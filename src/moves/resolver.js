@@ -18,6 +18,7 @@
 
 import { MOVES, moveRollKind } from "../schemas.js";
 import { rollOracle, rollPaired } from "../oracles/roller.js";
+import { BONDED_DEVELOP_OUTCOMES } from "./developRelationship.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -328,6 +329,15 @@ function withCost(recovery, costs) {
  * editing this map, update the audit row first so the doc and code stay
  * in lockstep.
  */
+// A bonded Develop Your Relationship's card line, by its roll's outcome
+// (BONDED_DEVELOP_OUTCOMES). No outcome — the un-bonded development, no roll —
+// takes the move's generic line.
+const BONDED_DEVELOP_EFFECT_TEXT = {
+  strong_hit: "Bonded: mark 2 ticks on your bonds legacy track — on a match, raise their rank by one.",
+  weak_hit:   "Bonded: take +2 momentum.",
+  miss:       "Bonded: take no lasting benefit.",
+};
+
 const CONSEQUENCE_MAP = {
 
   // ── SESSION MOVES ──────────────────────────────────────────────────────────
@@ -509,14 +519,20 @@ const CONSEQUENCE_MAP = {
     }
   },
 
-  develop_your_relationship: (_outcome, _isMatch) => ({
+  develop_your_relationship: (outcome, _isMatch) => ({
     ...emptyConsequences(),
     // Pipeline (GM-gated) resolves the target connection and applies either a
-    // connection-track mark (un-bonded) or a bonds-legacy mark (bonded, per
-    // §3.3.5). See src/moves/developRelationship.js. Replaced the old dead
-    // `progressMarked: 1` route (removed 2026-10).
+    // connection-track mark (un-bonded) or the bonded roll's legacy ticks and
+    // rank raise (§3.3.5). See src/moves/developRelationship.js. Replaced the
+    // old dead `progressMarked: 1` route (removed 2026-10).
     developRelationship: true,
-    otherEffect: "Develop the relationship: mark connection progress, or — if you are bonded — mark your bonds legacy track.",
+    // Only the bonded development is rolled (+rank — un-bonded is no roll, so
+    // its outcome is null): a weak hit's +2 momentum is that roll's own, applied
+    // with the move's other meters to the roller (BONDED_DEVELOP_OUTCOMES,
+    // shared with `!bond` — issue #322 V01: the pipeline paid 1 bonds tick).
+    momentumChange: BONDED_DEVELOP_OUTCOMES[outcome]?.momentum ?? 0,
+    otherEffect: BONDED_DEVELOP_EFFECT_TEXT[outcome]
+      ?? "Develop the relationship: mark progress on your connection's relationship track (once bonded, roll +their rank instead).",
   }),
 
   test_your_relationship: (outcome, _isMatch) => {

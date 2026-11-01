@@ -3903,19 +3903,35 @@ it.)*
 
 **Develop Your Relationship (audit 3.14).** An un-bonded connection marks its
 own relationship track ("no roll, mark progress", via `markRelationshipProgress`).
-A *bonded* connection instead marks the bonds legacy track by the rolled outcome
-— **strong hit 2 ticks, weak hit 1, miss 0** — and a **match on a hit raises the
-connection's rank by one** (play kit §3.3.5). Orchestration is a pure module
+A *bonded* connection instead rolls +rank and pays the move's text — **strong
+hit 2 bonds-legacy ticks, weak hit +2 momentum, miss nothing** — and a **strong
+hit with a match raises the connection's rank by one** (play kit §3.3.5; revised
+2026-11-01, issue #322 V01 — below). Orchestration is a pure module
 `src/moves/developRelationship.js` (`selectConnection` + `planDevelopRelationship`,
 mirroring `expedition.js`/`combat.js`); the resolver emits a `developRelationship`
 consequence flag and the GM-gated pipeline handler resolves the target connection
 and applies the writes.
 
-- **Weak-hit = 1 tick is a deliberate fill-in.** The play kit text in
-  `playkit-rules-and-coverage.md` §3.3.5 only specifies the strong-hit value (2).
-  We chose strong 2 / weak 1 / miss 0 — "diminished but present" on a weak hit,
-  consistent with the game's general outcome philosophy — rather than leave weak
-  undefined. Recorded here so it isn't re-litigated.
+- ~~**Weak-hit = 1 tick is a deliberate fill-in.**~~ *Superseded 2026-11-01
+  (maintainer decision, issue #322 V01).* The fill-in rested on the play kit
+  summary naming only the strong-hit value; the move's own text (the vendored
+  system's `starforged-moves` data, and `!bond` since it was written) says
+  "On a weak hit, take +2 momentum", and the rank raise is "on a strong hit
+  with a match". The pipeline paid a weak hit 1 bonds tick while `!bond` paid
+  +2 momentum. **Decision: both pay the text, from one table** —
+  `BONDED_DEVELOP_OUTCOMES` / `bondedDevelopOutcome` in
+  `developRelationship.js`: strong `{ ticks: 2 }`, weak `{ momentum: 2 }`, miss
+  nothing, `raiseRank` on a strong hit with a match. The pipeline's weak-hit
+  momentum is the roll's own (the resolver's `momentumChange`, credited to the
+  roller with the move's meters, as every move's is); a Test Your Relationship
+  hit develops through the plan with the test's roll, so its branch adds the
+  plan's momentum to that move's consequences. `!bond` relays the roll's
+  result (`outcome`, `isMatch`) and the canonical GM pays it from the table —
+  the old effect-carrying payload and its clamp (which turned any tick count
+  into 2) are gone. A weak hit cannot carry a match (a match is two equal
+  challenge dice), so the weak-hit raise both paths coded was never reachable;
+  the plan now says what the text says. *Rejected:* keeping 1 tick and changing
+  `!bond` — a house rule the move's text contradicts.
 - **Target resolution.** The connection is resolved from `interpretation.moveTarget`
   (the named connection) with the same exact→substring→sole-fallback ladder as
   expeditions/combat, except the fallback prefers the **sole bonded** connection,

@@ -297,7 +297,7 @@ to find each move's resolver branch.
 | Locations / settlements / planets / ships / creatures / factions as entities | ✅ | `src/entities/*.js`, registry at `src/entities/registry.js` |
 | Connection bond + name + location + two roles + rank | ✅ | `src/entities/connection.js:18-22, 371-379` |
 | Progress tracks worksheet (vow/expedition/connection/combat/scene_challenge) | ✅ | `TRACK_TYPES` / `PANEL_TRACK_TYPES` in `src/ui/progressTracks.js` (the unused `schemas.js` `TRACK_TYPES` copy was deleted in 2026-10) |
-| Bond legacy ticks on Develop Your Relationship (when bonded) | ✅ | `developRelationship.js` + pipeline: bonded → bonds legacy (2/1/0 by outcome, match raises rank); un-bonded → connection track |
+| Bond legacy ticks on Develop Your Relationship (when bonded) | ✅ | `developRelationship.js` + pipeline: bonded → `BONDED_DEVELOP_OUTCOMES`, shared with `!bond` (strong 2 bonds-legacy ticks / weak +2 momentum / miss nothing; a strong hit with a match raises rank — issue #322 V01); un-bonded → connection track |
 
 ### 2.6 Safety, scene, and session lifecycle
 
@@ -462,8 +462,10 @@ player gets whatever stat was chosen by the interpreter. Either pre-resolve
 the higher in `statEnrichment.js` or add a stat picker in the confirm dialog.
 
 **3.3.5 Develop Your Relationship — bond legacy ticks when bonded. — FIXED (2026-06-17)**
-Once bonded, Develop Your Relationship marks the bonds legacy track by outcome
-(strong 2 / weak 1 / miss 0) and a match raises the connection's rank by one;
+Once bonded, Develop Your Relationship rolls +rank and pays the move's text —
+strong hit 2 bonds-legacy ticks, weak hit +2 momentum, miss nothing — and a
+strong hit with a match raises the connection's rank by one (issue #322 V01:
+the pipeline paid a weak hit 1 tick, `!bond` +2 momentum);
 un-bonded connections mark their own relationship track ("no roll, mark
 progress"). Implemented in `src/moves/developRelationship.js` (pure, unit-tested)
 + a GM-gated pipeline handler in `src/index.js`. The resolver emits a

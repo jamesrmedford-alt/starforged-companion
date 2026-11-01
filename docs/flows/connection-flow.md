@@ -89,10 +89,15 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   name — stamps `moveTargetId` / `moveTarget` so this branch marks the same
   one, and makes the rank the stat (`BOND_ROLL_ADDS`, +1 troublesome … +5
   epic; the card reads "+epic (5)" — issue #314 Q06, the pipeline rolled +0
-  while `!bond` rolled +rank); the outcome marks bonds-legacy ticks (strong 2
-  / weak 1) and a match-on-hit raises the connection's rank (`nextRank`,
-  clamped at epic), mirrored onto the bond Items by the record's `_id`
-  (`setBondItemRank` — Q04). Ambiguous target (several active, none named)
+  while `!bond` rolled +rank); the outcome pays `BONDED_DEVELOP_OUTCOMES`
+  (`bondedDevelopOutcome`, shared with `!bond` — issue #322 V01: the pipeline
+  paid a weak hit 1 tick): strong → 2 bonds-legacy ticks (`addLegacyTicks` on
+  the working copy, persisted with the move), weak → +2 momentum (the
+  resolver's `momentumChange`, credited to the roller by `persistResolution`;
+  a Test Your Relationship hit's branch adds the plan's momentum to that move's
+  consequences), miss → nothing; a strong hit with a match raises the
+  connection's rank (`nextRank`, never past epic), mirrored onto the bond
+  Items by the record's `_id` (`setBondItemRank` — Q04). Ambiguous target (several active, none named)
   silently no-ops. `selectConnection`'s `strict` option is for an
   irreversible write (`!sever`): a name that matches no connection exactly or
   by substring resolves nothing, and an unnamed target resolves only when
@@ -105,17 +110,19 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   **sole** bonded one, and that connection's rank drives the adds
   (`BOND_ROLL_ADDS`, shared with the pipeline's bonded roll; a bare rank arg
   is the untargeted fallback; a name that matches nothing warns).
-  It rolls, posts the card, and relays the lasting effect to the canonical
-  GM (`requestGmAction("bond.apply")` → `applyBondEffects`): strong → 2
-  bonds-legacy ticks (`addLegacyTicks`, so filled boxes pay XP), weak → +2
-  momentum to the **roller's** PC (`resolveSpeakerActorId`), and a hit with a
-  match on a targeted connection raises its rank one step for real
-  (`updateConnection` + the bond-Item mirror via `setBondItemRank`, keyed by
-  the record's `_id` and name read on the GM — issue #314 Q04). The
-  handler validates the client-supplied payload: ticks / momentum clamp to
-  the legal {0, 2} (a request carrying both is refused), the raise must be
-  exactly `nextRank` of the bonded connection's current rank, and momentum
-  goes only to a PC the requester owns (or a GM's request). With no GM
+  It rolls, posts the card, and relays the roll's result to the canonical
+  GM (`requestGmAction("bond.apply", { outcome, isMatch, … })` →
+  `applyBondEffects`), which pays it from the pipeline's table
+  (`bondedDevelopOutcome` — issue #322 V01): strong → 2 bonds-legacy ticks
+  (`addLegacyTicks`, so filled boxes pay XP), weak → +2 momentum to the
+  **roller's** PC (`resolveSpeakerActorId`), and a strong hit with a match on
+  a targeted connection raises its rank one step for real (`updateConnection`
+  + the bond-Item mirror via `setBondItemRank`, keyed by the record's `_id`
+  and name read on the GM — issue #314 Q04). The handler validates the
+  client-supplied payload: an outcome that is not a roll result is refused
+  (effects named in the payload are ignored), the raise must be exactly
+  `nextRank` of the bonded connection's current rank, and momentum goes only
+  to a PC the requester owns (or a GM's request). With no GM
   connected the card still posts and `requestGmAction` warns that nothing was
   saved.
 - **`deepenLinkedConnection`** — the vow/fight payoff path: marks the

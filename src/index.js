@@ -1143,8 +1143,10 @@ export function registerChatHook() {
 
       // Develop Your Relationship (audit 3.14) — GM-gated. An un-bonded
       // connection marks its own relationship track ("no roll, mark progress");
-      // a bonded connection marks the bonds legacy track per the rolled outcome
-      // (§3.3.5: strong 2 / weak 1 / miss 0), and a match raises its rank by one.
+      // a bonded connection pays the rolled outcome (§3.3.5,
+      // BONDED_DEVELOP_OUTCOMES: strong 2 bonds-legacy ticks / weak +2
+      // momentum / miss nothing), and a strong hit with a match raises its rank
+      // by one (issue #322 V01).
       if (resolution.consequences?.developRelationship && game.user.isGM) {
         try {
           const conn = await import("./entities/connection.js");
@@ -1162,6 +1164,16 @@ export function registerChatHook() {
 
           if (plan.action === "bond-legacy") {
             if (plan.ticks > 0) addLegacyTicks(campaignState, "bonds", plan.ticks);
+            // A Test Your Relationship hit develops with the test's own roll,
+            // whose consequences cannot know the connection is bonded: its weak
+            // hit's +2 momentum joins them here, before the card and the
+            // persist, so it is credited to the roller with the move's other
+            // meters. Develop Your Relationship's roll carries it from the
+            // resolver already.
+            if (plan.momentum > 0 && resolution.moveId !== "develop_your_relationship" && resolution.consequences) {
+              resolution.consequences.momentumChange =
+                Number(resolution.consequences.momentumChange ?? 0) + plan.momentum;
+            }
             if (plan.raiseRank && plan.newRank && plan.connection.__hostId) {
               await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
                 console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
@@ -5076,7 +5088,9 @@ async function postDevelopRelationshipCard(plan) {
   if (plan.action === "bond-legacy") {
     body = plan.ticks > 0
       ? `Marked ${plan.ticks} tick${plan.ticks === 1 ? "" : "s"} on your bonds legacy track for your bond with <strong>${name}</strong>.`
-      : `No bonds legacy progress with <strong>${name}</strong> this time.`;
+      : plan.momentum > 0
+        ? `Your bond with <strong>${name}</strong> holds — take +${plan.momentum} momentum.`
+        : `No lasting benefit from your bond with <strong>${name}</strong> this time.`;
     if (plan.raiseRank && plan.newRank) {
       body += ` Match — ${name}'s rank rises to <strong>${escapeChatHtml(plan.newRank)}</strong>.`;
     }

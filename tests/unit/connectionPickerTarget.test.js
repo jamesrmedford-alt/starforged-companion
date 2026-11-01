@@ -235,7 +235,11 @@ describe('Develop Your Relationship with a bonded connection rolls +rank (issue 
     const [interpretation] = resolveMove.mock.calls[0];
     expect(interpretation).toMatchObject({ moveTargetId: 'conn-vega', statUsed: 'formidable', statValue: 3 });
     expect(resolveMove.mock.results[0].value).toMatchObject({ actionScore: 6, outcome: 'weak_hit' });   // 3 + 3 beats 4, not 7
-    expect(bondsTicks()).toBe(1);
+    // The weak hit takes +2 momentum, credited to the roller — no bonds tick
+    // (issue #322 V01: the pipeline marked 1 tick, `!bond` gave +2 momentum).
+    expect(bondsTicks()).toBe(0);
+    expect(actors.bex.system.momentum.value).toBe(4);
+    expect(table.cards(f => f.developRelationshipCard).at(-1).content).toMatch(/take \+2 momentum/);
     expect(record('conn-sable').relationshipTicks).toBe(8);
   });
 
@@ -270,5 +274,45 @@ describe('Develop Your Relationship with a bonded connection rolls +rank (issue 
 
     expect(table.cards(f => f.bondCommandCard).at(-1).content).toContain('Action: 3 + 5 = <strong>8</strong>');
     expect(bondsTicks()).toBe(4);
+  });
+
+  // Issue #322 V01: a Test Your Relationship hit develops a bonded connection
+  // with the test's own roll, whose consequences cannot know the bond — the
+  // develop branch adds the weak hit's +2 momentum to them, for the roller.
+  it("Test Your Relationship's weak hit with a bonded connection: +2 momentum to the roller, no tick", async () => {
+    await seed([{ id: 'conn-vega', name: 'Vega', ticks: 40, bonded: true, rank: 'formidable' }]);
+    control.dice = DICE;                       // 3 + heart 2 = 5 against 4 and 7
+    control.interpret = {
+      moveId: 'test_your_relationship', moveName: 'Test Your Relationship', statUsed: 'heart', adds: 0,
+      moveTarget: 'Vega', rationale: 'test', mischiefApplied: false,
+    };
+    await table.client('pl-1').chat('Vega asks whether I still trust her.', { speaker: { actor: 'pc-bex' } });
+    await table.settle();
+
+    expect(resolveMove.mock.results[0].value).toMatchObject({ moveId: 'test_your_relationship', outcome: 'weak_hit' });
+    expect(bondsTicks()).toBe(0);
+    expect(actors.bex.system.momentum.value).toBe(4);
+    // On the resolution the card and the persist read.
+    expect(resolveMove.mock.results[0].value.consequences.momentumChange).toBe(2);
+  });
+
+  // Issue #322 V01 (the audit's bondWeakHit probe): the same weak hit paid 1
+  // bonds tick through the pipeline and +2 momentum through `!bond`. Both pay
+  // the move's text now — +2 momentum to the roller, no tick.
+  it('parity with `!bond` on a weak hit: both pay +2 momentum to the roller, and no tick', async () => {
+    await seed([{ id: 'conn-vega', name: 'Vega', ticks: 40, bonded: true, rank: 'formidable' }]);
+    control.dice = DICE;                       // 3 + 3 = 6 against 4 and 7
+    const { resolution } = await pickFromCard('develop', 'conn-vega');
+    expect(resolution).toMatchObject({ actionScore: 6, outcome: 'weak_hit' });
+    expect(bondsTicks()).toBe(0);
+    expect(actors.bex.system.momentum.value).toBe(4);
+
+    control.bondDice = [3, 4, 7];
+    await table.client('pl-1').chat('!bond Vega', { speaker: { actor: 'pc-bex' } });
+    await table.settle();
+
+    expect(table.cards(f => f.bondCommandCard).at(-1).content).toMatch(/Weak hit\.<\/strong> Take \+2 momentum/);
+    expect(bondsTicks()).toBe(0);
+    expect(actors.bex.system.momentum.value).toBe(6);
   });
 });

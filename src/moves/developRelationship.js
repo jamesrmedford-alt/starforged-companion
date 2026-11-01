@@ -5,15 +5,17 @@
  * Pure orchestration for the connection-progress / bond-legacy split:
  *  - An UN-bonded connection: Develop Your Relationship marks progress on the
  *    connection's own relationship track (per its rank). "No roll, mark progress."
- *  - A BONDED connection (play kit §3.3.5): you roll +rank instead, and the
- *    outcome marks the bonds legacy track — strong hit 2 ticks, weak hit 1,
- *    miss 0 — and a match (on a hit) raises the connection's rank by one.
+ *  - A BONDED connection (play kit §3.3.5): you roll +rank instead — a
+ *    strong hit marks 2 ticks on the bonds legacy track, a weak hit takes +2
+ *    momentum, a miss takes no lasting benefit, and a strong hit with a match
+ *    raises the connection's rank by one (BONDED_DEVELOP_OUTCOMES).
  *
  * The side effects (markRelationshipProgress / addLegacyTicks / updateConnection)
  * live in the GM-gated pipeline handler; this module only decides *what* to do
  * so it can be unit-tested without Foundry. Mirrors expedition.js / combat.js.
  *
- * Source: docs/rules-reference/playkit-rules-and-coverage.md §3.3.5,
+ * Source: docs/rules-reference/playkit-rules-and-coverage.md §3.3.5, the
+ *         move's text (vendor/foundry-ironsworn starforged-moves),
  *         decisions.md → "Develop Your Relationship bond legacy".
  */
 
@@ -43,10 +45,36 @@ export function buildConnectionSuggestion(resolution, activeConnections, moveCat
   if (!unbonded.length) return null;
   return { eligible: true, count: unbonded.length };
 }
-// Bonds legacy ticks marked when developing a BONDED connection, by outcome.
-// Strong = 2 (the play-kit value); weak = 1 (diminished-but-present, see
-// decisions.md); miss = 0. A match on a hit additionally raises rank.
-export const BOND_LEGACY_TICKS = { strong_hit: 2, weak_hit: 1, miss: 0 };
+// What a BONDED Develop Your Relationship roll pays, by outcome — the move's
+// text: "On a strong hit, mark 2 ticks on your bonds legacy track. … On a
+// weak hit, take +2 momentum. On a miss, take no lasting benefit." The one
+// table both paths read: the move pipeline (planDevelopRelationship, and the
+// resolver's weak-hit momentum) and `!bond` (handleBondCommand and its relay
+// handler, applyBondEffects). The pipeline paid a weak hit 1 bonds tick and
+// `!bond` +2 momentum (issue #322 V01).
+export const BONDED_DEVELOP_OUTCOMES = Object.freeze({
+  strong_hit: Object.freeze({ ticks: 2, momentum: 0 }),
+  weak_hit:   Object.freeze({ ticks: 0, momentum: 2 }),
+  miss:       Object.freeze({ ticks: 0, momentum: 0 }),
+});
+
+/**
+ * A bonded Develop Your Relationship's lasting effects for one roll result:
+ * its BONDED_DEVELOP_OUTCOMES row, and whether a match raises the
+ * connection's rank — "On a strong hit with a match, you may also … raise
+ * their rank by one (if not already epic)": a strong hit only, never a weak
+ * one (both paths raised on any hit with a match — issue #322 V01).
+ *
+ * @param {string} outcome — "strong_hit" | "weak_hit" | "miss"
+ * @param {boolean} isMatch
+ * @returns {{ ticks: number, momentum: number, raiseRank: boolean }|null}
+ *   null for anything that is not a roll result
+ */
+export function bondedDevelopOutcome(outcome, isMatch) {
+  const row = Object.hasOwn(BONDED_DEVELOP_OUTCOMES, String(outcome)) ? BONDED_DEVELOP_OUTCOMES[outcome] : null;
+  if (!row) return null;
+  return { ticks: row.ticks, momentum: row.momentum, raiseRank: outcome === "strong_hit" && isMatch === true };
+}
 
 // Rank → the adds of the bonded-path Develop Your Relationship roll (play kit
 // p. 3: troublesome +1; dangerous +2; formidable +3; extreme +4; epic +5). The
@@ -167,20 +195,27 @@ export function selectConnection(connections, target, { hostId = null, unbonded 
  * @param {object|null} connection — from selectConnection
  * @param {"strong_hit"|"weak_hit"|"miss"} outcome
  * @param {boolean} isMatch
+ * A bonded plan carries its outcome's `momentum` (bondedDevelopOutcome). For
+ * Develop Your Relationship itself that is the roll's own momentum, which the
+ * resolver's consequences carry (credited to the roller with the move's other
+ * meters); a Test Your Relationship hit develops through this plan with the
+ * test's roll, so its pipeline branch applies the momentum.
+ *
  * @returns {{action:"none"}
  *          | {action:"connection-progress", connection, marks:number}
- *          | {action:"bond-legacy", connection, ticks:number, raiseRank:boolean, newRank:string|null}}
+ *          | {action:"bond-legacy", connection, ticks:number, momentum:number, raiseRank:boolean, newRank:string|null}}
  */
 export function planDevelopRelationship(connection, outcome, isMatch) {
   if (!connection) return { action: "none" };
 
   if (connection.bonded) {
-    const ticks = BOND_LEGACY_TICKS[outcome] ?? 0;
-    const raiseRank = !!isMatch && outcome !== "miss";
+    const effect = bondedDevelopOutcome(outcome, isMatch) ?? { ticks: 0, momentum: 0, raiseRank: false };
+    const raiseRank = effect.raiseRank && connection.rank !== "epic";
     return {
       action: "bond-legacy",
       connection,
-      ticks,
+      ticks:    effect.ticks,
+      momentum: effect.momentum,
       raiseRank,
       newRank: raiseRank ? nextRank(connection.rank) : null,
     };

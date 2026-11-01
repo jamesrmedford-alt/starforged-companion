@@ -9,6 +9,8 @@
  *   strong + match → also raise the connection's rank by 1
  *   weak hit → +2 momentum
  *   miss → no lasting benefit
+ * — developRelationship.js BONDED_DEVELOP_OUTCOMES, the table the move
+ * pipeline's bonded roll pays from too (issue #322 V01).
  *
  * Multiplayer split (2026-10 audit)
  * ---------------------------------
@@ -23,7 +25,7 @@
  */
 
 import { rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie } from "./resolver.js";
-import { selectConnection, nextRank, BOND_ROLL_ADDS } from "./developRelationship.js";
+import { selectConnection, nextRank, bondedDevelopOutcome, BOND_ROLL_ADDS } from "./developRelationship.js";
 import { showActionRoll } from "../dice/diceAnimation.js";
 import { getPlayerActors, applyMeterChanges, setBondItemRank, readMomentumState } from "../character/actorBridge.js";
 import { resolveSpeakerActorId } from "../multiplayer/speaker.js";
@@ -89,18 +91,19 @@ export async function handleBondCommand(message) {
   void showActionRoll(actionDie, challengeDice);
 
   const matchBadge = isMatch ? " ✦ MATCH" : "";
-  const raiseRank  = !!target && isMatch && outcome !== "miss" && target.rank !== "epic";
+  // The pipeline's table (BONDED_DEVELOP_OUTCOMES): strong 2 ticks, weak +2
+  // momentum, a match raising the rank on a strong hit only (issue #322 V01).
+  const effect     = bondedDevelopOutcome(outcome, isMatch);
+  const raiseRank  = !!target && effect.raiseRank && target.rank !== "epic";
   const raisedRank = raiseRank ? nextRank(target.rank) : null;
-  let body, momentumChange = 0, ticksOnBonds = 0;
+  let body;
 
   switch (outcome) {
     case "strong_hit":
-      ticksOnBonds = 2;
-      body = `<strong>Strong hit${matchBadge}.</strong> Mark 2 ticks on your bonds legacy track.`;
+      body = `<strong>Strong hit${matchBadge}.</strong> Mark ${effect.ticks} ticks on your bonds legacy track.`;
       break;
     case "weak_hit":
-      momentumChange = 2;
-      body = `<strong>Weak hit${matchBadge}.</strong> Take +2 momentum.`;
+      body = `<strong>Weak hit${matchBadge}.</strong> Take +${effect.momentum} momentum.`;
       break;
     case "miss":
       body = `<strong>Miss${matchBadge}.</strong> Take no lasting benefit.`;
@@ -108,7 +111,7 @@ export async function handleBondCommand(message) {
   }
   if (raiseRank) {
     body += ` The match bolsters your standing — <strong>${escapeHtml(target.name)}</strong>'s rank rises to <strong>${raisedRank}</strong>.`;
-  } else if (!target && isMatch && outcome !== "miss") {
+  } else if (!target && effect.raiseRank) {
     body += " You may also envision how recent events bolstered your connection's standing and raise their rank by one (if not already epic).";
   }
 
@@ -120,56 +123,55 @@ export async function handleBondCommand(message) {
     flags:   { [MODULE_ID]: { bondCommandCard: true } },
   });
 
-  if (ticksOnBonds === 0 && momentumChange === 0 && !raiseRank) {
+  if (!effect.ticks && !effect.momentum && !raiseRank) {
     console.debug(`${MODULE_ID} | !bond: ${outcome} — no lasting effect to apply.`);
     return;
   }
 
   // Credit the roller (decisions.md → "Multiplayer attribution"): the momentum
   // goes to the typing player's PC, resolved from the message, never the GM's
-  // character or the first PC in the world.
+  // character or the first PC in the world. The relay carries the roll's
+  // result, not its effects: the GM pays it from the shared table.
   await requestGmAction("bond.apply", {
-    ticksOnBonds,
-    momentumChange,
-    raiseRank,
+    outcome,
+    isMatch,
     targetHostId: raiseRank ? (target.__hostId ?? null) : null,
     raisedRank,
     actorId:      rollerId,
   });
 }
 
-// The only lasting effects one `!bond` roll can produce (play kit p. 3): a
-// strong hit marks 2 bonds-legacy ticks, a weak hit gives +2 momentum — never
-// both. The relay payload is client-supplied (gmRelay.js "Trust model"), so
-// the handler clamps to these values.
-const BOND_LEGACY_TICKS = 2;
-const BOND_MOMENTUM     = 2;
-
 /**
  * gmRelay handler for "bond.apply" — runs on the canonical GM.
  *
- * Validates the client-supplied payload before writing: ticks and momentum
- * clamp to the legal {0, 2} (a request carrying both is refused — no single
- * roll yields both), the rank raise must name a real next rank, and the
- * momentum target must be a PC the requester owns (or the requester is a GM).
+ * The payload is client-supplied (gmRelay.js "Trust model"), so it carries the
+ * roll's result — `outcome` and `isMatch` — and the handler pays it from
+ * BONDED_DEVELOP_OUTCOMES, the table the move pipeline pays a bonded
+ * development from: a strong hit 2 bonds-legacy ticks, a weak hit +2 momentum,
+ * never both; anything else is refused. Each value is the table's, so a
+ * request can never ask for more (the old clamp turned any tick count into 2
+ * — issue #322 V01). A strong hit with a match raises the rank only to the
+ * connection's real next rank, and the momentum goes only to a PC the
+ * requester owns (or the requester is a GM).
  *
- * @param {{ ticksOnBonds?: number, momentumChange?: number, raiseRank?: boolean,
- *           targetHostId?: string|null, raisedRank?: string|null, actorId?: string|null }} payload
+ * @param {{ outcome?: string, isMatch?: boolean, targetHostId?: string|null,
+ *           raisedRank?: string|null, actorId?: string|null }} payload
  * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
  * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
 export async function applyBondEffects(payload = {}, ctx = {}) {
-  const ticks    = clampEffect(payload.ticksOnBonds,   BOND_LEGACY_TICKS, "ticksOnBonds");
-  let   momentum = clampEffect(payload.momentumChange, BOND_MOMENTUM,     "momentumChange");
-  const raise    = payload.raiseRank === true
+  const effect = bondedDevelopOutcome(payload.outcome, payload.isMatch === true);
+  if (!effect) {
+    console.warn(`${MODULE_ID} | !bond: relayed outcome "${payload.outcome}" is not a roll result — refused.`, payload);
+    return { applied: false, reason: "invalid" };
+  }
+  const ticks    = effect.ticks;
+  let   momentum = effect.momentum;
+  const raise    = effect.raiseRank
     && typeof payload.targetHostId === "string" && payload.targetHostId.length > 0
     && typeof payload.raisedRank === "string" && payload.raisedRank in BOND_ROLL_ADDS;
 
-  if (ticks > 0 && momentum > 0) {
-    console.warn(`${MODULE_ID} | !bond: relay asked for both legacy ticks and momentum — no single roll yields both; refused.`, payload);
-    return { applied: false, reason: "invalid" };
-  }
-  if (payload.raiseRank === true && !raise) {
+  if (effect.raiseRank && payload.targetHostId != null && !raise) {
     console.warn(`${MODULE_ID} | !bond: rank raise requested without a valid target/rank — skipped.`, payload);
   }
 
@@ -243,15 +245,6 @@ export async function applyBondEffects(payload = {}, ctx = {}) {
  * Clamp a relayed effect count to {0, legal}. Anything else is a forged or
  * corrupted payload — warned, then clamped (a positive value to `legal`).
  */
-function clampEffect(value, legal, label) {
-  const n = Math.floor(Number(value));
-  if (!Number.isFinite(n) || n <= 0) return 0;
-  if (n !== legal) {
-    console.warn(`${MODULE_ID} | !bond: relayed ${label}=${value} is not a legal roll result — clamped to ${legal}.`);
-  }
-  return legal;
-}
-
 function escapeHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")

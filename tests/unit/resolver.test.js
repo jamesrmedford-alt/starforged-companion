@@ -477,7 +477,9 @@ const HANDLER_CASES = [
   ["make_a_connection",         "strong_hit", false, { match: /role|rank/i }],
   ["make_a_connection",         "weak_hit",   false, { match: /complication|cost/i }],
   ["make_a_connection",         "miss",       false, { match: /Pay the Price/i }],
-  ["develop_your_relationship", "strong_hit", false, { match: /progress/i }],
+  ["develop_your_relationship", "strong_hit", false, { developRelationship: true, match: /bonds legacy/i }],
+  ["develop_your_relationship", "weak_hit",   false, { developRelationship: true, match: /\+2 momentum/i }],
+  ["develop_your_relationship", "miss",       false, { developRelationship: true, match: /no lasting benefit/i }],
   ["test_your_relationship",    "strong_hit", false, { developRelationship: true, match: /Develop/i }],
   ["test_your_relationship",    "weak_hit",   false, { developRelationship: true, match: /Develop/i }],
   ["test_your_relationship",    "miss",       false, { match: /lose|loyalty/i }],
@@ -1462,10 +1464,23 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
   });
 
   it("develop_your_relationship flags developRelationship (audit 3.14)", () => {
-    for (const outcome of ["strong_hit", "weak_hit", "miss"]) {
+    for (const outcome of ["strong_hit", "weak_hit", "miss", null]) {
       const c = mapConsequences("develop_your_relationship", outcome, false);
       expect(c.developRelationship).toBe(true);
     }
+  });
+
+  // Issue #322 V01: only the bonded development is rolled, and its weak hit
+  // takes +2 momentum — the roll's own, with the move's meters (the pipeline
+  // paid 1 bonds tick, `!bond` +2 momentum). The un-bonded development (no
+  // roll, outcome null) takes none.
+  it("develop_your_relationship: a bonded weak hit takes +2 momentum; no other result does", () => {
+    expect(mapConsequences("develop_your_relationship", "weak_hit", false).momentumChange).toBe(2);
+    expect(mapConsequences("develop_your_relationship", "strong_hit", true).momentumChange).toBe(0);
+    expect(mapConsequences("develop_your_relationship", "miss", false).momentumChange).toBe(0);
+    const unrolled = mapConsequences("develop_your_relationship", null, false);
+    expect(unrolled.momentumChange).toBe(0);
+    expect(unrolled.otherEffect).toMatch(/relationship track/i);
   });
 
   it("reach_a_milestone flags reachMilestone", () => {

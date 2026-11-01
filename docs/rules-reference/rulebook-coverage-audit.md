@@ -205,7 +205,7 @@ Relationship`, `Forge a Bond`.
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
 | 3.13 | Make a Connection: oracle-seeded NPC, progress track | MOVE | PINNED | `connectionPipeline`, `connectionSeedEnrichment`, `entityWorldJournal` | — | none |
-| 3.14 | Develop Your Relationship: marks progress; when bonded → roll +rank, tick bond legacy track | MOVE | DONE | `developRelationship.js` + GM-gated pipeline: un-bonded marks the connection track; bonded rolls +rank (`enrichBondedDevelop`, +1 troublesome … +5 epic — issue #314 Q06, the pipeline rolled +0), marks bonds legacy (strong 2 / weak 1 / miss 0) and a match raises rank (§3.3.5). `developRelationship` unit batch; `connectionPickerTarget.test.js` through the pipeline, at every rank, with `!bond` parity | — | done (2026-06-17; +rank 2026-10) |
+| 3.14 | Develop Your Relationship: marks progress; when bonded → roll +rank, tick bond legacy track | MOVE | DONE | `developRelationship.js` + GM-gated pipeline: un-bonded marks the connection track; bonded rolls +rank (`enrichBondedDevelop`, +1 troublesome … +5 epic — issue #314 Q06, the pipeline rolled +0), pays the move's text from one table shared with `!bond` (strong 2 bonds-legacy ticks / weak +2 momentum / miss nothing; a strong hit with a match raises rank — issue #322 V01, the pipeline paid a weak hit 1 tick) (§3.3.5). `developRelationship` unit batch; `connectionPickerTarget.test.js` through the pipeline, at every rank, with `!bond` parity | — | done (2026-06-17; +rank 2026-10) |
 | 3.15 | Test Your Relationship: roll when bond is stressed | MOVE | GAP | none | Low | NEEDS-TEST |
 | 3.16 | Forge a Bond: progress move resolves; awards Bond asset | MOVE | GAP | none | Medium | NEEDS-TEST |
 
