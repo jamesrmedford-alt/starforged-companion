@@ -26,6 +26,7 @@
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { getCommandVehicleActorId } from "../entities/ship.js";
+import { getShipPositioningEnabled, getShipAutoMoveOnCourse } from "../ui/settingsPanel.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -178,6 +179,14 @@ export function handleCommandVehicleTokenDrag(tokenDoc, changes, options) {
     // so the test harness sees the default behaviour.
     console.debug?.(`${MODULE_ID} | preUpdateToken: settings read failed:`, err?.message ?? err);
   }
+
+  // A drop on a pin rolls Set a Course and, on a hit, moves the token onto the
+  // pin — the arrival the pipeline applies only with Ship Positioning and
+  // Auto-Move Ship on Set a Course both on (index.js applyOutcomeEffects).
+  // With either off, the drop was cancelled and the move rolled, yet the
+  // token could never follow (issue #321 U54): the drag is a plain token move
+  // instead — with positioning on, a position note (updateToken), no roll.
+  if (!getShipPositioningEnabled() || !getShipAutoMoveOnCourse()) return undefined;
 
   // Only the Scene flagged as a sector Scene participates.
   const scene = tokenDoc.parent ?? tokenDoc.scene;

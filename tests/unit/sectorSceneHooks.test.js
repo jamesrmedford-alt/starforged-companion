@@ -313,6 +313,29 @@ describe('handleCommandVehicleTokenDrag', () => {
     restore();
   });
 
+  // Issue #321 U54: the arrival that moves the token onto the pin runs only with
+  // Ship Positioning and Auto-Move Ship on Set a Course both on. With either
+  // off, a drop was cancelled and Set a Course rolled, yet the token never moved.
+  it.each([
+    ['Ship Positioning', 'factContinuity.shipPositioning'],
+    ['Auto-Move Ship on Set a Course', 'factContinuity.shipAutoMoveOnCourse'],
+  ])('with %s off, a drop on a pin is a plain token move — nothing is cancelled or rolled', async (_label, key) => {
+    global.game.settings._store.set(`${MODULE_ID}.${key}`, false);
+    try {
+      const scene = makeSectorScene({ notes: [makeSettlementNote('s1', 100, 100, 'Bleakhold')] });
+      const result = handleCommandVehicleTokenDrag(
+        { id: 'tok1', flags: { [MODULE_ID]: { commandVehicle: true } }, x: 0, y: 0, parent: scene },
+        { x: 110, y: 110 },
+      );
+      await new Promise(r => setTimeout(r, 5));   // any dispatch lands inside this test
+      expect(result).toBeUndefined();
+      expect(createCalls).toHaveLength(0);
+    } finally {
+      global.game.settings._store.delete(`${MODULE_ID}.${key}`);
+      restore();
+    }
+  });
+
   it("names the pin's settlement Actor — its current name, and its id for the arrival (issue #321 U52)", async () => {
     global.game.actors._set('actor-bleak', { id: 'actor-bleak', name: 'Bleak Hold Station' });
     const scene = makeSectorScene({
@@ -749,6 +772,24 @@ describe('token placement / reposition → position record write', () => {
     const pos = ship.flags[MODULE_ID].ship.position;
     expect(pos?.nearestSettlementId).toBe('actor-astra');
     expect(pos?.updatedBy).toBe('token_placement');
+  });
+
+  it('with Auto-Move off, a drop onto a pin lands as a position note — near it, no roll (issue #321 U54)', async () => {
+    const ship = seedCommandVehicle();
+    global.game.settings._store.set(`${MODULE_ID}.factContinuity.shipAutoMoveOnCourse`, false);
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('gen-astra', 100, 100, 'Astra', { actorId: 'actor-astra' })],
+    });
+    scene.flags[MODULE_ID].sectorId = 'sec-fc';
+    const token = cvToken(scene, { x: 600, y: 600 });
+
+    expect(handleCommandVehicleTokenDrag(token, { x: 100, y: 100 })).toBeUndefined();   // not cancelled
+    Object.assign(token, { x: 100, y: 100 });                                           // Foundry applies the move
+    await handleCommandVehicleTokenReposition(token, { x: 100, y: 100 }, {}, 'test-user-gm');
+
+    expect(ship.flags[MODULE_ID].ship.position).toMatchObject({
+      nearestSettlementId: 'actor-astra', sectorId: 'sec-fc', updatedBy: 'token_placement',
+    });
   });
 
   it('an off-pin reposition records deep space', async () => {

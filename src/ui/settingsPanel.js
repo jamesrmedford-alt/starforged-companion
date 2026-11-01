@@ -602,7 +602,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED, {
     name:    'Sector-Scene Ship Token',
-    hint:    'Place a Token representing the command vehicle on the sector Scene. Dragging the Token onto a settlement Note pin fires the same Set a Course pipeline a chat-typed move would. The Token snaps back to its previous position on a miss.',
+    hint:    'Place a Token representing the command vehicle on the sector Scene. With Ship Positioning and Auto-Move Ship on Set a Course on, dragging the Token onto a settlement Note pin fires the same Set a Course pipeline a chat-typed move would, and the Token moves onto the pin on a hit (it stays put on a miss); with either off, the drag simply moves the Token.',
     scope:   'world',
     config:  false,
     type:    Boolean,
