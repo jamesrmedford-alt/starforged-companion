@@ -205,7 +205,7 @@ async function openOracleAddDialog(prefillId = "") {
           return;
         }
 
-        await saveCustomOracle(tableId, name, parseEntries(raw));
+        await saveCustomOracle(tableId, name, parseEntries(raw), { unparsed: unparsedEntryLines(raw) });
       },
     },
   });
@@ -219,13 +219,24 @@ async function openOracleAddDialog(prefillId = "") {
  * @param {string} tableId
  * @param {string} name
  * @param {Array<{min:number,max:number,result:string}>} entries — parsed
+ * @param {{ unparsed?: string[] }} [opts] — the lines that did not parse
+ *   (unparsedEntryLines): any at all refuses the save, naming them
  * @returns {Promise<boolean>} true when the table was saved
  */
-export async function saveCustomOracle(tableId, name, entries) {
+export async function saveCustomOracle(tableId, name, entries, { unparsed = [] } = {}) {
   // `!oracle <tableId> [question]` splits on whitespace, so an id with a
   // space (or other punctuation) could never be rolled from chat.
   if (!/^[A-Za-z0-9_]+$/.test(String(tableId ?? ""))) {
     await postCard("<strong>Custom oracle not saved</strong><p>Table ID may only contain letters, numbers and underscores.</p>");
+    return false;
+  }
+  if (Array.isArray(unparsed) && unparsed.length) {
+    const lines = unparsed.slice(0, 10).map(l => `<li><code>${escapeHtml(l)}</code></li>`).join("");
+    await postCard(
+      `<strong>Custom oracle not saved</strong><p>${unparsed.length === 1 ? "This line" : "These lines"} could not be read — ` +
+      `each needs a number or a range, a space, then the result (<code>1-3 Result text</code>):</p><ul>${lines}</ul>` +
+      (unparsed.length > 10 ? `<p>…and ${unparsed.length - 10} more.</p>` : ""),
+    );
     return false;
   }
   if (!entries?.length) {
@@ -269,30 +280,54 @@ export async function saveCustomOracle(tableId, name, entries) {
 // Parsing
 // ─────────────────────────────────────────────────────────────────────────────
 
+// A range's dash: the hyphen, and the dashes a pasted rulebook table brings —
+// hyphen, non-breaking hyphen, figure, en and em dashes, the horizontal bar
+// and the minus sign. "5–6 Hostile" (en dash) was dropped (issue #322 V28).
+const ENTRY_LINE_RE = /^(\d+)(?:\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*(\d+))?\s+(.+)$/;
+
+/** A row number: "00" is a percentile table's 100 ("96-00 Roll twice"). */
+const entryNumber = (token) => (token === "00" ? 100 : Number(token));
+
+/** One line as an entry, or null when it does not read as one. */
+function parseEntryLine(trimmed) {
+  const m = trimmed.match(ENTRY_LINE_RE);
+  if (!m) return null;
+  const min = entryNumber(m[1]);
+  const max = m[2] !== undefined ? entryNumber(m[2]) : min;
+  if (Number.isNaN(min) || Number.isNaN(max) || max < min) return null;
+  return { min, max, result: m[3].trim() };
+}
+
+/** The lines of a textarea body that are entries to read: not blank, not a # comment. */
+function entryLines(raw) {
+  return String(raw).split(/\r?\n/).map(line => line.trim()).filter(line => line && !line.startsWith("#"));
+}
+
 /**
  * Parse a textarea body into table entries. Accepts:
  *   1-30 Triumph
- *   31-60 Stalemate
+ *   31–60 Stalemate      (an en dash, or another dash, as pasted)
+ *   96-00 Roll twice     ("00" is 100)
  *   7 Critical
  * Whitespace between range and result is required. Lines starting with #
- * are treated as comments and ignored.
+ * are treated as comments and ignored. A line that does not read as an entry
+ * is left out here — unparsedEntryLines names them, and the save is refused
+ * while there are any.
  */
 export function parseEntries(raw) {
-  const out = [];
-  for (const line of String(raw).split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
+  return entryLines(raw).map(parseEntryLine).filter(Boolean);
+}
 
-    const m = trimmed.match(/^(\d+)(?:\s*-\s*(\d+))?\s+(.+)$/);
-    if (!m) continue;
-
-    const min = Number(m[1]);
-    const max = m[2] !== undefined ? Number(m[2]) : min;
-    if (Number.isNaN(min) || Number.isNaN(max) || max < min) continue;
-
-    out.push({ min, max, result: m[3].trim() });
-  }
-  return out;
+/**
+ * The lines parseEntries cannot read. They were dropped without a word, and
+ * when the lost one was the table's top row the die shrank to the highest
+ * row left — a d4 or a d95, saved with a success card (issue #322 V28).
+ *
+ * @param {string} raw — the textarea body
+ * @returns {string[]}
+ */
+export function unparsedEntryLines(raw) {
+  return entryLines(raw).filter(line => !parseEntryLine(line));
 }
 
 /**
