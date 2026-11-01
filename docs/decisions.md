@@ -3280,9 +3280,13 @@ log, so below-floor chronicle beats are skipped. The empty-body defect (T3) is a
 separate confirm/persist concern, not a salience question.
 
 **Settings surface:** the three thresholds are registered `config: false` like
-the rest of the World Journal / Chronicle capture family (none of which the
-custom panel renders yet) and are documented in the in-game Settings Reference.
-Surfacing the whole capture family as panel rows is a clean later improvement.
+the rest of the World Journal / Chronicle capture family and are documented in
+the in-game Settings Reference. *(2026-11-01, issue #322 V06: the panel now
+renders them — the Narrator tab's Character Management and World Journal
+sections, with Narration Max Tokens, the Scene Interrogation trio and the
+Private Channel switch; the four Ship Positioning settings join the Mischief
+tab's Fact Continuity section. Every setting the Settings Reference places in
+the panel has a control there; nothing could set them before.)*
 
 ---
 
