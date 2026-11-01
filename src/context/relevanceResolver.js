@@ -231,7 +231,7 @@ export function matchNamesInNarration(playerNarration, index) {
   const matchedNames = [];
 
   for (const [token, entity] of index.entries()) {
-    const re = new RegExp(`\\b${escapeRegExp(token)}\\b`, "i");
+    const re = wholeWordPattern(token);
     if (!re.test(text)) continue;
     const key = entity.journalId ?? entity._id ?? entity.name;
     if (seen.has(key)) continue;
@@ -473,4 +473,18 @@ function readApiKey() {
 
 function escapeRegExp(s) {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/**
+ * A whole-word match for a name, Unicode-aware: no letter, digit or
+ * underscore on either side. JS `\b` is an ASCII boundary, so a name that
+ * starts or ends with a non-ASCII letter — "Zoë", "José", "Élise" — had no
+ * boundary beside a space and never matched (issue #322 V19).
+ *
+ * @param {string} token — the name (any case; the pattern ignores case)
+ * @param {string} [flags] — extra flags besides "u" ("i" by default)
+ * @returns {RegExp}
+ */
+export function wholeWordPattern(token, flags = "i") {
+  return new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(String(token ?? ""))}(?![\\p{L}\\p{N}_])`, `${flags}u`);
 }

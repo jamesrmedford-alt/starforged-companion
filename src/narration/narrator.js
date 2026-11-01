@@ -14,7 +14,7 @@ import {
   formatSettlementPlanet,
   sanitizePlayerText,
 } from './narratorPrompt.js';
-import { resolveRelevance, collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
+import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
@@ -2811,7 +2811,8 @@ export function inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors
     const tokens = new Set([name.toLowerCase(), name.split(/\s+/)[0].toLowerCase()]);
     for (const t of tokens) {
       if (t.length < 2) continue;
-      if (new RegExp(`\\b${escapeRegexLiteral(t)}\\b`).test(text)) return true;
+      // Unicode-aware: a PC named "Zoë" or "Élise" is a whole word too (issue #322 V19).
+      if (wholeWordPattern(t, '').test(text)) return true;
     }
   }
   return false;
