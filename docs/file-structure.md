@@ -44,6 +44,7 @@ developer-only and excluded from the release.
 | `openRouterImage.js` | OpenRouter image client; decodes inline base64. **Sole image-provider call site.** |
 | `promptBuilder.js` | Builds image prompts from entity descriptions. |
 | `storage.js` | Portrait persistence (base64 flag storage). `storeArtAsset` adds its `artAssetIds` index entry to the latest stored campaignState, never the caller's whole copy (issue #300 F14). |
+| `notesPortrait.js` | The portrait block embedded at the top of a connection's or ship's Notes: `PORTRAIT_BLOCK_RE` (the marker div `withPortraitInNotes` writes and replaces) and `keepNotesPortrait(previousNotes, nextNotes)` — a re-seed's Notes (↻ Regenerate flavour) keep the old Notes' block, since the existing portrait is not attached again (issue #322 V30). |
 
 ### `audio/` — ElevenLabs narration overlay
 

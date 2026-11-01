@@ -41,6 +41,7 @@ import {
   writeEntityFlag,
 } from "../entities/registry.js";
 import { uploadedPath } from "../net/uploadResult.js";
+import { PORTRAIT_BLOCK_RE } from "./notesPortrait.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -285,10 +286,7 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
 export function withPortraitInNotes(notesHtml, imgPath) {
   const existing = String(notesHtml ?? "");
   // Remove any prior companion art block (idempotent on regeneration).
-  const stripped = existing.replace(
-    /<div class="sf-ship-portrait"[\s\S]*?<\/div>/,
-    "",
-  ).trimStart();
+  const stripped = existing.replace(PORTRAIT_BLOCK_RE, "").trimStart();
   if (!imgPath) return stripped;
   const block =
     `<div class="sf-ship-portrait" style="text-align:center;margin-bottom:0.5em;">` +

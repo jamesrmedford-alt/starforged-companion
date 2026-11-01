@@ -27,6 +27,7 @@
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityIdInStore } from "./registry.js";
+import { keepNotesPortrait } from "../art/notesPortrait.js";
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
 
@@ -446,7 +447,11 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
   // Characteristics is a plain <textarea> on the Starforged sheet — plain text
   // only (finding B). Notes is a rich-text field — HTML there is fine.
   const characteristics = buildConnectionCharacteristics({ role, goal, firstLook, disposition, pronouns });
-  const notesHtml       = await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, disposition, pronouns });
+  // The portrait embedded at the top of the old Notes stays: a regenerated
+  // flavour keeps its existing portrait, which is not attached again (issue
+  // #322 V30).
+  const notesHtml       = keepNotesPortrait(actor.system?.notes,
+    await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, disposition, pronouns }));
 
   try {
     await actor.update({
