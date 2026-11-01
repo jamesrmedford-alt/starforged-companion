@@ -180,7 +180,8 @@ describe('spawnEncounter places a token backed by a world Actor (issue #306 R12)
     expect(result.placed).toBe(true);
     expect(game.actors.importFromCompendium).toHaveBeenCalledTimes(1);
     expect(placed).toHaveLength(1);
-    expect(placed[0]).toMatchObject({ actorId: 'world-foe', x: 500, y: 500, hidden: false });
+    // Centred: a 1×1 token's middle on the unpadded 1000×1000 scene's middle (issue #322 V24).
+    expect(placed[0]).toMatchObject({ actorId: 'world-foe', x: 450, y: 450, hidden: false });
     expect(game.actors.get(placed[0].actorId)).toBeTruthy();
     expect(canonical.getTokenDocument).not.toHaveBeenCalled();
   });
