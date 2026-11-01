@@ -14,7 +14,7 @@
 // Constants
 // ---------------------------------------------------------------------------
 
-import { createClock, retireClock, removeClock } from '../clocks/clocks.js';
+import { createClock, retireClock, removeClock, clocksFingerprint } from '../clocks/clocks.js';
 import { requestGmAction } from '../multiplayer/gmRelay.js';
 import { isTrackPosition } from '../moves/combat.js';
 
@@ -394,6 +394,8 @@ export class ProgressTrackApp extends ApplicationV2 {
     // current state so the player can see both progress + danger in one row.
     const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
     const clockById     = new Map((campaignState.clocks ?? []).map(c => [c._id, c]));
+    // What this render shows, for onSettingChanged to compare against.
+    this._clocksShown   = clocksFingerprint(campaignState.clocks ?? []);
 
     // Annotate each track with derived display values.
     const annotated = tracks.map(t => {
@@ -561,6 +563,26 @@ export class ProgressTrackApp extends ApplicationV2 {
       if (!foundry.utils.hasProperty(change, `flags.${MODULE_ID}.${FLAG_KEY}`)) return;
       instance.render();
     });
+    Hooks.on('updateSetting', ProgressTrackApp.onSettingChanged);
+    Hooks.on('createSetting', ProgressTrackApp.onSettingChanged);
+  }
+
+  /**
+   * campaignState setting hook: a scene challenge's "Tension: n/4" line is its
+   * paired clock, stored in campaignState, so an open panel re-renders when
+   * the clocks it showed changed — a Pay the Price, `!clock` or another GM's
+   * advance left the line stale (issue #322 V12). Local to this client.
+   *
+   * @param {{ key?: string }} setting — the Setting document
+   */
+  static onSettingChanged(setting) {
+    if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+    const instance = ProgressTrackApp.#instance;
+    if (!instance?.rendered) return;
+    let clocks = [];
+    try { clocks = game.settings.get(MODULE_ID, 'campaignState')?.clocks ?? []; } catch { return; }
+    if (clocksFingerprint(clocks) === instance._clocksShown) return;
+    instance.render();
   }
 
   // -----------------------------------------------------------------------

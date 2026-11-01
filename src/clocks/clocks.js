@@ -60,6 +60,8 @@ function getPanelClass() {
 
     async _prepareContext() {
       const clocks = readState().clocks ?? [];
+      // What this render shows, for the campaignState hook to compare against.
+      this._clocksShown = clocksFingerprint(clocks);
       return {
         clocks: clocks.map(c => ({
           ...c,
@@ -182,6 +184,34 @@ export function openClocksPanel() {
   if (!_panelInstance) _panelInstance = new Cls();
   _panelInstance.render({ force: true });
   return _panelInstance;
+}
+
+/** The clocks as a string, to tell whether they changed. */
+export function clocksFingerprint(clocks) {
+  try { return JSON.stringify(clocks ?? []); } catch { return ""; }
+}
+
+/**
+ * campaignState setting hook: an open Clocks panel re-renders when the clocks
+ * it shows changed. It re-rendered only after its own buttons, so a clock a
+ * Pay the Price, Begin a Session, `!clock` or another GM advanced stayed stale
+ * on screen (issue #322 V12). Every client runs it for its own panel; it
+ * writes nothing. Any other campaignState write leaves the panel alone (a
+ * re-render would clear a clock name being typed).
+ *
+ * @param {{ key?: string }} setting — the Setting document
+ */
+export function onClocksSettingChanged(setting) {
+  if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+  if (!_panelInstance?.rendered) return;
+  if (clocksFingerprint(readState().clocks) === _panelInstance._clocksShown) return;
+  _panelInstance.render({ force: false });
+}
+
+/** Register the Clocks panel's refresh hook. Called once at init. */
+export function registerClocksPanelHooks() {
+  Hooks.on("updateSetting", onClocksSettingChanged);
+  Hooks.on("createSetting", onClocksSettingChanged);
 }
 
 

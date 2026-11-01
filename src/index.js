@@ -57,7 +57,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
-import { isClockCommand, handleClockCommand, applyClockAdvances } from "./clocks/clocks.js";
+import { isClockCommand, handleClockCommand, applyClockAdvances, registerClocksPanelHooks } from "./clocks/clocks.js";
 import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
 import {
   isShipEnvisionCommand,
@@ -6570,6 +6570,7 @@ Hooks.once("ready", () => {
   registerSessionActivityHook();           // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
+  registerClocksPanelHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();
   registerChroniclePanelHooks();             // #306 R11: the open Chronicle panel shows edits the GM applied
