@@ -262,17 +262,26 @@ function normalizeLabel(s) {
  * when one eligible site of that type remains → the sole eligible site — but
  * runs each rung over ALL sectors before the next, weaker one, so a guess in
  * an earlier sector can never preempt an exact match in a later one (issue
- * #300 F07). An explicit site id (the expedition→site link) beats every rung.
- * The two guessing rungs try the active sector first, then every sector, and
- * fire only when unambiguous.
+ * #300 F07). Within each rung the active sector is tried first: generated
+ * names repeat across sectors ("Derelict Starship"), so a namesake in an
+ * older sector must not win (issue #321 U48). The two guessing rungs fire
+ * only when unambiguous.
+ *
+ * A label or link that names one site exactly resolves to that site or to
+ * nothing: an explicit site id (the expedition→site link) beats every rung
+ * and returns null when its site no longer qualifies (already charted /
+ * cleared), and so does an exact name — never a sibling the looser rungs
+ * would find instead ("…II" contains "…I"; "vault" in a charted vault's name
+ * picks the other vault).
  *
  * @param {Array<{id, mapData?: {discoveries?: Array}}>} sectors — campaignState.sectors
  * @param {string|null} label — the expedition destination / command target
  * @param {Object} [opts]
  * @param {(site: Object) => boolean} [opts.eligible] — which sites qualify
  *   (default: undiscovered; clearing passes discovered-and-not-cleared)
- * @param {string|null} [opts.siteId] — an exact link, tried first
- * @param {string|null} [opts.activeSectorId] — scopes the guessing rungs first
+ * @param {string|null} [opts.siteId] — an exact link, tried first (its site
+ *   or null; a link to no stored site falls back to the label)
+ * @param {string|null} [opts.activeSectorId] — tried first on every rung
  * @param {boolean} [opts.requireLabelMatch] — true skips the sole-site guess,
  *   so only a name/type-confident match returns. Used when STAMPING an
  *   expedition→site link at creation (a guess there would tie unrelated
@@ -285,36 +294,43 @@ export function selectSectorSite(sectors, label, {
   activeSectorId = null,
   requireLabelMatch = false,
 } = {}) {
-  const candidates = [];
+  const all = [];
   for (const sector of sectors ?? []) {
     for (const site of sector?.mapData?.discoveries ?? []) {
-      if (site && eligible(site)) candidates.push({ sector, site });
+      if (site) all.push({ sector, site });
     }
+  }
+  const candidates = all.filter(c => eligible(c.site));
+  const inActive   = (list) => list.filter(c => activeSectorId && c.sector?.id === activeSectorId);
+
+  if (siteId) {
+    const linked = all.find(c => c.site.id === siteId);
+    if (linked) return eligible(linked.site) ? linked : null;
   }
   if (!candidates.length) return null;
 
-  if (siteId) {
-    const linked = candidates.find(c => c.site.id === siteId);
-    if (linked) return linked;
-  }
-
   const want = normalizeLabel(label);
   if (want) {
-    const exact = candidates.find(c => normalizeLabel(c.site.name) === want);
-    if (exact) return exact;
+    const named = all.filter(c => normalizeLabel(c.site.name) === want);
+    for (const scope of [inActive(named), named]) {
+      if (scope.length) return scope.find(c => eligible(c.site)) ?? null;
+    }
 
-    const sub = candidates.find(c => {
+    const contains = (c) => {
       const n = normalizeLabel(c.site.name);
       return n && (n.includes(want) || want.includes(n));
-    });
-    if (sub) return sub;
+    };
+    for (const scope of [inActive(candidates), candidates]) {
+      const sub = scope.find(contains);
+      if (sub) return sub;
+    }
   }
 
   const kinds = [
     ...(/vault|precursor/.test(want)     ? ["vault"]    : []),
     ...(/derelict|wreck|ghost/.test(want) ? ["derelict"] : []),
   ];
-  const active = candidates.filter(c => activeSectorId && c.sector?.id === activeSectorId);
+  const active = inActive(candidates);
   for (const scope of [active, candidates]) {
     if (!scope.length) continue;
     for (const kind of kinds) {
