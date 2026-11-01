@@ -37,6 +37,14 @@ const MODULE_ID = "starforged-companion";
 export const AUDIO_SOCKET_NAME = `module.${MODULE_ID}`;
 
 const _sessionsByCardId = new WeakMap();
+
+// A card's load generation: each Play takes it, its Stop bumps it, and a load
+// that finishes under an older one never plays. Stop pressed while a card was
+// still Loading (the synthesis, before any session existed) was undone when
+// the load finished — the narration started after Stop (issue #322 V14).
+const _loadGenerationByCard = new WeakMap();
+const cardLoadGeneration = (message) => _loadGenerationByCard.get(message) ?? 0;
+const cancelCardLoad     = (message) => _loadGenerationByCard.set(message, cardLoadGeneration(message) + 1);
 let _gestureOverlayShown = false;
 
 // Keyless playback: a client without an ElevenLabs key asks the canonical GM to
@@ -504,6 +512,7 @@ export async function onNarratorCardRendered(message, root) {
     freshStop.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
+      cancelCardLoad(message);   // a load still in flight stays silent
       await stopActivePlayback();
       setButtonLabel(fresh, "idle");
     });
@@ -541,10 +550,14 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
   }
 
   setButtonLabel(btn, "loading");
+  const generation = cardLoadGeneration(message);
+  const stopped    = () => cardLoadGeneration(message) !== generation;
   try {
     // Pick the NPC voice from the card's focal connection pronouns (finding F).
     const npcVoiceId = await resolveNpcVoiceForCard(message, getVoiceConfig());
     const segments = await buildPlayableSegments(rawProse, { npcVoiceId });
+    // Stop was pressed while this loaded: the card stays as Stop left it.
+    if (stopped()) return;
     if (segments.length === 0) {
       // No synthesisable text. Previously a silent no-op — a player clicking
       // Play saw nothing happen with no explanation (finding H). Tell them.
@@ -582,6 +595,7 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
   } catch (err) {
     // Synthesis / segmentation failures (buildPlayableSegments throws).
     console.error(`${MODULE_ID} | audio toggle failed:`, err);
+    if (stopped()) return;   // stopped meanwhile: no error to show on an idle card
     setButtonLabel(btn, "error");
     const detail = typeof err?.message === "string" && err.message ? err.message : "Audio unavailable";
     btn.setAttribute("title", detail);
