@@ -125,19 +125,35 @@ async function loadTracks() {
   return foundry.utils.deepClone(journal?.getFlag(MODULE_ID, FLAG_KEY) ?? []);
 }
 
+// The tail of this client's track writes (never rejects).
+let _writeTail = Promise.resolve();
+
 /**
  * Change the tracks: `change(tracks)` gets a fresh copy of the stored list
  * and returns the list to save, or null to save nothing. Creates the journal
  * on the first write. GM-only (journal write).
  *
+ * Every write on this client goes through here, one at a time: each reads the
+ * list only once the write before it has landed. The tracks are one array in
+ * one flag, saved whole, and Foundry updates the client's document only when
+ * the server answers — so a write that read during another's round trip saved
+ * the old list over it: two quick + clicks marked once, and a + racing the
+ * move pipeline's position write lost one of the two (issue #321 U57). A
+ * write that fails does not hold up the next. `change` must not call another
+ * track writer: it would wait for itself.
+ *
  * @param {(tracks: object[]) => (object[]|null|Promise<object[]|null>)} change
  * @returns {Promise<void>}
  */
-async function writeTracks(change) {
-  const journal = await getOrCreateJournal();
-  const tracks  = foundry.utils.deepClone(journal.getFlag(MODULE_ID, FLAG_KEY) ?? []);
-  const next    = await change(tracks);
-  if (Array.isArray(next)) await journal.setFlag(MODULE_ID, FLAG_KEY, next);
+function writeTracks(change) {
+  const run = _writeTail.then(async () => {
+    const journal = await getOrCreateJournal();
+    const tracks  = foundry.utils.deepClone(journal.getFlag(MODULE_ID, FLAG_KEY) ?? []);
+    const next    = await change(tracks);
+    if (Array.isArray(next)) await journal.setFlag(MODULE_ID, FLAG_KEY, next);
+  });
+  _writeTail = run.catch(() => {});
+  return run;
 }
 
 /**
@@ -163,16 +179,6 @@ async function updateTrack(trackId, change) {
 /** Ticks one Mark Progress adds to a track, by its rank. */
 function ticksPerMark(track) {
   return RANKS[track?.rank]?.ticksPerMark ?? 4;
-}
-
-/**
- * Persist tracks array to the journal flags.
- * @param {object[]} tracks
- * @returns {Promise<void>}
- */
-async function saveTracks(tracks) {
-  const journal = await getOrCreateJournal();
-  await journal.setFlag(MODULE_ID, FLAG_KEY, tracks);
 }
 
 // ---------------------------------------------------------------------------
@@ -847,12 +853,7 @@ export function listOpenProgressTracks() {
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
 export async function setCombatTrackPosition(trackId, position) {
-  const tracks = await loadTracks();
-  const track  = tracks.find(t => t.id === trackId);
-  if (!track) return null;
-  track.combatState = position;
-  await saveTracks(tracks);
-  return track;
+  return updateTrack(trackId, (track) => { track.combatState = position; });
 }
 
 /**
@@ -881,9 +882,7 @@ export async function addProgressTrack(data) {
     }
   }
 
-  const tracks = await loadTracks();
-  tracks.push(track);
-  await saveTracks(tracks);
+  await writeTracks(tracks => [...tracks, track]);
 
   // NOTE: journal `vow` tracks deliberately get NO item mirror. Vows live as
   // actor progress Items (the live store — swearVow.js creates them); the
@@ -941,14 +940,11 @@ export async function getProgressTrack(trackId) {
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
 export async function completeProgressTrack(trackId) {
-  const tracks = await loadTracks();
-  const track  = tracks.find(t => t.id === trackId);
-  if (!track) return null;
-  await retirePairedClock(track);
-  track.completed   = true;
-  track.completedAt = Date.now();
-  await saveTracks(tracks);
-  return track;
+  return updateTrack(trackId, async (track) => {
+    await retirePairedClock(track);
+    track.completed   = true;
+    track.completedAt = Date.now();
+  });
 }
 
 /**
@@ -974,15 +970,9 @@ export async function markProgressById(trackId, times = 1) {
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
 export async function adjustProgressById(trackId, marks) {
-  const tracks = await loadTracks();
-  const track = tracks.find(t => t.id === trackId);
-  if (!track) return null;
-
-  const ticksPerMark = RANKS[track.rank]?.ticksPerMark ?? 4;
-  track.ticks = Math.max(0, Math.min(track.ticks + ticksPerMark * Math.trunc(marks), MAX_TICKS));
-
-  await saveTracks(tracks);
-  return track;
+  return updateTrack(trackId, (track) => {
+    track.ticks = Math.max(0, Math.min(track.ticks + ticksPerMark(track) * Math.trunc(marks), MAX_TICKS));
+  });
 }
 
 /**
@@ -995,12 +985,7 @@ export async function adjustProgressById(trackId, marks) {
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
 export async function updateTrackFields(trackId, patch = {}) {
-  const tracks = await loadTracks();
-  const track  = tracks.find(t => t.id === trackId);
-  if (!track) return null;
-  Object.assign(track, patch);
-  await saveTracks(tracks);
-  return track;
+  return updateTrack(trackId, (track) => { Object.assign(track, patch); });
 }
 
 // ---------------------------------------------------------------------------
