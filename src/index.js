@@ -176,7 +176,7 @@ import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
 import { requestOracleNarration } from "./oracles/oracleFollowup.js";
-import { inferShipPosition } from "./factContinuity/shipPosition.js";
+import { inferShipPosition, inferShipPositionFromEntityId } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
   applyPaceCommand,
@@ -1604,6 +1604,24 @@ export function registerChatHook() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The current-location pick ({ id, type, entity }, as resolveCurrentLocationName
+ * returns) for a place known by its host document id — a settlement, location
+ * or planet — or null. An arrival whose destination came by id (a token
+ * dropped on a sector pin) sets the current location by it (issue #321 U52).
+ *
+ * @param {string|null} id
+ * @returns {{ id: string, type: string, entity: Object }|null}
+ */
+function currentLocationForEntityId(id) {
+  if (!id) return null;
+  for (const type of ["settlement", "location", "planet"]) {
+    const entity = readEntityFlag(type, getEntityDocument(type, id));
+    if (entity) return { id, type, entity };
+  }
+  return null;
+}
+
+/**
  * Apply an outcome's effects beyond the roller's meters and its choice card —
  * what the pipeline applies from the resolver's consequence flags: an arrival
  * (Set a Course), the expedition's progress, a legacy mark, the companion's
@@ -1683,12 +1701,21 @@ async function applyOutcomeEffects({
     && getShipPositioningEnabled()
     && getShipAutoMoveOnCourse()
   ) {
+    // A Set a Course started by dropping the ship's token on a sector pin
+    // names its destination by the pin's settlement Actor (forcedMoveTargetId
+    // → moveTargetId): arrive at that settlement by its id, not by a name a
+    // rename leaves behind or a namesake in another sector matches first
+    // (issue #321 U52). Finish an Expedition's moveTargetId is a track's.
+    const destinationId = resolution.moveId === "set_a_course"
+      ? (interpretation?.moveTargetId ?? null)
+      : null;
     await maybeUpdateShipPositionFromName(
       moveTarget,
       campaignState,
       tokenDragSetCourse ? "scene_token"
         : resolution.moveId === "finish_an_expedition" ? "expedition"
         : "set_a_course",
+      { entityId: destinationId },
     );
 
     // Keep the campaign's "current location" in step with the arrival —
@@ -1696,7 +1723,8 @@ async function applyOutcomeEffects({
     // by move left the narrator options / entity-panel highlight pointing
     // at the last !at (LOCATION-DUAL-STORE fix). Same resolver as !at; a
     // destination that isn't a tracked entity leaves the store untouched.
-    const arrivedAt = resolveCurrentLocationName(moveTarget ?? "", campaignState);
+    const arrivedAt = currentLocationForEntityId(destinationId)
+      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
     if (arrivedAt) {
       campaignState.currentLocationId   = arrivedAt.id;
       campaignState.currentLocationType = arrivedAt.type;
@@ -5599,14 +5627,18 @@ async function handleAtCommand(message) {
  * (`!at`, `set_a_course`) and does not throw into the pipeline.
  *
  * Exported so the move-resolution path, the Entities panel's "Set as
- * current location" (issue #321 U56) and the future Token-drag handler can
- * all reach the same logic. `entityId`, when the caller knows the place's
- * host document id, is matched before the name (inferShipPosition).
+ * current location" (issue #321 U56) and the token-drag arrival reach the
+ * same logic.
+ *
+ * `opts.entityId` names the destination by its host document id when the
+ * caller knows it (the Entities panel's place; a token dropped on a sector
+ * pin): the position is that place's, and the name only a fallback for an id
+ * that resolves to no settlement / planet / location (issue #321 U52, U56).
  */
 export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual", { entityId = null } = {}) {
   if (!getShipPositioningEnabled()) return null;
   const ref = typeof name === "string" ? name.trim() : "";
-  if (!ref) return null;
+  if (!ref && !entityId) return null;
   if (!game.user?.isGM) return null;            // world-scoped write — GM only
 
   try {
@@ -5615,7 +5647,9 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
     // and threw "Ship actor not found" on every write here (finding #5).
     const cvActorId = getCommandVehicleActorId(campaignState);
     if (!cvActorId) return null;
-    const position = inferShipPosition(ref, campaignState, { source, entityId });
+    const position = (entityId ? inferShipPositionFromEntityId(entityId, campaignState, { source }) : null)
+      ?? (ref ? inferShipPosition(ref, campaignState, { source }) : null);
+    if (!position) return null;
     await updateShip(cvActorId, { position });
 
     // Cluster C — the map follows the fiction: move the sector-scene Token

@@ -8714,8 +8714,9 @@ function registerTokenDragSetACourseTests(quench) {
             "synthetic message content should mention setting a course");
           assert.isOk(synthetic.flags[MODULE].tokenDragSetCourse,
             "synthetic message should carry the tokenDragSetCourse payload for downstream Token move");
-          assert.equal(synthetic.flags[MODULE].tokenDragSetCourse.destName, "Glimmer",
-            "tokenDragSetCourse payload should carry the destination Note text");
+          // This pin links no settlement Actor, so the course goes by its label.
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Glimmer",
+            "the course's destination should be the dropped-on pin's settlement");
         });
 
         it("does not fire when the drag lands outside snap radius (free-text reposition)", async function () {

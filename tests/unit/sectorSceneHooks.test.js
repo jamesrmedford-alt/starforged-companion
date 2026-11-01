@@ -20,8 +20,13 @@ import {
   handleCommandVehicleTokenPlacement,
   handleCommandVehicleTokenReposition,
   isCommandVehicleToken,
+  handleSettlementPinRename,
   POSITION_SYNC_OPTION,
 } from '../../src/sectors/sectorSceneHooks.js';
+import { createSettlement, updateSettlement } from '../../src/entities/settlement.js';
+import { createSectorScene } from '../../src/sectors/sceneBuilder.js';
+import { inferShipPosition } from '../../src/factContinuity/shipPosition.js';
+import { _resetFolderCache } from '../../src/entities/folder.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -301,11 +306,148 @@ describe('handleCommandVehicleTokenDrag', () => {
     const flag = createCalls[0].flags?.[MODULE_ID];
     expect(flag?.bypassPacing).toBe(true);
     expect(flag?.forcedMoveId).toBe('set_a_course');
+    // A legacy pin with no linked Actor goes by its label, and names no id.
     expect(flag?.forcedMoveTarget).toBe('Bleakhold');
-    expect(flag?.tokenDragSetCourse?.destNoteId).toBe('s1');
-    expect(flag?.tokenDragSetCourse?.destX).toBe(100);
-    expect(flag?.tokenDragSetCourse?.destY).toBe(100);
+    expect(flag?.forcedMoveTargetId).toBeUndefined();
+    expect(flag?.tokenDragSetCourse).toEqual({ sceneId: 'scene1', tokenId: 'tok1', destX: 100, destY: 100 });
     restore();
+  });
+
+  it("names the pin's settlement Actor — its current name, and its id for the arrival (issue #321 U52)", async () => {
+    global.game.actors._set('actor-bleak', { id: 'actor-bleak', name: 'Bleak Hold Station' });
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('gen-1', 100, 100, 'Bleakhold', { actorId: 'actor-bleak' })],
+    });
+    handleCommandVehicleTokenDrag(
+      { id: 'tok1', flags: { [MODULE_ID]: { commandVehicle: true } }, x: 0, y: 0, parent: scene },
+      { x: 110, y: 110 },
+    );
+    await new Promise(r => setTimeout(r, 5));
+    const flag = createCalls[0].flags?.[MODULE_ID];
+    expect(createCalls[0].content).toBe('I set a course for Bleak Hold Station.');
+    expect(flag?.forcedMoveTarget).toBe('Bleak Hold Station');
+    expect(flag?.forcedMoveTargetId).toBe('actor-bleak');
+    restore();
+  });
+});
+
+// Issue #321 U52 — the real producers: a settlement Actor (createSettlement),
+// the pins createSectorScene writes, the rename updateSettlement applies.
+describe('dropping the ship on a renamed settlement pin', () => {
+  beforeEach(() => {
+    global.game.actors._reset();
+    global.game.folders._reset();
+    _resetFolderCache();
+    global.game.settings._store.clear();
+    ChatMessage._reset();
+  });
+
+  it("sets a course for the settlement the pin links, by its current name", async () => {
+    const cs = { sectors: [{ id: 'sec-1', name: 'Test Sector' }], activeSectorId: 'sec-1', settlementIds: [] };
+    global.game.settings._store.set(`${MODULE_ID}.campaignState`, cs);
+    await createSettlement({ name: 'Bleakhold', location: 'Orbital', sectorId: 'sec-1' }, cs, { persist: false });
+    const actorId = cs.settlementIds[0];
+
+    const notes = [];
+    const scene = {
+      id: 'scene-1', flags: {}, grid: { size: 100 },
+      dimensions: { sceneX: 200, sceneY: 200, sceneWidth: 1792, sceneHeight: 1024 },
+      update: vi.fn(async () => scene),
+      createEmbeddedDocuments: vi.fn(async (type, data) => {
+        if (type === 'Note') for (const d of data) notes.push({ id: `note-${notes.length}`, ...d });
+        return data;
+      }),
+    };
+    global.Scene = { create: vi.fn(async (data) => { scene.flags = data.flags; return scene; }) };
+    await createSectorScene({
+      id: 'sec-1', name: 'Test Sector',
+      settlements: [{ id: 'gen-A', name: 'Bleakhold', locationType: 'orbital', planet: null, stellar: null }],
+      mapData: { settlements: [{ id: 'gen-A', name: 'Bleakhold', type: 'orbital', gridX: 3, gridY: 2 }], passages: [], discoveries: [] },
+    }, null, { 'gen-A': global.game.actors.get(actorId) });
+    scene.notes = notes;
+
+    // The GM renames the settlement (Actor name + record name, as the sheet + rename sync do).
+    await updateSettlement(actorId, { name: 'Bleak Hold Station' });
+
+    const pin = notes.find(n => n.flags[MODULE_ID].settlementId === 'gen-A' && !n.flags[MODULE_ID].planetNote && !n.flags[MODULE_ID].stellarNote);
+    const tokenDoc = { id: 'tok-1', x: 0, y: 0, flags: { [MODULE_ID]: { commandVehicle: true } }, parent: scene };
+    expect(handleCommandVehicleTokenDrag(tokenDoc, { x: pin.x, y: pin.y }, {})).toBe(false);
+    await new Promise(r => setTimeout(r, 10));
+
+    const msg = ChatMessage._created.at(-1);
+    expect(msg.flags[MODULE_ID].forcedMoveTarget).toBe('Bleak Hold Station');   // was the pin's stale "Bleakhold"
+    expect(msg.flags[MODULE_ID].forcedMoveTargetId).toBe(actorId);
+    // The arrival's name fallback resolves it too.
+    const pos = inferShipPosition(msg.flags[MODULE_ID].forcedMoveTarget, global.game.settings.get(MODULE_ID, 'campaignState'));
+    expect(pos.nearestSettlementId).toBe(actorId);
+  });
+});
+
+describe('handleSettlementPinRename — a pin label follows its settlement Actor (issue #321 U52)', () => {
+  function sectorSceneWithPins() {
+    const update = vi.fn(async function (changes) { Object.assign(this, changes); });
+    const note = (id, text, flags) => ({ id, text, flags: { [MODULE_ID]: { sectorNote: true, ...flags } }, update });
+    const notes = [
+      note('pin',     'Bleakhold',      { settlementId: 'gen-1', actorId: 'actor-bleak' }),
+      note('planet',  'Vorn Prime',     { settlementId: 'gen-1', actorId: 'actor-bleak', planetNote: true }),
+      note('star',    'Red star',       { settlementId: 'gen-1', stellarNote: true }),
+      note('other',   'Drift',          { settlementId: 'gen-2', actorId: 'actor-drift' }),
+      note('site',    'Unexplored Site', { siteNote: true, siteId: 's1', actorId: 'actor-bleak' }),
+    ];
+    const scene = { flags: { [MODULE_ID]: { sectorScene: true, sectorId: 'sec-1' } }, notes: { contents: notes } };
+    return { scene, notes, update };
+  }
+
+  function withScenes(scenes, fn) {
+    const prev = global.game.scenes;
+    global.game.scenes = { contents: scenes };
+    return Promise.resolve(fn()).finally(() => { global.game.scenes = prev; });
+  }
+
+  const actor = { id: 'actor-bleak', type: 'location', name: 'Bleak Hold Station' };
+
+  it("renames the settlement's own pins on every sector scene — not its planet, star or site pins", async () => {
+    const a = sectorSceneWithPins();
+    const b = sectorSceneWithPins();
+    await withScenes([a.scene, b.scene], () => handleSettlementPinRename(actor, { name: 'Bleak Hold Station' }));
+
+    for (const { notes } of [a, b]) {
+      expect(notes.find(n => n.id === 'pin').text).toBe('Bleak Hold Station');
+      expect(notes.find(n => n.id === 'planet').text).toBe('Vorn Prime');
+      expect(notes.find(n => n.id === 'star').text).toBe('Red star');
+      expect(notes.find(n => n.id === 'other').text).toBe('Drift');
+      expect(notes.find(n => n.id === 'site').text).toBe('Unexplored Site');
+    }
+    expect(a.update).toHaveBeenCalledTimes(1);   // its one settlement pin
+    expect(b.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores updates without a rename, non-location actors and non-sector scenes', async () => {
+    const { scene, update } = sectorSceneWithPins();
+    const plain = { ...sectorSceneWithPins().scene, flags: {} };
+    await withScenes([scene, plain], async () => {
+      await handleSettlementPinRename(actor, { system: { klass: 'orbital' } });
+      await handleSettlementPinRename({ ...actor, type: 'starship' }, { name: 'X' });
+    });
+    expect(update).not.toHaveBeenCalled();
+    await withScenes([plain], () => handleSettlementPinRename(actor, { name: 'Bleak Hold Station' }));
+    expect(plain.notes.contents.find(n => n.id === 'pin').text).toBe('Bleakhold');
+  });
+
+  it("leaves the shared Notes to the canonical GM — a player's client does not write them", async () => {
+    const { scene, update } = sectorSceneWithPins();
+    const undo = asPlayer();
+    try {
+      await withScenes([scene], () => handleSettlementPinRename(actor, { name: 'Bleak Hold Station' }));
+    } finally {
+      undo();
+    }
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('is registered on updateActor', () => {
+    registerSectorSceneHooks();
+    expect(Hooks._handlers.get('updateActor')).toContain(handleSettlementPinRename);
   });
 });
 

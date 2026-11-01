@@ -71,6 +71,43 @@ export function registerSectorSceneHooks() {
   // (travel move with a roll); off-pin = position note, no move mechanics.
   Hooks.on("createToken", handleCommandVehicleTokenPlacement);
   Hooks.on("updateToken", handleCommandVehicleTokenReposition);
+
+  // A settlement pin's label follows its Actor's name (issue #321 U52).
+  Hooks.on("updateActor", handleSettlementPinRename);
+}
+
+/**
+ * updateActor — a settlement Actor renamed (its sheet, the Entities panel, the
+ * rename sync) renames its pins on every sector Scene. The label was written
+ * once at scene creation, so the map kept the old name. Settlement pins only:
+ * a planet pin links the same Actor but is labelled with the planet, and a
+ * site pin's label is "Unexplored Site" until it is revealed. Notes are
+ * shared documents, so one client writes — the canonical GM.
+ *
+ * @param {Actor} actor   the updated Actor (post-update)
+ * @param {Object} changes the update diff
+ * @returns {Promise<void>|undefined}
+ */
+export function handleSettlementPinRename(actor, changes) {
+  if (!actor || actor.type !== "location" || !changes || !("name" in changes)) return undefined;
+  if (!isCanonicalGM()) return undefined;
+  const name = String(actor.name ?? "").trim();
+  if (!name) return undefined;
+
+  const writes = [];
+  for (const scene of game.scenes?.contents ?? []) {
+    if (!scene?.flags?.[MODULE_ID]?.sectorScene) continue;
+    const notes = scene.notes?.contents ?? scene.notes ?? [];
+    for (const note of Array.isArray(notes) ? notes : []) {
+      const flags = note?.flags?.[MODULE_ID];
+      if (!flags?.settlementId || flags.actorId !== actor.id) continue;
+      if (flags.planetNote || flags.stellarNote || flags.siteNote) continue;
+      if (note.text === name) continue;
+      writes.push(Promise.resolve(note.update?.({ text: name })).catch(err =>
+        console.warn(`${MODULE_ID} | settlement pin rename failed for ${note.id}:`, err?.message ?? err)));
+    }
+  }
+  return Promise.all(writes).then(() => undefined);
 }
 
 /**
@@ -202,10 +239,19 @@ export function nearestSettlementNote(scene, x, y, radiusPx) {
  *
  * We attach a flag on the message so the post-resolution path knows to
  * also move the Token visually when the move succeeds.
+ *
+ * The destination is the settlement Actor the pin links (`flags.actorId`):
+ * its current name is the course's target, and its id rides as
+ * `forcedMoveTargetId` so the arrival records that settlement by id. The
+ * pin's label was written once at scene creation — it went stale on an
+ * Actor rename, and the arrival then resolved nothing by it, or a namesake
+ * (issue #321 U52). A legacy pin with no linked Actor still uses its label.
  */
 async function dispatchSetACourseFromTokenDrag(scene, settlementNote, tokenDoc) {
   if (!game?.user) return;
-  const destinationName = settlementNote.text ?? "the destination";
+  const pinActorId = settlementNote.flags?.[MODULE_ID]?.actorId ?? null;
+  const destActor  = pinActorId ? (game.actors?.get?.(pinActorId) ?? null) : null;
+  const destinationName = destActor?.name || settlementNote.text || "the destination";
 
   try {
     await ChatMessage.create({
@@ -218,14 +264,14 @@ async function dispatchSetACourseFromTokenDrag(scene, settlementNote, tokenDoc) 
           bypassPacing:   true,
           forcedMoveId:   "set_a_course",
           forcedMoveTarget: destinationName,
+          ...(destActor ? { forcedMoveTargetId: destActor.id } : {}),
+          // What the pipeline needs to move this token onto the pin on a
+          // non-miss (moveCommandVehicleTokenToDestination).
           tokenDragSetCourse: {
-            sceneId:        scene.id,
-            tokenId:        tokenDoc.id,
-            destSettlement: settlementNote.flags?.[MODULE_ID]?.settlementId ?? null,
-            destNoteId:     settlementNote.id,
-            destX:          Number(settlementNote.x ?? 0),
-            destY:          Number(settlementNote.y ?? 0),
-            destName:       destinationName,
+            sceneId: scene.id,
+            tokenId: tokenDoc.id,
+            destX:   Number(settlementNote.x ?? 0),
+            destY:   Number(settlementNote.y ?? 0),
           },
         },
       },

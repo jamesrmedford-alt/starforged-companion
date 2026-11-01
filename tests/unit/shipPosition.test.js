@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   inferShipPosition,
+  inferShipPositionFromEntityId,
   formatShipPositionLine,
   emptyPosition,
 } from '../../src/factContinuity/shipPosition.js';
@@ -152,18 +153,6 @@ describe('inferShipPosition', () => {
     });
     const out = inferShipPosition('Bleakhold', state);
     expect(out.nearestSettlementId).toBe('s1');
-  });
-
-  // Issue #321 U56 — the Entities panel's "Set as current location" knows
-  // the place it means: its id wins over the name, and an id that names no
-  // place falls back to the name.
-  it('matches entityId before the name; an unknown id falls back to the name', () => {
-    const state = makeCampaignState({
-      settlements: [settlement('s1', 'Bleakhold'), settlement('s2', 'Bleakhold')],
-    });
-    expect(inferShipPosition('Bleakhold', state).nearestSettlementId).toBe('s1');
-    expect(inferShipPosition('Bleakhold', state, { entityId: 's2' }).nearestSettlementId).toBe('s2');
-    expect(inferShipPosition('Bleakhold', state, { entityId: 'gone' }).nearestSettlementId).toBe('s1');
   });
 
   it('returns empty record with the seed echoed when state is empty', () => {
@@ -508,5 +497,56 @@ describe('document-backed resolution (production storage shape)', () => {
     const state = makeCampaignState({ settlements: [settlement('s-leg', 'Legacyport')] });
     const p = inferShipPosition('Legacyport', state, { source: 'manual' });
     expect(p.nearestSettlementId).toBe('s-leg');
+  });
+});
+
+// Issue #321 U52: a token dropped on a sector pin names its destination by the
+// pin's settlement Actor; the arrival records THAT settlement — a rename leaves
+// the label behind, and a namesake in another sector matches the name first.
+describe('inferShipPositionFromEntityId — arrival by the destination\'s id', () => {
+  const MID = 'starforged-companion';
+
+  function hostActor(id, typeKey, record) {
+    const actor = makeTestActor({
+      id, type: 'location', name: record.name,
+      flags: { [MID]: { entityType: typeKey, [typeKey]: record } },
+    });
+    global.game.actors._set(id, actor);
+    return actor;
+  }
+
+  beforeEach(() => { global.game.actors._reset(); });
+
+  it('records the settlement the id names, in its own sector — not a namesake the name finds first', () => {
+    hostActor('actor-old', 'settlement', { _id: 'rec-old', name: 'Bleakhold', sectorId: 'sec-old' });
+    hostActor('actor-new', 'settlement', { _id: 'rec-new', name: 'Bleakhold', sectorId: 'sec-new' });
+    const state = { settlementIds: ['actor-old', 'actor-new'], activeSectorId: 'sec-new',
+      sectors: [sec('sec-old', 'Old Reach'), sec('sec-new', 'New Reach')] };
+
+    expect(inferShipPosition('Bleakhold', state).nearestSettlementId).toBe('actor-old');   // the name's first match
+
+    const p = inferShipPositionFromEntityId('actor-new', state, { source: 'scene_token' });
+    expect(p).toMatchObject({
+      nearestSettlementId: 'actor-new', sectorId: 'sec-new', nearestPlanetId: null,
+      freeText: '', updatedBy: 'scene_token',
+    });
+    expect(p.updatedAt).toBeTruthy();
+  });
+
+  it('resolves the planet a settlement belongs to, as the name path does', () => {
+    hostActor('actor-set', 'settlement', { _id: 'rec-set', name: 'Bleakhold', sectorId: 'sec-1' });
+    hostActor('actor-pl', 'planet', { _id: 'rec-pl', name: 'Vorn Prime', settlementIds: ['rec-set'], sectorId: 'sec-1' });
+    const state = { settlementIds: ['actor-set'], planetIds: ['actor-pl'] };
+    expect(inferShipPositionFromEntityId('actor-set', state).nearestPlanetId).toBe('actor-pl');
+  });
+
+  it('a planet or a location id records that place; anything else is null (the name decides)', () => {
+    hostActor('actor-pl', 'planet', { _id: 'rec-pl', name: 'Vorn Prime', sectorId: 'sec-1' });
+    hostActor('actor-loc', 'location', { _id: 'rec-loc', name: 'The Shroud', sectorId: 'sec-1' });
+    expect(inferShipPositionFromEntityId('actor-pl', {})).toMatchObject({ nearestPlanetId: 'actor-pl', sectorId: 'sec-1' });
+    expect(inferShipPositionFromEntityId('actor-loc', {})).toMatchObject({ freeText: 'The Shroud', sectorId: 'sec-1', nearestSettlementId: null });
+    expect(inferShipPositionFromEntityId('actor-missing', {})).toBeNull();
+    expect(inferShipPositionFromEntityId(null, {})).toBeNull();
+    expect(inferShipPositionFromEntityId('actor-pl', {}, { source: 'nonsense' }).updatedBy).toBe('manual');
   });
 });

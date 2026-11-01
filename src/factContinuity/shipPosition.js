@@ -66,10 +66,6 @@ export function emptyPosition() {
  * @param {Object} campaignState
  * @param {Object} [options]
  * @param {"at_command"|"set_a_course"|"narrator_sidecar"|"scene_token"|"manual"} [options.source]
- * @param {string} [options.entityId]  the host document id of the place the
- *   caller means, when it knows it (the Entities panel's "Set as current
- *   location"): matched before the name, so a same-named or renamed place
- *   cannot take the ship elsewhere (issue #321 U56)
  * @returns {Object} position record (always returns; never throws)
  */
 export function inferShipPosition(seedRef, campaignState, options = {}) {
@@ -97,10 +93,7 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
     : collectEntitiesForIndex(campaignState);
   const index    = buildNameIndex(entities, []);
 
-  const byId = options.entityId
-    ? (entities.find(e => e.journalId === options.entityId) ?? null)
-    : null;
-  const hit = byId ?? matchSeedAgainstIndex(index, ref);
+  const hit = matchSeedAgainstIndex(index, ref);
   if (!hit) {
     out.freeText = ref;
     return out;
@@ -184,6 +177,49 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
   const scopeStr = scope.length ? ` (${scope.join(", ")})` : "";
 
   return `SHIP POSITION: ${ship} ${parts.join(" ")}${scopeStr}`.trim();
+}
+
+/**
+ * The position record for an arrival at a place known by its host document
+ * id — a token dropped on a sector pin names the settlement Actor the pin
+ * links — rather than by a name, which a rename leaves behind and a namesake
+ * in another sector matches first (issue #321 U52). The record is the one
+ * inferShipPosition builds when a name resolves to that same entity. Pure.
+ *
+ * @param {string} entityId — a settlement, planet or location host document id
+ * @param {Object} campaignState
+ * @param {Object} [options]
+ * @param {string} [options.source] — as inferShipPosition's
+ * @returns {Object|null} the position record, or null when the id is not a
+ *   settlement, planet or location (the caller falls back to the name)
+ */
+export function inferShipPositionFromEntityId(entityId, campaignState, options = {}) {
+  if (!entityId) return null;
+  for (const entityType of ["settlement", "planet", "location"]) {
+    let record = null;
+    try {
+      record = readEntityFlag(entityType, getEntityDocument(entityType, entityId));
+    } catch (err) {
+      console.warn(`starforged-companion | shipPosition: read ${entityType} ${entityId} failed:`, err?.message ?? err);
+    }
+    if (!record) continue;
+
+    const out = emptyPosition();
+    out.updatedAt = new Date().toISOString();
+    out.updatedBy = SOURCE_VALUES.has(options.source) ? options.source : "manual";
+    const hit = { ...record, journalId: entityId };
+    if (entityType === "settlement") {
+      out.nearestSettlementId = entityId;
+      out.nearestPlanetId     = resolvePlanetForSettlement(hit, campaignState);
+    } else if (entityType === "planet") {
+      out.nearestPlanetId = entityId;
+    } else {
+      out.freeText = record.name ?? "";
+    }
+    out.sectorId = resolveSectorForRecord(hit, campaignState);
+    return out;
+  }
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────
