@@ -17,6 +17,7 @@ import {
   scheduleDebouncedWrite,
   flushNow,
   renderTurnsHtml,
+  parseTurnsHtml,
   loadCurrentSessionTranscript,
 } from "./transcript.js";
 
@@ -55,8 +56,11 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     this.userId         = userId;
     this.mode           = mode;
     this.initialMessage = initialMessage;
-    this.turns          = [];   // { who, name, text } since this window opened
-    this.resumedHtml    = "";   // prior-session HTML loaded on first render
+    // The session's private conversation — { who, name, text } — the one
+    // transcript the window shows and sends the narrator (issue #321 U42):
+    // the saved turns, read once on the first render, then this window's.
+    this.turns          = [];
+    this.loaded         = false;
     this.errorBanner    = "";
     this.busy           = false;
   }
@@ -104,12 +108,17 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
   async _prepareContext(_options) {
-    const sessionId = game.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? "";
-    if (!this.resumedHtml) {
-      this.resumedHtml = await loadCurrentSessionTranscript(this.userId, sessionId).catch(() => "");
+    // Read the saved session once. Re-reading on every render — whenever the
+    // first read was empty — loaded this window's own turns back from the page
+    // once the debounced save landed, and showed them twice.
+    if (!this.loaded) {
+      this.loaded = true;
+      const sessionId = game.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? "";
+      const saved = await loadCurrentSessionTranscript(this.userId, sessionId).catch(() => "");
+      this.turns = [...parseTurnsHtml(saved), ...this.turns];
     }
     return {
-      transcriptHtml: this.resumedHtml + renderTurnsHtml(this.turns),
+      transcriptHtml: renderTurnsHtml(this.turns),
       initialMessage: this.initialMessage,
       errorBanner:    this.errorBanner,
       busy:           this.busy,

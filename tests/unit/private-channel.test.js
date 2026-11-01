@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   renderTurnsHtml,
+  parseTurnsHtml,
   buildOwnership,
   appendToBuffer,
   scheduleDebouncedWrite,
@@ -154,6 +155,32 @@ describe("renderTurnsHtml", () => {
     expect(renderTurnsHtml([{ who: "player", text: "   " }])).toBe("");
     const html = renderTurnsHtml([{ who: "bogus", text: "hi" }]);
     expect(html).toContain("pc-turn-player");
+  });
+});
+
+// Issue #321 U42 — a reopened window reads its saved turns back into the one
+// transcript it shows and sends the narrator.
+describe("parseTurnsHtml", () => {
+  it("reads back what renderTurnsHtml wrote, escapes and all", () => {
+    const turns = [
+      { who: "player",   name: "Kira",     text: "My mother's ring — 1 < 2 & \"q\"" },
+      { who: "narrator", name: "Narrator", text: "The image stays with you." },
+    ];
+    expect(parseTurnsHtml(renderTurnsHtml(turns))).toEqual(turns);
+  });
+
+  it("reads a paragraph the journal editor reformatted, telling the narrator by name", () => {
+    const html = '<p><strong>Narrator:</strong> The rain keeps on.</p><p data-x="1"><strong>Kira:</strong> <em>Still</em> here.</p>';
+    expect(parseTurnsHtml(html)).toEqual([
+      { who: "narrator", name: "Narrator", text: "The rain keeps on." },
+      { who: "player",   name: "Kira",     text: "Still here." },
+    ]);
+  });
+
+  it("skips empty paragraphs and reads nothing from nothing", () => {
+    expect(parseTurnsHtml('<p class="pc-turn pc-turn-player"><strong>Kira:</strong>  </p><p></p>')).toEqual([]);
+    expect(parseTurnsHtml("")).toEqual([]);
+    expect(parseTurnsHtml(null)).toEqual([]);
   });
 });
 

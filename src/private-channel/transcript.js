@@ -80,6 +80,40 @@ export function renderTurnsHtml(turns) {
     .join("");
 }
 
+function unescapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&amp;/g, "&");   // ampersand last so the entities above decode first
+}
+
+const stripTags = (s) => String(s ?? "").replace(/<[^>]*>/g, "");
+
+/**
+ * Read a session page's HTML back into turns — the inverse of renderTurnsHtml,
+ * so the window holds one structured transcript, the one it shows and the one
+ * it sends the narrator (issue #321 U42). A paragraph the journal editor has
+ * reformatted (its pc-turn class dropped) still reads: the speaker is its
+ * leading bold "Name:", and "Narrator" marks the narrator's turns.
+ *
+ * @param {string} html
+ * @returns {Array<{who:"player"|"narrator", name:string, text:string}>}
+ */
+export function parseTurnsHtml(html) {
+  const turns = [];
+  for (const [, attrs, inner] of String(html ?? "").matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/gi)) {
+    const spoken = /^\s*<strong>([\s\S]*?):<\/strong>\s?([\s\S]*)$/i.exec(inner);
+    const name   = spoken ? unescapeHtml(stripTags(spoken[1])).trim() : "";
+    const text   = unescapeHtml(stripTags(spoken ? spoken[2] : inner)).trim();
+    if (!text) continue;
+    const who = /\bpc-turn-(player|narrator)\b/.exec(attrs)?.[1] ?? (name === "Narrator" ? "narrator" : "player");
+    turns.push({ who, name, text });
+  }
+  return turns;
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Journal + page resolution
