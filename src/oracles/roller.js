@@ -377,8 +377,7 @@ function directiveRollCount(text) {
  *     on that table: `"Ultra-scale: Titanic (hill-sized)"`.
  *   - `result === "Roll twice"`      → roll twice on `parentTable`, join `" / "`.
  *   - `result === "Roll three times"` → roll three times, join `" / "`.
- *   - `result === "Roll again …"`    → roll twice on `parentTable`, join `"-"`
- *     for "(paired name)", else `" / "`.
+ *   - `result === "Roll again …"`    → roll twice on `parentTable`, join `" / "`.
  *   - `result === "<heading> (roll twice)"` (Starship Type's "Ships in
  *     conflict") → roll twice, `"<heading>: a / b"`.
  *   - otherwise → `entry.result` verbatim; the entry is the one leaf.
@@ -425,9 +424,8 @@ function resolveDirective(entry, parentTable, depth = 0, parentDie = 100) {
 
   const times = directiveRollCount(entry.result);
   if (times) {
-    const joiner = /paired name/i.test(entry.result) ? "-" : " / ";
     let joined = rollAndResolve(parentTable, depth + 1, parentDie);
-    for (let i = 1; i < times; i++) joined = joinResolved(joiner, joined, rollAndResolve(parentTable, depth + 1, parentDie));
+    for (let i = 1; i < times; i++) joined = joinResolved(" / ", joined, rollAndResolve(parentTable, depth + 1, parentDie));
     const heading = /^(.*\S)\s*\(roll twice\)\s*$/i.exec(entry.result)?.[1];
     return heading ? { text: `${heading}: ${joined.text}`, leaves: joined.leaves } : joined;
   }

@@ -74,7 +74,7 @@ describe("SECTOR_TROUBLE table", () => {
 
 // ─────────────────────────────────────────────────────────────────────────────
 // rollTableResult — directive handling (F2)
-// "Roll twice" / "Roll again (paired name)" / "Action + Theme" must be resolved
+// "Roll twice" / "Roll again" / "Action + Theme" must be resolved
 // in-place; the leaked literal strings were polluting connection names, NPC
 // goals, and settlement-roll outputs.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -104,12 +104,12 @@ describe("rollTableResult — directive handling", () => {
     expect(result).toBe("Agent / AI");
   });
 
-  it("resolves 'Roll again (paired name)' on FAMILY_NAMES by hyphenating two sub-rolls", () => {
-    // FAMILY_NAMES 81-100 → "Roll again (paired name)". Sub-rolls of 1 / 3 land on
-    // the first two entries of FAMILY_NAMES.
-    const result = rollTableResult(FAMILY_NAMES, 81, { fixedRolls: [1, 3] });
-    expect(result).toMatch(/^[A-Z][a-z]+-[A-Z][a-z]+$/);
-    expect(result).not.toMatch(/Roll/);
+  // Issue #321 U63: FAMILY_NAMES 81-100 was a mis-transcribed "Roll again
+  // (paired name)" band; the rulebook table is 100 single names.
+  it("FAMILY_NAMES is the rulebook's 100 single names — 81 is Duval, 100 is Volkov", () => {
+    expect(rollTableResult(FAMILY_NAMES, 81, { fixedRolls: [1, 3] })).toBe("Duval");
+    expect(rollTableResult(FAMILY_NAMES, 100)).toBe("Volkov");
+    expect(FAMILY_NAMES).toHaveLength(100);
   });
 
   it("resolves 'Action + Theme' via ref: 'action_theme'", () => {

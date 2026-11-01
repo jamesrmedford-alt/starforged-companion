@@ -779,11 +779,10 @@ ${settlementListHtml}
  * Roll on a table and return the result string.
  *
  * Resolves rulebook directive entries in-place so callers never see raw
- * `"Roll twice"`, `"Roll again (paired name)"`, or `"Action + Theme"` strings:
+ * `"Roll twice"`, `"Roll again …"`, or `"Action + Theme"` strings:
  *
  *   - `"Roll twice"`     → roll twice more on the same table, join with `" / "`.
- *   - `"Roll again …"`   → roll twice more on the same table, join with `"-"`
- *                          (the `(paired name)` form on FAMILY_NAMES).
+ *   - `"Roll again …"`   → roll twice more on the same table, join with `" / "`.
  *   - `ref: "action_theme"` → roll CORE.ACTION + CORE.THEME, join with `" "`.
  *
  * Recursion is depth-capped (`MAX_DIRECTIVE_DEPTH`); at the cap we fall back
@@ -825,21 +824,18 @@ export function rollTableResult(table, fixedRoll, opts = {}) {
   }
 
   // "Roll again …" or "Roll twice" — resolve to exactly two NON-directive
-  // entries on the same table and join. The `(paired name)` parenthetical
-  // (FAMILY_NAMES 81-100) signals a hyphen join for hyphenated surnames;
-  // everything else uses `" / "`.
+  // entries on the same table and join with `" / "`.
   //
   // Each side re-rolls past further directive rows (bounded) rather than
-  // recursing into them: the 81-100 directive band re-hit ~20% of the time,
-  // compounding into multi-hyphen chains, and at the old depth cap the raw
-  // "Roll again (paired name)" literal leaked verbatim into names —
-  // surfaced by the quickstart name-roller property test, but live since
-  // v1.7.1 (sector-wizard connection surnames).
+  // recursing into them: a mis-transcribed FAMILY_NAMES once had a "Roll again
+  // (paired name)" band at 81-100 that re-hit ~20% of the time, compounding
+  // into multi-hyphen chains, and at the old depth cap the raw literal leaked
+  // verbatim into names. The table now follows the rulebook — 100 single
+  // names (issue #321 U63) — and the bounded re-roll stays for "Roll twice".
   if (/^Roll (twice|again)\b/i.test(entry.result)) {
     const a = rollNonDirectiveResult(table, fixedRolls);
     const b = rollNonDirectiveResult(table, fixedRolls);
-    const joiner = /paired name/i.test(entry.result) ? "-" : " / ";
-    return `${a}${joiner}${b}`;
+    return `${a} / ${b}`;
   }
 
   return entry.result;
