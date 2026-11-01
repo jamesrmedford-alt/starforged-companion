@@ -13,6 +13,7 @@
  */
 
 import { getCanonicalEncounterActor } from "./ironswornPacks.js";
+import { rankName } from "../schemas.js";
 
 const MODULE_ID = "starforged-companion";
 const ENCOUNTER_RE = /^!sfc\s+encounter\s+(.+?)\s*$/i;
@@ -45,36 +46,40 @@ export function isEncounterCommand(message) {
  * Build a chat-card HTML summary for an encounter Actor. Used by the
  * player path (and as a fallback for the GM path when no scene is active).
  *
+ * A foundry-ironsworn foe (FoeModel: `system` is `{ dfid }` only) keeps its
+ * challenge rank and its Features / Drives / Tactics text on its embedded
+ * `progress` Item. The card read them from `actor.system`, where no foe has
+ * them, and came out a bare name (issue #321 U32). The rank is the numeric
+ * ChallengeRank, shown by name.
+ *
  * Pure — no Foundry API calls. Exported for testing.
  *
- * @param {Object} actor — a foundry-ironsworn foe Actor (or shaped fixture)
+ * @param {Object} actor — a foundry-ironsworn foe Actor
  * @returns {string}
  */
 export function buildEncounterCard(actor) {
   if (!actor) return "<p><em>Encounter not found.</em></p>";
   const name = actor.name ?? "Unknown";
-  const sys  = actor.system ?? {};
   const lines = [`<h3>${escapeHtml(name)}</h3>`];
 
-  const rank = sys.rank ?? sys.Rank;
-  if (rank) lines.push(`<p><strong>Rank:</strong> ${escapeHtml(String(rank))}</p>`);
+  const progress = foeProgressItem(actor);
+  const rank = progress?.system?.rank;
+  if (rank !== undefined && rank !== null && rank !== "") {
+    const label = rankName(rank);
+    lines.push(`<p><strong>Rank:</strong> ${escapeHtml(label.charAt(0).toUpperCase() + label.slice(1))}</p>`);
+  }
 
-  const description = sys.description ?? sys.Description ?? "";
+  // The compendium's own HTML: the Features / Drives / Tactics boxes, then lore.
+  const description = progress?.system?.description ?? "";
   if (description) lines.push(`<div class="sf-encounter-desc">${description}</div>`);
 
-  const features = sys.features ?? [];
-  if (Array.isArray(features) && features.length) {
-    const items = features.map(f => `<li>${escapeHtml(String(f))}</li>`).join("");
-    lines.push(`<p><strong>Features:</strong></p><ul>${items}</ul>`);
-  }
-
-  const drives = sys.drives ?? [];
-  if (Array.isArray(drives) && drives.length) {
-    const items = drives.map(d => `<li>${escapeHtml(String(d))}</li>`).join("");
-    lines.push(`<p><strong>Drives:</strong></p><ul>${items}</ul>`);
-  }
-
   return lines.join("");
+}
+
+/** The foe's embedded `progress` Item (its rank and stat text), or null. */
+function foeProgressItem(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  return Array.from(items).find(i => i?.type === "progress") ?? null;
 }
 
 function escapeHtml(s) {
