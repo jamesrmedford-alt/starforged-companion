@@ -4,7 +4,7 @@
  *
  * Unit coverage for the v1.7.28 playtest-fix batch:
  *   #1 abilityScanner — robust JSON extraction (trailing prose can't break it)
- *   #3 audio cache    — eviction throttle + positive-lookup memo
+ *   #3 audio cache    — positive-lookup memo (the eviction sweep was removed — issue #322 V16)
  *   #5 statEnrichment — no-stat moves log at debug, not warn
  *   #6 native roll    — parse/classify foundry-ironsworn vow/connection rolls
  */
@@ -20,7 +20,6 @@ import {
 import {
   lookup as cacheLookup,
   write as cacheWrite,
-  evictIfOverflow,
   _resetAudioCacheStateForTests,
 } from '../../src/audio/cache.js';
 
@@ -135,12 +134,12 @@ describe('#6 classifyProgressRoll', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// #3 audio cache — eviction throttle + lookup memo
+// #3 audio cache — lookup memo
 // ─────────────────────────────────────────────────────────────────────────────
 
 const HASH = 'a'.repeat(64);
 
-describe('#3 audio cache throttle + memo', () => {
+describe('#3 audio cache memo', () => {
   let browseSpy;
   beforeEach(() => {
     _resetAudioCacheStateForTests();
@@ -148,18 +147,6 @@ describe('#3 audio cache throttle + memo', () => {
     browseSpy = vi.spyOn(globalThis.foundry.applications.apps.FilePicker.implementation, 'browse');
   });
   afterEach(() => vi.restoreAllMocks());
-
-  it('throttles repeated eviction sweeps but honours force', async () => {
-    await evictIfOverflow(1000);                 // first sweep runs (browses root)
-    expect(browseSpy).toHaveBeenCalled();
-    browseSpy.mockClear();
-
-    await evictIfOverflow(1000);                  // within interval → throttled
-    expect(browseSpy).not.toHaveBeenCalled();
-
-    await evictIfOverflow(1000, { force: true }); // bypass throttle
-    expect(browseSpy).toHaveBeenCalled();
-  });
 
   it('memoises a positive lookup so the second call does not browse again', async () => {
     await cacheWrite(HASH, new Uint8Array([1, 2, 3]));

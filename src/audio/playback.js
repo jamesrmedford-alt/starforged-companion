@@ -154,6 +154,7 @@ export class PlaybackSession {
     this._stopped     = false;
     this._generation  = 0;
     this._run         = null;   // the sequencing loop's promise — settles when the session ends
+    this._resumeGap   = null;   // set while a segment loaded during a pause waits for Resume
   }
 
   get state() { return this._state; }
@@ -166,6 +167,18 @@ export class PlaybackSession {
     if (this._state === PLAYBACK_STATE.PLAYING) return;
     // Stop any other session before we make a sound — prevents overlap.
     _claimActivePlayback(this);
+    if (this._state === PLAYBACK_STATE.PAUSED && this._resumeGap) {
+      // Paused between segments: the segment that loaded meanwhile is waiting,
+      // unplayed, in the sequencing loop — let it play.
+      this._resumeGap();
+      return this._run;
+    }
+    if (this._state === PLAYBACK_STATE.PAUSED && !this._currentSound && this._run) {
+      // Paused between segments and resumed before the next one loaded: the
+      // loop plays it when it lands (the ended one is not replayed).
+      this._setState(PLAYBACK_STATE.PLAYING);
+      return this._run;
+    }
     if (this._state === PLAYBACK_STATE.PAUSED && this._currentSound) {
       // The loop that started this segment still waits for its end and
       // carries on from there — resuming adds no continuation of its own.
@@ -201,6 +214,7 @@ export class PlaybackSession {
   async stop() {
     this._stopped = true;
     this._generation++;   // a load still in flight must not start playing
+    this._resumeGap?.();  // a segment waiting out a pause: the loop ends it
     this._setState(PLAYBACK_STATE.STOPPED);
     if (this._currentSound && typeof this._currentSound.stop === "function") {
       try { await this._currentSound.stop(); } catch (err) {
@@ -215,6 +229,7 @@ export class PlaybackSession {
     const current = () => !this._stopped && generation === this._generation;
     while (current() && this._currentIdx < this.segments.length) {
       const seg   = this.segments[this._currentIdx];
+      this._currentSound = null;   // nothing is sounding while the next segment loads
       const sound = await this._createSound(seg.src);
       if (!current()) {
         // Stopped, or replayed from the top, while this loaded: never play it.
@@ -224,6 +239,19 @@ export class PlaybackSession {
         return;
       }
       this._currentSound = sound;
+      if (this._state === PLAYBACK_STATE.PAUSED) {
+        // Paused between segments, while this one loaded: it waits, unplayed,
+        // until Resume (or Stop). It used to start playing the moment it
+        // loaded, undoing the Pause (issue #322 V14).
+        await new Promise(resolve => { this._resumeGap = resolve; });
+        this._resumeGap = null;
+        if (!current()) {
+          try { await sound?.stop?.(); } catch (err) {
+            console.debug?.(`${MODULE_ID} | playback: stopping a paused sound failed:`, err?.message ?? err);
+          }
+          return;
+        }
+      }
       this._setState(PLAYBACK_STATE.PLAYING);
       await this._playOneSound(sound);
       if (!current()) return;

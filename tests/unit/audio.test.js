@@ -4,7 +4,7 @@
  *
  * Coverage for the audio narration module (docs/audio/audio-narration-scope.md):
  *   - segments.js (splitSegments, stripMarkup)
- *   - cache.js (cacheKey, lookup, write, evictIfOverflow)
+ *   - cache.js (cacheKey, lookup, write)
  *   - elevenlabs.js (ELEVENLABS_MODELS, synthesise, fetchSubscription)
  *   - playback.js (PlaybackSession state machine + gesture queue)
  *   - index.js (audioEnabledForThisClient, segmentation orchestration)

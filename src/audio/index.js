@@ -21,7 +21,6 @@ import {
   cacheKey,
   lookup as cacheLookup,
   write  as cacheWrite,
-  evictIfOverflow,
 } from "./cache.js";
 import { synthesise } from "./elevenlabs.js";
 import {
@@ -37,6 +36,14 @@ const MODULE_ID = "starforged-companion";
 export const AUDIO_SOCKET_NAME = `module.${MODULE_ID}`;
 
 const _sessionsByCardId = new WeakMap();
+
+// A card's load generation: each Play takes it, its Stop bumps it, and a load
+// that finishes under an older one never plays. Stop pressed while a card was
+// still Loading (the synthesis, before any session existed) was undone when
+// the load finished — the narration started after Stop (issue #322 V14).
+const _loadGenerationByCard = new WeakMap();
+const cardLoadGeneration = (message) => _loadGenerationByCard.get(message) ?? 0;
+const cancelCardLoad     = (message) => _loadGenerationByCard.set(message, cardLoadGeneration(message) + 1);
 let _gestureOverlayShown = false;
 
 // Keyless playback: a client without an ElevenLabs key asks the canonical GM to
@@ -85,6 +92,31 @@ function _saveAutoplayedIds(ids) {
 
 /** Test-only — resets the autoplay guard so the next call re-reads storage. */
 export function _resetAutoplayGuardForTests() { _autoplayedCardIds = null; }
+
+// This client's start: a narrator card auto-plays only when it was created
+// after it. Foundry renders the recent chat log at every page load, so on a
+// browser whose played-list (claimAutoplayOnce) lacked those ids — a new
+// device, cleared site data, the first load after turning auto-play on —
+// every old card claimed auto-play, and the player's first click anywhere
+// played an hours-old narration (issue #322 V15). In server time when Foundry
+// gives it, since a message's `timestamp` is the server's; a minute's margin
+// covers a card posted while this client loaded.
+const NEW_CARD_MARGIN_MS = 60 * 1000;
+const serverNow = () => {
+  const t = Number(globalThis.game?.time?.serverTime);
+  return Number.isFinite(t) && t > 0 ? t : Date.now();
+};
+let _clientStartedAt = serverNow();
+
+/** Called from the module's ready hook: this client's start, in server time. */
+export function markAudioClientReady() { _clientStartedAt = serverNow(); }
+
+/** Was this card created since this client started (an old chat-log card is not)? */
+function isCardNewHere(message) {
+  const ts = Number(message?.timestamp ?? Date.parse(message?.flags?.[MODULE_ID]?.timestamp ?? ""));
+  if (!Number.isFinite(ts)) return true;
+  return ts >= _clientStartedAt - NEW_CARD_MARGIN_MS;
+}
 
 /**
  * Should this card auto-play right now? Returns true at most once per card id
@@ -291,17 +323,10 @@ function synthesiseToCacheOnce(hash, spec, apiKey) {
   return pending;
 }
 
-/** Canonical GM: write a clip to the cache (+ an eviction sweep); the path, or null when the write failed. */
+/** Canonical GM: write a clip to the cache; the path, or null when the write failed. */
 async function writeToCache(hash, bytes) {
   try {
-    const path = await cacheWrite(hash, bytes);
-    const cap  = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
-    if (cap > 0) {
-      evictIfOverflow(cap).catch(err =>
-        console.warn(`${MODULE_ID} | audio cache eviction sweep failed:`, err),
-      );
-    }
-    return path;
+    return await cacheWrite(hash, bytes);
   } catch (err) {
     console.warn(`${MODULE_ID} | audio cache write (GM-direct) failed:`, err);
     return null;
@@ -381,12 +406,6 @@ async function handleCacheWrite(payload) {
   try {
     const bytes = base64ToBytes(payload.b64 ?? "");
     await cacheWrite(payload.hash, bytes);
-    const cap = Number(getSetting("audio.cacheMaxBytes", 200 * 1024 * 1024)) || 0;
-    if (cap > 0) {
-      evictIfOverflow(cap).catch(err =>
-        console.warn(`${MODULE_ID} | audio cache eviction (GM-relay) failed:`, err),
-      );
-    }
   } catch (err) {
     console.warn(`${MODULE_ID} | audio cache GM-relay write failed:`, err);
   }
@@ -504,6 +523,7 @@ export async function onNarratorCardRendered(message, root) {
     freshStop.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
+      cancelCardLoad(message);   // a load still in flight stays silent
       await stopActivePlayback();
       setButtonLabel(fresh, "idle");
     });
@@ -511,7 +531,7 @@ export async function onNarratorCardRendered(message, root) {
 
   // Optional auto-play — once per card. A re-render (e.g. after the card's
   // "Roll <move>" button updates the message) must not replay the audio (F14).
-  if (getSetting("audio.autoplay", false) === true && claimAutoplayOnce(message.id)) {
+  if (getSetting("audio.autoplay", false) === true && isCardNewHere(message) && claimAutoplayOnce(message.id)) {
     if (!userGestureReceived()) {
       showGestureOverlay(root, async () => {
         await togglePlayback(message, fresh, rawProse);
@@ -541,10 +561,14 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
   }
 
   setButtonLabel(btn, "loading");
+  const generation = cardLoadGeneration(message);
+  const stopped    = () => cardLoadGeneration(message) !== generation;
   try {
     // Pick the NPC voice from the card's focal connection pronouns (finding F).
     const npcVoiceId = await resolveNpcVoiceForCard(message, getVoiceConfig());
     const segments = await buildPlayableSegments(rawProse, { npcVoiceId });
+    // Stop was pressed while this loaded: the card stays as Stop left it.
+    if (stopped()) return;
     if (segments.length === 0) {
       // No synthesisable text. Previously a silent no-op — a player clicking
       // Play saw nothing happen with no explanation (finding H). Tell them.
@@ -582,8 +606,8 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
   } catch (err) {
     // Synthesis / segmentation failures (buildPlayableSegments throws).
     console.error(`${MODULE_ID} | audio toggle failed:`, err);
+    if (stopped()) return;   // stopped meanwhile: no error to show on an idle card
     setButtonLabel(btn, "error");
-    btn.setAttribute("disabled", "true");
     const detail = typeof err?.message === "string" && err.message ? err.message : "Audio unavailable";
     btn.setAttribute("title", detail);
     // Surface the real reason on a deliberate click (finding H): the button
@@ -636,8 +660,12 @@ function setButtonLabel(btn, label) {
       btn.removeAttribute("disabled");
       break;
     case "error":
-      btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Unavailable';
-      btn.setAttribute("disabled", "true");
+      // Clickable: its title (the reason) says "try again" for the keyless
+      // and transient cases, and a click retries. Disabled, it stayed dead
+      // until the card re-rendered — after the GM cached the clip a player
+      // could not try again (issue #322 V13).
+      btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Unavailable — retry';
+      btn.removeAttribute("disabled");
       break;
     case "idle":
     default:

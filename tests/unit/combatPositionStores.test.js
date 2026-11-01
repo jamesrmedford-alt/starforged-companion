@@ -24,6 +24,8 @@ vi.mock("../../src/ui/progressTracks.js", () => ({
 }));
 vi.mock("../../src/character/actorBridge.js", () => ({
   setCombatPosition: vi.fn(async () => {}),
+  // The real predicate: a character Actor that is no NPC card.
+  isPlayerCharacterActor: (actor) => actor?.type === "character" && !actor?.flags?.["starforged-companion"]?.entityType,
 }));
 
 import { registerCombatTrackerHooks, applyCombatPositionToTrack } from "../../src/moves/combatTracker.js";
@@ -56,7 +58,7 @@ afterEach(() => {
 });
 
 /** A Starforged combat for track "trk-1" with one combatant, rendered in the tracker. */
-function renderTracker({ position = "none", actor = { id: "pc1", name: "Kira" } } = {}) {
+function renderTracker({ position = "none", actor = { id: "pc1", name: "Kira", type: "character" } } = {}) {
   const cFlags = { [MODULE_ID]: { position } };
   const combatant = {
     id: "cmb1", actorId: actor?.id ?? null, actor,
@@ -86,18 +88,27 @@ describe("the combat tracker's position badge writes the fight's track (issue #3
     // The two stores the badge always wrote …
     expect(combatant.setFlag).toHaveBeenCalledWith(MODULE_ID, "position", "inControl");
     expect(setCombatPosition).toHaveBeenCalledWith(combatant.actor, "inControl");
-    // … and the canonical one.
-    expect(setCombatTrackPosition).toHaveBeenCalledWith("trk-1", "in_control");
+    // … and the canonical one: the fight's, as Kira's own (issue #322 V03).
+    expect(setCombatTrackPosition).toHaveBeenCalledWith("trk-1", "in_control", "pc1");
+  });
+
+  // Issue #322 V03: position is per character. A foe's badge sets the fight's
+  // position alone — no foe is recorded as one of the crew.
+  it("a foe's badge writes the fight's position, not a character's own", async () => {
+    const { badge } = renderTracker({ actor: { id: "npc-raider", name: "Raider", type: "foe" } });
+    badge.click();
+    await settle();
+    expect(setCombatTrackPosition).toHaveBeenCalledWith("trk-1", "in_control", null);
   });
 
   it("each step of the cycle reaches the track: in control → in a bad spot → neutral", async () => {
     renderTracker({ position: "inControl" }).badge.click();
     await settle();
-    expect(setCombatTrackPosition).toHaveBeenLastCalledWith("trk-1", "bad_spot");
+    expect(setCombatTrackPosition).toHaveBeenLastCalledWith("trk-1", "bad_spot", "pc1");
 
     renderTracker({ position: "inABadSpot" }).badge.click();
     await settle();
-    expect(setCombatTrackPosition).toHaveBeenLastCalledWith("trk-1", null);
+    expect(setCombatTrackPosition).toHaveBeenLastCalledWith("trk-1", null, "pc1");
     expect(setCombatPosition).toHaveBeenLastCalledWith(expect.objectContaining({ id: "pc1" }), "none");
   });
 
@@ -124,9 +135,9 @@ describe("the combat tracker's position badge writes the fight's track (issue #3
 
 describe("applyCombatPositionToTrack — neutral, and the canonical store first (issue #321 U19)", () => {
   it("null clears the position everywhere (the toggles' neutral step)", async () => {
-    const actor = { id: "pc1", name: "Kira" };
+    const actor = { id: "pc1", name: "Kira", type: "character" };
     await applyCombatPositionToTrack("trk-1", null, actor);
-    expect(setCombatTrackPosition).toHaveBeenCalledWith("trk-1", null);
+    expect(setCombatTrackPosition).toHaveBeenCalledWith("trk-1", null, "pc1");
     expect(setCombatPosition).toHaveBeenCalledWith(actor, "none");
   });
 

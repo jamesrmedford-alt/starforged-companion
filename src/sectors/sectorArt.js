@@ -19,6 +19,7 @@
  */
 
 import { generateOpenRouterImage } from "../art/openRouterImage.js";
+import { uploadedPath } from "../net/uploadResult.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -112,9 +113,9 @@ export async function generateSectorBackground(sector, _campaignState) {
     return null;
   }
 
-  let uploadedPath;
+  let storedPath;
   try {
-    uploadedPath = await uploadSectorImage(b64, sector.id);
+    storedPath = await uploadSectorImage(b64, sector.id);
   } catch (err) {
     const reason = err?.message ?? String(err);
     console.warn(`${MODULE_ID} | sectorArt: FilePicker.upload failed:`, reason);
@@ -122,15 +123,15 @@ export async function generateSectorBackground(sector, _campaignState) {
     return null;
   }
 
-  if (!uploadedPath) {
-    const msg = "Sector art generated but upload returned no path.";
+  if (!storedPath) {
+    const msg = "Sector art generated but the upload failed — the server stored no file.";
     console.warn(`${MODULE_ID} | sectorArt: ${msg}`);
     notify("error", msg, { permanent: true });
     return null;
   }
 
-  console.log(`${MODULE_ID} | sectorArt: uploaded background to ${uploadedPath}`);
-  return uploadedPath;
+  console.log(`${MODULE_ID} | sectorArt: uploaded background to ${storedPath}`);
+  return storedPath;
 }
 
 /**
@@ -230,5 +231,7 @@ async function uploadSectorImage(b64, sectorId) {
   const response = await foundry.applications.apps.FilePicker.implementation
     .upload("data", uploadDir, file, {}, { notify: false });
 
-  return response?.path ?? `${uploadDir}/${filename}`;
+  // A failed upload resolves false / undefined / {} — no path, never a built
+  // one for a file that was not written (issue #322 V26).
+  return uploadedPath(response, `${uploadDir}/${filename}`);
 }

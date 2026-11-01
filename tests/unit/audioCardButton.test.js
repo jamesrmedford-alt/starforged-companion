@@ -15,7 +15,6 @@ vi.mock('../../src/audio/cache.js', () => ({
   cacheKey:        vi.fn(),
   lookup:          vi.fn(),
   write:           vi.fn(),
-  evictIfOverflow: vi.fn(),
 }));
 
 import { onNarratorCardRendered } from '../../src/audio/index.js';

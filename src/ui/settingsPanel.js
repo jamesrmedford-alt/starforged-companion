@@ -123,6 +123,11 @@ const SALIENCE_CHOICES = {
   defining:    'Campaign-defining only',
 };
 
+// The Narration Max Tokens row's range: from a short narration to the
+// models' output ceiling. Default 16000.
+const NARRATION_MAX_TOKENS_MIN = 300;
+const NARRATION_MAX_TOKENS_MAX = 64000;
+
 const NARRATION_MODELS = {
   'claude-haiku-4-5-20251001':  'Haiku 4.5 (fast, economical)',
   'claude-sonnet-4-5-20250929': 'Sonnet 4.5 (richer narration, recommended)',
@@ -632,6 +637,14 @@ export function registerSettings() {
 // Settings helpers — read
 // ---------------------------------------------------------------------------
 
+// The Private Channel's master switch — registered by src/private-channel/index.js.
+const PRIVATE_CHANNEL_ENABLED = 'privateChannel.enabled';
+
+/** A setting's value, or `fallback` when it is unset or unregistered. */
+function readSetting(key, fallback) {
+  try { return game.settings.get(MODULE_ID, key) ?? fallback; } catch { return fallback; }
+}
+
 function getDial()         { return game.settings.get(MODULE_ID, SETTING.DIAL); }
 function getGlobalLines()  { return game.settings.get(MODULE_ID, SETTING.GLOBAL_LINES) ?? []; }
 function getGlobalVeils()  { return game.settings.get(MODULE_ID, SETTING.GLOBAL_VEILS) ?? []; }
@@ -957,6 +970,24 @@ export class SettingsPanelApp extends ApplicationV2 {
       autoRecapEnabled:      getAutoRecapEnabled(),
       sessionGapHours:       getSessionGapHours(),
       recapGmOnly:           getRecapGmOnly(),
+      // Documented in the help's Settings Reference, registered config:false
+      // and rendered nowhere until issue #322 V06.
+      sceneQueryEnabled:     readSetting(SETTING.SCENE_QUERY_ENABLED, true),
+      sceneResponseLength:   readSetting(SETTING.SCENE_RESPONSE_LENGTH, 2),
+      sceneContextCards:     readSetting(SETTING.SCENE_CONTEXT_CARDS, 3),
+      chronicleAutoEntry:    readSetting(SETTING.CHRONICLE_AUTO_ENTRY, true),
+      chronicleSalience:     readSetting(SETTING.CHRONICLE_SALIENCE, 'significant'),
+      salienceChoices:       SALIENCE_CHOICES,
+      worldJournal: {
+        privateChannel:             readSetting(PRIVATE_CHANNEL_ENABLED, true),
+        loreInContext:              readSetting(SETTING.WJ_LORE_IN_CONTEXT, true),
+        threatsInContext:           readSetting(SETTING.WJ_THREATS_IN_CONTEXT, true),
+        factionInContext:           readSetting(SETTING.WJ_FACTION_IN_CONTEXT, true),
+        contradictionNotifications: readSetting(SETTING.WJ_CONTRADICTION_NOTIFY, true),
+        sessionLogAutoWrite:        readSetting(SETTING.WJ_SESSION_LOG_AUTOWRITE, true),
+        loreSalience:               readSetting(SETTING.WJ_LORE_SALIENCE, 'significant'),
+        threatSalience:             readSetting(SETTING.WJ_THREAT_SALIENCE, 'significant'),
+      },
       pacingEnabled:         getPacingEnabled(),
       pacingDensityWindow:   getPacingDensityWindow(),
       pacingDials:           getPacingDials(),
@@ -968,6 +999,10 @@ export class SettingsPanelApp extends ApplicationV2 {
         maxLedgerTokens:   getFactContinuityMaxLedgerTokens(),
         consistencyCheck:  getFactContinuityConsistencyCheck(),
         sceneFrame:        getFactContinuitySceneFrame(),
+        shipPositioning:     getShipPositioningEnabled(),
+        shipAutoMove:        getShipAutoMoveOnCourse(),
+        shipTokenEnabled:    readSetting(SETTING.FC_SHIP_TOKEN_ENABLED, true) !== false,
+        shipTokenSnapRadius: readSetting(SETTING.FC_SHIP_TOKEN_SNAP_RADIUS, 1),
       },
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
@@ -1242,6 +1277,37 @@ export class SettingsPanelApp extends ApplicationV2 {
           </label>
           <span class="pacing-field-hint">Run a Haiku audit pass after every narration, checking the prose against the scene frame, binding truths, retracted facts, current state, and ship position. High-confidence contradictions surface on the GM Narrative Review card. Fire-and-forget, ~$0.0004 per call; on by default.</span>
         </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.shipPositioning"
+                   ${ctx.factContinuity.shipPositioning ? 'checked' : ''} ${dis}>
+            Ship positioning
+          </label>
+          <span class="pacing-field-hint">Track the command vehicle's position (sector / planet / nearest settlement) and give it to the narrator. Updates from !at, a hit on Set a Course or Finish an Expedition, the narrator, and the sector-scene ship token.</span>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.shipAutoMoveOnCourse"
+                   ${ctx.factContinuity.shipAutoMove ? 'checked' : ''} ${dis}>
+            Auto-move the ship on Set a Course
+          </label>
+          <span class="pacing-field-hint">A hit on Set a Course or Finish an Expedition moves the ship to the destination you named. Off: move it with !at.</span>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label">
+            <input type="checkbox" name="factContinuity.shipTokenEnabled"
+                   ${ctx.factContinuity.shipTokenEnabled ? 'checked' : ''} ${dis}>
+            Sector-scene ship token
+          </label>
+          <span class="pacing-field-hint">Place a token for the command vehicle on each new sector scene. With ship positioning and auto-move on, dropping it on a settlement pin sets a course there.</span>
+        </div>
+        <div class="pacing-field">
+          <label class="pacing-field-label" for="sf-fc-snap-radius">Ship token snap radius (grid cells)</label>
+          <input class="settings-input pacing-dial-input" id="sf-fc-snap-radius"
+                 name="factContinuity.shipTokenSnapRadius" type="number" min="0" max="5" step="1"
+                 value="${ctx.factContinuity.shipTokenSnapRadius}" ${dis}>
+          <span class="pacing-field-hint">How close the token must come to a settlement pin to count as a drop on it. 0 = the same cell; default 1.</span>
+        </div>
         ${ctx.isGM ? `
           <div class="pacing-actions">
             <button class="settings-btn btn-save-pacing" data-action="saveFactContinuitySettings">Save Fact Continuity Settings</button>
@@ -1327,6 +1393,32 @@ export class SettingsPanelApp extends ApplicationV2 {
                     rows="3" maxlength="500" placeholder="Additional instructions for the narrator…"
                     ${dis}>${ctx.narrationInstructions}</textarea>
         </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Narration max tokens</label>
+          <input class="settings-input narrator-number-input" name="narrationMaxTokens"
+                 type="number" min="${NARRATION_MAX_TOKENS_MIN}" max="${NARRATION_MAX_TOKENS_MAX}" step="100" value="${ctx.narrationMaxTokens}" ${dis}>
+          <span class="narrator-field-hint">Hard cap on each narration's output, in tokens. Default 16000 — the length setting shapes the prose; a low cap cuts it off.</span>
+        </div>
+        <hr class="narrator-divider">
+        <h4 class="narrator-section-heading">Scene Interrogation (@scene)</h4>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="sceneQueryEnabled" ${ctx.sceneQueryEnabled ? 'checked' : ''} ${dis}>
+            Enable @scene questions
+          </label>
+          <span class="narrator-field-hint">A message starting with @scene asks the narrator to describe the scene, with no move.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Scene response length (sentences)</label>
+          <input class="settings-input narrator-number-input" name="sceneResponseLength"
+                 type="number" min="1" max="4" value="${ctx.sceneResponseLength}" ${dis}>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Scene context cards</label>
+          <input class="settings-input narrator-number-input" name="sceneContextCards"
+                 type="number" min="1" max="6" value="${ctx.sceneContextCards}" ${dis}>
+          <span class="narrator-field-hint">Recent narration cards each @scene answer sees as context. Default 3.</span>
+        </div>
         <hr class="narrator-divider">
         <h4 class="narrator-section-heading">Previously On / Recap</h4>
         <div class="narrator-field">
@@ -1348,6 +1440,67 @@ export class SettingsPanelApp extends ApplicationV2 {
             GM-only recap commands
           </label>
           <span class="narrator-field-hint">Restrict !recap commands to the GM to prevent API call spam in multiplayer.</span>
+        </div>
+        <hr class="narrator-divider">
+        <h4 class="narrator-section-heading">Character Management</h4>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="chronicleAutoEntry" ${ctx.chronicleAutoEntry ? 'checked' : ''} ${dis}>
+            Auto-write Chronicle entries
+          </label>
+          <span class="narrator-field-hint">Write a short Chronicle entry after each narrated turn that clears the threshold below.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Chronicle capture threshold</label>
+          ${renderSelect('chronicleSalienceThreshold', ctx.chronicleSalience, ctx.salienceChoices, gmOnly)}
+        </div>
+        <hr class="narrator-divider">
+        <h4 class="narrator-section-heading">World Journal</h4>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="privateChannel.enabled" ${ctx.worldJournal.privateChannel ? 'checked' : ''} ${dis}>
+            Private Channel
+          </label>
+          <span class="narrator-field-hint">The ✦ toolbar button for each player's private narrator conversation. Off hides it for everyone.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="loreInContext" ${ctx.worldJournal.loreInContext ? 'checked' : ''} ${dis}>
+            Confirmed lore in narrator context
+          </label>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="threatsInContext" ${ctx.worldJournal.threatsInContext ? 'checked' : ''} ${dis}>
+            Active threats in narrator context
+          </label>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="factionLandscapeInContext" ${ctx.worldJournal.factionInContext ? 'checked' : ''} ${dis}>
+            Faction landscape in narrator context
+          </label>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="contradictionNotifications" ${ctx.worldJournal.contradictionNotifications ? 'checked' : ''} ${dis}>
+            Contradiction notifications
+          </label>
+          <span class="narrator-field-hint">A chat card when a narration may contradict confirmed lore or an established scene fact. Off silences the consistency check's review cards too.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="sessionLogAutoWrite" ${ctx.worldJournal.sessionLogAutoWrite ? 'checked' : ''} ${dis}>
+            Session Log auto-write
+          </label>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Lore capture threshold</label>
+          ${renderSelect('loreSalienceThreshold', ctx.worldJournal.loreSalience, ctx.salienceChoices, gmOnly)}
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">Threat capture threshold</label>
+          ${renderSelect('threatSalienceThreshold', ctx.worldJournal.threatSalience, ctx.salienceChoices, gmOnly)}
         </div>
         ${ctx.isGM ? `
           <div class="narrator-actions">
@@ -1725,6 +1878,18 @@ export class SettingsPanelApp extends ApplicationV2 {
       const sessionGapHours  = Math.max(1, Math.min(48, Number(sessionGapRaw) || 4));
       const recapGmOnly      = el.querySelector('[name="recapGmOnly"]')?.checked ?? true;
 
+      // The rows issue #322 V06 added: documented, but nothing could set them.
+      const checked = (name, fallback) => el.querySelector(`[name="${name}"]`)?.checked ?? fallback;
+      const number  = (name, min, max, fallback) => {
+        const n = Math.round(Number(el.querySelector(`[name="${name}"]`)?.value));
+        return Number.isFinite(n) && n > 0 ? Math.max(min, Math.min(max, n)) : fallback;
+      };
+      const salience = (name) => {
+        const v = el.querySelector(`[name="${name}"]`)?.value;
+        return Object.hasOwn(SALIENCE_CHOICES, v ?? '') ? v : 'significant';
+      };
+      const maxTokens = number('narrationMaxTokens', NARRATION_MAX_TOKENS_MIN, NARRATION_MAX_TOKENS_MAX, 16000);
+
       await Promise.all([
         game.settings.set(MODULE_ID, SETTING.NARRATION_ENABLED,      enabled),
         game.settings.set(MODULE_ID, SETTING.NARRATION_MODEL,        model),
@@ -1740,6 +1905,20 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
         game.settings.set(MODULE_ID, SETTING.SESSION_GAP_HOURS,      sessionGapHours),
         game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
+        game.settings.set(MODULE_ID, SETTING.NARRATION_MAX_TOKENS,   maxTokens),
+        game.settings.set(MODULE_ID, SETTING.SCENE_QUERY_ENABLED,    checked('sceneQueryEnabled', true)),
+        game.settings.set(MODULE_ID, SETTING.SCENE_RESPONSE_LENGTH,  number('sceneResponseLength', 1, 4, 2)),
+        game.settings.set(MODULE_ID, SETTING.SCENE_CONTEXT_CARDS,    number('sceneContextCards', 1, 6, 3)),
+        game.settings.set(MODULE_ID, SETTING.CHRONICLE_AUTO_ENTRY,   checked('chronicleAutoEntry', true)),
+        game.settings.set(MODULE_ID, SETTING.CHRONICLE_SALIENCE,     salience('chronicleSalienceThreshold')),
+        game.settings.set(MODULE_ID, PRIVATE_CHANNEL_ENABLED,        checked('privateChannel.enabled', true)),
+        game.settings.set(MODULE_ID, SETTING.WJ_LORE_IN_CONTEXT,     checked('loreInContext', true)),
+        game.settings.set(MODULE_ID, SETTING.WJ_THREATS_IN_CONTEXT,  checked('threatsInContext', true)),
+        game.settings.set(MODULE_ID, SETTING.WJ_FACTION_IN_CONTEXT,  checked('factionLandscapeInContext', true)),
+        game.settings.set(MODULE_ID, SETTING.WJ_CONTRADICTION_NOTIFY, checked('contradictionNotifications', true)),
+        game.settings.set(MODULE_ID, SETTING.WJ_SESSION_LOG_AUTOWRITE, checked('sessionLogAutoWrite', true)),
+        game.settings.set(MODULE_ID, SETTING.WJ_LORE_SALIENCE,       salience('loreSalienceThreshold')),
+        game.settings.set(MODULE_ID, SETTING.WJ_THREAT_SALIENCE,     salience('threatSalienceThreshold')),
       ]);
 
       ui.notifications?.info('Starforged Companion: Narrator settings saved.');
@@ -1799,6 +1978,12 @@ export class SettingsPanelApp extends ApplicationV2 {
       const sceneFrame       = el.querySelector('[name="factContinuity.sceneFrame"]')?.checked       ?? true;
       const maxRaw           = el.querySelector('[name="factContinuity.maxLedgerTokens"]')?.value;
       const maxTokens        = Math.max(100, Math.min(2000, Number(maxRaw) || 400));
+      // Ship positioning's four rows (issue #322 V06 — documented, never rendered).
+      const shipPositioning  = el.querySelector('[name="factContinuity.shipPositioning"]')?.checked       ?? true;
+      const shipAutoMove     = el.querySelector('[name="factContinuity.shipAutoMoveOnCourse"]')?.checked  ?? true;
+      const shipToken        = el.querySelector('[name="factContinuity.shipTokenEnabled"]')?.checked      ?? true;
+      const snapRaw          = Math.round(Number(el.querySelector('[name="factContinuity.shipTokenSnapRadius"]')?.value));
+      const snapRadius       = Number.isFinite(snapRaw) ? Math.max(0, Math.min(5, snapRaw)) : 1;
 
       await Promise.all([
         game.settings.set(MODULE_ID, SETTING.FC_ENABLED,             enabled),
@@ -1807,6 +1992,10 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS,   maxTokens),
         game.settings.set(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK,   consistencyCheck),
         game.settings.set(MODULE_ID, SETTING.FC_SCENE_FRAME,         sceneFrame),
+        game.settings.set(MODULE_ID, SETTING.FC_SHIP_POSITIONING,    shipPositioning),
+        game.settings.set(MODULE_ID, SETTING.FC_SHIP_AUTO_MOVE,      shipAutoMove),
+        game.settings.set(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED,  shipToken),
+        game.settings.set(MODULE_ID, SETTING.FC_SHIP_TOKEN_SNAP_RADIUS, snapRadius),
       ]);
 
       ui.notifications?.info('Starforged Companion: Fact Continuity settings saved.');

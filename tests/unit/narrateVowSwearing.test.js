@@ -29,6 +29,14 @@ describe('buildVowSwearingUserMessage', () => {
     expect(msg).toContain('drawn blade');
   });
 
+  // Issue #322 V34: a custom Iron truth chosen in the World Truths dialog is
+  // its text alone (no option description); the scene is still grounded in it.
+  it('grounds the scene in a custom Iron truth, which has a title and no description', () => {
+    const msg = buildVowSwearingUserMessage({ name: 'Find the beacon' }, { title: 'We swear on the bones of the drowned moon.', description: '' });
+    expect(msg).toContain('bind their oaths thus — We swear on the bones of the drowned moon.');
+    expect(msg).not.toMatch(/sworn upon iron/i);
+  });
+
   it('falls back to a generic iron oath when no truth is established', () => {
     const msg = buildVowSwearingUserMessage({ name: 'Find the beacon' }, null);
     expect(msg).toContain('Find the beacon');

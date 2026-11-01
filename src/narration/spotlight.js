@@ -59,7 +59,7 @@ export function selectSpotlight({ roster, presentNames = [], lastActorId = null 
   const present = Array.isArray(presentNames)
     ? presentNames
         .filter(n => typeof n === 'string' && n.trim())
-        .map(n => n.trim().toLowerCase())
+        .map(n => n.trim().toLowerCase().replace(/\s+/g, ' '))
     : [];
 
   // Narrow to PCs the scene frame says are present. Only adopt the narrowed
@@ -67,7 +67,7 @@ export function selectSpotlight({ roster, presentNames = [], lastActorId = null 
   // lagging, or centred on a single PC — fall back to the full roster.
   let candidates = pcs;
   if (present.length) {
-    const inScene = pcs.filter(pc => present.includes(pc.name.trim().toLowerCase()));
+    const inScene = pcs.filter(pc => present.some(name => frameNamesPc(name, pc, pcs)));
     if (inScene.length >= 2) candidates = inScene;
     else return null; // 0–1 PCs in scene → no turn order to imply this beat.
   }
@@ -81,6 +81,28 @@ export function selectSpotlight({ roster, presentNames = [], lastActorId = null 
   const next = ordered[(lastIdx + 1) % ordered.length];
 
   return { nextActorId: next.id, nextActorName: next.name.trim(), candidates: ordered };
+}
+
+/**
+ * Does a scene-frame name stand for this PC? Its full name, or — as the frame
+ * often lists a cast by first name ("Kira, Ren" for Kira Voss and Ren Tal) —
+ * its first or last name when no other PC shares it. The frame was matched by
+ * the full name alone, so such a scene rotated nobody (issue #322 V20).
+ *
+ * @param {string} name — a frame `present` entry, trimmed and lower-cased
+ * @param {{ name: string }} pc
+ * @param {Array<{ name: string }>} pcs — the roster, for a shared name part
+ * @returns {boolean}
+ */
+function frameNamesPc(name, pc, pcs) {
+  const parts = (p) => p.name.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const full  = parts(pc).join(' ');
+  if (name === full) return true;
+  const own = parts(pc);
+  if (own.length < 2 || !own.includes(name)) return false;
+  // first or last name only — a middle word is no name to be called by
+  if (name !== own[0] && name !== own[own.length - 1]) return false;
+  return pcs.filter(other => other !== pc && parts(other).includes(name)).length === 0;
 }
 
 /**

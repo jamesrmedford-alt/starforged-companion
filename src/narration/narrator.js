@@ -14,7 +14,7 @@ import {
   formatSettlementPlanet,
   sanitizePlayerText,
 } from './narratorPrompt.js';
-import { resolveRelevance, collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
+import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
@@ -924,7 +924,7 @@ export async function postNarrationCard(narrationText, resolution, campaignState
     content: `
       <div class="sf-narration-card">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${stripMarkup(narrationText)}</div>
+        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
             <i class="fas fa-play"></i> Play
@@ -1029,9 +1029,12 @@ function ringEntryText(message) {
  * architecture §2) — added with the rolling session summary.
  *
  * @param {string} sessionId
+ * @param {{ forRecap?: boolean }} [opts] — `forRecap`: the session recap's
+ *   reading, which keeps a fallback card and an X-carded narration (their
+ *   moves happened) and leaves out the rest as the narrator's does
  * @returns {Array<Object>} ChatMessage documents
  */
-function sessionNarratorCards(sessionId) {
+function sessionNarratorCards(sessionId, { forRecap = false } = {}) {
   return (game.messages?.contents ?? []).filter(m => {
     const f = m.flags?.[MODULE_ID];
     if (!f?.narratorCard) return false;
@@ -1053,10 +1056,13 @@ function sessionNarratorCards(sessionId) {
     // so the session recap still counts the move, but its line must not reach
     // the ring or the rolling summary, nor count as the session's first
     // narration — that cancelled the session's campaign recap (issue #321 U35).
-    if (f.narrationFallback) return false;
+    // The session recap (`forRecap`) keeps it: the move happened — the recap
+    // counts it and quotes none of its line (issue #322 V05).
+    if (f.narrationFallback && !forRecap) return false;
     // The X-Card removed this narration (issue #321 U07): the table took it
-    // out of the story, so the narrator never reads it again.
-    if (f.xCarded) return false;
+    // out of the story, so the narrator never reads it again. Its move still
+    // happened: the recap counts it, without its prose.
+    if (f.xCarded && !forRecap) return false;
     if (Array.isArray(m.whisper) && m.whisper.length) return false;
     return true;
   });
@@ -1237,30 +1243,71 @@ async function clearXCardRedirect() {
 }
 
 /**
+ * The session `!recap session N` names: the current one when N is its number,
+ * else the session whose narrator cards carry N (`sessionNumber`, stamped on
+ * every narrator card), else last session's summary when it is N's. The
+ * number was matched and dropped, so every `!recap session N` recapped the
+ * current session under its own number (issue #322 V05).
+ *
+ * @param {Object} campaignState
+ * @param {number} sessionNumber
+ * @returns {{ sessionId: string|null, sessionNumber: number }} a null id when
+ *   no record of session N is left
+ */
+function recapSessionFor(campaignState, sessionNumber) {
+  if (Number(campaignState?.sessionNumber) === sessionNumber) {
+    return { sessionId: campaignState?.currentSessionId ?? null, sessionNumber };
+  }
+  const card = (game.messages?.contents ?? []).findLast?.(m => {
+    const f = m.flags?.[MODULE_ID];
+    return f?.narratorCard && Number(f.sessionNumber) === sessionNumber && typeof f.sessionId === 'string' && f.sessionId;
+  });
+  if (card) return { sessionId: card.flags[MODULE_ID].sessionId, sessionNumber };
+  const prev = campaignState?.previousSessionSummary;
+  if (prev && Number(prev.sessionNumber) === sessionNumber && typeof prev.sessionId === 'string' && prev.sessionId) {
+    return { sessionId: prev.sessionId, sessionNumber };
+  }
+  return { sessionId: null, sessionNumber };
+}
+
+/**
  * Assemble and post a session recap card from chat history.
  * No Claude API call — reads narrator card flags from game.messages.
  *
+ * The cards are the session's narrator cards as the narrator reads them
+ * (sessionNarratorCards — a burned move's superseded prose left out), plus
+ * its fallback and X-carded cards, whose moves happened: they count, and none
+ * of their lines is quoted. "Moves resolved" counts the cards that carry a
+ * move — paced prose, an @scene answer or a vignette is part of the story,
+ * not a move. The recap read every narrator card itself: a burned Strike
+ * showed as "Strike → Miss" beside "Strike → Strong Hit", and every card
+ * counted as a move (issue #322 V05).
+ *
  * @param {Object} campaignState
- * @param {string|null} sessionId  — null = current session
+ * @param {string|null} sessionId  — null = current session (or the one
+ *   `opts.sessionNumber` names)
+ * @param {{ sessionNumber?: number|null }} [opts] — `!recap session N`'s N
  * @returns {Promise<void>}
  */
-export async function postSessionRecap(campaignState, sessionId = null) {
-  const targetId = sessionId ?? campaignState?.currentSessionId ?? null;
-  const sessionNum = campaignState?.sessionNumber ?? null;
+export async function postSessionRecap(campaignState, sessionId = null, { sessionNumber = null } = {}) {
+  const asked   = Number.isInteger(sessionNumber) && sessionNumber > 0 ? sessionNumber : null;
+  const target  = sessionId
+    ? { sessionId, sessionNumber: null }
+    : asked !== null
+      ? recapSessionFor(campaignState, asked)
+      : { sessionId: campaignState?.currentSessionId ?? null, sessionNumber: campaignState?.sessionNumber ?? null };
+  const targetId   = target.sessionId;
+  const sessionNum = target.sessionNumber
+    ?? (targetId && targetId === campaignState?.currentSessionId ? campaignState?.sessionNumber ?? null : null);
 
-  const messages = (game.messages?.contents ?? []).filter(m => {
-    const flags = m.flags?.[MODULE_ID];
-    if (!flags?.narratorCard) return false;
-    if (targetId === null) return true;
-    return flags.sessionId === targetId;
-  });
+  const messages = asked !== null && !targetId ? [] : sessionNarratorCards(targetId, { forRecap: true });
 
   if (!messages.length) {
     return ChatMessage.create({
       content: `
         <div class="sf-recap-session-card">
           <div class="sf-recap-label">◈ Session Recap</div>
-          <div class="sf-recap-empty">No narrated moves found for this session.</div>
+          <div class="sf-recap-empty">${asked !== null ? `No narrated moves found for session ${asked}.` : 'No narrated moves found for this session.'}</div>
         </div>
       `.trim(),
       flags: {
@@ -1268,6 +1315,7 @@ export async function postSessionRecap(campaignState, sessionId = null) {
           recapCard:    true,
           recapType:    'session',
           recapEmpty:   true,
+          ...(sessionNum != null ? { sessionNumber: sessionNum } : {}),
         },
       },
     });
@@ -1276,6 +1324,7 @@ export async function postSessionRecap(campaignState, sessionId = null) {
   const outcomes = { strong_hit: 0, weak_hit: 0, miss: 0 };
   const moveLines = [];
   let matchContext = null;
+  let totalMoves = 0;
 
   for (const msg of messages) {
     const f = msg.flags[MODULE_ID];
@@ -1283,23 +1332,25 @@ export async function postSessionRecap(campaignState, sessionId = null) {
       ? f.moveId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
       : null;
     const outcome  = f.outcome ?? null;
-    // A narration the X-Card removed (issue #321 U07): its move still
-    // counts, but its prose is not quoted back to the table.
-    const text     = f.xCarded ? '' : (f.narrationText ?? '');
+    // A narration the X-Card removed (issue #321 U07) and a fallback card
+    // ("narration unavailable") count their move; no line of theirs is quoted.
+    const text     = (f.xCarded || f.narrationFallback) ? '' : (f.narrationText ?? '');
     const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? '';
 
-    if (outcome && outcomes[outcome] !== undefined) outcomes[outcome]++;
+    if (moveName) totalMoves++;
+    if (moveName && outcome && outcomes[outcome] !== undefined) outcomes[outcome]++;
     if (f.isMatch) matchContext = moveName;
 
     if (moveName && outcome) {
       const outcomeLabel = outcome.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
-      moveLines.push(`• ${moveName} → ${outcomeLabel}${firstSentence ? ': ' + firstSentence : ''}`);
-    } else if (text) {
-      moveLines.push(`• ${firstSentence}`);
+      moveLines.push(`• ${moveName} → ${outcomeLabel}${firstSentence ? ': ' + escapeHtml(firstSentence) : ''}`);
+    } else if (moveName) {
+      moveLines.push(`• ${moveName}${firstSentence ? ': ' + escapeHtml(firstSentence) : ''}`);
+    } else if (firstSentence) {
+      moveLines.push(`• ${escapeHtml(firstSentence)}`);
     }
   }
 
-  const totalMoves = messages.length;
   const summaryParts = [`${totalMoves} move${totalMoves !== 1 ? 's' : ''} resolved.`];
   if (outcomes.strong_hit > 0) summaryParts.push(`${outcomes.strong_hit} strong hit${outcomes.strong_hit !== 1 ? 's' : ''}.`);
   if (matchContext) summaryParts.push(`A match was rolled — ${matchContext}.`);
@@ -2097,8 +2148,10 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
   await ensureSceneStarted(campaignState, 'clock_vignette');
 
+  // Its own role (a threat tightening, or arriving), not the session
+  // vignette's "calm before / after" (issue #322 V23).
   const character = getActiveCharacter(campaignState);
-  const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
+  const extras = await buildNarratorExtras('clock_advance', campaignState, { character });
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );
@@ -2154,9 +2207,13 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
 export function buildVowSwearingUserMessage(vow, ironTruth) {
   const subject   = vow?.name ? `"${vow.name}"` : "a vow";
   const rank      = vow?.rank ? ` (${vow.rank})` : "";
+  // A custom Iron truth chosen in the World Truths dialog is its title alone
+  // (issue #322 V34).
   const truthLine = ironTruth?.description
     ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title ? `${ironTruth.title}: ` : ""}${ironTruth.description}`
-    : `In this world, vows are sworn upon iron.`;
+    : ironTruth?.title
+      ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title}`
+      : `In this world, vows are sworn upon iron.`;
   return [
     `A character is swearing ${subject}${rank}.`,
     ``,
@@ -2407,7 +2464,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     if (!text?.trim()) return null;
 
     const buttonMove = reconcileSuggestedMove(text, suggestedMove);
-    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId);
+    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds);
     schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
     schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
     scheduleChronicleEntry({
@@ -2432,7 +2489,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
         });
         if (text?.trim()) {
           const buttonMove = reconcileSuggestedMove(text, suggestedMove);
-          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId);
+          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds);
           schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
           schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
           scheduleChronicleEntry({
@@ -2598,7 +2655,7 @@ export async function runNarrationTierUpdate(narrationText, campaignState) {
   }
 }
 
-async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null) {
+async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = []) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove
     ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(formatMoveLabel(suggestedMove))}</button></div>`
@@ -2607,7 +2664,7 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
     content: `
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${stripMarkup(narrationText)}</div>
+        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
         ${buttonRow}
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
@@ -2629,7 +2686,11 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         playerName:       playerName ?? null,
         suggestedMove:    suggestedMove ?? null,
         sessionId:        sessionId ?? null,
-        matchedEntityIds: [],
+        // The scene's matched entities, as the move narration card stamps
+        // them: the audio picks an NPC's pronoun-keyed voice from them
+        // (resolveNpcVoiceForCard). Stamped [], a paced card never got it
+        // (issue #322 V22).
+        matchedEntityIds: Array.isArray(matchedEntityIds) ? [...matchedEntityIds] : [],
         narrationId:      narrationId ?? null,   // for the X-Card (issue #321 U07)
         timestamp:        new Date().toISOString(),
       },
@@ -2760,7 +2821,8 @@ export function inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors
     const tokens = new Set([name.toLowerCase(), name.split(/\s+/)[0].toLowerCase()]);
     for (const t of tokens) {
       if (t.length < 2) continue;
-      if (new RegExp(`\\b${escapeRegexLiteral(t)}\\b`).test(text)) return true;
+      // Unicode-aware: a PC named "Zoë" or "Élise" is a whole word too (issue #322 V19).
+      if (wholeWordPattern(t, '').test(text)) return true;
     }
   }
   return false;
@@ -3095,8 +3157,8 @@ async function postSceneCard(question, responseText, sessionId, playerName = nul
     content: `
       <div class="sf-scene-card">
         <div class="sf-scene-label">◈ Scene</div>
-        <div class="sf-scene-question">${question}</div>
-        <div class="sf-scene-prose">${stripMarkup(responseText)}</div>
+        <div class="sf-scene-question">${escapeHtml(question)}</div>
+        <div class="sf-scene-prose">${escapeHtml(stripMarkup(responseText))}</div>
       </div>
     `.trim(),
     flags: {
@@ -3123,8 +3185,8 @@ async function postSceneFallbackCard(question, reason, sessionId) {
     content: `
       <div class="sf-scene-card sf-scene-fallback">
         <div class="sf-scene-label">◈ Scene</div>
-        <div class="sf-scene-question">${question}</div>
-        <div class="sf-scene-error">${reason}</div>
+        <div class="sf-scene-question">${escapeHtml(question)}</div>
+        <div class="sf-scene-error">${escapeHtml(reason)}</div>
       </div>
     `.trim(),
     flags: {

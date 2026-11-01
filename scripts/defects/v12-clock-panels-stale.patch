@@ -1,0 +1,30 @@
+Defect: V12 (issue #322) — an open Clocks panel, and a scene challenge's tension line in the Progress Tracks panel, re-render only after their own buttons: a clock changed elsewhere stays stale on screen
+Tests: tests/unit/clocksPanelRefresh.test.js
+Catches: re-renders when a clock it shows advanced
+Catches: re-renders when a clock was added or removed
+Catches: re-renders when the paired clock advanced elsewhere
+
+diff --git a/src/clocks/clocks.js b/src/clocks/clocks.js
+index 23354b1..82395c5 100644
+--- a/src/clocks/clocks.js
++++ b/src/clocks/clocks.js
+@@ -205,7 +205,6 @@ export function onClocksSettingChanged(setting) {
+   if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+   if (!_panelInstance?.rendered) return;
+   if (clocksFingerprint(readState().clocks) === _panelInstance._clocksShown) return;
+-  _panelInstance.render({ force: false });
+ }
+ 
+ /** Register the Clocks panel's refresh hook. Called once at init. */
+diff --git a/src/ui/progressTracks.js b/src/ui/progressTracks.js
+index 50d4968..401a4fa 100644
+--- a/src/ui/progressTracks.js
++++ b/src/ui/progressTracks.js
+@@ -582,7 +582,6 @@ export class ProgressTrackApp extends ApplicationV2 {
+     let clocks = [];
+     try { clocks = game.settings.get(MODULE_ID, 'campaignState')?.clocks ?? []; } catch { return; }
+     if (clocksFingerprint(clocks) === instance._clocksShown) return;
+-    instance.render();
+   }
+ 
+   // -----------------------------------------------------------------------

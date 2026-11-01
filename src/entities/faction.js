@@ -16,7 +16,7 @@
  */
 
 import { getOrCreateEntitiesFolder } from "./folder.js";
-import { registerEntityIdInStore } from "./registry.js";
+import { registerEntityIdInStore, rerenderEntityPageBody } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "faction";
@@ -301,6 +301,9 @@ export async function updateFaction(journalEntryId, updates) {
   };
 
   await page.setFlag(MODULE_ID, FLAG_KEY, updated);
+  // The page the GM opens shows the record as it is now — seeded type,
+  // stance, edits (issue #322 V31).
+  await rerenderEntityPageBody(FLAG_KEY, page, updated);
 
   if (updates.name && updates.name !== entry.name) {
     await entry.update({ name: updates.name });

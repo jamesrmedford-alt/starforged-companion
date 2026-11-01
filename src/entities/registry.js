@@ -119,7 +119,44 @@ export async function writeEntityFlag(typeKey, document, payload) {
   }
   const page = document.pages?.contents?.[0];
   if (!page) throw new Error(`writeEntityFlag(${typeKey}): no page on document ${document.id}`);
-  return page.setFlag(MODULE_ID, typeKey, payload);
+  const result = await page.setFlag(MODULE_ID, typeKey, payload);
+  await rerenderEntityPageBody(typeKey, page, payload);
+  return result;
+}
+
+// Journal-hosted entities whose page body is rendered from the record (the
+// F19 / T3 "the JournalEntryPage isn't blank" body). Loaded on demand: the
+// type modules import this one.
+const BODY_RENDERERS = {
+  faction:  () => import('./faction.js'),
+  creature: () => import('./creature.js'),
+};
+
+/**
+ * Re-render a journal-hosted entity's page body from its record, so the page
+ * the GM opens shows the record as it is. The body was rendered once, at
+ * creation: a draft-confirmed faction's seeded type, its stance and every
+ * later edit — a creature's too — never reached it (issue #322 V31). The body
+ * is a rendered mirror of the record, as the World Journal's own pages are;
+ * a write that changes nothing leaves it alone, and a failed render is
+ * logged, never thrown (the record is already saved).
+ *
+ * @param {string} typeKey
+ * @param {JournalEntryPage} page
+ * @param {Object} record
+ * @returns {Promise<void>}
+ */
+export async function rerenderEntityPageBody(typeKey, page, record) {
+  const load = BODY_RENDERERS[typeKey];
+  if (!load || typeof page?.update !== 'function') return;
+  try {
+    const { renderEntityBody } = await load();
+    const content = renderEntityBody(record);
+    if (page.text?.content === content) return;
+    await page.update({ text: { format: 1, content } });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | registry: re-rendering the ${typeKey} page body failed:`, err?.message ?? err);
+  }
 }
 
 /**

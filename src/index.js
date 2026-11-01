@@ -57,7 +57,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "./safety/sessionLifecycleDialogs.js";
-import { isClockCommand, handleClockCommand, applyClockAdvances } from "./clocks/clocks.js";
+import { isClockCommand, handleClockCommand, applyClockAdvances, registerClocksPanelHooks } from "./clocks/clocks.js";
 import { isRepairCommand, handleRepairCommand } from "./moves/repair.js";
 import {
   isShipEnvisionCommand,
@@ -88,7 +88,7 @@ import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPla
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
-import { openSystemTruthsDialog, generateLoreRecap } from "./truths/generator.js";
+import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths } from "./truths/generator.js";
 
 import {
   openProgressTracks,
@@ -210,7 +210,7 @@ import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence } from "./m
 import { registerGmRelaySocket, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
-import { takeNextMoveAdd, clearPersistedNextMoveAdd } from "./moves/nextMoveAdd.js";
+import { takeNextMoveAdd, clearPersistedNextMoveAdd, grantNextMoveBonus, consumeNextMoveBonus } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
@@ -462,10 +462,6 @@ function registerCoreSettings() {
     name: "Playback speed", scope: "world", config: false,
     type: Number, default: 1.0, range: { min: 0.7, max: 1.5, step: 0.1 },
   });
-  game.settings.register(MODULE_ID, "audio.cacheMaxBytes", {
-    name: "Audio cache size cap (bytes)", scope: "world", config: false,
-    type: Number, default: 200 * 1024 * 1024,
-  });
 
   game.settings.register(MODULE_ID, "elevenLabsApiKey", {
     name: "ElevenLabs API Key",
@@ -695,8 +691,11 @@ async function handleEncounterCommand(message) {
 async function handleRecapCommand(message) {
   const text = message.content?.trim() ?? "";
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  if (/^!recap\s+session(?:\s+(\d+))?/i.test(text)) {
-    await postSessionRecap(campaignState, null);
+  const session = /^!recap\s+session(?:\s+(\d+))?/i.exec(text);
+  if (session) {
+    // `!recap session 3` recaps session 3 — the number was matched and dropped,
+    // so every N recapped the current session (issue #322 V05).
+    await postSessionRecap(campaignState, null, { sessionNumber: session[1] ? Number(session[1]) : null });
   } else {
     await postCampaignRecap(campaignState);
   }
@@ -879,12 +878,14 @@ export function registerChatHook() {
     const dial   = getMischiefDial();
 
     try {
-      // Resolve the single active combat track's position once. Fed to the
-      // interpreter so it only proposes position-appropriate combat moves
-      // (constrainMoveToPosition forces the result legal), and reused below for
-      // the Take Decisive Action bad-spot downgrade. null out of combat, or when
-      // there are zero/multiple active combat tracks.
-      const combatPosition = await getActiveCombatPosition();
+      // The roller's combat position, resolved once: their own in the open
+      // fight, else the fight's when one is open (position is per character —
+      // issue #322 V03: one PC's bad spot remapped another's Strike to Clash).
+      // Fed to the interpreter so it only proposes position-appropriate combat
+      // moves (constrainMoveToPosition forces the result legal), and reused
+      // below for the Take Decisive Action bad-spot downgrade. null out of
+      // combat, or when it cannot be told which fight applies.
+      const combatPosition = await getActiveCombatPosition(speakerActorId ?? getPlayerActors()[0]?.id ?? null);
 
       const interpretation = forcedMoveId
         ? buildForcedInterpretation(forcedMoveId, narration, dial, forcedMoveTarget, forcedMoveTargetId)
@@ -1035,6 +1036,13 @@ export function registerChatHook() {
         interpretation.adds = (interpretation.adds ?? 0) + breakAdd;
         await clearPersistedNextMoveAdd();
       }
+      // "+1 on your next move" the roller earned (Secure an Advantage, Gain
+      // Ground): their own, on their next action roll — claimed on the store
+      // first, so a refused claim adds nothing (issue #322 V02).
+      const bonusAdd = await consumeNextMoveBonus(campaignState, rollerActor?.id ?? null, interpretation.moveId);
+      if (bonusAdd > 0) {
+        interpretation.adds = (interpretation.adds ?? 0) + bonusAdd;
+      }
 
       // Stat substitution — when an asset ability (e.g. Empath's
       // "roll +heart in place of the listed stat") was offered AND the
@@ -1106,11 +1114,12 @@ export function registerChatHook() {
       }
 
       // Take Decisive Action — the resolver applies the bad-spot downgrade
-      // (play kit p. 5). Prefer the enriched track's own position (exact even
-      // with several open fights, where getActiveCombatPosition returns null);
-      // fall back to the single-active-track position resolved at the top of
-      // this block. resolveMove gates the downgrade on moveId, so passing a
-      // position for every move is safe (no-op for non-TDA moves).
+      // (play kit p. 5). Prefer the scored fight's position for the roller —
+      // their own there, else the fight's (enrichProgressTicks; exact even
+      // with several open fights, where getActiveCombatPosition can return
+      // null); fall back to the position resolved at the top of this block.
+      // resolveMove gates the downgrade on moveId, so passing a position for
+      // every move is safe (no-op for non-TDA moves).
       const resolvedPosition =
         (interpretation.moveId === "take_decisive_action" && tickInfo?.combatState)
           ? tickInfo.combatState
@@ -1143,8 +1152,10 @@ export function registerChatHook() {
 
       // Develop Your Relationship (audit 3.14) — GM-gated. An un-bonded
       // connection marks its own relationship track ("no roll, mark progress");
-      // a bonded connection marks the bonds legacy track per the rolled outcome
-      // (§3.3.5: strong 2 / weak 1 / miss 0), and a match raises its rank by one.
+      // a bonded connection pays the rolled outcome (§3.3.5,
+      // BONDED_DEVELOP_OUTCOMES: strong 2 bonds-legacy ticks / weak +2
+      // momentum / miss nothing), and a strong hit with a match raises its rank
+      // by one (issue #322 V01).
       if (resolution.consequences?.developRelationship && game.user.isGM) {
         try {
           const conn = await import("./entities/connection.js");
@@ -1162,6 +1173,16 @@ export function registerChatHook() {
 
           if (plan.action === "bond-legacy") {
             if (plan.ticks > 0) addLegacyTicks(campaignState, "bonds", plan.ticks);
+            // A Test Your Relationship hit develops with the test's own roll,
+            // whose consequences cannot know the connection is bonded: its weak
+            // hit's +2 momentum joins them here, before the card and the
+            // persist, so it is credited to the roller with the move's other
+            // meters. Develop Your Relationship's roll carries it from the
+            // resolver already.
+            if (plan.momentum > 0 && resolution.moveId !== "develop_your_relationship" && resolution.consequences) {
+              resolution.consequences.momentumChange =
+                Number(resolution.consequences.momentumChange ?? 0) + plan.momentum;
+            }
             if (plan.raiseRank && plan.newRank && plan.connection.__hostId) {
               await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
                 console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
@@ -1538,8 +1559,16 @@ export function registerChatHook() {
         rollerActor?.id ?? null,
       );
 
-      // Step 10: narrate the consequence directly via Claude — no GM dependency
-      await narrateResolution(resolution, campaignState, { relevance, speakerActorId });
+      // Step 10: narrate the consequence directly via Claude — no GM dependency.
+      // The result card is on the table: the result is applied below whatever
+      // happens to its narration. narrateResolution posts a fallback card when
+      // the Claude call fails, but when the narrator card and that fallback
+      // are both refused its rejection skipped the persist — the strong hit
+      // showed and never landed (issue #322 V09).
+      await narrateResolution(resolution, campaignState, { relevance, speakerActorId }).catch(err => {
+        console.warn(`${MODULE_ID} | the move's narration could not be posted — its result is applied all the same:`, err?.message ?? err);
+        ui.notifications?.warn?.("Starforged Companion: the narration could not be posted to chat; the move's result was still applied.");
+      });
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
@@ -1854,6 +1883,23 @@ async function applyOutcomeEffects({
       notApplied.push(`companion health ${signed} (${healed.reason})`);
     } else {
       applied.push(`companion health ${signed}`);
+    }
+  }
+
+  // Secure an Advantage's strong hit — "take both": the +1 on the roller's
+  // next move beside the +2 momentum (the weak hit's and Gain Ground's are a
+  // choice card's pick, granted by the pick). Recorded for the roller and
+  // added to their next action roll (consumeNextMoveBonus); it was card text
+  // alone (issue #322 V02). An upgrade grants what its outcome adds.
+  const nextBonus = Number(next.nextMoveBonus ?? 0) - Number(orig.nextMoveBonus ?? 0);
+  if (nextBonus > 0) {
+    try {
+      const granted = await grantNextMoveBonus(rollerActor?.id ?? null, nextBonus, resolution.moveId ?? null);
+      if (granted.ok) applied.push(`+${nextBonus} on ${rollerActor?.name ?? "the roller"}'s next move`);
+      else notApplied.push(`+${nextBonus} on the next move — no character to give it to`);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | next-move bonus failed:`, err?.message ?? err);
+      notApplied.push(`+${nextBonus} on the next move`);
     }
   }
 
@@ -5076,7 +5122,9 @@ async function postDevelopRelationshipCard(plan) {
   if (plan.action === "bond-legacy") {
     body = plan.ticks > 0
       ? `Marked ${plan.ticks} tick${plan.ticks === 1 ? "" : "s"} on your bonds legacy track for your bond with <strong>${name}</strong>.`
-      : `No bonds legacy progress with <strong>${name}</strong> this time.`;
+      : plan.momentum > 0
+        ? `Your bond with <strong>${name}</strong> holds — take +${plan.momentum} momentum.`
+        : `No lasting benefit from your bond with <strong>${name}</strong> this time.`;
     if (plan.raiseRank && plan.newRank) {
       body += ` Match — ${name}'s rank rises to <strong>${escapeChatHtml(plan.newRank)}</strong>.`;
     }
@@ -5677,7 +5725,11 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
 async function handleSectorCommand(message) {
   const text  = message.content?.trim() ?? "";
   const parts = text.slice("!sector".length).trim().split(/\s+/);
-  const sub   = parts[0]?.toLowerCase() ?? "";
+  const arg   = parts.join(" ");
+  // `new` and `list` are subcommands only as the whole argument: a sector
+  // named "New Hope" or "List of Stars" is switched to by its name — `!sector
+  // New Hope` opened the Sector Creator (issue #322 V10).
+  const sub   = parts.length === 1 ? arg.toLowerCase() : null;
 
   // A copy: a refused switch must leave this client's cached state as it was
   // (issue #321 U58).
@@ -5685,7 +5737,7 @@ async function handleSectorCommand(message) {
 
   // Bare `!sector` — show usage (SECTOR-SWITCH-001: it used to do nothing).
   // Whispered to the typist; it's help text, not table news.
-  if (!sub) {
+  if (!arg) {
     await ChatMessage.create({
       content: "<p><strong>Sectors:</strong> <code>!sector list</code> — list sectors · " +
         "<code>!sector new</code> — create one (GM) · <code>!sector &lt;name&gt;</code> — switch the active sector (GM).</p>",
@@ -5729,7 +5781,7 @@ async function handleSectorCommand(message) {
     ui.notifications.warn("!sector <name> (switching the active sector) is GM-only.");
     return;
   }
-  const name   = parts.join(" ");
+  const name   = arg;
   const match  = (campaignState.sectors ?? []).find(
     s => s.name.toLowerCase() === name.toLowerCase()
   );
@@ -6360,8 +6412,15 @@ Hooks.once("ready", () => {
           console.warn(`${MODULE_ID} | campaign recap refresh failed:`, err?.message ?? err));
       }
 
+      // The campaign's truths follow the World Truths dialog's newest save
+      // (issue #322 V34): a world whose truths were saved in the dialog before
+      // each save was written through gets them in worldTruths now, and one
+      // never linked links its newest save — before the setup card asks.
+      await reconcileSystemTruths().catch(err =>
+        console.warn(`${MODULE_ID} | ready: reconciling the World Truths failed:`, err));
+
       // Notify GM if no World Truths have been established yet
-      if (!freshState.worldTruthsSet) {
+      if (!game.settings.get(MODULE_ID, "campaignState")?.worldTruthsSet) {
         ChatMessage.create({
           content: `<div class="sf-card sf-card--setup">
             <div class="sf-card-header">◈ Campaign Setup</div>
@@ -6373,22 +6432,6 @@ Hooks.once("ready", () => {
         }).catch(err =>
           console.warn(`${MODULE_ID} | truths setup card failed:`, err)
         );
-      }
-
-      // Fallback — link the system's truths journal if truths were set before
-      // the createJournalEntryPage hook was wired, or if the ID was never stored.
-      if (!freshState.worldTruthsJournalId) {
-        const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
-        if (systemTitle) {
-          const truthsJournal = game.journal?.contents?.find(j => j.name === systemTitle);
-          if (truthsJournal) {
-            freshState.worldTruthsJournalId = truthsJournal.id;
-            freshState.worldTruthsSet       = true;
-            game.settings.set(MODULE_ID, "campaignState", freshState).catch(err =>
-              console.warn(`${MODULE_ID} | ready: fallback truths link failed:`, err)
-            );
-          }
-        }
       }
     }).catch(err => {
       console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
@@ -6514,6 +6557,7 @@ Hooks.once("ready", () => {
   registerSessionActivityHook();           // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
+  registerClocksPanelHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();
   registerChroniclePanelHooks();             // #306 R11: the open Chronicle panel shows edits the GM applied
@@ -6522,8 +6566,11 @@ Hooks.once("ready", () => {
   registerSectorSceneHooks();
   registerShipMapSceneHooks();
   // Audio narration — socket relay for cache writes from non-GM clients.
-  import("./audio/index.js").then(({ registerAudioSocket }) => {
+  import("./audio/index.js").then(({ registerAudioSocket, markAudioClientReady }) => {
     registerAudioSocket();
+    // Only a narrator card created after this client's start auto-plays —
+    // never the chat log rendered at load (issue #322 V15).
+    markAudioClientReady();
   }).catch(err => console.warn(`${MODULE_ID} | audio socket registration failed:`, err));
   // Shared inciting-vow — GM-side relay (any player can swear it for the crew)
   // and the cross-PC progress sync. Both no-op on non-canonical clients.
@@ -7271,7 +7318,10 @@ Hooks.on("createJournalEntry", async (entry) => {
  * journal, and the newest is the campaign's truths. `worldTruthsJournalId` used
  * to stay on the first journal once `worldTruthsSet` was true, so `!lore`
  * summarised — and wrote "The Story So Far" into — the superseded truths
- * (issue #321 U65).
+ * (issue #321 U65). And each save's truths are the narrator's too:
+ * recordSystemTruths parses the page into `campaignState.worldTruths`, which
+ * only the Playtest Quickstart used to write — truths chosen in the dialog
+ * reached `!lore` alone (issue #322 V34).
  */
 Hooks.on("createJournalEntryPage", async (page) => {
   if (!isCanonicalGM()) return;   // single emitter for the campaignState write
@@ -7292,15 +7342,19 @@ Hooks.on("createJournalEntryPage", async (page) => {
   const content = page.text?.content ?? "";
   if ((content.match(/<h2/gi) ?? []).length < 2) return;
 
-  // A copy, as above: a refused write leaves the cached setting as it was.
-  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
   if (campaignState.worldTruthsSet && campaignState.worldTruthsJournalId === entry.id) return; // Already recorded
 
-  campaignState.worldTruthsSet       = true;
-  campaignState.worldTruthsJournalId = entry.id;
-  await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
-    console.error(`${MODULE_ID} | createJournalEntryPage: failed to persist truths state:`, err)
-  );
+  // The saved truths become the campaign's — parsed into worldTruths, which
+  // the narrator reads, as well as linked for !lore (issue #322 V34). Owned
+  // fields onto the latest store; a refused write leaves the cached setting
+  // as it was, and claims nothing.
+  try {
+    await recordSystemTruths(entry.id, content);
+  } catch (err) {
+    console.error(`${MODULE_ID} | createJournalEntryPage: failed to persist truths state:`, err);
+    return;
+  }
 
   // Dismiss the setup notification card if it is still in chat
   const setupCard = game.messages?.contents?.find(

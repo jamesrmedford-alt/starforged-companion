@@ -71,7 +71,9 @@ describe("re-narration credits the roller", () => {
   it("Burn Momentum narrates with campaignState and the burning PC as speaker", async () => {
     makeCard("m-burn", {
       burn: {
-        canBurn: true, challengeDice: [2, 7], momentum: 8, markedImpactCount: 0,
+        // 8 on the sheet: 7 before the weak hit's +1 — burnable 7 would not
+        // beat the 7, so the dice are 2 and 6 (issue #322 V04).
+        canBurn: true, challengeDice: [2, 6], momentum: 7, outcomeMomentum: 1, markedImpactCount: 0,
         moveId: "gather_information", originalOutcome: "weak_hit",
         originalConsequences: ORIGINAL, previewOutcome: "strong_hit",
         originalApplied: true, actorId: "pc-roller", resolutionId: null, ptpReversals: null,

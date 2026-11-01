@@ -40,6 +40,8 @@ import {
   readEntityFlag,
   writeEntityFlag,
 } from "../entities/registry.js";
+import { uploadedPath } from "../net/uploadResult.js";
+import { PORTRAIT_BLOCK_RE } from "./notesPortrait.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -284,10 +286,7 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
 export function withPortraitInNotes(notesHtml, imgPath) {
   const existing = String(notesHtml ?? "");
   // Remove any prior companion art block (idempotent on regeneration).
-  const stripped = existing.replace(
-    /<div class="sf-ship-portrait"[\s\S]*?<\/div>/,
-    "",
-  ).trimStart();
+  const stripped = existing.replace(PORTRAIT_BLOCK_RE, "").trimStart();
   if (!imgPath) return stripped;
   const block =
     `<div class="sf-ship-portrait" style="text-align:center;margin-bottom:0.5em;">` +
@@ -359,7 +358,7 @@ async function uploadPortraitImage(b64, filename) {
     const file = new File([blob], filename, { type: "image/png" });
 
     const response = await FP.upload("data", uploadDir, file, {}, { notify: false });
-    return response?.path ?? `${uploadDir}/${filename}`;
+    return uploadedPath(response, `${uploadDir}/${filename}`);   // null when it failed (issue #322 V26)
   } catch (err) {
     console.warn(`${MODULE_ID} | Art: portrait upload failed:`, err?.message ?? err);
     return null;

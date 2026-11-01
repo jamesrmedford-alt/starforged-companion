@@ -54,14 +54,15 @@ function actorWithMomentum(value, debility = {}) {
 
 describe('buildBurnState', () => {
   it('returns metadata when burn would upgrade a weak hit to a strong hit', () => {
-    // weak hit with action score 3 vs [2, 7]. With 7 momentum after consequence
-    // (current 6 + 1 from weak-hit), action score becomes 7+1=8 — beats both
-    // challenge dice → strong hit.
-    const actor = actorWithMomentum(7); // post-consequence 8 beats both [2,7]
+    // weak hit with action score 3 vs [2, 7]. Momentum 8 before the move's
+    // effects beats both challenge dice → strong hit. The weak hit's own +1
+    // is not burned (issue #322 V04) — it is recorded, for the click.
+    const actor = actorWithMomentum(8);
     const burn  = buildBurnState(makeResolution(), actor);
     expect(burn).not.toBeNull();
     expect(burn.canBurn).toBe(true);
-    expect(burn.momentum).toBe(8);          // post-consequence momentum (7 + 1)
+    expect(burn.momentum).toBe(8);          // the momentum before the move's effects
+    expect(burn.outcomeMomentum).toBe(1);   // what the weak hit's +1 lands as
     expect(burn.previewOutcome).toBe('strong_hit');
     expect(burn.moveId).toBe('gather_information');
     expect(burn.challengeDice).toEqual([2, 7]);
@@ -84,6 +85,30 @@ describe('buildBurnState', () => {
     expect(buildBurnState(makeResolution({ isProgressMove: true }), actor)).toBeNull();
   });
 
+  // Issue #322 V04 (the audit's burnEligibility probe): "You must burn
+  // momentum before applying any other effects of the move." The weak hit's
+  // own +1 was counted: at 5 against [3, 5] the card offered "6 → Strong Hit".
+  it("a weak hit's own +1 momentum is not counted toward burning that weak hit away", () => {
+    const resolution = makeResolution({ actionScore: 4, challengeDice: [3, 5], consequences: { momentumChange: 1 } });
+    expect(buildBurnState(resolution, actorWithMomentum(5))).toBeNull();   // was { momentum: 6, previewOutcome: "strong_hit" }
+    // control: momentum that beats both dice before the move's effects
+    expect(buildBurnState(resolution, actorWithMomentum(6))).toMatchObject({ momentum: 6, previewOutcome: 'strong_hit' });
+  });
+
+  it("a miss's Pay the Price momentum loss is not counted against the burn: the momentum before it is burned", () => {
+    // Momentum 7 when rolled; the price took 3 (the pipeline builds the burn
+    // after the price lands, before the persist): 4 on the sheet, 7 burnable.
+    const ptpReversals = { clocksAdvanced: [], sufferMeterDeltas: [
+      { move: 'lose_momentum', meterKey: 'momentum', amount: 3, actorId: 'pc-burn', before: 7, after: 4 },
+    ] };
+    const miss = makeResolution({ outcome: 'miss', actionScore: 2, challengeDice: [5, 6], consequences: { momentumChange: 0 } });
+    expect(buildBurnState(miss, actorWithMomentum(4))).toBeNull();                              // 4 beats neither
+    expect(buildBurnState(miss, actorWithMomentum(4), ptpReversals)).toMatchObject({ momentum: 7, previewOutcome: 'strong_hit' });
+    // Another PC's price is not this one's.
+    const theirs = { clocksAdvanced: [], sufferMeterDeltas: [{ ...ptpReversals.sufferMeterDeltas[0], actorId: 'pc-other' }] };
+    expect(buildBurnState(miss, actorWithMomentum(4), theirs)).toBeNull();
+  });
+
   it('returns null when burn would not actually improve the outcome', () => {
     // current 1 momentum, after weak-hit +1 → 2. Challenge dice are [5, 8].
     // Burn would set score to 2, still a miss — outcome unchanged. Not eligible.
@@ -103,7 +128,7 @@ describe('buildBurnState', () => {
     // Two impacts → reset to 0. Implementation detail of applyMomentumBurn,
     // but the metadata must reflect the impact count so the click can
     // compute the same reset value the preview implies.
-    const actor = actorWithMomentum(7, { wounded: true, shaken: true });
+    const actor = actorWithMomentum(8, { wounded: true, shaken: true });
     const burn  = buildBurnState(makeResolution(), actor);
     expect(burn.markedImpactCount).toBe(2);
   });
@@ -123,7 +148,7 @@ describe('buildBurnState', () => {
   });
 
   it('stores null ptpReversals when not provided', () => {
-    const actor = actorWithMomentum(7);
+    const actor = actorWithMomentum(8);
     const burn = buildBurnState(makeResolution(), actor);
     expect(burn?.ptpReversals).toBeNull();
   });
@@ -147,7 +172,7 @@ describe('buildBurnState', () => {
   });
 
   it('counts only impacts, not every truthy debility field', () => {
-    const actor = actorWithMomentum(7, { wounded: true, custom1name: 'Haunted' });
+    const actor = actorWithMomentum(8, { wounded: true, custom1name: 'Haunted' });
     expect(buildBurnState(makeResolution(), actor).markedImpactCount).toBe(1);
   });
 });
@@ -249,16 +274,16 @@ describe('resultUpgradeBlocker', () => {
 describe('buildBurnState — the move\'s targets', () => {
   it('carries them for the upgraded outcome\'s choice card', () => {
     const targets = { vehicleActorId: 'ship-1', companionItemId: null, combatTrackId: 'fight-1' };
-    expect(buildBurnState(makeResolution(), actorWithMomentum(7), null, targets).targets).toEqual(targets);
-    expect(buildBurnState(makeResolution(), actorWithMomentum(7)).targets).toBeNull();
+    expect(buildBurnState(makeResolution(), actorWithMomentum(8), null, targets).targets).toEqual(targets);
+    expect(buildBurnState(makeResolution(), actorWithMomentum(8)).targets).toBeNull();
   });
 
   // UPGRADE-PIPELINE-EFFECTS: the burned outcome's other effects resolve
   // against the move's target and ranks, as the pipeline's did.
   it('carries the move\'s target and ranks for the burned outcome\'s other effects', () => {
     const move = { moveTarget: 'Boarders', moveTargetId: null, combatRank: 'dangerous', expeditionRank: null };
-    expect(buildBurnState(makeResolution(), actorWithMomentum(7), null, null, move).move).toEqual(move);
-    expect(buildBurnState(makeResolution(), actorWithMomentum(7)).move).toBeNull();
+    expect(buildBurnState(makeResolution(), actorWithMomentum(8), null, null, move).move).toEqual(move);
+    expect(buildBurnState(makeResolution(), actorWithMomentum(8)).move).toBeNull();
   });
 });
 

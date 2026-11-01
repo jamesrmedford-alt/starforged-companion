@@ -137,10 +137,17 @@ CLAUDE.md "audit consumers" rule):
 - rolling-summary refresh hook (`registerRollingSummaryRefreshHook`, issue
   #286 B7) — on the canonical GM, a new `narratorCard` with `narrationText`
   triggers the debounced regen after the card posts
-- session recap (`postSessionRecap`) — inclusion intended; its move lines and
-  "A match was rolled" read move narration's `moveId` / `outcome` / `isMatch`
-  (`isMatch` had no writer until RECAP-MATCH-DEAD, issue #282); an X-carded
-  card's move still counts, its prose is not quoted (issue #321 U07)
+- session recap (`postSessionRecap`) — inclusion intended; reads
+  `sessionNarratorCards(sessionId, { forRecap: true })`: the narrator's
+  excludes (a burned move's superseded prose among them) except that a
+  fallback card and an X-carded card stay — their moves count, their lines are
+  not quoted (issue #321 U07). Its move lines and "A match was rolled" read
+  move narration's `moveId` / `outcome` / `isMatch` (`isMatch` had no writer
+  until RECAP-MATCH-DEAD, issue #282); "moves resolved" counts only the cards
+  with a `moveId`, and `!recap session N` finds session N by the cards'
+  `sessionNumber` (`recapSessionFor`). It filtered the cards itself: a burned
+  Strike listed its superseded miss, every card counted as a move, and N was
+  dropped (issue #322 V05)
 - correction-dialog render hook (`src/index.js`) — no-ops without
   `[data-action="openCorrectionDialog"]` markup
 - audio render hook (`src/index.js`) — no-ops without the hidden play-button

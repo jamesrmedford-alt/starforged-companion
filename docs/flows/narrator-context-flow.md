@@ -23,8 +23,11 @@ of context), **WRONG-DETAIL** (stale/wrong data injected), **INVENT-RISK**
 **Single seam holds.** Every narrator call builds context through
 `buildNarratorExtras(mode, …)` (`src/narration/narrator.js`): move_resolution,
 paced_narrative, scene_interrogation, oracle_followup, session_vignette
-(galley, end-session, clock/trigger vignettes), vow_swearing,
-inciting_incident, campaign_recap (meta — no sidecar/latitude). The `!ship
+(galley and end-session vignettes), clock_advance (a clock's advance or
+trigger — its own role and the interaction latitude since issue #322 V23; it
+used the vignette's "calm before / after"), vow_swearing (embellishment
+latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
+sidecar/latitude). The `!ship
 envision/history` and `!lore`/truths generators are separate world-building
 prompts outside the memory surfaces (they write Notes/journal canon but don't
 read the ledger).
@@ -175,8 +178,11 @@ Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03) · *
 oracle results** (`campaignState.recentOracles`, read from the store — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, last 5 this
 session, "the dice established these"; skipped for meta modes) · [4] world
-truths (each truth's rolled sub-table detail after its title — who the war
-was against — as the journal prints it, issue #321 U66) · [4a] campaign truths digest · [4b] campaign premise
+truths (`campaignState.worldTruths` — the Quickstart's rolled truths or the
+World Truths dialog's newest save, parsed from its "Setting Truths" page as
+it is linked, so the block, the vow scene's Iron truth and `!lore` read one
+save: issue #322 V34; each truth's rolled sub-table detail after its title —
+who the war was against — as the journal prints it, issue #321 U66) · [4a] campaign truths digest · [4b] campaign premise
 (`campaignState.incitingIncident` — durable canon, every call) · [4c] LAST
 SESSION (`previousSessionSummary`, kept at the mint — issue #286 C3), then the
 rolling session summary, each prefixed with a **ledger-wins caveat** — a
@@ -358,7 +364,7 @@ otherwise `sceneTruths` is unioned by id, so a `!truth` correction or an oracle
 follow-up's truth that landed during the narration survives. The pipeline's own end-of-move write
 (`persistResolution`) merges the same way (`mergeWithLatestState` —
 relay-owned fields such as `xCardActive`, `safety`, `safetyFlags`,
-`nextMoveAdd`, `clocks`, `recentOracles` take the stored value; same-scene
+`nextMoveAdd`, `nextMoveBonuses`, `clocks`, `recentOracles` take the stored value; same-scene
 `sceneTruths` union by id with retractions sticky; a scene change mid-move
 keeps the stored scene ledgers; what an X-carded narration wrote —
 the store's `xCardedNarrationIds` — is retracted from the working copy first,

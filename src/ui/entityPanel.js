@@ -525,12 +525,17 @@ export class EntityPanelApp extends ApplicationV2 {
           </div>`;
       }).join('');
 
-    const progressHtml = entity.typeKey === 'connection' && entity.data.progress
+    // The connection's relationship track is `relationshipTicks` (schemas.js
+    // ConnectionSchema; markRelationshipProgress writes it, Forge a Bond
+    // scores it). The row read `data.progress`, which nothing writes, so it
+    // never rendered (issue #322 V11).
+    const relTicks = Number(entity.data?.relationshipTicks);
+    const progressHtml = entity.typeKey === 'connection' && Number.isFinite(relTicks)
       ? `<div class="detail-progress">
            <span class="detail-label">Progress</span>
            <span class="detail-value">
-             ${Math.floor((entity.data.progress.ticks ?? 0) / 4)} / 10 boxes
-             (${entity.data.progress.rank ?? '—'})
+             ${Math.floor(Math.max(0, Math.min(40, relTicks)) / 4)} / 10 boxes
+             (${escapeHtml(entity.data.rank ?? '—')}${entity.data.bonded ? ', bonded' : ''})
            </span>
          </div>`
       : '';

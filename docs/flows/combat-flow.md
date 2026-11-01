@@ -21,8 +21,12 @@ Two cross-cutting facts to hold onto:
   Burn and Improve open only once the pipeline has persisted the original
   outcome and stamped the card `originalApplied` (until then the button is
   disabled and the GM handler refuses — issue #300 F02); each swaps that
-  recorded original for the upgraded outcome, burns the PC's live momentum
-  (bounds from `actorBridge.readMomentumState`), and spends the other, so one
+  recorded original for the upgraded outcome, burns the momentum the PC held
+  before the move's effects — the live value less the recorded outcome's own
+  momentum change (`outcomeMomentum`, as it landed), plus what its Pay the
+  Price took; the outcome's own +1 used to count toward burning it away
+  (issue #322 V04) — within the bounds from `actorBridge.readMomentumState`,
+  and spends the other, so one
   card is upgraded at most once. The pipeline gives each resolution an `_id`
   so the upgrade can strike the original narration card. Each upgrade claims
   the card (`consumed`) before any effect; then (`src/moves/resultUpgrade.js`)
@@ -119,10 +123,20 @@ fight or, gone or finished by then, nothing — the card says so. It used to
 re-select the sole open fight at click time: with two open it marked nothing,
 and an old choice marked a fight opened after its own finished (issue #309
 N04). A card posted before the card carried its fight keeps the sole-open
-reading.
+reading. Its "+1 on your next move" pick (and Secure an Advantage's) grants the
+roller `campaignState.nextMoveBonuses[actorId]` (`grantNextMoveBonus`), which
+the pipeline adds to that character's next action roll (`consumeNextMoveBonus`,
+`src/moves/nextMoveAdd.js`); Secure an Advantage's strong hit grants it through
+`applyOutcomeEffects` (`nextMoveBonus` consequence). The pick only posted a
+reminder card (issue #322 V02).
 
-**Position** (`in_control` / `bad_spot`) is written to the track and mirrored
-to the actor + combatant badge (`applyCombatPositionToTrack`) — the track
+**Position** (`in_control` / `bad_spot`) is **per character** (rulebook,
+Battle Stations!; issue #322 V03). The fight's track holds each player
+character's own (`positions[actorId]`) beside the fight's last-set one
+(`combatState`, `setCombatTrackPosition(trackId, position, actorId)`), so a
+position ends with its fight; a foe's badge sets the fight's alone. It is
+written to the track and mirrored to the actor + combatant badge
+(`applyCombatPositionToTrack`) — the track
 first: when that write is refused the function rejects and the mirrors are
 left as they were, and each caller catches it (the pipeline lists it as not
 applied, a suffer pick reports it refused, the threshold card's create logs
@@ -138,10 +152,15 @@ writes it to the move's own fight (`moveFight`): the track its progress marked
 (or created), else `selectCombatTrack` on the move's target, else the sole
 open fight — with several fights open it used to be written only while
 exactly one was open (issue #306 R05). The same `moveFight` is stamped on the
-move card for its Finish the Fight button (§3). It constrains
-which combat moves the interpreter proposes (`constrainMoveToPosition`,
-`src/moves/interpreter.js`) and drives the play-kit Take Decisive Action
-bad-spot downgrade in the resolver. The weak-hit Enter-the-Fray choice ("You
+move card for its Finish the Fight button (§3). The **roller's** position —
+their own in the open fight, else the fight's (`getActiveCombatPosition(actorId)`;
+for Take Decisive Action, the scored fight's via `combatPositionFor` in
+`enrichProgressTicks`) — constrains which combat moves the interpreter
+proposes (`constrainMoveToPosition`, `src/moves/interpreter.js`) and drives
+the play-kit Take Decisive Action bad-spot downgrade in the resolver. One
+value per fight used to apply to every roller: one PC's bad spot remapped
+another's Strike to Clash and downgraded their Take Decisive Action (V03).
+The weak-hit Enter-the-Fray choice ("You
 are in control", or the momentum option's bad spot — issue #321 U18) is a
 `combat-position` suffer call (`src/moves/sufferDialog.js`)
 that writes the open track — or stashes onto the pending threshold card when
@@ -150,7 +169,8 @@ clicked before Enter the Fray.
 **Narrator awareness:** every prose narration carries [4j] OPEN PROGRESS
 TRACKS (`buildNarratorExtras` → `listOpenProgressTracks`,
 `src/ui/progressTracks.js`): each open fight's label, rank, filled boxes,
-objective, position (in control / in a bad spot) and the vow it serves, with
+objective, position (each character's own by name — "positions: Kira in a
+bad spot, Ren in control" — else the fight's) and the vow it serves, with
 open expeditions and scene challenges. Until issue #290 this was the
 assembler's ACTIVE FIGHT block, which no narration read, and #271 deleted it
 unported (TRACKS-UNPORTED). Shipboard fights additionally inject Battle

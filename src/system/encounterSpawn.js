@@ -122,6 +122,30 @@ async function worldEncounterActor(canonical) {
  * @returns {Promise<{actor: Object|null, placed: boolean}>} `actor` is the
  *   world Actor when placed, else the compendium Actor
  */
+/**
+ * Where a token sits centred on a scene: its top-left, so its middle is the
+ * middle of the scene's own rectangle. Foundry pads a scene (a module sector
+ * scene: 10% each side), so the canvas origin is not the scene's corner —
+ * `scene.dimensions` gives the rectangle; half the scene's width and height,
+ * the old placement, put the foe up and to the left of centre (issue #322
+ * V24). A scene without `dimensions` is taken as unpadded.
+ *
+ * @param {Object} scene
+ * @param {{ width?: number, height?: number }} token — its size in grid units
+ * @returns {{ x: number, y: number }}
+ */
+function sceneCentreFor(scene, token = {}) {
+  const dims = scene?.dimensions ?? {};
+  const grid = Number(dims.size) || Number(scene?.grid?.size) || 100;
+  const left = Number(dims.sceneX) || 0;
+  const top  = Number(dims.sceneY) || 0;
+  const w    = Number(dims.sceneWidth)  || Number(scene?.width)  || 1000;
+  const h    = Number(dims.sceneHeight) || Number(scene?.height) || 1000;
+  const tw   = (Number(token.width)  || 1) * grid;
+  const th   = (Number(token.height) || 1) * grid;
+  return { x: Math.round(left + w / 2 - tw / 2), y: Math.round(top + h / 2 - th / 2) };
+}
+
 export async function spawnEncounter(name) {
   const canonical = await getCanonicalEncounterActor(name);
   if (!canonical) {
@@ -142,12 +166,10 @@ export async function spawnEncounter(name) {
     try {
       const actor = await worldEncounterActor(canonical);
       if (!actor) throw new Error(`"${canonical.name}" could not be imported into the world`);
-      const tokenData = await actor.getTokenDocument({
-        x: (scene.width ?? 1000) / 2,
-        y: (scene.height ?? 1000) / 2,
-        hidden: false,
-      });
-      await scene.createEmbeddedDocuments("Token", [tokenData.toObject?.() ?? tokenData]);
+      const tokenDoc  = await actor.getTokenDocument({ hidden: false });
+      const tokenData = { ...(tokenDoc?.toObject?.() ?? tokenDoc) };
+      Object.assign(tokenData, sceneCentreFor(scene, tokenData));
+      await scene.createEmbeddedDocuments("Token", [tokenData]);
       return { actor, placed: true };
     } catch (err) {
       console.warn(`${MODULE_ID} | encounterSpawn: token placement failed, falling back to chat card:`, err);

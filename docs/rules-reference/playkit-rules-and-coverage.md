@@ -297,7 +297,7 @@ to find each move's resolver branch.
 | Locations / settlements / planets / ships / creatures / factions as entities | ✅ | `src/entities/*.js`, registry at `src/entities/registry.js` |
 | Connection bond + name + location + two roles + rank | ✅ | `src/entities/connection.js:18-22, 371-379` |
 | Progress tracks worksheet (vow/expedition/connection/combat/scene_challenge) | ✅ | `TRACK_TYPES` / `PANEL_TRACK_TYPES` in `src/ui/progressTracks.js` (the unused `schemas.js` `TRACK_TYPES` copy was deleted in 2026-10) |
-| Bond legacy ticks on Develop Your Relationship (when bonded) | ✅ | `developRelationship.js` + pipeline: bonded → bonds legacy (2/1/0 by outcome, match raises rank); un-bonded → connection track |
+| Bond legacy ticks on Develop Your Relationship (when bonded) | ✅ | `developRelationship.js` + pipeline: bonded → `BONDED_DEVELOP_OUTCOMES`, shared with `!bond` (strong 2 bonds-legacy ticks / weak +2 momentum / miss nothing; a strong hit with a match raises rank — issue #322 V01); un-bonded → connection track |
 
 ### 2.6 Safety, scene, and session lifecycle
 
@@ -319,7 +319,7 @@ to find each move's resolver branch.
 |---|---|---|
 | Clocks (4/6/8/10-segment, campaign or tension) | ✅ | `src/clocks/clocks.js`: `!clock new/advance/fill/reset/remove/list` + the Clocks panel; campaign clocks roll their odds and advance at Begin a Session (`advanceCampaignClocksForBeginSession`); tension clocks and vow deadline clocks advance one segment on Pay the Price (`advanceClocksOnPayThePrice`, `src/clocks/payThePriceClocks.js` — a player's `!ptp` relays `payThePrice.advanceClocks` to the canonical GM). A full clock only posts an "already triggered" notice |
 | Scene Challenges worksheet (rulebook pp. 239–241) | 🔄 | the Progress Tracks panel creates `scene_challenge` tracks (`src/ui/progressTracks.js`) with a paired 4-segment tension clock (`tensionClockId`); completing the challenge retires the clock and removing it removes the clock (issue #316 T03); no Starforged move maps to it (the panel roll is display-only), no setup walkthrough |
-| Custom oracle tables (the oracle worksheet) | ✅ | `!oracle-add` / Custom Oracles panel (`src/oracles/customOracles.js`): entries must run from 1 with no gaps or overlaps (`validateCustomOracleEntries`); the table rolls 1..its highest entry (`dieSizeForTable`, `src/oracles/roller.js` — a 1–6 table rolls a d6); roll with `!oracle <tableId>` or the panel. `campaignState.customOracles` is canonical; each client's `ORACLE_TABLES` copy is a mirror kept in sync |
+| Custom oracle tables (the oracle worksheet) | ✅ | `!oracle-add` / Custom Oracles panel (`src/oracles/customOracles.js`): entries must run from 1 with no gaps or overlaps (`validateCustomOracleEntries`); a range may use any dash and `00` is 100, and a line that does not read refuses the save, named on the card (`unparsedEntryLines` — issue #322 V28); the table rolls 1..its highest entry (`dieSizeForTable`, `src/oracles/roller.js` — a 1–6 table rolls a d6); roll with `!oracle <tableId>` or the panel. `campaignState.customOracles` is canonical; each client's `ORACLE_TABLES` copy is a mirror kept in sync |
 
 ### 2.8 Chat commands & toolbar (UI surface inventory)
 
@@ -462,8 +462,10 @@ player gets whatever stat was chosen by the interpreter. Either pre-resolve
 the higher in `statEnrichment.js` or add a stat picker in the confirm dialog.
 
 **3.3.5 Develop Your Relationship — bond legacy ticks when bonded. — FIXED (2026-06-17)**
-Once bonded, Develop Your Relationship marks the bonds legacy track by outcome
-(strong 2 / weak 1 / miss 0) and a match raises the connection's rank by one;
+Once bonded, Develop Your Relationship rolls +rank and pays the move's text —
+strong hit 2 bonds-legacy ticks, weak hit +2 momentum, miss nothing — and a
+strong hit with a match raises the connection's rank by one (issue #322 V01:
+the pipeline paid a weak hit 1 tick, `!bond` +2 momentum);
 un-bonded connections mark their own relationship track ("no roll, mark
 progress"). Implemented in `src/moves/developRelationship.js` (pure, unit-tested)
 + a GM-gated pipeline handler in `src/index.js`. The resolver emits a

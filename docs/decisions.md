@@ -6,6 +6,84 @@ rejected.
 
 ---
 
+## Issue #322 audit: the rules text over fill-ins, the roller's own position and bonus, one truths store, numbers and paths the module checks (2026-11)
+
+**Decision:** (issue #322, part 2 of the seventh audit. The maintainer asked
+for the issue to be addressed on 2026-11-01 and decided V01–V04 that day;
+V34 was decided in the issue. Each finding's ID in brackets.)
+- **The four decisions** [V01–V04; maintainer], each recorded in its own
+  section: a bonded Develop Your Relationship pays the move's text on both
+  paths ("Develop Your Relationship bond legacy", below); the +1 on the next
+  move is applied to the roller's next action roll ("The roller's +1 on the
+  next move is applied automatically"); combat position is per character
+  ("Combat position is per character"); a burn spends the pre-outcome
+  momentum ("A burn spends the momentum from before the move").
+- **One truths store, written through on every save** [V34; maintainer] —
+  "Truths saved in the World Truths dialog reach the narrator".
+- **The model's numbers are never the roll's** [V08]. The interpreter's
+  `adds`, `statValue` and `progressTicks` are dropped at the parse: the sheet,
+  the live tracks, the confirm dialog and the pending +1s supply every number;
+  an unresolved progress move scores 0, as its warning says.
+- **`!recap session N` names a session, and counts moves** [V05]. N resolves
+  through the narrator cards' `sessionNumber` (else last session's summary),
+  the recap reads the cards as the narrator does
+  (`sessionNarratorCards(…, { forRecap })` keeps fallback and X-carded cards,
+  whose moves happened, quoting neither), and "moves resolved" counts cards
+  with a `moveId`.
+- **The help's settings are reachable** [V06]: every setting the Settings
+  Reference places in the Companion Settings panel has a row there, clamped on
+  save; the Audio Cache Max setting is removed instead [V16], because Foundry
+  v13's client FilePicker cannot delete a file, so no automatic trim is
+  possible — a GM empties the world's `audio/` folder by hand.
+- **Card text is escaped; names match as Unicode words** [V18, V19]. Narrator
+  prose, paced prose and `@scene` text go into card HTML through
+  `escapeHtml(stripMarkup(…))`; name matching uses `wholeWordPattern` (no
+  letter, digit or underscore either side, `u` flag) everywhere relevance and
+  the PC-name check match names. A scene frame names a PC by its full name or
+  by a first or last name no other PC shares [V20].
+- **A pacing override is the scene's** [V21]: `endScene` clears
+  `pacing.sceneOverride`, as does `startScene` replacing an empty scene; an
+  override set before any scene is the next scene's.
+- **Narrator audio claims only what this client saw posted** [V15], and every
+  Play is cancellable [V14]: auto-play takes a card stamped after this
+  client's start (server time, a minute's margin); Stop bumps the card's load
+  generation, and a segment loaded during a pause waits for Resume or Stop.
+- **A clock's beat is its own narrator mode** [V23] (`clock_advance`, the
+  interaction latitude); the oath scene's latitude is embellishment.
+- **An upload's path is the server's** [V26]: `net/uploadResult.js`
+  `uploadedPath` — the response's path, the built path only on a reported
+  success, else no file; every upload site uses it.
+- **Nothing is half-saved or deleted first** [V28, V29]: a custom oracle table
+  with a line that does not read is refused, its lines listed; the connection
+  migration saves its id swap before it deletes the old journals.
+- **A journal-hosted faction's or creature's page body is a rendered mirror
+  of its record** [V31], re-rendered on every record write, as the World
+  Journal's pages are.
+- **A shared vow's sync queues the newest change per field** [V32], as the
+  shared supply's does: a pass writes only differing fields, marks its writes,
+  and gives way to a newer change.
+- **The Chronicle's type list is every type an entry can have** [V33] — the
+  automatic writer's five and the hand-set three.
+
+**Reason:** issue #322 reproduced each defect with a probe on `6455e01` or
+traced it by hand; each fix's regression tests fail with it taken out
+(`docs/testing/fix-sensitivity.md`). Rules/reachability.md §5 (one canonical
+store, written through) decided V34's shape; §1 (nothing ships without a
+consumer) covers V02, V11, V16 and V22.
+
+**Rejected:**
+- *A manual adds input on the confirm dialog* [V02] — it asks the player to
+  remember a bonus the module already holds.
+- *Keep the sweep and document that it never evicts* [V16] — it cost a
+  full-tree scan per ten minutes of synthesis for nothing.
+- *Save a custom table's readable lines and warn* [V28] — the die is the
+  highest surviving row, so a dropped top row changes every roll.
+
+**Trade-offs accepted:** the +1 on the next move reaches only pipeline rolls
+[V02]; an old world keeps its unused stored Audio Cache Max value [V16]; a
+custom truth reaches the narrator as its first paragraph [V34]; the items
+found while fixing (`known-issues.md`, issue #322 section) stay open.
+
 ## Issue #321 audit: owned-field writes, an X-Card that forgets, panels and buttons through the GM, the roller's own character, oracles from the system's data (2026-10)
 
 **Decision:** (issue #321, part 1 of the seventh audit. The maintainer asked
@@ -94,7 +172,9 @@ Each finding's ID in brackets.)
   module's flag, never by name** [U65, U67]. Each newly saved system truths
   page re-points `worldTruthsJournalId`, and the Quickstart records
   `worldTruthsSet` / `worldTruthsJournalId` and finds its own journal by id or
-  flag, so a GM's own "World Truths" journal is never written.
+  flag, so a GM's own "World Truths" journal is never written. Since issue
+  #322 V34 the dialog's save is parsed into `worldTruths` too (below, "Truths
+  saved in the World Truths dialog reach the narrator").
 - **The players' ship is never an NPC ship** [U26]: the draft Confirm creates
   detected ships `npcShip: true`, and every lone-ship fallback skips them
   (`isLoneShipCandidate`). The marker is set at the Confirm, not in
@@ -881,7 +961,9 @@ finding's ID in brackets):
   effects for the new outcome's — there is no "original not applied yet"
   path left. One claim set (`claimResultUpgrade`) covers both buttons.
   Burn previews use the actor's live momentum and its bounds (`readMomentumState`,
-  `actorBridge.js`), never a value past the maximum [F03].
+  `actorBridge.js`), never a value past the maximum [F03]. *(Revised
+  2026-11-01, issue #322 V04: the momentum burned is the momentum from before
+  the move's effects — see "A burn spends the momentum from before the move".)*
 - **Repair is pay-in-full or nothing** [F04]. The supply trade for extra
   repair points is paid before any benefit (`paySupplyTrade`); a missing or
   unowned payer or too little supply applies no repairs, and a partial debit
@@ -1906,6 +1988,105 @@ adds itself, alongside the confirm dialog's asset adds.
   a no-roll move has nothing to add to.
 - *Let the table choose the recipient* — the rule allows "you or an ally";
   the next action roll is the common case and needs no extra prompt.
+
+## Combat position is per character (2026-11-01)
+
+**Decision (maintainer, issue #322 V03):** each player character holds their
+own combat position in a fight. The fight's progress track stays the
+canonical store: it holds each PC's position (`positions[actorId]`) beside the
+fight's last-set one (`combatState`); the actor's `system.combatPosition` and
+the combat tracker's badge mirror it (`applyCombatPositionToTrack`, the one
+writer — a foe's badge sets the fight's alone). The **roller's own** position
+drives the interpreter's position directive (`getActiveCombatPosition(actorId)`)
+and Take Decisive Action's bad-spot downgrade (`combatPositionFor` on the
+scored fight); the fight's last-set position is the fallback for a PC with
+none of their own. The narrator's [4j] line names each PC's position.
+
+**Reason:** one value per fight remapped a PC in control's Strike to Clash and
+downgraded their Take Decisive Action because another PC was in a bad spot —
+the rulebook (Battle Stations!, the p. 187 pilot-and-gunner example) and this
+file track position per character. The sheet field that was written was read
+only by the badge.
+
+**Rejected:** *reading the sheet field as the store* — it outlives the fight
+(nothing clears it), so a stale position would steer the next fight; on the
+track, a PC's position ends with its fight.
+
+## The roller's +1 on the next move is applied automatically (2026-11-01)
+
+**Decision (maintainer, issue #322 V02):** "+1 on your next move (not a
+progress move)" — Secure an Advantage's strong hit (beside its +2 momentum),
+its weak-hit pick and Gain Ground's pick — is recorded for the **roller** as
+`campaignState.nextMoveBonuses[actorId]` (`{ value, sources, setAt }`) and the
+move pipeline adds it to **that character's** next action roll
+(`src/moves/nextMoveAdd.js`). The pick's executor (sufferDialog `next-bonus`)
+grants it on the canonical GM, where a choice card's pick runs; the strong
+hit's rides its consequences (`nextMoveBonus: 1`), granted by
+`applyOutcomeEffects` — so a Burn or Improve Result that upgrades a weak hit
+to the strong hit grants it too. The pipeline takes it with
+`consumeNextMoveBonus`, after Take a Break's add, claiming it on the store
+first: a refused claim adds nothing and leaves it pending, so it is never
+added twice. Progress and no-roll moves leave it pending; two pending grants
+add up. The field is store-owned in `persistResolution`'s merge. A grant the
+world refuses is reported on the choice card, with the GMs' Retry
+(`isRetryableSufferCall` accepts `next-bonus`).
+
+**Reason:** NEXT-MOVE-BONUS-DEAD — the pick posted "Remember to add +1 to your
+action die result on the next roll" with a `nextBonus` flag nothing read, the
+pipeline rolls the next move itself and the confirm dialog has no adds input,
+and the strong hit's +1 was the card's text alone. Take a Break's identical
++1 had the same defect, fixed the same way (above).
+
+**Rejected:**
+- *Table-wide, like Take a Break* — the move says "your next move"; Take a
+  Break's "you or an ally" is the table's.
+- *A manual adds input on the confirm dialog* — it asks the player to remember
+  a bonus the module already knows, on every roll.
+
+Like Take a Break's, the +1 reaches the move pipeline's rolls only: `!bond`
+and a roll made on the system's character sheet do not take it.
+
+## Truths saved in the World Truths dialog reach the narrator (2026-11-01)
+
+**Decision (maintainer, issue #322 V34):** revised World Truths propagate to
+the narrator. `campaignState.worldTruths` is the one store the narrator reads
+— the WORLD TRUTHS block and `getTruth` (the vow scene's Iron truth) — and it
+is written through on **every** save of the truths, always together with
+`worldTruthsJournalId`, the journal `!lore` summarises:
+
+- the Playtest Quickstart's, as before (`storeWorldTruths`);
+- each save of the system's dialog (`!truths`, the toolbar button, the setup
+  card): the `createJournalEntryPage` hook parses the new "Setting Truths"
+  page into `worldTruths` as it links the journal (`recordSystemTruths`) —
+  each category's chosen option, its sub-table result and the line that
+  introduces it, its text and quest starter; a custom truth's first
+  paragraph. A save with no truth that reads (the dialog's empty save) moves
+  nothing;
+- at world load (`reconcileSystemTruths`, canonical GM): a world whose truths
+  were saved in the dialog before this holds none of them in `worldTruths`,
+  and one that saved twice before #321 U65 may link its first save — each is
+  brought up to the newest save; the Quickstart's own journal, when linked,
+  is left alone;
+- `!lore`'s repair of a stale link links the journal it found with that
+  journal's truths, not the id alone.
+
+The newest save wins, as #321 U65 made it for `!lore`. Each write is the
+`worldTruths*` fields alone, merged onto the latest stored campaignState.
+
+**Reason:** TRUTHS-TWO-STORES — a dialog save was recorded as
+`worldTruthsSet` / `worldTruthsJournalId` only, which `!lore` alone read: a
+world set up in the dialog gave the narrator no WORLD TRUTHS, and one that
+revised the Quickstart's truths in the dialog kept the Quickstart's while a
+`!lore` recap of the revision said otherwise (rules/reachability.md §5, one
+canonical store written through on every change).
+
+**Rejected:** *every reader takes the linked journal* — the WORLD TRUTHS block
+is built for every narration, so it would parse a journal page per call, and
+the module's own journal holds its truths as a flag beside its page, so the
+readers would need both paths; parsing once per save keeps one shape for both
+sources. *Matching the dialog's options to the module's truth tables* — the
+module's option titles are condensed from the book's (24 of the system's 42
+differ), so the page's own text is what is parsed.
 
 ## Claude calls run where a key lives, exactly once (2026-10)
 
@@ -3221,9 +3402,13 @@ log, so below-floor chronicle beats are skipped. The empty-body defect (T3) is a
 separate confirm/persist concern, not a salience question.
 
 **Settings surface:** the three thresholds are registered `config: false` like
-the rest of the World Journal / Chronicle capture family (none of which the
-custom panel renders yet) and are documented in the in-game Settings Reference.
-Surfacing the whole capture family as panel rows is a clean later improvement.
+the rest of the World Journal / Chronicle capture family and are documented in
+the in-game Settings Reference. *(2026-11-01, issue #322 V06: the panel now
+renders them — the Narrator tab's Character Management and World Journal
+sections, with Narration Max Tokens, the Scene Interrogation trio and the
+Private Channel switch; the four Ship Positioning settings join the Mischief
+tab's Fact Continuity section. Every setting the Settings Reference places in
+the panel has a control there; nothing could set them before.)*
 
 ---
 
@@ -3875,8 +4060,12 @@ that marks the active combat track. Explore a Waypoint's "gain expedition
 progress OR +2 momentum" choice is now a real dialog picker (the
 `expedition-progress` call kind). Combat position is written to the track after
 every combat move. Take Decisive Action and Face Defeat close the track with
-`endCombat: true`. The "+1 on your next move" option in Gain Ground posts a
-reminder card — not auto-applied, no campaignState field, player applies it.
+`endCombat: true`. ~~The "+1 on your next move" option in Gain Ground posts a
+reminder card — not auto-applied, no campaignState field, player applies it.~~
+*Superseded 2026-11-01 (issue #322 V02):* the pipeline rolls every move
+itself and the confirm dialog has no adds input, so "player applies it" left
+the +1 applied by nobody — see "The roller's +1 on the next move is applied
+automatically".
 
 **Reason:** the maintainer asked to "plan and execute" the combat progress +
 in-dialogue momentum-vs-progress gap, with full lifecycle mirror and
@@ -3903,19 +4092,35 @@ it.)*
 
 **Develop Your Relationship (audit 3.14).** An un-bonded connection marks its
 own relationship track ("no roll, mark progress", via `markRelationshipProgress`).
-A *bonded* connection instead marks the bonds legacy track by the rolled outcome
-— **strong hit 2 ticks, weak hit 1, miss 0** — and a **match on a hit raises the
-connection's rank by one** (play kit §3.3.5). Orchestration is a pure module
+A *bonded* connection instead rolls +rank and pays the move's text — **strong
+hit 2 bonds-legacy ticks, weak hit +2 momentum, miss nothing** — and a **strong
+hit with a match raises the connection's rank by one** (play kit §3.3.5; revised
+2026-11-01, issue #322 V01 — below). Orchestration is a pure module
 `src/moves/developRelationship.js` (`selectConnection` + `planDevelopRelationship`,
 mirroring `expedition.js`/`combat.js`); the resolver emits a `developRelationship`
 consequence flag and the GM-gated pipeline handler resolves the target connection
 and applies the writes.
 
-- **Weak-hit = 1 tick is a deliberate fill-in.** The play kit text in
-  `playkit-rules-and-coverage.md` §3.3.5 only specifies the strong-hit value (2).
-  We chose strong 2 / weak 1 / miss 0 — "diminished but present" on a weak hit,
-  consistent with the game's general outcome philosophy — rather than leave weak
-  undefined. Recorded here so it isn't re-litigated.
+- ~~**Weak-hit = 1 tick is a deliberate fill-in.**~~ *Superseded 2026-11-01
+  (maintainer decision, issue #322 V01).* The fill-in rested on the play kit
+  summary naming only the strong-hit value; the move's own text (the vendored
+  system's `starforged-moves` data, and `!bond` since it was written) says
+  "On a weak hit, take +2 momentum", and the rank raise is "on a strong hit
+  with a match". The pipeline paid a weak hit 1 bonds tick while `!bond` paid
+  +2 momentum. **Decision: both pay the text, from one table** —
+  `BONDED_DEVELOP_OUTCOMES` / `bondedDevelopOutcome` in
+  `developRelationship.js`: strong `{ ticks: 2 }`, weak `{ momentum: 2 }`, miss
+  nothing, `raiseRank` on a strong hit with a match. The pipeline's weak-hit
+  momentum is the roll's own (the resolver's `momentumChange`, credited to the
+  roller with the move's meters, as every move's is); a Test Your Relationship
+  hit develops through the plan with the test's roll, so its branch adds the
+  plan's momentum to that move's consequences. `!bond` relays the roll's
+  result (`outcome`, `isMatch`) and the canonical GM pays it from the table —
+  the old effect-carrying payload and its clamp (which turned any tick count
+  into 2) are gone. A weak hit cannot carry a match (a match is two equal
+  challenge dice), so the weak-hit raise both paths coded was never reachable;
+  the plan now says what the text says. *Rejected:* keeping 1 tick and changing
+  `!bond` — a house rule the move's text contradicts.
 - **Target resolution.** The connection is resolved from `interpretation.moveTarget`
   (the named connection) with the same exact→substring→sole-fallback ladder as
   expeditions/combat, except the fallback prefers the **sole bonded** connection,
@@ -3947,7 +4152,9 @@ so it correctly has no `schemas.js` entry. Mechanically it resolves through the
 existing combat moves (Gain Ground, Strike, React Under Fire, Clash, Aid Your
 Ally) plus suffer/recover moves, with **position tracked per character** and **Aid
 Your Ally transferring control** between crew (see the p. 187 worked example:
-pilot + gunner each hold their own position). The rulebook is explicit that "there
+pilot + gunner each hold their own position — until 2026-11-01 the module kept
+one position per fight for every roller; see "Combat position is per character",
+issue #322 V03). The rulebook is explicit that "there
 are no strict shipboard combat roles," but offers 11 example crew tasks: Command,
 Countermeasures, Damage Control, Engineering, Escort, Gunnery, Infantry, Medical,
 Piloting, Sensors, Systems. The original `rulebook-summary.md` bullet ("open the
@@ -4198,6 +4405,30 @@ meter preview, pickers) are deleted — the card flow is the only path. The
 pure resolution helpers (`resolveSufferSelection`, `runSufferResolution`,
 `isOptionAvailable`) live on; they are what the card flow executes.
 
+## A burn spends the momentum from before the move (2026-11-01)
+
+**Decision (maintainer, issue #322 V04):** Burn Momentum is offered, previewed
+and applied at the momentum the PC held **before the move's effects** — the
+rule quoted at the top of `burnMomentum.js`: "You must burn momentum before
+applying any other effects of the move." `buildBurnState` runs after a miss's
+Pay the Price has landed and before the persist, so it burns the actor's value
+plus what the price took (its momentum receipts), and records
+`outcomeMomentum` — the outcome's momentum change as it will land, clamped to
+the bounds. The click (`handleBurnClick`) burns the live value less
+`outcomeMomentum` (a card from before this records none: the outcome's
+nominal change), plus what the price took (`burnableMomentum`). Momentum
+changed by anything else since — another move, a sheet edit — still counts.
+The burn's write is unchanged: momentum goes to the reset plus the upgraded
+outcome's change.
+
+**Reason:** BURN-COUNTS-OUTCOME-MOMENTUM — the burn compared the live value,
+after the outcome: at momentum 5 against 3 and 5 a weak hit's +1 made the
+card offer "6 → Strong Hit", spending momentum the move itself gave to
+replace that very result.
+
+**Rejected:** *keep the post-outcome value as a house rule* — the rule is
+explicit, and `tests/unit/burnMomentum.test.js` pinned the deviation.
+
 ## Burn Momentum reverses Pay-the-Price side effects (2026-06-22)
 
 **Decision:** Clicking 🔥 Burn Momentum on a move that resolved as a miss now
@@ -4429,8 +4660,10 @@ mechanics.
 
 2. **The inciting vow is the crew's shared founding vow.** "⚔ Swear this vow" now creates the vow on
    **every** player character (each copy tagged `flags[MODULE].sharedVow` + the inciting message id),
-   and an `updateItem` hook (`registerSharedVowSyncHook`, canonical-GM single-writer, vowId-keyed
-   re-entrancy guard) keeps `system.current` / `system.clockTicks` in lockstep across all copies — so
+   and an `updateItem` hook (`registerSharedVowSyncHook`, canonical-GM single-writer; since issue
+   #322 V32 a per-vow queue of the newest value per field and marked mirror writes, as the shared
+   supply's — the vowId-keyed re-entrancy guard dropped a change made mid-pass) keeps
+   `system.current` / `system.clockTicks` in lockstep across all copies — so
    marking or fulfilling it (the module's vow flow OR a native sheet edit) advances it for the whole
    crew. Any player can click it; non-canonical clients relay to the GM over the module socket
    (`kind: "vow.swearShared"`), who performs the privileged multi-actor writes.

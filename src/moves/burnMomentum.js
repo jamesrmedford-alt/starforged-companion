@@ -13,7 +13,10 @@
  *
  * In this module the burn is offered AFTER persistResolution has applied
  * the original outcome's consequences — the card carries the metadata to
- * undo and reapply when the player clicks. The button stays disabled, and
+ * undo and reapply when the player clicks. The momentum burned is the
+ * momentum before them, as the rule says: not the outcome's own momentum
+ * change, nor a Pay the Price momentum loss (burnableMomentum — issue #322
+ * V04: a weak hit's +1 was counted toward burning that very weak hit away). The button stays disabled, and
  * the GM-side handler refuses, until the pipeline stamps the card
  * `originalApplied` right after that persist: a burn clicked while the
  * narration was still running used to apply the upgraded outcome first,
@@ -160,16 +163,53 @@ export const UPGRADE_REFUSALS = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The momentum a Pay the Price took from this PC — its momentum receipts (a
+ * "lose momentum" route, a harm's overflow), what landed.
+ *
+ * @param {Object|null} ptpReversals — buildBurnState's / the card's record
+ * @param {string|null} actorId
+ * @returns {number}
+ */
+function priceMomentumTaken(ptpReversals, actorId) {
+  const deltas = Array.isArray(ptpReversals?.sufferMeterDeltas) ? ptpReversals.sufferMeterDeltas
+    : ptpReversals?.sufferMeterDelta ? [ptpReversals.sufferMeterDelta] : [];
+  return deltas
+    .filter(d => d?.meterKey === "momentum" && (!d.actorId || !actorId || d.actorId === actorId))
+    .reduce((sum, d) => sum + Math.max(0, Number(d.amount) || 0), 0);
+}
+
+/**
+ * The momentum a burn spends: what the PC held before the move's effects.
+ * "You must burn momentum before applying any other effects of the move" —
+ * so the live value less the recorded outcome's momentum change as it landed
+ * (`outcomeMomentum`), plus what a Pay the Price took. The burn was compared
+ * at the live value: at momentum 5 against 3 and 5, a weak hit's own +1 made
+ * the burn "6 → Strong Hit" (issue #322 V04; maintainer decision 2026-11-01).
+ * Clamped to the PC's bounds.
+ *
+ * @param {{ value: number, min: number, max: number }} momentum — readMomentumState
+ * @param {number} outcomeMomentum — the outcome's momentum change on the sheet
+ * @param {number} priceTaken — momentum a Pay the Price took (priceMomentumTaken)
+ * @returns {number}
+ */
+function burnableMomentum(momentum, outcomeMomentum = 0, priceTaken = 0) {
+  const value = Number(momentum?.value ?? 0) - (Number(outcomeMomentum) || 0) + (Number(priceTaken) || 0);
+  return Math.min(Math.max(value, momentum?.min ?? -6), momentum?.max ?? 10);
+}
+
+/**
  * Build the metadata blob to stash on the move-result chat card so the
  * Burn button knows what to do when clicked. Returns null when burn is
  * not eligible (progress move, zero momentum, outcome wouldn't improve,
  * etc).
  *
- * `postMomentum` is the momentum the actor will have AFTER the original
- * outcome's consequences are persisted — that's the value the player
- * burns against per the rules. It is clamped to the character's bounds the
- * way the sheet write clamps it, so the preview never offers a burn with
- * momentum above the effective maximum (issue #300 F03).
+ * The pipeline builds it before persistResolution applies the outcome (a
+ * miss's Pay the Price has landed). The burn compares and spends the momentum
+ * from before the move's effects (burnableMomentum): the actor's value, plus
+ * what the price took. `outcomeMomentum` records what the outcome's momentum
+ * change will land as — clamped to the character's bounds the way the sheet
+ * write clamps it (issue #300 F03) — for the click to take it back out of the
+ * live value.
  *
  * @param {Object} resolution
  * @param {Actor}  actor       — active character; needed for momentum + impacts
@@ -193,20 +233,23 @@ export function buildBurnState(resolution, actor, ptpReversals = null, targets =
   const momentum           = readMomentumState(actor);
   const consequenceDelta   = Number(resolution.consequences?.momentumChange ?? 0);
   const postMomentum       = Math.min(Math.max(momentum.value + consequenceDelta, momentum.min), momentum.max);
+  const outcomeMomentum    = postMomentum - momentum.value;
+  const burnable           = burnableMomentum(momentum, 0, priceMomentumTaken(ptpReversals, actor.id));
   const markedImpactCount  = momentum.impactCount;
 
-  if (!canBurnMomentum(postMomentum, resolution.outcome, resolution.challengeDice, false)) {
+  if (!canBurnMomentum(burnable, resolution.outcome, resolution.challengeDice, false)) {
     return null;
   }
 
   const { outcome: previewOutcome } = applyMomentumBurn(
-    postMomentum, resolution.challengeDice, markedImpactCount,
+    burnable, resolution.challengeDice, markedImpactCount,
   );
 
   return {
     canBurn:            true,
     challengeDice:      resolution.challengeDice,
-    momentum:           postMomentum,
+    momentum:           burnable,
+    outcomeMomentum,
     markedImpactCount,
     moveId:             resolution.moveId,
     originalOutcome:    resolution.outcome,
@@ -463,16 +506,24 @@ async function handleBurnClick(message, { narrate, persist, applyEffects }) {
     return { applied: false, reason: "no-actor" };
   }
 
-  // Burn the momentum the PC holds now, against its live impacts — the
-  // original outcome is already on the sheet, so this includes its change.
-  // The card's preview can be stale (another move or a sheet edit since);
-  // never apply a burn that does not strictly improve the outcome.
+  // Burn the momentum the PC held before the move's effects, against its live
+  // impacts: the live value — the original outcome is on the sheet — less
+  // that outcome's momentum change, plus what its Pay the Price took (issue
+  // #322 V04: the live value counted the outcome's own momentum). A card
+  // built before the burn recorded `outcomeMomentum` takes the outcome's
+  // nominal change. The card's preview can be stale (another move or a sheet
+  // edit since); never apply a burn that does not strictly improve the outcome.
   const momentum = readMomentumState(actor);
-  if (!canBurnMomentum(momentum.value, burn.originalOutcome, burn.challengeDice, false)) {
-    console.warn(`${MODULE_ID} | burnMomentum: momentum ${momentum.value} would not improve ${burn.originalOutcome}; ignoring`);
+  const burnable = burnableMomentum(
+    momentum,
+    burn.outcomeMomentum ?? Number(burn.originalConsequences?.momentumChange ?? 0),
+    priceMomentumTaken(burn.ptpReversals, actor.id),
+  );
+  if (!canBurnMomentum(burnable, burn.originalOutcome, burn.challengeDice, false)) {
+    console.warn(`${MODULE_ID} | burnMomentum: momentum ${burnable} would not improve ${burn.originalOutcome}; ignoring`);
     return { applied: false, reason: "no-improvement" };
   }
-  const burnResult = applyMomentumBurn(momentum.value, burn.challengeDice, momentum.impactCount);
+  const burnResult = applyMomentumBurn(burnable, burn.challengeDice, momentum.impactCount);
 
   const newConsequences = mapConsequences(burn.moveId, burnResult.outcome, burnResult.isMatch);
 
@@ -517,7 +568,7 @@ async function handleBurnClick(message, { narrate, persist, applyEffects }) {
   // The working copy it writes is the one the re-narration reads and logs
   // against; a copy, never the cached setting (rules/foundry-api.md).
   const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-  const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: momentum.value, newConsequences, campaignState });
+  const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: burnable, newConsequences, campaignState });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: burn, actor, campaignState, kind: "burn" });
 
   await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands })) })

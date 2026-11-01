@@ -160,3 +160,66 @@ describe("the toolbar opens the viewer's own PC's Chronicle", () => {
     expect(opened).toEqual(['pc-1']);
   });
 });
+
+// Issue #322 V33 — the GM's type select listed the six hand-set types, but the
+// automatic scribe writes 'discovery' and 'moment' entries too. With no option
+// selected the select shows its first, so those entries read as "Revelation",
+// and once re-typed they could not be set back (the re-type refused both).
+describe("the GM's type select offers every type an entry can have (issue #322 V33)", () => {
+  /** The rendered select of the entry with this text. */
+  async function selectFor(text) {
+    const panel = new ChroniclePanelApp('pc-1');
+    const context = await panel._prepareContext();
+    const content = new StubElement('div');
+    panel._replaceHTML(await panel._renderHTML(context), content);
+    const entry = context.entries.find(e => e.text === text);
+    return { select: content.querySelector(`[data-entry-id="${entry.id}"] .sf-chronicle-type-select`), entry };
+  }
+  const shown = (select) => select.querySelectorAll('option').find(o => o.hasAttribute('selected'))?.textContent;
+
+  it("a scribe's 'moment' and 'discovery' entries show as themselves, not as Revelation", async () => {
+    await addChronicleEntry('pc-1', { type: 'moment', text: 'Kira held the line.', automated: true });
+    await addChronicleEntry('pc-1', { type: 'discovery', text: 'A beacon in the Rift.', automated: true });
+    await addChronicleEntry('pc-1', { type: 'scar', text: 'A burn across the palm.', automated: true });
+
+    const moment = (await selectFor('Kira held the line.')).select;
+    expect(moment.value).toBe('moment');                     // was 'revelation' — the first option
+    expect(shown(moment)).toBe('Moment');
+    const discovery = (await selectFor('A beacon in the Rift.')).select;
+    expect(discovery.value).toBe('discovery');
+    expect(shown(discovery)).toBe('Discovery');
+    expect((await selectFor('A burn across the palm.')).select.value).toBe('scar');   // control: a listed type
+  });
+
+  it('a GM can re-type a moment to a scar and set it back', async () => {
+    await addChronicleEntry('pc-1', { type: 'moment', text: 'Kira held the line.', automated: true });
+
+    for (const type of ['scar', 'moment', 'discovery']) {
+      const { select } = await selectFor('Kira held the line.');
+      select.value = type;
+      select.dispatchEvent(new StubEvent('change'));
+      await Promise.all(pending);
+      expect((await getChronicleEntries('pc-1'))[0].type, type).toBe(type);   // 'moment' / 'discovery' were refused
+    }
+  });
+
+  it('every type the automatic scribe writes is offered, with a label', async () => {
+    const { CHRONICLE_AUTO_TYPES, CHRONICLE_ENTRY_TYPES } = await import('../../src/character/chronicle.js');
+    for (const type of CHRONICLE_AUTO_TYPES) {
+      await addChronicleEntry('pc-1', { type, text: `A ${type} beat.`, automated: true });
+    }
+    for (const type of CHRONICLE_AUTO_TYPES) {
+      expect(CHRONICLE_ENTRY_TYPES, type).toContain(type);
+      const { select } = await selectFor(`A ${type} beat.`);
+      expect(select.value, type).toBe(type);
+      expect(shown(select), type).not.toBe(type);   // a label, not the raw id
+    }
+  });
+
+  it('a stored type outside the list is shown as itself, never as the first option', async () => {
+    await addChronicleEntry('pc-1', { type: 'omen', text: 'The stars dimmed.' });
+    const { select } = await selectFor('The stars dimmed.');
+    expect(select.value).toBe('omen');
+    expect(select.querySelectorAll('option').map(o => o.value)).toContain('revelation');   // the list is still offered
+  });
+});

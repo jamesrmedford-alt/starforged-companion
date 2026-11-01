@@ -1,0 +1,17 @@
+Defect: V19 (issue #322) — another PC's name in a player's line is matched with an ASCII word boundary, so a name ending in a non-ASCII letter ("Zoë") is never seen
+Tests: tests/unit/relevanceUnicodeNames.test.js
+Catches: a player's line naming another PC is seen when that PC's name ends in a non-ASCII letter
+
+diff --git a/src/narration/narrator.js b/src/narration/narrator.js
+index 1982032..a134983 100644
+--- a/src/narration/narrator.js
++++ b/src/narration/narrator.js
+@@ -2822,7 +2822,7 @@ export function inputNamesOtherPlayerCharacter(playerText, speakerName, pcActors
+     for (const t of tokens) {
+       if (t.length < 2) continue;
+       // Unicode-aware: a PC named "Zoë" or "Élise" is a whole word too (issue #322 V19).
+-      if (wholeWordPattern(t, '').test(text)) return true;
++      if (new RegExp(`\\b${escapeRegexLiteral(t)}\\b`).test(text)) return true;
+     }
+   }
+   return false;

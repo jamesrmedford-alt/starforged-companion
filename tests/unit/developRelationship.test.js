@@ -13,7 +13,8 @@ import {
   buildConnectionSuggestion,
   CONNECTION_SUGGEST_CATEGORIES,
   nextRank,
-  BOND_LEGACY_TICKS,
+  BONDED_DEVELOP_OUTCOMES,
+  bondedDevelopOutcome,
   BOND_ROLL_ADDS,
   bondedDevelopRoll,
   CONNECTION_RANKS,
@@ -185,22 +186,34 @@ describe("planDevelopRelationship", () => {
     }
   });
 
-  it("bonded → bond-legacy with 2/1/0 ticks by outcome", () => {
+  // Issue #322 V01: the move's text — strong 2 ticks, weak +2 momentum, miss
+  // nothing. The pipeline paid a weak hit 1 tick where `!bond` paid +2 momentum.
+  it("bonded → bond-legacy: strong 2 ticks, weak +2 momentum, miss nothing", () => {
     const c = conn({ bonded: true });
-    expect(planDevelopRelationship(c, "strong_hit", false).ticks).toBe(2);
-    expect(planDevelopRelationship(c, "weak_hit", false).ticks).toBe(1);
-    expect(planDevelopRelationship(c, "miss", false).ticks).toBe(0);
+    expect(planDevelopRelationship(c, "strong_hit", false)).toMatchObject({ action: "bond-legacy", ticks: 2, momentum: 0 });
+    expect(planDevelopRelationship(c, "weak_hit", false)).toMatchObject({ action: "bond-legacy", ticks: 0, momentum: 2 });
+    expect(planDevelopRelationship(c, "miss", false)).toMatchObject({ action: "bond-legacy", ticks: 0, momentum: 0 });
   });
 
-  it("bonded + match on a hit → raiseRank with newRank one step up", () => {
+  it("bonded + match on a strong hit → raiseRank with newRank one step up", () => {
     const c = conn({ bonded: true, rank: "dangerous" });
     const strong = planDevelopRelationship(c, "strong_hit", true);
     expect(strong.raiseRank).toBe(true);
     expect(strong.newRank).toBe("formidable");
+  });
 
+  // Issue #322 V01: "On a strong hit with a match … raise their rank". Dice
+  // never roll a weak hit with a match (a match is two equal challenge dice:
+  // a score beats both or neither); the plan follows the text all the same.
+  it("bonded + match on a WEAK hit → no rank raise, the +2 momentum alone", () => {
+    const c = conn({ bonded: true, rank: "dangerous" });
     const weak = planDevelopRelationship(c, "weak_hit", true);
-    expect(weak.raiseRank).toBe(true);
-    expect(weak.newRank).toBe("formidable");
+    expect(weak).toMatchObject({ raiseRank: false, newRank: null, ticks: 0, momentum: 2 });
+  });
+
+  it("an epic bond's strong hit with a match raises nothing — already epic", () => {
+    const c = conn({ bonded: true, rank: "epic" });
+    expect(planDevelopRelationship(c, "strong_hit", true)).toMatchObject({ ticks: 2, raiseRank: false, newRank: null });
   });
 
   it("bonded + match on a MISS → no rank raise", () => {
@@ -284,8 +297,13 @@ describe("buildConnectionSuggestion", () => {
 // ─── constants ───────────────────────────────────────────────────────────────
 
 describe("constants", () => {
-  it("BOND_LEGACY_TICKS is 2/1/0", () => {
-    expect(BOND_LEGACY_TICKS).toEqual({ strong_hit: 2, weak_hit: 1, miss: 0 });
+  it("BONDED_DEVELOP_OUTCOMES is the move's text: strong 2 ticks / weak +2 momentum / miss nothing", () => {
+    expect(BONDED_DEVELOP_OUTCOMES).toEqual({
+      strong_hit: { ticks: 2, momentum: 0 },
+      weak_hit:   { ticks: 0, momentum: 2 },
+      miss:       { ticks: 0, momentum: 0 },
+    });
+    expect(Object.isFrozen(BONDED_DEVELOP_OUTCOMES.weak_hit)).toBe(true);
   });
   it("CONNECTION_RANKS is the five-rank ladder in order", () => {
     expect(CONNECTION_RANKS).toEqual(["troublesome", "dangerous", "formidable", "extreme", "epic"]);
@@ -327,5 +345,26 @@ describe("shouldForgeBond", () => {
     expect(shouldForgeBond({ moveId: "forge_a_bond", outcome: "miss" })).toBe(false);
     expect(shouldForgeBond({ moveId: "fulfill_your_vow", outcome: "strong_hit" })).toBe(false);
     expect(shouldForgeBond({})).toBe(false);
+  });
+});
+
+// ─── bondedDevelopOutcome — the one table (issue #322 V01) ──────────────────
+
+describe("bondedDevelopOutcome", () => {
+  it("pays each roll result its row, and raises the rank on a strong hit with a match only", () => {
+    expect(bondedDevelopOutcome("strong_hit", true)).toEqual({ ticks: 2, momentum: 0, raiseRank: true });
+    expect(bondedDevelopOutcome("strong_hit", false)).toEqual({ ticks: 2, momentum: 0, raiseRank: false });
+    expect(bondedDevelopOutcome("weak_hit", true)).toEqual({ ticks: 0, momentum: 2, raiseRank: false });
+    expect(bondedDevelopOutcome("miss", true)).toEqual({ ticks: 0, momentum: 0, raiseRank: false });
+  });
+
+  it("anything that is not a roll result is null — no row to pay", () => {
+    for (const bad of [null, undefined, "", "STRONG_HIT", "toString", "__proto__", 2]) {
+      expect(bondedDevelopOutcome(bad, true), String(bad)).toBeNull();
+    }
+  });
+
+  it("a truthy non-boolean match is not a match", () => {
+    expect(bondedDevelopOutcome("strong_hit", "yes").raiseRank).toBe(false);
   });
 });

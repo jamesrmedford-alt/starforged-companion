@@ -181,12 +181,15 @@ describe("Secure an Advantage's weak hit — the choice carries the momentum (SA
     expect(pc.system.momentum.value).toBe(4);
   });
 
-  it("+1 on your next move: the momentum stays at 2, and the reminder is posted", async () => {
+  it("+1 on your next move: the momentum stays at 2, and the +1 is the roller's for their next roll", async () => {
     pc.system.momentum.value = 2;
     await roll("secure_an_advantage");
     await pick(1);
     expect(pc.system.momentum.value).toBe(2);
-    expect(table.cards(f => f.sufferDeferred && f.nextBonus)).toHaveLength(1);
+    // Granted, not a reminder (issue #322 V02): the pipeline adds it to the
+    // roller's next action roll (tests/unit/nextMoveBonus.test.js).
+    expect(table.world.campaignState().nextMoveBonuses?.[pc.id]?.value).toBe(1);
+    expect(table.cards(f => f.sufferDeferred).at(-1).content).toMatch(/next action roll/);
   });
 });
 

@@ -367,13 +367,20 @@ export async function createEntityJournals(sector, campaignState) {
   }
 
   const connBeforeLen = campaignState.connectionIds?.length ?? 0;
+  // The disposition and first look the generator rolled are the record's:
+  // the narrator's sector roster reads them, and ✦ Finalise re-rolls only
+  // what is blank. They reached no store, so Finalise rolled new ones
+  // (issue #322 V27; decisions.md → "NPC card population").
+  const rolledLook = sector.connection.firstLook;
   await createConnection({
-    name:     sector.connection.name,
-    role:     sector.connection.role,
-    goal:     sector.connection.goal,
-    rank:     "dangerous",
-    location: sector.connection.homeSettlement,
-    sectorId: sector.id,
+    name:        sector.connection.name,
+    role:        sector.connection.role,
+    goal:        sector.connection.goal,
+    rank:        "dangerous",
+    location:    sector.connection.homeSettlement,
+    sectorId:    sector.id,
+    disposition: sector.connection.aspect ?? null,
+    firstLook:   Array.isArray(rolledLook) ? rolledLook.filter(Boolean) : (rolledLook ? [rolledLook] : []),
   }, campaignState, { persist: false });
   // connectionJournalId now carries the NPC-card Actor id (connections converted
   // to `character` Actors under FOLDER-002); the field name is kept for the

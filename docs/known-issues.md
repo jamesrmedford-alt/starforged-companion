@@ -11,6 +11,89 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Bug audit after #320 (issue #322, part 2 of 2) — all thirty-four fixed in the v1.7.36 cycle
+
+Found by the seventh bug audit (2026-10-31) of `6455e01`: the 29 UX,
+documentation, rare and latent findings (V05–V33) and the four that needed a
+decision (V01–V04), with V34 — TRUTHS-TWO-STORES, found while fixing #321.
+The maintainer decided V01–V04 and V34 on 2026-11-01 (decisions.md). Each
+fix carries its own regression tests, converted from the audit's probe where
+it had one (`tests/probes/` on branch `claude/sweet-wozniak-td294f`), which
+fail with the fix taken out (`docs/testing/fix-sensitivity.md`). None has
+been checked in a live Foundry world yet. The ones to try: a bonded Develop
+Your Relationship weak hit, typed and with `!bond` (V01); a Secure an
+Advantage pick, then the next move's roll (V02); two PCs in one fight, one
+in a bad spot (V03); `!recap session N` mid-campaign (V05); Stop while a
+card loads and Pause between its segments, and auto-play on a new device
+(V14, V15); a sector map on The Forge (V26); and truths saved in the
+`!truths` dialog, then `!narrator debug` after the next move, in a world set
+up before the fix (V34).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| V01 BOND-WEAK-HIT-SPLIT | WRONG-DETAIL | A bonded Develop Your Relationship weak hit paid 1 bonds tick through the pipeline (a decisions.md fill-in) and +2 momentum through `!bond`, whose relay clamp made any tick count 2 → both pay the move's text from `BONDED_DEVELOP_OUTCOMES` (strong 2 ticks, weak +2 momentum, miss nothing; rank +1 on a strong hit with a match); `!bond` relays the roll, not its effects |
+| V02 NEXT-MOVE-BONUS-DEAD | PRODUCED-BUT-DEAD | "+1 on your next move" posted a reminder whose `nextBonus` flag nothing read, and the strong hit dropped it → `campaignState.nextMoveBonuses[actorId]` granted by the pick and the strong hit, added to the roller's next action roll and claimed on the store first (`nextMoveAdd.js`) |
+| V03 COMBAT-POSITION-PER-FIGHT | ATTRIBUTION | One position per fight steered every roller: one PC's bad spot remapped another's Strike and downgraded their Take Decisive Action → the track holds `positions[actorId]`; the roller's own drives the directive and the downgrade (`combatPositionFor`), the fight's as a fallback; [4j] names each |
+| V04 BURN-COUNTS-OUTCOME-MOMENTUM | WRONG-DETAIL | Burn eligibility counted the replaced outcome's own momentum ("6 → Strong Hit" at 5 after a weak hit's +1) → the burn state records `outcomeMomentum`; offer, preview and burn use the pre-outcome value plus what a miss's Pay the Price took |
+| V05 RECAP-SESSION-NUMBER-DROPPED | WRONG-DETAIL | `!recap session 3` dropped the 3 and recapped the current session; a burned move listed its superseded outcome; every narrator card counted as a move → N resolves by the cards' `sessionNumber` (else last session's summary); the recap reads `sessionNarratorCards(…, { forRecap })` and counts cards with a `moveId` |
+| V06 HELP-SETTINGS-UNREACHABLE | UX | Settings the help places in the panel were `config: false` with no control — Narration Max Tokens, Scene Interrogation ×3, Chronicle ×2, World Journal ×8 (the audit's seven and the Private Channel switch), Ship Positioning ×4, Audio Cache Max — and two stated defaults were stale → 18 rows on the Narrator and Mischief tabs, clamped on save; Narration Max Tokens 16000, audio on; Audio Cache Max removed (V16) |
+| V07 HELP-RANK-TICKS-WRONG | UX | The help's "Ticks per mark" listed boxes; the First Session walkthrough made a vow in the Progress Tracks panel; buttons "in Token Controls" → corrected copy |
+| V08 INTERP-NUMBERS-TRUSTED | WRONG-DETAIL | The interpreter copied the model's `adds` / `statValue` unchecked: a string concatenated ("31", a strong hit), a number stacked on the dialog's adds, an unresolved progress move scored the model's number → none kept; an unresolved progress move scores 0 |
+| V09 NARRATION-THROW-SKIPS-PERSIST | LOSE-STATE | A refused narration card and fallback rejected out of the pipeline before `persistResolution`: the move card showed a hit nothing applied → the rejection is caught and reported, and the result persists |
+| V10 SECTOR-SWITCH-KEYWORD-PREFIX | UX | `!sector New Hope` opened the Sector Creator (`new` matched as the first word) → `new` / `list` are subcommands only as the whole argument |
+| V11 PANEL-CONN-PROGRESS-DEAD | PRODUCED-BUT-DEAD | The Entities panel's Progress row read `connection.progress`, which nothing writes → reads `relationshipTicks` and the rank |
+| V12 CLOCKS-PANEL-STALE | UX | An open Clocks panel and a scene challenge's tension line re-rendered only after their own buttons → each re-renders on the campaignState hook when its clocks changed (local-only, `hookGates` LOCAL_ONLY) |
+| V13 AUDIO-ERROR-NO-RETRY | UX | A failed play disabled the button until a re-render, though its message says to try again → the error state stays clickable |
+| V14 AUDIO-STOP-WHILE-LOADING | UX | Stop during synthesis stopped nothing; a Pause between segments played the next as it loaded (AUDIO-PAUSE-GAP-IGNORED) → a load generation per card that Stop bumps; a segment loaded during a pause waits |
+| V15 AUDIO-AUTOPLAY-OLD-CARD | UX | Auto-play claimed any card missing from this browser's played-list, so a new device's first click played an hours-old narration → only cards stamped after this client's start (server time, a minute's margin) |
+| V16 AUDIO-CACHE-CAP-DEAD | PRODUCED-BUT-DEAD | The 200 MB cap's sweep browsed and HEADed the whole cache, then deleted through a FilePicker method v13's client lacks: it evicted nothing → sweep, throttle, `audio.cacheMaxBytes` and the help row removed; the help says to trim by hand |
+| V17 NPC-TAG-UNCLOSED-LEAKS | WRONG-DETAIL | Half an `<npc>` pair (a reply cut mid-line, a stray close) showed on the card and was spoken → removed; text after an unclosed open tag is the NPC's line |
+| V18 NARR-CARD-UNESCAPED | WRONG-DETAIL | Narration, paced and `@scene` cards put prose in unescaped: "<signal lost>" vanished → `escapeHtml(stripMarkup(…))`, the question too |
+| V19 RELEVANCE-UNICODE-BOUNDARY | LOSE-PLOT | Name matching used ASCII `\b`: "Zoë", "Élise" never matched (no card, ledger facts out of scope) → `wholeWordPattern` with the `u` flag |
+| V20 SPOTLIGHT-FRAME-NAMES | WRONG-DETAIL | The spotlight counted a PC only by its exact full name in the scene frame → a full name, or a first / last name no other PC shares |
+| V21 PACE-OVERRIDE-OUTLIVES-SCENE | WRONG-DETAIL | `!pace hot` / `quiet` lasted until `!pace clear` though documented per scene → `endScene` clears it, and `startScene` replacing an empty scene |
+| V22 PACED-CARD-NO-ENTITIES | PRODUCED-BUT-DEAD | Paced cards stamped `matchedEntityIds: []`, so the NPC voice picker found no one → the scene's matched entities, as the move card |
+| V23 CLOCK-BEAT-VIGNETTE-ROLE | WRONG-DETAIL | A clock advance was narrated in the session-vignette role ("the calm before") → a `clock_advance` mode (interaction latitude); `vow_swearing` gets embellishment |
+| V24 ENCOUNTER-TOKEN-OFF-CENTRE | UX | `!sfc encounter` placed the foe at half the padded canvas by its top-left → centred on `scene.dimensions`' rectangle by its size |
+| V25 ART-ASSET-NAME-LOOKUP | LOSE-STATE | The Art Cache fast path found an asset by its recorded journal name, with no fallback: a rename hid the portrait → the entry the name finds must hold the asset, else the flag scan |
+| V26 SECTOR-ART-UPLOAD-FAIL-PATH | WRONG-DETAIL | v13's `FilePicker.upload` resolves `false` / `undefined` / `{}` on failure; four uploads fell back to the built path (a black map "generated") → `net/uploadResult.js` `uploadedPath` |
+| V27 SECTOR-NPC-ROLLS-DROPPED | LOSE-PLOT | The sector connection's rolled disposition and first look were not passed to `createConnection` → passed; Finalise reuses them |
+| V28 CUSTOM-ORACLE-LINES-DROPPED | LOSE-STATE | Custom oracle lines with an en-dash range or "00" were dropped silently, shrinking the die → any dash, "00" = 100, and a table with an unreadable line is refused, the lines listed |
+| V29 CONN-MIGRATION-DELETES-BEFORE-PERSIST | LOSE-STATE | The migration deleted each legacy journal before its id swap was saved → the swap is saved first (owned field), then the deletes; a rerun reuses its card |
+| V30 REGENERATE-STRIPS-NOTES-PORTRAIT | LOSE-STATE | ↻ Regenerate flavour rewrote Notes without the embedded portrait, which generate-once never re-attached → the seeds keep the old Notes' portrait block (`art/notesPortrait.js`) |
+| V31 FACTION-PAGE-BODY-STALE | WRONG-DETAIL | A faction's or creature's page body was rendered once, at creation → `rerenderEntityPageBody` on every record write |
+| V32 SHARED-VOW-SYNC-LOST-UPDATE | RACE | A change to a shared vow copy during a sync pass was dropped or reverted → per-vow queue of the newest value per field; only differing fields written; mirror writes marked |
+| V33 CHRONICLE-TYPE-SELECT | UX | The GM's type select lacked the automatic writer's `discovery` / `moment`, showing them as "Revelation", and the re-type refused them → `CHRONICLE_ENTRY_TYPES` is the union (`CHRONICLE_AUTO_TYPES` + hand-set); an unlisted stored type is offered, selected |
+| V34 TRUTHS-TWO-STORES | WRONG-DETAIL | The WORLD TRUTHS block and `getTruth` read `worldTruths`, which only the Quickstart wrote; a dialog save reached `!lore` alone → `recordSystemTruths` parses each save into `worldTruths` as it links the journal; `reconcileSystemTruths` brings an older world up to its newest save at load; `!lore`'s repair links with the truths |
+
+Decided by the maintainer (2026-11-01): V01 pays the move's text on both
+paths; V02's +1 is applied automatically to the roller's next action roll;
+V03's position is per character; V04 burns the pre-outcome momentum; V34's
+revised truths propagate to the narrator.
+
+Open — found while fixing, not fixed:
+
+- **BOND-DEVELOP-UPGRADE** (WRONG-DETAIL, low). A Burn Momentum or Improve
+  Result that upgrades a bonded Develop Your Relationship to a strong hit
+  marks no bonds ticks and raises no rank on a match: the development runs in
+  the pipeline's develop branch, which an upgrade does not re-run.
+- **TEST-RELATIONSHIP-DEVELOP-ROLL** (RULES, low). A Test Your Relationship hit
+  develops a bonded connection with the test's own roll, not a Develop Your
+  Relationship roll of its own (a pre-existing approximation).
+- **NEXT-MOVE-BONUS-PIPELINE-ONLY** (by design, noted). The +1 on the next
+  move, like Take a Break's, is added only to rolls the move pipeline makes;
+  `!bond` and the system sheet's rolls do not take it.
+- **CUSTOM-ORACLE-TO-RANGES** (WRONG-DETAIL, low). A custom oracle line
+  written "3 to 4 Wary" still reads as the single-number row 3, "to 4 Wary",
+  so it is neither refused nor read as a range.
+- **TRUTHS-CUSTOM-PARSE** (WRONG-DETAIL, low). A custom truth from the dialog
+  reaches the narrator as its first paragraph; one left empty is read from the
+  category's inspiration text; a dialog in another language keys its truths
+  by their own category names, so the vow scene's Iron truth is not found.
+- **IRON-TRUTH-COLON** (WRONG-DETAIL, cosmetic). The vow scene's truth line
+  joins a title and its description with ": " after the title's full stop
+  ("…to the Forge.: Many …"), for every truth source.
+
 ### Bug audit after #320 (issue #321, part 1 of 2) — all sixty-eight fixed in the v1.7.36 cycle
 
 Found by the seventh bug audit (2026-10-31) of `6455e01`, with a probe per
@@ -25,7 +108,7 @@ inputs production never passes (U02, U18), a hook called without the
 creation's options (U47), a ship created outside the draft Confirm (U26), the
 old hash-only audio signal (U60) and a coverage map that predates the new
 Ultra-scale table (U63); the regression tests drive the real paths. Part 2,
-issue #322, is open. None has been checked in a live Foundry world yet. The
+issue #322, is above. None has been checked in a live Foundry world yet. The
 ones to try: a solo GM raising a stat on the sheet and rolling (U01); two open
 vows and 🏁 Attempt to Fulfill Vow (U02); a Pay the Price miss's card against
 its narration (U03); a player marking a track and pinning a detail in the
@@ -182,10 +265,13 @@ Open — found while fixing, not fixed:
   appends two encounter entries to its World Journal entry.
 - **SHIP-TYPE-IN-CONFLICT** (WRONG-DETAIL, low). A new ship whose type rolls
   95–100 gets "Ships in conflict: A / B" as its single type.
-- **TRUTHS-TWO-STORES** (WRONG-DETAIL — needs the maintainer's call). The
-  narrator's WORLD TRUTHS block reads `campaignState.worldTruths` (the
-  Quickstart's); the `!truths` dialog's journal reaches only `!lore`, so a
-  revision made in the dialog never reaches the narrator.
+- ~~**TRUTHS-TWO-STORES**~~ (WRONG-DETAIL) — fixed by issue #322 V34 (the
+  maintainer decided revised truths propagate to the narrator). Each save of
+  the `!truths` dialog is parsed into `campaignState.worldTruths` as its
+  journal is linked, and a world saved before that gets them at its next
+  load, so the WORLD TRUTHS block, the vow scene's Iron truth and `!lore` read
+  the newest save (decisions.md, "Truths saved in the World Truths dialog
+  reach the narrator").
 - **LORE-JOURNAL-BY-NAME** (WRONG-DETAIL, low). `writeLoreRecapToJournal`
   falls back by name and can add "The Story So Far" to a GM's own "World
   Truths" journal.

@@ -18,6 +18,7 @@
 
 import { MOVES, moveRollKind } from "../schemas.js";
 import { rollOracle, rollPaired } from "../oracles/roller.js";
+import { BONDED_DEVELOP_OUTCOMES } from "./developRelationship.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -262,6 +263,11 @@ function emptyConsequences() {
     reachMilestone:        false,
     // Pipeline applies this delta to companion health (Companion Takes a Hit strong hit).
     companionHealthChange: 0,
+    // "+N on your next move (not a progress move)" for the roller — Secure an
+    // Advantage's strong hit. The pipeline records it (grantNextMoveBonus) and
+    // adds it to that character's next action roll (issue #322 V02). The weak
+    // hit's and Gain Ground's are a choice card's `nextBonus` option.
+    nextMoveBonus:         0,
     otherEffect:         "",
   };
 }
@@ -328,6 +334,15 @@ function withCost(recovery, costs) {
  * editing this map, update the audit row first so the doc and code stay
  * in lockstep.
  */
+// A bonded Develop Your Relationship's card line, by its roll's outcome
+// (BONDED_DEVELOP_OUTCOMES). No outcome — the un-bonded development, no roll —
+// takes the move's generic line.
+const BONDED_DEVELOP_EFFECT_TEXT = {
+  strong_hit: "Bonded: mark 2 ticks on your bonds legacy track — on a match, raise their rank by one.",
+  weak_hit:   "Bonded: take +2 momentum.",
+  miss:       "Bonded: take no lasting benefit.",
+};
+
 const CONSEQUENCE_MAP = {
 
   // ── SESSION MOVES ──────────────────────────────────────────────────────────
@@ -374,7 +389,10 @@ const CONSEQUENCE_MAP = {
       case "strong_hit": return {
         ...emptyConsequences(),
         momentumChange: 2,
-        otherEffect: "Strong hit: take both — +2 momentum AND +1 on next move (not a progress move).",
+        // "Take both": the +1 is added to the roller's next action roll — it
+        // was card text alone (issue #322 V02).
+        nextMoveBonus:  1,
+        otherEffect: "Strong hit: take both — +2 momentum AND +1 on your next move (added to your next action roll; not a progress move).",
       };
       case "weak_hit": return {
         ...emptyConsequences(),
@@ -509,14 +527,20 @@ const CONSEQUENCE_MAP = {
     }
   },
 
-  develop_your_relationship: (_outcome, _isMatch) => ({
+  develop_your_relationship: (outcome, _isMatch) => ({
     ...emptyConsequences(),
     // Pipeline (GM-gated) resolves the target connection and applies either a
-    // connection-track mark (un-bonded) or a bonds-legacy mark (bonded, per
-    // §3.3.5). See src/moves/developRelationship.js. Replaced the old dead
-    // `progressMarked: 1` route (removed 2026-10).
+    // connection-track mark (un-bonded) or the bonded roll's legacy ticks and
+    // rank raise (§3.3.5). See src/moves/developRelationship.js. Replaced the
+    // old dead `progressMarked: 1` route (removed 2026-10).
     developRelationship: true,
-    otherEffect: "Develop the relationship: mark connection progress, or — if you are bonded — mark your bonds legacy track.",
+    // Only the bonded development is rolled (+rank — un-bonded is no roll, so
+    // its outcome is null): a weak hit's +2 momentum is that roll's own, applied
+    // with the move's other meters to the roller (BONDED_DEVELOP_OUTCOMES,
+    // shared with `!bond` — issue #322 V01: the pipeline paid 1 bonds tick).
+    momentumChange: BONDED_DEVELOP_OUTCOMES[outcome]?.momentum ?? 0,
+    otherEffect: BONDED_DEVELOP_EFFECT_TEXT[outcome]
+      ?? "Develop the relationship: mark progress on your connection's relationship track (once bonded, roll +their rank instead).",
   }),
 
   test_your_relationship: (outcome, _isMatch) => {
@@ -679,7 +703,8 @@ const CONSEQUENCE_MAP = {
         ...emptyConsequences(),
         combatPosition: "in_control",
         // B2 multi: choose two of three. The dialog marks combat progress,
-        // applies the momentum delta, or posts a next-bonus reminder.
+        // applies the momentum delta, or grants the roller +1 on their next
+        // action roll (issue #322 V02).
         sufferPrompt: { kind: "enumerated", multi: 2, options: [
           { label: "Mark progress",        combatProgress: 1 },
           { label: "+2 momentum",          momentum:       2 },

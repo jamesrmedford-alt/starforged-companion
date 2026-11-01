@@ -77,7 +77,9 @@ describe('handleBondCommand — author client', () => {
     expect(event).toBe(GM_RELAY_SOCKET);
     expect(payload.kind).toBe('gmRelay.bond.apply');
     expect(payload.requesterId).toBe('pl-1');
-    expect(payload.payload).toMatchObject({ ticksOnBonds: 2, momentumChange: 0, raiseRank: false });
+    // The roll's result, not its effects: the GM pays it from the shared table.
+    expect(payload.payload).toMatchObject({ outcome: 'strong_hit', isMatch: false, targetHostId: null, raisedRank: null });
+    expect(payload.payload).not.toHaveProperty('ticksOnBonds');
   });
 
   it('credits a weak hit\'s momentum to the speaking PC, not the first PC', async () => {
@@ -87,7 +89,7 @@ describe('handleBondCommand — author client', () => {
     await handleBondCommand({ content: '!bond Sable', author: { id: 'pl-1' }, speaker: { actor: 'pc-b' } });
 
     const relayed = game.socket._emitted[0].payload.payload;
-    expect(relayed).toMatchObject({ momentumChange: 2, ticksOnBonds: 0, actorId: 'pc-b' });
+    expect(relayed).toMatchObject({ outcome: 'weak_hit', actorId: 'pc-b' });
   });
 
   // Issue #311 P01: an action roll, so the roller's negative momentum cancels a
@@ -102,7 +104,7 @@ describe('handleBondCommand — author client', () => {
     const card = ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.bondCommandCard);
     expect(card.content).toMatch(/<s>3<\/s> \(cancelled by momentum -3\) \+ 2 = <strong>2<\/strong>/);
     expect(card.content).toMatch(/Weak hit/);
-    expect(game.socket._emitted[0].payload.payload).toMatchObject({ momentumChange: 2, actorId: 'pc-b' });
+    expect(game.socket._emitted[0].payload.payload).toMatchObject({ outcome: 'weak_hit', actorId: 'pc-b' });
   });
 
   it("a negative momentum that does not match the die leaves it", async () => {
@@ -116,12 +118,13 @@ describe('handleBondCommand — author client', () => {
     expect(card.content).toMatch(/Strong hit/);
   });
 
-  it('a hit with a match relays the rank raise with the target host id', async () => {
+  it('a strong hit with a match relays the rank raise with the target host id', async () => {
     setUsers([GM, P1], 'pl-1');
     rollChallengeDice.mockReturnValue([3, 3]);
     await handleBondCommand({ content: '!bond Sable', author: { id: 'pl-1' } });
     const relayed = game.socket._emitted[0].payload.payload;
-    expect(relayed).toMatchObject({ raiseRank: true, targetHostId: 'conn-1', raisedRank: 'formidable' });
+    expect(relayed).toMatchObject({ outcome: 'strong_hit', isMatch: true, targetHostId: 'conn-1', raisedRank: 'formidable' });
+    expect(ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.bondCommandCard).content).toMatch(/rank rises to <strong>formidable/);
   });
 
   it('a miss relays nothing', async () => {
@@ -151,63 +154,80 @@ describe('handleBondCommand — author client', () => {
 describe('applyBondEffects — canonical GM handler', () => {
   beforeEach(() => setUsers([GM, P1], 'gm-1'));
 
-  it('marks bonds legacy ticks', async () => {
-    await applyBondEffects({ ticksOnBonds: 2 }, { requesterIsGM: false });
+  it("pays a strong hit's bonds legacy ticks from the shared table", async () => {
+    await applyBondEffects({ outcome: 'strong_hit', isMatch: false }, { requesterIsGM: false });
     expect(state().legacyTracks.bonds.ticks).toBe(2);
   });
 
-  it('gives momentum to the relayed roller', async () => {
+  it("gives a weak hit's +2 momentum to the relayed roller, and no ticks", async () => {
     pcB.ownership = { 'pl-1': 3 };
-    await applyBondEffects({ momentumChange: 2, actorId: 'pc-b' }, { requesterId: 'pl-1', requester: P1, requesterIsGM: false });
+    await applyBondEffects({ outcome: 'weak_hit', actorId: 'pc-b' }, { requesterId: 'pl-1', requester: P1, requesterIsGM: false });
     expect(pcB._updateHistory.some(u => u['system.momentum.value'] === 4)).toBe(true);
     expect(pcA._updateHistory).toHaveLength(0);
+    expect(state().legacyTracks.bonds).toBeUndefined();
   });
 
   it('falls back to the first PC when the roller is unknown (GM requester)', async () => {
-    await applyBondEffects({ momentumChange: 2, actorId: null }, { requesterId: 'gm-1', requester: GM, requesterIsGM: true });
+    await applyBondEffects({ outcome: 'weak_hit', actorId: null }, { requesterId: 'gm-1', requester: GM, requesterIsGM: true });
     expect(pcA._updateHistory.some(u => u['system.momentum.value'] === 4)).toBe(true);
   });
 
   it('refuses momentum for a PC the requester does not own', async () => {
     pcB.ownership = { 'pl-2': 3 };
-    await applyBondEffects({ momentumChange: 2, actorId: 'pc-b' }, { requesterId: 'pl-1', requester: P1, requesterIsGM: false });
+    await applyBondEffects({ outcome: 'weak_hit', actorId: 'pc-b' }, { requesterId: 'pl-1', requester: P1, requesterIsGM: false });
     expect(pcB._updateHistory).toHaveLength(0);
     expect(getCapturedWarns().some(w => /does not own Bex — momentum refused/.test(w))).toBe(true);
   });
 
-  it('clamps an inflated legacy-tick payload to the legal 2 ticks', async () => {
-    await applyBondEffects({ ticksOnBonds: 40 }, { requesterIsGM: false });
-    expect(state().legacyTracks.bonds.ticks).toBe(2);
-    expect(getCapturedWarns().some(w => /ticksOnBonds=40 is not a legal roll result/.test(w))).toBe(true);
-  });
-
-  it('clamps an inflated momentum payload to +2', async () => {
-    await applyBondEffects({ momentumChange: 10, actorId: 'pc-a' }, { requesterIsGM: true });
-    expect(pcA._updateHistory.some(u => u['system.momentum.value'] === 4)).toBe(true);
-  });
-
-  it('refuses a payload asking for both legacy ticks and momentum', async () => {
-    const res = await applyBondEffects({ ticksOnBonds: 2, momentumChange: 2, actorId: 'pc-a' }, { requesterIsGM: true });
-    expect(res).toEqual({ applied: false, reason: 'invalid' });
+  it('a miss pays nothing', async () => {
+    const res = await applyBondEffects({ outcome: 'miss', isMatch: true, actorId: 'pc-a' }, { requesterIsGM: true });
+    expect(res).toEqual({ applied: false });
     expect(state().legacyTracks.bonds).toBeUndefined();
     expect(pcA._updateHistory).toHaveLength(0);
   });
 
+  // Issue #322 V01: the old payload named its effects and the clamp turned any
+  // tick count into 2. Now the payload names a roll result and the table pays
+  // it, so no request asks for more — or for ticks and momentum together.
+  it('effects named in the payload are ignored: the outcome is paid from the table', async () => {
+    await applyBondEffects({ outcome: 'strong_hit', ticksOnBonds: 40, momentumChange: 10, actorId: 'pc-a' }, { requesterIsGM: true });
+    expect(state().legacyTracks.bonds.ticks).toBe(2);
+    expect(pcA._updateHistory).toHaveLength(0);
+  });
+
+  it.each([
+    [{ ticksOnBonds: 2 }],
+    [{ outcome: 'great_hit' }],
+    [{ outcome: 'toString' }],
+    [{ outcome: null, momentumChange: 2, actorId: 'pc-a' }],
+  ])('refuses a payload whose outcome is not a roll result: %j', async (payload) => {
+    const res = await applyBondEffects(payload, { requesterIsGM: true });
+    expect(res).toEqual({ applied: false, reason: 'invalid' });
+    expect(state().legacyTracks.bonds).toBeUndefined();
+    expect(pcA._updateHistory).toHaveLength(0);
+    expect(getCapturedWarns().some(w => /is not a roll result — refused/.test(w))).toBe(true);
+  });
+
   it('refuses a rank raise that skips a rank (not the connection\'s next rank)', async () => {
-    await applyBondEffects({ raiseRank: true, targetHostId: 'conn-1', targetName: 'Sable', raisedRank: 'epic' }, {});
+    await applyBondEffects({ outcome: 'strong_hit', isMatch: true, targetHostId: 'conn-1', raisedRank: 'epic' }, {});
     expect(updateConnection).not.toHaveBeenCalled();
     expect(getCapturedWarns().some(w => /is not the next rank of bonded connection/.test(w))).toBe(true);
   });
 
-  it('a non-boolean raiseRank is not a raise', async () => {
-    const res = await applyBondEffects({ raiseRank: 'yes', targetHostId: 'conn-1', raisedRank: 'formidable' }, {});
-    expect(res).toEqual({ applied: false });
+  it('a non-boolean match is not a match: no raise', async () => {
+    await applyBondEffects({ outcome: 'strong_hit', isMatch: 'yes', targetHostId: 'conn-1', raisedRank: 'formidable' }, {});
     expect(updateConnection).not.toHaveBeenCalled();
+    expect(state().legacyTracks.bonds.ticks).toBe(2);
   });
 
-  it('raises the connection rank', async () => {
-    await applyBondEffects({ raiseRank: true, targetHostId: 'conn-1', raisedRank: 'formidable' }, {});
+  it('raises the connection rank on a strong hit with a match', async () => {
+    await applyBondEffects({ outcome: 'strong_hit', isMatch: true, targetHostId: 'conn-1', raisedRank: 'formidable' }, {});
     expect(updateConnection).toHaveBeenCalledWith('conn-1', { rank: 'formidable' });
+  });
+
+  it('a weak hit raises no rank, whatever the payload says', async () => {
+    await applyBondEffects({ outcome: 'weak_hit', isMatch: true, targetHostId: 'conn-1', raisedRank: 'formidable', actorId: 'pc-a' }, { requesterIsGM: true });
+    expect(updateConnection).not.toHaveBeenCalled();
   });
 
   // Issue #314 Q04: the mirror was keyed by the host Actor id, which no Item
@@ -222,7 +242,7 @@ describe('applyBondEffects — canonical GM handler', () => {
     const sibling = bondItem('b-sibling', 'Sable',     'rec-other');    // another Sable's
     pcA.items = { contents: [sable, sibling] };
 
-    await applyBondEffects({ raiseRank: true, targetHostId: 'conn-1', raisedRank: 'formidable' }, {});
+    await applyBondEffects({ outcome: 'strong_hit', isMatch: true, targetHostId: 'conn-1', raisedRank: 'formidable' }, {});
 
     expect(sable.system.rank).toBe('formidable');
     expect(sibling.system.rank).toBe('dangerous');
@@ -231,7 +251,7 @@ describe('applyBondEffects — canonical GM handler', () => {
 
   it('refuses a malformed rank raise with a warning', async () => {
     const warn = vi.spyOn(console, 'warn');
-    await applyBondEffects({ raiseRank: true, targetHostId: 'conn-1', raisedRank: 'legendary' }, {});
+    await applyBondEffects({ outcome: 'strong_hit', isMatch: true, targetHostId: 'conn-1', raisedRank: 'legendary' }, {});
     expect(updateConnection).not.toHaveBeenCalled();
     expect(warn.mock.calls.some(c => /rank raise requested without a valid/.test(String(c[0])))).toBe(true);
   });

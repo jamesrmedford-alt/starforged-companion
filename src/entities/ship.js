@@ -37,6 +37,7 @@ import {
   registerEntityIdInStore,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
+import { keepNotesPortrait } from "../art/notesPortrait.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "ship";
@@ -623,8 +624,11 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     // document between the first and last setFlag and see only some of
     // the fields populated. Foundry V13 auto-creates intermediate paths
     // in dot-notation flag writes, so this single update form is safe.
+    // The portrait embedded at the top of the old Notes stays (issue #322
+    // V30): a regenerated flavour keeps the ship's existing portrait, which
+    // generatePortrait does not attach again.
     await actor.update({
-      "system.notes":                      notesHtml,
+      "system.notes":                      keepNotesPortrait(actor.system?.notes, notesHtml),
       [`flags.${MODULE_ID}.ship`]:         ship,
       [`flags.${MODULE_ID}.entityType`]:   actor.flags?.[MODULE_ID]?.entityType ?? "ship",
       [`flags.${MODULE_ID}.entityId`]:     actor.flags?.[MODULE_ID]?.entityId   ?? id,
