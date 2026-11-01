@@ -694,6 +694,12 @@ const DEFAULT_PERMISSION_CLASS_BY_MODE = {
   oracle_followup:     'embellishment',
   session_vignette:    'embellishment',
   inciting_incident:   'discovery',
+  // The oath scene is sensory fiction around an established vow; it had no
+  // entry, so it carried no latitude block at all (issue #322 V23).
+  vow_swearing:        'embellishment',
+  // A clock's beat moves an established threat forward — its arrival, when
+  // the clock fills — with the cast the table knows (issue #322 V23).
+  clock_advance:       'interaction',
   campaign_recap:      null,
 };
 
@@ -952,6 +958,7 @@ const NARRATOR_MODES = new Set([
   'session_vignette',   // Begin Session opening vignette — see src/session/galleyVignette.js
   'inciting_incident',  // Campaign-launch inciting incident — see src/session/incitingIncident.js
   'vow_swearing',       // The moment a vow is sworn, grounded in the Iron truth — see narrateVowSwearing
+  'clock_advance',      // A tracked threat's clock advancing or filling — see narrateClockAdvancement
   'campaign_recap',     // Between-sessions recap generation — see getCampaignRecap (narrator.js)
 ]);
 
@@ -1019,6 +1026,20 @@ const ROLE_DESCRIPTIONS = {
     `Both flavours: end the vignette on a beat that closes (END) or hands the scene ` +
     `over (BEGIN). Do not describe a move, do not propose a mechanical action — depict ` +
     `the calm before / the calm after, not the start or end of the action.`,
+
+  // A clock beat used the session-vignette role — "depict the calm before /
+  // the calm after, not the start or end of the action" — for a threat
+  // materialising (issue #322 V23).
+  clock_advance:
+    `You are the narrator for an Ironsworn: Starforged campaign. Your role is to render ` +
+    `a tracked threat moving closer — a danger, a faction's plot or a deadline whose ` +
+    `clock has just advanced — as a brief story beat.\n\n` +
+    `The user message names the threat and whether its clock has filled. Make the ` +
+    `advance felt in the current fiction: a sign, a report, a tremor, a warning that ` +
+    `the pressure has grown. When the clock has filled, the threat MATERIALISES — depict ` +
+    `its arrival concretely, as happening now, and leave the characters poised to ` +
+    `respond. Do not resolve it, and do not name a move, a mechanic, the clock or its ` +
+    `segments.`,
 
   inciting_incident:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +

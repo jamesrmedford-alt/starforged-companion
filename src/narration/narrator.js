@@ -2148,8 +2148,10 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
   await ensureSceneStarted(campaignState, 'clock_vignette');
 
+  // Its own role (a threat tightening, or arriving), not the session
+  // vignette's "calm before / after" (issue #322 V23).
   const character = getActiveCharacter(campaignState);
-  const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
+  const extras = await buildNarratorExtras('clock_advance', campaignState, { character });
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );

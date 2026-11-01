@@ -23,8 +23,11 @@ of context), **WRONG-DETAIL** (stale/wrong data injected), **INVENT-RISK**
 **Single seam holds.** Every narrator call builds context through
 `buildNarratorExtras(mode, …)` (`src/narration/narrator.js`): move_resolution,
 paced_narrative, scene_interrogation, oracle_followup, session_vignette
-(galley, end-session, clock/trigger vignettes), vow_swearing,
-inciting_incident, campaign_recap (meta — no sidecar/latitude). The `!ship
+(galley and end-session vignettes), clock_advance (a clock's advance or
+trigger — its own role and the interaction latitude since issue #322 V23; it
+used the vignette's "calm before / after"), vow_swearing (embellishment
+latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
+sidecar/latitude). The `!ship
 envision/history` and `!lore`/truths generators are separate world-building
 prompts outside the memory surfaces (they write Notes/journal canon but don't
 read the ledger).
