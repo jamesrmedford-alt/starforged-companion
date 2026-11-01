@@ -33,7 +33,7 @@
 import { apiPost } from "../api-proxy.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 
-import { getConnection, createConnection, updateConnection } from "./connection.js";
+import { getConnection, createConnection, updateConnection, roleTitleFromName } from "./connection.js";
 import { getPlayerActors, createCharacterBondItem } from "../character/actorBridge.js";
 import { getSettlement, createSettlement } from "./settlement.js";
 import { getFaction,    createFaction }    from "./faction.js";
@@ -87,12 +87,16 @@ const ENTITY_ID_FIELDS = {
 
 /**
  * Reduce an entity name to a canonical form for dedup comparisons.
- * The detector may strip an honorific when it extracts a name from prose, so
- * we strip the same set (HONORIFIC_PREFIXES, shared with the name index): "Dr.
+ * The detector may strip a title when it extracts a name from prose, so we
+ * strip one shared title set: the honorifics (HONORIFIC_PREFIXES, shared with
+ * the name index) and the titles the module itself writes into NPC names as
+ * their role (connection.js NAME_TITLE_ROLES, via roleTitleFromName). "Dr.
  * Chen" stored as a connection matches a "Chen" detection on the next
- * narration, instead of being treated as a new NPC.
+ * narration, and the PC "Doctor Chen" or the vow target "Administrator Lyssa
+ * Chen" match "Dr. Chen" / "Lyssa Chen" (issue #321 U30), instead of each
+ * being offered as a new NPC.
  * Lowercases, trims, collapses interior whitespace, and strips a single
- * leading honorific (with optional trailing period). Returns `""` for
+ * leading title (with optional trailing period). Returns `""` for
  * non-string / empty input.
  */
 export function normalizeEntityName(name) {
@@ -100,7 +104,7 @@ export function normalizeEntityName(name) {
   let n = name.trim().toLowerCase().replace(/\s+/g, " ");
   if (!n) return "";
   const m = n.match(/^([a-z]+)\.?\s+(.+)$/);
-  if (m && HONORIFIC_PREFIXES.has(m[1])) n = m[2];
+  if (m && (HONORIFIC_PREFIXES.has(m[1]) || roleTitleFromName(m[1]))) n = m[2];
   return n.trim();
 }
 

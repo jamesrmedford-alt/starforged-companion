@@ -1357,6 +1357,22 @@ describe("normalizeEntityName", () => {
     expect(normalizeEntityName("Iron Compact")).toBe("iron compact");
     expect(normalizeEntityName("Old Sable")).toBe("old sable");
   });
+
+  // Issue #321 U30 — the titles the module writes into NPC names as their role
+  // (connection.js NAME_TITLE_ROLES) are stripped like the honorifics.
+  it("strips a leading NPC title the module records as a role", () => {
+    expect(normalizeEntityName("Doctor Chen")).toBe("chen");
+    expect(normalizeEntityName("Administrator Lyssa Chen")).toBe("lyssa chen");
+    expect(normalizeEntityName("Overseer Kell")).toBe("kell");
+    expect(normalizeEntityName("Councillor Mae")).toBe("mae");
+    expect(normalizeEntityName("Warden Ilse Varo")).toBe("ilse varo");
+  });
+
+  it("control: strips only a whole leading title word", () => {
+    expect(normalizeEntityName("Chiefly Nobody")).toBe("chiefly nobody");
+    expect(normalizeEntityName("Governor's Rest")).toBe("governor's rest");
+    expect(normalizeEntityName("Warden")).toBe("warden");
+  });
 });
 
 
