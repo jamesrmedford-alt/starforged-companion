@@ -15,9 +15,9 @@
  * of the store read at the click (a Replace: after its prompt closes) and
  * persists only the ledger field it changed, merged onto the latest store.
  *
- * The DialogV2 double runs the dialog's render wiring both ways a test may
- * see it — the `render` option and the "render" event — so these tests are
- * about the writes, not the wiring (correctionDialogWiring.test.js).
+ * The DialogV2 double fires the "render" event the dialog wires its rows
+ * from (issue #321 U38 — correctionDialogWiring.test.js covers the wiring);
+ * these tests are about the writes.
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -34,7 +34,6 @@ class FakeDialogV2 extends EventTarget {
   constructor(options) { super(); this.options = options; this.element = null; FakeDialogV2.last = this; }
   async render() {
     this.element = parseHTML(`<div class="window-content">${this.options.content}</div>`);
-    this.options.render?.(null, this);
     this.dispatchEvent(new Event('render'));
     return this;
   }

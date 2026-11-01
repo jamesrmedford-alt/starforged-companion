@@ -74,9 +74,14 @@ export async function openCorrectionDialog(message) {
       { action: 'close', label: 'Close', default: true, callback: () => true },
     ],
     rejectClose: false,
-    render: (_event, dialog) => attachRowHandlers(dialog.element, ctx, () => rerender(dialog)),
   });
 
+  // The row controls are wired from the dialog's "render" event (issue #321
+  // U38). `render` is a DialogV2.wait() option — wait() itself attaches it
+  // with addEventListener("render") — so on a dialog built with `new` it was
+  // an unread option, the Strike / Replace handlers never attached, and the
+  // rows' buttons submitted (closed) the dialog.
+  dlg.addEventListener('render', () => attachRowHandlers(dlg.element, ctx, () => rerender(dlg)));
   dlg.render({ force: true });
 }
 
@@ -123,8 +128,8 @@ function renderTruthRow(truth, ctx) {
   const lockHint  = canStrike ? '' : ` <span class="sf-correct-lock" title="GM-asserted — players cannot strike">🔒</span>`;
   const buttons   = canStrike
     ? `
-      <button class="sf-correct-btn" data-action="strike-truth" data-truth-id="${escape(truth.id)}">Strike</button>
-      <button class="sf-correct-btn" data-action="replace-truth" data-truth-id="${escape(truth.id)}">Replace…</button>
+      <button type="button" class="sf-correct-btn" data-action="strike-truth" data-truth-id="${escape(truth.id)}">Strike</button>
+      <button type="button" class="sf-correct-btn" data-action="replace-truth" data-truth-id="${escape(truth.id)}">Replace…</button>
     `
     : '';
   return `
@@ -146,9 +151,9 @@ function renderStateRow(row, ctx) {
   const value     = escape(String(row.value ?? ''));
   // All actors can strike/replace state values (scope §10.1 — state is no-asymmetry).
   const buttons   = ctx ? `
-    <button class="sf-correct-btn" data-action="strike-state"
+    <button type="button" class="sf-correct-btn" data-action="strike-state"
             data-state-key="${escape(row.key)}" data-attribute="${attribute}">Strike</button>
-    <button class="sf-correct-btn" data-action="replace-state"
+    <button type="button" class="sf-correct-btn" data-action="replace-state"
             data-state-key="${escape(row.key)}" data-attribute="${attribute}">Replace…</button>
   ` : '';
   return `
