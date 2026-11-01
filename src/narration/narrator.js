@@ -1554,13 +1554,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
     }
 
     await postSceneCard(question, response, sessionId, character?.name ?? null);
-    // Mine the ANSWER for entities, factions, and lore — the same passes the
-    // paced-narrative path runs. A direct question ("who is the Triumvirate?")
-    // routinely surfaces the richest world detail of the session; without this
-    // the narrator's answer reached the chat log and the recent-narration ring
-    // but never the World Journal or entity records (playtest v1.7.22).
-    schedulePacedDetection(response, campaignState);
-    schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
+    scheduleSceneAnswerCapture(response, extras, campaignState);
     return response;
 
   } catch (err) {
@@ -1582,8 +1576,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
         });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId, character?.name ?? null);
-          schedulePacedDetection(response, campaignState);
-          schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
+          scheduleSceneAnswerCapture(response, extras, campaignState);
           return response;
         }
       } catch (retryErr) {
@@ -1594,6 +1587,31 @@ export async function interrogateScene(question, campaignState, options = {}) {
     await postSceneFallbackCard(question, 'Scene query failed — check your API key and proxy.', sessionId);
     return null;
   }
+}
+
+/**
+ * Mine an @scene ANSWER for entities, factions, and lore — the same passes
+ * the paced-narrative path runs. A direct question ("who is the
+ * Triumvirate?") routinely surfaces the richest world detail of the session;
+ * without this the narrator's answer reached the chat log and the
+ * recent-narration ring but never the World Journal or entity records
+ * (playtest v1.7.22).
+ *
+ * Canonical GM only, like scheduleNarrationCapture: both passes write the
+ * world (World Journal pages, session-log beats, entity cards, the GM's draft
+ * card). @scene runs RUN_ON.CLAUDE, so at a table with no keyed GM it answers
+ * on the asking player's client, where those writes are refused (issue #321
+ * U36). There the answer's ledger facts still reach the GM through the
+ * sidecar relay (applyNarratorSidecar); the passes are skipped.
+ *
+ * @param {string} response — the answer's prose
+ * @param {{ matchedEntityIds?: string[], matchedEntityTypes?: string[] }} extras
+ * @param {Object} campaignState
+ */
+function scheduleSceneAnswerCapture(response, extras, campaignState) {
+  if (!isCanonicalGM()) return;
+  schedulePacedDetection(response, campaignState);
+  schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
 }
 
 /**
