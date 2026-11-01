@@ -1563,8 +1563,16 @@ export function registerChatHook() {
         rollerActor?.id ?? null,
       );
 
-      // Step 10: narrate the consequence directly via Claude — no GM dependency
-      await narrateResolution(resolution, campaignState, { relevance, speakerActorId });
+      // Step 10: narrate the consequence directly via Claude — no GM dependency.
+      // The result card is on the table: the result is applied below whatever
+      // happens to its narration. narrateResolution posts a fallback card when
+      // the Claude call fails, but when the narrator card and that fallback
+      // are both refused its rejection skipped the persist — the strong hit
+      // showed and never landed (issue #322 V09).
+      await narrateResolution(resolution, campaignState, { relevance, speakerActorId }).catch(err => {
+        console.warn(`${MODULE_ID} | the move's narration could not be posted — its result is applied all the same:`, err?.message ?? err);
+        ui.notifications?.warn?.("Starforged Companion: the narration could not be posted to chat; the move's result was still applied.");
+      });
 
       // Only the GM can write world-scoped settings (campaignState).
       // Players trigger the pipeline but defer persistence to the GM's client.
