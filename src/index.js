@@ -917,22 +917,35 @@ export function registerChatHook() {
       // fights open and none named — a typed "I take decisive action", or a
       // combat card whose fight nothing named — it would score nothing: a
       // certain miss. Ask which fight instead of rolling; each pick posts the
-      // move again with that fight's id (TDA-BUTTON-NO-TARGET).
-      if (interpretation.moveId === "take_decisive_action" && !interpretation.moveTargetId) {
+      // move again with that fight's id (TDA-BUTTON-NO-TARGET). Strike and
+      // Clash mark one fight's progress and Undertake an Expedition one
+      // expedition's: unnamed among several, they made a phantom track (issue
+      // #321 U16), so they ask too — a named destination is its own
+      // expedition, or a new one.
+      const whichTrackType =
+        ["take_decisive_action", "strike", "clash"].includes(interpretation.moveId) ? "combat"
+        : interpretation.moveId === "undertake_an_expedition" ? "expedition"
+        : null;
+      if (whichTrackType && !interpretation.moveTargetId) {
         const tracks = await listProgressTracks().catch(err => {
-          console.warn(`${MODULE_ID} | which-fight lookup failed:`, err?.message ?? err);
+          console.warn(`${MODULE_ID} | which-${whichTrackType === "combat" ? "fight" : "expedition"} lookup failed:`, err?.message ?? err);
           return [];
         });
-        const openFights = tracks.filter(t => t.type === "combat" && !t.completed);
-        if (openFights.length >= 2 && !selectCombatTrack(openFights, interpretation.moveTarget ?? null)) {
+        const open   = tracks.filter(t => t.type === whichTrackType && !t.completed);
+        const target = interpretation.moveTarget ?? null;
+        const unresolved = whichTrackType === "combat"
+          ? !selectCombatTrack(open, target)
+          : !(typeof target === "string" && target.trim());
+        if (open.length >= 2 && unresolved) {
           await postWhichFightCard({
             moveId:    interpretation.moveId,
             moveName:  interpretation.moveName,
             narration,
             actorId:   speakerActorId ?? null,
-            fights:    openFights,
+            fights:    open,
+            trackType: whichTrackType,
           }).catch(err =>
-            console.warn(`${MODULE_ID} | which-fight card failed:`, err?.message ?? err));
+            console.warn(`${MODULE_ID} | which-${whichTrackType === "combat" ? "fight" : "expedition"} card failed:`, err?.message ?? err));
           return;
         }
       }
@@ -1729,13 +1742,19 @@ async function applyOutcomeEffects({
   if (next.expeditionProgress && !orig.expeditionProgress) {
     try {
       const result = await applyExpeditionProgress(
-        { moveTarget, expeditionRank: interpretation?.expeditionRank },
+        { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null, expeditionRank: interpretation?.expeditionRank },
         {
           listTracks:   () => listProgressTracks(),
           createTrack:  (data) => addProgressTrack(data),
           markProgress: (id) => markProgressById(id),
         },
       );
+      if (result && !result.track) {
+        // Several open and none named, or the named one is over: nothing
+        // marked, and no phantom begun (issue #321 U16).
+        console.warn(`${MODULE_ID} | expedition progress: ${result.reason === "gone" ? "the move's expedition is over" : "more than one expedition is open and none was named"} — not marked.`);
+        notApplied.push(`expedition progress — ${result.reason === "gone" ? "its expedition is over" : "which expedition?"}`);
+      }
       if (result?.track) {
         // Link the new expedition to the undiscovered site its destination
         // confidently names (exact/substring/type keyword — never the
@@ -1875,13 +1894,19 @@ async function applyOutcomeEffects({
         }
       } else {
         const result = await applyCombatProgress(
-          { moveTarget, combatRank: interpretation?.combatRank, markCount: marks },
+          { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null, combatRank: interpretation?.combatRank, markCount: marks },
           {
             listTracks:   () => listProgressTracks(),
             createTrack:  (data) => addProgressTrack(data),
             markProgress: (id) => markProgressById(id),
           },
         );
+        if (result && !result.track) {
+          // Several fights open and none named, or the named one is over:
+          // nothing marked, and no phantom fight (issue #321 U16).
+          console.warn(`${MODULE_ID} | combat progress: ${result.reason === "gone" ? "the move's fight is over" : "more than one fight is open and none was named"} — ×${marks} not marked.`);
+          notApplied.push(`combat progress ×${marks} — ${result.reason === "gone" ? "its fight is over" : "which fight?"}`);
+        }
         if (result?.track) {
           combatProgressTrack = result.track;
           await postCombatProgressCard(result).catch(err =>
@@ -3504,24 +3529,31 @@ async function postTrackGoneCard(interpretation) {
 /**
  * Take Decisive Action with two or more fights open and none named: ask which
  * fight, instead of rolling a score of nothing — a certain miss
- * (TDA-BUTTON-NO-TARGET). Posted in place of the move; nothing is rolled or
- * written. Each open fight gets a button (wireWhichFightButtons) that posts
- * the move again with that fight's id, credited to the original roller.
+ * (TDA-BUTTON-NO-TARGET). Strike and Clash ask the same, and Undertake an
+ * Expedition which expedition (`trackType` "expedition"): unnamed among
+ * several they marked a phantom track (issue #321 U16). Posted in place of
+ * the move; nothing is rolled or written. Each open track gets a button
+ * (wireWhichFightButtons) that posts the move again with that track's id,
+ * credited to the original roller.
  *
  * @param {{ moveId: string, moveName?: string, narration?: string,
  *   actorId?: string|null, fights: Array<{ id: string, label?: string,
- *   rank?: string, ticks?: number }> }} opts
+ *   rank?: string, ticks?: number }>, trackType?: "combat"|"expedition" }} opts
  */
-async function postWhichFightCard({ moveId, moveName, narration, actorId = null, fights }) {
+async function postWhichFightCard({ moveId, moveName, narration, actorId = null, fights, trackType = "combat" }) {
+  const expedition = trackType === "expedition";
+  const noun = expedition ? "expedition" : "fight";
   const buttons = fights.map(t => {
     const rank  = escapeChatHtml(String(t.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
     const boxes = Math.floor(Number(t.ticks ?? 0) / 4);
+    const label = escapeChatHtml(t.label ?? (expedition ? "Expedition" : "Combat"));
     return `<button type="button" class="sf-followup-btn" data-action="sf-which-fight" data-track-id="${escapeChatHtml(t.id)}" `
-      + `title="Roll this fight's progress">⚔ ${escapeChatHtml(t.label ?? "Combat")} — ${rank}, ${boxes}/10 boxes</button>`;
+      + `title="Roll for this ${noun}">${expedition ? "🗺" : "⚔"} ${label} — ${rank}, ${boxes}/10 boxes</button>`;
   }).join("");
+  const choose = moveId === "take_decisive_action" ? "the fight to finish" : `the ${noun}`;
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(moveName ?? "Take Decisive Action")} — which fight?</strong>`
-      + `<p>More than one fight is open and nothing named this one. Choose the fight to finish — nothing has been rolled yet.</p>`
+    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(moveName ?? "Take Decisive Action")} — which ${noun}?</strong>`
+      + `<p>More than one ${noun} is open and nothing named this one. Choose ${choose} — nothing has been rolled yet.</p>`
       + `<div class="sf-milestone-suggest-row">${buttons}</div></div>`,
     // fights: the open fights' ids and names when asked — a pick forwards its
     // fight as forcedMoveTargetId / forcedMoveTarget. actorId: the roller, the
@@ -3816,6 +3848,7 @@ export async function createCombatTrackFromThreshold({ label, rank, vowName, obj
       markCount:     0,
       objective:     objective || null,
       linkedVowName: vowName || null,
+      beginsFight:   true,    // a new foe is a new fight, whatever else is open (issue #321 U16)
     },
     {
       listTracks:   () => listProgressTracks(),

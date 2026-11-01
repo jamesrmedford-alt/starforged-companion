@@ -118,6 +118,39 @@ describe("applyExpeditionProgress", () => {
   it("returns null when deps are incomplete (defensive)", async () => {
     expect(await applyExpeditionProgress({ moveTarget: "x" }, {})).toBeNull();
   });
+
+  // Issue #321 U16 — with two expeditions open, an unnamed Undertake an
+  // Expedition created and marked a phantom "Expedition".
+  describe("an expedition is begun only when none is open or a new one is named (issue #321 U16)", () => {
+    const twoOpen = () => [
+      exp({ id: "e1", label: "The Vault of Tears", rank: "formidable", ticks: 12 }),
+      exp({ id: "e2", label: "Bleakhold survey", ticks: 8 }),
+    ];
+
+    it("with two expeditions open and no destination named, nothing is begun or marked", async () => {
+      const d = deps(twoOpen());
+      const res = await applyExpeditionProgress({ moveTarget: null, expeditionRank: null }, d);
+      expect(d.createTrack).not.toHaveBeenCalled();
+      expect(d.marked).toEqual([]);
+      expect(res).toEqual({ track: null, created: false, reason: "ambiguous" });
+    });
+
+    it("control: a destination none of them matches is a new expedition, as before", async () => {
+      const d = deps(twoOpen());
+      const res = await applyExpeditionProgress({ moveTarget: "The Drift", expeditionRank: "extreme" }, d);
+      expect(d.createTrack).toHaveBeenCalledWith({ label: "The Drift", type: "expedition", rank: "extreme" });
+      expect(res.created).toBe(true);
+    });
+
+    it("an expedition named by id (a which-expedition pick) is that one; over, nothing", async () => {
+      const d = deps(twoOpen());
+      expect((await applyExpeditionProgress({ moveTarget: "Bleakhold survey", moveTargetId: "e2" }, d)).track.id).toBe("e2");
+      expect(d.marked).toEqual(["e2"]);
+      const gone = await applyExpeditionProgress({ moveTarget: "Old route", moveTargetId: "e9" }, d);
+      expect(gone).toEqual({ track: null, created: false, reason: "gone" });
+      expect(d.createTrack).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("legacyRewardTicks", () => {

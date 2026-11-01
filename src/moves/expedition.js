@@ -71,16 +71,31 @@ export function selectExpeditionTrack(allTracks, label, { trackId = null } = {})
  *   deps.createTrack({label,type,rank}) -> Promise<track>
  *   deps.markProgress(trackId)   -> Promise<track|null> (rank-aware; returns updated)
  *
- * @param {{ moveTarget:string|null, expeditionRank:string|null }} move
+ * A new expedition is begun when none is open, or when the move names a
+ * destination none of the open ones matches. With two or more open and no
+ * destination named, the selector's null means "ambiguous", not "none":
+ * creating made a phantom "Expedition" that took the progress (issue #321
+ * U16). An expedition named by id (a "Which expedition?" pick) is that open
+ * one or nothing. Nothing is marked then: `track` is null and `reason` says
+ * why ("ambiguous" | "gone"); the pipeline asks which expedition before
+ * rolling.
+ *
+ * @param {{ moveTarget:string|null, moveTargetId?:string|null, expeditionRank:string|null }} move
  * @param {Object} deps
- * @returns {Promise<{ track:Object, created:boolean }|null>}
+ * @returns {Promise<{ track:Object|null, created:boolean, reason?:string }|null>}
  */
-export async function applyExpeditionProgress({ moveTarget, expeditionRank }, deps) {
+export async function applyExpeditionProgress({ moveTarget, moveTargetId = null, expeditionRank }, deps) {
   if (!deps?.listTracks || !deps?.createTrack || !deps?.markProgress) return null;
 
   const all = await deps.listTracks();
-  let track   = selectExpeditionTrack(all, moveTarget);
+  let track   = selectExpeditionTrack(all, moveTarget, { trackId: moveTargetId });
   let created = false;
+
+  if (!track && moveTargetId) return { track: null, created: false, reason: "gone" };
+  const named = !!(moveTarget && String(moveTarget).trim());
+  if (!track && !named && (all ?? []).some(t => t?.type === "expedition" && !t.completed)) {
+    return { track: null, created: false, reason: "ambiguous" };
+  }
 
   if (!track) {
     const rank  = normalizeExpeditionRank(expeditionRank);

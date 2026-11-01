@@ -64,19 +64,38 @@ export function selectCombatTrack(allTracks, label, { trackId = null } = {}) {
 /**
  * Resolve-or-create the combat track, then mark progress `markCount` times.
  *
- * @param {{ moveTarget?: string|null, combatRank?: string|null, markCount?: number }} opts
+ * A move's marks create a track only when no fight is open (issue #321 U16):
+ * with two or more open and none selected — an unnamed Strike or Clash (the
+ * interpreter is not asked for their target), or a name matching none — the
+ * selector's null means "ambiguous", not "none", and creating made a phantom
+ * "Combat" fight that took the marks and the position. A fight named by id
+ * (a "Which fight?" pick) is that open fight or nothing — over, it is not
+ * re-created. Nothing is marked then: `track` is null and `reason` says why
+ * ("ambiguous" | "gone"); the pipeline asks which fight before rolling.
+ * Entering the fray (`beginsFight`, the threshold card) begins a fight: a foe
+ * no open fight matches is a new one, however many are open.
+ *
+ * @param {{ moveTarget?: string|null, moveTargetId?: string|null, combatRank?: string|null,
+ *   markCount?: number, beginsFight?: boolean }} opts
  * @param {{ listTracks: Function, createTrack: Function, markProgress: Function }} deps
- * @returns {Promise<{track: object, created: boolean, marksApplied: number}>}
+ * @returns {Promise<{track: object|null, created: boolean, marksApplied: number, reason?: string}>}
  */
 export async function applyCombatProgress(
-  { moveTarget, combatRank, markCount = 1, objective = null, linkedVowName = null },
+  { moveTarget, moveTargetId = null, combatRank, markCount = 1, objective = null, linkedVowName = null, beginsFight = false },
   deps,
 ) {
   const { listTracks, createTrack, markProgress } = deps;
 
   const allTracks = await listTracks();
-  let track   = selectCombatTrack(allTracks, moveTarget ?? null);
+  let track   = selectCombatTrack(allTracks, moveTarget ?? null, { trackId: moveTargetId });
   let created = false;
+
+  if (!track && moveTargetId) {
+    return { track: null, created: false, marksApplied: 0, reason: "gone" };
+  }
+  if (!track && !beginsFight && allTracks.some(t => t.type === 'combat' && !t.completed)) {
+    return { track: null, created: false, marksApplied: 0, reason: "ambiguous" };
+  }
 
   if (!track) {
     track = await createTrack({
