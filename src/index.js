@@ -5729,7 +5729,11 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
 async function handleSectorCommand(message) {
   const text  = message.content?.trim() ?? "";
   const parts = text.slice("!sector".length).trim().split(/\s+/);
-  const sub   = parts[0]?.toLowerCase() ?? "";
+  const arg   = parts.join(" ");
+  // `new` and `list` are subcommands only as the whole argument: a sector
+  // named "New Hope" or "List of Stars" is switched to by its name — `!sector
+  // New Hope` opened the Sector Creator (issue #322 V10).
+  const sub   = parts.length === 1 ? arg.toLowerCase() : null;
 
   // A copy: a refused switch must leave this client's cached state as it was
   // (issue #321 U58).
@@ -5737,7 +5741,7 @@ async function handleSectorCommand(message) {
 
   // Bare `!sector` — show usage (SECTOR-SWITCH-001: it used to do nothing).
   // Whispered to the typist; it's help text, not table news.
-  if (!sub) {
+  if (!arg) {
     await ChatMessage.create({
       content: "<p><strong>Sectors:</strong> <code>!sector list</code> — list sectors · " +
         "<code>!sector new</code> — create one (GM) · <code>!sector &lt;name&gt;</code> — switch the active sector (GM).</p>",
@@ -5781,7 +5785,7 @@ async function handleSectorCommand(message) {
     ui.notifications.warn("!sector <name> (switching the active sector) is GM-only.");
     return;
   }
-  const name   = parts.join(" ");
+  const name   = arg;
   const match  = (campaignState.sectors ?? []).find(
     s => s.name.toLowerCase() === name.toLowerCase()
   );
