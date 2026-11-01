@@ -6579,8 +6579,11 @@ Hooks.once("ready", () => {
   registerSectorSceneHooks();
   registerShipMapSceneHooks();
   // Audio narration — socket relay for cache writes from non-GM clients.
-  import("./audio/index.js").then(({ registerAudioSocket }) => {
+  import("./audio/index.js").then(({ registerAudioSocket, markAudioClientReady }) => {
     registerAudioSocket();
+    // Only a narrator card created after this client's start auto-plays —
+    // never the chat log rendered at load (issue #322 V15).
+    markAudioClientReady();
   }).catch(err => console.warn(`${MODULE_ID} | audio socket registration failed:`, err));
   // Shared inciting-vow — GM-side relay (any player can swear it for the crew)
   // and the cross-PC progress sync. Both no-op on non-canonical clients.

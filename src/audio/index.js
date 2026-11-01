@@ -94,6 +94,31 @@ function _saveAutoplayedIds(ids) {
 /** Test-only — resets the autoplay guard so the next call re-reads storage. */
 export function _resetAutoplayGuardForTests() { _autoplayedCardIds = null; }
 
+// This client's start: a narrator card auto-plays only when it was created
+// after it. Foundry renders the recent chat log at every page load, so on a
+// browser whose played-list (claimAutoplayOnce) lacked those ids — a new
+// device, cleared site data, the first load after turning auto-play on —
+// every old card claimed auto-play, and the player's first click anywhere
+// played an hours-old narration (issue #322 V15). In server time when Foundry
+// gives it, since a message's `timestamp` is the server's; a minute's margin
+// covers a card posted while this client loaded.
+const NEW_CARD_MARGIN_MS = 60 * 1000;
+const serverNow = () => {
+  const t = Number(globalThis.game?.time?.serverTime);
+  return Number.isFinite(t) && t > 0 ? t : Date.now();
+};
+let _clientStartedAt = serverNow();
+
+/** Called from the module's ready hook: this client's start, in server time. */
+export function markAudioClientReady() { _clientStartedAt = serverNow(); }
+
+/** Was this card created since this client started (an old chat-log card is not)? */
+function isCardNewHere(message) {
+  const ts = Number(message?.timestamp ?? Date.parse(message?.flags?.[MODULE_ID]?.timestamp ?? ""));
+  if (!Number.isFinite(ts)) return true;
+  return ts >= _clientStartedAt - NEW_CARD_MARGIN_MS;
+}
+
 /**
  * Should this card auto-play right now? Returns true at most once per card id
  * across page reloads — the first call claims it and returns true; subsequent
@@ -520,7 +545,7 @@ export async function onNarratorCardRendered(message, root) {
 
   // Optional auto-play — once per card. A re-render (e.g. after the card's
   // "Roll <move>" button updates the message) must not replay the audio (F14).
-  if (getSetting("audio.autoplay", false) === true && claimAutoplayOnce(message.id)) {
+  if (getSetting("audio.autoplay", false) === true && isCardNewHere(message) && claimAutoplayOnce(message.id)) {
     if (!userGestureReceived()) {
       showGestureOverlay(root, async () => {
         await togglePlayback(message, fresh, rawProse);
