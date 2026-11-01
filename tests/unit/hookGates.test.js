@@ -70,6 +70,7 @@ const LOCAL_ONLY = {
   'src/index.js createItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
   'src/index.js updateItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
   'src/index.js deleteItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
+  'src/private-channel/transcript.js createJournalEntry inline#1': 'ends this client\'s wait for the transcript journal the GM created for it',
 };
 
 const NOT_CALLS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'new', 'import', 'super']);

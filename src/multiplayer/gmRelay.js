@@ -172,6 +172,9 @@ export const GM_ACTIONS = Object.freeze({
   // The Progress Tracks and Entities panels: every edit, from any user (issue #321 U05)
   "progressTrack.edit":        { load: () => import("../ui/progressTracks.js"),                      fn: "applyProgressTrackEditFromRelay" },
   "entity.edit":               { load: () => import("../ui/entityPanel.js"),                         fn: "applyEntityEditFromRelay" },
+  // Issue #321 U10 — the Private Channel: a default Player cannot create a JournalEntry, so the GM
+  // creates the player's transcript journal, with the player as its OWNER
+  "privateChannel.createJournal": { load: () => import("../private-channel/transcript.js"),         fn: "applyPrivateJournalCreate" },
 });
 
 /**
