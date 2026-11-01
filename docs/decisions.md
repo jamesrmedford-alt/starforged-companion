@@ -1907,6 +1907,40 @@ adds itself, alongside the confirm dialog's asset adds.
 - *Let the table choose the recipient* — the rule allows "you or an ally";
   the next action roll is the common case and needs no extra prompt.
 
+## The roller's +1 on the next move is applied automatically (2026-11-01)
+
+**Decision (maintainer, issue #322 V02):** "+1 on your next move (not a
+progress move)" — Secure an Advantage's strong hit (beside its +2 momentum),
+its weak-hit pick and Gain Ground's pick — is recorded for the **roller** as
+`campaignState.nextMoveBonuses[actorId]` (`{ value, sources, setAt }`) and the
+move pipeline adds it to **that character's** next action roll
+(`src/moves/nextMoveAdd.js`). The pick's executor (sufferDialog `next-bonus`)
+grants it on the canonical GM, where a choice card's pick runs; the strong
+hit's rides its consequences (`nextMoveBonus: 1`), granted by
+`applyOutcomeEffects` — so a Burn or Improve Result that upgrades a weak hit
+to the strong hit grants it too. The pipeline takes it with
+`consumeNextMoveBonus`, after Take a Break's add, claiming it on the store
+first: a refused claim adds nothing and leaves it pending, so it is never
+added twice. Progress and no-roll moves leave it pending; two pending grants
+add up. The field is store-owned in `persistResolution`'s merge. A grant the
+world refuses is reported on the choice card, with the GMs' Retry
+(`isRetryableSufferCall` accepts `next-bonus`).
+
+**Reason:** NEXT-MOVE-BONUS-DEAD — the pick posted "Remember to add +1 to your
+action die result on the next roll" with a `nextBonus` flag nothing read, the
+pipeline rolls the next move itself and the confirm dialog has no adds input,
+and the strong hit's +1 was the card's text alone. Take a Break's identical
++1 had the same defect, fixed the same way (above).
+
+**Rejected:**
+- *Table-wide, like Take a Break* — the move says "your next move"; Take a
+  Break's "you or an ally" is the table's.
+- *A manual adds input on the confirm dialog* — it asks the player to remember
+  a bonus the module already knows, on every roll.
+
+Like Take a Break's, the +1 reaches the move pipeline's rolls only: `!bond`
+and a roll made on the system's character sheet do not take it.
+
 ## Claude calls run where a key lives, exactly once (2026-10)
 
 **Decision:** The Claude key is per browser (issue #209), so work whose job is
@@ -3875,8 +3909,12 @@ that marks the active combat track. Explore a Waypoint's "gain expedition
 progress OR +2 momentum" choice is now a real dialog picker (the
 `expedition-progress` call kind). Combat position is written to the track after
 every combat move. Take Decisive Action and Face Defeat close the track with
-`endCombat: true`. The "+1 on your next move" option in Gain Ground posts a
-reminder card — not auto-applied, no campaignState field, player applies it.
+`endCombat: true`. ~~The "+1 on your next move" option in Gain Ground posts a
+reminder card — not auto-applied, no campaignState field, player applies it.~~
+*Superseded 2026-11-01 (issue #322 V02):* the pipeline rolls every move
+itself and the confirm dialog has no adds input, so "player applies it" left
+the +1 applied by nobody — see "The roller's +1 on the next move is applied
+automatically".
 
 **Reason:** the maintainer asked to "plan and execute" the combat progress +
 in-dialogue momentum-vs-progress gap, with full lifecycle mirror and

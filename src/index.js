@@ -210,7 +210,7 @@ import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence } from "./m
 import { registerGmRelaySocket, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
-import { takeNextMoveAdd, clearPersistedNextMoveAdd } from "./moves/nextMoveAdd.js";
+import { takeNextMoveAdd, clearPersistedNextMoveAdd, grantNextMoveBonus, consumeNextMoveBonus } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
@@ -1034,6 +1034,13 @@ export function registerChatHook() {
       if (breakAdd > 0) {
         interpretation.adds = (interpretation.adds ?? 0) + breakAdd;
         await clearPersistedNextMoveAdd();
+      }
+      // "+1 on your next move" the roller earned (Secure an Advantage, Gain
+      // Ground): their own, on their next action roll — claimed on the store
+      // first, so a refused claim adds nothing (issue #322 V02).
+      const bonusAdd = await consumeNextMoveBonus(campaignState, rollerActor?.id ?? null, interpretation.moveId);
+      if (bonusAdd > 0) {
+        interpretation.adds = (interpretation.adds ?? 0) + bonusAdd;
       }
 
       // Stat substitution — when an asset ability (e.g. Empath's
@@ -1866,6 +1873,23 @@ async function applyOutcomeEffects({
       notApplied.push(`companion health ${signed} (${healed.reason})`);
     } else {
       applied.push(`companion health ${signed}`);
+    }
+  }
+
+  // Secure an Advantage's strong hit — "take both": the +1 on the roller's
+  // next move beside the +2 momentum (the weak hit's and Gain Ground's are a
+  // choice card's pick, granted by the pick). Recorded for the roller and
+  // added to their next action roll (consumeNextMoveBonus); it was card text
+  // alone (issue #322 V02). An upgrade grants what its outcome adds.
+  const nextBonus = Number(next.nextMoveBonus ?? 0) - Number(orig.nextMoveBonus ?? 0);
+  if (nextBonus > 0) {
+    try {
+      const granted = await grantNextMoveBonus(rollerActor?.id ?? null, nextBonus, resolution.moveId ?? null);
+      if (granted.ok) applied.push(`+${nextBonus} on ${rollerActor?.name ?? "the roller"}'s next move`);
+      else notApplied.push(`+${nextBonus} on the next move — no character to give it to`);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | next-move bonus failed:`, err?.message ?? err);
+      notApplied.push(`+${nextBonus} on the next move`);
     }
   }
 

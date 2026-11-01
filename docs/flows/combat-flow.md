@@ -119,7 +119,12 @@ fight or, gone or finished by then, nothing — the card says so. It used to
 re-select the sole open fight at click time: with two open it marked nothing,
 and an old choice marked a fight opened after its own finished (issue #309
 N04). A card posted before the card carried its fight keeps the sole-open
-reading.
+reading. Its "+1 on your next move" pick (and Secure an Advantage's) grants the
+roller `campaignState.nextMoveBonuses[actorId]` (`grantNextMoveBonus`), which
+the pipeline adds to that character's next action roll (`consumeNextMoveBonus`,
+`src/moves/nextMoveAdd.js`); Secure an Advantage's strong hit grants it through
+`applyOutcomeEffects` (`nextMoveBonus` consequence). The pick only posted a
+reminder card (issue #322 V02).
 
 **Position** (`in_control` / `bad_spot`) is written to the track and mirrored
 to the actor + combatant badge (`applyCombatPositionToTrack`) — the track

@@ -208,6 +208,8 @@ export function isRetryableSufferCall(call) {
     case "combat-progress":
     case "expedition-progress":
       return smallInt(call.count ?? 1, 4);
+    case "next-bonus":
+      return smallInt(call.amount, 2);
     default:
       return false;
   }
@@ -361,13 +363,20 @@ async function runSufferCall(call, actor, opts) {
       console.warn(`${MODULE_ID} | combat-position executor: ${open.length} open combat tracks — position "${call.position}" not applied.`);
       return { kind: "combat-position", position: call.position, skipped: true, ok: false, reason: "ambiguous" };
     }
-    case "next-bonus":
+    case "next-bonus": {
+      // The roller's own +1, added by the pipeline to their next action roll
+      // (nextMoveAdd.js consumeNextMoveBonus). It only posted a reminder card,
+      // and the confirm dialog has nowhere to enter it (issue #322 V02). A
+      // write the world refuses throws: the card reports it, with a Retry.
+      const { grantNextMoveBonus } = await import("./nextMoveAdd.js");
+      const granted = await grantNextMoveBonus(actor?.id ?? null, call.amount, "choice");
+      if (!granted.ok) return { kind: "next-bonus", amount: call.amount, ok: false, reason: granted.reason };
       await postDeferredCard(
         `+${call.amount} on your next move`,
-        `Remember to add +${call.amount} to your action die result on the next roll.`,
-        { nextBonus: true, amount: call.amount },
+        `Added to ${escapeHtml(actor?.name ?? "your character")}'s next action roll (not a progress move).`,
       );
       return { kind: "next-bonus", amount: call.amount };
+    }
     case "complication":
       // Surface a chat card; the narrator picks it up on next scene
       // transition. The actual `pendingComplication` flag write is
@@ -449,6 +458,14 @@ async function applyVehicleIntegrity(vehicleActorId, delta) {
   if (res.reason === "battered") console.warn(`${MODULE_ID} | integrity change: ${res.name ?? id} is battered — integrity not raised.`);
   if (res.reason === "refused")  console.warn(`${MODULE_ID} | integrity change on ${res.name ?? id} failed:`, res.error);
   return { ...res, vehicleActorId: id };
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 async function postDeferredCard(title, body, flags = {}) {

@@ -263,6 +263,11 @@ function emptyConsequences() {
     reachMilestone:        false,
     // Pipeline applies this delta to companion health (Companion Takes a Hit strong hit).
     companionHealthChange: 0,
+    // "+N on your next move (not a progress move)" for the roller — Secure an
+    // Advantage's strong hit. The pipeline records it (grantNextMoveBonus) and
+    // adds it to that character's next action roll (issue #322 V02). The weak
+    // hit's and Gain Ground's are a choice card's `nextBonus` option.
+    nextMoveBonus:         0,
     otherEffect:         "",
   };
 }
@@ -384,7 +389,10 @@ const CONSEQUENCE_MAP = {
       case "strong_hit": return {
         ...emptyConsequences(),
         momentumChange: 2,
-        otherEffect: "Strong hit: take both — +2 momentum AND +1 on next move (not a progress move).",
+        // "Take both": the +1 is added to the roller's next action roll — it
+        // was card text alone (issue #322 V02).
+        nextMoveBonus:  1,
+        otherEffect: "Strong hit: take both — +2 momentum AND +1 on your next move (added to your next action roll; not a progress move).",
       };
       case "weak_hit": return {
         ...emptyConsequences(),
@@ -695,7 +703,8 @@ const CONSEQUENCE_MAP = {
         ...emptyConsequences(),
         combatPosition: "in_control",
         // B2 multi: choose two of three. The dialog marks combat progress,
-        // applies the momentum delta, or posts a next-bonus reminder.
+        // applies the momentum delta, or grants the roller +1 on their next
+        // action roll (issue #322 V02).
         sufferPrompt: { kind: "enumerated", multi: 2, options: [
           { label: "Mark progress",        combatProgress: 1 },
           { label: "+2 momentum",          momentum:       2 },

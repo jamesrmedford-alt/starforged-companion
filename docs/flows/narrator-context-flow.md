@@ -358,7 +358,7 @@ otherwise `sceneTruths` is unioned by id, so a `!truth` correction or an oracle
 follow-up's truth that landed during the narration survives. The pipeline's own end-of-move write
 (`persistResolution`) merges the same way (`mergeWithLatestState` —
 relay-owned fields such as `xCardActive`, `safety`, `safetyFlags`,
-`nextMoveAdd`, `clocks`, `recentOracles` take the stored value; same-scene
+`nextMoveAdd`, `nextMoveBonuses`, `clocks`, `recentOracles` take the stored value; same-scene
 `sceneTruths` union by id with retractions sticky; a scene change mid-move
 keeps the stored scene ledgers; what an X-carded narration wrote —
 the store's `xCardedNarrationIds` — is retracted from the working copy first,
