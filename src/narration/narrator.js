@@ -2207,9 +2207,13 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
 export function buildVowSwearingUserMessage(vow, ironTruth) {
   const subject   = vow?.name ? `"${vow.name}"` : "a vow";
   const rank      = vow?.rank ? ` (${vow.rank})` : "";
+  // A custom Iron truth chosen in the World Truths dialog is its title alone
+  // (issue #322 V34).
   const truthLine = ironTruth?.description
     ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title ? `${ironTruth.title}: ` : ""}${ironTruth.description}`
-    : `In this world, vows are sworn upon iron.`;
+    : ironTruth?.title
+      ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title}`
+      : `In this world, vows are sworn upon iron.`;
   return [
     `A character is swearing ${subject}${rank}.`,
     ``,

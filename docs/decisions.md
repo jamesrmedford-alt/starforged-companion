@@ -94,7 +94,9 @@ Each finding's ID in brackets.)
   module's flag, never by name** [U65, U67]. Each newly saved system truths
   page re-points `worldTruthsJournalId`, and the Quickstart records
   `worldTruthsSet` / `worldTruthsJournalId` and finds its own journal by id or
-  flag, so a GM's own "World Truths" journal is never written.
+  flag, so a GM's own "World Truths" journal is never written. Since issue
+  #322 V34 the dialog's save is parsed into `worldTruths` too (below, "Truths
+  saved in the World Truths dialog reach the narrator").
 - **The players' ship is never an NPC ship** [U26]: the draft Confirm creates
   detected ships `npcShip: true`, and every lone-ship fallback skips them
   (`isLoneShipCandidate`). The marker is set at the Confirm, not in
@@ -1965,6 +1967,48 @@ and the strong hit's +1 was the card's text alone. Take a Break's identical
 
 Like Take a Break's, the +1 reaches the move pipeline's rolls only: `!bond`
 and a roll made on the system's character sheet do not take it.
+
+## Truths saved in the World Truths dialog reach the narrator (2026-11-01)
+
+**Decision (maintainer, issue #322 V34):** revised World Truths propagate to
+the narrator. `campaignState.worldTruths` is the one store the narrator reads
+— the WORLD TRUTHS block and `getTruth` (the vow scene's Iron truth) — and it
+is written through on **every** save of the truths, always together with
+`worldTruthsJournalId`, the journal `!lore` summarises:
+
+- the Playtest Quickstart's, as before (`storeWorldTruths`);
+- each save of the system's dialog (`!truths`, the toolbar button, the setup
+  card): the `createJournalEntryPage` hook parses the new "Setting Truths"
+  page into `worldTruths` as it links the journal (`recordSystemTruths`) —
+  each category's chosen option, its sub-table result and the line that
+  introduces it, its text and quest starter; a custom truth's first
+  paragraph. A save with no truth that reads (the dialog's empty save) moves
+  nothing;
+- at world load (`reconcileSystemTruths`, canonical GM): a world whose truths
+  were saved in the dialog before this holds none of them in `worldTruths`,
+  and one that saved twice before #321 U65 may link its first save — each is
+  brought up to the newest save; the Quickstart's own journal, when linked,
+  is left alone;
+- `!lore`'s repair of a stale link links the journal it found with that
+  journal's truths, not the id alone.
+
+The newest save wins, as #321 U65 made it for `!lore`. Each write is the
+`worldTruths*` fields alone, merged onto the latest stored campaignState.
+
+**Reason:** TRUTHS-TWO-STORES — a dialog save was recorded as
+`worldTruthsSet` / `worldTruthsJournalId` only, which `!lore` alone read: a
+world set up in the dialog gave the narrator no WORLD TRUTHS, and one that
+revised the Quickstart's truths in the dialog kept the Quickstart's while a
+`!lore` recap of the revision said otherwise (rules/reachability.md §5, one
+canonical store written through on every change).
+
+**Rejected:** *every reader takes the linked journal* — the WORLD TRUTHS block
+is built for every narration, so it would parse a journal page per call, and
+the module's own journal holds its truths as a flag beside its page, so the
+readers would need both paths; parsing once per save keeps one shape for both
+sources. *Matching the dialog's options to the module's truth tables* — the
+module's option titles are condensed from the book's (24 of the system's 42
+differ), so the page's own text is what is parsed.
 
 ## Claude calls run where a key lives, exactly once (2026-10)
 

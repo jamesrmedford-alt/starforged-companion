@@ -13,6 +13,13 @@
  * injected into every Loremaster context packet as background lore.
  * They don't change mid-campaign — the journal entry is the authoritative record.
  *
+ * One store for the narrator: `campaignState.worldTruths`, written through on
+ * every save of the truths — the Playtest Quickstart's (storeWorldTruths) and
+ * each save of the system's World Truths dialog (recordSystemTruths, parsing
+ * the "Setting Truths" page the dialog writes; reconcileSystemTruths at world
+ * load), always with `worldTruthsJournalId` naming the journal it came from,
+ * which `!lore` reads. The newest save wins (issue #322 V34).
+ *
  * This campaign's truths (already established, Session Zero):
  *   Cataclysm:     We escaped a catastrophic war (roll 82) — Foe: AI (sub-roll 15)
  *   Exodus:        Millennia-long journey, Ironhomes still sail (roll 4)
@@ -294,6 +301,213 @@ export function openSystemTruthsDialog() {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// THE SYSTEM DIALOG'S TRUTHS
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The name the system gives a World Truths dialog save ("Setting Truths"). */
+function systemTruthsTitle() {
+  return game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
+}
+
+/** True for HTML that holds saved truths — ≥2 <h2>, one per category saved. */
+function holdsTruths(html) {
+  return typeof html === "string" && (html.match(/<h2/gi) ?? []).length >= 2;
+}
+
+/** The content of a journal's truths page (its first text page holding truths), or null. */
+function truthsPageHtml(journal) {
+  const page = (journal?.pages?.contents ?? []).find(p => p?.type === "text" && holdsTruths(p?.text?.content));
+  return page ? page.text.content : null;
+}
+
+/**
+ * Journals with one of `names`, newest first: each Save in the system dialog
+ * creates a new journal, and the newest holds the campaign's truths (issue
+ * #321 U65). Foundry stamps `_stats.createdTime`; the collection's order
+ * breaks a tie.
+ */
+function journalsNewestFirst(names) {
+  return (game.journal?.contents ?? [])
+    .map((j, order) => ({ j, order }))
+    .filter(({ j }) => names.includes(j?.name))
+    .sort((a, b) => ((Number(b.j._stats?.createdTime) || 0) - (Number(a.j._stats?.createdTime) || 0)) || (b.order - a.order))
+    .map(({ j }) => j);
+}
+
+/**
+ * The truths a truths journal holds, in the shape campaignState.worldTruths
+ * stores: the module's own journal carries them as its page's flag; a system
+ * dialog save is parsed from its page. Null when the journal holds none.
+ */
+function truthsFromJournal(journal) {
+  if (isModuleTruthsJournal(journal)) {
+    const page = (journal.pages?.contents ?? []).find(p => p?.flags?.[MODULE_ID]?.worldTruths);
+    return page ? page.flags[MODULE_ID].worldTruths : null;
+  }
+  const html = truthsPageHtml(journal);
+  return html ? parseSystemTruthsHtml(html) : null;
+}
+
+/**
+ * Record a save of the system's World Truths dialog (`!truths`, the toolbar
+ * button, the setup card): its truths become the campaign's — parsed into
+ * `campaignState.worldTruths`, which the narrator's WORLD TRUTHS block and
+ * getTruth (the vow scene's Iron truth) read — with the journal linked for
+ * `!lore`. Only the Quickstart wrote worldTruths, so truths chosen in the
+ * dialog never reached the narrator, and a revision in the dialog left it
+ * the Quickstart's (issue #322 V34). WORLD_TRUTHS_FIELDS only, merged onto
+ * the latest stored campaignState. The caller gates on the canonical GM.
+ *
+ * @param {string} journalId — the dialog's new journal
+ * @param {string} html      — its page's content
+ * @returns {Promise<void>}  rejects when the write is refused
+ */
+export async function recordSystemTruths(journalId, html) {
+  await writeTruthsLink(journalId, parseSystemTruthsHtml(html));
+}
+
+/**
+ * Bring the campaign's truths up to the World Truths dialog's newest save, at
+ * world load (canonical GM). A world whose truths were saved in the dialog
+ * before each save was written through holds none of them in worldTruths,
+ * and one that saved twice before #321 U65 may still link the first save;
+ * a world never linked links its newest. A world whose truths are the
+ * Quickstart's (the module's own journal linked) is left alone. Writes only
+ * when the link or the truths differ.
+ *
+ * @returns {Promise<boolean>} true when written
+ */
+export async function reconcileSystemTruths() {
+  const state  = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const linked = state.worldTruthsJournalId ? (game.journal?.get(state.worldTruthsJournalId) ?? null) : null;
+  if (isModuleTruthsJournal(linked)) return false;
+
+  const title   = systemTruthsTitle();
+  const newest  = title
+    ? journalsNewestFirst([title]).find(j => !isModuleTruthsJournal(j) && truthsPageHtml(j))
+    : null;
+  const journal = newest ?? (truthsPageHtml(linked) ? linked : null);
+  if (!journal) return false;
+
+  const truths = parseSystemTruthsHtml(truthsPageHtml(journal));
+  const stored = !Object.keys(truths).length || JSON.stringify(truths) === JSON.stringify(state.worldTruths ?? {});
+  if (journal.id === state.worldTruthsJournalId && state.worldTruthsSet === true && stored) return false;
+  await writeTruthsLink(journal.id, truths);
+  return true;
+}
+
+/**
+ * Link `journalId` as the campaign's truths journal, with the truths it holds
+ * — never the link alone while worldTruths says something else. A save with
+ * no truth that reads keeps the stored ones (the dialog's empty save).
+ * WORLD_TRUTHS_FIELDS only, onto the latest store; rejects when refused.
+ */
+async function writeTruthsLink(journalId, truths) {
+  const fields = { worldTruthsSet: true, worldTruthsJournalId: journalId };
+  if (truths && Object.keys(truths).length) fields.worldTruths = truths;
+  await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(fields, WORLD_TRUTHS_FIELDS, "world truths"));
+}
+
+const H2_RE     = /<h2\b[^>]*>([\s\S]*?)<\/h2>/gi;
+const BLOCK_RE  = /<(p|blockquote|ul|ol|h[3-6])\b[^>]*>([\s\S]*?)<\/\1>/gi;
+const BOLD_RE   = /^<(strong|b)\b[^>]*>([\s\S]*?)<\/\1>$/i;
+const ITALIC_RE = /^<(em|i)\b[^>]*>([\s\S]*?)<\/\1>$/i;
+
+/**
+ * The truths a save of the system's World Truths dialog holds, keyed by
+ * category id in the TruthResult shape storeWorldTruths stores.
+ *
+ * The dialog (vendor sf-truths.vue saveTruths) writes a section per chosen
+ * category: `<h2>{category}</h2>`, the option's title in bold, its text — a
+ * sub-table's result blockquoted after the line that introduces it ("In this
+ * final war, we were set upon by:") — the quest starter in italics, then the
+ * category's inspiration text. A custom truth is the GM's own text, whose
+ * first paragraph says it. A category named as none of TRUTH_TABLES' (another
+ * language) keeps its own name as the key.
+ *
+ * @param {string} html
+ * @returns {Object} truthSet — {} when nothing reads
+ */
+function parseSystemTruthsHtml(html) {
+  const source = typeof html === "string" ? html : "";
+  const heads  = [...source.matchAll(H2_RE)];
+  const truthSet = {};
+  heads.forEach((head, i) => {
+    const categoryName = htmlText(head[1]);
+    const categoryId   = truthCategoryId(categoryName);
+    const end   = i + 1 < heads.length ? heads[i + 1].index : source.length;
+    const truth = categoryId ? parseTruthSection(source.slice(head.index + head[0].length, end)) : null;
+    if (truth) truthSet[categoryId] = { categoryId, categoryName, ...truth };
+  });
+  return truthSet;
+}
+
+/** One category's section → the TruthResult fields, or null when it holds no text. */
+function parseTruthSection(body) {
+  let blocks = [...body.matchAll(BLOCK_RE)]
+    .map(m => ({ tag: m[1].toLowerCase(), inner: m[2].trim(), text: htmlText(m[2]) }))
+    .filter(b => b.text);
+  if (!blocks.length) {
+    const text = htmlText(body);
+    if (!text) return null;
+    blocks = [{ tag: "p", inner: body.trim(), text }];
+  }
+
+  const bold = blocks[0].tag === "p" ? blocks[0].inner.match(BOLD_RE) : null;
+  if (!bold) return truthFields({ title: blocks[0].text });    // a custom truth
+
+  const rest  = blocks.slice(1);
+  const quest = rest.findIndex(b => b.tag === "p" && ITALIC_RE.test(b.inner));
+  const prose = quest >= 0 ? rest.slice(0, quest) : rest;
+  const sub   = prose.findIndex(b => b.tag === "blockquote");
+  return truthFields({
+    title:         htmlText(bold[2]),
+    description:   prose.map(b => b.text).join(" "),
+    questStarter:  quest >= 0 ? rest[quest].text : "",
+    subTableLabel: sub > 0 ? introducingSentence(prose[sub - 1].text) : null,
+    subResult:     sub >= 0 ? prose[sub].text : null,
+  });
+}
+
+function truthFields({ title, description = "", questStarter = "", subTableLabel = null, subResult = null }) {
+  return { roll: null, title, description, questStarter, subTableId: null, subTableLabel, subRoll: null, subResult };
+}
+
+/** The category id for a dialog heading — TRUTH_TABLES' by name, else the heading's own. */
+function truthCategoryId(name) {
+  const lower = String(name ?? "").trim().toLowerCase();
+  if (!lower) return null;
+  const known = TRUTH_CATEGORIES.find(id => TRUTH_TABLES[id]?.name?.toLowerCase() === lower);
+  return known ?? (lower.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || String(name).trim());
+}
+
+/** The sentence a paragraph ends with when it introduces what follows ("This is because:"), else null. */
+function introducingSentence(text) {
+  if (!text.endsWith(":")) return null;
+  return text.split(/(?<=[.!?]["'\u2019\u201D]?)\s+/).at(-1) || null;
+}
+
+const NAMED_ENTITIES = Object.freeze({
+  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'",
+  lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201C", rdquo: "\u201D",
+  ndash: "\u2013", mdash: "\u2014", hellip: "\u2026",
+});
+
+/** An HTML fragment's text: tags dropped, entities decoded, whitespace folded. */
+function htmlText(fragment) {
+  return String(fragment ?? "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
+      if (code[0] !== "#") return NAMED_ENTITIES[code.toLowerCase()] ?? whole;
+      const n = /^#x/i.test(code) ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+      return Number.isInteger(n) && n > 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : whole;
+    })
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // LORE RECAP
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -372,27 +586,19 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
     : null;
 
   if (!entry) {
-    const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "Setting Truths";
-    // Newest first: each Save in the system dialog creates a new journal, and
-    // the newest holds the campaign's truths (issue #321 U65 — the first match
-    // was the oldest). Foundry stamps `_stats.createdTime`; the collection's
-    // order breaks a tie.
-    const candidates  = (game.journal?.contents ?? [])
-      .map((j, order) => ({ j, order }))
-      .filter(({ j }) => j.name === systemTitle || j.name === JOURNAL_NAME)
-      .sort((a, b) => ((Number(b.j._stats?.createdTime) || 0) - (Number(a.j._stats?.createdTime) || 0)) || (b.order - a.order))
-      .map(({ j }) => j);
+    // Newest first (issue #321 U65 — the first match was the oldest).
+    const candidates = journalsNewestFirst([systemTruthsTitle() || "Setting Truths", JOURNAL_NAME]);
     // Prefer a candidate whose first page looks like a real truths page
     // (≥2 <h2> elements — same shape the createJournalEntryPage hook checks).
-    entry = candidates.find(j => {
-      const html = j.pages?.contents?.[0]?.text?.content ?? "";
-      return (html.match(/<h2/gi) ?? []).length >= 2;
-    }) ?? candidates[0] ?? null;
+    entry = candidates.find(j => holdsTruths(j.pages?.contents?.[0]?.text?.content ?? "")) ?? candidates[0] ?? null;
 
     if (entry && entry.id !== campaignState.worldTruthsJournalId) {
       campaignState.worldTruthsJournalId = entry.id;
+      // Linked with the truths it holds, so the narrator reads the truths this
+      // recap summarises (issue #322 V34) — owned fields onto the latest store,
+      // not this call's whole copy.
       if (game.user?.isGM) {
-        await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
+        await writeTruthsLink(entry.id, truthsFromJournal(entry)).catch(err =>
           console.warn(`${MODULE_ID} | lore: failed to repair worldTruthsJournalId:`, err)
         );
       }

@@ -182,10 +182,13 @@ Open — found while fixing, not fixed:
   appends two encounter entries to its World Journal entry.
 - **SHIP-TYPE-IN-CONFLICT** (WRONG-DETAIL, low). A new ship whose type rolls
   95–100 gets "Ships in conflict: A / B" as its single type.
-- **TRUTHS-TWO-STORES** (WRONG-DETAIL — needs the maintainer's call). The
-  narrator's WORLD TRUTHS block reads `campaignState.worldTruths` (the
-  Quickstart's); the `!truths` dialog's journal reaches only `!lore`, so a
-  revision made in the dialog never reaches the narrator.
+- ~~**TRUTHS-TWO-STORES**~~ (WRONG-DETAIL) — fixed by issue #322 V34 (the
+  maintainer decided revised truths propagate to the narrator). Each save of
+  the `!truths` dialog is parsed into `campaignState.worldTruths` as its
+  journal is linked, and a world saved before that gets them at its next
+  load, so the WORLD TRUTHS block, the vow scene's Iron truth and `!lore` read
+  the newest save (decisions.md, "Truths saved in the World Truths dialog
+  reach the narrator").
 - **LORE-JOURNAL-BY-NAME** (WRONG-DETAIL, low). `writeLoreRecapToJournal`
   falls back by name and can add "The Story So Far" to a GM's own "World
   Truths" journal.

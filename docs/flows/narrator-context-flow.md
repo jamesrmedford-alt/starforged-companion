@@ -178,8 +178,11 @@ Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03) · *
 oracle results** (`campaignState.recentOracles`, read from the store — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, last 5 this
 session, "the dice established these"; skipped for meta modes) · [4] world
-truths (each truth's rolled sub-table detail after its title — who the war
-was against — as the journal prints it, issue #321 U66) · [4a] campaign truths digest · [4b] campaign premise
+truths (`campaignState.worldTruths` — the Quickstart's rolled truths or the
+World Truths dialog's newest save, parsed from its "Setting Truths" page as
+it is linked, so the block, the vow scene's Iron truth and `!lore` read one
+save: issue #322 V34; each truth's rolled sub-table detail after its title —
+who the war was against — as the journal prints it, issue #321 U66) · [4a] campaign truths digest · [4b] campaign premise
 (`campaignState.incitingIncident` — durable canon, every call) · [4c] LAST
 SESSION (`previousSessionSummary`, kept at the mint — issue #286 C3), then the
 rolling session summary, each prefixed with a **ledger-wins caveat** — a

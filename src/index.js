@@ -88,7 +88,7 @@ import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPla
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
-import { openSystemTruthsDialog, generateLoreRecap } from "./truths/generator.js";
+import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths } from "./truths/generator.js";
 
 import {
   openProgressTracks,
@@ -6412,8 +6412,15 @@ Hooks.once("ready", () => {
           console.warn(`${MODULE_ID} | campaign recap refresh failed:`, err?.message ?? err));
       }
 
+      // The campaign's truths follow the World Truths dialog's newest save
+      // (issue #322 V34): a world whose truths were saved in the dialog before
+      // each save was written through gets them in worldTruths now, and one
+      // never linked links its newest save — before the setup card asks.
+      await reconcileSystemTruths().catch(err =>
+        console.warn(`${MODULE_ID} | ready: reconciling the World Truths failed:`, err));
+
       // Notify GM if no World Truths have been established yet
-      if (!freshState.worldTruthsSet) {
+      if (!game.settings.get(MODULE_ID, "campaignState")?.worldTruthsSet) {
         ChatMessage.create({
           content: `<div class="sf-card sf-card--setup">
             <div class="sf-card-header">◈ Campaign Setup</div>
@@ -6425,22 +6432,6 @@ Hooks.once("ready", () => {
         }).catch(err =>
           console.warn(`${MODULE_ID} | truths setup card failed:`, err)
         );
-      }
-
-      // Fallback — link the system's truths journal if truths were set before
-      // the createJournalEntryPage hook was wired, or if the ID was never stored.
-      if (!freshState.worldTruthsJournalId) {
-        const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
-        if (systemTitle) {
-          const truthsJournal = game.journal?.contents?.find(j => j.name === systemTitle);
-          if (truthsJournal) {
-            freshState.worldTruthsJournalId = truthsJournal.id;
-            freshState.worldTruthsSet       = true;
-            game.settings.set(MODULE_ID, "campaignState", freshState).catch(err =>
-              console.warn(`${MODULE_ID} | ready: fallback truths link failed:`, err)
-            );
-          }
-        }
       }
     }).catch(err => {
       console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
@@ -7327,7 +7318,10 @@ Hooks.on("createJournalEntry", async (entry) => {
  * journal, and the newest is the campaign's truths. `worldTruthsJournalId` used
  * to stay on the first journal once `worldTruthsSet` was true, so `!lore`
  * summarised — and wrote "The Story So Far" into — the superseded truths
- * (issue #321 U65).
+ * (issue #321 U65). And each save's truths are the narrator's too:
+ * recordSystemTruths parses the page into `campaignState.worldTruths`, which
+ * only the Playtest Quickstart used to write — truths chosen in the dialog
+ * reached `!lore` alone (issue #322 V34).
  */
 Hooks.on("createJournalEntryPage", async (page) => {
   if (!isCanonicalGM()) return;   // single emitter for the campaignState write
@@ -7348,15 +7342,19 @@ Hooks.on("createJournalEntryPage", async (page) => {
   const content = page.text?.content ?? "";
   if ((content.match(/<h2/gi) ?? []).length < 2) return;
 
-  // A copy, as above: a refused write leaves the cached setting as it was.
-  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
   if (campaignState.worldTruthsSet && campaignState.worldTruthsJournalId === entry.id) return; // Already recorded
 
-  campaignState.worldTruthsSet       = true;
-  campaignState.worldTruthsJournalId = entry.id;
-  await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
-    console.error(`${MODULE_ID} | createJournalEntryPage: failed to persist truths state:`, err)
-  );
+  // The saved truths become the campaign's — parsed into worldTruths, which
+  // the narrator reads, as well as linked for !lore (issue #322 V34). Owned
+  // fields onto the latest store; a refused write leaves the cached setting
+  // as it was, and claims nothing.
+  try {
+    await recordSystemTruths(entry.id, content);
+  } catch (err) {
+    console.error(`${MODULE_ID} | createJournalEntryPage: failed to persist truths state:`, err);
+    return;
+  }
 
   // Dismiss the setup notification card if it is still in chat
   const setupCard = game.messages?.contents?.find(
