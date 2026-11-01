@@ -436,12 +436,20 @@ export function mergeSceneLedgers(working, latest) {
  * truth that landed during the narration survives. When the caller's object
  * IS the stored one it is written as-is. Failures are logged, never thrown.
  *
+ * A caller that owns a further change — a correction's mark on the rolling
+ * summary, the inciting premise — makes it with `opts.onto` on the latest
+ * stored campaignState being written, in the same write; it is written even
+ * when the scene changed and the ledgers are not (issue #321 U06).
+ *
  * @param {Object}   campaignState — the caller's working copy
  * @param {string[]} fields        — the scene-ledger keys this write owns
  * @param {string}   label         — for the logs
- * @returns {Promise<boolean>} true when written
+ * @param {Object}   [opts]
+ * @param {(target: Object) => void} [opts.onto] — makes the caller's further
+ *   change on the object about to be written (a copy of the latest store)
+ * @returns {Promise<boolean>} true when the ledgers were written
  */
-export async function persistSceneLedgerFields(campaignState, fields, label) {
+export async function persistSceneLedgerFields(campaignState, fields, label, { onto = null } = {}) {
   try {
     if (typeof game === 'undefined' || !game?.settings?.set) return false;
     let latest = null;
@@ -451,22 +459,26 @@ export async function persistSceneLedgerFields(campaignState, fields, label) {
       console.debug?.(`${MODULE_ID} | sceneLifecycle: latest campaignState read failed (${label}); writing the caller's copy:`, err?.message ?? err);
     }
     let target = campaignState;
+    let ledgersWritten = true;
     if (latest && typeof latest === 'object' && latest !== campaignState) {
       const ledgers = {};
       for (const key of SCENE_FIELDS) {
         if (Object.prototype.hasOwnProperty.call(campaignState, key)) ledgers[key] = campaignState[key];
       }
-      if (!mergeSceneLedgers(ledgers, latest)) {
-        console.debug(`${MODULE_ID} | sceneLifecycle: the scene changed meanwhile — ${label} not persisted (the stored scene's ledgers stand).`);
-        return false;
-      }
       target = { ...latest };
-      for (const key of fields) {
-        if (Object.prototype.hasOwnProperty.call(ledgers, key)) target[key] = ledgers[key];
+      if (mergeSceneLedgers(ledgers, latest)) {
+        for (const key of fields) {
+          if (Object.prototype.hasOwnProperty.call(ledgers, key)) target[key] = ledgers[key];
+        }
+      } else {
+        console.debug(`${MODULE_ID} | sceneLifecycle: the scene changed meanwhile — ${label} not persisted (the stored scene's ledgers stand).`);
+        if (typeof onto !== 'function') return false;
+        ledgersWritten = false;
       }
     }
+    if (typeof onto === 'function') onto(target);
     await game.settings.set(MODULE_ID, 'campaignState', target);
-    return true;
+    return ledgersWritten;
   } catch (err) {
     console.warn(`${MODULE_ID} | sceneLifecycle: campaignState persist failed (${label}):`, err);
     return false;

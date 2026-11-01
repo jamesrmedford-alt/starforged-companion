@@ -13,7 +13,8 @@
  *   - propagateRetraction(truth, campaignState) — on Strike / Replace: drop
  *     the subject entity's same-session tier details that state the fact,
  *     take same-session lore that states it about the same subject out of
- *     confirmed canon, and mark the rolling summary for a regen.
+ *     confirmed canon, and mark the rolling summary for a regen
+ *     (markSummaryForRegen).
  *   - rememberSessionRetractions(campaignState) — at scene end: keep the
  *     scene's bare strikes for the rest of the session, so the CORRECTED
  *     block and the summary prompt still name them.
@@ -125,10 +126,7 @@ export async function propagateRetraction(truth, campaignState) {
   // The summary is regenerated from source, and the source prose still says
   // it: the next regen runs regardless of the debounce, with the struck fact
   // in its leave-out list (sessionRetractedFacts).
-  const summary = campaignState?.sessionSummary;
-  if (summary && summary.sessionId === campaignState.currentSessionId) {
-    campaignState.sessionSummary = { ...summary, coveredCount: 0 };
-  }
+  markSummaryForRegen(campaignState);
   return out;
 }
 
@@ -154,6 +152,23 @@ function loreStatesStrike(entry, subject, label, fact) {
   const named = subject?.kind === 'text' || subject?.kind === 'entity';
   if (named && !containsWords(entry.title, label) && !containsWords(entry.text, label)) return false;
   return factsOverlap(entry.fact ?? entry.text ?? '', fact) || factsOverlap(entry.title ?? '', fact);
+}
+
+/**
+ * Mark this session's rolling summary for a regen: the next refresh runs
+ * regardless of the debounce (`coveredCount` 0). propagateRetraction marks
+ * its caller's copy; a correction that persists onto the latest store marks
+ * the stored summary the same way (issue #321 U06 — the copy's summary may
+ * predate a regen that landed meanwhile). Mutates campaignState.
+ *
+ * @param {Object} campaignState
+ * @returns {boolean} true when a summary was marked
+ */
+export function markSummaryForRegen(campaignState) {
+  const summary = campaignState?.sessionSummary;
+  if (!summary || summary.sessionId !== campaignState.currentSessionId) return false;
+  campaignState.sessionSummary = { ...summary, coveredCount: 0 };
+  return true;
 }
 
 async function dropTierDetails(subject, fact, sessionId) {

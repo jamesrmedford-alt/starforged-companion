@@ -37,7 +37,8 @@ import {
   subjectKey,
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
-import { propagateRetraction } from "./retractions.js";
+import { propagateRetraction, markSummaryForRegen } from "./retractions.js";
+import { persistSceneLedgerFields } from "./sceneLifecycle.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -131,7 +132,10 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
 
   const isGM = !!ctx.requesterIsGM;
   const permCtx = { isGM, actor: isGM ? "gm" : "player" };
-  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  // A copy to work on: a Strike awaits its propagation (entity tiers, World
+  // Journal lore), and the write below lands on the store as it is after
+  // that — never this read held across the await (issue #321 U06b).
+  const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
 
   // NARR-CMD-SUBJECT (narrator-context audit 2026-07): resolve command
   // subjects against the full entity roster, exactly like the sidecar apply
@@ -147,41 +151,54 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
   }
 
   let resultLine = "";
+  let changed = null;        // the ledger field this command changed
+  let struckTruth = false;
   try {
     if (parsed.domain === "truth" && parsed.verb === "strike") {
       const struck = strikeTruth(parsed.rest, campaignState, permCtx);
-      // The strike reaches the tier details, lore and summary that copied
-      // the fact (issue #286 B6).
-      if (struck) await propagateRetraction(struck, campaignState);
+      if (struck) {
+        changed = "sceneTruths";
+        struckTruth = true;
+        // The strike reaches the tier details, lore and summary that copied
+        // the fact (issue #286 B6).
+        await propagateRetraction(struck, campaignState);
+      }
       resultLine = struck
         ? `Truth <code>${struck.id.slice(0, 8)}</code> struck.`
         : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
     } else if (parsed.domain === "truth") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const truth   = setTruth(subject, parsed.fact, campaignState, permCtx);
+      if (truth) changed = "sceneTruths";
       resultLine = truth
         ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em>.`
         : `Truth not recorded — empty subject or fact.`;
     } else if (parsed.verb === "strike") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const ok      = strikeStateValue(subjectKey(subject), parsed.attribute, campaignState);
+      if (ok) changed = "sceneState";
       resultLine = ok
         ? `State <code>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.attribute)}</code> struck.`
         : `No matching state entry.`;
     } else {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const result  = setStateValue(subjectKey(subject), parsed.attribute, parsed.value, campaignState);
+      if (result) changed = "sceneState";
       resultLine = result
         ? `State recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.attribute)}: ${escapeHtml(parsed.value)}</em>.`
         : `State not recorded — empty attribute or value.`;
     }
 
-    // Persist after the command ran (a no-match leaves the ledgers unchanged,
-    // so the write is a harmless no-op then).
-    try {
-      await game.settings.set(MODULE_ID, "campaignState", campaignState);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | !truth/!state: persist failed:`, err);
+    // Persist only what the command changed, onto the store as it is now
+    // (rules/reachability.md §9): the ledger field, merged with the store's
+    // (a narration's truths and a relayed X-Card that landed while a Strike
+    // propagated stay; a released move lock is not written back), and a
+    // Strike's regen mark on the stored rolling summary. A no-match writes
+    // nothing.
+    if (changed) {
+      await persistSceneLedgerFields(campaignState, [changed], "!truth/!state", {
+        onto: struckTruth ? markSummaryForRegen : null,
+      });
     }
   } catch (err) {
     console.error(`${MODULE_ID} | !truth/!state command failed:`, err);
