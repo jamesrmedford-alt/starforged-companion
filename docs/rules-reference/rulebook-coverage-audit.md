@@ -231,7 +231,7 @@ Relationship`, `Forge a Bond`.
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
 | 3.23 | Battle Stations! — shipboard-combat framework (11 crew roles; rulebook pp. 184–187) | DOC/NARRATION | DONE | **Not a move** (no roll/stat/outcome → no `schemas.js` entry). Resolves via the existing combat/suffer/recover moves with per-character position + Aid Your Ally control hand-off. Module surfaces the 11 roles to the narrator (conditional shipboard-combat guidance) and players (`!stations` + help page). Ship-map mini-game planned (`issue #216 (Shipboard Combat (Battle Stations!))`). | Low | `battleStations.js` |
-| 3.24 | Enter the Fray / Gain Ground / React Under Fire / Strike / Clash run resolveMove | MOVE | PINNED | `moveOutcomeMatrix` pins enter_the_fray / gain_ground outcome shapes (incl. in_control / bad_spot position); combat-lifecycle wiring done (3.25/3.26). React Under Fire / Clash shapes not separately fixtured | — | mostly done |
+| 3.24 | Enter the Fray / Gain Ground / React Under Fire / Strike / Clash run resolveMove | MOVE | PINNED | `moveOutcomeMatrix` pins enter_the_fray / gain_ground outcome shapes (incl. in_control / bad_spot position; Enter the Fray's weak-hit +2 momentum begins in a bad spot since issue #321 U18); combat-lifecycle wiring done (3.25/3.26). React Under Fire / Clash shapes not separately fixtured | — | mostly done |
 | 3.25 | Combat positioning (in control / in a bad spot) persists between moves | PIPELINE | DONE | pipeline writes `combatPosition` to the active combat track after every combat move; panel reads it back | — | `resolver` + `progressTracks` |
 | 3.26 | Strike / Clash strong hit marks progress *twice* | MOVE | DONE | `combatProgress: 2` consequence → GM-gated pipeline handler marks twice via `applyCombatProgress` | — | `combat` unit batch |
 | 3.27 | Take Decisive Action triggered when progress full; weak-hit d100 table | MOVE | DONE | `endCombat: true` closes the track; `rollDecisiveActionCost: true` fires the DECISIVE_ACTION_COST table card in the pipeline; entry 1-40 has `sufferRoute:{move:"any",amount:2}` which opens the B1 generic suffer picker | — | `sufferAndCombat.js` + pipeline |
@@ -290,7 +290,7 @@ Hit`, `Sacrifice Resources`, `Withstand Damage`.
 |---|---|---|---|---|---|
 | 3.45 | Ask the Oracle: yes/no with odds (small/unlikely/50-50/likely/almost certain) | MOVE | PINNED | `rollAskTheOracle` (`roller.js:343`, `ORACLE_ODDS`) + `fateMoves` batch | — | done |
 | 3.46 | Ask the Oracle: prompt table roll (~120 RG tables) | MOVE | PARTIAL | `systemAssets` lookups; `i18nResolution` | Low | NEEDS-TEST — sample roller against one or two tables |
-| 3.47 | Pay the Price: choose / roll / narrator decides on miss | MOVE | DONE | Pay the Price d100 (`payThePrice.js`) + `!pay-the-price` + suffer routing — a 96–100 "Roll twice" lands each leaf's route (issue #314 Q03; `oracleRoller.test.js`, `payThePriceRoutes.test.js`); `fateMoves` batch | — | done |
+| 3.47 | Pay the Price: choose / roll / narrator decides on miss | MOVE | DONE | Pay the Price d100 (`payThePrice.js`) + `!pay-the-price` + suffer routing — a 96–100 "Roll twice" lands each leaf's route (issue #314 Q03; `oracleRoller.test.js`, `payThePriceRoutes.test.js`); one roll per result, the narration seeded with the card's (issue #321 U03; `payThePriceOneRoll.test.js`); `fateMoves` batch | — | done |
 
 ### Clocks & scene challenges
 
