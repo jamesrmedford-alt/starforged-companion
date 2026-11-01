@@ -5409,7 +5409,9 @@ async function handleAtCommand(message) {
     return;
   }
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A copy: a refused write must leave this client's cached state as it was
+  // (issue #321 U58).
+  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
 
   if (!arg) {
     campaignState.currentLocationId   = null;
@@ -5497,7 +5499,9 @@ async function handleSectorCommand(message) {
   const parts = text.slice("!sector".length).trim().split(/\s+/);
   const sub   = parts[0]?.toLowerCase() ?? "";
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A copy: a refused switch must leave this client's cached state as it was
+  // (issue #321 U58).
+  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
 
   // Bare `!sector` — show usage (SECTOR-SWITCH-001: it used to do nothing).
   // Whispered to the typist; it's help text, not table news.

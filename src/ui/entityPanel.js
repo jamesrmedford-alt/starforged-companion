@@ -1012,7 +1012,9 @@ export class EntityPanelApp extends ApplicationV2 {
         return;
       }
 
-      const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+      // Written on a copy: a refused write must leave this client's cached
+      // state as it was (issue #321 U58).
+      const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
       const isAlreadyCurrent = campaignState.currentLocationId === journalId;
       campaignState.currentLocationId   = isAlreadyCurrent ? null : journalId;
       campaignState.currentLocationType = isAlreadyCurrent ? null : type;
@@ -1051,7 +1053,7 @@ export class EntityPanelApp extends ApplicationV2 {
       ui?.notifications?.warn('Undismissing an entity is GM-only (writes campaign state).');
       return;
     }
-    const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };   // a copy (issue #321 U58)
     const list = (campaignState.dismissedEntities ?? []).filter(n => n !== name);
     campaignState.dismissedEntities = list;
     await game.settings.set(MODULE_ID, 'campaignState', campaignState);
