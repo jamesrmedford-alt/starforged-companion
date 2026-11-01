@@ -121,7 +121,12 @@ All real progress lands on **item ticks** (`system.current`) via
   to sibling copies by `vowId` — `["current","clockTicks","completed","rank"]`
   (`SHARED_VOW_SYNC_FIELDS`; `completed` joined in the VOW-FULFIL-SIBLINGS
   fix, so a native-sheet fulfil closes every crewmate's copy, and `rank` in
-  the 2026-07 cleanup — see gaps).
+  the 2026-07 cleanup — see gaps). Changes queue per vow, the newest value
+  per field; a pass writes each copy only the fields that differ, marks its
+  writes (`sharedVowMirror`) so they do not cascade, and gives way to a newer
+  change mid-pass — an in-flight guard used to drop a change made during a
+  pass, and the pass's all-fields write reverted it (issue #322 V32, the
+  shared supply's F05 / R03 race).
 - **Vow deadline clocks**: `advanceVowClocks` bumps `clockTicks` on Pay the
   Price ("⏳ The clock turns" card) via `advanceClocksOnPayThePrice`
   (`src/clocks/payThePriceClocks.js`) — called directly by the pipeline on

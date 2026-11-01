@@ -4538,8 +4538,10 @@ mechanics.
 
 2. **The inciting vow is the crew's shared founding vow.** "⚔ Swear this vow" now creates the vow on
    **every** player character (each copy tagged `flags[MODULE].sharedVow` + the inciting message id),
-   and an `updateItem` hook (`registerSharedVowSyncHook`, canonical-GM single-writer, vowId-keyed
-   re-entrancy guard) keeps `system.current` / `system.clockTicks` in lockstep across all copies — so
+   and an `updateItem` hook (`registerSharedVowSyncHook`, canonical-GM single-writer; since issue
+   #322 V32 a per-vow queue of the newest value per field and marked mirror writes, as the shared
+   supply's — the vowId-keyed re-entrancy guard dropped a change made mid-pass) keeps
+   `system.current` / `system.clockTicks` in lockstep across all copies — so
    marking or fulfilling it (the module's vow flow OR a native sheet edit) advances it for the whole
    crew. Any player can click it; non-canonical clients relay to the GM over the module socket
    (`kind: "vow.swearShared"`), who performs the privileged multi-actor writes.

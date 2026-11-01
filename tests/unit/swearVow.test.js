@@ -137,7 +137,16 @@ describe('computeSharedVowSyncUpdates', () => {
     const sib = vowItem('i2', 'm1', 8, { clockTicks: 0 });   // progress equal, clock behind
     const out = computeSharedVowSyncUpdates(src, [{ items: [src, sib] }]);
     expect(out).toHaveLength(1);
-    expect(out[0].update).toEqual({ 'system.current': 8, 'system.clockTicks': 3 });
+    // Only the field that differs: copying every field from the source is how
+    // a pass reverted a change made meanwhile on a sibling (issue #322 V32).
+    expect(out[0].update).toEqual({ 'system.clockTicks': 3 });
+  });
+
+  it("limited to a change's own fields, it writes only those", () => {
+    const src = vowItem('i1', 'm1', 12, { clockTicks: 0 });
+    const sib = vowItem('i2', 'm1', 4,  { clockTicks: 1 });   // the sibling's own tick, made meanwhile
+    const out = computeSharedVowSyncUpdates(src, [{ items: [src, sib] }], { current: 12 });
+    expect(out[0].update).toEqual({ 'system.current': 12 });   // its clockTicks 1 is left alone
   });
 });
 

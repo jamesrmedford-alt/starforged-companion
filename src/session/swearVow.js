@@ -43,7 +43,12 @@ const SOCKET    = `module.${MODULE_ID}`;
 // re-rank keeps every copy — and therefore the fulfil payoff scaling — in
 // agreement: a SHARED vow has one rank for the whole crew.
 const SHARED_VOW_SYNC_FIELDS = ["current", "clockTicks", "completed", "rank"];
-const _vowSyncInFlight = new Set();
+// The canonical GM marks its sibling writes with this update option, so the
+// sync hook tells them from independent changes (as sharedSupply.js does).
+const VOW_MIRROR_OPTION = "sharedVowMirror";
+// vowId → { running, next }: a sync pass writing the copies, and the newest
+// value per field still to propagate (issue #322 V32).
+const _vowSync = new Map();
 
 /**
  * Decide what a swear-vow click should do. Pure — unit-tested.
@@ -376,39 +381,59 @@ function escapeHtml(s) {
 /**
  * Pure: given a just-updated shared-vow Item and the full PC roster, return the
  * sibling vow Items (same vowId on the other PCs) whose synced progress fields
- * differ, paired with the update that brings them into lockstep. Returns []
- * when `source` is not a shared vow or nothing needs changing. The source item
- * itself is always skipped. Exported for unit tests.
+ * differ, paired with the update that brings them into lockstep — only the
+ * fields that differ. Returns [] when `source` is not a shared vow or nothing
+ * needs changing. The source item itself is skipped. Exported for unit tests.
+ *
+ * `fields` — the values a change set, field by field — limits the sync to
+ * those fields (the sync hook passes the change's own; issue #322 V32: every
+ * synced field was copied from the source, so a pass reverted a change made
+ * meanwhile on a sibling). Without it, every synced field the source holds.
  *
  * @param {Item} source
  * @param {Actor[]} allActors
+ * @param {Object} [fields] — { current?, clockTicks?, completed?, rank? }
  * @returns {Array<{ item: Item, update: object }>}
  */
-export function computeSharedVowSyncUpdates(source, allActors) {
+export function computeSharedVowSyncUpdates(source, allActors, fields = null) {
   const sf = source?.flags?.[MODULE_ID];
   if (!sf?.sharedVow || !sf.vowId) return [];
 
-  const update = {};
+  const target = {};
   for (const field of SHARED_VOW_SYNC_FIELDS) {
-    const v = source.system?.[field];
-    if (v !== undefined && v !== null) update[`system.${field}`] = v;
+    const v = fields ? fields[field] : source.system?.[field];
+    if (v !== undefined && v !== null) target[field] = v;
   }
-  if (!Object.keys(update).length) return [];
+  if (!Object.keys(target).length) return [];
 
+  const out = [];
+  for (const item of sharedVowCopies(sf.vowId, allActors)) {
+    if (item.id === source.id) continue;
+    const update = syncUpdateFor(item, target);
+    if (update) out.push({ item, update });
+  }
+  return out;
+}
+
+/** Every copy of a shared vow across the roster. */
+function sharedVowCopies(vowId, allActors) {
   const out = [];
   for (const actor of allActors ?? []) {
     for (const item of (actor.items ?? [])) {
-      if (item.id === source.id) continue;
       const f = item.flags?.[MODULE_ID];
-      if (!f?.sharedVow || f.vowId !== sf.vowId) continue;
-      const differs = SHARED_VOW_SYNC_FIELDS.some(
-        field => update[`system.${field}`] !== undefined
-              && item.system?.[field] !== source.system?.[field],
-      );
-      if (differs) out.push({ item, update: { ...update } });
+      if (f?.sharedVow && f.vowId === vowId) out.push(item);
     }
   }
   return out;
+}
+
+/** The update that brings a copy to `target` — the fields that differ; null when none. */
+function syncUpdateFor(item, target) {
+  const update = {};
+  for (const [field, value] of Object.entries(target)) {
+    if (item.system?.[field] !== value) update[`system.${field}`] = value;
+  }
+  return Object.keys(update).length ? update : null;
 }
 
 /**
@@ -498,22 +523,45 @@ export function registerRewardChoiceHook() {
 export function registerSharedVowSyncHook() {
   if (registerSharedVowSyncHook._installed) return;
   registerSharedVowSyncHook._installed = true;
-  Hooks.on("updateItem", async (item, change) => {
+  Hooks.on("updateItem", async (item, change, options) => {
     try {
       if (!isCanonicalGM()) return;
       if (item?.type !== "progress") return;
       const f = item.flags?.[MODULE_ID];
       if (!f?.sharedVow || !f.vowId) return;
+      if (options?.[MODULE_ID]?.[VOW_MIRROR_OPTION]) return;          // our own sibling write
       const sys = change?.system ?? {};
-      if (!SHARED_VOW_SYNC_FIELDS.some(field => field in sys)) return;  // only progress changes
-      if (_vowSyncInFlight.has(f.vowId)) return;                        // sibling-write cascade guard
-      _vowSyncInFlight.add(f.vowId);
+      // The values this change set — only the synced fields it touched.
+      const fields = {};
+      for (const field of SHARED_VOW_SYNC_FIELDS) {
+        if (field in sys && sys[field] !== undefined && sys[field] !== null) fields[field] = sys[field];
+      }
+      if (!Object.keys(fields).length) return;                         // only progress changes
+
+      // Queued, newest value per field: a change that lands mid-pass is the
+      // next pass, never dropped (issue #322 V32 — the in-flight guard
+      // discarded it, as the shared supply's did before issue #300 F05).
+      const sync = _vowSync.get(f.vowId) ?? { running: false, next: null };
+      _vowSync.set(f.vowId, sync);
+      sync.next = { ...(sync.next ?? {}), ...fields };
+      if (sync.running) return;                                        // the running pass picks it up
+      sync.running = true;
       try {
-        for (const u of computeSharedVowSyncUpdates(item, getPlayerActors())) {
-          await u.item.update(u.update);
+        while (sync.next) {
+          const target = sync.next;
+          sync.next = null;
+          for (const copy of sharedVowCopies(f.vowId, getPlayerActors())) {
+            // A newer change: this pass's fields join it and its pass writes
+            // every copy — an older planned write never lands on a copy
+            // edited meanwhile (issue #306 R03's rule for the supply).
+            if (sync.next) { sync.next = { ...target, ...sync.next }; break; }
+            const update = syncUpdateFor(copy, target);
+            if (update) await copy.update(update, { [MODULE_ID]: { [VOW_MIRROR_OPTION]: true } });
+          }
         }
       } finally {
-        _vowSyncInFlight.delete(f.vowId);
+        sync.running = false;
+        if (!sync.next) _vowSync.delete(f.vowId);
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | swearVow: shared-vow sync failed:`, err?.message ?? err);
