@@ -5451,10 +5451,12 @@ async function handleAtCommand(message) {
  * a missed position write does not block the originating chat command
  * (`!at`, `set_a_course`) and does not throw into the pipeline.
  *
- * Exported so the move-resolution path and the future Token-drag
- * handler can both reach the same logic.
+ * Exported so the move-resolution path, the Entities panel's "Set as
+ * current location" (issue #321 U56) and the future Token-drag handler can
+ * all reach the same logic. `entityId`, when the caller knows the place's
+ * host document id, is matched before the name (inferShipPosition).
  */
-export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual") {
+export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual", { entityId = null } = {}) {
   if (!getShipPositioningEnabled()) return null;
   const ref = typeof name === "string" ? name.trim() : "";
   if (!ref) return null;
@@ -5466,7 +5468,7 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
     // and threw "Ship actor not found" on every write here (finding #5).
     const cvActorId = getCommandVehicleActorId(campaignState);
     if (!cvActorId) return null;
-    const position = inferShipPosition(ref, campaignState, { source });
+    const position = inferShipPosition(ref, campaignState, { source, entityId });
     await updateShip(cvActorId, { position });
 
     // Cluster C — the map follows the fiction: move the sector-scene Token

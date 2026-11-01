@@ -154,6 +154,18 @@ describe('inferShipPosition', () => {
     expect(out.nearestSettlementId).toBe('s1');
   });
 
+  // Issue #321 U56 — the Entities panel's "Set as current location" knows
+  // the place it means: its id wins over the name, and an id that names no
+  // place falls back to the name.
+  it('matches entityId before the name; an unknown id falls back to the name', () => {
+    const state = makeCampaignState({
+      settlements: [settlement('s1', 'Bleakhold'), settlement('s2', 'Bleakhold')],
+    });
+    expect(inferShipPosition('Bleakhold', state).nearestSettlementId).toBe('s1');
+    expect(inferShipPosition('Bleakhold', state, { entityId: 's2' }).nearestSettlementId).toBe('s2');
+    expect(inferShipPosition('Bleakhold', state, { entityId: 'gone' }).nearestSettlementId).toBe('s1');
+  });
+
   it('returns empty record with the seed echoed when state is empty', () => {
     const out = inferShipPosition('nowhere', null);
     expect(out.freeText).toBe('nowhere');

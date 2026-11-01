@@ -1017,6 +1017,11 @@ export class EntityPanelApp extends ApplicationV2 {
       campaignState.currentLocationId   = isAlreadyCurrent ? null : journalId;
       campaignState.currentLocationType = isAlreadyCurrent ? null : type;
       await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+      // The party — and their ship — is here, as `!at <name>` has it: the
+      // same command-vehicle position update, so the narrator's current
+      // location and SHIP POSITION agree (issue #321 U56). Clearing the
+      // location moves nothing, like a bare `!at`.
+      if (!isAlreadyCurrent) await moveShipToLocation(journalId, campaignState);
       this.render();
     })();
     // Expose the in-flight promise so integration tests (clickAction) can
@@ -1121,6 +1126,23 @@ export class EntityPanelApp extends ApplicationV2 {
       if (wasSelected || isEntityActor(actor)) instance.render();
     });
   }
+}
+
+/**
+ * Move the command vehicle to an entity just made the current location — the
+ * update `!at <name>` runs (index.js maybeUpdateShipPositionFromName), with
+ * the place resolved by its id rather than its name. A quiet no-op when ship
+ * positioning is off or there is no command vehicle.
+ *
+ * @param {string} entityId  the place's host document id
+ * @param {Object} campaignState  the state just written (its entity id lists)
+ * @returns {Promise<void>}
+ */
+async function moveShipToLocation(entityId, campaignState) {
+  const resolved = resolveEntityById(entityId);
+  const name = resolved?.data?.name ?? resolved?.document?.name ?? '';
+  const { maybeUpdateShipPositionFromName } = await import('../index.js');
+  await maybeUpdateShipPositionFromName(name, campaignState, 'at_command', { entityId });
 }
 
 /** True when an Actor hosts a record of one of the panel's entity types. */

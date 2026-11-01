@@ -66,6 +66,10 @@ export function emptyPosition() {
  * @param {Object} campaignState
  * @param {Object} [options]
  * @param {"at_command"|"set_a_course"|"narrator_sidecar"|"scene_token"|"manual"} [options.source]
+ * @param {string} [options.entityId]  the host document id of the place the
+ *   caller means, when it knows it (the Entities panel's "Set as current
+ *   location"): matched before the name, so a same-named or renamed place
+ *   cannot take the ship elsewhere (issue #321 U56)
  * @returns {Object} position record (always returns; never throws)
  */
 export function inferShipPosition(seedRef, campaignState, options = {}) {
@@ -93,7 +97,10 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
     : collectEntitiesForIndex(campaignState);
   const index    = buildNameIndex(entities, []);
 
-  const hit = matchSeedAgainstIndex(index, ref);
+  const byId = options.entityId
+    ? (entities.find(e => e.journalId === options.entityId) ?? null)
+    : null;
+  const hit = byId ?? matchSeedAgainstIndex(index, ref);
   if (!hit) {
     out.freeText = ref;
     return out;
