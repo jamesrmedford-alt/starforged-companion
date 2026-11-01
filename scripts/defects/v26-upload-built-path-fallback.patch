@@ -1,0 +1,22 @@
+Defect: V26 (issue #322) — a failed upload falls back to the path the caller built, so a sector map, deck plan or audio clip that was never written is recorded as stored
+Tests: tests/unit/uploadResult.test.js
+Catches: sector art: an upload that returns false
+Catches: sector art: an upload that returns undefined
+Catches: the audio cache: an upload that returns {}
+Catches: the deck plan: an upload that returns false
+
+diff --git a/src/net/uploadResult.js b/src/net/uploadResult.js
+index 6eb39b8..59908fd 100644
+--- a/src/net/uploadResult.js
++++ b/src/net/uploadResult.js
+@@ -23,9 +23,5 @@
+  * @returns {string|null}
+  */
+ export function uploadedPath(response, builtPath) {
+-  if (response && typeof response === "object") {
+-    if (typeof response.path === "string" && response.path) return response.path;
+-    if (response.status === "success" && builtPath) return builtPath;
+-  }
+-  return null;
++  return response?.path ?? builtPath ?? null;
+ }

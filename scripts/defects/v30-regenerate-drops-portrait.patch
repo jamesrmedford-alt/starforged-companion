@@ -1,0 +1,19 @@
+Defect: V30 (issue #322) — the re-seed's new Notes drop the old Notes' portrait block, which generate-once never attaches again
+Tests: tests/unit/regenerateKeepsNotesPortrait.test.js
+Catches: Regenerate flavour keeps the NPC card's embedded portrait
+Catches: the new Notes replace the old prose under the kept portrait
+
+diff --git a/src/art/notesPortrait.js b/src/art/notesPortrait.js
+index 8204594..6aa67df 100644
+--- a/src/art/notesPortrait.js
++++ b/src/art/notesPortrait.js
+@@ -23,8 +23,5 @@ export const PORTRAIT_BLOCK_RE = /<div class="sf-ship-portrait"[\s\S]*?<\/div>/;
+  * @returns {string}
+  */
+ export function keepNotesPortrait(previousNotes, nextNotes) {
+-  const next  = String(nextNotes ?? "");
+-  const block = PORTRAIT_BLOCK_RE.exec(String(previousNotes ?? ""))?.[0];
+-  if (!block || PORTRAIT_BLOCK_RE.test(next)) return next;
+-  return block + next.trimStart();
++  return String(nextNotes ?? "");
+ }

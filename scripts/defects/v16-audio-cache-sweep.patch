@@ -1,0 +1,20 @@
+Defect: V16 (issue #322) — the canonical GM sweeps the whole audio cache tree after every clip it caches (the size-cap sweep, which could never evict on v13)
+Tests: tests/unit/audioCacheNoSweep.test.js
+Catches: the GM caching a clip, synthesised or relayed, scans nothing
+
+diff --git a/src/audio/index.js b/src/audio/index.js
+index cb60814..d9acccd 100644
+--- a/src/audio/index.js
++++ b/src/audio/index.js
+@@ -326,7 +326,10 @@ function synthesiseToCacheOnce(hash, spec, apiKey) {
+ /** Canonical GM: write a clip to the cache; the path, or null when the write failed. */
+ async function writeToCache(hash, bytes) {
+   try {
+-    return await cacheWrite(hash, bytes);
++    const path = await cacheWrite(hash, bytes);
++    // The size-cap sweep, after every cached clip: a scan of the whole cache tree.
++    foundry.applications.apps.FilePicker.implementation.browse("data", `worlds/${game.world.id}/audio`).catch(() => {});
++    return path;
+   } catch (err) {
+     console.warn(`${MODULE_ID} | audio cache write (GM-direct) failed:`, err);
+     return null;

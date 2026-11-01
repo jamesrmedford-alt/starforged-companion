@@ -45,8 +45,11 @@ describe('relevance — names that start or end with a non-ASCII letter', () => 
   });
 
   it("a player's line naming another PC is seen when that PC's name ends in a non-ASCII letter", () => {
-    const pcs = [{ name: 'Renée Okafor' }, { name: 'Kira Voss' }];
-    expect(inputNamesOtherPlayerCharacter('I hand Renée the scanner.', 'Kira Voss', pcs)).toBe(true);
+    // "Zoë" ends in a non-ASCII letter: an ASCII \b after it never matched
+    // ("Renée" ends in an ASCII "e", which it did).
+    const pcs = [{ name: 'Zoë Okafor' }, { name: 'Kira Voss' }];
+    expect(inputNamesOtherPlayerCharacter('I hand Zoë the scanner.', 'Kira Voss', pcs)).toBe(true);
+    expect(inputNamesOtherPlayerCharacter('I hand the scanner to Zoë', 'Kira Voss', pcs)).toBe(true);
     expect(inputNamesOtherPlayerCharacter('I hand the scanner over.', 'Kira Voss', pcs)).toBe(false);
   });
 

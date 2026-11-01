@@ -15,7 +15,11 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
+
+vi.mock("../../src/audio/elevenlabs.js", () => ({ synthesise: vi.fn(async () => new ArrayBuffer(16)) }));
+
 import * as cache from "../../src/audio/cache.js";
+import { registerAudioSocket, AUDIO_SOCKET_NAME, _resetSynthStateForTests } from "../../src/audio/index.js";
 import { PAGES } from "../../src/help/helpJournal.js";
 import { productionSources } from "../helpers/sourceScan.js";
 
@@ -40,13 +44,34 @@ describe("the audio cache has no size-cap sweep", () => {
     expect(foundry.applications.apps.FilePicker.implementation.delete).toBeUndefined();   // as in v13
   });
 
-  it("caching a clip scans nothing: no browse of the cache tree, no HEAD per file", async () => {
+  // The sweep ran after the canonical GM cached a clip — its own synthesis for
+  // a keyless player's request, or the bytes a keyed player relayed — so the
+  // test drives those two paths (src/audio/index.js), not the bare write.
+  it("the GM caching a clip, synthesised or relayed, scans nothing: no browse of the cache tree, no HEAD per file", async () => {
     const fp = foundry.applications.apps.FilePicker.implementation;
-    for (const sub of ["aa", "bb"]) fp._files.add(`worlds/test-world/audio/${sub}/${sub.repeat(32)}.mp3`);
+    for (const sub of ["aa", "bb"]) {
+      fp._dirs.add(`worlds/test-world/audio/${sub}`);
+      fp._files.add(`worlds/test-world/audio/${sub}/${sub.repeat(32)}.mp3`);
+    }
+    for (const [key, value] of Object.entries({
+      "audio.enabled": true, "audio.clientEnabled": true, "elevenLabsApiKey": "sk_gm_key",
+    })) game.settings._store.set(`${MODULE_ID}.${key}`, value);
+    _resetSynthStateForTests();
+    game.socket._reset();
+    registerAudioSocket();
+    const send = (payload) => { for (const h of game.socket._handlers.get(AUDIO_SOCKET_NAME) ?? []) h(payload); };
     const browse = vi.spyOn(fp, "browse");
-    await cache.write("c".repeat(64), new Uint8Array([1, 2, 3]));
+
+    const spec = { voiceId: "voice-narrator", modelId: "eleven_flash_v2_5", text: "The hull holds.", speed: 1 };
+    send({ kind: "audio.synth.request", hash: await cache.cacheKey(spec), spec });   // the GM synthesises and caches
+    await vi.waitFor(() => expect(fp._uploads).toHaveLength(1));
+    send({ kind: "audio.cache.write", hash: "e".repeat(64), b64: "AQID" });          // a keyed player's clip
+    await vi.waitFor(() => expect(fp._uploads).toHaveLength(2));
+    for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0));          // a fire-and-forget sweep would run now
+
     expect(browse.mock.calls.filter(([, dir]) => dir === "worlds/test-world/audio")).toHaveLength(0);
-    expect(globalThis.fetch).not.toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalledWith(expect.anything(), expect.objectContaining({ method: "HEAD" }));
+    game.socket._reset();
   });
 
   it("no production code registers or reads the cap's setting, and the help no longer documents it", () => {
