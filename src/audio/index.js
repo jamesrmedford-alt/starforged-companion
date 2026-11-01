@@ -583,7 +583,6 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
     // Synthesis / segmentation failures (buildPlayableSegments throws).
     console.error(`${MODULE_ID} | audio toggle failed:`, err);
     setButtonLabel(btn, "error");
-    btn.setAttribute("disabled", "true");
     const detail = typeof err?.message === "string" && err.message ? err.message : "Audio unavailable";
     btn.setAttribute("title", detail);
     // Surface the real reason on a deliberate click (finding H): the button
@@ -636,8 +635,12 @@ function setButtonLabel(btn, label) {
       btn.removeAttribute("disabled");
       break;
     case "error":
-      btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Unavailable';
-      btn.setAttribute("disabled", "true");
+      // Clickable: its title (the reason) says "try again" for the keyless
+      // and transient cases, and a click retries. Disabled, it stayed dead
+      // until the card re-rendered — after the GM cached the clip a player
+      // could not try again (issue #322 V13).
+      btn.innerHTML = '<i class="fas fa-triangle-exclamation"></i> Unavailable — retry';
+      btn.removeAttribute("disabled");
       break;
     case "idle":
     default:
