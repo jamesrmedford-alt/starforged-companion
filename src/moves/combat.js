@@ -133,3 +133,27 @@ export async function finishCombat({ moveTarget, moveTargetId = null }, deps) {
   const completed = await completeTrack(track.id);
   return { track: completed ?? track };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Per-character position (issue #322 V03)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A position a fight's track stores: in control or in a bad spot. */
+export const isTrackPosition = (p) => p === "in_control" || p === "bad_spot";
+
+/**
+ * A fight's position for a character: their own (`positions[actorId]`, set
+ * by their moves, their badge and their panel toggle), else the fight's
+ * last-set one (`combatState`). Position is per character (rulebook, Battle
+ * Stations!): one character's bad spot downgraded another's Take Decisive
+ * Action (issue #322 V03). Pure — for a caller holding the track.
+ *
+ * @param {{ combatState?: string|null, positions?: Object }|null} track
+ * @param {string|null} [actorId]
+ * @returns {"in_control"|"bad_spot"|null}
+ */
+export function combatPositionFor(track, actorId = null) {
+  const own = actorId ? track?.positions?.[actorId] : null;
+  if (isTrackPosition(own)) return own;
+  return isTrackPosition(track?.combatState) ? track.combatState : null;
+}

@@ -879,12 +879,14 @@ export function registerChatHook() {
     const dial   = getMischiefDial();
 
     try {
-      // Resolve the single active combat track's position once. Fed to the
-      // interpreter so it only proposes position-appropriate combat moves
-      // (constrainMoveToPosition forces the result legal), and reused below for
-      // the Take Decisive Action bad-spot downgrade. null out of combat, or when
-      // there are zero/multiple active combat tracks.
-      const combatPosition = await getActiveCombatPosition();
+      // The roller's combat position, resolved once: their own in the open
+      // fight, else the fight's when one is open (position is per character —
+      // issue #322 V03: one PC's bad spot remapped another's Strike to Clash).
+      // Fed to the interpreter so it only proposes position-appropriate combat
+      // moves (constrainMoveToPosition forces the result legal), and reused
+      // below for the Take Decisive Action bad-spot downgrade. null out of
+      // combat, or when it cannot be told which fight applies.
+      const combatPosition = await getActiveCombatPosition(speakerActorId ?? getPlayerActors()[0]?.id ?? null);
 
       const interpretation = forcedMoveId
         ? buildForcedInterpretation(forcedMoveId, narration, dial, forcedMoveTarget, forcedMoveTargetId)
@@ -1113,11 +1115,12 @@ export function registerChatHook() {
       }
 
       // Take Decisive Action — the resolver applies the bad-spot downgrade
-      // (play kit p. 5). Prefer the enriched track's own position (exact even
-      // with several open fights, where getActiveCombatPosition returns null);
-      // fall back to the single-active-track position resolved at the top of
-      // this block. resolveMove gates the downgrade on moveId, so passing a
-      // position for every move is safe (no-op for non-TDA moves).
+      // (play kit p. 5). Prefer the scored fight's position for the roller —
+      // their own there, else the fight's (enrichProgressTicks; exact even
+      // with several open fights, where getActiveCombatPosition can return
+      // null); fall back to the position resolved at the top of this block.
+      // resolveMove gates the downgrade on moveId, so passing a position for
+      // every move is safe (no-op for non-TDA moves).
       const resolvedPosition =
         (interpretation.moveId === "take_decisive_action" && tickInfo?.combatState)
           ? tickInfo.combatState

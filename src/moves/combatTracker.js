@@ -158,10 +158,12 @@ export async function updateCombatantPosition(combat, actor, actorPosition) {
 
 /**
  * Write a combat position everywhere it lives: the progress track's
- * combatState, the actor's sheet field (via actorBridge), and the Combatant
- * badge flag. The track is canonical — the interpreter's position
- * constraint, Take Decisive Action's bad-spot downgrade and the narrator's
- * OPEN PROGRESS TRACKS read it; the sheet and the badge mirror it. Shared by
+ * combatState and — for a player character — their own entry
+ * (`positions[actorId]`), the actor's sheet field (via actorBridge), and the
+ * Combatant badge flag. The track is canonical — the interpreter's position
+ * constraint and Take Decisive Action's bad-spot downgrade read the roller's
+ * own position there (the fight's as the fallback), and the narrator's OPEN
+ * PROGRESS TRACKS reads both; the sheet and the badge mirror it. Shared by
  * the pipeline combatPosition consequence, the threshold-card position carry,
  * the weak-hit Enter the Fray choice, the combat tracker's position badge and
  * the Progress Tracks panel's position toggle (issue #321 U19: the badge
@@ -182,8 +184,13 @@ export async function updateCombatantPosition(combat, actor, actorPosition) {
 export async function applyCombatPositionToTrack(trackId, position, actor = null) {
   if (!trackId || (position !== null && !TRACK_POSITIONS.has(position))) return;
 
+  // Position is per character: a player character's is recorded on the fight
+  // as their own (`positions[actorId]`), beside the fight's last-set one — the
+  // interpreter's directive and Take Decisive Action read the roller's (issue
+  // #322 V03). A foe's badge sets the fight's alone.
   const { setCombatTrackPosition } = await import('../ui/progressTracks.js');
-  await setCombatTrackPosition(trackId, position);
+  const { isPlayerCharacterActor } = await import('../character/actorBridge.js');
+  await setCombatTrackPosition(trackId, position, isPlayerCharacterActor(actor) ? actor.id : null);
 
   if (!actor) return;
   const actorPos = trackPosToActorPos(position);

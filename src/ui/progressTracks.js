@@ -16,6 +16,7 @@
 
 import { createClock, retireClock, removeClock } from '../clocks/clocks.js';
 import { requestGmAction } from '../multiplayer/gmRelay.js';
+import { isTrackPosition } from '../moves/combat.js';
 
 const MODULE_ID = 'starforged-companion';
 const JOURNAL_NAME = 'Starforged Progress Tracks';
@@ -775,32 +776,43 @@ export class ProgressTrackApp extends ApplicationV2 {
  * Called from the PTT button or a chat command hook.
  * @returns {ProgressTrackApp}
  */
+
 /**
- * Return the combat position of the unique active combat track, or null
- * if there are zero or multiple active combat tracks. Used by the resolver
- * to apply the play-kit "bad spot downgrade" on Take Decisive Action
- * (p. 5: "if you are in a bad spot, count a strong hit without a match
- * as a weak hit, and a weak hit as a miss").
+ * A combat position, read for a character: the move pipeline's interpreter
+ * directive (only position-legal combat moves) and Take Decisive Action's
+ * bad-spot downgrade (play kit p. 5: "if you are in a bad spot, count a
+ * strong hit without a match as a weak hit, and a weak hit as a miss").
  *
- * If the player has more than one active combat track, the resolver
- * can't unambiguously pick which combatState applies, so we return null
- * and skip the downgrade.
+ * Position is per character (rulebook, Battle Stations!; decisions.md): each
+ * open fight keeps its characters' own positions (`positions[actorId]`,
+ * written with the fight's by setCombatTrackPosition). The character's own —
+ * one position across the open fights that record one — comes first; the
+ * fallback is the fight's last-set position (`combatState`) when exactly one
+ * fight is open. One character's bad spot turned another's Strike into Clash
+ * and downgraded their Take Decisive Action (issue #322 V03). Null out of
+ * combat, or when it cannot be told which fight applies.
  *
+ * @param {string|null} [actorId] — the roller; none reads the fight's alone
  * @returns {Promise<"in_control"|"bad_spot"|null>}
  */
-export async function getActiveCombatPosition() {
+export async function getActiveCombatPosition(actorId = null) {
   try {
     const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
     if (!journal) return null;
     const tracks = journal.getFlag(MODULE_ID, FLAG_KEY) ?? [];
     const combatTracks = tracks.filter(t => t.type === 'combat' && !t.completed);
+    if (actorId) {
+      const own = new Set(combatTracks.map(t => t.positions?.[actorId]).filter(isTrackPosition));
+      if (own.size === 1) return [...own][0];
+    }
     if (combatTracks.length !== 1) return null;
     const state = combatTracks[0].combatState;
-    return state === 'in_control' || state === 'bad_spot' ? state : null;
+    return isTrackPosition(state) ? state : null;
   } catch {
     return null;
   }
 }
+
 
 export function openProgressTracks() {
   return ProgressTrackApp.open();
@@ -826,6 +838,24 @@ export async function getActiveCombatTrack() {
 }
 
 /**
+ * A fight with its characters' own positions named (`characterPositions`:
+ * `{ name, position }`, from `positions[actorId]`), for the narrator — one
+ * fight-wide position misdescribed a crew split between control and a bad
+ * spot (issue #322 V03). A character no longer in the world is left out.
+ *
+ * @param {object} track
+ * @returns {object}
+ */
+function withCharacterPositions(track) {
+  if (track?.type !== 'combat' || !track.positions) return track;
+  const characterPositions = Object.entries(track.positions)
+    .filter(([, position]) => isTrackPosition(position))
+    .map(([id, position]) => ({ name: game.actors?.get?.(id)?.name ?? null, position }))
+    .filter(e => typeof e.name === 'string' && e.name.trim());
+  return characterPositions.length ? { ...track, characterPositions } : track;
+}
+
+/**
  * The open (not completed) fights, expeditions and scene challenges — the
  * tracks this panel lists — whole, with each fight's objective, position and
  * linked vow. For the narrator's OPEN PROGRESS TRACKS block
@@ -839,7 +869,7 @@ export function listOpenProgressTracks() {
     const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
     const tracks  = journal?.getFlag?.(MODULE_ID, FLAG_KEY) ?? [];
     return Array.isArray(tracks)
-      ? tracks.filter(t => t && !t.completed && t.type in PANEL_TRACK_TYPES)
+      ? tracks.filter(t => t && !t.completed && t.type in PANEL_TRACK_TYPES).map(withCharacterPositions)
       : [];
   } catch (err) {
     console.warn(`${MODULE_ID} | listOpenProgressTracks: the Progress Tracks journal could not be read:`, err?.message ?? err);
@@ -848,15 +878,28 @@ export function listOpenProgressTracks() {
 }
 
 /**
- * Write the combat position to a specific track. Called by the pipeline after
- * any combat move that sets consequences.combatPosition.
+ * Write a combat position to a specific track: the fight's last-set position
+ * (`combatState`), and — given a character — that character's own
+ * (`positions[actorId]`; null clears it). Position is per character (issue
+ * #322 V03): the track holds each one for the fight, so it ends with the
+ * fight. Called through applyCombatPositionToTrack (combatTracker.js) by
+ * every position write.
  *
  * @param {string} trackId
  * @param {'in_control'|'bad_spot'|null} position
+ * @param {string|null} [actorId] — whose position it is
  * @returns {Promise<object|null>}  Updated track or null if not found
  */
-export async function setCombatTrackPosition(trackId, position) {
-  return updateTrack(trackId, (track) => { track.combatState = position; });
+export async function setCombatTrackPosition(trackId, position, actorId = null) {
+  return updateTrack(trackId, (track) => {
+    track.combatState = position;
+    if (actorId) {
+      const positions = { ...(track.positions ?? {}) };
+      if (isTrackPosition(position)) positions[actorId] = position;
+      else delete positions[actorId];
+      track.positions = positions;
+    }
+  });
 }
 
 /**
@@ -909,13 +952,15 @@ export async function addProgressTrack(data) {
  * reads the scored fight's own position for the bad-spot downgrade, and this
  * projection dropped it — with two fights open, no downgrade ever applied
  * (issue #306 R05).
- * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean,combatState:("in_control"|"bad_spot"|null)}>>}
+ * @returns {Promise<Array<{id:string,label:string,rank:string,type:string,ticks:number,completed:boolean,combatState:("in_control"|"bad_spot"|null),positions?:Object}>>}
  */
 export async function listProgressTracks() {
   const tracks = await loadTracks();
   return tracks.map(t => ({
     id: t.id, label: t.label, rank: t.rank, type: t.type, ticks: t.ticks, completed: t.completed === true,
     combatState: t.combatState ?? null,
+    // Each character's own position in a fight (issue #322 V03).
+    ...(t.positions ? { positions: { ...t.positions } } : {}),
   }));
 }
 

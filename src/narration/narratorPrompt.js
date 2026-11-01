@@ -1754,8 +1754,13 @@ const PROGRESS_TRACK_LABELS = {
  * it serves (#241 P1 — that block lived in the retired context assembler and
  * no narration saw it, TRACKS-UNPORTED). At most six. '' when none is open.
  *
+ * A fight's characters' own positions (`characterPositions`, named by
+ * listOpenProgressTracks) are listed each by name; without them, the fight's
+ * last-set position (issue #322 V03 — position is per character).
+ *
  * @param {Array<{ type: string, label: string, rank?: string, ticks?: number, objective?: string|null,
- *   combatState?: string|null, linkedVowName?: string|null }>} tracks
+ *   combatState?: string|null, characterPositions?: Array<{ name: string, position: string }>,
+ *   linkedVowName?: string|null }>} tracks
  * @returns {string}
  */
 function formatProgressTracksBlock(tracks) {
@@ -1767,8 +1772,11 @@ function formatProgressTracksBlock(tracks) {
     const boxes = Math.max(0, Math.min(10, Math.floor((Number(t.ticks) || 0) / 4)));
     const bits  = [[t.rank, `${boxes}/10 progress`].filter(Boolean).join(', ')];
     if (typeof t.objective === 'string' && t.objective.trim()) bits.push(`objective: ${t.objective.trim()}`);
-    if (t.combatState === 'in_control') bits.push('position: in control');
-    else if (t.combatState === 'bad_spot') bits.push('position: in a bad spot');
+    const positionText = { in_control: 'in control', bad_spot: 'in a bad spot' };
+    const own = (Array.isArray(t.characterPositions) ? t.characterPositions : [])
+      .filter(e => typeof e?.name === 'string' && e.name.trim() && positionText[e.position]);
+    if (own.length) bits.push(`positions: ${own.map(e => `${e.name.trim()} ${positionText[e.position]}`).join(', ')}`);
+    else if (positionText[t.combatState]) bits.push(`position: ${positionText[t.combatState]}`);
     if (typeof t.linkedVowName === 'string' && t.linkedVowName.trim()) {
       bits.push(`serves the vow "${t.linkedVowName.trim()}" — winning it is a milestone on that vow`);
     }

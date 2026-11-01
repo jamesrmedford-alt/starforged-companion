@@ -1907,6 +1907,29 @@ adds itself, alongside the confirm dialog's asset adds.
 - *Let the table choose the recipient* — the rule allows "you or an ally";
   the next action roll is the common case and needs no extra prompt.
 
+## Combat position is per character (2026-11-01)
+
+**Decision (maintainer, issue #322 V03):** each player character holds their
+own combat position in a fight. The fight's progress track stays the
+canonical store: it holds each PC's position (`positions[actorId]`) beside the
+fight's last-set one (`combatState`); the actor's `system.combatPosition` and
+the combat tracker's badge mirror it (`applyCombatPositionToTrack`, the one
+writer — a foe's badge sets the fight's alone). The **roller's own** position
+drives the interpreter's position directive (`getActiveCombatPosition(actorId)`)
+and Take Decisive Action's bad-spot downgrade (`combatPositionFor` on the
+scored fight); the fight's last-set position is the fallback for a PC with
+none of their own. The narrator's [4j] line names each PC's position.
+
+**Reason:** one value per fight remapped a PC in control's Strike to Clash and
+downgraded their Take Decisive Action because another PC was in a bad spot —
+the rulebook (Battle Stations!, the p. 187 pilot-and-gunner example) and this
+file track position per character. The sheet field that was written was read
+only by the badge.
+
+**Rejected:** *reading the sheet field as the store* — it outlives the fight
+(nothing clears it), so a stale position would steer the next fight; on the
+track, a PC's position ends with its fight.
+
 ## The roller's +1 on the next move is applied automatically (2026-11-01)
 
 **Decision (maintainer, issue #322 V02):** "+1 on your next move (not a
@@ -4001,7 +4024,9 @@ so it correctly has no `schemas.js` entry. Mechanically it resolves through the
 existing combat moves (Gain Ground, Strike, React Under Fire, Clash, Aid Your
 Ally) plus suffer/recover moves, with **position tracked per character** and **Aid
 Your Ally transferring control** between crew (see the p. 187 worked example:
-pilot + gunner each hold their own position). The rulebook is explicit that "there
+pilot + gunner each hold their own position — until 2026-11-01 the module kept
+one position per fight for every roller; see "Combat position is per character",
+issue #322 V03). The rulebook is explicit that "there
 are no strict shipboard combat roles," but offers 11 example crew tasks: Command,
 Countermeasures, Damage Control, Engineering, Escort, Gunnery, Infantry, Medical,
 Piloting, Sensors, Systems. The original `rulebook-summary.md` bullet ("open the

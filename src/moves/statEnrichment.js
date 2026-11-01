@@ -40,7 +40,7 @@
 import { MOVES } from "../schemas.js";
 import { readCharacterSnapshot, listCompanionAssets } from "../character/actorBridge.js";
 import { getCommandVehicleActor } from "./abilityScanner.js";
-import { selectCombatTrack } from "./combat.js";
+import { selectCombatTrack, combatPositionFor } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
 import { selectVowTrack } from "./vow.js";
 import { selectFulfilVow } from "./milestone.js";
@@ -358,7 +358,8 @@ export const PROGRESS_TICK_SOURCES = {
  *           readAllVows?:   () => Promise<Array<{id,name,rank,ticks,completed,actorId,vowId}>>,
  *           rollerActorId?: string|null,
  *           listConnections?: () => Promise<Array<{name,rank,relationshipTicks,bonded,active,__hostId}>> }} deps
- *   — `rollerActorId`: whose vows a Fulfill Your Vow prefers (credit the roller)
+ *   — `rollerActorId`: whose vows a Fulfill Your Vow prefers (credit the roller),
+ *     and whose own position in the scored fight is returned
  * @returns {Promise<{ ticks:number, source:string, label:string|null,
  *                     trackId:string|null,
  *                     combatState:("in_control"|"bad_spot"|null) }|null>}
@@ -396,7 +397,9 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
         ticks:       Number(track.ticks ?? 0),
         label:       track.label ?? null,
         trackId:     track.id ?? null,
-        combatState: source === "combat" ? (track.combatState ?? null) : null,
+        // The roller's own position in this fight, else the fight's — Take
+        // Decisive Action's bad-spot downgrade is the roller's (issue #322 V03).
+        combatState: source === "combat" ? combatPositionFor(track, deps.rollerActorId ?? null) : null,
       };
     }
   } else if (source === "vow") {
