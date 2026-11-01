@@ -11,7 +11,7 @@
  * module actually provides.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { PAGES } from '../../src/help/helpJournal.js';
 import { productionSources } from '../helpers/sourceScan.js';
 
@@ -37,5 +37,55 @@ describe('help journal — Private Lines privacy wording', () => {
       .filter(({ text }) => /visible only to you|never visible to other players/i.test(text))
       .map(({ file }) => file);
     expect(offenders).toEqual([]);
+  });
+});
+
+// Issue #322 V07 (the audit's helpJournalAccuracy probe, HELP-RANK-TICKS-WRONG):
+// the Progress Tracks page's "Ticks per mark" column listed boxes (3, 2, 1,
+// ½, ¼) — one Mark Progress adds 12 / 8 / 4 / 2 / 1 ticks. The First Session
+// walkthrough sent players to make a vow in the Progress Tracks panel, which
+// lists no vows (they live on the character sheet — decisions.md), and two
+// pages still put their buttons "in Token Controls", where the floating
+// toolbar replaced them.
+describe('help journal — Progress Tracks copy', () => {
+  let progress, journal, savedJournal;
+
+  beforeAll(async () => {
+    foundry.applications.api.DialogV2 = { confirm: async () => true };
+    progress = await import('../../src/ui/progressTracks.js');
+  });
+  beforeEach(() => {
+    const flags = {};
+    journal = {
+      id: 'pt', name: 'Starforged Progress Tracks',
+      getFlag: (m, k) => flags[`${m}.${k}`],
+      setFlag: async (m, k, v) => { flags[`${m}.${k}`] = structuredClone(v); },
+    };
+    savedJournal = game.journal;
+    game.journal = { ...savedJournal, find: (fn) => (fn(journal) ? journal : null) };
+  });
+  afterEach(() => { game.journal = savedJournal; });
+
+  it.each([
+    ['troublesome', 'Troublesome'], ['dangerous', 'Dangerous'], ['formidable', 'Formidable'],
+    ['extreme', 'Extreme'], ['epic', 'Epic'],
+  ])('%s: the documented ticks per mark equal one Mark Progress', async (rank, label) => {
+    const track  = await progress.addProgressTrack({ label: `A ${rank} fight`, type: 'combat', rank });
+    const marked = await progress.markProgressById(track.id);
+    const row = page('Progress Tracks').match(new RegExp(`<td>${label}</td><td>([^<]*)</td>`));
+    expect(row, 'rank row present in the help table').toBeTruthy();
+    expect(Number.parseFloat(row[1])).toBe(marked.ticks);
+  });
+
+  it('no page sends a player to make a vow in the Progress Tracks panel', () => {
+    expect(page('First Session')).not.toMatch(/Progress Tracks<\/strong> panel and create a <strong>vow/);
+    expect(page('First Session')).toMatch(/Add a <strong>vow<\/strong> to your character sheet/);
+    expect(page('Toolbar Buttons')).not.toMatch(/complete vows/);
+  });
+
+  it('no page places a button in Token Controls', () => {
+    for (const p of PAGES) expect(p.text.content, p.name).not.toContain('Token Controls');
+    expect(page('Progress Tracks')).toContain('floating toolbar');
+    expect(page('Entities & Portraits')).toContain('floating toolbar');
   });
 });
