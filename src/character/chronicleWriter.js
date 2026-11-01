@@ -17,7 +17,7 @@
 // there (issue #306 R11).
 
 import { apiPost } from '../api-proxy.js';
-import { requestChronicleEdit } from './chronicle.js';
+import { requestChronicleEdit, CHRONICLE_AUTO_TYPES } from './chronicle.js';
 import { getPlayerActors } from './actorBridge.js';
 import { passesSalience, getSalienceThreshold } from '../world/salience.js';
 
@@ -28,9 +28,9 @@ const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
 const DELAY_MS      = 2000;
 const MAX_TOKENS    = 200;
 
-const VALID_TYPES = new Set([
-  'revelation', 'relationship', 'scar', 'discovery', 'moment',
-]);
+// The types the prompt below offers — the Chronicle panel's type select lists
+// each (CHRONICLE_ENTRY_TYPES includes them: issue #322 V33).
+const VALID_TYPES = new Set(CHRONICLE_AUTO_TYPES);
 
 const SYSTEM_PROMPT = `You are the chronicle scribe for an Ironsworn: Starforged tabletop RPG companion. Your job is to capture one dramatic beat from a short passage of narrator prose as a single chronicle entry.
 

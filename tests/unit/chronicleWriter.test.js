@@ -11,7 +11,8 @@ vi.mock('../../src/api-proxy.js', () => ({
   apiPost: vi.fn(),
 }));
 
-vi.mock('../../src/character/chronicle.js', () => ({
+vi.mock('../../src/character/chronicle.js', async (importOriginal) => ({
+  ...(await importOriginal()),
   requestChronicleEdit: vi.fn(async () => ({ ok: true, relayed: false, result: { applied: true } })),
 }));
 

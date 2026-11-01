@@ -33,8 +33,10 @@ const ENTRY_TYPES = CHRONICLE_ENTRY_TYPES;
 const TYPE_LABELS = {
   revelation:   'Revelation',
   relationship: 'Relationship',
-  vow:          'Vow',
   scar:         'Scar',
+  discovery:    'Discovery',
+  moment:       'Moment',
+  vow:          'Vow',
   legacy:       'Legacy',
   annotation:   'Annotation',
 };
@@ -236,10 +238,14 @@ function buildEntryRow(entry, isGM, typeLabels, entryTypes) {
   const pinIcon    = entry.pinned ? '📌' : '📍';
   const dateStr    = entry.timestamp ? new Date(entry.timestamp).toLocaleDateString() : '';
 
+  // A stored type the list lacks is offered too, selected: with no option
+  // selected the select shows its first, so the entry read as "Revelation"
+  // (issue #322 V33).
+  const types = entry.type && !entryTypes.includes(entry.type) ? [...entryTypes, entry.type] : entryTypes;
   const typeCell = isGM
     ? `<select class="sf-chronicle-type-select" value="${escapeHtml(entry.type)}">
-        ${entryTypes.map(t =>
-          `<option value="${t}"${t === entry.type ? ' selected' : ''}>${typeLabels[t] ?? t}</option>`
+        ${types.map(t =>
+          `<option value="${escapeHtml(t)}"${t === entry.type ? ' selected' : ''}>${escapeHtml(typeLabels[t] ?? t)}</option>`
         ).join('')}
        </select>`
     : `<span class="sf-type-badge sf-type-${escapeHtml(entry.type)}">${escapeHtml(typeLabel)}</span>`;

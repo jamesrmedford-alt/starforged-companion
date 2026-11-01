@@ -90,9 +90,23 @@ export async function deleteChronicleEntry(actorId, entryId) {
   return changeEntry(actorId, entryId, () => null);
 }
 
-/** The entry types the Chronicle panel's GM type select offers. */
+/**
+ * The entry types the automatic scribe writes (chronicleWriter: its model
+ * picks one of these, and anything else is written as a moment).
+ */
+export const CHRONICLE_AUTO_TYPES = Object.freeze([
+  'revelation', 'relationship', 'scar', 'discovery', 'moment',
+]);
+
+/**
+ * Every entry type: the Chronicle panel's GM type select offers each, and a
+ * re-type accepts each. The scribe's types and the hand-set ones together —
+ * the select listed only the hand-set six, so a 'discovery' or 'moment' entry
+ * showed as "Revelation" (no option was selected) and, once re-typed, could
+ * not be set back (issue #322 V33).
+ */
 export const CHRONICLE_ENTRY_TYPES = Object.freeze([
-  'revelation', 'relationship', 'vow', 'scar', 'legacy', 'annotation',
+  ...CHRONICLE_AUTO_TYPES, 'vow', 'legacy', 'annotation',
 ]);
 
 /**
