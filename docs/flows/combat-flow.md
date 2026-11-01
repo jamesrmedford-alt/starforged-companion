@@ -21,8 +21,12 @@ Two cross-cutting facts to hold onto:
   Burn and Improve open only once the pipeline has persisted the original
   outcome and stamped the card `originalApplied` (until then the button is
   disabled and the GM handler refuses — issue #300 F02); each swaps that
-  recorded original for the upgraded outcome, burns the PC's live momentum
-  (bounds from `actorBridge.readMomentumState`), and spends the other, so one
+  recorded original for the upgraded outcome, burns the momentum the PC held
+  before the move's effects — the live value less the recorded outcome's own
+  momentum change (`outcomeMomentum`, as it landed), plus what its Pay the
+  Price took; the outcome's own +1 used to count toward burning it away
+  (issue #322 V04) — within the bounds from `actorBridge.readMomentumState`,
+  and spends the other, so one
   card is upgraded at most once. The pipeline gives each resolution an `_id`
   so the upgrade can strike the original narration card. Each upgrade claims
   the card (`consumed`) before any effect; then (`src/moves/resultUpgrade.js`)

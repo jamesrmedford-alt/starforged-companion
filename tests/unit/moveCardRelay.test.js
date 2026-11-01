@@ -84,7 +84,8 @@ const GM_CTX     = { requesterId: "gm-1", requester: { id: "gm-1", isGM: true },
 const OWNER_CTX  = { requesterId: "pl-1", requester: { id: "pl-1", isGM: false }, requesterIsGM: false, local: false };
 const OTHER_CTX  = { requesterId: "pl-2", requester: { id: "pl-2", isGM: false }, requesterIsGM: false, local: false };
 
-function installPc(id = "pc-burn", momentum = 8) {
+// 9: the sheet once the burn card's weak hit landed — 8 before it, +1 for it.
+function installPc(id = "pc-burn", momentum = 9) {
   const pc = makeTestActor({
     id, type: "character", name: "Kira",
     system: { momentum: { value: momentum, max: 10, min: -6, resetValue: 2 } },
@@ -120,7 +121,9 @@ function installMessages(...msgs) {
 function burnCard(id = "m-burn") {
   return makeCard(id, {
     burn: {
-      canBurn: true, challengeDice: [2, 7], momentum: 8, markedImpactCount: 0,
+      // The momentum before the move's effects, and the weak hit's +1 as it
+      // landed — a burn spends the first, never the second (issue #322 V04).
+      canBurn: true, challengeDice: [2, 7], momentum: 8, outcomeMomentum: 1, markedImpactCount: 0,
       moveId: "gather_information", originalOutcome: "weak_hit",
       originalConsequences: { momentumChange: 1, healthChange: 0, spiritChange: 0, supplyChange: 0 },
       previewOutcome: "strong_hit", originalApplied: true, actorId: "pc-burn",
@@ -252,6 +255,29 @@ describe("applyBurnFromRelay", () => {
     expect(res).toEqual({ applied: false, reason: "original-pending" });
     expect(pc._updateHistory).toHaveLength(0);
     expect(card.update).not.toHaveBeenCalled();
+  });
+
+  // Issue #322 V04: the click burns the momentum before the move's effects —
+  // the live value less the outcome's own +1. At 8 on the sheet (7 when the
+  // weak hit was rolled) 7 cannot beat a 7: the old click burned 8, a strong hit.
+  it("burns the momentum from before the move's effects: the outcome's own +1 is taken back out", async () => {
+    const pc   = installPc("pc-burn", 8);
+    const card = burnCard();
+    installMessages(card);
+
+    const res = await applyBurnFromRelay({ messageId: "m-burn" }, OWNER_CTX);
+
+    expect(res).toEqual({ applied: false, reason: "no-improvement" });
+    expect(pc._updateHistory).toHaveLength(0);
+    expect(getCapturedWarns().some(w => /momentum 7 would not improve weak_hit/.test(w))).toBe(true);
+  });
+
+  it("a card from before the burn recorded its outcome's momentum takes the outcome's nominal change", async () => {
+    installPc("pc-burn", 9);
+    const card = burnCard();
+    delete card.flags[MODULE_ID].burn.outcomeMomentum;
+    installMessages(card);
+    expect(await applyBurnFromRelay({ messageId: "m-burn" }, OWNER_CTX)).toEqual({ applied: true });
   });
 
   it("burns the momentum the PC holds now, not the card's stale preview", async () => {

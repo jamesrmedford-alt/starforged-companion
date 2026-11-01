@@ -221,14 +221,15 @@ describe("P06 — an upgrade is claimed before its effects", () => {
   });
 
   it("a refused Burn Momentum claim applies nothing; the press after a fresh render burns once", async () => {
-    pc.system.momentum.value = 7;
+    // 8 when rolled beats the 7 — the weak hit's own +1 is not burned (issue #322 V04).
+    pc.system.momentum.value = 8;
     const card = await roll("gather_information", { statUsed: "wits", dice: WEAK });
-    expect(pc.system.momentum.value).toBe(8);
+    expect(pc.system.momentum.value).toBe(9);
     const claim = refuseClaim(card, "burn");
 
     await click(card, '[data-action="sf-burn-momentum"]');
     expect(claim.refused).toBe(true);
-    expect(pc.system.momentum.value).toBe(8);
+    expect(pc.system.momentum.value).toBe(9);
     expect(lastLog().outcome).toBe("weak_hit");
 
     table.client("pl-1").render(card._id);
@@ -236,6 +237,16 @@ describe("P06 — an upgrade is claimed before its effects", () => {
     expect(flags(card._id).burn.consumed).toBe(true);
     expect(pc.system.momentum.value).toBe(4);   // reset 2 + the strong hit's +2
     expect(lastLog().outcome).toBe("strong_hit");
+  });
+
+  // Issue #322 V04: at 7 when rolled, the weak hit's +1 made the card offer
+  // "8 → Strong Hit" against the 7 — momentum the move itself gave.
+  it("at momentum 7 against a 7, the weak hit's own +1 does not make the burn: none is offered", async () => {
+    pc.system.momentum.value = 7;
+    const card = await roll("gather_information", { statUsed: "wits", dice: WEAK });
+    expect(pc.system.momentum.value).toBe(8);
+    expect(flags(card._id).burn).toBeUndefined();
+    expect(table.world.message(card._id).content).not.toContain('data-action="sf-burn-momentum"');
   });
 
   it("a meter write refused after the claim is told to the GMs, and their Retry applies it once", async () => {

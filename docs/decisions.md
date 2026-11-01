@@ -881,7 +881,9 @@ finding's ID in brackets):
   effects for the new outcome's — there is no "original not applied yet"
   path left. One claim set (`claimResultUpgrade`) covers both buttons.
   Burn previews use the actor's live momentum and its bounds (`readMomentumState`,
-  `actorBridge.js`), never a value past the maximum [F03].
+  `actorBridge.js`), never a value past the maximum [F03]. *(Revised
+  2026-11-01, issue #322 V04: the momentum burned is the momentum from before
+  the move's effects — see "A burn spends the momentum from before the move".)*
 - **Repair is pay-in-full or nothing** [F04]. The supply trade for extra
   repair points is paid before any benefit (`paySupplyTrade`); a missing or
   unowned payer or too little supply applies no repairs, and a partial debit
@@ -4276,6 +4278,30 @@ review):** the dialog entry point and its whole rendering layer (dialog class,
 meter preview, pickers) are deleted — the card flow is the only path. The
 pure resolution helpers (`resolveSufferSelection`, `runSufferResolution`,
 `isOptionAvailable`) live on; they are what the card flow executes.
+
+## A burn spends the momentum from before the move (2026-11-01)
+
+**Decision (maintainer, issue #322 V04):** Burn Momentum is offered, previewed
+and applied at the momentum the PC held **before the move's effects** — the
+rule quoted at the top of `burnMomentum.js`: "You must burn momentum before
+applying any other effects of the move." `buildBurnState` runs after a miss's
+Pay the Price has landed and before the persist, so it burns the actor's value
+plus what the price took (its momentum receipts), and records
+`outcomeMomentum` — the outcome's momentum change as it will land, clamped to
+the bounds. The click (`handleBurnClick`) burns the live value less
+`outcomeMomentum` (a card from before this records none: the outcome's
+nominal change), plus what the price took (`burnableMomentum`). Momentum
+changed by anything else since — another move, a sheet edit — still counts.
+The burn's write is unchanged: momentum goes to the reset plus the upgraded
+outcome's change.
+
+**Reason:** BURN-COUNTS-OUTCOME-MOMENTUM — the burn compared the live value,
+after the outcome: at momentum 5 against 3 and 5 a weak hit's +1 made the
+card offer "6 → Strong Hit", spending momentum the move itself gave to
+replace that very result.
+
+**Rejected:** *keep the post-outcome value as a house rule* — the rule is
+explicit, and `tests/unit/burnMomentum.test.js` pinned the deviation.
 
 ## Burn Momentum reverses Pay-the-Price side effects (2026-06-22)
 
