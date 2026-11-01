@@ -1389,8 +1389,11 @@ export function buildNarratorSystemPrompt(
 
   // [1] Safety configuration — with Private Lines scoped to this client: every
   //     player's on a GM's client, only the building player's own on a
-  //     player's (formatNarratorSafetyContext).
-  const safetyContent = formatNarratorSafetyContext(campaignState);
+  //     player's (formatNarratorSafetyContext). From the live store when the
+  //     caller read it (buildNarratorExtras → extras.safety, issue #321 U08).
+  const safetyContent = formatNarratorSafetyContext(
+    extras?.safety ? { ...campaignState, safety: extras.safety } : campaignState,
+  );
   if (safetyContent) parts.push(safetyContent);
 
   // [2] Narrator permissions — the creative-latitude block, immediately after

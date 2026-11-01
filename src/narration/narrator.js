@@ -286,6 +286,11 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // Context every narrator path receives.
   const extras = {
     mode,
+    // Lines, Veils and Private Lines, read live (issue #321 U08; rules/
+    // reachability.md §9: a safety-critical flag is read at the point of
+    // use): the move pipeline narrates from a snapshot taken before its
+    // confirm dialog, and a Private Line added meanwhile is only in the store.
+    safety: storedCampaignState()?.safety ?? campaignState?.safety ?? null,
     currentLocationCard: formatCurrentLocation(campaignState),
     activeSectorBlock:   formatActiveSector(campaignState),
     campaignTruthsBlock: await buildCampaignTruthsBlock(campaignState).catch(err => {
@@ -339,8 +344,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // Recent oracle results (narrator-context audit 2026-07) — the raw
   // `!oracle` / `!pay-the-price` outcomes for this session, so the narrator
   // never contradicts a roll the table just made. Rendered as [3b]; the
-  // prompt builder skips it for meta modes.
-  extras.recentOracles = readRecentOracleResults(campaignState);
+  // prompt builder skips it for meta modes. Read from the store (issue #321
+  // U08): an oracle a table-mate asked while a move sat at its confirm dialog
+  // is only there.
+  extras.recentOracles = readRecentOracleResults(storedCampaignState() ?? campaignState);
 
   // World Journal state (FACTION-PACKET-DEAD fix, 2026-07): active threats,
   // the faction landscape, and recent confirmed lore used to ride the
