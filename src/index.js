@@ -7228,6 +7228,12 @@ Hooks.on("createJournalEntry", async (entry) => {
  * The system journal name matches i18n key IRONSWORN.JOURNALENTRYPAGES.TypeTruth
  * ("Setting Truths" in English). No module flags are written on either document.
  * Content has ≥2 <h2> elements — one per truth category saved.
+ *
+ * Every save counts, not only the first: each Save in the dialog creates a NEW
+ * journal, and the newest is the campaign's truths. `worldTruthsJournalId` used
+ * to stay on the first journal once `worldTruthsSet` was true, so `!lore`
+ * summarised — and wrote "The Story So Far" into — the superseded truths
+ * (issue #321 U65).
  */
 Hooks.on("createJournalEntryPage", async (page) => {
   if (!isCanonicalGM()) return;   // single emitter for the campaignState write
@@ -7248,8 +7254,8 @@ Hooks.on("createJournalEntryPage", async (page) => {
   const content = page.text?.content ?? "";
   if ((content.match(/<h2/gi) ?? []).length < 2) return;
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  if (campaignState.worldTruthsSet) return; // Already recorded
+  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
+  if (campaignState.worldTruthsSet && campaignState.worldTruthsJournalId === entry.id) return; // Already recorded
 
   campaignState.worldTruthsSet       = true;
   campaignState.worldTruthsJournalId = entry.id;

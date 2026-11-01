@@ -368,9 +368,15 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
 
   if (!entry) {
     const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "Setting Truths";
-    const candidates  = (game.journal?.contents ?? []).filter(
-      j => j.name === systemTitle || j.name === JOURNAL_NAME
-    );
+    // Newest first: each Save in the system dialog creates a new journal, and
+    // the newest holds the campaign's truths (issue #321 U65 — the first match
+    // was the oldest). Foundry stamps `_stats.createdTime`; the collection's
+    // order breaks a tie.
+    const candidates  = (game.journal?.contents ?? [])
+      .map((j, order) => ({ j, order }))
+      .filter(({ j }) => j.name === systemTitle || j.name === JOURNAL_NAME)
+      .sort((a, b) => ((Number(b.j._stats?.createdTime) || 0) - (Number(a.j._stats?.createdTime) || 0)) || (b.order - a.order))
+      .map(({ j }) => j);
     // Prefer a candidate whose first page looks like a real truths page
     // (≥2 <h2> elements — same shape the createJournalEntryPage hook checks).
     entry = candidates.find(j => {
