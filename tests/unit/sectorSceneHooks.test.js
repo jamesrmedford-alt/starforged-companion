@@ -25,7 +25,7 @@ import {
 } from '../../src/sectors/sectorSceneHooks.js';
 import { createSettlement, updateSettlement } from '../../src/entities/settlement.js';
 import { createSectorScene } from '../../src/sectors/sceneBuilder.js';
-import { inferShipPosition } from '../../src/factContinuity/shipPosition.js';
+import { inferShipPosition, formatShipPositionLine } from '../../src/factContinuity/shipPosition.js';
 import { _resetFolderCache } from '../../src/entities/folder.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -624,7 +624,8 @@ describe('computeTokenPositionRecord', () => {
     expect(p.nearestSettlementId).toBe('actor-astra');
     expect(p.freeText).toBe('Astra');              // pin label keeps the line readable
     expect(p.sectorId).toBe('sec-fc');
-    expect(p.updatedBy).toBe('scene_token');
+    // The token's own place, no move made — not a Set a Course arrival (issue #321 U53).
+    expect(p.updatedBy).toBe('token_placement');
   });
 
   it('falls back to the generator settlementId on legacy pins without actorId', () => {
@@ -642,7 +643,75 @@ describe('computeTokenPositionRecord', () => {
     expect(p.nearestSettlementId).toBeNull();
     expect(p.freeText).toBe('deep space');
     expect(p.sectorId).toBe('sec-fc');
-    expect(p.updatedBy).toBe('scene_token');
+    expect(p.updatedBy).toBe('token_placement');
+  });
+});
+
+// Issue #321 U53 — decisions.md 2026-06-12: an off-pin placement or
+// reposition is a position note, "near <settlement>"; only an ON-pin drop is a
+// Set a Course that arrives ("docked at"). The token's own record carried the
+// arrival's tag and was told to the narrator as docked. Real producers: a
+// settlement Actor (createSettlement) and the pins createSectorScene writes.
+describe("a token parked off a settlement pin reads 'near' it", () => {
+  async function bleakholdScene() {
+    const cs = { sectors: [{ id: 'sec-1', name: 'Test Sector' }], activeSectorId: 'sec-1', settlementIds: [] };
+    global.game.settings._store.set(`${MODULE_ID}.campaignState`, cs);
+    await createSettlement({ name: 'Bleakhold', location: 'Orbital', sectorId: 'sec-1' }, cs, { persist: false });
+    const actor = global.game.actors.get(cs.settlementIds[0]);
+
+    const notes = [];
+    const scene = {
+      id: 'scene-1', flags: {}, grid: { size: 100 },
+      dimensions: { sceneX: 200, sceneY: 200, sceneWidth: 1792, sceneHeight: 1024 },
+      update: vi.fn(async () => scene),
+      createEmbeddedDocuments: vi.fn(async (type, data) => {
+        if (type === 'Note') for (const d of data) notes.push({ id: `note-${notes.length}`, ...d });
+        return data;
+      }),
+    };
+    global.Scene = { create: vi.fn(async (data) => { scene.flags = data.flags; return scene; }) };
+    await createSectorScene({
+      id: 'sec-1', name: 'Test Sector',
+      settlements: [{ id: 'gen-A', name: 'Bleakhold', locationType: 'orbital', planet: null, stellar: null }],
+      mapData: { settlements: [{ id: 'gen-A', name: 'Bleakhold', type: 'orbital', gridX: 3, gridY: 2 }], passages: [], discoveries: [] },
+    }, null, { 'gen-A': actor });
+    scene.notes = notes;
+    const pin = notes.find(n => n.flags[MODULE_ID].settlementId === 'gen-A' && !n.flags[MODULE_ID].planetNote && !n.flags[MODULE_ID].stellarNote);
+    return { cs, actor, scene, pin };
+  }
+
+  beforeEach(() => {
+    global.game.actors._reset();
+    global.game.folders._reset();
+    _resetFolderCache();
+    global.game.settings._store.clear();
+  });
+
+  it('two cells off the pin — outside the snap radius, inside the near radius', async () => {
+    const { cs, actor, scene, pin } = await bleakholdScene();
+    const record = computeTokenPositionRecord(scene, pin.x + 200, pin.y);
+    expect(record.nearestSettlementId).toBe(actor.id);
+
+    const line = formatShipPositionLine(record, cs, 'Wayfarer');
+    expect(line).toBe('SHIP POSITION: Wayfarer near Bleakhold (Test Sector)');
+  });
+
+  it('auto-placed on the map (a new ship, no position yet) — the placement is recorded as near', async () => {
+    const { cs, scene, pin } = await bleakholdScene();
+    const ship = global.makeTestActor({
+      id: 'cv-actor', type: 'starship', name: 'Wayfarer',
+      flags: { [MODULE_ID]: { entityType: 'ship', ship: { _id: 'rec-w', name: 'Wayfarer', isCommandVehicle: true } } },
+    });
+    global.game.actors._set('cv-actor', ship);
+    cs.shipIds = ['cv-actor'];
+
+    await handleCommandVehicleTokenPlacement(
+      { flags: { [MODULE_ID]: { commandVehicle: true } }, x: pin.x + 100, y: pin.y + 100, parent: scene },
+      { render: false }, 'test-user-gm');
+
+    const line = formatShipPositionLine(ship.flags[MODULE_ID].ship.position, cs, 'Wayfarer');
+    expect(line).toContain('near Bleakhold');
+    expect(line).not.toContain('docked at');
   });
 });
 
@@ -679,7 +748,7 @@ describe('token placement / reposition → position record write', () => {
 
     const pos = ship.flags[MODULE_ID].ship.position;
     expect(pos?.nearestSettlementId).toBe('actor-astra');
-    expect(pos?.updatedBy).toBe('scene_token');
+    expect(pos?.updatedBy).toBe('token_placement');
   });
 
   it('an off-pin reposition records deep space', async () => {

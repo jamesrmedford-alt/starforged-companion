@@ -269,11 +269,19 @@ describe('formatShipPositionLine — mobility status (Finding L)', () => {
     freeText:            '',
   };
 
-  it('scene_token source → "docked at" phrasing', () => {
+  it('scene_token source (the Set a Course a token dropped ON a pin starts — an arrival) → "docked at" phrasing', () => {
     const line = formatShipPositionLine({ ...pos, updatedBy: 'scene_token' }, state, 'Vanguard');
     expect(line).toContain('docked at Bleakhold Station');
     expect(line).not.toContain('near ');
     expect(line).not.toContain('in transit');
+  });
+
+  // Issue #321 U53 (decisions.md 2026-06-12): a token placed on the map, or
+  // moved off a pin, made no move — it is near the pin, not docked at it.
+  it('token_placement source (the token\'s own place on the map) → "near" phrasing', () => {
+    const line = formatShipPositionLine({ ...pos, updatedBy: 'token_placement' }, state, 'Vanguard');
+    expect(line).toContain('near Bleakhold Station');
+    expect(line).not.toContain('docked at');
   });
 
   it('at_command source → "docked at" phrasing', () => {

@@ -151,13 +151,16 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
 
   const ship      = (shipName ?? "").trim() || "Command vehicle";
   const source    = position.updatedBy ?? null;
-  // Every recorder writes the position only after ARRIVAL is confirmed:
+  // These recorders write the position only after ARRIVAL is confirmed:
   // set_a_course and finish_an_expedition hits mean "you reach your
   // destination" (play kit; the pipeline gates the write on a non-miss and
-  // snaps the token), and the token drag / !at are declarative. So every
-  // known source reads as stationary; an unknown source degrades to the
-  // neutral "near". (SHIP-TRANSIT-LINE fix — set_a_course used to render
-  // "in transit to" after the ship had already arrived.)
+  // snaps the token) — scene_token is the Set a Course a token dropped ON a
+  // pin starts — and !at is declarative. So they read as stationary. The
+  // token's own place on the map (token_placement: placed, or moved off a
+  // pin, no move made) reads "near" its nearest pin (decisions.md
+  // 2026-06-12; issue #321 U53), as do the narrator sidecar, a manual entry
+  // and an unknown source. (SHIP-TRANSIT-LINE fix — set_a_course used to
+  // render "in transit to" after the ship had already arrived.)
   const docked = source === "set_a_course" || source === "scene_token"
     || source === "at_command" || source === "expedition";
 

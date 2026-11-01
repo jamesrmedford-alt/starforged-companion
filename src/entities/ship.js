@@ -99,8 +99,11 @@ export const ShipSchema = {
     freeText:            "",     // free-text fallback
     updatedAt:           null,
     updatedBy:           null,   // "at_command" | "set_a_course" |
-                                 //   "narrator_sidecar" | "scene_token" |
-                                 //   "manual"
+                                 //   "expedition" | "narrator_sidecar" |
+                                 //   "scene_token" (a token dropped on a pin:
+                                 //   its Set a Course arrival) |
+                                 //   "token_placement" (the token's own map
+                                 //   place, no move made) | "manual"
   },
 
   createdAt: null,

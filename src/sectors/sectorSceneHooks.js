@@ -321,6 +321,14 @@ function readNearRadiusCells() {
  * Scene: the nearest settlement pin within the near radius when one
  * exists, else deep space in the scene's sector. Pure read.
  *
+ * Its provenance is `token_placement` — the token's own place on the map,
+ * where it was placed or moved off a pin, with no move made — which the
+ * narrator's ship line reads as "near <settlement>" (decisions.md
+ * 2026-06-12). Arriving ON a pin is a Set a Course: that arrival is
+ * `scene_token`, read "docked at". Both were `scene_token`, so a ship parked
+ * two cells off a pin, or auto-placed on a new map, was "docked at" it
+ * (issue #321 U53).
+ *
  * @param {Scene} scene — a Scene flagged { sectorScene, sectorId }
  * @param {number} x
  * @param {number} y
@@ -341,7 +349,7 @@ export function computeTokenPositionRecord(scene, x, y) {
     nearestSettlementId: pinFlags?.actorId ?? pinFlags?.settlementId ?? null,
     freeText:            pin ? String(pin.text ?? "") : "deep space",
     updatedAt:           new Date().toISOString(),
-    updatedBy:           "scene_token",
+    updatedBy:           "token_placement",
   };
 }
 
