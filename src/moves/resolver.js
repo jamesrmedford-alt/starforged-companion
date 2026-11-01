@@ -657,12 +657,16 @@ const CONSEQUENCE_MAP = {
       case "weak_hit": return {
         ...emptyConsequences(),
         enterCombat: true,
-        // B2: choose one — +2 momentum OR in control. No pre-set position.
+        // B2: choose one — +2 momentum OR in control. No pre-set position:
+        // the pick sets it. Positions are binary, so taking the momentum
+        // instead of control begins the fight in a bad spot — it set none, so
+        // no bad-spot directive steered the interpreter and Take Decisive
+        // Action was never downgraded (issue #321 U18).
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "+2 momentum",        momentum: 2 },
-          { label: "You are in control", combatPosition: "in_control" },
+          { label: "+2 momentum (you begin in a bad spot)", chain: [{ momentum: 2 }, { combatPosition: "bad_spot" }] },
+          { label: "You are in control",                    combatPosition: "in_control" },
         ]},
-        otherEffect: "Weak hit: choose one — +2 momentum OR you are in control."
+        otherEffect: "Weak hit: choose one — +2 momentum (and begin in a bad spot) OR you are in control."
       };
       case "miss": return { ...emptyConsequences(), enterCombat: true, combatPosition: "bad_spot",
         otherEffect: "Fight begins with you in a bad spot." };

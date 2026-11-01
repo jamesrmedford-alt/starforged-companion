@@ -33,6 +33,7 @@ import {
 } from "../../src/moves/resolver.js";
 import { rollOracle, rollPaired } from "../../src/oracles/roller.js";
 import { enrichProgressTicks } from "../../src/moves/statEnrichment.js";
+import { resolveSufferSelection } from "../../src/moves/sufferDialog.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1385,6 +1386,32 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     const miss = mapConsequences("enter_the_fray", "miss", false);
     expect(miss.enterCombat).toBe(true);
     expect(miss.combatPosition).toBe("bad_spot");
+  });
+
+  // Issue #321 U18: positions are binary, so taking the weak hit's +2
+  // momentum instead of "You are in control" begins the fight in a bad spot.
+  // The option set no position: the fight's combatState stayed null, so the
+  // interpreter got no bad-spot directive and Take Decisive Action was never
+  // downgraded.
+  describe("enter_the_fray weak hit — the momentum option begins in a bad spot (issue #321 U18)", () => {
+    const weak = () => mapConsequences("enter_the_fray", "weak_hit", false);
+    const pick = (c, label) => resolveSufferSelection(c.sufferPrompt,
+      { optionIndices: [c.sufferPrompt.options.findIndex(o => label.test(o.label))] });
+
+    it("taking +2 momentum (not 'You are in control') takes the momentum and begins in a bad spot", () => {
+      const c = weak();
+      expect(c.combatPosition).toBeNull();               // no position on the roll itself
+      expect(pick(c, /momentum/)).toEqual([
+        { kind: "meter", meterKey: "momentum", delta: 2 },
+        { kind: "combat-position", position: "bad_spot" },
+      ]);
+    });
+
+    it("control: 'You are in control' sets in control alone; the strong hit and the miss set theirs", () => {
+      expect(pick(weak(), /in control/)).toEqual([{ kind: "combat-position", position: "in_control" }]);
+      expect(mapConsequences("enter_the_fray", "strong_hit", false).combatPosition).toBe("in_control");
+      expect(mapConsequences("enter_the_fray", "miss", false).combatPosition).toBe("bad_spot");
+    });
   });
 
   it("strike marks progress twice via combatProgress on strong and weak hits (audit 3.26)", () => {
