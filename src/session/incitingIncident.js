@@ -373,12 +373,17 @@ export async function runIncitingIncident(campaignState) {
   // aged out within a session and the narrator drifted on its load-bearing
   // facts. narratorPrompt injects this record into EVERY call as canon.
   // campaignState flows here by reference from narrateIncitingIncident →
-  // applyNarratorSidecar, which already persisted the sidecar writes onto this
-  // same object; we add the premise and persist the superset. GM-gated.
+  // applyNarratorSidecar, which applied the sidecar's truths, state and frame
+  // to this same object (its own persist may still be in flight). The premise
+  // and those scene ledgers are written onto the store as it is now — the
+  // ledgers merged like every narration's (persistSceneLedgerFields) — never
+  // this object whole, which reverted everything relayed during the Claude
+  // call: a player's Private Lines, a safety flag, an X-Card (issue #321
+  // U06d). GM-gated.
   if (text && campaignState && globalThis.game?.user?.isGM) {
     try {
       const meta = splitIncitingMeta(text);
-      campaignState.incitingIncident = {
+      const premise = {
         prose:           meta.prose,
         spark,
         vow:             meta.vow,
@@ -388,7 +393,11 @@ export async function runIncitingIncident(campaignState) {
         sessionId:       campaignState?.currentSessionId ?? null,
         establishedAt:   new Date().toISOString(),
       };
-      await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", campaignState);
+      campaignState.incitingIncident = premise;
+      const { persistSceneLedgerFields } = await import("../factContinuity/sceneLifecycle.js");
+      await persistSceneLedgerFields(campaignState, ["sceneTruths", "sceneState", "sceneFrame"], "inciting premise", {
+        onto: (target) => { target.incitingIncident = premise; },
+      });
     } catch (err) {
       console.warn(`${MODULE_ID} | runIncitingIncident: premise persist failed:`, err?.message ?? err);
     }
