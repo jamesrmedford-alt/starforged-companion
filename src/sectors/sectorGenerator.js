@@ -84,6 +84,10 @@ export function generateSector(region, _overrides = {}) {
     settlements.push(s);
   }
 
+  // Step 8: Zoom in on the starting settlement — settlements[0], the local
+  // connection's home (step 9).
+  if (settlements[0]) zoomInOnSettlement(settlements[0]);
+
   // Step 10: Sector trouble
   const trouble = rollTableResult(MISC.SECTOR_TROUBLE);
 
@@ -217,10 +221,34 @@ export function generateSettlement(region, projectCount) {
     authority,
     projects,
     planet,
-    trouble:      null,
-    firstLook:    [],
-    stellar:      null,
+    // The zoom-in details — rolled for the starting settlement only
+    // (zoomInOnSettlement, step 8).
+    trouble:        null,
+    firstLook:      [],
+    initialContact: null,
+    stellar:        null,
   };
+}
+
+/**
+ * Step 8 of the rulebook's starting sector: zoom in on the starting
+ * settlement — its First Look (rolled 1–2 times), Initial Contact and
+ * Trouble, on the Settlement oracles. The details ride onto the settlement
+ * Actor (createEntityJournals) for its sheet, the narrator stub and the
+ * narrator (issue #321 U50: never rolled, though every reader treated them
+ * as rolled).
+ *
+ * @param {SettlementResult} settlement — mutated in place
+ */
+function zoomInOnSettlement(settlement) {
+  const looks = [rollTableResult(SETTLEMENTS.FIRST_LOOK)];
+  if (rollD100() > 50) {
+    const second = rollTableResult(SETTLEMENTS.FIRST_LOOK);
+    if (second !== looks[0]) looks.push(second);
+  }
+  settlement.firstLook      = looks;
+  settlement.initialContact = rollTableResult(SETTLEMENTS.INITIAL_CONTACT);
+  settlement.trouble        = rollTableResult(SETTLEMENTS.TROUBLE);
 }
 
 /**
@@ -310,6 +338,10 @@ export async function createEntityJournals(sector, campaignState) {
       authority:  s.authority,
       projects:   s.projects,
       trouble:    s.trouble ?? null,
+      // The starting settlement's zoom-in (step 8); the record's firstLook is
+      // a string (SettlementSchema), the generator's a list of 1–2 rolls.
+      firstLook:      Array.isArray(s.firstLook) ? s.firstLook.filter(Boolean).join(", ") : (s.firstLook ?? ""),
+      initialContact: s.initialContact ?? "",
       planet:     s.planet ?? null,
       stellar:    s.stellar ?? null,
       sectorId:   sector.id,
@@ -945,6 +977,11 @@ export function buildSettlementStubPrompt(settlement, sector, regionLabel, persp
   const planetLine  = settlement.planet
     ? `Planet: ${settlement.planet.type} (${settlement.planet.name})`
     : "";
+  // The starting settlement's zoom-in (step 8) — the stub sits beside these
+  // rolled details on the settlement's sheet, so it must not contradict them.
+  const firstLook = Array.isArray(settlement.firstLook)
+    ? settlement.firstLook.filter(Boolean).join(", ")
+    : (settlement.firstLook ?? "");
   return `You are the narrator for an Ironsworn: Starforged campaign.
 Write ONE paragraph (2–3 sentences) describing this settlement.
 Be atmospheric. ${perspective}. Wry tone.
@@ -955,6 +992,8 @@ Type: ${locationTypeToLabel(settlement.locationType)}
 Population: ${settlement.population}
 Authority: ${settlement.authority}
 Projects: ${(settlement.projects ?? []).join(", ")}
+${firstLook ? `First look: ${firstLook}` : ""}
+${settlement.initialContact ? `Initial contact: ${settlement.initialContact}` : ""}
 ${settlement.trouble ? `Current trouble: ${settlement.trouble}` : ""}
 ${planetLine}
 Sector: ${sector.name} (${regionLabel})

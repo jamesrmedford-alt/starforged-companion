@@ -29,6 +29,7 @@ import {
 } from "../../src/sectors/sectorGenerator.js";
 import { finalizeEntityArtOnly } from "../../src/entities/finalize.js";
 import * as settlement from "../../src/entities/settlement.js";
+import { formatEntityCard } from "../../src/narration/narratorPrompt.js";
 
 import { buildSectorBackgroundPrompt } from "../../src/sectors/sectorArt.js";
 import { SECTOR_TROUBLE } from "../../src/oracles/tables/misc.js";
@@ -386,6 +387,77 @@ describe("generateSector — precursor sites & derelicts", () => {
     // Expanse floor strictly exceeds the Terminus floor.
     expect(generateSector("expanse").sites.length)
       .toBeGreaterThan(generateSector("terminus").sites.length - 1);
+  });
+});
+
+// The rulebook's step 8 — zoom in on the starting settlement (issue #321 U50):
+// never rolled, though the stub prompt, the sheet's facts line, the active-
+// sector roster and the narrator's card all read the results as rolled.
+describe("generateSector — zoom in on the starting settlement (step 8)", () => {
+  // A directive row that leaked unresolved, or an unmatched roll, is not a result.
+  const isRolled = (v) => typeof v === "string" && v.trim().length > 0
+    && !["Descriptor + Focus", "Action + Theme", "Unknown"].includes(v);
+
+  beforeEach(() => {
+    if (global.game?.folders?._reset) global.game.folders._reset();
+    if (global.game?.actors?._reset)  global.game.actors._reset();
+    _resetFolderCache();
+  });
+
+  it.each(["terminus", "outlands", "expanse"])(
+    "%s: the starting settlement gets a first look (1–2), an initial contact and a trouble; the others none",
+    (region) => {
+      for (let i = 0; i < 10; i += 1) {
+        const sector = generateSector(region);
+        const [home, ...others] = sector.settlements;
+        // settlements[0] is the starting settlement — the local connection's home.
+        expect(sector.connection.homeSettlement).toBe(home.name);
+        expect(home.firstLook.length).toBeGreaterThanOrEqual(1);
+        expect(home.firstLook.length).toBeLessThanOrEqual(2);
+        for (const look of home.firstLook) expect(isRolled(look)).toBe(true);
+        expect(new Set(home.firstLook).size).toBe(home.firstLook.length);
+        expect(isRolled(home.initialContact)).toBe(true);
+        expect(isRolled(home.trouble)).toBe(true);
+        for (const s of others) {
+          expect(s.firstLook).toEqual([]);
+          expect(s.initialContact).toBeNull();
+          expect(s.trouble).toBeNull();
+        }
+      }
+    },
+  );
+
+  it("rides onto the starting settlement's Actor and reaches the narrator's settlement card", async () => {
+    const sector = generateSector("outlands");
+    const campaignState = { sectors: [], settlementIds: [], connectionIds: [], locationIds: [] };
+    const { settlements } = await createEntityJournals(sector, campaignState);
+
+    const home   = sector.settlements[0];
+    const record = settlement.getSettlement(settlements[home.id].id);
+    expect(record.firstLook).toBe(home.firstLook.join(", "));
+    expect(record.initialContact).toBe(home.initialContact);
+    expect(record.trouble).toBe(home.trouble);
+
+    const card = formatEntityCard(record, "settlement");
+    expect(card).toContain(`First look: ${home.firstLook.join(", ")}`);
+    expect(card).toContain(`Initial contact: ${home.initialContact}`);
+
+    const other = settlement.getSettlement(settlements[sector.settlements[1].id].id);
+    expect(formatEntityCard(other, "settlement")).not.toContain("Initial contact:");
+  });
+
+  it("the narrator stub prompt for the starting settlement carries its first look and initial contact", () => {
+    const sector = generateSector("terminus");
+    const [home, other] = sector.settlements;
+
+    const prompt = buildSettlementStubPrompt(home, sector, "Terminus");
+    expect(prompt).toContain(`First look: ${home.firstLook.join(", ")}`);
+    expect(prompt).toContain(`Initial contact: ${home.initialContact}`);
+    expect(prompt).toContain(`Current trouble: ${home.trouble}`);
+
+    const otherPrompt = buildSettlementStubPrompt(other, sector, "Terminus");
+    expect(otherPrompt).not.toContain("First look:");
+    expect(otherPrompt).not.toContain("Initial contact:");
   });
 });
 

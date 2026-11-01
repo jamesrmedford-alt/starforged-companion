@@ -146,6 +146,7 @@ export class SectorCreatorApp extends ApplicationV2 {
         </div>
         <div class="sf-settlement-projects">Projects: ${s.projects.join(", ")}</div>
         ${s.planet ? `<div class="sf-settlement-planet">🪐 ${s.planet.type}: ${s.planet.name}</div>` : ""}
+        ${zoomInLine(s)}
       </div>
     `).join("");
 
@@ -386,6 +387,19 @@ export function openSectorCreator() {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** The starting settlement's zoom-in (step 8), or "" for the others. */
+function zoomInLine(s) {
+  const firstLook = (Array.isArray(s.firstLook) ? s.firstLook : []).filter(Boolean).join(", ");
+  const bits = [
+    firstLook          ? `First look: ${firstLook}`            : "",
+    s.initialContact   ? `Initial contact: ${s.initialContact}` : "",
+    s.trouble          ? `Trouble: ${s.trouble}`                : "",
+  ].filter(Boolean);
+  return bits.length
+    ? `<div class="sf-settlement-zoom">🔍 Starting settlement — ${bits.join(" · ")}</div>`
+    : "";
+}
 
 function labelLocationType(t) {
   switch (t) {

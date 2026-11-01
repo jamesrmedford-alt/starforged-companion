@@ -734,6 +734,7 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['population', 'Population'],
     ['authority',  'Authority'],
     ['firstLook',  'First look'],
+    ['initialContact', 'Initial contact'],
     ['description','Description'],
     ['notes',      'Notes'],
   ],

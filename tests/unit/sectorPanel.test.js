@@ -143,6 +143,20 @@ describe("Sector Creator wizard — Create Sector runs once", () => {
   });
 });
 
+describe("Sector Creator wizard — the starting settlement's zoom-in (issue #321 U50)", () => {
+  it("previews the starting settlement's first look, initial contact and trouble, on its entry only", async () => {
+    const app  = await wizardOnOutlands();
+    const home = (await app._prepareContext({})).sector.settlements[0];
+    const html = await renderedHtml(app);
+
+    expect(html).toContain(
+      `🔍 Starting settlement — First look: ${home.firstLook.join(", ")} · ` +
+      `Initial contact: ${home.initialContact} · Trouble: ${home.trouble}`,
+    );
+    expect(html.match(/Starting settlement —/g)).toHaveLength(1);
+  });
+});
+
 describe("runSectorCreationPipeline — idempotent per sector id", () => {
   it("a call while the same sector's creation runs joins it: one set of Actors, one Scene, one record", async () => {
     const sector = generateSector("outlands");
