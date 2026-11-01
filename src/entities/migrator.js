@@ -602,7 +602,8 @@ export async function scaffoldPcShipFolders() {
  * longer resolve via the registry. This walks those ids, and for any that still
  * point at a JournalEntry carrying a connection flag payload, creates an
  * equivalent NPC-card Actor (in the sector's NPC folder, or top-level NPCs/),
- * swaps the id in connectionIds, and deletes the old journal.
+ * saves the swapped ids in connectionIds, and only then deletes the old
+ * journals (issue #322 V29).
  *
  * The createActor seed hook then populates each migrated card (Characteristics /
  * Notes / portrait) just like a freshly created connection.
@@ -623,9 +624,13 @@ export async function migrateJournalConnectionsToActors(campaignState) {
   const ids = Array.isArray(state.connectionIds) ? state.connectionIds : [];
   if (!ids.length) return summary;
 
-  let changed = false;
-  for (let i = 0; i < ids.length; i += 1) {
-    const id = ids[i];
+  // journal id → the Actor that replaces it, and the journals to delete once
+  // the swap is saved. The journals used to be deleted inside the loop, before
+  // the save: a refused or interrupted save left connectionIds pointing at
+  // deleted journals — the connection gone from every reader (issue #322 V29).
+  const swaps    = new Map();
+  const journals = [];
+  for (const id of ids) {
     if (globalThis.game?.actors?.get(id)) { summary.skipped += 1; continue; }  // already an Actor
 
     const journal = globalThis.game?.journal?.get(id) ?? null;
@@ -633,46 +638,66 @@ export async function migrateJournalConnectionsToActors(campaignState) {
     const payload = page?.flags?.[MODULE_ID]?.connection;
     if (!payload) { summary.skipped += 1; continue; }  // dangling id — leave as-is
 
-    const folderId = payload.sectorId
-      ? await getOrCreateSectorNpcActorFolder(payload.sectorId, state)
-      : await getOrCreateActorFolder("NPCs");
-
-    let actor = null;
-    try {
-      actor = await globalThis.Actor?.create?.({
-        name:   payload.name || journal.name || "Unknown Connection",
-        type:   "character",
-        folder: folderId,
-        flags:  {
-          [MODULE_ID]: { entityType: "connection", entityId: payload._id, connection: payload },
-          core:        { sheetClass: STARFORGED_CHARACTER_SHEET },
-        },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | migrateJournalConnectionsToActors: Actor.create failed for ${id}:`, err);
+    // A card an earlier load made for this connection, whose save did not
+    // land: reuse it, never a second card (rules/reachability.md §7).
+    let actor = findMigratedConnectionActor(payload._id);
+    if (!actor) {
+      const folderId = payload.sectorId
+        ? await getOrCreateSectorNpcActorFolder(payload.sectorId, state)
+        : await getOrCreateActorFolder("NPCs");
+      try {
+        actor = await globalThis.Actor?.create?.({
+          name:   payload.name || journal.name || "Unknown Connection",
+          type:   "character",
+          folder: folderId,
+          flags:  {
+            [MODULE_ID]: { entityType: "connection", entityId: payload._id, connection: payload },
+            core:        { sheetClass: STARFORGED_CHARACTER_SHEET },
+          },
+        });
+      } catch (err) {
+        console.error(`${MODULE_ID} | migrateJournalConnectionsToActors: Actor.create failed for ${id}:`, err);
+      }
     }
     if (!actor?.id) { summary.skipped += 1; continue; }
 
-    ids[i] = actor.id;            // swap journal id → actor id in place
-    changed = true;
+    swaps.set(id, actor.id);
+    journals.push({ id, journal });
     summary.migrated += 1;
+  }
 
+  if (!swaps.size) return summary;
+
+  // The swap is saved first, onto the store as it is now — connectionIds
+  // alone, with no await between the read and the write. Only once it landed
+  // are the old journals deleted; refused, they stay, and the next load
+  // migrates them again (reusing the cards made here).
+  try {
+    const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? state;
+    const current = Array.isArray(latest.connectionIds) ? latest.connectionIds : ids;
+    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", {
+      ...latest,
+      connectionIds: current.map(id => swaps.get(id) ?? id),
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | migrateJournalConnectionsToActors: persist failed — the old journals are kept for the next load:`, err);
+    return summary;
+  }
+  for (const { id, journal } of journals) {
     try {
       await journal.delete?.();
     } catch (err) {
       console.warn(`${MODULE_ID} | migrateJournalConnectionsToActors: old journal delete failed for ${id}:`, err);
     }
   }
-
-  if (changed) {
-    state.connectionIds = ids;
-    try {
-      await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", state);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | migrateJournalConnectionsToActors: persist failed:`, err);
-    }
-  }
   return summary;
+}
+
+/** An NPC-card Actor already made for this connection record, by its id. */
+function findMigratedConnectionActor(recordId) {
+  if (!recordId) return null;
+  return globalThis.game?.actors?.find?.(a =>
+    a?.flags?.[MODULE_ID]?.entityType === "connection" && a.flags[MODULE_ID].entityId === recordId) ?? null;
 }
 
 /**
