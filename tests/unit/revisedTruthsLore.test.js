@@ -105,3 +105,38 @@ describe("after the truths are revised, !lore summarises the revised truths (iss
     expect(table.world.campaignState().worldTruthsJournalId).toBe("j-new");
   });
 });
+
+// Both truths-journal hooks used to set their fields on the cached
+// campaignState before the write: a refused write left the GM's client
+// claiming the journal was linked while the world said otherwise
+// (rules/foundry-api.md — write a copy).
+describe("the truths-journal hooks leave the cached setting alone when the write is refused", () => {
+  beforeEach(async () => {
+    await table.reset({
+      world: { settings: { campaignState: { ...CampaignStateSchema, sessionActive: true, worldTruthsSet: false, worldTruthsJournalId: null } } },
+    });
+    table.interceptWrites(w => (w.kind === "setting" && w.key === "starforged-companion.campaignState" ? new Error("refused by the test") : undefined));
+  });
+
+  const cached = () => table.client("gm-1").getSetting("campaignState");
+
+  it("createJournalEntry", async () => {
+    expectConsoleError(/createJournalEntry: failed to persist journal id/);
+    const { journal } = truthsJournal("j-first", OLD_TRUTHS, 1_000);
+    table.journal.set(journal.id, journal);
+    table.fireDocumentHook("gm-1", "createJournalEntry", journal);
+    await table.settle();
+    expect(cached()).toMatchObject({ worldTruthsSet: false, worldTruthsJournalId: null });
+    expect(table.world.campaignState().worldTruthsJournalId).toBeNull();
+  });
+
+  it("createJournalEntryPage", async () => {
+    expectConsoleError(/createJournalEntryPage: failed to persist truths state/);
+    const { journal, page } = truthsJournal("j-first", OLD_TRUTHS, 1_000);
+    table.journal.set(journal.id, journal);
+    table.fireDocumentHook("gm-1", "createJournalEntryPage", page);
+    await table.settle();
+    expect(cached()).toMatchObject({ worldTruthsSet: false, worldTruthsJournalId: null });
+    expect(table.world.campaignState().worldTruthsSet).toBe(false);
+  });
+});

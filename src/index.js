@@ -7208,7 +7208,9 @@ Hooks.on("createJournalEntry", async (entry) => {
   const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
   if (!systemTitle || entry.name !== systemTitle) return;
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A copy: a refused write must not leave this client's cached setting
+  // claiming the journal is linked (rules/foundry-api.md).
+  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
   if (campaignState.worldTruthsSet) return; // Already recorded with real content
 
   campaignState.worldTruthsJournalId = entry.id;
@@ -7254,6 +7256,7 @@ Hooks.on("createJournalEntryPage", async (page) => {
   const content = page.text?.content ?? "";
   if ((content.match(/<h2/gi) ?? []).length < 2) return;
 
+  // A copy, as above: a refused write leaves the cached setting as it was.
   const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
   if (campaignState.worldTruthsSet && campaignState.worldTruthsJournalId === entry.id) return; // Already recorded
 
