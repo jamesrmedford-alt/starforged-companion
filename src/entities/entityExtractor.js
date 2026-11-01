@@ -847,6 +847,11 @@ function safeOracleRoll(tableId) {
 export async function postCreationEnrichment(typeKey, record, campaignState) {
   if (!record || !record.portraitSourceDescription) return;
   if (!hasOpenRouterKey()) return;
+  // One portrait owner per creation (issue #321 U29): with Auto-Seed NPC on,
+  // the createActor seed hook seeds every new connection card — its portrait
+  // included, drawn from the portrait source set here — so generating here
+  // too billed OpenRouter twice for one NPC.
+  if (typeKey === "connection" && seedHookOwnsPortrait(record)) return;
 
   const hostId = findHostDocumentId(typeKey, record._id, campaignState);
   if (!hostId) return;
@@ -856,6 +861,22 @@ export async function postCreationEnrichment(typeKey, record, campaignState) {
     await generatePortrait(hostId, typeKey, record, campaignState ?? {});
   } catch (err) {
     console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err);
+  }
+}
+
+/**
+ * True when the createActor seed hook (index.js, "Auto-Seed NPC / Connection
+ * Details" on) will seed this new connection card — portrait included — so
+ * it is that card's one portrait owner. The hook seeds any card not yet
+ * marked `seeded` (connectionNeedsSeed).
+ */
+function seedHookOwnsPortrait(record) {
+  if (record?.seeded) return false;
+  try {
+    return !!globalThis.game?.settings?.get(MODULE_ID, "autoSeedConnection");
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | postCreationEnrichment: autoSeedConnection read failed:`, err?.message ?? err);
+    return false;
   }
 }
 
