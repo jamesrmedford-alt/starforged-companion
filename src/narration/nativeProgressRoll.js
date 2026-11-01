@@ -140,17 +140,18 @@ export function classifyProgressRoll(parsed, subtypeLookup) {
  * Decide what the native-progress-roll hook should do once the Foundry-coupled
  * facts are known, and — when it declines — *why* and at what log level, so the
  * caller never skips without a trace (decisions.md → "No silent failures").
- * Pure: the caller resolves "is this my roll?", the roll kind, the parsed roll,
- * and the classified move (all need Foundry/regex), then hands them here.
+ * Pure: the caller resolves "does this client narrate it?" (the keyed-runner
+ * ladder: the keyed canonical GM, else the roller), the roll kind, the parsed
+ * roll, and the classified move (all need Foundry/regex), then hands them here.
  *
- * @param {{ isRoller: boolean, rollKind: string, parsed: object|null,
+ * @param {{ narratesHere: boolean, rollKind: string, parsed: object|null,
  *           moveId: string|null }} facts
  * @returns {{ act: boolean, reason: string, log: 'none'|'debug'|'warn' }}
  *   act:true → narrate. act:false → `reason` names the skip and `log` is the
  *   level to surface it ('none' = a correct, uninteresting stand-down).
  */
-export function planNativeRollNarration({ isRoller, rollKind, parsed, moveId } = {}) {
-  if (!isRoller) return { act: false, reason: "not-this-clients-roll", log: "none" };
+export function planNativeRollNarration({ narratesHere, rollKind, parsed, moveId } = {}) {
+  if (!narratesHere) return { act: false, reason: "narrated-on-another-client", log: "none" };
   if (!parsed) {
     if (rollKind === "unparseable") return { act: false, reason: "unparseable-roll-card", log: "warn" };
     if (rollKind === "action")      return { act: false, reason: "action-roll", log: "none" };

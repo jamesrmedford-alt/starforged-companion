@@ -141,19 +141,36 @@ function readOwnPrivateLines() {
  * scene is paused (a relay has no ack), so the GM posts a card saying the
  * pause was not saved (issue #302). A local caller posts its own card.
  *
+ * The narration the card answers also leaves narrator memory (issue #321
+ * U07 — full exclusion; narrator.js applyXCardToNarratorMemory says which
+ * cards): in the same write as the pause, the ledger entries its sidecar
+ * wrote are retracted, a rolling summary that covered it loses its text, and
+ * the first narration after a GM resumes is told to redirect. After the
+ * write its cards are flagged `xCarded` (out of the recent-narration ring and
+ * the rolling summary) and the retracted facts reach the tier details and
+ * lore that copied them (propagateRetraction). The pause comes first: if the
+ * memory side fails, the pause is still written.
+ *
  * @param {Object} [_payload] — relay payload (unused)
  * @param {Object} [ctx]      — relay context (anyone may play the X-Card; `local: false` on a relayed play)
  * @returns {Promise<boolean>} true when the pause was persisted
  */
 export async function suppressScene(_payload, ctx) {
+  // Loaded before the store is read, so nothing awaits between the read and
+  // the write below (the X-Card runs unqueued on that guarantee).
+  const narrator = await import("../narration/narrator.js").catch((err) => {
+    console.warn(`${MODULE_ID} | X-Card: narrator memory unavailable — the pause is recorded, the narration is not removed:`, err?.message ?? err);
+    return null;
+  });
+  let removal = NO_REMOVAL;
   try {
     // A copy: a write that fails must leave this client's cached value as it
     // was, or the narrator here would hold a pause that never landed (#302).
     const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
     cs.xCardActive = true;
     cs.xCardPlays = (Number(cs.xCardPlays) || 0) + 1;
+    removal = removeXCardedNarration(narrator, cs);
     await game.settings.set(MODULE_ID, "campaignState", cs);
-    return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | suppressScene: could not persist X-Card state:`, err.message);
     if (ctx?.local === false) {
@@ -161,6 +178,55 @@ export async function suppressScene(_payload, ctx) {
         console.warn(`${MODULE_ID} | suppressScene: could not post the "not saved" card:`, postErr?.message ?? postErr));
     }
     return false;
+  }
+  await finishXCardRemoval(narrator, removal);
+  return true;
+}
+
+const NO_REMOVAL = Object.freeze({ cards: [], retracted: [] });
+
+/**
+ * Take the narration this X-Card answers out of narrator memory on `cs`, the
+ * copy about to be written (narrator.js applyXCardToNarratorMemory).
+ * Synchronous, and never throws — the pause is written regardless.
+ *
+ * @param {Object|null} narrator — the narrator module
+ * @param {Object} cs
+ * @returns {{ cards: Object[], retracted: Object[] }}
+ */
+function removeXCardedNarration(narrator, cs) {
+  if (typeof narrator?.applyXCardToNarratorMemory !== "function") return NO_REMOVAL;
+  try {
+    return narrator.applyXCardToNarratorMemory(cs);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: removing the narration from narrator memory failed — the pause is recorded:`, err?.message ?? err);
+    return NO_REMOVAL;
+  }
+}
+
+/**
+ * After the pause is written: flag the X-carded cards (the ring and the
+ * rolling summary leave them out) and carry their retracted facts to the
+ * stores that copied them — entity tier details and this session's lore
+ * (rules/narrator-memory.md 6b: every correction path calls
+ * propagateRetraction). Fail-open per step.
+ *
+ * @param {Object|null} narrator
+ * @param {{ cards: Object[], retracted: Object[] }} removal
+ * @returns {Promise<void>}
+ */
+async function finishXCardRemoval(narrator, removal) {
+  if (!removal.cards.length) return;
+  await narrator.flagXCardedCards(removal.cards);
+  if (!removal.retracted.length) return;
+  try {
+    const { propagateRetraction } = await import("../factContinuity/retractions.js");
+    // propagateRetraction reads the session id and marks a copy's summary;
+    // the summary was settled in the pause's write.
+    const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+    for (const truth of removal.retracted) await propagateRetraction(truth, cs);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: carrying the retracted facts to entity details and lore failed:`, err?.message ?? err);
   }
 }
 

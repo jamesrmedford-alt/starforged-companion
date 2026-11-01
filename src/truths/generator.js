@@ -32,6 +32,7 @@
 
 import { TRUTH_CATEGORIES, TRUTH_TABLES, SUB_TABLES } from "./tables.js";
 import { apiPost } from "../api-proxy.js";
+import { mergeOwnedFields } from "../factContinuity/sceneLifecycle.js";
 
 const MODULE_ID      = "starforged-companion";
 const JOURNAL_NAME   = "World Truths";
@@ -102,33 +103,69 @@ export function rollCategory(categoryId, options = {}) {
 // STORAGE
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** campaignState fields storeWorldTruths writes. */
+const WORLD_TRUTHS_FIELDS = Object.freeze(["worldTruths", "worldTruthsSet", "worldTruthsJournalId"]);
+
 /**
- * Store a truth set in campaign state and create a Foundry journal entry.
- * The journal entry is the player-facing record. Campaign state is the
- * machine-readable version for context injection.
+ * Store a truth set in campaign state and in the module's World Truths
+ * journal. The journal entry is the player-facing record. Campaign state is
+ * the machine-readable version for context injection.
+ *
+ * The truths are recorded as established — `worldTruthsSet`, and
+ * `worldTruthsJournalId` naming the journal written — so a world load no
+ * longer asks the GM to establish World Truths and `!lore` reads these
+ * (issue #321 U67: only the system-dialog hooks wrote either field, and they
+ * skip a journal carrying this module's flags). The journal is the one the
+ * campaign records when it is ours, else the newest carrying our flag —
+ * never found by name: a GM's own "World Truths" notes kept losing their
+ * first page here.
+ *
+ * Only WORLD_TRUTHS_FIELDS are written, merged onto the latest stored
+ * campaignState after the journal awaits; the caller's copy takes them once
+ * the write has landed.
  *
  * @param {Object} truthSet
- * @param {Object} campaignState  — mutated in place
+ * @param {Object} campaignState  — mutated in place (WORLD_TRUTHS_FIELDS)
  * @returns {Promise<JournalEntry>}
  */
 export async function storeWorldTruths(truthSet, campaignState) {
-  // Persist to campaign state
-  campaignState.worldTruths = truthSet;
-  await persistCampaignState(campaignState);
+  const existing = findModuleTruthsJournal(campaignState);
+  const journal  = existing
+    ? await updateTruthsJournal(existing, truthSet)
+    : await createTruthsJournal(truthSet);
 
-  // Create or update the journal entry
-  const existing = game.journal?.getName(JOURNAL_NAME);
-  if (existing) {
-    await updateTruthsJournal(existing, truthSet);
-    return existing;
-  }
-
-  return createTruthsJournal(truthSet);
+  const journalId = journal?.id ?? null;
+  await persistWorldTruthsFields({ ...campaignState, worldTruths: truthSet, worldTruthsSet: true, worldTruthsJournalId: journalId });
+  campaignState.worldTruths          = truthSet;
+  campaignState.worldTruthsSet       = true;
+  campaignState.worldTruthsJournalId = journalId;
+  return journal;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // JOURNAL ENTRY
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** True for a journal this module created to hold the World Truths. */
+function isModuleTruthsJournal(journal) {
+  return journal?.flags?.[MODULE_ID]?.entityType === "worldTruths";
+}
+
+/**
+ * The module's own World Truths journal: the one campaignState records when
+ * it is ours, else the newest journal carrying our flag. Null when there is
+ * none (a journal of that name without our flag is not ours).
+ *
+ * @param {Object} campaignState
+ * @returns {JournalEntry|null}
+ */
+function findModuleTruthsJournal(campaignState) {
+  const recorded = campaignState?.worldTruthsJournalId
+    ? (game.journal?.get(campaignState.worldTruthsJournalId) ?? null)
+    : null;
+  if (isModuleTruthsJournal(recorded)) return recorded;
+  return (game.journal?.contents ?? []).filter(isModuleTruthsJournal).at(-1) ?? null;
+}
 
 async function createTruthsJournal(truthSet) {
   const entry = await JournalEntry.create({
@@ -146,14 +183,30 @@ async function createTruthsJournal(truthSet) {
   return entry;
 }
 
+/**
+ * Rewrite the truths page of the module's own journal — the page carrying
+ * our `worldTruths` flag, so a "The Story So Far" page `!lore` added is never
+ * the one replaced. A journal that lost its truths page gets a new one.
+ *
+ * @returns {Promise<JournalEntry>} the same journal
+ */
 async function updateTruthsJournal(entry, truthSet) {
-  const page = entry.pages?.contents?.[0];
-  if (!page) return createTruthsJournal(truthSet);
+  const page = (entry.pages?.contents ?? []).find(p => p?.flags?.[MODULE_ID]?.worldTruths);
+  if (!page) {
+    await entry.createEmbeddedDocuments("JournalEntryPage", [{
+      name:  "World Truths",
+      type:  "text",
+      text:  { content: formatTruthsAsHtml(truthSet) },
+      flags: { [MODULE_ID]: { worldTruths: truthSet } },
+    }]);
+    return entry;
+  }
 
   await page.update({
     "text.content": formatTruthsAsHtml(truthSet),
     flags: { [MODULE_ID]: { worldTruths: truthSet } },
   });
+  return entry;
 }
 
 /**
@@ -276,9 +329,13 @@ export async function generateLoreRecap(campaignState) {
   if (!recap) return null;
   if (!recap.trim()) return null;
 
+  // Only the recap is this command's to write, onto the store as it is now
+  // (issue #321 U06a): campaignState was read before the Claude call, and
+  // writing it whole reverted whatever landed meanwhile — a player's X-Card,
+  // a move releasing its lock (rules/reachability.md §9).
   campaignState.loreRecap = recap;
   try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(campaignState, ["loreRecap"], "!lore"));
   } catch (err) {
     console.error(`${MODULE_ID} | lore: failed to persist loreRecap:`, err);
     throw err;
@@ -316,9 +373,15 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
 
   if (!entry) {
     const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "Setting Truths";
-    const candidates  = (game.journal?.contents ?? []).filter(
-      j => j.name === systemTitle || j.name === JOURNAL_NAME
-    );
+    // Newest first: each Save in the system dialog creates a new journal, and
+    // the newest holds the campaign's truths (issue #321 U65 — the first match
+    // was the oldest). Foundry stamps `_stats.createdTime`; the collection's
+    // order breaks a tie.
+    const candidates  = (game.journal?.contents ?? [])
+      .map((j, order) => ({ j, order }))
+      .filter(({ j }) => j.name === systemTitle || j.name === JOURNAL_NAME)
+      .sort((a, b) => ((Number(b.j._stats?.createdTime) || 0) - (Number(a.j._stats?.createdTime) || 0)) || (b.order - a.order))
+      .map(({ j }) => j);
     // Prefer a candidate whose first page looks like a real truths page
     // (≥2 <h2> elements — same shape the createJournalEntryPage hook checks).
     entry = candidates.find(j => {
@@ -445,11 +508,13 @@ function findEntry(entries, roll) {
   return entries?.find(e => roll >= e.min && roll <= e.max) ?? null;
 }
 
-async function persistCampaignState(campaignState) {
+/** Write WORLD_TRUTHS_FIELDS of `campaignState` onto the latest stored campaignState. */
+async function persistWorldTruthsFields(campaignState) {
   try {
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
+    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(campaignState, WORLD_TRUTHS_FIELDS, "world truths"));
   } catch (err) {
-    console.error(`${MODULE_ID} | truths: persistCampaignState failed:`, err);
+    console.error(`${MODULE_ID} | truths: persisting the world truths failed:`, err);
     throw err;
   }
 }

@@ -20,9 +20,9 @@
  *       sector's entityJournalIds map post-migration), and replaces the
  *       overview's settlements list in place.
  *
- *   - cleanupSectorRecordPages(sectorId)
- *       Deletes every embedded page on the sector-record journal except
- *       the overview. Used by the migrator's sector-rewrite step.
+ *   - cleanupSectorRecordPages(sectorId, campaignState)
+ *       Deletes the legacy per-settlement pages (and only those) from the
+ *       sector-record journal. Used by the migrator's sector-rewrite step.
  *
  *   - registerSectorOverviewSync()
  *       Hooks updateActor with a per-sector debounced re-render. Fires
@@ -53,6 +53,30 @@ function locationTypeToLabel(locationType) {
   return LOCATION_TYPE_LABELS[locationType] ?? "Deep Space";
 }
 
+// The settlement Actor's class lives in `system.klass` ("deep space", what
+// the sheet's dropdown edits) and its flag's `location` ("Deep Space"); the
+// generator and the map use "deep_space". One key space for the label map.
+function normaliseLocationType(raw) {
+  if (!raw) return null;
+  const key = String(raw).trim().toLowerCase().replace(/\s+/g, "_");
+  return Object.prototype.hasOwnProperty.call(LOCATION_TYPE_LABELS, key) ? key : null;
+}
+
+/**
+ * The settlement rows an overview lists, in map order. The sector the creator
+ * holds carries the rolled `settlements[]`; the record storeSector persists to
+ * `campaignState.sectors[]` carries none — only `mapData.settlements` (id,
+ * name, marker type) and `entityJournalIds` — so a stored record is listed
+ * from its map data (issue #321 U13: the rewrite read `sector.settlements`
+ * and wrote an empty list over the real one).
+ */
+function settlementRows(sector) {
+  if (Array.isArray(sector?.settlements) && sector.settlements.length) return sector.settlements;
+  return (sector?.mapData?.settlements ?? [])
+    .filter(m => m?.id)
+    .map(m => ({ id: m.id, name: m.name, locationType: m.type }));
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;")
@@ -65,21 +89,31 @@ function escapeHtml(s) {
 /**
  * Render the wrapped `<ul>` for a sector overview's Settlements list.
  *
- * @param {Object} sector  has `.settlements[]` (gen-side, with id/name/
- *   locationType/population/authority)
+ * Each row shows the settlement Actor's CURRENT name, class, population and
+ * authority — the Actor is the settlement's canonical store, and these are
+ * the fields the live sync rewrites the list for — falling back to the
+ * row's own values where the Actor has none.
+ *
+ * @param {Object} sector  the creator's sector (`.settlements[]`, with
+ *   id/name/locationType/population/authority) or a stored sector record
+ *   (`.mapData.settlements[]` — see settlementRows)
  * @param {Object<string, ClientDocument>} settlementsByGenId  gen-side id →
  *   settlement Actor (if migrated). When an entry is missing the row falls
  *   back to a plain `<li>` without a UUID link.
  * @returns {string}
  */
 export function buildSettlementsListHtml(sector, settlementsByGenId = {}) {
-  const items = (sector?.settlements ?? []).map(s => {
+  const items = settlementRows(sector).map(s => {
     const actor = settlementsByGenId?.[s.id];
-    const tail  = `${escapeHtml(locationTypeToLabel(s.locationType))}, ` +
-                  `Pop: ${escapeHtml(s.population ?? "")}, ` +
-                  `Authority: ${escapeHtml(s.authority ?? "")}`;
+    const data  = actor?.flags?.[MODULE_ID]?.settlement ?? {};
+    const locationType = normaliseLocationType(actor?.system?.klass)
+      ?? normaliseLocationType(data.location)
+      ?? s.locationType;
+    const tail  = `${escapeHtml(locationTypeToLabel(locationType))}, ` +
+                  `Pop: ${escapeHtml(data.population || s.population || "")}, ` +
+                  `Authority: ${escapeHtml(data.authority || s.authority || "")}`;
     const head  = actor?.id
-      ? `@UUID[Actor.${actor.id}]{${escapeHtml(actor.name ?? s.name)}}`
+      ? `@UUID[Actor.${actor.id}]{${escapeHtml(actor.name || s.name)}}`
       : escapeHtml(s.name);
     return `<li>${head} — ${tail}</li>`;
   }).join("");
@@ -127,10 +161,13 @@ export async function rewriteSectorOverviewSettlements(sectorId, campaignState) 
 }
 
 /**
- * Delete every embedded JournalEntryPage on the sector-record journal except
- * the overview (the page whose name matches the sector name, or the first
- * page if no name match is found). Used by the migrator's sector-rewrite
- * step to clean up legacy per-settlement pages.
+ * Delete the legacy per-settlement pages from the sector-record journal —
+ * the pages the pre-Phase-3 sector creator wrote, one per settlement, which
+ * the Actor-linked overview list replaces. Used by the migrator's
+ * sector-rewrite step. Only a page identifiable as one is deleted (see
+ * isLegacySettlementPage): a page the GM added to the record, or a legacy
+ * page whose Notes they filled in, is kept (issue #321 U49 — every page but
+ * the overview was deleted, on every `!migrate-entities` run).
  *
  * @param {string} sectorId
  * @param {Object} campaignState
@@ -144,7 +181,9 @@ export async function cleanupSectorRecordPages(sectorId, campaignState) {
   const overview = findOverviewPage(journal, sector);
   if (!overview) return 0;
 
-  const others = (journal.pages?.contents ?? []).filter(p => p.id !== overview.id);
+  const settlementNames = new Set(settlementRows(sector).map(r => normaliseName(r.name)).filter(Boolean));
+  const others = (journal.pages?.contents ?? [])
+    .filter(p => p.id !== overview.id && isLegacySettlementPage(p, settlementNames));
   let deleted = 0;
   for (const p of others) {
     try {
@@ -254,6 +293,45 @@ function findSectorRecordJournal(sectorId) {
     if (j?.flags?.[MODULE_ID]?.sectorRecord && j.flags[MODULE_ID].sectorId === sectorId) return j;
   }
   return null;
+}
+
+function normaliseName(s) {
+  return String(s ?? "").trim().toLowerCase();
+}
+
+// The per-settlement page the pre-Phase-3 creator wrote into the Sector
+// Record (commits efc8c74..b65175a): named after the settlement, its rolled
+// details as bold-labelled lines, the narrator stub, then a Notes heading
+// over a placeholder the GM was invited to replace.
+const LEGACY_PAGE_DETAIL_LABELS = [
+  /<strong>\s*Population:\s*<\/strong>/i,
+  /<strong>\s*Authority:\s*<\/strong>/i,
+];
+const LEGACY_NOTES_HEADING     = /<h3>\s*Notes\s*<\/h3>/i;
+const LEGACY_NOTES_PLACEHOLDER = "Record discoveries and plot threads here.";
+
+/**
+ * Is this Sector Record page a legacy per-settlement page the migration may
+ * delete — named for one of the sector's settlements, in the generated
+ * layout, its Notes still the untouched placeholder? Anything else is the
+ * GM's (a page they added, or a legacy page they wrote notes into).
+ *
+ * @param {Object} page
+ * @param {Set<string>} settlementNames  normalised generator names (mapData)
+ * @returns {boolean}
+ */
+function isLegacySettlementPage(page, settlementNames) {
+  if (!settlementNames.has(normaliseName(page?.name))) return false;
+  const content = String(page?.text?.content ?? "");
+  if (!LEGACY_PAGE_DETAIL_LABELS.every(re => re.test(content))) return false;
+  const notesAt = content.search(LEGACY_NOTES_HEADING);
+  if (notesAt < 0) return false;
+  const notes = content.slice(notesAt)
+    .replace(LEGACY_NOTES_HEADING, "")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return notes === LEGACY_NOTES_PLACEHOLDER;
 }
 
 function findOverviewPage(journal, sector) {

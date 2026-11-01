@@ -588,7 +588,13 @@ const CONSEQUENCE_MAP = {
           : "Strong hit — choose: mark expedition progress OR take +2 momentum." };
       case "weak_hit": return { ...emptyConsequences(), momentumChange: 1,
         otherEffect: "Interesting find bound up in peril or ominous aspect. Take +1 momentum." };
-      case "miss": return { ...emptyConsequences(),
+      // A miss pays the price, routed like every other "Pay the Price" miss —
+      // the card, its suffer route, the tension clocks (issue #321 U17,
+      // WAYPOINT-MISS-NO-PTP: it said so and routed nothing). With a match the
+      // player may instead Confront Chaos (the card's button), so the price
+      // is theirs to choose, not routed — as Finish an Expedition's miss
+      // offers its recommit.
+      case "miss": return { ...emptyConsequences(), routePayThePrice: !isMatch,
         otherEffect: isMatch
           ? "Miss with a match — may Confront Chaos instead. Otherwise: immediate hardship or threat. Pay the Price."
           : "Immediate hardship or threat. Pay the Price." };
@@ -651,12 +657,16 @@ const CONSEQUENCE_MAP = {
       case "weak_hit": return {
         ...emptyConsequences(),
         enterCombat: true,
-        // B2: choose one — +2 momentum OR in control. No pre-set position.
+        // B2: choose one — +2 momentum OR in control. No pre-set position:
+        // the pick sets it. Positions are binary, so taking the momentum
+        // instead of control begins the fight in a bad spot — it set none, so
+        // no bad-spot directive steered the interpreter and Take Decisive
+        // Action was never downgraded (issue #321 U18).
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "+2 momentum",        momentum: 2 },
-          { label: "You are in control", combatPosition: "in_control" },
+          { label: "+2 momentum (you begin in a bad spot)", chain: [{ momentum: 2 }, { combatPosition: "bad_spot" }] },
+          { label: "You are in control",                    combatPosition: "in_control" },
         ]},
-        otherEffect: "Weak hit: choose one — +2 momentum OR you are in control."
+        otherEffect: "Weak hit: choose one — +2 momentum (and begin in a bad spot) OR you are in control."
       };
       case "miss": return { ...emptyConsequences(), enterCombat: true, combatPosition: "bad_spot",
         otherEffect: "Fight begins with you in a bad spot." };
@@ -1199,8 +1209,12 @@ export function resolveMove(interpretation, campaignState, options = {}) {
 
   // Oracle seeding (narrator-entity-discovery scope §7) — runs after the
   // outcome is known so we can condition on hit-with-match etc. Only the
-  // configured moves produce seeds; everything else gets null.
-  const oracleSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null);
+  // configured moves produce seeds; everything else gets null. A result the
+  // pipeline routes to Pay the Price rolls no price here: the pipeline rolls
+  // the one its card shows and the table pays, and seeds the narration with
+  // it (withPayThePriceSeed — issue #321 U03).
+  const oracleSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
+    { routesPayThePrice: consequences.routePayThePrice === true });
 
   return {
     playerNarration,
@@ -1254,11 +1268,18 @@ export function resolveMove(interpretation, campaignState, options = {}) {
  * @param {string} moveId
  * @param {string} outcome
  * @param {boolean} isMatch
+ * @param {Object|null} [currentSite]
+ * @param {Object} [opts]
+ * @param {boolean} [opts.routesPayThePrice] — the result's consequences route
+ *   Pay the Price (`routePayThePrice`): the pipeline rolls the price for its
+ *   card and seeds the narration with that one, so none is rolled here
+ *   (issue #321 U03)
  * @returns {Object|null}
  */
-// Moves whose miss outcome triggers a Pay the Price prompt per the play kit.
-// Listed by moveId so the resolver can auto-roll the d100 table and surface
-// it as an advisory seed on the move card.
+// Moves whose miss outcome says "Pay the Price" per the play kit. A miss the
+// pipeline routes (routePayThePrice) is seeded with its card's price by the
+// pipeline; only a miss that routes none — Sojourn's, where Pay the Price is
+// one of its choices — gets an advisory roll here.
 const PAY_THE_PRICE_ON_MISS = new Set([
   "face_danger", "secure_an_advantage", "gather_information", "compel",
   "check_your_gear", "set_a_course", "gain_ground", "react_under_fire",
@@ -1267,7 +1288,7 @@ const PAY_THE_PRICE_ON_MISS = new Set([
   "explore_a_waypoint",
 ]);
 
-export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null) {
+export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, { routesPayThePrice = false } = {}) {
   try {
     const results = [];
     const names   = [];
@@ -1396,15 +1417,6 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null) {
         break;
       }
 
-      case "face_defeat": {
-        // Face Defeat always calls Pay the Price — seed the narrator with the roll
-        // so it can ground the narration. A second visible card is also posted by
-        // the pipeline (routePayThePrice: true → postFaceDefeatPayThePriceCard).
-        const ptp = safeRoll("pay_the_price");
-        if (ptp) results.push(`Pay the Price: ${ptp}`);
-        break;
-      }
-
       case "endure_harm": {
         if (outcome === "miss") {
           const wound = safeRoll("mortal_wound");
@@ -1430,8 +1442,12 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null) {
       }
     }
 
-    // ── PAY THE PRICE ON MISS (advisory for any move whose miss text says so)
-    if (outcome === "miss" && PAY_THE_PRICE_ON_MISS.has(moveId)) {
+    // ── PAY THE PRICE ON MISS — advisory, for a miss whose text says so but
+    // that routes none. A routed price (routePayThePrice — Face Defeat's, on
+    // any outcome, too) is the pipeline's card roll, which it seeds the
+    // narration with: rolling one here too gave the narration one price and
+    // the table another (issue #321 U03).
+    if (outcome === "miss" && PAY_THE_PRICE_ON_MISS.has(moveId) && !routesPayThePrice) {
       const ptp = safeRoll("pay_the_price");
       if (ptp) results.push(`Pay the Price: ${ptp}`);
     }
@@ -1448,6 +1464,22 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null) {
     console.warn("starforged-companion | buildOracleSeeds failed:", err);
     return null;
   }
+}
+
+/**
+ * A move's oracle seeds with the Pay the Price its pipeline rolled for the
+ * card, so the narration depicts the price the table is shown and pays — one
+ * roll per result (issue #321 U03). A new object; `seeds` is not changed.
+ *
+ * @param {Object|null} seeds — the resolution's oracleSeeds (null when none)
+ * @param {string} moveId
+ * @param {string|null} price — the card's Pay the Price result
+ * @returns {Object|null}
+ */
+export function withPayThePriceSeed(seeds, moveId, price) {
+  if (!price) return seeds ?? null;
+  const base = seeds ?? { results: [], names: [], context: moveId };
+  return { ...base, results: [...(base.results ?? []), `Pay the Price: ${price}`] };
 }
 
 function safeRoll(tableId) {

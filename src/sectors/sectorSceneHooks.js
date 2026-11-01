@@ -26,6 +26,7 @@
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { getCommandVehicleActorId } from "../entities/ship.js";
+import { getShipPositioningEnabled, getShipAutoMoveOnCourse } from "../ui/settingsPanel.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -71,6 +72,43 @@ export function registerSectorSceneHooks() {
   // (travel move with a roll); off-pin = position note, no move mechanics.
   Hooks.on("createToken", handleCommandVehicleTokenPlacement);
   Hooks.on("updateToken", handleCommandVehicleTokenReposition);
+
+  // A settlement pin's label follows its Actor's name (issue #321 U52).
+  Hooks.on("updateActor", handleSettlementPinRename);
+}
+
+/**
+ * updateActor — a settlement Actor renamed (its sheet, the Entities panel, the
+ * rename sync) renames its pins on every sector Scene. The label was written
+ * once at scene creation, so the map kept the old name. Settlement pins only:
+ * a planet pin links the same Actor but is labelled with the planet, and a
+ * site pin's label is "Unexplored Site" until it is revealed. Notes are
+ * shared documents, so one client writes — the canonical GM.
+ *
+ * @param {Actor} actor   the updated Actor (post-update)
+ * @param {Object} changes the update diff
+ * @returns {Promise<void>|undefined}
+ */
+export function handleSettlementPinRename(actor, changes) {
+  if (!actor || actor.type !== "location" || !changes || !("name" in changes)) return undefined;
+  if (!isCanonicalGM()) return undefined;
+  const name = String(actor.name ?? "").trim();
+  if (!name) return undefined;
+
+  const writes = [];
+  for (const scene of game.scenes?.contents ?? []) {
+    if (!scene?.flags?.[MODULE_ID]?.sectorScene) continue;
+    const notes = scene.notes?.contents ?? scene.notes ?? [];
+    for (const note of Array.isArray(notes) ? notes : []) {
+      const flags = note?.flags?.[MODULE_ID];
+      if (!flags?.settlementId || flags.actorId !== actor.id) continue;
+      if (flags.planetNote || flags.stellarNote || flags.siteNote) continue;
+      if (note.text === name) continue;
+      writes.push(Promise.resolve(note.update?.({ text: name })).catch(err =>
+        console.warn(`${MODULE_ID} | settlement pin rename failed for ${note.id}:`, err?.message ?? err)));
+    }
+  }
+  return Promise.all(writes).then(() => undefined);
 }
 
 /**
@@ -142,6 +180,14 @@ export function handleCommandVehicleTokenDrag(tokenDoc, changes, options) {
     console.debug?.(`${MODULE_ID} | preUpdateToken: settings read failed:`, err?.message ?? err);
   }
 
+  // A drop on a pin rolls Set a Course and, on a hit, moves the token onto the
+  // pin — the arrival the pipeline applies only with Ship Positioning and
+  // Auto-Move Ship on Set a Course both on (index.js applyOutcomeEffects).
+  // With either off, the drop was cancelled and the move rolled, yet the
+  // token could never follow (issue #321 U54): the drag is a plain token move
+  // instead — with positioning on, a position note (updateToken), no roll.
+  if (!getShipPositioningEnabled() || !getShipAutoMoveOnCourse()) return undefined;
+
   // Only the Scene flagged as a sector Scene participates.
   const scene = tokenDoc.parent ?? tokenDoc.scene;
   if (!scene?.flags?.[MODULE_ID]?.sectorScene) return undefined;
@@ -202,10 +248,19 @@ export function nearestSettlementNote(scene, x, y, radiusPx) {
  *
  * We attach a flag on the message so the post-resolution path knows to
  * also move the Token visually when the move succeeds.
+ *
+ * The destination is the settlement Actor the pin links (`flags.actorId`):
+ * its current name is the course's target, and its id rides as
+ * `forcedMoveTargetId` so the arrival records that settlement by id. The
+ * pin's label was written once at scene creation — it went stale on an
+ * Actor rename, and the arrival then resolved nothing by it, or a namesake
+ * (issue #321 U52). A legacy pin with no linked Actor still uses its label.
  */
 async function dispatchSetACourseFromTokenDrag(scene, settlementNote, tokenDoc) {
   if (!game?.user) return;
-  const destinationName = settlementNote.text ?? "the destination";
+  const pinActorId = settlementNote.flags?.[MODULE_ID]?.actorId ?? null;
+  const destActor  = pinActorId ? (game.actors?.get?.(pinActorId) ?? null) : null;
+  const destinationName = destActor?.name || settlementNote.text || "the destination";
 
   try {
     await ChatMessage.create({
@@ -218,14 +273,14 @@ async function dispatchSetACourseFromTokenDrag(scene, settlementNote, tokenDoc) 
           bypassPacing:   true,
           forcedMoveId:   "set_a_course",
           forcedMoveTarget: destinationName,
+          ...(destActor ? { forcedMoveTargetId: destActor.id } : {}),
+          // What the pipeline needs to move this token onto the pin on a
+          // non-miss (moveCommandVehicleTokenToDestination).
           tokenDragSetCourse: {
-            sceneId:        scene.id,
-            tokenId:        tokenDoc.id,
-            destSettlement: settlementNote.flags?.[MODULE_ID]?.settlementId ?? null,
-            destNoteId:     settlementNote.id,
-            destX:          Number(settlementNote.x ?? 0),
-            destY:          Number(settlementNote.y ?? 0),
-            destName:       destinationName,
+            sceneId: scene.id,
+            tokenId: tokenDoc.id,
+            destX:   Number(settlementNote.x ?? 0),
+            destY:   Number(settlementNote.y ?? 0),
           },
         },
       },
@@ -275,6 +330,14 @@ function readNearRadiusCells() {
  * Scene: the nearest settlement pin within the near radius when one
  * exists, else deep space in the scene's sector. Pure read.
  *
+ * Its provenance is `token_placement` — the token's own place on the map,
+ * where it was placed or moved off a pin, with no move made — which the
+ * narrator's ship line reads as "near <settlement>" (decisions.md
+ * 2026-06-12). Arriving ON a pin is a Set a Course: that arrival is
+ * `scene_token`, read "docked at". Both were `scene_token`, so a ship parked
+ * two cells off a pin, or auto-placed on a new map, was "docked at" it
+ * (issue #321 U53).
+ *
  * @param {Scene} scene — a Scene flagged { sectorScene, sectorId }
  * @param {number} x
  * @param {number} y
@@ -295,7 +358,7 @@ export function computeTokenPositionRecord(scene, x, y) {
     nearestSettlementId: pinFlags?.actorId ?? pinFlags?.settlementId ?? null,
     freeText:            pin ? String(pin.text ?? "") : "deep space",
     updatedAt:           new Date().toISOString(),
-    updatedBy:           "scene_token",
+    updatedBy:           "token_placement",
   };
 }
 

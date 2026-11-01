@@ -27,7 +27,12 @@ dominion/leadership, `projects[]`, `rumors[]`, quirk, and
 open_alliance | temporary_alliance | warring | unknown`. Created by the
 sector generator (pre-populated) and by draft-card confirmation, which since
 2026-07 reconciles any WJ intelligence and rolls the faction oracles
-(`seedFactionRecord`). Read by the relevance resolver → ENTITIES IN SCENE cards
+(`seedFactionRecord`), then mirrors the faction into the World Journal with
+no attitude — the entry keeps the one the narration established (a new
+entry starts `unknown`) — backlinked by the record's host JournalEntry id
+(`findFactionByName(…).id`, as the reconcile writes it). The mirror passed
+`attitude: "unknown"` and the record's `_id`, resetting a hostile faction to
+unknown and re-pointing the backlink (issue #321 U28). Read by the relevance resolver → ENTITIES IN SCENE cards
 (`formatEntityCard` has a faction field table including `relationship`) and
 the entity panel (which can edit `relationship` manually).
 
@@ -58,7 +63,7 @@ the active sector, rendered in the ACTIVE SECTOR block. Static, name-only.
 | Code | Class | Defect → fix |
 |---|---|---|
 | FACTION-PACKET-DEAD | LOSE-PLOT | The assembler packet was built at three callsites and never read → **retired from all live paths** (index Step 8, burn-momentum, improve-result — whose `if (!packet) return` guard had silently aborted re-narration on assembly failure; the 2026-10 post-merge review found those two re-narration calls still passing `null` in the removed packet's argument slot, so `narrateResolution` received `null` for campaignState and re-narration failed into a console warning — now `narrate(synthResolution, campaignState, { speakerActorId })`, describing the PC who rolled). The load-bearing sections now flow through `buildNarratorExtras`: **[4d] ACTIVE THREATS** (top 4), **[4e] FACTION LANDSCAPE** (`mergeFactionLandscape` — records canonical, WJ-only appended), **[4f] ESTABLISHED LORE** (recent 5, clipped), gated on the existing `threatsInContext` / `factionLandscapeInContext` / `loreInContext` settings. The assembler module was later deleted outright (#271, see `unreachable-code-audit.md`) |
-| FACTION-DUAL-STORE | WRONG-DETAIL | Two unreconciled records per faction → draft-confirm now reconciles: the new entity record inherits the WJ entry's attitude (mapped) and the WJ entry backlinks the record via `entityId`; the WJ entry remains the intelligence log under the record's canon |
+| FACTION-DUAL-STORE | WRONG-DETAIL | Two unreconciled records per faction → draft-confirm now reconciles: the new entity record inherits the WJ entry's attitude (mapped) and the WJ entry backlinks the record via `entityId` (the host JournalEntry id); the WJ entry remains the intelligence log under the record's canon. Since issue #321 U28 the confirm's WJ mirror keeps the established attitude and that backlink — it wrote `unknown` and the record's `_id` |
 | FACTION-ATTITUDE-SPLIT-BRAIN | WRONG-DETAIL | Attitude shifts wrote only the WJ store → `recordFactionIntelligence` itself syncs every attitude write (detection transitions, `!journal faction`, auto-surface) onto `record.relationship` via `ATTITUDE_TO_RELATIONSHIP` (hostile→antagonistic, neutral→apathetic, allied→open_alliance; unknown never overwrites). The record is the canonical stance home — decisions.md |
 | FACTION-RECORD-WRITE-ONCE | LOSE-PLOT | Records frozen at creation → `seedFactionRecord` rolls the Starforged faction oracles (type + per-type subtype, influence, quirk, first project) on draft-confirm, idempotent via the new `seeded` flag; the attitude sync above gives the record its narrative write path; generative-tier accrual unchanged. `addRumor`/`setProject` remain panel/API affordances |
 | FACTION-DETECTOR-ONLY-CONTEXT | INVENT-RISK | The narrator never saw the landscape the detector classified against → resolved by [4e]: the narrator now reads the same political map, with a stances-are-established guard sentence |

@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { rollYesNo, rollOracle } from "../../src/oracles/roller.js";
+import { rollYesNo, rollOracle, ORACLE_TABLES } from "../../src/oracles/roller.js";
 
 
 describe("rollYesNo", () => {
@@ -122,6 +122,58 @@ describe("rollOracle — directive resolution", () => {
     const r = rollOracle("character_role", { roll: 1 });
     expect(r.result).toBe("Agent");
     expect(r.isRef).toBe(false);
+  });
+
+  // Issue #321 U68: the rulebook's other directive wordings came back verbatim
+  // as answers — "Roll three times", Starship Type's "Ships in conflict (roll
+  // twice)" (about 6% of new starships got it as their type) and Creature
+  // Scale's "Ultra-scale (roll on ultra table)", whose table was not
+  // registered at all.
+  describe("every directive wording resolves (issue #321 U68)", () => {
+    /** Roll `roll` on `tableId` with the d100s after it scripted. */
+    function rollScripted(tableId, roll, ...next) {
+      const rng = vi.spyOn(Math, "random");
+      for (const v of next) rng.mockReturnValueOnce((v - 0.5) / 100);
+      try { return rollOracle(tableId, { roll }); } finally { rng.mockRestore(); }
+    }
+
+    it('Space Sighting 99 "Roll three times" rolls three results, in every region', () => {
+      expect(rollScripted("space_sighting_terminus", 99, 61, 75, 86).result)
+        .toBe("Debris field: Mineral asteroids / Large rogue asteroid / Dense nebula cloud");
+      for (const id of ["space_sighting_outlands", "space_sighting_expanse"]) {
+        const r = rollScripted(id, 100, 86, 86, 86);
+        expect(r.result, id).toBe("Dense nebula cloud / Dense nebula cloud / Dense nebula cloud");
+      }
+    });
+
+    it('Starship Type "Ships in conflict (roll twice)" names the two ships under its heading', () => {
+      const r = rollScripted("starship_type", 97, 5, 35);
+      expect(r.result).toBe("Ships in conflict: Corvette — Light attack ship / Hunter — Stealthy attack ship");
+    });
+
+    it('Creature Scale 100 "Ultra-scale" rolls on the registered Ultra-scale table', () => {
+      const r = rollScripted("creature_scale", 100, 95);
+      expect(r.result).toBe("Ultra-scale: Colossal (mountain-sized)");
+      expect(r).toMatchObject({ isRef: true, refTableId: "creature_ultra_scale" });
+      expect(rollOracle("creature_ultra_scale", { roll: 100 }).result).toBe("Vast (planet-sized)");
+      expect(rollOracle("creature_ultra_scale", { roll: 1 }).result).toBe("Titanic (hill-sized)");
+    });
+
+    it("no registered table returns a directive's own words at any roll", () => {
+      const DIRECTIVE = /^Roll (twice|three times|again)\b|\(roll (twice|on [^)]*)\)/i;
+      const rng = vi.spyOn(Math, "random").mockReturnValue(0);   // every follow-up roll is a 1
+      try {
+        const leaks = [];
+        for (const [id, def] of Object.entries(ORACLE_TABLES)) {
+          if (def.category === "custom") continue;
+          for (let roll = 1; roll <= 100; roll++) {
+            const { result } = rollOracle(id, { roll });
+            if (DIRECTIVE.test(result)) leaks.push(`${id} ${roll}: ${result}`);
+          }
+        }
+        expect(leaks).toEqual([]);
+      } finally { rng.mockRestore(); }
+    });
   });
 });
 

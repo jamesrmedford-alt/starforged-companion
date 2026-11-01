@@ -78,8 +78,10 @@ export function _resetIronswornAvailabilityCache() {
 // STARSHIP ICON PICKER (Phase 3)
 // ─────────────────────────────────────────────────────────────────────────────
 
-// foundry-ironsworn ships 15 numbered starship .webp tokens. The exact filenames
-// follow the pattern Starforged-Starship-Token-NN.webp where NN is 01..15.
+// foundry-ironsworn ships 15 numbered starship .webp tokens:
+// assets/starships/Ship-NNs.webp, NN = 01..15 (the system's own create-actor
+// dialog uses Ship-10s.webp). The Starforged-Starship-Token-NN.webp names this
+// built before were never in the system, so every such image 404'd (issue #321 U31).
 const STARSHIP_TOKEN_COUNT = 15;
 
 /**
@@ -110,7 +112,7 @@ function stableHash(s) {
 export function pickStarshipIcon(seed) {
   const idx = (stableHash(seed) % STARSHIP_TOKEN_COUNT) + 1;
   const num = String(idx).padStart(2, "0");
-  return `${IS_PATHS.STARSHIPS}/Starforged-Starship-Token-${num}.webp`;
+  return `${IS_PATHS.STARSHIPS}/Ship-${num}s.webp`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

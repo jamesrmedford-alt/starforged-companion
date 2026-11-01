@@ -11,6 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   inferShipPosition,
+  inferShipPositionFromEntityId,
   formatShipPositionLine,
   emptyPosition,
 } from '../../src/factContinuity/shipPosition.js';
@@ -268,11 +269,19 @@ describe('formatShipPositionLine — mobility status (Finding L)', () => {
     freeText:            '',
   };
 
-  it('scene_token source → "docked at" phrasing', () => {
+  it('scene_token source (the Set a Course a token dropped ON a pin starts — an arrival) → "docked at" phrasing', () => {
     const line = formatShipPositionLine({ ...pos, updatedBy: 'scene_token' }, state, 'Vanguard');
     expect(line).toContain('docked at Bleakhold Station');
     expect(line).not.toContain('near ');
     expect(line).not.toContain('in transit');
+  });
+
+  // Issue #321 U53 (decisions.md 2026-06-12): a token placed on the map, or
+  // moved off a pin, made no move — it is near the pin, not docked at it.
+  it('token_placement source (the token\'s own place on the map) → "near" phrasing', () => {
+    const line = formatShipPositionLine({ ...pos, updatedBy: 'token_placement' }, state, 'Vanguard');
+    expect(line).toContain('near Bleakhold Station');
+    expect(line).not.toContain('docked at');
   });
 
   it('at_command source → "docked at" phrasing', () => {
@@ -384,6 +393,53 @@ describe('inferShipPosition — tolerant seed matching', () => {
   });
 });
 
+// Issue #321 U43: the word scan looked up every lowercased word in the name
+// index, whose keys include each multi-word name's first and last word — so a
+// common noun matched a recorded place's name part — and a non-spatial hit
+// replaced the narrated phrase with the entity's bare name.
+describe('inferShipPosition — the word scan resolves names, not common nouns', () => {
+  const cs = () => ({
+    settlements: [{ _id: 's-bleak', journalId: 's-bleak', name: 'Bleakhold Station', sectorId: 'sec-1' }],
+    planets:     [{ _id: 'p-kaan',  journalId: 'p-kaan',  name: 'Kaan', settlementIds: [], sectorId: 'sec-1' }],
+    factions:    [{ _id: 'f-cov',   journalId: 'f-cov',   name: 'The Covenant' }],
+    ships:       [{ _id: 'sh-iron', journalId: 'sh-iron', name: 'Iron Resolve' }],
+    sectors:     [{ id: 'sec-1', name: 'Igneous Spine' }],
+    activeSectorId: 'sec-1',
+  });
+
+  it('a common noun in an unrecorded destination does not dock the ship at a recorded place', () => {
+    const pos = inferShipPosition('a derelict station above Kaan', cs(), { source: 'narrator_sidecar' });
+    expect(pos.nearestSettlementId).toBeNull();
+    expect(pos.nearestPlanetId).toBe('p-kaan');
+  });
+
+  it('a phrase whose only name-like word is lowercase stays free text', () => {
+    const pos = inferShipPosition('holding beside the station', cs(), { source: 'narrator_sidecar' });
+    expect(pos.nearestSettlementId).toBeNull();
+    expect(pos.freeText).toBe('holding beside the station');
+  });
+
+  it('a capitalised name part in a phrase still resolves (control)', () => {
+    const pos = inferShipPosition("holding off Bleakhold's docking ring", cs(), { source: 'narrator_sidecar' });
+    expect(pos.nearestSettlementId).toBe('s-bleak');
+  });
+
+  it('a whole seed that is a deliberate short name resolves in any case (control)', () => {
+    expect(inferShipPosition('bleakhold', cs(), { source: 'at_command' }).nearestSettlementId).toBe('s-bleak');
+  });
+
+  it('keeps the narrated phrase when the only match is not a place', () => {
+    const state = cs();
+    const pos   = inferShipPosition('alongside the Covenant flagship Iron Resolve', state, { source: 'narrator_sidecar' });
+    expect(pos.freeText).toBe('alongside the Covenant flagship Iron Resolve');
+    expect(formatShipPositionLine(pos, state, "Pioneer's Pride")).toContain('flagship');
+
+    const beside = inferShipPosition('beside Iron Resolve', state, { source: 'narrator_sidecar' });
+    expect(beside.freeText).toBe('beside Iron Resolve');
+    expect(beside.nearestSettlementId).toBeNull();
+  });
+});
+
 
 // ────────────────────────────────────────────────────────────────────
 // Document-backed resolution (v1.7.10 finding #5)
@@ -449,5 +505,56 @@ describe('document-backed resolution (production storage shape)', () => {
     const state = makeCampaignState({ settlements: [settlement('s-leg', 'Legacyport')] });
     const p = inferShipPosition('Legacyport', state, { source: 'manual' });
     expect(p.nearestSettlementId).toBe('s-leg');
+  });
+});
+
+// Issue #321 U52: a token dropped on a sector pin names its destination by the
+// pin's settlement Actor; the arrival records THAT settlement — a rename leaves
+// the label behind, and a namesake in another sector matches the name first.
+describe('inferShipPositionFromEntityId — arrival by the destination\'s id', () => {
+  const MID = 'starforged-companion';
+
+  function hostActor(id, typeKey, record) {
+    const actor = makeTestActor({
+      id, type: 'location', name: record.name,
+      flags: { [MID]: { entityType: typeKey, [typeKey]: record } },
+    });
+    global.game.actors._set(id, actor);
+    return actor;
+  }
+
+  beforeEach(() => { global.game.actors._reset(); });
+
+  it('records the settlement the id names, in its own sector — not a namesake the name finds first', () => {
+    hostActor('actor-old', 'settlement', { _id: 'rec-old', name: 'Bleakhold', sectorId: 'sec-old' });
+    hostActor('actor-new', 'settlement', { _id: 'rec-new', name: 'Bleakhold', sectorId: 'sec-new' });
+    const state = { settlementIds: ['actor-old', 'actor-new'], activeSectorId: 'sec-new',
+      sectors: [sec('sec-old', 'Old Reach'), sec('sec-new', 'New Reach')] };
+
+    expect(inferShipPosition('Bleakhold', state).nearestSettlementId).toBe('actor-old');   // the name's first match
+
+    const p = inferShipPositionFromEntityId('actor-new', state, { source: 'scene_token' });
+    expect(p).toMatchObject({
+      nearestSettlementId: 'actor-new', sectorId: 'sec-new', nearestPlanetId: null,
+      freeText: '', updatedBy: 'scene_token',
+    });
+    expect(p.updatedAt).toBeTruthy();
+  });
+
+  it('resolves the planet a settlement belongs to, as the name path does', () => {
+    hostActor('actor-set', 'settlement', { _id: 'rec-set', name: 'Bleakhold', sectorId: 'sec-1' });
+    hostActor('actor-pl', 'planet', { _id: 'rec-pl', name: 'Vorn Prime', settlementIds: ['rec-set'], sectorId: 'sec-1' });
+    const state = { settlementIds: ['actor-set'], planetIds: ['actor-pl'] };
+    expect(inferShipPositionFromEntityId('actor-set', state).nearestPlanetId).toBe('actor-pl');
+  });
+
+  it('a planet or a location id records that place; anything else is null (the name decides)', () => {
+    hostActor('actor-pl', 'planet', { _id: 'rec-pl', name: 'Vorn Prime', sectorId: 'sec-1' });
+    hostActor('actor-loc', 'location', { _id: 'rec-loc', name: 'The Shroud', sectorId: 'sec-1' });
+    expect(inferShipPositionFromEntityId('actor-pl', {})).toMatchObject({ nearestPlanetId: 'actor-pl', sectorId: 'sec-1' });
+    expect(inferShipPositionFromEntityId('actor-loc', {})).toMatchObject({ freeText: 'The Shroud', sectorId: 'sec-1', nearestSettlementId: null });
+    expect(inferShipPositionFromEntityId('actor-missing', {})).toBeNull();
+    expect(inferShipPositionFromEntityId(null, {})).toBeNull();
+    expect(inferShipPositionFromEntityId('actor-pl', {}, { source: 'nonsense' }).updatedBy).toBe('manual');
   });
 });

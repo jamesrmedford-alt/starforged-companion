@@ -18,7 +18,15 @@ export const SCALE = [
   { min: 26, max: 60,  result: "Medium (person-sized)" },
   { min: 61, max: 90,  result: "Large (vehicle-sized)" },
   { min: 91, max: 99,  result: "Huge (whale-sized)" },
-  { min: 100,max: 100, result: "Ultra-scale (roll on ultra table)" },
+  // Roll on the Ultra-scale table below — the roller does (rollOracle).
+  { min: 100,max: 100, result: "Ultra-scale", ref: "creature_ultra_scale" },
+];
+
+// Creature Scale 100 rolls here (Starforged/Oracles/Creatures/Ultra-scale).
+export const ULTRA_SCALE = [
+  { min: 1,  max: 89,  result: "Titanic (hill-sized)" },
+  { min: 90, max: 99,  result: "Colossal (mountain-sized)" },
+  { min: 100,max: 100, result: "Vast (planet-sized)" },
 ];
 
 // Basic form tables vary by environment
@@ -106,7 +114,26 @@ export const BASIC_FORM_AIR = [
   { min: 91, max: 100, result: "Roll twice" },
 ];
 
-export const BASIC_FORM_INTERIOR = BASIC_FORM_LAND; // Close enough for interior spaces
+export const BASIC_FORM_INTERIOR = [
+  { min: 1,  max: 3,   result: "Amoeba / pseudopods" },
+  { min: 4,  max: 6,   result: "Amorphous / elemental" },
+  { min: 7,  max: 12,  result: "Avian / winged" },
+  { min: 13, max: 19,  result: "Beast / mammal" },
+  { min: 20, max: 22,  result: "Crustacean / shelled" },
+  { min: 23, max: 24,  result: "Fish / torpedo-shaped" },
+  { min: 25, max: 37,  result: "Humanoid / bipedal" },
+  { min: 38, max: 49,  result: "Insectoid / exoskeletal" },
+  { min: 50, max: 51,  result: "Jellyfish / gasbag" },
+  { min: 52, max: 56,  result: "Lizard / reptilian" },
+  { min: 57, max: 58,  result: "Octopoid / tentacled" },
+  { min: 59, max: 63,  result: "Plant / fungus" },
+  { min: 64, max: 65,  result: "Ray / flat-bodied" },
+  { min: 66, max: 68,  result: "Snake / eel" },
+  { min: 69, max: 83,  result: "Spider / web-weaver" },
+  { min: 84, max: 85,  result: "Starfish / symmetrical" },
+  { min: 86, max: 90,  result: "Worm / slug / larva" },
+  { min: 91, max: 100, result: "Roll twice" },
+];
 
 export const FIRST_LOOK = [
   { min: 1,  max: 2,   result: "Antennae or sensory organs" },
@@ -132,8 +159,8 @@ export const FIRST_LOOK = [
   { min: 41, max: 42,  result: "Faceless or inexpressive" },
   { min: 43, max: 44,  result: "Fangs or rows of teeth" },
   { min: 45, max: 46,  result: "Feathered" },
-  { min: 47, max: 48,  result: "Hidden symbiote" },
-  { min: 49, max: 50,  result: "Hive mind" },
+  { min: 47, max: 48,  result: "Fungal growth" },
+  { min: 49, max: 50,  result: "Fur, hair, or filaments" },
   { min: 51, max: 52,  result: "Graceful" },
   { min: 53, max: 54,  result: "Hideous" },
   { min: 55, max: 56,  result: "Hooded or crested" },
@@ -186,9 +213,9 @@ export const BEHAVIOR = [
 ];
 
 export const REVEALED_ASPECT = [
-  { min: 1,  max: 2,   result: "Alternative movement" },
-  { min: 3,  max: 4,   result: "Alternative senses" },
-  { min: 5,  max: 6,   result: "Alternative environment" },
+  { min: 1,  max: 2,   result: "Alternative environment" },
+  { min: 3,  max: 4,   result: "Alternative movement" },
+  { min: 5,  max: 6,   result: "Alternative senses" },
   { min: 7,  max: 8,   result: "Burrower" },
   { min: 9,  max: 10,  result: "Chameleon" },
   { min: 11, max: 12,  result: "Clever" },
@@ -209,8 +236,8 @@ export const REVEALED_ASPECT = [
   { min: 41, max: 42,  result: "Entangling secretion" },
   { min: 43, max: 44,  result: "Extradimensional" },
   { min: 45, max: 46,  result: "Hallucinogen secretion" },
-  { min: 47, max: 48,  result: "Fungal growth" },
-  { min: 49, max: 50,  result: "Fur, hair, or filaments" },
+  { min: 47, max: 48,  result: "Hidden symbiote" },
+  { min: 49, max: 50,  result: "Hive mind" },
   { min: 51, max: 52,  result: "Illusionary" },
   { min: 53, max: 54,  result: "Infectious" },
   { min: 55, max: 56,  result: "Infested with parasites" },

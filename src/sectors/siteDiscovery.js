@@ -70,7 +70,7 @@ export async function revealSectorSite(label, opts = {}) {
     }
   }
 
-  await setState(state);
+  await persistSiteFlag(getState, setState, sector, match, "discovered", "revealSectorSite");
   return { sector, site: match };
 }
 
@@ -147,8 +147,53 @@ export async function clearSectorSite(label, opts = {}) {
     try { await updateLoc(record.actorId, { status: "cleared" }); }
     catch (err) { console.warn(`${MODULE_ID} | clearSectorSite: location status update failed:`, err?.message ?? err); }
   }
-  await setState(state);
+  await persistSiteFlag(getState, setState, sector, record, "cleared", "clearSectorSite");
   return { sector, site: record };
+}
+
+/**
+ * Persist one discovery record's flag onto the state as it is NOW (issue
+ * #321 U06c): getState() is read again after the location write and the
+ * scene restyle, and the flag set on a copy of it — copied along the path to
+ * the record, never changed in place. Writing back the state read before
+ * those awaits reverted whatever landed meanwhile: a player's relayed X-Card,
+ * Take a Break, a `!bond` (rules/reachability.md §9). The record is found by
+ * identity, else by its sector's and its own id; when the site is no longer
+ * stored, nothing is written.
+ *
+ * @param {Function} getState
+ * @param {Function} setState
+ * @param {Object}   sector — the sector the record was found in
+ * @param {Object}   site   — the discovery record
+ * @param {"discovered"|"cleared"} key
+ * @param {string}   label  — for the log
+ * @returns {Promise<void>}
+ */
+async function persistSiteFlag(getState, setState, sector, site, key, label) {
+  const latest  = getState();
+  const sameSector = (s) => s === sector || (sector?.id != null && s?.id === sector.id);
+  const sameSite   = (d) => d === site   || (site?.id   != null && d?.id === site.id);
+  let found = false;
+  const sectors = (Array.isArray(latest?.sectors) ? latest.sectors : []).map((s) => {
+    const discoveries = s?.mapData?.discoveries;
+    if (!sameSector(s) || !Array.isArray(discoveries)) return s;
+    return {
+      ...s,
+      mapData: {
+        ...s.mapData,
+        discoveries: discoveries.map((d) => {
+          if (!sameSite(d)) return d;
+          found = true;
+          return { ...d, [key]: true };
+        }),
+      },
+    };
+  });
+  if (!found) {
+    console.warn(`${MODULE_ID} | ${label}: "${site?.name ?? site?.id}" is no longer stored — not saved.`);
+    return;
+  }
+  await setState({ ...latest, sectors });
 }
 
 function escapeSiteHtml(s) {

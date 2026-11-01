@@ -26,6 +26,7 @@
  */
 
 import { rollYesNo } from "../oracles/roller.js";
+import { newNarrationId } from "../factContinuity/ledgers.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -220,8 +221,6 @@ export async function createClock(input) {
   const advanceOdds = ["small_chance","unlikely","50_50","likely","almost_certain"].includes(input?.advanceOdds)
                       ? input.advanceOdds : "likely";
 
-  const state = readState();
-  state.clocks ??= [];
   const clock = {
     _id:       foundry.utils.randomID(),
     name,
@@ -235,8 +234,7 @@ export async function createClock(input) {
     createdAt:   new Date().toISOString(),
     updatedAt:   new Date().toISOString(),
   };
-  state.clocks.push(clock);
-  await writeState(state);
+  await addClock(clock);
   return clock;
 }
 
@@ -294,7 +292,7 @@ export async function removeClock(clockId) {
  *   one entry per clock advanced; empty when there are no active tension clocks.
  */
 export async function advanceTensionClocksForPayThePrice() {
-  const state = readState();
+  const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
   const eligible = (state.clocks ?? []).filter(
     c => c.active !== false && c.type === "tension" && (c.filled ?? 0) < c.segments,
   );
@@ -319,7 +317,7 @@ export async function advanceTensionClocksForPayThePrice() {
  */
 export async function revertTensionClocksForBurn(ids) {
   if (!ids?.length) return;
-  const state = readState();
+  const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
   let dirty = false;
   const now = new Date().toISOString();
   for (const id of ids) {
@@ -473,8 +471,6 @@ async function cmdNew(parts) {
   const advanceOdds = ["small_chance","unlikely","50_50","likely","almost_certain"].includes(rest[2]?.toLowerCase())
                        ? rest[2].toLowerCase() : "likely";
 
-  const state = readState();
-  state.clocks ??= [];
   const clock = {
     _id:       foundry.utils.randomID(),
     name,
@@ -488,8 +484,7 @@ async function cmdNew(parts) {
     createdAt:   new Date().toISOString(),
     updatedAt:   new Date().toISOString(),
   };
-  state.clocks.push(clock);
-  await writeState(state);
+  await addClock(clock);
 
   await postCard(`<strong>Clock created</strong><p>${renderClock(clock)}</p>`);
 }
@@ -637,8 +632,20 @@ async function writeState(state) {
   await game.settings.set(MODULE_ID, "campaignState", state);
 }
 
+// Every writer here works on a copy of the state: `readState` returns this
+// client's cached campaignState, and a refused write must leave it as it was
+// — changed in place, the cache kept the change, which the next write of any
+// field then persisted (rules/foundry-api.md; issue #321 U58).
+
+/** Append a new clock to the stored list. */
+async function addClock(clock) {
+  const state = { ...readState() };
+  state.clocks = [...(state.clocks ?? []), clock];
+  await writeState(state);
+}
+
 async function mutateClock(id, fn) {
-  const state = readState();
+  const state = foundry.utils.deepClone(readState());
   const clock = (state.clocks ?? []).find(c => c._id === id);
   if (!clock) return;
   fn(clock);
@@ -702,16 +709,19 @@ function fireClockVignette(clockData) {
     try {
       const { narrateClockAdvancement } = await import("../narration/narrator.js");
       const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
-      const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs });
+      const narrationId = newNarrationId();
+      const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs, narrationId });
       if (text) {
         // Flag family (NARR-RING-CLOCKVIG, narrator-context audit 2026-07):
         // vignette prose must enter the recent-narration ring and rolling
-        // summary like every other narrator fiction card.
+        // summary like every other narrator fiction card. narrationId: what
+        // an X-Card on it retracts (issue #321 U07).
         await postCard(`<em>${escapeHtml(text)}</em>`, {
           clockVignetteCard: true,
           narratorCard:      true,
           narrationText:     text,
           sessionId:         cs.currentSessionId ?? null,
+          narrationId,
         });
       }
     } catch (err) {

@@ -22,6 +22,7 @@ import { applySidecar, strikeTruth, replaceTruth } from '../../src/factContinuit
 import { appendDetailToTier } from '../../src/entities/entityExtractor.js';
 import {
   recordLoreDiscovery,
+  archiveSceneTruth,
   getConfirmedLore,
   getNarratorAssertedLore,
   promoteLoreToConfirmed,
@@ -75,6 +76,14 @@ describe('factsOverlap', () => {
     expect(factsOverlap('the hatch is welded shut', 'the cargo hatch opens onto the docking ring')).toBe(false);
     expect(factsOverlap('', 'anything')).toBe(false);
   });
+
+  // Issue #321 U39: containment was a plain substring test.
+  it('matches containment only as whole words', () => {
+    expect(factsOverlap('Is dead', 'this deadline cannot slip')).toBe(false);
+    expect(factsOverlap('Is armed', 'the crew of this armada')).toBe(false);
+    expect(factsOverlap('Is dead', "Mira's husband is dead, lost when the reactor failed")).toBe(true);
+    expect(factsOverlap('Is dead.', 'is dead')).toBe(true);
+  });
 });
 
 describe('propagateRetraction', () => {
@@ -121,6 +130,70 @@ describe('propagateRetraction', () => {
     expect(getConfirmedLore(cs).map(l => l.title)).not.toContain('The hatch');
   });
 
+  // Issue #321 U39: the lore matcher ignored the struck truth's subject, so a
+  // short subject-less fact took unrelated same-session canon down with it.
+  it('leaves other subjects\' lore that merely shares the struck phrase in canon', async () => {
+    const cs = makeState({ sessionNumber: 4, currentSceneId: 'sc-2' });
+    // An earlier scene this session archived the dockmaster's death as lore.
+    await archiveSceneTruth({
+      subject: { kind: 'text', text: 'the dockmaster' }, fact: 'Is dead',
+      sessionId: 'sess-1', sessionNum: 4, sceneId: 'sc-1', moveId: null,
+    }, cs);
+    await recordLoreDiscovery("Mira's husband", {
+      text: "Mira's husband is dead, lost when the Ascent's reactor failed",
+      confirmed: true, narratorAsserted: true, sessionId: 'sess-1',
+    }, cs);
+    expect(getConfirmedLore(cs)).toHaveLength(2);
+
+    const out = await propagateRetraction({
+      id: 'tr-vance001', subject: { kind: 'text', text: 'Vance' }, fact: 'Is dead',
+      sessionId: 'sess-1', sceneId: 'sc-2', retracted: true,
+    }, cs);
+
+    expect(out.lore).toBe(0);
+    expect(getConfirmedLore(cs).map(e => e.title).sort())
+      .toEqual(["Mira's husband", 'the dockmaster: Is dead']);
+  });
+
+  it('takes the struck subject\'s own lore out of canon — archived or detected', async () => {
+    const cs = makeState({ sessionNumber: 4, currentSceneId: 'sc-2' });
+    await archiveSceneTruth({
+      subject: { kind: 'text', text: 'Vance' }, fact: 'Is dead',
+      sessionId: 'sess-1', sessionNum: 4, sceneId: 'sc-1', moveId: null,
+    }, cs);
+    await recordLoreDiscovery('The gantry shooting', {
+      text: 'Vance is dead, shot on the gantry by a Syndicate sniper',
+      confirmed: true, narratorAsserted: true, sessionId: 'sess-1',
+    }, cs);
+    await recordLoreDiscovery('Kira', {
+      text: 'Kira is dead set on reaching the Forge', confirmed: true, narratorAsserted: true, sessionId: 'sess-1',
+    }, cs);
+
+    const out = await propagateRetraction({
+      id: 'tr-vance001', subject: { kind: 'text', text: 'Vance' }, fact: 'Is dead',
+      sessionId: 'sess-1', sceneId: 'sc-2', retracted: true,
+    }, cs);
+
+    expect(out.lore).toBe(2);
+    expect(getConfirmedLore(cs).map(e => e.title)).toEqual(['Kira']);
+  });
+
+  it('matches an entity subject\'s lore by the record\'s name', async () => {
+    const cs = makeState();
+    const { truth } = npcWithTruth(cs, 'Kael Dros', 'is lying to the crew');
+    await recordLoreDiscovery('The dockmaster\'s deceit', {
+      text: 'Kael Dros is lying to the crew about the manifest', confirmed: true, narratorAsserted: true, sessionId: 'sess-1',
+    }, cs);
+    await recordLoreDiscovery('The quartermaster', {
+      text: 'The quartermaster is lying to the crew about the rations', confirmed: true, narratorAsserted: true, sessionId: 'sess-1',
+    }, cs);
+
+    const out = await propagateRetraction(strikeTruth(truth.id, cs), cs);
+
+    expect(out.lore).toBe(1);
+    expect(getConfirmedLore(cs).map(e => e.title)).toEqual(['The quartermaster']);
+  });
+
   it('marks this session\'s rolling summary for a regen', async () => {
     const cs = makeState({ sessionSummary: { text: 'Kael showed his scar.', coveredCount: 12, sessionId: 'sess-1' } });
     applySidecar({ newTruths: [{ subject: 'scene', fact: 'it is raining' }], stateChanges: [] }, { campaignState: cs });
@@ -154,5 +227,36 @@ describe('session retractions', () => {
       { label: 'Kael Dros', fact: 'has a ragged scar along his jaw' },
     ]);
     expect(sessionRetractedFacts({ ...cs, currentSessionId: 'sess-2', sceneTruths: [] })).toEqual([]);
+  });
+
+  // Issue #321 U39: strikes were deduplicated by fact text alone, so a second
+  // subject's identical strike never rendered in CORRECTED and was lost at
+  // scene end.
+  it('keep two subjects\' strikes of the same phrase apart — in the scene and past it', () => {
+    const cs = makeState();
+    applySidecar({ newTruths: [
+      { subject: 'Vance', fact: 'Is dead' },
+      { subject: 'Kira',  fact: 'Is dead' },
+    ], stateChanges: [] }, { campaignState: cs });
+    strikeTruth(cs.sceneTruths[0].id, cs);
+    strikeTruth(cs.sceneTruths[1].id, cs);
+
+    const expected = [{ label: 'Vance', fact: 'Is dead' }, { label: 'Kira', fact: 'Is dead' }];
+    expect(sessionRetractedFacts(cs)).toEqual(expected);
+
+    rememberSessionRetractions(cs);
+    cs.sceneTruths = [];   // the scene ends
+    expect(sessionRetractedFacts(cs)).toEqual(expected);
+    expect(cs.sessionRetractions.facts.map(f => `${f.label} — ${f.fact}`)).toEqual(['Vance — Is dead', 'Kira — Is dead']);
+  });
+
+  it('still list one subject\'s same strike once when two scenes made it', () => {
+    const cs = makeState({ sessionRetractions: { sessionId: 'sess-1', facts: [{ label: 'Vance', fact: 'Is dead', sceneId: 'sc-0', at: 1 }] } });
+    applySidecar({ newTruths: [{ subject: 'vance', fact: 'is dead' }], stateChanges: [] }, { campaignState: cs });
+    strikeTruth(cs.sceneTruths[0].id, cs);
+
+    expect(sessionRetractedFacts(cs)).toEqual([{ label: 'Vance', fact: 'Is dead' }]);
+    rememberSessionRetractions(cs);
+    expect(cs.sessionRetractions.facts).toHaveLength(1);
   });
 });

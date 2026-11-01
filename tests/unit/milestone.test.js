@@ -11,6 +11,7 @@
 import { describe, it, expect } from "vitest";
 import {
   selectMilestoneVow,
+  selectFulfilVow,
   planReachMilestone,
   milestoneTicks,
   marksForSourceRank,
@@ -183,5 +184,98 @@ describe("buildMilestoneSuggestion", () => {
     expect(MILESTONE_SUGGEST_CATEGORIES.has("adventure")).toBe(true);
     expect(MILESTONE_SUGGEST_CATEGORIES.has("exploration")).toBe(true);
     expect(MILESTONE_SUGGEST_CATEGORIES.has("combat")).toBe(false);
+  });
+});
+
+// ── selectFulfilVow (issue #321 U02) ──────────────────────────────────────────
+// The vow a Fulfill Your Vow scores, from every PC's vow copies. The old
+// "sole open vow" fallback scored 0 — a certain miss — with a shared vow's two
+// copies, two PCs' own vows, or a solo PC's background and inciting vows.
+
+describe("selectFulfilVow", () => {
+  const copy = (actorId, id, over = {}) => ({
+    id, name: "Rescue Dani", rank: "formidable", ticks: 32, completed: false, actorId, vowId: "vid-dani", ...over,
+  });
+  const ids = (choices) => choices.map(v => v.id);
+
+  it("control: one PC, one open vow — that vow", () => {
+    expect(selectFulfilVow([copy("pc1", "v1")], null, { rollerActorId: "pc1" })).toEqual({ vow: copy("pc1", "v1"), choices: [] });
+  });
+
+  it("a shared vow's copies are one vow — the roller's copy", () => {
+    const vows = [copy("pc2", "v2"), copy("pc1", "v1")];
+    expect(selectFulfilVow(vows, null, { rollerActorId: "pc1" }).vow.id).toBe("v1");
+  });
+
+  it("a roller who holds no copy (a GM) still finds the one shared vow", () => {
+    const vows = [copy("pc1", "v1"), copy("pc2", "v2")];
+    expect(selectFulfilVow(vows, null, { rollerActorId: null }).vow.id).toBe("v1");
+    expect(selectFulfilVow(vows, null, { rollerActorId: "gm-pc" }).vow.id).toBe("v1");
+  });
+
+  it("two PCs, each with their own vow — the roller's", () => {
+    const vows = [
+      copy("pc2", "v9", { name: "Repay the Syndicate", vowId: "vid-debt", ticks: 4 }),
+      copy("pc1", "v1", { name: "Find my sister",      vowId: "vid-sis",  ticks: 24 }),
+    ];
+    expect(selectFulfilVow(vows, null, { rollerActorId: "pc1" })).toMatchObject({ vow: { id: "v1", ticks: 24 }, choices: [] });
+  });
+
+  it("a solo PC's background and inciting vows: no vow, both offered — never a 0 score", () => {
+    const vows = [
+      copy("pc1", "bg", { name: "Background Vow", vowId: "vid-bg", ticks: 8 }),
+      copy("pc1", "inc", { name: "Rescue Dani", vowId: "vid-dani" }),
+    ];
+    const { vow, choices } = selectFulfilVow(vows, null, { rollerActorId: "pc1" });
+    expect(vow).toBeNull();
+    expect(ids(choices)).toEqual(["bg", "inc"]);
+  });
+
+  it("the roller's vows are the choices — a crewmate's own vow is not offered", () => {
+    const vows = [
+      copy("pc1", "a1", { name: "Find my sister", vowId: "vid-sis" }),
+      copy("pc1", "d1"),
+      copy("pc2", "d2"),
+      copy("pc2", "x2", { name: "Repay the Syndicate", vowId: "vid-debt" }),
+    ];
+    expect(ids(selectFulfilVow(vows, null, { rollerActorId: "pc1" }).choices)).toEqual(["a1", "d1"]);
+  });
+
+  it("a roller who holds none: everyone's vows, a shared one offered once", () => {
+    const vows = [
+      copy("pc1", "d1"), copy("pc2", "d2"),
+      copy("pc2", "x2", { name: "Repay the Syndicate", vowId: "vid-debt" }),
+    ];
+    expect(ids(selectFulfilVow(vows, null, { rollerActorId: "pc3" }).choices)).toEqual(["d1", "x2"]);
+  });
+
+  it("a shared vow offered among several is the roller's own copy", () => {
+    const vows = [copy("pc2", "d2"), copy("pc1", "d1"), copy("pc1", "a1", { name: "Find my sister", vowId: "vid-sis" })];
+    expect(ids(selectFulfilVow(vows, null, { rollerActorId: "pc1" }).choices)).toEqual(["d1", "a1"]);
+  });
+
+  it("a named vow: the roller's own first, then anyone's — exact, then a substring", () => {
+    const vows = [
+      copy("pc2", "x2", { name: "Background Vow", vowId: "vid-ash-bg" }),
+      copy("pc1", "x1", { name: "Background Vow", vowId: "vid-bex-bg" }),
+      copy("pc2", "r2", { name: "Repay the Syndicate", vowId: "vid-debt" }),
+    ];
+    expect(selectFulfilVow(vows, "background vow", { rollerActorId: "pc1" }).vow.id).toBe("x1");
+    expect(selectFulfilVow(vows, "the Syndicate", { rollerActorId: "pc1" }).vow.id).toBe("r2");
+  });
+
+  it("a picked copy by id: that open copy, else nothing — never another vow", () => {
+    const vows = [copy("pc1", "v1"), copy("pc1", "v3", { name: "Find my sister", vowId: "vid-sis", completed: true })];
+    expect(selectFulfilVow(vows, "Rescue Dani", { itemId: "v1", rollerActorId: "pc1" }).vow.id).toBe("v1");
+    expect(selectFulfilVow(vows, "Find my sister", { itemId: "v3", rollerActorId: "pc1" })).toEqual({ vow: null, choices: [] });
+  });
+
+  it("a vow the module has not stamped counts as itself", () => {
+    const vows = [copy("pc1", "u1", { vowId: null, name: "Old vow" }), copy("pc1", "u2", { vowId: null, name: "Older vow" })];
+    expect(ids(selectFulfilVow(vows, null, { rollerActorId: "pc1" }).choices)).toEqual(["u1", "u2"]);
+  });
+
+  it("no open vow: nothing, and nothing to offer", () => {
+    expect(selectFulfilVow([copy("pc1", "v1", { completed: true })], null, { rollerActorId: "pc1" })).toEqual({ vow: null, choices: [] });
   });
 });

@@ -487,6 +487,24 @@ function flushMicrotasks() {
   return new Promise(resolve => setTimeout(resolve, 0));
 }
 
+/**
+ * Wait until the stored campaignState satisfies `predicate` — a world-setting
+ * write lands only after its server round trip — or `timeoutMs` passes.
+ * Returns the stored state either way, so the caller's assertion reports the
+ * outcome. The X-Card's pause is such a write, started once suppressScene has
+ * loaded the narrator module (issue #321 U07): a fixed number of ticks after
+ * posting `!x` races it.
+ */
+async function waitForCampaignState(predicate, timeoutMs = 3000) {
+  const deadline = Date.now() + timeoutMs;
+  let state = game.settings.get(MODULE_ID, "campaignState");
+  while (!predicate(state) && Date.now() < deadline) {
+    await new Promise(resolve => setTimeout(resolve, 25));
+    state = game.settings.get(MODULE_ID, "campaignState");
+  }
+  return state;
+}
+
 /** Wait for app to render. Resolves once `app.rendered` is true (with a short timeout). */
 async function awaitRender(app, timeoutMs = 2000) {
   if (!app) throw new Error("awaitRender: no app");
@@ -2900,8 +2918,7 @@ function registerChatCommandsTests(quench) {
         it("posting !x sets campaignState.xCardActive = true", async function () {
           try {
             await post("!x");
-            await flushMicrotasks();
-            const after = game.settings.get(MODULE_ID, "campaignState");
+            const after = await waitForCampaignState(cs => cs?.xCardActive === true);
             assert.isTrue(after.xCardActive, "xCardActive should be true after !x");
           } finally {
             // clearXCard alone is sufficient — restoring a captured snapshot of
@@ -4321,9 +4338,7 @@ function registerSafetyExtrasTests(quench) {
             assert.isFalse(before.xCardActive, "precondition: xCardActive should start false");
             const msg = await ChatMessage.create({ content: "!x", user: game.user.id });
             if (msg?.id) created.push(msg.id);
-            await flushMicrotasks();
-            await flushMicrotasks();
-            const after = game.settings.get(MODULE_ID, "campaignState");
+            const after = await waitForCampaignState(cs => cs?.xCardActive === true);
             assert.isTrue(after.xCardActive, "xCardActive should flip after !x");
           } finally {
             const safety = await import(`/modules/${MODULE_ID}/src/context/safety.js`);
@@ -8714,8 +8729,9 @@ function registerTokenDragSetACourseTests(quench) {
             "synthetic message content should mention setting a course");
           assert.isOk(synthetic.flags[MODULE].tokenDragSetCourse,
             "synthetic message should carry the tokenDragSetCourse payload for downstream Token move");
-          assert.equal(synthetic.flags[MODULE].tokenDragSetCourse.destName, "Glimmer",
-            "tokenDragSetCourse payload should carry the destination Note text");
+          // This pin links no settlement Actor, so the course goes by its label.
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Glimmer",
+            "the course's destination should be the dropped-on pin's settlement");
         });
 
         it("does not fire when the drag lands outside snap radius (free-text reposition)", async function () {

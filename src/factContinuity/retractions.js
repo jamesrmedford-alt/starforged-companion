@@ -12,8 +12,9 @@
  *
  *   - propagateRetraction(truth, campaignState) — on Strike / Replace: drop
  *     the subject entity's same-session tier details that state the fact,
- *     take matching same-session lore out of confirmed canon, and mark the
- *     rolling summary for a regen.
+ *     take same-session lore that states it about the same subject out of
+ *     confirmed canon, and mark the rolling summary for a regen
+ *     (markSummaryForRegen).
  *   - rememberSessionRetractions(campaignState) — at scene end: keep the
  *     scene's bare strikes for the rest of the session, so the CORRECTED
  *     block and the summary prompt still name them.
@@ -22,11 +23,16 @@
  *
  * "Same session" is the bound: tier details and detection lore carry a
  * sessionId, not a sceneId. Matching is word overlap (factsOverlap), so the
- * tier pass's paraphrase of a struck truth is found too.
+ * tier pass's paraphrase of a struck truth is found too. Sidecar facts are
+ * short subject-less phrases ("Is dead"), so a lore entry must also be about
+ * the struck truth's subject (issue #321 U39: striking "Vance — Is dead" took
+ * the dockmaster's death out of canon), and a session's strikes are told
+ * apart by subject and fact together.
  */
 
 import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById } from '../entities/registry.js';
 import { retractSessionLore } from '../world/worldJournal.js';
+import { XCARD_RETRACTED_BY } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -50,9 +56,21 @@ function significantWords(text) {
   );
 }
 
+/** A text's words, lowercased and single-spaced — punctuation dropped. */
+function wordSequence(text) {
+  return String(text ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u).filter(Boolean).join(' ');
+}
+
+/** True when `needle`'s words appear in `haystack`, in order, as whole words. */
+function containsWords(haystack, needle) {
+  const n = wordSequence(needle);
+  return Boolean(n) && ` ${wordSequence(haystack)} `.includes(` ${n} `);
+}
+
 /**
- * True when two facts say the same thing: one contains the other, or at least
- * two significant words are shared and they make up 60% of the shorter fact.
+ * True when two facts say the same thing: one contains the other as whole
+ * words ("is dead" is not in "this deadline"), or at least two significant
+ * words are shared and they make up 60% of the shorter fact.
  * "has a ragged scar along his jaw" ~ "Kael has a scar along his jaw";
  * "a scar on his arm" !~ "a scar on his jaw". Exported for unit testing.
  *
@@ -61,10 +79,10 @@ function significantWords(text) {
  * @returns {boolean}
  */
 export function factsOverlap(a, b) {
-  const la = String(a ?? '').trim().toLowerCase();
-  const lb = String(b ?? '').trim().toLowerCase();
+  const la = wordSequence(a);
+  const lb = wordSequence(b);
   if (!la || !lb) return false;
-  if (la.includes(lb) || lb.includes(la)) return true;
+  if (containsWords(la, lb) || containsWords(lb, la)) return true;
   const wa = significantWords(la);
   const wb = significantWords(lb);
   if (!wa.size || !wb.size) return false;
@@ -99,8 +117,8 @@ export async function propagateRetraction(truth, campaignState) {
 
   if (sessionId) {
     try {
-      out.lore = await retractSessionLore(sessionId, (entry) =>
-        factsOverlap(entry?.fact ?? entry?.text ?? '', fact) || factsOverlap(entry?.title ?? '', fact));
+      const label = subjectLabel(truth.subject);
+      out.lore = await retractSessionLore(sessionId, (entry) => loreStatesStrike(entry, truth.subject, label, fact));
     } catch (err) {
       console.warn(`${MODULE_ID} | retraction: lore propagation failed:`, err?.message ?? err);
     }
@@ -109,11 +127,49 @@ export async function propagateRetraction(truth, campaignState) {
   // The summary is regenerated from source, and the source prose still says
   // it: the next regen runs regardless of the debounce, with the struck fact
   // in its leave-out list (sessionRetractedFacts).
-  const summary = campaignState?.sessionSummary;
-  if (summary && summary.sessionId === campaignState.currentSessionId) {
-    campaignState.sessionSummary = { ...summary, coveredCount: 0 };
-  }
+  markSummaryForRegen(campaignState);
   return out;
+}
+
+/**
+ * True when a lore entry states the struck fact about the struck subject.
+ *
+ *   - An archived scene truth (`subject` + `fact` on the entry, from
+ *     archiveSceneTruth) must name the same subject: its subject key equals
+ *     the struck subject's label ("scene" for a scene truth).
+ *   - Any other lore (detection pass, `!journal lore`) must mention a named
+ *     subject — a text subject or the entity's name — as whole words in its
+ *     title or text. A scene truth's fact describes the scene itself ("the
+ *     cargo hatch is welded shut"), so the fact alone decides.
+ *
+ * Either way the fact must overlap the entry's fact, text or title.
+ */
+function loreStatesStrike(entry, subject, label, fact) {
+  if (!entry) return false;
+  const archived = typeof entry.subject === 'string' && typeof entry.fact === 'string' && entry.fact.trim();
+  if (archived) {
+    return wordSequence(entry.subject) === wordSequence(label) && factsOverlap(entry.fact, fact);
+  }
+  const named = subject?.kind === 'text' || subject?.kind === 'entity';
+  if (named && !containsWords(entry.title, label) && !containsWords(entry.text, label)) return false;
+  return factsOverlap(entry.fact ?? entry.text ?? '', fact) || factsOverlap(entry.title ?? '', fact);
+}
+
+/**
+ * Mark this session's rolling summary for a regen: the next refresh runs
+ * regardless of the debounce (`coveredCount` 0). propagateRetraction marks
+ * its caller's copy; a correction that persists onto the latest store marks
+ * the stored summary the same way (issue #321 U06 — the copy's summary may
+ * predate a regen that landed meanwhile). Mutates campaignState.
+ *
+ * @param {Object} campaignState
+ * @returns {boolean} true when a summary was marked
+ */
+export function markSummaryForRegen(campaignState) {
+  const summary = campaignState?.sessionSummary;
+  if (!summary || summary.sessionId !== campaignState.currentSessionId) return false;
+  campaignState.sessionSummary = { ...summary, coveredCount: 0 };
+  return true;
 }
 
 async function dropTierDetails(subject, fact, sessionId) {
@@ -152,6 +208,17 @@ function subjectLabel(subject) {
 }
 
 /**
+ * A bare strike the CORRECTED block and the summary's leave-out list name: a
+ * retracted truth with no replacement. A truth the X-Card removed is not one
+ * (issue #321 U07): naming it — even as "do not re-assert" — would hand the
+ * narrator the content the table removed. It stays retracted in the ledger,
+ * which is what blocks its re-assertion.
+ */
+function isNamedStrike(t) {
+  return !!t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY && !!String(t.fact ?? '').trim();
+}
+
+/**
  * At scene end, keep the scene's bare strikes (a Replace's replacement
  * stands, so it is not kept) on `campaignState.sessionRetractions` for the
  * rest of the session. Mutates campaignState; endScene persists it.
@@ -161,8 +228,7 @@ function subjectLabel(subject) {
 export function rememberSessionRetractions(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
   if (!sessionId) return;
-  const struck = (campaignState.sceneTruths ?? [])
-    .filter(t => t?.retracted && !t.correctedTo && String(t.fact ?? '').trim());
+  const struck = (campaignState.sceneTruths ?? []).filter(isNamedStrike);
   if (!struck.length) return;
 
   const prior = campaignState.sessionRetractions?.sessionId === sessionId
@@ -170,16 +236,25 @@ export function rememberSessionRetractions(campaignState) {
     : [];
   const facts = [...prior];
   for (const t of struck) {
-    const fact = String(t.fact).trim();
-    if (facts.some(f => f.fact.toLowerCase() === fact.toLowerCase())) continue;
+    const strike = { label: subjectLabel(t.subject), fact: String(t.fact).trim() };
+    if (facts.some(f => sameStrike(f, strike))) continue;
     facts.push({
-      label:   subjectLabel(t.subject),
-      fact,
+      ...strike,
       sceneId: t.sceneId ?? null,
       at:      t.retractedAt ?? Date.now(),
     });
   }
   campaignState.sessionRetractions = { sessionId, facts: facts.slice(-SESSION_RETRACTION_CAP) };
+}
+
+/**
+ * Two strikes are one when they name the same subject and the same fact —
+ * sidecar facts are subject-less phrases, so "Vance — Is dead" and
+ * "Kira — Is dead" are two (issue #321 U39).
+ */
+function sameStrike(a, b) {
+  return String(a?.label ?? '').trim().toLowerCase() === String(b?.label ?? '').trim().toLowerCase()
+    && String(a?.fact ?? '').trim().toLowerCase() === String(b?.fact ?? '').trim().toLowerCase();
 }
 
 /**
@@ -195,11 +270,11 @@ export function sessionRetractedFacts(campaignState) {
     ? (campaignState.sessionRetractions.facts ?? []).map(f => ({ label: f.label, fact: f.fact }))
     : [];
   const current = (campaignState?.sceneTruths ?? [])
-    .filter(t => t?.retracted && !t.correctedTo && String(t.fact ?? '').trim())
+    .filter(isNamedStrike)
     .map(t => ({ label: subjectLabel(t.subject), fact: String(t.fact).trim() }));
   const out = [];
   for (const f of [...earlier, ...current]) {
-    if (!out.some(o => o.fact.toLowerCase() === f.fact.toLowerCase())) out.push(f);
+    if (!out.some(o => sameStrike(o, f))) out.push(f);
   }
   return out;
 }

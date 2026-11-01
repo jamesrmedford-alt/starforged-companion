@@ -31,7 +31,7 @@
   "steps": [
     { "id": "open", "do": "beginSession", "as": "player", "galley": true,
       "calls": [
-        { "kind": "callNarratorAPI>narrateSessionVignette", "contains": ["SHIP POSITION: Kobayashi IV docked at Hollow Spire"] }
+        { "kind": "callNarratorAPI>narrateSessionVignette", "contains": ["SHIP POSITION: Kobayashi IV near Hollow Spire"] }
       ],
       "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "then": [

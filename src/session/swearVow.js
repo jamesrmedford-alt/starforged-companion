@@ -145,10 +145,15 @@ export async function executeSwearVow(message) {
  * confirmation. Runs only on the canonical GM — invoked directly on a GM click
  * or via the swear-shared-vow socket relay from another client.
  *
+ * The vow target is a connection of every PC the vow is sworn on, and the
+ * oath scene is written for the PC who rolled the swear (`speakerActorId`) —
+ * neither is the first PC's alone (issue #321 U23).
+ *
  * @param {ChatMessage} message
+ * @param {{ speakerActorId?: string|null }} [options]
  * @returns {Promise<{ actors: Actor[], connection: Object|null }|null>}
  */
-export async function swearSharedVowForAll(message) {
+export async function swearSharedVowForAll(message, { speakerActorId = null } = {}) {
   const flags = message?.flags?.[MODULE_ID] ?? {};
   const meta  = flags.incitingMeta ?? null;
 
@@ -230,7 +235,7 @@ export async function swearSharedVowForAll(message) {
       }, campaignState);
       await postCreationEnrichment("connection", connection, campaignState).catch(err =>
         console.warn(`${MODULE_ID} | swearVow: connection enrichment failed:`, err));
-      await registerConnectionOnActiveCharacter(connection).catch(err =>
+      await registerConnectionOnActiveCharacter(connection, { actors: sworn }).catch(err =>
         console.warn(`${MODULE_ID} | swearVow: bond item registration failed:`, err));
       // The opening scene recorded who they are and what is at stake under
       // their name, before this card existed (issue #286 A3).
@@ -251,7 +256,7 @@ export async function swearSharedVowForAll(message) {
   // oath being made. Dynamic import avoids a static narrator.js dependency cycle.
   try {
     const { narrateAndPostVowSwearing } = await import("../narration/narrator.js");
-    await narrateAndPostVowSwearing({ vow: plan.vow, campaignState });
+    await narrateAndPostVowSwearing({ vow: plan.vow, campaignState, speakerActorId });
   } catch (err) {
     console.warn(`${MODULE_ID} | swearVow: vow-swearing scene failed:`, err?.message ?? err);
   }

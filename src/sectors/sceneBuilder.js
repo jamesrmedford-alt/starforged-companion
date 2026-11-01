@@ -21,6 +21,7 @@ import {
   iconForStellarObject,
   pickStarshipIcon,
 } from "../system/ironswornAssets.js";
+import { POSITION_SYNC_OPTION } from "./sectorSceneHooks.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -402,6 +403,13 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
  * Position: centered on the settlement Note matching
  * `position.nearestSettlementId` if present, else the scene's centre.
  *
+ * Placing the token is a position statement only for a ship with no position
+ * yet (the quickstart's new ship): the createToken hook then records where it
+ * landed (decisions.md 2026-06-12). A ship that already has a position keeps
+ * it — the token is created with POSITION_SYNC_OPTION, so the hook leaves the
+ * record alone. Preparing a second sector used to move the ship to the new
+ * map's centre (issue #321 U47).
+ *
  * @param {Scene} scene
  * @param {Object} sector — the SectorResult the scene was built from
  * @returns {Promise<TokenDocument|null>}
@@ -481,8 +489,13 @@ export async function placeCommandVehicleTokenIfPresent(scene, sector) {
     },
   };
 
+  // The ship is already somewhere: this token marks it on the new map, it
+  // does not move it here.
+  const createOptions = { render: false };
+  if (hasEstablishedPosition(commandPayload?.position)) createOptions[POSITION_SYNC_OPTION] = true;
+
   try {
-    const created = await scene.createEmbeddedDocuments("Token", [tokenData], { render: false });
+    const created = await scene.createEmbeddedDocuments("Token", [tokenData], createOptions);
     console.log(`${MODULE_ID} | createSectorScene: command-vehicle Token placed`);
     return Array.isArray(created) ? created[0] : created;
   } catch (err) {
@@ -547,6 +560,19 @@ export async function restyleSiteOnScene(scene, site) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Does the command vehicle's §20 position record say where it is? The
+ * schema default and emptyPosition() carry nothing — a ship never placed.
+ *
+ * @param {Object|null|undefined} position
+ * @returns {boolean}
+ */
+function hasEstablishedPosition(position) {
+  if (!position || typeof position !== "object") return false;
+  return !!(position.sectorId || position.nearestSettlementId || position.nearestPlanetId
+    || String(position.freeText ?? "").trim());
+}
 
 /**
  * The scene rectangle's top-left inset within the padded canvas — the offset

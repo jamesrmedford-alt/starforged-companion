@@ -179,14 +179,32 @@ describe("parseDetectionResponse — renames", () => {
     expect(result.renames).toEqual([{ from: "Unknown Suited Figure", to: "Vex" }]);
   });
 
-  it("drops an entity that is also listed as a rename target (no dup-and-rename)", () => {
+  it("drops an entity that is also listed as a rename target of a recorded placeholder (no dup-and-rename)", () => {
+    const figure = addConnectionEntity(null, { name: "Unknown Suited Figure" });
     const raw = JSON.stringify({
       entities: [{ type: "connection", name: "Vex", confidence: "high" }],
       renames:  [{ from: "Unknown Suited Figure", to: "Vex" }],
     });
-    const result = parseDetectionResponse(raw, {});
-    expect(result.entities).toEqual([]);            // Vex not created as new
+    const result = parseDetectionResponse(raw, { connectionIds: [figure.journalId] });
+    expect(result.entities).toEqual([]);            // Vex not created as new — the rename lands
     expect(result.renames).toHaveLength(1);
+  });
+
+  // Issue #321 U27 — a rename that cannot land must not swallow the new NPC.
+  it("keeps a rename target as a new entity when its `from` is no recorded placeholder", () => {
+    const named = addConnectionEntity(null, { name: "Karthik Freeman" });
+    const raw = JSON.stringify({
+      entities: [
+        { type: "connection", name: "Vex",  confidence: "high" },
+        { type: "connection", name: "Rell", confidence: "high" },
+      ],
+      renames: [
+        { from: "the hooded figure", to: "Vex" },     // no card was ever made for the figure
+        { from: "Karthik Freeman",   to: "Rell" },    // a properly-named connection is never renamed
+      ],
+    });
+    const result = parseDetectionResponse(raw, { connectionIds: [named.journalId] });
+    expect(result.entities.map(e => e.name)).toEqual(["Vex", "Rell"]);
   });
 
   it("ignores malformed or no-op renames", () => {
@@ -273,6 +291,32 @@ describe("applyEntityRenames", () => {
     );
     expect(updates).toEqual([]);
     expect(applied).toEqual([]);
+  });
+});
+
+// Issue #321 U27 — one narration introduces "a hooded figure" who gives the
+// name Vex. No card ever existed for the figure, but the model reports both
+// the rename and the new connection: the rename cannot land, so Vex is drafted.
+describe("detection → renames → drafts: a rename from a figure with no card", () => {
+  it("offers the newly named NPC on the draft card", async () => {
+    const restoreUser = global.game.user;
+    global.game.user = { isGM: true, id: "test-user-gm" };
+    const cs = { connectionIds: [], dismissedEntities: [] };
+    const reply = JSON.stringify({
+      entities: [{ type: "connection", name: "Vex", description: "A hooded courier with a voice like gravel.",
+        pronouns: "she/her", role: "courier", goal: null, confidence: "high" }],
+      renames: [{ from: "the hooded figure", to: "Vex" }],
+      worldJournal: { lore: [], threats: [], factionUpdates: [], locationUpdates: [], stateTransitions: [] },
+    });
+
+    const detection = parseDetectionResponse(reply, cs);
+    const renamed   = await applyEntityRenames(detection.renames, cs);
+    const routed    = await routeEntityDrafts(detection.entities, cs, { autoCreateConnection: false });
+
+    expect(renamed).toEqual([]);
+    expect(routed.queued.map(e => e.name)).toEqual(["Vex"]);
+    expect(global.ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.draftEntityCard)).toHaveLength(1);
+    global.game.user = restoreUser;
   });
 });
 
@@ -1312,6 +1356,22 @@ describe("normalizeEntityName", () => {
   it("does not strip non-honorific leading words", () => {
     expect(normalizeEntityName("Iron Compact")).toBe("iron compact");
     expect(normalizeEntityName("Old Sable")).toBe("old sable");
+  });
+
+  // Issue #321 U30 — the titles the module writes into NPC names as their role
+  // (connection.js NAME_TITLE_ROLES) are stripped like the honorifics.
+  it("strips a leading NPC title the module records as a role", () => {
+    expect(normalizeEntityName("Doctor Chen")).toBe("chen");
+    expect(normalizeEntityName("Administrator Lyssa Chen")).toBe("lyssa chen");
+    expect(normalizeEntityName("Overseer Kell")).toBe("kell");
+    expect(normalizeEntityName("Councillor Mae")).toBe("mae");
+    expect(normalizeEntityName("Warden Ilse Varo")).toBe("ilse varo");
+  });
+
+  it("control: strips only a whole leading title word", () => {
+    expect(normalizeEntityName("Chiefly Nobody")).toBe("chiefly nobody");
+    expect(normalizeEntityName("Governor's Rest")).toBe("governor's rest");
+    expect(normalizeEntityName("Warden")).toBe("warden");
   });
 });
 

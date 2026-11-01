@@ -14,17 +14,29 @@ layers. This file is the never-break list.
    end-session vignettes, vow-swearing scenes, all three clock-vignette post
    sites, and oracle follow-up narrations — "mood piece" is not an
    exemption. Since issue #286 D1 a reflection a player publishes from the
-   Private Channel carries it too: published text is canon. When adding a new card type or co-marking an existing one,
+   Private Channel carries it too: published text is canon. One exception
+   (issue #321 U35): the move narration's "narration unavailable" card keeps
+   the family so the session recap counts the move, and every narrator-memory
+   read leaves it out by its `narrationFallback` flag (`sessionNarratorCards`)
+   — it was fed back as story and counted as the session's first narration. A
+   card the X-Card removed is flagged `xCarded` and left out the same way
+   (U07), and each narration's card carries its `narrationId`, which its
+   sidecar stamps on what it writes (U07; a fallback card or a published
+   reflection carries none). When adding a new card type or co-marking an existing one,
    audit every `narratorCard` consumer (ring, rolling summary, session
-   recap, correction hook, audio hook, burn-supersede) in the same commit —
-   the consumer list lives in architecture doc §2.
+   recap, correction hook, audio hook, burn-supersede, the X-Card's card
+   pick and redirect hook) in the same commit — the consumer list lives in
+   architecture doc §2.
 
 2. **The sidecar JSON contract** (`appendSidecarInstruction` ↔
    `extractSidecar` ↔ `applySidecar`/`applySceneFrame`) is a matched pair.
    Any key added to the instruction must be normalised in
    `sidecarParser.js` and applied in `narrator.js applyNarratorSidecar` in
    the same commit, with parser tests for garbage shapes. Parsing is
-   tolerant; never let a malformed sidecar block a narration post.
+   tolerant; never let a malformed sidecar block a narration post, and never
+   let raw sidecar JSON reach the prose — a ```` ```json ````, ```` ``` json ````
+   or bare ```` ``` ```` fence holding an object is the sidecar, stripped
+   every time (issue #321 U41).
 
 3. **Required emissions are prompt-enforced, not code-enforced.** NPC
    location/vessel/condition (stateChanges) and intent/stakes (newTruths)
@@ -62,7 +74,12 @@ layers. This file is the never-break list.
    hours without a chat message (issue #286 C4); only world load and Begin a
    Session mint, and the mint keeps the closing session's summary as
    `previousSessionSummary` (LAST SESSION) — the one prose surface that
-   crosses sessions besides the campaign recap.
+   crosses sessions besides the campaign recap. A scene is never minted over
+   a live one: a caller whose snapshot holds no scene while the store has one
+   adopts it (`startScene` → `adoptStoredScene`, issue #321 U06f), and every
+   sidecar-applying narration — oracle follow-ups, session and clock
+   vignettes and vow scenes included — starts a scene when none is active
+   (`ensureSceneStarted`, canonical GM, issue #321 U34).
 
 6b. **Retraction is enforced.** A bare Strike renders in the CORRECTED
    ledger block AND blocks narrator re-assertion at `applySidecar` (GM
@@ -71,10 +88,17 @@ layers. This file is the never-break list.
    ignores instructions vs. model re-emits the fact). Since issue #286 (B6)
    a Strike also reaches the stores that copied the fact
    (`propagateRetraction`, `src/factContinuity/retractions.js` — same-session
-   tier details on the subject, same-session auto-confirmed lore, a summary
-   regen), and the scene's strikes outlive it for the session
-   (`campaignState.sessionRetractions` → CORRECTED + the summary's leave-out
-   list). Any new correction path calls `propagateRetraction`.
+   tier details on the subject, same-session auto-confirmed lore that states
+   it about the struck subject (issue #321 U39 — sidecar facts are
+   subject-less phrases, so a bare fact match retracted another character's
+   lore), a summary regen), and the scene's strikes outlive it for the
+   session (`campaignState.sessionRetractions` → CORRECTED + the summary's
+   leave-out list; a strike is its subject and fact together, U39). Any new
+   correction path calls `propagateRetraction` — the X-Card does, for each
+   truth it retracts (issue #321 U07). An X-Card retraction
+   (`retractedBy: "xcard"`) blocks re-assertion like a strike but is never
+   named under CORRECTED or in the leave-out list: naming it would hand the
+   narrator the content the table removed.
 
 7. **Sidecar subjects resolve against the full roster, in its own shape.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so

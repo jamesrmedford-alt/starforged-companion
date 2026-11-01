@@ -15,9 +15,14 @@
  * private lines stay private.
  */
 
-import { getActiveCharacter } from "../narration/narrator.js";
+import { getActiveCharacter, isXCardActive } from "../narration/narrator.js";
+import { resolveUserActorId } from "../multiplayer/speaker.js";
 
 const MODULE_ID = "starforged-companion";
+
+/** What a player is told when Publish is refused during an X-Card pause. */
+export const XCARD_PUBLISH_REFUSED =
+  "The X-Card is in play — nothing is published to the table until a GM resumes the scene.";
 
 function escapeHtml(s) {
   return String(s ?? "")
@@ -34,19 +39,30 @@ function escapeHtml(s) {
  * @param {object} args
  * @param {string} args.userId   — the publishing player
  * @param {string} args.content  — plain text to publish (escaped for display)
+ * Refused while the X-Card is in play (issue #321 U09): a published reflection
+ * is canon — main chat, the recent-narration ring, the rolling summary — so it
+ * would bring back what the card was played to stop. The player is told.
+ *
  * @returns {Promise<ChatMessage|null>} the posted message, or null when empty
+ *   or refused
  */
 export async function publishToMainChat({ userId, content }) {
   const text = String(content ?? "").trim();
   if (!text) return null;
+  if (isXCardActive(null)) {
+    globalThis.ui?.notifications?.warn?.(XCARD_PUBLISH_REFUSED);
+    return null;
+  }
 
   let characterName = "You";
   let sessionId     = null;
   try {
     const cs      = game.settings?.get?.(MODULE_ID, "campaignState");
-    const actorId = game.users?.get?.(userId)?.character?.id ?? null;
+    // The publisher's own PC (issue #321 U23) — an unbound player who owns
+    // one was published as the campaign's first PC, another player's.
+    const actorId = resolveUserActorId(game.users?.get?.(userId) ?? null, cs);
     sessionId     = cs?.currentSessionId ?? null;
-    characterName = getActiveCharacter(cs, actorId)?.name || characterName;
+    characterName = (actorId ? getActiveCharacter(cs, actorId)?.name : null) || characterName;
   } catch (err) {
     console.warn(`${MODULE_ID} | privateChannel: publish alias resolve failed:`, err?.message ?? err);
   }

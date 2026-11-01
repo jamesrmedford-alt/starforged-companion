@@ -33,8 +33,9 @@
 import { apiPost } from "../api-proxy.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
 
-import { getConnection, createConnection, updateConnection } from "./connection.js";
-import { getPlayerActors, createCharacterBondItem } from "../character/actorBridge.js";
+import { getConnection, createConnection, updateConnection, roleTitleFromName } from "./connection.js";
+import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from "../character/actorBridge.js";
+import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
 import { getFaction,    createFaction }    from "./faction.js";
 import { getShip,       createShip }       from "./ship.js";
@@ -87,12 +88,16 @@ const ENTITY_ID_FIELDS = {
 
 /**
  * Reduce an entity name to a canonical form for dedup comparisons.
- * The detector may strip an honorific when it extracts a name from prose, so
- * we strip the same set (HONORIFIC_PREFIXES, shared with the name index): "Dr.
+ * The detector may strip a title when it extracts a name from prose, so we
+ * strip one shared title set: the honorifics (HONORIFIC_PREFIXES, shared with
+ * the name index) and the titles the module itself writes into NPC names as
+ * their role (connection.js NAME_TITLE_ROLES, via roleTitleFromName). "Dr.
  * Chen" stored as a connection matches a "Chen" detection on the next
- * narration, instead of being treated as a new NPC.
+ * narration, and the PC "Doctor Chen" or the vow target "Administrator Lyssa
+ * Chen" match "Dr. Chen" / "Lyssa Chen" (issue #321 U30), instead of each
+ * being offered as a new NPC.
  * Lowercases, trims, collapses interior whitespace, and strips a single
- * leading honorific (with optional trailing period). Returns `""` for
+ * leading title (with optional trailing period). Returns `""` for
  * non-string / empty input.
  */
 export function normalizeEntityName(name) {
@@ -100,7 +105,7 @@ export function normalizeEntityName(name) {
   let n = name.trim().toLowerCase().replace(/\s+/g, " ");
   if (!n) return "";
   const m = n.match(/^([a-z]+)\.?\s+(.+)$/);
-  if (m && HONORIFIC_PREFIXES.has(m[1])) n = m[2];
+  if (m && (HONORIFIC_PREFIXES.has(m[1]) || roleTitleFromName(m[1]))) n = m[2];
   return n.trim();
 }
 
@@ -187,6 +192,16 @@ export async function runCombinedDetectionPass(
     return emptyDetection();
   }
 
+  // A reply that holds no JSON object — cut off at max_tokens, or malformed —
+  // drops every entity, lore item, threat and faction of this narration, so
+  // it is never silent either (issue #321 U15; cf. NARRCHK-TRUNC-SILENT).
+  if (raw && !parseDetectionJson(raw)) {
+    console.warn(
+      `${MODULE_ID} | entityExtractor: the detection reply is not a complete JSON object — ` +
+      `this narration's entities, lore and factions were not captured.`,
+    );
+    notifyDetectionFailure();
+  }
   return parseDetectionResponse(raw, campaignState);
 }
 
@@ -397,15 +412,22 @@ export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, cam
  * @returns {{ entities, worldJournal }}
  */
 export function parseDetectionResponse(text, campaignState) {
-  if (!text || typeof text !== "string") return emptyDetection();
-  const slice = (text.match(/\{[\s\S]*\}/) ?? [text])[0];
+  return detectionFromParsed(parseDetectionJson(text), campaignState);
+}
 
-  let parsed;
+/** The reply's JSON object, or null when it holds none (cut off, malformed, empty). */
+function parseDetectionJson(text) {
+  if (!text || typeof text !== "string") return null;
+  const slice = (text.match(/\{[\s\S]*\}/) ?? [text])[0];
   try {
-    parsed = JSON.parse(slice);
+    return JSON.parse(slice);
   } catch {
-    return emptyDetection();
+    return null;
   }
+}
+
+function detectionFromParsed(parsed, campaignState) {
+  if (!parsed) return emptyDetection();
 
   const entities = Array.isArray(parsed?.entities) ? parsed.entities : [];
   const wj       = parsed?.worldJournal && typeof parsed.worldJournal === "object"
@@ -437,8 +459,14 @@ export function parseDetectionResponse(text, campaignState) {
     .filter(r => r.from && r.to && normalizeEntityName(r.from) !== normalizeEntityName(r.to));
 
   // A name being renamed TO must never also be created as a brand-new entity —
-  // belt-and-braces in case the model lists it in both places.
-  const renameTargets = new Set(renames.map(r => normalizeEntityName(r.to)).filter(Boolean));
+  // belt-and-braces in case the model lists it in both places. Only for a
+  // rename that can land, though: its `from` must name a recorded placeholder
+  // figure. Any other rename is skipped (applyEntityRenames), and dropping its
+  // `to` as well lost the newly named NPC entirely (issue #321 U27).
+  const renameTargets = new Set(renames
+    .filter(r => findPlaceholderConnection(r.from, campaignState))
+    .map(r => normalizeEntityName(r.to))
+    .filter(Boolean));
 
   const filteredEntities = entities
     .filter(e => e && typeof e.name === "string" && e.name.trim())
@@ -493,6 +521,9 @@ export function parseDetectionResponse(text, campaignState) {
  * @param {string}  [options.source]  — telemetry flag attached to the
  *   GM draft card. "paced_narrative" for paced-path detection;
  *   anything else / omitted is treated as "move_resolution" (default).
+ * @param {string|null} [options.actorId] — the PC the narration was for (the
+ *   roller): an auto-created connection's bond Item goes to them, and the
+ *   draft card carries it so Confirm does too (issue #321 U23).
  * @returns {Promise<{ created: Array, queued: Array }>}
  */
 export async function routeEntityDrafts(entities, campaignState, options = {}) {
@@ -530,7 +561,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           firstAppearance:           options.sessionId ?? "",
         }, campaignState);
         await postCreationEnrichment("connection", record, campaignState);
-        await registerConnectionOnActiveCharacter(record).catch(err =>
+        await registerConnectionOnActiveCharacter(record, { actorId: options.actorId ?? null }).catch(err =>
           console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
         // The narration that introduced them recorded their identity anchor
         // under their name, before the card existed.
@@ -564,7 +595,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   if (queued.length) {
-    await postDraftEntityCard(queued, campaignState, { source: options.source });
+    await postDraftEntityCard(queued, campaignState, { source: options.source, actorId: options.actorId });
   }
 
   return { created, queued };
@@ -601,7 +632,6 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
   const getConn      = deps.getConn      ?? getConnection;
   const updateConn   = deps.updateConn   ?? updateConnection;
   const entityExists = deps.entityExists ?? entityExistsAnyType;
-  const ids          = campaignState?.connectionIds ?? [];
   const applied      = [];
 
   for (const { from, to } of renames) {
@@ -611,22 +641,14 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     // Never rename onto a name that already belongs to another entity.
     if (entityExists(to, campaignState)) continue;
 
-    // Find the placeholder connection this rename targets.
-    let targetId = null, targetRec = null;
-    for (const id of ids) {
-      let rec = null;
-      try { rec = getConn(id); } catch { continue; }
-      if (rec?.name && normalizeEntityName(rec.name) === fromNorm) {
-        targetId = id; targetRec = rec; break;
-      }
-    }
-    if (!targetId || !targetRec) continue;
-    // Safety bound: only collapse placeholder figures, never properly-named ones.
-    if (!isPlaceholderName(targetRec.name)) continue;
+    // The placeholder connection this rename targets — only placeholder
+    // figures collapse, never properly-named ones.
+    const target = findPlaceholderConnection(from, campaignState, getConn);
+    if (!target) continue;
 
     try {
-      await updateConn(targetId, { name: to });
-      applied.push({ from: targetRec.name, to, id: targetId });
+      await updateConn(target.id, { name: to });
+      applied.push({ from: target.rec.name, to, id: target.id });
     } catch (err) {
       console.warn(`${MODULE_ID} | applyEntityRenames: ${from} → ${to} failed:`, err?.message ?? err);
     }
@@ -641,6 +663,30 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     }
   }
   return applied;
+}
+
+/**
+ * The recorded connection a rename's `from` names, when that connection is
+ * still a placeholder figure — `{ id, rec }` — else null (no such connection,
+ * or one with a proper name). A rename lands only on one; the detection parse
+ * drops the rename's `to` from the new entities only then.
+ *
+ * @param {string} from
+ * @param {Object} campaignState
+ * @param {Function} [getConn]  (id) => record
+ * @returns {{ id: string, rec: Object }|null}
+ */
+function findPlaceholderConnection(from, campaignState, getConn = getConnection) {
+  const fromNorm = normalizeEntityName(from);
+  if (!fromNorm) return null;
+  for (const id of campaignState?.connectionIds ?? []) {
+    let rec = null;
+    try { rec = getConn(id); } catch { continue; }
+    if (rec?.name && normalizeEntityName(rec.name) === fromNorm) {
+      return isPlaceholderName(rec.name) ? { id, rec } : null;
+    }
+  }
+  return null;
 }
 
 /**
@@ -808,6 +854,11 @@ function safeOracleRoll(tableId) {
 export async function postCreationEnrichment(typeKey, record, campaignState) {
   if (!record || !record.portraitSourceDescription) return;
   if (!hasOpenRouterKey()) return;
+  // One portrait owner per creation (issue #321 U29): with Auto-Seed NPC on,
+  // the createActor seed hook seeds every new connection card — its portrait
+  // included, drawn from the portrait source set here — so generating here
+  // too billed OpenRouter twice for one NPC.
+  if (typeKey === "connection" && seedHookOwnsPortrait(record)) return;
 
   const hostId = findHostDocumentId(typeKey, record._id, campaignState);
   if (!hostId) return;
@@ -817,6 +868,22 @@ export async function postCreationEnrichment(typeKey, record, campaignState) {
     await generatePortrait(hostId, typeKey, record, campaignState ?? {});
   } catch (err) {
     console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err);
+  }
+}
+
+/**
+ * True when the createActor seed hook (index.js, "Auto-Seed NPC / Connection
+ * Details" on) will seed this new connection card — portrait included — so
+ * it is that card's one portrait owner. The hook seeds any card not yet
+ * marked `seeded` (connectionNeedsSeed).
+ */
+function seedHookOwnsPortrait(record) {
+  if (record?.seeded) return false;
+  try {
+    return !!globalThis.game?.settings?.get(MODULE_ID, "autoSeedConnection");
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | postCreationEnrichment: autoSeedConnection read failed:`, err?.message ?? err);
+    return false;
   }
 }
 
@@ -1490,6 +1557,9 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   // detection is firing and what the GM does with those drafts without
   // adding an explicit UI.
   const source = options.source === "paced_narrative" ? "paced_narrative" : "move_resolution";
+  // The PC the narration was for: a confirmed connection's bond Item goes to
+  // them (confirmDraft), not the first PC (issue #321 U23).
+  const actorId = typeof options.actorId === "string" && options.actorId ? options.actorId : null;
 
   try {
     return await ChatMessage.create({
@@ -1500,6 +1570,7 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
           draftEntityCard: true,
           drafts,
           source,
+          ...(actorId ? { actorId } : {}),
         },
       },
     });
@@ -1644,6 +1715,13 @@ async function confirmDraft(message, draftIndex) {
 
   const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
 
+  // Already created — by a Confirm whose card write was lost, or another GM's:
+  // mark the row, create nothing twice (issue #321 U25).
+  if (entityExistsForName(draft.name, draft.type, campaignState)) {
+    await setDraftStatus(message, draftIndex, "confirmed");
+    return;
+  }
+
   let record = null;
   try {
     if (draft.type === "connection") {
@@ -1666,7 +1744,9 @@ async function confirmDraft(message, draftIndex) {
         pronouns:                  seedData.pronouns,
         portraitSourceDescription: seedData.portraitSource,
       }, campaignState);
-      await registerConnectionOnActiveCharacter(record).catch(err =>
+      await registerConnectionOnActiveCharacter(record, {
+        actorId: message?.flags?.[MODULE_ID]?.actorId ?? null,
+      }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     } else if (draft.type === "ship") {
       const seedData = buildShipSeedData(
@@ -1679,6 +1759,9 @@ async function confirmDraft(message, draftIndex) {
         type:                      seedData.type,
         firstLook:                 seedData.firstLook,
         portraitSourceDescription: seedData.portraitSource,
+        // A ship the narration introduced is someone else's: it never becomes
+        // the players' ship by the lone-ship fallback (issue #321 U26).
+        npcShip:                   true,
       }, campaignState);
     } else if (draft.type === "faction") {
       // Faction confirm (faction-lifecycle audit 2026-07): reconcile any
@@ -1733,12 +1816,16 @@ async function confirmDraft(message, draftIndex) {
     // skips any faction that already has an entity record, so without this the
     // entity and the journal stay disconnected and the Factions page stays
     // empty (playtest finding).
+    // No attitude: the entry keeps the one the narration established (a new
+    // entry starts "unknown"); the backlink is the host id, as the reconcile
+    // above writes it. Passing attitude "unknown" overwrote a known attitude,
+    // and record._id re-pointed the backlink (issue #321 U28).
     if (draft.type === "faction") {
       try {
+        const { findFactionByName } = await import("./faction.js");
         await recordFactionIntelligence(draft.name, {
-          attitude: "unknown",
           summary:  draft.description ?? "",
-          entityId: record._id,
+          entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
         }, campaignState);
       } catch (err) {
         console.warn(`${MODULE_ID} | draft confirm: faction World Journal mirror failed:`, err?.message ?? err);
@@ -1754,8 +1841,7 @@ async function confirmDraft(message, draftIndex) {
     await promoteNewEntityLedgerSubjects(draft.name, draft.type, record, campaignState);
   }
 
-  drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "confirmed" });
-  await updateDraftCard(message, drafts);
+  await setDraftStatus(message, draftIndex, "confirmed");
 }
 
 async function handleDraftDismiss(message, draftIndex) {
@@ -1779,8 +1865,36 @@ async function handleDraftDismiss(message, draftIndex) {
     return;
   }
 
-  drafts.splice(drafts.indexOf(draft), 1, { ...draft, status: "dismissed" });
-  await updateDraftCard(message, drafts);
+  await setDraftStatus(message, draftIndex, "dismissed");
+}
+
+// Card writes per draft card on this client, one at a time. Each re-reads the
+// card's live rows and changes only its own: two rows confirmed back to back
+// each wrote the whole array copied at its click, and the later write reverted
+// the other row to "pending" — its Confirm came back and made the NPC twice
+// (issue #321 U25). The creation itself stays concurrent (the per-row
+// _draftsInFlight guard covers a double-click), so a slow one never holds up
+// another row.
+const _draftCardWrites = new Map();
+
+async function setDraftStatus(message, draftIndex, status) {
+  const id = message?.id;
+  const prev = _draftCardWrites.get(id);
+  let release;
+  const done = new Promise(resolve => { release = resolve; });
+  _draftCardWrites.set(id, done);
+  try {
+    if (prev) await prev;
+    const live = globalThis.game?.messages?.get?.(id) ?? message;
+    const drafts = Array.isArray(live?.flags?.[MODULE_ID]?.drafts) ? [...live.flags[MODULE_ID].drafts] : [];
+    const at = drafts.findIndex(d => d.index === draftIndex);
+    if (at < 0) return;
+    drafts[at] = { ...drafts[at], status };
+    await updateDraftCard(live, drafts);
+  } finally {
+    release();
+    if (_draftCardWrites.get(id) === done) _draftCardWrites.delete(id);
+  }
 }
 
 async function updateDraftCard(message, drafts) {
@@ -1826,21 +1940,28 @@ function collectGmIds() {
 // Default API call (Haiku)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The combined detection reply carries every entity, rename, lore item,
+// threat, faction, location and state transition of one narration; a busy one
+// (an inciting incident) runs ~900 tokens. At 600 it was cut off mid-JSON and
+// the whole detection dropped (issue #321 U15). The tier reply is one short list.
+const DETECTION_MAX_TOKENS = 1500;
+const TIER_MAX_TOKENS      = 600;
+
 async function defaultCallDetectionAPI(prompt) {
-  return callHaiku(prompt, "Return only the JSON object — no prose.");
+  return callHaiku(prompt, "Return only the JSON object — no prose.", DETECTION_MAX_TOKENS);
 }
 
 async function defaultCallTierAPI(prompt) {
-  return callHaiku(prompt, "Return only the JSON object — no prose.");
+  return callHaiku(prompt, "Return only the JSON object — no prose.", TIER_MAX_TOKENS);
 }
 
-async function callHaiku(userPrompt, systemPrompt) {
+async function callHaiku(userPrompt, systemPrompt, maxTokens) {
   const apiKey = readApiKey();
   if (!apiKey) return "";
 
   const body = {
     model:      HAIKU_MODEL,
-    max_tokens: 600,
+    max_tokens: maxTokens,
     system: [
       { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
     ],
@@ -1855,6 +1976,11 @@ async function callHaiku(userPrompt, systemPrompt) {
   };
 
   const data = await apiPost(ANTHROPIC_URL, headers, body);
+  if (data?.stop_reason === "max_tokens") {
+    // Cut off at the cap: the JSON ends mid-object. The caller reports the
+    // loss; this names the cause (issue #321 U15).
+    console.warn(`${MODULE_ID} | entityExtractor: Haiku reply cut off at max_tokens (${maxTokens}).`);
+  }
   return (data?.content ?? [])
     .filter(b => b.type === "text")
     .map(b => b.text)
@@ -2011,22 +2137,46 @@ function escapeHtml(s) {
 }
 
 /**
- * Register a confirmed Connection on the active character Actor as an
- * ironsworn `progress` Item with subtype "bond". This is what makes the
- * Connection appear under the character sheet's Connections tab with its
- * own progress track — mirroring what the system's built-in "+ Connection"
- * button does. With no active character (sector seeding, multi-PC setups
- * with no obvious target), this is a no-op.
+ * Register a confirmed Connection on a character Actor as an ironsworn
+ * `progress` Item with subtype "bond". This is what makes the Connection
+ * appear under the character sheet's Connections tab with its own progress
+ * track — mirroring what the system's built-in "+ Connection" button does.
+ *
+ * The bond goes to the roller / owner, never simply the first PC (issue #321
+ * U23 — Ren's new connection used to land on Kira's sheet):
+ *   - `actors`  — each of these PCs (the shared inciting vow's target: the
+ *                 whole crew swore the vow, so each holds the connection);
+ *   - `actorId` — the PC the narration was for (the roller), when it is a PC;
+ *   - otherwise the acting user's own PC (resolveUserActorId: User#character
+ *     → an owned PC → the first PC only for a GM or in solo play).
+ * With no PC to hold it, this is a no-op. Idempotent per actor and
+ * connection (createCharacterBondItem).
+ *
+ * @param {Object} record — the connection record (`_id`, `name`, `rank`)
+ * @param {{ actorId?: string|null, actors?: Actor[]|null }} [target]
  */
 // Exported for the inciting-incident ⚔ Swear this vow flow (Cluster B).
-export async function registerConnectionOnActiveCharacter(record) {
+export async function registerConnectionOnActiveCharacter(record, { actorId = null, actors = null } = {}) {
   if (!record?._id) return;
-  const actors = getPlayerActors();
-  const actor = actors?.[0];
-  if (!actor) return;
-  await createCharacterBondItem(actor, {
-    name:         record.name,
-    rank:         record.rank,
-    connectionId: record._id,
-  });
+  const holders = Array.isArray(actors)
+    ? actors.filter(isPlayerCharacterActor)
+    : [bondHolderActor(actorId)].filter(Boolean);
+  for (const actor of holders) {
+    await createCharacterBondItem(actor, {
+      name:         record.name,
+      rank:         record.rank,
+      connectionId: record._id,
+    });
+  }
+}
+
+/** The PC a new connection's bond Item goes to: `actorId` when it is a PC, else the acting user's own. */
+function bondHolderActor(actorId) {
+  const named = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (isPlayerCharacterActor(named)) return named;
+  let campaignState = null;
+  try { campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null; }
+  catch (err) { console.debug(`${MODULE_ID} | bond item: campaignState read failed:`, err?.message ?? err); }
+  const ownId = resolveUserActorId(globalThis.game?.user ?? null, campaignState);
+  return ownId ? (globalThis.game?.actors?.get?.(ownId) ?? null) : null;
 }

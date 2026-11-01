@@ -20,7 +20,14 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
+
+vi.mock('../../src/entities/finalize.js', () => ({ finalizeEntityArtOnly: vi.fn() }));
+
 import { createSectorScene, restyleSiteOnScene } from '../../src/sectors/sceneBuilder.js';
+import { generateSector } from '../../src/sectors/sectorGenerator.js';
+import { handleCommandVehicleTokenPlacement, POSITION_SYNC_OPTION } from '../../src/sectors/sectorSceneHooks.js';
+import { createShip, updateShip, getShip } from '../../src/entities/ship.js';
+import { _resetFolderCache } from '../../src/entities/folder.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -358,5 +365,76 @@ describe('createSectorScene — scene-rect offset + centred camera (PLAYTEST-171
     );
     expect(settlementNote.x).toBe(200 + 300);
     expect(settlementNote.y).toBe(200 + 200);
+  });
+});
+
+// Issue #321 U47: creating ANY sector auto-places the command vehicle's token
+// on the new scene, and Foundry's createToken hook (canonical GM) recorded the
+// ship's position from that token — so preparing sector B while the crew sat
+// in sector A moved the ship to B's map centre. Placing the token is a
+// position statement only for a ship with no position yet.
+describe('placeCommandVehicleTokenIfPresent — a ship already somewhere is not moved (issue #321 U47)', () => {
+  // A scene whose Token creation keeps the options it was given: Foundry hands
+  // the creation's options to every client's createToken hook.
+  function sceneRecordingTokens() {
+    const scene = {
+      id: 'scene-B', flags: {}, grid: { size: 100 }, notes: [], tokens: [], tokenCreateOptions: null,
+      dimensions: { sceneX: SCENE_X, sceneY: SCENE_Y, sceneWidth: SCENE_W, sceneHeight: SCENE_H },
+      update: vi.fn(async () => scene),
+      createEmbeddedDocuments: vi.fn(async (type, data, options) => {
+        const docs = data.map((d, i) => ({ id: `${type}-${i}`, ...d, parent: scene }));
+        if (type === 'Note') scene.notes.push(...docs);
+        if (type === 'Token') { scene.tokens.push(...docs); scene.tokenCreateOptions = options; }
+        return docs;
+      }),
+    };
+    global.Scene = { create: vi.fn(async (data) => { scene.flags = data.flags; return scene; }) };
+    return scene;
+  }
+
+  async function commandVehicle(position = null) {
+    const cs = { sectors: [{ id: 'sector-A', name: 'Old Reach' }], activeSectorId: 'sector-A', shipIds: [], settlementIds: [] };
+    game.settings._store.set(`${MODULE_ID}.campaignState`, cs);
+    await createShip({ name: 'Wayfarer', isCommandVehicle: true }, cs);
+    const shipId = cs.shipIds[0];
+    if (position) await updateShip(shipId, { position });
+    return shipId;
+  }
+
+  beforeEach(() => {
+    game.actors._reset();
+    game.folders._reset();
+    _resetFolderCache();
+    game.settings._store.clear();
+  });
+
+  it('creating a second sector leaves the ship where it is; the new map still gets its token', async () => {
+    const docked = {
+      sectorId: 'sector-A', nearestPlanetId: null, nearestSettlementId: 'settlement-in-A',
+      freeText: '', updatedAt: 't0', updatedBy: 'set_a_course',
+    };
+    const shipId = await commandVehicle(docked);
+    const scene  = sceneRecordingTokens();
+    await createSectorScene(generateSector('terminus'), null, {});
+
+    expect(scene.tokens).toHaveLength(1);
+    expect(scene.tokenCreateOptions?.[POSITION_SYNC_OPTION]).toBe(true);
+    // Foundry fires createToken (with the creation's options) on every client.
+    await handleCommandVehicleTokenPlacement(scene.tokens[0], scene.tokenCreateOptions, 'test-user-gm');
+
+    expect(getShip(shipId).position).toEqual(docked);
+  });
+
+  it('a ship with no position yet is placed as a position statement — the new map grounds where it is', async () => {
+    const shipId  = await commandVehicle();
+    const scene   = sceneRecordingTokens();
+    const sectorB = generateSector('terminus');
+    await createSectorScene(sectorB, null, {});
+
+    expect(scene.tokens).toHaveLength(1);
+    expect(scene.tokenCreateOptions?.[POSITION_SYNC_OPTION]).toBeUndefined();
+    await handleCommandVehicleTokenPlacement(scene.tokens[0], scene.tokenCreateOptions, 'test-user-gm');
+
+    expect(getShip(shipId).position?.sectorId).toBe(sectorB.id);
   });
 });

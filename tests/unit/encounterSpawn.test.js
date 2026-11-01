@@ -2,6 +2,8 @@
 // Phase 7 — !sfc encounter command parser and chat-card builder.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import {
   parseEncounterCommand,
   isEncounterCommand,
@@ -52,27 +54,33 @@ describe('Phase 7 — buildEncounterCard', () => {
     expect(card).toContain('<h3>');
   });
 
-  it('includes the rank when present', () => {
-    const card = buildEncounterCard({
-      name: 'Adept',
-      system: { rank: 'formidable' },
-    });
-    expect(card).toContain('Rank');
-    expect(card).toContain('formidable');
+  // Issue #321 U32 — a foundry-ironsworn foe (FoeModel: system = { dfid })
+  // keeps its rank and stat text on its embedded `progress` Item. These tests
+  // used to feed a `system.rank / features / drives` shape no foe has.
+  const foe = (name, progress) => {
+    const items = [{ type: 'progress', name, system: { subtype: 'progress', current: 0, ...progress } }];
+    items.contents = items;
+    return { name, type: 'foe', system: { dfid: '' }, items };
+  };
+
+  it('shows the rank of the progress item by name', () => {
+    const card = buildEncounterCard(foe('Adept', { rank: 3, description: '' }));
+    expect(card).toContain('<strong>Rank:</strong> Formidable');
   });
 
-  it('renders features and drives as lists', () => {
-    const card = buildEncounterCard({
-      name: 'Hunter',
-      system: {
-        features: ['Tracks tirelessly', 'Knows your scent'],
-        drives:   ['Complete the contract'],
-      },
-    });
-    expect(card).toContain('Features');
-    expect(card).toContain('<li>Tracks tirelessly</li>');
-    expect(card).toContain('Drives');
-    expect(card).toContain('<li>Complete the contract</li>');
+  it('renders the progress item\'s Features / Drives / Tactics text', () => {
+    const card = buildEncounterCard(foe('Hunter', {
+      rank: 2,
+      description: '<h4>Features</h4><p>Tracks tirelessly</p><h4>Drives</h4><p>Complete the contract</p>',
+    }));
+    expect(card).toContain('<strong>Rank:</strong> Dangerous');
+    expect(card).toContain('<p>Tracks tirelessly</p>');
+    expect(card).toContain('<p>Complete the contract</p>');
+  });
+
+  it('control: a foe without a progress item is just its name', () => {
+    const card = buildEncounterCard({ name: 'Odd', system: { dfid: '' }, items: [] });
+    expect(card).toBe('<h3>Odd</h3>');
   });
 
   it('escapes HTML in the actor name', () => {
@@ -83,6 +91,39 @@ describe('Phase 7 — buildEncounterCard', () => {
 
   it('returns a placeholder card when actor is null', () => {
     expect(buildEncounterCard(null)).toContain('not found');
+  });
+});
+
+// Issue #321 U32 — the card from the REAL compendium entry of the vendored
+// `foe-actors-sf` pack (the pack getCanonicalEncounterActor reads). CI checks
+// the submodule out; a checkout without it skips these.
+describe('buildEncounterCard — a real foundry-ironsworn foe', () => {
+  const PACK_DIR = path.resolve('vendor/foundry-ironsworn/json-packs/foe-actors-sf');
+  const CHITON = path.join(PACK_DIR, 'Chiton_95667d6a269e99a0.json');
+  const vendored = fs.existsSync(CHITON);
+
+  /** A Foundry-shaped foe Actor built from the vendored compendium JSON. */
+  function vendorFoe(file) {
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+    const items = (raw.items ?? []).map(i => ({ ...i }));
+    items.contents = items;            // EmbeddedCollection-ish: .contents
+    return { ...raw, items };
+  }
+
+  it.skipIf(!vendored)('control: the vendored foe keeps rank + features on its progress item, not on system', () => {
+    const chiton = vendorFoe(CHITON);
+    expect(chiton.system).toEqual({ dfid: '' });
+    const progress = chiton.items.find(i => i.type === 'progress');
+    expect(progress.system.rank).toBe(2);
+    expect(progress.system.description).toContain('Arachnid monsters with blade-like limbs');
+  });
+
+  it.skipIf(!vendored)('the !sfc encounter card shows the foe rank by name and its features', () => {
+    const card = buildEncounterCard(vendorFoe(CHITON));
+    expect(card).toContain('<h3>Chiton</h3>');
+    expect(card).toContain('<strong>Rank:</strong> Dangerous');
+    expect(card).toContain('Arachnid monsters with blade-like limbs');
+    expect(card).toContain('Feed and protect the queen');
   });
 });
 

@@ -119,22 +119,38 @@ should remember* must carry all three flags:
 | oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
 | published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`). No sidecar, so no ledger facts |
 
+Every narration card above (the published reflection is not a narration)
+also carries its narration's `narrationId` — the id its sidecar stamps on the
+ledger entries it writes (§3; issue #321 U07).
+The move narration's "narration unavailable" card (`postFallbackCard`) keeps
+the family so the session recap counts the move, and is marked
+`narrationFallback`, which every memory read leaves out (issue #321 U35 — it
+was fed back as story and counted as the session's first narration).
+
 **Audited consumers of `narratorCard`** (re-audit when adding a card type —
 CLAUDE.md "audit consumers" rule):
 - ring (`getRecentNarrationContext`) — the point
 - rolling session summary (`sessionNarratorCards` → `getRollingSessionSummary`)
-  — shares the ring's source reader + defensive excludes; reads the full feed,
+  — shares the ring's source reader + defensive excludes (since issue #321
+  also `narrationFallback`, U35, and `xCarded`, U07); reads the full feed,
   not the last N
 - rolling-summary refresh hook (`registerRollingSummaryRefreshHook`, issue
   #286 B7) — on the canonical GM, a new `narratorCard` with `narrationText`
   triggers the debounced regen after the card posts
 - session recap (`postSessionRecap`) — inclusion intended; its move lines and
   "A match was rolled" read move narration's `moveId` / `outcome` / `isMatch`
-  (`isMatch` had no writer until RECAP-MATCH-DEAD, issue #282)
+  (`isMatch` had no writer until RECAP-MATCH-DEAD, issue #282); an X-carded
+  card's move still counts, its prose is not quoted (issue #321 U07)
 - correction-dialog render hook (`src/index.js`) — no-ops without
   `[data-action="openCorrectionDialog"]` markup
 - audio render hook (`src/index.js`) — no-ops without the hidden play-button
-  markup
+  markup, and on an X-carded card (issue #321 U07)
+- the X-Card (issue #321 U07): `xCardedNarrationCards` picks the cards a play
+  removes from `sessionNarratorCards` (the newest still in memory and its
+  beat), and `registerXCardRedirectHook` (canonical GM) clears
+  `xCardRedirect` when the first narrator card with `narrationText` posts
+  with the X-Card lifted — not a fallback, a published reflection or an
+  X-carded card
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
   `resolutionId`, unaffected
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
@@ -164,7 +180,30 @@ discretion — for:
 
 `inciting_incident` mode appends a premise-capture addendum (vow target's
 identity + history, location + condition, the deadline). This is what makes
-the opening premise survivable.
+the opening premise survivable. The premise (`campaignState.incitingIncident`)
+is written with the narration's scene ledgers onto the store as it is then
+(`persistSceneLedgerFields(…, { onto })`), never the pre-call snapshot whole —
+that reverted Private Lines, a safety flag or an X-Card relayed during the
+call (issue #321 U06d).
+
+**Narration ids and the X-Card (issue #321 U07).** Every truth and state value
+a sidecar writes, and the frame, carries the narration's `narrationId` (its
+card carries the same id). The X-Card retracts what the narration it answers
+wrote (`retractNarrations`): its truths `retractedBy: "xcard"` — rendered
+nowhere, not even under CORRECTED, never migrated, still blocking a
+re-assertion — its state values removed and its frame cleared, in the same
+write as the pause; the ids are kept on `xCardedNarrationIds`, so
+`mergeSceneLedgers` retracts them again from a stale writer's copy and a late
+relayed sidecar of that narration is dropped.
+
+**Scene start.** A narration whose snapshot holds no scene while the store has
+one continues it (`startScene` → `adoptStoredScene`, issue #321 U06f): the
+move pipeline's snapshot predates its confirm dialog, and a second scene was
+minted over the live one's ledgers, which were neither kept nor archived.
+Oracle follow-ups, session and clock vignettes and vow scenes start a scene
+when none is active, as move, paced and `@scene` narration do
+(`ensureSceneStarted`, canonical GM — issue #321 U34; their facts landed
+under no scene).
 
 **Subject resolution (Cluster A2; fixed by issue #286).** `applyNarratorSidecar`
 passes the full entity roster (`collectAllEntities`,
@@ -284,7 +323,11 @@ from 300). The post-A sidecar on a heavy turn: required stateChanges
 ≈ **240–290 tokens**, and the inciting premise addendum can reach ~400.
 Failure mode when headroom is too small: the fence is clipped mid-JSON,
 `extractSidecar` strips it defensively (prose stays clean, parseError
-logged) — and the turn loses its frame update and required emissions.
+logged) — and the turn loses its frame update and required emissions. A
+fence cut only in its closing backticks, around a complete object, is
+applied; and the sidecar is read from a ```` ```json ````, ```` ``` json ````
+or bare ```` ``` ```` fence whose body is an object, never shown as prose
+(issue #321 U41).
 Since 2026-07 this is **never silent**: `callNarratorAPI` warns on
 `stop_reason: "max_tokens"` (catching truncation before the fence even
 opens) and `applyNarratorSidecar` warns when a response carries no fence at
@@ -383,7 +426,11 @@ regressions, all are known scope cuts:
    `campaignState.settlements` arrays) and that nothing seeded an initial
    position. Now: a command-vehicle token on a sector scene is
    **authoritative** — `createToken`/`updateToken` hooks write the §20
-   record from token coordinates (`updatedBy: "scene_token"`); programmatic
+   record from token coordinates (`updatedBy: "token_placement"`, read
+   "near" — it was `scene_token`, read "docked at", issue #321 U53;
+   `scene_token` is now the Set a Course arrival a drop on a pin starts; and
+   a token placed on a new sector's map records a position only for a ship
+   that has none, U47); programmatic
    syncs carry the `POSITION_SYNC_OPTION` update option so the hooks ignore
    the module's own moves; the inciting incident REQUIRES a starting
    `ship/position` emission; and an empty record renders an explicit
@@ -428,11 +475,18 @@ regressions, all are known scope cuts:
       (which continues the scene instead of implicitly ending it). Recap
       card includes the incident.
 - [ ] End Session closes the scene (truths migrated, `currentSceneId`
-      null) and marks the session ended; the next Begin Session mints a new
-      one, and its first narration shows LAST SESSION and the CAMPAIGN
+      null) and marks the session ended — when the closing vignette
+      narrates, it opens a scene of its own, which the next mint closes
+      (`session_close`; issue #321 U34); the next Begin Session mints a new
+      one and begins it (the mint closes the session-active gate — issue
+      #321 U12), and its first narration shows LAST SESSION and the CAMPAIGN
       RECAP. A reload after four idle hours re-mints the session AND closes
       any stale scene (`session_gap_remint` in the console); a reload mid-play
       resumes it, however long the session has run.
+- [ ] Play the X-Card on a narration → its card is flagged `xCarded`, its
+      facts leave the ledger without appearing under CORRECTED, and the first
+      narration after a GM resumes steers elsewhere (X-CARD — REDIRECT;
+      issue #321 U07).
 - [ ] `!oracle yes` → the answer renders under RECENT ORACLE RESULTS on the
       next narrator call; the narration does not contradict it.
 - [ ] Strike a truth → it renders under CORRECTED and the narrator does not

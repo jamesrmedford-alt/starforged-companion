@@ -84,13 +84,13 @@
  *
  * Older ad-hoc relays still share the same socket channel with their own
  * `kind`s and listeners (not gmRelay-prefixed, so this listener ignores them):
- *   - "expedition.recommit", "combat.enterFray"   — src/index.js
+ *   - "combat.enterFray"                          — src/index.js
  *   - "vow.setReward", "vow.linkConnection"       — src/session/swearVow.js
  *   - "errorLog.append"                           — src/logging/errorLog.js
  *   - "audio.cache.write", "audio.synth.*"        — src/audio/index.js
- * The world-writing ones (the first four) predate this module, have no
+ * The world-writing ones (the first three) predate this module, have no
  * requester context, no serialisation and no no-GM warning; fold them into
- * GM_ACTIONS when next touched.
+ * GM_ACTIONS when next touched ("expedition.recommit" was, issue #321 U20).
  *
  * Handler signature: `async (payload, ctx) => void`, where
  *   ctx = { requesterId, requester, requesterIsGM, local }
@@ -167,8 +167,21 @@ export const GM_ACTIONS = Object.freeze({
   "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond" },
   "suffer.pick":               { load: () => import("../moves/sufferCard.js"),                       fn: "applySufferPickFromRelay" },
   "payoff.retry":              { load: () => import("../moves/cardActions.js"),                      fn: "applyPayoffRetry" },
+  // Issue #321 group A — one-shot card buttons claimed on the GM-authored card:
+  // U02 "Which vow?" (a Fulfill Your Vow that named none of several open vows);
+  // U20 a move card's "⚑ Mark Progress on Vow", and an expedition's "🔁 Recommit"
+  // (the legacy "expedition.recommit" socket relay, folded in — RELAY-LEGACY-KINDS)
+  "fulfilVow.pick":            { load: () => import("../moves/cardActions.js"),                      fn: "applyFulfilVowPick" },
+  "milestone.suggestion":      { load: () => import("../moves/cardActions.js"),                      fn: "applyMilestoneSuggestion" },
+  "expedition.recommit":       { load: () => import("../moves/cardActions.js"),                      fn: "applyRecommitOffer" },
   // The Chronicle: the panel's edits and automatic entries (the GM is its one writer)
   "chronicle.edit":            { load: () => import("../character/chronicle.js"),                    fn: "applyChronicleEditFromRelay" },
+  // The Progress Tracks and Entities panels: every edit, from any user (issue #321 U05)
+  "progressTrack.edit":        { load: () => import("../ui/progressTracks.js"),                      fn: "applyProgressTrackEditFromRelay" },
+  "entity.edit":               { load: () => import("../ui/entityPanel.js"),                         fn: "applyEntityEditFromRelay" },
+  // Issue #321 U10 — the Private Channel: a default Player cannot create a JournalEntry, so the GM
+  // creates the player's transcript journal, with the player as its OWNER
+  "privateChannel.createJournal": { load: () => import("../private-channel/transcript.js"),         fn: "applyPrivateJournalCreate" },
 });
 
 /**

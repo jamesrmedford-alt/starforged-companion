@@ -116,6 +116,19 @@ describe("formatActiveSector — sector cast & attributes (PLAYTEST-1712 T)", ()
     expect(block.toLowerCase()).toContain("lawless");
   });
 
+  it("names each settlement's rolled planet and stellar object — the world and star pinned beside it on the map (issue #321 U51)", () => {
+    vi.mocked(listSettlements).mockReturnValue([
+      { name: "Hypatia", sectorId: "sec-1", authority: "Corrupt", trouble: "Pirate tithes",
+        planet: { type: "Ocean World", name: "Mireth Deep" }, stellar: "Smoldering red star" },
+      { name: "Driftwell", sectorId: "sec-1", authority: "Ruthless", stellar: "Young star incubating in a dense nebula" },
+    ]);
+    const block = formatActiveSector(state());
+    expect(block).toContain(
+      "- Hypatia (Authority: Corrupt; Trouble: Pirate tithes; Planet: Mireth Deep (Ocean World); Stellar object: Smoldering red star)");
+    expect(block).toContain(
+      "- Driftwell (Authority: Ruthless; Stellar object: Young star incubating in a dense nebula)");
+  });
+
   it("lists established NPCs with their roles so the narrator reuses them", () => {
     vi.mocked(listConnections).mockReturnValue([
       { name: "Nova Petrov", sectorId: "sec-1", role: "Smuggler captain" },

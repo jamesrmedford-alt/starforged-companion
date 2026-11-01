@@ -20,7 +20,7 @@
  * before `applySidecar` runs.
  */
 
-import { buildNameIndex } from "../context/relevanceResolver.js";
+import { buildNameIndex, resolveEntityName } from "../context/relevanceResolver.js";
 import { getEntityDocument, readEntityFlag } from "../entities/registry.js";
 
 const SOURCE_VALUES = new Set([
@@ -118,8 +118,10 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
     }
     default: {
       // Ship / faction / connection / creature / character — none of
-      // these are spatial anchors. Fall through to free-text capture.
-      out.freeText = hit.name ?? ref;
+      // these are spatial anchors. Keep the narrated phrase as free text:
+      // the bare name dropped where the ship is ("alongside the Covenant
+      // flagship" became "The Covenant" — issue #321 U43).
+      out.freeText = ref;
       return out;
     }
   }
@@ -149,13 +151,16 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
 
   const ship      = (shipName ?? "").trim() || "Command vehicle";
   const source    = position.updatedBy ?? null;
-  // Every recorder writes the position only after ARRIVAL is confirmed:
+  // These recorders write the position only after ARRIVAL is confirmed:
   // set_a_course and finish_an_expedition hits mean "you reach your
   // destination" (play kit; the pipeline gates the write on a non-miss and
-  // snaps the token), and the token drag / !at are declarative. So every
-  // known source reads as stationary; an unknown source degrades to the
-  // neutral "near". (SHIP-TRANSIT-LINE fix — set_a_course used to render
-  // "in transit to" after the ship had already arrived.)
+  // snaps the token) — scene_token is the Set a Course a token dropped ON a
+  // pin starts — and !at is declarative. So they read as stationary. The
+  // token's own place on the map (token_placement: placed, or moved off a
+  // pin, no move made) reads "near" its nearest pin (decisions.md
+  // 2026-06-12; issue #321 U53), as do the narrator sidecar, a manual entry
+  // and an unknown source. (SHIP-TRANSIT-LINE fix — set_a_course used to
+  // render "in transit to" after the ship had already arrived.)
   const docked = source === "set_a_course" || source === "scene_token"
     || source === "at_command" || source === "expedition";
 
@@ -175,6 +180,49 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
   const scopeStr = scope.length ? ` (${scope.join(", ")})` : "";
 
   return `SHIP POSITION: ${ship} ${parts.join(" ")}${scopeStr}`.trim();
+}
+
+/**
+ * The position record for an arrival at a place known by its host document
+ * id — a token dropped on a sector pin names the settlement Actor the pin
+ * links — rather than by a name, which a rename leaves behind and a namesake
+ * in another sector matches first (issue #321 U52). The record is the one
+ * inferShipPosition builds when a name resolves to that same entity. Pure.
+ *
+ * @param {string} entityId — a settlement, planet or location host document id
+ * @param {Object} campaignState
+ * @param {Object} [options]
+ * @param {string} [options.source] — as inferShipPosition's
+ * @returns {Object|null} the position record, or null when the id is not a
+ *   settlement, planet or location (the caller falls back to the name)
+ */
+export function inferShipPositionFromEntityId(entityId, campaignState, options = {}) {
+  if (!entityId) return null;
+  for (const entityType of ["settlement", "planet", "location"]) {
+    let record = null;
+    try {
+      record = readEntityFlag(entityType, getEntityDocument(entityType, entityId));
+    } catch (err) {
+      console.warn(`starforged-companion | shipPosition: read ${entityType} ${entityId} failed:`, err?.message ?? err);
+    }
+    if (!record) continue;
+
+    const out = emptyPosition();
+    out.updatedAt = new Date().toISOString();
+    out.updatedBy = SOURCE_VALUES.has(options.source) ? options.source : "manual";
+    const hit = { ...record, journalId: entityId };
+    if (entityType === "settlement") {
+      out.nearestSettlementId = entityId;
+      out.nearestPlanetId     = resolvePlanetForSettlement(hit, campaignState);
+    } else if (entityType === "planet") {
+      out.nearestPlanetId = entityId;
+    } else {
+      out.freeText = record.name ?? "";
+    }
+    out.sectorId = resolveSectorForRecord(hit, campaignState);
+    return out;
+  }
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -316,14 +364,18 @@ function lookupSector(id, campaignState) {
  * Match a free-text seed against the name index with tolerance for the
  * phrasing narrators and players actually use (Cluster C / F5 gap 3):
  *
- *   "Lyra"                     → exact
- *   "Lyra's orbital graveyard" → possessive-stripped word scan → "lyra"
- *   "the Vault of Tears"       → word scan (words ≥ 4 chars; leftmost wins)
+ *   "Lyra"                         → exact
+ *   "Lyra's orbital graveyard"     → word scan → "Lyra"
+ *   "the Vault of Tears"           → word scan → "Vault" (a name part)
+ *   "a derelict station above Kaan" → word scan → "Kaan", never "station"
  *
- * Precedence: full ref → possessive-stripped full ref → per-word scan
- * (possessives stripped, punctuation trimmed, words shorter than 4 chars
- * skipped so "the"/"of" can't false-positive). Returns the index hit or
- * null. Exported for unit testing.
+ * Precedence: full ref → possessive-stripped full ref (exact index keys) →
+ * a scan of the seed's capitalised words, leftmost first, each resolved
+ * through resolveEntityName's bounded ladder: a full name, or one name part
+ * a single entity has. A lowercase word is never looked up, so a common noun
+ * cannot match a name part (issue #321 U43: "a derelict station" docked the
+ * ship at Bleakhold Station). Returns the hit or null. Exported for unit
+ * testing.
  */
 export function matchSeedAgainstIndex(index, ref) {
   const lookup = String(ref ?? "").toLowerCase();
@@ -335,10 +387,11 @@ export function matchSeedAgainstIndex(index, ref) {
     if (hit) return hit;
   }
 
-  for (const raw of stripPossessive(lookup).split(/\s+/)) {
-    const word = raw.replace(/[^\p{L}\p{N}-]/gu, "");
-    if (word.length < 4) continue;
-    const hit = index.get(word);
+  const entities = [...new Set(index.values())];
+  for (const raw of String(ref).split(/\s+/)) {
+    const word = raw.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+    if (!/^\p{Lu}/u.test(word)) continue;
+    const hit = resolveEntityName(word, entities);
     if (hit) return hit;
   }
   return null;

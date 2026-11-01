@@ -107,15 +107,16 @@ export async function applySafetyFlag(payload = {}, ctx = {}) {
   }
   const visibility = payload.visibility === "private" ? "private" : "public";
 
-  const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  state.safetyFlags ??= [];
-  state.safetyFlags.push({
+  // Written on a copy: `get` returns this client's cached state, and a
+  // refused write must leave it as it was (issue #321 U58).
+  const state = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+  state.safetyFlags = [...(state.safetyFlags ?? []), {
     _id:        foundry.utils.randomID(),
     text,
     visibility,
     createdBy:  ctx?.requester?.name ?? "unknown",
     createdAt:  new Date().toISOString(),
-  });
+  }];
   await game.settings.set(MODULE_ID, "campaignState", state);
   return true;
 }
@@ -250,7 +251,10 @@ export async function openTakeABreakDialog() {
  * @returns {Promise<void>}
  */
 export async function applyTakeBreak(_payload = {}, _ctx = {}) {
-  const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  // Written on a copy: the card says a refused +1 "was not recorded", and the
+  // cached state the move pipeline reads must agree — it used to keep the +1
+  // (issue #321 U58).
+  const state = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
   // Consumed by the move pipeline on the next action roll
   // (src/moves/nextMoveAdd.js takeNextMoveAdd).
   state.nextMoveAdd = { value: 1, source: "take_a_break", setAt: new Date().toISOString() };

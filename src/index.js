@@ -22,9 +22,9 @@
  *   — Narration runs on whichever client triggered the move
  */
 
-import { CampaignStateSchema, MOVES }   from "./schemas.js";
+import { CampaignStateSchema, MOVES, rankName } from "./schemas.js";
 import { interpretMove }         from "./moves/interpreter.js";
-import { resolveMove }           from "./moves/resolver.js";
+import { resolveMove, withPayThePriceSeed } from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
 import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
@@ -44,7 +44,7 @@ import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
-import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop } from "./moves/statEnrichment.js";
+import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
 import { markLegacyTrack }       from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
@@ -79,6 +79,7 @@ import {
   getCampaignRecap,
   narrateAndPostVowSwearing,
   registerRollingSummaryRefreshHook,
+  registerXCardRedirectHook,
   registerPublishedReflectionHook,
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
@@ -123,7 +124,7 @@ import {
 import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
 import { handleBondCommand } from "./moves/bondCommand.js";
 import { postReachMilestoneCard } from "./moves/milestonePicker.js";
-import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank } from "./moves/milestone.js";
+import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank, selectFulfilVow } from "./moves/milestone.js";
 import {
   extractRiders,
   collectFiringRiders,
@@ -176,7 +177,7 @@ import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
 import { requestOracleNarration } from "./oracles/oracleFollowup.js";
-import { inferShipPosition } from "./factContinuity/shipPosition.js";
+import { inferShipPosition, inferShipPositionFromEntityId } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
   applyPaceCommand,
@@ -205,7 +206,7 @@ import {
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
 import { registerGmRelaySocket, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
@@ -893,6 +894,16 @@ export function registerChatHook() {
             apiKey,
             combatPosition,
           });
+      // A forced move whose stat is a choice rolls the one its narration's
+      // approach fits — a stat-only interpretation — not its first listed
+      // stat (issue #321 U04). No key keeps the listed stat.
+      if (forcedMoveId) {
+        await enrichForcedMoveStat(interpretation, {
+          interpret: apiKey
+            ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId })
+            : null,
+        });
+      }
 
       if (interpretation.mischiefApplied) {
         interpretation._mischiefAside = buildMischiefAside(
@@ -907,22 +918,35 @@ export function registerChatHook() {
       // fights open and none named — a typed "I take decisive action", or a
       // combat card whose fight nothing named — it would score nothing: a
       // certain miss. Ask which fight instead of rolling; each pick posts the
-      // move again with that fight's id (TDA-BUTTON-NO-TARGET).
-      if (interpretation.moveId === "take_decisive_action" && !interpretation.moveTargetId) {
+      // move again with that fight's id (TDA-BUTTON-NO-TARGET). Strike and
+      // Clash mark one fight's progress and Undertake an Expedition one
+      // expedition's: unnamed among several, they made a phantom track (issue
+      // #321 U16), so they ask too — a named destination is its own
+      // expedition, or a new one.
+      const whichTrackType =
+        ["take_decisive_action", "strike", "clash"].includes(interpretation.moveId) ? "combat"
+        : interpretation.moveId === "undertake_an_expedition" ? "expedition"
+        : null;
+      if (whichTrackType && !interpretation.moveTargetId) {
         const tracks = await listProgressTracks().catch(err => {
-          console.warn(`${MODULE_ID} | which-fight lookup failed:`, err?.message ?? err);
+          console.warn(`${MODULE_ID} | which-${whichTrackType === "combat" ? "fight" : "expedition"} lookup failed:`, err?.message ?? err);
           return [];
         });
-        const openFights = tracks.filter(t => t.type === "combat" && !t.completed);
-        if (openFights.length >= 2 && !selectCombatTrack(openFights, interpretation.moveTarget ?? null)) {
+        const open   = tracks.filter(t => t.type === whichTrackType && !t.completed);
+        const target = interpretation.moveTarget ?? null;
+        const unresolved = whichTrackType === "combat"
+          ? !selectCombatTrack(open, target)
+          : !(typeof target === "string" && target.trim());
+        if (open.length >= 2 && unresolved) {
           await postWhichFightCard({
             moveId:    interpretation.moveId,
             moveName:  interpretation.moveName,
             narration,
             actorId:   speakerActorId ?? null,
-            fights:    openFights,
+            fights:    open,
+            trackType: whichTrackType,
           }).catch(err =>
-            console.warn(`${MODULE_ID} | which-fight card failed:`, err?.message ?? err));
+            console.warn(`${MODULE_ID} | which-${whichTrackType === "combat" ? "fight" : "expedition"} card failed:`, err?.message ?? err));
           return;
         }
       }
@@ -934,6 +958,30 @@ export function registerChatHook() {
       // PC B's stats offered substitutions B doesn't have.
       const speakerActor = speakerActorId ? game.actors?.get(speakerActorId) : null;
       const rollerActor  = speakerActor ?? getPlayerActors()[0] ?? null;
+
+      // Every PC's vows, each copy with its holder — speaker first so a name
+      // tie resolves to the roller's own copy.
+      const readAllVows = async () => {
+        const actors = getPlayerActors();
+        actors.sort((a, b) =>
+          (a.id === speakerActorId ? -1 : 0) - (b.id === speakerActorId ? -1 : 0));
+        return actors.flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
+      };
+
+      // Fulfill Your Vow scores one vow's progress. Naming none while the
+      // roller — or, holding none, the table — has several open, it scored
+      // nothing: a certain miss. Ask which vow instead of rolling; each pick
+      // posts the move again with that vow's copy, as the roller (issue #321
+      // U02). A shared vow's copies are one vow (selectFulfilVow).
+      if (interpretation.moveId === "fulfill_your_vow" && !interpretation.moveTargetId) {
+        const { vow, choices } = selectFulfilVow(await readAllVows(), interpretation.moveTarget ?? null,
+          { rollerActorId: rollerActor?.id ?? null });
+        if (!vow && choices.length >= 2) {
+          await postWhichVowCard({ narration, actorId: rollerActor?.id ?? null, vows: choices }).catch(err =>
+            console.warn(`${MODULE_ID} | which-vow card failed:`, err?.message ?? err));
+          return;
+        }
+      }
 
       // Scan the character's assets + the command vehicle's modules for
       // abilities that apply to the chosen move. Surfaced on the
@@ -1026,13 +1074,8 @@ export function registerChatHook() {
       };
       const tickInfo = await enrichProgressTicks(interpretation, {
         listTracks: () => listProgressTracks(),
-        readAllVows: async () => {
-          const actors = getPlayerActors();
-          // Speaker-first so a name tie resolves to the roller's own vow copy.
-          actors.sort((a, b) =>
-            (a.id === speakerActorId ? -1 : 0) - (b.id === speakerActorId ? -1 : 0));
-          return actors.flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
-        },
+        readAllVows,
+        rollerActorId: rollerActor?.id ?? null,
         listConnections,
       }).catch(err => {
         console.warn(`${MODULE_ID} | progress tick enrichment failed:`, err?.message ?? err);
@@ -1050,12 +1093,12 @@ export function registerChatHook() {
       });
 
       // A roll started from a track (a Progress Tracks row, an expedition
-      // card) names it by id. When that track was deleted or finished
-      // meanwhile, nothing is rolled — and it says so: a same-named sibling is
-      // a different fight, and a score of 0 would be a certain miss with its
-      // consequences (issue #306 R06).
+      // card, a "Which vow?" pick) names it by id. When that track was
+      // deleted or finished meanwhile, nothing is rolled — and it says so: a
+      // same-named sibling is a different fight, and a score of 0 would be a
+      // certain miss with its consequences (issue #306 R06, #321 U02).
       if (interpretation.moveTargetId
-          && (tickInfo?.source === "combat" || tickInfo?.source === "expedition")
+          && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow")
           && !tickInfo.trackId) {
         await postTrackGoneCard(interpretation).catch(err =>
           console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
@@ -1172,13 +1215,15 @@ export function registerChatHook() {
         if (incitingSwearId && !incitingMsg) {
           console.warn(`${MODULE_ID} | inciting swear: original card ${incitingSwearId} not found — no vow created`);
         }
+        // The oath scene is the roller's, as the move narration is.
         if (incitingMsg) {
-          await swearSharedVowForAll(incitingMsg).catch(err =>
+          await swearSharedVowForAll(incitingMsg, { speakerActorId: rollerActor?.id ?? null }).catch(err =>
             console.warn(`${MODULE_ID} | inciting swear creation failed:`, err?.message ?? err));
         } else {
           await narrateAndPostVowSwearing({
             vow: { name: interpretation.moveTarget ?? null, rank: null },
             campaignState,
+            speakerActorId: rollerActor?.id ?? null,
           }).catch(err => console.warn(`${MODULE_ID} | vow-swearing scene failed:`, err?.message ?? err));
         }
       }
@@ -1400,10 +1445,14 @@ export function registerChatHook() {
       // burn button can undo them when the player burns momentum to upgrade the outcome.
       let ptpReversals = null;
       if (resolution.consequences?.routePayThePrice && game.user.isGM) {
-        ptpReversals = await postFaceDefeatPayThePriceCard(rollerActor?.id ?? null).catch(err => {
+        const ptp = await postFaceDefeatPayThePriceCard(rollerActor?.id ?? null).catch(err => {
           console.warn(`${MODULE_ID} | face defeat PtP card failed:`, err?.message ?? err);
           return null;
         });
+        ptpReversals = ptp?.reversals ?? null;
+        // The move's narration depicts this card's price — the one the table
+        // pays; the resolver rolled none for it (issue #321 U03).
+        resolution.oracleSeeds = withPayThePriceSeed(resolution.oracleSeeds, resolution.moveId, ptp?.price ?? null);
       }
 
       // Step 7: relevance resolver — picks the narrator-permission block
@@ -1556,6 +1605,24 @@ export function registerChatHook() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The current-location pick ({ id, type, entity }, as resolveCurrentLocationName
+ * returns) for a place known by its host document id — a settlement, location
+ * or planet — or null. An arrival whose destination came by id (a token
+ * dropped on a sector pin) sets the current location by it (issue #321 U52).
+ *
+ * @param {string|null} id
+ * @returns {{ id: string, type: string, entity: Object }|null}
+ */
+function currentLocationForEntityId(id) {
+  if (!id) return null;
+  for (const type of ["settlement", "location", "planet"]) {
+    const entity = readEntityFlag(type, getEntityDocument(type, id));
+    if (entity) return { id, type, entity };
+  }
+  return null;
+}
+
+/**
  * Apply an outcome's effects beyond the roller's meters and its choice card —
  * what the pipeline applies from the resolver's consequence flags: an arrival
  * (Set a Course), the expedition's progress, a legacy mark, the companion's
@@ -1635,12 +1702,21 @@ async function applyOutcomeEffects({
     && getShipPositioningEnabled()
     && getShipAutoMoveOnCourse()
   ) {
+    // A Set a Course started by dropping the ship's token on a sector pin
+    // names its destination by the pin's settlement Actor (forcedMoveTargetId
+    // → moveTargetId): arrive at that settlement by its id, not by a name a
+    // rename leaves behind or a namesake in another sector matches first
+    // (issue #321 U52). Finish an Expedition's moveTargetId is a track's.
+    const destinationId = resolution.moveId === "set_a_course"
+      ? (interpretation?.moveTargetId ?? null)
+      : null;
     await maybeUpdateShipPositionFromName(
       moveTarget,
       campaignState,
       tokenDragSetCourse ? "scene_token"
         : resolution.moveId === "finish_an_expedition" ? "expedition"
         : "set_a_course",
+      { entityId: destinationId },
     );
 
     // Keep the campaign's "current location" in step with the arrival —
@@ -1648,7 +1724,8 @@ async function applyOutcomeEffects({
     // by move left the narrator options / entity-panel highlight pointing
     // at the last !at (LOCATION-DUAL-STORE fix). Same resolver as !at; a
     // destination that isn't a tracked entity leaves the store untouched.
-    const arrivedAt = resolveCurrentLocationName(moveTarget ?? "", campaignState);
+    const arrivedAt = currentLocationForEntityId(destinationId)
+      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
     if (arrivedAt) {
       campaignState.currentLocationId   = arrivedAt.id;
       campaignState.currentLocationType = arrivedAt.type;
@@ -1694,13 +1771,19 @@ async function applyOutcomeEffects({
   if (next.expeditionProgress && !orig.expeditionProgress) {
     try {
       const result = await applyExpeditionProgress(
-        { moveTarget, expeditionRank: interpretation?.expeditionRank },
+        { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null, expeditionRank: interpretation?.expeditionRank },
         {
           listTracks:   () => listProgressTracks(),
           createTrack:  (data) => addProgressTrack(data),
           markProgress: (id) => markProgressById(id),
         },
       );
+      if (result && !result.track) {
+        // Several open and none named, or the named one is over: nothing
+        // marked, and no phantom begun (issue #321 U16).
+        console.warn(`${MODULE_ID} | expedition progress: ${result.reason === "gone" ? "the move's expedition is over" : "more than one expedition is open and none was named"} — not marked.`);
+        notApplied.push(`expedition progress — ${result.reason === "gone" ? "its expedition is over" : "which expedition?"}`);
+      }
       if (result?.track) {
         // Link the new expedition to the undiscovered site its destination
         // confidently names (exact/substring/type keyword — never the
@@ -1840,13 +1923,19 @@ async function applyOutcomeEffects({
         }
       } else {
         const result = await applyCombatProgress(
-          { moveTarget, combatRank: interpretation?.combatRank, markCount: marks },
+          { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null, combatRank: interpretation?.combatRank, markCount: marks },
           {
             listTracks:   () => listProgressTracks(),
             createTrack:  (data) => addProgressTrack(data),
             markProgress: (id) => markProgressById(id),
           },
         );
+        if (result && !result.track) {
+          // Several fights open and none named, or the named one is over:
+          // nothing marked, and no phantom fight (issue #321 U16).
+          console.warn(`${MODULE_ID} | combat progress: ${result.reason === "gone" ? "the move's fight is over" : "more than one fight is open and none was named"} — ×${marks} not marked.`);
+          notApplied.push(`combat progress ×${marks} — ${result.reason === "gone" ? "its fight is over" : "which fight?"}`);
+        }
         if (result?.track) {
           combatProgressTrack = result.track;
           await postCombatProgressCard(result).catch(err =>
@@ -2081,13 +2170,16 @@ function invalidateItemOwnerSnapshot(item) {
  * Fires when any Actor document is updated — including by other clients.
  *
  * Responsibilities:
- * - Invalidate the cached character snapshot so the next context packet build
- *   reads fresh state from the Actor document.
- * - If the change touches condition debilities, recalculate momentum bounds so
- *   the Actor's momentum stays within the new valid range.
+ * - Invalidate the cached character snapshot on EVERY update — this client's
+ *   cache only — so the next roll and context build read fresh state from the
+ *   Actor document. Not gated on `hasPlayerOwner`: that is false for every PC
+ *   in solo-GM play (and for a PC the GM plays at a group table), whose sheet
+ *   edits otherwise never reached rolls or the narrator (issue #321 U01).
+ * - If a player-owned PC's condition debilities changed, recalculate momentum
+ *   bounds so the Actor's momentum stays within the new valid range.
  *
- * Ignores updates made by this client (userId === game.user.id) because
- * actorBridge already invalidates the cache after its own writes.
+ * The momentum recalc ignores updates made by this client
+ * (userId === game.user.id): actorBridge's own writes keep the bounds.
  */
 function registerActorHook() {
   // A PC's vows, bonds and assets are embedded Items, changed on the native
@@ -2099,12 +2191,12 @@ function registerActorHook() {
   Hooks.on("deleteItem", invalidateItemOwnerSnapshot);
 
   Hooks.on("updateActor", (actor, changes, _options, userId) => {
-    if (!actor.hasPlayerOwner) return;
-
-    // Invalidate the cached snapshot so the next context build reads fresh data
+    // Invalidate the cached snapshot so the next roll / context build reads
+    // fresh data — every actor, whoever owns it.
     invalidateActorCache(actor.id);
 
-    // Skip if this is our own write — actorBridge already handled the cache
+    // The momentum recalc below is for player-owned PCs, edited by another user.
+    if (!actor.hasPlayerOwner) return;
     if (userId === game.user.id) return;
 
     // If condition debilities changed, recalculate momentum bounds — on
@@ -2216,6 +2308,60 @@ function registerEntityRenameSyncHook() {
 }
 
 /**
+ * Which client narrates a native sheet roll: the keyed-runner ladder of
+ * RUN_ON.CLAUDE and requestOracleNarration (decisions.md "Claude calls run
+ * where a key lives, exactly once"). A keyed GM is connected → the canonical
+ * GM, which is keyed by construction, so the call succeeds and its narrator
+ * side-data applies; otherwise → the roller's own client, with its own key.
+ * The createChatMessage hook fires on every client and each reaches the same
+ * answer, so no relay is needed. Unlike the chat-command AUTHOR policy, an
+ * author-less message is nobody's roll — a native roll card always carries
+ * its roller.
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean}
+ */
+function nativeRollNarratesHere(message) {
+  if (hasKeyedActiveGM()) return isCanonicalGM();
+  const authorId = messageAuthorId(message);
+  return authorId != null && authorId === game?.user?.id;
+}
+
+/**
+ * The subtype lookup both native-roll hooks hand classifyProgressRoll — the
+ * narration hook below and the canonical GM's payoff hook
+ * (registerNativeFulfilConsequenceHook) — so the two always agree on what a
+ * sheet roll was. The vendor sets a moveDsId only for a vow, so a connection's
+ * roll is told apart by the source progress Item's subtype, read off the
+ * speaker actor (the system serialises only the track name). The module and
+ * the vendor's Connections tab store a connection as subtype "bond": the
+ * narration hook accepted only "connection", so a sheet-rolled Forge a Bond
+ * was paid but never narrated (issue #321 U21).
+ *
+ * @param {ChatMessage} message  the native roll card
+ * @param {string} label         the calling hook, for the log line
+ * @returns {(source: string) => ('vow'|'connection'|null)}
+ */
+function nativeProgressSubtypeLookup(message, label) {
+  return (source) => {
+    try {
+      const actor = message?.speaker?.actor ? game.actors?.get(message.speaker.actor) : null;
+      const src   = String(source ?? "").trim().toLowerCase();
+      if (!actor || !src) return null;
+      const item = actor.items?.find?.(i =>
+        i?.type === "progress" && String(i?.name ?? "").trim().toLowerCase() === src);
+      const subtype = String(item?.system?.subtype ?? "").toLowerCase();
+      if (subtype.includes("vow")) return "vow";
+      if (subtype.includes("connection") || subtype.includes("bond")) return "connection";
+      return null;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ${label}: subtype lookup for "${source}" threw:`, err?.message ?? err);
+      return null;
+    }
+  };
+}
+
+/**
  * Narrate NATIVE foundry-ironsworn vow/connection progress rolls (#236
  * follow-up). When a player rolls a vow (or connection) progress on the system
  * character sheet, the system posts only its own roll card and fires no hook,
@@ -2223,55 +2369,35 @@ function registerEntityRenameSyncHook() {
  * card, classifies it as a vow or connection resolution, and narrates the
  * already-determined outcome via narrateResolution — WITHOUT re-rolling.
  *
- * Single-emitter on the ROLLER's own client (the message author): exactly one
- * client narrates — the one that made the roll and holds the Claude key —
- * matching the pipeline's no-GM-dependency narration (#248 Theme D). The old
- * isCanonicalGM gate produced nothing when the Claude key lived on a player's
- * client, not the GM's. Anything it can't act on (action rolls, expedition/
- * combat progress, our own cards, unparseable shapes) is skipped with a debug
+ * Narrated exactly once, where a Claude key lives (nativeRollNarratesHere —
+ * decisions.md "Claude calls run where a key lives, exactly once"): the keyed
+ * canonical GM when one is connected, else the roller's own client with its
+ * own key. Narrating only on the roller gave a keyless player "Narration
+ * unavailable" at a table whose GM holds the key (issue #321 U11); the older
+ * canonical-GM-only gate produced nothing when only a player held a key
+ * (#248 Theme D). The narration is the roller's: their PC is the narrator's
+ * CHARACTER. Anything it can't act on (action rolls, expedition/combat
+ * progress, our own cards, unparseable shapes) is skipped with a debug
  * breadcrumb on the deciding client (decisions.md → "No silent failures"). See
  * nativeProgressRoll.js for the vendor-coupling note.
  */
 function registerNativeProgressRollHook() {
   Hooks.on("createChatMessage", (message) => {
     try {
-      // Narration runs on the ROLLER's own client — the one that made the roll
-      // and (per #209) holds the Claude key — mirroring the move pipeline's
-      // "no GM dependency" narration (Step 10 above). Gating this to the
-      // canonical GM (the old behaviour) silently produced nothing on tables
-      // where the Claude key lives on a player's client, not the GM's
-      // (#248 Theme D; decisions.md → "No silent failures"). Other clients
-      // correctly stand down here — not a failure, so no log.
-      // Unlike the chat-command AUTHOR policy, an author-less message is NOT
-      // treated as ours here — a native roll card always carries its roller.
-      const authorId = messageAuthorId(message);
-      const isRoller = authorId != null && authorId === game?.user?.id;
+      // Every client reads the same keyed-GM registry and user list, so one
+      // decides it narrates and the others stand down — not a failure, so no log.
+      const narratesHere = nativeRollNarratesHere(message);
 
       const content = String(message?.content ?? "");
-      const parsed  = isRoller ? parseIronswornProgressRoll(content) : null;
-      const moveId  = (isRoller && parsed) ? classifyProgressRoll(parsed, (source) => {
-        // Fallback discriminator: read the source progress Item's subtype off
-        // the speaker actor (the system serialises only the track name).
-        try {
-          const actor = message?.speaker?.actor ? game.actors?.get(message.speaker.actor) : null;
-          const src   = String(source ?? "").trim().toLowerCase();
-          if (!actor || !src) return null;
-          const item = actor.items?.find?.(i =>
-            i?.type === "progress" && String(i?.name ?? "").trim().toLowerCase() === src);
-          const subtype = String(item?.system?.subtype ?? "").toLowerCase();
-          if (subtype.includes("vow"))        return "vow";
-          if (subtype.includes("connection")) return "connection";
-          return null;
-        } catch (err) {
-          console.warn(`${MODULE_ID} | native-roll: subtype lookup for "${source}" threw:`, err?.message ?? err);
-          return null;
-        }
-      }) : null;
+      const parsed  = narratesHere ? parseIronswornProgressRoll(content) : null;
+      const moveId  = (narratesHere && parsed)
+        ? classifyProgressRoll(parsed, nativeProgressSubtypeLookup(message, "native-roll"))
+        : null;
 
       // No silent failures (decisions.md): map the facts to act/skip + reason +
       // level, then always log the decision on this (the deciding) client.
-      const rollKind = (isRoller && !parsed) ? ironswornRollKind(content) : "progress";
-      const plan = planNativeRollNarration({ isRoller, rollKind, parsed, moveId });
+      const rollKind = (narratesHere && !parsed) ? ironswornRollKind(content) : "progress";
+      const plan = planNativeRollNarration({ narratesHere, rollKind, parsed, moveId });
       if (plan.log === "warn") {
         console.warn(`${MODULE_ID} | native-roll: ${plan.reason} — skipping (a vendor card-shape change?)`);
       } else if (plan.log === "debug") {
@@ -2288,6 +2414,8 @@ function registerNativeProgressRollHook() {
 
       import("./narration/narrator.js").then(({ narrateResolution }) => {
         const campaignState = game.settings.get(MODULE_ID, "campaignState");
+        // The roller's PC (the sheet's speaker), not this client's own.
+        const speakerActorId = resolveSpeakerActorId(message, campaignState);
         const resolution = {
           _id:             `native-${message.id}`,
           moveId,
@@ -2304,7 +2432,7 @@ function registerNativeProgressRollHook() {
         };
         // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
         // mechanics, just narrate the outcome.
-        return narrateResolution(resolution, campaignState);
+        return narrateResolution(resolution, campaignState, { speakerActorId });
       }).catch(err =>
         console.warn(`${MODULE_ID} | native progress-roll narration failed:`, err?.message ?? err));
     } catch (err) {
@@ -2401,13 +2529,17 @@ function registerStarshipSeedHook() {
  * Triggers:
  *  - createItem / deleteItem — when a Command Vehicle asset is added to or
  *    removed from a starship Actor, recompute that ship's flag.
- *  - ready (once) — reconcile ships created before asset-detection shipped,
+ *  - world load — reconcile ships created before asset-detection shipped,
  *    so an existing command vehicle (like one made via the sidebar) gets
- *    flagged without the user having to re-add the asset.
+ *    flagged without the user having to re-add the asset. This runs from
+ *    the module's own ready handler, so the scan runs at once: a
+ *    Hooks.once("ready") registered while "ready" is dispatching is never
+ *    called (Foundry's Hooks.callAll iterates a copy of the handler list), and
+ *    the scan never ran (issue #321 U22).
  *
  * Canonical-GM gated (world-scoped writes, single emitter — createItem /
  * deleteItem fire on every client). The sync helper writes only on a status
- * change, so the ready-scan is idempotent. A single tracked starship is still
+ * change, so the load scan is idempotent. A single tracked starship is still
  * resolved as the command vehicle via the lone-ship fallback even if nothing
  * here ever flags it.
  */
@@ -2434,22 +2566,21 @@ function registerCommandVehicleHook() {
   Hooks.on("createItem", onAssetChange);
   Hooks.on("deleteItem", onAssetChange);
 
-  Hooks.once("ready", () => {
-    try {
-      if (!isCanonicalGM()) return;
-      import("./entities/ship.js").then(async (mod) => {
-        const state     = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        const starships = (game.actors?.contents ?? []).filter(a => a?.type === "starship");
-        for (const actor of starships) {
-          await mod.syncCommandVehicleFlag(actor, state).catch(err =>
-            console.warn(`${MODULE_ID} | command-vehicle ready sync failed for ${actor.id}:`, err));
-        }
-      }).catch(err =>
-        console.warn(`${MODULE_ID} | command-vehicle ready scan: dynamic import failed:`, err));
-    } catch (err) {
-      console.warn(`${MODULE_ID} | command-vehicle ready hook threw:`, err);
-    }
-  });
+  // The world-load reconcile — now, not on a "ready" that has already begun.
+  try {
+    if (!isCanonicalGM()) return;
+    import("./entities/ship.js").then(async (mod) => {
+      const state     = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const starships = (game.actors?.contents ?? []).filter(a => a?.type === "starship");
+      for (const actor of starships) {
+        await mod.syncCommandVehicleFlag(actor, state).catch(err =>
+          console.warn(`${MODULE_ID} | command-vehicle load sync failed for ${actor.id}:`, err));
+      }
+    }).catch(err =>
+      console.warn(`${MODULE_ID} | command-vehicle load scan: dynamic import failed:`, err));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | command-vehicle load scan threw:`, err);
+  }
 }
 
 /**
@@ -2967,9 +3098,10 @@ async function handleJournalCommand(message) {
  */
 /**
  * Build a minimal interpretation when the move ID is supplied by the caller
- * (the NWMA suggestion button). Skips the Claude API entirely. Stat defaults
- * to the move's first listed stat; the confirmation dialog still lets the
- * player override.
+ * (the NWMA suggestion button, the way-out and Battle buttons …), without
+ * interpreting the move. The stat starts as the move's first listed stat; the
+ * pipeline then reads the narration for it when the move lists several
+ * (enrichForcedMoveStat — issue #321 U04), and the confirm dialog shows it.
  */
 function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget = null, moveTargetId = null) {
   const moveData = MOVES[moveId];
@@ -3085,13 +3217,18 @@ async function handlePaceCommand(message) {
   });
 }
 
-// Map of chat-friendly odds aliases to canonical ORACLE_ODDS keys.
+// Map of chat-friendly odds aliases to canonical ORACLE_ODDS keys. The play
+// kit names two of the five odds with two words — "small chance" and "almost
+// certain" — which are looked up before the one-word aliases (issue #321 U64:
+// only the first word was checked, so "almost certain" rolled at 50/50 and
+// "small chance" left "chance" in the question).
 const ODDS_ALIASES = new Map([
-  ["small_chance",  "small_chance"], ["small", "small_chance"],
+  ["small_chance",  "small_chance"], ["small", "small_chance"], ["small chance", "small_chance"],
   ["unlikely",      "unlikely"],
   ["50_50",         "50_50"],        ["50/50", "50_50"], ["even", "50_50"],
   ["likely",        "likely"],
   ["almost_certain","almost_certain"], ["certain", "almost_certain"], ["sure", "almost_certain"],
+  ["almost certain", "almost_certain"],
 ]);
 
 /**
@@ -3127,16 +3264,19 @@ async function handleOracleCommand(message) {
     return;
   }
 
-  // Resolve odds — if parts[1] is a known odds alias use it, else fall back
-  // to 50/50 and treat parts[1..] as the question.
+  // Resolve odds — a two-word alias (parts[1..2]) first, then a one-word
+  // alias (parts[1]); else fall back to 50/50 and treat parts[1..] as the
+  // question.
   let oddsKey  = "50_50";
   let question = parts.slice(1).join(" ");
-  if (parts[1]) {
-    const aliased = ODDS_ALIASES.get(parts[1].toLowerCase());
-    if (aliased) {
-      oddsKey  = aliased;
-      question = parts.slice(2).join(" ");
-    }
+  const twoWord = parts[2] ? ODDS_ALIASES.get(`${parts[1]} ${parts[2]}`.toLowerCase()) : null;
+  const oneWord = parts[1] ? ODDS_ALIASES.get(parts[1].toLowerCase()) : null;
+  if (twoWord) {
+    oddsKey  = twoWord;
+    question = parts.slice(3).join(" ");
+  } else if (oneWord) {
+    oddsKey  = oneWord;
+    question = parts.slice(2).join(" ");
   }
 
   const result = rollYesNo(oddsKey, { question });
@@ -3429,24 +3569,31 @@ async function postTrackGoneCard(interpretation) {
 /**
  * Take Decisive Action with two or more fights open and none named: ask which
  * fight, instead of rolling a score of nothing — a certain miss
- * (TDA-BUTTON-NO-TARGET). Posted in place of the move; nothing is rolled or
- * written. Each open fight gets a button (wireWhichFightButtons) that posts
- * the move again with that fight's id, credited to the original roller.
+ * (TDA-BUTTON-NO-TARGET). Strike and Clash ask the same, and Undertake an
+ * Expedition which expedition (`trackType` "expedition"): unnamed among
+ * several they marked a phantom track (issue #321 U16). Posted in place of
+ * the move; nothing is rolled or written. Each open track gets a button
+ * (wireWhichFightButtons) that posts the move again with that track's id,
+ * credited to the original roller.
  *
  * @param {{ moveId: string, moveName?: string, narration?: string,
  *   actorId?: string|null, fights: Array<{ id: string, label?: string,
- *   rank?: string, ticks?: number }> }} opts
+ *   rank?: string, ticks?: number }>, trackType?: "combat"|"expedition" }} opts
  */
-async function postWhichFightCard({ moveId, moveName, narration, actorId = null, fights }) {
+async function postWhichFightCard({ moveId, moveName, narration, actorId = null, fights, trackType = "combat" }) {
+  const expedition = trackType === "expedition";
+  const noun = expedition ? "expedition" : "fight";
   const buttons = fights.map(t => {
     const rank  = escapeChatHtml(String(t.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
     const boxes = Math.floor(Number(t.ticks ?? 0) / 4);
+    const label = escapeChatHtml(t.label ?? (expedition ? "Expedition" : "Combat"));
     return `<button type="button" class="sf-followup-btn" data-action="sf-which-fight" data-track-id="${escapeChatHtml(t.id)}" `
-      + `title="Roll this fight's progress">⚔ ${escapeChatHtml(t.label ?? "Combat")} — ${rank}, ${boxes}/10 boxes</button>`;
+      + `title="Roll for this ${noun}">${expedition ? "🗺" : "⚔"} ${label} — ${rank}, ${boxes}/10 boxes</button>`;
   }).join("");
+  const choose = moveId === "take_decisive_action" ? "the fight to finish" : `the ${noun}`;
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(moveName ?? "Take Decisive Action")} — which fight?</strong>`
-      + `<p>More than one fight is open and nothing named this one. Choose the fight to finish — nothing has been rolled yet.</p>`
+    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(moveName ?? "Take Decisive Action")} — which ${noun}?</strong>`
+      + `<p>More than one ${noun} is open and nothing named this one. Choose ${choose} — nothing has been rolled yet.</p>`
       + `<div class="sf-milestone-suggest-row">${buttons}</div></div>`,
     // fights: the open fights' ids and names when asked — a pick forwards its
     // fight as forcedMoveTargetId / forcedMoveTarget. actorId: the roller, the
@@ -3454,6 +3601,39 @@ async function postWhichFightCard({ moveId, moveName, narration, actorId = null,
     flags: { [MODULE_ID]: {
       whichFightCard: true, moveId, narration: narration ?? null, actorId,
       fights: fights.map(t => ({ id: t.id, label: t.label ?? null })),
+    } },
+  });
+}
+
+/**
+ * Fulfill Your Vow with several vows open and none named: ask which vow,
+ * instead of rolling a score of nothing — a certain miss (issue #321 U02).
+ * Posted in place of the move; nothing is rolled or written. Each distinct
+ * vow (selectFulfilVow — a shared vow once, as the roller's copy when they
+ * hold one) gets a button (wireWhichVowButtons) whose pick the canonical GM
+ * applies once (gmRelay "fulfilVow.pick" → cardActions.applyFulfilVowPick):
+ * the move is posted again with that copy's id, as the roller.
+ *
+ * @param {{ narration?: string, actorId?: string|null,
+ *   vows: Array<{ id: string, name?: string, rank?: string|number, ticks?: number }> }} opts
+ */
+async function postWhichVowCard({ narration, actorId = null, vows }) {
+  const buttons = vows.map(v => {
+    const rank  = escapeChatHtml(rankName(v.rank).replace(/^\w/, c => c.toUpperCase()));
+    const boxes = Math.floor(Number(v.ticks ?? 0) / 4);
+    return `<button type="button" class="sf-followup-btn" data-action="sf-which-vow" data-item-id="${escapeChatHtml(v.id)}" `
+      + `title="Roll this vow's progress">🏁 ${escapeChatHtml(v.name || "Vow")} — ${rank}, ${boxes}/10 boxes</button>`;
+  }).join("");
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Fulfill Your Vow — which vow?</strong>`
+      + `<p>More than one vow is open and nothing named this one. Choose the vow to fulfill — nothing has been rolled yet.</p>`
+      + `<div class="sf-milestone-suggest-row">${buttons}</div></div>`,
+    // choices: the offered vow copies — a pick must be one of them and
+    // forwards its copy as forcedMoveTargetId / forcedMoveTarget. actorId:
+    // the roller, the pick's speaker, so the move stays theirs.
+    flags: { [MODULE_ID]: {
+      whichVowCard: true, narration: narration ?? null, actorId,
+      choices: vows.map(v => ({ itemId: v.id, name: v.name ?? null })),
     } },
   });
 }
@@ -3472,30 +3652,51 @@ async function postRecommitOfferCard(track) {
   });
 }
 
-// GM-side: execute the recommit mechanics on an open expedition track.
-async function performRecommit(trackId) {
+/**
+ * GM-side: execute the recommit mechanics on an open expedition track — the
+ * offer card's claim (cardActions.applyRecommitOffer, gmRelay
+ * "expedition.recommit", issue #321 U20) runs it once per card.
+ *
+ * @param {string} trackId
+ * @returns {Promise<{ ok: boolean, reason?: "no-track"|"write-refused" }>}
+ *   "write-refused": the track write failed and nothing changed
+ */
+export async function performRecommit(trackId) {
+  let track = null;
   try {
-    const track = (await listProgressTracks()).find(t => t.id === trackId);
-    if (!track || track.completed) {
-      console.warn(`${MODULE_ID} | recommit: track ${trackId} missing or already completed.`);
-      return;
-    }
-    const dice = rollChallengeDice();
-    const plan = planRecommit(track.ticks, track.rank, dice);
-    await updateTrackFields(trackId, { ticks: plan.newTicks, rank: plan.newRank });
-    await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Recommitted: ${escapeChatHtml(track.label ?? "Expedition")}</strong>`
-        + `<p>Challenge dice ${dice[0]}, ${dice[1]} — cleared <strong>${plan.clearedBoxes}</strong> box${plan.clearedBoxes === 1 ? "" : "es"} `
-        + `(now ${Math.floor(plan.newTicks / 4)}/10) and the expedition hardens to <strong>${escapeChatHtml(plan.newRank)}</strong>. `
-        + `The journey continues.</p></div>`,
-      flags: { [MODULE_ID]: { recommitCard: true, trackId, newRank: plan.newRank, newTicks: plan.newTicks } },
-    });
+    track = (await listProgressTracks()).find(t => t.id === trackId);
   } catch (err) {
-    console.warn(`${MODULE_ID} | recommit failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | recommit: the tracks could not be read — nothing recommitted:`, err?.message ?? err);
+    return { ok: false, reason: "write-refused" };
   }
+  if (!track || track.completed) {
+    console.warn(`${MODULE_ID} | recommit: track ${trackId} missing or already completed.`);
+    return { ok: false, reason: "no-track" };
+  }
+  const dice = rollChallengeDice();
+  const plan = planRecommit(track.ticks, track.rank, dice);
+  try {
+    await updateTrackFields(trackId, { ticks: plan.newTicks, rank: plan.newRank });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | recommit failed — the track was not changed:`, err?.message ?? err);
+    return { ok: false, reason: "write-refused" };
+  }
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Recommitted: ${escapeChatHtml(track.label ?? "Expedition")}</strong>`
+      + `<p>Challenge dice ${dice[0]}, ${dice[1]} — cleared <strong>${plan.clearedBoxes}</strong> box${plan.clearedBoxes === 1 ? "" : "es"} `
+      + `(now ${Math.floor(plan.newTicks / 4)}/10) and the expedition hardens to <strong>${escapeChatHtml(plan.newRank)}</strong>. `
+      + `The journey continues.</p></div>`,
+    flags: { [MODULE_ID]: { recommitCard: true, trackId, newRank: plan.newRank, newTicks: plan.newTicks } },
+  }).catch(err => console.warn(`${MODULE_ID} | recommit card failed:`, err?.message ?? err));
+  return { ok: true };
 }
 
-// Wire the recommit button — a journal write, so non-canonical clients relay.
+// Wire the recommit button. A click relays to the canonical GM
+// ("expedition.recommit" → cardActions.applyRecommitOffer), which claims the
+// GM-authored offer card (`recommitted`) before recommitting: once, whoever
+// presses and however often the card re-renders (issue #321 U20 — a local
+// disable re-armed on every other client and on a re-render). A click that is
+// not delivered re-arms the button.
 function registerRecommitHook() {
   if (registerRecommitHook._installed) return;
   registerRecommitHook._installed = true;
@@ -3504,38 +3705,22 @@ function registerRecommitHook() {
     if (!f?.recommitOfferCard) return;
     const btn = root.querySelector('[data-action="sf-recommit"]');
     if (!btn) return;
+    if (liveCardFlags(message)?.recommitted) {
+      btn.disabled = true;
+      return;
+    }
     const fresh = btn.cloneNode(true);
     btn.replaceWith(fresh);
     fresh.addEventListener("click", async (event) => {
       event.preventDefault(); event.stopPropagation();
       fresh.disabled = true;
-      if (isCanonicalGM()) {
-        await performRecommit(f.trackId);
-      } else {
-        try {
-          game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "expedition.recommit", trackId: f.trackId });
-        } catch (err) {
-          console.warn(`${MODULE_ID} | recommit relay emit failed:`, err?.message ?? err);
-          fresh.disabled = false;
-        }
-      }
+      await relayCardAction({
+        kind:       "expedition.recommit",
+        payload:    { messageId: message?.id ?? null },
+        isResolved: () => !!liveCardFlags(message)?.recommitted,
+        restore:    () => { fresh.disabled = false; },
+      });
     });
-  });
-}
-
-// GM-side socket receiver for player recommit clicks.
-function registerRecommitSocket() {
-  if (registerRecommitSocket._installed) return;
-  if (!game?.socket?.on) return;
-  registerRecommitSocket._installed = true;
-  game.socket.on(`module.${MODULE_ID}`, async (payload) => {
-    try {
-      if (!payload || payload.kind !== "expedition.recommit") return;
-      if (!isCanonicalGM()) return;
-      await performRecommit(payload.trackId);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | recommit socket handler failed:`, err?.message ?? err);
-    }
   });
 }
 
@@ -3708,6 +3893,7 @@ export async function createCombatTrackFromThreshold({ label, rank, vowName, obj
       markCount:     0,
       objective:     objective || null,
       linkedVowName: vowName || null,
+      beginsFight:   true,    // a new foe is a new fight, whatever else is open (issue #321 U16)
     },
     {
       listTracks:   () => listProgressTracks(),
@@ -4331,24 +4517,7 @@ function registerNativeFulfilConsequenceHook() {
       if (!isCanonicalGM()) return;
       const parsed = parseIronswornProgressRoll(message?.content ?? "");
       if (!parsed) return;
-      const moveId = classifyProgressRoll(parsed, (source) => {
-        try {
-          const actor = message?.speaker?.actor ? game.actors?.get(message.speaker.actor) : null;
-          const src   = String(source ?? "").trim().toLowerCase();
-          if (!actor || !src) return null;
-          const it = actor.items?.find?.(i =>
-            i?.type === "progress" && String(i?.name ?? "").trim().toLowerCase() === src);
-          const subtype = String(it?.system?.subtype ?? "").toLowerCase();
-          if (subtype.includes("vow"))        return "vow";
-          // The module (and vendor Connections tab) store connection progress
-          // items as subtype "bond" — accept both spellings.
-          if (subtype.includes("connection") || subtype.includes("bond")) return "connection";
-          return null;
-        } catch (err) {
-          console.warn(`${MODULE_ID} | native-fulfil: subtype lookup threw:`, err?.message ?? err);
-          return null;
-        }
-      });
+      const moveId = classifyProgressRoll(parsed, nativeProgressSubtypeLookup(message, "native-fulfil"));
       if (shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) {
         // The sheet roll's speaker is the PC who rolled — their copy gets the reward.
         payFulfilledVowNative(parsed.source, parsed.outcome, {
@@ -5107,7 +5276,9 @@ async function postFaceDefeatPayThePriceCard(actorId = null) {
     speakerActorId: actorId,
   });
 
-  return { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDeltas };
+  // reversals — what the price did, for an upgrade to undo; price — the
+  // result the card shows, which the move's narration is seeded with.
+  return { reversals: { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDeltas }, price: result.result };
 }
 
 /**
@@ -5294,7 +5465,10 @@ async function handleSeverCommand(message) {
   const connections = (campaignState.connectionIds ?? [])
     .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
     .filter(Boolean);
-  const target = selectConnection(connections, arg || null);
+  // Strict: a severance is permanent, so a name that matches nobody severs
+  // nobody, and a bare `!sever` acts only when one connection is active —
+  // never the develop ladder's sole-bonded guess (issue #321 U14).
+  const target = selectConnection(connections, arg || null, { strict: true });
   if (!target?.__hostId) {
     ui.notifications?.warn(
       `Starforged Companion: no active connection matched "${arg || ""}"${arg ? "" : " — name the connection (!sever <name>) when several are active"}.`);
@@ -5409,7 +5583,9 @@ async function handleAtCommand(message) {
     return;
   }
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A copy: a refused write must leave this client's cached state as it was
+  // (issue #321 U58).
+  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
 
   if (!arg) {
     campaignState.currentLocationId   = null;
@@ -5451,13 +5627,19 @@ async function handleAtCommand(message) {
  * a missed position write does not block the originating chat command
  * (`!at`, `set_a_course`) and does not throw into the pipeline.
  *
- * Exported so the move-resolution path and the future Token-drag
- * handler can both reach the same logic.
+ * Exported so the move-resolution path, the Entities panel's "Set as
+ * current location" (issue #321 U56) and the token-drag arrival reach the
+ * same logic.
+ *
+ * `opts.entityId` names the destination by its host document id when the
+ * caller knows it (the Entities panel's place; a token dropped on a sector
+ * pin): the position is that place's, and the name only a fallback for an id
+ * that resolves to no settlement / planet / location (issue #321 U52, U56).
  */
-export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual") {
+export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual", { entityId = null } = {}) {
   if (!getShipPositioningEnabled()) return null;
   const ref = typeof name === "string" ? name.trim() : "";
-  if (!ref) return null;
+  if (!ref && !entityId) return null;
   if (!game.user?.isGM) return null;            // world-scoped write — GM only
 
   try {
@@ -5466,7 +5648,9 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
     // and threw "Ship actor not found" on every write here (finding #5).
     const cvActorId = getCommandVehicleActorId(campaignState);
     if (!cvActorId) return null;
-    const position = inferShipPosition(ref, campaignState, { source });
+    const position = (entityId ? inferShipPositionFromEntityId(entityId, campaignState, { source }) : null)
+      ?? (ref ? inferShipPosition(ref, campaignState, { source }) : null);
+    if (!position) return null;
     await updateShip(cvActorId, { position });
 
     // Cluster C — the map follows the fiction: move the sector-scene Token
@@ -5495,7 +5679,9 @@ async function handleSectorCommand(message) {
   const parts = text.slice("!sector".length).trim().split(/\s+/);
   const sub   = parts[0]?.toLowerCase() ?? "";
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A copy: a refused switch must leave this client's cached state as it was
+  // (issue #321 U58).
+  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
 
   // Bare `!sector` — show usage (SECTOR-SWITCH-001: it used to do nothing).
   // Whispered to the typist; it's help text, not table news.
@@ -6324,6 +6510,7 @@ Hooks.once("ready", () => {
   registerNativeFulfilConsequenceHook();   // #248 B2: native-sheet vow fulfil → deepen bond + grant reward + legacy
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
+  registerXCardRedirectHook();             // #321 U07: the X-Card's redirect is cleared once the first narration after it posts
   registerSessionActivityHook();           // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
@@ -6352,8 +6539,8 @@ Hooks.once("ready", () => {
   registerCombatThresholdHook();
   registerCombatThresholdSocket();
   registerWayOutHook();
+  // Recommit relays through gmRelay "expedition.recommit" (issue #321 U20).
   registerRecommitHook();
-  registerRecommitSocket();
   // Won-fight vow milestone (#241) — Mark milestone / Fulfill / Deepen bond on a
   // won linked fight; mark + deepen relay to the canonical GM through gmRelay
   // ("fightVow.*" → src/moves/cardActions.js), one-shot per card.
@@ -6685,11 +6872,53 @@ export function wireWhichFightButtons(message, root) {
 onChatMessageRender((message, root) => wireWhichFightButtons(message, root));
 
 /**
- * Wire the "⚑ Reach a Milestone" suggestion button on a move-result card.
- * Clicking marks vow progress (sole open vow → auto-mark; several → picker)
- * via the same applyReachMilestone path the move uses. Disabled after one use
- * (flag `milestoneMarked`) so a card can't double-mark on re-render. GM-gated
- * writes are inherited from markVowProgress.
+ * Wire a "which vow?" card's buttons (postWhichVowCard, issue #321 U02). A
+ * pick relays to the canonical GM ("fulfilVow.pick" →
+ * cardActions.applyFulfilVowPick), which claims the GM-authored card
+ * (`resolved`) and posts the move once, as the roller; a re-render or another
+ * client finds the claim. A click that is not delivered re-arms the buttons.
+ *
+ * Exported so tests and Quench can drive it with a synthetic message + root.
+ */
+export function wireWhichVowButtons(message, root) {
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.whichVowCard) return;
+  const buttons = [...(root?.querySelectorAll?.('[data-action="sf-which-vow"]') ?? [])];
+  if (!buttons.length) return;
+  if (liveCardFlags(message)?.resolved) {
+    for (const b of buttons) b.disabled = true;
+    return;
+  }
+  const fresh = buttons.map(btn => {
+    const clone = btn.cloneNode(true);
+    btn.replaceWith(clone);
+    return clone;
+  });
+  for (const btn of fresh) {
+    btn.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      for (const b of fresh) b.disabled = true;
+      await relayCardAction({
+        kind:       "fulfilVow.pick",
+        payload:    { messageId: message?.id ?? null, itemId: btn.dataset.itemId || null },
+        isResolved: () => !!liveCardFlags(message)?.resolved,
+        restore:    () => { for (const b of fresh) b.disabled = false; },
+      });
+    });
+  }
+}
+onChatMessageRender((message, root) => wireWhichVowButtons(message, root));
+
+/**
+ * Wire the "⚑ Mark Progress on Vow" suggestion button on a move-result card.
+ * A click relays to the canonical GM ("milestone.suggestion" →
+ * cardActions.applyMilestoneSuggestion), which claims the GM-authored card
+ * (`milestoneMarked`) and posts the forced reach_a_milestone once, as the
+ * card's roller — the pipeline then marks the roller's vow (sole open vow →
+ * auto-mark; several → picker). The flag was read and never written, so a
+ * second client, or a re-render, marked the vow again (issue #321 U20). A
+ * click that is not delivered re-arms the button.
  *
  * Exported so Quench can drive it with a synthetic message + root.
  */
@@ -6699,7 +6928,7 @@ export function wireMilestoneSuggestionButton(message, root) {
   const btn = root?.querySelector?.('[data-action="sf-reach-milestone"]');
   if (!btn) return;
 
-  if (f.milestoneMarked) {
+  if (liveCardFlags(message)?.milestoneMarked) {
     btn.disabled = true;
     btn.textContent = "⚑ Milestone marked";
     return;
@@ -6711,19 +6940,12 @@ export function wireMilestoneSuggestionButton(message, root) {
     event.preventDefault();
     event.stopPropagation();
     fresh.disabled = true;
-    try {
-      // Multiplayer fix (#236-follow-up): post a forced reach_a_milestone move
-      // so the canonical GM runs the progress mark + narration, exactly like the
-      // Attempt-to-Fulfill-Vow button. The old direct applyReachMilestone() call
-      // was GM-gated and silently no-op'd for players (the click did nothing).
-      await ChatMessage.create({
-        content: "Mark progress on your vow.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone" } },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | Reach a Milestone suggestion failed:`, err);
-      fresh.disabled = false;
-    }
+    await relayCardAction({
+      kind:       "milestone.suggestion",
+      payload:    { messageId: message?.id ?? null, actorId: clickerActorId() },
+      isResolved: () => !!liveCardFlags(message)?.milestoneMarked,
+      restore:    () => { fresh.disabled = false; },
+    });
   });
 }
 onChatMessageRender((message, root) => wireMilestoneSuggestionButton(message, root));
@@ -6928,9 +7150,10 @@ export function wireConnectionPickerButtons(message, root) {
 }
 
 // The PC a card-button click on THIS client acts for — the same ladder as a
-// typed message (selected token → bound character → owned PC → first PC).
-// A player who owns none of those (an observer) sends null rather than the
-// first PC, which the GM-side handler would refuse as not theirs.
+// typed message (selected token → bound character → owned PC → the first PC
+// only for a GM or in solo play). A player who owns none of those (an
+// observer) sends null rather than another player's PC, which the GM-side
+// handler would refuse as not theirs.
 function clickerActorId() {
   let speakerActor = null;
   try {
@@ -6942,9 +7165,9 @@ function clickerActorId() {
     { author: game.user ?? null, speaker: { actor: speakerActor } },
     game.settings.get(MODULE_ID, "campaignState"),
   );
-  if (!actorId || game.user?.isGM) return actorId;
-  const actor = game.actors?.get?.(actorId) ?? null;
-  if (userOwnsActor(actor, game.user)) return actorId;
+  if (game.user?.isGM) return actorId;
+  const actor = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+  if (actor && userOwnsActor(actor, game.user)) return actorId;
   console.debug(`${MODULE_ID} | card click: this user owns no player character — the GM resolves the speaker.`);
   return null;
 }
@@ -7021,7 +7244,9 @@ Hooks.on("createJournalEntry", async (entry) => {
   const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
   if (!systemTitle || entry.name !== systemTitle) return;
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A copy: a refused write must not leave this client's cached setting
+  // claiming the journal is linked (rules/foundry-api.md).
+  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
   if (campaignState.worldTruthsSet) return; // Already recorded with real content
 
   campaignState.worldTruthsJournalId = entry.id;
@@ -7041,6 +7266,12 @@ Hooks.on("createJournalEntry", async (entry) => {
  * The system journal name matches i18n key IRONSWORN.JOURNALENTRYPAGES.TypeTruth
  * ("Setting Truths" in English). No module flags are written on either document.
  * Content has ≥2 <h2> elements — one per truth category saved.
+ *
+ * Every save counts, not only the first: each Save in the dialog creates a NEW
+ * journal, and the newest is the campaign's truths. `worldTruthsJournalId` used
+ * to stay on the first journal once `worldTruthsSet` was true, so `!lore`
+ * summarised — and wrote "The Story So Far" into — the superseded truths
+ * (issue #321 U65).
  */
 Hooks.on("createJournalEntryPage", async (page) => {
   if (!isCanonicalGM()) return;   // single emitter for the campaignState write
@@ -7061,8 +7292,9 @@ Hooks.on("createJournalEntryPage", async (page) => {
   const content = page.text?.content ?? "";
   if ((content.match(/<h2/gi) ?? []).length < 2) return;
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  if (campaignState.worldTruthsSet) return; // Already recorded
+  // A copy, as above: a refused write leaves the cached setting as it was.
+  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
+  if (campaignState.worldTruthsSet && campaignState.worldTruthsJournalId === entry.id) return; // Already recorded
 
   campaignState.worldTruthsSet       = true;
   campaignState.worldTruthsJournalId = entry.id;

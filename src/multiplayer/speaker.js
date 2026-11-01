@@ -20,13 +20,24 @@
  *                                     through (observed in playtest: chat
  *                                     attributed to "Ship").
  *   2. message.author.character.id  — User.character (the explicitly
- *                                     bound PC for this Foundry user)
+ *                                     bound PC for this Foundry user),
+ *                                     honoured only when it is a player
+ *                                     character — a user whose assigned
+ *                                     character is the crew's starship or
+ *                                     an NPC card falls through (issue
+ *                                     #321 U24)
  *   3. first Actor type === "character" that the author OWNS via
  *      Foundry's permission system
- *   4. campaignState.characterIds[0] — solo-GM-play fallback
+ *   4. the campaign's first PC — only for a GM author or in solo play
+ *      (a single PC in the world). A player with no PC of their own is
+ *      never handed another player's character (issue #321 U23).
  *
- * Returns null only when there is literally no PC in the world.
+ * Steps 2–4 are resolveUserActorId — "whose PC is this user?" — the one
+ * resolver every path that acts for a user rather than a message (the
+ * Private Channel, the Chronicle toolbar, a connection's bond Item) shares.
  */
+
+import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
 
 const OWNERSHIP_OWNER = 3;
 
@@ -82,45 +93,70 @@ export function resolveSpeakerActorId(message, campaignState) {
   const speakerActorId = message?.speaker?.actor ?? null;
   if (speakerActorId) {
     const actor = globalThis.game?.actors?.get?.(speakerActorId) ?? null;
-    if (isPlayerCharacter(actor)) return actor.id;
+    if (isPlayerCharacterActor(actor)) return actor.id;
   }
 
-  // 2. User.character — the bound PC. Works for any player who set
-  //    "character" on their User document (the standard Foundry pattern).
-  const author = message?.author ?? null;
-  if (author?.character?.id) {
-    return author.character.id;
-  }
-
-  // 3. Ownership scan. A player can own a PC without setting it as their
-  //    User#character. Foundry's testUserPermission is the canonical
-  //    check; we fall back to direct ownership-map inspection when
-  //    testUserPermission isn't available (e.g. test mocks).
-  if (author?.id && globalThis.game?.actors) {
-    const owned = filterPlayerOwnedCharacters(author);
-    if (owned.length) return owned[0].id;
-  }
-
-  // 4. Solo-GM / unbound fallback — campaignState's first PC.
-  return campaignState?.characterIds?.[0] ?? null;
+  // 2–4. The author's own PC.
+  return resolveUserActorId(messageAuthor(message), campaignState);
 }
 
 /**
- * Player character = ironsworn `character` Actor WITHOUT the module's
- * entityType flag. NPC/connection cards are `character` actors too
- * (FOLDER-002) — never attribute a chat message to one; starships and
- * other actor types are never speakers.
+ * "Whose PC is this user?" — the user's own player character, roller / owner
+ * first (issue #321 U23). The one resolver for every path that acts for a
+ * user: a chat message's author (resolveSpeakerActorId), the Private
+ * Channel's player, the Chronicle toolbar's viewer, the PC a narration — and
+ * so a new connection's bond Item — belongs to.
+ *
+ *   1. User#character — honoured only when it is a player character: a user
+ *      can assign the starship or an NPC card as their character, and
+ *      attributing to it rolls the ship's (absent) stats and writes the
+ *      move's effects onto it (issue #321 U24).
+ *   2. The first PC the user OWNS. A player can own a PC without setting it
+ *      as their User#character. Foundry's testUserPermission is the
+ *      canonical check (a GM owns every actor); the raw ownership map is
+ *      read when testUserPermission isn't available (e.g. test mocks).
+ *   3. The campaign's first PC — only for a GM (who plays the GM-run PCs and
+ *      solo games) or in solo play (a single PC in the world). Otherwise
+ *      null: a player with no PC of their own is never handed another
+ *      player's character.
+ *
+ * @param {User|Object|null} user
+ * @param {Object|null}      campaignState
+ * @returns {string|null} Actor id or null
  */
-function isPlayerCharacter(actor) {
-  if (!actor || actor.type !== "character") return false;
-  if (actor.flags?.["starforged-companion"]?.entityType) return false;
-  return true;
+export function resolveUserActorId(user, campaignState) {
+  const bound = user?.character ?? null;
+  if (bound?.id) {
+    const actor = globalThis.game?.actors?.get?.(bound.id) ?? bound;
+    if (isPlayerCharacterActor(actor)) return actor.id;
+  }
+
+  if (user?.id && globalThis.game?.actors) {
+    const owned = filterPlayerOwnedCharacters(user);
+    if (owned.length) return owned[0].id;
+  }
+
+  const pcs = getPlayerActors();
+  if (!user?.isGM && pcs.length > 1) return null;
+  return campaignState?.characterIds?.[0] ?? pcs[0]?.id ?? null;
+}
+
+/**
+ * The User who wrote a message. Foundry v13 exposes it as `message.author`;
+ * a shape that carries only the id (legacy / programmatic) is looked up, so
+ * the GM check in resolveUserActorId still sees the author's role.
+ */
+function messageAuthor(message) {
+  const author = message?.author ?? null;
+  if (author && typeof author === "object") return author;
+  const id = messageAuthorId(message);
+  return id ? (globalThis.game?.users?.get?.(id) ?? null) : null;
 }
 
 function filterPlayerOwnedCharacters(user) {
   const all = Array.from(globalThis.game.actors ?? []);
   return all.filter(a => {
-    if (!isPlayerCharacter(a)) return false;
+    if (!isPlayerCharacterActor(a)) return false;
     if (typeof a.testUserPermission === "function") {
       return a.testUserPermission(user, "OWNER");
     }

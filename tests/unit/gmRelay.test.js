@@ -158,7 +158,7 @@ describe('registerGmRelaySocket', () => {
     setUsers([GM], 'gm-1');
     const spy = vi.spyOn(safety, 'suppressScene').mockResolvedValue(undefined);
     registerGmRelaySocket();
-    await handler()({ kind: 'expedition.recommit', trackId: 't1' });
+    await handler()({ kind: 'combat.enterFray', label: 'Raiders' });
     await handler()(null);
     expect(spy).not.toHaveBeenCalled();
     spy.mockRestore();
@@ -430,7 +430,7 @@ describe('announceGmRelayReady / onGmRelayReady', () => {
     const cb = vi.fn();
     onGmRelayReady(cb);
     deliver({ kind: `${GM_RELAY_KIND_PREFIX}xcard.activate`, payload: {} });
-    deliver({ kind: 'expedition.recommit' });
+    deliver({ kind: 'combat.enterFray' });
     setUsers([GM, PLAYER], 'gm-1');
     deliver({ kind: GM_RELAY_READY_KIND });
     expect(cb).not.toHaveBeenCalled();

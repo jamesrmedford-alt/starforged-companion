@@ -20,8 +20,13 @@ import {
   handleCommandVehicleTokenPlacement,
   handleCommandVehicleTokenReposition,
   isCommandVehicleToken,
+  handleSettlementPinRename,
   POSITION_SYNC_OPTION,
 } from '../../src/sectors/sectorSceneHooks.js';
+import { createSettlement, updateSettlement } from '../../src/entities/settlement.js';
+import { createSectorScene } from '../../src/sectors/sceneBuilder.js';
+import { inferShipPosition, formatShipPositionLine } from '../../src/factContinuity/shipPosition.js';
+import { _resetFolderCache } from '../../src/entities/folder.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -301,11 +306,171 @@ describe('handleCommandVehicleTokenDrag', () => {
     const flag = createCalls[0].flags?.[MODULE_ID];
     expect(flag?.bypassPacing).toBe(true);
     expect(flag?.forcedMoveId).toBe('set_a_course');
+    // A legacy pin with no linked Actor goes by its label, and names no id.
     expect(flag?.forcedMoveTarget).toBe('Bleakhold');
-    expect(flag?.tokenDragSetCourse?.destNoteId).toBe('s1');
-    expect(flag?.tokenDragSetCourse?.destX).toBe(100);
-    expect(flag?.tokenDragSetCourse?.destY).toBe(100);
+    expect(flag?.forcedMoveTargetId).toBeUndefined();
+    expect(flag?.tokenDragSetCourse).toEqual({ sceneId: 'scene1', tokenId: 'tok1', destX: 100, destY: 100 });
     restore();
+  });
+
+  // Issue #321 U54: the arrival that moves the token onto the pin runs only with
+  // Ship Positioning and Auto-Move Ship on Set a Course both on. With either
+  // off, a drop was cancelled and Set a Course rolled, yet the token never moved.
+  it.each([
+    ['Ship Positioning', 'factContinuity.shipPositioning'],
+    ['Auto-Move Ship on Set a Course', 'factContinuity.shipAutoMoveOnCourse'],
+  ])('with %s off, a drop on a pin is a plain token move — nothing is cancelled or rolled', async (_label, key) => {
+    global.game.settings._store.set(`${MODULE_ID}.${key}`, false);
+    try {
+      const scene = makeSectorScene({ notes: [makeSettlementNote('s1', 100, 100, 'Bleakhold')] });
+      const result = handleCommandVehicleTokenDrag(
+        { id: 'tok1', flags: { [MODULE_ID]: { commandVehicle: true } }, x: 0, y: 0, parent: scene },
+        { x: 110, y: 110 },
+      );
+      await new Promise(r => setTimeout(r, 5));   // any dispatch lands inside this test
+      expect(result).toBeUndefined();
+      expect(createCalls).toHaveLength(0);
+    } finally {
+      global.game.settings._store.delete(`${MODULE_ID}.${key}`);
+      restore();
+    }
+  });
+
+  it("names the pin's settlement Actor — its current name, and its id for the arrival (issue #321 U52)", async () => {
+    global.game.actors._set('actor-bleak', { id: 'actor-bleak', name: 'Bleak Hold Station' });
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('gen-1', 100, 100, 'Bleakhold', { actorId: 'actor-bleak' })],
+    });
+    handleCommandVehicleTokenDrag(
+      { id: 'tok1', flags: { [MODULE_ID]: { commandVehicle: true } }, x: 0, y: 0, parent: scene },
+      { x: 110, y: 110 },
+    );
+    await new Promise(r => setTimeout(r, 5));
+    const flag = createCalls[0].flags?.[MODULE_ID];
+    expect(createCalls[0].content).toBe('I set a course for Bleak Hold Station.');
+    expect(flag?.forcedMoveTarget).toBe('Bleak Hold Station');
+    expect(flag?.forcedMoveTargetId).toBe('actor-bleak');
+    restore();
+  });
+});
+
+// Issue #321 U52 — the real producers: a settlement Actor (createSettlement),
+// the pins createSectorScene writes, the rename updateSettlement applies.
+describe('dropping the ship on a renamed settlement pin', () => {
+  beforeEach(() => {
+    global.game.actors._reset();
+    global.game.folders._reset();
+    _resetFolderCache();
+    global.game.settings._store.clear();
+    ChatMessage._reset();
+  });
+
+  it("sets a course for the settlement the pin links, by its current name", async () => {
+    const cs = { sectors: [{ id: 'sec-1', name: 'Test Sector' }], activeSectorId: 'sec-1', settlementIds: [] };
+    global.game.settings._store.set(`${MODULE_ID}.campaignState`, cs);
+    await createSettlement({ name: 'Bleakhold', location: 'Orbital', sectorId: 'sec-1' }, cs, { persist: false });
+    const actorId = cs.settlementIds[0];
+
+    const notes = [];
+    const scene = {
+      id: 'scene-1', flags: {}, grid: { size: 100 },
+      dimensions: { sceneX: 200, sceneY: 200, sceneWidth: 1792, sceneHeight: 1024 },
+      update: vi.fn(async () => scene),
+      createEmbeddedDocuments: vi.fn(async (type, data) => {
+        if (type === 'Note') for (const d of data) notes.push({ id: `note-${notes.length}`, ...d });
+        return data;
+      }),
+    };
+    global.Scene = { create: vi.fn(async (data) => { scene.flags = data.flags; return scene; }) };
+    await createSectorScene({
+      id: 'sec-1', name: 'Test Sector',
+      settlements: [{ id: 'gen-A', name: 'Bleakhold', locationType: 'orbital', planet: null, stellar: null }],
+      mapData: { settlements: [{ id: 'gen-A', name: 'Bleakhold', type: 'orbital', gridX: 3, gridY: 2 }], passages: [], discoveries: [] },
+    }, null, { 'gen-A': global.game.actors.get(actorId) });
+    scene.notes = notes;
+
+    // The GM renames the settlement (Actor name + record name, as the sheet + rename sync do).
+    await updateSettlement(actorId, { name: 'Bleak Hold Station' });
+
+    const pin = notes.find(n => n.flags[MODULE_ID].settlementId === 'gen-A' && !n.flags[MODULE_ID].planetNote && !n.flags[MODULE_ID].stellarNote);
+    const tokenDoc = { id: 'tok-1', x: 0, y: 0, flags: { [MODULE_ID]: { commandVehicle: true } }, parent: scene };
+    expect(handleCommandVehicleTokenDrag(tokenDoc, { x: pin.x, y: pin.y }, {})).toBe(false);
+    await new Promise(r => setTimeout(r, 10));
+
+    const msg = ChatMessage._created.at(-1);
+    expect(msg.flags[MODULE_ID].forcedMoveTarget).toBe('Bleak Hold Station');   // was the pin's stale "Bleakhold"
+    expect(msg.flags[MODULE_ID].forcedMoveTargetId).toBe(actorId);
+    // The arrival's name fallback resolves it too.
+    const pos = inferShipPosition(msg.flags[MODULE_ID].forcedMoveTarget, global.game.settings.get(MODULE_ID, 'campaignState'));
+    expect(pos.nearestSettlementId).toBe(actorId);
+  });
+});
+
+describe('handleSettlementPinRename — a pin label follows its settlement Actor (issue #321 U52)', () => {
+  function sectorSceneWithPins() {
+    const update = vi.fn(async function (changes) { Object.assign(this, changes); });
+    const note = (id, text, flags) => ({ id, text, flags: { [MODULE_ID]: { sectorNote: true, ...flags } }, update });
+    const notes = [
+      note('pin',     'Bleakhold',      { settlementId: 'gen-1', actorId: 'actor-bleak' }),
+      note('planet',  'Vorn Prime',     { settlementId: 'gen-1', actorId: 'actor-bleak', planetNote: true }),
+      note('star',    'Red star',       { settlementId: 'gen-1', stellarNote: true }),
+      note('other',   'Drift',          { settlementId: 'gen-2', actorId: 'actor-drift' }),
+      note('site',    'Unexplored Site', { siteNote: true, siteId: 's1', actorId: 'actor-bleak' }),
+    ];
+    const scene = { flags: { [MODULE_ID]: { sectorScene: true, sectorId: 'sec-1' } }, notes: { contents: notes } };
+    return { scene, notes, update };
+  }
+
+  function withScenes(scenes, fn) {
+    const prev = global.game.scenes;
+    global.game.scenes = { contents: scenes };
+    return Promise.resolve(fn()).finally(() => { global.game.scenes = prev; });
+  }
+
+  const actor = { id: 'actor-bleak', type: 'location', name: 'Bleak Hold Station' };
+
+  it("renames the settlement's own pins on every sector scene — not its planet, star or site pins", async () => {
+    const a = sectorSceneWithPins();
+    const b = sectorSceneWithPins();
+    await withScenes([a.scene, b.scene], () => handleSettlementPinRename(actor, { name: 'Bleak Hold Station' }));
+
+    for (const { notes } of [a, b]) {
+      expect(notes.find(n => n.id === 'pin').text).toBe('Bleak Hold Station');
+      expect(notes.find(n => n.id === 'planet').text).toBe('Vorn Prime');
+      expect(notes.find(n => n.id === 'star').text).toBe('Red star');
+      expect(notes.find(n => n.id === 'other').text).toBe('Drift');
+      expect(notes.find(n => n.id === 'site').text).toBe('Unexplored Site');
+    }
+    expect(a.update).toHaveBeenCalledTimes(1);   // its one settlement pin
+    expect(b.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores updates without a rename, non-location actors and non-sector scenes', async () => {
+    const { scene, update } = sectorSceneWithPins();
+    const plain = { ...sectorSceneWithPins().scene, flags: {} };
+    await withScenes([scene, plain], async () => {
+      await handleSettlementPinRename(actor, { system: { klass: 'orbital' } });
+      await handleSettlementPinRename({ ...actor, type: 'starship' }, { name: 'X' });
+    });
+    expect(update).not.toHaveBeenCalled();
+    await withScenes([plain], () => handleSettlementPinRename(actor, { name: 'Bleak Hold Station' }));
+    expect(plain.notes.contents.find(n => n.id === 'pin').text).toBe('Bleakhold');
+  });
+
+  it("leaves the shared Notes to the canonical GM — a player's client does not write them", async () => {
+    const { scene, update } = sectorSceneWithPins();
+    const undo = asPlayer();
+    try {
+      await withScenes([scene], () => handleSettlementPinRename(actor, { name: 'Bleak Hold Station' }));
+    } finally {
+      undo();
+    }
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('is registered on updateActor', () => {
+    registerSectorSceneHooks();
+    expect(Hooks._handlers.get('updateActor')).toContain(handleSettlementPinRename);
   });
 });
 
@@ -482,7 +647,8 @@ describe('computeTokenPositionRecord', () => {
     expect(p.nearestSettlementId).toBe('actor-astra');
     expect(p.freeText).toBe('Astra');              // pin label keeps the line readable
     expect(p.sectorId).toBe('sec-fc');
-    expect(p.updatedBy).toBe('scene_token');
+    // The token's own place, no move made — not a Set a Course arrival (issue #321 U53).
+    expect(p.updatedBy).toBe('token_placement');
   });
 
   it('falls back to the generator settlementId on legacy pins without actorId', () => {
@@ -500,7 +666,75 @@ describe('computeTokenPositionRecord', () => {
     expect(p.nearestSettlementId).toBeNull();
     expect(p.freeText).toBe('deep space');
     expect(p.sectorId).toBe('sec-fc');
-    expect(p.updatedBy).toBe('scene_token');
+    expect(p.updatedBy).toBe('token_placement');
+  });
+});
+
+// Issue #321 U53 — decisions.md 2026-06-12: an off-pin placement or
+// reposition is a position note, "near <settlement>"; only an ON-pin drop is a
+// Set a Course that arrives ("docked at"). The token's own record carried the
+// arrival's tag and was told to the narrator as docked. Real producers: a
+// settlement Actor (createSettlement) and the pins createSectorScene writes.
+describe("a token parked off a settlement pin reads 'near' it", () => {
+  async function bleakholdScene() {
+    const cs = { sectors: [{ id: 'sec-1', name: 'Test Sector' }], activeSectorId: 'sec-1', settlementIds: [] };
+    global.game.settings._store.set(`${MODULE_ID}.campaignState`, cs);
+    await createSettlement({ name: 'Bleakhold', location: 'Orbital', sectorId: 'sec-1' }, cs, { persist: false });
+    const actor = global.game.actors.get(cs.settlementIds[0]);
+
+    const notes = [];
+    const scene = {
+      id: 'scene-1', flags: {}, grid: { size: 100 },
+      dimensions: { sceneX: 200, sceneY: 200, sceneWidth: 1792, sceneHeight: 1024 },
+      update: vi.fn(async () => scene),
+      createEmbeddedDocuments: vi.fn(async (type, data) => {
+        if (type === 'Note') for (const d of data) notes.push({ id: `note-${notes.length}`, ...d });
+        return data;
+      }),
+    };
+    global.Scene = { create: vi.fn(async (data) => { scene.flags = data.flags; return scene; }) };
+    await createSectorScene({
+      id: 'sec-1', name: 'Test Sector',
+      settlements: [{ id: 'gen-A', name: 'Bleakhold', locationType: 'orbital', planet: null, stellar: null }],
+      mapData: { settlements: [{ id: 'gen-A', name: 'Bleakhold', type: 'orbital', gridX: 3, gridY: 2 }], passages: [], discoveries: [] },
+    }, null, { 'gen-A': actor });
+    scene.notes = notes;
+    const pin = notes.find(n => n.flags[MODULE_ID].settlementId === 'gen-A' && !n.flags[MODULE_ID].planetNote && !n.flags[MODULE_ID].stellarNote);
+    return { cs, actor, scene, pin };
+  }
+
+  beforeEach(() => {
+    global.game.actors._reset();
+    global.game.folders._reset();
+    _resetFolderCache();
+    global.game.settings._store.clear();
+  });
+
+  it('two cells off the pin — outside the snap radius, inside the near radius', async () => {
+    const { cs, actor, scene, pin } = await bleakholdScene();
+    const record = computeTokenPositionRecord(scene, pin.x + 200, pin.y);
+    expect(record.nearestSettlementId).toBe(actor.id);
+
+    const line = formatShipPositionLine(record, cs, 'Wayfarer');
+    expect(line).toBe('SHIP POSITION: Wayfarer near Bleakhold (Test Sector)');
+  });
+
+  it('auto-placed on the map (a new ship, no position yet) — the placement is recorded as near', async () => {
+    const { cs, scene, pin } = await bleakholdScene();
+    const ship = global.makeTestActor({
+      id: 'cv-actor', type: 'starship', name: 'Wayfarer',
+      flags: { [MODULE_ID]: { entityType: 'ship', ship: { _id: 'rec-w', name: 'Wayfarer', isCommandVehicle: true } } },
+    });
+    global.game.actors._set('cv-actor', ship);
+    cs.shipIds = ['cv-actor'];
+
+    await handleCommandVehicleTokenPlacement(
+      { flags: { [MODULE_ID]: { commandVehicle: true } }, x: pin.x + 100, y: pin.y + 100, parent: scene },
+      { render: false }, 'test-user-gm');
+
+    const line = formatShipPositionLine(ship.flags[MODULE_ID].ship.position, cs, 'Wayfarer');
+    expect(line).toContain('near Bleakhold');
+    expect(line).not.toContain('docked at');
   });
 });
 
@@ -537,7 +771,25 @@ describe('token placement / reposition → position record write', () => {
 
     const pos = ship.flags[MODULE_ID].ship.position;
     expect(pos?.nearestSettlementId).toBe('actor-astra');
-    expect(pos?.updatedBy).toBe('scene_token');
+    expect(pos?.updatedBy).toBe('token_placement');
+  });
+
+  it('with Auto-Move off, a drop onto a pin lands as a position note — near it, no roll (issue #321 U54)', async () => {
+    const ship = seedCommandVehicle();
+    global.game.settings._store.set(`${MODULE_ID}.factContinuity.shipAutoMoveOnCourse`, false);
+    const scene = makeSectorScene({
+      notes: [makeSettlementNote('gen-astra', 100, 100, 'Astra', { actorId: 'actor-astra' })],
+    });
+    scene.flags[MODULE_ID].sectorId = 'sec-fc';
+    const token = cvToken(scene, { x: 600, y: 600 });
+
+    expect(handleCommandVehicleTokenDrag(token, { x: 100, y: 100 })).toBeUndefined();   // not cancelled
+    Object.assign(token, { x: 100, y: 100 });                                           // Foundry applies the move
+    await handleCommandVehicleTokenReposition(token, { x: 100, y: 100 }, {}, 'test-user-gm');
+
+    expect(ship.flags[MODULE_ID].ship.position).toMatchObject({
+      nearestSettlementId: 'actor-astra', sectorId: 'sec-fc', updatedBy: 'token_placement',
+    });
   });
 
   it('an off-pin reposition records deep space', async () => {

@@ -15,6 +15,8 @@
  *   2. One generation, one permitted regeneration, then locked
  *   3. Art is generated once per entity per campaign — not per session
  *   4. API key stored scope: "client" — never sent to server
+ *   5. Generated on a GM's client only — the only one that can store it
+ *      (canKeepPortrait; issue #321 U33)
  *
  * Transport: OpenRouter chat-completions with `modalities: ["image"]`. The
  * default model is FLUX.2 Pro (`black-forest-labs/flux.2-pro`), configurable
@@ -61,6 +63,7 @@ const MODULE_ID = "starforged-companion";
  * @returns {Promise<ArtAsset|null>}
  */
 export async function generatePortrait(journalEntryId, entityType, entity, campaignState) {
+  if (!canKeepPortrait()) return null;
   if (!entity.portraitSourceDescription) {
     console.warn(`${MODULE_ID} | Art: no source description for ${entityType} ${entity._id}`);
     return null;
@@ -104,6 +107,7 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
  * @returns {Promise<ArtAsset|null>}
  */
 export async function regeneratePortrait(journalEntryId, entityType, entity, campaignState) {
+  if (!canKeepPortrait()) return null;
   if (!entity.portraitId) {
     console.warn(`${MODULE_ID} | Art: no existing portrait to regenerate for ${entity._id}`);
     return null;
@@ -366,6 +370,24 @@ async function uploadPortraitImage(b64, filename) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Whether this client can keep a portrait it generates. Storing one creates
+ * an art journal entry and registers it in the world art index
+ * (campaignState), linking it writes the entity's host document, attaching it
+ * uploads the image — all GM-only. So a portrait is generated only on a GM's
+ * client, before anything is billed: a player's click used to pay for the
+ * image with their own key and then lose it at the refused store (issue #321
+ * U33). Logged, not toasted — the automatic portrait triggers are silent by
+ * design, and the Entities panel shows its portrait buttons to GMs only.
+ *
+ * @returns {boolean}
+ */
+function canKeepPortrait() {
+  if (globalThis.game?.user?.isGM) return true;
+  console.warn(`${MODULE_ID} | Art: portraits are generated on a GM's client — nothing was generated here.`);
+  return false;
+}
 
 function readOpenRouterKey() {
   try {

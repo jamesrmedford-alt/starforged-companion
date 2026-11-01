@@ -35,13 +35,33 @@ passage" drawing.
   **arrival**: `maybeUpdateShipPositionFromName` writes the ship-position
   flag on the command vehicle and the sector-scene token syncs.
 - **Token-drag affordance**: dragging the command-vehicle token onto a
-  settlement pin cancels the drag and posts a forced `set_a_course`
-  (`tokenDragSetCourse` payload); on a non-miss the token snaps to the pin
-  (gated by `factContinuity.shipTokenEnabled`).
+  settlement pin cancels the drag and posts a forced `set_a_course` naming
+  the pin's settlement Actor (`flags.actorId`): its current name as
+  `forcedMoveTarget`, its id as `forcedMoveTargetId` (a legacy pin with no
+  linked Actor uses its label; the `tokenDragSetCourse` payload now carries
+  only the scene, token and pin coordinates). On a non-miss the arrival
+  records the ship position by that id (`inferShipPositionFromEntityId`,
+  source `scene_token` → "docked at") and the current location by it, and the
+  token snaps to the pin — the pin's label went stale on a rename, so the
+  arrival resolved nothing by it, or a namesake in another sector (issue #321
+  U52). A settlement Actor's rename renames its settlement pins on every
+  sector scene (`handleSettlementPinRename`, canonical GM; not its planet or
+  site pins). Gated by `factContinuity.shipTokenEnabled`, and — since the
+  arrival needs both — by Ship Positioning and Auto-Move Ship on Set a Course:
+  with either off the drag is a plain token move (with positioning on, a
+  position note, no roll), where it used to roll Set a Course and leave the
+  ship in place (issue #321 U54).
 - **`undertake_an_expedition`** (perilous/unknown): strong/weak hit →
   `applyExpeditionProgress` resolve-or-creates the expedition track (label =
   destination, rank = interpreter's `expeditionRank`, default dangerous) and
-  marks one rank-step. The progress card shows boxes filled and carries a
+  marks one rank-step. A new track is begun only when no expedition is open
+  or the move names a destination none of the open ones matches; naming none
+  while two or more are open, the pipeline posts a **Which expedition?** card
+  before rolling (`postWhichFightCard` with `trackType: "expedition"`, whose
+  pick posts the move again with that track's id), and a track named by id
+  that is over marks nothing (`reason: "ambiguous" | "gone"`) — an unnamed
+  Undertake used to begin a phantom "Expedition" that took the progress
+  (issue #321 U16). The progress card shows boxes filled and carries a
   **"🗺 Finish the Expedition"** button. Deliberately **not** an arrival move
   — no position write mid-journey.
 - **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
@@ -61,8 +81,11 @@ passage" drawing.
   expedition progress" and "+2 momentum" (executed by the suffer executor —
   which resolve-or-creates: with no open expedition it begins a default
   dangerous one and marks it, WAYPOINT-PROGRESS-NOOP fix; several open →
-  visible warn); weak hit +1 momentum; miss routes Pay the Price (in text
-  only — the miss sets no `routePayThePrice`, WAYPOINT-MISS-NO-PTP, open).
+  visible warn); weak hit +1 momentum; miss routes Pay the Price
+  (`routePayThePrice` — the card, its suffer route, the tension clocks; it
+  said so in text only until issue #321 U17, WAYPOINT-MISS-NO-PTP) — except
+  a miss with a match, where the player may instead Confront Chaos, so the
+  price is their choice and is not routed.
   Strong-hit-with-match seeds a "notable aspect" + Make-a-Discovery oracle
   roll into the narrator prompt and offers **🔭 Make a Discovery** on the
   result card; miss-with-match seeds Confront Chaos and offers **🌀 Confront
@@ -79,12 +102,20 @@ passage" drawing.
   `campaignState.currentLocationId/Type` and the ship position (bare `!at`
   clears both), and since the LOCATION-DUAL-STORE fix the arrival block does
   too — a tracked destination reached by move updates `currentLocationId`
-  via the same resolver.
+  via the same resolver (a token-drop arrival by the pin's Actor id first,
+  `currentLocationForEntityId` — issue #321 U52). The Entities panel's "Set as
+  current location" moves the ship as `!at` does — the shared
+  `maybeUpdateShipPositionFromName`, source `at_command`, with the entity's
+  id (`{ entityId }`) — so the narrator no longer gets two locations (issue
+  #321 U56). `!at` and the panel button write a copy of the stored
+  campaignState, so a refused write leaves the GM's cache as it was (U58).
 - **Narrator awareness**: the §6.5 ship block renders `COMMAND VEHICLE` +
-  `SHIP POSITION` lines — every recorder writes only after arrival, so all
-  known sources read as stationary ("docked at" / "in orbit of";
+  `SHIP POSITION` lines — every arrival recorder writes only after arrival,
+  so those sources read as stationary ("docked at" / "in orbit of";
   SHIP-TRANSIT-LINE fix — `set_a_course` used to say "in transit to" a place
-  the ship had reached); with no position it explicitly instructs the
+  the ship had reached); a token's own place on the map (placed, auto-placed
+  or moved off a pin, source `token_placement`) reads "near" its nearest pin
+  (issue #321 U53 — it was `scene_token`, "docked at"); with no position it explicitly instructs the
   narrator not to invent one.
   Active expeditions appear only in the generic Progress Tracks context
   section (up to 4 active tracks) — no dedicated journey block.
@@ -103,20 +134,33 @@ rolls nothing (a "not rolled" card). Strong hit → `finishExpedition` completes
 track and pays `legacyRewardTicks(rank)` (weak hit one rank down) onto the
 **discoveries** legacy; the finish card reports both. `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
-("docked at …"). Miss leaves the track open with recommit text (advisory
-only).
+("docked at …"). Miss leaves the track open and posts the recommit offer
+(below, "Advisory-only branches"): its **🔁 Recommit** relays
+`expedition.recommit` to the canonical GM (`cardActions.applyRecommitOffer`),
+which claims the GM-authored offer card (`recommitted`) before running
+`performRecommit` — once per card whoever presses (any user may), where every
+press or re-render used to recommit again; a refused track write releases the
+claim (issue #321 U20, which also folded the old raw `expedition.recommit`
+socket relay into `GM_ACTIONS`).
 
 ## 4. Site discovery
 
 `revealSectorSite` (shared by expedition-finish and `!reveal-site`):
 `selectSectorSite` picks the target — the expedition's `siteId` link first,
 then exact → substring → type-keyword vault/derelict → sole-undiscovered,
-each rung over every sector before the next (the two guesses scoped to the
-active sector first, and only when unambiguous: an earlier sector's sole
-site used to preempt a later sector's exact match, issue #300 F07) — flips `discovered:true`, marks the
+each rung over every sector before the next (the guesses only when
+unambiguous: an earlier sector's sole site used to preempt a later sector's
+exact match, issue #300 F07), the active sector first on every rung
+(generated names repeat across sectors — issue #321 U48). A link, or an exact
+name, resolves to that site or to nothing once it no longer qualifies
+(already charted / cleared) — never a sibling a looser rung would find ("…II"
+contains "…I"); a link to no stored site falls back to the label — flips `discovered:true`, marks the
 location Actor `visited`, and restyles the scene — pin renamed to the site's
 real name with the discovered icon, dashed passage → solid brightened route —
-then posts the "◈ Site Discovered" card.
+then posts the "◈ Site Discovered" card. The flag is saved onto the state as
+it is after those awaits (`persistSiteFlag`, `src/sectors/siteDiscovery.js`),
+never the state read before them, which reverted an X-Card or Take a Break
+relayed meanwhile (issue #321 U06c); the pipeline's working copy gets it too.
 
 ## Verified defects (all FIXED in the v1.7.30 cycle — resolved ledger in `known-issues.md`)
 
@@ -153,7 +197,8 @@ summary lives in the `known-issues.md` table and the code.
   site first.
 - ~~Advisory-only branches~~ — **addressed**: the finish-miss card offers
   **🔁 Recommit** (rolls the challenge dice, clears the lowest die's boxes,
-  raises the rank — `planRecommit`), and Explore a Waypoint match results
+  raises the rank — `planRecommit`; once per card since issue #321 U20, §3),
+  and Explore a Waypoint match results
   carry one-click **🔭 Make a Discovery** / **🌀 Confront Chaos** buttons
   (`waypointOracleFor`); since issue #316 T06 a click relays to the
   canonical GM, which claims the card once (§2).

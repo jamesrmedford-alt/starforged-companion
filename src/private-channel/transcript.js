@@ -23,7 +23,16 @@
  * each appended to the same old page content — the later write erased the
  * other's turns. A failed batch goes back ahead of newer turns, with its
  * session id, and is retried.
+ *
+ * The journal itself is created on the canonical GM (issue #321 U10): a
+ * default Player cannot create a JournalEntry — Foundry's JOURNAL_CREATE
+ * permission starts at Trusted Player — so every flush failed and the
+ * conversation was lost on close or reload. The player's flush relays
+ * "privateChannel.createJournal" and waits for the journal, which names the
+ * player its OWNER, so they add and write its pages themselves.
  */
+
+import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 
 const MODULE_ID   = "starforged-companion";
 const FOLDER_NAME = "Starforged Companion";
@@ -31,6 +40,8 @@ const FLAG_KEY    = "privateChannelPage";
 const DEFAULT_DEBOUNCE_MS = 5000;
 /** Automatic retries after a failed write (5 s, 10 s, 15 s); the next flush trigger retries after that. */
 const MAX_AUTO_RETRIES = 3;
+/** How long a flush waits for the journal the GM creates before keeping its turns for a retry. */
+const JOURNAL_RELAY_WAIT_MS = 15_000;
 
 // userId → { batches: Batch[], timerId, chain: Promise, failures: number }
 // Batch = { sessionId: string, turns: Turn[] } — turns waiting for their page
@@ -67,6 +78,40 @@ export function renderTurnsHtml(turns) {
       return `<p class="pc-turn pc-turn-${who}"><strong>${name}:</strong> ${escapeHtml(t.text)}</p>`;
     })
     .join("");
+}
+
+function unescapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&amp;/g, "&");   // ampersand last so the entities above decode first
+}
+
+const stripTags = (s) => String(s ?? "").replace(/<[^>]*>/g, "");
+
+/**
+ * Read a session page's HTML back into turns — the inverse of renderTurnsHtml,
+ * so the window holds one structured transcript, the one it shows and the one
+ * it sends the narrator (issue #321 U42). A paragraph the journal editor has
+ * reformatted (its pc-turn class dropped) still reads: the speaker is its
+ * leading bold "Name:", and "Narrator" marks the narrator's turns.
+ *
+ * @param {string} html
+ * @returns {Array<{who:"player"|"narrator", name:string, text:string}>}
+ */
+export function parseTurnsHtml(html) {
+  const turns = [];
+  for (const [, attrs, inner] of String(html ?? "").matchAll(/<p\b([^>]*)>([\s\S]*?)<\/p>/gi)) {
+    const spoken = /^\s*<strong>([\s\S]*?):<\/strong>\s?([\s\S]*)$/i.exec(inner);
+    const name   = spoken ? unescapeHtml(stripTags(spoken[1])).trim() : "";
+    const text   = unescapeHtml(stripTags(spoken ? spoken[2] : inner)).trim();
+    if (!text) continue;
+    const who = /\bpc-turn-(player|narrator)\b/.exec(attrs)?.[1] ?? (name === "Narrator" ? "narrator" : "player");
+    turns.push({ who, name, text });
+  }
+  return turns;
 }
 
 
@@ -148,6 +193,68 @@ async function getOrCreatePrivateJournal(userId) {
     return existing;
   }
 
+  // A GM creates its own. A player asks the canonical GM, which makes them the
+  // journal's OWNER. With no GM connected the create is tried here: a Trusted
+  // Player may; anyone else's turns wait in the buffer for a retry.
+  if (game.user?.isGM || !hasActiveGM()) return createPrivateJournal(userId);
+  const relay = await requestGmAction("privateChannel.createJournal", {});
+  if (!relay?.ok) return null;
+  return waitForPrivateJournal(userId);
+}
+
+/**
+ * Wait for the journal the GM is creating for this user to reach this client
+ * (its createJournalEntry hook). Resolves with it, or with null after
+ * `timeoutMs` — the flush then keeps its turns for a retry, and the next
+ * relay finds the journal already made.
+ *
+ * @param {string} userId
+ * @param {number} [timeoutMs]
+ * @returns {Promise<JournalEntry|null>}
+ */
+function waitForPrivateJournal(userId, timeoutMs = JOURNAL_RELAY_WAIT_MS) {
+  const found = () => findPrivateJournals(userId)[0] ?? null;
+  const ready = found();
+  if (ready) return Promise.resolve(ready);
+  return new Promise(resolve => {
+    let hookId = null;
+    let timer  = null;
+    const finish = () => {
+      clearTimeout(timer);
+      if (hookId !== null) Hooks.off?.("createJournalEntry", hookId);
+      const journal = found();
+      if (!journal) console.warn(`${MODULE_ID} | privateChannel: the GM has not created the transcript journal yet — turns kept for a retry`);
+      resolve(journal);
+    };
+    timer  = setTimeout(finish, timeoutMs);
+    hookId = Hooks.on("createJournalEntry", (journal) => {
+      if (privateChannelOwner(journal) === userId) finish();
+    }) ?? null;
+  });
+}
+
+/**
+ * gmRelay handler for "privateChannel.createJournal" — runs on the canonical
+ * GM. Creates the requesting user's transcript journal, with them as its
+ * OWNER, unless they have one: two flushes that both relayed get one journal
+ * (the relay queue runs them in turn). The journal is only ever the
+ * requester's own.
+ *
+ * @param {Object} [_payload]
+ * @param {{ requesterId?: string }} [ctx]
+ * @returns {Promise<JournalEntry|null>}
+ */
+export async function applyPrivateJournalCreate(_payload = {}, ctx = {}) {
+  const userId = typeof ctx?.requesterId === "string" ? ctx.requesterId : null;
+  if (!userId || !game.users?.get?.(userId)) {
+    console.warn(`${MODULE_ID} | privateChannel: a journal create was relayed by an unknown user — skipped.`);
+    return null;
+  }
+  return findPrivateJournals(userId)[0] ?? createPrivateJournal(userId);
+}
+
+/** Create a user's transcript journal here: they are OWNER, the GM OBSERVER, everyone else NONE. */
+async function createPrivateJournal(userId) {
   // Folder lookup mirrors worldJournal.js; create lazily, tolerate failure.
   let folderId = null;
   try {

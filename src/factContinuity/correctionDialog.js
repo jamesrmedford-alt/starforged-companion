@@ -23,7 +23,8 @@ import {
   subjectFromStateKey,
 } from './ledgers.js';
 import { resolveEntityById } from '../entities/registry.js';
-import { propagateRetraction } from './retractions.js';
+import { propagateRetraction, markSummaryForRegen } from './retractions.js';
+import { persistSceneLedgerFields } from './sceneLifecycle.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -31,12 +32,16 @@ const MODULE_ID = 'starforged-companion';
  * Open the correction dialog for a narrator chat card. Reads the card's
  * `flags[MODULE_ID].matchedEntityIds` to scope the truth/state listing.
  *
+ * The dialog is non-blocking and stays open while play goes on, so it holds
+ * no campaignState: each render and each row action reads the store as it is
+ * then (issue #321 U06e).
+ *
  * @param {ChatMessage} message — the narrator card
  * @returns {Promise<void>}
  */
 export async function openCorrectionDialog(message) {
   if (!message) return;
-  const campaignState = game.settings.get(MODULE_ID, 'campaignState');
+  const campaignState = readCampaignState();
   if (!campaignState) return;
 
   const ctx = {
@@ -50,15 +55,15 @@ export async function openCorrectionDialog(message) {
 
   const { DialogV2 } = foundry.applications.api;
 
-  // Re-rendered after each correction so the user sees the result of their
-  // own action without closing/reopening.
+  // Re-rendered after each correction, from the store as it is then, so the
+  // user sees the result of their own action without closing/reopening.
   const rerender = (dlg) => {
     const root = dlg.element;
     if (!root) return;
-    const fresh = renderDialogContent(campaignState, matchedIds, ctx);
+    const fresh = renderDialogContent(readCampaignState() ?? {}, matchedIds, ctx);
     const body  = root.querySelector('.sf-correct-body');
     if (body) body.innerHTML = fresh;
-    attachRowHandlers(root, campaignState, matchedIds, ctx, () => rerender(dlg));
+    attachRowHandlers(root, ctx, () => rerender(dlg));
   };
 
   const dlg = new DialogV2({
@@ -69,10 +74,25 @@ export async function openCorrectionDialog(message) {
       { action: 'close', label: 'Close', default: true, callback: () => true },
     ],
     rejectClose: false,
-    render: (_event, dialog) => attachRowHandlers(dialog.element, campaignState, matchedIds, ctx, () => rerender(dialog)),
   });
 
+  // The row controls are wired from the dialog's "render" event (issue #321
+  // U38). `render` is a DialogV2.wait() option — wait() itself attaches it
+  // with addEventListener("render") — so on a dialog built with `new` it was
+  // an unread option, the Strike / Replace handlers never attached, and the
+  // rows' buttons submitted (closed) the dialog.
+  dlg.addEventListener('render', () => attachRowHandlers(dlg.element, ctx, () => rerender(dlg)));
   dlg.render({ force: true });
+}
+
+/** The stored campaignState (the cached value — read only), or null. */
+function readCampaignState() {
+  try {
+    return game.settings.get(MODULE_ID, 'campaignState') ?? null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | correctionDialog: campaignState read failed:`, err?.message ?? err);
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -108,8 +128,8 @@ function renderTruthRow(truth, ctx) {
   const lockHint  = canStrike ? '' : ` <span class="sf-correct-lock" title="GM-asserted — players cannot strike">🔒</span>`;
   const buttons   = canStrike
     ? `
-      <button class="sf-correct-btn" data-action="strike-truth" data-truth-id="${escape(truth.id)}">Strike</button>
-      <button class="sf-correct-btn" data-action="replace-truth" data-truth-id="${escape(truth.id)}">Replace…</button>
+      <button type="button" class="sf-correct-btn" data-action="strike-truth" data-truth-id="${escape(truth.id)}">Strike</button>
+      <button type="button" class="sf-correct-btn" data-action="replace-truth" data-truth-id="${escape(truth.id)}">Replace…</button>
     `
     : '';
   return `
@@ -131,9 +151,9 @@ function renderStateRow(row, ctx) {
   const value     = escape(String(row.value ?? ''));
   // All actors can strike/replace state values (scope §10.1 — state is no-asymmetry).
   const buttons   = ctx ? `
-    <button class="sf-correct-btn" data-action="strike-state"
+    <button type="button" class="sf-correct-btn" data-action="strike-state"
             data-state-key="${escape(row.key)}" data-attribute="${attribute}">Strike</button>
-    <button class="sf-correct-btn" data-action="replace-state"
+    <button type="button" class="sf-correct-btn" data-action="replace-state"
             data-state-key="${escape(row.key)}" data-attribute="${attribute}">Replace…</button>
   ` : '';
   return `
@@ -152,7 +172,7 @@ function renderStateRow(row, ctx) {
 // Event handling
 // ---------------------------------------------------------------------------
 
-function attachRowHandlers(root, campaignState, matchedIds, ctx, rerender) {
+function attachRowHandlers(root, ctx, rerender) {
   if (!root) return;
   for (const btn of root.querySelectorAll('[data-action]')) {
     // Replace each button with a clone to drop any previously attached
@@ -163,45 +183,75 @@ function attachRowHandlers(root, campaignState, matchedIds, ctx, rerender) {
     fresh.addEventListener('click', async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      await handleRowAction(fresh, campaignState, matchedIds, ctx);
-      await persistCampaignState(campaignState);
+      await handleRowAction(fresh, ctx);
       rerender();
     });
   }
 }
 
-async function handleRowAction(button, campaignState, matchedIds, ctx) {
+/**
+ * Apply one row's correction to the store as it is at the click — never to
+ * the campaignState read when the dialog opened (issue #321 U06e: each click
+ * wrote that snapshot whole, reverting an X-Card played, the next
+ * narration's truths and a released move lock) — and persist only the
+ * ledger field it changed, merged onto the latest store; a Strike or Replace
+ * also marks the stored rolling summary for a regen. A Replace reads the
+ * store after its prompt closes. A cancelled prompt, or a row that no longer
+ * matches, writes nothing.
+ *
+ * @param {HTMLElement} button
+ * @param {{ isGM: boolean, actor: "gm"|"player" }} ctx
+ * @returns {Promise<void>}
+ */
+async function handleRowAction(button, ctx) {
   const action = button.dataset.action;
   switch (action) {
     case 'strike-truth': {
-      const struck = strikeTruth(button.dataset.truthId, campaignState, ctx);
-      if (struck) await propagateRetraction(struck, campaignState);   // issue #286 B6
+      const working = workingCopy();
+      const struck  = strikeTruth(button.dataset.truthId, working, ctx);
+      if (!struck) return;
+      await propagateRetraction(struck, working);   // issue #286 B6
+      await persistCorrection(working, 'sceneTruths', { regenSummary: true });
       return;
     }
     case 'replace-truth': {
-      const truth = (campaignState.sceneTruths ?? []).find(t => t?.id === button.dataset.truthId);
-      const next  = await promptForText(`Replacement fact for "${truth?.fact ?? ''}"`, truth?.fact ?? '');
+      const truth = (readCampaignState()?.sceneTruths ?? []).find(t => t?.id === button.dataset.truthId);
+      if (!truth) return;
+      const next  = await promptForText(`Replacement fact for "${truth.fact ?? ''}"`, truth.fact ?? '');
       if (!next) return;
-      const replaced = replaceTruth(truth.id, { fact: next }, campaignState, ctx);
-      if (replaced) await propagateRetraction(replaced.struck, campaignState);
+      const working  = workingCopy();
+      const replaced = replaceTruth(truth.id, { fact: next }, working, ctx);
+      if (!replaced) return;
+      await propagateRetraction(replaced.struck, working);
+      await persistCorrection(working, 'sceneTruths', { regenSummary: true });
       return;
     }
-    case 'strike-state':
-      strikeStateValue(button.dataset.stateKey, button.dataset.attribute, campaignState);
+    case 'strike-state': {
+      const working = workingCopy();
+      if (!strikeStateValue(button.dataset.stateKey, button.dataset.attribute, working)) return;
+      await persistCorrection(working, 'sceneState');
       return;
+    }
     case 'replace-state': {
       const key  = button.dataset.stateKey;
       const attr = button.dataset.attribute;
-      const list = campaignState?.sceneState?.bySubject?.[key] ?? [];
+      const list = readCampaignState()?.sceneState?.bySubject?.[key] ?? [];
       const cur  = list.find(e => e.attribute === attr);
       const next = await promptForText(`New value for "${attr}"`, String(cur?.value ?? ''));
       if (!next) return;
-      setStateValue(key, attr, next, campaignState);
+      const working = workingCopy();
+      if (!setStateValue(key, attr, next, working)) return;
+      await persistCorrection(working, 'sceneState');
       return;
     }
     default:
       return;
   }
+}
+
+/** A copy of the stored campaignState to correct — the cached value is never changed in place. */
+function workingCopy() {
+  return foundry.utils.deepClone(readCampaignState() ?? {});
 }
 
 async function promptForText(prompt, defaultValue) {
@@ -289,12 +339,22 @@ function escape(s) {
     .replace(/"/g, '&quot;');
 }
 
-async function persistCampaignState(campaignState) {
-  try {
-    await game.settings.set(MODULE_ID, 'campaignState', campaignState);
-  } catch (err) {
-    console.warn(`${MODULE_ID} | correctionDialog: campaignState persist failed:`, err);
-  }
+/**
+ * Persist a correction's ledger field onto the latest store
+ * (persistSceneLedgerFields: truths unioned by id with a retraction
+ * sticking; nothing when the scene closed meanwhile) and, after a Strike or
+ * Replace, the regen mark on the stored rolling summary. Failures are logged
+ * there, never thrown.
+ *
+ * @param {Object} working — the corrected copy
+ * @param {"sceneTruths"|"sceneState"} field
+ * @param {{ regenSummary?: boolean }} [opts]
+ * @returns {Promise<void>}
+ */
+async function persistCorrection(working, field, { regenSummary = false } = {}) {
+  await persistSceneLedgerFields(working, [field], 'correction dialog', {
+    onto: regenSummary ? markSummaryForRegen : null,
+  });
 }
 
 // Avoid unused-parameter lint when subjectKey is imported only for the type

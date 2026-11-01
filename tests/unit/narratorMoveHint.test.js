@@ -171,4 +171,16 @@ describe("suppressPcDirectedSocialMove()", () => {
   it("keeps Compel when only the speaker's own name appears", () => {
     expect(suppressPcDirectedSocialMove("compel", "Kylar grits his teeth", "Kylar Nazari", PCS)).toBe("compel");
   });
+
+  // Issue #321 U45: a move named by its display name slipped past the id set.
+  it("suppresses a social move aimed at a fellow PC whatever its case or form", () => {
+    expect(suppressPcDirectedSocialMove("Compel", "I lean on Ren until he folds.", "Kira", [{ name: "Kira" }, { name: "Ren" }])).toBeNull();
+    expect(suppressPcDirectedSocialMove("Develop Your Relationship", "Mave, we need to talk", "Kylar Nazari", PCS)).toBeNull();
+  });
+
+  it("hands back the nominated move's id, and nothing for a phrase that names no move", () => {
+    expect(suppressPcDirectedSocialMove("Compel", "I lean on the dock official", "Mave Takara", PCS)).toBe("compel");
+    expect(suppressPcDirectedSocialMove("Gather Information", "Kylar, what did you see?", "Mave Takara", PCS)).toBe("gather_information");
+    expect(suppressPcDirectedSocialMove("Dance Wildly", "I spin around", "Mave Takara", PCS)).toBeNull();
+  });
 });

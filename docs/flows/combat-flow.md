@@ -57,8 +57,10 @@ Two cross-cutting facts to hold onto:
 
 `enter_the_fray` is an action move; **all three outcomes** set `enterCombat`
 (`src/moves/resolver.js`), differing in the opening position: strong hit → +2
-momentum and `in_control`; weak hit → a choose-one (+2 momentum OR in control);
-miss → `bad_spot`.
+momentum and `in_control`; weak hit → a choose-one (+2 momentum, and you
+begin in a bad spot — a `chain` of `momentum` and `combatPosition: "bad_spot"`
+— OR in control; positions are binary, so taking the momentum used to set no
+position at all, issue #321 U18); miss → `bad_spot`.
 
 The pipeline's `enterCombat` branch (`applyOutcomeEffects`, `src/index.js`)
 does **not** create a track. If no matching open combat track exists (`selectCombatTrack`,
@@ -77,7 +79,8 @@ does **not** create a track. If no matching open combat track exists (`selectCom
 **Enter the Fray** reads rank/vow/objective (+ the carried position) from the
 card and creates the track on the canonical GM (socket kind `combat.enterFray`
 relays player clicks). `createCombatTrackFromThreshold` → `applyCombatProgress`
-→ `addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
+(`beginsFight: true` — a new foe is a new fight however many are open, issue
+#321 U16) → `addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
 `linkedVowName`, and gets its `combatState` set from the carried position via
 `applyCombatPositionToTrack` (`src/moves/combatTracker.js` — writes the track,
 the actor's sheet field, and the combatant badge). A combat-track card posts
@@ -103,6 +106,12 @@ and for what an upgrade adds over it): Strike hits mark 2; Clash marks 2 (strong
 Ground marks only when the player picks that option in its choose-one; React
 Under Fire marks none. Marks are rank-aware (`markProgressById` — dangerous = 8
 ticks/mark). Misses mark nothing and route Pay the Price; the fight stays open.
+A move's marks create a fight only when none is open (`applyCombatProgress`):
+with fights open and none selected — or the fight named by id over — it marks
+nothing and says why (`reason: "ambiguous" | "gone"`; the applier warns and
+lists it as not applied). It used to begin a phantom "Combat" fight that took
+the marks and the position; an unnamed Strike or Clash with two or more open
+now gets the **Which fight?** card before rolling (§3; issue #321 U16).
 Gain Ground's pick is made later, on its suffer-choice card: the card carries
 the move's own fight (`moveFight`, below — `executorOpts.combatTrackId`, via
 `persistResolution`'s targets), and the `combat-progress` call marks that
@@ -113,7 +122,18 @@ N04). A card posted before the card carried its fight keeps the sole-open
 reading.
 
 **Position** (`in_control` / `bad_spot`) is written to the track and mirrored
-to the actor + combatant badge (`applyCombatPositionToTrack`). The pipeline
+to the actor + combatant badge (`applyCombatPositionToTrack`) — the track
+first: when that write is refused the function rejects and the mirrors are
+left as they were, and each caller catches it (the pipeline lists it as not
+applied, a suffer pick reports it refused, the threshold card's create logs
+it). Every writer goes through it — the combat tracker's position badge (a
+GM's click; the clicked combatant's own flag too) and the Progress Tracks
+panel's toggle (relayed `progressTrack.edit` op `position`, cycled from the
+stored position on the canonical GM and mirrored to the clicker's assigned
+character, `game.user.character`, when it is a PC they own) included; the
+badge wrote only the two mirrors and the toggle only the track, so the
+interpreter, TDA, the narrator, the sheet and the badge disagreed (issue #321
+U19). The pipeline
 writes it to the move's own fight (`moveFight`): the track its progress marked
 (or created), else `selectCombatTrack` on the move's target, else the sole
 open fight — with several fights open it used to be written only while
@@ -122,7 +142,8 @@ move card for its Finish the Fight button (§3). It constrains
 which combat moves the interpreter proposes (`constrainMoveToPosition`,
 `src/moves/interpreter.js`) and drives the play-kit Take Decisive Action
 bad-spot downgrade in the resolver. The weak-hit Enter-the-Fray choice ("You
-are in control") is a `combat-position` suffer call (`src/moves/sufferDialog.js`)
+are in control", or the momentum option's bad spot — issue #321 U18) is a
+`combat-position` suffer call (`src/moves/sufferDialog.js`)
 that writes the open track — or stashes onto the pending threshold card when
 clicked before Enter the Fray.
 
@@ -162,7 +183,11 @@ card — is not rolled: the pipeline posts a **Which fight?** card instead
 names, the narration and the roller's `actorId`), and a pick
 (`wireWhichFightButtons`) posts the move again with that fight's id, spoken
 as the original roller. One pick per card: every button disables, and the
-GM's pick is stamped `whichFightPicked`. A TDA
+GM's pick is stamped `whichFightPicked`. Since issue #321 U16 a Strike or
+Clash that matches no open fight while two or more are open gets the same
+card (and an Undertake an Expedition naming no destination among several
+open expeditions a "Which expedition?" one — `trackType: "expedition"`, see
+`exploration-flow.md` §1). A TDA
 **weak hit** also rolls
 the `decisive_action_cost` oracle (a d100 card whose 1–40 band routes a suffer
 pick). A TDA **miss** does not end the fight — it routes Pay the Price.
@@ -173,6 +198,16 @@ card's `trackId` / `trackLabel`, so Battle ends that fight while another is
 open — without them, two open fights left it ending neither.
 
 **Face Defeat** closes the track as a loss (no payoff) and routes Pay the Price.
+
+**One price per result.** A routed Pay the Price (`routePayThePrice` — Face
+Defeat on every outcome, the misses above) is rolled once, for its card
+(`postFaceDefeatPayThePriceCard`, which every routed price posts through), and
+the pipeline seeds the narration with that card's result
+(`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
+advisory price for a result that routes one (`routesPayThePrice`). The
+narration used to depict one price while the card showed — and the table
+paid — another (issue #321 U03). A miss that routes none (Sojourn's) keeps
+its advisory seed.
 
 ## 4. The win payoff (linked fights)
 
@@ -247,6 +282,17 @@ card (`trackGoneCard`) instead (issue #306 R06).
 Pre-session (the pipeline's session gate would ignore the bridge) and for
 `scene_challenge` rows (no mapped move), it keeps the bespoke instant display
 roll (`type: 'progressRoll'` card — display-only by design).
+
+The panel's edits — add, +, −, ✓, ✕ and the position toggle — are written by
+the canonical GM for every user (gmRelay `progressTrack.edit` →
+`applyProgressTrackEditFromRelay`, payload checked against what the panel can
+produce; a refusal or a write that throws is reported, never swallowed). The
+tracks journal is `ownership: NONE`, so a player's own write was refused and
+the click did nothing; reading the panel never creates the journal, only a
+write does (issue #321 U05). Every track write on a client runs one at a
+time, each on a fresh read once the previous has landed (`writeTracks`), so
+two quick clicks — or a click racing the pipeline's position write — no
+longer lose one change (U57).
 
 ## 6. Settings, gating, coverage
 

@@ -128,12 +128,16 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //       xCardActive                 safety.js suppressScene / clearXCard (`!x`, X-Card relay)
 //       xCardPlays                  safety.js suppressScene — the play count the narrator's
 //                                   in-flight check compares (issue #306 R01)
+//       xCardRedirect, xCardedNarrationIds   safety.js suppressScene (applyXCardToNarratorMemory);
+//                                   the redirect is cleared by the narrator's redirect hook
+//                                   (issue #321 U07)
 //       safety                      settingsPanel safety sync + "safety.syncPrivateLines" relay
 //       safetyFlags                 sessionDialogs applySafetyFlag ("safety.setFlag" relay)
 //       nextMoveAdd                 sessionDialogs applyTakeBreak; the pipeline consumes it
 //                                   on the store via clearPersistedNextMoveAdd
 //       questFocus, connectionFocus, sessionFocus   Begin / End a Session relays
-//       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays)
+//       sessionActive, sessionActiveStartedAt   session/lifecycle.js (Begin / End relays;
+//                                   a new session's mint closes the gate)
 //       sessionStartedId            Begin a Session relay (start effects once per session)
 //       currentSessionId, sessionNumber, lastSessionTimestamp,
 //       sessionEndedId, previousSessionSummary   session/lifecycle.js session-id lifecycle
@@ -152,6 +156,9 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //       activeSectorId              `!sector`
 //       incitingIncident            session/incitingIncident.js
 //       worldTruths, worldTruthsSet, worldTruthsJournalId   truths flows
+//       loreRecap                   truths/generator.js generateLoreRecap (`!lore`) —
+//                                   the pipeline never writes it, so its working copy
+//                                   only ever holds the recap from before the move
 //
 //   ENTITY_ID_LISTS (entities/registry.js) — both sides append (the
 //     narrator's auto-created connections land on the working copy and the
@@ -181,6 +188,8 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 const STORE_OWNED_FIELDS = Object.freeze([
   'xCardActive',
   'xCardPlays',
+  'xCardRedirect',
+  'xCardedNarrationIds',
   'safety',
   'safetyFlags',
   'nextMoveAdd',
@@ -208,6 +217,7 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'worldTruths',
   'worldTruthsSet',
   'worldTruthsJournalId',
+  'loreRecap',
 ]);
 
 /**

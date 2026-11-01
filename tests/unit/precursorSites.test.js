@@ -310,6 +310,103 @@ describe("selectSectorSite — across sectors", () => {
 });
 
 
+// Issue #321 U48: real generated names repeat across sectors (a derelict is
+// named after its rolled type, numeral-suffixed only WITHIN a sector) and
+// every name carries its type keyword, so "X I" is a substring of "X II". The
+// exact and substring rungs ran first-match over every sector in storage
+// order, and a label naming an ineligible site fell through to guesses.
+describe("selectSectorSite — generated names (issue #321 U48)", () => {
+  // Every derelict a deep-space starship, so names collide as they do in play.
+  const roll = stubRoller({ derelict_location: "Deep Space", derelict_type: "Derelict starship" });
+  const sectorOf = (id, region, trouble = "Energy storms are rampant", roller = roll) =>
+    ({ id, mapData: { discoveries: generateSectorSites(region, trouble, { rollOracle: roller }) } });
+
+  it("an exact name in the active sector beats a same-named site in an older sector", () => {
+    const older  = sectorOf("sector-A", "terminus");   // one derelict: "Derelict Starship"
+    const active = sectorOf("sector-B", "terminus");   // one derelict: "Derelict Starship"
+    expect(older.mapData.discoveries[0].name).toBe("Derelict Starship");
+    expect(active.mapData.discoveries[0].name).toBe("Derelict Starship");
+
+    // The crew, in sector B, undertakes an expedition to "the derelict starship"
+    // (index.js stamps the track's site link with requireLabelMatch).
+    const picked = selectSectorSite([older, active], "the derelict starship", {
+      requireLabelMatch: true, activeSectorId: "sector-B",
+    });
+    expect(picked?.sector.id).toBe("sector-B");
+    // With no active sector, storage order still answers (the old behaviour).
+    expect(selectSectorSite([older, active], "the derelict starship")?.sector.id).toBe("sector-A");
+  });
+
+  it("a generic type label is settled by the active sector, not the oldest sector", () => {
+    const older  = sectorOf("sector-A", "terminus");
+    const active = sectorOf("sector-B", "terminus");
+    expect(selectSectorSite([older, active], "the derelict", { activeSectorId: "sector-B" })?.sector.id).toBe("sector-B");
+  });
+
+  it("an exact name for an already-charted site never falls through to its numbered sibling", () => {
+    // Expanse: derelict + vault + derelict → "Derelict Starship I" / "Derelict Starship II".
+    const sector = sectorOf("sector-X", "expanse");
+    const names  = sector.mapData.discoveries.map(s => s.name);
+    expect(names).toEqual(expect.arrayContaining(["Derelict Starship I", "Derelict Starship II"]));
+
+    // `!reveal-site Derelict Starship II` charted II; the crew then swears an expedition to it.
+    sector.mapData.discoveries.find(s => s.name === "Derelict Starship II").discovered = true;
+    const stamped = selectSectorSite([sector], "Derelict Starship II", {
+      requireLabelMatch: true, activeSectorId: "sector-X",
+    });
+    expect(stamped).toBeNull();   // the substring rung linked "…I" ("…ii" contains "…i")
+    // Revealing by that name reveals nothing either (the sole-site guess included).
+    expect(selectSectorSite([sector], "Derelict Starship II", { activeSectorId: "sector-X" })).toBeNull();
+  });
+
+  it("an expedition to an already-charted vault is not linked to a different undiscovered vault", () => {
+    // Outlands + a precursor-themed trouble: derelict + vault + bonus vault.
+    let n = 0;
+    const vaultRoll = (tableId) => ({
+      result: tableId === "vault_form" ? `Form ${++n}` : roll(tableId).result,
+    });
+    const sector = sectorOf("sector-V", "outlands", "Precursor sites throughout the sector emit strange signals", vaultRoll);
+    const vaults = sector.mapData.discoveries.filter(s => s.type === "vault");
+    expect(vaults).toHaveLength(2);
+    const [charted, other] = vaults;
+    charted.discovered = true;
+
+    // The type-keyword rung ("vault" in the label, one undiscovered vault left) linked the other one.
+    const stamped = selectSectorSite([sector], charted.name, { requireLabelMatch: true, activeSectorId: "sector-V" });
+    expect(stamped).toBeNull();
+    expect(selectSectorSite([sector], other.name, { requireLabelMatch: true, activeSectorId: "sector-V" })?.site.id).toBe(other.id);
+  });
+
+  it("an active-sector namesake that no longer qualifies settles the name — nothing, not another sector's", () => {
+    const older  = sectorOf("sector-A", "terminus");
+    const active = sectorOf("sector-B", "terminus");
+    active.mapData.discoveries[0].discovered = true;   // the crew already charted B's derelict
+    expect(selectSectorSite([older, active], "Derelict Starship", { activeSectorId: "sector-B" })).toBeNull();
+    // An eligible exact match elsewhere still answers when the active sector has no namesake.
+    expect(selectSectorSite([older, active], "Derelict Starship", { activeSectorId: "sector-C" })?.sector.id).toBe("sector-A");
+  });
+
+  it("a site link to a site that no longer qualifies returns nothing — no guess by name", () => {
+    const sites = [
+      { id: "v1", name: "Precursor Vault — Monument", type: "vault", discovered: true },
+      { id: "v2", name: "Precursor Vault — Vessel",   type: "vault", discovered: false },
+    ];
+    expect(pick(sites, "the vault", { siteId: "v1" })).toBeNull();
+    expect(pick(sites, "the vault", { siteId: "v2" })?.id).toBe("v2");
+  });
+
+  it("clearing by the exact name of a site not yet discovered clears nothing", () => {
+    const sites = [
+      { id: "v1", name: "Precursor Vault — Monument", type: "vault", discovered: false },
+      { id: "v2", name: "Precursor Vault — Vessel",   type: "vault", discovered: true, cleared: false },
+    ];
+    const clearable = { eligible: s => s.discovered && !s.cleared };
+    expect(pick(sites, "Precursor Vault — Monument", clearable)).toBeNull();
+    expect(pick(sites, "Precursor Vault — Vessel", clearable)?.id).toBe("v2");
+  });
+});
+
+
 describe("derelictTypeTableFor (SITE-TYPE-TABLE-MISMATCH)", () => {
   it("routes the type roll by rolled location", () => {
     expect(derelictTypeTableFor("Planetside")).toBe("derelict_type_planetside");

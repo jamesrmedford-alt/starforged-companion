@@ -9,12 +9,15 @@
  */
 
 import { requestPrivateNarration } from "./narrate.js";
-import { publishToMainChat } from "./publish.js";
+import { publishToMainChat, XCARD_PUBLISH_REFUSED } from "./publish.js";
+import { isXCardActive } from "../narration/narrator.js";
+import { resolveUserActorId } from "../multiplayer/speaker.js";
 import {
   appendToBuffer,
   scheduleDebouncedWrite,
   flushNow,
   renderTurnsHtml,
+  parseTurnsHtml,
   loadCurrentSessionTranscript,
 } from "./transcript.js";
 
@@ -53,8 +56,11 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     this.userId         = userId;
     this.mode           = mode;
     this.initialMessage = initialMessage;
-    this.turns          = [];   // { who, name, text } since this window opened
-    this.resumedHtml    = "";   // prior-session HTML loaded on first render
+    // The session's private conversation — { who, name, text } — the one
+    // transcript the window shows and sends the narrator (issue #321 U42):
+    // the saved turns, read once on the first render, then this window's.
+    this.turns          = [];
+    this.loaded         = false;
     this.errorBanner    = "";
     this.busy           = false;
   }
@@ -102,12 +108,17 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
   async _prepareContext(_options) {
-    const sessionId = game.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? "";
-    if (!this.resumedHtml) {
-      this.resumedHtml = await loadCurrentSessionTranscript(this.userId, sessionId).catch(() => "");
+    // Read the saved session once. Re-reading on every render — whenever the
+    // first read was empty — loaded this window's own turns back from the page
+    // once the debounced save landed, and showed them twice.
+    if (!this.loaded) {
+      this.loaded = true;
+      const sessionId = game.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? "";
+      const saved = await loadCurrentSessionTranscript(this.userId, sessionId).catch(() => "");
+      this.turns = [...parseTurnsHtml(saved), ...this.turns];
     }
     return {
-      transcriptHtml: this.resumedHtml + renderTurnsHtml(this.turns),
+      transcriptHtml: renderTurnsHtml(this.turns),
       initialMessage: this.initialMessage,
       errorBanner:    this.errorBanner,
       busy:           this.busy,
@@ -158,8 +169,13 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     return this.element?.querySelector("[data-pc-input]")?.value ?? "";
   }
 
+  /**
+   * This player's own PC (issue #321 U23): User#character → an owned PC → the
+   * first PC only for a GM or in solo play — never another player's.
+   */
   #resolveActorId() {
-    return game.users?.get?.(this.userId)?.character?.id ?? null;
+    const campaignState = game.settings?.get?.(MODULE_ID, "campaignState") ?? null;
+    return resolveUserActorId(game.users?.get?.(this.userId) ?? null, campaignState);
   }
 
   static async #onSend(_event, _target) {
@@ -167,7 +183,8 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     const message = this.#inputValue().trim();
     if (!message) return;
 
-    const characterName = game.users?.get?.(this.userId)?.character?.name ?? "You";
+    const actorId       = this.#resolveActorId();
+    const characterName = (actorId ? game.actors?.get?.(actorId)?.name : null) ?? "You";
     this.initialMessage = "";
     this.errorBanner    = "";
 
@@ -183,7 +200,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       const result = await requestPrivateNarration({
         campaignState,
         userId:          this.userId,
-        actorId:         this.#resolveActorId(),
+        actorId,
         transcriptTurns: this.turns.map(t => `${t.name}: ${t.text}`),
         playerMessage:   message,
       });
@@ -195,6 +212,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
         scheduleDebouncedWrite(this.userId);
       } else {
         this.errorBanner = {
+          "x-card":       "The X-Card is in play — the narrator is paused until a GM resumes the scene.",
           "no-key":       "Add your Claude API key in Companion Settings → About.",
           "no-character": "Set up your character first.",
           "empty":        "The narrator had nothing to say — try rephrasing.",
@@ -216,6 +234,12 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     const lastNarrator = [...this.turns].reverse().find(t => t.who === "narrator");
     if (!lastNarrator) {
       this.errorBanner = "Nothing to publish yet.";
+      await this.render();
+      return;
+    }
+    // Nothing reaches the table during an X-Card pause (issue #321 U09).
+    if (isXCardActive(null)) {
+      this.errorBanner = XCARD_PUBLISH_REFUSED;
       await this.render();
       return;
     }

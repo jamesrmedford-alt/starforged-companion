@@ -7,7 +7,8 @@
  *
  * Exports:
  *   - startScene(campaignState, { reason }) — assign a fresh scene ID; if a
- *       prior scene wasn't cleanly ended, flush it first via endScene.
+ *       prior scene wasn't cleanly ended, flush it first via endScene. A
+ *       caller holding no scene adopts the store's active scene instead.
  *   - endScene(campaignState, { reason }) — migrate entity-scoped truths to
  *       entity generative tiers, archive free-text and scene-scoped truths
  *       to the WJ Lore journal, then discard active ledgers.
@@ -30,7 +31,7 @@ import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
 import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
 import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
 import { rememberSessionRetractions } from './retractions.js';
-import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from './ledgers.js';
+import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -39,14 +40,29 @@ const MODULE_ID = 'starforged-companion';
  * the previous scene was never cleanly ended; that scene is flushed first
  * with reason "implicit_due_to_new_scene".
  *
+ * A caller holding no scene may hold a snapshot read before another
+ * narration started one — the move pipeline reads campaignState before its
+ * confirm dialog and Claude calls. When the store has an active scene, that
+ * scene is the one in progress: it is adopted into the caller's copy (scene
+ * id, truths, state, frame, spotlight) and its id returned, nothing written
+ * (issue #321 U06f — a second scene used to be minted over the live one's
+ * ledgers, which were neither kept nor archived). A caller that holds the
+ * active scene (`!scene start` reads the store first) still ends it and
+ * starts a new one.
+ *
  * @param {Object} campaignState
  * @param {Object} [opts]
  * @param {string} [opts.reason] — diagnostic only ("@scene_intercept",
  *   "first_narration", "scene_command")
- * @returns {Promise<string>} the new scene ID
+ * @returns {Promise<string>} the new (or adopted) scene ID
  */
 export async function startScene(campaignState, { reason = 'unknown' } = {}) {
   if (!campaignState) return null;
+
+  if (!campaignState.currentSceneId && adoptStoredScene(campaignState)) {
+    console.debug(`${MODULE_ID} | sceneLifecycle: startScene (${reason}) — scene ${campaignState.currentSceneId} is already active; continuing it.`);
+    return campaignState.currentSceneId;
+  }
 
   const stateHasEntries = hasActiveStateEntries(campaignState);
   if ((campaignState.sceneTruths?.length ?? 0) > 0 || stateHasEntries) {
@@ -163,6 +179,30 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Copy the store's active scene — SCENE_FIELDS, cloned — into the caller's
+ * campaignState when the store has one the caller lacks. Returns true when a
+ * scene was adopted.
+ *
+ * @param {Object} campaignState — the caller's copy (mutated)
+ * @returns {boolean}
+ */
+function adoptStoredScene(campaignState) {
+  let latest = null;
+  try {
+    latest = game.settings.get(MODULE_ID, 'campaignState');
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | sceneLifecycle: latest campaignState read failed; starting a scene from the caller's copy:`, err?.message ?? err);
+    return false;
+  }
+  if (!latest || typeof latest !== 'object' || latest === campaignState || !latest.currentSceneId) return false;
+  for (const key of SCENE_FIELDS) {
+    if (latest[key] === undefined) delete campaignState[key];
+    else campaignState[key] = foundry.utils.deepClone(latest[key]);
+  }
+  return true;
+}
 
 function hasActiveStateEntries(campaignState) {
   const bySubject = campaignState.sceneState?.bySubject;
@@ -388,7 +428,9 @@ export async function persistCampaignStateFields(campaignState, fields, label) {
  *     retraction on either side sticks, the working copy's new truths
  *     appended); sceneState / sceneFrame / spotlight keep the working copy
  *     (their supersede / delete semantics cannot be merged without a
- *     baseline).
+ *     baseline) — except what a narration the X-Card removed wrote (the
+ *     store's `xCardedNarrationIds`), which is retracted from the working
+ *     copy first (issue #321 U07).
  *
  * @param {Object} working — the writer's copy (mutated)
  * @param {Object} latest  — the latest stored campaignState (not mutated)
@@ -401,6 +443,17 @@ export function mergeSceneLedgers(working, latest) {
       else delete working[key];
     }
     return false;
+  }
+
+  // A narration the X-Card removed stays removed (issue #321 U07): the
+  // working copy may predate the removal, and its state and frame would be
+  // kept below. Its truths are retracted again here too (a retraction sticks
+  // in the union); a frame it wrote yields to the store's.
+  const removed = Array.isArray(latest.xCardedNarrationIds) ? latest.xCardedNarrationIds : [];
+  if (removed.length) {
+    const frameRemoved = removed.includes(working.sceneFrame?.narrationId);
+    retractNarrations(working, removed);
+    if (frameRemoved) working.sceneFrame = latest.sceneFrame ?? null;
   }
 
   const storeTruths   = Array.isArray(latest.sceneTruths)  ? latest.sceneTruths  : null;
@@ -436,12 +489,20 @@ export function mergeSceneLedgers(working, latest) {
  * truth that landed during the narration survives. When the caller's object
  * IS the stored one it is written as-is. Failures are logged, never thrown.
  *
+ * A caller that owns a further change — a correction's mark on the rolling
+ * summary, the inciting premise — makes it with `opts.onto` on the latest
+ * stored campaignState being written, in the same write; it is written even
+ * when the scene changed and the ledgers are not (issue #321 U06).
+ *
  * @param {Object}   campaignState — the caller's working copy
  * @param {string[]} fields        — the scene-ledger keys this write owns
  * @param {string}   label         — for the logs
- * @returns {Promise<boolean>} true when written
+ * @param {Object}   [opts]
+ * @param {(target: Object) => void} [opts.onto] — makes the caller's further
+ *   change on the object about to be written (a copy of the latest store)
+ * @returns {Promise<boolean>} true when the ledgers were written
  */
-export async function persistSceneLedgerFields(campaignState, fields, label) {
+export async function persistSceneLedgerFields(campaignState, fields, label, { onto = null } = {}) {
   try {
     if (typeof game === 'undefined' || !game?.settings?.set) return false;
     let latest = null;
@@ -451,22 +512,26 @@ export async function persistSceneLedgerFields(campaignState, fields, label) {
       console.debug?.(`${MODULE_ID} | sceneLifecycle: latest campaignState read failed (${label}); writing the caller's copy:`, err?.message ?? err);
     }
     let target = campaignState;
+    let ledgersWritten = true;
     if (latest && typeof latest === 'object' && latest !== campaignState) {
       const ledgers = {};
       for (const key of SCENE_FIELDS) {
         if (Object.prototype.hasOwnProperty.call(campaignState, key)) ledgers[key] = campaignState[key];
       }
-      if (!mergeSceneLedgers(ledgers, latest)) {
-        console.debug(`${MODULE_ID} | sceneLifecycle: the scene changed meanwhile — ${label} not persisted (the stored scene's ledgers stand).`);
-        return false;
-      }
       target = { ...latest };
-      for (const key of fields) {
-        if (Object.prototype.hasOwnProperty.call(ledgers, key)) target[key] = ledgers[key];
+      if (mergeSceneLedgers(ledgers, latest)) {
+        for (const key of fields) {
+          if (Object.prototype.hasOwnProperty.call(ledgers, key)) target[key] = ledgers[key];
+        }
+      } else {
+        console.debug(`${MODULE_ID} | sceneLifecycle: the scene changed meanwhile — ${label} not persisted (the stored scene's ledgers stand).`);
+        if (typeof onto !== 'function') return false;
+        ledgersWritten = false;
       }
     }
+    if (typeof onto === 'function') onto(target);
     await game.settings.set(MODULE_ID, 'campaignState', target);
-    return true;
+    return ledgersWritten;
   } catch (err) {
     console.warn(`${MODULE_ID} | sceneLifecycle: campaignState persist failed (${label}):`, err);
     return false;

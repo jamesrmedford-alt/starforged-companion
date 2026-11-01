@@ -31,7 +31,9 @@
  *      ready) and Begin a Session: when the session is over, bring its
  *      rolling summary up to date, close its scene under its own id, then
  *      `mintSession` — which keeps that summary as `previousSessionSummary`
- *      (issue #286 C3) for the narrator's LAST SESSION block.
+ *      (issue #286 C3) for the narrator's LAST SESSION block, and closes the
+ *      session-active gate: a new session is begun at Begin a Session
+ *      (issue #321 U12).
  *   - `registerSessionActivityHook()` — the canonical GM refreshes
  *      `lastSessionTimestamp` on chat activity, at most every
  *      ACTIVITY_STAMP_MINUTES. Activity extends a live session; it never
@@ -133,6 +135,8 @@ export const SESSION_MINT_FIELDS = Object.freeze([
   "lastSessionTimestamp",
   "sessionEndedId",
   "previousSessionSummary",
+  "sessionActive",
+  "sessionActiveStartedAt",
 ]);
 
 /** Milliseconds since the session was last seen live; Infinity when unknown. */
@@ -171,8 +175,12 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
  * Start a new session: keep the closing session's rolling summary as
  * `previousSessionSummary` (an older one stays when the closing session has
  * none), then mint the id, bump `sessionNumber` and stamp
- * `lastSessionTimestamp`. Mutates and returns campaignState; the caller
- * persists SESSION_MINT_FIELDS.
+ * `lastSessionTimestamp`. The new session has not been begun, so its
+ * session-active gate is closed until Begin a Session opens it: a session
+ * nobody ended (it went idle) used to hand its open gate to the next one —
+ * "Active" since last week, Begin disabled, and the campaign clocks, the
+ * Spotlight Vignette and the foci skipped (issue #321 U12). Mutates and
+ * returns campaignState; the caller persists SESSION_MINT_FIELDS.
  *
  * @param {Object} campaignState
  * @param {number} [now] — epoch ms
@@ -189,10 +197,12 @@ export function mintSession(campaignState, now = Date.now()) {
       updatedAt:     summary.updatedAt ?? null,
     };
   }
-  campaignState.currentSessionId     = newSessionId();
-  campaignState.sessionNumber        = (campaignState.sessionNumber ?? 0) + 1;
-  campaignState.lastSessionTimestamp = new Date(now).toISOString();
-  campaignState.sessionEndedId       = null;
+  campaignState.currentSessionId       = newSessionId();
+  campaignState.sessionNumber          = (campaignState.sessionNumber ?? 0) + 1;
+  campaignState.lastSessionTimestamp   = new Date(now).toISOString();
+  campaignState.sessionEndedId         = null;
+  campaignState.sessionActive          = false;
+  campaignState.sessionActiveStartedAt = null;
   return campaignState;
 }
 

@@ -5,9 +5,25 @@
  * JournalEntry that also holds the narrator-stub paragraph. Surgical
  * replacement (via marker comments or a regex fallback) lets us update the
  * settlements list without touching the rest.
+ *
+ * Fixtures use the shape storeSector actually persists to
+ * campaignState.sectors[] — `mapData.settlements` + `entityJournalIds`, never a
+ * `settlements` array (issue #321 U13: the rewrite read `sector.settlements`,
+ * which the stored record never has, and wrote an empty list over the real one
+ * — hidden by fixtures that hand-built that array). The "real generate → store
+ * chain" block runs the production producers end to end.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { vi, describe, it, expect, beforeEach, afterEach } from "vitest";
+
+vi.mock("../../src/entities/finalize.js", () => ({ finalizeEntityArtOnly: vi.fn() }));
+// storeSector records the sector trouble as a World Journal threat — not the
+// subject here, and the journal harness below is not a World Journal.
+vi.mock("../../src/world/worldJournal.js", async () => {
+  const actual = await vi.importActual("../../src/world/worldJournal.js");
+  return { ...actual, recordThreat: vi.fn(async () => null) };
+});
+
 import {
   buildSettlementsListHtml,
   rewriteSectorOverviewSettlements,
@@ -15,6 +31,13 @@ import {
   registerSectorOverviewSync,
   _flushPendingRewrites,
 } from "../../src/sectors/sectorOverview.js";
+import {
+  generateSector,
+  createEntityJournals,
+  createSectorJournal,
+  storeSector,
+} from "../../src/sectors/sectorGenerator.js";
+import { _resetFolderCache } from "../../src/entities/folder.js";
 
 const MODULE = "starforged-companion";
 
@@ -76,9 +99,38 @@ function makePage(seed) {
   return page;
 }
 
+/**
+ * A settlement Actor as createSettlement writes it: `system.klass` (what the
+ * sheet edits) and the full record on `flags.settlement`.
+ */
+function settlementActor({ id, name, klass = "orbital", location = "Orbital", population = "", authority = "", sectorId = null }) {
+  const actor = global.makeTestActor({
+    id, type: "location", name,
+    system: { subtype: "settlement", klass },
+    flags: { [MODULE]: { entityType: "settlement", settlement: { name, location, population, authority, sectorId } } },
+  });
+  global.game.actors._set(id, actor);
+  return actor;
+}
+
+/**
+ * A sector record in the shape storeSector persists: settlement rows live on
+ * mapData.settlements (id, name, marker type) and entityJournalIds maps each
+ * generator id to its settlement Actor.
+ */
+function storedSector({ id, name, settlements }) {
+  return {
+    id, name,
+    mapData: { settlements: settlements.map(s => ({ id: s.genId, name: s.name, type: s.type ?? "orbital", gridX: 1, gridY: 1 })) },
+    entityJournalIds: Object.fromEntries(settlements.map(s => [s.genId, s.actorId])),
+    settlementIds: settlements.map(s => s.actorId),
+  };
+}
+
 beforeEach(() => {
   global.game.actors._reset();
   global.game.folders._reset();
+  global.game.settings._store.clear();
 });
 
 describe("buildSettlementsListHtml", () => {
@@ -90,7 +142,7 @@ describe("buildSettlementsListHtml", () => {
     };
     const actor = { id: "actor-1", name: "Bleakhold" };
     const html  = buildSettlementsListHtml(sector, { g1: actor });
-    expect(html).toContain("@UUID[Actor.actor-1]{Bleakhold}");
+    expect(html).toContain("@UUID[Actor.actor-1]{Bleakhold} — Planetside, Pop: Thousands, Authority: Notorious");
     expect(html).toMatch(/<!-- sf:settlements-list -->[\s\S]*<!-- \/sf:settlements-list -->/);
   });
 
@@ -103,6 +155,36 @@ describe("buildSettlementsListHtml", () => {
     const html = buildSettlementsListHtml(sector, {});
     expect(html).not.toContain("@UUID");
     expect(html).toContain("<li>Floater — Orbital, Pop: Hundreds, Authority: Strict</li>");
+  });
+
+  it("lists a stored sector record from its map data, each row from the settlement Actor", () => {
+    const a = settlementActor({ id: "actor-A", name: "Bleakhold", klass: "planetside", location: "Planetside", population: "Thousands", authority: "Notorious" });
+    const b = settlementActor({ id: "actor-B", name: "Floater", klass: "deep space", location: "Deep Space", population: "Few", authority: "None" });
+    const sector = storedSector({ id: "sec", name: "Reach", settlements: [
+      { genId: "g1", actorId: "actor-A", name: "Bleakhold", type: "planetside" },
+      { genId: "g2", actorId: "actor-B", name: "Floater",   type: "deep_space" },
+    ] });
+    expect(sector.settlements).toBeUndefined();   // the persisted shape carries no settlements array
+
+    const html = buildSettlementsListHtml(sector, { g1: a, g2: b });
+    expect(html).toContain("<li>@UUID[Actor.actor-A]{Bleakhold} — Planetside, Pop: Thousands, Authority: Notorious</li>");
+    expect(html).toContain("<li>@UUID[Actor.actor-B]{Floater} — Deep Space, Pop: Few, Authority: None</li>");
+  });
+
+  it("shows the Actor's current name, class, population and authority over the generated values", () => {
+    const actor = settlementActor({ id: "actor-A", name: "Bleak Hold Station", klass: "orbital", location: "Orbital", population: "Tens of thousands", authority: "Corrupt" });
+    const sector = {
+      settlements: [{ id: "g1", name: "Bleakhold", locationType: "planetside", population: "Few", authority: "None" }],
+    };
+    const html = buildSettlementsListHtml(sector, { g1: actor });
+    expect(html).toContain("@UUID[Actor.actor-A]{Bleak Hold Station} — Orbital, Pop: Tens of thousands, Authority: Corrupt");
+  });
+
+  it("keeps a map row whose settlement Actor is gone, as a plain name", () => {
+    const sector = storedSector({ id: "sec", name: "Reach", settlements: [
+      { genId: "g1", actorId: "actor-gone", name: "Lost Haven", type: "orbital" },
+    ] });
+    expect(buildSettlementsListHtml(sector, {})).toContain("<li>Lost Haven — Orbital, Pop: , Authority: </li>");
   });
 });
 
@@ -124,21 +206,16 @@ describe("rewriteSectorOverviewSettlements — surgical replacement", () => {
     global.game.journal._add(journal);
 
     // Seed the settlement Actor that the gen→host map points at
-    global.game.actors._set("actor-A", global.makeTestActor({
-      id: "actor-A", type: "location", name: "Bleakhold",
-      flags: { [MODULE]: { settlement: { name: "Bleakhold" } } },
-    }));
+    settlementActor({ id: "actor-A", name: "Bleakhold", klass: "planetside", location: "Planetside", population: "Thousands", authority: "Notorious" });
 
-    const campaignState = { sectors: [{
-      id: sectorId, name: sectorName,
-      settlements: [{ id: "g1", name: "Bleakhold", locationType: "planetside", population: "Thousands", authority: "Notorious" }],
-      entityJournalIds: { g1: "actor-A" },
-    }]};
+    const campaignState = { sectors: [storedSector({ id: sectorId, name: sectorName, settlements: [
+      { genId: "g1", actorId: "actor-A", name: "Bleakhold", type: "planetside" },
+    ] })] };
 
     const ok = await rewriteSectorOverviewSettlements(sectorId, campaignState);
     expect(ok).toBe(true);
     expect(overviewPage.text.content).toContain("A grim stretch of frontier");  // stub preserved
-    expect(overviewPage.text.content).toContain("@UUID[Actor.actor-A]{Bleakhold}");
+    expect(overviewPage.text.content).toContain("@UUID[Actor.actor-A]{Bleakhold} — Planetside, Pop: Thousands, Authority: Notorious");
     expect(overviewPage.text.content).not.toContain("OLD ENTRY");
     expect(overviewPage.text.content).toContain("1 passage charted");           // passages preserved
   });
@@ -157,16 +234,11 @@ describe("rewriteSectorOverviewSettlements — surgical replacement", () => {
     const { journal, overviewPage } = makeSectorRecordJournal(sectorId, sectorName, initialContent);
     global.game.journal._add(journal);
 
-    global.game.actors._set("actor-B", global.makeTestActor({
-      id: "actor-B", type: "location", name: "Outpost 7",
-      flags: { [MODULE]: { settlement: { name: "Outpost 7" } } },
-    }));
+    settlementActor({ id: "actor-B", name: "Outpost 7", population: "Few", authority: "None" });
 
-    const campaignState = { sectors: [{
-      id: sectorId, name: sectorName,
-      settlements: [{ id: "g7", name: "Outpost 7", locationType: "orbital", population: "Few", authority: "None" }],
-      entityJournalIds: { g7: "actor-B" },
-    }]};
+    const campaignState = { sectors: [storedSector({ id: sectorId, name: sectorName, settlements: [
+      { genId: "g7", actorId: "actor-B", name: "Outpost 7" },
+    ] })] };
 
     const ok = await rewriteSectorOverviewSettlements(sectorId, campaignState);
     expect(ok).toBe(true);
@@ -193,16 +265,11 @@ describe("rewriteSectorOverviewSettlements — surgical replacement", () => {
       pages: { contents: [] },
     };
     global.game.journal._add(legacy);
-    global.game.actors._set("actor-C", global.makeTestActor({
-      id: "actor-C", type: "location", name: "Outerward",
-      flags: { [MODULE]: { settlement: { name: "Outerward" } } },
-    }));
+    settlementActor({ id: "actor-C", name: "Outerward", klass: "deep space", location: "Deep Space", population: "Dozens", authority: "Notorious" });
 
-    const campaignState = { sectors: [{
-      id: sectorId, name: sectorName,
-      settlements: [{ id: "g-out", name: "Outerward", locationType: "deep_space", population: "Dozens", authority: "Notorious" }],
-      entityJournalIds: { "g-out": "j-legacy" },   // still pointing at the legacy id
-    }]};
+    const campaignState = { sectors: [storedSector({ id: sectorId, name: sectorName, settlements: [
+      { genId: "g-out", actorId: "j-legacy", name: "Outerward", type: "deep_space" },   // still pointing at the legacy id
+    ] })] };
 
     const ok = await rewriteSectorOverviewSettlements(sectorId, campaignState);
     expect(ok).toBe(true);
@@ -219,16 +286,11 @@ describe("rewriteSectorOverviewSettlements — surgical replacement", () => {
     const { journal, overviewPage } = makeSectorRecordJournal(sectorId, sectorName, content);
     global.game.journal._add(journal);
 
-    global.game.actors._set("actor-D", global.makeTestActor({
-      id: "actor-D", type: "location", name: "Stable",
-      flags: { [MODULE]: { settlement: { name: "Stable" } } },
-    }));
+    settlementActor({ id: "actor-D", name: "Stable", population: "Few", authority: "None" });
 
-    const campaignState = { sectors: [{
-      id: sectorId, name: sectorName,
-      settlements: [{ id: "g-d", name: "Stable", locationType: "orbital", population: "Few", authority: "None" }],
-      entityJournalIds: { "g-d": "actor-D" },
-    }]};
+    const campaignState = { sectors: [storedSector({ id: sectorId, name: sectorName, settlements: [
+      { genId: "g-d", actorId: "actor-D", name: "Stable" },
+    ] })] };
 
     const before = overviewPage.text.content;
     const result = await rewriteSectorOverviewSettlements(sectorId, campaignState);
@@ -237,29 +299,86 @@ describe("rewriteSectorOverviewSettlements — surgical replacement", () => {
   });
 });
 
+/**
+ * The per-settlement page the pre-Phase-3 sector creator wrote into the Sector
+ * Record — its template verbatim (createSectorJournal's per-settlement loop,
+ * commits efc8c74..b65175a; the producer no longer exists).
+ */
+function legacySettlementPageContent(s, stubText = null) {
+  return `<h2>${s.name}</h2>
+<p><strong>Type:</strong> ${s.type ?? "Orbital"}</p>
+<p><strong>Population:</strong> ${s.population ?? "Few"}</p>
+<p><strong>Authority:</strong> ${s.authority ?? "None"}</p>
+<p><strong>Projects:</strong> ${(s.projects ?? ["Mining"]).join(", ")}</p>
+${s.trouble ? `<p><strong>Trouble:</strong> ${s.trouble}</p>` : ""}
+${s.planet ? `<p><strong>Planet:</strong> ${s.planet.name} (${s.planet.type})</p>` : ""}
+<hr>
+<p class="narrator-stub">${stubText || "<em>No narrator text generated.</em>"}</p>
+<hr>
+<h3>Notes</h3>
+<p><em>Record discoveries and plot threads here.</em></p>`;
+}
+
 describe("cleanupSectorRecordPages", () => {
   let restore;
   afterEach(() => { restore?.(); });
 
-  it("deletes every embedded page except the overview", async () => {
+  function cinderBelt() {
     restore = installRichJournalMock();
     const sectorId   = "sec-X";
     const sectorName = "Cinder Belt";
     const { journal, overviewPage } = makeSectorRecordJournal(sectorId, sectorName, "<h2>Cinder Belt</h2>");
-
-    const extra1 = makePage({ name: "Outpost A", text: { content: "<p>legacy settlement page</p>", format: 1 } });
-    const extra2 = makePage({ name: "Outpost B", text: { content: "<p>legacy settlement page</p>", format: 1 } });
-    journal._addPage(extra1);
-    journal._addPage(extra2);
     global.game.journal._add(journal);
+    const campaignState = { sectors: [storedSector({ id: sectorId, name: sectorName, settlements: [
+      { genId: "g-a", actorId: "actor-a", name: "Outpost A" },
+      { genId: "g-b", actorId: "actor-b", name: "Outpost B" },
+    ] })] };
+    const addPage = (name, content) => {
+      const page = makePage({ name, text: { content, format: 1 } });
+      journal._addPage(page);
+      return page;
+    };
+    return { sectorId, journal, overviewPage, campaignState, addPage };
+  }
 
-    const deleted = await cleanupSectorRecordPages(sectorId, {
-      sectors: [{ id: sectorId, name: sectorName }],
-    });
+  it("deletes the legacy per-settlement pages the old sector creator wrote", async () => {
+    const { sectorId, overviewPage, campaignState, addPage } = cinderBelt();
+    const a = addPage("Outpost A", legacySettlementPageContent({ name: "Outpost A", trouble: "Raiders" }, "A rusting dome."));
+    const b = addPage("Outpost B", legacySettlementPageContent({ name: "Outpost B", planet: { name: "Vorn Prime", type: "Desert World" } }));
+
+    const deleted = await cleanupSectorRecordPages(sectorId, campaignState);
     expect(deleted).toBe(2);
-    expect(extra1._deleted).toBe(true);
-    expect(extra2._deleted).toBe(true);
+    expect(a._deleted).toBe(true);
+    expect(b._deleted).toBe(true);
     expect(overviewPage._deleted).toBeUndefined();
+  });
+
+  it("keeps a page the GM added — its name is no settlement's, or its body is not the generated layout", async () => {
+    const { sectorId, campaignState, addPage } = cinderBelt();
+    const rumours = addPage("Rumours", "<p>The Hegemony is coming.</p>");
+    const named   = addPage("Outpost A", "<p>My notes on Outpost A: the dock master is lying.</p>");
+
+    expect(await cleanupSectorRecordPages(sectorId, campaignState)).toBe(0);
+    expect(rumours._deleted).toBeUndefined();
+    expect(named._deleted).toBeUndefined();
+  });
+
+  it("keeps a legacy settlement page whose Notes the GM wrote", async () => {
+    const { sectorId, campaignState, addPage } = cinderBelt();
+    const annotated = addPage("Outpost A", legacySettlementPageContent({ name: "Outpost A" })
+      .replace("<p><em>Record discoveries and plot threads here.</em></p>", "<p>Kade owes us a favour.</p>"));
+    const appended = addPage("Outpost B", `${legacySettlementPageContent({ name: "Outpost B" })}\n<p>The reactor leaks.</p>`);
+
+    expect(await cleanupSectorRecordPages(sectorId, campaignState)).toBe(0);
+    expect(annotated._deleted).toBeUndefined();
+    expect(appended._deleted).toBeUndefined();
+  });
+
+  it("deletes nothing when the sector's record is not stored (nothing identifies its settlements)", async () => {
+    const { sectorId, addPage } = cinderBelt();
+    const page = addPage("Outpost A", legacySettlementPageContent({ name: "Outpost A" }));
+    expect(await cleanupSectorRecordPages(sectorId, { sectors: [] })).toBe(0);
+    expect(page._deleted).toBeUndefined();
   });
 });
 
@@ -287,19 +406,13 @@ describe("registerSectorOverviewSync — live updateActor hook", () => {
     const { journal, overviewPage } = makeSectorRecordJournal(sectorId, sectorName, initialContent);
     global.game.journal._add(journal);
 
-    const actor = global.makeTestActor({
-      id: "actor-L", type: "location", name: "New Name",
-      flags: { [MODULE]: { settlement: { name: "New Name", sectorId } } },
-    });
-    global.game.actors._set("actor-L", actor);
+    const actor = settlementActor({ id: "actor-L", name: "New Name", population: "Few", authority: "None", sectorId });
 
-    // Seed campaignState so rewriteSectorOverviewSettlements can find it
-    global.game.settings.get = () => ({
-      sectors: [{
-        id: sectorId, name: sectorName,
-        settlements: [{ id: "g-l", name: "New Name", locationType: "orbital", population: "Few", authority: "None" }],
-        entityJournalIds: { "g-l": "actor-L" },
-      }],
+    // The stored campaignState rewriteSectorOverviewSettlements reads
+    global.game.settings._store.set(`${MODULE}.campaignState`, {
+      sectors: [storedSector({ id: sectorId, name: sectorName, settlements: [
+        { genId: "g-l", actorId: "actor-L", name: "Old Name" },
+      ] })],
     });
 
     registerSectorOverviewSync();
@@ -309,8 +422,34 @@ describe("registerSectorOverviewSync — live updateActor hook", () => {
     // Drain the debounce
     await _flushPendingRewrites();
 
-    expect(overviewPage.text.content).toContain("@UUID[Actor.actor-L]{New Name}");
+    expect(overviewPage.text.content).toContain("@UUID[Actor.actor-L]{New Name} — Orbital, Pop: Few, Authority: None");
     expect(overviewPage.text.content).not.toContain("Old Name");
+  });
+
+  it("a GM's edit to the Actor's class, population or authority shows in its row", async () => {
+    restore = installRichJournalMock();
+    const sectorId   = "sec-edit";
+    const sectorName = "Edited Reach";
+    const { journal, overviewPage } = makeSectorRecordJournal(sectorId, sectorName,
+      `<h3>Settlements</h3>
+<!-- sf:settlements-list --><ul><li>@UUID[Actor.actor-E]{Hold} — Orbital, Pop: Few, Authority: None</li></ul><!-- /sf:settlements-list -->`);
+    global.game.journal._add(journal);
+    const actor = settlementActor({ id: "actor-E", name: "Hold", population: "Few", authority: "None", sectorId });
+    global.game.settings._store.set(`${MODULE}.campaignState`, {
+      sectors: [storedSector({ id: sectorId, name: sectorName, settlements: [
+        { genId: "g-e", actorId: "actor-E", name: "Hold" },
+      ] })],
+    });
+    registerSectorOverviewSync();
+
+    // The sheet's settlement-type dropdown edits system.klass; the record holds the rest.
+    actor.system.klass = "planetside";
+    actor.flags[MODULE].settlement.population = "Thousands";
+    actor.flags[MODULE].settlement.authority  = "Martial law";
+    registeredHandler(actor, { system: { klass: "planetside" } });
+    await _flushPendingRewrites();
+
+    expect(overviewPage.text.content).toContain("@UUID[Actor.actor-E]{Hold} — Planetside, Pop: Thousands, Authority: Martial law");
   });
 
   it("leaves the overview to the canonical GM — a player's or second GM's client does not rewrite it", async () => {
@@ -321,17 +460,11 @@ describe("registerSectorOverviewSync — live updateActor hook", () => {
 <!-- sf:settlements-list --><ul><li>@UUID[Actor.actor-G]{Old Name}</li></ul><!-- /sf:settlements-list -->`;
     const { journal, overviewPage } = makeSectorRecordJournal(sectorId, sectorName, initialContent);
     global.game.journal._add(journal);
-    const actor = global.makeTestActor({
-      id: "actor-G", type: "location", name: "New Name",
-      flags: { [MODULE]: { settlement: { name: "New Name", sectorId } } },
-    });
-    global.game.actors._set("actor-G", actor);
-    global.game.settings.get = () => ({
-      sectors: [{
-        id: sectorId, name: sectorName,
-        settlements: [{ id: "g-g", name: "New Name", locationType: "orbital", population: "Few", authority: "None" }],
-        entityJournalIds: { "g-g": "actor-G" },
-      }],
+    const actor = settlementActor({ id: "actor-G", name: "New Name", sectorId });
+    global.game.settings._store.set(`${MODULE}.campaignState`, {
+      sectors: [storedSector({ id: sectorId, name: sectorName, settlements: [
+        { genId: "g-g", actorId: "actor-G", name: "Old Name" },
+      ] })],
     });
     registerSectorOverviewSync();
 
@@ -359,10 +492,7 @@ describe("registerSectorOverviewSync — live updateActor hook", () => {
     global.game.journal._add(journal);
     const before = overviewPage.text.content;
 
-    const actor = global.makeTestActor({
-      id: "actor-Q", type: "location", name: "Quiet",
-      flags: { [MODULE]: { settlement: { name: "Quiet", sectorId } } },
-    });
+    const actor = settlementActor({ id: "actor-Q", name: "Quiet", sectorId });
 
     registerSectorOverviewSync();
     // A meter-tick-style change: nothing visible in the overview should fire.
@@ -384,5 +514,112 @@ describe("registerSectorOverviewSync — live updateActor hook", () => {
     registeredHandler(ship, { name: "Renamed Ship" });
     await _flushPendingRewrites();
     // No assertion needed — just verifying no error and no scheduled work
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The real generate → store chain (issue #321 U13) — the record the rewrite
+// reads comes from storeSector, the overview page from createSectorJournal.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("the overview of a sector the creator stored (real generate → store chain)", () => {
+  let restoreJournal;
+  let prevCreate;
+
+  // A journal collection + JournalEntry.create that keep their pages, so the
+  // real createSectorJournal writes a real overview page we can read back.
+  beforeEach(() => {
+    _resetFolderCache();
+    restoreJournal = installRichJournalMock();
+    prevCreate = global.JournalEntry.create;
+    global.JournalEntry.create = async (data) => {
+      const pages = [];
+      const journal = {
+        id:    foundry.utils.randomID(),
+        name:  data.name,
+        flags: data.flags ?? {},
+        pages: { get contents() { return pages; }, find: (fn) => pages.find(fn) },
+        createEmbeddedDocuments: async (_type, docs) => docs.map(d => {
+          const page = makePage({ name: d.name, text: d.text ?? {} });
+          pages.push(page);
+          return page;
+        }),
+      };
+      global.game.journal._add(journal);
+      return journal;
+    };
+  });
+  afterEach(() => {
+    global.JournalEntry.create = prevCreate;
+    restoreJournal?.();
+  });
+
+  async function buildRealSector() {
+    const sector = generateSector("outlands");
+    // runSectorCreationPipeline hands createEntityJournals the setting's object.
+    const campaignState = { sectors: [], settlementIds: [], connectionIds: [], locationIds: [] };
+    global.game.settings._store.set(`${MODULE}.campaignState`, campaignState);
+
+    const entityData = await createEntityJournals(sector, campaignState);
+    const journal    = await createSectorJournal(sector, { sector: "A grim stretch of frontier.", settlements: {} }, entityData.settlements);
+    await storeSector(sector, {
+      settlements:         entityData.settlements,
+      connectionJournalId: entityData.connectionJournalId,
+      sites:               entityData.sites,
+      sceneId:             null,
+      sectorJournalId:     journal?.id ?? null,
+      stubs:               { sector: null, settlements: {} },
+    }, campaignState);
+
+    const page   = journal.pages.contents[0];
+    const actors = Object.values(entityData.settlements).filter(Boolean);
+    return { sector, page, actors };
+  }
+
+  it("a rewrite of the stored record still lists every settlement", async () => {
+    const { sector, page, actors } = await buildRealSector();
+    expect(actors).toHaveLength(3);
+    // The freshly created overview links each settlement Actor.
+    for (const a of actors) expect(page.text.content).toContain(`@UUID[Actor.${a.id}]`);
+
+    const stored = global.game.settings.get(MODULE, "campaignState");
+    expect(stored.sectors.find(s => s.id === sector.id).settlements).toBeUndefined();
+    await rewriteSectorOverviewSettlements(sector.id, stored);
+
+    for (const a of actors) expect(page.text.content).toContain(`@UUID[Actor.${a.id}]{${a.name}}`);
+    expect(page.text.content).not.toMatch(/<!-- sf:settlements-list --><ul><\/ul>/);
+  });
+
+  it("!migrate-entities' page cleanup keeps a page the GM added to the sector record", async () => {
+    const { sector } = await buildRealSector();
+    const stored  = global.game.settings.get(MODULE, "campaignState");
+    const journal = global.game.journal.find(j => j.flags?.[MODULE]?.sectorRecord && j.flags[MODULE].sectorId === sector.id);
+    const [rumours] = await journal.createEmbeddedDocuments("JournalEntryPage", [
+      { name: "Rumours", type: "text", text: { content: "<p>The Hegemony is coming.</p>" } },
+    ]);
+
+    expect(await cleanupSectorRecordPages(sector.id, stored)).toBe(0);
+    expect(rumours._deleted).toBeUndefined();
+    expect(journal.pages.contents.map(p => p.name)).toEqual([sector.name, "Rumours"]);
+  });
+
+  it("renaming a settlement Actor (the live updateActor sync) keeps the list, renamed", async () => {
+    const { page, actors } = await buildRealSector();
+    const handlers = [];
+    const prevHooks = global.Hooks;
+    global.Hooks = { on: (name, fn) => { if (name === "updateActor") handlers.push(fn); } };
+    try {
+      registerSectorOverviewSync();
+    } finally {
+      global.Hooks = prevHooks;
+    }
+
+    const target = actors[0];
+    target.name = "Bleak Hold Station";                // the GM renames the Actor on its sheet
+    for (const fn of handlers) fn(target, { name: "Bleak Hold Station", _id: target.id });
+    await _flushPendingRewrites();
+
+    expect(page.text.content).toContain(`@UUID[Actor.${target.id}]{Bleak Hold Station}`);
+    for (const a of actors.slice(1)) expect(page.text.content).toContain(`@UUID[Actor.${a.id}]{${a.name}}`);
   });
 });

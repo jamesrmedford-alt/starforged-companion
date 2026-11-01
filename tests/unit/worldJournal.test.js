@@ -204,6 +204,27 @@ describe("recordLoreDiscovery", () => {
     const data = journal.pages.contents[0].flags[MODULE_ID].loreEntry;
     expect(data.text).toBe("second");
   });
+
+  // Issue #321 U40: an update that gave no text blanked the entry, and its
+  // category fell back to "other".
+  it("keeps an entry's text and category when an update gives none", async () => {
+    await recordLoreDiscovery("Same Title", { text: "first", category: "history" }, campaign());
+    const result = await recordLoreDiscovery("Same Title", { text: "", confirmed: true }, campaign());
+    expect(result).toMatchObject({ text: "first", category: "history", confirmed: true });
+  });
+
+  // The write states `retracted` every time — Foundry merges flag objects, a
+  // replacing store does not, and either way a struck entry stays struck when
+  // the detection pass records its title again.
+  it("keeps a struck entry struck when the detection pass records it again", async () => {
+    await recordLoreDiscovery("The hatch", { text: "welded shut", confirmed: true, narratorAsserted: true }, campaign());
+    const page = _journals.get(JOURNAL_NAMES.lore).pages.contents[0];
+    page.flags[MODULE_ID].loreEntry = { ...page.flags[MODULE_ID].loreEntry, confirmed: false, retracted: true, retractedAt: "t1" };
+
+    const result = await recordLoreDiscovery("The hatch", { text: "welded shut", confirmed: true, narratorAsserted: true }, campaign());
+    expect(result).toMatchObject({ retracted: true, retractedAt: "t1" });
+    expect(getConfirmedLore(campaign())).toEqual([]);
+  });
 });
 
 

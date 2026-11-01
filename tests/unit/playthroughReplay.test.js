@@ -171,7 +171,7 @@ describe('strict replay fails what a permissive replay only reported', () => {
     recording.exchanges = recording.exchanges.filter(x => !(x.step === 'open' && x.kind === 'callHaiku>defaultCallTierAPI'));
     const harness = harnessFor({ mode: 'replay', recording, strict: true });
     harness.setStep('open');
-    await harness.send('callNarratorAPI>narrateSessionVignette', { system: 'SHIP POSITION: Kobayashi IV docked at Hollow Spire' });
+    await harness.send('callNarratorAPI>narrateSessionVignette', { system: 'SHIP POSITION: Kobayashi IV near Hollow Spire (Cinder Expanse)' });
     await harness.send('callHaiku>defaultCallTierAPI', { user: 'galley' });
     const report = harness.checkStep('open', SCENARIO.steps[0], []);
     expect(report.failures).toEqual([]);

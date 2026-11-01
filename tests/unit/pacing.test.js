@@ -40,6 +40,7 @@ vi.mock('../../src/ui/progressTracks.js', () => ({
   listProgressTracks: vi.fn(async () => []),
 }));
 
+import { addConnectionEntity } from '../helpers/fullStateFixture.js';
 import { apiPost } from '../../src/api-proxy.js';
 import { narratePacedInput } from '../../src/narration/narrator.js';
 import { logPacingDecision } from '../../src/pacing/telemetry.js';
@@ -340,6 +341,41 @@ describe('classifyInput()', () => {
     const result = await classifyInput(baseArgs());
     expect(result.decision).toBe(PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE);
     expect(result.suggestedMove).toBe('compel');
+  });
+
+  // Issue #321 U45: the suggestion is used as a move id downstream (the NWMA
+  // card's Roll button posts it as forcedMoveId), and the schema invited a
+  // move name — "Gather Information" made the Roll button throw "Unknown move".
+  it.each([
+    ['Gather Information', 'gather_information'],
+    ['gather information',  'gather_information'],
+    ['Face-Danger',         'face_danger'],
+    ['  Compel  ',          'compel'],
+    ['Swear an Iron Vow',   'swear_an_iron_vow'],
+  ])('maps the suggestion %j to the move id %j', async (suggestion, moveId) => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: suggestion,
+      category: 'investigation', confidence: 0.7, reasoning: 'probing for clues',
+    }));
+    expect((await classifyInput(baseArgs())).suggestedMove).toBe(moveId);
+  });
+
+  it.each([
+    ['a phrase that names no move', 'Dance Wildly'],
+    ['a non-string',                42],
+    ['an inherited property name',  'constructor'],
+  ])('drops a suggestion that is %s', async (_label, suggestion) => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'MOVE', suggestedMove: suggestion, category: 'social', confidence: 0.7, reasoning: 'x',
+    }));
+    const result = await classifyInput(baseArgs());
+    expect(result.decision).toBe(PACING_DECISION.MOVE);
+    expect(result.suggestedMove).toBeNull();
+  });
+
+  it('asks the model for a catalog move id, not a move name', () => {
+    const { systemPrompt } = buildClassifierContext(baseArgs());
+    expect(systemPrompt).toContain('"suggestedMove": "<move id from the MOVE CATALOG>" | null');
   });
 
   it('strips ``` fences from JSON responses', async () => {
@@ -886,5 +922,34 @@ describe('buildClassifierContext — scene frame + actor-hosted location (F9)', 
       pacingConfig:      { dials: {} },
     });
     expect(userMessage).not.toContain('Scene frame —');
+  });
+});
+
+// Issue #321 U44: connections were read from game.journal, but they are
+// NPC-card Actors, so the CHARACTER section only ever said "names
+// unavailable" and the addressee-is-a-Connection rule never fired.
+describe('buildClassifierContext — connection names', () => {
+  afterEach(() => { global.game.actors._reset?.(); });
+
+  const connectionsLine = (campaignState) => buildClassifierContext({
+    playerText:        'I lean on Kael Dros for the docking codes.',
+    campaignState,
+    character:         { name: 'Kira' },
+    recentMoveDensity: { count: 0, window: 5 },
+    pacingConfig:      BASE_PACING_CFG,
+  }).userMessage.split('\n').find(l => l.startsWith('Connections:'));
+
+  it('names each Actor-hosted connection with its relationship', () => {
+    const kael  = addConnectionEntity(null, { name: 'Kael Dros', relationshipType: 'ally' });
+    const sable = addConnectionEntity(null, { name: 'Sable', relationshipType: 'rival' });
+    expect(connectionsLine({ connectionIds: [kael.journalId, sable.journalId] }))
+      .toBe('Connections: Kael Dros (ally), Sable (rival)');
+  });
+
+  it('says the names are unavailable only when no id resolves', () => {
+    const kael = addConnectionEntity(null, { name: 'Kael Dros', relationshipType: 'ally' });
+    expect(connectionsLine({ connectionIds: [kael.journalId, 'actor-gone'] })).toBe('Connections: Kael Dros (ally)');
+    expect(connectionsLine({ connectionIds: ['actor-gone'] })).toBe('Connections: 1 active (names unavailable)');
+    expect(connectionsLine({ connectionIds: [] })).toBe('Connections: (none recorded)');
   });
 });

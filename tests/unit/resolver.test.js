@@ -28,10 +28,12 @@ import {
   rollChallengeDice,
   resolveMove,
   buildOracleSeeds,
+  withPayThePriceSeed,
   cancelsActionDie,
 } from "../../src/moves/resolver.js";
 import { rollOracle, rollPaired } from "../../src/oracles/roller.js";
 import { enrichProgressTicks } from "../../src/moves/statEnrichment.js";
+import { resolveSufferSelection } from "../../src/moves/sufferDialog.js";
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1124,13 +1126,28 @@ describe("buildOracleSeeds", () => {
   });
 
   describe("play-kit consequence tables", () => {
-    it("seeds Pay the Price on miss for moves in the PTP set", () => {
+    it("a miss the pipeline routes to Pay the Price rolls no price of its own — the card's is the one (issue #321 U03)", () => {
       rollOracle.mockImplementation((t) =>
         t === "pay_the_price" ? { result: "You are harmed" } : { result: "—" }
       );
-      const seeds = buildOracleSeeds("face_danger", "miss", false);
-      expect(seeds).not.toBeNull();
-      expect(seeds.results[0]).toContain("Pay the Price: You are harmed");
+      expect(buildOracleSeeds("face_danger", "miss", false, null, { routesPayThePrice: true })).toBeNull();
+      expect(rollOracle).not.toHaveBeenCalledWith("pay_the_price");
+    });
+
+    it("Face Defeat rolls no seed price — it always routes Pay the Price (issue #321 U03)", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "pay_the_price" ? { result: "You are harmed" } : { result: "—" }
+      );
+      expect(buildOracleSeeds("face_defeat", null, false, null, { routesPayThePrice: true })).toBeNull();
+      expect(rollOracle).not.toHaveBeenCalledWith("pay_the_price");
+    });
+
+    it("seeds an advisory Pay the Price on a miss that routes none (Sojourn's, one of its choices)", () => {
+      rollOracle.mockImplementation((t) =>
+        t === "pay_the_price" ? { result: "You are harmed" } : { result: "—" }
+      );
+      const seeds = buildOracleSeeds("sojourn", "miss", false);
+      expect(seeds.results).toEqual(["Pay the Price: You are harmed"]);
     });
 
     it("does NOT seed Pay the Price on hits", () => {
@@ -1198,6 +1215,76 @@ describe("buildOracleSeeds", () => {
       );
       const seeds = buildOracleSeeds("explore_a_waypoint", "miss", true);
       expect(seeds.results.some(r => r.includes("Confront Chaos: Dread hallucinations"))).toBe(true);
+    });
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// One Pay the Price per result (issue #321 U03): the narration is seeded with
+// the price the pipeline rolls for its card, never a second roll of its own.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("one Pay the Price per result (issue #321 U03)", () => {
+  beforeEach(() => {
+    rollOracle.mockReset();
+    rollPaired.mockReset();
+    rollOracle.mockReturnValue({ result: "Seeded price" });
+    rollPaired.mockReturnValue({});
+  });
+
+  const interp = (over = {}) => ({
+    moveId: "face_danger", moveName: "Face Danger", statUsed: "iron", statValue: 1, adds: 0,
+    playerNarration: "I force the hatch.", ...over,
+  });
+  const seededPrices = (r) => (r.oracleSeeds?.results ?? []).filter(s => /^Pay the Price:/.test(s));
+
+  it("a miss that routes Pay the Price rolls no price for the narrator", () => {
+    const dice = fixDiceSequence([0.45, 0.75, 0.0]);   // challenge [5, 8]; action die 1 → 1 + 1 = 2 → miss
+    const r = resolveMove(interp(), { currentSessionId: "s1" });
+    dice.mockRestore();
+
+    expect(r.outcome).toBe("miss");
+    expect(r.consequences.routePayThePrice).toBe(true);   // the pipeline rolls the card's price
+    expect(rollOracle).not.toHaveBeenCalledWith("pay_the_price");
+    expect(seededPrices(r)).toEqual([]);
+  });
+
+  it("Face Defeat rolls no price for the narrator either", () => {
+    const r = resolveMove(interp({ moveId: "face_defeat", moveName: "Face Defeat", statUsed: null, statValue: 0 }), {});
+    expect(r.consequences.routePayThePrice).toBe(true);
+    expect(rollOracle).not.toHaveBeenCalledWith("pay_the_price");
+    expect(seededPrices(r)).toEqual([]);
+  });
+
+  it("control: a miss whose other seeds roll keeps them", () => {
+    rollOracle.mockImplementation((t) => ({ result: `roll:${t}` }));
+    const dice = fixDiceSequence([0.45, 0.45, 0.0]);   // challenge [5, 5] → a match; action die 1 → miss
+    const r = resolveMove(interp({ moveId: "explore_a_waypoint", moveName: "Explore a Waypoint", statUsed: "wits" }), {});
+    dice.mockRestore();
+    expect(r.outcome).toBe("miss");
+    expect(r.oracleSeeds.results).toContain("Confront Chaos: roll:confront_chaos");
+  });
+
+  describe("withPayThePriceSeed — the card's price into the narration's seeds", () => {
+    it("a result with no seeds gets one: the card's price", () => {
+      expect(withPayThePriceSeed(null, "face_danger", "You are separated from something or someone")).toEqual({
+        results: ["Pay the Price: You are separated from something or someone"], names: [], context: "face_danger",
+      });
+    });
+
+    it("adds the price after the move's own seeds, leaving them unchanged", () => {
+      const seeds = { results: ["Confront Chaos: Dread hallucinations"], names: [], context: "explore_a_waypoint" };
+      const next = withPayThePriceSeed(seeds, "explore_a_waypoint", "A trusted ally is put in harm's way");
+      expect(next.results).toEqual(["Confront Chaos: Dread hallucinations", "Pay the Price: A trusted ally is put in harm's way"]);
+      expect(next.context).toBe("explore_a_waypoint");
+      expect(seeds.results).toEqual(["Confront Chaos: Dread hallucinations"]);
+    });
+
+    it("no price (the card was not posted) leaves the seeds as they are", () => {
+      const seeds = { results: ["Confront Chaos: X"], names: [], context: "explore_a_waypoint" };
+      expect(withPayThePriceSeed(seeds, "explore_a_waypoint", null)).toBe(seeds);
+      expect(withPayThePriceSeed(null, "face_danger", null)).toBeNull();
     });
   });
 });
@@ -1299,6 +1386,32 @@ describe("CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B)", () => {
     const miss = mapConsequences("enter_the_fray", "miss", false);
     expect(miss.enterCombat).toBe(true);
     expect(miss.combatPosition).toBe("bad_spot");
+  });
+
+  // Issue #321 U18: positions are binary, so taking the weak hit's +2
+  // momentum instead of "You are in control" begins the fight in a bad spot.
+  // The option set no position: the fight's combatState stayed null, so the
+  // interpreter got no bad-spot directive and Take Decisive Action was never
+  // downgraded.
+  describe("enter_the_fray weak hit — the momentum option begins in a bad spot (issue #321 U18)", () => {
+    const weak = () => mapConsequences("enter_the_fray", "weak_hit", false);
+    const pick = (c, label) => resolveSufferSelection(c.sufferPrompt,
+      { optionIndices: [c.sufferPrompt.options.findIndex(o => label.test(o.label))] });
+
+    it("taking +2 momentum (not 'You are in control') takes the momentum and begins in a bad spot", () => {
+      const c = weak();
+      expect(c.combatPosition).toBeNull();               // no position on the roll itself
+      expect(pick(c, /momentum/)).toEqual([
+        { kind: "meter", meterKey: "momentum", delta: 2 },
+        { kind: "combat-position", position: "bad_spot" },
+      ]);
+    });
+
+    it("control: 'You are in control' sets in control alone; the strong hit and the miss set theirs", () => {
+      expect(pick(weak(), /in control/)).toEqual([{ kind: "combat-position", position: "in_control" }]);
+      expect(mapConsequences("enter_the_fray", "strong_hit", false).combatPosition).toBe("in_control");
+      expect(mapConsequences("enter_the_fray", "miss", false).combatPosition).toBe("bad_spot");
+    });
   });
 
   it("strike marks progress twice via combatProgress on strong and weak hits (audit 3.26)", () => {
@@ -1421,6 +1534,9 @@ describe("routePayThePrice on miss/weak outcomes", () => {
     ["hearten",                 "miss"],
     ["resupply",                "miss"],
     ["repair",                  "miss"],
+    // Issue #321 U17 (WAYPOINT-MISS-NO-PTP): the card said "Pay the Price"
+    // and nothing routed it — no card, no suffer route, no clock tick.
+    ["explore_a_waypoint",      "miss"],
   ];
   PTP_CASES.forEach(([moveId, outcome]) => {
     it(`${moveId}:${outcome} sets routePayThePrice:true`, () => {
@@ -1430,6 +1546,12 @@ describe("routePayThePrice on miss/weak outcomes", () => {
 
   it("face_danger:strong_hit does NOT set routePayThePrice", () => {
     expect(mapConsequences("face_danger", "strong_hit", false).routePayThePrice).toBe(false);
+  });
+
+  it("control: explore_a_waypoint:miss with a match offers Confront Chaos instead — the price is not routed", () => {
+    const c = mapConsequences("explore_a_waypoint", "miss", true);
+    expect(c.routePayThePrice).toBe(false);
+    expect(c.otherEffect).toMatch(/Confront Chaos instead.*Pay the Price/);
   });
 });
 

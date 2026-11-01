@@ -134,6 +134,59 @@ describe("applyCombatProgress", () => {
     await applyCombatProgress({ moveTarget: null, markCount: 1 }, deps);
     expect(deps.createTrack).toHaveBeenCalledWith(expect.objectContaining({ label: "Combat" }));
   });
+
+  // Issue #321 U16 — the selector's null meant both "none open" and
+  // "ambiguous": with two fights open, an unnamed Strike created and marked a
+  // phantom "Combat" fight.
+  describe("a fight is created only when none is open (issue #321 U16)", () => {
+    const twoFights = () => [
+      cbt({ id: "f1", label: "Pirate raiders", ticks: 8 }),
+      cbt({ id: "f2", label: "Rogue drone swarm", rank: "formidable", ticks: 4 }),
+    ];
+
+    it("control: with one fight open, an unnamed Strike marks that fight", async () => {
+      const deps = makeDeps([cbt({ id: "f1", label: "Pirate raiders", ticks: 8 })]);
+      const r = await applyCombatProgress({ moveTarget: null, markCount: 2 }, deps);
+      expect(r.created).toBe(false);
+      expect(deps.markProgress).toHaveBeenCalledWith("f1");
+    });
+
+    it("with two fights open and no target named, a Strike creates no new fight and marks nothing", async () => {
+      const deps = makeDeps(twoFights());
+      const r = await applyCombatProgress({ moveTarget: null, markCount: 2 }, deps);
+      expect(deps.createTrack).not.toHaveBeenCalled();
+      expect(deps.markProgress).not.toHaveBeenCalled();
+      expect(r).toEqual({ track: null, created: false, marksApplied: 0, reason: "ambiguous" });
+    });
+
+    it("a name matching none of the open fights creates none either", async () => {
+      const deps = makeDeps(twoFights());
+      const r = await applyCombatProgress({ moveTarget: "the second gunship", markCount: 2 }, deps);
+      expect(deps.createTrack).not.toHaveBeenCalled();
+      expect(r.reason).toBe("ambiguous");
+    });
+
+    it("a fight named by id (a which-fight pick) is that fight — not a same-named sibling", async () => {
+      const deps = makeDeps([...twoFights(), cbt({ id: "f3", label: "Pirate raiders", ticks: 20 })]);
+      const r = await applyCombatProgress({ moveTarget: "Pirate raiders", moveTargetId: "f3", markCount: 1 }, deps);
+      expect(deps.markProgress).toHaveBeenCalledWith("f3");
+      expect(r.track.id).toBe("f3");
+    });
+
+    it("a fight named by id that is over is not re-created, and nothing is marked", async () => {
+      const deps = makeDeps([cbt({ id: "f1", label: "Pirate raiders", completed: true })]);
+      const r = await applyCombatProgress({ moveTarget: "Pirate raiders", moveTargetId: "f1", markCount: 2 }, deps);
+      expect(deps.createTrack).not.toHaveBeenCalled();
+      expect(r).toEqual({ track: null, created: false, marksApplied: 0, reason: "gone" });
+    });
+
+    it("control: entering the fray (beginsFight) begins a new fight beside the open ones", async () => {
+      const deps = makeDeps(twoFights());
+      const r = await applyCombatProgress({ moveTarget: "Ironclad boarders", markCount: 0, beginsFight: true }, deps);
+      expect(deps.createTrack).toHaveBeenCalledWith(expect.objectContaining({ label: "Ironclad boarders", type: "combat" }));
+      expect(r.created).toBe(true);
+    });
+  });
 });
 
 // ─── finishCombat ────────────────────────────────────────────────────────────

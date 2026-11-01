@@ -61,6 +61,14 @@ describe("schedulePacedDetection()", () => {
     await vi.runAllTimersAsync();
     expect(runCombinedDetectionPass).toHaveBeenCalledTimes(1);
   });
+
+  // Issue #321 U23: the draft card carries the PC the narration was for, so
+  // Confirm puts a connection's bond Item on their sheet, not the first PC's.
+  it("hands routeEntityDrafts the PC the narration was for", async () => {
+    schedulePacedDetection("text", BASE_STATE, { actorId: "pc-ren" });
+    await vi.runAllTimersAsync();
+    expect(routeEntityDrafts.mock.calls[0][2].actorId).toBe("pc-ren");
+  });
 });
 
 

@@ -83,24 +83,24 @@ export const INNER_FIRST_LOOK = [
 
 // Zone map for starships
 export const ZONE_STARSHIP = [
-  { min: 1,  max: 5,   result: "Access" },
-  { min: 6,  max: 30,  result: "Community" },
-  { min: 31, max: 55,  result: "Engineering" },
-  { min: 56, max: 65,  result: "Living" },
-  { min: 66, max: 85,  result: "Medical" },
-  { min: 86, max: 90,  result: "Operations" },
+  { min: 1,  max: 5,   result: "Community" },
+  { min: 6,  max: 30,  result: "Engineering" },
+  { min: 31, max: 55,  result: "Living" },
+  { min: 56, max: 65,  result: "Medical" },
+  { min: 66, max: 85,  result: "Operations" },
+  { min: 86, max: 90,  result: "Production" },
   { min: 91, max: 100, result: "Research" },
 ];
 
 // Zone map for settlements
 export const ZONE_SETTLEMENT = [
-  { min: 1,  max: 20,  result: "Access" },
-  { min: 21, max: 30,  result: "Community" },
-  { min: 31, max: 55,  result: "Engineering" },
-  { min: 56, max: 65,  result: "Living" },
-  { min: 66, max: 75,  result: "Medical" },
-  { min: 76, max: 90,  result: "Operations" },
-  { min: 91, max: 100, result: "Production" },
+  { min: 1,  max: 20,  result: "Community" },
+  { min: 21, max: 30,  result: "Engineering" },
+  { min: 31, max: 50,  result: "Living" },
+  { min: 51, max: 60,  result: "Medical" },
+  { min: 61, max: 70,  result: "Operations" },
+  { min: 71, max: 90,  result: "Production" },
+  { min: 91, max: 100, result: "Research" },
 ];
 
 // ── Zone: Access ─────────────────────────────────────────────────────────────
@@ -163,15 +163,15 @@ export const ACCESS_OPPORTUNITY = [
 // ── Zone: Community ───────────────────────────────────────────────────────────
 export const COMMUNITY_AREA = [
   { min: 1,  max: 8,   result: "Bar or club" },
-  { min: 9,  max: 16,  result: "Temple or chapel" },
-  { min: 17, max: 24,  result: "Classroom or education" },
-  { min: 25, max: 32,  result: "Concourse or hub" },
-  { min: 33, max: 40,  result: "Entertainment" },
-  { min: 41, max: 48,  result: "Park or garden" },
-  { min: 49, max: 56,  result: "Gym or fitness" },
-  { min: 57, max: 64,  result: "Market or trade" },
-  { min: 65, max: 72,  result: "Promenade or overlook" },
-  { min: 73, max: 80,  result: "Restaurant or dining" },
+  { min: 9,  max: 16,  result: "Classroom or education" },
+  { min: 17, max: 24,  result: "Concourse or hub" },
+  { min: 25, max: 32,  result: "Entertainment" },
+  { min: 33, max: 40,  result: "Gym or fitness" },
+  { min: 41, max: 48,  result: "Market or trade" },
+  { min: 49, max: 56,  result: "Park or garden" },
+  { min: 57, max: 64,  result: "Promenade or overlook" },
+  { min: 65, max: 72,  result: "Restaurant or dining" },
+  { min: 73, max: 80,  result: "Temple or chapel" },
   { min: 81, max: 85,  result: "New zone" },
   { min: 86, max: 100, result: "New zone via Access" },
 ];
@@ -200,8 +200,8 @@ export const LIVING_AREA = [
   { min: 25, max: 32,  result: "Locker room or storage" },
   { min: 33, max: 40,  result: "Mess hall or dining" },
   { min: 41, max: 48,  result: "Observation lounge" },
-  { min: 49, max: 56,  result: "Quarters (individual)" },
-  { min: 57, max: 64,  result: "Quarters (communal)" },
+  { min: 49, max: 56,  result: "Quarters (communal)" },
+  { min: 57, max: 64,  result: "Quarters (individual)" },
   { min: 65, max: 72,  result: "Restroom or showers" },
   { min: 73, max: 80,  result: "Sleeping pods" },
   { min: 81, max: 85,  result: "New zone" },

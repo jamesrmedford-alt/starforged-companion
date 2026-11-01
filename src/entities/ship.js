@@ -46,6 +46,8 @@ export const ShipSchema = {
   name:     "",
   active:   true,
   isCommandVehicle: false,  // true = the STARSHIP asset; shared by all players
+  npcShip:          false,  // true = a ship the narration introduced (a confirmed
+                            //   draft) — someone else's; never the lone-ship fallback
 
   // Oracle-derived details
   type:         "",    // Starship type oracle result
@@ -97,8 +99,11 @@ export const ShipSchema = {
     freeText:            "",     // free-text fallback
     updatedAt:           null,
     updatedBy:           null,   // "at_command" | "set_a_course" |
-                                 //   "narrator_sidecar" | "scene_token" |
-                                 //   "manual"
+                                 //   "expedition" | "narrator_sidecar" |
+                                 //   "scene_token" (a token dropped on a pin:
+                                 //   its Set a Course arrival) |
+                                 //   "token_placement" (the token's own map
+                                 //   place, no move made) | "manual"
   },
 
   createdAt: null,
@@ -174,6 +179,22 @@ export function listShips(campaignState) {
     .filter(Boolean);
 }
 
+/**
+ * Whether a tracked ship may stand in for the players' ship when none is
+ * flagged `isCommandVehicle` (the lone-ship fallback). A ship the narration
+ * introduced and the GM confirmed from a draft card (`npcShip`) is someone
+ * else's — the pirate cutter, the patrol — so it never counts: confirming one
+ * used to leave two candidates and no command vehicle at all, so Withstand
+ * Damage rolled +0 and SHIP POSITION vanished (issue #321 U26).
+ *
+ * @param {Object|null|undefined} ship — the ship flag payload (absent on a
+ *   starship the module has not registered yet)
+ * @returns {boolean}
+ */
+export function isLoneShipCandidate(ship) {
+  return ship?.npcShip !== true;
+}
+
 export function getCommandVehicle(campaignState) {
   const ships = listShips(campaignState);
   const flagged = ships.find(s => s.isCommandVehicle);
@@ -182,7 +203,8 @@ export function getCommandVehicle(campaignState) {
   // when nothing has set the isCommandVehicle flag yet (e.g. a ship created
   // before asset-detection shipped, or via the sidebar). Ambiguous when more
   // than one ship is tracked — then designation must be explicit.
-  return ships.length === 1 ? ships[0] : null;
+  const candidates = ships.filter(isLoneShipCandidate);
+  return candidates.length === 1 ? candidates[0] : null;
 }
 
 /**
@@ -206,9 +228,10 @@ export function getCommandVehicleActorId(campaignState) {
   for (const id of ids) {
     const rec = getShip(id);
     if (!rec) continue;
+    if (rec.isCommandVehicle) return id;
+    if (!isLoneShipCandidate(rec)) continue;
     count += 1;
     if (count === 1) loneId = id;
-    if (rec.isCommandVehicle) return id;
   }
   return count === 1 ? loneId : null;
 }

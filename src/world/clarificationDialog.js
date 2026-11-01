@@ -10,7 +10,7 @@
 //   - "Someone new"        → resolves as discovery
 //   - "No specific entity" → resolves as embellishment
 
-import { listConnections } from '../entities/connection.js';
+import { getConnection }   from '../entities/connection.js';
 import { getSettlement }   from '../entities/settlement.js';
 import { getLocation }     from '../entities/location.js';
 import { getPlanet }       from '../entities/planet.js';
@@ -211,11 +211,17 @@ function collectOptions(campaignState) {
   const options = [];
   if (!campaignState) return options;
 
-  // All connections — primary clarification candidates
-  for (const conn of (() => { try { return listConnections(campaignState); } catch { return []; } })()) {
+  // All connections — primary clarification candidates. Each is offered under
+  // its host document id (the Actor id campaignState.connectionIds holds), the
+  // id relevance, entity cards and the tier pass all use (issue #321 U37: the
+  // id was looked up in game.journal, which no Actor-hosted connection is in,
+  // so every pick handed the narrator no entity).
+  const connectionIds = Array.isArray(campaignState.connectionIds) ? campaignState.connectionIds : [];
+  for (const hostId of connectionIds) {
+    const conn = hostId ? getConnection(hostId) : null;
     if (!conn?.name || conn.active === false) continue;
     options.push({
-      journalId: resolveJournalId(conn._id, campaignState.connectionIds, "connection"),
+      journalId: hostId,
       type:      'connection',
       name:      conn.name,
       role:      conn.role ?? '',
@@ -242,26 +248,6 @@ function collectOptions(campaignState) {
   }
 
   return options;
-}
-
-function resolveJournalId(connectionInternalId, connectionIds, _type) {
-  // Connections store their internal _id alongside the JournalEntry id used
-  // by campaignState.connectionIds. The cheapest lookup is to scan the
-  // journal collection for a flag match — but listConnections only returns
-  // the data records. Cross-reference here by walking ids, loading each
-  // entry, and matching the _id field.
-  if (!Array.isArray(connectionIds)) return null;
-  for (const journalId of connectionIds) {
-    try {
-      const entry = game.journal?.get(journalId);
-      const page  = entry?.pages?.contents?.[0];
-      const data  = page?.flags?.[MODULE_ID]?.connection;
-      if (data?._id === connectionInternalId) return journalId;
-    } catch (err) {
-      console.warn(`${MODULE_ID} | clarificationDialog: resolveJournalId failed for ${journalId}:`, err);
-    }
-  }
-  return null;
 }
 
 function typeGlyph(type) {

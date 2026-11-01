@@ -6,6 +6,136 @@ rejected.
 
 ---
 
+## Issue #321 audit: owned-field writes, an X-Card that forgets, panels and buttons through the GM, the roller's own character, oracles from the system's data (2026-10)
+
+**Decision:** (issue #321, part 1 of the seventh audit. The maintainer asked
+for the issue to be addressed on 2026-10-31 and decided U07 and U09 that day.
+Each finding's ID in brackets.)
+- **A long-running writer writes only what it owns, onto the store as it is
+  then** [U06, U58]. `!lore` (`loreRecap`), `!truth` / `!state` and the
+  correction dialog (their ledger field, through `persistSceneLedgerFields`,
+  whose new `opts.onto` makes a further owned change — `markSummaryForRegen`,
+  the inciting premise — in the same write), `!reveal-site` / `!clear-site`
+  (`persistSiteFlag`) and the inciting incident re-read the store after their
+  awaits. `loreRecap`, `xCardRedirect` and `xCardedNarrationIds` are
+  store-owned in the move pipeline's merge. `startScene` adopts the store's
+  active scene when its caller holds none, so a narration from an older
+  snapshot continues the scene in progress. A handler never mutates the
+  cached setting before its write lands: it writes a copy.
+- **The X-Card forgets what it answered** [U07; maintainer: full exclusion].
+  Every narration carries an id (`newNarrationId`) on its card
+  (`narrationId`) and on the ledger entries its sidecar wrote. The pause write
+  (`suppressScene` → `applyXCardToNarratorMemory`) takes "the narration on
+  screen": the newest narrator card still in memory, plus the narrator cards
+  of the same beat — posted after the last message someone sent, within two
+  minutes of the newest; an earlier X-Card's card bounds the beat, so a second
+  play removes nothing more. Its truths are retracted (`retractedBy: "xcard"`,
+  never named under CORRECTED, re-assertion still blocked), its state and
+  frame removed, the summary reset when it covered them, the cards flagged
+  `xCarded` (out of the ring, the summary, the recap's prose and audio), and
+  `xCardRedirect` set: the first narration after Resume renders "X-CARD —
+  REDIRECT" without naming the beat, and `registerXCardRedirectHook` clears it
+  once that narration posts. A failure in the forgetting never blocks the
+  pause.
+- **The Private Channel is a narrator entry point** [U09; maintainer]. While
+  the live `xCardActive` is set its narrator refuses on entry (and discards a
+  reply the card overtook) and Publish refuses; the window says why.
+- **Safety and recent oracles are read live at narration** [U08]
+  (`buildNarratorExtras`: `extras.safety`, `extras.recentOracles`).
+- **A player's world write goes to the canonical GM, and a once-only press is
+  claimed on the GM-authored card** [U02, U05, U10, U20]. New GM_ACTIONS kinds:
+  `progressTrack.edit` and `entity.edit` (one kind per panel with an `op`, as
+  `chronicle.edit`; any user, values checked against what the panel offers),
+  `privateChannel.createJournal` (the requester's own journal, the player its
+  OWNER), `fulfilVow.pick` (the "Which vow?" card), `milestone.suggestion`
+  and `expedition.recommit` (which retires that legacy socket relay). Track
+  writes run one at a time per client, each on a fresh read (`writeTracks`)
+  [U57].
+- **Generation that costs the GM's key stays the GM's** [U33, U29, U36].
+  Generate / Regenerate portrait is GM-only (a relay was rejected: the key, the
+  stored image and the single regeneration are the GM's); with Auto-Seed NPC
+  on, the seed hook owns a new card's portrait; an `@scene` answer's
+  detection and tier passes run on the canonical GM only.
+- **Claude calls run where a key lives** [U11, U04]. A sheet-rolled vow or
+  bond is narrated by a keyed GM when one is connected, else by the roller,
+  decided in the hook every client runs; a forced move with several stats
+  reads its stat from a stat-only interpretation (`interpretMove`'s
+  `expectedMoveSlug`) on the canonical GM's key, else keeps the first stat.
+- **Effects follow the roller or the user's own character** [U23, U24, U02].
+  `speaker.resolveUserActorId`: `User#character` when it is a PC, else a PC the
+  user owns, else the first PC only for a GM or a single-PC world. The
+  narration's PC rides to the draft card (`actorId`); a shared vow's target is
+  a connection of every PC who swore it; an unnamed Fulfill Your Vow scores
+  the roller's vow (a shared vow once, by `vowId`) or asks which.
+- **A target is what was named, or nothing** [U14, U16, U48]. `!sever` matches
+  strictly (`selectConnection(…, { strict: true })`); a Strike, Clash or
+  Undertake with several open tracks asks which, and a track is created only
+  when none is open (an expedition also for a newly named destination); a site
+  named exactly, or linked, is that site or null, the active sector first.
+- **A place is resolved by id when the caller knows it** [U52, U56, U37, U44,
+  U13]. One path, `inferShipPositionFromEntityId`, serves the token drop and
+  the Entities panel's "Set as current location" (which now moves the ship as
+  `!at` does); connections are read through their host Actor id; the Sector
+  Record's list is built from the map and each settlement's current Actor.
+- **Ship position wording follows its source** [U53, U47, U54]. A token near a
+  pin or auto-placed is `token_placement` ("near"); a new sector's token is a
+  position statement only for a ship with no position; the drag pipeline runs
+  only with Ship Positioning and Auto-Move on.
+- **Oracle tables are transcribed from the vendored Dataforged data** [U63,
+  U68]. `oracleTableFidelity.test.js` compares every built-in table roll for
+  roll with `vendor/foundry-ironsworn/json-packs/starforged-oracles`; the
+  name and callsign lists are not deliberate substitutes (one commit ever,
+  headed as a transcription). Directives ("Roll three times", "… (roll
+  twice)", Ultra-scale) are rolled out; `creature_ultra_scale` is registered.
+- **A Pay the Price is rolled once per result** [U03, U17]; the narration is
+  seeded with the card's roll. An Explore a Waypoint miss routes Pay the Price
+  unless it is a match, whose Confront Chaos stays the player's choice.
+- **The campaign's truths are its newest saved truths journal, found by the
+  module's flag, never by name** [U65, U67]. Each newly saved system truths
+  page re-points `worldTruthsJournalId`, and the Quickstart records
+  `worldTruthsSet` / `worldTruthsJournalId` and finds its own journal by id or
+  flag, so a GM's own "World Truths" journal is never written.
+- **The players' ship is never an NPC ship** [U26]: the draft Confirm creates
+  detected ships `npcShip: true`, and every lone-ship fallback skips them
+  (`isLoneShipCandidate`). The marker is set at the Confirm, not in
+  `createShip`, which the migrator also uses for the players' own ship.
+
+**Reason:** issue #321 reproduced each defect with a probe on `6455e01`; every
+#321 probe failed on `15f157d`, and each fix's regression tests fail with it
+taken out (`docs/testing/fix-sensitivity.md`). Rules/reachability.md §9 (no
+snapshot written back across an await) and §8 (relay a GM-gated write) were
+the repo's own rules at most of the sites; the X-Card decision record already
+said "every narrator entry point stands down".
+
+**Rejected:**
+- *Redirect only, or exclusion without retracting the facts* [U07] — the
+  maintainer chose the full exclusion: a ledger fact or summary line the
+  removed narration wrote would bring the beat back.
+- *Leave the Private Channel out of the pause* [U09] — Publish posts canon
+  narrator cards that the main narrator remembers.
+- *Relay portrait generation* [U33] — it would spend the GM's art budget and
+  single regeneration on any player's click, and fail silently at a keyless
+  GM.
+- *Relay the `@scene` capture* [U36] — the keyed client would run the Haiku
+  half and a new kind apply its writes; gated like `scheduleNarrationCapture`
+  instead.
+- *Salvage a cut-off detection reply* [U15] — needs a JSON-repair parser; the
+  cap is raised to 1500 and an unreadable reply warns and tells the GM.
+- *Merge the role titles into `HONORIFIC_PREFIXES`* [U30] — it would widen the
+  name index's noise words and make the relevance resolver depend on
+  connection.js at load.
+- *Move the token on a hit with Auto-Move off* [U54] — the map and the
+  narrator would disagree.
+- *A relay for the native-roll narration* [U11] — every client runs the hook
+  and reaches the same answer; a relay adds a round trip and a kind.
+
+**Trade-offs accepted:** a forced move with several stats costs one Haiku call
+[U04]; a player's panel edit needs a GM online [U05]; the track write queue
+has no timeout, as the Chronicle's has none [U57]; at a keyless-GM table an
+`@scene` answer's world detail is not captured [U36]; existing Actors with the
+old broken starship image are not migrated [U31]; the items found while
+fixing (`known-issues.md`, issue #321 section) stay open.
+
 ## Issue #316 audit: the sheet owns the momentum bases; a legacy track clears; a scene challenge ends with its clock; a start effect is recoverable; a move rolls by its data; a matched waypoint has one reward (2026-10)
 
 **Decision:** (issue #316. The maintainer asked for the issue to be addressed
@@ -1065,11 +1195,16 @@ and write")
   cached prefix; last session's and this session's summaries, the cards of the
   recorded entities the player's message or the scene frame names, and the
   scene ledger in the per-turn message. It is told never to contradict them.
+  Its character is the player's own PC (`resolveUserActorId`, issue #321
+  U23), and it is sent the session's whole private transcript — the saved
+  turns read back when the window reopens, then the window's own (issue #321
+  U42).
 - **Write.** A reflection the player publishes is canon. Its card carries the
   narrator flag family, so the ring and the rolling summary hold it, and the
   canonical GM runs the tier pass for the recorded entities it names
   (`registerPublishedReflectionHook`), as for vow scenes and vignettes. Only
   the published text: the player's own private lines are never published.
+  Publishing is refused while the X-Card is in play (issue #321 U09).
 - **No ledger facts.** The private narrator emits no sidecar; nothing said in
   the private window is recorded until it is published.
 - **Verified in Foundry (issue #290 part 2, 2026-10-25):** a player's client
@@ -1174,6 +1309,10 @@ sector roster (the relevance and frame-cast rules choose cards, unchanged).
   whichever comes first, starts the new one (`rollSessionIfDue`,
   `src/session/lifecycle.js`): a session nobody ended first gets its rolling
   summary brought up to date, its scene closes under its own id, then the mint.
+  The new session starts with its session-active gate closed and Begin a
+  Session opens it (issue #321 U12 — the mint left the gate as it was, so a
+  session that went idle handed its open gate to the next: "active" since last
+  week, Begin a Session disabled, its clocks, vignette and foci skipped).
 - The mint keeps the closing session's rolling summary as
   `previousSessionSummary`. Every prose mode renders it as LAST SESSION in
   [4c], before STORY SO FAR and under the same ledger-wins caveat. The
@@ -1243,16 +1382,32 @@ everything older.
 Strike / Replace call `propagateRetraction` (`src/factContinuity/retractions.js`):
 
 - the subject entity's tier details from the **same session** that state the
-  fact are removed (word-overlap match, `factsOverlap`; pinned details stay);
-- the session's World Journal lore that states it goes `retracted` and
+  fact are removed (word-overlap match, `factsOverlap`; pinned details stay;
+  containment counts only whole words — "is dead" is not in "this deadline",
+  issue #321 U39);
+- the session's World Journal lore that states it **about the struck
+  subject** goes `retracted` and
   unconfirmed — kept for history, out of ESTABLISHED LORE and the pending
   queue; the detection pass's "lore confirmed" transition cannot re-confirm
-  it, and `!journal lore "<title>" confirmed` restores it;
+  it, and `!journal lore "<title>" confirmed` restores it — with its text
+  (unless the command gives new text), category, session and move provenance
+  and its narrator provenance; `rumour` clears the strike but keeps the entry
+  out of canon and the review queue (issue #321 U40: a restore left
+  `retracted` set, since `setFlag` merges key by key, and blanked the entry).
+  The subject rule (issue #321 U39 — sidecar facts are subject-less phrases,
+  so striking "Vance — Is dead" took another character's death out of
+  canon): an archived scene truth must carry the struck subject's label;
+  other lore must name the text subject or the entity as whole words in its
+  title or text; a scene truth's fact alone decides;
 - the rolling summary regenerates on its next refresh, with a leave-out list.
 
 `endScene` keeps the scene's bare strikes on `campaignState.sessionRetractions`
 (cap 20, session-keyed), so the CORRECTED block (still capped at 5) and the
-summary's leave-out list hold for the rest of the session.
+summary's leave-out list hold for the rest of the session. A strike there is
+its subject label and fact together, so two characters' identical struck facts
+are both kept (issue #321 U39). The X-Card calls `propagateRetraction` for
+each truth it retracts, but its retractions (`retractedBy: "xcard"`) are never
+named under CORRECTED or in the leave-out list (issue #321 U07).
 
 **Why:** the prose that made a truth also fed the tier pass, the auto-confirmed
 lore and the summary. A Strike marked only the scene ledger, and CORRECTED
@@ -1509,10 +1664,16 @@ Kinds today: `xcard.activate`, `safety.setFlag`, `session.takeBreak`,
 `milestone.pick`, `connection.pick`, `fightVow.markMilestone`,
 `fightVow.deepenBond`, `suffer.pick` (issue #302), `chronicle.edit` (issue #306 — every Chronicle
 write, the automatic writer's included), `payoff.retry` (issue #306 R04 — a payoff failure card's
-Retry, GM only). Four older world-writing socket relays predate it
-(`expedition.recommit`, `combat.enterFray`, `vow.setReward`,
-`vow.linkConnection`) — fold them in when next touched (known-issues
-RELAY-LEGACY-KINDS).
+Retry, GM only), `narrator.sidecar` (issue #286 D2), `waypoint.oracle` (issue #316 T06),
+`fulfilVow.pick` (issue #321 U02 — a "Which vow?" pick), `milestone.suggestion` and
+`expedition.recommit` (issue #321 U20 — a move card's "⚑ Mark Progress on Vow" and a
+finish-miss card's "🔁 Recommit", each claimed once on its card), `progressTrack.edit` and
+`entity.edit` (issue #321 U05 — every Progress Tracks and Entities panel edit, from any user, as
+an `op` the handler validates), `privateChannel.createJournal` (issue #321 U10 — the GM creates a
+player's Private Channel journal with the player as OWNER). Three older world-writing socket
+relays predate it (`combat.enterFray`, `vow.setReward`, `vow.linkConnection`) — fold them in
+when next touched (known-issues RELAY-LEGACY-KINDS); `expedition.recommit` was folded in
+(issue #321 U20).
 
 **Reason:** world settings and other users' documents are GM-write only, so
 player-invoked flows (Set a Flag, Take a Break, Begin / End a Session, the
@@ -1547,14 +1708,19 @@ never writes the whole snapshot back.
   session-active and session-id fields (`sessionStartedId` included),
   `customOracles`, `recentOracles`,
   `clocks`, `pacing`, `campaignRecapCache`, `dismissedEntities`, `pendingMove`,
-  `activeSectorId`, `incitingIncident`, the `worldTruths*` fields); entity id
+  `activeSectorId`, `incitingIncident`, the `worldTruths*` fields; since issue
+  #321 `xCardRedirect` and `xCardedNarrationIds` (U07) and `loreRecap` (U06g —
+  a move resolved during `!lore` reverted the new recap)); entity id
   lists are an ordered union; `artAssetIds` (a map) keeps both sides' entries,
   the store's winning a clash; `sessionLogs` come from the store plus this
   resolution's entry; `sessionSummary` by newer `updatedAt`; `legacyTracks`
   take the per-track max (`cleared` sticks); scene ledgers — if the store is
   on a different scene its scene wins wholesale, otherwise `sceneTruths` is
   unioned by id (a retraction on either side sticks) and `sceneState` /
-  `sceneFrame` / `spotlight` keep the working copy. Every other field keeps the
+  `sceneFrame` / `spotlight` keep the working copy — except what a narration
+  the X-Card removed wrote (the store's `xCardedNarrationIds`), which is
+  retracted from the working copy first, a frame it wrote yielding to the
+  store's (issue #321 U07). Every other field keeps the
   working copy (the pipeline's own writes: arrival location, site reveals …).
 - Scene start / end write only the fields they own onto the latest stored
   state (`persistCampaignStateFields` / `mergeOwnedFields`,
@@ -1570,9 +1736,24 @@ never writes the whole snapshot back.
   has moved to another scene, `sceneTruths` unioned by id otherwise
   (SIDECAR-LEDGER-CLOBBER: replacing them dropped a mid-narration `!truth`
   strike or oracle truth and resurrected a scene End a Session had closed).
+- *(Issue #321 U06.)* The other writers that hold a snapshot across an await
+  write the same way. `!truth` / `!state` and the correction dialog correct a
+  fresh copy and persist only the ledger field they changed through
+  `persistSceneLedgerFields`, a Strike's or Replace's regen mark on the rolling
+  summary made on the latest store in the same write (`opts.onto` →
+  `markSummaryForRegen`; U06b, U06e); the inciting premise rides it too
+  (`onto` sets `incitingIncident`, U06d); `!lore` writes only `loreRecap`
+  (`mergeOwnedFields`, U06a); `!reveal-site` / `!clear-site` save the site's
+  flag onto the state as it is after their awaits (`persistSiteFlag`, U06c);
+  and a narration whose snapshot holds no scene adopts the store's active one
+  instead of starting a second (`startScene`, U06f). Each used to write its
+  whole read back, reverting an X-Card, a Take a Break, a narration's truths
+  or a released move lock that landed meanwhile.
 - Single-field consumers re-read the store: Take a Break's +1 is cleared on
-  the store (`clearPersistedNextMoveAdd`), and every narrator X-Card gate reads
-  the live setting as well as the caller's snapshot.
+  the store (`clearPersistedNextMoveAdd`), every narrator X-Card gate reads
+  the live setting as well as the caller's snapshot, and the narrator's safety
+  block and recent oracle results are read from the store (issue #321 U08 —
+  Lines, Veils and oracle answers added while a move waited were missed).
 - Registrations write only their own key onto the latest store (issue #300
   F14, CREATE-PERSIST-WHOLE): an entity creator unions its new id into its id
   list (`registerEntityIdInStore`, `src/entities/registry.js`), a portrait its
@@ -1630,6 +1811,29 @@ the moment it reaches the GM, never queued behind other relayed actions — and 
 move resolved meanwhile posts its result card plus a short "narration paused"
 notice (not a narrator card, so it stays out of the recent-narration ring and
 the rolling summary).
+
+*(Issue #321, maintainer decisions.)* The Private Channel's narrator and its
+Publish are narrator entry points too: `requestPrivateNarration` stands down
+on entry and discards a reply that returns after a play, and Publish is
+refused with a warning — a published reflection is canon (U09). The narration
+the card answers **leaves narrator memory — full exclusion** (U07). In the
+same write as the pause, `suppressScene` → `applyXCardToNarratorMemory`
+(`narrator.js`) takes the newest narration of the session still in memory,
+with the narrator cards of the same beat (posted after the last message
+someone sent, at most two minutes older; an earlier X-Card's card, its
+"cleared" card or a card it removed bounds the beat, so a repeat play removes
+nothing more), retracts what their sidecars wrote (truths `retractedBy:
+"xcard"`, state values removed, a frame they wrote cleared — by the
+`narrationId` each card and ledger entry carries), records their ids on
+`xCardedNarrationIds`, empties a rolling summary that covered them and sets
+`xCardRedirect`; the pause is written even if that part fails. After the
+write the cards are flagged `xCarded` — out of the ring, the rolling summary
+and the session recap's prose, with no Play button — and each retracted
+truth runs `propagateRetraction`; the retractions block re-assertion but are
+never named under CORRECTED. The first narration after a GM resumes carries
+the X-CARD — REDIRECT block (prompt section [1b]), which never names the
+removed content; `registerXCardRedirectHook` clears `xCardRedirect` once a
+narration has posted with the X-Card lifted.
 
 **Reason:** the X-Card is the safety tool a player reaches for without
 explanation, and for players it recorded nothing (XCARD-PLAYER-NOOP); move
@@ -1718,7 +1922,9 @@ and exactly one runs it:
 - otherwise → the author's client runs it with its own key (a keyed player at
   a keyless-GM table). GM-only writes are then skipped and debug-logged — the
   scene start included: the narrators' `ensureSceneStarted` (which `@scene`
-  goes through) starts a scene on the canonical GM only (SCENE-START-OFF-GM); a keyless
+  goes through) starts a scene on the canonical GM only (SCENE-START-OFF-GM),
+  and so does an `@scene` answer's post-narration capture, the detection and
+  tier passes (`scheduleSceneAnswerCapture`, issue #321 U36); a keyless
   author gets the usual "Claude API key not configured" fallback. Since issue
   #286 D2 the narrator side-data is the exception: it is relayed to the
   canonical GM, which starts a scene to hold it (see "Narrator side-data,
@@ -1729,7 +1935,11 @@ and `!incite`, and the same ladder in `requestOracleNarration`
 (`src/oracles/oracleFollowup.js`, relay `oracle.narrate`) for the follow-up
 after `!oracle yes`, `!oracle <table-id>`, `!pay-the-price` and Face Defeat —
 where "no key anywhere" skips with a debug line, since the raw card already
-carries the result. The move pipeline itself stays canonical-GM-only (single
+carries the result. A vow or bond progress roll made on the vendor sheet is
+narrated by the same ladder (`nativeRollNarratesHere`, issue #321 U11), decided
+by its `createChatMessage` hook on every client — no relay; it used to be
+narrated on the roller's client always, so a keyless player got "Narration
+unavailable" at a table whose GM holds the key. The move pipeline itself stays canonical-GM-only (single
 emitter). Exception: the Begin / End a Session vignettes run inside the
 canonical-GM relay handlers, so they need a keyed GM (known-issues, 2026-10
 accepted limitations).
@@ -2230,7 +2440,12 @@ player commits — via the shared `applyCombatPositionToTrack` (track
 `combatState` + actor sheet + combatant badge). The weak-hit choose-one's "You
 are in control" maps to a `combat-position` suffer call whose executor writes
 an open track, or stashes onto the newest pending threshold card when the
-track doesn't exist yet (either click order works).
+track doesn't exist yet (either click order works). *(Issue #321: the weak
+hit's "+2 momentum" option begins the fight in a bad spot through the same
+call (U18); the combat tracker's position badge and the Progress Tracks
+panel's toggle write through `applyCombatPositionToTrack` too, which writes
+the track first and rejects, mirrors untouched, when that write is refused
+(U19).)*
 
 **Reason:** The combat track is created only when the player clicks Enter the
 Fray, but the `combatPosition` consequence fires at resolution time — before
@@ -2356,7 +2571,11 @@ creative latitude to invite a different move. The player acts on the prose they
 read, so the prose is the source of truth — and because the button re-posts with
 `forcedMoveId: suggestedMove`, reconciling the flag (not just the label) means
 the *rolled* move matches too. Only the final italic span is scanned, so
-single-word move names in the prose body cannot false-match.
+single-word move names in the prose body cannot false-match. *(Issue #321: the
+classifier's `suggestedMove` is always a MOVES key or null — `toMoveId` maps a
+display name, so the button no longer fails with "Unknown move" (U45); and the
+forced move rolls the stat its narration fits, read by a stat-only
+interpretation, not the move's first listed stat (`enrichForcedMoveStat`, U04).)*
 
 **Rejected:**
 - *Make the classifier authoritative and forbid the narrator from deviating* —
@@ -2445,7 +2664,9 @@ untouched.
   deterministic remap is what makes the result actually legal.
 - *Reject/error on a wrong-position move* — remapping preserves intent (an
   attack stays an attack, just the correct variant) and keeps the pipeline
-  flowing; the confirm dialog still lets the player override.
+  flowing; the confirm dialog shows the move and stat (with any ability's
+  stat swap), and its Re-interpret cancels the move so the player can
+  re-word it (issue #321 U04 — it offers no override of the move).
 - *Force every move to be a combat move while in combat* — rejected; non-combat
   moves (Ask the Oracle, Face Danger for the environment, etc.) remain valid
   mid-fight, so only the four position-locked combat moves are remapped.
@@ -2805,6 +3026,15 @@ const tracks = journal.getFlag("starforged-companion", "tracks") ?? [];
 This distinction matters: JournalEntry flags and JournalEntryPage flags are
 completely separate. The tracks journal creates no pages.
 
+**Who writes (issue #321).** The journal is created `ownership: NONE` for
+players, so every Progress Tracks panel edit — any user's — is written by the
+canonical GM (gmRelay `progressTrack.edit`, validated per `op`), and reading
+the tracks never creates the journal; only a write does (U05 — a player's
+click was refused and did nothing). Every track write on a client runs one at
+a time through `writeTracks`, each on a fresh read once the previous write has
+landed: the array is saved whole, and two writes that read during each other's
+round trip lost one change (U57).
+
 **Reason:** Initially designed with per-track journal entries. Changed because
 individual journal entries created UI clutter and made bulk operations require
 scanning the entire journal collection. Single journal with a flag array is
@@ -2832,6 +3062,18 @@ entities have a stable visual identity across sessions.
 **State stored on:** `ArtAsset.regenerationUsed` (boolean) and `ArtAsset.locked`
 (boolean). The superseded asset gets `ArtAsset.superseded = true` and is retained
 for the session log.
+
+**Who generates (issue #321).** A portrait is generated on a GM's client only:
+`generatePortrait` / `regeneratePortrait` return null elsewhere before anything is
+billed (`canKeepPortrait`), and the Entities panel shows its Generate / Regenerate
+buttons to GMs only (U33). Storing, linking and attaching a portrait are GM writes,
+so a player's click paid for an image the store then refused. A GM relay was
+rejected: the OpenRouter key lives in the GM's browser, a player's relayed click
+would spend the GM's art budget and could burn the one regeneration, and a
+fire-and-forget relay to a keyless GM fails silently. One portrait per new NPC
+card (U29): with Auto-Seed NPC on, the `createActor` seed hook owns it (drawn
+from the creator's `portraitSourceDescription`) and the creator skips it; with it
+off, the creator generates it — both used to, billing OpenRouter twice.
 
 ---
 
@@ -3306,7 +3548,11 @@ of leaving them as instructional text (closes audit 3.18–3.21):
   (`moveTarget`), else the single open expedition, else **auto-created** at an
   **interpreter-inferred rank** (`expeditionRank`; validated, `dangerous`
   default, re-rankable in the panel — the inference is a best guess, kept cheap
-  to correct).
+  to correct). *(Issue #321 U16: auto-created only when no expedition is open
+  or the move names a destination none of the open ones matches; naming none
+  among several open, the pipeline asks "Which expedition?" before rolling, and
+  a track named by id that is over marks nothing — it used to begin a phantom
+  "Expedition".)*
 - **Make a Discovery / Confront Chaos** mark the **discoveries** legacy track
   (2 ticks / 1 tick-per-aspect) via a `legacyMark` consequence. *(2026-10,
   issue #316: neither has an action roll — the resolver draws no dice for
@@ -3363,7 +3609,12 @@ mechanism as the top-priority signal — `message.speaker.actor` (v13
 before the author's bound `User.character`, the ownership scan, and the
 campaignState fallback. Non-PC speakers (a selected starship, an NPC card —
 `character` actors carrying the module `entityType` flag, FOLDER-002) fall
-through to author-based resolution rather than being attributed.
+through to author-based resolution rather than being attributed. *(Issue
+#321: the bound `User.character` is PC-validated the same way — a user who
+assigned the starship or an NPC card as their character spoke as it (U24);
+the author steps are `resolveUserActorId`, and the campaignState fallback
+applies only to a GM author or in solo play (one PC), so a player with no PC
+of their own resolves to none, never another player's (U23).)*
 
 The resolved speaker reaches every narrator path (move, paced, `@scene` —
 which previously discarded its options entirely), the user message labels
@@ -3403,7 +3654,11 @@ nearest settlement pin within 3× snap radius → "near <settlement>", else
 "deep space"). When no token exists, fiction-side fallbacks apply: the
 inciting incident must emit a starting `ship/position` sidecar change, and
 an empty record injects an explicit "not yet established — do not invent"
-guard line into the narrator prompt rather than silence.
+guard line into the narrator prompt rather than silence. *(Issue #321 U47:
+the token the sector creator places on a new map is a position statement
+only for a ship with no position yet — for one that has a position it is
+created with `POSITION_SYNC_OPTION`, so creating another sector no longer
+moves the ship onto its map.)*
 
 **Reporter's framing (verbatim):** *"The token was positioned on the sector.
 In that instance, it's position should be known. It sounds like there is a
@@ -3413,7 +3668,10 @@ it isn't on the sector, then the above fallbacks sound great."*
 **This refines (does not reverse) Cluster C's "the map follows the fiction":**
 both directions now write, disambiguated by provenance — fiction-side writes
 sync the token (existing), token-side writes record position
-(`updatedBy: "scene_token"`), and every programmatic token move carries the
+(`updatedBy: "token_placement"`, read "near" its pin — issue #321 U53: they
+were `scene_token`, so a ship parked near a settlement or auto-placed read
+"docked at"; `scene_token` is now the Set a Course arrival a drop on a pin
+starts, read "docked at"), and every programmatic token move carries the
 `POSITION_SYNC_OPTION` update option so the hooks never mistake the module's
 own syncs for player statements (without it, the sync's own update would
 re-enter the drag handler and dispatch a duplicate set_a_course).
@@ -3421,7 +3679,12 @@ re-enter the drag handler and dispatch a duplicate set_a_course).
 **Boundary kept deliberately:** dropping the token ON a pin (snap radius)
 still routes through the Set a Course move — travel under stakes costs a
 roll; an off-pin drop is a position note with no move mechanics. The radius
-split is the predictable rule for which is which.
+split is the predictable rule for which is which. *(Issue #321: the drop
+names the pin's settlement Actor — its current name and its id — and the
+arrival records that settlement by id (U52); it routes through the move only
+while Ship Positioning and Auto-Move Ship on Set a Course are both on, since
+the arrival needs both — with either off it is a plain token move, where it
+used to roll the move and leave the ship in place (U54).)*
 
 **Rejected:**
 - *Snap-back on off-pin drags* — punishes the common "park the ship near X"
@@ -3851,7 +4114,11 @@ established entities may be named later. The rename is **bounded to placeholder
 connections** — `isPlaceholderName` must be true for the `from` record, the
 target name must not already belong to another entity, and the whole path is
 GM-gated. A renamed figure is also defensively stripped from the `entities`
-array in `parseDetectionResponse` so it can never be both renamed and recreated.
+array in `parseDetectionResponse` so it can never be both renamed and recreated
+— only when the rename's `from` names a recorded placeholder connection
+(`findPlaceholderConnection`, shared with `applyEntityRenames`); any other
+rename is skipped, so its newly named figure is drafted as a new entity (issue
+#321 U27 — it was dropped, and the NPC vanished).
 A GM-visible "Identity revealed" card records the link.
 
 **Reason:** Detection dedups by name only (the prompt's ESTABLISHED ENTITIES
@@ -4152,6 +4419,13 @@ mechanics.
    `persistResolution` now uses the first PC. The same audit extended roller credit to the ability
    scan, Reach a Milestone, the won-fight vow mark and reward, `!ptp` harm and `!bond` momentum —
    known-issues CREDIT-ROLLER-SWEEP, RENARRATE-ATTRIBUTION, FULFIL-REWARD-FIRST-PC.)*
+   *(Issue #321 U23: one resolver answers "whose PC is this user?" — `resolveUserActorId`
+   (`src/multiplayer/speaker.js`): `User.character` when it is a PC, else the first PC the user
+   owns, else the campaign's first PC only for a GM or in solo play. A new connection's bond Item
+   goes on the roller's PC (Make a Connection) or the PC a draft card carries (`actorId`, stamped
+   by every detection path that knows its narration's PC); the shared vow's target becomes a
+   connection of every PC who swore it; the oath scene is written for the PC who swore; the
+   Private Channel and the toolbar's Chronicle use the user's own PC.)*
 
 2. **The inciting vow is the crew's shared founding vow.** "⚔ Swear this vow" now creates the vow on
    **every** player character (each copy tagged `flags[MODULE].sharedVow` + the inciting message id),

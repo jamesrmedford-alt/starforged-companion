@@ -33,7 +33,7 @@
  */
 
 import { apiPost } from "../api-proxy.js";
-import { listShips } from "../entities/ship.js";
+import { listShips, isLoneShipCandidate } from "../entities/ship.js";
 
 const MODULE_ID    = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -444,10 +444,11 @@ export function getCommandVehicleActor(campaignState) {
     const ship = (listShips(campaignState) ?? []).find(s => s?.isCommandVehicle);
     if (!ship) {
       // Lone-ship fallback: a single tracked starship is the command vehicle
-      // even when nothing has set the isCommandVehicle flag yet.
+      // even when nothing has set the isCommandVehicle flag yet. A confirmed
+      // NPC ship is never a candidate (issue #321 U26).
       const starships = ids
         .map(id => globalThis.game?.actors?.get?.(id))
-        .filter(a => a?.type === "starship");
+        .filter(a => a?.type === "starship" && isLoneShipCandidate(a.flags?.[MODULE_ID]?.ship));
       return starships.length === 1 ? starships[0] : null;
     }
     // listShips returns flag payloads; map back via shipIds whose actor has

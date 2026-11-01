@@ -9,6 +9,7 @@ import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
 import { resolveEntityById } from '../entities/registry.js';
+import { isLoneShipCandidate } from '../entities/ship.js';
 
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
@@ -455,11 +456,12 @@ export function buildShipPositionLine(campaignState) {
       if (p?.isCommandVehicle) { payload = p; actor = a; break; }
     }
     // Lone-ship fallback: a single tracked starship is the command vehicle
-    // even when nothing has set the isCommandVehicle flag yet.
+    // even when nothing has set the isCommandVehicle flag yet. A confirmed
+    // NPC ship is never a candidate (issue #321 U26).
     if (!actor) {
       const starships = ids
         .map(id => globalThis.game?.actors?.get?.(id))
-        .filter(a => a?.type === 'starship');
+        .filter(a => a?.type === 'starship' && isLoneShipCandidate(a.flags?.[MID]?.ship));
       if (starships.length === 1) {
         actor   = starships[0];
         payload = actor.flags?.[MID]?.ship ?? null;
@@ -732,6 +734,11 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['population', 'Population'],
     ['authority',  'Authority'],
     ['firstLook',  'First look'],
+    ['initialContact', 'Initial contact'],
+    // The world and star the sector generator rolled and pinned beside the
+    // settlement on the map (issue #321 U51 — stored, never shown).
+    ['planet',     'Planet', formatSettlementPlanet],
+    ['stellar',    'Stellar object'],
     ['description','Description'],
     ['notes',      'Notes'],
   ],
@@ -789,6 +796,23 @@ function formatLastKnown(lastKnown) {
     out.push(`  ${attr}: ${value}${entry.sessionNum ? ` (Session ${entry.sessionNum})` : ''}`);
   }
   return out;
+}
+
+/**
+ * A settlement's rolled planet as narrator text — "Vorn Prime (Desert World)".
+ * The sector generator rolls one per orbital / planetside settlement and keeps
+ * it on the settlement's record as `{ name, type }` (no planet entity exists),
+ * so the settlement card and the active sector's roster both render it here.
+ *
+ * @param {{name?: string, type?: string}|string|null} planet
+ * @returns {string} '' when there is none
+ */
+export function formatSettlementPlanet(planet) {
+  if (!planet) return '';
+  if (typeof planet !== 'object') return String(planet).trim();
+  const name = String(planet.name ?? '').trim();
+  const type = String(planet.type ?? '').trim();
+  return name && type ? `${name} (${type})` : (name || type);
 }
 
 /** Generative-tier lines an entity card shows, and how many of them are held for traits. */
@@ -875,8 +899,8 @@ export function formatEntityCard(entity, entityType) {
 
   const fields = CANONICAL_FIELDS_BY_TYPE[entityType] ?? [['description', 'Description']];
   const shown  = new Set();   // a value two fields share (a goal also stored as the motivation) shows once
-  for (const [key, label] of fields) {
-    const value = entity[key];
+  for (const [key, label, format] of fields) {
+    const value = format ? format(entity[key]) : entity[key];
     if (value === undefined || value === null || value === '') continue;
     const text = Array.isArray(value) ? value.join(', ') : String(value);
     if (!text || shown.has(text)) continue;
@@ -1066,6 +1090,20 @@ const ANTI_SUGGESTION_CLAUSE =
   `narration. Do not surface mechanical options as parenthetical or italicized asides ` +
   `inside the prose. The fiction moves forward through what the narrator describes ` +
   `happening, not through suggestions about what could happen next.`;
+
+/**
+ * The redirect the first narration after an X-Card carries (issue #321 U07,
+ * section [1b]). The removed beat is already out of every memory the narrator
+ * reads; this tells it to move the story away without saying what it was.
+ */
+const XCARD_REDIRECT_BLOCK =
+  `## X-CARD — REDIRECT\n\n` +
+  `A player used the X-Card on the most recent beat of the story. That beat has been ` +
+  `removed: it did not happen. Do not continue it, refer to it, describe its aftermath, ` +
+  `or bring back anything it introduced, even indirectly. Take the scene in a clearly ` +
+  `different direction — a cut to another moment, a shift of focus, or a new ` +
+  `development — and carry on from what remains of the story. Do not mention the ` +
+  `X-Card or that anything was removed.`;
 
 const TONE_DESCRIPTIONS = {
   wry: "Wry — knowing and slightly sardonic, aware of consequence without wallowing in it. The narrator has seen this before. It notices the irony. It does not editorialize, but it does not pretend not to notice.",
@@ -1365,9 +1403,18 @@ export function buildNarratorSystemPrompt(
 
   // [1] Safety configuration — with Private Lines scoped to this client: every
   //     player's on a GM's client, only the building player's own on a
-  //     player's (formatNarratorSafetyContext).
-  const safetyContent = formatNarratorSafetyContext(campaignState);
+  //     player's (formatNarratorSafetyContext). From the live store when the
+  //     caller read it (buildNarratorExtras → extras.safety, issue #321 U08).
+  const safetyContent = formatNarratorSafetyContext(
+    extras?.safety ? { ...campaignState, safety: extras.safety } : campaignState,
+  );
   if (safetyContent) parts.push(safetyContent);
+
+  // [1b] X-Card redirect — the first narration after a GM resumes from an
+  //      X-Card steers away from the beat the card removed (issue #321 U07;
+  //      buildNarratorExtras → extras.xCardRedirect, cleared once a narration
+  //      has posted). It never names the removed content.
+  if (extras?.xCardRedirect && !isMetaMode) parts.push(XCARD_REDIRECT_BLOCK);
 
   // [2] Narrator permissions — the creative-latitude block, immediately after
   //     safety and before any other contextual section. Every prose mode has a
@@ -2024,13 +2071,21 @@ export function buildPartyBlock(party) {
   ].join('\n');
 }
 
+/**
+ * WORLD TRUTHS block — one line per established truth. A truth whose option
+ * carries a sub-table (the Cataclysm war's foe, why AI is outlawed) keeps its
+ * rolled detail after the title, with the table's label, as the World Truths
+ * journal prints it: without it the narrator knew there was a war but not
+ * who it was against, and was free to invent a foe (issue #321 U66).
+ */
 function buildWorldTruthsBlock(campaignState) {
   const truths  = campaignState?.worldTruths ?? {};
   const entries = Object.entries(truths)
     .map(([key, v]) => {
       const text = v.title ?? v.result;
       if (!text) return null;
-      return `${toLabel(key)}: ${text}`;
+      const sub = typeof v.subResult === 'string' ? v.subResult.trim() : '';
+      return `${toLabel(key)}: ${text}${sub ? ` ${v.subTableLabel ?? 'Detail:'} ${sub}` : ''}`;
     })
     .filter(Boolean);
 

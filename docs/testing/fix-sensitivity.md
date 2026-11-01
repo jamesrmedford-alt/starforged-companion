@@ -1,14 +1,15 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315 and #316
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316 and #321
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300, #301, #306, #309, #311, #313, #314, #315 and #316 audits and from issue #302's disturbance
+#300, #301, #306, #309, #311, #313, #314, #315, #316 and #321 audits and from issue #302's disturbance
 matrix (slice B): the tests that fail with the fix taken out. It was produced
 by `scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to
 `ec08eb4`), for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for
 the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
 2026-10-29 (the patch applied to `fd17788`), for issue #311 on 2026-10-29, for
-issues #313, #314 and #315 on 2026-10-30 and for issue #316 on 2026-10-31. To
+issues #313, #314 and #315 on 2026-10-30, for issue #316 on 2026-10-31 and
+for issue #321 on 2026-11-01. To
 reproduce:
 
 ```bash
@@ -59,6 +60,20 @@ node scripts/fix-sensitivity.mjs \
 # issue #316
 node scripts/fix-sensitivity.mjs \
   e6c6500 eca4344 bb52b2b 775fd77 96043f2 300fb37 --md details.md
+
+# issue #321 (the vendored system data is not checked out in the script's
+# worktrees, so the tests that read it skip there — see the #321 summary)
+node scripts/fix-sensitivity.mjs \
+  0686a64 481bea4 6630c3b af10b33 66319f9 7f48b53 71182f0 88c55a1 3974061 \
+  97a2b8f 2d15c73 b80b4ec 632b047 ced9f5e 4e1d531 8f24c65 88a72a8 26baf6c \
+  798bec5 4c23f20 6f911d9 413e293 4768ebd 0d95837 11785cf 9f81053 c282a13 \
+  f9f10c6 5df5b43 8f5b3c3 136d212 88960d0 187af8c cbb890a fb79e0a 32246f3 \
+  100b3fd b85ed27 e2c62f4 b8c6cd9 b817cca 5c78275 160fd80 c4cba83 e7d7629 \
+  6d8b29a 79ff7a5 0d25bb8 b0cdc45 2bbfd48 7f6e838 ec8fe0a 5f74fcb 87e2a28 \
+  2b40416 5ff101f 804d44f eb22041 568964e f6050b0 175db78 83ff2f1 f2dcda2 \
+  0a8b6b6 cc3cc68 9cff74f ab9f4aa e0c64d2 25c47ac 718991b 3c092ef 96bd02c \
+  90bbb4d 68b0e11 \
+  --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -220,6 +235,94 @@ radio.
 | T05 NO-ROLL-MOVE-ROLLED | 96043f2 | revert | 9 — `resolver.test.js` (5: Make a Discovery draws no dice and has no outcome; a stat the interpreter named is not rolled and a negative momentum cancels nothing; every no-roll move in the table; a bonded Develop rolls +rank by its `rollKind`; action and progress moves keep their kinds), `noRollMoves.test.js` (3: the real waypoint follow-up has no dice, no outcome, no Burn, and momentum stays 9; a typed Make a Discovery the same; a Face Danger miss still rolls and offers a burn), `improveResult.test.js` (no Improve on a "none" resolution); 3 more fail only on the missing `moveRollKind` |
 | T06 WAYPOINT-REWARD-STACKS | 300fb37 | revert | 8 — `waypointRewardClaim.test.js` (4: the ordinary +2 taken, the discovery is refused and its button closed on a re-render; the discovery first marks 2 ticks once, retires the ordinary choice and a re-render finds the claim; another player's click is refused and a GM's takes it as the roller; Confront Chaos is taken once), `cardButtonWiring.test.js` (4: a player's click relays `waypoint.oracle` with no local post; the canonical GM's click claims and posts once as the roller; a claimed card renders disabled; no GM re-arms); 9 more fail only on the missing `applyWaypointOraclePick` |
 
+### Issue #321 — the seventh audit, part 1
+
+Every fix commit is **sensitive**. U06 is seven sites in six commits (U06a
+and U06g share one); U65's follow-up makes the truths-journal hooks write a
+copy; a test-only follow-up to U02 changes nothing under `src/` and is not
+listed; the refactor that routes the detection pass back through
+`parseDetectionResponse` (after U15) changes no behaviour. Three fixes read the
+vendored foundry-ironsworn data, which the script's worktrees do not check
+out: there their vendor-reading tests skip. U31 and U32 are shown by their
+other tests; U63's table comparison was run by hand with the data present.
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| U01 SOLO-SNAPSHOT-STALE | 0686a64 | revert | 3 — `soloSheetEditSnapshot.test.js` (3) |
+| U02 FULFIL-VOW-NO-TARGET | 481bea4 | revert | 10 — `fulfilVowWhichVow.test.js` (5), `statEnrichment.test.js` (5); 12 more fail only on a missing export |
+| U03 PTP-DOUBLE-ROLL | 6630c3b | revert | 6 — `payThePriceOneRoll.test.js` (2), `resolver.test.js` (4); 3 more fail only on a missing export |
+| U04 FORCED-MOVE-FIRST-STAT | af10b33 | revert | 6 — `forcedMoveStat.test.js` (2), `interpreterExpectedMove.test.js` (4); 6 more fail only on a missing export |
+| U05 PANELS-PLAYER-WRITES | 66319f9 | revert | 16 — `entityPanelRelay.test.js` (9), `progressTracksPanelRelay.test.js` (7); 7 more fail only on a missing export |
+| U06a + U06g STALE-SNAPSHOT-WRITERS | 7f48b53 | revert | 3 — `loreRecapMoveMerge.test.js`, `loreRecapStaleWrite.test.js` (2) |
+| U06b STALE-SNAPSHOT-WRITERS | 71182f0 | revert | 8 — `factCommandStaleWrite.test.js` (8) |
+| U06c STALE-SNAPSHOT-WRITERS | 88c55a1 | revert | 4 — `siteDiscoveryStaleWrite.test.js` (4) |
+| U06d STALE-SNAPSHOT-WRITERS | 3974061 | revert | 2 — `incitingPremiseStaleWrite.test.js` (2) |
+| U06e STALE-SNAPSHOT-WRITERS | 97a2b8f | revert | 5 — `correctionDialogStaleWrite.test.js` (5) |
+| U06f STALE-SNAPSHOT-WRITERS | 2d15c73 | revert | 3 — `startSceneAdoption.test.js` (3) |
+| U07 XCARD-CONTENT-REMEMBERED | b80b4ec | revert | 17 — `narrationIdCards.test.js` (4), `xcardNarratorMemory.test.js` (12), `xcardNarratorMemoryTable.test.js`; 4 more fail only on a missing export |
+| U08 MOVE-NARRATION-STALE-SAFETY | 632b047 | revert | 6 — `moveNarrationStaleSnapshot.test.js` (2), `narratorLiveSafety.test.js` (4) |
+| U09 PRIVATE-CHANNEL-XCARD | ced9f5e | revert | 3 — `privateChannelXCard.test.js` (3) |
+| U10 PRIVATE-JOURNAL-PLAYER-CREATE | 4e1d531 | revert | 3 — `hookGates.test.js`, `privateChannelPlayerJournal.test.js` (2); 1 more fail only on a missing export |
+| U11 NATIVE-ROLL-KEYLESS | 8f24c65 | revert | 9 — `nativeRollKeyedRunner.test.js` (2), `nativeRollNarration.test.js` (7) |
+| U12 SESSION-GATE-CARRIES-OVER | 88a72a8 | revert | 3 — `sessionGateRollover.test.js`, `sessionManagement.test.js`, `sessionRelayDialogs.test.js` |
+| U13 SECTOR-LIST-WIPED | 26baf6c | revert | 11 — `sectorOverview.test.js` (11) |
+| U14 SEVER-FALLBACK | 798bec5 | revert | 5 — `developRelationship.test.js` (3), `severCommand.test.js` (2) |
+| U15 DETECTION-TRUNC-SILENT | 4c23f20 | revert | 3 — `detectionTruncation.test.js` (3) |
+| U16 PHANTOM-TRACK | 6f911d9 | revert | 8 — `combat.test.js` (4), `expedition.test.js` (2), `progressTrackSelection.test.js` (2) |
+| U17 WAYPOINT-MISS-NO-PTP | 413e293 | revert | 2 — `payThePriceOneRoll.test.js`, `resolver.test.js` |
+| U18 FRAY-MOMENTUM-NO-POSITION | 4768ebd | revert | 1 — `resolver.test.js` |
+| U19 COMBAT-POSITION-DRIFT | 0d95837 | revert | 7 — `combatPositionStores.test.js` (6), `progressTracksPanelRelay.test.js` |
+| U20 SUGGESTION-BUTTONS-REPEAT | 11785cf | revert | 6 — `milestoneSuggestionOnce.test.js` (3), `recommitOnce.test.js` (3); 11 more fail only on a missing export |
+| U21 NATIVE-BOND-NOT-NARRATED | 9f81053 | revert | 1 — `nativeBondRollNarration.test.js` |
+| U22 CV-READY-SCAN-DEAD | c282a13 | revert | 1 — `commandVehicleLoadScan.test.js` |
+| U23 FIRST-PC-ATTRIBUTION | f9f10c6 | revert | 14 — `chroniclePanel.test.js` (2), `connectionBondHolder.test.js` (2), `narratorPaced.test.js`, `private-channel.test.js` (2), `privateChannelOwnPc.test.js` (2), `rollerAttribution.test.js` (2), `speaker.test.js`, `swearTargetBondCrew.test.js` (2); 5 more fail only on a missing export |
+| U24 SPEAKER-BOUND-NON-PC | 5df5b43 | revert | 2 — `speaker.test.js` (2) |
+| U25 DRAFT-CONCURRENT-CONFIRM | 8f5b3c3 | revert | 4 — `draftCardConcurrentConfirm.test.js` (4) |
+| U26 LONE-SHIP-NPC-DRAFT | 136d212 | revert | 3 — `loneShipNpcDraft.test.js` (3) |
+| U27 RENAME-DROPS-NEW-NAME | 88960d0 | revert | 2 — `entityExtractor.test.js` (2) |
+| U28 FACTION-CONFIRM-ATTITUDE | 187af8c | revert | 3 — `factionConfirmAttitude.test.js` (3) |
+| U29 AUTOSEED-DOUBLE-PORTRAIT | cbb890a | revert | 2 — `autoSeedPortraitOwner.test.js` (2) |
+| U30 DEDUP-TITLES | fb79e0a | revert | 3 — `dedupNameTitles.test.js` (2), `entityExtractor.test.js` |
+| U31 STARSHIP-ICON-PATH | 32246f3 | revert | 2 — `ironswornAssets.test.js` (2) |
+| U32 ENCOUNTER-CARD-EMPTY | 100b3fd | revert | 2 — `encounterSpawn.test.js` (2) |
+| U33 PORTRAIT-PLAYER-CLICK | b85ed27 | revert | 4 — `portraitGmOnly.test.js` (4) |
+| U34 SIDECAR-NO-SCENE | e2c62f4 | revert | 6 — `sidecarScenePaths.test.js` (4), `sidecarWithoutScene.test.js` (2) |
+| U35 FALLBACK-IN-RING | b8c6cd9 | revert | 2 — `narratorFallback.test.js` (2) |
+| U36 SCENE-CAPTURE-UNGATED | b817cca | revert | 2 — `sceneQueryCaptureGate.test.js` (2) |
+| U37 CLARIFY-PICK-NO-ID | 5c78275 | revert | 3 — `clarificationDialog.test.js` (3) |
+| U38 CORRECTION-DIALOG-RENDER | 160fd80 | revert | 8 — `correctionDialogStaleWrite.test.js` (4), `correctionDialogWiring.test.js` (4) |
+| U39 RETRACTION-OVERREACH | c4cba83 | revert | 5 — `retractions.test.js` (5) |
+| U40 LORE-RESTORE-STAYS-STRUCK | e7d7629 | revert | 6 — `loreRestore.test.js` (4), `worldJournal.test.js` (2) |
+| U41 SIDECAR-BARE-FENCE | 6d8b29a | revert | 8 — `factContinuity.test.js` (8) |
+| U42 PRIVATE-TRANSCRIPT-SPLIT | 79ff7a5 | revert | 2 — `privateChannelTranscript.test.js` (2); 3 more fail only on a missing export |
+| U43 SHIP-POSITION-WORD-SCAN | 0d25bb8 | revert | 3 — `shipPosition.test.js` (3) |
+| U44 CLASSIFIER-CONNECTIONS | b0cdc45 | revert | 2 — `pacing.test.js` (2) |
+| U45 CLASSIFIER-MOVE-NAME | 2bbfd48 | revert | 10 — `narratorMoveHint.test.js` (2), `pacing.test.js` (8); 2 more fail only on a missing export |
+| U46 SECTOR-CREATE-DOUBLE-CLICK | 7f6e838 | revert | 5 — `sectorPanel.test.js` (5) |
+| U47 NEW-SECTOR-MOVES-SHIP | ec8fe0a | revert | 1 — `sectorSceneBuilder.test.js` |
+| U48 SITE-LADDER-WRONG-SITE | 5f74fcb | revert | 8 — `precursorSites.test.js` (7), `siteDiscovery.test.js` |
+| U49 MIGRATE-DELETES-GM-PAGES | 87e2a28 | revert | 5 — `entityMigrator.test.js`, `sectorOverview.test.js` (4) |
+| U50 ZOOM-IN-NOT-ROLLED | 2b40416 | revert | 6 — `sectorGenerator.test.js` (5), `sectorPanel.test.js` |
+| U51 SECTOR-PLANETS-DARK | 5ff101f | revert | 5 — `narratorPrompt.test.js` (2), `sectorContext.test.js`, `sectorPlanetsNarrator.test.js` (2); 1 more fail only on a missing export |
+| U52 TOKEN-DRAG-PIN-LABEL | 804d44f | revert | 5 — `sectorSceneHooks.test.js` (4), `tokenDragArrival.test.js`; 6 more fail only on a missing export |
+| U53 OFF-PIN-DOCKED | eb22041 | revert | 5 — `sectorSceneHooks.test.js` (5) |
+| U54 DRAG-WITH-AUTOMOVE-OFF | 568964e | revert | 3 — `sectorSceneHooks.test.js` (3) |
+| U55 SHARED-VOW-CLOCK-REPEATED | f6050b0 | revert | 5 — `actorBridge.test.js`, `sharedVowClockOnce.test.js` (4) |
+| U56 PANEL-LOCATION-NO-SHIP | 175db78 | revert | 4 — `entityPanelCurrentLocation.test.js` (3), `shipPosition.test.js` |
+| U57 TRACK-LOST-UPDATE | 83ff2f1 | revert | 4 — `progressTracksWriteQueue.test.js` (4) |
+| U58 CACHED-SETTING-MUTATION | f2dcda2 | revert | 14 — `cachedSettingWrites.test.js` (14) |
+| U59 AUDIO-DOUBLE-SYNTH | 0a8b6b6 | revert | 2 — `audioSynthesisOnce.test.js` (2) |
+| U60 AUDIO-KEYLESS-BROWSE | cc3cc68 | revert | 4 — `audioKeylessPlayback.test.js`, `nonGmClientPaths.test.js` (3) |
+| U61 END-VIGNETTE-SEVERED | 9cff74f | revert | 3 — `endSessionVignetteSeveredBond.test.js` (3) |
+| U62 VOW-RANK-NUMERIC | ab9f4aa | revert | 2 — `vowRankName.test.js` (2) |
+| U63 ORACLE-TABLE-FIDELITY | e0c64d2 | revert | 1 — `sectorGenerator.test.js` (the invented paired-name row); and 20 in `oracleTableFidelity.test.js` (one per corrected table: 132 pass with the fix, 20 fail without), run by hand with the vendored data present |
+| U64 ORACLE-ODDS-TWO-WORD | 25c47ac | revert | 2 — `chatCommandRouting.test.js` (2) |
+| U65 TRUTHS-RESAVE-STALE | 718991b | revert | 2 — `revisedTruthsLore.test.js` (2) |
+| U65 (follow-up: the hooks write a copy) | 3c092ef | revert | 1 — `revisedTruthsLore.test.js` |
+| U66 TRUTH-SUBRESULT-DARK | 96bd02c | revert | 1 — `narratorPrompt.test.js` |
+| U67 QUICKSTART-TRUTHS-FLAGS | 90bbb4d | revert | 5 — `truths.test.js` (5) |
+| U68 ORACLE-DIRECTIVES-LITERAL | 68b0e11 | revert | 4 — `oracleRoller.test.js` (4) |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -280,6 +383,14 @@ ways; each was read and is a control:
 | `sceneChallengeClock` › control: a cancelled removal changes nothing / control: a combat track's completion touches no clock | the confirm's No, and a track with no paired clock (#316 T03) |
 | `sessionStartClocks` › control: Begin advances the clock once; a second Begin repeats nothing and owes nothing | the audit's own control (#316 T04) |
 | `burnMomentum` › buildBurnState — a move that rolled nothing cannot be burned: returns null for a rollKind "none" resolution / control: an action-roll miss with the same momentum is eligible | a "none" resolution's null outcome already made no burn (the gate is shown by `noRollMoves` through the pipeline), and an action miss still burns (#316 T05) |
+
+For issue #321 the script lists 75 new tests that pass both ways, under
+each commit in the Details below. The fixing commits name each as a control
+in its title or comment — the case that must keep working (a one-word odds
+alias, a player-owned PC's sheet edit, a GM's own click, two PCs' own
+same-named vows, a failed run that can be retried …) — or as a test whose
+defect an earlier fix in the series already closed (U57's two panel races,
+closed by U05's relay queue).
 
 Two more passed both ways under 611979e's revert because they cover N02,
 fixed in the commit before it: `consequenceTargets` › a strong hit's +1
@@ -1816,3 +1927,1352 @@ Test files: `tests/unit/cardActions.test.js`, `tests/unit/cardButtonWiring.test.
 | (new) tests/unit/waypointRewardClaim.test.js › T06 — a matched waypoint has one reward another player's click is refused; a GM's takes it as the roller | AssertionError: expected 2 to be +0 // Object.is equality |
 | (new) tests/unit/waypointRewardClaim.test.js › T06 — a matched waypoint has one reward a miss with a match: Confront Chaos is taken once | AssertionError: expected 2 to be 1 // Object.is equality |
 
+### 6d8b29a — fix: a sidecar fenced without the json tag is parsed, never shown (issue #321 U41)
+
+Test files: `tests/unit/factContinuity.test.js`. Source restored: 1 file(s).
+
+- With the fix: 55 passed, 0 failed.
+- Without it: 8 failed (8 new; 0 only for a missing export); 47 still pass (1 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/factContinuity.test.js › extractSidecar — a sidecar fenced without the json tag a bare ``` fence: parses the sidecar and keeps the JSON out of the prose | TypeError: Cannot read properties of null (reading 'newTruths') |
+| (new) tests/unit/factContinuity.test.js › extractSidecar — a sidecar fenced without the json tag a "``` json" fence: parses the sidecar and keeps the JSON out of the prose | TypeError: Cannot read properties of null (reading 'newTruths') |
+| (new) tests/unit/factContinuity.test.js › extractSidecar — a sidecar fenced without the json tag a single-line bare fence: parses the sidecar and keeps the JSON out of the prose | TypeError: Cannot read properties of null (reading 'newTruths') |
+| (new) tests/unit/factContinuity.test.js › extractSidecar — a sidecar fenced without the json tag strips a bare fence whose object body is malformed and reports the parse error | AssertionError: expected 'Vance limps in.\n\n```\n{ "newTruths"…' to be 'Vance limps in.' // Object.is equality |
+| (new) tests/unit/factContinuity.test.js › extractSidecar — a sidecar fenced without the json tag parses an unclosed fence whose object is complete (the closing fence never came) | AssertionError: ```json: expected Error: Sidecar opening fence found but no… to be null |
+| (new) tests/unit/factContinuity.test.js › extractSidecar — a sidecar fenced without the json tag parses an unclosed fence whose closing fence was cut off after one or two backticks | AssertionError: expected Error: Sidecar opening fence found but no… to be null |
+| (new) tests/unit/factContinuity.test.js › extractSidecar — a sidecar fenced without the json tag strips a truncated unclosed bare fence and surfaces the truncation | AssertionError: expected 'Vance limps in.\n\n```\n{ "newTruths"…' to be 'Vance limps in.' // Object.is equality |
+| (new) tests/unit/factContinuity.test.js › extractSidecar — a sidecar fenced without the json tag strips a truncated fence that follows a complete one, so no JSON reaches the prose | AssertionError: expected 'Prose chunk one.\n\nProse chunk two.\…' not to match /```\|newTruths/ |
+
+- New test passing with and without the fix (a control?): tests/unit/factContinuity.test.js › extractSidecar — a sidecar fenced without the json tag leaves a bare fence that holds no JSON object in the prose (control)
+
+### c4cba83 — fix: a strike retracts only its own subject's lore, and two subjects' strikes stay apart (issue #321 U39)
+
+Test files: `tests/unit/retractions.test.js`. Source restored: 1 file(s).
+
+- With the fix: 14 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 9 still pass (1 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/retractions.test.js › factsOverlap matches containment only as whole words | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/retractions.test.js › propagateRetraction leaves other subjects' lore that merely shares the struck phrase in canon | AssertionError: expected 2 to be +0 // Object.is equality |
+| (new) tests/unit/retractions.test.js › propagateRetraction takes the struck subject's own lore out of canon — archived or detected | AssertionError: expected 3 to be 2 // Object.is equality |
+| (new) tests/unit/retractions.test.js › propagateRetraction matches an entity subject's lore by the record's name | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/retractions.test.js › session retractions keep two subjects' strikes of the same phrase apart — in the scene and past it | AssertionError: expected [ { label: 'Vance', fact: 'Is dead' } ] to deeply equal [ { label: 'Vance', …(1) }, …(1) ] |
+
+- New test passing with and without the fix (a control?): tests/unit/retractions.test.js › session retractions still list one subject's same strike once when two scenes made it
+
+### e7d7629 — fix: restoring struck lore puts it back in canon with its text (issue #321 U40)
+
+Test files: `tests/unit/loreRestore.test.js`, `tests/unit/worldJournal.test.js`. Source restored: 1 file(s).
+
+- With the fix: 73 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 67 still pass (0 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/loreRestore.test.js › restoring struck lore with `!journal lore "&lt;title>" confirmed` puts the entry back in confirmed canon, with its text | AssertionError: expected [] to include 'Kael\'s debt' |
+| (new) tests/unit/loreRestore.test.js › restoring struck lore with `!journal lore "&lt;title>" confirmed` keeps the entry's category and provenance, even in a later session | AssertionError: expected { title: 'Kael\'s debt', …(15) } to match object { category: 'debt', …(6) } |
+| (new) tests/unit/loreRestore.test.js › restoring struck lore with `!journal lore "&lt;title>" confirmed` takes the command's text when it gives one | AssertionError: expected undefined to be 'Kael owes the Syndicate 500 credits' // Object.is equality |
+| (new) tests/unit/loreRestore.test.js › restoring struck lore with `!journal lore "&lt;title>" confirmed` a rumour ruling clears the strike but keeps the entry out of canon and out of the review queue | AssertionError: expected { title: 'Kael\'s debt', …(15) } to match object { confirmed: false, …(3) } |
+| (new) tests/unit/worldJournal.test.js › recordLoreDiscovery keeps an entry's text and category when an update gives none | AssertionError: expected { title: 'Same Title', …(15) } to match object { text: 'first', …(2) } |
+| (new) tests/unit/worldJournal.test.js › recordLoreDiscovery keeps a struck entry struck when the detection pass records it again | AssertionError: expected { title: 'The hatch', …(15) } to match object { retracted: true, retractedAt: 't1' } |
+
+### 5c78275 — fix: picking a connection in the clarification dialog hands the narrator that NPC (issue #321 U37)
+
+Test files: `tests/unit/clarificationDialog.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/clarificationDialog.test.js › ClarificationDialog — picking a recorded connection offers the connection under its host (Actor) id, and the pick puts that id in relevance.entityIds | AssertionError: expected { journalId: null, …(3) } to match object { Object (journalId, type, ...) } |
+| (new) tests/unit/clarificationDialog.test.js › ClarificationDialog — picking a recorded connection offers every connection under its own host id, in campaign order | AssertionError: expected [ [ 'Sable', null ], …(1) ] to deeply equal [ …(2) ] |
+| (new) tests/unit/clarificationDialog.test.js › ClarificationDialog — picking a recorded connection offers no lost or unresolvable connection | AssertionError: expected [ null ] to deeply equal [ 'actor-conn-q738s6' ] |
+
+### b0cdc45 — fix: the pacing classifier knows the campaign's connections by name (issue #321 U44)
+
+Test files: `tests/unit/pacing.test.js`. Source restored: 1 file(s).
+
+- With the fix: 66 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 64 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/pacing.test.js › buildClassifierContext — connection names names each Actor-hosted connection with its relationship | AssertionError: expected 'Connections: 2 active (names unavaila…' to be 'Connections: Kael Dros (ally), Sable …' // Object.is equality |
+| (new) tests/unit/pacing.test.js › buildClassifierContext — connection names says the names are unavailable only when no id resolves | AssertionError: expected 'Connections: 2 active (names unavaila…' to be 'Connections: Kael Dros (ally)' // Object.is equality |
+
+### 2bbfd48 — fix: a move the pacing classifier names is always a real move id (issue #321 U45)
+
+Test files: `tests/unit/narratorMoveHint.test.js`, `tests/unit/pacing.test.js`, `tests/unit/schemas.test.js`. Source restored: 3 file(s).
+
+- With the fix: 136 passed, 0 failed.
+- Without it: 12 failed (12 new; 2 only for a missing export); 124 still pass (1 new).
+- Verdict: **sensitive** — 10 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/narratorMoveHint.test.js › suppressPcDirectedSocialMove() suppresses a social move aimed at a fellow PC whatever its case or form | AssertionError: expected 'Compel' to be null |
+| (new) tests/unit/narratorMoveHint.test.js › suppressPcDirectedSocialMove() hands back the nominated move's id, and nothing for a phrase that names no move | AssertionError: expected 'Compel' to be 'compel' // Object.is equality |
+| (new) tests/unit/pacing.test.js › classifyInput() maps the suggestion "Gather Information" to the move id "gather_information" | AssertionError: expected 'Gather Information' to be 'gather_information' // Object.is equality |
+| (new) tests/unit/pacing.test.js › classifyInput() maps the suggestion "gather information" to the move id "gather_information" | AssertionError: expected 'gather information' to be 'gather_information' // Object.is equality |
+| (new) tests/unit/pacing.test.js › classifyInput() maps the suggestion "Face-Danger" to the move id "face_danger" | AssertionError: expected 'Face-Danger' to be 'face_danger' // Object.is equality |
+| (new) tests/unit/pacing.test.js › classifyInput() maps the suggestion "  Compel  " to the move id "compel" | AssertionError: expected 'Compel' to be 'compel' // Object.is equality |
+| (new) tests/unit/pacing.test.js › classifyInput() maps the suggestion "Swear an Iron Vow" to the move id "swear_an_iron_vow" | AssertionError: expected 'Swear an Iron Vow' to be 'swear_an_iron_vow' // Object.is equality |
+| (new) tests/unit/pacing.test.js › classifyInput() drops a suggestion that is a phrase that names no move | AssertionError: expected 'Dance Wildly' to be null |
+| (new) tests/unit/pacing.test.js › classifyInput() drops a suggestion that is an inherited property name | AssertionError: expected 'constructor' to be null |
+| (new) tests/unit/pacing.test.js › classifyInput() asks the model for a catalog move id, not a move name | AssertionError: expected 'You are the pacing pre-classifier for…' to contain '"suggestedMove": "&lt;move id from the M…' |
+| (new) (API) tests/unit/schemas.test.js › toMoveId maps every move's key, and its display name in any case or separator, to the key | TypeError: toMoveId is not a function |
+| (new) (API) tests/unit/schemas.test.js › toMoveId returns null for anything that names no move | TypeError: toMoveId is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/pacing.test.js › classifyInput() drops a suggestion that is a non-string
+
+### b817cca — fix: an @scene answer is mined for world detail on the canonical GM only (issue #321 U36)
+
+Test files: `tests/unit/sceneQueryCaptureGate.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sceneQueryCaptureGate.test.js › @scene capture runs on the canonical GM only a keyed player's client (no keyed GM online) runs neither the detection pass nor the tier pass | AssertionError: expected { detection: 1, tierPass: 1 } to deeply equal { detection: +0, tierPass: +0 } |
+| (new) tests/unit/sceneQueryCaptureGate.test.js › @scene capture runs on the canonical GM only there the answer's ledger facts still go to the GM through the sidecar relay | AssertionError: expected { detection: 1, tierPass: 1 } to deeply equal { detection: +0, tierPass: +0 } |
+
+- New test passing with and without the fix (a control?): tests/unit/sceneQueryCaptureGate.test.js › @scene capture runs on the canonical GM only the canonical GM mines the answer with both passes (control)
+
+### 0d25bb8 — fix: the ship's narrated position matches place names, not common nouns (issue #321 U43)
+
+Test files: `tests/unit/shipPosition.test.js`. Source restored: 1 file(s).
+
+- With the fix: 42 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 39 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/shipPosition.test.js › inferShipPosition — the word scan resolves names, not common nouns a common noun in an unrecorded destination does not dock the ship at a recorded place | AssertionError: expected 's-bleak' to be null |
+| (new) tests/unit/shipPosition.test.js › inferShipPosition — the word scan resolves names, not common nouns a phrase whose only name-like word is lowercase stays free text | AssertionError: expected 's-bleak' to be null |
+| (new) tests/unit/shipPosition.test.js › inferShipPosition — the word scan resolves names, not common nouns keeps the narrated phrase when the only match is not a place | AssertionError: expected 'The Covenant' to be 'alongside the Covenant flagship Iron …' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/shipPosition.test.js › inferShipPosition — the word scan resolves names, not common nouns a capitalised name part in a phrase still resolves (control)
+- New test passing with and without the fix (a control?): tests/unit/shipPosition.test.js › inferShipPosition — the word scan resolves names, not common nouns a whole seed that is a deliberate short name resolves in any case (control)
+
+### 66319f9 — fix: players can use the Progress Tracks and Entities panels (issue #321 U05)
+
+Test files: `tests/unit/entityPanelRelay.test.js`, `tests/unit/progressTracksPanelRelay.test.js`. Source restored: 3 file(s).
+
+- With the fix: 24 passed, 0 failed.
+- Without it: 23 failed (23 new; 7 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 16 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a player's edit is relayed to the GM, not refused (issue #321 U05) the canonical-lock toggle is relayed — no permission error on the player's client | AssertionError: expected Error: User test-user-player lacks permis… to be null |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a player's edit is relayed to the GM, not refused (issue #321 U05) Pin, Promote and Remove are relayed with the detail they act on | Error: User test-user-player lacks permission to update Actor [npc-vex] — needs OWNER permission on "Vex" (ownership {"default":0}) (permission-faithful test st |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a player's edits land on the NPC card (issue #321 U05) the canonical-lock toggle locks, and a second click unlocks | Error: User Pat lacks permission to update Actor [npc-vex] — needs OWNER permission on "Vex" (ownership {"default":0}) (permission-faithful test stub, tests/hel |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a player's edits land on the NPC card (issue #321 U05) Pin pins the detail (and a second click unpins it) | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a player's edits land on the NPC card (issue #321 U05) Promote, once the player confirms on their own screen, appends the detail to the notes | Error: User Pat lacks permission to update Actor [npc-vex] — needs OWNER permission on "Vex" (ownership {"default":0}) (permission-faithful test stub, tests/hel |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a player's edits land on the NPC card (issue #321 U05) Remove removes the detail and keeps the others | AssertionError: expected [ 'Has a scar over one eye', …(2) ] to deeply equal [ 'Owes the Syndicate', …(1) ] |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a player's edits land on the NPC card (issue #321 U05) with no GM connected, Pin warns the player and changes nothing | AssertionError: expected [] to deep equally contain StringMatching /no GM is connected/ |
+| (new) (API) tests/unit/entityPanelRelay.test.js › applyEntityEditFromRelay — validation (issue #321 U05) refuses an unknown op, an unknown entity, and a detail the panel does not show | TypeError: applyEntityEditFromRelay is not a function |
+| (new) (API) tests/unit/entityPanelRelay.test.js › applyEntityEditFromRelay — validation (issue #321 U05) Remove leaves a promoted entry with the same text alone (the panel never showed it) | TypeError: applyEntityEditFromRelay is not a function |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a refused Pin or Remove is reported, not swallowed (issue #321 U05) pinTier: the GM's refused write shows an error notification | AssertionError: expected "error" to be called with arguments: [ StringMatching /could not be saved/ ] |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a refused Pin or Remove is reported, not swallowed (issue #321 U05) removeTier: the GM's refused write shows an error notification | AssertionError: expected "error" to be called with arguments: [ StringMatching /could not be saved/ ] |
+| (new) tests/unit/progressTracksPanelRelay.test.js › Progress Tracks panel — a player's click lands through the canonical GM (issue #321 U05) a player's Mark Progress (+) on a dangerous fight lands: 0 → 8 ticks | AssertionError: expected { ticks: +0, …(1) } to deeply equal { ticks: 8, error: null } |
+| (new) tests/unit/progressTracksPanelRelay.test.js › Progress Tracks panel — a player's click lands through the canonical GM (issue #321 U05) a player's position toggle (Neutral → In control) lands | AssertionError: expected null to be 'in_control' // Object.is equality |
+| (new) tests/unit/progressTracksPanelRelay.test.js › Progress Tracks panel — a player's click lands through the canonical GM (issue #321 U05) a player's − clears one box, and ✓ completes the fight | AssertionError: expected 12 to be 8 // Object.is equality |
+| (new) tests/unit/progressTracksPanelRelay.test.js › Progress Tracks panel — a player's click lands through the canonical GM (issue #321 U05) a player's ✕ asks the player to confirm — on their own screen — then the GM removes the track | AssertionError: expected [ { id: 'fight-1', …(7) } ] to deeply equal [] |
+| (new) tests/unit/progressTracksPanelRelay.test.js › Progress Tracks panel — a player's click lands through the canonical GM (issue #321 U05) a player's Add creates the track — and a scene challenge's paired danger clock — on the GM | AssertionError: expected undefined to match object { …(4) } |
+| (new) tests/unit/progressTracksPanelRelay.test.js › Progress Tracks panel — a player's click lands through the canonical GM (issue #321 U05) with no GM connected, a player's click warns and changes nothing | AssertionError: expected Error: User Pat lacks permission to updat… to be null |
+| (new) (API) tests/unit/progressTracksPanelRelay.test.js › applyProgressTrackEditFromRelay — what the panel can produce, and nothing else (issue #321 U05) marks by rank and never past 40 ticks; clears one box and never below 0 | TypeError: applyProgressTrackEditFromRelay is not a function |
+| (new) (API) tests/unit/progressTracksPanelRelay.test.js › applyProgressTrackEditFromRelay — what the panel can produce, and nothing else (issue #321 U05) refuses a track the panel does not list (a vow), a finished one, an unknown id, and a position on a non-fight | TypeError: applyProgressTrackEditFromRelay is not a function |
+| (new) (API) tests/unit/progressTracksPanelRelay.test.js › applyProgressTrackEditFromRelay — what the panel can produce, and nothing else (issue #321 U05) ✕ removes a finished panel track too (the panel offers it on archived rows) | TypeError: applyProgressTrackEditFromRelay is not a function |
+| (new) (API) tests/unit/progressTracksPanelRelay.test.js › applyProgressTrackEditFromRelay — what the panel can produce, and nothing else (issue #321 U05) an Add takes a panel type and rank only, and a name of at most 60 characters | TypeError: applyProgressTrackEditFromRelay is not a function |
+| (new) (API) tests/unit/progressTracksPanelRelay.test.js › applyProgressTrackEditFromRelay — what the panel can produce, and nothing else (issue #321 U05) an unknown op is refused | TypeError: applyProgressTrackEditFromRelay is not a function |
+| (new) tests/unit/progressTracksPanelRelay.test.js › the panel renders on a player's client without creating the GM's journal (issue #321 U05) no tracks journal yet: the player sees an empty panel, and nothing is created | AssertionError: expected "create" to not be called at all, but actually been called 1 times |
+
+- New test passing with and without the fix (a control?): tests/unit/progressTracksPanelRelay.test.js › Progress Tracks panel — a player's click lands through the canonical GM (issue #321 U05) the same click by the GM lands (control: the handler itself works)
+
+### 83ff2f1 — fix: progress track writes no longer lose one another (issue #321 U57)
+
+Test files: `tests/unit/progressTracksWriteQueue.test.js`. Source restored: 1 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/progressTracksWriteQueue.test.js › track writers on one client run one at a time, each on a fresh read (issue #321 U57) two progress marks in flight together both land | AssertionError: expected 8 to be 16 // Object.is equality |
+| (new) tests/unit/progressTracksWriteQueue.test.js › track writers on one client run one at a time, each on a fresh read (issue #321 U57) a panel + racing the move pipeline's position write keeps both | AssertionError: expected { id: 'fight-1', …(6) } to match object { ticks: 8, combatState: 'bad_spot' } |
+| (new) tests/unit/progressTracksWriteQueue.test.js › track writers on one client run one at a time, each on a fresh read (issue #321 U57) a new track and a mark on another track, written together, both land | AssertionError: expected [ 'fight-1', 'exp-1' ] to deeply equal [ 'fight-1', 'exp-1', …(1) ] |
+| (new) tests/unit/progressTracksWriteQueue.test.js › track writers on one client run one at a time, each on a fresh read (issue #321 U57) a completion racing a mark keeps the mark (the completed track is saved with it) | AssertionError: expected { id: 'fight-1', …(7) } to match object { ticks: 8, completed: true } |
+
+- New test passing with and without the fix (a control?): tests/unit/progressTracksWriteQueue.test.js › the Progress Tracks panel — two quick clicks keep both (issue #321 U57) two Mark Progress clicks 5 ms apart on a dangerous fight mark 16 ticks
+- New test passing with and without the fix (a control?): tests/unit/progressTracksWriteQueue.test.js › the Progress Tracks panel — two quick clicks keep both (issue #321 U57) Mark Progress then the position toggle, in quick succession, keep both changes
+- New test passing with and without the fix (a control?): tests/unit/progressTracksWriteQueue.test.js › track writers on one client run one at a time, each on a fresh read (issue #321 U57) a refused write does not wedge the next one, which reads what is stored
+
+### 0d95837 — fix: a fight's position badge and panel toggle reach every store (issue #321 U19)
+
+Test files: `tests/unit/combatPositionStores.test.js`, `tests/unit/progressTracksPanelRelay.test.js`. Source restored: 2 file(s).
+
+- With the fix: 22 passed, 0 failed.
+- Without it: 7 failed (7 new; 0 only for a missing export); 15 still pass (2 new).
+- Verdict: **sensitive** — 7 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/combatPositionStores.test.js › the combat tracker's position badge writes the fight's track (issue #321 U19) clicking the position badge writes the fight's track position too (the store every reader reads) | AssertionError: expected "spy" to be called with arguments: [ 'trk-1', 'in_control' ] |
+| (new) tests/unit/combatPositionStores.test.js › the combat tracker's position badge writes the fight's track (issue #321 U19) each step of the cycle reaches the track: in control → in a bad spot → neutral | AssertionError: expected last "spy" call to have been called with [ 'trk-1', 'bad_spot' ] |
+| (new) tests/unit/combatPositionStores.test.js › the combat tracker's position badge writes the fight's track (issue #321 U19) a refused track write changes neither mirror, and says so | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| (new) tests/unit/combatPositionStores.test.js › applyCombatPositionToTrack — neutral, and the canonical store first (issue #321 U19) null clears the position everywhere (the toggles' neutral step) | AssertionError: expected "spy" to be called with arguments: [ 'trk-1', null ] |
+| (new) tests/unit/combatPositionStores.test.js › applyCombatPositionToTrack — neutral, and the canonical store first (issue #321 U19) an unknown or missing position writes nothing | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| (new) tests/unit/combatPositionStores.test.js › applyCombatPositionToTrack — neutral, and the canonical store first (issue #321 U19) a refused track write rejects before the mirrors change | Error: promise resolved "undefined" instead of rejecting |
+| (new) tests/unit/progressTracksPanelRelay.test.js › Progress Tracks panel — a player's click lands through the canonical GM (issue #321 U05) the position toggle writes every store of the fight's position (issue #321 U19) the clicker's own character's sheet and badge follow the track | AssertionError: expected { Object (track, sheet, ...) } to deeply equal { track: 'in_control', …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/combatPositionStores.test.js › the combat tracker's position badge writes the fight's track (issue #321 U19) control: a player's click changes nothing (the badge is the GM's)
+- New test passing with and without the fix (a control?): tests/unit/progressTracksPanelRelay.test.js › Progress Tracks panel — a player's click lands through the canonical GM (issue #321 U05) the position toggle writes every store of the fight's position (issue #321 U19) a character the clicker does not own is left alone: only the track moves
+
+### b85ed27 — fix: portraits are generated on a GM's client only, never paid for and lost (issue #321 U33)
+
+Test files: `tests/unit/portraitGmOnly.test.js`. Source restored: 2 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/portraitGmOnly.test.js › the portrait generator runs on a GM's client only (issue #321 U33) a player's Generate pays for nothing: no image is requested, nothing is written | Error: promise rejected "Error: User test-user-player lacks permis…" instead of resolving |
+| (new) tests/unit/portraitGmOnly.test.js › the portrait generator runs on a GM's client only (issue #321 U33) a player's Regenerate pays for nothing either | Error: promise rejected "Error: User test-user-player lacks permis…" instead of resolving |
+| (new) tests/unit/portraitGmOnly.test.js › the Entities panel shows Generate / Regenerate portrait to GMs only (issue #321 U33) a player sees neither button | AssertionError: expected [ 'backToList', …(3) ] to not include 'generatePortrait' |
+| (new) tests/unit/portraitGmOnly.test.js › the Entities panel shows Generate / Regenerate portrait to GMs only (issue #321 U33) a player's click on a button left from before generates nothing and says the GM generates portraits | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+
+- New test passing with and without the fix (a control?): tests/unit/portraitGmOnly.test.js › the portrait generator runs on a GM's client only (issue #321 U33) control: the GM's Generate requests the image once, stores it and links it to the NPC
+- New test passing with and without the fix (a control?): tests/unit/portraitGmOnly.test.js › the Entities panel shows Generate / Regenerate portrait to GMs only (issue #321 U33) control: a GM sees Generate on an entity with no portrait, and Regenerate on one with an unlocked portrait
+
+### 175db78 — fix: "Set as current location" moves the ship as `!at` does (issue #321 U56)
+
+Test files: `tests/unit/entityPanelCurrentLocation.test.js`, `tests/unit/shipPosition.test.js`. Source restored: 3 file(s).
+
+- With the fix: 47 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 43 still pass (1 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/entityPanelCurrentLocation.test.js › Entity Panel — Set as current location moves the ship, as `!at` does (issue #321 U56) moves the command vehicle's position along with currentLocationId, as `!at Bleakhold` does | AssertionError: expected { …(5) } to match object { …(2) } |
+| (new) tests/unit/entityPanelCurrentLocation.test.js › Entity Panel — Set as current location moves the ship, as `!at` does (issue #321 U56) clearing the current location (a second click) leaves the ship where it is, like a bare `!at` | AssertionError: expected 'actor-first' to be 'actor-bleak' // Object.is equality |
+| (new) tests/unit/entityPanelCurrentLocation.test.js › Entity Panel — Set as current location moves the ship, as `!at` does (issue #321 U56) the place is the one clicked, by its id — not another settlement with the same name | AssertionError: expected 'actor-first' to be 'actor-bleak-2' // Object.is equality |
+| (new) tests/unit/shipPosition.test.js › inferShipPosition matches entityId before the name; an unknown id falls back to the name | AssertionError: expected 's1' to be 's2' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/entityPanelCurrentLocation.test.js › Entity Panel — Set as current location moves the ship, as `!at` does (issue #321 U56) control: with ship positioning off, only the current location changes
+
+### f2dcda2 — fix: a refused setting write leaves this client's cache as it was (issue #321 U58)
+
+Test files: `tests/unit/cachedSettingWrites.test.js`. Source restored: 5 file(s).
+
+- With the fix: 14 passed, 0 failed.
+- Without it: 14 failed (14 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 14 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/cachedSettingWrites.test.js › Take a Break on the canonical GM, write refused (issue #321 U58) a refused Take a Break write leaves no +1 behind on the GM's client | AssertionError: expected { value: 1, …(2) } to be undefined |
+| (new) tests/unit/cachedSettingWrites.test.js › Take a Break on the canonical GM, write refused (issue #321 U58) an unrelated later write from the GM does not resurrect the refused +1 into the world | AssertionError: expected { value: 1, …(2) } to be undefined |
+| (new) tests/unit/cachedSettingWrites.test.js › Take a Break on the canonical GM, write refused (issue #321 U58) a refused `!at &lt;place>` or `!sector &lt;name>` leaves the GM's cached state as it was | AssertionError: expected 'actor-bleak' to be null |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) safety/sessionDialogs.js Set a Flag (applySafetyFlag) | AssertionError: expected { sessionActive: true, …(7) } to deeply equal { sessionActive: true, …(7) } |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) safety/sessionDialogs.js Take a Break (applyTakeBreak) | AssertionError: expected { sessionActive: true, …(8) } to deeply equal { sessionActive: true, …(7) } |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) ui/settingsPanel.js a player's Private Lines sync on the GM (applyPrivateLinesSync) | AssertionError: expected { sessionActive: true, …(7) } to deeply equal { sessionActive: true, …(7) } |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) ui/settingsPanel.js the GM's Lines / Veils sync into campaignState (syncSafetyToCampaignState) | AssertionError: expected { sessionActive: true, …(7) } to deeply equal { sessionActive: true, …(7) } |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) ui/settingsPanel.js adding or removing a Line or a Veil | AssertionError: addLine: expected [ 'gore', 'spiders' ] to deeply equal [ 'gore' ] |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) ui/settingsPanel.js adding or removing a Private Line | AssertionError: addPrivateLine: expected [ 'needles', 'spiders' ] to deeply equal [ 'needles' ] |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) clocks/clocks.js creating a clock (createClock and `!clock new`) | AssertionError: expected { sessionActive: true, …(7) } to deeply equal { sessionActive: true, …(7) } |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) clocks/clocks.js changing a clock (`!clock reset`, through mutateClock) | AssertionError: expected { sessionActive: true, …(7) } to deeply equal { sessionActive: true, …(7) } |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) clocks/clocks.js Pay the Price's tension-clock advance, and its revert on a burn | AssertionError: expected { sessionActive: true, …(7) } to deeply equal { sessionActive: true, …(7) } |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) ui/entityPanel.js Set as current location | AssertionError: expected { sessionActive: true, …(7) } to deeply equal { sessionActive: true, …(7) } |
+| (new) tests/unit/cachedSettingWrites.test.js › a refused write leaves this client's cached setting as it was (issue #321 U58) ui/entityPanel.js Undismiss | AssertionError: expected { sessionActive: true, …(7) } to deeply equal { sessionActive: true, …(7) } |
+
+### 798bec5 — fix: !sever severs only the connection it names (issue #321 U14)
+
+Test files: `tests/unit/developRelationship.test.js`, `tests/unit/severCommand.test.js`. Source restored: 2 file(s).
+
+- With the fix: 48 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 43 still pass (3 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/developRelationship.test.js › selectConnection strict (!sever) a named target that matches no name resolves nothing — not the sole bonded one | AssertionError: expected { _id: 'a', name: 'Mira Kade', …(3) } to be null |
+| (new) tests/unit/developRelationship.test.js › selectConnection strict (!sever) an unnamed target resolves nothing while several are active, even with one bonded | AssertionError: expected { _id: 'a', name: 'Mira Kade', …(3) } to be null |
+| (new) tests/unit/developRelationship.test.js › selectConnection strict (!sever) an unnamed target resolves the sole active connection | AssertionError: expected { _id: 'a', name: 'Mira', …(3) } to be null |
+| (new) tests/unit/severCommand.test.js › !sever resolves its target strictly a name that matches no connection severs nobody — not the sole bonded one | AssertionError: expected { mira: false, dex: true, …(1) } to deeply equal { mira: true, dex: true, cards: [] } |
+| (new) tests/unit/severCommand.test.js › !sever resolves its target strictly a bare !sever with several connections active severs nobody | AssertionError: expected { mira: false, dex: true, …(1) } to deeply equal { mira: true, dex: true, cards: [] } |
+
+- New test passing with and without the fix (a control?): tests/unit/developRelationship.test.js › selectConnection strict (!sever) control: keeps the exact and substring rungs
+- New test passing with and without the fix (a control?): tests/unit/severCommand.test.js › !sever resolves its target strictly control: an exact or partial name severs that connection only
+- New test passing with and without the fix (a control?): tests/unit/severCommand.test.js › a bare !sever with one active connection control: severs it
+
+### 4c23f20 — fix: a cut-off entity detection reply is logged and the GM is told (issue #321 U15)
+
+Test files: `tests/unit/detectionTruncation.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/detectionTruncation.test.js › combined detection: a reply cut off at max_tokens asks for room for a busy narration's whole reply | AssertionError: expected 600 to be greater than or equal to 1500 |
+| (new) tests/unit/detectionTruncation.test.js › combined detection: a reply cut off at max_tokens is not dropped silently: the console names the cut and the GM is told | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/detectionTruncation.test.js › combined detection: a reply with no JSON object tells the GM — a malformed reply drops the narration's detection too | AssertionError: expected "warn" to be called 1 times, but got 0 times |
+
+- New test passing with and without the fix (a control?): tests/unit/detectionTruncation.test.js › combined detection: a reply cut off at max_tokens control: a complete reply is parsed and tells nobody anything
+- New test passing with and without the fix (a control?): tests/unit/detectionTruncation.test.js › combined detection: a reply with no JSON object control: an empty reply (no key on this client) is not a failure
+
+### 8f5b3c3 — fix: rows of one draft card resolved together all keep their status (issue #321 U25)
+
+Test files: `tests/unit/draftCardConcurrentConfirm.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/draftCardConcurrentConfirm.test.js › two rows of one draft card confirmed concurrently both stay confirmed — the slower write does not revert the other row | AssertionError: expected [ Array(2) ] to deeply equal [ Array(2) ] |
+| (new) tests/unit/draftCardConcurrentConfirm.test.js › two rows of one draft card confirmed concurrently no Confirm is offered again, so the NPC is not created a second time | AssertionError: expected [ StubElement{ …(9) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/draftCardConcurrentConfirm.test.js › two rows of one draft card confirmed concurrently a Confirm and a Dismiss on two rows both land | AssertionError: expected [ Array(2) ] to deeply equal [ Array(2) ] |
+| (new) tests/unit/draftCardConcurrentConfirm.test.js › Confirm on an entity that already exists marks the row and creates nothing — a lost card write cannot mint a duplicate NPC | AssertionError: expected [ …(2) ] to have a length of 1 but got 2 |
+
+### 136d212 — fix: a confirmed NPC ship never displaces the players' ship (issue #321 U26)
+
+Test files: `tests/unit/loneShipNpcDraft.test.js`. Source restored: 6 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/loneShipNpcDraft.test.js › a ship confirmed from a draft card leaves the players' ship as the command vehicle everywhere | AssertionError: expected { actorId: null, record: null, …(5) } to match object { actorId: 'ship-wayward', …(5) } |
+| (new) tests/unit/loneShipNpcDraft.test.js › a ship confirmed from a draft card is marked as someone else's ship | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/loneShipNpcDraft.test.js › a ship confirmed from a draft card does not become the players' ship when theirs is not tracked | AssertionError: expected { actorId: 'sact000000000007', …(6) } to match object { actorId: null, record: null, …(3) } |
+
+- New test passing with and without the fix (a control?): tests/unit/loneShipNpcDraft.test.js › a ship confirmed from a draft card control: the players' lone ship resolves before any ship is detected
+
+### 88960d0 — fix: a newly named NPC is drafted when its rename has no card to land on (issue #321 U27)
+
+Test files: `tests/unit/entityExtractor.test.js`. Source restored: 1 file(s).
+
+- With the fix: 127 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 125 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/entityExtractor.test.js › parseDetectionResponse — renames keeps a rename target as a new entity when its `from` is no recorded placeholder | AssertionError: expected [] to deeply equal [ 'Vex', 'Rell' ] |
+| (new) tests/unit/entityExtractor.test.js › detection → renames → drafts: a rename from a figure with no card offers the newly named NPC on the draft card | AssertionError: expected [] to deeply equal [ 'Vex' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/entityExtractor.test.js › parseDetectionResponse — renames drops an entity that is also listed as a rename target of a recorded placeholder (no dup-and-rename)
+
+### 187af8c — fix: confirming a faction keeps its World Journal attitude (issue #321 U28)
+
+Test files: `tests/unit/factionConfirmAttitude.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/factionConfirmAttitude.test.js › confirming a faction draft keeps the World Journal attitude the narration established | AssertionError: expected { hostId: 'jrnl000000000003', …(6) } to match object { recordStance: 'antagonistic', …(3) } |
+| (new) tests/unit/factionConfirmAttitude.test.js › confirming a faction draft backlinks the World Journal entry to the faction host, not the record id | AssertionError: expected 'tfT0DdSDx8CSqs0p' to be 'jrnl000000000007' // Object.is equality |
+| (new) tests/unit/factionConfirmAttitude.test.js › confirming a faction draft a faction with no World Journal entry yet is mirrored there with an unknown attitude | AssertionError: expected 'DYljLaEKEIlqfi9c' to be 'jrnl000000000011' // Object.is equality |
+
+### cbb890a — fix: a new NPC card gets one portrait with Auto-Seed on (issue #321 U29)
+
+Test files: `tests/unit/autoSeedPortraitOwner.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/autoSeedPortraitOwner.test.js › with Auto-Seed NPC on, the seed owns the new card's portrait confirming one NPC draft generates one portrait | AssertionError: expected [ { …(4) }, { …(4) } ] to have a length of 1 but got 2 |
+| (new) tests/unit/autoSeedPortraitOwner.test.js › with Auto-Seed NPC on, the seed owns the new card's portrait a Make a Connection auto-create generates one portrait | AssertionError: expected [ { …(4) }, { …(4) } ] to have a length of 1 but got 2 |
+
+- New test passing with and without the fix (a control?): tests/unit/autoSeedPortraitOwner.test.js › with Auto-Seed NPC on, the seed owns the new card's portrait control: the seed draws its portrait from the description the narration gave
+- New test passing with and without the fix (a control?): tests/unit/autoSeedPortraitOwner.test.js › with Auto-Seed NPC off, the creator owns it control: confirming one NPC draft generates one portrait
+
+### fb79e0a — fix: a titled NPC or PC re-detected by its bare name is not offered as new (issue #321 U30)
+
+Test files: `tests/unit/dedupNameTitles.test.js`, `tests/unit/entityExtractor.test.js`. Source restored: 1 file(s).
+
+- With the fix: 132 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 129 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/dedupNameTitles.test.js › the draft dedup gate strips the module's own NPC titles a PC or NPC re-detected without its title is not offered as a new connection | AssertionError: expected [ 'Dr. Chen', 'Lyssa Chen' ] to deeply equal [] |
+| (new) tests/unit/dedupNameTitles.test.js › the draft dedup gate strips the module's own NPC titles a titled detection of a bare-named connection is not offered either | AssertionError: expected [ 'Overseer Kell' ] to deeply equal [] |
+| (new) tests/unit/entityExtractor.test.js › normalizeEntityName strips a leading NPC title the module records as a role | AssertionError: expected 'doctor chen' to be 'chen' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/dedupNameTitles.test.js › the draft dedup gate strips the module's own NPC titles control: a genuinely new NPC is still offered
+- New test passing with and without the fix (a control?): tests/unit/entityExtractor.test.js › normalizeEntityName control: strips only a whole leading title word
+
+### 32246f3 — fix: non-command starships get a token image the system ships (issue #321 U31)
+
+Test files: `tests/unit/ironswornAssets.test.js`. Source restored: 1 file(s).
+
+- With the fix: 16 passed, 0 failed.
+- Without it: 2 failed (0 new; 0 only for a missing export); 14 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/ironswornAssets.test.js › Phase 3 — pickStarshipIcon returns a path under IS_PATHS.STARSHIPS | AssertionError: expected 'systems/foundry-ironsworn/assets/star…' to match /\/Ship-\d{2}s\.webp$/Ship-\d{2}s\.webp$ |
+| tests/unit/ironswornAssets.test.js › Phase 3 — pickStarshipIcon produces a token in the 01..15 range | TypeError: Cannot read properties of null (reading '1') |
+
+### 100b3fd — fix: the !sfc encounter card shows the foe's rank and features (issue #321 U32)
+
+Test files: `tests/unit/encounterSpawn.test.js`. Source restored: 1 file(s).
+
+- With the fix: 17 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 15 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/encounterSpawn.test.js › Phase 7 — buildEncounterCard shows the rank of the progress item by name | AssertionError: expected '&lt;h3>Adept&lt;/h3>' to contain '&lt;strong>Rank:&lt;/strong> Formidable' |
+| (new) tests/unit/encounterSpawn.test.js › Phase 7 — buildEncounterCard renders the progress item's Features / Drives / Tactics text | AssertionError: expected '&lt;h3>Hunter&lt;/h3>' to contain '&lt;strong>Rank:&lt;/strong> Dangerous' |
+
+- New test passing with and without the fix (a control?): tests/unit/encounterSpawn.test.js › Phase 7 — buildEncounterCard control: a foe without a progress item is just its name
+
+### 0686a64 — fix: a sheet edit of a PC no player owns reaches the next roll and narration (issue #321 U01)
+
+Test files: `tests/unit/soloSheetEditSnapshot.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/soloSheetEditSnapshot.test.js › a sheet edit of the solo GM's PC (hasPlayerOwner false) drops the cached snapshot a raised stat reaches the next snapshot | AssertionError: expected 3 to be 4 // Object.is equality |
+| (new) tests/unit/soloSheetEditSnapshot.test.js › a sheet edit of the solo GM's PC (hasPlayerOwner false) drops the cached snapshot meters, impacts and pronouns edited on the sheet reach the next snapshot | AssertionError: expected { health: 5, wounded: false, …(1) } to deeply equal { health: 2, wounded: true, …(1) } |
+| (new) tests/unit/soloSheetEditSnapshot.test.js › a sheet edit of the solo GM's PC (hasPlayerOwner false) drops the cached snapshot the next move rolls the edited stat | AssertionError: expected '&lt;div class="sf-move-result sf-weak-hi…' to contain '+iron (4)' |
+
+- New test passing with and without the fix (a control?): tests/unit/soloSheetEditSnapshot.test.js › a sheet edit of the solo GM's PC (hasPlayerOwner false) drops the cached snapshot control: the same edit on a player-owned PC is seen
+
+### 5df5b43 — fix: a user whose assigned character is the ship or an NPC speaks as their own PC (issue #321 U24)
+
+Test files: `tests/unit/speaker.test.js`. Source restored: 1 file(s).
+
+- With the fix: 26 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 24 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/speaker.test.js › resolveSpeakerActorId — a user whose assigned character is not a PC is attributed to their PC, not the starship assigned as their character | AssertionError: expected 'ship-1' to be 'pc-pat' // Object.is equality |
+| (new) tests/unit/speaker.test.js › resolveSpeakerActorId — a user whose assigned character is not a PC is attributed to their PC, not the NPC card assigned as their character | AssertionError: expected 'npc-1' to be 'pc-pat' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/speaker.test.js › resolveSpeakerActorId — a user whose assigned character is not a PC control: the same ship as a SELECTED token (speaker.actor) falls through to the PC
+- New test passing with and without the fix (a control?): tests/unit/speaker.test.js › resolveSpeakerActorId — a user whose assigned character is not a PC a bound PC is still honoured before the ownership scan
+
+### ab9f4aa — fix: a vow's and a bond's rank read as a name in prompts and cards (issue #321 U62)
+
+Test files: `tests/unit/vowRankName.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/vowRankName.test.js › a vendor vow's numeric rank reads as its name the snapshot carries the rank name for a vow and a bond | AssertionError: expected 3 to be 'formidable' // Object.is equality |
+| (new) tests/unit/vowRankName.test.js › a vendor vow's numeric rank reads as its name the narrator's CHARACTER block names the vow's rank | AssertionError: expected 'Background vow: Find the Wanderer (3,…' to be 'Background vow: Find the Wanderer (fo…' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/vowRankName.test.js › a vendor vow's numeric rank reads as its name control: a string rank passes through and a missing rank still defaults to dangerous
+
+### 8f24c65 — fix: a sheet-rolled vow or bond is narrated once, where a Claude key lives, as the roller (issue #321 U11)
+
+Test files: `tests/unit/nativeRollKeyedRunner.test.js`, `tests/unit/nativeRollNarration.test.js`. Source restored: 2 file(s).
+
+- With the fix: 15 passed, 0 failed.
+- Without it: 9 failed (4 new; 0 only for a missing export); 6 still pass (1 new).
+- Verdict: **sensitive** — 9 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/nativeRollKeyedRunner.test.js › a sheet-rolled vow is narrated where a key lives a keyless player's roll is narrated once by the keyed GM, with no fallback card | AssertionError: expected [] to deeply equal [ [ 'gm-1', 'sk-ant-gina' ] ] |
+| (new) tests/unit/nativeRollKeyedRunner.test.js › a sheet-rolled vow is narrated where a key lives the GM's narration is the roller's: their PC is the narrator's CHARACTER | AssertionError: the given combination of arguments (undefined and string) is invalid for this assertion. You can use an array, a map, an object, a set, a string |
+| (new) tests/unit/nativeRollNarration.test.js › planNativeRollNarration — no silent failures stands down quietly when another client narrates the roll | AssertionError: expected { act: false, …(2) } to deeply equal { act: false, …(2) } |
+| (new) tests/unit/nativeRollNarration.test.js › planNativeRollNarration — no silent failures narrates when this client parsed a classified vow/connection roll | AssertionError: expected { act: false, …(2) } to deeply equal { act: true, reason: 'narrate', …(1) } |
+| tests/unit/nativeRollNarration.test.js › planNativeRollNarration — no silent failures debug-logs a progress roll that is not a vow/connection (expedition/combat) | AssertionError: expected { act: false, …(2) } to deeply equal { act: false, …(2) } |
+| tests/unit/nativeRollNarration.test.js › planNativeRollNarration — no silent failures stays quiet on a normal action roll | AssertionError: expected { act: false, …(2) } to deeply equal { act: false, …(2) } |
+| tests/unit/nativeRollNarration.test.js › planNativeRollNarration — no silent failures WARNS on an unparseable roll card (a possible vendor-shape change) | AssertionError: expected { act: false, …(2) } to deeply equal { act: false, …(2) } |
+| tests/unit/nativeRollNarration.test.js › planNativeRollNarration — no silent failures stays quiet on an ordinary non-roll message | AssertionError: expected { act: false, …(2) } to deeply equal { act: false, …(2) } |
+| tests/unit/nativeRollNarration.test.js › planNativeRollNarration — no silent failures treats missing facts as a quiet stand-down (no throw) | AssertionError: expected { act: false, …(2) } to deeply equal { act: false, …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/nativeRollKeyedRunner.test.js › a sheet-rolled vow is narrated where a key lives control: with no keyed GM, a keyed player narrates their own roll on their own key
+
+### 9f81053 — fix: a Forge a Bond rolled on the sheet's Connections tab is narrated (issue #321 U21)
+
+Test files: `tests/unit/nativeBondRollNarration.test.js`. Source restored: 1 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/nativeBondRollNarration.test.js › a progress roll made on the sheet is narrated by its subtype a connection (subtype "bond") is narrated as Forge a Bond | AssertionError: expected [] to have a length of 1 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/nativeBondRollNarration.test.js › a progress roll made on the sheet is narrated by its subtype control: a vow (no moveDsId) is narrated as Fulfill Your Vow
+
+### f9f10c6 — fix: the roller or owner, not the first PC, holds a new bond, swears the oath scene, speaks in the Private Channel and opens the Chronicle (issue #321 U23)
+
+Test files: `tests/unit/chroniclePanel.test.js`, `tests/unit/connectionBondHolder.test.js`, `tests/unit/narratorPaced.test.js`, `tests/unit/private-channel.test.js`, `tests/unit/privateChannelOwnPc.test.js`, `tests/unit/rollerAttribution.test.js`, `tests/unit/speaker.test.js`, `tests/unit/swearTargetBondCrew.test.js`. Source restored: 9 file(s).
+
+- With the fix: 118 passed, 0 failed.
+- Without it: 19 failed (19 new; 5 only for a missing export); 99 still pass (4 new).
+- Verdict: **sensitive** — 14 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/chroniclePanel.test.js › the toolbar opens the viewer's own PC's Chronicle an unbound player who owns Ren opens Ren's, not the first PC's | AssertionError: expected [ 'pc-1' ] to deeply equal [ 'pc-ren' ] |
+| (new) tests/unit/chroniclePanel.test.js › the toolbar opens the viewer's own PC's Chronicle a player with no PC of their own is told so, and opens no one else's | AssertionError: expected [ 'pc-1' ] to deeply equal [] |
+| (new) tests/unit/connectionBondHolder.test.js › a connection the narration creates is the roller's Make a Connection: the auto-created connection's bond Item goes to the PC who rolled | AssertionError: expected { ren: [], kira: [ 'Sable Ortiz' ] } to deeply equal { ren: [ 'Sable Ortiz' ], kira: [] } |
+| (new) tests/unit/connectionBondHolder.test.js › a connection the narration creates is the roller's a paced narration's draft card carries the PC it was written for, for Confirm | AssertionError: expected [ [ [ 'Sable Ortiz' ], undefined ] ] to deeply equal [ [ [ 'Sable Ortiz' ], 'pc-ren' ] ] |
+| (new) tests/unit/narratorPaced.test.js › schedulePacedDetection() hands routeEntityDrafts the PC the narration was for | AssertionError: expected undefined to be 'pc-ren' // Object.is equality |
+| (new) tests/unit/private-channel.test.js › buildPrivateContext speaks as the player's own PC (issue #321 U23) an unbound player who owns a PC is given theirs, not the campaign's first | AssertionError: expected "spy" to be called with arguments: [ …(2) ] |
+| (new) tests/unit/private-channel.test.js › buildPrivateContext speaks as the player's own PC (issue #321 U23) a player with no PC of their own gets none — never another player's | Error: promise resolved "{ …(3) }" instead of rejecting |
+| (new) tests/unit/privateChannelOwnPc.test.js › publishing a Private Channel reflection attributes it to the publisher's own PC, not the campaign's first PC | AssertionError: expected 'Kira' to be 'Dax' // Object.is equality |
+| (new) tests/unit/privateChannelOwnPc.test.js › publishing a Private Channel reflection a player with no PC of their own publishes as themselves, never as another player's PC | AssertionError: expected 'Kira' to be 'You' // Object.is equality |
+| (new) tests/unit/rollerAttribution.test.js › the vow-swearing scene is written for the character who swore Ren swears; the oath scene's CHARACTER block is Ren's | AssertionError: expected '## NARRATOR ROLE AND VOICE\n\nYou are…' to match /## CHARACTER\nName: Ren\b/ |
+| (new) tests/unit/rollerAttribution.test.js › Confirm on a draft card puts the connection's bond on the PC the narration was for Ren's narration introduced them: the bond is on Ren's sheet, not Kira's | AssertionError: expected undefined to be 'pc-quinn' // Object.is equality |
+| (new) (API) tests/unit/speaker.test.js › resolveUserActorId — the roller / owner first, the first PC only for a GM or solo play an unbound player who owns a PC gets theirs, not the campaign's first | TypeError: (0 , resolveUserActorId) is not a function |
+| (new) (API) tests/unit/speaker.test.js › resolveUserActorId — the roller / owner first, the first PC only for a GM or solo play a bound PC wins over an owned one | TypeError: (0 , resolveUserActorId) is not a function |
+| (new) (API) tests/unit/speaker.test.js › resolveUserActorId — the roller / owner first, the first PC only for a GM or solo play a player with no PC of their own is never handed another player's | TypeError: (0 , resolveUserActorId) is not a function |
+| (new) (API) tests/unit/speaker.test.js › resolveUserActorId — the roller / owner first, the first PC only for a GM or solo play a GM with no PC of their own gets the campaign's first PC | TypeError: (0 , resolveUserActorId) is not a function |
+| (new) (API) tests/unit/speaker.test.js › resolveUserActorId — the roller / owner first, the first PC only for a GM or solo play solo play: the one PC in the world is anyone's | TypeError: (0 , resolveUserActorId) is not a function |
+| (new) tests/unit/speaker.test.js › resolveUserActorId — the roller / owner first, the first PC only for a GM or solo play a message from a player with no PC resolves to no one, not the campaign's first PC | AssertionError: expected 'pc-kira' to be null |
+| (new) tests/unit/swearTargetBondCrew.test.js › swearing the shared inciting vow every PC the shared vow is sworn on also gets the vow target as a connection | AssertionError: expected [] to deeply equal [ 'conn-vance' ] |
+| (new) tests/unit/swearTargetBondCrew.test.js › swearing the shared inciting vow the oath scene is written for the PC who rolled the swear | AssertionError: expected { vow: { …(3) }, …(1) } to match object { speakerActorId: 'pc-tomas' } |
+
+- New test passing with and without the fix (a control?): tests/unit/chroniclePanel.test.js › the toolbar opens the viewer's own PC's Chronicle control: the GM with no bound PC opens the first PC's
+- New test passing with and without the fix (a control?): tests/unit/privateChannelOwnPc.test.js › publishing a Private Channel reflection control: a bound player publishes as their bound PC
+- New test passing with and without the fix (a control?): tests/unit/rollerAttribution.test.js › Confirm on a draft card puts the connection's bond on the PC the narration was for control: a card that names no PC falls back to the confirming GM's — the first PC
+- New test passing with and without the fix (a control?): tests/unit/speaker.test.js › resolveUserActorId — the roller / owner first, the first PC only for a GM or solo play control: a message carrying only its author's id is resolved through game.users, so a GM author keeps the first-PC fallback
+
+### ced9f5e — fix: the Private Channel stands down while the X-Card is in play (issue #321 U09)
+
+Test files: `tests/unit/private-channel.test.js`, `tests/unit/privateChannelXCard.test.js`. Source restored: 4 file(s).
+
+- With the fix: 60 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 57 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/privateChannelXCard.test.js › publishing a reflection while the X-Card is active puts no narrator (canon) card into main chat during the pause, and tells the player | AssertionError: expected { …(12) } to be null |
+| (new) tests/unit/privateChannelXCard.test.js › the private narrator during an X-Card pause stands down on entry: no Claude call, and the window is told why | AssertionError: expected { ok: true, …(1) } to deeply equal { ok: false, reason: 'x-card' } |
+| (new) tests/unit/privateChannelXCard.test.js › the private narrator during an X-Card pause discards a reply written while the card was played | AssertionError: expected { ok: true, …(1) } to deeply equal { ok: false, reason: 'x-card' } |
+
+- New test passing with and without the fix (a control?): tests/unit/privateChannelXCard.test.js › publishing a reflection while the X-Card is active control: once a GM resumes, the reflection is published as canon
+- New test passing with and without the fix (a control?): tests/unit/privateChannelXCard.test.js › the private narrator during an X-Card pause control: with no X-Card in play the private narrator answers
+
+### 4e1d531 — fix: a default Player's Private Channel history is saved (issue #321 U10)
+
+Test files: `tests/unit/hookGates.test.js`, `tests/unit/privateChannelPlayerJournal.test.js`. Source restored: 2 file(s).
+
+- With the fix: 8 passed, 0 failed.
+- Without it: 4 failed (3 new; 1 only for a missing export); 4 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/hookGates.test.js › document hook handlers run their shared writes on one client every LOCAL_ONLY entry still names an ungated handler | AssertionError: src/private-channel/transcript.js createJournalEntry inline#1 no longer exists — remove it from LOCAL_ONLY: expected false to be true // Object. |
+| (new) tests/unit/privateChannelPlayerJournal.test.js › a default Player's Private Channel transcript is saved when the window flushes: the GM creates the journal, owned by the player | AssertionError: expected '' to contain 'about the ring' |
+| (new) tests/unit/privateChannelPlayerJournal.test.js › a default Player's Private Channel transcript a later flush writes to the same journal — one journal per player | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) (API) tests/unit/privateChannelPlayerJournal.test.js › a default Player's Private Channel transcript the GM serves a repeated create with the journal it already made | TypeError: transcript.applyPrivateJournalCreate is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/privateChannelPlayerJournal.test.js › a default Player's Private Channel transcript control: the GM creates its own transcript journal on its own client
+
+### 79ff7a5 — fix: the Private Channel shows and sends the narrator one transcript (issue #321 U42)
+
+Test files: `tests/unit/private-channel.test.js`, `tests/unit/privateChannelTranscript.test.js`. Source restored: 2 file(s).
+
+- With the fix: 60 passed, 0 failed.
+- Without it: 5 failed (5 new; 3 only for a missing export); 55 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/private-channel.test.js › parseTurnsHtml reads back what renderTurnsHtml wrote, escapes and all | TypeError: parseTurnsHtml is not a function |
+| (new) (API) tests/unit/private-channel.test.js › parseTurnsHtml reads a paragraph the journal editor reformatted, telling the narrator by name | TypeError: parseTurnsHtml is not a function |
+| (new) (API) tests/unit/private-channel.test.js › parseTurnsHtml skips empty paragraphs and reads nothing from nothing | TypeError: parseTurnsHtml is not a function |
+| (new) tests/unit/privateChannelTranscript.test.js › Private Channel reopened in the same session sends the narrator the session's earlier private turns it is showing | AssertionError: expected [ Array(1) ] to deeply equal [ …(3) ] |
+| (new) tests/unit/privateChannelTranscript.test.js › the session's first Private Channel conversation shows each turn once after the debounced save lands | AssertionError: expected 2 to be 1 // Object.is equality |
+
+### 6630c3b — fix: one Pay the Price per result — the narration depicts the card's price (issue #321 U03)
+
+Test files: `tests/unit/payThePriceOneRoll.test.js`, `tests/unit/resolver.test.js`. Source restored: 2 file(s).
+
+- With the fix: 291 passed, 0 failed.
+- Without it: 9 failed (9 new; 3 only for a missing export); 282 still pass (2 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/payThePriceOneRoll.test.js › one result, one Pay the Price (issue #321 U03) a miss: the move narration is seeded with the price the card shows and the table pays, rolled once | AssertionError: expected 'You are separated from something or s…' to be 'A trusted ally is put in harm\'s way' // Object.is equality |
+| (new) tests/unit/payThePriceOneRoll.test.js › one result, one Pay the Price (issue #321 U03) Face Defeat: the narration depicts the card's price, rolled once | AssertionError: expected [ Array(1) ] to deeply equal [ Array(1) ] |
+| (new) tests/unit/resolver.test.js › buildOracleSeeds play-kit consequence tables a miss the pipeline routes to Pay the Price rolls no price of its own — the card's is the one (issue #321 U03) | AssertionError: expected { …(3) } to be null |
+| (new) tests/unit/resolver.test.js › buildOracleSeeds play-kit consequence tables Face Defeat rolls no seed price — it always routes Pay the Price (issue #321 U03) | AssertionError: expected { …(3) } to be null |
+| (new) tests/unit/resolver.test.js › one Pay the Price per result (issue #321 U03) a miss that routes Pay the Price rolls no price for the narrator | AssertionError: expected "spy" to not be called with arguments: [ 'pay_the_price' ] |
+| (new) tests/unit/resolver.test.js › one Pay the Price per result (issue #321 U03) Face Defeat rolls no price for the narrator either | AssertionError: expected "spy" to not be called with arguments: [ 'pay_the_price' ] |
+| (new) (API) tests/unit/resolver.test.js › one Pay the Price per result (issue #321 U03) withPayThePriceSeed — the card's price into the narration's seeds a result with no seeds gets one: the card's price | TypeError: withPayThePriceSeed is not a function |
+| (new) (API) tests/unit/resolver.test.js › one Pay the Price per result (issue #321 U03) withPayThePriceSeed — the card's price into the narration's seeds adds the price after the move's own seeds, leaving them unchanged | TypeError: withPayThePriceSeed is not a function |
+| (new) (API) tests/unit/resolver.test.js › one Pay the Price per result (issue #321 U03) withPayThePriceSeed — the card's price into the narration's seeds no price (the card was not posted) leaves the seeds as they are | TypeError: withPayThePriceSeed is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/resolver.test.js › buildOracleSeeds play-kit consequence tables seeds an advisory Pay the Price on a miss that routes none (Sojourn's, one of its choices)
+- New test passing with and without the fix (a control?): tests/unit/resolver.test.js › one Pay the Price per result (issue #321 U03) control: a miss whose other seeds roll keeps them
+
+### af10b33 — fix: a forced move rolls the stat its narration fits, not its first listed one (issue #321 U04)
+
+Test files: `tests/unit/forcedMoveStat.test.js`, `tests/unit/interpreterExpectedMove.test.js`, `tests/unit/statEnrichment.test.js`. Source restored: 3 file(s).
+
+- With the fix: 66 passed, 0 failed.
+- Without it: 12 failed (12 new; 6 only for a missing export); 54 still pass (3 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/forcedMoveStat.test.js › a forced move rolls the stat its narration fits (issue #321 U04) the pacing "Roll ⟨move⟩" button: the GM reads the stat for the forced move, the dialog shows it, the roll uses it | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/forcedMoveStat.test.js › a forced move rolls the stat its narration fits (issue #321 U04) a way-out button: the canned exit is read for its stat too | AssertionError: expected [ { moveId: 'face_danger', …(1) } ] to deeply equal [ { moveId: 'face_danger', …(1) } ] |
+| (new) tests/unit/interpreterExpectedMove.test.js › interpretMove() — a move already chosen (expectedMoveSlug) tells the model the move is fixed and which stats it lists, with no mischief and no position steer | AssertionError: expected 'No active tracks yet.\n\nINTERPRETATI…' to contain 'MOVE ALREADY CHOSEN: the player chose…' |
+| (new) tests/unit/interpreterExpectedMove.test.js › interpretMove() — a move already chosen (expectedMoveSlug) keeps the chosen move when the model names another — its stat stands when the chosen move lists it | AssertionError: expected { …(18) } to match object { moveId: 'battle', …(3) } |
+| (new) tests/unit/interpreterExpectedMove.test.js › interpretMove() — a move already chosen (expectedMoveSlug) a stat the chosen move does not list gives way to its first | AssertionError: expected 'wits' to be 'heart' // Object.is equality |
+| (new) tests/unit/interpreterExpectedMove.test.js › interpretMove() — a move already chosen (expectedMoveSlug) an unreadable reply keeps the chosen move and its first listed stat | AssertionError: expected { …(17) } to match object { moveId: 'heal', …(3) } |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichForcedMoveStat a move with several stats rolls the one the stat-only reading picks, and says why | TypeError: (0 , enrichForcedMoveStat) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichForcedMoveStat every forced move whose stat is a choice is read — the examples that always rolled +edge or +iron | TypeError: (0 , enrichForcedMoveStat) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichForcedMoveStat no Claude key (no interpreter): the listed stat stays | TypeError: (0 , enrichForcedMoveStat) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichForcedMoveStat nothing to choose — one stat, a progress or no-roll move, or "whichever is higher" — makes no reading | TypeError: (0 , enrichForcedMoveStat) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichForcedMoveStat a stat the move does not list keeps the listed one | TypeError: (0 , enrichForcedMoveStat) is not a function |
+| (new) (API) tests/unit/statEnrichment.test.js › enrichForcedMoveStat a failed reading keeps the listed stat and says so | TypeError: (0 , enrichForcedMoveStat) is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/forcedMoveStat.test.js › a forced move rolls the stat its narration fits (issue #321 U04) control: a forced move with one stat to roll makes no reading
+- New test passing with and without the fix (a control?): tests/unit/interpreterExpectedMove.test.js › interpretMove() — a move already chosen (expectedMoveSlug) control: a reading for the chosen move, with a stat it lists, comes back as read
+- New test passing with and without the fix (a control?): tests/unit/interpreterExpectedMove.test.js › interpretMove() — a move already chosen (expectedMoveSlug) control: without a chosen move the model still picks the move, under mischief
+
+### 481bea4 — fix: an unnamed Fulfill Your Vow scores the roller's vow, or asks which (issue #321 U02)
+
+Test files: `tests/unit/fulfilVowWhichVow.test.js`, `tests/unit/milestone.test.js`, `tests/unit/statEnrichment.test.js`. Source restored: 6 file(s).
+
+- With the fix: 104 passed, 0 failed.
+- Without it: 22 failed (22 new; 12 only for a missing export); 82 still pass (1 new).
+- Verdict: **sensitive** — 10 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/fulfilVowWhichVow.test.js › Attempt to Fulfill Vow names no vow (issue #321 U02) a shared vow held by two PCs is one vow: the button scores it, nothing asked | AssertionError: expected [ { moveTargetId: null, …(1) } ] to deeply equal [ { moveTargetId: null, …(1) } ] |
+| (new) tests/unit/fulfilVowWhichVow.test.js › Attempt to Fulfill Vow names no vow (issue #321 U02) two PCs' own vows: the roller's is scored | AssertionError: expected [ { moveTargetId: null, …(1) } ] to deeply equal [ { moveTargetId: null, …(1) } ] |
+| (new) tests/unit/fulfilVowWhichVow.test.js › Attempt to Fulfill Vow names no vow (issue #321 U02) a solo PC's two vows: nothing rolled — "Which vow?" asks; the pick rolls that vow, once, as the roller | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| (new) tests/unit/fulfilVowWhichVow.test.js › Attempt to Fulfill Vow names no vow (issue #321 U02) only the roller's player (or a GM) may pick for them | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/fulfilVowWhichVow.test.js › Attempt to Fulfill Vow names no vow (issue #321 U02) a picked vow fulfilled before the pick lands is not rolled — and says so | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow control: one PC, one open vow — that vow | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow a shared vow's copies are one vow — the roller's copy | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow a roller who holds no copy (a GM) still finds the one shared vow | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow two PCs, each with their own vow — the roller's | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow a solo PC's background and inciting vows: no vow, both offered — never a 0 score | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow the roller's vows are the choices — a crewmate's own vow is not offered | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow a roller who holds none: everyone's vows, a shared one offered once | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow a shared vow offered among several is the roller's own copy | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow a named vow: the roller's own first, then anyone's — exact, then a substring | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow a picked copy by id: that open copy, else nothing — never another vow | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow a vow the module has not stamped counts as itself | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) (API) tests/unit/milestone.test.js › selectFulfilVow no open vow: nothing, and nothing to offer | TypeError: (0 , selectFulfilVow) is not a function |
+| (new) tests/unit/statEnrichment.test.js › enrichProgressTicks — Fulfill Your Vow naming no vow (issue #321 U02) two PCs whose only vow is their shared vow — the unnamed fulfil scores that vow, not 0 | AssertionError: expected { ticks: +0, source: 'vow', …(3) } to match object { ticks: 32, trackId: 'v1' } |
+| (new) tests/unit/statEnrichment.test.js › enrichProgressTicks — Fulfill Your Vow naming no vow (issue #321 U02) two PCs, each with their own single vow — the roller's vow is scored, not 0 | AssertionError: expected +0 to be 24 // Object.is equality |
+| (new) tests/unit/statEnrichment.test.js › enrichProgressTicks — Fulfill Your Vow naming no vow (issue #321 U02) a "Which vow?" pick scores the copy it names, by id | AssertionError: expected { source: 'vow', ticks: 32, …(3) } to match object { ticks: 36, trackId: 'v2' } |
+| (new) tests/unit/statEnrichment.test.js › enrichProgressTicks — Fulfill Your Vow naming no vow (issue #321 U02) a picked vow fulfilled meanwhile scores nothing — and no journal track stands in for it | AssertionError: expected { source: 'vow', ticks: 40, …(3) } to match object { ticks: +0, trackId: null } |
+| (new) tests/unit/statEnrichment.test.js › enrichProgressTicks — Fulfill Your Vow naming no vow (issue #321 U02) several of the roller's vows open: nothing scored — the pipeline asks which vow first | AssertionError: expected { source: 'vow', ticks: 40, …(3) } to match object { ticks: +0, trackId: null } |
+
+- New test passing with and without the fix (a control?): tests/unit/statEnrichment.test.js › enrichProgressTicks — Fulfill Your Vow naming no vow (issue #321 U02) control: one PC, one open vow — the unnamed fulfil scores it
+
+### 6f911d9 — fix: an unnamed Strike or Undertake an Expedition asks which track instead of making one (issue #321 U16)
+
+Test files: `tests/unit/combat.test.js`, `tests/unit/expedition.test.js`, `tests/unit/progressTrackSelection.test.js`. Source restored: 3 file(s).
+
+- With the fix: 67 passed, 0 failed.
+- Without it: 8 failed (8 new; 0 only for a missing export); 59 still pass (5 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix; 5 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/combat.test.js › applyCombatProgress a fight is created only when none is open (issue #321 U16) with two fights open and no target named, a Strike creates no new fight and marks nothing | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| (new) tests/unit/combat.test.js › applyCombatProgress a fight is created only when none is open (issue #321 U16) a name matching none of the open fights creates none either | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| (new) tests/unit/combat.test.js › applyCombatProgress a fight is created only when none is open (issue #321 U16) a fight named by id (a which-fight pick) is that fight — not a same-named sibling | AssertionError: expected "spy" to be called with arguments: [ 'f3' ] |
+| (new) tests/unit/combat.test.js › applyCombatProgress a fight is created only when none is open (issue #321 U16) a fight named by id that is over is not re-created, and nothing is marked | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| (new) tests/unit/expedition.test.js › applyExpeditionProgress an expedition is begun only when none is open or a new one is named (issue #321 U16) with two expeditions open and no destination named, nothing is begun or marked | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| (new) tests/unit/expedition.test.js › applyExpeditionProgress an expedition is begun only when none is open or a new one is named (issue #321 U16) an expedition named by id (a which-expedition pick) is that one; over, nothing | AssertionError: expected { track: { id: 'new', …(5) }, …(1) } to deeply equal { track: null, created: false, …(1) } |
+| (new) tests/unit/progressTrackSelection.test.js › a move that marks one track, naming none of several, asks which (issue #321 U16) two fights open: an unnamed Strike is not rolled — the pick strikes that fight, for the roller, and no phantom fight is made | AssertionError: expected [ { …(4) } ] to deeply equal [] |
+| (new) tests/unit/progressTrackSelection.test.js › a move that marks one track, naming none of several, asks which (issue #321 U16) two expeditions open: an unnamed Undertake an Expedition asks which; the pick marks that one | AssertionError: expected [ { …(4) } ] to deeply equal [] |
+
+- New test passing with and without the fix (a control?): tests/unit/combat.test.js › applyCombatProgress a fight is created only when none is open (issue #321 U16) control: with one fight open, an unnamed Strike marks that fight
+- New test passing with and without the fix (a control?): tests/unit/combat.test.js › applyCombatProgress a fight is created only when none is open (issue #321 U16) control: entering the fray (beginsFight) begins a new fight beside the open ones
+- New test passing with and without the fix (a control?): tests/unit/expedition.test.js › applyExpeditionProgress an expedition is begun only when none is open or a new one is named (issue #321 U16) control: a destination none of them matches is a new expedition, as before
+- New test passing with and without the fix (a control?): tests/unit/progressTrackSelection.test.js › a move that marks one track, naming none of several, asks which (issue #321 U16) control: a destination none of them matches begins a new expedition, as before
+- New test passing with and without the fix (a control?): tests/unit/progressTrackSelection.test.js › a move that marks one track, naming none of several, asks which (issue #321 U16) control: the Enter the Fray threshold still begins a new fight while two are open
+
+### 413e293 — fix: an Explore a Waypoint miss pays the price (issue #321 U17)
+
+Test files: `tests/unit/payThePriceOneRoll.test.js`, `tests/unit/resolver.test.js`. Source restored: 1 file(s).
+
+- With the fix: 295 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 293 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/payThePriceOneRoll.test.js › an Explore a Waypoint miss pays the price (issue #321 U17) a miss without a match posts the Pay the Price card — once, the price the narration depicts | AssertionError: expected undefined to be defined |
+| (new) tests/unit/resolver.test.js › routePayThePrice on miss/weak outcomes explore_a_waypoint:miss sets routePayThePrice:true | AssertionError: expected false to be true // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/payThePriceOneRoll.test.js › an Explore a Waypoint miss pays the price (issue #321 U17) control: a miss with a match offers Confront Chaos instead — no price is routed
+- New test passing with and without the fix (a control?): tests/unit/resolver.test.js › routePayThePrice on miss/weak outcomes control: explore_a_waypoint:miss with a match offers Confront Chaos instead — the price is not routed
+
+### 4768ebd — fix: an Enter the Fray weak hit that takes the momentum begins in a bad spot (issue #321 U18)
+
+Test files: `tests/unit/resolver.test.js`. Source restored: 1 file(s).
+
+- With the fix: 293 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 292 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/resolver.test.js › CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B) enter_the_fray weak hit — the momentum option begins in a bad spot (issue #321 U18) taking +2 momentum (not 'You are in control') takes the momentum and begins in a bad spot | AssertionError: expected [ { kind: 'meter', …(2) } ] to deeply equal [ { kind: 'meter', …(2) }, …(1) ] |
+
+- New test passing with and without the fix (a control?): tests/unit/resolver.test.js › CONSEQUENCE_MAP — sufferPrompt shape (F16 Phase B) enter_the_fray weak hit — the momentum option begins in a bad spot (issue #321 U18) control: 'You are in control' sets in control alone; the strong hit and the miss set theirs
+
+### 11785cf — fix: Mark Progress on Vow and Recommit apply once per card (issue #321 U20)
+
+Test files: `tests/unit/cardActions.test.js`, `tests/unit/gmRelay.test.js`, `tests/unit/milestoneSuggestionOnce.test.js`, `tests/unit/recommitOnce.test.js`. Source restored: 3 file(s).
+
+- With the fix: 123 passed, 0 failed.
+- Without it: 17 failed (17 new; 11 only for a missing export); 104 still pass (1 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/cardActions.test.js › applyMilestoneSuggestion (issue #321 U20) the roller's player presses: the card is claimed and the move posted once, as the roller | TypeError: applyMilestoneSuggestion is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyMilestoneSuggestion (issue #321 U20) two near-simultaneous presses post exactly one move | TypeError: applyMilestoneSuggestion is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyMilestoneSuggestion (issue #321 U20) another player may not press it for the roller; the clicker's own PC is never substituted | TypeError: applyMilestoneSuggestion is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyMilestoneSuggestion (issue #321 U20) a card from before the roller was stamped marks the clicker's own PC — one they own | TypeError: applyMilestoneSuggestion is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyMilestoneSuggestion (issue #321 U20) a refused claim posts nothing; a failed post releases the claim so the press can be made again | TypeError: applyMilestoneSuggestion is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyMilestoneSuggestion (issue #321 U20) refuses a card that offers no milestone | TypeError: applyMilestoneSuggestion is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyRecommitOffer (issue #321 U20) any user's press claims the offer and recommits once | TypeError: applyRecommitOffer is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyRecommitOffer (issue #321 U20) two near-simultaneous presses recommit exactly once | TypeError: applyRecommitOffer is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyRecommitOffer (issue #321 U20) a refused track write changed nothing: the claim is released, and the press can be made again | TypeError: applyRecommitOffer is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyRecommitOffer (issue #321 U20) an expedition already over keeps the offer closed | TypeError: applyRecommitOffer is not a function |
+| (new) (API) tests/unit/cardActions.test.js › applyRecommitOffer (issue #321 U20) a refused claim recommits nothing; a card that is no offer is refused | TypeError: applyRecommitOffer is not a function |
+| (new) tests/unit/milestoneSuggestionOnce.test.js › "⚑ Mark Progress on Vow" marks one milestone per card (issue #321 U20) the player and the GM both pressing "Mark Progress on Vow" mark one milestone | AssertionError: expected 16 to be 8 // Object.is equality |
+| (new) tests/unit/milestoneSuggestionOnce.test.js › "⚑ Mark Progress on Vow" marks one milestone per card (issue #321 U20) after a re-render the used button stays used | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/milestoneSuggestionOnce.test.js › "⚑ Mark Progress on Vow" marks one milestone per card (issue #321 U20) the card's roller is the one marked: another player may not press it for them; the GM may, as the roller | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/recommitOnce.test.js › one recommit offer recommits once (issue #321 U20) the player and the GM both pressing Recommit on one card recommits once | AssertionError: expected [ { …(7) }, { …(7) } ] to have a length of 1 but got 2 |
+| (new) tests/unit/recommitOnce.test.js › one recommit offer recommits once (issue #321 U20) a player's press is applied on the canonical GM and shows used everywhere | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/recommitOnce.test.js › one recommit offer recommits once (issue #321 U20) a re-rendered offer card does not recommit a second time | AssertionError: expected [ { …(7) }, { …(7) } ] to have a length of 1 but got 2 |
+
+- New test passing with and without the fix (a control?): tests/unit/milestoneSuggestionOnce.test.js › "⚑ Mark Progress on Vow" marks one milestone per card (issue #321 U20) control: the player and the GM both pressing "Make a Discovery" mark the legacy once
+
+### c282a13 — fix: the command-vehicle reconcile runs when the world loads (issue #321 U22)
+
+Test files: `tests/unit/commandVehicleLoadScan.test.js`. Source restored: 1 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/commandVehicleLoadScan.test.js › the command-vehicle reconcile runs at world load (issue #321 U22) a legacy command vehicle is flagged when the world loads | AssertionError: expected 1 to be +0 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/commandVehicleLoadScan.test.js › the command-vehicle reconcile runs at world load (issue #321 U22) control: the reconcile itself works on this harness when it is called
+
+### 08cf719 — test: the "Which vow?" pick handler's refusals and claim release (issue #321 U02)
+
+Skipped: the commit changes nothing under src/.
+
+### 88a72a8 — fix: a session nobody ended rolls over with its gate closed, so Begin a Session runs (issue #321 U12)
+
+Test files: `tests/unit/sessionGateRollover.test.js`, `tests/unit/sessionManagement.test.js`, `tests/unit/sessionRelayDialogs.test.js`. Source restored: 2 file(s).
+
+- With the fix: 63 passed, 0 failed.
+- Without it: 3 failed (2 new; 0 only for a missing export); 60 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sessionGateRollover.test.js › a session nobody ended rolls over with its gate closed (issue #321 U12) the session minted at world load is not "already active" since last week, and can be begun from the panel | AssertionError: expected { …(7) } to match object { sessionActive: false, …(1) } |
+| (new) tests/unit/sessionManagement.test.js › session boundaries (issue #286 C3, C4) a new session starts with its session-active gate closed, and its caller persists the gate | AssertionError: expected { …(6) } to match object { sessionNumber: 5, …(2) } |
+| tests/unit/sessionRelayDialogs.test.js › Begin a Session a session that went idle is begun anew, although nobody ended it | AssertionError: expected 612000001 to be less than 60000 |
+
+- New test passing with and without the fix (a control?): tests/unit/sessionGateRollover.test.js › a session nobody ended rolls over with its gate closed (issue #321 U12) a reload mid-session keeps the gate open — only a new session closes it
+
+### 9cff74f — fix: End a Session's closing vignette features a bond still in play, not a severed one (issue #321 U61)
+
+Test files: `tests/unit/endSessionVignetteSeveredBond.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/endSessionVignetteSeveredBond.test.js › selectEndSessionNPC — a severed bond is not the closing vignette's NPC skips a severed (inactive) bond and features the live one | AssertionError: expected 'Vance' to be 'Ilse' // Object.is equality |
+| (new) tests/unit/endSessionVignetteSeveredBond.test.js › selectEndSessionNPC — a severed bond is not the closing vignette's NPC with only a severed bond, an active connection is featured instead | AssertionError: expected { kind: 'bonded_connection', …(2) } to match object { kind: 'connection', name: 'Doran' } |
+| (new) tests/unit/endSessionVignetteSeveredBond.test.js › selectEndSessionNPC — a severed bond is not the closing vignette's NPC with only a severed bond and nothing else, the vignette falls back — never the lost NPC | AssertionError: expected 'bonded_connection' to be 'fallback' // Object.is equality |
+
+### f6050b0 — fix: a shared vow's deadline is one clock on Pay the Price — listed once, one trigger vignette (issue #321 U55)
+
+Test files: `tests/unit/actorBridge.test.js`, `tests/unit/sharedVowClockOnce.test.js`. Source restored: 2 file(s).
+
+- With the fix: 109 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 104 still pass (1 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/actorBridge.test.js › advanceVowClocks with a lockstep map, later copies of a vowId follow the first copy instead of advancing again | AssertionError: expected [ [ 'va', 3, undefined ], …(2) ] to deeply equal [ [ 'va', 3, 'shared-1' ], …(2) ] |
+| (new) tests/unit/sharedVowClockOnce.test.js › one shared vow, three PCs — Pay the Price fills its deadline once (issue #321 U55) the clock card lists the shared deadline once | AssertionError: expected 3 to be 1 // Object.is equality |
+| (new) tests/unit/sharedVowClockOnce.test.js › one shared vow, three PCs — Pay the Price fills its deadline once (issue #321 U55) one trigger vignette (one Claude call, one TRIGGERED card) for the one deadline | AssertionError: expected { claudeCalls: 3, cards: 3 } to deeply equal { claudeCalls: 1, cards: 1 } |
+| (new) tests/unit/sharedVowClockOnce.test.js › one shared vow, three PCs — Pay the Price fills its deadline once (issue #321 U55) every PC's copy still advances, and the result lists each copy for the Burn Momentum reversal | AssertionError: expected [ …(3) ] to deeply equal [ …(3) ] |
+| (new) tests/unit/sharedVowClockOnce.test.js › one shared vow, three PCs — Pay the Price fills its deadline once (issue #321 U55) the copies move together: a sibling the sync hook already moved is not advanced a second time | AssertionError: expected [ 3, 4, 4 ] to deeply equal [ 3, 3, 3 ] |
+
+- New test passing with and without the fix (a control?): tests/unit/sharedVowClockOnce.test.js › one shared vow, three PCs — Pay the Price fills its deadline once (issue #321 U55) two PCs' own vows of the same name are two clocks — each keeps its line
+
+### 25c47ac — fix: !oracle yes accepts "small chance" and "almost certain" as odds (issue #321 U64)
+
+Test files: `tests/unit/chatCommandRouting.test.js`. Source restored: 1 file(s).
+
+- With the fix: 30 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 28 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/chatCommandRouting.test.js › !oracle yes — the rulebook's two-word odds names "almost certain" rolls at Almost Certain odds, not 50/50 | AssertionError: expected { Object (name, question, ...) } to match object { …(2) } |
+| (new) tests/unit/chatCommandRouting.test.js › !oracle yes — the rulebook's two-word odds names "small chance" keeps "chance" out of the question | AssertionError: expected { …(3) } to match object { …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/chatCommandRouting.test.js › !oracle yes — the rulebook's two-word odds names a one-word alias still works, and a question that merely starts with an odds word is not eaten
+
+### 96bd02c — fix: the narrator's World Truths name a truth's rolled detail, such as who the war was against (issue #321 U66)
+
+Test files: `tests/unit/narratorPrompt.test.js`. Source restored: 1 file(s).
+
+- With the fix: 147 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 146 still pass (0 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/narratorPrompt.test.js › buildNarratorSystemPrompt() WORLD TRUTHS carries a truth's rolled sub-table detail, with its label | AssertionError: expected '## NARRATOR ROLE AND VOICE\n\nYou are…' to contain 'Cataclysm: We escaped the ravages of …' |
+
+### 90bbb4d — fix: the Playtest Quickstart's World Truths count as established and never overwrite a GM's own "World Truths" journal (issue #321 U67)
+
+Test files: `tests/unit/truths.test.js`. Source restored: 1 file(s).
+
+- With the fix: 36 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 31 still pass (0 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/truths.test.js › storeWorldTruths records the truths as established: worldTruthsSet and worldTruthsJournalId alongside worldTruths | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/truths.test.js › storeWorldTruths a GM journal named "World Truths" (no module flag) keeps its content — the module writes its own | AssertionError: expected '&lt;h2>Cataclysm&lt;/h2>\n      &lt;p>&lt;strong>…' to be '&lt;p>The GM\'s own truths, written by h…' // Object.is equality |
+| (new) tests/unit/truths.test.js › storeWorldTruths a second run rewrites the module's own journal — found by the recorded id, though the GM renamed it — and keeps its other pages | AssertionError: expected { id: 'j-new-2', …(4) } to be { id: 'j-new-1', …(4) } // Object.is equality |
+| (new) tests/unit/truths.test.js › storeWorldTruths found by its flag when the recorded id names another journal; a lost truths page is re-created, never written over the lore page | AssertionError: expected '&lt;h2>Cataclysm&lt;/h2>\n      &lt;p>&lt;strong>…' to be '&lt;p>Lore.&lt;/p>' // Object.is equality |
+| (new) tests/unit/truths.test.js › storeWorldTruths writes only the truths fields — a write that lands while the journal is created is kept | AssertionError: expected { worldTruths: { …(14) }, …(37) } to match object { xCardActive: true, …(1) } |
+
+### 718991b — fix: after the World Truths are revised in the truths dialog, !lore summarises the revised truths (issue #321 U65)
+
+Test files: `tests/unit/revisedTruthsLore.test.js`. Source restored: 2 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/revisedTruthsLore.test.js › after the truths are revised, !lore summarises the revised truths (issue #321 U65) a second Save in the truths dialog becomes the journal !lore reads | AssertionError: expected { worldTruths: { …(14) }, …(36) } to match object { worldTruthsSet: true, …(1) } |
+| (new) tests/unit/revisedTruthsLore.test.js › after the truths are revised, !lore summarises the revised truths (issue #321 U65) with the recorded journal gone, !lore falls back to the newest truths journal and records it | AssertionError: expected 'Summarise these world truths:\n\nCata…' to contain 'Interdimensional entities' |
+
+- New test passing with and without the fix (a control?): tests/unit/revisedTruthsLore.test.js › after the truths are revised, !lore summarises the revised truths (issue #321 U65) a page with no truth selections (the dialog's empty save) does not move the record
+
+### 68b0e11 — fix: oracle rolls resolve "Roll three times", "Ships in conflict (roll twice)" and Ultra-scale instead of returning the instruction (issue #321 U68)
+
+Test files: `tests/unit/oracleRoller.test.js`. Source restored: 2 file(s).
+
+- With the fix: 32 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 28 still pass (0 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — directive resolution every directive wording resolves (issue #321 U68) Space Sighting 99 "Roll three times" rolls three results, in every region | AssertionError: expected 'Roll three times' to be 'Debris field: Mineral asteroids / Lar…' // Object.is equality |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — directive resolution every directive wording resolves (issue #321 U68) Starship Type "Ships in conflict (roll twice)" names the two ships under its heading | AssertionError: expected 'Ships in conflict (roll twice)' to be 'Ships in conflict: Corvette — Light a…' // Object.is equality |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — directive resolution every directive wording resolves (issue #321 U68) Creature Scale 100 "Ultra-scale" rolls on the registered Ultra-scale table | AssertionError: expected 'Ultra-scale (roll on ultra table)' to be 'Ultra-scale: Colossal (mountain-sized)' // Object.is equality |
+| (new) tests/unit/oracleRoller.test.js › rollOracle — directive resolution every directive wording resolves (issue #321 U68) no registered table returns a directive's own words at any roll | AssertionError: expected [ …(13) ] to deeply equal [] |
+
+### e0c64d2 — fix: twenty oracle tables now match the rulebook's data roll for roll (issue #321 U63)
+
+Test files: `tests/unit/oracleTableFidelity.test.js`, `tests/unit/sectorGenerator.test.js`. Source restored: 11 file(s).
+
+- With the fix: 84 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 83 still pass (0 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sectorGenerator.test.js › rollTableResult — directive handling FAMILY_NAMES is the rulebook's 100 single names — 81 is Duval, 100 is Volkov | AssertionError: expected 'Adler-Bai' to be 'Duval' // Object.is equality |
+
+### 0a8b6b6 — fix: the GM synthesises each narrator clip once when its own playback and a player both ask for it (issue #321 U59)
+
+Test files: `tests/unit/audioSynthesisOnce.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/audioSynthesisOnce.test.js › the canonical GM synthesises a clip once (issue #321 U59) its own playback first, then a player request for the same clip: one synthesis, one upload | AssertionError: expected "spy" to be called 1 times, but got 2 times |
+| (new) tests/unit/audioSynthesisOnce.test.js › the canonical GM synthesises a clip once (issue #321 U59) a player request first, then the GM presses Play: the playback waits for that synthesis | AssertionError: expected "spy" to be called 1 times, but got 2 times |
+
+- New test passing with and without the fix (a control?): tests/unit/audioSynthesisOnce.test.js › the canonical GM synthesises a clip once (issue #321 U59) a failed synthesis is not remembered — the next request tries again
+
+### cc3cc68 — fix: a keyless player plays the narrator clip the GM cached for it, without needing file-browser permission (issue #321 U60)
+
+Test files: `tests/unit/audioKeylessPlayback.test.js`, `tests/unit/nonGmClientPaths.test.js`. Source restored: 1 file(s).
+
+- With the fix: 16 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 12 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/audioKeylessPlayback.test.js › a keyless player without File Browser permission (issue #321 U60) plays the clip the GM just synthesised and cached for it | AssertionError: expected [ { kind: 'audio.synth.done', …(1) } ] to deeply equal [ { kind: 'audio.synth.done', …(2) } ] |
+| (new) tests/unit/nonGmClientPaths.test.js › handleSynthRequest — GM synthesises on a keyless client request synthesises + caches an uncached clip, then signals done with the path it wrote | AssertionError: expected { kind: 'audio.synth.done', …(1) } to deeply equal { kind: 'audio.synth.done', …(2) } |
+| (new) tests/unit/nonGmClientPaths.test.js › handleSynthRequest — GM synthesises on a keyless client request skips synthesis when the clip is already cached, but still signals done with its path | AssertionError: expected undefined to be '/worlds/test/audio/abc.mp3' // Object.is equality |
+| (new) tests/unit/nonGmClientPaths.test.js › handleSynthRequest — GM synthesises on a keyless client request signals done without synthesising when the GM has no key — no path | AssertionError: expected undefined to be null |
+
+- New test passing with and without the fix (a control?): tests/unit/audioKeylessPlayback.test.js › a keyless player without File Browser permission (issue #321 U60) control — a Trusted Player, who may browse, plays it too
+- New test passing with and without the fix (a control?): tests/unit/audioKeylessPlayback.test.js › a keyless player without File Browser permission (issue #321 U60) a done signal naming some other file is not played
+
+### 3c092ef — fix: a refused save of the World Truths journal link leaves the GM's client agreeing with the world (issue #321, U58 shape in the U65 hooks)
+
+Test files: `tests/unit/revisedTruthsLore.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 4 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/revisedTruthsLore.test.js › the truths-journal hooks leave the cached setting alone when the write is refused createJournalEntry | AssertionError: expected { worldTruths: { …(14) }, …(36) } to match object { worldTruthsSet: false, …(1) } |
+
+- New test passing with and without the fix (a control?): tests/unit/revisedTruthsLore.test.js › the truths-journal hooks leave the cached setting alone when the write is refused createJournalEntryPage
+
+### 26baf6c — fix: renaming or editing a sector settlement keeps the Sector Record's list (issue #321 U13)
+
+Test files: `tests/unit/sectorOverview.test.js`. Source restored: 1 file(s).
+
+- With the fix: 17 passed, 0 failed.
+- Without it: 11 failed (6 new; 0 only for a missing export); 6 still pass (0 new).
+- Verdict: **sensitive** — 11 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sectorOverview.test.js › buildSettlementsListHtml lists a stored sector record from its map data, each row from the settlement Actor | AssertionError: expected '&lt;!-- sf:settlements-list -->&lt;ul>&lt;/ul>…' to contain '&lt;li>@UUID[Actor.actor-A]{Bleakhold} —…' |
+| (new) tests/unit/sectorOverview.test.js › buildSettlementsListHtml shows the Actor's current name, class, population and authority over the generated values | AssertionError: expected '&lt;!-- sf:settlements-list -->&lt;ul>&lt;li>@…' to contain '@UUID[Actor.actor-A]{Bleak Hold Stati…' |
+| (new) tests/unit/sectorOverview.test.js › buildSettlementsListHtml keeps a map row whose settlement Actor is gone, as a plain name | AssertionError: expected '&lt;!-- sf:settlements-list -->&lt;ul>&lt;/ul>…' to contain '&lt;li>Lost Haven — Orbital, Pop: , Auth…' |
+| tests/unit/sectorOverview.test.js › rewriteSectorOverviewSettlements — surgical replacement replaces the marker-wrapped block when present, preserving the narrator stub | AssertionError: expected '&lt;h2>Sigma Draconis&lt;/h2>\n&lt;p class="na…' to contain '@UUID[Actor.actor-A]{Bleakhold} — Pla…' |
+| tests/unit/sectorOverview.test.js › rewriteSectorOverviewSettlements — surgical replacement uses the heuristic &lt;h3>Settlements&lt;/h3>&lt;ul>...&lt;/ul> when no markers exist | AssertionError: expected '&lt;h2>Pelican Reach&lt;/h2>\n&lt;p class="nar…' to contain '@UUID[Actor.actor-B]{Outpost 7}' |
+| tests/unit/sectorOverview.test.js › rewriteSectorOverviewSettlements — surgical replacement follows the migrated.toActorId pointer on a legacy journal | AssertionError: expected false to be true // Object.is equality |
+| tests/unit/sectorOverview.test.js › rewriteSectorOverviewSettlements — surgical replacement returns false when no rewrite is needed (idempotent) | AssertionError: expected true to be false // Object.is equality |
+| tests/unit/sectorOverview.test.js › registerSectorOverviewSync — live updateActor hook rewrites the overview when a settlement actor is renamed | AssertionError: expected '&lt;h3>Settlements&lt;/h3>\n&lt;!-- sf:settlem…' to contain '@UUID[Actor.actor-L]{New Name} — Orbi…' |
+| (new) tests/unit/sectorOverview.test.js › registerSectorOverviewSync — live updateActor hook a GM's edit to the Actor's class, population or authority shows in its row | AssertionError: expected '&lt;h3>Settlements&lt;/h3>\n&lt;!-- sf:settlem…' to contain '@UUID[Actor.actor-E]{Hold} — Planetsi…' |
+| (new) tests/unit/sectorOverview.test.js › the overview of a sector the creator stored (real generate → store chain) a rewrite of the stored record still lists every settlement | AssertionError: expected '&lt;h2>Forgotten Juncture&lt;/h2>\n&lt;p>&lt;stro…' to contain '@UUID[Actor.9HcasbjW3d16eGCj]{Vega}' |
+| (new) tests/unit/sectorOverview.test.js › the overview of a sector the creator stored (real generate → store chain) renaming a settlement Actor (the live updateActor sync) keeps the list, renamed | AssertionError: expected '&lt;h2>Kronos Pyre&lt;/h2>\n&lt;p>&lt;strong>Regi…' to contain '@UUID[Actor.UyUFd8lT4iP63kvq]{Bleak H…' |
+
+### 87e2a28 — fix: !migrate-entities keeps the pages a GM added to a Sector Record (issue #321 U49)
+
+Test files: `tests/unit/entityMigrator.test.js`, `tests/unit/sectorOverview.test.js`. Source restored: 1 file(s).
+
+- With the fix: 49 passed, 0 failed.
+- Without it: 5 failed (4 new; 0 only for a missing export); 44 still pass (1 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/entityMigrator.test.js › sector-record overview rewrite (Phase 3.5) rewrites existing overview pages to use UUID links and deletes per-settlement embedded pages | AssertionError: expected true to be undefined |
+| (new) tests/unit/sectorOverview.test.js › cleanupSectorRecordPages keeps a page the GM added — its name is no settlement's, or its body is not the generated layout | AssertionError: expected 2 to be +0 // Object.is equality |
+| (new) tests/unit/sectorOverview.test.js › cleanupSectorRecordPages keeps a legacy settlement page whose Notes the GM wrote | AssertionError: expected 2 to be +0 // Object.is equality |
+| (new) tests/unit/sectorOverview.test.js › cleanupSectorRecordPages deletes nothing when the sector's record is not stored (nothing identifies its settlements) | AssertionError: expected 1 to be +0 // Object.is equality |
+| (new) tests/unit/sectorOverview.test.js › the overview of a sector the creator stored (real generate → store chain) !migrate-entities' page cleanup keeps a page the GM added to the sector record | AssertionError: expected 1 to be +0 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/sectorOverview.test.js › cleanupSectorRecordPages deletes the legacy per-settlement pages the old sector creator wrote
+
+### 7f6e838 — fix: a second Create Sector click while a sector is being created does nothing (issue #321 U46)
+
+Test files: `tests/unit/sectorPanel.test.js`. Source restored: 1 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sectorPanel.test.js › Sector Creator wizard — Create Sector runs once a second Create Sector click while the first run is in flight creates nothing more | AssertionError: expected "spy" to be called 1 times, but got 2 times |
+| (new) tests/unit/sectorPanel.test.js › Sector Creator wizard — Create Sector runs once holds Create and Re-generate disabled while the creation runs; neither does anything meanwhile | AssertionError: expected '&lt;div class="sf-wizard-body sf-wizard-…' to match /data-action="finalizeSector" disabled/ |
+| (new) tests/unit/sectorPanel.test.js › Sector Creator wizard — Create Sector runs once a failed creation releases the guard, so Create can be retried | AssertionError: expected undefined to be false // Object.is equality |
+| (new) tests/unit/sectorPanel.test.js › runSectorCreationPipeline — idempotent per sector id a call while the same sector's creation runs joins it: one set of Actors, one Scene, one record | AssertionError: expected { id: 'W9qFHyjX3bEX7Uz7', …(16) } to be { id: 'W9qFHyjX3bEX7Uz7', …(16) } // Object.is equality |
+| (new) tests/unit/sectorPanel.test.js › runSectorCreationPipeline — idempotent per sector id a call for a sector already stored returns its record and creates nothing | AssertionError: expected { id: 'EoMmZt53tyB15bkN', …(16) } to deeply equal { id: 'EoMmZt53tyB15bkN', …(16) } |
+
+- New test passing with and without the fix (a control?): tests/unit/sectorPanel.test.js › runSectorCreationPipeline — idempotent per sector id a failed run is not stored, so the same sector can be created again
+
+### 2b40416 — fix: a new sector zooms in on its starting settlement — first look, initial contact, trouble (issue #321 U50)
+
+Test files: `tests/unit/sectorGenerator.test.js`, `tests/unit/sectorPanel.test.js`. Source restored: 3 file(s).
+
+- With the fix: 96 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 90 still pass (0 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sectorGenerator.test.js › generateSector — zoom in on the starting settlement (step 8) terminus: the starting settlement gets a first look (1–2), an initial contact and a trouble; the others none | AssertionError: expected 0 to be greater than or equal to 1 |
+| (new) tests/unit/sectorGenerator.test.js › generateSector — zoom in on the starting settlement (step 8) outlands: the starting settlement gets a first look (1–2), an initial contact and a trouble; the others none | AssertionError: expected 0 to be greater than or equal to 1 |
+| (new) tests/unit/sectorGenerator.test.js › generateSector — zoom in on the starting settlement (step 8) expanse: the starting settlement gets a first look (1–2), an initial contact and a trouble; the others none | AssertionError: expected 0 to be greater than or equal to 1 |
+| (new) tests/unit/sectorGenerator.test.js › generateSector — zoom in on the starting settlement (step 8) rides onto the starting settlement's Actor and reaches the narrator's settlement card | AssertionError: expected '' to be undefined // Object.is equality |
+| (new) tests/unit/sectorGenerator.test.js › generateSector — zoom in on the starting settlement (step 8) the narrator stub prompt for the starting settlement carries its first look and initial contact | AssertionError: expected 'You are the narrator for an Ironsworn…' to contain 'First look: ' |
+| (new) tests/unit/sectorPanel.test.js › Sector Creator wizard — the starting settlement's zoom-in (issue #321 U50) previews the starting settlement's first look, initial contact and trouble, on its entry only | AssertionError: expected '&lt;div class="sf-wizard-body sf-wizard-…' to contain '🔍 Starting settlement — First look: …' |
+
+### 5ff101f — fix: the narrator knows the planet and star beside each sector settlement (issue #321 U51)
+
+Test files: `tests/unit/narratorPrompt.test.js`, `tests/unit/sectorContext.test.js`, `tests/unit/sectorPlanetsNarrator.test.js`. Source restored: 2 file(s).
+
+- With the fix: 168 passed, 0 failed.
+- Without it: 6 failed (6 new; 1 only for a missing export); 162 still pass (0 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/narratorPrompt.test.js › formatEntityCard — a sector settlement's planet and star shows the rolled planet as "Name (Type)" and the stellar object | AssertionError: expected '## BLEAKHOLD — Settlement\n\nESTABLIS…' to contain '  Planet: Vorn Prime (Desert World)' |
+| (new) tests/unit/narratorPrompt.test.js › formatEntityCard — a sector settlement's planet and star omits the Planet line for a deep-space settlement (no planet rolled) | AssertionError: expected '## BLEAKHOLD — Settlement\n\nESTABLIS…' to contain '  Stellar object: Red star' |
+| (new) (API) tests/unit/narratorPrompt.test.js › formatSettlementPlanet renders a rolled planet record, a bare string, and nothing | TypeError: (0 , formatSettlementPlanet) is not a function |
+| (new) tests/unit/sectorContext.test.js › formatActiveSector — sector cast & attributes (PLAYTEST-1712 T) names each settlement's rolled planet and stellar object — the world and star pinned beside it on the map (issue #321 U51) | AssertionError: expected 'Active sector: Igneous Maze\nRegion: …' to contain '- Hypatia (Authority: Corrupt; Troubl…' |
+| (new) tests/unit/sectorPlanetsNarrator.test.js › a generated sector's planets and stars reach the narrator the active sector roster and the settlement's card name its rolled planet and stellar object | AssertionError: expected '- Glimmer (Authority: Tolerant; Troub…' to contain 'Planet: Ulven Alpha (Furnace World)' |
+| (new) tests/unit/sectorPlanetsNarrator.test.js › a generated sector's planets and stars reach the narrator a deep-space settlement names its stellar object and no planet | AssertionError: expected '- Solitude (Authority: None / lawless…' to contain 'Stellar object: Blazing blue star' |
+
+### 5f74fcb — fix: a site named exactly is that site or none, the active sector's first (issue #321 U48)
+
+Test files: `tests/unit/precursorSites.test.js`, `tests/unit/siteDiscovery.test.js`. Source restored: 1 file(s).
+
+- With the fix: 52 passed, 0 failed.
+- Without it: 8 failed (8 new; 0 only for a missing export); 44 still pass (1 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/precursorSites.test.js › selectSectorSite — generated names (issue #321 U48) an exact name in the active sector beats a same-named site in an older sector | AssertionError: expected 'sector-A' to be 'sector-B' // Object.is equality |
+| (new) tests/unit/precursorSites.test.js › selectSectorSite — generated names (issue #321 U48) a generic type label is settled by the active sector, not the oldest sector | AssertionError: expected 'sector-A' to be 'sector-B' // Object.is equality |
+| (new) tests/unit/precursorSites.test.js › selectSectorSite — generated names (issue #321 U48) an exact name for an already-charted site never falls through to its numbered sibling | AssertionError: expected { …(2) } to be null |
+| (new) tests/unit/precursorSites.test.js › selectSectorSite — generated names (issue #321 U48) an expedition to an already-charted vault is not linked to a different undiscovered vault | AssertionError: expected { …(2) } to be null |
+| (new) tests/unit/precursorSites.test.js › selectSectorSite — generated names (issue #321 U48) an active-sector namesake that no longer qualifies settles the name — nothing, not another sector's | AssertionError: expected { …(2) } to be null |
+| (new) tests/unit/precursorSites.test.js › selectSectorSite — generated names (issue #321 U48) a site link to a site that no longer qualifies returns nothing — no guess by name | AssertionError: expected { id: 'v2', …(3) } to be null |
+| (new) tests/unit/precursorSites.test.js › selectSectorSite — generated names (issue #321 U48) clearing by the exact name of a site not yet discovered clears nothing | AssertionError: expected { id: 'v2', …(4) } to be null |
+| (new) tests/unit/siteDiscovery.test.js › revealSectorSite — stored siteId link (expedition→site FK) reveals nothing when the linked site is already discovered — not another site by label | AssertionError: expected { sector: { id: 'sec', …(2) }, …(1) } to be null |
+
+- New test passing with and without the fix (a control?): tests/unit/siteDiscovery.test.js › revealSectorSite — stored siteId link (expedition→site FK) falls back to the label when the link names no stored site
+
+### ec8fe0a — fix: creating another sector no longer moves the ship onto its map (issue #321 U47)
+
+Test files: `tests/unit/sectorSceneBuilder.test.js`. Source restored: 1 file(s).
+
+- With the fix: 21 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 20 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sectorSceneBuilder.test.js › placeCommandVehicleTokenIfPresent — a ship already somewhere is not moved (issue #321 U47) creating a second sector leaves the ship where it is; the new map still gets its token | AssertionError: expected undefined to be true // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/sectorSceneBuilder.test.js › placeCommandVehicleTokenIfPresent — a ship already somewhere is not moved (issue #321 U47) a ship with no position yet is placed as a position statement — the new map grounds where it is
+
+### 804d44f — fix: dropping the ship on a settlement pin arrives at that settlement, renamed or not (issue #321 U52)
+
+Test files: `tests/unit/sectorSceneHooks.test.js`, `tests/unit/shipPosition.test.js`, `tests/unit/tokenDragArrival.test.js`. Source restored: 4 file(s).
+
+- With the fix: 93 passed, 0 failed.
+- Without it: 11 failed (10 new; 6 only for a missing export); 82 still pass (0 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/sectorSceneHooks.test.js › handleCommandVehicleTokenDrag returns false (cancels drag) and dispatches set_a_course when drop is near a settlement | AssertionError: expected { sceneId: 'scene1', …(6) } to deeply equal { sceneId: 'scene1', …(3) } |
+| (new) tests/unit/sectorSceneHooks.test.js › handleCommandVehicleTokenDrag names the pin's settlement Actor — its current name, and its id for the arrival (issue #321 U52) | AssertionError: expected 'I set a course for Bleakhold.' to be 'I set a course for Bleak Hold Station.' // Object.is equality |
+| (new) tests/unit/sectorSceneHooks.test.js › dropping the ship on a renamed settlement pin sets a course for the settlement the pin links, by its current name | TypeError: Cannot read properties of undefined (reading 'flags') |
+| (new) (API) tests/unit/sectorSceneHooks.test.js › handleSettlementPinRename — a pin label follows its settlement Actor (issue #321 U52) renames the settlement's own pins on every sector scene — not its planet, star or site pins | TypeError: (0 , handleSettlementPinRename) is not a function |
+| (new) (API) tests/unit/sectorSceneHooks.test.js › handleSettlementPinRename — a pin label follows its settlement Actor (issue #321 U52) ignores updates without a rename, non-location actors and non-sector scenes | TypeError: (0 , handleSettlementPinRename) is not a function |
+| (new) (API) tests/unit/sectorSceneHooks.test.js › handleSettlementPinRename — a pin label follows its settlement Actor (issue #321 U52) leaves the shared Notes to the canonical GM — a player's client does not write them | TypeError: (0 , handleSettlementPinRename) is not a function |
+| (new) tests/unit/sectorSceneHooks.test.js › handleSettlementPinRename — a pin label follows its settlement Actor (issue #321 U52) is registered on updateActor | AssertionError: the given combination of arguments (undefined and undefined) is invalid for this assertion. You can use an array, a map, an object, a set, a str |
+| (new) (API) tests/unit/shipPosition.test.js › inferShipPositionFromEntityId — arrival by the destination's id records the settlement the id names, in its own sector — not a namesake the name finds first | TypeError: (0 , inferShipPositionFromEntityId) is not a function |
+| (new) (API) tests/unit/shipPosition.test.js › inferShipPositionFromEntityId — arrival by the destination's id resolves the planet a settlement belongs to, as the name path does | TypeError: (0 , inferShipPositionFromEntityId) is not a function |
+| (new) (API) tests/unit/shipPosition.test.js › inferShipPositionFromEntityId — arrival by the destination's id a planet or a location id records that place; anything else is null (the name decides) | TypeError: (0 , inferShipPositionFromEntityId) is not a function |
+| (new) tests/unit/tokenDragArrival.test.js › a Set a Course started by dropping the ship on a sector pin arrives at the pin's settlement — the ship's position and the current location — not a namesake | AssertionError: expected 'actor-old-bleak' to be 'actor-new-bleak' // Object.is equality |
+
+### eb22041 — fix: a ship token parked near a settlement, or auto-placed, reads "near" it, not "docked at" (issue #321 U53)
+
+Test files: `tests/unit/sectorSceneHooks.test.js`, `tests/unit/shipPosition.test.js`. Source restored: 3 file(s).
+
+- With the fix: 95 passed, 0 failed.
+- Without it: 5 failed (2 new; 0 only for a missing export); 90 still pass (2 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/sectorSceneHooks.test.js › computeTokenPositionRecord associates with the nearest settlement pin and prefers its actorId | AssertionError: expected 'scene_token' to be 'token_placement' // Object.is equality |
+| tests/unit/sectorSceneHooks.test.js › computeTokenPositionRecord records honest deep space when no pin is within the near radius | AssertionError: expected 'scene_token' to be 'token_placement' // Object.is equality |
+| (new) tests/unit/sectorSceneHooks.test.js › a token parked off a settlement pin reads 'near' it two cells off the pin — outside the snap radius, inside the near radius | AssertionError: expected 'SHIP POSITION: Wayfarer docked at Ble…' to be 'SHIP POSITION: Wayfarer near Bleakhol…' // Object.is equality |
+| (new) tests/unit/sectorSceneHooks.test.js › a token parked off a settlement pin reads 'near' it auto-placed on the map (a new ship, no position yet) — the placement is recorded as near | AssertionError: expected 'SHIP POSITION: Wayfarer docked at Ble…' to contain 'near Bleakhold' |
+| tests/unit/sectorSceneHooks.test.js › token placement / reposition → position record write placement on a sector scene writes the position from the token coords | AssertionError: expected 'scene_token' to be 'token_placement' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/shipPosition.test.js › formatShipPositionLine — mobility status (Finding L) scene_token source (the Set a Course a token dropped ON a pin starts — an arrival) → "docked at" phrasing
+- New test passing with and without the fix (a control?): tests/unit/shipPosition.test.js › formatShipPositionLine — mobility status (Finding L) token_placement source (the token's own place on the map) → "near" phrasing
+
+### 568964e — fix: with Ship Positioning or Auto-Move off, dragging the ship onto a pin just moves it (issue #321 U54)
+
+Test files: `tests/unit/sectorSceneHooks.test.js`. Source restored: 2 file(s).
+
+- With the fix: 52 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 49 still pass (0 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sectorSceneHooks.test.js › handleCommandVehicleTokenDrag with Ship Positioning off, a drop on a pin is a plain token move — nothing is cancelled or rolled | AssertionError: expected false to be undefined |
+| (new) tests/unit/sectorSceneHooks.test.js › handleCommandVehicleTokenDrag with Auto-Move Ship on Set a Course off, a drop on a pin is a plain token move — nothing is cancelled or rolled | AssertionError: expected false to be undefined |
+| (new) tests/unit/sectorSceneHooks.test.js › token placement / reposition → position record write with Auto-Move off, a drop onto a pin lands as a position note — near it, no roll (issue #321 U54) | AssertionError: expected false to be undefined |
+
+### 7f48b53 — fix: !lore keeps what lands during its Claude call, and a move keeps the new recap (issue #321 U06a, U06g)
+
+Test files: `tests/unit/loreRecapMoveMerge.test.js`, `tests/unit/loreRecapStaleWrite.test.js`. Source restored: 2 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/loreRecapMoveMerge.test.js › persistResolution keeps a lore recap written while the move resolved !lore during a move: the recap survives the move's persist | AssertionError: expected '' to match /Forge forgives nothing/ |
+| (new) tests/unit/loreRecapStaleWrite.test.js › !lore does not revert writes that land during its Claude call a player's X-Card played while the GM's !lore recap generates stays in force | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/loreRecapStaleWrite.test.js › !lore does not revert writes that land during its Claude call !lore typed while a player's move holds the lock does not resurrect the lock after the move releases it | AssertionError: expected true to be false // Object.is equality |
+
+### 71182f0 — fix: !truth and !state write only what they changed, onto the store as it is then (issue #321 U06b)
+
+Test files: `tests/unit/factCommandStaleWrite.test.js`. Source restored: 3 file(s).
+
+- With the fix: 10 passed, 0 failed.
+- Without it: 8 failed (8 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/factCommandStaleWrite.test.js › !truth strike on the canonical GM does not revert an X-Card that lands while the strike propagates | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/factCommandStaleWrite.test.js › !truth strike on the canonical GM does not re-take a move lock released while the strike propagates | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/factCommandStaleWrite.test.js › !truth strike on the canonical GM keeps a narration's truth that lands while the strike propagates | AssertionError: expected [ [ 'tr-dock0001', true ] ] to deeply equal [ [ 'tr-dock0001', true ], …(1) ] |
+| (new) tests/unit/factCommandStaleWrite.test.js › !truth strike on the canonical GM marks the stored rolling summary for a regen — a summary regenerated meanwhile keeps its text | AssertionError: expected { text: 'Old summary.', …(3) } to match object { text: 'Newer summary.', …(1) } |
+| (new) tests/unit/factCommandStaleWrite.test.js › !truth strike on the canonical GM writes nothing when the strike matches no truth | AssertionError: expected [ [ 'starforged-companion', …(2) ] ] to deeply equal [] |
+| (new) tests/unit/factCommandStaleWrite.test.js › !truth strike on the canonical GM does not change the cached setting value before its own write | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/factCommandStaleWrite.test.js › persistSceneLedgerFields — a further owned change (opts.onto) makes the change on the latest store, in the same write as the merged ledgers | AssertionError: expected { currentSceneId: 'sc-1', …(3) } to match object { premise: 'new', xCardActive: true } |
+| (new) tests/unit/factCommandStaleWrite.test.js › persistSceneLedgerFields — a further owned change (opts.onto) still writes the change when the scene changed meanwhile, but not the ledgers | AssertionError: expected { currentSceneId: 'sc-2', …(2) } to match object { currentSceneId: 'sc-2', …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/factCommandStaleWrite.test.js › !state set on the canonical GM writes the state ledger onto the latest store and nothing it did not change
+- New test passing with and without the fix (a control?): tests/unit/factCommandStaleWrite.test.js › persistSceneLedgerFields — a further owned change (opts.onto) writes nothing when the scene changed and there is no further change
+
+### 88c55a1 — fix: !reveal-site and !clear-site keep what lands while they await (issue #321 U06c)
+
+Test files: `tests/unit/siteDiscoveryStaleWrite.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/siteDiscoveryStaleWrite.test.js › !reveal-site / !clear-site write onto the state as it is after their awaits !reveal-site keeps an X-Card that lands while it awaits the location write | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/siteDiscoveryStaleWrite.test.js › !reveal-site / !clear-site write onto the state as it is after their awaits !clear-site keeps an X-Card that lands while it awaits the location write | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/siteDiscoveryStaleWrite.test.js › !reveal-site / !clear-site write onto the state as it is after their awaits finds the site by id when the stored state was replaced meanwhile, keeping the other writer's change | AssertionError: expected undefined to match object { value: 1 } |
+| (new) tests/unit/siteDiscoveryStaleWrite.test.js › !reveal-site / !clear-site write onto the state as it is after their awaits writes nothing when the site is no longer stored | AssertionError: expected [ { id: 's1', name: 'Sector', …(2) } ] to deeply equal [] |
+
+- New test passing with and without the fix (a control?): tests/unit/siteDiscoveryStaleWrite.test.js › !reveal-site / !clear-site write onto the state as it is after their awaits control: the expedition path's working copy still carries the flag
+
+### 3974061 — fix: the inciting premise no longer reverts writes relayed during its narration (issue #321 U06d)
+
+Test files: `tests/unit/incitingPremiseStaleWrite.test.js`. Source restored: 1 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/incitingPremiseStaleWrite.test.js › the inciting premise persist keeps a Private Lines sync and a safety flag relayed during the inciting narration | AssertionError: expected [] to deeply equal [ { playerId: 'pl-1', …(1) } ] |
+| (new) tests/unit/incitingPremiseStaleWrite.test.js › the inciting premise persist carries the narration's scene ledgers when the sidecar's own persist has not landed yet | AssertionError: expected [] to deeply equal [ 'body horror' ] |
+
+### 97a2b8f — fix: the correction dialog corrects the store as it is at each click (issue #321 U06e)
+
+Test files: `tests/unit/correctionDialogStaleWrite.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/correctionDialogStaleWrite.test.js › Correct Active Scene Facts dialog a Strike clicked after other writes landed does not revert them | AssertionError: X-Card played while the dialog was open: expected false to be true // Object.is equality |
+| (new) tests/unit/correctionDialogStaleWrite.test.js › Correct Active Scene Facts dialog a Replace reads the store after its prompt closes, keeping what landed while it was open | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/correctionDialogStaleWrite.test.js › Correct Active Scene Facts dialog a cancelled Replace writes nothing | AssertionError: expected [ [ 'starforged-companion', …(2) ] ] to deeply equal [] |
+| (new) tests/unit/correctionDialogStaleWrite.test.js › Correct Active Scene Facts dialog a state Strike after a released move lock does not re-take it | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/correctionDialogStaleWrite.test.js › Correct Active Scene Facts dialog re-renders from the store after an action, listing a truth recorded since it opened | AssertionError: expected '&lt;h4>State&lt;/h4>&lt;ul class="sf-correct-l…' to contain 'Carries a Covenant signet' |
+
+### 2d15c73 — fix: a narration from an older snapshot continues the scene in progress (issue #321 U06f)
+
+Test files: `tests/unit/startSceneAdoption.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/startSceneAdoption.test.js › startScene from a snapshot older than the live scene does not wipe the scene another narration started meanwhile | AssertionError: expected 'sc-5c2a2c73' to be 'sc-live' // Object.is equality |
+| (new) tests/unit/startSceneAdoption.test.js › startScene from a snapshot older than the live scene adopts the live scene into the caller's copy, as a copy, and writes nothing | AssertionError: expected "set" to not be called at all, but actually been called 1 times |
+| (new) tests/unit/startSceneAdoption.test.js › startScene from a snapshot older than the live scene a paced narration from a stale snapshot records its facts in the live scene | AssertionError: expected 'sc-36d5d62b' to be 'sc-live' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/startSceneAdoption.test.js › startScene from a snapshot older than the live scene control: a caller holding the active scene still ends it and starts a new one
+
+### 632b047 — fix: a move's narration honours safety settings and oracle results added while it waited (issue #321 U08)
+
+Test files: `tests/unit/moveNarrationStaleSnapshot.test.js`, `tests/unit/narratorLiveSafety.test.js`. Source restored: 2 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/moveNarrationStaleSnapshot.test.js › move narration reads safety and oracle results live, not from its pre-dialog snapshot a Private Line that lands while the move sits at its confirm dialog is a hard stop in that narration | AssertionError: expected '## NARRATOR ROLE AND VOICE\n\nYou are…' to match /### PRIVATE LINES[^\n]*\n- spiders/ |
+| (new) tests/unit/moveNarrationStaleSnapshot.test.js › move narration reads safety and oracle results live, not from its pre-dialog snapshot an !oracle answer a table-mate gets while the move sits at its confirm dialog is in that narration | AssertionError: expected '## NARRATOR ROLE AND VOICE\n\nYou are…' to contain '## RECENT ORACLE RESULTS' |
+| (new) tests/unit/narratorLiveSafety.test.js › buildNarratorExtras reads safety and recent oracles live takes Lines, Veils and Private Lines from the store, not the snapshot | AssertionError: expected undefined to deeply equal { …(3) } |
+| (new) tests/unit/narratorLiveSafety.test.js › buildNarratorExtras reads safety and recent oracles live takes the session's recent oracle results from the store | AssertionError: expected [] to deeply equal [ { name: 'Ask the Oracle', …(2) } ] |
+| (new) tests/unit/narratorLiveSafety.test.js › buildNarratorExtras reads safety and recent oracles live falls back to the caller's copy when nothing is stored | AssertionError: expected undefined to deeply equal { lines: [ 'old line' ], …(2) } |
+| (new) tests/unit/narratorLiveSafety.test.js › buildNarratorSystemPrompt renders the live safety block prefers extras.safety over the snapshot's | AssertionError: expected '## NARRATOR ROLE AND VOICE\n\nYou are…' to match /### LINES[^\n]*\n- new line/ |
+
+### b8c6cd9 — fix: a "narration unavailable" card is no longer fed back to the narrator (issue #321 U35)
+
+Test files: `tests/unit/narratorFallback.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 3 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/narratorFallback.test.js › a fallback card is not narrator memory (issue #321 U35) the "narration unavailable" line never reaches the recent-narration ring | AssertionError: expected 'Face Danger: Strong Hit — narration u…' not to contain 'narration unavailable' |
+| (new) tests/unit/narratorFallback.test.js › a fallback card is not narrator memory (issue #321 U35) a failed first narration does not cost the session its campaign recap | AssertionError: expected '' to contain 'beacon at Bleakhold' |
+
+### e2c62f4 — fix: oracle follow-ups, vignettes and vow scenes record their facts in a scene (issue #321 U34)
+
+Test files: `tests/unit/sidecarScenePaths.test.js`, `tests/unit/sidecarWithoutScene.test.js`. Source restored: 1 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sidecarScenePaths.test.js › sidecar-writing narrations open a scene first a session vignette | AssertionError: expected 'object' to be 'string' // Object.is equality |
+| (new) tests/unit/sidecarScenePaths.test.js › sidecar-writing narrations open a scene first a clock vignette | AssertionError: expected 'object' to be 'string' // Object.is equality |
+| (new) tests/unit/sidecarScenePaths.test.js › sidecar-writing narrations open a scene first a vow-swearing scene | AssertionError: expected 'object' to be 'string' // Object.is equality |
+| (new) tests/unit/sidecarScenePaths.test.js › sidecar-writing narrations open a scene first continues a scene that is already open instead of starting another | AssertionError: expected [] to deeply equal [ [ …(2) ] ] |
+| (new) tests/unit/sidecarWithoutScene.test.js › an oracle follow-up narrated with no scene open keeps what it established the first move after it still sees the frame and Teo's whereabouts | AssertionError: expected 'object' to be 'string' // Object.is equality |
+| (new) tests/unit/sidecarWithoutScene.test.js › the move continues the scene the follow-up started | AssertionError: expected 'sc-65d98b89' to be null // Object.is equality |
+
+### b80b4ec — fix: an X-Carded narration leaves narrator memory, and the next narration redirects (issue #321 U07)
+
+Test files: `tests/unit/narrationIdCards.test.js`, `tests/unit/xcardNarratorMemory.test.js`, `tests/unit/xcardNarratorMemoryTable.test.js`. Source restored: 15 file(s).
+
+- With the fix: 22 passed, 0 failed.
+- Without it: 21 failed (21 new; 4 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 17 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/narrationIdCards.test.js › a narrator card posted by its caller carries its narration id the Begin a Session galley vignette | AssertionError: expected 'undefined' to be 'string' // Object.is equality |
+| (new) tests/unit/narrationIdCards.test.js › a narrator card posted by its caller carries its narration id a `!clock advance` vignette | AssertionError: expected 'undefined' to be 'string' // Object.is equality |
+| (new) tests/unit/narrationIdCards.test.js › a narrator card posted by its caller carries its narration id Pay the Price's trigger vignette | AssertionError: expected 'undefined' to be 'string' // Object.is equality |
+| (new) tests/unit/narrationIdCards.test.js › a narrator card posted by its caller carries its narration id the inciting incident | AssertionError: expected 'undefined' to be 'string' // Object.is equality |
+| (new) tests/unit/xcardNarratorMemory.test.js › the X-carded narration leaves narrator memory after the X-Card is played and resumed, the X-carded narration is not in the next narration's RECENT SCENE | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/xcardNarratorMemory.test.js › the X-carded narration leaves narrator memory retracts what its sidecar wrote — and only that: an earlier narration's facts stay | AssertionError: expected { id: 'tr-e607828c', …(14) } to match object { retracted: true, …(1) } |
+| (new) tests/unit/xcardNarratorMemory.test.js › the X-carded narration leaves narrator memory names a removed fact nowhere — not even as a correction — and still blocks its re-assertion | AssertionError: expected '## ACTIVE SCENE — BINDING TRUTHS AND …' not to match /cutting torch\|burned hand\|interrogati…/ |
+| (new) tests/unit/xcardNarratorMemory.test.js › the X-carded narration leaves narrator memory a move resolving from a snapshot read before the X-Card does not bring its state or frame back | AssertionError: expected [ { attribute: 'condition', …(2) } ] to be undefined |
+| (new) tests/unit/xcardNarratorMemory.test.js › the X-carded narration leaves narrator memory a relayed sidecar of the removed narration that arrives late is dropped | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/xcardNarratorMemory.test.js › the X-carded narration leaves narrator memory drops the rolling summary's text when it covered the narration | AssertionError: expected { …(3) } to match object { text: '', coveredCount: +0 } |
+| (new) tests/unit/xcardNarratorMemory.test.js › the X-carded narration leaves narrator memory the session recap counts the move but does not quote the removed narration | AssertionError: expected '&lt;div class="sf-recap-session-card">\n…' not to contain 'cutting torch' |
+| (new) tests/unit/xcardNarratorMemory.test.js › the X-carded narration leaves narrator memory a removed narration shows no audio Play button | AssertionError: expected false to be true // Object.is equality |
+| (new) (API) tests/unit/xcardNarratorMemory.test.js › the X-Card's redirect the first narration after a GM resumes carries it; once a narration has posted it is cleared | TypeError: registerXCardRedirectHook is not a function |
+| (new) (API) tests/unit/xcardNarratorMemory.test.js › the X-Card's redirect is not cleared while the X-Card is still active | TypeError: registerXCardRedirectHook is not a function |
+| (new) tests/unit/xcardNarratorMemory.test.js › the X-Card's redirect is never rendered in a recap | AssertionError: expected undefined to be false // Object.is equality |
+| (new) tests/unit/xcardNarratorMemory.test.js › which cards an X-Card removes the newest narration and the cards posted with it, back to the last message someone sent | AssertionError: expected [] to deeply equal [ 'The torch flares.', …(1) ] |
+| (new) (API) tests/unit/xcardNarratorMemory.test.js › which cards an X-Card removes a card more than two minutes older than the newest is not in its beat | TypeError: xCardedNarrationCards is not a function |
+| (new) tests/unit/xcardNarratorMemory.test.js › which cards an X-Card removes played again before anything new is narrated, it removes nothing more | AssertionError: expected [] to deeply equal [ 'The torch flares.' ] |
+| (new) tests/unit/xcardNarratorMemory.test.js › which cards an X-Card removes after a GM resumes, the next X-Card removes the new narration and does not reach past the resume | AssertionError: expected [] to deeply equal [ 'The torch flares.', …(1) ] |
+| (new) (API) tests/unit/xcardNarratorMemory.test.js › which cards an X-Card removes never chooses a fallback or a whispered card | TypeError: xCardedNarrationCards is not a function |
+| (new) tests/unit/xcardNarratorMemoryTable.test.js › an X-Card on a move narration, end to end removes the beat from what the next narration reads, redirects it once, and the beat stays out | AssertionError: expected [ undefined ] to deeply equal [ true ] |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardNarratorMemory.test.js › the X-carded narration leaves narrator memory control: keeps a rolling summary made before the narration it removes
+
+### 160fd80 — fix: the correction dialog's Strike and Replace buttons are wired the way Foundry v13 offers (issue #321 U38)
+
+Test files: `tests/unit/correctionDialogStaleWrite.test.js`, `tests/unit/correctionDialogWiring.test.js`. Source restored: 1 file(s).
+
+- With the fix: 9 passed, 0 failed.
+- Without it: 8 failed (4 new; 0 only for a missing export); 1 still pass (0 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/correctionDialogStaleWrite.test.js › Correct Active Scene Facts dialog a Strike clicked after other writes landed does not revert them | AssertionError: expected false to be true // Object.is equality |
+| tests/unit/correctionDialogStaleWrite.test.js › Correct Active Scene Facts dialog a Replace reads the store after its prompt closes, keeping what landed while it was open | AssertionError: expected { id: 'tr-aaaa0001', …(14) } to match object { retracted: true } |
+| tests/unit/correctionDialogStaleWrite.test.js › Correct Active Scene Facts dialog a state Strike after a released move lock does not re-take it | AssertionError: expected [ { attribute: 'location', …(2) } ] to be undefined |
+| tests/unit/correctionDialogStaleWrite.test.js › Correct Active Scene Facts dialog re-renders from the store after an action, listing a truth recorded since it opened | AssertionError: expected '&lt;h4>Truths&lt;/h4>&lt;ul class="sf-correct-…' to contain 'Carries a Covenant signet' |
+| (new) tests/unit/correctionDialogWiring.test.js › the correction dialog wiring a Strike clicked in a dialog that only fires its "render" event strikes the truth | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/correctionDialogWiring.test.js › the correction dialog wiring does not rely on a `render` constructor option, which only DialogV2.wait() reads | AssertionError: expected { …(6) } to not have property "render" |
+| (new) tests/unit/correctionDialogWiring.test.js › the correction dialog wiring the row buttons do not submit the dialog's form | AssertionError: strike-truth: expected 'submit' to be 'button' // Object.is equality |
+| (new) tests/unit/correctionDialogWiring.test.js › the correction dialog wiring stays wired after a correction re-renders the list | AssertionError: expected [ { attribute: 'location', …(2) } ] to be undefined |

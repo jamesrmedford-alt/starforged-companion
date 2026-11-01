@@ -602,7 +602,7 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.FC_SHIP_TOKEN_ENABLED, {
     name:    'Sector-Scene Ship Token',
-    hint:    'Place a Token representing the command vehicle on the sector Scene. Dragging the Token onto a settlement Note pin fires the same Set a Course pipeline a chat-typed move would. The Token snaps back to its previous position on a miss.',
+    hint:    'Place a Token representing the command vehicle on the sector Scene. With Ship Positioning and Auto-Move Ship on Set a Course on, dragging the Token onto a settlement Note pin fires the same Set a Course pipeline a chat-typed move would, and the Token moves onto the pin on a hit (it stays put on a miss); with either off, the drag simply moves the Token.',
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -755,8 +755,10 @@ async function syncSafetyToCampaignState() {
   }
 
   try {
-    const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
-    if (!campaignState.safety) campaignState.safety = {};
+    // Written on a copy, the safety object too: a refused write must leave
+    // this client's cached state as it was (issue #321 U58).
+    const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+    campaignState.safety = { ...(campaignState.safety ?? {}) };
 
     // Global Lines and Veils — GM-controlled, world-scoped
     campaignState.safety.lines = getGlobalLines();
@@ -823,8 +825,9 @@ export async function applyPrivateLinesSync(payload = {}, ctx = {}) {
     .filter(l => typeof l === 'string' && l.trim())
     .map(l => l.trim().slice(0, 500));
 
-  const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
-  if (!campaignState.safety) campaignState.safety = {};
+  // Written on a copy, the safety object too (issue #321 U58).
+  const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+  campaignState.safety = { ...(campaignState.safety ?? {}) };
   const others = (campaignState.safety.privateLines ?? []).filter(e => e.playerId !== playerId);
   campaignState.safety.privateLines = lines.length > 0
     ? [...others, { playerId, lines }]
@@ -1632,9 +1635,9 @@ export class SettingsPanelApp extends ApplicationV2 {
       const input = this.element.querySelector('[name="newLine"]');
       const text = input?.value.trim();
       if (!text) return;
-      const lines = getGlobalLines();
-      lines.push(text);
-      await setGlobalLines(lines);   // sync included
+      // A new array: `get` returns the cached setting, which a refused
+      // write must leave as it was (issue #321 U58).
+      await setGlobalLines([...getGlobalLines(), text]);   // sync included
       this.render();
     })();
     this._lastAction = work;
@@ -1645,9 +1648,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     const work = (async () => {
       if (!game.user.isGM) return;
       const idx = Number(target.dataset.index);
-      const lines = getGlobalLines();
-      lines.splice(idx, 1);
-      await setGlobalLines(lines);   // sync included
+      await setGlobalLines(getGlobalLines().filter((_, i) => i !== idx));   // sync included
       this.render();
     })();
     this._lastAction = work;
@@ -1660,9 +1661,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const input = this.element.querySelector('[name="newVeil"]');
       const text = input?.value.trim();
       if (!text) return;
-      const veils = getGlobalVeils();
-      veils.push(text);
-      await setGlobalVeils(veils);   // sync included
+      await setGlobalVeils([...getGlobalVeils(), text]);   // sync included
       this.render();
     })();
     this._lastAction = work;
@@ -1673,9 +1672,7 @@ export class SettingsPanelApp extends ApplicationV2 {
     const work = (async () => {
       if (!game.user.isGM) return;
       const idx = Number(target.dataset.index);
-      const veils = getGlobalVeils();
-      veils.splice(idx, 1);
-      await setGlobalVeils(veils);   // sync included
+      await setGlobalVeils(getGlobalVeils().filter((_, i) => i !== idx));   // sync included
       this.render();
     })();
     this._lastAction = work;
@@ -1687,9 +1684,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const input = this.element.querySelector('[name="newPrivateLine"]');
       const text = input?.value.trim();
       if (!text) return;
-      const lines = getPrivateLines();
-      lines.push(text);
-      await setPrivateLines(lines);  // sync included
+      await setPrivateLines([...getPrivateLines(), text]);  // sync included
       this.render();
     })();
     this._lastAction = work;
@@ -1699,9 +1694,7 @@ export class SettingsPanelApp extends ApplicationV2 {
   static #onRemovePrivateLine(_event, target) {
     const work = (async () => {
       const idx = Number(target.dataset.index);
-      const lines = getPrivateLines();
-      lines.splice(idx, 1);
-      await setPrivateLines(lines);  // sync included
+      await setPrivateLines(getPrivateLines().filter((_, i) => i !== idx));  // sync included
       this.render();
     })();
     this._lastAction = work;

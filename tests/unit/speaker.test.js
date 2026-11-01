@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach } from 'vitest';
-import { resolveSpeakerActorId, isAuthoringClient, messageAuthorId } from '../../src/multiplayer/speaker.js';
+import { resolveSpeakerActorId, resolveUserActorId, isAuthoringClient, messageAuthorId } from '../../src/multiplayer/speaker.js';
 
 beforeEach(() => {
   global.game.actors?._reset?.();
@@ -23,7 +23,7 @@ function makeActor({ id, type = 'character', ownership = {}, testUserPermission 
 
 describe('resolveSpeakerActorId', () => {
   it('returns User.character.id when the user has a bound PC', () => {
-    const msg = { author: { id: 'u1', character: { id: 'actor-bound' } } };
+    const msg = { author: { id: 'u1', character: { id: 'actor-bound', type: 'character' } } };
     expect(resolveSpeakerActorId(msg, {})).toBe('actor-bound');
   });
 
@@ -91,7 +91,7 @@ describe('resolveSpeakerActorId — token selection (message.speaker)', () => {
 
     const msg = {
       speaker: { scene: 's1', token: 't1', actor: 'actor-token-pc', alias: 'Kira Chen' },
-      author:  { id: 'u1', character: { id: 'actor-bound' } },
+      author:  { id: 'u1', character: { id: 'actor-bound', type: 'character' } },
     };
     expect(resolveSpeakerActorId(msg, {})).toBe('actor-token-pc');
   });
@@ -102,7 +102,7 @@ describe('resolveSpeakerActorId — token selection (message.speaker)', () => {
 
     const msg = {
       speaker: { scene: 's1', token: 't1', actor: 'actor-ship', alias: 'Ship' },
-      author:  { id: 'u1', character: { id: 'actor-bound' } },
+      author:  { id: 'u1', character: { id: 'actor-bound', type: 'character' } },
     };
     expect(resolveSpeakerActorId(msg, {})).toBe('actor-bound');
   });
@@ -114,7 +114,7 @@ describe('resolveSpeakerActorId — token selection (message.speaker)', () => {
 
     const msg = {
       speaker: { actor: 'actor-npc', alias: 'Vance' },
-      author:  { id: 'u1', character: { id: 'actor-bound' } },
+      author:  { id: 'u1', character: { id: 'actor-bound', type: 'character' } },
     };
     expect(resolveSpeakerActorId(msg, {})).toBe('actor-bound');
   });
@@ -122,7 +122,7 @@ describe('resolveSpeakerActorId — token selection (message.speaker)', () => {
   it('skips a speaker id whose actor no longer exists', () => {
     const msg = {
       speaker: { actor: 'actor-deleted' },
-      author:  { id: 'u1', character: { id: 'actor-bound' } },
+      author:  { id: 'u1', character: { id: 'actor-bound', type: 'character' } },
     };
     expect(resolveSpeakerActorId(msg, {})).toBe('actor-bound');
   });
@@ -130,6 +130,98 @@ describe('resolveSpeakerActorId — token selection (message.speaker)', () => {
   it('still reaches the campaignState fallback when speaker and author both resolve nothing', () => {
     const msg = { speaker: { actor: null, alias: 'Gamemaster' }, author: { id: 'u1' } };
     expect(resolveSpeakerActorId(msg, { characterIds: ['actor-fallback'] })).toBe('actor-fallback');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The bound User#character is PC-validated like the token (issue #321 U24)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('resolveSpeakerActorId — a user whose assigned character is not a PC', () => {
+  const MODULE_ID = 'starforged-companion';
+
+  function setup() {
+    const pc   = { id: 'pc-pat', type: 'character', name: 'Kira', flags: {},
+      testUserPermission: (user, level) => user?.id === 'pl-1' && level === 'OWNER' };
+    const ship = { id: 'ship-1', type: 'starship', name: 'ISV Vesta', flags: {},
+      testUserPermission: () => true };   // the crew's ship: every player owns it
+    const npc  = { id: 'npc-1', type: 'character', name: 'Vance', flags: { [MODULE_ID]: { entityType: 'connection' } },
+      testUserPermission: () => true };
+    for (const a of [pc, ship, npc]) global.game.actors._set(a.id, a);
+    return { pc, ship, npc };
+  }
+
+  it('is attributed to their PC, not the starship assigned as their character', () => {
+    const { ship } = setup();
+    const msg = { speaker: { actor: null, alias: 'Pat' }, author: { id: 'pl-1', character: ship } };
+    expect(resolveSpeakerActorId(msg, {})).toBe('pc-pat');
+  });
+
+  it('is attributed to their PC, not the NPC card assigned as their character', () => {
+    const { npc } = setup();
+    const msg = { speaker: { actor: null, alias: 'Pat' }, author: { id: 'pl-1', character: npc } };
+    expect(resolveSpeakerActorId(msg, {})).toBe('pc-pat');
+  });
+
+  it('control: the same ship as a SELECTED token (speaker.actor) falls through to the PC', () => {
+    setup();
+    const msg = { speaker: { actor: 'ship-1', alias: 'ISV Vesta' }, author: { id: 'pl-1', character: null } };
+    expect(resolveSpeakerActorId(msg, {})).toBe('pc-pat');
+  });
+
+  it('a bound PC is still honoured before the ownership scan', () => {
+    const { pc } = setup();
+    const other = { id: 'pc-other', type: 'character', name: 'Ren', flags: {}, testUserPermission: () => true };
+    global.game.actors._setAll([other, pc]);   // the ownership scan would find Ren first
+    const msg = { speaker: { actor: null }, author: { id: 'pl-1', character: pc } };
+    expect(resolveSpeakerActorId(msg, {})).toBe('pc-pat');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// resolveUserActorId — "whose PC is this user?" (issue #321 U23)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('resolveUserActorId — the roller / owner first, the first PC only for a GM or solo play', () => {
+  const kira = () => ({ id: 'pc-kira', type: 'character', name: 'Kira', flags: {}, ownership: { 'pl-2': 3 } });
+  const dax  = () => ({ id: 'pc-dax',  type: 'character', name: 'Dax',  flags: {}, ownership: { 'pl-1': 3 } });
+  const cs   = { characterIds: ['pc-kira', 'pc-dax'] };
+
+  it("an unbound player who owns a PC gets theirs, not the campaign's first", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveUserActorId({ id: 'pl-1', isGM: false, character: null }, cs)).toBe('pc-dax');
+  });
+
+  it('a bound PC wins over an owned one', () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveUserActorId({ id: 'pl-1', isGM: false, character: kira() }, cs)).toBe('pc-kira');
+  });
+
+  it("a player with no PC of their own is never handed another player's", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveUserActorId({ id: 'pl-9', isGM: false, character: null }, cs)).toBeNull();
+    expect(resolveUserActorId(null, cs)).toBeNull();
+  });
+
+  it("a GM with no PC of their own gets the campaign's first PC", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveUserActorId({ id: 'gm-1', isGM: true, character: null }, cs)).toBe('pc-kira');
+  });
+
+  it("solo play: the one PC in the world is anyone's", () => {
+    global.game.actors._setAll([kira()]);
+    expect(resolveUserActorId({ id: 'pl-9', isGM: false, character: null }, { characterIds: [] })).toBe('pc-kira');
+  });
+
+  it("a message from a player with no PC resolves to no one, not the campaign's first PC", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    const msg = { speaker: { actor: null }, author: { id: 'pl-9', isGM: false } };
+    expect(resolveSpeakerActorId(msg, cs)).toBeNull();
+  });
+
+  it("control: a message carrying only its author's id is resolved through game.users, so a GM author keeps the first-PC fallback", () => {
+    global.game.actors._setAll([kira(), dax()]);
+    expect(resolveSpeakerActorId({ author: 'test-user-gm' }, cs)).toBe('pc-kira');   // the setup's GM user
   });
 });
 

@@ -9,7 +9,7 @@
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { initSessionId, isNewSessionStart } from '../../src/index.js';
-import { sessionNeedsMint, mintSession, touchSessionActivity, SESSION_IDLE_HOURS } from '../../src/session/lifecycle.js';
+import { sessionNeedsMint, mintSession, touchSessionActivity, SESSION_IDLE_HOURS, SESSION_MINT_FIELDS } from '../../src/session/lifecycle.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -221,6 +221,18 @@ describe('session boundaries (issue #286 C3, C4)', () => {
     expect(state.previousSessionSummary).toEqual({
       sessionId: 's1', sessionNumber: 4, text: 'The crew paid Vex 300 credits.', updatedAt: '2026-10-01T00:00:00Z',
     });
+  });
+
+  // Issue #321 U12: a session nobody ended handed its open gate to the next
+  // one — the panel read "Active" since last week and Begin was disabled.
+  it('a new session starts with its session-active gate closed, and its caller persists the gate', () => {
+    const state = makeState({
+      currentSessionId: 's1', sessionNumber: 4, lastSessionTimestamp: hoursAgo(170),
+      sessionActive: true, sessionActiveStartedAt: hoursAgo(173),
+    });
+    mintSession(state);
+    expect(state).toMatchObject({ sessionNumber: 5, sessionActive: false, sessionActiveStartedAt: null });
+    expect(SESSION_MINT_FIELDS).toEqual(expect.arrayContaining(['sessionActive', 'sessionActiveStartedAt']));
   });
 
   it('a closing session with no summary of its own leaves the older one in place', () => {

@@ -9,7 +9,9 @@ function; line numbers drift, so search by symbol. Sibling docs:
 Multiplayer, up front: module-side vow Item writes run on the **canonical
 GM** — the move pipeline (gated on `isCanonicalGM()`), a card click relayed
 through `requestGmAction` (`src/multiplayer/gmRelay.js` `GM_ACTIONS`:
-`milestone.pick`, `fightVow.markMilestone`, `payThePrice.advanceClocks`), or
+`milestone.pick`, `fightVow.markMilestone`, `payThePrice.advanceClocks`; and,
+since issue #321, `fulfilVow.pick` and `milestone.suggestion`, which claim
+their card and post the forced move once for the pipeline), or
 one of the two older ad-hoc socket relays from the swear cards
 (`vow.setReward`, `vow.linkConnection` in `src/session/swearVow.js`, not yet
 folded into `GM_ACTIONS`). Only the vendor sheet writes a vow from the
@@ -56,8 +58,12 @@ canonical GM's pipeline swear branch calls `swearSharedVowForAll`
 (`createCharacterVowItem` — idempotent by `vowId`, carries
 `sharedVow`/`linkedConnectionName`/optional deadline clock), creates the
 immediate-crisis **tension clock** when the meta has one, creates the **target
-NPC connection**, posts the sworn-confirmation card (rank→milestone/legacy
-stakes lines), narrates the vow-swearing scene, and proposes two concrete
+NPC connection** — a bond Item on every PC the vow was sworn on
+(`registerConnectionOnActiveCharacter(…, { actors })`), not the first PC's
+alone — posts the sworn-confirmation card (rank→milestone/legacy
+stakes lines), narrates the vow-swearing scene for the PC who rolled the
+swear (`swearSharedVowForAll(message, { speakerActorId })` →
+`narrateAndPostVowSwearing`; issue #321 U23), and proposes two concrete
 **rewards** (`proposeRewards`) + a write-your-own on the reward-choice card.
 Chosen rewards land as `flags.reward = {status:"promised", description, form}`
 on every copy (`setSharedVowReward`, socket `vow.setReward` for players).
@@ -90,11 +96,20 @@ All real progress lands on **item ticks** (`system.current`) via
   (idempotent, in-flight guarded). A click with no GM connected, a refusal,
   or a card still unresolved after `RELAY_RECOVERY_MS` (15 s) re-arms the
   buttons (`relayCardAction`, `src/moves/cardActions.js`). The move card's
-  "⚑ Reach a Milestone" suggestion button posts a forced
-  `reach_a_milestone` move instead.
+  "⚑ Mark Progress on Vow" suggestion button leads to a forced
+  `reach_a_milestone` move instead (next bullet).
 - **Move-card suggestion buttons** ("⚑ Mark Progress on Vow" / "🏁 Attempt to
   Fulfill Vow") on eligible adventure/exploration hits — these post forced
-  moves so the GM-side pipeline does the work.
+  moves so the GM-side pipeline does the work. "⚑ Mark Progress on Vow"
+  relays `milestone.suggestion` (`wireMilestoneSuggestionButton` →
+  `cardActions.applyMilestoneSuggestion`): the canonical GM claims the
+  GM-authored move card (`milestoneMarked` — read but never written before)
+  and posts the forced Reach a Milestone once, as the card's roller; only the
+  roller's player or a GM may press it (a card from before the roller was
+  stamped marks the clicker's own PC), and a failed post releases the claim
+  (issue #321 U20 — every client's press, or a re-render, marked the vow
+  again). "🏁 Attempt to Fulfill Vow" still posts its forced move from the
+  clicker's client, disabled only there.
 - **Won-fight milestone** (see `combat-flow.md` §4): marks scale by the
   fight's rank, ticks-per-mark by the vow's rank. Marked on the vow's
   **holder** — the card's roller (`actorId`) when they hold the vow, else
@@ -103,15 +118,21 @@ All real progress lands on **item ticks** (`system.current`) via
   from the same roller-first resolution (`postFightVowMilestoneCard`), not
   the first PC holding a vow of that name.
 - **Shared-vow lockstep**: `registerSharedVowSyncHook` copies changed fields
-  to sibling copies by `vowId` — `["current","clockTicks","completed"]`
+  to sibling copies by `vowId` — `["current","clockTicks","completed","rank"]`
   (`SHARED_VOW_SYNC_FIELDS`; `completed` joined in the VOW-FULFIL-SIBLINGS
-  fix, so a native-sheet fulfil closes every crewmate's copy). `rank` is
-  still deliberately unsynced (see gaps).
+  fix, so a native-sheet fulfil closes every crewmate's copy, and `rank` in
+  the 2026-07 cleanup — see gaps).
 - **Vow deadline clocks**: `advanceVowClocks` bumps `clockTicks` on Pay the
   Price ("⏳ The clock turns" card) via `advanceClocksOnPayThePrice`
   (`src/clocks/payThePriceClocks.js`) — called directly by the pipeline on
   the canonical GM; a player-typed `!ptp` relays `payThePrice.advanceClocks`
-  so the clocks advance once, on the GM. A Burn Momentum or Improve Result
+  so the clocks advance once, on the GM. A shared vow's copies are one clock
+  (issue #321 U55): one `lockstep` map rides every PC's call of an advance,
+  so the first copy advances and each later copy is set to the value it
+  reached (advancing each copy raced the sync hook, which had already moved
+  it); the card lists the vow once and fires one trigger vignette
+  (`onePerClock`, by `vowId`). The returned entries keep every copy, each
+  with its `vowId`, for the reversal below. A Burn Momentum or Improve Result
   that upgrades the miss reverts them via `revertVowClocksForBurn`
   (`resultUpgrade.js` `revertPayThePrice` — issue #311 P05). A rewind that
   lands in part leaves only the refused Items on the GMs' payoff card; its
@@ -122,21 +143,41 @@ All real progress lands on **item ticks** (`system.current`) via
 
 Vows reach the narrator through the CHARACTER STATE block (Background Vow +
 other vows; `isBackground` follows the **shared** vow, not merely the
-first-created one) and the CAMPAIGN PREMISE block
+first-created one; each vow's rank by name — `readVows` maps the vendor's
+numeric rank through `rankName`, which rendered "(3, progress 2/10)" before
+issue #321 U62) and the CAMPAIGN PREMISE block
 (`campaignState.incitingIncident`: prose, central figure, first vow, deadline,
 immediate crisis — injected into every call). The optional vow-swearing scene
 (`narrateVowSwearing`, `vowSwearingNarration` setting) fires from both swear
-paths. Vows are **not** part of the scene frame or relevance-injected entity
-cards.
+paths, written for the PC who swore (`speakerActorId`, issue #321 U23), and
+records its facts in a scene (`ensureSceneStarted`, issue #321 U34). Vows are
+**not** part of the scene frame or relevance-injected entity cards.
 
 ## 4. Fulfilment
 
 Scoring: `fulfill_your_vow` is a progress move; `enrichProgressTicks` fills
 the roll from the **item's live ticks** (items first, speaker's copies first;
 journal track only as fallback) — see `decisions.md` "Progress-move scores
-come from module data".
+come from module data". The vow scored is `selectFulfilVow`'s
+(`src/moves/milestone.js`; issue #321 U02): a picked copy by id (that open
+copy, else nothing); else a name — the roller's own vow first, then anyone's,
+exact then substring; else one vow per `vowId`, the roller's own open vows
+first (a shared vow counts once, scored on the roller's copy). `readVows`
+carries each copy's `vowId`, and enrichment takes the roller
+(`rollerActorId`). A Fulfill Your Vow that names no vow while several
+distinct vows are open is not rolled — it used to score 0, a certain miss:
+the pipeline posts a **Which vow?** card (`postWhichVowCard`, flagged
+`whichVowCard` with `narration`, the roller's `actorId`, `choices`
+`[{ itemId, name }]` and `resolved`). A pick (`wireWhichVowButtons`) relays
+`fulfilVow.pick` → `cardActions.applyFulfilVowPick` on the canonical GM,
+which checks the pick is one of the card's choices and that the requester
+owns the roller's PC (or is a GM), claims the card (`resolved`) and posts the
+forced fulfil with the copy as `forcedMoveTargetId`, spoken as the roller; a
+failed post releases the claim. A picked vow fulfilled or deleted before the
+roll resolves gets the "not rolled" card (`postTrackGoneCard`).
 
-**Pipeline path** (typed, victory-card button, or suggestion button):
+**Pipeline path** (typed, victory-card button, suggestion button, or a
+"Which vow?" pick):
 `finishVow` closes the journal twin if one exists; `completeVowItemByName`
 closes **every open item copy** across PCs of the roller's vow — the Item
 the roll scored (`tickInfo.trackId`), else the roller's exact-name vow;
@@ -156,8 +197,14 @@ used to collect only the first PC's copy, so a shared vow's reward went to
 the first PC). No journal track and no item matched → `console.warn`,
 nothing completes.
 
-**Native-sheet path**: the roller's client narrates the vendor progress-roll
-card (`registerNativeProgressRollHook`); the canonical GM applies consequences
+**Native-sheet path**: the vendor progress-roll card is narrated where a Claude
+key lives (`registerNativeProgressRollHook` → `nativeRollNarratesHere`, the
+`RUN_ON.CLAUDE` ladder decided on every client from shared data): the keyed
+canonical GM when a keyed GM is connected, else the roller's own client with
+its own key — as the roller's PC (`resolveSpeakerActorId` on the roll card).
+Narrating only on the roller's client gave a keyless player "Narration
+unavailable" at a table whose GM holds the key (issue #321 U11). The canonical
+GM applies consequences
 (`registerNativeFulfilConsequenceHook` → `shouldPayFulfilledVow` → full
 `payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
 also pays quests legacy — from the roller's vow's rank). Idempotency:

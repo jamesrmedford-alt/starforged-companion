@@ -6,6 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   renderTurnsHtml,
+  parseTurnsHtml,
   buildOwnership,
   appendToBuffer,
   scheduleDebouncedWrite,
@@ -36,6 +37,9 @@ vi.mock("../../src/narration/narrator.js", () => ({
   getRecentNarrationContext: vi.fn(() => ""),
   currentLocationName:       vi.fn(() => null),
   buildPrivateChannelStory:  vi.fn(async () => ({ canon: "", scene: "" })),
+  // No X-Card in play here; tests/unit/privateChannelXCard.test.js runs the real check.
+  isXCardActive:             vi.fn(() => false),
+  watchXCard:                vi.fn(() => ({ interrupted: () => false })),
 }));
 vi.mock("../../src/api-proxy.js", () => ({ apiPost: vi.fn() }));
 
@@ -151,6 +155,32 @@ describe("renderTurnsHtml", () => {
     expect(renderTurnsHtml([{ who: "player", text: "   " }])).toBe("");
     const html = renderTurnsHtml([{ who: "bogus", text: "hi" }]);
     expect(html).toContain("pc-turn-player");
+  });
+});
+
+// Issue #321 U42 — a reopened window reads its saved turns back into the one
+// transcript it shows and sends the narrator.
+describe("parseTurnsHtml", () => {
+  it("reads back what renderTurnsHtml wrote, escapes and all", () => {
+    const turns = [
+      { who: "player",   name: "Kira",     text: "My mother's ring — 1 < 2 & \"q\"" },
+      { who: "narrator", name: "Narrator", text: "The image stays with you." },
+    ];
+    expect(parseTurnsHtml(renderTurnsHtml(turns))).toEqual(turns);
+  });
+
+  it("reads a paragraph the journal editor reformatted, telling the narrator by name", () => {
+    const html = '<p><strong>Narrator:</strong> The rain keeps on.</p><p data-x="1"><strong>Kira:</strong> <em>Still</em> here.</p>';
+    expect(parseTurnsHtml(html)).toEqual([
+      { who: "narrator", name: "Narrator", text: "The rain keeps on." },
+      { who: "player",   name: "Kira",     text: "Still here." },
+    ]);
+  });
+
+  it("skips empty paragraphs and reads nothing from nothing", () => {
+    expect(parseTurnsHtml('<p class="pc-turn pc-turn-player"><strong>Kira:</strong>  </p><p></p>')).toEqual([]);
+    expect(parseTurnsHtml("")).toEqual([]);
+    expect(parseTurnsHtml(null)).toEqual([]);
   });
 });
 
@@ -512,6 +542,10 @@ describe("debounced write", () => {
 
 describe("buildPrivateContext", () => {
   beforeEach(() => {
+    // "u1" is a player whose bound PC is Kira — the Private Channel speaks
+    // only as the player's own PC (issue #321 U23).
+    _users.set("u1", { id: "u1", name: "Pat", isGM: false, active: true,
+      character: { id: "pc-kira", type: "character", name: "Kira" } });
     getActiveCharacter.mockReset().mockReturnValue({
       name: "Kira", description: "A wry pilot.", meters: { health: 4, spirit: 3 }, narratorNotes: "",
     });
@@ -587,6 +621,31 @@ describe("buildPrivateContext", () => {
       buildPrivateContext({ campaignState: {}, userId: "u1", playerMessage: "x" }),
     ).rejects.toThrow(/no active character/i);
   });
+
+  describe("speaks as the player's own PC (issue #321 U23)", () => {
+    beforeEach(() => {
+      game.actors._setAll([
+        makeTestActor({ id: "pc-kira", name: "Kira", ownership: { "player-2": 3 } }),
+        makeTestActor({ id: "pc-dax",  name: "Dax",  ownership: { "u2": 3 } }),
+      ]);
+    });
+    afterEach(() => game.actors._reset());
+
+    it("an unbound player who owns a PC is given theirs, not the campaign's first", async () => {
+      _users.set("u2", { id: "u2", name: "Sam", isGM: false, active: true, character: null });
+      const campaignState = { currentSessionId: "s1", characterIds: ["pc-kira", "pc-dax"] };
+      await buildPrivateContext({ campaignState, userId: "u2", playerMessage: "x" });
+      expect(getActiveCharacter).toHaveBeenCalledWith(campaignState, "pc-dax");
+    });
+
+    it("a player with no PC of their own gets none — never another player's", async () => {
+      _users.set("u3", { id: "u3", name: "Lee", isGM: false, active: true, character: null });
+      await expect(buildPrivateContext({
+        campaignState: { currentSessionId: "s1", characterIds: ["pc-kira", "pc-dax"] }, userId: "u3", playerMessage: "x",
+      })).rejects.toThrow(/no active character/i);
+      expect(getActiveCharacter).not.toHaveBeenCalled();
+    });
+  });
 });
 
 
@@ -597,6 +656,10 @@ describe("buildPrivateContext", () => {
 describe("publishToMainChat", () => {
   let createSpy;
   beforeEach(() => {
+    // "u1" is a player whose bound PC is Kira — the Private Channel speaks
+    // only as the player's own PC (issue #321 U23).
+    _users.set("u1", { id: "u1", name: "Pat", isGM: false, active: true,
+      character: { id: "pc-kira", type: "character", name: "Kira" } });
     getActiveCharacter.mockReset().mockReturnValue({ name: "Kira" });
     createSpy = vi.spyOn(global.ChatMessage, "create").mockResolvedValue({ id: "msg-1" });
   });
@@ -648,6 +711,10 @@ describe("publishToMainChat", () => {
 
 describe("requestPrivateNarration", () => {
   beforeEach(() => {
+    // "u1" is a player whose bound PC is Kira — the Private Channel speaks
+    // only as the player's own PC (issue #321 U23).
+    _users.set("u1", { id: "u1", name: "Pat", isGM: false, active: true,
+      character: { id: "pc-kira", type: "character", name: "Kira" } });
     apiPost.mockReset();
     getActiveCharacter.mockReset().mockReturnValue({ name: "Kira", meters: {} });
     getRecentNarrationContext.mockReset().mockReturnValue("");

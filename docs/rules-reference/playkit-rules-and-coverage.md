@@ -247,7 +247,7 @@ to find each move's resolver branch.
 | Adventure (6) | `src/moves/resolver.js:242-311` | all 6 mechanically resolved |
 | Quest (4) | `src/moves/resolver.js:317-349` | all 4; Fulfill Your Vow is a progress move |
 | Connection (4) | `src/moves/resolver.js:354-391` | all 4; Make a Connection seeds role/goal/first-look/given-name oracles (`src/moves/resolver.js:856-875`) |
-| Exploration (6) | `src/moves/resolver.js:397-455` | all 6; explore_a_waypoint dispatches to Make a Discovery on strong+match and Confront Chaos on miss+match (`src/moves/resolver.js:408-455`) |
+| Exploration (6) | `src/moves/resolver.js:397-455` | all 6; explore_a_waypoint dispatches to Make a Discovery on strong+match and Confront Chaos on miss+match (`src/moves/resolver.js:408-455`); a miss without a match routes Pay the Price (issue #321 U17) |
 | Combat (8) | `src/moves/resolver.js:460-541` | all 8; combat positioning exposed via otherEffect text only (see §3) |
 | Suffer (6) | `src/moves/resolver.js:547-601` | all 6 |
 | Recover (5) | `src/moves/resolver.js:606-658` | all 5; Repair points/spends not auto-applied to vehicle integrity (advice only) |
@@ -292,7 +292,7 @@ to find each move's resolver branch.
 
 | Rule | Status | Pathway |
 |---|---|---|
-| Sector creation (name, region, settlements, passages) | ✅ | `src/sectors/sectorGenerator.js`, `sectorPanel.js`, `sectorOverview.js`; 11-step wizard (scope: `issue #218 (Sector Creator)`) |
+| Sector creation (name, region, settlements, passages) | ✅ | `src/sectors/sectorGenerator.js`, `sectorPanel.js`, `sectorOverview.js`; 11-step wizard (scope: `issue #218 (Sector Creator)`); step 8 zooms in on the starting settlement — first look, initial contact and trouble rolled for `settlements[0]` (issue #321 U50) |
 | Sector faction / control field | 🔄 | `src/sectors/sectorGenerator.js:103` initialises `faction: null` and displays it; no oracle generates faction control |
 | Locations / settlements / planets / ships / creatures / factions as entities | ✅ | `src/entities/*.js`, registry at `src/entities/registry.js` |
 | Connection bond + name + location + two roles + rank | ✅ | `src/entities/connection.js:18-22, 371-379` |

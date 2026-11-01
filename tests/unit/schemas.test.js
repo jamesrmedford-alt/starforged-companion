@@ -270,3 +270,28 @@ describe("moveRollKind", () => {
     expect(moveRollKind(undefined)).toBe("none");
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// toMoveId — a model-named move mapped to its MOVES key (issue #321 U45)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("toMoveId", () => {
+  it("maps every move's key, and its display name in any case or separator, to the key", async () => {
+    const { MOVES, toMoveId } = await import("../../src/schemas.js");
+    for (const id of Object.keys(MOVES)) {
+      const name = id.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+      expect(toMoveId(id), id).toBe(id);
+      expect(toMoveId(name), name).toBe(id);
+      expect(toMoveId(name.toUpperCase()), name).toBe(id);
+      expect(toMoveId(id.replace(/_/g, "-")), id).toBe(id);
+    }
+  });
+
+  it("returns null for anything that names no move", async () => {
+    const { toMoveId } = await import("../../src/schemas.js");
+    for (const value of ["Dance Wildly", "", "   ", "constructor", "__proto__", "toString", null, undefined, 42, {}]) {
+      expect(toMoveId(value), String(value)).toBeNull();
+    }
+  });
+});

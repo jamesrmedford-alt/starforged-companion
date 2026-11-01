@@ -106,13 +106,33 @@ describe("revealSectorSite — stored siteId link (expedition→site FK)", () =>
     expect(state.sectors[0].mapData.discoveries[0].discovered).toBe(false);
   });
 
-  it("falls back to the label ladder when the linked site is already discovered", async () => {
+  // Issue #321 U48: the link names one site. Once that site is charted (a
+  // `!reveal-site` meanwhile) the expedition has nothing left to reveal — it
+  // used to fall through to the label ladder and reveal a different site.
+  it("reveals nothing when the linked site is already discovered — not another site by label", async () => {
     const state = { sectors: [{ id: "sec", sceneId: null, mapData: { discoveries: [
       { id: "d1", name: "Precursor Vault — Sunken Choir", type: "vault", discovered: false, actorId: null },
       { id: "d2", name: "Derelict Starship", type: "derelict", discovered: true, actorId: null },
     ] } }] };
+    const setState = vi.fn();
     const result = await revealSectorSite("sunken choir", {
       siteId: "d2",
+      getState: () => state,
+      setState,
+      getScene: () => null,
+      updateLoc: async () => {},
+    });
+    expect(result).toBeNull();
+    expect(state.sectors[0].mapData.discoveries[0].discovered).toBe(false);
+    expect(setState).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the label when the link names no stored site", async () => {
+    const state = { sectors: [{ id: "sec", sceneId: null, mapData: { discoveries: [
+      { id: "d1", name: "Precursor Vault — Sunken Choir", type: "vault", discovered: false, actorId: null },
+    ] } }] };
+    const result = await revealSectorSite("sunken choir", {
+      siteId: "gone",
       getState: () => state,
       setState: () => {},
       getScene: () => null,

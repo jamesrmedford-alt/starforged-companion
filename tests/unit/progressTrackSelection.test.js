@@ -334,3 +334,78 @@ describe('a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-T
     expect(track(boarders.id).completed).toBe(false);
   });
 });
+
+// Issue #321 U16: with two fights open, an unnamed Strike or Clash (the
+// interpreter is not asked for their target) created and marked a phantom
+// "Combat" fight, which then took the move's position; Undertake an
+// Expedition did the same with two expeditions open.
+describe('a move that marks one track, naming none of several, asks which (issue #321 U16)', () => {
+  const typedUndertake = (moveTarget = null) => ({
+    moveId: 'undertake_an_expedition', moveName: 'Undertake An Expedition', statUsed: 'wits', adds: 0,
+    moveTarget, rationale: 'test', mischiefApplied: false,
+  });
+
+  it('two fights open: an unnamed Strike is not rolled — the pick strikes that fight, for the roller, and no phantom fight is made', async () => {
+    const boarders = await openTrack('Boarders', { ticks: 8, combatState: 'in_control' });
+    const turret   = await openTrack('Turret', { rank: 'formidable', ticks: 4, combatState: 'in_control' });
+
+    await typedMove(strikeAt(null), STRIKE_STRONG);
+
+    expect(sessionLog()).toEqual([]);
+    expect(tracks()).toHaveLength(2);                                  // was 3: a phantom "Combat"
+    const [picker] = table.cards(f => f.whichFightCard);
+    expect(picker.flags[MODULE_ID]).toMatchObject({ moveId: 'strike', actorId: 'pc-pat' });
+    expect(picker.content).toContain('Strike — which fight?');
+
+    control.dice = STRIKE_STRONG;
+    await clickCard('gm-1', picker._id, `[data-action="sf-which-fight"][data-track-id="${turret.id}"]`);
+
+    expect(sessionLog().map(e => [e.moveId, e.outcome])).toEqual([['strike', 'strong_hit']]);
+    expect(tracks()).toHaveLength(2);
+    expect(track(turret.id).ticks).toBe(4 + 2 * 4);                    // marked twice (formidable: 4 a mark)
+    expect(track(boarders.id).ticks).toBe(8);
+    const [forced] = table.cards(f => f.forcedMoveId === 'strike');
+    expect(forced?.speaker?.actor).toBe('pc-pat');
+  });
+
+  it('two expeditions open: an unnamed Undertake an Expedition asks which; the pick marks that one', async () => {
+    const vault = await openTrack('The Vault of Tears', { type: 'expedition', rank: 'formidable', ticks: 12 });
+    const survey = await openTrack('Bleakhold survey', { type: 'expedition', ticks: 8 });
+
+    await typedMove(typedUndertake(null), STRIKE_STRONG);
+
+    expect(sessionLog()).toEqual([]);
+    const [picker] = table.cards(f => f.whichFightCard);
+    expect(picker.content).toContain('which expedition?');
+    expect(picker.flags[MODULE_ID].fights.map(f => f.id)).toEqual([vault.id, survey.id]);
+
+    control.dice = STRIKE_STRONG;                                       // +wits 2: 6 + 2 = 8 beats 2 and 3
+    await clickCard('pl-1', picker._id, `[data-action="sf-which-fight"][data-track-id="${survey.id}"]`);
+
+    expect(sessionLog().map(e => [e.moveId, e.outcome])).toEqual([['undertake_an_expedition', 'strong_hit']]);
+    expect(tracks()).toHaveLength(2);                                  // was 3: a phantom "Expedition"
+    expect(track(survey.id).ticks).toBe(8 + 8);                        // one dangerous mark
+    expect(track(vault.id).ticks).toBe(12);
+  });
+
+  it('control: a destination none of them matches begins a new expedition, as before', async () => {
+    await openTrack('The Vault of Tears', { type: 'expedition', ticks: 12 });
+    await openTrack('Bleakhold survey', { type: 'expedition', ticks: 8 });
+
+    await typedMove(typedUndertake('The Drift'), STRIKE_STRONG);
+
+    expect(table.cards(f => f.whichFightCard)).toHaveLength(0);
+    expect(tracks().map(t => t.label)).toEqual(['The Vault of Tears', 'Bleakhold survey', 'The Drift']);
+  });
+
+  it('control: the Enter the Fray threshold still begins a new fight while two are open', async () => {
+    await openTrack('Boarders');
+    await openTrack('Turret', { rank: 'formidable' });
+    const gm = table.client('gm-1');
+    const { createCombatTrackFromThreshold } = await gm.import('../../src/index.js');
+    await gm.run(() => createCombatTrackFromThreshold({ label: 'Ironclad raiders', rank: 'extreme' }));
+    await table.settle();
+
+    expect(tracks().map(t => t.label)).toEqual(['Boarders', 'Turret', 'Ironclad raiders']);
+  });
+});

@@ -103,6 +103,7 @@ export const ORACLE_TABLES = {
   // Creatures
   creature_environment:  { name: "Creature Environment",   table: CREATURES.ENVIRONMENT,  category: "creatures" },
   creature_scale:        { name: "Creature Scale",         table: CREATURES.SCALE,        category: "creatures" },
+  creature_ultra_scale:  { name: "Creature Ultra-scale",   table: CREATURES.ULTRA_SCALE,  category: "creatures" },
   creature_basic_form_space:    { name: "Creature Form (Space)",    table: CREATURES.BASIC_FORM_SPACE,    category: "creatures" },
   creature_basic_form_interior: { name: "Creature Form (Interior)", table: CREATURES.BASIC_FORM_INTERIOR, category: "creatures" },
   creature_basic_form_land:     { name: "Creature Form (Land)",     table: CREATURES.BASIC_FORM_LAND,     category: "creatures" },
@@ -290,7 +291,8 @@ export function unregisterOracleTable(tableId) {
  * Roll on an oracle table by ID.
  *
  * Directive entries are resolved in-place so callers never receive raw
- * `"Roll twice"`, `"Roll again …"`, or `"Action + Theme"` strings. See
+ * `"Roll twice"`, `"Roll three times"`, `"Roll again …"`, `"… (roll twice)"`
+ * or `"Action + Theme"` strings, nor an Ultra-scale row left unrolled. See
  * `resolveDirective` for the resolution rules. The original directive
  * type is reported via `isRef` / `refTableId` for callers that still want
  * to distinguish a direct hit from a resolved chain.
@@ -340,17 +342,48 @@ export function rollOracle(tableId, options = {}) {
 }
 
 /**
+ * Cross-references the roller follows in place: the row's word is a heading,
+ * not the answer. Every other ref (Space Sighting's "Stellar Object", Starship
+ * Type's "Fleet", …) stays a label its caller may follow via `refTableId`.
+ */
+const REFS_ROLLED_IN_PLACE = new Set(["creature_ultra_scale"]);
+
+/**
+ * How many rolls a directive row asks for on its own table: 3 for "Roll three
+ * times", 2 for "Roll twice", "Roll again …" and "… (roll twice)", else 0.
+ *
+ * @param {string} text
+ * @returns {number}
+ */
+function directiveRollCount(text) {
+  const t = String(text ?? "");
+  if (/^Roll three times\b/i.test(t)) return 3;
+  if (/^Roll (twice|again)\b/i.test(t) || /\(roll twice\)\s*$/i.test(t)) return 2;
+  return 0;
+}
+
+/**
  * Resolve a single table-entry directive into its result text and the
- * entries it lands on. Pure function — same rules as `rollTableResult` in
- * sectorGenerator.js, but operates on a single matched entry plus its parent
- * table so it can be invoked from `rollOracle` without needing the original
- * d100.
+ * entries it lands on. Pure function — the rules of `rollTableResult` in
+ * sectorGenerator.js (whose tables need only the chains and "Roll twice /
+ * again"), plus the wordings below, but operates on a single matched entry
+ * plus its parent table so it can be invoked from `rollOracle` without needing
+ * the original d100.
  *
  * Resolution:
  *   - `entry.ref === "action_theme"` → roll CORE.ACTION + CORE.THEME, join `" "`.
+ *   - `entry.ref === "descriptor_focus"` → roll CORE.DESCRIPTOR + CORE.FOCUS, join `" "`.
+ *   - a ref in REFS_ROLLED_IN_PLACE (Creature Scale's "Ultra-scale") → roll
+ *     on that table: `"Ultra-scale: Titanic (hill-sized)"`.
  *   - `result === "Roll twice"`      → roll twice on `parentTable`, join `" / "`.
- *   - `result === "Roll again …"`    → roll twice on `parentTable`, join `"-"`.
+ *   - `result === "Roll three times"` → roll three times, join `" / "`.
+ *   - `result === "Roll again …"`    → roll twice on `parentTable`, join `" / "`.
+ *   - `result === "<heading> (roll twice)"` (Starship Type's "Ships in
+ *     conflict") → roll twice, `"<heading>: a / b"`.
  *   - otherwise → `entry.result` verbatim; the entry is the one leaf.
+ *
+ * The last three wordings, and the Ultra-scale row, used to come back verbatim
+ * as if they were answers (issue #321 U68).
  *
  * `leaves` are the terminal entries, in order, so a chain keeps each leaf's
  * annotations (a Pay the Price leaf's `sufferRoute` — issue #314 Q03); a
@@ -383,10 +416,18 @@ function resolveDirective(entry, parentTable, depth = 0, parentDie = 100) {
     return joinResolved(" ", rollAndResolve(CORE.DESCRIPTOR, depth + 1), rollAndResolve(CORE.FOCUS, depth + 1));
   }
 
-  if (/^Roll (twice|again)\b/i.test(entry.result)) {
-    const a = rollAndResolve(parentTable, depth + 1, parentDie);
-    const b = rollAndResolve(parentTable, depth + 1, parentDie);
-    return joinResolved(/paired name/i.test(entry.result) ? "-" : " / ", a, b);
+  if (REFS_ROLLED_IN_PLACE.has(entry.ref) && ORACLE_TABLES[entry.ref]) {
+    const target = ORACLE_TABLES[entry.ref];
+    const sub    = rollAndResolve(target.table, depth + 1, target.die ?? 100);
+    return { text: `${entry.result}: ${sub.text}`, leaves: sub.leaves };
+  }
+
+  const times = directiveRollCount(entry.result);
+  if (times) {
+    let joined = rollAndResolve(parentTable, depth + 1, parentDie);
+    for (let i = 1; i < times; i++) joined = joinResolved(" / ", joined, rollAndResolve(parentTable, depth + 1, parentDie));
+    const heading = /^(.*\S)\s*\(roll twice\)\s*$/i.exec(entry.result)?.[1];
+    return heading ? { text: `${heading}: ${joined.text}`, leaves: joined.leaves } : joined;
   }
 
   return { text: entry.result, leaves: [entry] };
