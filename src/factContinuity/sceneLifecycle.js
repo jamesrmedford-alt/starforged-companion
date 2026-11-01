@@ -65,8 +65,11 @@ export async function startScene(campaignState, { reason = 'unknown' } = {}) {
   }
 
   const stateHasEntries = hasActiveStateEntries(campaignState);
+  const replacing = !!campaignState.currentSceneId;
+  let ended = false;
   if ((campaignState.sceneTruths?.length ?? 0) > 0 || stateHasEntries) {
     await endScene(campaignState, { reason: 'implicit_due_to_new_scene' });
+    ended = true;
   }
 
   const id = `sc-${randomSceneSuffix()}`;
@@ -77,7 +80,13 @@ export async function startScene(campaignState, { reason = 'unknown' } = {}) {
   campaignState.sceneFrame = null;   // A4 — frame is scene-scoped; new scene starts frameless
   campaignState.spotlight = { lastActorId: null, sceneId: id }; // #232 — rotation restarts per scene
 
-  await persistCampaignState(campaignState, `startScene (${reason})`);
+  // An empty scene replaced by this one ended too (endScene ran only for a
+  // scene with entries): its pacing override goes with it (issue #322 V21).
+  // An override set before any scene began is this new scene's.
+  const fields = [...SCENE_FIELDS];
+  if (replacing && !ended && clearPacingOverride(campaignState)) fields.push('pacing');
+
+  await persistCampaignStateFields(campaignState, fields, `startScene (${reason})`);
   return id;
 }
 
@@ -171,7 +180,13 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   campaignState.currentSceneId = null;
   campaignState.spotlight = { lastActorId: null, sceneId: null }; // #232 — clear rotation with the scene
 
-  await persistCampaignStateFields(campaignState, [...SCENE_FIELDS, 'sessionRetractions'], `endScene (${reason})`);
+  // `!pace hot` / `!pace quiet` last "for the current scene" (the help), and
+  // only `!pace clear` cleared them (issue #322 V21): the override ends with
+  // the scene.
+  const fields = [...SCENE_FIELDS, 'sessionRetractions'];
+  if (clearPacingOverride(campaignState)) fields.push('pacing');
+
+  await persistCampaignStateFields(campaignState, fields, `endScene (${reason})`);
 
   return { migrated, archived, skipped };
 }
@@ -179,6 +194,24 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * Clear a `!pace` scene override on the caller's copy, from the store's own
+ * pacing block (so a `!roll` flag set meanwhile stays). True when there was
+ * one — the caller then persists `pacing` with its scene fields, with no await
+ * between this read and that write.
+ *
+ * @param {Object} campaignState — the caller's copy (mutated)
+ * @returns {boolean}
+ */
+function clearPacingOverride(campaignState) {
+  let stored = null;
+  try { stored = game.settings.get(MODULE_ID, 'campaignState')?.pacing ?? null; } catch { stored = null; }
+  const pacing = stored && typeof stored === 'object' ? stored : campaignState.pacing;
+  if (!pacing?.sceneOverride) return false;
+  campaignState.pacing = { ...pacing, sceneOverride: null };
+  return true;
+}
 
 /**
  * Copy the store's active scene — SCENE_FIELDS, cloned — into the caller's
@@ -365,10 +398,6 @@ async function keepLastKnownWhereabouts(campaignState) {
 
 /** campaignState fields the scene lifecycle owns (written by startScene / endScene). */
 const SCENE_FIELDS = Object.freeze(['currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'spotlight']);
-
-async function persistCampaignState(campaignState, label) {
-  await persistCampaignStateFields(campaignState, SCENE_FIELDS, label);
-}
 
 /**
  * The latest stored campaignState with only `fields` taken from the caller's
