@@ -2500,13 +2500,17 @@ function registerStarshipSeedHook() {
  * Triggers:
  *  - createItem / deleteItem — when a Command Vehicle asset is added to or
  *    removed from a starship Actor, recompute that ship's flag.
- *  - ready (once) — reconcile ships created before asset-detection shipped,
+ *  - world load — reconcile ships created before asset-detection shipped,
  *    so an existing command vehicle (like one made via the sidebar) gets
- *    flagged without the user having to re-add the asset.
+ *    flagged without the user having to re-add the asset. This runs from
+ *    the module's own ready handler, so the scan runs at once: a
+ *    Hooks.once("ready") registered while "ready" is dispatching is never
+ *    called (Foundry's Hooks.callAll iterates a copy of the handler list), and
+ *    the scan never ran (issue #321 U22).
  *
  * Canonical-GM gated (world-scoped writes, single emitter — createItem /
  * deleteItem fire on every client). The sync helper writes only on a status
- * change, so the ready-scan is idempotent. A single tracked starship is still
+ * change, so the load scan is idempotent. A single tracked starship is still
  * resolved as the command vehicle via the lone-ship fallback even if nothing
  * here ever flags it.
  */
@@ -2533,22 +2537,21 @@ function registerCommandVehicleHook() {
   Hooks.on("createItem", onAssetChange);
   Hooks.on("deleteItem", onAssetChange);
 
-  Hooks.once("ready", () => {
-    try {
-      if (!isCanonicalGM()) return;
-      import("./entities/ship.js").then(async (mod) => {
-        const state     = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        const starships = (game.actors?.contents ?? []).filter(a => a?.type === "starship");
-        for (const actor of starships) {
-          await mod.syncCommandVehicleFlag(actor, state).catch(err =>
-            console.warn(`${MODULE_ID} | command-vehicle ready sync failed for ${actor.id}:`, err));
-        }
-      }).catch(err =>
-        console.warn(`${MODULE_ID} | command-vehicle ready scan: dynamic import failed:`, err));
-    } catch (err) {
-      console.warn(`${MODULE_ID} | command-vehicle ready hook threw:`, err);
-    }
-  });
+  // The world-load reconcile — now, not on a "ready" that has already begun.
+  try {
+    if (!isCanonicalGM()) return;
+    import("./entities/ship.js").then(async (mod) => {
+      const state     = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const starships = (game.actors?.contents ?? []).filter(a => a?.type === "starship");
+      for (const actor of starships) {
+        await mod.syncCommandVehicleFlag(actor, state).catch(err =>
+          console.warn(`${MODULE_ID} | command-vehicle load sync failed for ${actor.id}:`, err));
+      }
+    }).catch(err =>
+      console.warn(`${MODULE_ID} | command-vehicle load scan: dynamic import failed:`, err));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | command-vehicle load scan threw:`, err);
+  }
 }
 
 /**
