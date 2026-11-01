@@ -17,6 +17,7 @@
 
 import { rollOracle } from "../oracles/roller.js";
 import { stripMarkup } from "../audio/segments.js";
+import { newNarrationId } from "../factContinuity/ledgers.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -328,7 +329,7 @@ export function renderIncitingIncidentCard({ spark, text, fallback = false, swor
  * @param {{ spark, text, fallback, sessionId }} args
  */
 export async function postIncitingIncidentCard(args) {
-  const { text, fallback = false, sessionId = null } = args ?? {};
+  const { text, fallback = false, sessionId = null, narrationId = null } = args ?? {};
   let narratorFlags = {};
   if (!fallback && text) {
     const meta = splitIncitingMeta(text);
@@ -336,6 +337,9 @@ export async function postIncitingIncidentCard(args) {
       narratorCard:  true,
       narrationText: meta.prose,
       sessionId,
+      // The narration's id (stamped on its sidecar's ledger entries) — what
+      // an X-Card on this card retracts (issue #321 U07).
+      narrationId,
       // Structured proposal for the ⚔ Swear this vow click handler — the
       // handler reads flags, never re-parses card HTML (Cluster B).
       incitingMeta: { vow: meta.vow, clock: meta.clock, immediateCrisis: meta.immediateCrisis, target: meta.target },
@@ -359,10 +363,12 @@ export async function runIncitingIncident(campaignState) {
   const spark = rollIncitingSpark();
 
   let text = null;
+  let narrationId = null;
   try {
     const { narrateIncitingIncident } = await import("../narration/narrator.js");
     const userMessage = buildIncitingIncidentUserMessage(spark);
-    text = await narrateIncitingIncident({ userMessage, campaignState: campaignState ?? {} });
+    narrationId = newNarrationId();
+    text = await narrateIncitingIncident({ userMessage, campaignState: campaignState ?? {}, narrationId });
   } catch (err) {
     console.warn(`${MODULE_ID} | runIncitingIncident: narration failed:`, err?.message ?? err);
   }
@@ -413,6 +419,7 @@ export async function runIncitingIncident(campaignState) {
     text,
     fallback:  !text,
     sessionId: campaignState?.currentSessionId ?? null,
+    narrationId,
   });
 
   // Capture entities the opening fiction invented (e.g. a new faction) into the

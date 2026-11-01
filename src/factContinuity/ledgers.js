@@ -15,6 +15,7 @@
  *   - promoteTextSubject   Rewrite text-subject ledger entries to entity-subject.
  *   - subjectKey           Stable key for indexing state-ledger entries.
  *   - subjectFromStateKey  The subject a state-ledger key stands for.
+ *   - retractNarrations    Retract what X-carded narrations' sidecars wrote.
  */
 
 import { resolveEntityName } from '../context/relevanceResolver.js';
@@ -35,6 +36,9 @@ import { resolveEntityName } from '../context/relevanceResolver.js';
  * @param {"narrator_sidecar"|"manual_truth_cmd"|"promoted_state"} [ctx.source="narrator_sidecar"]
  * @param {Array} [ctx.entities] — the entity roster (collectAllEntities:
  *   [{ _id, journalId, name, entityType }]) for subject resolution
+ * @param {string|null} [ctx.narrationId] — the narration this sidecar came
+ *   with (its narrator card carries the same id); stamped on every truth and
+ *   state value written, so an X-Card can retract them (retractNarrations)
  * @returns {{ truthIds: string[], stateUpdates: Array<{ key: string, attribute: string }> }}
  */
 export function applySidecar(sidecar, ctx) {
@@ -52,6 +56,7 @@ export function applySidecar(sidecar, ctx) {
   const asserter  = ctx.asserter  ?? 'narrator';
   const source    = ctx.source    ?? 'narrator_sidecar';
   const entities  = Array.isArray(ctx.entities) ? ctx.entities : [];
+  const stamp     = narrationStamp(ctx.narrationId);
   const now       = Date.now();
 
   // Sync the state ledger's sanity tag to the active scene.
@@ -103,6 +108,7 @@ export function applySidecar(sidecar, ctx) {
       retractedAt: null,
       correctedTo: null,
       migratedTo:  null,
+      ...stamp,
     });
     truthIds.push(id);
   }
@@ -120,13 +126,86 @@ export function applySidecar(sidecar, ctx) {
     const key     = subjectKey(subject);
     const list    = (campaignState.sceneState.bySubject[key] ??= []);
     const idx     = list.findIndex(e => e.attribute === attribute);
-    const entry   = { attribute, value, updatedAt: now };
+    const entry   = { attribute, value, updatedAt: now, ...stamp };
     if (idx >= 0) list[idx] = entry;
     else list.push(entry);
     stateUpdates.push({ key, attribute });
   }
 
   return { truthIds, stateUpdates };
+}
+
+/**
+ * A fresh id for one narration. Its narrator card carries it as
+ * `narrationId`, and its sidecar stamps it on every ledger entry it writes
+ * (applySidecar, applySceneFrame), so an X-Card played on that narration can
+ * retract them (retractNarrations — issue #321 U07). The narrator makes one
+ * per narration; a caller that posts a narration's card itself (the session
+ * and clock vignettes, the inciting incident) makes one and passes it to both
+ * the narration and its card.
+ *
+ * @returns {string}
+ */
+export function newNarrationId() {
+  const uuid = globalThis.crypto?.randomUUID?.();
+  return `nar-${uuid ? uuid.replace(/-/g, '').slice(0, 16) : Math.random().toString(36).slice(2, 14)}`;
+}
+
+/** `{ narrationId }` for a usable narration id, else `{}` (nothing stamped). */
+function narrationStamp(narrationId) {
+  return (typeof narrationId === 'string' && narrationId.trim()) ? { narrationId: narrationId.trim() } : {};
+}
+
+/** `retractedBy` of a truth the X-Card removed (retractNarrations). */
+export const XCARD_RETRACTED_BY = 'xcard';
+
+/**
+ * Retract what the given narrations' sidecars wrote to the active-scene
+ * ledgers — the X-Card (issue #321 U07). Each truth they recorded is
+ * retracted with `retractedBy: "xcard"`: it renders nowhere (not even under
+ * CORRECTED — sessionRetractedFacts leaves it out), is never migrated at
+ * scene end, and still blocks the narrator re-asserting it (applySidecar's
+ * equivalence check). Each state value they set is removed, and a scene frame
+ * they wrote is cleared.
+ *
+ * Replaces `sceneTruths`, `sceneState` and `sceneFrame` on `campaignState`
+ * with new objects and never changes the ones it was given, so the caller
+ * may pass a shallow copy of the stored (cached) value. Pure, no I/O.
+ *
+ * @param {Object}   campaignState — the copy to update
+ * @param {string[]} narrationIds  — the removed narrations (their cards' `narrationId`)
+ * @returns {Object[]} the truths it retracted (the new entries)
+ */
+export function retractNarrations(campaignState, narrationIds) {
+  const ids = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === 'string' && id));
+  if (!campaignState || !ids.size) return [];
+  const now = Date.now();
+  const retracted = [];
+
+  if (Array.isArray(campaignState.sceneTruths)) {
+    campaignState.sceneTruths = campaignState.sceneTruths.map((t) => {
+      if (!t || t.retracted || !ids.has(t.narrationId)) return t;
+      const next = { ...t, retracted: true, retractedBy: XCARD_RETRACTED_BY, retractedAt: now };
+      retracted.push(next);
+      return next;
+    });
+  }
+
+  const bySubject = campaignState.sceneState?.bySubject;
+  if (bySubject && typeof bySubject === 'object') {
+    const kept = {};
+    for (const [key, list] of Object.entries(bySubject)) {
+      if (!Array.isArray(list)) { kept[key] = list; continue; }
+      const rest = list.filter(e => !ids.has(e?.narrationId));
+      if (rest.length) kept[key] = rest;
+    }
+    campaignState.sceneState = { ...campaignState.sceneState, bySubject: kept };
+  }
+
+  if (campaignState.sceneFrame && ids.has(campaignState.sceneFrame.narrationId)) {
+    campaignState.sceneFrame = null;
+  }
+  return retracted;
 }
 
 /**
@@ -140,9 +219,12 @@ export function applySidecar(sidecar, ctx) {
  *
  * @param {Object|null} frame — { location, present[], situation } or null
  * @param {Object} campaignState
+ * @param {Object} [opts]
+ * @param {string|null} [opts.narrationId] — the narration that wrote it,
+ *   stamped so an X-Card can clear it (retractNarrations)
  * @returns {boolean} true when the frame was applied
  */
-export function applySceneFrame(frame, campaignState) {
+export function applySceneFrame(frame, campaignState, { narrationId = null } = {}) {
   if (!campaignState || !frame || typeof frame !== 'object') return false;
   const location  = typeof frame.location  === 'string' ? frame.location.trim()  : '';
   const situation = typeof frame.situation === 'string' ? frame.situation.trim() : '';
@@ -157,6 +239,7 @@ export function applySceneFrame(frame, campaignState) {
     situation,
     sceneId:   campaignState.currentSceneId ?? null,
     updatedAt: Date.now(),
+    ...narrationStamp(narrationId),
   };
   return true;
 }

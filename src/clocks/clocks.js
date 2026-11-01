@@ -26,6 +26,7 @@
  */
 
 import { rollYesNo } from "../oracles/roller.js";
+import { newNarrationId } from "../factContinuity/ledgers.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -708,16 +709,19 @@ function fireClockVignette(clockData) {
     try {
       const { narrateClockAdvancement } = await import("../narration/narrator.js");
       const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
-      const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs });
+      const narrationId = newNarrationId();
+      const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs, narrationId });
       if (text) {
         // Flag family (NARR-RING-CLOCKVIG, narrator-context audit 2026-07):
         // vignette prose must enter the recent-narration ring and rolling
-        // summary like every other narrator fiction card.
+        // summary like every other narrator fiction card. narrationId: what
+        // an X-Card on it retracts (issue #321 U07).
         await postCard(`<em>${escapeHtml(text)}</em>`, {
           clockVignetteCard: true,
           narratorCard:      true,
           narrationText:     text,
           sessionId:         cs.currentSessionId ?? null,
+          narrationId,
         });
       }
     } catch (err) {

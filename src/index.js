@@ -79,6 +79,7 @@ import {
   getCampaignRecap,
   narrateAndPostVowSwearing,
   registerRollingSummaryRefreshHook,
+  registerXCardRedirectHook,
   registerPublishedReflectionHook,
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
@@ -6509,6 +6510,7 @@ Hooks.once("ready", () => {
   registerNativeFulfilConsequenceHook();   // #248 B2: native-sheet vow fulfil → deepen bond + grant reward + legacy
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
+  registerXCardRedirectHook();             // #321 U07: the X-Card's redirect is cleared once the first narration after it posts
   registerSessionActivityHook();           // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();

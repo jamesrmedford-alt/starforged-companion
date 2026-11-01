@@ -31,7 +31,7 @@ import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
 import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
 import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
 import { rememberSessionRetractions } from './retractions.js';
-import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from './ledgers.js';
+import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -428,7 +428,9 @@ export async function persistCampaignStateFields(campaignState, fields, label) {
  *     retraction on either side sticks, the working copy's new truths
  *     appended); sceneState / sceneFrame / spotlight keep the working copy
  *     (their supersede / delete semantics cannot be merged without a
- *     baseline).
+ *     baseline) — except what a narration the X-Card removed wrote (the
+ *     store's `xCardedNarrationIds`), which is retracted from the working
+ *     copy first (issue #321 U07).
  *
  * @param {Object} working — the writer's copy (mutated)
  * @param {Object} latest  — the latest stored campaignState (not mutated)
@@ -441,6 +443,17 @@ export function mergeSceneLedgers(working, latest) {
       else delete working[key];
     }
     return false;
+  }
+
+  // A narration the X-Card removed stays removed (issue #321 U07): the
+  // working copy may predate the removal, and its state and frame would be
+  // kept below. Its truths are retracted again here too (a retraction sticks
+  // in the union); a frame it wrote yields to the store's.
+  const removed = Array.isArray(latest.xCardedNarrationIds) ? latest.xCardedNarrationIds : [];
+  if (removed.length) {
+    const frameRemoved = removed.includes(working.sceneFrame?.narrationId);
+    retractNarrations(working, removed);
+    if (frameRemoved) working.sceneFrame = latest.sceneFrame ?? null;
   }
 
   const storeTruths   = Array.isArray(latest.sceneTruths)  ? latest.sceneTruths  : null;

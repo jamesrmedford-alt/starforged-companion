@@ -32,6 +32,7 @@
 
 import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById } from '../entities/registry.js';
 import { retractSessionLore } from '../world/worldJournal.js';
+import { XCARD_RETRACTED_BY } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -207,6 +208,17 @@ function subjectLabel(subject) {
 }
 
 /**
+ * A bare strike the CORRECTED block and the summary's leave-out list name: a
+ * retracted truth with no replacement. A truth the X-Card removed is not one
+ * (issue #321 U07): naming it — even as "do not re-assert" — would hand the
+ * narrator the content the table removed. It stays retracted in the ledger,
+ * which is what blocks its re-assertion.
+ */
+function isNamedStrike(t) {
+  return !!t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY && !!String(t.fact ?? '').trim();
+}
+
+/**
  * At scene end, keep the scene's bare strikes (a Replace's replacement
  * stands, so it is not kept) on `campaignState.sessionRetractions` for the
  * rest of the session. Mutates campaignState; endScene persists it.
@@ -216,8 +228,7 @@ function subjectLabel(subject) {
 export function rememberSessionRetractions(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
   if (!sessionId) return;
-  const struck = (campaignState.sceneTruths ?? [])
-    .filter(t => t?.retracted && !t.correctedTo && String(t.fact ?? '').trim());
+  const struck = (campaignState.sceneTruths ?? []).filter(isNamedStrike);
   if (!struck.length) return;
 
   const prior = campaignState.sessionRetractions?.sessionId === sessionId
@@ -259,7 +270,7 @@ export function sessionRetractedFacts(campaignState) {
     ? (campaignState.sessionRetractions.facts ?? []).map(f => ({ label: f.label, fact: f.fact }))
     : [];
   const current = (campaignState?.sceneTruths ?? [])
-    .filter(t => t?.retracted && !t.correctedTo && String(t.fact ?? '').trim())
+    .filter(isNamedStrike)
     .map(t => ({ label: subjectLabel(t.subject), fact: String(t.fact).trim() }));
   const out = [];
   for (const f of [...earlier, ...current]) {

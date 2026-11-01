@@ -456,6 +456,9 @@ async function requestGmSynthesis(hash, spec) {
 export async function onNarratorCardRendered(message, root) {
   if (!audioEnabledForThisClient()) return;
   if (!(root instanceof HTMLElement)) return;
+  // The X-Card removed this narration (issue #321 U07): no Play button — its
+  // audio stays hidden, as the card renders it.
+  if (message?.flags?.[MODULE_ID]?.xCarded) return;
 
   const playBtn = root.querySelector('[data-action="audioPlayToggle"]');
   if (!playBtn) return;

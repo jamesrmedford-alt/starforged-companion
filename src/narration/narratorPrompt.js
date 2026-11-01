@@ -1091,6 +1091,20 @@ const ANTI_SUGGESTION_CLAUSE =
   `inside the prose. The fiction moves forward through what the narrator describes ` +
   `happening, not through suggestions about what could happen next.`;
 
+/**
+ * The redirect the first narration after an X-Card carries (issue #321 U07,
+ * section [1b]). The removed beat is already out of every memory the narrator
+ * reads; this tells it to move the story away without saying what it was.
+ */
+const XCARD_REDIRECT_BLOCK =
+  `## X-CARD — REDIRECT\n\n` +
+  `A player used the X-Card on the most recent beat of the story. That beat has been ` +
+  `removed: it did not happen. Do not continue it, refer to it, describe its aftermath, ` +
+  `or bring back anything it introduced, even indirectly. Take the scene in a clearly ` +
+  `different direction — a cut to another moment, a shift of focus, or a new ` +
+  `development — and carry on from what remains of the story. Do not mention the ` +
+  `X-Card or that anything was removed.`;
+
 const TONE_DESCRIPTIONS = {
   wry: "Wry — knowing and slightly sardonic, aware of consequence without wallowing in it. The narrator has seen this before. It notices the irony. It does not editorialize, but it does not pretend not to notice.",
   grim_and_grounded: "Grim and grounded — sparse, consequential, Ironsworn-canonical. Short sentences. Weighted words. No flourish.",
@@ -1395,6 +1409,12 @@ export function buildNarratorSystemPrompt(
     extras?.safety ? { ...campaignState, safety: extras.safety } : campaignState,
   );
   if (safetyContent) parts.push(safetyContent);
+
+  // [1b] X-Card redirect — the first narration after a GM resumes from an
+  //      X-Card steers away from the beat the card removed (issue #321 U07;
+  //      buildNarratorExtras → extras.xCardRedirect, cleared once a narration
+  //      has posted). It never names the removed content.
+  if (extras?.xCardRedirect && !isMetaMode) parts.push(XCARD_REDIRECT_BLOCK);
 
   // [2] Narrator permissions — the creative-latitude block, immediately after
   //     safety and before any other contextual section. Every prose mode has a

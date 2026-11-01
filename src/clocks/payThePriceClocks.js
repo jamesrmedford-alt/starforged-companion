@@ -10,6 +10,8 @@
  * directly, keeping its return value for the Burn Momentum reversal.
  */
 
+import { newNarrationId } from "../factContinuity/ledgers.js";
+
 const MODULE_ID = "starforged-companion";
 
 /**
@@ -83,10 +85,12 @@ export async function advanceClocksOnPayThePrice() {
         const { narrateClockAdvancement } = await import("../narration/narrator.js");
         const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
         for (const cd of justTriggered) {
-          const text = await narrateClockAdvancement({ clock: cd, campaignState: cs });
+          const narrationId = newNarrationId();
+          const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId });
           if (text) {
             // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction must
             // enter the ring/summary or the narrator forgets it immediately.
+            // narrationId: what an X-Card on it retracts (issue #321 U07).
             await ChatMessage.create({
               content: `<div class="sf-clock-card"><strong>⚠ TRIGGERED — </strong><em>${escapeChatHtml(text)}</em></div>`,
               flags:   {
@@ -96,6 +100,7 @@ export async function advanceClocksOnPayThePrice() {
                   narratorCard:      true,
                   narrationText:     text,
                   sessionId:         cs.currentSessionId ?? null,
+                  narrationId,
                 },
               },
             });

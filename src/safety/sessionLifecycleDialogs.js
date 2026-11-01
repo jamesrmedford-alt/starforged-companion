@@ -30,6 +30,7 @@
 
 import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
+import { newNarrationId } from "../factContinuity/ledgers.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -262,10 +263,12 @@ async function beginSessionOnce(payload) {
             const { narrateClockAdvancement } = await import("../narration/narrator.js");
             const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
             for (const cd of advanced) {
-              const text = await narrateClockAdvancement({ clock: cd, campaignState: cs });
+              const narrationId = newNarrationId();
+              const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId });
               if (text) {
                 // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction
                 // must enter the ring/summary or it is forgotten instantly.
+                // narrationId: what an X-Card on it retracts (issue #321 U07).
                 await ChatMessage.create({
                   content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${escapeHtml(text)}</em></div>`,
                   flags:   {
@@ -275,6 +278,7 @@ async function beginSessionOnce(payload) {
                       narratorCard:      true,
                       narrationText:     text,
                       sessionId:         cs.currentSessionId ?? null,
+                      narrationId,
                     },
                   },
                 });
@@ -309,9 +313,10 @@ async function beginSessionOnce(payload) {
       const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
       const participants = collectGalleyParticipants();
       const userMessage  = buildGalleyVignetteUserMessage(participants, cs);
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs });
+      const narrationId  = newNarrationId();
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId });
       if (text) {
-        await postGalleyVignetteCard({ text, kind: "galley_begin", sessionId: cs.currentSessionId ?? "" });
+        await postGalleyVignetteCard({ text, kind: "galley_begin", sessionId: cs.currentSessionId ?? "", narrationId });
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | galley vignette generation failed:`, err?.message ?? err);
@@ -556,9 +561,10 @@ async function endSessionOnce(payload) {
       const cs  = game.settings.get(MODULE_ID, "campaignState") ?? {};
       const npc = selectEndSessionNPC(cs);
       const userMessage = buildEndSessionVignetteUserMessage(npc, cs);
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs });
+      const narrationId = newNarrationId();
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId });
       if (text) {
-        await postEndSessionVignetteCard({ text, npcName: npc.name, sessionId: cs.currentSessionId ?? "" });
+        await postEndSessionVignetteCard({ text, npcName: npc.name, sessionId: cs.currentSessionId ?? "", narrationId });
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | end-session vignette generation failed:`, err?.message ?? err);

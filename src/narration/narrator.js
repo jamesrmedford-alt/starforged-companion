@@ -19,7 +19,7 @@ import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
-import { applySidecar, applySceneFrame } from '../factContinuity/ledgers.js';
+import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults } from '../oracles/oracleMemory.js';
 import { logNarratorUsage } from '../pacing/telemetry.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
@@ -349,6 +349,12 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // is only there.
   extras.recentOracles = readRecentOracleResults(storedCampaignState() ?? campaignState);
 
+  // The X-Card's redirect (issue #321 U07): pending from the play until the
+  // first narration after a GM resumes has posted (registerXCardRedirectHook
+  // clears it). Read from the store — the X-Card is played mid-pipeline.
+  extras.xCardRedirect = mode !== 'campaign_recap'
+    && xCardRedirectPending(storedCampaignState() ?? campaignState);
+
   // World Journal state (FACTION-PACKET-DEAD fix, 2026-07): active threats,
   // the faction landscape, and recent confirmed lore used to ride the
   // assembler context packet — which was passed to narrateResolution and
@@ -617,6 +623,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     return null;
   }
   const xCard = watchXCard(campaignState);
+  const narrationId = newNarrationId();
 
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -691,6 +698,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     matchedEntityIds: extras.matchedEntityIds ?? [],
     playerText:       isPlayerWrittenInput(resolution) ? (resolution.playerNarration ?? '') : '',
     playerName:       character?.name ?? null,
+    narrationId,
   };
 
   try {
@@ -709,6 +717,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     const narration = applyNarratorSidecar(raw, campaignState, {
       moveId:           resolution?.moveId,
       matchedEntityIds: extras.matchedEntityIds ?? [],
+      narrationId,
     });
 
     if (!narration?.trim()) {
@@ -745,6 +754,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
         const narration = applyNarratorSidecar(raw, campaignState, {
           moveId:           resolution?.moveId,
           matchedEntityIds: extras.matchedEntityIds ?? [],
+          narrationId,
         });
         if (narration?.trim()) {
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
@@ -909,6 +919,7 @@ export async function postNarrationCard(narrationText, resolution, campaignState
   const matchedEntityIds = Array.isArray(options.matchedEntityIds) ? options.matchedEntityIds : [];
   const playerText = typeof options.playerText === 'string' ? options.playerText.trim() : '';
   const playerName = typeof options.playerName === 'string' && options.playerName.trim() ? options.playerName.trim() : null;
+  const narrationId = typeof options.narrationId === 'string' && options.narrationId ? options.narrationId : null;
   return ChatMessage.create({
     content: `
       <div class="sf-narration-card">
@@ -942,6 +953,9 @@ export async function postNarrationCard(narrationText, resolution, campaignState
         // prose by the ring and the rolling summary (ringEntryText).
         playerText,
         playerName,
+        // Links the card to the ledger entries its sidecar wrote, which an
+        // X-Card on it retracts (issue #321 U07).
+        narrationId,
         timestamp:        new Date().toISOString(),
       },
     },
@@ -1040,9 +1054,186 @@ function sessionNarratorCards(sessionId) {
     // the ring or the rolling summary, nor count as the session's first
     // narration — that cancelled the session's campaign recap (issue #321 U35).
     if (f.narrationFallback) return false;
+    // The X-Card removed this narration (issue #321 U07): the table took it
+    // out of the story, so the narrator never reads it again.
+    if (f.xCarded) return false;
     if (Array.isArray(m.whisper) && m.whisper.length) return false;
     return true;
   });
+}
+
+// ---------------------------------------------------------------------------
+// The X-Card and narrator memory (issue #321 U07)
+// ---------------------------------------------------------------------------
+//
+// Full exclusion (decisions.md → "X-Card: anyone plays it, a GM resumes it"):
+// the narration an X-Card answers leaves narrator memory — its cards are
+// flagged `xCarded` (out of the ring, the rolling summary and the session
+// recap's prose), the ledger entries its sidecar wrote are retracted, a
+// rolling summary that covered it loses its text, and the first narration
+// after a GM resumes carries a redirect away from it.
+//
+// Which cards: the narration on screen when the card is played — the newest
+// narrator card of the session still in narrator memory, with the narrator
+// cards posted in the same beat: those after the last message someone sent
+// (any chat message that is not one of this module's cards) and at most
+// XCARD_BEAT_WINDOW_MS older than it. An earlier X-Card's card, its "X-Card
+// cleared" card, or a card an earlier X-Card removed bounds the beat; when one
+// of those is newer than any narration, nothing was narrated since and the
+// X-Card removes nothing more.
+
+/** How much older than the newest X-carded card a card of the same beat may be. */
+const XCARD_BEAT_WINDOW_MS = 2 * 60 * 1000;
+
+/** X-carded narration ids kept on campaignState, newest last (the merge and relay checks read them). */
+const XCARD_NARRATION_ID_CAP = 50;
+
+/** A ChatMessage's creation time (ms), or null when it carries none. */
+function messageTime(message) {
+  const t = Number(message?.timestamp);
+  if (Number.isFinite(t) && t > 0) return t;
+  const iso = Date.parse(message?.flags?.[MODULE_ID]?.timestamp ?? '');
+  return Number.isFinite(iso) ? iso : null;
+}
+
+/**
+ * The narrator cards an X-Card played now removes, oldest first (the rule
+ * above). Reads chat only.
+ *
+ * @param {string|null} sessionId
+ * @returns {Array<Object>} ChatMessage documents
+ */
+export function xCardedNarrationCards(sessionId) {
+  if (!sessionId) return [];
+  const messages = game.messages?.contents ?? [];
+  const inMemory = new Set(sessionNarratorCards(sessionId));
+  const isBoundary = (f) => !!(f?.xcardCard || f?.xcardClearedCard);
+
+  // The newest narration, unless an earlier X-Card already answered it.
+  let newestIdx = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    const f = m?.flags?.[MODULE_ID];
+    if (inMemory.has(m)) { newestIdx = i; break; }
+    if (f?.xcardClearedCard || f?.xCarded) return [];   // nothing narrated since
+    // anything else — this play's own X-Card card, a person's message, another card — is passed over
+  }
+  if (newestIdx < 0) return [];
+
+  const newest   = messages[newestIdx];
+  const newestAt = messageTime(newest);
+  const beat = [newest];
+  for (let i = newestIdx - 1; i >= 0; i--) {
+    const m = messages[i];
+    const f = m?.flags?.[MODULE_ID];
+    if (!f) break;                              // someone spoke: the beat began after it
+    if (isBoundary(f) || f.xCarded) break;      // an earlier X-Card answered what came before
+    if (!inMemory.has(m)) continue;             // one of this module's other cards
+    const at = messageTime(m);
+    if (newestAt !== null && at !== null && newestAt - at > XCARD_BEAT_WINDOW_MS) break;
+    beat.unshift(m);
+  }
+  return beat;
+}
+
+/**
+ * Take the narration an X-Card answers out of narrator memory's stores on
+ * `cs` — a copy of the stored campaignState that the caller (suppressScene,
+ * on the canonical GM) writes in the same write as the pause. Synchronous: no
+ * await between the caller's read and its write. Sets:
+ *   - the ledger: what the X-carded narrations' sidecars wrote, retracted
+ *     (retractNarrations — truths `retractedBy: "xcard"`, state removed, a
+ *     frame they wrote cleared);
+ *   - `xCardedNarrationIds`: their ids, so a stale writer's merge
+ *     (mergeSceneLedgers) or a late relayed sidecar cannot bring them back;
+ *   - `sessionSummary`: its text dropped and a regen due, when it covered
+ *     them (the summary is a droppable convenience; the next regen reads the
+ *     remaining cards);
+ *   - `xCardRedirect`: the redirect the first narration after a GM resumes
+ *     carries — set on every play, X-carded cards or not.
+ * The caller then flags the returned cards `xCarded` (flagXCardedCards).
+ *
+ * @param {Object} cs — the copy to update (mutated; its ledger objects are replaced, never changed)
+ * @returns {{ cards: Object[], retracted: Object[] }} the X-carded cards and the truths retracted
+ */
+export function applyXCardToNarratorMemory(cs) {
+  const sessionId = cs?.currentSessionId ?? null;
+  const cards = xCardedNarrationCards(sessionId);
+  const ids = [...new Set(cards.map(m => m.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === 'string' && id))];
+
+  const retracted = retractNarrations(cs, ids);
+  if (ids.length) {
+    const prior = Array.isArray(cs.xCardedNarrationIds) ? cs.xCardedNarrationIds : [];
+    cs.xCardedNarrationIds = [...prior.filter(id => !ids.includes(id)), ...ids].slice(-XCARD_NARRATION_ID_CAP);
+  }
+
+  const summary = cs.sessionSummary;
+  if (cards.length && summary?.sessionId === sessionId) {
+    // The summary was made from the session's cards in memory, oldest first:
+    // it covers the first `coveredCount` of them.
+    const firstIdx = sessionNarratorCards(sessionId).indexOf(cards[0]);
+    if (firstIdx >= 0 && firstIdx < (Number(summary.coveredCount) || 0)) {
+      cs.sessionSummary = { ...summary, text: '', coveredCount: 0 };
+    }
+  }
+
+  cs.xCardRedirect = { sessionId, at: new Date().toISOString() };
+  return { cards, retracted };
+}
+
+/**
+ * Flag the X-carded cards `xCarded` (sessionNarratorCards leaves them out).
+ * GM-authored update on the canonical GM; a card that cannot be updated is
+ * logged and skipped.
+ *
+ * @param {Object[]} cards
+ * @returns {Promise<number>} cards flagged
+ */
+export async function flagXCardedCards(cards) {
+  let flagged = 0;
+  for (const message of cards ?? []) {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.xCarded`]: true });
+      flagged += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: could not flag narration card ${message?.id} removed:`, err?.message ?? err);
+    }
+  }
+  return flagged;
+}
+
+/** True when an X-Card redirect is pending for this session (buildNarratorExtras). */
+function xCardRedirectPending(cs) {
+  const redirect = cs?.xCardRedirect;
+  if (!redirect || typeof redirect !== 'object') return false;
+  return !redirect.sessionId || redirect.sessionId === (cs.currentSessionId ?? null);
+}
+
+/**
+ * Clear the X-Card redirect once the first narration after a GM resumed has
+ * posted (issue #321 U07). Every narration built after the resume carried it
+ * — buildNarratorExtras reads it from the store, and while the X-Card is
+ * active every narrator path stands down — so the first narrator card posted
+ * with the X-Card lifted is one that delivered it. A fallback card (nothing
+ * was delivered), a published Private Channel reflection (not a narration)
+ * and an X-carded card do not count. On the canonical GM — a single-emitter
+ * world write onto the latest store.
+ */
+export function registerXCardRedirectHook() {
+  Hooks.on('createChatMessage', (message) => {
+    if (!isCanonicalGM()) return;
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.narratorCard || !f.narrationText) return;
+    if (f.narrationFallback || f.publishedReflection || f.xCarded) return;
+    clearXCardRedirect().catch(err =>
+      console.warn(`${MODULE_ID} | X-Card: clearing the redirect failed:`, err?.message ?? err));
+  });
+}
+
+async function clearXCardRedirect() {
+  const latest = storedCampaignState();
+  if (!latest?.xCardRedirect || latest.xCardActive) return;
+  await game.settings.set(MODULE_ID, 'campaignState', { ...latest, xCardRedirect: null });
 }
 
 /**
@@ -1092,7 +1283,9 @@ export async function postSessionRecap(campaignState, sessionId = null) {
       ? f.moveId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
       : null;
     const outcome  = f.outcome ?? null;
-    const text     = f.narrationText ?? '';
+    // A narration the X-Card removed (issue #321 U07): its move still
+    // counts, but its prose is not quoted back to the table.
+    const text     = f.xCarded ? '' : (f.narrationText ?? '');
     const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? '';
 
     if (outcome && outcomes[outcome] !== undefined) outcomes[outcome]++;
@@ -1518,6 +1711,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
     return null;
   }
   const xCard = watchXCard(campaignState);
+  const narrationId = newNarrationId();
 
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -1566,7 +1760,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
       return null;
     }
     const response = applyNarratorSidecar(raw, campaignState, {
-      moveId: null, matchedEntityIds: extras.matchedEntityIds,
+      moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
     });
 
     if (!response?.trim()) {
@@ -1574,7 +1768,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
       return null;
     }
 
-    await postSceneCard(question, response, sessionId, character?.name ?? null);
+    await postSceneCard(question, response, sessionId, character?.name ?? null, narrationId);
     scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null);
     return response;
 
@@ -1593,10 +1787,10 @@ export async function interrogateScene(question, campaignState, options = {}) {
           return null;
         }
         const response = applyNarratorSidecar(raw, campaignState, {
-          moveId: null, matchedEntityIds: extras.matchedEntityIds,
+          moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
         });
         if (response?.trim()) {
-          await postSceneCard(question, response, sessionId, character?.name ?? null);
+          await postSceneCard(question, response, sessionId, character?.name ?? null, narrationId);
           scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null);
           return response;
         }
@@ -1684,6 +1878,7 @@ export async function narrateOracleFollowup({
     return null;
   }
   const xCard = watchXCard(campaignState);
+  const narrationId = newNarrationId();
 
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -1720,11 +1915,11 @@ export async function narrateOracleFollowup({
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateOracleFollowup')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
 
     if (!text?.trim()) return null;
 
-    await postOracleNarrationCard({ text, kind, oracleName, sessionId });
+    await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId });
     // The narration of a roll the table made — discovery by nature (#286 D4).
     scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null });
     return text;
@@ -1739,9 +1934,9 @@ export async function narrateOracleFollowup({
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateOracleFollowup')) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (text?.trim()) {
-          await postOracleNarrationCard({ text, kind, oracleName, sessionId });
+          await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId });
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null });
           return text;
         }
@@ -1777,7 +1972,7 @@ function buildOracleUserMessage({
   );
 }
 
-async function postOracleNarrationCard({ text, kind, oracleName, sessionId }) {
+async function postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId = null }) {
   const header = oracleName || (kind === 'pay_the_price' ? 'Pay the Price' : 'Oracle');
   // Flag family (narrator-context audit 2026-07): the oracle follow-up is
   // in-fiction prose anchored to the scene — without the family it never
@@ -1792,6 +1987,7 @@ async function postOracleNarrationCard({ text, kind, oracleName, sessionId }) {
         sessionId:           sessionId ?? '',
         narratorCard:        true,
         narrationText:       text,
+        narrationId:         narrationId ?? null,   // for the X-Card (issue #321 U07)
       },
     },
   });
@@ -1825,7 +2021,7 @@ function escapeHtml(s) {
  * @param {Object} args.campaignState
  * @returns {Promise<string|null>}
  */
-export async function narrateSessionVignette({ userMessage, campaignState }) {
+export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId() }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
   if (isXCardActive(campaignState))  return null;
@@ -1851,7 +2047,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
       maxTokens: maxTokensWithSidecar(16000),  // 4-6 sentences, comfortable headroom
     });
     if (xCard.interrupted('narrateSessionVignette')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
     if (!text?.trim()) return null;
     scheduleNarrationCapture(text, campaignState);   // its NPCs' developments → their cards (#286 D4)
     return text;
@@ -1866,7 +2062,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateSessionVignette')) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (!text?.trim()) return null;
         scheduleNarrationCapture(text, campaignState);
         return text;
@@ -1889,7 +2085,7 @@ export async function narrateSessionVignette({ userMessage, campaignState }) {
  * @param {{ clock: { name:string, type:string, filled:number, segments:number, triggered:boolean }, campaignState: Object }} args
  * @returns {Promise<string|null>}
  */
-export async function narrateClockAdvancement({ clock, campaignState }) {
+export async function narrateClockAdvancement({ clock, campaignState, narrationId = newNarrationId() }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
   if (isXCardActive(campaignState))  return null;
@@ -1922,7 +2118,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateClockAdvancement')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
     return (text && text.trim()) ? text : null;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -1935,7 +2131,7 @@ export async function narrateClockAdvancement({ clock, campaignState }) {
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateClockAdvancement')) return null;
-        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
+        const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         return (text && text.trim()) ? text : null;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
@@ -1982,10 +2178,12 @@ export function buildVowSwearingUserMessage(vow, ironTruth) {
  * issue #321 U23), as the move narration before it is.
  *
  * @param {{ vow: { name?: string, rank?: string|null }, campaignState: Object,
- *           speakerActorId?: string|null }} args
+ *           speakerActorId?: string|null, narrationId?: string }} args —
+ *   `narrationId`: stamped on the sidecar's facts and the posted card, so an
+ *   X-Card can remove this narration (issue #321 U07)
  * @returns {Promise<string|null>}
  */
-export async function narrateVowSwearing({ vow, campaignState, speakerActorId = null }) {
+export async function narrateVowSwearing({ vow, campaignState, speakerActorId = null, narrationId = newNarrationId() }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
   let vowSceneOn = true;
@@ -2015,7 +2213,7 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateVowSwearing')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
     return (text && text.trim()) ? text : null;
   };
 
@@ -2042,7 +2240,8 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
  * @returns {Promise<string|null>}
  */
 export async function narrateAndPostVowSwearing({ vow, campaignState, speakerActorId = null }) {
-  const text = await narrateVowSwearing({ vow, campaignState, speakerActorId });
+  const narrationId = newNarrationId();
+  const text = await narrateVowSwearing({ vow, campaignState, speakerActorId, narrationId });
   if (!text) return null;
   const clean = stripMarkup(text)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -2061,6 +2260,7 @@ export async function narrateAndPostVowSwearing({ vow, campaignState, speakerAct
           narratorCard:  true,
           narrationText: text,
           sessionId:     campaignState?.currentSessionId ?? null,
+          narrationId,   // for the X-Card (issue #321 U07)
         },
       },
     });
@@ -2083,7 +2283,7 @@ export async function narrateAndPostVowSwearing({ vow, campaignState, speakerAct
  * @param {{ userMessage: string, campaignState: Object }} args
  * @returns {Promise<string|null>}
  */
-export async function narrateIncitingIncident({ userMessage, campaignState }) {
+export async function narrateIncitingIncident({ userMessage, campaignState, narrationId = newNarrationId() }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
   if (isXCardActive(campaignState))  return null;
@@ -2114,7 +2314,7 @@ export async function narrateIncitingIncident({ userMessage, campaignState }) {
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateIncitingIncident')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [] });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
     return (text && text.trim()) ? text : null;
   };
 
@@ -2158,6 +2358,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     return null;
   }
   const xCard = watchXCard(campaignState);
+  const narrationId = newNarrationId();
 
   const apiKey = getApiKey();
   if (!apiKey) {
@@ -2200,13 +2401,13 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     });
     if (xCard.interrupted('narratePacedInput')) return null;
     const text = applyNarratorSidecar(raw, campaignState, {
-      moveId: null, matchedEntityIds: extras.matchedEntityIds,
+      moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
     });
 
     if (!text?.trim()) return null;
 
     const buttonMove = reconcileSuggestedMove(text, suggestedMove);
-    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null);
+    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId);
     schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
     schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
     scheduleChronicleEntry({
@@ -2227,11 +2428,11 @@ export async function narratePacedInput(playerText, campaignState, options = {})
         });
         if (xCard.interrupted('narratePacedInput')) return null;
         const text = applyNarratorSidecar(raw, campaignState, {
-          moveId: null, matchedEntityIds: extras.matchedEntityIds,
+          moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
         });
         if (text?.trim()) {
           const buttonMove = reconcileSuggestedMove(text, suggestedMove);
-          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null);
+          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId);
           schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
           schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
           scheduleChronicleEntry({
@@ -2397,7 +2598,7 @@ export async function runNarrationTierUpdate(narrationText, campaignState) {
   }
 }
 
-async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null) {
+async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove
     ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(formatMoveLabel(suggestedMove))}</button></div>`
@@ -2429,6 +2630,7 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         suggestedMove:    suggestedMove ?? null,
         sessionId:        sessionId ?? null,
         matchedEntityIds: [],
+        narrationId:      narrationId ?? null,   // for the X-Card (issue #321 U07)
         timestamp:        new Date().toISOString(),
       },
     },
@@ -2888,7 +3090,7 @@ export function formatActiveSector(campaignState) {
   return lines.join('\n');
 }
 
-async function postSceneCard(question, responseText, sessionId, playerName = null) {
+async function postSceneCard(question, responseText, sessionId, playerName = null, narrationId = null) {
   return ChatMessage.create({
     content: `
       <div class="sf-scene-card">
@@ -2910,6 +3112,7 @@ async function postSceneCard(question, responseText, sessionId, playerName = nul
         narrationText: responseText,
         sessionId:     sessionId ?? null,
         playerName:    playerName ?? null,   // with sceneQuestion, read back by the ring (ringEntryText)
+        narrationId:   narrationId ?? null,  // its sidecar's ledger entries, for the X-Card (issue #321 U07)
       },
     },
   });
@@ -3016,6 +3219,8 @@ async function postFallbackCard(resolution, campaignState = null) {
  * @param {Object} campaignState
  * @param {Object} [ctx]
  * @param {string|null} [ctx.moveId]
+ * @param {string|null} [ctx.narrationId] — the narration's id (its card
+ *   carries it too), stamped on what the sidecar writes (issue #321 U07)
  * @returns {string} prose with the sidecar block removed
  */
 /**
@@ -3136,6 +3341,7 @@ function relayNarratorSidecar(sidecar, campaignState, ctx) {
       sceneId:          campaignState.currentSceneId ?? null,
       moveId:           ctx.moveId ?? null,
       matchedEntityIds: Array.isArray(ctx.matchedEntityIds) ? ctx.matchedEntityIds : [],
+      narrationId:      typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
     });
   }).catch(err =>
     console.warn(`${MODULE_ID} | factContinuity: narrator side-data relay failed:`, err?.message ?? err));
@@ -3150,9 +3356,11 @@ const RELAYED_SIDECAR_MAX_ENTRIES = 20;
  * its own key, onto the latest stored campaignState. Dropped when the scene it
  * was written in has ended; when no scene is active yet, one starts first (the
  * player's client could not start it). Like any narration on a player's key,
- * the content is the player's client's — the same trust as its prose.
+ * the content is the player's client's — the same trust as its prose. Also
+ * dropped when the X-Card has removed the narration it came with (issue #321
+ * U07): it may arrive after the X-Card retracted that narration's facts.
  *
- * @param {{ sidecar: Object, sceneId?: string|null, moveId?: string|null }} payload
+ * @param {{ sidecar: Object, sceneId?: string|null, moveId?: string|null, narrationId?: string|null }} payload
  * @param {Object} [_ctx]
  * @returns {Promise<void>}
  */
@@ -3162,14 +3370,20 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
   if (!sidecar) return;
   sidecar.newTruths    = sidecar.newTruths.slice(0, RELAYED_SIDECAR_MAX_ENTRIES);
   sidecar.stateChanges = sidecar.stateChanges.slice(0, RELAYED_SIDECAR_MAX_ENTRIES);
+  const narrationId = (typeof payload.narrationId === 'string' && /^[\w-]{1,64}$/.test(payload.narrationId))
+    ? payload.narrationId : null;
   const campaignState = game.settings.get(MODULE_ID, 'campaignState');
   if (!campaignState) return;
   if (payload.sceneId && payload.sceneId !== (campaignState.currentSceneId ?? null)) {
     console.debug?.(`${MODULE_ID} | factContinuity: relayed narrator side-data belongs to a scene that has ended — dropped.`);
     return;
   }
+  if (narrationId && (campaignState.xCardedNarrationIds ?? []).includes(narrationId)) {
+    console.debug?.(`${MODULE_ID} | factContinuity: relayed narrator side-data belongs to a narration the X-Card removed — dropped.`);
+    return;
+  }
   await ensureSceneStarted(campaignState, 'relayed_narration');
-  await applySidecarSideData(sidecar, campaignState, { moveId: payload.moveId ?? null });
+  await applySidecarSideData(sidecar, campaignState, { moveId: payload.moveId ?? null, narrationId });
 }
 
 /**
@@ -3213,6 +3427,9 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       console.debug?.(`${MODULE_ID} | factContinuity: entity roster collect failed:`, err?.message ?? err);
     }
 
+    // The narration id is stamped on every entry, so an X-Card on the
+    // narration can retract them (issue #321 U07).
+    const narrationId = typeof ctx.narrationId === 'string' ? ctx.narrationId : null;
     applySidecar(filteredSidecar, {
       campaignState,
       sessionId: campaignState.currentSessionId ?? null,
@@ -3220,6 +3437,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       moveId:    ctx.moveId ?? null,
       asserter:  'narrator',
       entities,
+      narrationId,
     });
 
     // Narrator-memory A4 — merge the scene-frame snapshot (full
@@ -3233,7 +3451,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       console.debug?.(`${MODULE_ID} | factContinuity: sceneFrame setting read failed:`, err?.message ?? err);
     }
     if (frameEnabled && sidecar.sceneFrame) {
-      applySceneFrame(sidecar.sceneFrame, campaignState);
+      applySceneFrame(sidecar.sceneFrame, campaignState, { narrationId });
     }
 
     // Persist only the ledger fields the sidecar wrote, merged onto the

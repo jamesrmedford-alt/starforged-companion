@@ -163,7 +163,7 @@ function truncate(s, max) {
  * @param {string} args.kind
  * @param {string|null} [args.sessionId]
  */
-export async function postGalleyVignetteCard({ text, kind, sessionId = null }) {
+export async function postGalleyVignetteCard({ text, kind, sessionId = null, narrationId = null }) {
   await globalThis.ChatMessage?.create?.({
     content:
       `<div class="sf-session-vignette-card"><strong>Opening — Ship's Galley</strong>` +
@@ -183,6 +183,9 @@ export async function postGalleyVignetteCard({ text, kind, sessionId = null }) {
         sessionId:           sessionId ?? "",
         narratorCard:        true,
         narrationText:       text,
+        // The narration's id (narrateSessionVignette stamped it on its
+        // sidecar's ledger entries) — what an X-Card on this card retracts.
+        narrationId:         narrationId ?? null,
       },
     },
   });

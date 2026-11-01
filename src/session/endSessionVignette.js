@@ -173,7 +173,7 @@ export function buildEndSessionVignetteUserMessage(npc, campaignState) {
  * @param {string} args.npcName
  * @param {string|null} [args.sessionId]
  */
-export async function postEndSessionVignetteCard({ text, npcName, sessionId = null }) {
+export async function postEndSessionVignetteCard({ text, npcName, sessionId = null, narrationId = null }) {
   await globalThis.ChatMessage?.create?.({
     content:
       `<div class="sf-session-vignette-card"><strong>Closing — ${escapeHtml(npcName)}</strong>` +
@@ -190,6 +190,8 @@ export async function postEndSessionVignetteCard({ text, npcName, sessionId = nu
         sessionId:           sessionId ?? "",
         narratorCard:        true,
         narrationText:       text,
+        // The narration's id — what an X-Card on this card retracts.
+        narrationId:         narrationId ?? null,
       },
     },
   });

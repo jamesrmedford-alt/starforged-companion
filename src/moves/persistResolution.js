@@ -128,6 +128,9 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //       xCardActive                 safety.js suppressScene / clearXCard (`!x`, X-Card relay)
 //       xCardPlays                  safety.js suppressScene — the play count the narrator's
 //                                   in-flight check compares (issue #306 R01)
+//       xCardRedirect, xCardedNarrationIds   safety.js suppressScene (applyXCardToNarratorMemory);
+//                                   the redirect is cleared by the narrator's redirect hook
+//                                   (issue #321 U07)
 //       safety                      settingsPanel safety sync + "safety.syncPrivateLines" relay
 //       safetyFlags                 sessionDialogs applySafetyFlag ("safety.setFlag" relay)
 //       nextMoveAdd                 sessionDialogs applyTakeBreak; the pipeline consumes it
@@ -185,6 +188,8 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 const STORE_OWNED_FIELDS = Object.freeze([
   'xCardActive',
   'xCardPlays',
+  'xCardRedirect',
+  'xCardedNarrationIds',
   'safety',
   'safetyFlags',
   'nextMoveAdd',
