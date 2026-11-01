@@ -924,7 +924,7 @@ export async function postNarrationCard(narrationText, resolution, campaignState
     content: `
       <div class="sf-narration-card">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${stripMarkup(narrationText)}</div>
+        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
             <i class="fas fa-play"></i> Play
@@ -2658,7 +2658,7 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
     content: `
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${stripMarkup(narrationText)}</div>
+        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
         ${buttonRow}
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
@@ -3146,8 +3146,8 @@ async function postSceneCard(question, responseText, sessionId, playerName = nul
     content: `
       <div class="sf-scene-card">
         <div class="sf-scene-label">◈ Scene</div>
-        <div class="sf-scene-question">${question}</div>
-        <div class="sf-scene-prose">${stripMarkup(responseText)}</div>
+        <div class="sf-scene-question">${escapeHtml(question)}</div>
+        <div class="sf-scene-prose">${escapeHtml(stripMarkup(responseText))}</div>
       </div>
     `.trim(),
     flags: {
@@ -3174,8 +3174,8 @@ async function postSceneFallbackCard(question, reason, sessionId) {
     content: `
       <div class="sf-scene-card sf-scene-fallback">
         <div class="sf-scene-label">◈ Scene</div>
-        <div class="sf-scene-question">${question}</div>
-        <div class="sf-scene-error">${reason}</div>
+        <div class="sf-scene-question">${escapeHtml(question)}</div>
+        <div class="sf-scene-error">${escapeHtml(reason)}</div>
       </div>
     `.trim(),
     flags: {
