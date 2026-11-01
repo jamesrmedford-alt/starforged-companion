@@ -40,6 +40,7 @@ import {
   readEntityFlag,
   writeEntityFlag,
 } from "../entities/registry.js";
+import { uploadedPath } from "../net/uploadResult.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -359,7 +360,7 @@ async function uploadPortraitImage(b64, filename) {
     const file = new File([blob], filename, { type: "image/png" });
 
     const response = await FP.upload("data", uploadDir, file, {}, { notify: false });
-    return response?.path ?? `${uploadDir}/${filename}`;
+    return uploadedPath(response, `${uploadDir}/${filename}`);   // null when it failed (issue #322 V26)
   } catch (err) {
     console.warn(`${MODULE_ID} | Art: portrait upload failed:`, err?.message ?? err);
     return null;

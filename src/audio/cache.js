@@ -17,6 +17,8 @@
  * commits to cache via socket relay (see src/audio/index.js).
  */
 
+import { uploadedPath } from "../net/uploadResult.js";
+
 const MODULE_ID = "starforged-companion";
 
 // In-memory positive-lookup memo (hash → resolved path). Repeated plays and
@@ -141,7 +143,7 @@ export async function write(hash, bytes) {
   // server-side and would 404 on playback. Prefer the response path when
   // present; fall back to the local path on native Foundry (where upload
   // may return { path: full } or an undefined value depending on version).
-  const uploadedPath = typeof response?.path === "string" ? response.path : null;
-  return uploadedPath ?? full;
+  // A failed upload (false / undefined / {}) stored nothing: no path (issue #322 V26).
+  return uploadedPath(response, full);
 }
 

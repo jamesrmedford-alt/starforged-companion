@@ -16,6 +16,7 @@
  */
 
 import { generateOpenRouterImage } from "../art/openRouterImage.js";
+import { uploadedPath } from "../net/uploadResult.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -189,5 +190,5 @@ async function uploadShipMapImage(b64, shipActorId) {
   const response = await foundry.applications.apps.FilePicker.implementation
     .upload("data", uploadDir, file, {}, { notify: false });
 
-  return response?.path ?? `${uploadDir}/${filename}`;
+  return uploadedPath(response, `${uploadDir}/${filename}`);   // null when it failed (issue #322 V26)
 }
