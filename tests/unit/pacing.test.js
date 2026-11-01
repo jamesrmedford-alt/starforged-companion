@@ -40,6 +40,7 @@ vi.mock('../../src/ui/progressTracks.js', () => ({
   listProgressTracks: vi.fn(async () => []),
 }));
 
+import { addConnectionEntity } from '../helpers/fullStateFixture.js';
 import { apiPost } from '../../src/api-proxy.js';
 import { narratePacedInput } from '../../src/narration/narrator.js';
 import { logPacingDecision } from '../../src/pacing/telemetry.js';
@@ -886,5 +887,34 @@ describe('buildClassifierContext — scene frame + actor-hosted location (F9)', 
       pacingConfig:      { dials: {} },
     });
     expect(userMessage).not.toContain('Scene frame —');
+  });
+});
+
+// Issue #321 U44: connections were read from game.journal, but they are
+// NPC-card Actors, so the CHARACTER section only ever said "names
+// unavailable" and the addressee-is-a-Connection rule never fired.
+describe('buildClassifierContext — connection names', () => {
+  afterEach(() => { global.game.actors._reset?.(); });
+
+  const connectionsLine = (campaignState) => buildClassifierContext({
+    playerText:        'I lean on Kael Dros for the docking codes.',
+    campaignState,
+    character:         { name: 'Kira' },
+    recentMoveDensity: { count: 0, window: 5 },
+    pacingConfig:      BASE_PACING_CFG,
+  }).userMessage.split('\n').find(l => l.startsWith('Connections:'));
+
+  it('names each Actor-hosted connection with its relationship', () => {
+    const kael  = addConnectionEntity(null, { name: 'Kael Dros', relationshipType: 'ally' });
+    const sable = addConnectionEntity(null, { name: 'Sable', relationshipType: 'rival' });
+    expect(connectionsLine({ connectionIds: [kael.journalId, sable.journalId] }))
+      .toBe('Connections: Kael Dros (ally), Sable (rival)');
+  });
+
+  it('says the names are unavailable only when no id resolves', () => {
+    const kael = addConnectionEntity(null, { name: 'Kael Dros', relationshipType: 'ally' });
+    expect(connectionsLine({ connectionIds: [kael.journalId, 'actor-gone'] })).toBe('Connections: Kael Dros (ally)');
+    expect(connectionsLine({ connectionIds: ['actor-gone'] })).toBe('Connections: 1 active (names unavailable)');
+    expect(connectionsLine({ connectionIds: [] })).toBe('Connections: (none recorded)');
   });
 });

@@ -13,6 +13,7 @@
  */
 
 import { apiPost } from "../api-proxy.js";
+import { getConnection } from "../entities/connection.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL         = "claude-haiku-4-5-20251001";
@@ -447,21 +448,16 @@ function fallbackDecision(reason) {
 function formatConnections(campaignState, _character) {
   const ids = campaignState?.connectionIds ?? [];
   if (!ids.length) return "Connections: (none recorded)";
+  // Connections are NPC-card Actors (FOLDER-002): read each record through its
+  // host id (issue #321 U44 — they were looked up in game.journal, so the
+  // classifier only ever saw "names unavailable" and its addressee-is-a-
+  // Connection rule never fired). getConnection never throws.
   const names = [];
-  if (globalThis.game?.journal) {
-    for (const id of ids.slice(0, 8)) {
-      try {
-        const entry = game.journal.get?.(id);
-        const page  = entry?.pages?.contents?.[0];
-        const data  = page?.flags?.["starforged-companion"]?.connection;
-        if (data?.name) {
-          const status = data.relationshipType ?? data.relationship ?? "";
-          names.push(status ? `${data.name} (${status})` : data.name);
-        }
-      } catch (err) {
-        console.warn(`starforged-companion | pacing classifier: connection read failed for ${id}:`, err);
-      }
-    }
+  for (const id of ids.slice(0, 8)) {
+    const data = getConnection(id);
+    if (!data?.name) continue;
+    const status = data.relationshipType ?? data.relationship ?? "";
+    names.push(status ? `${data.name} (${status})` : data.name);
   }
   return `Connections: ${names.length ? names.join(", ") : `${ids.length} active (names unavailable)`}`;
 }
