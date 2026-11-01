@@ -6,6 +6,84 @@ rejected.
 
 ---
 
+## Issue #322 audit: the rules text over fill-ins, the roller's own position and bonus, one truths store, numbers and paths the module checks (2026-11)
+
+**Decision:** (issue #322, part 2 of the seventh audit. The maintainer asked
+for the issue to be addressed on 2026-11-01 and decided V01–V04 that day;
+V34 was decided in the issue. Each finding's ID in brackets.)
+- **The four decisions** [V01–V04; maintainer], each recorded in its own
+  section: a bonded Develop Your Relationship pays the move's text on both
+  paths ("Develop Your Relationship bond legacy", below); the +1 on the next
+  move is applied to the roller's next action roll ("The roller's +1 on the
+  next move is applied automatically"); combat position is per character
+  ("Combat position is per character"); a burn spends the pre-outcome
+  momentum ("A burn spends the momentum from before the move").
+- **One truths store, written through on every save** [V34; maintainer] —
+  "Truths saved in the World Truths dialog reach the narrator".
+- **The model's numbers are never the roll's** [V08]. The interpreter's
+  `adds`, `statValue` and `progressTicks` are dropped at the parse: the sheet,
+  the live tracks, the confirm dialog and the pending +1s supply every number;
+  an unresolved progress move scores 0, as its warning says.
+- **`!recap session N` names a session, and counts moves** [V05]. N resolves
+  through the narrator cards' `sessionNumber` (else last session's summary),
+  the recap reads the cards as the narrator does
+  (`sessionNarratorCards(…, { forRecap })` keeps fallback and X-carded cards,
+  whose moves happened, quoting neither), and "moves resolved" counts cards
+  with a `moveId`.
+- **The help's settings are reachable** [V06]: every setting the Settings
+  Reference places in the Companion Settings panel has a row there, clamped on
+  save; the Audio Cache Max setting is removed instead [V16], because Foundry
+  v13's client FilePicker cannot delete a file, so no automatic trim is
+  possible — a GM empties the world's `audio/` folder by hand.
+- **Card text is escaped; names match as Unicode words** [V18, V19]. Narrator
+  prose, paced prose and `@scene` text go into card HTML through
+  `escapeHtml(stripMarkup(…))`; name matching uses `wholeWordPattern` (no
+  letter, digit or underscore either side, `u` flag) everywhere relevance and
+  the PC-name check match names. A scene frame names a PC by its full name or
+  by a first or last name no other PC shares [V20].
+- **A pacing override is the scene's** [V21]: `endScene` clears
+  `pacing.sceneOverride`, as does `startScene` replacing an empty scene; an
+  override set before any scene is the next scene's.
+- **Narrator audio claims only what this client saw posted** [V15], and every
+  Play is cancellable [V14]: auto-play takes a card stamped after this
+  client's start (server time, a minute's margin); Stop bumps the card's load
+  generation, and a segment loaded during a pause waits for Resume or Stop.
+- **A clock's beat is its own narrator mode** [V23] (`clock_advance`, the
+  interaction latitude); the oath scene's latitude is embellishment.
+- **An upload's path is the server's** [V26]: `net/uploadResult.js`
+  `uploadedPath` — the response's path, the built path only on a reported
+  success, else no file; every upload site uses it.
+- **Nothing is half-saved or deleted first** [V28, V29]: a custom oracle table
+  with a line that does not read is refused, its lines listed; the connection
+  migration saves its id swap before it deletes the old journals.
+- **A journal-hosted faction's or creature's page body is a rendered mirror
+  of its record** [V31], re-rendered on every record write, as the World
+  Journal's pages are.
+- **A shared vow's sync queues the newest change per field** [V32], as the
+  shared supply's does: a pass writes only differing fields, marks its writes,
+  and gives way to a newer change.
+- **The Chronicle's type list is every type an entry can have** [V33] — the
+  automatic writer's five and the hand-set three.
+
+**Reason:** issue #322 reproduced each defect with a probe on `6455e01` or
+traced it by hand; each fix's regression tests fail with it taken out
+(`docs/testing/fix-sensitivity.md`). Rules/reachability.md §5 (one canonical
+store, written through) decided V34's shape; §1 (nothing ships without a
+consumer) covers V02, V11, V16 and V22.
+
+**Rejected:**
+- *A manual adds input on the confirm dialog* [V02] — it asks the player to
+  remember a bonus the module already holds.
+- *Keep the sweep and document that it never evicts* [V16] — it cost a
+  full-tree scan per ten minutes of synthesis for nothing.
+- *Save a custom table's readable lines and warn* [V28] — the die is the
+  highest surviving row, so a dropped top row changes every roll.
+
+**Trade-offs accepted:** the +1 on the next move reaches only pipeline rolls
+[V02]; an old world keeps its unused stored Audio Cache Max value [V16]; a
+custom truth reaches the narrator as its first paragraph [V34]; the items
+found while fixing (`known-issues.md`, issue #322 section) stay open.
+
 ## Issue #321 audit: owned-field writes, an X-Card that forgets, panels and buttons through the GM, the roller's own character, oracles from the system's data (2026-10)
 
 **Decision:** (issue #321, part 1 of the seventh audit. The maintainer asked
