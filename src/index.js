@@ -3612,30 +3612,51 @@ async function postRecommitOfferCard(track) {
   });
 }
 
-// GM-side: execute the recommit mechanics on an open expedition track.
-async function performRecommit(trackId) {
+/**
+ * GM-side: execute the recommit mechanics on an open expedition track — the
+ * offer card's claim (cardActions.applyRecommitOffer, gmRelay
+ * "expedition.recommit", issue #321 U20) runs it once per card.
+ *
+ * @param {string} trackId
+ * @returns {Promise<{ ok: boolean, reason?: "no-track"|"write-refused" }>}
+ *   "write-refused": the track write failed and nothing changed
+ */
+export async function performRecommit(trackId) {
+  let track = null;
   try {
-    const track = (await listProgressTracks()).find(t => t.id === trackId);
-    if (!track || track.completed) {
-      console.warn(`${MODULE_ID} | recommit: track ${trackId} missing or already completed.`);
-      return;
-    }
-    const dice = rollChallengeDice();
-    const plan = planRecommit(track.ticks, track.rank, dice);
-    await updateTrackFields(trackId, { ticks: plan.newTicks, rank: plan.newRank });
-    await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Recommitted: ${escapeChatHtml(track.label ?? "Expedition")}</strong>`
-        + `<p>Challenge dice ${dice[0]}, ${dice[1]} — cleared <strong>${plan.clearedBoxes}</strong> box${plan.clearedBoxes === 1 ? "" : "es"} `
-        + `(now ${Math.floor(plan.newTicks / 4)}/10) and the expedition hardens to <strong>${escapeChatHtml(plan.newRank)}</strong>. `
-        + `The journey continues.</p></div>`,
-      flags: { [MODULE_ID]: { recommitCard: true, trackId, newRank: plan.newRank, newTicks: plan.newTicks } },
-    });
+    track = (await listProgressTracks()).find(t => t.id === trackId);
   } catch (err) {
-    console.warn(`${MODULE_ID} | recommit failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | recommit: the tracks could not be read — nothing recommitted:`, err?.message ?? err);
+    return { ok: false, reason: "write-refused" };
   }
+  if (!track || track.completed) {
+    console.warn(`${MODULE_ID} | recommit: track ${trackId} missing or already completed.`);
+    return { ok: false, reason: "no-track" };
+  }
+  const dice = rollChallengeDice();
+  const plan = planRecommit(track.ticks, track.rank, dice);
+  try {
+    await updateTrackFields(trackId, { ticks: plan.newTicks, rank: plan.newRank });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | recommit failed — the track was not changed:`, err?.message ?? err);
+    return { ok: false, reason: "write-refused" };
+  }
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Recommitted: ${escapeChatHtml(track.label ?? "Expedition")}</strong>`
+      + `<p>Challenge dice ${dice[0]}, ${dice[1]} — cleared <strong>${plan.clearedBoxes}</strong> box${plan.clearedBoxes === 1 ? "" : "es"} `
+      + `(now ${Math.floor(plan.newTicks / 4)}/10) and the expedition hardens to <strong>${escapeChatHtml(plan.newRank)}</strong>. `
+      + `The journey continues.</p></div>`,
+    flags: { [MODULE_ID]: { recommitCard: true, trackId, newRank: plan.newRank, newTicks: plan.newTicks } },
+  }).catch(err => console.warn(`${MODULE_ID} | recommit card failed:`, err?.message ?? err));
+  return { ok: true };
 }
 
-// Wire the recommit button — a journal write, so non-canonical clients relay.
+// Wire the recommit button. A click relays to the canonical GM
+// ("expedition.recommit" → cardActions.applyRecommitOffer), which claims the
+// GM-authored offer card (`recommitted`) before recommitting: once, whoever
+// presses and however often the card re-renders (issue #321 U20 — a local
+// disable re-armed on every other client and on a re-render). A click that is
+// not delivered re-arms the button.
 function registerRecommitHook() {
   if (registerRecommitHook._installed) return;
   registerRecommitHook._installed = true;
@@ -3644,38 +3665,22 @@ function registerRecommitHook() {
     if (!f?.recommitOfferCard) return;
     const btn = root.querySelector('[data-action="sf-recommit"]');
     if (!btn) return;
+    if (liveCardFlags(message)?.recommitted) {
+      btn.disabled = true;
+      return;
+    }
     const fresh = btn.cloneNode(true);
     btn.replaceWith(fresh);
     fresh.addEventListener("click", async (event) => {
       event.preventDefault(); event.stopPropagation();
       fresh.disabled = true;
-      if (isCanonicalGM()) {
-        await performRecommit(f.trackId);
-      } else {
-        try {
-          game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "expedition.recommit", trackId: f.trackId });
-        } catch (err) {
-          console.warn(`${MODULE_ID} | recommit relay emit failed:`, err?.message ?? err);
-          fresh.disabled = false;
-        }
-      }
+      await relayCardAction({
+        kind:       "expedition.recommit",
+        payload:    { messageId: message?.id ?? null },
+        isResolved: () => !!liveCardFlags(message)?.recommitted,
+        restore:    () => { fresh.disabled = false; },
+      });
     });
-  });
-}
-
-// GM-side socket receiver for player recommit clicks.
-function registerRecommitSocket() {
-  if (registerRecommitSocket._installed) return;
-  if (!game?.socket?.on) return;
-  registerRecommitSocket._installed = true;
-  game.socket.on(`module.${MODULE_ID}`, async (payload) => {
-    try {
-      if (!payload || payload.kind !== "expedition.recommit") return;
-      if (!isCanonicalGM()) return;
-      await performRecommit(payload.trackId);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | recommit socket handler failed:`, err?.message ?? err);
-    }
   });
 }
 
@@ -6487,8 +6492,8 @@ Hooks.once("ready", () => {
   registerCombatThresholdHook();
   registerCombatThresholdSocket();
   registerWayOutHook();
+  // Recommit relays through gmRelay "expedition.recommit" (issue #321 U20).
   registerRecommitHook();
-  registerRecommitSocket();
   // Won-fight vow milestone (#241) — Mark milestone / Fulfill / Deepen bond on a
   // won linked fight; mark + deepen relay to the canonical GM through gmRelay
   // ("fightVow.*" → src/moves/cardActions.js), one-shot per card.
@@ -6859,11 +6864,14 @@ export function wireWhichVowButtons(message, root) {
 onChatMessageRender((message, root) => wireWhichVowButtons(message, root));
 
 /**
- * Wire the "⚑ Reach a Milestone" suggestion button on a move-result card.
- * Clicking marks vow progress (sole open vow → auto-mark; several → picker)
- * via the same applyReachMilestone path the move uses. Disabled after one use
- * (flag `milestoneMarked`) so a card can't double-mark on re-render. GM-gated
- * writes are inherited from markVowProgress.
+ * Wire the "⚑ Mark Progress on Vow" suggestion button on a move-result card.
+ * A click relays to the canonical GM ("milestone.suggestion" →
+ * cardActions.applyMilestoneSuggestion), which claims the GM-authored card
+ * (`milestoneMarked`) and posts the forced reach_a_milestone once, as the
+ * card's roller — the pipeline then marks the roller's vow (sole open vow →
+ * auto-mark; several → picker). The flag was read and never written, so a
+ * second client, or a re-render, marked the vow again (issue #321 U20). A
+ * click that is not delivered re-arms the button.
  *
  * Exported so Quench can drive it with a synthetic message + root.
  */
@@ -6873,7 +6881,7 @@ export function wireMilestoneSuggestionButton(message, root) {
   const btn = root?.querySelector?.('[data-action="sf-reach-milestone"]');
   if (!btn) return;
 
-  if (f.milestoneMarked) {
+  if (liveCardFlags(message)?.milestoneMarked) {
     btn.disabled = true;
     btn.textContent = "⚑ Milestone marked";
     return;
@@ -6885,19 +6893,12 @@ export function wireMilestoneSuggestionButton(message, root) {
     event.preventDefault();
     event.stopPropagation();
     fresh.disabled = true;
-    try {
-      // Multiplayer fix (#236-follow-up): post a forced reach_a_milestone move
-      // so the canonical GM runs the progress mark + narration, exactly like the
-      // Attempt-to-Fulfill-Vow button. The old direct applyReachMilestone() call
-      // was GM-gated and silently no-op'd for players (the click did nothing).
-      await ChatMessage.create({
-        content: "Mark progress on your vow.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone" } },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | Reach a Milestone suggestion failed:`, err);
-      fresh.disabled = false;
-    }
+    await relayCardAction({
+      kind:       "milestone.suggestion",
+      payload:    { messageId: message?.id ?? null, actorId: clickerActorId() },
+      isResolved: () => !!liveCardFlags(message)?.milestoneMarked,
+      restore:    () => { fresh.disabled = false; },
+    });
   });
 }
 onChatMessageRender((message, root) => wireMilestoneSuggestionButton(message, root));

@@ -22,6 +22,7 @@ vi.mock('../../src/index.js', () => ({
   deepenLinkedConnection: vi.fn(async () => ({ ok: true })),
   postPayoffFailureCard:  vi.fn(async () => {}),
   retryPayoffSteps:       vi.fn(async () => []),
+  performRecommit:        vi.fn(async () => ({ ok: true })),
 }));
 
 import {
@@ -30,10 +31,12 @@ import {
   applyFightVowDeepenBond,
   applyPayoffRetry,
   applyWaypointOraclePick,
+  applyMilestoneSuggestion,
+  applyRecommitOffer,
   parseCardButtons,
   relayCardAction,
 } from '../../src/moves/cardActions.js';
-import { markLinkedVowMilestone, deepenLinkedConnection, postPayoffFailureCard, retryPayoffSteps } from '../../src/index.js';
+import { markLinkedVowMilestone, deepenLinkedConnection, postPayoffFailureCard, retryPayoffSteps, performRecommit } from '../../src/index.js';
 import { GM_RELAY_SOCKET, _resetGmRelayForTests } from '../../src/multiplayer/gmRelay.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -506,5 +509,123 @@ describe('applyWaypointOraclePick', () => {
     expect(await applyWaypointOraclePick({ messageId: 'wp-1' }, GM_CTX)).toEqual({ posted: false, reason: 'not-a-pc' });
     expect(warn).toHaveBeenCalledTimes(3);
     warn.mockRestore();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// milestone.suggestion / expedition.recommit (issue #321 U20): one press per
+// card, claimed on the GM-authored card before acting
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('applyMilestoneSuggestion (issue #321 U20)', () => {
+  const P2_CTX = { requesterId: 'pl-2', requester: P2, requesterIsGM: false };
+  let card;
+  const forcedMoves = () => ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.forcedMoveId === 'reach_a_milestone');
+
+  beforeEach(() => {
+    card = makeCard('mv-1', { moveResolution: true, resolutionId: 'res-1', milestoneSuggestion: { eligible: true }, actorId: 'pc-b' });
+    messages = [card];
+    game.messages = { get: (id) => messages.find(m => m.id === id) ?? null };
+  });
+
+  it('the roller\'s player presses: the card is claimed and the move posted once, as the roller', async () => {
+    expect(await applyMilestoneSuggestion({ messageId: 'mv-1' }, P1_CTX)).toEqual({ posted: true });
+    expect(card.flags[MODULE_ID].milestoneMarked).toBe(true);
+    expect(forcedMoves()).toHaveLength(1);
+    expect(forcedMoves()[0]).toMatchObject({ content: 'Mark progress on your vow.', speaker: { actor: 'pc-b' } });
+    expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'reach_a_milestone' });
+    expect(await applyMilestoneSuggestion({ messageId: 'mv-1' }, GM_CTX)).toEqual({ posted: false, reason: 'already-marked' });
+    expect(forcedMoves()).toHaveLength(1);
+  });
+
+  it('two near-simultaneous presses post exactly one move', async () => {
+    const [a, b] = await Promise.all([
+      applyMilestoneSuggestion({ messageId: 'mv-1' }, P1_CTX),
+      applyMilestoneSuggestion({ messageId: 'mv-1' }, GM_CTX),
+    ]);
+    expect([a.posted, b.posted].filter(Boolean)).toHaveLength(1);
+    expect(forcedMoves()).toHaveLength(1);
+  });
+
+  it('another player may not press it for the roller; the clicker\'s own PC is never substituted', async () => {
+    silenceConsoleErrors();
+    expect(await applyMilestoneSuggestion({ messageId: 'mv-1', actorId: 'pc-a' }, P2_CTX)).toEqual({ posted: false, reason: 'not-owner' });
+    expect(card.flags[MODULE_ID].milestoneMarked).toBeUndefined();
+    expect(forcedMoves()).toHaveLength(0);
+  });
+
+  it('a card from before the roller was stamped marks the clicker\'s own PC — one they own', async () => {
+    silenceConsoleErrors();
+    delete card.flags[MODULE_ID].actorId;
+    expect(await applyMilestoneSuggestion({ messageId: 'mv-1', actorId: 'pc-a' }, P1_CTX)).toEqual({ posted: false, reason: 'not-owner' });
+    expect(await applyMilestoneSuggestion({ messageId: 'mv-1', actorId: 'pc-b' }, P1_CTX)).toEqual({ posted: true });
+    expect(forcedMoves()[0].speaker).toMatchObject({ actor: 'pc-b' });
+  });
+
+  it('a refused claim posts nothing; a failed post releases the claim so the press can be made again', async () => {
+    silenceConsoleErrors();
+    card.update.mockRejectedValueOnce(new Error('refused by the test'));
+    expect(await applyMilestoneSuggestion({ messageId: 'mv-1' }, P1_CTX)).toEqual({ posted: false, reason: 'claim-refused' });
+    expect(forcedMoves()).toHaveLength(0);
+
+    vi.spyOn(ChatMessage, 'create').mockRejectedValueOnce(new Error('post refused'));
+    expect(await applyMilestoneSuggestion({ messageId: 'mv-1' }, P1_CTX)).toEqual({ posted: false, reason: 'post-failed' });
+    expect(card.flags[MODULE_ID].milestoneMarked).toBe(false);
+    expect(await applyMilestoneSuggestion({ messageId: 'mv-1' }, P1_CTX)).toEqual({ posted: true });
+    expect(forcedMoves()).toHaveLength(1);
+  });
+
+  it('refuses a card that offers no milestone', async () => {
+    silenceConsoleErrors();
+    card.flags[MODULE_ID].milestoneSuggestion = null;
+    expect(await applyMilestoneSuggestion({ messageId: 'mv-1' }, GM_CTX)).toEqual({ posted: false, reason: 'not-a-suggestion' });
+    expect(await applyMilestoneSuggestion({ messageId: 'gone' }, GM_CTX)).toEqual({ posted: false, reason: 'no-message' });
+  });
+});
+
+describe('applyRecommitOffer (issue #321 U20)', () => {
+  let offer;
+
+  beforeEach(() => {
+    performRecommit.mockReset();
+    performRecommit.mockResolvedValue({ ok: true });
+    offer = makeCard('rc-1', { recommitOfferCard: true, trackId: 'exp-1', trackLabel: 'The Drift' });
+    messages = [offer];
+    game.messages = { get: (id) => messages.find(m => m.id === id) ?? null };
+  });
+
+  it('any user\'s press claims the offer and recommits once', async () => {
+    expect(await applyRecommitOffer({ messageId: 'rc-1' }, P1_CTX)).toEqual({ applied: true });
+    expect(offer.flags[MODULE_ID].recommitted).toBe(true);
+    expect(performRecommit).toHaveBeenCalledWith('exp-1');
+    expect(await applyRecommitOffer({ messageId: 'rc-1' }, GM_CTX)).toEqual({ applied: false, reason: 'already-recommitted' });
+    expect(performRecommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('two near-simultaneous presses recommit exactly once', async () => {
+    await Promise.all([applyRecommitOffer({ messageId: 'rc-1' }, P1_CTX), applyRecommitOffer({ messageId: 'rc-1' }, GM_CTX)]);
+    expect(performRecommit).toHaveBeenCalledTimes(1);
+  });
+
+  it('a refused track write changed nothing: the claim is released, and the press can be made again', async () => {
+    performRecommit.mockResolvedValueOnce({ ok: false, reason: 'write-refused' });
+    expect(await applyRecommitOffer({ messageId: 'rc-1' }, P1_CTX)).toEqual({ applied: false, reason: 'write-refused' });
+    expect(offer.flags[MODULE_ID].recommitted).toBe(false);
+    expect(await applyRecommitOffer({ messageId: 'rc-1' }, P1_CTX)).toEqual({ applied: true });
+  });
+
+  it('an expedition already over keeps the offer closed', async () => {
+    performRecommit.mockResolvedValueOnce({ ok: false, reason: 'no-track' });
+    expect(await applyRecommitOffer({ messageId: 'rc-1' }, P1_CTX)).toEqual({ applied: false, reason: 'no-track' });
+    expect(offer.flags[MODULE_ID].recommitted).toBe(true);
+  });
+
+  it('a refused claim recommits nothing; a card that is no offer is refused', async () => {
+    silenceConsoleErrors();
+    offer.update.mockRejectedValueOnce(new Error('refused by the test'));
+    expect(await applyRecommitOffer({ messageId: 'rc-1' }, GM_CTX)).toEqual({ applied: false, reason: 'claim-refused' });
+    expect(performRecommit).not.toHaveBeenCalled();
+    delete offer.flags[MODULE_ID].recommitOfferCard;
+    expect(await applyRecommitOffer({ messageId: 'rc-1' }, GM_CTX)).toEqual({ applied: false, reason: 'not-a-recommit-offer' });
   });
 });

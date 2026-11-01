@@ -18,8 +18,10 @@
  * (src/multiplayer/gmRelay.js — "connection.pick", "fightVow.markMilestone",
  * "fightVow.deepenBond"), as does a payoff failure card's Retry
  * ("payoff.retry", issue #306 R04), an Explore a Waypoint match's
- * Make a Discovery / Confront Chaos ("waypoint.oracle", issue #316 T06) and a
- * "Which vow?" card's pick ("fulfilVow.pick", issue #321 U02). The
+ * Make a Discovery / Confront Chaos ("waypoint.oracle", issue #316 T06), a
+ * "Which vow?" card's pick ("fulfilVow.pick", issue #321 U02), a move card's
+ * "⚑ Mark Progress on Vow" ("milestone.suggestion") and an expedition's
+ * "🔁 Recommit" ("expedition.recommit", both issue #321 U20). The
  * handlers below run on the canonical GM, check
  * and stamp the card's resolved flag behind an in-flight guard (the
  * milestone-picker pattern, src/moves/milestonePicker.js), and take every
@@ -425,6 +427,143 @@ export async function applyFulfilVowPick(payload = {}, ctx = {}) {
       return { posted: false, reason: "post-failed" };
     }
     return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MOVE CARD "⚑ Mark Progress on Vow" — gmRelay "milestone.suggestion"
+// EXPEDITION "🔁 Recommit" — gmRelay "expedition.recommit" (issue #321 U20)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * gmRelay handler for "milestone.suggestion" — runs on the canonical GM (issue
+ * #321 U20). A quest-advancing hit's move card offers "⚑ Mark Progress on
+ * Vow"; its button posted the forced Reach a Milestone from the clicker's
+ * client and disabled only its own DOM button, so the player and the GM — or
+ * one client after a re-render — each marked the vow again (`milestoneMarked`
+ * was read, never written).
+ *
+ * One mark per card, claimed on the GM-authored card (`milestoneMarked`)
+ * before the post, behind the in-flight guard; a post that fails releases the
+ * claim. The mark is the card's roller's (`actorId`): their player or a GM
+ * may press it, and the move speaks as that PC. A card posted before the
+ * roller was stamped marks the clicker's own PC (the payload's `actorId`,
+ * which the requester must own).
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | milestone suggestion: card ${messageId ?? "?"} not found — nothing marked.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.milestoneSuggestion?.eligible) {
+    console.warn(`${MODULE_ID} | milestone suggestion: message ${messageId} offers no milestone — ignored.`);
+    return { posted: false, reason: "not-a-suggestion" };
+  }
+  const key = `${messageId}:milestone`;
+  if (f.milestoneMarked || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | milestone suggestion: card ${messageId} already marked — ignoring the press.`);
+    return { posted: false, reason: "already-marked" };
+  }
+
+  const cardActorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  const actorId = cardActorId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
+  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | milestone suggestion: ${actorId} is not a player character — refused.`);
+    return { posted: false, reason: "not-a-pc" };
+  }
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | milestone suggestion: user ${ctx?.requesterId ?? "?"} may not mark ${actor?.name ?? "this card"}'s vow — refused.`);
+    return { posted: false, reason: "not-owner" };
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.milestoneMarked`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | milestone suggestion: card ${messageId} could not be claimed — nothing marked:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    try {
+      await ChatMessage.create({
+        content: "Mark progress on your vow.",
+        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone" } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | milestone suggestion: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.milestoneMarked`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | milestone suggestion: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "post-failed" };
+    }
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+/**
+ * gmRelay handler for "expedition.recommit" — runs on the canonical GM (issue
+ * #321 U20). A Finish an Expedition miss offers "🔁 Recommit"; its button
+ * disabled only the clicker's DOM button and recommitted on the GM (or over
+ * the old raw `expedition.recommit` socket relay, RELAY-LEGACY-KINDS), with
+ * nothing on the card: each press — the player's and the GM's, or one after a
+ * re-render — rolled the challenge dice, cleared boxes and raised the rank
+ * again.
+ *
+ * One recommit per offer card: any user may press it (the expedition is the
+ * crew's), and the GM-authored card is claimed (`recommitted`) before the
+ * recommit, behind the in-flight guard. A track write the world refused
+ * changed nothing and releases the claim, so the press can be made again;
+ * an expedition already over leaves the offer closed.
+ *
+ * @param {{ messageId?: string }} payload
+ * @param {Object} [_ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+export async function applyRecommitOffer(payload = {}, _ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | recommit: offer card ${messageId ?? "?"} not found — nothing recommitted.`);
+    return { applied: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.recommitOfferCard || typeof f.trackId !== "string" || !f.trackId) {
+    console.warn(`${MODULE_ID} | recommit: message ${messageId} is not a recommit offer — ignored.`);
+    return { applied: false, reason: "not-a-recommit-offer" };
+  }
+  const key = `${messageId}:recommit`;
+  if (f.recommitted || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | recommit: offer ${messageId} already taken — ignoring the press.`);
+    return { applied: false, reason: "already-recommitted" };
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.recommitted`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | recommit: offer ${messageId} could not be claimed — nothing recommitted:`, err?.message ?? err);
+      return { applied: false, reason: "claim-refused" };
+    }
+    const { performRecommit } = await import("../index.js");
+    const res = await performRecommit(f.trackId);
+    if (res?.reason === "write-refused") {
+      await message.update({ [`flags.${MODULE_ID}.recommitted`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | recommit: releasing the claim failed:`, e?.message ?? e));
+    }
+    return { applied: res?.ok === true, ...(res?.reason ? { reason: res.reason } : {}) };
   } finally {
     _inFlight.delete(key);
   }
