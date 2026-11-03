@@ -275,9 +275,12 @@ async function clearForceMove(campaignState) {
     // clear it on the next pipeline pass.
     return;
   }
+  // A copy (rules/foundry-api.md): a refused clear leaves the flag set
+  // everywhere, for the next pass to clear (issue #326 W51).
+  const pacing = { ...campaignState.pacing, forceNextAsMove: false };
   try {
-    campaignState.pacing.forceNextAsMove = false;
-    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", campaignState);
+    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", { ...campaignState, pacing });
+    campaignState.pacing = pacing;
   } catch (err) {
     console.warn(`${MODULE_ID} | pacing: failed to clear forceNextAsMove:`, err);
   }
@@ -303,29 +306,37 @@ const SCENE_OVERRIDES = {
  * @returns {Promise<{status: string, persisted: boolean}>}
  */
 export async function applyPaceCommand(campaignState, subcommand) {
-  campaignState.pacing ??= {};
   const sub = String(subcommand ?? "").toLowerCase().trim();
 
   if (sub === "status") {
-    return { status: formatPaceStatus(campaignState), persisted: false };
+    return { status: formatPaceStatus(campaignState ?? {}), persisted: false };
   }
 
+  let sceneOverride, done;
   if (sub === "clear") {
-    campaignState.pacing.sceneOverride = null;
-    await persist(campaignState);
-    return { status: "Pacing scene override cleared.", persisted: true };
+    sceneOverride = null;
+    done = "Pacing scene override cleared.";
+  } else if (sub in SCENE_OVERRIDES) {
+    sceneOverride = { ...SCENE_OVERRIDES[sub] };
+    done = `Pacing override set to **${sub}** (${SCENE_OVERRIDES[sub].modifier >= 0 ? "+" : ""}${SCENE_OVERRIDES[sub].modifier}).`;
+  } else {
+    return { status: `Unknown subcommand: ${subcommand}. Use hot, quiet, clear, or status.`, persisted: false };
   }
 
-  if (sub in SCENE_OVERRIDES) {
-    campaignState.pacing.sceneOverride = { ...SCENE_OVERRIDES[sub] };
-    await persist(campaignState);
+  // A copy is written (rules/foundry-api.md): the caller hands in the cached
+  // setting, and setting the override on it before a refused write left the
+  // GM's client — and the card — claiming an override the world never got
+  // (issue #326 W51). The caller's object takes the change once it landed.
+  const pacing = { ...(campaignState?.pacing ?? {}), sceneOverride };
+  if (!await persist({ ...campaignState, pacing })) {
     return {
-      status: `Pacing override set to **${sub}** (${SCENE_OVERRIDES[sub].modifier >= 0 ? "+" : ""}${SCENE_OVERRIDES[sub].modifier}).`,
-      persisted: true,
+      status: `The pacing override was not ${sub === "clear" ? "cleared" : "set"} — the world did not take the write.`,
+      persisted: false,
+      refused: true,
     };
   }
-
-  return { status: `Unknown subcommand: ${subcommand}. Use hot, quiet, clear, or status.`, persisted: false };
+  if (campaignState) campaignState.pacing = pacing;
+  return { status: done, persisted: true };
 }
 
 function formatPaceStatus(campaignState) {
@@ -344,12 +355,20 @@ function formatPaceStatus(campaignState) {
   return lines.join("\n");
 }
 
+/**
+ * Write a campaignState (a copy — never the cached value) on a GM client.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<boolean>} true when the world took it
+ */
 async function persist(campaignState) {
-  if (!globalThis.game?.user?.isGM) return;
+  if (!globalThis.game?.user?.isGM) return false;
   try {
     await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", campaignState);
+    return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | pacing: persist failed:`, err);
+    return false;
   }
 }
 
@@ -363,13 +382,16 @@ async function persist(campaignState) {
  * to the move pipeline. Used as a false-negative recovery: when the classifier
  * said NARRATIVE but the player wanted a roll.
  *
- * GM-only at the call site (writes world-scoped state).
+ * GM-only at the call site (writes world-scoped state). A copy is written —
+ * a refused write leaves the caller's (cached) object unchanged and returns
+ * false, so the card does not claim it (issue #326 W51).
  *
  * @param {Object} campaignState
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} true when the world took it
  */
 export async function markForceNextAsMove(campaignState) {
-  campaignState.pacing ??= {};
-  campaignState.pacing.forceNextAsMove = true;
-  await persist(campaignState);
+  const pacing = { ...(campaignState?.pacing ?? {}), forceNextAsMove: true };
+  if (!await persist({ ...campaignState, pacing })) return false;
+  if (campaignState) campaignState.pacing = pacing;
+  return true;
 }

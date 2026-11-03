@@ -34,7 +34,9 @@ const MODULE_ID = "starforged-companion";
  *   (selectSectorSite), so neither this id nor an exact name can be preempted
  *   by a guess in an earlier sector (issue #300 F07).
  * @param {Function} [opts.getState]  — () => campaignState
- * @param {Function} [opts.setState]  — (state) => Promise
+ * @param {Function} [opts.setState]  — (state) => Promise — the state with the
+ *   flag set, a copy; the move pipeline's seam folds its sectors into the
+ *   working copy its persist writes
  * @param {Function} [opts.getScene]  — (sceneId) => Scene|null
  * @param {Function} [opts.updateLoc] — (actorId, updates) => Promise
  * @param {Function} [opts.restyle]   — (scene, site) => Promise
@@ -55,7 +57,11 @@ export async function revealSectorSite(label, opts = {}) {
   if (!found) return null;
   const { sector, site: match } = found;
 
-  match.discovered = true;
+  // The flag is set on a copy: the record is the stored state's (the cached
+  // setting, by default), and setting it in place before a refused write left
+  // the site revealed on the GM's client alone — a retried !reveal-site found
+  // "no matching unexplored site" (issue #326 W51; rules/foundry-api.md).
+  const revealed = { ...match, discovered: true };
 
   if (match.actorId) {
     try { await updateLoc(match.actorId, { status: "visited" }); }
@@ -65,13 +71,13 @@ export async function revealSectorSite(label, opts = {}) {
   if (sector.sceneId) {
     const scene = getScene(sector.sceneId);
     if (scene) {
-      try { await restyle(scene, match); }
+      try { await restyle(scene, revealed); }
       catch (err) { console.warn(`${MODULE_ID} | revealSectorSite: scene restyle failed:`, err?.message ?? err); }
     }
   }
 
   await persistSiteFlag(getState, setState, sector, match, "discovered", "revealSectorSite");
-  return { sector, site: match };
+  return { sector, site: revealed };
 }
 
 /**
@@ -142,13 +148,14 @@ export async function clearSectorSite(label, opts = {}) {
   if (!found) return null;
   const { sector, site: record } = found;
 
-  record.cleared = true;
+  // On a copy, as revealSectorSite (issue #326 W51).
+  const cleared = { ...record, cleared: true };
   if (record.actorId) {
     try { await updateLoc(record.actorId, { status: "cleared" }); }
     catch (err) { console.warn(`${MODULE_ID} | clearSectorSite: location status update failed:`, err?.message ?? err); }
   }
   await persistSiteFlag(getState, setState, sector, record, "cleared", "clearSectorSite");
-  return { sector, site: record };
+  return { sector, site: cleared };
 }
 
 /**
@@ -159,7 +166,8 @@ export async function clearSectorSite(label, opts = {}) {
  * those awaits reverted whatever landed meanwhile: a player's relayed X-Card,
  * Take a Break, a `!bond` (rules/reachability.md §9). The record is found by
  * identity, else by its sector's and its own id; when the site is no longer
- * stored, nothing is written.
+ * stored, nothing is written. A refused write rejects (the caller reports it)
+ * and leaves the stored state as it was — nothing is set on it beforehand.
  *
  * @param {Function} getState
  * @param {Function} setState

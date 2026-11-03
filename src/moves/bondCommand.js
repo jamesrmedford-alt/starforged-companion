@@ -200,7 +200,11 @@ export async function applyBondEffects(payload = {}, ctx = {}) {
     // legacy write. Lazy import: index.js is the module entry (already loaded
     // in Foundry), and a static import would make this module a cycle.
     const { addLegacyTicks } = await import("../index.js");
-    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    // Marked on a copy (rules/foundry-api.md): the cached state took the
+    // ticks before a write that could be refused, and the GM's next
+    // whole-object write carried them into the world (issue #326 W51).
+    const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const campaignState = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
     addLegacyTicks(campaignState, "bonds", ticks);
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
   }

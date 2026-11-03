@@ -1370,17 +1370,18 @@ export function registerChatHook() {
               console.warn(`${MODULE_ID} | expedition finish card failed:`, err?.message ?? err));
 
             // Reaching the end of an expedition discovers any unexplored sector
-            // site it led to (precursor vault / derelict). Mutate the in-memory
-            // campaignState so the discovered flag rides along with the pending
-            // persistResolution write below (setState is a no-op here); the
-            // scene pin + passage and the location Actor update apply at once.
+            // site it led to (precursor vault / derelict). The discovered flag
+            // is folded into the in-memory campaignState so it rides along with
+            // the pending persistResolution write below (revealSectorSite sets
+            // it on a copy — issue #326 W51); the scene pin + passage and the
+            // location Actor update apply at once.
             try {
               const { revealSectorSite, postSiteDiscoveryCard } = await import("./sectors/siteDiscovery.js");
               const revealed = await revealSectorSite(fin.track?.label ?? interpretation.moveTarget, {
                 source:   "expedition",
                 siteId:   fin.track?.siteId ?? null,
                 getState: () => campaignState,
-                setState: () => {},
+                setState: (next) => { campaignState.sectors = next.sectors; },
               });
               if (revealed) await postSiteDiscoveryCard(revealed);
             } catch (err) {
@@ -3226,7 +3227,14 @@ async function handleClearSiteCommand(message) {
   const label = text.replace(/^!clear-site\s*/i, "").trim();
   try {
     const { clearSectorSite } = await import("./sectors/siteDiscovery.js");
-    const cleared = await clearSectorSite(label || null);
+    let cleared;
+    try {
+      cleared = await clearSectorSite(label || null);
+    } catch (err) {
+      // Refused: nothing changed on this client either (issue #326 W51).
+      ui.notifications?.error(`The site could not be marked cleared — the world did not take the write. Try again.`);
+      throw err;
+    }
     if (cleared) {
       await ChatMessage.create({
         content: `<div class="starforged-companion-card"><h3>◈ Site Cleared — ${escapeChatHtml(cleared.site.name)}</h3><p>The ${cleared.site.type === "vault" ? "vault" : "derelict"} is fully explored. Its secrets are yours — or spent.</p></div>`,
@@ -3254,7 +3262,15 @@ async function handleRevealSiteCommand(message) {
   const label = text.replace(/^!reveal-site\s*/i, "").trim();
   try {
     const { revealSectorSite, postSiteDiscoveryCard } = await import("./sectors/siteDiscovery.js");
-    const revealed = await revealSectorSite(label || null, { source: "manual" });
+    let revealed;
+    try {
+      revealed = await revealSectorSite(label || null, { source: "manual" });
+    } catch (err) {
+      // Refused: nothing changed on this client either, so a retry reveals it
+      // (issue #326 W51).
+      ui.notifications?.error(`The site could not be revealed — the world did not take the write. Try again.`);
+      throw err;
+    }
     if (revealed) {
       await postSiteDiscoveryCard(revealed);
     } else {
@@ -3787,7 +3803,14 @@ function registerOracleMemoryCaptureHook() {
       const entry = message?.flags?.[MODULE_ID]?.oracleMemory;
       if (!entry || typeof entry !== "object") return;
 
-      const campaignState = game.settings.get(MODULE_ID, "campaignState");
+      // A copy, with its own ring (rules/foundry-api.md): recordOracleResult
+      // pushed onto the cached ring, so a refused write left the GM's cache
+      // holding a result the world did not (issue #326 W51).
+      const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const campaignState = {
+        ...cached,
+        recentOracles: Array.isArray(cached.recentOracles) ? [...cached.recentOracles] : [],
+      };
       const stored = recordOracleResult(campaignState, entry);
       if (!stored) return;
       game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
@@ -5932,9 +5955,12 @@ async function handleRollCommand(_message) {
     return;
   }
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  await markForceNextAsMove(campaignState);
+  // A refused write sets nothing, and the card says so (issue #326 W51).
+  const marked = await markForceNextAsMove(campaignState);
   await ChatMessage.create({
-    content: `<div class="sf-pace-card"><strong>Pacing</strong> <p>Next undecorated input will route to the move interpreter, bypassing the classifier.</p></div>`,
+    content: marked
+      ? `<div class="sf-pace-card"><strong>Pacing</strong> <p>Next undecorated input will route to the move interpreter, bypassing the classifier.</p></div>`
+      : `<div class="sf-pace-card"><strong>Pacing</strong> <p>!roll was not recorded — the world did not take the write. Try again.</p></div>`,
     flags:   { [MODULE_ID]: { rollCommandCard: true } },
   });
 }

@@ -250,21 +250,35 @@ export async function saveCustomOracle(tableId, name, entries, { unparsed = [] }
     return false;
   }
 
-  const existing  = ORACLE_TABLES[tableId];
+  const existing  = Object.prototype.hasOwnProperty.call(ORACLE_TABLES, tableId) ? ORACLE_TABLES[tableId] : null;
   const isUpdate  = existing?.category === CUSTOM_ORACLE_CATEGORY;
+  if (existing && !isUpdate) {
+    await postCard(`<strong>Custom oracle not saved</strong><p><code>${escapeHtml(tableId)}</code> is a built-in oracle table and cannot be redefined.</p>`);
+    return false;
+  }
+
+  // Persist to campaignState (the canonical store) so the table survives a
+  // reload; the updateSetting hook mirrors it onto every other client. A copy
+  // is written, and the table registered here only once it landed: the
+  // cached state took the table and the table was registered before a write
+  // that could be refused, so it rolled on the GM's client alone and the
+  // GM's next whole-object write carried it into the world (issue #326 W51).
+  const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const state  = { ...cached };
+  state.customOracles = { ...(cached.customOracles ?? {}), [tableId]: { name, entries } };
+  try {
+    await game.settings.set(MODULE_ID, "campaignState", state);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | custom oracle: saving "${tableId}" was refused:`, err?.message ?? err);
+    await postCard(`<strong>Custom oracle not saved</strong><p>The world did not take the write — <code>${escapeHtml(tableId)}</code> was not saved. Try again.</p>`);
+    return false;
+  }
   try {
     registerOracleTable(tableId, { name, table: entries, category: CUSTOM_ORACLE_CATEGORY });
   } catch (err) {
     await postCard(`<strong>Custom oracle not saved</strong><p>${escapeHtml(err.message)}</p>`);
     return false;
   }
-
-  // Persist to campaignState (the canonical store) so the table survives a
-  // reload; the updateSetting hook mirrors it onto every other client.
-  const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  state.customOracles ??= {};
-  state.customOracles[tableId] = { name, entries };
-  await game.settings.set(MODULE_ID, "campaignState", state);
 
   const safeId = escapeHtml(tableId);
   await postCard(
@@ -369,13 +383,24 @@ export function validateCustomOracleEntries(entries) {
 // Removal helper (mostly for tests / cleanup)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Remove a custom table: from campaignState (a copy written — issue #326
+ * W51: the cached table was deleted before a write that could be refused),
+ * then from this client's registry once the write landed. A refused write
+ * rejects and leaves the table in place everywhere.
+ *
+ * @param {string} tableId
+ * @returns {Promise<void>}
+ */
 export async function removeCustomOracle(tableId) {
-  unregisterOracleTable(tableId);
-  const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  if (state.customOracles?.[tableId]) {
+  const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  if (cached.customOracles?.[tableId]) {
+    const state = { ...cached };
+    state.customOracles = { ...cached.customOracles };
     delete state.customOracles[tableId];
     await game.settings.set(MODULE_ID, "campaignState", state);
   }
+  unregisterOracleTable(tableId);
 }
 
 
@@ -534,7 +559,12 @@ function getPanelClass() {
       });
       if (!confirmed) return;
 
-      await removeCustomOracle(id);
+      try {
+        await removeCustomOracle(id);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | custom oracle: removing "${id}" was refused:`, err?.message ?? err);
+        ui.notifications?.error(`Custom oracle ${id} was not removed — the world did not take the write. Try again.`);
+      }
       this.render();
     }
   };

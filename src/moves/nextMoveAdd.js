@@ -71,8 +71,12 @@ export async function clearPersistedNextMoveAdd() {
   try {
     const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
     if (!latest.nextMoveAdd) return;
-    delete latest.nextMoveAdd;
-    await game.settings.set(MODULE_ID, "campaignState", latest);
+    // A copy (rules/foundry-api.md): deleting the grant from the cached value
+    // before a refused write left the GM's client without a +1 the world
+    // still held (issue #326 W51).
+    const next = { ...latest };
+    delete next.nextMoveAdd;
+    await game.settings.set(MODULE_ID, "campaignState", next);
   } catch (err) {
     console.warn(`${MODULE_ID} | Take a Break: clearing the used +1 failed:`, err?.message ?? err);
   }
