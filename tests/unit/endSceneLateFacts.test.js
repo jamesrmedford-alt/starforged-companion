@@ -8,7 +8,7 @@
  * latest store. A narration that finished inside that window persisted its
  * sidecar into the still-current scene, and the final write cleared it: never
  * migrated, archived or kept as LAST KNOWN. Every caller — `!scene end`, the
- * implicit end in startScene, the re-mint, End a Session, closeWorld. It now
+ * implicit end in startScene, the re-mint, End a Session. It now
  * re-reads the store before its final write and migrates what arrived.
  */
 

@@ -467,7 +467,7 @@ Both persist only their scene fields
 onto the latest stored campaignState (`persistCampaignStateFields`) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
 pipeline's stale snapshot. Triggers for `endScene`: the two
-commands, the implicit path, `closeWorld`, **End Session**
+commands, the implicit path, **End Session**
 (`session_close`), and the close-out before a new session is minted
 (`rollSessionIfDue`: `session_gap_remint` for a session that went idle,
 `session_close` for one that was ended — which closes the scene End a

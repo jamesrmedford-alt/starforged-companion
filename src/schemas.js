@@ -508,8 +508,8 @@ export const CampaignStateSchema = {
 
   currentSessionId:     "",    // minted by mintSession() (src/session/lifecycle.js)
   sessionNumber:        0,     // increments each new session
-  lastSessionTimestamp: null,  // ISO string: when the session was last seen live — at mint,
-                               // on chat activity (at most every 10 minutes) and at closeWorld
+  lastSessionTimestamp: null,  // ISO string: when the session was last seen live — at mint
+                               // and on chat activity (at most every 10 minutes)
   // The session End a Session closed (issue #286 C4). The next world load or
   // Begin a Session mints a new session while this equals currentSessionId.
   sessionEndedId:       null,

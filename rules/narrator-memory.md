@@ -71,7 +71,7 @@ layers. This file is the never-break list.
    on the card as LAST KNOWN). Scenes close at their fiction's
    boundaries (2026-07): End Session (`session_close`), the close-out before
    a new session is minted (`rollSessionIfDue` — `session_gap_remint` for a
-   session that went idle), and `closeWorld` — do not add a session boundary
+   session that went idle) — do not add a session boundary
    that leaves a scene open. A session is over at End Session or after four
    hours without a chat message (issue #286 C4); only world load and Begin a
    Session mint, and the mint keeps the closing session's summary as

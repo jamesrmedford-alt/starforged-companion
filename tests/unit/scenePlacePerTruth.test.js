@@ -6,7 +6,7 @@
  *
  * endScene filed every scene-subject truth on the frame's location at the END
  * of the scene. A scene spans travel — scenes end only at `!scene end`, End a
- * Session, the re-mint and closeWorld — so "the bar is called the Rusty
+ * Session and the re-mint — so "the bar is called the Rusty
  * Lantern", recorded at Bleakhold, landed on Ironway's card. Decided: each
  * truth records the frame's location when it is asserted (`sceneLocation`);
  * scene end files it there; a truth with no stamp (older, or asserted before

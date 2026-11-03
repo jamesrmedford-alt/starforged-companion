@@ -293,9 +293,9 @@ Open — found while fixing, not fixed:
 - **END-SESSION-STALE-ENDSCENE** (SAFETY). End a Session runs `endScene` on
   its pre-await snapshot: a truth struck or X-carded during its awaits is
   migrated to tiers or lore anyway (the U06 class).
-- **CLOSEWORLD-STALE-WRITE**, **MIGRATE-STALE-WRITE**, **LORE-ID-REPAIR-WHOLE**
-  (SAFETY). The `closeWorld` hook (holds the cached state across `endScene`,
-  then mutates and writes it), `!migrate-entities` (`migrator.js` writes its
+- ~~**CLOSEWORLD-STALE-WRITE**~~ (moot: the `closeWorld` handler is deleted —
+  issue #326 D7), **MIGRATE-STALE-WRITE**, **LORE-ID-REPAIR-WHOLE**
+  (SAFETY). `!migrate-entities` (`migrator.js` writes its
   whole state after awaits) and `callLoreRecapNarrator`'s journal-id repair
   (writes the caller's whole state) are the U06 shape at sites the issue did
   not list. `handleDraftDismiss` and the ready hook's truths fallback mutate

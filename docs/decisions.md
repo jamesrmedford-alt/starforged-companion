@@ -65,10 +65,18 @@ brackets.)
   challenge — its clock retired before the price is routed, then the track
   completed. *Rejected:* a card that only asks for the price and ends the
   challenge — the move belongs in the pipeline like its two siblings.
+- **No `closeWorld` hook** [D7; maintainer]. `Hooks.once("closeWorld")`
+  ended the active scene and stamped `lastSessionTimestamp` on world close,
+  but Foundry documents no such hook (the API reference listed it from a
+  community source) and nothing exercised it — dead code, and a stale
+  whole-state write had it ever run (CLOSEWORLD-STALE-WRITE, now moot). The
+  handler and its mentions are deleted; a scene left open at a reload closes
+  at End Session or the idle re-mint, which rules/narrator-memory.md §6
+  already treats as intended.
 - **A scene truth is filed where it was asserted** [D2; maintainer]. Scene
   end filed every scene-subject truth on the frame's location at the end of
   the scene, but a scene spans travel (it ends only at `!scene end`, End a
-  Session, the re-mint and `closeWorld`): "the bar is called the Rusty
+  Session and the re-mint): "the bar is called the Rusty
   Lantern", recorded at Bleakhold, landed on Ironway's card. Each truth now
   records the frame's location when it is asserted (`sceneLocation`: the
   asserting narration's own frame, else the frame in place; a Replace keeps
@@ -1745,7 +1753,8 @@ continues that scene. The intercept no longer calls `startScene`;
 active, on the canonical GM. Scenes end at `!scene end`, End Session
 (`session_close`), the close-out before a new session is minted
 (`session_gap_remint` — see "A session ends at End Session or after four idle
-hours") and `closeWorld`. Pacing's move-density window still
+hours"). *(Issue #326 D7: the `closeWorld` handler that also ended a scene is
+deleted — Foundry documents no such hook.)* Pacing's move-density window still
 resets on `@scene`: that is a pacing heuristic, not a scene boundary.
 
 **Why:** scope #227 §2.3 / §9.1 made every `@scene` a scene boundary when it

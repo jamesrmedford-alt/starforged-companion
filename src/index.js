@@ -646,7 +646,7 @@ export const CHAT_COMMAND_ROUTES = [
  * A4): interrogateScene starts one only when none is active (on the canonical
  * GM). It used to end the scene first, so the answer was written without the
  * frame, truths, state or CORRECTED list it was asked about. Scenes end at
- * `!scene end`, End Session, the 4-hour re-mint and closeWorld.
+ * `!scene end`, End Session and the 4-hour re-mint.
  */
 async function handleSceneQueryCommand(message) {
   const text     = message.content?.trim() ?? "";
@@ -7166,23 +7166,6 @@ Hooks.once("ready", () => {
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
     initSpeechInput();
   }
-});
-
-Hooks.once("closeWorld", async () => {
-  if (!game.user.isGM) return;
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  // Fact continuity: flush any active scene before the world closes so
-  // truths migrate to entity tiers / WJ Lore rather than vanishing on the
-  // next world load. See issue #227 (Fact Continuity) §9.2.
-  if (factContinuityEnabledFromSettings() && campaignState?.currentSceneId) {
-    try {
-      await endScene(campaignState, { reason: "session_close" });
-    } catch (err) {
-      console.warn(`${MODULE_ID} | closeWorld: endScene failed:`, err);
-    }
-  }
-  campaignState.lastSessionTimestamp = new Date().toISOString();
-  await game.settings.set(MODULE_ID, "campaignState", campaignState);
 });
 
 /**
