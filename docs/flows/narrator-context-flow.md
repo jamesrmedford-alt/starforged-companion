@@ -142,7 +142,9 @@ exclusion, a maintainer decision). In the same write as the pause,
 `applyXCardToNarratorMemory` (`narrator.js`), which picks the cards with
 `xCardedNarrationCards`: the newest narrator card of the session still in
 narrator memory, with the narrator cards of the same beat — those after the
-last message someone sent and at most two minutes older; an earlier X-Card's
+last message someone sent (a forced move's post — the Roll button's re-post
+of the player's line, a button's forced move — counts as one, issue #326 W42)
+and at most two minutes older; an earlier X-Card's
 card, its "X-Card cleared" card or a card an earlier X-Card removed bounds
 the beat, so a repeat play removes nothing more (fallback, burn-superseded
 and whispered cards are never chosen). It retracts what their sidecars wrote
