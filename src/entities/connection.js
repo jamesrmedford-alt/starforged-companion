@@ -439,8 +439,12 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
   const portraitSource = [pronounsToPortraitDescriptor(pronouns), firstLook, role, disposition]
     .filter(Boolean).join(". ");
 
-  const connection = {
-    ...existing,
+  // The fields the seed writes. Only these are written — by path, onto the
+  // record as it is when the write lands: the record was read before the
+  // Notes' Claude call, and writing that snapshot whole reverted whatever
+  // landed during the call — the sector creator's canonical lock (issue
+  // #326 W69: the card then read "prefer consistency", not "fixed").
+  const seededFields = {
     role,
     goal,
     firstLook:   firstLook ? [firstLook] : (Array.isArray(existing.firstLook) ? existing.firstLook : []),
@@ -461,19 +465,23 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
   const notesHtml       = keepNotesPortrait(actor.system?.notes,
     await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, description, disposition, pronouns }));
 
+  const fieldPaths = Object.fromEntries(Object.entries(seededFields)
+    .map(([key, value]) => [`flags.${MODULE_ID}.${FLAG_KEY}.${key}`, value]));
   try {
     await actor.update({
       "system.biography":                 characteristics,
       "system.pronouns":                  pronouns,
       "system.notes":                     notesHtml,
-      [`flags.${MODULE_ID}.${FLAG_KEY}`]: connection,
+      ...fieldPaths,
       [`flags.${MODULE_ID}.entityType`]:  actor.flags?.[MODULE_ID]?.entityType ?? "connection",
-      [`flags.${MODULE_ID}.entityId`]:    actor.flags?.[MODULE_ID]?.entityId   ?? connection._id,
+      [`flags.${MODULE_ID}.entityId`]:    actor.flags?.[MODULE_ID]?.entityId   ?? existing._id,
     });
   } catch (err) {
     console.error(`${MODULE_ID} | seedConnectionActor: update failed:`, err);
     return null;
   }
+  // The record as written: the seeded fields over the record as it is now.
+  const connection = { ...existing, ...(actor.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {}), ...seededFields };
 
   // Silent portrait — gated on an OpenRouter key. attachPortraitToActor sets
   // actor.img + prototype-token art and embeds a large copy at the top of the
