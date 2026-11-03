@@ -37,7 +37,11 @@ Two cross-cutting facts to hold onto:
   move's pending choice card (bound by `resolutionId`) and posts the upgraded
   outcome's choice for the move's fight, vehicle and companion; a write that
   does not land goes to the GMs' payoff card with a Retry (issue #311 P03–P06).
-  A consequence chosen first closes both. The upgraded outcome's other
+  A consequence chosen first closes both, and so does the roller's next
+  move: the pipeline stamps their earlier cards' open upgrades `laterMove`
+  after the new move's persist, and the GM handlers refuse a card a later move
+  by its roller follows (`resultUpgrade.closeUpgradesForLaterMove` /
+  `laterMoveFollows`, issue #326 D4). The upgraded outcome's other
   effects run through the pipeline's own applier (`applyOutcomeEffects`,
   `src/index.js` — the branches below are its body), for what the upgrade
   adds over the recorded original: a Strike burned from a miss marks its

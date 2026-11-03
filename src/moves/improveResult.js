@@ -50,6 +50,7 @@ import {
   reportUpgradeFailures,
   reconcileChoices,
   consequenceChosen,
+  laterMoveFollows,
   applyUpgradedOutcomeEffects,
   renarrateUpgrade,
   effectsNoteHtml,
@@ -63,6 +64,7 @@ import {
   resultUpgradeBlocker,
   UPGRADE_PENDING_TITLE,
   UPGRADE_CHOSEN_TITLE,
+  UPGRADE_LATER_MOVE_TITLE,
   UPGRADE_REFUSALS,
 } from "./burnMomentum.js";
 
@@ -197,6 +199,12 @@ export function registerImproveResultHook({ narrate, applyEffects } = {}) {
       btn.textContent = "✦ Improve Result — momentum was already burned";
       return;
     }
+    if (blocker === "later-move") {
+      btn.disabled    = true;
+      btn.textContent = "✦ Improve Result — closed by a later move";
+      btn.title       = UPGRADE_LATER_MOVE_TITLE;
+      return;
+    }
     if (blocker === "choice-made") {
       btn.disabled    = true;
       btn.textContent = "✦ Improve Result — the consequence was already chosen";
@@ -267,6 +275,7 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
     return { applied: false, reason: "already-consumed" };
   }
   const blocker = resultUpgradeBlocker(improve, flags.burn)
+    ?? (laterMoveFollows(message) ? "later-move" : null)
     ?? (consequenceChosen(improve.resolutionId) ? "choice-made" : null);
   if (blocker) {
     console.warn(`${MODULE_ID} | improveResult: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; improvement refused.`);

@@ -39,7 +39,7 @@ import {
   renderImproveButtonHtml,
   registerImproveResultHook,
 } from "./moves/improveResult.js";
-import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep } from "./moves/resultUpgrade.js";
+import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep, closeUpgradesForLaterMove } from "./moves/resultUpgrade.js";
 import { registerSufferCardHook, summarizeSufferCalls } from "./moves/sufferCard.js";
 import {
   scanForApplicableAbilities,
@@ -1686,6 +1686,11 @@ export function registerChatHook() {
           await moveResultMessage.update(recorded).catch(err =>
             console.warn(`${MODULE_ID} | burn / improve metadata update failed:`, err));
         }
+        // This roller's earlier move cards: their Burn / Improve belonged to
+        // the moves being made then — closed now this one has resolved (issue
+        // #326 D4). Canonical GM: the pipeline runs there.
+        await closeUpgradesForLaterMove(rollerActor?.id ?? null, resolution._id ?? null).catch(err =>
+          console.warn(`${MODULE_ID} | closing earlier move cards' upgrades failed:`, err?.message ?? err));
 
         // The move is resolved, persisted, and narrated — the critical section
         // the concurrency lock guards (campaignState writes + narration) is now

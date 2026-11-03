@@ -403,6 +403,59 @@ export async function closeUpgradesForChoice(resolutionId) {
     .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
 }
 
+// The PC whose move a move card records — its roller.
+const cardRoller = (f) => f?.actorId ?? f?.burn?.actorId ?? f?.improve?.actorId ?? null;
+
+/**
+ * An upgrade belongs to the move being made (issue #326 D4): "you must burn
+ * momentum before applying any other effects of the move". Once a roller's
+ * next move has resolved, the Burn Momentum / Improve Result still open on
+ * their earlier move cards are closed (`laterMove`), so the buttons say so —
+ * an old card's 🔥 burned momentum at its CURRENT value, swapped the old
+ * outcome's effects in after the fact and re-narrated a past beat as the
+ * scene's latest. Canonical GM, after the new move's persist. Best effort:
+ * the GM handlers also refuse a card a later move has followed
+ * (laterMoveFollows), whether or not it was stamped.
+ *
+ * @param {string|null} actorId — the roller of the move just resolved
+ * @param {string|null} resolutionId — that move's resolution (its card stays open)
+ */
+export async function closeUpgradesForLaterMove(actorId, resolutionId) {
+  if (!actorId) return;
+  for (const card of allMessages()) {
+    const f = card?.flags?.[MODULE_ID];
+    if (f?.moveResolution !== true || f.resolutionId === resolutionId || cardRoller(f) !== actorId) continue;
+    const update = Object.fromEntries(["burn", "improve"]
+      .filter(k => f[k] && !f[k].consumed && !f[k].laterMove)
+      .map(k => [`flags.${MODULE_ID}.${k}.laterMove`, true]));
+    if (!Object.keys(update).length) continue;
+    await card.update(update)
+      .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades after a later move failed:`, err?.message ?? err));
+  }
+}
+
+/**
+ * True when the roller of a move card has a later move card — the card's
+ * upgrades are closed (issue #326 D4). The GM handlers' check, for a card
+ * closeUpgradesForLaterMove never stamped (posted before it, or a refused
+ * stamp).
+ *
+ * @param {ChatMessage} message — the move card
+ * @returns {boolean}
+ */
+export function laterMoveFollows(message) {
+  const f = message?.flags?.[MODULE_ID];
+  const roller = cardRoller(f);
+  if (!roller || !message?.id) return false;
+  const all = allMessages();
+  const at = all.findIndex(m => m?.id === message.id);
+  if (at < 0) return false;
+  return all.slice(at + 1).some(m => {
+    const g = m?.flags?.[MODULE_ID];
+    return g?.moveResolution === true && g.resolutionId !== f.resolutionId && cardRoller(g) === roller;
+  });
+}
+
 // Why a choice card was retired, by what replaced the choice.
 const RETIRED_REASON = {
   burn:      "The result changed — momentum was burned — so this choice no longer applies.",

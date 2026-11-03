@@ -80,6 +80,7 @@ import {
   reportUpgradeFailures,
   reconcileChoices,
   consequenceChosen,
+  laterMoveFollows,
   applyUpgradedOutcomeEffects,
   renarrateUpgrade,
   effectsNoteHtml,
@@ -132,14 +133,17 @@ export function releaseResultUpgrade(messageId) {
  * upgrade already changed the result ("already-upgraded"), or the move's
  * consequence was already chosen on its choice card ("choice-made" — what the
  * choice applied stands, so upgrading would stack two outcomes' choices;
- * issue #311 P03). The GM handlers also check the choice cards themselves
- * (resultUpgrade.js consequenceChosen).
+ * issue #311 P03), or the roller has made another move since ("later-move" —
+ * an upgrade belongs to the move being made, issue #326 D4). The GM handlers
+ * also check the choice cards and the later moves themselves (resultUpgrade.js
+ * consequenceChosen, laterMoveFollows).
  * @param {Object} upgrade   the card's `burn` or `improve` flag
  * @param {Object} [other]   the card's other upgrade flag
- * @returns {"original-pending"|"already-upgraded"|"choice-made"|null}
+ * @returns {"original-pending"|"already-upgraded"|"later-move"|"choice-made"|null}
  */
 export function resultUpgradeBlocker(upgrade, other) {
   if (other?.consumed) return "already-upgraded";
+  if (upgrade?.laterMove) return "later-move";
   if (upgrade?.choiceMade) return "choice-made";
   if (upgrade?.originalApplied !== true) return "original-pending";
   return null;
@@ -151,10 +155,14 @@ export const UPGRADE_CHOSEN_TITLE = "The consequence was already chosen — upgr
 /** Tooltip on a burn / improve button waiting for the original outcome to be recorded. */
 export const UPGRADE_PENDING_TITLE = "Available once the move's result is recorded";
 
+/** Tooltip on a burn / improve button closed by the roller's next move (issue #326 D4). */
+export const UPGRADE_LATER_MOVE_TITLE = "An upgrade belongs to the move being made — this character has made another move since";
+
 /** Why the GM handlers refused an upgrade (resultUpgradeBlocker's reasons), for the log. */
 export const UPGRADE_REFUSALS = {
   "original-pending": "the original outcome is not recorded yet",
   "already-upgraded": "the result was already upgraded",
+  "later-move":       "the roller has made another move since",
   "choice-made":      "the move's consequence was already chosen",
 };
 
@@ -333,6 +341,12 @@ export function registerBurnMomentumHook({ narrate, applyEffects } = {}) {
       btn.textContent = "🔥 Burn Momentum — the result was already improved";
       return;
     }
+    if (blocker === "later-move") {
+      btn.disabled    = true;
+      btn.textContent = "🔥 Burn Momentum — closed by a later move";
+      btn.title       = UPGRADE_LATER_MOVE_TITLE;
+      return;
+    }
     if (blocker === "choice-made") {
       btn.disabled    = true;
       btn.textContent = "🔥 Burn Momentum — the consequence was already chosen";
@@ -471,6 +485,7 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
     return { applied: false, reason: "already-consumed" };
   }
   const blocker = resultUpgradeBlocker(burn, flags.improve)
+    ?? (laterMoveFollows(message) ? "later-move" : null)
     ?? (consequenceChosen(burn.resolutionId) ? "choice-made" : null);
   if (blocker) {
     console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; burn refused.`);

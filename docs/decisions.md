@@ -35,6 +35,17 @@ brackets.)
   (`awardXP` deleted); the earned-XP card stays and points at the Legacies
   tab. *Rejected:* a module panel showing the legacy and XP — the sheet is
   where XP is spent, so a second display would drift from it.
+- **An upgrade closes after the roller's next move** [D4; maintainer]. A
+  move card's Burn Momentum / Improve Result stayed live until used or its
+  choice was picked: an old card's 🔥 burned momentum at its current value,
+  swapped the old outcome's effects in after the fact and re-narrated a past
+  beat as the scene's latest — against "you must burn momentum before
+  applying any other effects of the move". Once the same roller's next move
+  has resolved (the pipeline, after its persist), their earlier cards' open
+  upgrades are stamped `laterMove` — the buttons read "closed by a later
+  move" — and the GM handlers refuse an upgrade on a card a later move by its
+  roller follows, stamped or not. Another character's move closes nothing.
+  *Rejected:* accepting late burns as a feature.
 - **A scene truth is filed where it was asserted** [D2; maintainer]. Scene
   end filed every scene-subject truth on the frame's location at the end of
   the scene, but a scene spans travel (it ends only at `!scene end`, End a
