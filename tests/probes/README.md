@@ -4,6 +4,10 @@ Probe tests from the eighth bug audit of `39331b4`
 (`docs/testing/bug-audit-8-2026-11-03.md`: 87 findings W01–W87 and 8
 decisions D1–D8).
 
+Filed as GitHub issues [#325](https://github.com/jamesrmedford-alt/starforged-companion/issues/325)
+(W01–W37) and [#326](https://github.com/jamesrmedford-alt/starforged-companion/issues/326)
+(W38–W87 and D1–D8).
+
 Each probe asserts the **correct** behaviour, so it fails while its finding is
 open and passes once the finding is fixed. Tests named `control: …` pass today
 by design. The files are named `*.probe.js` so `npm test` never collects them.
