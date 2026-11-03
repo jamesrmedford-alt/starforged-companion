@@ -26,6 +26,7 @@ import {
   runSufferResolution,
   isOptionAvailable,
   isRetryableSufferCall,
+  unpreparedAtZeroSupply,
 } from "./sufferDialog.js";
 import { getActor, getPlayerActors, readCompanionHealth } from "../character/actorBridge.js";
 import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
@@ -105,6 +106,17 @@ function optionContext(actor, executorOpts = {}) {
 }
 
 /**
+ * True when an "any" card cannot take this suffer move: one the prompt
+ * excludes (a redirected loss — sufferExecutor.sacrificeResources), or
+ * Sacrifice Resources while the PC is unprepared at 0 supply, whose loss goes
+ * to a different suffer move (issue #325 W16).
+ */
+function anySufferBlocked(prompt, sufferId, ctx) {
+  if (Array.isArray(prompt?.exclude) && prompt.exclude.includes(sufferId)) return true;
+  return sufferId === "sacrifice_resources" && unpreparedAtZeroSupply(ctx?.actor ?? null);
+}
+
+/**
  * Render the choice-card HTML for the current state. `pickedIndices` tracks
  * already-applied options for a multi-select prompt so they render as
  * done/disabled; `notApplied` lists what an earlier pick could not apply.
@@ -128,10 +140,12 @@ export function renderSufferCard(prompt, actor, pickedIndices = [], ctx = option
     const made = Array.isArray(pickedSuffers) ? pickedSuffers : [];
     header  = `Make a suffer move (${n > 1 ? `${n} × ` : ""}-${amt}):`
       + (made.length ? ` ${made.length} of ${n} made (${made.map(labelForSuffer).join(", ")}).` : "");
-    buttons = ANY_SUFFER_MOVES.map(s =>
-      `<button type="button" class="sf-suffer-card-btn" data-action="sf-suffer-pick" ` +
-      `data-pick-kind="any" data-suffer-id="${s.id}">${escapeHtml(s.label)} (-${amt})</button>`,
-    ).join("");
+    buttons = ANY_SUFFER_MOVES.map(s => {
+      const blocked = anySufferBlocked(prompt, s.id, ctx);
+      return `<button type="button" class="sf-suffer-card-btn" data-action="sf-suffer-pick" ` +
+        `data-pick-kind="any" data-suffer-id="${s.id}" ${blocked ? "disabled" : ""}>` +
+        `${escapeHtml(s.label)} (-${amt})${blocked ? " (unavailable)" : ""}</button>`;
+    }).join("");
   } else {
     const cap = sufferMultiCap(prompt);
     header = cap > 1
@@ -403,6 +417,7 @@ function offeredPick(flags, payload, actor) {
   if (!prompt) return null;
   if (payload.pickKind === "any") {
     return prompt.kind === "any" && ANY_SUFFER_MOVES.some(s => s.id === payload.sufferId)
+      && !anySufferBlocked(prompt, payload.sufferId, optionContext(actor, flags.executorOpts))
       ? { pickKind: "any", sufferId: payload.sufferId }
       : null;
   }

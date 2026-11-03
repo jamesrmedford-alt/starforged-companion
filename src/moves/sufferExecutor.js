@@ -347,6 +347,30 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     return { before: 0, after: 0, atZero: false, skipped: true };
   }
   const before = readMeter(actor, "supply");
+  // Already unprepared with nothing left: "When you suffer a loss of
+  // resources while unprepared … apply the cost to a different suffer move."
+  // The loss went 0 → 0 and the cost was settled for nothing (issue #325
+  // W16): a picker of the other suffer moves takes it instead.
+  if (before <= 0 && actor.system?.debility?.unprepared) {
+    const { postSufferChoiceCard } = await import("./sufferCard.js");
+    // The move's context (miss, the vehicle / companion it was made against),
+    // without this call's own arguments.
+    const executorOpts = Object.fromEntries(Object.entries(opts ?? {})
+      .filter(([key]) => !["skipCard", "amount", "itemId", "fixedRoll"].includes(key)));
+    const redirect = await postSufferChoiceCard({
+      sufferPrompt: { kind: "any", amount, count: 1, exclude: ["sacrifice_resources"] },
+      actor,
+      executorOpts,
+    });
+    if (!opts.skipCard) {
+      await postSufferCard({
+        title: `Sacrifice Resources (-${amount})`,
+        body: `Supply: 0 — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? " (choose below)" : " — choose one and apply it on the sheet"}.`,
+        flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero: true, unpreparedMarked: false, redirected: true },
+      });
+    }
+    return { before, after: before, atZero: true, unpreparedMarked: false, redirected: true };
+  }
   await applyMeterChanges(actor, { supply: -amount });
   const after = readMeter(actor, "supply");
   const atZero = after <= 0;

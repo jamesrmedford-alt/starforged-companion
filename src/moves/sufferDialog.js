@@ -422,6 +422,27 @@ async function runSufferCall(call, actor, opts) {
   }
 }
 
+/** The suffer moves an option (or its chain) makes. */
+function optionSuffers(opt) {
+  if (!opt || typeof opt !== "object") return [];
+  if (Array.isArray(opt.chain)) return opt.chain.flatMap(optionSuffers);
+  return typeof opt.suffer === "string" ? [opt.suffer] : [];
+}
+
+/**
+ * True when the PC is unprepared with no supply left: a further loss of
+ * resources goes to another suffer move (issue #325 W16).
+ *
+ * @param {Actor|null} actor
+ * @returns {boolean}
+ */
+export function unpreparedAtZeroSupply(actor) {
+  if (!actor?.system?.debility?.unprepared) return false;
+  const supply = actor.system?.supply;
+  const value = Number(typeof supply === "object" ? supply?.value : supply);
+  return !(value > 0);
+}
+
 /**
  * The player character a Heal's care is for (`opts.patientActorId`, resolved
  * before the dice — statEnrichment.js resolveHealPatient), or null when the
@@ -533,6 +554,11 @@ async function postDeferredCard(title, body, flags = {}) {
  *   (sufferCard.js optionContext builds it from the card)
  */
 export function isOptionAvailable(opt, ctx = {}) {
+  // A loss of resources while unprepared is applied to a different suffer
+  // move (Sacrifice Resources: "When you suffer a loss of resources while
+  // unprepared … apply the cost to a different suffer move"): at 0 supply it
+  // cost nothing and settled the choice (issue #325 W16).
+  if (optionSuffers(opt).includes("sacrifice_resources") && unpreparedAtZeroSupply(ctx.actor)) return false;
   if (!opt?.requires) return true;
   const req = String(opt.requires);
   const actor = ctx.actor;
