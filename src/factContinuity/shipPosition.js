@@ -44,6 +44,7 @@ export function emptyPosition() {
     sectorId:            null,
     nearestPlanetId:     null,
     nearestSettlementId: null,
+    nearestLocationId:   null,
     freeText:            "",
     updatedAt:           null,
     updatedBy:           null,
@@ -112,6 +113,10 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
       return out;
     }
     case "location": {
+      // A recorded place (a derelict, vault, station): by its id, with the
+      // name kept as text for older readers — it printed as bare free text,
+      // "Wayfinder Derelict Kovash" (issue #326 W65).
+      out.nearestLocationId = hit.journalId ?? hit._id ?? null;
       out.sectorId = resolveSectorForRecord(hit, campaignState);
       out.freeText = hit.name ?? ref;
       return out;
@@ -147,7 +152,12 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
   const planet     = lookupPlanet(position.nearestPlanetId, campaignState);
   const sector     = lookupSector(position.sectorId, campaignState);
   const free       = (position.freeText ?? "").trim();
-  if (!settlement && !planet && !sector && !free) return "";
+  // A recorded location, by its current name (the record's text if it is
+  // gone): it gets the settlement treatment (issue #326 W65).
+  const location   = position.nearestLocationId
+    ? (lookupRecordName(position.nearestLocationId, campaignState, "location", "locations") || free)
+    : "";
+  if (!settlement && !planet && !sector && !free && !location) return "";
 
   const ship      = (shipName ?? "").trim() || "Command vehicle";
   const source    = position.updatedBy ?? null;
@@ -168,6 +178,8 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
   if (settlement) {
     if (docked) parts.push(`docked at ${settlement}`);
     else        parts.push(`near ${settlement}`);
+  } else if (location) {
+    parts.push(docked ? `docked at ${location}` : `near ${location}`);
   } else if (planet) {
     parts.push(`in orbit of ${planet}`);
   } else if (free) {
@@ -217,6 +229,7 @@ export function inferShipPositionFromEntityId(entityId, campaignState, options =
     } else if (entityType === "planet") {
       out.nearestPlanetId = entityId;
     } else {
+      out.nearestLocationId = entityId;
       out.freeText = record.name ?? "";
     }
     out.sectorId = resolveSectorForRecord(hit, campaignState);
