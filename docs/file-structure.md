@@ -270,7 +270,7 @@ developer-only and excluded from the release.
 | File | Purpose |
 |------|---------|
 | `worldJournal.js` | World Journal CRUD (four category journals + session log). `recordLoreDiscovery` always writes `retracted` (the caller's value, else the stored one — Foundry merges flags key by key) and keeps the stored text and category when the caller gives none; `!journal lore "<title>" confirmed` / `rumour` clears a strike and keeps the entry's text, category, session and move provenance — and, confirmed, its narrator provenance (issue #321 U40: a restore left it struck and blanked). |
-| `worldJournalPanel.js` | WJ panel (confirm, severity dropdown, history accordion, entity links). |
+| `worldJournalPanel.js` | WJ panel (confirm, severity dropdown, history accordion, entity links). Contradictions: a lore catch gets Review / Override / Dismiss; a fact-continuity catch (◈ Narrative Review, `factContinuityReview`) gets Correct… (`openCorrectionDialog`) / Dismiss, and Override refuses it (issue #325 W34). |
 | `clarificationDialog.js` | Hybrid entity clarification dialog (NED v3). Connections are offered under their host Actor id, read through `getConnection` from `campaignState.connectionIds`, so a pick hands the narrator that NPC's card (issue #321 U37 — ids were looked up in `game.journal`, where no Actor-hosted connection is). |
 
 ---

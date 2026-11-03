@@ -4,7 +4,8 @@
 // Players read full WJ content via the native Foundry journal viewer. This
 // panel only exposes actions that change narrator state:
 //   1. Pending Lore       — Confirm / Dismiss narrator-asserted entries
-//   2. Contradictions     — Review / Override / Dismiss flagged entries
+//   2. Contradictions     — Review / Override / Dismiss flagged lore; a
+//                           fact-continuity catch gets Correct… / Dismiss
 //   3. Active Threats     — change severity inline
 //   4. Journal Links      — open the underlying JournalEntries
 
@@ -17,6 +18,7 @@ import {
   promoteLoreToConfirmed,
   updateThreatSeverity,
 } from './worldJournal.js';
+import { openCorrectionDialog } from '../factContinuity/correctionDialog.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -55,6 +57,7 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
       dismissAssertion:   WorldJournalPanelApp.#onDismissAssertion,
       reviewContradiction: WorldJournalPanelApp.#onReviewContradiction,
       overrideContradiction: WorldJournalPanelApp.#onOverrideContradiction,
+      correctContradiction: WorldJournalPanelApp.#onCorrectContradiction,
       dismissContradiction: WorldJournalPanelApp.#onDismissContradiction,
       openJournal:        WorldJournalPanelApp.#onOpenJournal,
     },
@@ -149,6 +152,15 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
     }
     const meta = readContradictionMessage(messageId);
     if (!meta) return;
+    // A fact-continuity catch (◈ Narrative Review) is about a binding scene
+    // fact, not a lore page: promoting "lore" by the subject's name changed
+    // nothing, and deleting the card took its Retract button with it while
+    // the check's per-scene dedup never posted the catch again (issue #325
+    // W34). Its remedy is the correction dialog (Correct…).
+    if (meta.factContinuity) {
+      ui?.notifications?.warn('This is a fact-continuity catch, not lore — use Correct… to strike or replace the fact.');
+      return;
+    }
     try {
       if (meta.name) await promoteLoreToConfirmed(meta.name, readCampaignState());
       await deleteChatMessage(messageId);
@@ -156,6 +168,18 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
       console.error(`${MODULE_ID} | worldJournalPanel: overrideContradiction failed:`, err);
     }
     await this.render({ force: true });
+  }
+
+  /** A fact-continuity catch's remedy: the card's correction dialog (the card stays). */
+  static async #onCorrectContradiction(_event, target) {
+    const messageId = target?.dataset?.messageId;
+    const message = messageId ? globalThis.game?.messages?.get?.(messageId) : null;
+    if (!message?.flags?.[MODULE_ID]?.factContinuityReview) return;
+    try {
+      await openCorrectionDialog(message);
+    } catch (err) {
+      console.error(`${MODULE_ID} | worldJournalPanel: correctContradiction failed:`, err);
+    }
   }
 
   static async #onDismissContradiction(_event, target) {
@@ -260,17 +284,26 @@ function buildPendingLoreSection(entries) {
 function buildContradictionsSection(items) {
   if (!items.length) return '';
   const heading = '<h3 class="sf-wj-section-heading">Contradictions</h3>';
-  const rows = items.map(c => `
-<div class="sf-wj-entry sf-wj-contradiction-entry">
-  <div class="sf-wj-entry-title">${escapeHtml(c.name ?? '(unknown)')}</div>
-  ${c.detail ? `<div class="sf-wj-entry-text">${escapeHtml(c.detail)}</div>` : ''}
-  <div class="sf-wj-action-row">
+  // A fact-continuity catch takes its own remedy, never the lore actions
+  // (issue #325 W34): Correct… opens its correction dialog when the card
+  // offers one (a frame / ship / identity catch names its remedy on the card).
+  const actions = (c) => c.factContinuity
+    ? (c.correctable ? `
+    <button type="button" class="sf-wj-correct-btn"
+            data-action="correctContradiction" data-message-id="${escapeHtml(c.messageId)}"
+            title="Strike or replace the contradicted fact">Correct…</button>` : '')
+    : `
     <button type="button" class="sf-wj-review-btn"
             data-action="reviewContradiction" data-message-id="${escapeHtml(c.messageId)}"
             title="Open the lore journal">Review</button>
     <button type="button" class="sf-wj-override-btn"
             data-action="overrideContradiction" data-message-id="${escapeHtml(c.messageId)}"
-            title="Mark the new narration as correct (promotes lore)">Override</button>
+            title="Mark the new narration as correct (promotes lore)">Override</button>`;
+  const rows = items.map(c => `
+<div class="sf-wj-entry sf-wj-contradiction-entry">
+  <div class="sf-wj-entry-title">${escapeHtml(c.name ?? '(unknown)')}</div>
+  ${c.detail ? `<div class="sf-wj-entry-text">${escapeHtml(c.detail)}</div>` : ''}
+  <div class="sf-wj-action-row">${actions(c)}
     <button type="button" class="sf-wj-dismiss-btn"
             data-action="dismissContradiction" data-message-id="${escapeHtml(c.messageId)}"
             title="Clear the contradiction flag">Dismiss</button>
@@ -349,6 +382,9 @@ function parseContradictionMessage(msg) {
     messageId: msg.id,
     name:      nameMatch ? decodeEntities(nameMatch[1]) : '',
     detail:    detailMatch ? decodeEntities(detailMatch[1]) : '',
+    // A ◈ Narrative Review card from the fact-continuity check (issue #325 W34).
+    factContinuity: msg.flags?.[MODULE_ID]?.factContinuityReview === true,
+    correctable:    content.includes('data-action="openCorrectionDialog"'),
   };
 }
 

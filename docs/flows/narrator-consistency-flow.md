@@ -66,6 +66,12 @@ longer special-cases them).
   `contradictedTruthId` + `matchedEntityIds` flags and co-marks
   `narratorCard` purely to surface the render hook — the ring's defensive
   excludes (`worldJournalContradiction`) keep it out of narrator memory.
+  The card also carries `factContinuityReview`: the World Journal panel
+  lists it under Contradictions with **Correct…** (the same dialog, when the
+  card has the button) and Dismiss — never the lore actions. Override
+  promoted "lore" by the subject's name, which changed nothing, and deleted
+  the card and its button while the dedup never posted the catch again; it
+  now refuses a fact-continuity catch (issue #325 W34).
 - The button opens the **Correct Active Scene Facts dialog**
   (`openCorrectionDialog`), scoped to the card's matched entities + current
   location: in-scope truths get Strike / Replace, state entries get Strike
