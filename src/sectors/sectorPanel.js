@@ -420,7 +420,7 @@ function getSetting(key, fallback) {
 
 function getNarratorSettings() {
   return {
-    perspective: getSetting("narrationPerspective", "second"),
+    perspective: getSetting("narrationPerspective", "auto"),   // auto / second_person / third_person
     tone:        getSetting("narrationTone",        "wry"),
   };
 }

@@ -577,9 +577,14 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
   const apiKey = getClaudeApiKey();
   if (!apiKey) return { sector: null, settlements: {} };
 
-  const perspective = narratorSettings.perspective ?? "second";
-  const perspectiveNote = perspective === "first"
-    ? "Narrate in first person (the protagonist's voice)"
+  // The narration's own perspective — `auto` resolved as the narrator
+  // resolves it. The stub compared the setting with "first", a value it never
+  // holds (auto / second_person / third_person), so a third-person campaign's
+  // Sector Record and settlement descriptions addressed "you" (issue #326 W73).
+  const { resolveNarrationPerspective } = await import("../narration/narratorPrompt.js");
+  const perspective = resolveNarrationPerspective(narratorSettings.perspective ?? "auto");
+  const perspectiveNote = perspective === "third_person"
+    ? "Narrate in third person (refer to the characters by name, never as 'you')"
     : "Narrate in second person (address the protagonist as 'you')";
 
   const regionLabel   = REGION_LABELS[sector.region] ?? sector.regionLabel ?? sector.region;
