@@ -430,7 +430,10 @@ went with the module, 2026-07 — issue #271).
 narration, **or the inciting incident** (so the premise sidecar writes into a
 real scene the first move then *continues* — the opening NPC state and frame
 survive), and since issue #321 U34 on an oracle follow-up, a session or clock
-vignette and a vow scene too — their facts used to land under no scene. A
+vignette and a vow scene too — their facts used to land under no scene; since
+issue #326 W59 a `!truth set` / `!state set` typed with no scene open starts
+one too (the next narration's scene start ended the phantom scene and
+discarded what the GM set). A
 caller whose snapshot holds no scene while the store has one adopts it
 (`startScene` → `adoptStoredScene`: the scene's id, truths, state, frame and
 spotlight cloned in, nothing written) instead of minting a second scene over

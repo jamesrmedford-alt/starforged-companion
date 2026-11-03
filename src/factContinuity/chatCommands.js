@@ -38,7 +38,7 @@ import {
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { propagateRetraction, markSummaryForRegen } from "./retractions.js";
-import { persistSceneLedgerFields } from "./sceneLifecycle.js";
+import { persistSceneLedgerFields, startScene } from "./sceneLifecycle.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -154,6 +154,18 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
   let changed = null;        // the ledger field this command changed
   let struckTruth = false;
   try {
+    // A truth or state set with no scene open starts one first, as a
+    // narration does (ensureSceneStarted — the issue #321 U34 rule for the
+    // other ledger writer): written scene-less, the next narration's
+    // startScene ended the phantom scene and the GM's state was discarded,
+    // the truth migrated out; and a move already in flight wrote its
+    // snapshot's empty ledgers over them (issue #326 W59). Started here, the
+    // scene is the store's, which the next narration (and that move's scene
+    // start, adoptStoredScene) continues.
+    if (parsed.verb !== "strike" && !campaignState.currentSceneId) {
+      await startScene(campaignState, { reason: "fact_continuity_command" });
+    }
+
     if (parsed.domain === "truth" && parsed.verb === "strike") {
       const struck = strikeTruth(parsed.rest, campaignState, permCtx);
       if (struck) {

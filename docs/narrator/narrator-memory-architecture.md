@@ -212,7 +212,7 @@ minted over the live one's ledgers, which were neither kept nor archived.
 Oracle follow-ups, session and clock vignettes and vow scenes start a scene
 when none is active, as move, paced and `@scene` narration do
 (`ensureSceneStarted`, canonical GM — issue #321 U34; their facts landed
-under no scene).
+under no scene), and so does a `!truth set` / `!state set` (issue #326 W59).
 
 **Subject resolution (Cluster A2; fixed by issue #286).** `applyNarratorSidecar`
 passes the full entity roster (`collectAllEntities`,
