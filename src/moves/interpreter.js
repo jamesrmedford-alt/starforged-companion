@@ -529,8 +529,17 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
     console.warn(`Starforged Companion | Unknown stat in response: ${parsed.statUsed}`);
     parsed.statUsed = finalMoveData.stat?.[0] ?? "wits";
   }
+  // A stat the move does not list gives way to the move's first (issue #325
+  // W19): Gather Information +iron or Check Your Gear +wits was rolled with
+  // that stat's sheet value, and the confirm dialog has no stat picker. Only
+  // the Chaotic dial keeps an unlisted stat — its Trickster framing asks the
+  // model to "consider unusual stats", a departure from the move text the
+  // maintainer chose to keep (decisions.md, issue #325). A move already
+  // chosen (expectedMoveId — issue #321 U04) is held to its list whatever
+  // the dial.
   const listedStats = Array.isArray(finalMoveData.stat) ? finalMoveData.stat : [];
-  if (expectedMoveId && listedStats.length && !listedStats.includes(parsed.statUsed)) {
+  const chaotic = mischiefLevel === "chaotic";
+  if ((expectedMoveId || !chaotic) && listedStats.length && !listedStats.includes(parsed.statUsed)) {
     parsed.statUsed = listedStats[0];
   }
 

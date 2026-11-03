@@ -1989,6 +1989,27 @@ adds itself, alongside the confirm dialog's asset adds.
 - *Let the table choose the recipient* — the rule allows "you or an ally";
   the next action roll is the common case and needs no extra prompt.
 
+## A typed move rolls a stat it lists — except under the Chaotic dial (2026-11-03)
+
+**Decision (maintainer, issue #325 W19):** the move interpreter holds a typed
+move to the stats the move lists (`interpreter.js` `parseInterpretation`): a
+stat the move does not list gives way to its first — Gather Information is
+always +wits, Check Your Gear +supply. Under the **Chaotic** Mischief dial the
+Trickster may roll an unlisted stat: its framing ("Consider unusual stats",
+"Find the stat that seems least relevant", `mischief.js`) is kept, a
+deliberate departure from the move text for comic, high-chaos play. A move
+already chosen before the interpretation (a forced move's stat-only reading,
+issue #321 U04) is held to its list on every dial.
+
+**Reason:** under Lawful and Balanced nothing invites an unlisted stat, yet
+the parse checked the model's stat only against every stat name the module
+knows, and the confirm dialog shows the stat as text with no picker — so a
+model slip was rolled with that stat's sheet value.
+
+**Rejected:** *drop the "unusual stats" framing and clamp under Chaotic too*
+(the recommended option) — the maintainer kept the Trickster's latitude; on
+the Chaotic dial an unlisted stat is the dial working as designed.
+
 ## Combat position is per character (2026-11-01)
 
 **Decision (maintainer, issue #322 V03):** each player character holds their
