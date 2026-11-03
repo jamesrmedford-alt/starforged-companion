@@ -47,7 +47,7 @@ import {
   _resetSynthStateForTests,
 } from '../../src/audio/index.js';
 
-import { write as mockWrite, lookup as mockLookup } from '../../src/audio/cache.js';
+import { write as mockWrite, lookup as mockLookup, cacheKey as mockCacheKey } from '../../src/audio/cache.js';
 import { isCanonicalGM }     from '../../src/multiplayer/gmGate.js';
 import { synthesise as mockSynthesise } from '../../src/audio/elevenlabs.js';
 
@@ -187,6 +187,9 @@ describe('registerAudioSocket — GM relay contract', () => {
 
 describe('handleSynthRequest — GM synthesises on a keyless client request', () => {
   const SPEC = { voiceId: 'v1', modelId: 'm1', text: 'Hello.', speed: 1.0 };
+  // SPEC's clip key (the mocked cacheKey's): the GM refuses a request whose
+  // hash is not its spec's key (issue #326 W81).
+  const HASH = 'deadbeefdeadbeef';
 
   function getHandler() {
     registerAudioSocket();
@@ -204,6 +207,7 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
     game.socket._reset();
     vi.mocked(isCanonicalGM).mockReturnValue(true);
     vi.mocked(mockLookup).mockResolvedValue(null);       // default: cache miss
+    vi.mocked(mockCacheKey).mockResolvedValue(HASH);
     vi.mocked(mockWrite).mockResolvedValue('/worlds/test/audio/x.mp3');
     vi.mocked(mockSynthesise).mockResolvedValue(new Uint8Array([1, 2, 3]));
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, 'sk_gm_key');
@@ -214,26 +218,26 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
   // may not browse the cache directory to find it.
   it('synthesises + caches an uncached clip, then signals done with the path it wrote', async () => {
     const handler = getHandler();
-    await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
+    await handler({ kind: 'audio.synth.request', hash: HASH, spec: SPEC });
     expect(mockSynthesise).toHaveBeenCalledOnce();
-    expect(mockWrite).toHaveBeenCalledWith('abc', expect.any(Uint8Array));
+    expect(mockWrite).toHaveBeenCalledWith(HASH, expect.any(Uint8Array));
     expect(doneEmits()).toHaveLength(1);
-    expect(doneEmits()[0].payload).toEqual({ kind: 'audio.synth.done', hash: 'abc', path: '/worlds/test/audio/x.mp3' });
+    expect(doneEmits()[0].payload).toEqual({ kind: 'audio.synth.done', hash: HASH, path: '/worlds/test/audio/x.mp3' });
   });
 
   it('skips synthesis when the clip is already cached, but still signals done with its path', async () => {
-    vi.mocked(mockLookup).mockResolvedValue('/worlds/test/audio/abc.mp3');
+    vi.mocked(mockLookup).mockResolvedValue(`/worlds/test/audio/${HASH}.mp3`);
     const handler = getHandler();
-    await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
+    await handler({ kind: 'audio.synth.request', hash: HASH, spec: SPEC });
     expect(mockSynthesise).not.toHaveBeenCalled();
     expect(doneEmits()).toHaveLength(1);
-    expect(doneEmits()[0].payload.path).toBe('/worlds/test/audio/abc.mp3');
+    expect(doneEmits()[0].payload.path).toBe(`/worlds/test/audio/${HASH}.mp3`);
   });
 
   it('ignores synth requests when not the canonical GM', async () => {
     vi.mocked(isCanonicalGM).mockReturnValue(false);
     const handler = getHandler();
-    await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
+    await handler({ kind: 'audio.synth.request', hash: HASH, spec: SPEC });
     expect(mockSynthesise).not.toHaveBeenCalled();
     expect(doneEmits()).toHaveLength(0);
   });
@@ -241,7 +245,7 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
   it('signals done without synthesising when the GM has no key — no path', async () => {
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, '');
     const handler = getHandler();
-    await handler({ kind: 'audio.synth.request', hash: 'abc', spec: SPEC });
+    await handler({ kind: 'audio.synth.request', hash: HASH, spec: SPEC });
     expect(mockSynthesise).not.toHaveBeenCalled();
     expect(doneEmits()).toHaveLength(1);
     expect(doneEmits()[0].payload.path).toBeNull();

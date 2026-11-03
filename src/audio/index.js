@@ -424,6 +424,20 @@ async function handleSynthRequest(payload) {
   const hash = typeof payload.hash === "string" ? payload.hash : "";
   const spec = payload.spec;
   if (!hash) return;
+  // A relayed payload is checked (rules/reachability.md §8): the hash must be
+  // the clip key of the spec it asks for. Unchecked, any client could bill
+  // arbitrary text to the GM's ElevenLabs key, or file audio under a real
+  // narration's hash that every client then plays (issue #326 W81). Refused
+  // quietly — no done signal, so waiters for the real clip are not unblocked.
+  if (spec && typeof spec === "object") {
+    let expected = null;
+    try { expected = await cacheKey(spec); }
+    catch (err) { console.warn(`${MODULE_ID} | audio synthesis request: clip key failed:`, err?.message ?? err); }
+    if (expected !== hash) {
+      console.warn(`${MODULE_ID} | audio synthesis request refused: hash ${hash.slice(0, 8)}… is not its spec's clip key.`);
+      return;
+    }
+  }
   const signalDone = (path) => game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.done", hash, path: path ?? null });
   let path = null;
   try {
