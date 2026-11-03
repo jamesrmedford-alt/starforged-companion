@@ -270,9 +270,13 @@ node scripts/deadscan.mjs --strict   # exit 1 on DEAD findings (CI-suitable)
 
 for the mechanical half, in a couple of seconds. It counts consumers in three
 corpora — production (`src/` minus `src/integration/`), Quench
-(`src/integration/`) and tests (`tests/`) — after stripping comments (string,
-template and regex literals are kept), so a comment mention is never a
-consumer. It reports:
+(`src/integration/`) and tests (`tests/`) — after stripping comments, so a
+comment mention is never a consumer, and with string and template text
+blanked, so a name inside a longer string — a function's own log line — is
+not one either (issue #326 W82: three exports passed `--strict` on their own
+`console.warn`). A string that is one whole identifier (`fn: "applyThing"`, a
+string dispatch) and template `${…}` code still count; settings keys are
+matched in the text with its strings intact. It reports:
 
 - **DEAD exports** — no consumer anywhere (multi-definition aware: N sibling
   copies with no external consumer are dead N times), unless on `module.api`;

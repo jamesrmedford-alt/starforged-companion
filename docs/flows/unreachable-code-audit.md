@@ -293,7 +293,12 @@ campaignState fields).
   session", then cleared.
 
 **Still listed, by choice:** QUENCH-ONLY `getLastJournalCommandPromise`
-(`index.js` — the Quench seam for awaiting a `!journal` write chain);
+(`index.js` — the Quench seam for awaiting a `!journal` write chain). Since
+issue #326 W82 (a mention inside a string no longer counts) the scan also
+lists QUENCH-ONLY `isIronswornAvailable` (`system/ironswornAssets.js`) and
+`listCanonicalEncounters` (`system/ironswornPacks.js`) — their own log lines
+had counted as consumers; no production caller, open in `known-issues.md` —
+and `loadEntityAssets` (`art/storage.js`), dead outright, was deleted;
 TEST-ONLY `NARRATOR_CLASSES` (the MOVES contract-test anchor) and
 `ship.sufferDamage` (`// UNWIRED: #216 Phase D`); the TEST-SEAM `_reset*` /
 `_internal` names. 0 DEAD exports, 0 DEAD settings, 0 UNREACHABLE modules.
