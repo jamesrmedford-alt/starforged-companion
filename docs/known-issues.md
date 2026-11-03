@@ -11,6 +11,86 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Eighth bug audit (issue #325, part 1 of 2) — all thirty-seven fixed in the v1.7.36 cycle
+
+Found by the eighth bug audit (2026-11-03) of `39331b4`, with a probe per
+finding (`tests/probes/` on branch `claude/affectionate-lamport-20ldyw`):
+seven high-impact (W01–W07, three of them X-Card safety) and thirty medium.
+The maintainer decided W19 on 2026-11-03 (decisions.md, "A typed move rolls
+a stat it lists — except under the Chaotic dial"). Each fix carries its own
+regression tests, converted from the audit's probes, which fail with the fix
+taken out (`docs/testing/fix-sensitivity.md`; W27 by injection). None has
+been checked in a live Foundry world yet. The ones to try: fulfil an Epic vow
+made on the sheet (W01); press "⚑ Mark Progress on Vow" while its own move is
+still narrating (W02); Heal another PC (W04); play the X-Card while the next
+move waits at its confirm dialog, then resume (W05–W07); a player's `!ptp`
+with a shared supply at 0 (W10); press Battle twice, from two clients (W11);
+two GMs, the canonical one closing their browser mid-move (W25); and Begin a
+Session solo, with no User character set (W32). Part 2 (issue #326, W38–W87
+and D1–D8) is open.
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| W01 VOW-RANK-NUMERIC | WRONG-DETAIL | The system stores a progress Item's rank as a number; the payoff sites read it raw and `normalizeExpeditionRank` fell back to "dangerous": every vow paid 2 ticks, the item-only "⚑ Vow Fulfilled" card threw on `rank.charAt`, the player-vow card printed "(3)" → `rankName` at the read sites, numeric ranks in `normalizeExpeditionRank` |
+| W02 CLAIMED-PICK-DROPPED-WHILE-BUSY | LOSE-STATE | A relayed one-shot button (milestone, "Which vow?", connection pick, waypoint 🔭 / 🌀) claimed its card, then its forced move met the move lock and was dropped → the post is flagged `deferWhileBusy`; the canonical GM holds it and replays it when the lock frees (`deferForcedMove` / `drainDeferredForcedMoves`) |
+| W03 PTP-NARRATED-TWICE | DUPLICATE | Every routed miss got a second narrator card and Claude call labelled "Face Defeat" → `postMovePayThePriceCard(actorId, moveName)` records the price under the move that paid it, with no follow-up narration (the move's own narration is seeded with it) |
+| W04 HEAL-HEALS-HEALER | ATTRIBUTION | Heal's recovery card, its wound check and its writes were the roller's → `resolveHealPatient` names the PC or companion before the dice; the card's targets carry it; the pick applies to the patient |
+| W05 XCARD-STALE-LEDGER | SAFETY | A move narrated from its pre-dialog snapshot rendered an X-carded beat's truths, state and frame as binding → `withSceneLedger` reads the scene ledgers from the live store at narration time |
+| W06 XCARD-SUMMARY-RESURRECTED | SAFETY | The emptied summary kept its old `updatedAt` (a merge tie wrote it back) and a regen in flight stored the removed beat → stamped `updatedAt` / `xCardedAt`; a regen that spans an X-Card play is discarded |
+| W07 XCARD-SHIP-POSITION | SAFETY | The sidecar's ship move had no `narrationId`, so the X-Card left it → the position record carries it and the X-Card restores the previous position (`restoreShipPositionAfterXCard`) |
+| W08 VENDOR-MOVE-CARD-NARRATED | WRONG-DETAIL | The system's "Send to chat" move card passed `isPlayerNarration` → content rooted in the system's chat classes is not narration |
+| W09 PACED-ROLL-CLICKER | ATTRIBUTION | The paced Roll button re-posted with no speaker, rolling for whoever pressed it → the card carries the narrating PC (`actorId`); the re-post speaks as them |
+| W10 PTP-CREW-UNPREPARED-PLAYER | GM-GATE | A player's `!ptp` suffer ran on their client, which cannot update the crew → relayed to the canonical GM (`payThePrice.suffer`), the typist as the roller |
+| W11 BUTTONS-LOCAL-DISABLE | DUPLICATE | Battle, way-out, Develop / Forge suggestion, reward and Link buttons were disabled in the clicker's DOM only → the issue #321 U20 shape (relay kinds `combatTrack.battle`, `wayOut.pick`, `connection.suggest`, `vow.reward`, `vow.link`; the card claimed first); a Battle naming a finished fight is not rolled; a reward pick on a granted or lost reward is refused |
+| W12 ABILITY-ADDS-SUMMED | WRONG-DETAIL | `extractAdds` summed every "add +N" in an ability → the clause naming the move (else the first); a "next <move>" add is not this move's |
+| W13 IMPROVE-COUNT-WEAK-ON-MISS | WRONG-DETAIL | "Count a weak hit as a strong hit" offered the upgrade on a miss → `extractResultImprovement` records `from: "weak_hit"`; the offer requires it |
+| W14 RESIST-MISS-FREE-AT-ZERO | WRONG-DETAIL | An Endure Harm / Stress miss's -1 was a clamped meter delta, free at 0 → runs the executor for 1, the overflow as momentum |
+| W15 TWO-SUFFER-MOVES-SAME-MOVE | WRONG-DETAIL | "Two suffer moves (-1 each)" applied one move twice → the "any" card takes `count` picks, one move per tap |
+| W16 SACRIFICE-UNPREPARED-FREE | WRONG-DETAIL | Sacrifice Resources at 0 while unprepared settled for nothing → the loss goes to a "make a suffer move" picker |
+| W17 MOVE-TEXT-CONSEQUENCES | WRONG-DETAIL | Compel's weak hit lacked +1 momentum; Resupply's weak hit lacked the item option; Aid Your Ally resolved as text (no miss price, no benefit); Companion Takes a Hit's death text ignored health → each follows the move text (Aid Your Ally as Secure an Advantage / Gain Ground, the ally taking the benefit) |
+| W18 BOND-ADDS-UNROLLED | WRONG-DETAIL | A bonded Test Your Relationship and a vow sworn to a connection rolled bare → `enrichBondAdds` adds +1 / +1 (+2 bonded); the swear post carries `swearToConnection` |
+| W19 INTERPRETER-STAT-OFF-LIST | WRONG-DETAIL | The parse checked the model's stat against every stat name → held to the move's list under Lawful and Balanced; Chaotic may roll an unlisted stat (maintainer decision) |
+| W20 RENARRATION-OUTCOME-MISSING | WRONG-DETAIL | Burn / Improve re-narrations and sheet-roll narrations had no MOVE OUTCOME → `buildLoremasterContext` for each |
+| W21 PERSPECTIVE-AUTO-COUNTS-GM | WRONG-DETAIL | Auto counted active users, the GM included → counts active non-GM users (none or one: second person) |
+| W22 CONNECTION-DISPOSITION-NEUTRAL | WRONG-DETAIL | The card rendered the never-written `relationshipType` as Disposition → renders `disposition`; `relationshipType` retired |
+| W23 MAKE-CONNECTION-PENDING-DRAFT | LOSE-STATE | A hit on an NPC pending in a draft card created nothing → `confirmNamedPendingConnection` confirms the named draft for the roller |
+| W24 END-SCENE-DROPS-CONCURRENT-FACTS | LOSE-STATE | Facts persisted during `endScene`'s awaits were cleared by its final write → `migrateLateSceneFacts` re-reads and migrates them first |
+| W25 MOVE-LOCK-GM-HANDOVER | LOSE-STATE | A lock held by a GM who disconnected wedged the table → the lock carries `pendingMoveBy`; the canonical GM releases a departed GM's lock on `userConnected` and whispers the GMs |
+| W26 PANEL-TEXT-UNESCAPED | SAFETY | Entity names and fields, safety lines and track labels went raw into panel HTML (a script-injection surface) → `escapeHtml` at each site |
+| W27 SHORT-CALLS-THINKING | WRONG-DETAIL | Six short structured calls on the narration model sent no `thinking`: on Sonnet 5 their replies could be empty → `narration/thinking.js` `thinkingOffFor`, narration's rule |
+| W28 FULFIL-LEGACY-TWICE | DUPLICATE | Sheet then pipeline fulfil paid the Quests legacy twice → the pipeline consults `fulfilPaid` before its own legacy write |
+| W29 WON-FIGHT-CARD-AFTER-FULFIL | WRONG-DETAIL | A victory card's milestone / 🏁 fell to the sole-open rung after its vow was fulfilled → the ladders match completed vows and stop; the card's buttons retire |
+| W30 SELECTOR-SUBSTRING-INSIDE-WORD | WRONG-DETAIL | Every selection ladder's substring rung matched inside words, either way; `!sever` severed the first partial fit → `wholeWordsFit` in every rung; `!sever`'s typed name a whole-word fragment of exactly one name (`connectionsNamedByFragment`) |
+| W31 SEED-REROLLS-NARRATED-IDENTITY | LOSE-PLOT | The narrated goal went to `motivation` and the seed rolled a goal and first look beside the narration's → the seed data's `goal`; no first-look roll for a described record |
+| W32 GALLEY-SOLO-PC-ABSENT | WRONG-DETAIL | Presence required `User.character` → a connected player's PC by `resolveUserActorId`; a PC no player has is the GM's |
+| W33 INCITING-BOLD-LABEL | WRONG-DETAIL | "**Suggested vow:**" leaked `**` into the vow, clock and target (a second connection) → `matchLabelLine` tolerates emphasis and strips it from the value |
+| W34 WJ-PANEL-FACT-OVERRIDE | LOSE-PLOT | The WJ panel's Override "promoted" a fact-continuity catch and deleted it, Retract button and all → those catches get Correct… / Dismiss; Override refuses them |
+| W35 TRUTHS-SINGLE-CATEGORY-SAVE | LOSE-PLOT | A truths save needed two `<h2>` → `holdsTruths`: one category with a truth is a save |
+| W36 HINT-COMMON-NOUN / HINT-PC-SOCIAL | WRONG-DETAIL | The longest move name in the hint won ("battle" over "Heal"), and the reconciled move skipped the fellow-PC guard → the move written as a move, else the last named; `reconcileSuggestedMove(…, guard)` |
+| W37 ROSTER-LOST-CONNECTION | LOSE-PLOT | The sector roster offered a severed connection as reuse-first cast → listed apart, "connection lost: <how>" leading its line |
+
+Decided by the maintainer (2026-11-03): W19 — under the Chaotic dial the
+Trickster may roll a stat the move does not list (the audit's probe for that
+case stays failing by design); Lawful and Balanced hold a move to its list.
+
+Open — found while fixing, not fixed:
+
+- **AID-ALLY-UPGRADE** (ATTRIBUTION, low). A Burn Momentum or Improve Result
+  that upgrades an Aid Your Ally applies the upgraded outcome's momentum to
+  the roller: the first resolution paid its hit to the ally
+  (`consequences.beneficiary`, W17), but the upgrade paths know only the
+  roller.
+- **FORCED-MOVE-HOLD-RELOAD** (LOSE-STATE, low). A forced move held for the
+  move lock (W02) waits in the canonical GM's memory: a GM reload while it
+  waits loses it, and its claimed card stays claimed.
+- **END-SCENE-NEXT-SCENE** (RACE, low; pre-existing). `endScene`'s final
+  write clears the ledgers and `currentSceneId` whatever the store holds
+  then; a scene started on another client during its awaits would be closed
+  with it (W24 migrates the old scene's late facts; it does not guard this).
+- **SEED-OLD-RECORDS** (WRONG-DETAIL, cosmetic). Connections seeded before
+  W31 keep the rolled goal beside the narrated one in `motivation`; nothing
+  migrates them.
+
 ### Bug audit after #320 (issue #322, part 2 of 2) — all thirty-four fixed in the v1.7.36 cycle
 
 Found by the seventh bug audit (2026-10-31) of `6455e01`: the 29 UX,
