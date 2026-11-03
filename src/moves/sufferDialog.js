@@ -58,18 +58,15 @@ const MODULE_ID = "starforged-companion";
 export function resolveSufferSelection(sufferPrompt, selection = {}) {
   if (!sufferPrompt) return [];
 
-  // B1 — "any": player picks any of the six suffer moves, possibly
-  // multiple times (count > 1 means "two suffer moves at -N each").
+  // B1 — "any": the player picks one of the six suffer moves per selection.
+  // A `count` > 1 ("two suffer moves at -1 each") is that many selections —
+  // the card takes `count` picks (sufferCard.js sufferMultiCap). The one
+  // chosen move used to be repeated `count` times, so the player could never
+  // take two different suffer moves (issue #325 W15).
   if (sufferPrompt.kind === "any") {
     const sufferId = selection.anyChoice;
     if (!sufferId) return [];
-    const count = sufferPrompt.count ?? 1;
-    const amount = sufferPrompt.amount ?? 1;
-    const calls = [];
-    for (let i = 0; i < count; i++) {
-      calls.push({ kind: "suffer", sufferId, amount, itemId: selection.itemId ?? null });
-    }
-    return calls;
+    return [{ kind: "suffer", sufferId, amount: sufferPrompt.amount ?? 1, itemId: selection.itemId ?? null }];
   }
 
   // B2 — "enumerated": player picks one or more from a listed set.
@@ -155,17 +152,14 @@ function optionToCalls(opt, selection) {
   }
   if (opt.kind === "any") {
     const sufferId = selection.anyChoice;
-    if (!sufferId) {
-      // Caller didn't pre-select which suffer move — surface a follow-up
-      // prompt by emitting a "needs-suffer-pick" marker. The dialog will
-      // recurse with the chosen sub-id.
+    if (!sufferId || (opt.count ?? 1) > 1) {
+      // Caller didn't pre-select which suffer move — or the option is several
+      // suffer moves, each the player's own pick (issue #325 W15) — surface a
+      // follow-up prompt by emitting a "needs-suffer-pick" marker. The card
+      // posts the B1 picker, which takes `count` picks.
       return [{ kind: "needs-any", amount: opt.amount ?? 1, count: opt.count ?? 1 }];
     }
-    const calls = [];
-    for (let i = 0; i < (opt.count ?? 1); i++) {
-      calls.push({ kind: "suffer", sufferId, amount: opt.amount ?? 1, itemId: selection.itemId ?? null });
-    }
-    return calls;
+    return [{ kind: "suffer", sufferId, amount: opt.amount ?? 1, itemId: selection.itemId ?? null }];
   }
 
   // Explicit meter delta options (e.g. "+1 momentum", "-1 health").

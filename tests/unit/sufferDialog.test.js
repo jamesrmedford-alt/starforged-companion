@@ -90,11 +90,12 @@ describe("resolveSufferSelection — B1 'any' prompts", () => {
     ]);
   });
 
-  it("repeats N times when count > 1 (e.g. set_a_course 'two suffer moves -1')", () => {
+  // Issue #325 W15: "two suffer moves (-1 each)" is two picks — the card
+  // takes `count` of them (sufferMultiCap); each resolves to ONE suffer move.
+  it("one suffer move per selection, whatever the count (set_a_course 'two suffer moves -1')", () => {
     const prompt = { kind: "any", amount: 1, count: 2 };
     const r = resolveSufferSelection(prompt, { anyChoice: "lose_momentum" });
-    expect(r).toHaveLength(2);
-    expect(r.every(c => c.sufferId === "lose_momentum" && c.amount === 1)).toBe(true);
+    expect(r).toEqual([{ kind: "suffer", sufferId: "lose_momentum", amount: 1, itemId: null }]);
   });
 
   it("returns empty when no anyChoice is supplied", () => {
@@ -231,13 +232,15 @@ describe("resolveSufferSelection — B2 enumerated prompts", () => {
     expect(r).toEqual([{ kind: "needs-any", amount: 2, count: 1 }]);
   });
 
-  it("nested 'any' sub-prompt resolves to N suffer calls when anyChoice is supplied", () => {
+  it("a nested 'any' sub-prompt of several moves asks for them on a follow-up, even with an anyChoice", () => {
     const prompt = { kind: "enumerated", options: [
       { label: "Two suffer moves (-1 each)", kind: "any", amount: 1, count: 2 },
+      { label: "One suffer move (-2)",       kind: "any", amount: 2, count: 1 },
     ]};
-    const r = resolveSufferSelection(prompt, { optionIndices: [0], anyChoice: "endure_harm" });
-    expect(r).toHaveLength(2);
-    expect(r.every(c => c.sufferId === "endure_harm" && c.amount === 1)).toBe(true);
+    expect(resolveSufferSelection(prompt, { optionIndices: [0], anyChoice: "endure_harm" }))
+      .toEqual([{ kind: "needs-any", amount: 1, count: 2 }]);
+    expect(resolveSufferSelection(prompt, { optionIndices: [1], anyChoice: "endure_harm" }))
+      .toEqual([{ kind: "suffer", sufferId: "endure_harm", amount: 2, itemId: null }]);
   });
 
   it("returns empty for unknown / null prompt", () => {
