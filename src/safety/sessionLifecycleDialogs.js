@@ -311,7 +311,7 @@ async function beginSessionOnce(payload) {
         = await import("../session/galleyVignette.js");
       const { narrateSessionVignette } = await import("../narration/narrator.js");
       const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
-      const participants = collectGalleyParticipants();
+      const participants = collectGalleyParticipants(cs);
       const userMessage  = buildGalleyVignetteUserMessage(participants, cs);
       const narrationId  = newNarrationId();
       const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId });

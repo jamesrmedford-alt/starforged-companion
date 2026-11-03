@@ -11,7 +11,8 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../src/character/actorBridge.js", () => ({
+vi.mock("../../src/character/actorBridge.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   getPlayerActors:       vi.fn(),
   readCharacterSnapshot: vi.fn(),
 }));

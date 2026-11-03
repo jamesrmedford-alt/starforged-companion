@@ -9,7 +9,9 @@
  * Player enumeration — important: in this module the GM IS a player
  * (the dominant solo-GM use case has the GM running their own PC).
  * Active vs absent is determined by Foundry's `User.active` flag, NOT
- * by GM status. Both lists include the GM when applicable.
+ * by GM status: a PC is present while the user at the table with it is
+ * connected — a player's own PC, or the GM's (one no player has) — see
+ * collectGalleyParticipants.
  *
  * Solo-GM mode (only one user, who is the GM): the vignette describes
  * the lone PC in the galley narrating absurd theories about the
@@ -23,6 +25,7 @@
  */
 
 import { readCharacterSnapshot, getPlayerActors } from "../character/actorBridge.js";
+import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
@@ -33,26 +36,52 @@ const MODULE_ID = "starforged-companion";
  * cards), NOT the set of users with a `User.character` assignment — a PC actor
  * that no connected user has selected as their character was previously dropped
  * from the vignette entirely (finding B: the second PC was missing). Every PC
- * now appears: present when a connected user is assigned to it, otherwise in the
- * absent list so the banter still references them. The GM is included on both
- * sides via their own assigned PC — see the file header.
+ * now appears, present or in the absent list so the banter still references
+ * them.
  *
+ * A PC is present when a connected user is at the table with it (issue #325
+ * W32 — only `User.character` counted, which nothing in the module sets, so a
+ * solo GM's own PC was "absent"):
+ *   - a connected user has it as their `User.character`;
+ *   - it is a connected player's own PC — `resolveUserActorId`, the one
+ *     "whose PC is this user?" resolver (User.character, else a PC they own,
+ *     else the lone PC of a solo game);
+ *   - no player has it (none has it as User.character or owns it): it is the
+ *     GM's — a solo game's, or a GM-run PC at a mixed table — and is at the
+ *     table while a GM is connected. A GM owns every actor, so ownership
+ *     never makes a player's PC the GM's.
+ *
+ * @param {Object|null} [campaignState] — for resolveUserActorId's solo-play rung
  * @returns {{ active: Array<{ user, actor }>, absent: Array<{ user, actor }> }}
  */
-export function collectGalleyParticipants() {
+export function collectGalleyParticipants(campaignState = null) {
   const users   = globalThis.game?.users?.contents ?? [];
   const actors  = (() => { try { return getPlayerActors() ?? []; } catch { return []; } })();
   const active  = [];
   const absent  = [];
 
+  const players  = users.filter(u => u && !u.isGM);
+  const gmOnline = users.find(u => u?.isGM && u.active === true) ?? null;
+  const playerPc = new Map();   // actor id → the connected player at the table with it
+  for (const user of players) {
+    if (user.active !== true) continue;
+    let id = null;
+    try {
+      id = resolveUserActorId(user, campaignState);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | galley vignette: could not resolve ${user.name ?? user.id}'s PC:`, err?.message ?? err);
+    }
+    if (id && !playerPc.has(id)) playerPc.set(id, user);
+  }
+
   for (const actor of actors) {
     if (!actor) continue;
-    // Presence is by User.active, not GM status (a GM owns every actor, so
-    // ownership can't distinguish who is actually at the table). Match the
-    // user who has selected this actor as their character.
     const assigned = users.find(u => u?.character?.id === actor.id) ?? null;
-    if (assigned?.active === true) active.push({ user: assigned, actor });
-    else                          absent.push({ user: assigned, actor });
+    const owner    = players.find(u => u.character?.id === actor.id || ownsActor(actor, u)) ?? null;
+    const present  = assigned?.active === true ? assigned
+      : playerPc.get(actor.id) ?? (!owner ? gmOnline : null);
+    if (present) active.push({ user: present, actor });
+    else         absent.push({ user: assigned ?? owner, actor });
   }
 
   // Fallback: if the PC roster came back empty (unusual config), preserve the
@@ -145,6 +174,18 @@ export function buildGalleyVignetteUserMessage(participants, campaignState) {
     "End on a beat that hands the scene to the players — a line of",
     "dialogue, a question, or a small interruption.",
   ].join("\n");
+}
+
+/** True when `user` owns `actor` (Foundry's permission test, else the ownership map). */
+function ownsActor(actor, user) {
+  if (typeof actor?.testUserPermission === "function") {
+    try {
+      return actor.testUserPermission(user, "OWNER") === true;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | galley vignette: permission test failed:`, err?.message ?? err);
+    }
+  }
+  return Number(actor?.ownership?.[user?.id]) === 3;
 }
 
 function truncate(s, max) {
