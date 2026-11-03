@@ -237,9 +237,16 @@ export function registerCombatTrackerHooks() {
     const root = html instanceof HTMLElement ? html : html?.[0];
     if (!root) return;
 
-    // Only customise when a Starforged-managed combat is displayed
-    const combat = game.combats?.find(c => c.getFlag(MODULE_ID, 'trackId'));
-    if (!combat) return;
+    // Only customise when the combat the tracker SHOWS is Starforged-managed.
+    // It decorated the first module combat in game.combats: with two fights
+    // open the viewed one got no badges, and the class below (which hides
+    // initiative and the turn controls) went on whatever combat was shown —
+    // the GM's own non-Starforged combat included (issue #326 W55).
+    const combat = app?.viewed ?? game.combat ?? null;
+    if (!combat?.getFlag?.(MODULE_ID, 'trackId')) {
+      root.classList.remove?.('sf-starforged-combat');
+      return;
+    }
 
     // Suppress native initiative and round/turn UI via CSS
     root.classList.add('sf-starforged-combat');
