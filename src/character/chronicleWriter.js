@@ -20,6 +20,7 @@ import { apiPost } from '../api-proxy.js';
 import { requestChronicleEdit, CHRONICLE_AUTO_TYPES } from './chronicle.js';
 import { getPlayerActors } from './actorBridge.js';
 import { passesSalience, getSalienceThreshold } from '../world/salience.js';
+import { thinkingOffFor } from '../narration/thinking.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -176,9 +177,12 @@ async function callChronicleAPI({ apiKey, narrationText, moveId, outcome, kind }
   const userMessage =
     `${contextBlock}## NARRATION\n\n${narrationText.trim()}`;
 
+  const model = readModel();
   const body = {
-    model: readModel(),
+    model,
     max_tokens: MAX_TOKENS,
+    // Its 200-token JSON on a thinking-by-default model (issue #325 W27).
+    ...thinkingOffFor(model),
     system: [
       { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
     ],

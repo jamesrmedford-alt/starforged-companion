@@ -14,6 +14,7 @@
  */
 
 import { EXPEDITION_RANKS } from "./expedition.js";
+import { wholeWordsFit } from "../context/relevanceResolver.js";
 
 export const COMBAT_RANKS = EXPEDITION_RANKS; // same rank ladder: troublesome…epic
 export const DEFAULT_COMBAT_RANK = "dangerous";
@@ -35,7 +36,8 @@ export function normalizeCombatRank(rank) {
  *     an open fight with that id, else null: never a same-named sibling
  *     (issue #306 R06)
  *  1. Exact label match (case-insensitive, ignoring leading "the")
- *  2. Substring in either direction
+ *  2. One label inside the other, as whole words, either direction (issue
+ *     #325 W30 — raw containment matched a short name inside another word)
  *  3. Fallback: single open combat track regardless of label
  *  4. null when ambiguous (multiple open, no match)
  *
@@ -54,7 +56,7 @@ export function selectCombatTrack(allTracks, label, { trackId = null } = {}) {
     const needle = norm(label);
     const exact  = open.find(t => norm(t.label) === needle);
     if (exact) return exact;
-    const sub = open.find(t => norm(t.label).includes(needle) || needle.includes(norm(t.label)));
+    const sub = open.find(t => wholeWordsFit(norm(t.label), needle));
     if (sub) return sub;
   }
 

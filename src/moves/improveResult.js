@@ -40,7 +40,7 @@
  * exclusive on one card (issue #300 F02 — see burnMomentum.js).
  */
 
-import { mapConsequences, OUTCOME_RANK } from "./resolver.js";
+import { mapConsequences, OUTCOME_RANK, buildLoremasterContext } from "./resolver.js";
 import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
 import {
@@ -103,7 +103,11 @@ export function buildImproveState(resolution, applicableAbilities, actor, ptpRev
   // Only offer when there's room to improve (weak hit or miss → strong hit).
   if (OUTCOME_RANK[resolution.outcome] >= OUTCOME_RANK.strong_hit) return null;
 
-  const ability = applicableAbilities.find(a => a?.resultImprovement?.improveTo === "strong_hit");
+  // An ability improves the result it names: "count a weak hit as a strong
+  // hit" a weak hit only, never a miss (issue #325 W13); "improve the result
+  // to a strong hit" any result below.
+  const ability = applicableAbilities.find(a => a?.resultImprovement?.improveTo === "strong_hit"
+    && (!a.resultImprovement.from || a.resultImprovement.from === resolution.outcome));
   if (!ability) return null;
 
   return {
@@ -426,7 +430,7 @@ function buildImprovedCardContent(originalContent, clockNote, effectsNote = "") 
  * roll.
  */
 function buildImprovedResolution({ improve, newConsequences, campaignState }) {
-  return {
+  const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          improve.moveId,
     moveName:        toDisplayName(improve.moveId),
@@ -448,6 +452,12 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
     inputMethod:     "improve",
     sessionId:       campaignState.currentSessionId ?? "",
   };
+  // The narrator's MOVE OUTCOME: the move and its improved result (issue
+  // #325 W20).
+  resolution.loremasterContext = buildLoremasterContext({
+    ...resolution, rollKind: "action", improvedBy: improve.assetName || null,
+  });
+  return resolution;
 }
 
 function toDisplayName(moveId) {

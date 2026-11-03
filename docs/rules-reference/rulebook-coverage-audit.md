@@ -182,7 +182,7 @@ Your Fate chooser faithfulness) are not yet individually pinned by a batch.
 
 | # | Rule | Status | Batch | Severity | Action |
 |---|---|---|---|---|---|
-| 3.7 | All 6 moves routed by interpreter; outcomes resolve via `resolveMove` | PARTIAL | `moveOutcomeMatrix` (P11) pins outcome shapes for face_danger / gather_information / secure_an_advantage; compel / aid_your_ally / check_your_gear not yet asserted | Low | NEEDS-TEST (remaining 3) |
+| 3.7 | All 6 moves routed by interpreter; outcomes resolve via `resolveMove` | PARTIAL | `moveOutcomeMatrix` (P11) pins outcome shapes for face_danger / gather_information / secure_an_advantage; since issue #325 W17, `moveTextConsequences` pins compel's hits and aid_your_ally's three outcomes (Secure an Advantage / Gain Ground for the ally), and `aidYourAllyBenefits` the ally's momentum on a table; compel's miss and check_your_gear not yet asserted | Low | NEEDS-TEST (remaining: check_your_gear, compel's miss) |
 | 3.8 | Group moves: one character rolls, others contribute via fiction/assets | MECHANIC | GAP | none | Low | NEEDS-TEST — only relevant in multiplayer; not solo-GM critical |
 
 ### Quest Moves (4)
@@ -313,7 +313,7 @@ exploration and combat lifecycles, the F16 suffer pipeline, threshold moves +
 their d100 tables, both fate moves, legacy XP, clocks, Develop Your
 Relationship). The phantom 3.23 is struck. **Still genuinely open:**
 
-- **GAP NEEDS-TEST:** 3.7 (compel / aid_your_ally / check_your_gear), 3.8
+- **GAP NEEDS-TEST:** 3.7 (check_your_gear; compel's miss), 3.8
   (group moves — multiplayer), 3.11 Fulfill Your Vow, 3.12 Forsake Your Vow,
   3.15 Test Your Relationship, 3.16 Forge a Bond, 3.44 Advance (XP spend).
 - **GAP NEEDS-FEATURE:** 3.32 Endure Harm "higher of" stat, 3.39 Repair point

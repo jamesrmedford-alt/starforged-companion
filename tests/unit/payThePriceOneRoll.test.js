@@ -127,6 +127,40 @@ describe('one result, one Pay the Price (issue #321 U03)', () => {
   });
 });
 
+// Issue #325 W03: every routed price was posted through a card written for
+// Face Defeat — its oracle memory said the player asked "Face Defeat", and it
+// asked for a follow-up narration of the price the move narration (seeded
+// with it since U03) already depicts: two narrations, free to contradict.
+describe('a routed price is narrated once, under the move that paid it (issue #325 W03)', () => {
+  it('a Face Danger miss: no second narration, and the price is recorded under Face Danger', async () => {
+    await playMove(
+      { moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'iron' },
+      'I sprint for the airlock before it seals.',
+    );
+    await table.drain();
+
+    const [card] = table.cards(f => f.payThePriceCard);
+    expect(card.flags[MODULE_ID].oracleMemory.question).toBe('Face Danger');
+    expect(card.content).toContain('<em>Face Danger</em>');
+    expect(table.cards(f => f.oracleNarrationCard)).toHaveLength(0);
+    const recorded = (table.world.campaignState().recentOracles ?? []).map(e => e.question);
+    expect(recorded).toEqual(['Face Danger']);
+    expect(table.claude.calls.filter(c => /Face Defeat/.test(`${c.system ?? ''}\n${c.userText ?? ''}`))).toHaveLength(0);
+  });
+
+  it('Face Defeat\'s own price is recorded under Face Defeat, and narrated once', async () => {
+    await playMove(
+      { moveId: 'face_defeat', moveName: 'Face Defeat', statUsed: null },
+      'I abandon the fight and fall back.',
+    );
+    await table.drain();
+
+    expect(table.cards(f => f.oracleNarrationCard)).toHaveLength(0);
+    const recorded = (table.world.campaignState().recentOracles ?? []).map(e => e.question);
+    expect(recorded).toEqual(['Face Defeat']);
+  });
+});
+
 // Issue #321 U17 (WAYPOINT-MISS-NO-PTP): an Explore a Waypoint miss said "Pay
 // the Price" and routed nothing — no card, no suffer route, no clock tick.
 describe('an Explore a Waypoint miss pays the price (issue #321 U17)', () => {

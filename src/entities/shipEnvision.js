@@ -38,6 +38,7 @@ import {
   updateShip,
   isLoneShipCandidate,
 } from "./ship.js";
+import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -595,6 +596,7 @@ async function generateProse({ builder, maxTokens }) {
   const body = {
     model,
     max_tokens: maxTokens,
+    ...thinkingOffFor(model),   // a short reply on the narration model (issue #325 W27)
     system:   [{ type: "text", text: system }],
     messages: [{ role: "user", content: user }],
   };

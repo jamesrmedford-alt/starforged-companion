@@ -7,11 +7,13 @@
  */
 
 import { legacyRewardTicks } from "./expedition.js";
+import { wholeWordsFit } from "../context/relevanceResolver.js";
 
 
 /**
  * Find the target vow track from a list of all progress tracks.
- * Priority: exact label match → substring → sole open vow.
+ * Priority: exact label match → one inside the other as whole words (issue
+ * #325 W30) → sole open vow.
  *
  * @param {Array} allTracks
  * @param {string|null} label  — vow name from interpretation.moveTarget
@@ -24,9 +26,7 @@ export function selectVowTrack(allTracks, label) {
     const lo = label.toLowerCase();
     const exact = open.find(t => t.label?.toLowerCase() === lo);
     if (exact) return exact;
-    const sub = open.find(
-      t => t.label?.toLowerCase().includes(lo) || lo.includes(t.label?.toLowerCase() ?? ""),
-    );
+    const sub = open.find(t => wholeWordsFit(t.label?.toLowerCase() ?? "", lo));
     if (sub) return sub;
   }
   return open.length === 1 ? open[0] : null;

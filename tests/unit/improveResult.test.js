@@ -33,13 +33,14 @@ function resolution(over = {}) {
 const actor = { id: "pc-1" };
 
 describe("extractResultImprovement", () => {
-  it("detects Fugitive's 'improve the result to a strong hit'", () => {
+  it("detects Fugitive's 'improve the result to a strong hit' — from any lower result", () => {
     expect(extractResultImprovement("When you make a move, you may improve the result to a strong hit."))
-      .toEqual({ improveTo: "strong_hit" });
+      .toEqual({ improveTo: "strong_hit", from: null });
   });
-  it("detects 'count as a strong hit' / 'treat as a strong hit'", () => {
-    expect(extractResultImprovement("you may count it as a strong hit")?.improveTo).toBe("strong_hit");
-    expect(extractResultImprovement("treat the roll as a strong hit")?.improveTo).toBe("strong_hit");
+  // Issue #325 W13: "count a weak hit as a strong hit" improves a weak hit only.
+  it("detects 'count as a strong hit' / 'treat as a strong hit' — from a weak hit", () => {
+    expect(extractResultImprovement("you may count it as a strong hit")).toEqual({ improveTo: "strong_hit", from: "weak_hit" });
+    expect(extractResultImprovement("treat the roll as a strong hit")).toEqual({ improveTo: "strong_hit", from: "weak_hit" });
   });
   it("does not fire on adds or reroll abilities", () => {
     expect(extractResultImprovement("When you make this move, add +1.")).toBeNull();

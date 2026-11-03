@@ -58,18 +58,15 @@ const MODULE_ID = "starforged-companion";
 export function resolveSufferSelection(sufferPrompt, selection = {}) {
   if (!sufferPrompt) return [];
 
-  // B1 — "any": player picks any of the six suffer moves, possibly
-  // multiple times (count > 1 means "two suffer moves at -N each").
+  // B1 — "any": the player picks one of the six suffer moves per selection.
+  // A `count` > 1 ("two suffer moves at -1 each") is that many selections —
+  // the card takes `count` picks (sufferCard.js sufferMultiCap). The one
+  // chosen move used to be repeated `count` times, so the player could never
+  // take two different suffer moves (issue #325 W15).
   if (sufferPrompt.kind === "any") {
     const sufferId = selection.anyChoice;
     if (!sufferId) return [];
-    const count = sufferPrompt.count ?? 1;
-    const amount = sufferPrompt.amount ?? 1;
-    const calls = [];
-    for (let i = 0; i < count; i++) {
-      calls.push({ kind: "suffer", sufferId, amount, itemId: selection.itemId ?? null });
-    }
-    return calls;
+    return [{ kind: "suffer", sufferId, amount: sufferPrompt.amount ?? 1, itemId: selection.itemId ?? null }];
   }
 
   // B2 — "enumerated": player picks one or more from a listed set.
@@ -155,17 +152,14 @@ function optionToCalls(opt, selection) {
   }
   if (opt.kind === "any") {
     const sufferId = selection.anyChoice;
-    if (!sufferId) {
-      // Caller didn't pre-select which suffer move — surface a follow-up
-      // prompt by emitting a "needs-suffer-pick" marker. The dialog will
-      // recurse with the chosen sub-id.
+    if (!sufferId || (opt.count ?? 1) > 1) {
+      // Caller didn't pre-select which suffer move — or the option is several
+      // suffer moves, each the player's own pick (issue #325 W15) — surface a
+      // follow-up prompt by emitting a "needs-suffer-pick" marker. The card
+      // posts the B1 picker, which takes `count` picks.
       return [{ kind: "needs-any", amount: opt.amount ?? 1, count: opt.count ?? 1 }];
     }
-    const calls = [];
-    for (let i = 0; i < (opt.count ?? 1); i++) {
-      calls.push({ kind: "suffer", sufferId, amount: opt.amount ?? 1, itemId: selection.itemId ?? null });
-    }
-    return calls;
+    return [{ kind: "suffer", sufferId, amount: opt.amount ?? 1, itemId: selection.itemId ?? null }];
   }
 
   // Explicit meter delta options (e.g. "+1 momentum", "-1 health").
@@ -287,6 +281,28 @@ async function runSufferCall(call, actor, opts) {
       return { kind: "suffer", sufferId: call.sufferId, ...r };
     }
     case "meter": {
+      // Aid Your Ally's choice: the benefit is the ally's (issue #325 W17).
+      if (call.meterKey === "momentum" && call.delta > 0) {
+        const ally = await aidedAllyActor(opts);
+        if (ally) {
+          await applyMeterChanges(ally, { momentum: call.delta });
+          return { kind: "meter", meterKey: call.meterKey, delta: call.delta, actorId: ally.id };
+        }
+      }
+      // Heal's recovery is the patient's — the ally under the roller's care,
+      // or the companion treated — never the healer's (issue #325 W04).
+      if (call.meterKey === "health" && call.delta > 0 && opts.patientCompanionItemId) {
+        const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
+        return { kind: "meter", meterKey: call.meterKey, delta: call.delta, companionItemId: opts.patientCompanionItemId,
+          ...(await applyCompanionHealthChange(actor, call.delta, { itemId: opts.patientCompanionItemId })) };
+      }
+      if (call.meterKey === "health" && call.delta > 0) {
+        const patient = await healPatientActor(opts);
+        if (patient) {
+          await applyMeterChanges(patient, { health: call.delta });
+          return { kind: "meter", meterKey: call.meterKey, delta: call.delta, actorId: patient.id };
+        }
+      }
       // A vehicle's integrity and a companion's health are no PC meters: the
       // generic write dropped them, and the card reported them applied
       // (issue #309 N02 / N03).
@@ -305,9 +321,15 @@ async function runSufferCall(call, actor, opts) {
     case "mark":
       await setDebility(actor, call.debility, true);
       return { kind: "mark", debility: call.debility };
-    case "clear-impact":
-      await setDebility(actor, call.debility, false);
-      return { kind: "clear-impact", debility: call.debility };
+    case "clear-impact": {
+      // Heal clears the patient's wound (issue #325 W04); a companion has none.
+      if (call.debility === "wounded" && opts.patientCompanionItemId) {
+        return { kind: "clear-impact", debility: call.debility, skipped: true };
+      }
+      const patient = call.debility === "wounded" ? await healPatientActor(opts) : null;
+      await setDebility(patient ?? actor, call.debility, false);
+      return { kind: "clear-impact", debility: call.debility, ...(patient ? { actorId: patient.id } : {}) };
+    }
     case "noop":
       return { kind: "noop" };
     case "combat-progress": {
@@ -368,12 +390,14 @@ async function runSufferCall(call, actor, opts) {
       // (nextMoveAdd.js consumeNextMoveBonus). It only posted a reminder card,
       // and the confirm dialog has nowhere to enter it (issue #322 V02). A
       // write the world refuses throws: the card reports it, with a Retry.
+      // Aid Your Ally's choice: the ally's next roll (issue #325 W17).
+      const taker = (await aidedAllyActor(opts)) ?? actor;
       const { grantNextMoveBonus } = await import("./nextMoveAdd.js");
-      const granted = await grantNextMoveBonus(actor?.id ?? null, call.amount, "choice");
+      const granted = await grantNextMoveBonus(taker?.id ?? null, call.amount, "choice");
       if (!granted.ok) return { kind: "next-bonus", amount: call.amount, ok: false, reason: granted.reason };
       await postDeferredCard(
         `+${call.amount} on your next move`,
-        `Added to ${escapeHtml(actor?.name ?? "your character")}'s next action roll (not a progress move).`,
+        `Added to ${escapeHtml(taker?.name ?? "your character")}'s next action roll (not a progress move).`,
       );
       return { kind: "next-bonus", amount: call.amount };
     }
@@ -406,6 +430,59 @@ async function runSufferCall(call, actor, opts) {
     default:
       return { kind: "unknown", call };
   }
+}
+
+/** The suffer moves an option (or its chain) makes. */
+function optionSuffers(opt) {
+  if (!opt || typeof opt !== "object") return [];
+  if (Array.isArray(opt.chain)) return opt.chain.flatMap(optionSuffers);
+  return typeof opt.suffer === "string" ? [opt.suffer] : [];
+}
+
+/**
+ * True when the PC is unprepared with no supply left: a further loss of
+ * resources goes to another suffer move (issue #325 W16).
+ *
+ * @param {Actor|null} actor
+ * @returns {boolean}
+ */
+export function unpreparedAtZeroSupply(actor) {
+  if (!actor?.system?.debility?.unprepared) return false;
+  const supply = actor.system?.supply;
+  const value = Number(typeof supply === "object" ? supply?.value : supply);
+  return !(value > 0);
+}
+
+/**
+ * The ally an Aid Your Ally's benefits go to (`opts.allyActorId`, resolved
+ * before the dice — statEnrichment.js resolveAidedAlly), or null. Issue #325
+ * W17.
+ *
+ * @param {Object} opts — the card's executorOpts
+ * @returns {Promise<Actor|null>}
+ */
+async function aidedAllyActor(opts) {
+  const id = typeof opts?.allyActorId === "string" && opts.allyActorId ? opts.allyActorId : null;
+  if (!id) return null;
+  const { isPlayerCharacterActor } = await import("../character/actorBridge.js");
+  const actor = globalThis.game?.actors?.get?.(id) ?? null;
+  return isPlayerCharacterActor(actor) ? actor : null;
+}
+
+/**
+ * The player character a Heal's care is for (`opts.patientActorId`, resolved
+ * before the dice — statEnrichment.js resolveHealPatient), or null when the
+ * roller tends their own wounds or the patient is gone. Issue #325 W04.
+ *
+ * @param {Object} opts — the card's executorOpts
+ * @returns {Promise<Actor|null>}
+ */
+async function healPatientActor(opts) {
+  const id = typeof opts?.patientActorId === "string" && opts.patientActorId ? opts.patientActorId : null;
+  if (!id) return null;
+  const { isPlayerCharacterActor } = await import("../character/actorBridge.js");
+  const actor = globalThis.game?.actors?.get?.(id) ?? null;
+  return isPlayerCharacterActor(actor) ? actor : null;
 }
 
 /**
@@ -503,12 +580,24 @@ async function postDeferredCard(title, body, flags = {}) {
  *   (sufferCard.js optionContext builds it from the card)
  */
 export function isOptionAvailable(opt, ctx = {}) {
+  // A loss of resources while unprepared is applied to a different suffer
+  // move (Sacrifice Resources: "When you suffer a loss of resources while
+  // unprepared … apply the cost to a different suffer move"): at 0 supply it
+  // cost nothing and settled the choice (issue #325 W16).
+  if (optionSuffers(opt).includes("sacrifice_resources") && unpreparedAtZeroSupply(ctx.actor)) return false;
   if (!opt?.requires) return true;
   const req = String(opt.requires);
   const actor = ctx.actor;
   const debility = actor?.system?.debility ?? {};
 
-  if (req === "!wounded")    return !debility.wounded;
+  // Heal's wound is the patient's (issue #325 W04): the ally under the
+  // roller's care, or a companion, who has no impacts.
+  if (req === "wounded" || req === "!wounded") {
+    const wounded = ctx.patientCompanion ? false
+      : ctx.patient ? !!ctx.patient.system?.debility?.wounded
+      : !!debility.wounded;
+    return req === "wounded" ? wounded : !wounded;
+  }
   if (req === "!shaken")     return !debility.shaken;
   if (req === "!battered") {
     // The vehicle's own impact — its +integrity is what the option gives
@@ -517,7 +606,6 @@ export function isOptionAvailable(opt, ctx = {}) {
     return !debility.battered;
   }
   if (req === "!unprepared") return !debility.unprepared;
-  if (req === "wounded")     return !!debility.wounded;
   if (req === "shaken")      return !!debility.shaken;
   if (req === "unprepared")  return !!debility.unprepared;
 

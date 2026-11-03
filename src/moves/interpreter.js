@@ -166,7 +166,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
 confidence: "high" | "medium" | "low" — your certainty in the interpretation.
 statValue: ALWAYS leave as 0 — filled in by the calling code (from the character sheet for action moves, from the live progress track / vow / connection data for progress moves — see enrichInterpretationStatValue and enrichProgressTicks in src/moves/statEnrichment.js). Module data is ground truth; never estimate a value.
 progressTicks: ALWAYS leave as 0 — for progress moves the module fills the score from the live track / vow / connection data. Never estimate a tick count.
-moveTarget: the named thing the move acts on, taken from the player's narration. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone → the vow's name, forge_a_bond / develop_your_relationship → the connection's name. null when nothing is named or implied.
+moveTarget: the named thing the move acts on, taken from the player's narration. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided. null when nothing is named or implied.
 expeditionRank: only for undertake_an_expedition. When the narration implies the journey's scope, infer its rank — "troublesome" (a short, easy hop), "dangerous" (default), "formidable" (a long or hostile crossing), "extreme", or "epic" (a vast, perilous undertaking). null otherwise; the player can re-rank the track later.
 combatRank: only for enter_the_fray. When the narration implies the foe’s danger level, infer its rank — "troublesome" (minor, easy to defeat), "dangerous" (default), "formidable" (a tough, seasoned opponent), "extreme" (an overwhelming threat), or "epic" (near-impossible odds). null otherwise; the player can re-rank the combat track later.`;
 }
@@ -529,8 +529,17 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
     console.warn(`Starforged Companion | Unknown stat in response: ${parsed.statUsed}`);
     parsed.statUsed = finalMoveData.stat?.[0] ?? "wits";
   }
+  // A stat the move does not list gives way to the move's first (issue #325
+  // W19): Gather Information +iron or Check Your Gear +wits was rolled with
+  // that stat's sheet value, and the confirm dialog has no stat picker. Only
+  // the Chaotic dial keeps an unlisted stat — its Trickster framing asks the
+  // model to "consider unusual stats", a departure from the move text the
+  // maintainer chose to keep (decisions.md, issue #325). A move already
+  // chosen (expectedMoveId — issue #321 U04) is held to its list whatever
+  // the dial.
   const listedStats = Array.isArray(finalMoveData.stat) ? finalMoveData.stat : [];
-  if (expectedMoveId && listedStats.length && !listedStats.includes(parsed.statUsed)) {
+  const chaotic = mischiefLevel === "chaotic";
+  if ((expectedMoveId || !chaotic) && listedStats.length && !listedStats.includes(parsed.statUsed)) {
     parsed.statUsed = listedStats[0];
   }
 

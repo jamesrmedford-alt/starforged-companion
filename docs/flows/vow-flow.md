@@ -11,11 +11,15 @@ GM** — the move pipeline (gated on `isCanonicalGM()`), a card click relayed
 through `requestGmAction` (`src/multiplayer/gmRelay.js` `GM_ACTIONS`:
 `milestone.pick`, `fightVow.markMilestone`, `payThePrice.advanceClocks`; and,
 since issue #321, `fulfilVow.pick` and `milestone.suggestion`, which claim
-their card and post the forced move once for the pipeline), or
-one of the two older ad-hoc socket relays from the swear cards
-(`vow.setReward`, `vow.linkConnection` in `src/session/swearVow.js`, not yet
-folded into `GM_ACTIONS`). Only the vendor sheet writes a vow from the
-owner's own client.
+their card and post the forced move once for the pipeline — flagged
+`deferWhileBusy`, so one that meets the move lock is held on the canonical
+GM and rolled when the lock frees, never dropped with its card claimed:
+issue #325 W02), and since issue #325 W11 the swear cards' reward pick
+and link (`vow.reward`, `vow.link` — `src/session/swearVow.js`
+`applyRewardPickFromRelay` / `applyPlayerVowLinkFromRelay`, each claiming its
+card once; they were the ad-hoc `vow.setReward` / `vow.linkConnection`
+socket relays). Only the vendor sheet writes a vow from the owner's own
+client.
 Effects credit the **roller**: the pipeline's `rollerActor` is the speaker
 resolved from the message, first PC only as a fallback (decisions.md →
 "Multiplayer attribution").
@@ -31,7 +35,7 @@ Terminology up front, because it drives every gap below:
   can't (see gaps) — effectively dormant.
 - **Matching:** creation, shared-sync, reward-set, and connection-link key
   on the **`vowId` flag**; fulfilment completion and payoff resolve through
-  `resolveVowItemCopies` — a name ladder (exact → substring → sole-open) that
+  `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
   then collects every copy by `vowId`. (The old exact-name-only payoff
   matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The
   sole-open rung is only for a name that matches nothing: it never applies
@@ -39,7 +43,12 @@ Terminology up front, because it drives every gap below:
   completed (fulfilling A used to resolve the one other open vow B and pay
   B's payoff). Likewise an exact name for a completed vow skips the substring
   rung, so fulfilling "Find the ship" can't resolve the open "Find the ship's
-  captain". **The roller's own vow comes first** (issue #301 B02): given the
+  captain". The milestone and fulfil ladders honour it too
+  (`selectMilestoneVow` / `planReachMilestone`, `selectFulfilVow` —
+  `namesCompletedVow`): a name matching only a completed vow marks nothing,
+  and a Fulfill Your Vow naming it is not rolled (the "not rolled" card) —
+  a won fight's card for a fulfilled vow marked, or scored and paid, the
+  PC's other vow (issue #325 W29). **The roller's own vow comes first** (issue #301 B02): given the
   roll's `itemId` (the Item it scored) and/or `actorId` (the roller), the
   resolver takes that Item, else the roller's own exact-name vow (open, then
   completed), before the global ladder — two PCs' *independent* vows can
@@ -50,7 +59,11 @@ Terminology up front, because it drives every gap below:
 
 **Inciting shared vow.** `runIncitingIncident` (`src/session/incitingIncident.js`)
 parses the narrator's `Suggested vow / Suggested clock / Immediate crisis /
-Vow target` lines into structured `incitingMeta` flags on the card. The card's
+Vow target` lines into structured `incitingMeta` flags on the card — a label
+in Markdown ("**Suggested vow:** …") is a label, and emphasis is stripped from
+the value (`matchLabelLine`; the closing `**` leaked into the vow, the clock
+and the target's name, which then matched no established NPC — issue #325
+W33). The card's
 **⚔ Swear this vow** button posts a forced `swear_an_iron_vow` ChatMessage
 carrying `incitingSwearMessageId` — the post itself is the relay; the
 canonical GM's pipeline swear branch calls `swearSharedVowForAll`
@@ -66,15 +79,20 @@ swear (`swearSharedVowForAll(message, { speakerActorId })` →
 `narrateAndPostVowSwearing`; issue #321 U23), and proposes two concrete
 **rewards** (`proposeRewards`) + a write-your-own on the reward-choice card.
 Chosen rewards land as `flags.reward = {status:"promised", description, form}`
-on every copy (`setSharedVowReward`, socket `vow.setReward` for players).
+on every copy (`setSharedVowReward`), on the canonical GM (`vow.reward`): the
+card is claimed once (`rewardChosen`), and a vow whose reward was already
+granted or lost is never promised again — an old card's pick re-promised a
+granted reward, so the next linked win or the fulfilment granted a second
+(issue #325 W11).
 
 **Player-authored vows.** `registerPlayerVowHook` (createItem hook, GM-side)
 catches sheet-made vows (no `vowId` yet), stamps `vowId = item.id`, and posts
 the "🆕 New vow recorded" card: stakes line, **⚔ Swear it (roll)** (forced
 `swear_an_iron_vow` without the inciting id — narrates + momentum, creates
 nothing twice), a **connection picker** when connections exist
-(`setVowLinkedConnection`, socket `vow.linkConnection`), and the same reward
-offer.
+(`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
+connection exists and claims the card once, `linkedConnection`), and the
+same reward offer.
 
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;
@@ -131,7 +149,10 @@ All real progress lands on **item ticks** (`system.current`) via
   Price ("⏳ The clock turns" card) via `advanceClocksOnPayThePrice`
   (`src/clocks/payThePriceClocks.js`) — called directly by the pipeline on
   the canonical GM; a player-typed `!ptp` relays `payThePrice.advanceClocks`
-  so the clocks advance once, on the GM. A shared vow's copies are one clock
+  so the clocks advance once, on the GM — and its suffer routes relay
+  `payThePrice.suffer` (`applyPayThePriceSufferFromRelay`, the typist's PC as
+  the roller), so the allies a Sacrifice Resources marks unprepared are
+  written where that is allowed (issue #325 W10). A shared vow's copies are one clock
   (issue #321 U55): one `lockstep` map rides every PC's call of an advance,
   so the first copy advances and each later copy is set to the value it
   reached (advancing each copy raced the sync hook, which had already moved
@@ -166,7 +187,7 @@ journal track only as fallback) — see `decisions.md` "Progress-move scores
 come from module data". The vow scored is `selectFulfilVow`'s
 (`src/moves/milestone.js`; issue #321 U02): a picked copy by id (that open
 copy, else nothing); else a name — the roller's own vow first, then anyone's,
-exact then substring; else one vow per `vowId`, the roller's own open vows
+exact then whole words ("Kade is avenged" never scores "Ade" — issue #325 W30); else one vow per `vowId`, the roller's own open vows
 first (a shared vow counts once, scored on the roller's copy). `readVows`
 carries each copy's `vowId`, and enrichment takes the roller
 (`rollerActorId`). A Fulfill Your Vow that names no vow while several
@@ -195,7 +216,7 @@ promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,
 weak = reduced/with-a-string, miss = lost; one-time via `reward.status`).
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
-exact → substring ladder, preferring the roller's, then collects **every**
+exact → whole-word substring ladder, preferring the roller's, then collects **every**
 PC's copy (by `vowId`, else name) — so the reward lands on the **roller's
 copy** when they hold one, else on the PC holding the promised reward (it
 used to collect only the first PC's copy, so a shared vow's reward went to
@@ -214,7 +235,10 @@ GM applies consequences
 `payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
 also pays quests legacy — from the roller's vow's rank). Idempotency:
 the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
-across both paths — and a claim on the vow (its `vowId`), taken before the
+across both paths — the pipeline's own Quests legacy write checks it too, for
+a vow fulfilled on the sheet (which leaves the Item open) and then through the
+pipeline (issue #325 W28: it paid the legacy a second time) — and a claim on
+the vow (its `vowId`), taken before the
 first await, keeps two fulfilments that arrive together (a duplicate sheet
 roll) from both passing the check before the flag lands (issue #306 R04). The
 flag is also the durable claim: nothing is paid until it has landed on a copy

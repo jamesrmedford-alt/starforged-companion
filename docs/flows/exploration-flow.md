@@ -93,7 +93,9 @@ passage" drawing.
   claim per card (`waypointRewardClaimed` on the GM-authored move card,
   written on the canonical GM by the `waypoint.oracle` relay —
   `cardActions.applyWaypointOraclePick`, which posts the forced follow-up as
-  the roller (`actorId`) and retires the pending ordinary choice card — or by
+  the roller (`actorId`; `deferWhileBusy`, so it is held, not dropped, while
+  another move holds the lock — issue #325 W02) and retires the pending
+  ordinary choice card — or by
   the ordinary pick, `resultUpgrade.closeUpgradesForChoice`; issue #316 T06).
   The follow-up is a no-roll move (`rollKind: "none"` — no dice, no outcome,
   no Burn / Improve; T05) whose `legacyMark` marks the discoveries legacy,
@@ -147,7 +149,7 @@ socket relay into `GM_ACTIONS`).
 
 `revealSectorSite` (shared by expedition-finish and `!reveal-site`):
 `selectSectorSite` picks the target — the expedition's `siteId` link first,
-then exact → substring → type-keyword vault/derelict → sole-undiscovered,
+then exact → whole-word substring → type-keyword vault/derelict → sole-undiscovered,
 each rung over every sector before the next (the guesses only when
 unambiguous: an earlier sector's sole site used to preempt a later sector's
 exact match, issue #300 F07), the active sector first on every rung

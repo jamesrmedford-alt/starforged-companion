@@ -42,6 +42,12 @@ final `storeSector` write.
   `registerConnectionOnActiveCharacter`, which also creates the PC's bond
   Item — on the roller's PC: the narration's `actorId` rides
   `runPostNarrationPasses` → `runDiscoveryDetection` → `routeEntityDrafts`).
+  When it creates none, a pending draft row the move's narration names
+  (`namingText`, whole words — the detection pass leaves a pending name out)
+  is confirmed as the roller's connection (`confirmNamedPendingConnection` →
+  `confirmDraft` with the roller's `actorId`; issue #325 W23 — the card said
+  "Connection made" and nothing was made, and a later Confirm bonded the old
+  narration's PC).
 - **Entity-extraction drafts** — connections detected in any other narration
   queue on the GM-whispered "New Entities Detected" card; Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
@@ -66,6 +72,15 @@ final `storeSector` write.
   setting → `seedConnectionActor` rolls role/goal/first-look/disposition,
   writes biography/notes/pronouns, fires a silent portrait.
 
+What the narration established wins over the seed's rolls (decisions.md,
+issue #286 D3): `buildConnectionSeedData` writes the detected (or Make a
+Connection seed's) goal to the record's `goal`, and `seedConnectionActor` —
+the `createActor` hook and ✦ Finalise alike — rolls only a blank field, and
+no first look for a record that has a `description` (the narration's, or the
+creation's first look folded into it); the Characteristics and Notes show the
+description in its place. The goal went to `motivation`, so the seed rolled a
+second goal beside it and a first look over the narrated one (issue #325 W31).
+
 `registerConnectionOnActiveCharacter(record, { actorId, actors })` puts the
 bond Item on each of `actors` (the inciting vow's crew), else on `actorId`
 when it is a PC, else on the acting user's own PC (`resolveUserActorId`); it
@@ -81,7 +96,8 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
 
 - **`develop_your_relationship` / `test_your_relationship`** (GM-gated
   pipeline branch): `selectConnection` (a picker's host id → exact →
-  substring → sole-bonded → sole-active) + `planDevelopRelationship` —
+  one name inside the other as whole words, either way — "Lorenzo" is not Ren,
+  issue #325 W30 → sole-bonded → sole-active) + `planDevelopRelationship` —
   **un-bonded** → one rank-step of
   `relationshipTicks` on the record (`markRelationshipProgress`, cap 40);
   **bonded** → the roll is +rank: `enrichBondedDevelop` (statEnrichment.js)
@@ -99,8 +115,12 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   connection's rank (`nextRank`, never past epic), mirrored onto the bond
   Items by the record's `_id` (`setBondItemRank` — Q04). Ambiguous target (several active, none named)
   silently no-ops. `selectConnection`'s `strict` option is for an
-  irreversible write (`!sever`): a name that matches no connection exactly or
-  by substring resolves nothing, and an unnamed target resolves only when
+  irreversible write (`!sever`): a name resolves the connection it names
+  exactly, else the one connection whose name holds it as whole words (the
+  typed name a fragment OF the record's name — `!sever Lyssa Chen` severed
+  "Chen"; a fragment that fits two severed the first: now neither, and the GM
+  is told which it fits — `connectionsNamedByFragment`, issue #325 W30);
+  anything else resolves nothing, and an unnamed target resolves only when
   exactly one connection is active — never the sole-bonded fallback (issue
   #321 U14).
 - **`!bond [rank] [name]`** — the bonded develop roll
@@ -129,9 +149,13 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   connection's own `relationshipTicks` (not bonds legacy), scaled by the
   source's rank.
 - **Suggestion buttons** on connection-category move cards
-  (`wireConnectionSuggestionButtons`) post a **connection picker** card
-  (`postConnectionPickerCard` — `flags.choices` lists the offered
-  connections; forge offers only un-bonded ones). Any user's pick relays
+  (`wireConnectionSuggestionButtons`) relay `connection.suggest` to the
+  canonical GM (`cardActions.applyConnectionSuggestion`), which claims the
+  move card once (`connectionSuggestionTaken`) and posts a **connection
+  picker** card (`postConnectionPickerCard` — `flags.choices` lists the
+  offered connections; forge offers only un-bonded ones). Each press used to
+  post a fresh picker from the clicker's client, so two presses developed the
+  relationship twice (issue #325 W11). Any user's pick relays
   `connection.pick` to the canonical GM (`wireConnectionPickerButtons` →
   `relayCardAction` → `applyConnectionPick`, `src/moves/cardActions.js`),
   which checks the pick is one of the card's choices (its buttons' data
@@ -141,7 +165,10 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   roller although the GM authors the message, and naming the picked
   connection as `forcedMoveTargetId` (its host Actor id) and
   `forcedMoveTarget` (its name) — and stamps the card `resolved` (in-flight
-  guarded; a failed post leaves it open). A forced move skips the
+  guarded; a failed post leaves it open). The forced move carries
+  `deferWhileBusy`: met by the move lock, it is held on the canonical GM and
+  rolled when the lock frees (issue #325 W02 — it was dropped, the card
+  already claimed). A forced move skips the
   interpreter, so those flags are the only way the pick reaches the move: the
   chat pipeline carries them as `interpretation.moveTargetId` /
   `moveTarget`, and enrichment and the develop / forge branches resolve by
@@ -206,7 +233,11 @@ Live surfaces: **entity cards** ("ENTITIES IN SCENE" — the record via
 (the PC's bond *Items* via `readConnections` — the mirror). Since issue #286
 (C5) the card shows the rolled `goal` beside the `motivation`, a lost
 (`active:false`) or forged (`bonded`) bond, and the last three `history`
-events (`forgeBond`, `loseConnection`); CHARACTER STATE shows each bond's
+events (`forgeBond`, `loseConnection`); the ACTIVE SECTOR roster, which
+renders every turn, lists a lost connection apart from the reuse-first cast,
+"connection lost: <how>" leading its line and its rolled disposition read as
+the initial one (`formatSectorNpcProfile` — issue #325 W37: it offered a
+severed NPC as friendly cast); CHARACTER STATE shows each bond's
 progress and its rank by name (`readConnections` maps the vendor's numeric
 rank through `rankName` — issue #321 U62). `background` and `secrets` have no production writer, so neither
 renders. The legacy
@@ -250,7 +281,8 @@ summary lives in the `known-issues.md` table and the code.
 - ~~No severance flow / dead flag togglers~~ — **addressed**: new GM
   **`!sever <name>`** command routes through `loseConnection` (record kept
   inactive, history entry, table card). It resolves strictly
-  (`selectConnection(…, { strict: true })`: exact or substring name; bare
+  (`selectConnection(…, { strict: true })`: exact name, or a whole-word
+  fragment of exactly one connection's name — issue #325 W30; bare
   only while one connection is active) — a misspelled name, or a bare
   `!sever` with several active, severed the table's sole bonded connection
   (issue #321 U14). The uncalled `setAllyFlag` /

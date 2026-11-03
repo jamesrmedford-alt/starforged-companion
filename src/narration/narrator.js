@@ -13,6 +13,7 @@ import {
   formatEntityCard,
   formatSettlementPlanet,
   sanitizePlayerText,
+  SCENE_LEDGER_FIELDS,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
@@ -21,6 +22,7 @@ import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlig
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults } from '../oracles/oracleMemory.js';
+import { narrationDisablesThinking } from './thinking.js';
 import { logNarratorUsage } from '../pacing/telemetry.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
@@ -283,9 +285,19 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     oracleSeeds     = null,
   } = opts;
 
+  // The scene's ledgers as they stand in the store (issue #325 W05; rules/
+  // reachability.md §9): the move pipeline narrates from a snapshot taken
+  // before its confirm dialog, and an X-Card played meanwhile has retracted
+  // the removed beat's truths, removed its state and cleared its frame only
+  // in the store — the snapshot handed them back as binding beside the
+  // X-CARD — REDIRECT block. The frame's cast and lore read it too.
+  const sceneLedger = liveSceneLedger(campaignState);
+  const sceneState  = sceneLedger ? { ...(campaignState ?? {}), ...sceneLedger } : campaignState;
+
   // Context every narrator path receives.
   const extras = {
     mode,
+    sceneLedger,
     // Lines, Veils and Private Lines, read live (issue #321 U08; rules/
     // reachability.md §9: a safety-critical flag is read at the point of
     // use): the move pipeline narrates from a snapshot taken before its
@@ -301,7 +313,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     // Spotlight rotation (issue #232) — multiplayer turn-implication nudge.
     // Advances the per-scene pointer as a side effect; '' when not applicable.
-    spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState),
+    spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState, sceneState),
   };
 
   // Rolling session summary (architecture §8.6) — the cached text. It is
@@ -409,14 +421,14 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     // roster carries their cast — so this stays a single rule, not per-mode
     // special-casing. The permission class for these modes is supplied by
     // buildNarratorSystemPrompt's per-mode default, not here.
-    const lexical = await resolvePathRelevance(playerNarration, campaignState);
+    const lexical = await resolvePathRelevance(playerNarration, sceneState);
     extras.entityCards        = lexical.entityCards;
     extras.matchedEntityIds   = lexical.entityIds;
     extras.matchedEntityTypes = lexical.entityTypes;
     extras.entityNamesById    = lexical.entityNamesById;
   }
 
-  addSceneFrameCast(extras, campaignState);
+  addSceneFrameCast(extras, sceneState);
 
   // Established lore, picked for what this turn is about (issue #286 C2):
   // the player's text, the scene frame and the entities now in play. It was
@@ -426,7 +438,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     ? safeWjRead(() => selectLoreForContext(
         [...getConfirmedLore(campaignState), ...getRecordedLocations(campaignState)]
           .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''))),
-        loreQueryText(playerNarration, campaignState, extras),
+        loreQueryText(playerNarration, sceneState, extras),
       ), 'lore')
     : [];
 
@@ -437,6 +449,24 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
 function storedCampaignState() {
   try { return game.settings.get(MODULE_ID, 'campaignState') ?? null; }
   catch { return null; }
+}
+
+/**
+ * The scene-ledger fields (narratorPrompt.js SCENE_LEDGER_FIELDS) from the
+ * store, for a narration built from an older snapshot — null when the store
+ * cannot be read or holds another world's session than the snapshot's (a
+ * narration built for a session that has since ended keeps its own).
+ *
+ * @param {Object|null} campaignState — the caller's snapshot
+ * @returns {Object|null}
+ */
+function liveSceneLedger(campaignState) {
+  const stored = storedCampaignState();
+  if (!stored || typeof stored !== 'object') return null;
+  if (campaignState?.currentSessionId && stored.currentSessionId !== campaignState.currentSessionId) return null;
+  const out = {};
+  for (const field of SCENE_LEDGER_FIELDS) out[field] = stored[field] ?? null;
+  return out;
 }
 
 /**
@@ -900,6 +930,9 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       connectionSeed:       options.connectionSeed ?? null,
       sessionId:            campaignState?.currentSessionId ?? '',
       actorId:              options.actorId ?? null,
+      // What names a Make a Connection's NPC — a pending draft's included
+      // (issue #325 W23).
+      namingText:           `${resolution?.playerNarration ?? ''}\n${narrationText ?? ''}`,
     });
   } catch (err) {
     console.error(`${MODULE_ID} | runDiscoveryDetection failed:`, err);
@@ -1179,7 +1212,13 @@ export function applyXCardToNarratorMemory(cs) {
     // it covers the first `coveredCount` of them.
     const firstIdx = sessionNarratorCards(sessionId).indexOf(cards[0]);
     if (firstIdx >= 0 && firstIdx < (Number(summary.coveredCount) || 0)) {
-      cs.sessionSummary = { ...summary, text: '', coveredCount: 0 };
+      // Stamped now: a move in flight merges its working copy's summary back
+      // only when that one is newer (persistResolution's sessionSummary
+      // rule). Kept at the old `updatedAt`, the tie wrote the removed beat
+      // back, text and coverage — and the restored coverage held the regen
+      // off for another K cards (issue #325 W06).
+      const now = new Date().toISOString();
+      cs.sessionSummary = { ...summary, text: '', coveredCount: 0, updatedAt: now, xCardedAt: now };
     }
   }
 
@@ -1539,6 +1578,10 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
       struck.map(f => `- ${f.label} — ${f.fact}`).join('\n')
     : '';
 
+  // An X-Card played while the call is out removes a narration this summary
+  // was made from: its reply is never stored (issue #325 W06).
+  const xCardPlaysAtStart = xCardPlayCount();
+
   let text;
   try {
     text = await callNarratorAPI({
@@ -1554,6 +1597,10 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     return cachedText;
   }
   if (!text?.trim()) return cachedText;
+  if (xCardPlayCount() !== xCardPlaysAtStart || isXCardActive(null)) {
+    console.debug(`${MODULE_ID} | narrator: X-Card played during the rolling summary's call — its summary is discarded.`);
+    return '';
+  }
 
   const record = {
     text:         text.trim(),
@@ -2463,8 +2510,8 @@ export async function narratePacedInput(playerText, campaignState, options = {})
 
     if (!text?.trim()) return null;
 
-    const buttonMove = reconcileSuggestedMove(text, suggestedMove);
-    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds);
+    const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
+    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null);
     schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
     schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
     scheduleChronicleEntry({
@@ -2488,8 +2535,8 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
         });
         if (text?.trim()) {
-          const buttonMove = reconcileSuggestedMove(text, suggestedMove);
-          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds);
+          const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
+          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null);
           schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
           schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
           scheduleChronicleEntry({
@@ -2655,7 +2702,7 @@ export async function runNarrationTierUpdate(narrationText, campaignState) {
   }
 }
 
-async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = []) {
+async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove
     ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(formatMoveLabel(suggestedMove))}</button></div>`
@@ -2684,6 +2731,9 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         narrationText:    narrationText,
         playerText:       playerText,
         playerName:       playerName ?? null,
+        // The narrating PC: the card's Roll button rolls the move as them,
+        // whoever presses it (issue #325 W09 — it rolled as the clicker).
+        actorId:          typeof actorId === 'string' && actorId ? actorId : null,
         suggestedMove:    suggestedMove ?? null,
         sessionId:        sessionId ?? null,
         // The scene's matched entities, as the move narration card stamps
@@ -2717,15 +2767,13 @@ function escapeRegexLiteral(s) {
   return String(s ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Move-name → id matchers, built once. Sorted by display-name length descending
-// so the most specific name wins (e.g. "face desolation" before "face death"
-// could ever shadow it, and multi-word names before single-word ones). Each
-// matcher is a whole-phrase, case-insensitive regex.
+// Move-name → id matchers, built once: each a whole-phrase, case-insensitive,
+// global regex. extractMoveFromNarrationHint collects every move named in the
+// hint and picks the one it invites — not the longest name (issue #325 W36).
 const MOVE_HINT_MATCHERS = Object.keys(MOVES)
   .map(id => ({ id, name: formatMoveLabel(id).toLowerCase() }))
   .filter(m => m.name && m.name !== 'move')
-  .sort((a, b) => b.name.length - a.name.length)
-  .map(({ id, name }) => ({ id, re: new RegExp(`\\b${escapeRegexLiteral(name)}\\b`, 'i') }));
+  .map(({ id, name }) => ({ id, re: new RegExp(`\\b${escapeRegexLiteral(name)}\\b`, 'gi') }));
 
 /**
  * Extract the content of the LAST italic span in a narration string. The
@@ -2759,16 +2807,36 @@ function lastItalicSpan(text) {
  * (or there is no hint). Only the final italic span is scanned, so single-word
  * move names ("Compel", "Strike") in the prose body cannot false-match.
  *
+ * The hint can name more than one move-shaped word: "Binding that wound
+ * before the battle could be a Heal." The move it invites is the one written
+ * as a move — capitalised, and not just because it opens a sentence — else
+ * the last one named. A name inside a longer one named there is that longer
+ * move. The longest name used to win, so the common noun "battle" made the
+ * button "Roll Battle" (issue #325 W36).
+ *
  * @param {string} narrationText
  * @returns {string|null}
  */
 export function extractMoveFromNarrationHint(narrationText) {
   const hint = lastItalicSpan(narrationText);
   if (!hint) return null;
+  const found = [];
   for (const { id, re } of MOVE_HINT_MATCHERS) {
-    if (re.test(hint)) return id;
+    re.lastIndex = 0;
+    for (const m of hint.matchAll(re)) found.push({ id, start: m.index, end: m.index + m[0].length, text: m[0] });
   }
-  return null;
+  const named = found.filter(a => !found.some(b =>
+    b !== a && b.start <= a.start && b.end >= a.end && (b.end - b.start) > (a.end - a.start)));
+  if (!named.length) return null;
+  const asMove = named.filter(n => /^\p{Lu}/u.test(n.text) && !opensSentence(hint, n.start));
+  const pool   = asMove.length ? asMove : named;
+  return pool.reduce((last, n) => (n.start > last.start ? n : last)).id;
+}
+
+/** True when the text before `index` is empty or ends a sentence (quotes and brackets aside). */
+function opensSentence(text, index) {
+  const before = text.slice(0, index).replace(/[\s"'\u201C\u2018([]+$/u, '');
+  return before === '' || /[.!?]$/.test(before);
 }
 
 /**
@@ -2779,13 +2847,25 @@ export function extractMoveFromNarrationHint(narrationText) {
  * the source of truth the player reads, so when the hint names a recognised
  * move it wins; otherwise the classifier's nomination stands.
  *
+ * With `guard`, the hint's move passes the same finding-G guard the
+ * nomination did: a social move against a fellow PC ("Pressing Ren for the
+ * truth would be a Compel") never becomes the button — the hint reads as
+ * naming no move, and the (already guarded) nomination stands. Only the
+ * nomination was guarded, so the card offered a Compel against a PC (issue
+ * #325 W36).
+ *
  * @param {string} narrationText
  * @param {string|null} classifierMove
+ * @param {{ playerText: string, speakerName?: string|null, pcActors?: Array }} [guard]
  * @returns {string|null}
  */
-export function reconcileSuggestedMove(narrationText, classifierMove) {
+export function reconcileSuggestedMove(narrationText, classifierMove, guard = null) {
   if (!classifierMove) return null;
-  return extractMoveFromNarrationHint(narrationText) ?? classifierMove;
+  let hinted = extractMoveFromNarrationHint(narrationText);
+  if (hinted && guard) {
+    hinted = suppressPcDirectedSocialMove(hinted, guard.playerText, guard.speakerName ?? null, guard.pcActors);
+  }
+  return hinted ?? classifierMove;
 }
 
 // Social moves that act upon another character. Suggesting one against a fellow
@@ -2968,10 +3048,16 @@ export function currentLocationName(campaignState) {
 export function formatSectorNpcProfile(c) {
   const lead = `${c.name}${c.role ? ` — ${c.role}` : ''}`;
   const bits = [];
+  // A lost connection says so first, with how it was lost, and its rolled
+  // disposition reads as the initial one: the line offered a severed NPC as
+  // friendly cast every turn, while only the entity card — rendered when the
+  // player names them — said the bond was broken (issue #325 W37).
+  const lost = c.active === false;
+  if (lost)          bits.push(lostConnectionNote(c));
   if (c.goal)        bits.push(`Goal: ${c.goal}`);
   if (c.motivation)  bits.push(`Motivation: ${c.motivation}`);
   if (c.pronouns)    bits.push(`Pronouns: ${c.pronouns}`);
-  if (c.disposition) bits.push(`Disposition: ${c.disposition}`);
+  if (c.disposition) bits.push(`${lost ? 'Initial disposition' : 'Disposition'}: ${c.disposition}`);
   const firstLook = Array.isArray(c.firstLook)
     ? c.firstLook.filter(Boolean).join(', ')
     : c.firstLook;
@@ -2979,6 +3065,16 @@ export function formatSectorNpcProfile(c) {
   if (c.rank)        bits.push(`Rank: ${c.rank}`);
   if (c.description) bits.push(c.description);
   return bits.length ? `${lead} (${bits.join('; ')})` : lead;
+}
+
+/** "connection lost: <how>" — the latest "Connection lost: …" history entry's reason, when there is one. */
+function lostConnectionNote(c) {
+  const entries = (Array.isArray(c?.history) ? c.history : [])
+    .map(h => (typeof h === 'string' ? h : h?.entry))
+    .filter(e => typeof e === 'string' && e.trim());
+  const loss   = [...entries].reverse().find(e => /^\s*connection lost\b/i.test(e));
+  const reason = loss ? loss.trim().replace(/^connection lost\s*:?\s*/i, '').trim() : '';
+  return reason ? `connection lost: ${reason}` : 'connection lost';
 }
 
 export function formatActiveSector(campaignState) {
@@ -3086,11 +3182,15 @@ export function formatActiveSector(campaignState) {
   // contradicting an oracle-rolled identity (PLAYTEST-1717 C: an inciting
   // incident recast a "Prophet" sector NPC as a researcher). Capped so a large
   // campaign can't bloat the prompt.
-  let npcLines = [];
+  // A lost connection (`!sever`) is listed apart, never as reuse-first cast
+  // (issue #325 W37).
+  let npcLines  = [];
+  let lostLines = [];
   try {
-    npcLines = listConnections(campaignState)
-      .filter(c => c && (!c.sectorId || c.sectorId === id))
-      .map(c => `- ${formatSectorNpcProfile(c)}`);
+    const inSector = listConnections(campaignState)
+      .filter(c => c && (!c.sectorId || c.sectorId === id));
+    npcLines  = inSector.filter(c => c.active !== false).map(c => `- ${formatSectorNpcProfile(c)}`);
+    lostLines = inSector.filter(c => c.active === false).map(c => `- ${formatSectorNpcProfile(c)}`);
   } catch (err) {
     console.debug?.(`${MODULE_ID} | formatActiveSector: connection read failed:`, err?.message ?? err);
   }
@@ -3102,6 +3202,15 @@ export function formatActiveSector(campaignState) {
       'or goal, change their pronouns or disposition, or invent a history that ' +
       'contradicts it. Build the fiction around who they already are:',
       ...npcLines,
+    );
+  }
+  if (lostLines.length) {
+    lines.push(
+      '',
+      'Lost connections in this sector — the bond with the crew is broken. ' +
+      'They are not allies and not cast to reuse as friends; if one appears, ' +
+      'the break shows:',
+      ...lostLines,
     );
   }
 
@@ -3531,36 +3640,17 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   }
 
   if (shipPositionChanges.length) {
-    applyShipPositionChanges(shipPositionChanges, campaignState).catch(err =>
+    applyShipPositionChanges(shipPositionChanges, campaignState, { narrationId: ctx.narrationId ?? null }).catch(err =>
       console.debug?.(`${MODULE_ID} | shipPosition: sidecar update failed:`, err?.message ?? err),
     );
   }
   return persisted;
 }
 
-/**
- * Whether to disable extended thinking for a narration call on `model`. Sonnet
- * 5 runs ADAPTIVE THINKING BY DEFAULT when the `thinking` param is omitted —
- * for short narration that only adds latency and lets thinking consume the
- * max_tokens cap, truncating the prose + memory sidecar. So we disable it
- * there; Opus 4.7/4.8 accept "disabled" too (they already default to off).
- * The older offered models (Sonnet 4.5, Haiku 4.5) default to thinking-off,
- * so we leave their request untouched.
- *
- * Exact ids, never a prefix (issue #286 F7): "claude-sonnet-5" also prefixes
- * "claude-sonnet-5-5", which rejects "disabled" with a 400 (its thinking-off
- * form is "between_tools"), as do the Fable tier and Opus 5.5. None of those
- * is offered as a narration model. Pure — exported for tests.
- *
- * @param {string} model
- * @returns {boolean}
- */
-export function narrationDisablesThinking(model) {
-  return THINKING_DISABLED_MODELS.test(String(model ?? ''));
-}
-
-/** The models narration sends `thinking: {type: "disabled"}` to — an id, optionally date-stamped. */
-const THINKING_DISABLED_MODELS = /^claude-(?:sonnet-5|opus-4-7|opus-4-8)(?:-\d{8})?$/;
+// Whether a call on `model` turns extended thinking off — the rule lives in
+// narration/thinking.js, shared with every short structured call that runs on
+// the narration model (issue #325 W27); re-exported here for its callers.
+export { narrationDisablesThinking };
 
 async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null }) {
   const body = {
@@ -3699,7 +3789,7 @@ function spotlightRotationEnabledFromSettings() {
  * @param {Object} campaignState
  * @returns {string}
  */
-function maybeAdvanceSpotlight(mode, campaignState) {
+function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState) {
   try {
     if (!spotlightRotationEnabledFromSettings()) return '';
     if (!SPOTLIGHT_MODES.has(mode)) return '';
@@ -3708,14 +3798,15 @@ function maybeAdvanceSpotlight(mode, campaignState) {
       .map(a => ({ id: a?.id, name: a?.name }))
       .filter(r => r.id && typeof r.name === 'string' && r.name.trim());
 
-    const presentNames = Array.isArray(campaignState?.sceneFrame?.present)
-      ? campaignState.sceneFrame.present
+    // The frame and scene as they stand in the store (issue #325 W05).
+    const presentNames = Array.isArray(frameState?.sceneFrame?.present)
+      ? frameState.sceneFrame.present
       : [];
 
     // The stored pointer only applies within the scene it was set in; a scene
     // change (new currentSceneId, or null when fact continuity is off) resets
     // the rotation to the start of the roster.
-    const sceneId = campaignState?.currentSceneId ?? null;
+    const sceneId = frameState?.currentSceneId ?? null;
     const lastActorId = (campaignState?.spotlight?.sceneId === sceneId)
       ? (campaignState?.spotlight?.lastActorId ?? null)
       : null;
@@ -4064,6 +4155,69 @@ function formatRecapEntries(entries) {
   }).filter(Boolean);
 }
 
+// How many earlier positions a narrated move keeps (`position.previous`),
+// for an X-Card whose beat moved the ship more than once.
+const SHIP_POSITION_HISTORY = 3;
+
+/** The command vehicle's stored position record, or null. */
+function shipPositionRecord(cvActorId, getShipFn) {
+  try {
+    const pos = getShipFn(cvActorId)?.position;
+    return pos && typeof pos === 'object' ? pos : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A position with its `previous` chain cut to SHIP_POSITION_HISTORY − 1 links. */
+function trimPositionHistory(position, depth = 1) {
+  if (!position || typeof position !== 'object') return null;
+  const { previous, ...rest } = position;
+  return depth < SHIP_POSITION_HISTORY && previous
+    ? { ...rest, previous: trimPositionHistory(previous, depth + 1) }
+    : rest;
+}
+
+/**
+ * Put the command vehicle back where it was before an X-carded narration moved
+ * it (issue #325 W07). The narrator's REQUIRED ship / position emission is
+ * routed around the ledgers to the ship record (applyShipPositionChanges) —
+ * `retractNarrations` never touched it, so after a resume every prompt's
+ * never-dropped SHIP POSITION line still named the removed beat's destination.
+ * A position a removed narration wrote is replaced by the one it recorded as
+ * `previous` (again, while that one is also a removed narration's), or by an
+ * empty position when it recorded none; the sector token follows. Runs on the
+ * canonical GM (suppressScene's finish). Never throws.
+ *
+ * @param {string[]} narrationIds — the X-carded narrations
+ * @param {Object} [campaignState]
+ * @returns {Promise<boolean>} whether the ship was moved back
+ */
+export async function restoreShipPositionAfterXCard(narrationIds, campaignState = storedCampaignState()) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === 'string' && id));
+  if (!removed.size) return false;
+  try {
+    const { getCommandVehicleActorId, getShip, updateShip } = await import('../entities/ship.js');
+    const cvActorId = getCommandVehicleActorId(campaignState ?? {});
+    if (!cvActorId) return false;
+    let position = shipPositionRecord(cvActorId, getShip);
+    if (!position?.narrationId || !removed.has(position.narrationId)) return false;
+    while (position?.narrationId && removed.has(position.narrationId)) position = position.previous ?? null;
+    const { emptyPosition } = await import('../factContinuity/shipPosition.js');
+    const restored = position ? { ...position } : { ...emptyPosition(), updatedAt: new Date().toISOString(), updatedBy: 'manual' };
+    await updateShip(cvActorId, { position: restored });
+    if (restored.nearestSettlementId || restored.nearestPlanetId) {
+      const { syncCommandVehicleTokenToPosition } = await import('../sectors/sectorSceneHooks.js');
+      await syncCommandVehicleTokenToPosition(restored, campaignState).catch(err =>
+        console.debug?.(`${MODULE_ID} | shipPosition: X-Card token sync failed:`, err?.message ?? err));
+    }
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: the ship's position could not be restored:`, err?.message ?? err);
+    return false;
+  }
+}
+
 /**
  * Apply sidecar state changes with subject === "ship" and attribute ===
  * "position" to the command vehicle's persistent position record
@@ -4075,7 +4229,7 @@ function formatRecapEntries(entries) {
  * is gated off. Errors are swallowed at debug — the narrator's
  * primary output (the prose) has already posted by this point.
  */
-async function applyShipPositionChanges(changes, campaignState) {
+async function applyShipPositionChanges(changes, campaignState, { narrationId = null } = {}) {
   if (!Array.isArray(changes) || !changes.length) return;
   // Feature gate is checked lazily so this module stays import-safe in
   // unit tests where `game.settings` may be partial.
@@ -4096,6 +4250,15 @@ async function applyShipPositionChanges(changes, campaignState) {
     const cvActorId = getCommandVehicleActorId(campaignState);
     if (!cvActorId) return;
     const position = inferShipPosition(dest, campaignState, { source: 'narrator_sidecar' });
+    // The narration that moved the ship, and where it was before: an X-Card
+    // on that narration puts it back (restoreShipPositionAfterXCard, issue
+    // #325 W07 — the move was routed around the ledgers with no narration id,
+    // so SHIP POSITION kept naming the removed destination).
+    if (typeof narrationId === 'string' && narrationId) {
+      position.narrationId = narrationId;
+      const prior = shipPositionRecord(cvActorId, getShip);
+      if (prior) position.previous = trimPositionHistory(prior);
+    }
     await updateShip(cvActorId, { position });
 
     // Cluster C — the map follows the fiction (see index.js

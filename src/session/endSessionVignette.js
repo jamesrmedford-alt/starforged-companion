@@ -117,9 +117,12 @@ function composeConnectionHint(c) {
   // gender. Placing it first guarantees it survives the 220-char truncation.
   const pron  = c.pronouns    ? `Pronouns: ${c.pronouns}` : "";
   const role  = c.role        ? `Role: ${c.role}` : "";
-  const motiv = c.motivation  ? `Motivation: ${c.motivation}` : "";
+  // The goal the narration (or the oracles) gave them — a detected NPC's goal
+  // is on `goal` since issue #325 W31, no longer on `motivation`.
+  const goal  = c.goal        ? `Goal: ${c.goal}` : "";
+  const motiv = c.motivation && c.motivation !== c.goal ? `Motivation: ${c.motivation}` : "";
   const desc  = c.description ? c.description : "";
-  return [pron, role, motiv, desc].filter(Boolean).join(" · ").slice(0, 220);
+  return [pron, role, goal, motiv, desc].filter(Boolean).join(" · ").slice(0, 220);
 }
 
 /**

@@ -1962,7 +1962,7 @@ function registerConnectionPipelineTests(quench) {
 // SEED ENRICHMENT — oracle backfill into the journal entry
 //
 // Before this fix, auto-creation on make_a_connection produced a journal entry
-// with name + (possibly empty) description and nothing else — role, motivation,
+// with name + (possibly empty) description and nothing else — role, goal,
 // and the first-look details were dropped on the floor even though the
 // resolver had already rolled them. Confirm-from-draft was the same. This
 // batch asserts those fields actually land on the persisted record.
@@ -2016,7 +2016,7 @@ function registerConnectionSeedEnrichmentTests(quench) {
       afterEach(flushCleanup);
 
       describe("make_a_connection auto-create — oracle seed lands on the journal", function () {
-        it("role, motivation, and first-look details all populate on the connection record", async function () {
+        it("role, goal, and first-look details all populate on the connection record", async function () {
           // routeEntityDrafts → createConnection cascade fires across the
           // entity panel, sector overview, and (if a player actor exists)
           // bond-item registration on the active character. With prior-
@@ -2063,8 +2063,8 @@ function registerConnectionSeedEnrichmentTests(quench) {
 
           assert.equal(conn.role, "Mercenary",
             "role should be seeded from oracle character_role");
-          assert.equal(conn.motivation, "Settle a debt with the Covenant",
-            "motivation should be seeded from oracle character_goal");
+          assert.equal(conn.goal, "Settle a debt with the Covenant",
+            "goal should be seeded from oracle character_goal (issue #325 W31: not motivation)");
           assert.include(conn.description, "wiry quartermaster",
             "description should retain the detector's narration snippet");
           assert.include(conn.description, "Augmented arm",
@@ -2099,13 +2099,13 @@ function registerConnectionSeedEnrichmentTests(quench) {
           assert.equal(data.name, "Vesna",
             "missing draft name should fall back to oracle given_name");
           assert.equal(data.role, "Drifter");
-          assert.equal(data.motivation, "Find kin");
+          assert.equal(data.goal, "Find kin");
           assert.include(data.description, "Heavy coat");
         });
       });
 
       describe("Confirm-from-draft — rolls fresh oracle on click", function () {
-        it("a confirmed connection draft gets role/motivation/description from a fresh oracle roll", async function () {
+        it("a confirmed connection draft gets role/goal/description from a fresh oracle roll", async function () {
           this.timeout(20000);
 
           const { routeEntityDrafts } = await import(
@@ -2160,13 +2160,13 @@ function registerConnectionSeedEnrichmentTests(quench) {
           const actor = game.actors?.get(newIds[0]);
           const conn  = actor?.getFlag?.(MODULE, "connection") ?? actor?.flags?.[MODULE]?.connection;
           assert.isOk(conn, "confirmed connection should carry a payload");
-          // Fresh oracle rolls produce some non-empty role and motivation in
+          // Fresh oracle rolls produce some non-empty role and goal in
           // virtually all rolls — we assert at least one of the three
           // first-look-derived fields is populated to confirm the seed
-          // rolled and applied.
-          const hasSeedDetail = !!(conn.role || conn.motivation || (conn.description && conn.description.includes("First look")));
+          // rolled and applied (the goal is on `goal` — issue #325 W31).
+          const hasSeedDetail = !!(conn.role || conn.goal || (conn.description && conn.description.includes("First look")));
           assert.isTrue(hasSeedDetail,
-            "at least one oracle-seeded field (role/motivation/first-look) should be populated after Confirm");
+            "at least one oracle-seeded field (role/goal/first-look) should be populated after Confirm");
           assert.isOk(conn.portraitSourceDescription,
             "Confirm path should also set portraitSourceDescription");
         });
@@ -6268,6 +6268,12 @@ function registerFactContinuityTests(quench) {
               setTruth({ kind: "scene", sceneId: "sc-quench-asm" },
                 "The blast door is welded shut", state,
                 { actor: "gm", isGM: true });
+              // Stored, as a sidecar's truth is: the narration reads the
+              // scene's ledgers from the store (issue #325 W05), so a truth
+              // only on this copy — beside an earlier test's stored state of
+              // the same session — never reached the block. The batch's
+              // after() restores the original state.
+              await writeCampaignState(state);
 
               const extras = await buildNarratorExtras(
                 "paced_narrative", state, { playerNarration: "" });
@@ -8859,16 +8865,28 @@ function registerCombatCardButtonTests(quench) {
       });
 
       describe("Battle button (Enter the Fray combat track card)", function () {
-        it("clicking 'Battle instead' posts a forced battle message", async function () {
+        // The press relays to the canonical GM, which claims the card it finds
+        // in game.messages (`battleClaimed`) and posts the Battle once (issue
+        // #325 W11) — so the card is a real message here.
+        async function postBattleCard(flags) {
+          const card = await ChatMessage.create({
+            content: `<div class="sf-ptp-card"><p><button type="button" data-action="sf-battle">⚔ Battle instead</button></p></div>`,
+            flags: { [MODULE]: { combatTrackCard: true, created: true, ...flags } },
+          });
+          track(card?.id);
+          return game.messages.get(card.id) ?? card;
+        }
+
+        it("clicking 'Battle instead' posts a forced battle message, once per card", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireCombatTrackCardButtons } = await import(`${MODULE_PATH}/index.js`);
+          const msg = await postBattleCard({});
 
           const root = document.createElement("div");
           root.innerHTML = `<div class="sf-ptp-card"><p>`
             + `<button type="button" data-action="openProgressTracks">Open</button>`
             + `<button type="button" data-action="sf-battle">⚔ Battle instead</button></p></div>`;
-          const msg = { id: "quench-battle-btn", flags: { [MODULE]: { combatTrackCard: true, created: true } } };
-
           wireCombatTrackCardButtons(msg, root);
           const btn = root.querySelector('[data-action="sf-battle"]');
           assert.isOk(btn, "the wired Battle button should still be present");
@@ -8880,18 +8898,19 @@ function registerCombatCardButtonTests(quench) {
           if (synthetic) track(synthetic.id);
           assert.isOk(synthetic,
             "expected a synthetic message with flags[MODULE].forcedMoveId === 'battle'");
+          assert.isOk(game.messages.get(msg.id)?.flags?.[MODULE]?.battleClaimed, "the card is claimed");
         });
 
         it("a card that names its track forwards it with the Battle (TDA-BUTTON-NO-TARGET)", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireCombatTrackCardButtons } = await import(`${MODULE_PATH}/index.js`);
+          const { addProgressTrack, completeProgressTrack } = await import(`${MODULE_PATH}/ui/progressTracks.js`);
+          const fight = await addProgressTrack({ label: `Quench Turret ${Date.now()}`, type: "combat", rank: "dangerous" });
+          const msg = await postBattleCard({ trackId: fight.id, trackLabel: fight.label });
 
           const root = document.createElement("div");
           root.innerHTML = `<p><button type="button" data-action="sf-battle">⚔ Battle instead</button></p>`;
-          const msg = { id: "quench-battle-named", flags: { [MODULE]: {
-            combatTrackCard: true, created: true, trackId: "quench-fight-turret", trackLabel: "Turret",
-          } } };
-
           wireCombatTrackCardButtons(msg, root);
           const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
           root.querySelector('[data-action="sf-battle"]')
@@ -8899,10 +8918,11 @@ function registerCombatCardButtonTests(quench) {
 
           const synthetic = await awaitForcedMove(beforeIds, "battle");
           if (synthetic) track(synthetic.id);
+          await completeProgressTrack(fight.id).catch(() => {});
           assert.isOk(synthetic, "expected a forced battle message");
-          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, "quench-fight-turret",
+          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, fight.id,
             "the card's track rides the Battle by id");
-          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Turret");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, fight.label);
         });
       });
 

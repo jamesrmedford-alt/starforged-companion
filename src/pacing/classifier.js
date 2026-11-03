@@ -461,7 +461,8 @@ function formatConnections(campaignState, _character) {
   for (const id of ids.slice(0, 8)) {
     const data = getConnection(id);
     if (!data?.name) continue;
-    const status = data.relationshipType ?? data.relationship ?? "";
+    // Its disposition — the field the record holds (issue #325 W22).
+    const status = data.disposition ?? "";
     names.push(status ? `${data.name} (${status})` : data.name);
   }
   return `Connections: ${names.length ? names.join(", ") : `${ids.length} active (names unavailable)`}`;

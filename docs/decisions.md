@@ -6,6 +6,85 @@ rejected.
 
 ---
 
+## Issue #325 audit: an X-Card reaches every store its beat wrote, a held press is rolled later, the system's numbers read as names, effects land on whom the move is for (2026-11)
+
+**Decision:** (issue #325, part 1 of the eighth audit. The maintainer asked
+for the issue to be addressed on 2026-11-03 and decided W19 that day. Each
+finding's ID in brackets.)
+- **A typed move rolls a stat it lists** [W19; maintainer] — except under the
+  Chaotic dial: "A typed move rolls a stat it lists — except under the
+  Chaotic dial", below.
+- **An X-Card reaches every store the removed beat wrote** [W05–W07]. A
+  narration reads the scene ledgers (truths, state, frame, retractions) from
+  the live store when it is written, as safety and oracles have since issue
+  #321 U08; the emptied rolling summary is stamped newer than any working
+  copy in flight, and a regeneration that spans an X-Card play is discarded;
+  the ship position a narration writes carries its `narrationId`, and the
+  X-Card restores the position before it.
+- **A press that meets the move lock is held, not dropped** [W02]. A claimed
+  one-shot button's forced move (`deferWhileBusy`) waits on the canonical GM
+  and is replayed when the lock frees; a typed line that meets the lock is
+  still refused. The hold is in memory (FORCED-MOVE-HOLD-RELOAD).
+- **The system's numbers are read as names** [W01]: a progress Item's
+  ChallengeRank number goes through `rankName` wherever a rank is read or
+  paid.
+- **A move's effects land on whom the move is for** [W04, W09, W10, W17,
+  W18]. Heal's patient and Aid Your Ally's ally are resolved before the dice
+  (whole-word names, as `enrichBondedDevelop` resolves a connection) and ride
+  the move's targets; a paced card's Roll speaks as the PC who narrated; a
+  player's `!ptp` suffer runs on the canonical GM for the typist; a bond's add
+  is rolled with the move it belongs to.
+- **Every shared button acts once, on the GM** [W11]: the issue #321 U20
+  shape — relayed, the GM-authored card claimed before the move is posted —
+  for Battle, the way-out moves, the Develop / Forge suggestions, the reward
+  picks and Link. A Battle naming a finished fight is not rolled; a reward
+  pick on a granted or lost reward is refused.
+- **The move text, not a shortcut** [W12–W17]: an ability adds its clause for
+  the move; "count a weak hit as a strong hit" improves only a weak hit; a
+  resist miss at 0 overflows to momentum; "two suffer moves" are two picks; a
+  loss while unprepared at 0 goes to another suffer move; Compel, Resupply,
+  Aid Your Ally and Companion Takes a Hit follow their text.
+- **A name matches as whole words in every selection ladder** [W30]
+  (`wholeWordsFit`, either way); an irreversible `!sever` takes the exact
+  name, else the one connection whose name holds the typed fragment — two
+  fits sever nobody.
+- **What the narration established wins** [W22, W31, W37]: the NPC card shows
+  the recorded disposition; the seed keeps the narrated goal (on `goal`) and
+  rolls no first look for a described NPC; the sector roster lists a lost
+  connection apart, saying how it was lost.
+- **A GM who leaves releases their own lock** [W25]: the lock records its
+  claimant (`pendingMoveBy`); the canonical GM releases a departed GM's lock
+  and whispers the GMs.
+- **Short calls follow narration's thinking rule** [W27]:
+  `narration/thinking.js` is the one rule, for narration and every short
+  structured call on the narration model.
+- **A save holds truths when one category does** [W35]; **a fact-continuity
+  catch keeps its remedy** [W34] (Correct… in the World Journal panel, never
+  the lore actions); **the Roll button is the move the hint invites, guarded
+  like the nomination** [W36]; **a bold label is a label** [W33].
+
+**Reason:** issue #325 reproduced each defect with a probe on `39331b4`;
+each fix's regression tests fail with it taken out
+(`docs/testing/fix-sensitivity.md`; W27 by injecting its defect). W05–W07
+complete the X-Card's reach (rules/narrator-memory.md invariant 6: anything
+a narration writes outside the ledgers carries its `narrationId` so the
+X-Card can undo it, and a narration is built from the ledgers as they stand
+in the store); W11 and W25 are the multiplayer family CLAUDE.md names
+(single emitter, claims before effects, locks released).
+
+**Rejected:**
+- *Release the claim when the pipeline refuses the forced move* [W02] — the
+  press is lost and the player must press again after a "move is already
+  being resolved" notice; holding it rolls it as soon as it can be.
+- *Pin the short structured calls to Haiku* [W27] — they run on the
+  narration model the GM chose; turning thinking off where narration does
+  fixes the cap without changing the model.
+- *Strike the contradicted truth on Override* [W34] — a catch often carries
+  no truth id, and a strike found by subject text could hit the wrong fact;
+  the correction dialog lets the GM choose.
+- *Expire the move lock by age* [W25] — a long narration would lose its lock
+  mid-flight; the claimant's departure is the event that matters.
+
 ## Issue #322 audit: the rules text over fill-ins, the roller's own position and bonus, one truths store, numbers and paths the module checks (2026-11)
 
 **Decision:** (issue #322, part 2 of the seventh audit. The maintainer asked
@@ -1989,6 +2068,27 @@ adds itself, alongside the confirm dialog's asset adds.
 - *Let the table choose the recipient* — the rule allows "you or an ally";
   the next action roll is the common case and needs no extra prompt.
 
+## A typed move rolls a stat it lists — except under the Chaotic dial (2026-11-03)
+
+**Decision (maintainer, issue #325 W19):** the move interpreter holds a typed
+move to the stats the move lists (`interpreter.js` `parseInterpretation`): a
+stat the move does not list gives way to its first — Gather Information is
+always +wits, Check Your Gear +supply. Under the **Chaotic** Mischief dial the
+Trickster may roll an unlisted stat: its framing ("Consider unusual stats",
+"Find the stat that seems least relevant", `mischief.js`) is kept, a
+deliberate departure from the move text for comic, high-chaos play. A move
+already chosen before the interpretation (a forced move's stat-only reading,
+issue #321 U04) is held to its list on every dial.
+
+**Reason:** under Lawful and Balanced nothing invites an unlisted stat, yet
+the parse checked the model's stat only against every stat name the module
+knows, and the confirm dialog shows the stat as text with no picker — so a
+model slip was rolled with that stat's sheet value.
+
+**Rejected:** *drop the "unusual stats" framing and clamp under Chaotic too*
+(the recommended option) — the maintainer kept the Trickster's latitude; on
+the Chaotic dial an unlisted stat is the dial working as designed.
+
 ## Combat position is per character (2026-11-01)
 
 **Decision (maintainer, issue #322 V03):** each player character holds their
@@ -2757,6 +2857,12 @@ classifier's `suggestedMove` is always a MOVES key or null — `toMoveId` maps a
 display name, so the button no longer fails with "Unknown move" (U45); and the
 forced move rolls the stat its narration fits, read by a stat-only
 interpretation, not the move's first listed stat (`enrichForcedMoveStat`, U04).)*
+*(Issue #325 W36: when the hint names several move-shaped words, the move it
+invites is the one written as a move — capitalised, and not only because it
+opens the sentence — else the last one named; the longest name used to win, so
+"before the battle could be a Heal" rolled Battle. And the hint's move passes
+the same finding-G guard as the nomination: a social move against a fellow PC
+is never the button, and the guarded nomination stands.)*
 
 **Rejected:**
 - *Make the classifier authoritative and forbid the narrator from deviating* —

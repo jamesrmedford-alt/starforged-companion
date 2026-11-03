@@ -16,6 +16,7 @@
  */
 
 import { rankTicks, rankName } from "../schemas.js";
+import { wholeWordsFit } from "../context/relevanceResolver.js";
 
 /**
  * Number of milestone marks a won challenge contributes to a track it's linked
@@ -62,7 +63,8 @@ export function milestoneTicks(rank) {
 
 /**
  * Select the target vow for a Reach a Milestone.
- * Priority: exact name → substring (either direction) → sole open vow → null
+ * Priority: exact name → whole words of one inside the other (either
+ * direction) → sole open vow → null
  * (ambiguous: more than one open vow and no name match).
  *
  * @param {Array<{id,name,rank,completed}>} vows  — readVows() output
@@ -70,21 +72,24 @@ export function milestoneTicks(rank) {
  * @returns {object|null}
  */
 export function selectMilestoneVow(vows, target) {
-  const open = (vows ?? []).filter(v => v && !v.completed);
+  const all  = (vows ?? []).filter(Boolean);
+  const open = all.filter(v => !v.completed);
   if (!open.length) return null;
-  if (target) {
-    const lo = String(target).toLowerCase().trim();
-    if (lo) {
-      const exact = open.find(v => (v.name ?? "").toLowerCase() === lo);
-      if (exact) return exact;
-      const sub = open.find(v => {
-        const n = (v.name ?? "").toLowerCase();
-        return n && (n.includes(lo) || lo.includes(n));
-      });
-      if (sub) return sub;
-    }
-  }
+  const named = vowByName(open, target);
+  if (named) return named;
+  // A name that matches a completed vow resolves nothing — never the sole
+  // open vow (decisions.md "Vow payoffs resolve vowId-first"): a won fight's
+  // card for a fulfilled vow marked the PC's other vow (issue #325 W29).
+  if (namesCompletedVow(all, target)) return null;
   return open.length === 1 ? open[0] : null;
+}
+
+/** True when `target` names a completed vow among `vows` and no open one. */
+export function namesCompletedVow(vows, target) {
+  const all = (vows ?? []).filter(Boolean);
+  if (!String(target ?? "").trim()) return false;
+  return !vowByName(all.filter(v => !v.completed), target)
+    && !!vowByName(all.filter(v => v.completed), target);
 }
 
 /**
@@ -97,8 +102,8 @@ export function selectMilestoneVow(vows, target) {
  *
  *   1. `itemId` — the copy a "Which vow?" pick named: that open copy, else
  *      nothing (it was fulfilled or deleted meanwhile), never another.
- *   2. A name — the roller's own vow first, then anyone's: exact, then a
- *      substring either way.
+ *   2. A name — the roller's own vow first, then anyone's: exact, then one
+ *      inside the other as whole words, either way.
  *   3. Otherwise one vow per `vowId` (a vow not yet stamped counts as itself):
  *      the roller's own open vows first — one is the vow, several are the
  *      choices — then everyone's. A shared vow is scored on the roller's copy
@@ -117,6 +122,10 @@ export function selectFulfilVow(vows, target, { itemId = null, rollerActorId = n
 
   const named = vowByName(mine, target) ?? vowByName(open, target);
   if (named) return { vow: named, choices: [] };
+  // A name that matches a completed vow scores nothing and offers nothing —
+  // the won-fight card's 🏁 for a fulfilled vow scored, completed and paid
+  // the PC's other vow (issue #325 W29).
+  if (namesCompletedVow(vows, target)) return { vow: null, choices: [], completed: true };
 
   for (const pool of [mine, open]) {
     const distinct = distinctVows(pool, rollerActorId);
@@ -126,15 +135,16 @@ export function selectFulfilVow(vows, target, { itemId = null, rollerActorId = n
   return { vow: null, choices: [] };
 }
 
-/** The vow `target` names: exact (case-insensitive), then a substring either way. */
+/**
+ * The vow `target` names: exact (case-insensitive), then one inside the other
+ * as whole words, either way — "Kade is avenged" never names the vow "Ade"
+ * (issue #325 W30).
+ */
 function vowByName(vows, target) {
   const lo = String(target ?? "").toLowerCase().trim();
   if (!lo) return null;
   return vows.find(v => (v.name ?? "").toLowerCase() === lo)
-    ?? vows.find(v => {
-      const n = (v.name ?? "").toLowerCase();
-      return n && (n.includes(lo) || lo.includes(n));
-    })
+    ?? vows.find(v => wholeWordsFit((v.name ?? "").toLowerCase(), lo))
     ?? null;
 }
 
@@ -160,6 +170,7 @@ function distinctVows(vows, rollerActorId) {
  */
 export function planReachMilestone(vows, target) {
   const open = (vows ?? []).filter(v => v && !v.completed);
+  if (namesCompletedVow(vows, target)) return { action: "none", reason: "completed" };
   if (!open.length) return { action: "none" };
   const selected = selectMilestoneVow(open, target);
   if (selected) return { action: "mark", vow: selected, ticks: milestoneTicks(selected.rank) };

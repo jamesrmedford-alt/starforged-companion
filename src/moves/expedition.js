@@ -12,6 +12,8 @@
 //
 // Decision: docs/decisions.md → "Exploration lifecycle: expedition + waypoint".
 
+import { wholeWordsFit } from "../context/relevanceResolver.js";
+
 export const EXPEDITION_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"];
 export const DEFAULT_EXPEDITION_RANK = "dangerous";
 
@@ -20,10 +22,23 @@ export const DEFAULT_EXPEDITION_RANK = "dangerous";
  * back to `dangerous`. The inferred rank is a best guess — the player can
  * re-rank the track in the Progress Tracks panel, so a wrong guess is cheap.
  *
+ * foundry-ironsworn stores a progress Item's rank as its ChallengeRank NUMBER
+ * (1 troublesome … 5 epic — `ChallengeRank._cast` turns a written "epic" into
+ * 5), so a vow or bond Item's rank reaches the legacy reward as a number: it
+ * maps to its name here. Every vow paid a dangerous vow's reward — an epic
+ * vow 2 ticks instead of 12 (issue #325 W01).
+ *
  * @param {*} rank
  * @returns {string}
  */
 export function normalizeExpeditionRank(rank) {
+  const numeric = typeof rank === "number" || (typeof rank === "string" && /^\s*\d+\s*$/.test(rank));
+  if (numeric) {
+    const n = Number(rank);
+    return Number.isInteger(n) && n >= 1 && n <= EXPEDITION_RANKS.length
+      ? EXPEDITION_RANKS[n - 1]
+      : DEFAULT_EXPEDITION_RANK;
+  }
   const r = String(rank ?? "").trim().toLowerCase();
   return EXPEDITION_RANKS.includes(r) ? r : DEFAULT_EXPEDITION_RANK;
 }
@@ -36,7 +51,8 @@ function normalizeLabel(s) {
 /**
  * Pick the expedition track an Undertake/Explore should mark, from the full
  * track list. Match the named destination against OPEN expedition tracks
- * (exact-normalised, then substring either way); else fall back to the single
+ * (exact-normalised, then one inside the other as whole words, either way —
+ * issue #325 W30); else fall back to the single
  * open expedition; else null (the caller creates one). A caller that knows
  * the track's id (a Progress Tracks panel row, an expedition card) gets that
  * open track or null — never a same-named sibling (issue #306 R06).
@@ -55,10 +71,7 @@ export function selectExpeditionTrack(allTracks, label, { trackId = null } = {})
   if (want) {
     const exact = expeditions.find(t => normalizeLabel(t.label) === want);
     if (exact) return exact;
-    const fuzzy = expeditions.find(t => {
-      const have = normalizeLabel(t.label);
-      return have && (have.includes(want) || want.includes(have));
-    });
+    const fuzzy = expeditions.find(t => wholeWordsFit(normalizeLabel(t.label), want));
     if (fuzzy) return fuzzy;
   }
   return expeditions.length === 1 ? expeditions[0] : null;

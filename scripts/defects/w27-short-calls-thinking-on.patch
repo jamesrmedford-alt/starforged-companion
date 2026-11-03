@@ -1,0 +1,16 @@
+Defect: W27 (issue #325) — the chronicle scribe and the other short structured calls on the narration model send no `thinking` field, so Sonnet 5 runs adaptive thinking inside their small max_tokens cap
+Tests: tests/unit/shortCallsThinkingOff.test.js
+Catches: the chronicle scribe turns thinking off for its 200-token JSON reply
+Catches: an NPC seed's introduction turns thinking off
+
+diff --git a/src/narration/thinking.js b/src/narration/thinking.js
+index 9a83cb6..77dc24b 100644
+--- a/src/narration/thinking.js
++++ b/src/narration/thinking.js
+@@ -46,5 +46,5 @@ export function narrationDisablesThinking(model) {
+  * @returns {{ thinking?: { type: "disabled" } }}
+  */
+ export function thinkingOffFor(model) {
+-  return narrationDisablesThinking(model) ? { thinking: { type: 'disabled' } } : {};
++  return {};
+ }

@@ -44,7 +44,7 @@ import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
 import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
-import { HONORIFIC_PREFIXES }              from "../context/relevanceResolver.js";
+import { HONORIFIC_PREFIXES, wholeWordPattern } from "../context/relevanceResolver.js";
 
 import {
   recordLoreDiscovery,
@@ -517,6 +517,10 @@ function detectionFromParsed(parsed, campaignState) {
  *   The paced-narrative detection path explicitly sets this to false
  *   so detected NPCs always go through GM review (suggestion-loop
  *   remediation §C — see docs/narrator/narrator-suggestion-loop-group-c-design-memo.md).
+ *   When no connection was created, a pending draft row `namingText` names
+ *   is confirmed as the roller's connection (issue #325 W23).
+ * @param {string}  [options.namingText] — the move's narration (player's and
+ *   narrator's), for the pending-draft fallback
  * @param {string}  [options.sessionId]
  * @param {string}  [options.source]  — telemetry flag attached to the
  *   GM draft card. "paced_narrative" for paced-path detection;
@@ -555,7 +559,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           name:                      seedData.name,
           description:               seedData.description,
           role:                      seedData.role,
-          motivation:                seedData.motivation,
+          goal:                      seedData.goal,
           pronouns:                  seedData.pronouns,
           portraitSourceDescription: seedData.portraitSource,
           firstAppearance:           options.sessionId ?? "",
@@ -592,6 +596,17 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     }
 
     queued.push(entity);
+  }
+
+  // Make a Connection: the NPC its narration names may sit in a pending draft
+  // row the detection left out — confirm it as the roller's (issue #325 W23).
+  if (options.autoCreateConnection && !created.length && options.namingText) {
+    const confirmed = await confirmNamedPendingConnection(options.namingText, options.actorId ?? null)
+      .catch(err => {
+        console.warn(`${MODULE_ID} | routeEntityDrafts: confirming the pending connection failed:`, err?.message ?? err);
+        return null;
+      });
+    if (confirmed) created.push(confirmed);
   }
 
   if (queued.length) {
@@ -711,7 +726,7 @@ async function postRenameNoticeCard(applied) {
 //
 // New entities created from a detector draft (or auto-created on a
 // make_a_connection hit) carry only the detector's surface description.
-// The journal records would otherwise sit with empty role / motivation /
+// The journal records would otherwise sit with empty role / goal /
 // description and no portrait. To give the GM a minimal sketch to work
 // with, we backfill the structured fields from the Starforged oracle
 // tables and trigger a silent portrait generation. Output never goes to
@@ -725,7 +740,7 @@ async function postRenameNoticeCard(applied) {
  *
  * @param {Object} draft           — { name, description, pronouns?, role?, goal? } (detected)
  * @param {Object|null} seed       — { role, goal, firstLook, givenName }
- * @returns {{ name, description, role, motivation, portraitSource }}
+ * @returns {{ name, description, role, goal, pronouns, portraitSource }}
  */
 export function buildConnectionSeedData(draft, seed) {
   const s = seed ?? {};
@@ -744,12 +759,14 @@ export function buildConnectionSeedData(draft, seed) {
   if (s.role)      portraitParts.push(`role: ${s.role}`);
   // What the narration said wins over an oracle roll (issue #286 D3): the
   // confirm path rolls AFTER the narration, and a rolled role or goal the
-  // card then lists as ESTABLISHED FACTS could contradict it.
+  // card then lists as ESTABLISHED FACTS could contradict it. The goal is
+  // the record's `goal` — it went to `motivation`, so the seed found `goal`
+  // blank and rolled one beside it (issue #325 W31).
   return {
     name,
     description,
     role:           draft?.role || (s.role ?? ""),
-    motivation:     draft?.goal || (s.goal ?? ""),
+    goal:           draft?.goal || (s.goal ?? ""),
     // Pronouns the narration established (detector capture) — with these on
     // the record, seedConnectionActor keeps them instead of rolling a random
     // set against the fiction (CHAR-NPC-PRONOUN-ROLL-BLIND).
@@ -1700,17 +1717,29 @@ async function handleDraftConfirm(message, draftIndex) {
   }
 }
 
-async function confirmDraft(message, draftIndex) {
+/**
+ * Create a draft row's entity and mark the row confirmed. A connection's bond
+ * Item goes to the PC of the card's narration (`flags.actorId`), or to
+ * `opts.actorId` — the roller of a Make a Connection that named the pending
+ * NPC (issue #325 W23). Returns the created record (null when nothing was
+ * created).
+ *
+ * @param {ChatMessage} message — the draft card
+ * @param {number} draftIndex
+ * @param {{ actorId?: string|null }} [opts]
+ * @returns {Promise<Object|null>}
+ */
+async function confirmDraft(message, draftIndex, opts = {}) {
   const drafts = Array.isArray(message?.flags?.[MODULE_ID]?.drafts)
     ? [...message.flags[MODULE_ID].drafts]
     : [];
   const draft = drafts.find(d => d.index === draftIndex);
-  if (!draft || draft.status !== "pending") return;
+  if (!draft || draft.status !== "pending") return null;
 
   const creator = ENTITY_CREATORS[draft.type];
   if (!creator) {
     console.warn(`${MODULE_ID} | draft confirm: no creator for type "${draft.type}"`);
-    return;
+    return null;
   }
 
   const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
@@ -1719,7 +1748,7 @@ async function confirmDraft(message, draftIndex) {
   // mark the row, create nothing twice (issue #321 U25).
   if (entityExistsForName(draft.name, draft.type, campaignState)) {
     await setDraftStatus(message, draftIndex, "confirmed");
-    return;
+    return null;
   }
 
   let record = null;
@@ -1740,12 +1769,12 @@ async function confirmDraft(message, draftIndex) {
         name:                      seedData.name,
         description:               seedData.description,
         role:                      seedData.role,
-        motivation:                seedData.motivation,
+        goal:                      seedData.goal,
         pronouns:                  seedData.pronouns,
         portraitSourceDescription: seedData.portraitSource,
       }, campaignState);
       await registerConnectionOnActiveCharacter(record, {
-        actorId: message?.flags?.[MODULE_ID]?.actorId ?? null,
+        actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
       }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     } else if (draft.type === "ship") {
@@ -1805,7 +1834,7 @@ async function confirmDraft(message, draftIndex) {
     if (globalThis.ui?.notifications?.warn) {
       globalThis.ui.notifications.warn(`Failed to create ${draft.type} "${draft.name}". See console.`);
     }
-    return;
+    return null;
   }
 
   if (record) {
@@ -1842,6 +1871,38 @@ async function confirmDraft(message, draftIndex) {
   }
 
   await setDraftStatus(message, draftIndex, "confirmed");
+  return record;
+}
+
+/**
+ * A Make a Connection hit on an NPC whose draft card is still pending (issue
+ * #325 W23): the detection pass leaves a pending name out (its prompt says
+ * not to return it, and the parse and routeEntityDrafts skip it), so the move
+ * card said "Connection made" and nothing was made — and a later Confirm gave
+ * the bond to the PC of the old narration. The pending connection row the
+ * move's narration names (whole words, the full name) is confirmed now, with
+ * the bond on the roller.
+ *
+ * @param {string} text — the player's narration and the narrator's
+ * @param {string|null} actorId — the roller
+ * @returns {Promise<{ entity: Object, record: Object }|null>}
+ */
+async function confirmNamedPendingConnection(text, actorId) {
+  const hay = String(text ?? "");
+  if (!hay.trim()) return null;
+  const messages = [...(globalThis.game?.messages?.contents ?? [])].reverse();   // the newest card first
+  for (const message of messages) {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.draftEntityCard) continue;
+    for (const draft of Array.isArray(f.drafts) ? f.drafts : []) {
+      if (draft?.type !== "connection" || (draft.status && draft.status !== "pending")) continue;
+      const name = typeof draft.name === "string" ? draft.name.trim() : "";
+      if (!name || !wholeWordPattern(name).test(hay)) continue;
+      const record = await confirmDraft(message, draft.index, { actorId });
+      return record ? { entity: draft, record } : null;
+    }
+  }
+  return null;
 }
 
 async function handleDraftDismiss(message, draftIndex) {

@@ -218,6 +218,12 @@ function removeXCardedNarration(narrator, cs) {
 async function finishXCardRemoval(narrator, removal) {
   if (!removal.cards.length) return;
   await narrator.flagXCardedCards(removal.cards);
+  // A ship move the removed narration made is undone with its ledger facts
+  // (issue #325 W07): the position record carries the narration's id.
+  if (typeof narrator.restoreShipPositionAfterXCard === "function") {
+    const ids = removal.cards.map(m => m?.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === "string" && id);
+    await narrator.restoreShipPositionAfterXCard(ids);
+  }
   if (!removal.retracted.length) return;
   try {
     const { propagateRetraction } = await import("../factContinuity/retractions.js");

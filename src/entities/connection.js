@@ -28,6 +28,8 @@ import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityIdInStore } from "./registry.js";
 import { keepNotesPortrait } from "../art/notesPortrait.js";
+import { thinkingOffFor } from "../narration/thinking.js";
+
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
 
@@ -340,7 +342,7 @@ export function renderEntityBody(connection) {
     value ? out.push(`<p><strong>${esc(label)}:</strong> ${esc(value)}</p>`) : null;
   meta("Role", connection?.role);
   meta("Rank", connection?.rank);
-  meta("Relationship", connection?.relationshipType);
+  meta("Disposition", connection?.disposition);   // not the unwritten relationshipType (issue #325 W22)
   if (connection?.description) out.push(`<p>${esc(connection.description)}</p>`);
   meta("Goal", connection?.goal);
   if (connection?.motivation)  out.push(`<p><strong>Motivation:</strong> ${esc(connection.motivation)}</p>`);
@@ -421,7 +423,13 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
   const role        = existing.role || roleTitleFromName(actor.name) || safeRoll(rollOracle, "character_role");
   const goal        = existing.goal || safeRoll(rollOracle, "character_goal");
   const firstLookEx = Array.isArray(existing.firstLook) ? existing.firstLook[0] : existing.firstLook;
-  const firstLook   = firstLookEx || safeRoll(rollOracle, "character_first_look");
+  // A record with a description was described when it was made — by the
+  // narration (a draft Confirm, Make a Connection, the inciting vow's target),
+  // or with the creation's first look folded in. A rolled first look beside
+  // it contradicted what the narration established (decisions.md, issue #286
+  // D3): it is rolled only for an NPC nobody described (issue #325 W31).
+  const description = typeof existing.description === "string" ? existing.description.trim() : "";
+  const firstLook   = firstLookEx || (description ? "" : safeRoll(rollOracle, "character_first_look"));
   const disposition = existing.disposition || safeRoll(rollOracle, "character_disposition");
   // Establish pronouns once (finding E) — preserved if already set.
   const pronouns    = existing.pronouns || pickConnectionPronouns();
@@ -446,12 +454,12 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
 
   // Characteristics is a plain <textarea> on the Starforged sheet — plain text
   // only (finding B). Notes is a rich-text field — HTML there is fine.
-  const characteristics = buildConnectionCharacteristics({ role, goal, firstLook, disposition, pronouns });
+  const characteristics = buildConnectionCharacteristics({ role, goal, firstLook, description, disposition, pronouns });
   // The portrait embedded at the top of the old Notes stays: a regenerated
   // flavour keeps its existing portrait, which is not attached again (issue
   // #322 V30).
   const notesHtml       = keepNotesPortrait(actor.system?.notes,
-    await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, disposition, pronouns }));
+    await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, description, disposition, pronouns }));
 
   try {
     await actor.update({
@@ -563,10 +571,11 @@ export function pronounsToPortraitDescriptor(pronouns) {
  * so HTML markup shows as literal tags (v1.7.11 playtest finding B). Empty
  * string when nothing rolled.
  */
-function buildConnectionCharacteristics({ role, goal, firstLook, disposition, pronouns }) {
+function buildConnectionCharacteristics({ role, goal, firstLook, description = "", disposition, pronouns }) {
   const lines = [];
   if (pronouns)    lines.push(`Pronouns: ${pronouns}`);
   if (firstLook)   lines.push(`First look: ${firstLook}`);
+  else if (description) lines.push(`Description: ${description}`);   // the narrated look (issue #325 W31)
   if (disposition) lines.push(`Initial disposition: ${disposition}`);
   if (role)        lines.push(`Role: ${role}`);
   if (goal)        lines.push(`Goal: ${goal}`);
@@ -578,10 +587,11 @@ function buildConnectionCharacteristics({ role, goal, firstLook, disposition, pr
  * fallback only — that field IS a rich-text editor, so markup renders. Never
  * write this to system.biography (see buildConnectionCharacteristics).
  */
-function buildConnectionDetailsHtml({ role, goal, firstLook, disposition, pronouns }) {
+function buildConnectionDetailsHtml({ role, goal, firstLook, description = "", disposition, pronouns }) {
   const lines = [];
   if (pronouns)    lines.push(`<li><strong>Pronouns:</strong> ${escapeHtmlConn(pronouns)}</li>`);
   if (firstLook)   lines.push(`<li><strong>First look:</strong> ${escapeHtmlConn(firstLook)}</li>`);
+  else if (description) lines.push(`<li><strong>Description:</strong> ${escapeHtmlConn(description)}</li>`);
   if (disposition) lines.push(`<li><strong>Initial disposition:</strong> ${escapeHtmlConn(disposition)}</li>`);
   if (role)        lines.push(`<li><strong>Role:</strong> ${escapeHtmlConn(role)}</li>`);
   if (goal)        lines.push(`<li><strong>Goal:</strong> ${escapeHtmlConn(goal)}</li>`);
@@ -595,15 +605,15 @@ function buildConnectionDetailsHtml({ role, goal, firstLook, disposition, pronou
  * introduction, then appends a compact fact line. Falls back to a plain oracle
  * bullet list when no Claude key is set or the call fails — never blocks seeding.
  */
-async function composeConnectionNotesHtml({ name, role, goal, firstLook, disposition, pronouns }) {
+async function composeConnectionNotesHtml({ name, role, goal, firstLook, description = "", disposition, pronouns }) {
   const facts = [pronouns, firstLook, disposition, role, goal].filter(Boolean);
-  if (!facts.length) return "";
+  if (!facts.length && !description) return "";
 
-  const prose = await generateConnectionIntroProse({ name, role, goal, firstLook, disposition, pronouns })
+  const prose = await generateConnectionIntroProse({ name, role, goal, firstLook, description, disposition, pronouns })
     .catch(() => null);
 
   if (!prose) {
-    return buildConnectionDetailsHtml({ role, goal, firstLook, disposition, pronouns });
+    return buildConnectionDetailsHtml({ role, goal, firstLook, description, disposition, pronouns });
   }
 
   const paras = prose
@@ -622,7 +632,7 @@ async function composeConnectionNotesHtml({ name, role, goal, firstLook, disposi
  * key is set or the call yields nothing. All Anthropic traffic routes through
  * src/api-proxy.js per the architecture constraint in CLAUDE.md.
  */
-async function generateConnectionIntroProse({ name, role, goal, firstLook, disposition, pronouns }) {
+async function generateConnectionIntroProse({ name, role, goal, firstLook, description = "", disposition, pronouns }) {
   const apiKey = readClaudeKeyConn();
   if (!apiKey) return null;
 
@@ -642,6 +652,7 @@ async function generateConnectionIntroProse({ name, role, goal, firstLook, dispo
     name        ? `Name: ${name}`                       : null,
     pronouns    ? `Pronouns: ${pronouns}`               : null,
     firstLook   ? `First look: ${firstLook}`            : null,
+    !firstLook && description ? `Description: ${description}` : null,
     disposition ? `Initial disposition: ${disposition}` : null,
     role        ? `Role: ${role}`                       : null,
     goal        ? `Goal: ${goal}`                       : null,
@@ -650,6 +661,7 @@ async function generateConnectionIntroProse({ name, role, goal, firstLook, dispo
   const body = {
     model,
     max_tokens: 220,
+    ...thinkingOffFor(model),   // its 220-token seed on the narration model (issue #325 W27)
     system:   [{ type: "text", text: system }],
     messages: [{ role: "user", content: userMsg }],
   };

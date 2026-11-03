@@ -159,7 +159,7 @@ duplicate or silently hit the wrong target.
   count: the campaign recap kept serving "Vex died." after the entry was
   corrected, because only the entry count was compared (issue #301 B04).
 - When only a name is available (narrator prose, a chat command), use a
-  **bounded ladder** — exact → substring → type-keyword-when-unique →
+  **bounded ladder** — exact → whole-word substring → type-keyword-when-unique →
   sole-open — and **stop before guessing** when a wrong guess is costly
   (`requireLabelMatch` on the expedition→site stamp is exactly this: no
   sole-open fallback when *creating* a link, only when *revealing*). A rename

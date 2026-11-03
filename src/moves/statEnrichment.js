@@ -45,6 +45,7 @@ import { selectExpeditionTrack } from "./expedition.js";
 import { selectVowTrack } from "./vow.js";
 import { selectFulfilVow } from "./milestone.js";
 import { selectConnection, bondedDevelopRoll } from "./developRelationship.js";
+import { wholeWordPattern } from "../context/relevanceResolver.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -161,6 +162,138 @@ export async function enrichBondedDevelop(interpretation, { listConnections }) {
   // the stat is made, for the resolver (issue #316 T05).
   interpretation.rollKind  = "action";
   return { connection: target, bonded: true, adds: roll.statValue };
+}
+
+/**
+ * Heal: whose care it is, resolved before the dice (issue #325 W04). The
+ * recovery card read the roller's impacts and wrote the roller: "I patch up
+ * Kira's wounds" offered "Take/give +3 health" while Kira lay wounded, and
+ * healed the healer. The move text: "If you (or the ally under your care) are
+ * wounded, clear the impact and take or give +2 health. Otherwise, take or
+ * give +3 health."
+ *
+ * - Obtain treatment for a companion (+heart): the roller's companion — the
+ *   one the move's target or the narration names, else the only one, else the
+ *   most hurt — is `patientCompanionItemId`.
+ * - Provide care for an ally: another player character named as the move's
+ *   target — or, when it names none, the only other PC the narration names
+ *   while the roll is +wits (the move's "Provide care") — is `patientActorId`.
+ * - Otherwise the roller tends their own wounds or receives treatment: no
+ *   patient, and the card is the roller's.
+ *
+ * Names match whole words (`wholeWordPattern`): a PC's full name or a first or
+ * last name no other PC shares. The cost of a weak hit stays the roller's.
+ *
+ * @param {Object} interpretation — mutated: `patientActorId` /
+ *   `patientCompanionItemId` set (or null)
+ * @param {Actor|null} roller
+ * @param {{ players?: Array<Actor> }} [deps] — every player character
+ * @returns {{ patientActorId: string|null, patientCompanionItemId: string|null }|null}
+ *   null for any other move
+ */
+export function resolveHealPatient(interpretation, roller, { players = [] } = {}) {
+  if (interpretation?.moveId !== "heal") return null;
+  const out = { patientActorId: null, patientCompanionItemId: null };
+  const target = typeof interpretation.moveTarget === "string" ? interpretation.moveTarget : "";
+  const prose  = typeof interpretation.playerNarration === "string" ? interpretation.playerNarration : "";
+
+  if (interpretation.statUsed === "heart") {
+    const companions = listCompanionAssets(roller);
+    const named = namedOnce(companions, target) ?? namedOnce(companions, prose);
+    const hurt  = [...companions].sort((a, b) => (a.system?.track?.value ?? 0) - (b.system?.track?.value ?? 0))[0];
+    out.patientCompanionItemId = (named ?? (companions.length === 1 ? companions[0] : hurt))?.id ?? null;
+  } else {
+    const others = (Array.isArray(players) ? players : []).filter(a => a?.id && a.id !== roller?.id);
+    const named  = namedOnce(others, target)
+      ?? (!target && interpretation.statUsed === "wits" ? namedOnce(others, prose) : null);
+    out.patientActorId = named?.id ?? null;
+  }
+  interpretation.patientActorId         = out.patientActorId;
+  interpretation.patientCompanionItemId = out.patientCompanionItemId;
+  return out;
+}
+
+/**
+ * The bond adds a move's text gives (issue #325 W18), resolved before the
+ * dice: Test Your Relationship — "If you share a bond, add +1" — and Swear an
+ * Iron Vow — "If you swear this vow to a connection, add +1; if you share a
+ * bond, add +2". The pipeline rolls these moves itself and nothing added
+ * either: a bonded Test rolled bare +heart, and so did the inciting vow sworn
+ * to the sector's connection.
+ *
+ * Test Your Relationship's connection resolves as its develop branch does (a
+ * picker's host id, else the named one — selectConnection), and is stamped on
+ * the interpretation so that branch develops the same one. A swear's
+ * connection is the one its card names (`swearToConnection` — the inciting
+ * vow's target, or the connection a sheet-made vow is linked to), matched by
+ * name among the active connections; a vow sworn to nobody the crew knows adds
+ * nothing.
+ *
+ * @param {Object} interpretation — mutated: `bondAdd` (and the Test's
+ *   `moveTargetId` / `moveTarget` when its connection resolves)
+ * @param {{ listConnections: () => Promise<Array<Object>> }} deps
+ * @returns {Promise<number>} the add (0 when none applies)
+ */
+export async function enrichBondAdds(interpretation, { listConnections }) {
+  const moveId = interpretation?.moveId;
+  if (moveId !== "test_your_relationship" && moveId !== "swear_an_iron_vow") return 0;
+  const connections = (await listConnections()) ?? [];
+  let add = 0;
+  if (moveId === "test_your_relationship") {
+    const target = selectConnection(connections, interpretation.moveTarget ?? null,
+      { hostId: interpretation.moveTargetId ?? null });
+    if (target?.__hostId) interpretation.moveTargetId = target.__hostId;
+    if (target?.name)     interpretation.moveTarget   = target.name;
+    add = target?.bonded ? 1 : 0;
+  } else {
+    const name = typeof interpretation.swearToConnection === "string" ? interpretation.swearToConnection.trim() : "";
+    const norm = (s) => String(s ?? "").trim().toLowerCase();
+    const sworn = name ? connections.find(c => c && c.active !== false && norm(c.name) === norm(name)) : null;
+    add = sworn ? (sworn.bonded ? 2 : 1) : 0;
+  }
+  interpretation.bondAdd = add;
+  return add;
+}
+
+/**
+ * Aid Your Ally: the ally aided, resolved before the dice (issue #325 W17) —
+ * another player character named as the move's target, else the only other
+ * PC the narration names. Their benefits are the ally's on a hit
+ * (resolver.aidYourAllyConsequences). No ally found: the benefits stay the
+ * roller's, as before.
+ *
+ * @param {Object} interpretation — mutated: `allyActorId` set (or null)
+ * @param {Actor|null} roller
+ * @param {{ players?: Array<Actor> }} [deps] — every player character
+ * @returns {string|null} the ally's actor id; null for any other move
+ */
+export function resolveAidedAlly(interpretation, roller, { players = [] } = {}) {
+  if (interpretation?.moveId !== "aid_your_ally") return null;
+  const others = (Array.isArray(players) ? players : []).filter(a => a?.id && a.id !== roller?.id);
+  const target = typeof interpretation.moveTarget === "string" ? interpretation.moveTarget : "";
+  const prose  = typeof interpretation.playerNarration === "string" ? interpretation.playerNarration : "";
+  const ally   = namedOnce(others, target) ?? (!target ? namedOnce(others, prose) : null);
+  interpretation.allyActorId = ally?.id ?? null;
+  return interpretation.allyActorId;
+}
+
+/** The one document of `docs` whose name `text` names (whole words: the full name, or a first / last name no other shares) — null for none or several. */
+function namedOnce(docs, text) {
+  const hay = String(text ?? "");
+  if (!hay.trim() || !docs.length) return null;
+  const tokensOf = (d) => {
+    const name  = String(d?.name ?? "").trim();
+    const parts = name.split(/\s+/).filter(p => p.length >= 2);
+    return { name, first: parts[0] ?? null, last: parts.length > 1 ? parts.at(-1) : null };
+  };
+  const all = docs.map(d => ({ d, ...tokensOf(d) })).filter(e => e.name);
+  const shared = (tok) => tok && all.filter(e => e.first?.toLowerCase() === tok.toLowerCase()
+    || e.last?.toLowerCase() === tok.toLowerCase()).length > 1;
+  const hits = all.filter(e =>
+    wholeWordPattern(e.name).test(hay)
+    || (e.first && !shared(e.first) && wholeWordPattern(e.first).test(hay))
+    || (e.last && !shared(e.last) && wholeWordPattern(e.last).test(hay)));
+  return hits.length === 1 ? hits[0].d : null;
 }
 
 /**

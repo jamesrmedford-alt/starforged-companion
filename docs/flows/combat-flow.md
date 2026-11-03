@@ -96,7 +96,10 @@ doc opens with position/range badges.
 one-click **Face Danger / Compel / Secure an Advantage** buttons
 (`WAY_OUT_MOVES` / `buildWayOutHtml`), each posting the forced move so
 choosing an exit rolls it (2026-07 soft-spot cleanup — it used to be
-advisory text only).
+advisory text only). A pick relays `wayOut.pick` to the canonical GM
+(`cardActions.applyWayOutPick`), which claims the card once (`wayOutTaken`)
+and posts the move as the clicker's PC — disabled only in the clicker's DOM,
+a re-render rolled the off-ramp again (issue #325 W11).
 
 Combat tracks carry **no promised reward** of their own — `proposeRewards` runs
 only for vows; a fight's payoff rides the *linked vow's* promised reward (see
@@ -215,19 +218,30 @@ pick). A TDA **miss** does not end the fight — it routes Pay the Price.
 **Battle** (the "⚔ Battle instead" button) is the one-roll alternative: an
 action move that ends the fight on every outcome. The button forwards its
 card's `trackId` / `trackLabel`, so Battle ends that fight while another is
-open — without them, two open fights left it ending neither.
+open — without them, two open fights left it ending neither. The press relays
+`combatTrack.battle` (`cardActions.applyCombatTrackBattle`): the canonical GM
+claims the card once (`battleClaimed`; `"fight-over"` when its fight already
+ended, posting nothing) and posts the Battle as the clicker's PC; and the
+pipeline does not roll a Battle naming a finished fight by id — the "not
+rolled" card, as Take Decisive Action. The button was disabled only in the
+clicker's DOM, so a re-render or another client rolled Battle again on a
+finished fight, its +2 momentum or a second Pay the Price (issue #325 W11).
 
 **Face Defeat** closes the track as a loss (no payoff) and routes Pay the Price.
 
 **One price per result.** A routed Pay the Price (`routePayThePrice` — Face
 Defeat on every outcome, the misses above) is rolled once, for its card
-(`postFaceDefeatPayThePriceCard`, which every routed price posts through), and
+(`postMovePayThePriceCard`, which every routed price posts through), and
 the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
 advisory price for a result that routes one (`routesPayThePrice`). The
 narration used to depict one price while the card showed — and the table
 paid — another (issue #321 U03). A miss that routes none (Sojourn's) keeps
-its advisory seed.
+its advisory seed. The card records the price under the move that paid it
+(its `oracleMemory.question` — "Face Danger" — which RECENT ORACLE RESULTS
+renders) and asks for no follow-up narration: the move's narration depicts
+the price. It used to say "Face Defeat" for every routed price and narrate
+the price a second time (issue #325 W03).
 
 ## 4. The win payoff (linked fights)
 
@@ -244,7 +258,10 @@ card's roller when they hold a copy, else the PC holding the resolved vow
 (`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks) and
 **🤝 Deepen your bond** when the vow links a connection
-(`deepenLinkedConnection`, scaled by the vow's rank). It then grants the
+(`deepenLinkedConnection`, scaled by the vow's rank). Once the card's vow is
+fulfilled its milestone and 🏁 are retired on every client and render
+(`wireFightVowButtons` → `linkedVowCompleted`), and a press that reaches the
+GM marks nothing (issue #325 W29). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
 one-time (`reward.status` flips from "promised" — written first, as the

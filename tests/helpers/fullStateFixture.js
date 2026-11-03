@@ -141,7 +141,7 @@ export function addConnectionEntity(_journals, data) {
     name:          data.name,
     role:          data.role ?? "",
     rank:          data.rank ?? "dangerous",
-    relationshipType: data.relationshipType ?? "neutral",
+    disposition:   data.disposition ?? null,   // the record's own (relationshipType is retired — issue #325 W22)
     active:        true,
     canonicalLocked: data.canonicalLocked ?? false,
     generativeTier: data.generativeTier ?? [],

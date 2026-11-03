@@ -29,6 +29,7 @@ import { getSettlement, updateSettlement } from "./settlement.js";
 import { getPlanet,     updatePlanet }     from "./planet.js";
 import { getLocation,   updateLocation }   from "./location.js";
 import { getConnection }                   from "./connection.js";
+import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -298,6 +299,7 @@ async function generateEntityFlavor(typeKey, record) {
   const body = {
     model,
     max_tokens: MAX_TOKENS,
+    ...thinkingOffFor(model),   // a short reply on the narration model (issue #325 W27)
     system:   [{ type: "text", text: system }],
     messages: [{ role: "user", content: user }],
   };

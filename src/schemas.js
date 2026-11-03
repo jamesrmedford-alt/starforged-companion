@@ -276,7 +276,9 @@ export const ConnectionSchema = {
   role: "",                     // Defining role — drives the +1 bonus on related moves
   secondRole: null,             // Set if bond forged and Expand Influence chosen
   rank: "dangerous",            // RANKS — governs progress per Develop Your Relationship
-  relationshipType: "neutral",  // "ally" | "neutral" | "antagonist" | "unknown"
+  // (relationshipType — always this default "neutral", never written — is
+  // retired: the record's `disposition` is what the narrator, the pacing
+  // classifier and the journal page show; issue #325 W22.)
 
   portraitId: null,             // ArtAsset _id — populated after first Loremaster description
   portraitSourceDescription: "",// The Loremaster narration excerpt that triggered art generation
@@ -302,8 +304,10 @@ export const ConnectionSchema = {
                                 // Anchors portrait prompt, entity card, seeded Notes, audio voice.
   background: "",               // Known history
   motivation: "",               // What drives them (may be blank — unknown)
-  goal: "",                     // CHARACTERS.GOAL oracle result — the driving objective
-                                // rolled at creation (sector wizard / Make a Connection).
+  goal: "",                     // The driving objective: the goal the narration gave them
+                                // (detection / the Make a Connection seed the narration was
+                                // written from — issue #325 W31), else the CHARACTERS.GOAL
+                                // oracle result (sector wizard, seedConnectionActor).
                                 // F3: rolled by sector creator and passed to createConnection
                                 // but had no schema home, so it never reached the journal body.
   secrets: "",                  // Information hidden from the player character (GM only)
@@ -476,6 +480,10 @@ export const CampaignStateSchema = {
   // Prevents two narration messages from kicking off parallel pipelines that
   // would race on campaignState writes. Cleared on ready if left stuck.
   pendingMove: false,
+  // The user id of the GM whose pipeline claimed the lock: when that GM
+  // disconnects, the next canonical GM releases it (index.js
+  // releaseLockOfDisconnectedGM — issue #325 W25).
+  pendingMoveBy: null,
 
   // Claude API configuration — read by the move interpreter (which falls back
   // to its own constants); nothing writes it, so it stays at these defaults.

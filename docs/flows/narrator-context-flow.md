@@ -45,8 +45,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   author's client with its own key (a keyed player at a keyless-GM table;
   keyless → the usual "key not configured" fallback). Every client reads the
   same setting and user list, so they agree on the runner.
-- **Oracle follow-ups** (after `!oracle yes`, `!oracle <tableId>`,
-  `!pay-the-price` and the pipeline's Face Defeat roll) go through
+- **Oracle follow-ups** (after `!oracle yes`, `!oracle <tableId>` and
+  `!pay-the-price`; a move's routed Pay the Price has none — its price seeds
+  the move's own narration, issue #325 W03) go through
   `requestOracleNarration` (`src/oracles/oracleFollowup.js`) with the same
   rule: a keyed GM is connected → `requestGmAction("oracle.narrate")` runs it
   on the keyed canonical GM; else a keyed author narrates locally; else it is
@@ -148,7 +149,17 @@ and whispered cards are never chosen). It retracts what their sidecars wrote
 (`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"`, state
 values removed, a frame they wrote cleared), appends their `narrationId`s to
 `xCardedNarrationIds` (cap 50), drops a rolling summary that covered them
-(text emptied, a regen due) and sets `xCardRedirect` — on every play. If that
+(text emptied, a regen due — stamped with a fresh `updatedAt` and
+`xCardedAt`, so a move in flight cannot merge its working copy's older
+summary back over it, and a regen whose Haiku call was out when the card was
+played discards its reply; issue #325 W06) and sets `xCardRedirect` — on
+every play. A ship move the narration made is undone too: the sidecar's
+`ship / position` change is written to the command vehicle stamped with the
+narration's `narrationId` and the position before it (`previous`, up to
+three deep), and the X-Card's finish (`restoreShipPositionAfterXCard`) puts
+back the latest position no removed narration wrote — an empty one when
+there is none — and moves the sector token with it; SHIP POSITION kept
+naming the removed destination (issue #325 W07). If that
 part fails the pause is still written. After the write the cards are flagged
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
 `propagateRetraction`. Readers: the ring and the rolling summary skip
@@ -202,7 +213,9 @@ objective, position and linked vow, at most six; skipped for the recap.
 Issue #290: only the retired assembler had rendered them, TRACKS-UNPORTED)
 · [5] current location card · [5b]
 active-sector anchor (each settlement with its planet and stellar object, as
-its card shows them — `formatSettlementPlanet`, issue #321 U51) · [6] matched entity cards (a connection's card also
+its card shows them — `formatSettlementPlanet`, issue #321 U51; the sector's
+connections as reuse-first cast, and a lost one apart, its line saying how it
+was lost — issue #325 W37) · [6] matched entity cards (a connection's card also
 shows its goal, a lost or forged bond and its last three `history` events —
 C5) · [6.5] active-scene ledger
 (SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
@@ -284,7 +297,17 @@ the check was the entry count alone, and the session-opening read had none).
 figures and places — the ledger holds only this scene) are always in scope
 (B4: they used to need their exact phrase in the player text or the frame);
 recorded entities are in scope when matched, at the current location, or in
-the frame's cast.
+the frame's cast. The ledger is read from the store when the narration is
+built — the scene, its truths, state and frame, and the session's strikes
+(`narratorPrompt.SCENE_LEDGER_FIELDS`, carried as `extras.sceneLedger` by
+`buildNarratorExtras`, which also reads the frame's cast, the lore query and
+the spotlight from it): the move pipeline narrates from a snapshot taken
+before its confirm dialog, and an X-Card played (and resumed) meanwhile had
+retracted the beat's truths, removed its state and cleared its frame only in
+the store — the narration rendered them as binding beside the X-CARD —
+REDIRECT block; a `!truth strike` made during the dialog rendered as binding
+the same way (issue #325 W05). A store holding another session than the
+snapshot's keeps the snapshot's ledger.
 
 **Budgets.** `SIDECAR_TOKEN_HEADROOM = 500`; move/paced use
 `narrationMaxTokens + 500`; every other mode passes
@@ -424,7 +447,11 @@ scene truths → WJ Lore (titled with the frame's location, not the scene id).
 It keeps each recorded character's location / vessel / condition on their
 record as `lastKnown` (C1, rendered as LAST KNOWN on the card), keeps the
 scene's strikes for the session (B6), then discards state and clears the
-frame. Both persist only their scene fields
+frame. Before that final write it re-reads the store and, while the store is
+still this scene, migrates the truths and keeps the whereabouts that a
+narration persisted during its awaits (`migrateLateSceneFacts`, a few
+passes) — the final write used to clear them unmigrated (issue #325 W24).
+Both persist only their scene fields
 (`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`)
 onto the latest stored campaignState (`persistCampaignStateFields`) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the

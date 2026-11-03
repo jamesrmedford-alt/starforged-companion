@@ -27,11 +27,12 @@ import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCh
 import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter, promoteNewEntityLedgerSubjects }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { relayCardAction } from "../moves/cardActions.js";
 import { progressPerMilestoneLine, legacyRewardLine, proposeRewards, buildRewardChoiceHtml }
   from "../moves/rewards.js";
+import { rankName } from "../schemas.js";
 
 const MODULE_ID = "starforged-companion";
-const SOCKET    = `module.${MODULE_ID}`;
 
 // Cross-PC sync of the shared inciting vow: the progress fields kept in lockstep
 // across every player character's copy, and a re-entrancy guard (keyed by vowId)
@@ -111,6 +112,9 @@ export function buildSwearMovePost(message) {
       forcedMoveId:           "swear_an_iron_vow",
       forcedMoveTarget:       meta.vow.statement,
       incitingSwearMessageId: message?.id ?? null,
+      // The vow is sworn to its target — the connection every copy is linked
+      // to: +1 to the roll, +2 when bonded (issue #325 W18).
+      ...(meta.target?.name ? { swearToConnection: meta.target.name } : {}),
     } },
   };
 }
@@ -437,34 +441,12 @@ function syncUpdateFor(item, target) {
 }
 
 /**
- * GM-side socket handler: a non-canonical client relays a swear-shared-vow click
- * here, and the canonical GM creates the vow on every PC. Register once on
- * ready (all clients; non-canonical receivers no-op).
- */
-export function registerSharedVowSocket() {
-  if (registerSharedVowSocket._installed) return;
-  if (!globalThis.game?.socket?.on) return;
-  registerSharedVowSocket._installed = true;
-  game.socket.on(SOCKET, async (payload) => {
-    try {
-      if (!payload || !isCanonicalGM()) return;
-      // (The old "vow.swearShared" relay is gone — swearing routes through the
-      // forced-move ChatMessage post, which any client may create.)
-      if (payload.kind === "vow.setReward") {
-        await setSharedVowReward(payload.vowId, payload.reward);
-      } else if (payload.kind === "vow.linkConnection") {
-        await setVowLinkedConnection(payload.vowId, payload.connectionName);
-      }
-    } catch (err) {
-      console.warn(`${MODULE_ID} | swearVow: shared-vow socket handler failed:`, err?.message ?? err);
-    }
-  });
-}
-
-/**
  * Wire the reward-choice card (#241 Phase 2): picking one of the two proposed
- * rewards, or writing your own, stamps it on the vow (promised) — GM-gated, so
- * non-canonical clients relay over the module socket.
+ * rewards, or writing your own, stamps it on the vow (promised). The pick is
+ * relayed to the canonical GM ("vow.reward" → applyRewardPickFromRelay), which
+ * claims the card once (`rewardChosen`) — the disable was the clicker's DOM
+ * only, so another client or a re-render re-armed the buttons — and never
+ * re-promises a reward already granted or lost (issue #325 W11).
  */
 export function registerRewardChoiceHook() {
   if (registerRewardChoiceHook._installed) return;
@@ -472,30 +454,29 @@ export function registerRewardChoiceHook() {
   onChatMessageRender((message, root) => {
     const f = message?.flags?.[MODULE_ID];
     if (!f?.rewardChoiceCard) return;
-    const vowId = f.vowId;
-    const opts  = Array.isArray(f.rewardOptions) ? f.rewardOptions : [];
-    const store = async (reward) => {
-      const full = { status: "promised", description: reward.description, form: reward.form ?? "gear" };
-      if (isCanonicalGM()) await setSharedVowReward(vowId, full);
-      else globalThis.game?.socket?.emit?.(SOCKET, { kind: "vow.setReward", vowId, reward: full });
-      try {
-        await ChatMessage.create({
-          content: `<p class="sf-incite-sworn">🎁 Reward set: <em>${escapeHtml(reward.description)}</em></p>`,
-          flags:   { [MODULE_ID]: { rewardSetCard: true } },
-        });
-      } catch (err) {
-        console.warn(`${MODULE_ID} | swearVow: reward-set card failed:`, err?.message ?? err);
-      }
+    const buttons = () => root.querySelectorAll("button");
+    const live = () => liveFlags(message);
+    if (live()?.rewardChosen) {
+      buttons().forEach(b => { b.disabled = true; });
+      return;
+    }
+    const relay = async (payload) => {
+      buttons().forEach(b => { b.disabled = true; });
+      await relayCardAction({
+        kind:       "vow.reward",
+        payload:    { messageId: message?.id ?? null, ...payload },
+        isResolved: () => !!live()?.rewardChosen,
+        restore:    () => buttons().forEach(b => { b.disabled = false; }),
+      });
     };
     root.querySelectorAll('[data-action="sf-reward-pick"]').forEach((btn) => {
       const fresh = btn.cloneNode(true);
       btn.replaceWith(fresh);
       fresh.addEventListener("click", async (e) => {
         e.preventDefault(); e.stopPropagation();
-        const opt = opts[Number(fresh.dataset.idx)];
-        if (!opt) return;
-        root.querySelectorAll("button").forEach(b => { b.disabled = true; });
-        await store({ description: opt.description, form: opt.form });
+        const idx = Number(fresh.dataset.idx);
+        if (!Number.isInteger(idx)) return;
+        await relay({ idx });
       });
     });
     const ownBtn = root.querySelector('[data-action="sf-reward-own"]');
@@ -506,11 +487,91 @@ export function registerRewardChoiceHook() {
         e.preventDefault(); e.stopPropagation();
         const text = root.querySelector(".sf-reward-own")?.value?.trim();
         if (!text) return;
-        root.querySelectorAll("button").forEach(b => { b.disabled = true; });
-        await store({ description: text.slice(0, 120), form: "gear" });
+        await relay({ own: text });
       });
     }
   });
+}
+
+/** The card's flags as the world holds them now (the render's copy otherwise). */
+function liveFlags(message) {
+  const stored = message?.id ? (globalThis.game?.messages?.get?.(message.id) ?? null) : null;
+  return (stored ?? message)?.flags?.[MODULE_ID] ?? null;
+}
+
+/**
+ * gmRelay handler for "vow.reward" — runs on the canonical GM (issue #325
+ * W11). A reward-choice card's pick — one of its proposed options (`idx`, from
+ * the GM-authored card's `rewardOptions`) or the clicker's own words (`own`,
+ * at most 120 characters) — promises that reward on every copy of the vow.
+ * One pick per card: the card is claimed (`rewardChosen`) before the write,
+ * behind the in-flight guard. A vow whose reward was already granted or lost
+ * (a won fight's grant, a forsaken vow) is never re-promised: the old card's
+ * pick set it "promised" again and the next linked win or the fulfilment
+ * granted a second reward. Any user may pick, as the card is the table's.
+ *
+ * @param {{ messageId?: string, idx?: number, own?: string }} payload
+ * @param {Object} [_ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+export async function applyRewardPickFromRelay(payload = {}, _ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) return { applied: false, reason: "no-message" };
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.rewardChoiceCard || !f.vowId) return { applied: false, reason: "not-a-reward-card" };
+  const key = `${messageId}:reward`;
+  if (f.rewardChosen || _rewardPicksInFlight.has(key)) {
+    console.debug(`${MODULE_ID} | swearVow: reward card ${messageId} already chosen — ignoring the pick.`);
+    return { applied: false, reason: "already-chosen" };
+  }
+  const opts = Array.isArray(f.rewardOptions) ? f.rewardOptions : [];
+  const own  = typeof payload.own === "string" ? payload.own.trim().slice(0, 120) : "";
+  const opt  = Number.isInteger(payload.idx) ? opts[payload.idx] : null;
+  const reward = opt?.description ? { description: String(opt.description), form: opt.form ?? "gear" }
+    : own ? { description: own, form: "gear" } : null;
+  if (!reward) return { applied: false, reason: "not-on-card" };
+
+  _rewardPicksInFlight.add(key);
+  try {
+    const settled = vowRewardStatuses(f.vowId).find(s => s === "granted" || s === "lost");
+    if (settled) {
+      console.warn(`${MODULE_ID} | swearVow: the vow's reward is already ${settled} — not promised again.`);
+      await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: settled }).catch(() => {});
+      return { applied: false, reason: settled };
+    }
+    try {
+      await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | swearVow: reward card ${messageId} could not be claimed — nothing promised:`, err?.message ?? err);
+      return { applied: false, reason: "claim-refused" };
+    }
+    await setSharedVowReward(f.vowId, { status: "promised", ...reward });
+    await ChatMessage.create({
+      content: `<p class="sf-incite-sworn">🎁 Reward set: <em>${escapeHtml(reward.description)}</em></p>`,
+      flags:   { [MODULE_ID]: { rewardSetCard: true } },
+    }).catch(err => console.warn(`${MODULE_ID} | swearVow: reward-set card failed:`, err?.message ?? err));
+    return { applied: true };
+  } finally {
+    _rewardPicksInFlight.delete(key);
+  }
+}
+
+const _rewardPicksInFlight = new Set();
+
+/** Every copy's reward status for a vow, by its vowId (copies on every PC). */
+function vowRewardStatuses(vowId) {
+  const out = [];
+  for (const actor of getPlayerActors()) {
+    const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
+    for (const item of items) {
+      if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId) {
+        const status = item.flags[MODULE_ID].reward?.status;
+        if (typeof status === "string") out.push(status);
+      }
+    }
+  }
+  return out;
 }
 
 /**
@@ -600,6 +661,9 @@ export function shouldOfferVowSetup(item) {
  * @returns {string}
  */
 export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
+  // A sheet-made vow's rank is the vendor's ChallengeRank number: the card
+  // names it — "(formidable)", never "(3)" (issue #325 W01).
+  if (rank != null && rank !== "") rank = rankName(rank);
   const vrank = rank ?? "dangerous";
   // Connection picker (#248 B-link): link this vow to a connection so fulfilling
   // it deepens that bond. Rendered only when connections exist.
@@ -625,17 +689,22 @@ export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
  * the vow already exists). Returns null for an empty name.
  *
  * @param {string} vowName
+ * @param {string|null} [linkedConnectionName] — the connection the vow is linked to
  * @returns {{ content: string, flags: object } | null}
  */
-export function buildSwearMovePostForName(vowName) {
+export function buildSwearMovePostForName(vowName, linkedConnectionName = null) {
   const name = String(vowName ?? "").trim();
   if (!name) return null;
+  const linked = typeof linkedConnectionName === "string" ? linkedConnectionName.trim() : "";
   return {
     content: `Swear an iron vow: ${name}.`,
     flags: { [MODULE_ID]: {
       bypassPacing:     true,
       forcedMoveId:     "swear_an_iron_vow",
       forcedMoveTarget: name,
+      // Linked to a connection (🤝 Link): sworn to them — +1, or +2 bonded
+      // (issue #325 W18).
+      ...(linked ? { swearToConnection: linked } : {}),
     } },
   };
 }
@@ -713,7 +782,7 @@ export function registerPlayerVowSwearHook() {
     fresh.addEventListener("click", async (e) => {
       e.preventDefault(); e.stopPropagation();
       fresh.disabled = true;   // stays disabled — the roll is firing; re-enable only on a post failure
-      const post = buildSwearMovePostForName(f.vowName);
+      const post = buildSwearMovePostForName(f.vowName, liveFlags(message)?.linkedConnection ?? null);
       if (!post) { fresh.disabled = false; return; }
       try {
         await globalThis.ChatMessage?.create?.(post);
@@ -728,8 +797,9 @@ export function registerPlayerVowSwearHook() {
 /**
  * Wire the 🤝 Link button on the player-vow setup card: links the vow to the
  * selected connection (#248 B-link), so fulfilling it deepens that bond. The
- * flag write is GM-only — non-canonical clients relay over the module socket.
- * Register once.
+ * link is relayed to the canonical GM ("vow.link" →
+ * applyPlayerVowLinkFromRelay), which claims the card once (`linkedConnection`)
+ * — the disable was the clicker's DOM only (issue #325 W11). Register once.
  */
 export function registerPlayerVowLinkHook() {
   if (registerPlayerVowLinkHook._installed) return;
@@ -739,6 +809,10 @@ export function registerPlayerVowLinkHook() {
     if (!f?.playerVowCard) return;
     const btn = root.querySelector('[data-action="sf-player-vow-link"]');
     if (!btn) return;
+    if (liveFlags(message)?.linkedConnection) {
+      btn.disabled = true;
+      return;
+    }
     const fresh = btn.cloneNode(true);
     btn.replaceWith(fresh);
     fresh.addEventListener("click", async (e) => {
@@ -746,18 +820,54 @@ export function registerPlayerVowLinkHook() {
       const connectionName = root.querySelector(".sf-vow-connection")?.value?.trim();
       if (!connectionName) return;                 // nothing selected — leave the button live
       fresh.disabled = true;
-      const vowId = f.vowId;
-      try {
-        if (isCanonicalGM()) await setVowLinkedConnection(vowId, connectionName);
-        else globalThis.game?.socket?.emit?.(SOCKET, { kind: "vow.linkConnection", vowId, connectionName });
-        await ChatMessage.create({
-          content: `<p class="sf-incite-sworn">🤝 Linked to <strong>${escapeHtml(connectionName)}</strong> — fulfilling this vow will deepen that bond.</p>`,
-          flags:   { [MODULE_ID]: { vowLinkedCard: true } },
-        }).catch(() => {});
-      } catch (err) {
-        console.warn(`${MODULE_ID} | playerVow: link failed:`, err?.message ?? err);
-        fresh.disabled = false;
-      }
+      await relayCardAction({
+        kind:       "vow.link",
+        payload:    { messageId: message?.id ?? null, connectionName },
+        isResolved: () => !!liveFlags(message)?.linkedConnection,
+        restore:    () => { fresh.disabled = false; },
+      });
     });
   });
+}
+
+/**
+ * gmRelay handler for "vow.link" — runs on the canonical GM (issue #325 W11).
+ * Links the player-vow card's vow (`vowId`) to a connection the world has —
+ * by name, as the card's picker lists them — once per card: the card is
+ * claimed (`linkedConnection`) before the write. Any user may link, as the
+ * card is the table's.
+ *
+ * @param {{ messageId?: string, connectionName?: string }} payload
+ * @param {Object} [_ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+export async function applyPlayerVowLinkFromRelay(payload = {}, _ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) return { applied: false, reason: "no-message" };
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.playerVowCard || !f.vowId) return { applied: false, reason: "not-a-vow-card" };
+  if (f.linkedConnection) return { applied: false, reason: "already-linked" };
+  const wanted = typeof payload.connectionName === "string" ? payload.connectionName.trim() : "";
+  let connectionName = null;
+  try {
+    const cs = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+    const { getConnection } = await import("../entities/connection.js");
+    connectionName = (cs.connectionIds ?? []).map(id => getConnection(id)?.name).find(n => n && n === wanted) ?? null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | playerVow: connection lookup failed:`, err?.message ?? err);
+  }
+  if (!connectionName) return { applied: false, reason: "no-such-connection" };
+  try {
+    await message.update({ [`flags.${MODULE_ID}.linkedConnection`]: connectionName });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | playerVow: card ${messageId} could not be claimed — not linked:`, err?.message ?? err);
+    return { applied: false, reason: "claim-refused" };
+  }
+  await setVowLinkedConnection(f.vowId, connectionName);
+  await ChatMessage.create({
+    content: `<p class="sf-incite-sworn">🤝 Linked to <strong>${escapeHtml(connectionName)}</strong> — fulfilling this vow will deepen that bond.</p>`,
+    flags:   { [MODULE_ID]: { vowLinkedCard: true } },
+  }).catch(() => {});
+  return { applied: true };
 }

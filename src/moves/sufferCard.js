@@ -26,6 +26,7 @@ import {
   runSufferResolution,
   isOptionAvailable,
   isRetryableSufferCall,
+  unpreparedAtZeroSupply,
 } from "./sufferDialog.js";
 import { getActor, getPlayerActors, readCompanionHealth } from "../character/actorBridge.js";
 import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
@@ -54,7 +55,9 @@ function escapeHtml(s) {
 }
 
 /**
- * How many options an enumerated prompt lets the player pick.
+ * How many picks a prompt takes.
+ *   kind "any"       → its `count` — "two suffer moves (-1 each)" is two
+ *                      picks, one suffer move each (issue #325 W15)
  *   multi === true   → any number (capped at the option count)
  *   multi === number → that many
  *   otherwise        → 1 (single-select)
@@ -63,6 +66,7 @@ function escapeHtml(s) {
  * @returns {number}
  */
 export function sufferMultiCap(prompt) {
+  if (prompt?.kind === "any") return Math.max(1, Number(prompt.count) || 1);
   if (prompt?.kind !== "enumerated") return 1;
   if (prompt.multi === true) return Math.max(1, prompt.options?.length ?? 1);
   if (typeof prompt.multi === "number") return Math.max(1, prompt.multi);
@@ -85,6 +89,11 @@ export function sufferMultiCap(prompt) {
  */
 function optionContext(actor, executorOpts = {}) {
   const companionHealth = readCompanionHealth(actor, executorOpts?.companionItemId ?? null) ?? 0;
+  // Heal's patient: the "wounded" options read their impacts (issue #325 W04).
+  const patientId = typeof executorOpts?.patientActorId === "string" && executorOpts.patientActorId
+    ? executorOpts.patientActorId : null;
+  const patient = patientId ? (globalThis.game?.actors?.get?.(patientId) ?? null) : null;
+  const patientCompanion = !!executorOpts?.patientCompanionItemId;
   let vehicleBattered = null;
   try {
     const vehicleId = executorOpts?.vehicleActorId
@@ -93,7 +102,18 @@ function optionContext(actor, executorOpts = {}) {
   } catch (err) {
     console.debug(`${MODULE_ID} | sufferCard: vehicle lookup failed:`, err?.message ?? err);
   }
-  return { actor, companionHealth, vehicleBattered };
+  return { actor, companionHealth, vehicleBattered, patient, patientCompanion };
+}
+
+/**
+ * True when an "any" card cannot take this suffer move: one the prompt
+ * excludes (a redirected loss — sufferExecutor.sacrificeResources), or
+ * Sacrifice Resources while the PC is unprepared at 0 supply, whose loss goes
+ * to a different suffer move (issue #325 W16).
+ */
+function anySufferBlocked(prompt, sufferId, ctx) {
+  if (Array.isArray(prompt?.exclude) && prompt.exclude.includes(sufferId)) return true;
+  return sufferId === "sacrifice_resources" && unpreparedAtZeroSupply(ctx?.actor ?? null);
 }
 
 /**
@@ -110,18 +130,22 @@ function optionContext(actor, executorOpts = {}) {
  * @param {string[]} [notApplied]
  * @returns {string}
  */
-export function renderSufferCard(prompt, actor, pickedIndices = [], ctx = optionContext(actor), notApplied = []) {
+export function renderSufferCard(prompt, actor, pickedIndices = [], ctx = optionContext(actor), notApplied = [], pickedSuffers = []) {
   const picked = new Set(pickedIndices);
   let header, buttons;
 
   if (prompt.kind === "any") {
     const n   = prompt.count ?? 1;
     const amt = prompt.amount ?? 1;
-    header  = `Make a suffer move (${n > 1 ? `${n} × ` : ""}-${amt}):`;
-    buttons = ANY_SUFFER_MOVES.map(s =>
-      `<button type="button" class="sf-suffer-card-btn" data-action="sf-suffer-pick" ` +
-      `data-pick-kind="any" data-suffer-id="${s.id}">${escapeHtml(s.label)} (-${amt})</button>`,
-    ).join("");
+    const made = Array.isArray(pickedSuffers) ? pickedSuffers : [];
+    header  = `Make a suffer move (${n > 1 ? `${n} × ` : ""}-${amt}):`
+      + (made.length ? ` ${made.length} of ${n} made (${made.map(labelForSuffer).join(", ")}).` : "");
+    buttons = ANY_SUFFER_MOVES.map(s => {
+      const blocked = anySufferBlocked(prompt, s.id, ctx);
+      return `<button type="button" class="sf-suffer-card-btn" data-action="sf-suffer-pick" ` +
+        `data-pick-kind="any" data-suffer-id="${s.id}" ${blocked ? "disabled" : ""}>` +
+        `${escapeHtml(s.label)} (-${amt})${blocked ? " (unavailable)" : ""}</button>`;
+    }).join("");
   } else {
     const cap = sufferMultiCap(prompt);
     header = cap > 1
@@ -393,6 +417,7 @@ function offeredPick(flags, payload, actor) {
   if (!prompt) return null;
   if (payload.pickKind === "any") {
     return prompt.kind === "any" && ANY_SUFFER_MOVES.some(s => s.id === payload.sufferId)
+      && !anySufferBlocked(prompt, payload.sufferId, optionContext(actor, flags.executorOpts))
       ? { pickKind: "any", sufferId: payload.sufferId }
       : null;
   }
@@ -436,10 +461,14 @@ async function handleSufferPick(message, dataset) {
   const needsAny = calls.find(c => c.kind === "needs-any");
 
   // Multi-select: accumulate picks until the cap is reached, then resolve.
-  const cap    = sufferMultiCap(prompt);
-  const multi  = prompt.kind === "enumerated" && cap > 1 && idx != null;
-  const picked = multi ? [...(Array.isArray(f.pickedIndices) ? f.pickedIndices : []), idx] : null;
-  const done   = !multi || picked.length >= cap;
+  // An "any" prompt of `count` > 1 takes one suffer move per pick (issue
+  // #325 W15); the same move twice only when it is picked twice.
+  const cap      = sufferMultiCap(prompt);
+  const multiAny = prompt.kind === "any" && cap > 1;
+  const multi    = (prompt.kind === "enumerated" && cap > 1 && idx != null) || multiAny;
+  const madeAny  = multiAny ? [...(Array.isArray(f.pickedSuffers) ? f.pickedSuffers : []), dataset.sufferId] : [];
+  const picked   = multi && !multiAny ? [...(Array.isArray(f.pickedIndices) ? f.pickedIndices : []), idx] : null;
+  const done     = !multi || (multiAny ? madeAny.length : picked.length) >= cap;
   const notes  = Array.isArray(f.notApplied) ? f.notApplied : [];
   const ctx    = optionContext(actor, executorOpts);
   const doneText = needsAny ? "Suffer move chosen — resolve it on the follow-up card."
@@ -453,8 +482,9 @@ async function handleSufferPick(message, dataset) {
   // buttons re-arm (relayCardAction).
   const claim = done
     ? { [`flags.${MODULE_ID}.resolved`]: true, content: renderResolvedCard(withNotApplied(doneText, notes)) }
-    : { content: renderSufferCard(prompt, actor, picked, ctx, notes) };
-  if (multi) claim[`flags.${MODULE_ID}.pickedIndices`] = picked;
+    : { content: renderSufferCard(prompt, actor, picked ?? [], ctx, notes, madeAny) };
+  if (multi && !multiAny) claim[`flags.${MODULE_ID}.pickedIndices`] = picked;
+  if (multiAny) claim[`flags.${MODULE_ID}.pickedSuffers`] = madeAny;
   try {
     await message.update(claim);
   } catch (err) {
@@ -492,7 +522,7 @@ async function handleSufferPick(message, dataset) {
     // GMs, with a Retry.
     const update = done
       ? { content: renderResolvedCard(multi ? withNotApplied(doneText, [...notes, ...missed]) : summarizeSufferResults(calls, results)) }
-      : { [`flags.${MODULE_ID}.notApplied`]: [...notes, ...missed], content: renderSufferCard(prompt, actor, picked, ctx, [...notes, ...missed]) };
+      : { [`flags.${MODULE_ID}.notApplied`]: [...notes, ...missed], content: renderSufferCard(prompt, actor, picked ?? [], ctx, [...notes, ...missed], madeAny) };
     await message.update(update).catch(err =>
       console.warn(`${MODULE_ID} | sufferCard: card ${message.id} note failed:`, err?.message ?? err));
     await reportRefusedCalls(actor, calls, results, executorOpts);

@@ -309,9 +309,20 @@ function systemTruthsTitle() {
   return game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
 }
 
-/** True for HTML that holds saved truths — ≥2 <h2>, one per category saved. */
-function holdsTruths(html) {
-  return typeof html === "string" && (html.match(/<h2/gi) ?? []).length >= 2;
+/**
+ * True for HTML that holds saved truths: at least one category `<h2>` with a
+ * truth under it. A one-category save is a save — the dialog calls creating
+ * truths optional — but the guard wanted two `<h2>`, so a GM who saved only
+ * the Iron truth had no WORLD TRUTHS, no Iron truth for the oath, and a "No
+ * World Truths" notice on every load (issue #325 W35). An empty page (the
+ * dialog's timing gap) or a heading with nothing under it holds none. The
+ * createJournalEntryPage hook and the load-time reconcile both ask this.
+ *
+ * @param {string} html
+ * @returns {boolean}
+ */
+export function holdsTruths(html) {
+  return typeof html === "string" && Object.keys(parseSystemTruthsHtml(html)).length > 0;
 }
 
 /** The content of a journal's truths page (its first text page holding truths), or null. */
@@ -588,8 +599,8 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
   if (!entry) {
     // Newest first (issue #321 U65 — the first match was the oldest).
     const candidates = journalsNewestFirst([systemTruthsTitle() || "Setting Truths", JOURNAL_NAME]);
-    // Prefer a candidate whose first page looks like a real truths page
-    // (≥2 <h2> elements — same shape the createJournalEntryPage hook checks).
+    // Prefer a candidate whose first page holds truths (holdsTruths — the
+    // same test the createJournalEntryPage hook makes).
     entry = candidates.find(j => holdsTruths(j.pages?.contents?.[0]?.text?.content ?? "")) ?? candidates[0] ?? null;
 
     if (entry && entry.id !== campaignState.worldTruthsJournalId) {

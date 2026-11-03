@@ -300,14 +300,14 @@ export async function scanForApplicableAbilities({
 
   const structured = structuredMatches(all, moveName);
   if (structured.length > 0) {
-    return structured.map(annotate("structured"));
+    return structured.map(annotate("structured", moveName));
   }
 
   const llm = await haikuFallback(all, moveId, moveName, narration, apiKey);
-  return llm.map(annotate("haiku"));
+  return llm.map(annotate("haiku", moveName));
 }
 
-function annotate(detection) {
+function annotate(detection, moveName = null) {
   return (ab) => ({
     key:             ab.key,
     assetName:       ab.assetName,
@@ -316,7 +316,7 @@ function annotate(detection) {
     abilityName:     ab.abilityName,
     summary:         ab.summary ?? "",
     text:            ab.text,
-    adds:            extractAdds(ab.text),
+    adds:            extractAdds(ab.text, moveName),
     // The Haiku path already populated statReplacement on its return shape;
     // the structured path lands here with no such field, so derive it from
     // the ability text via the regex fallback.
@@ -340,19 +340,23 @@ function annotate(detection) {
  * Detect a post-roll "improve the result" ability (v1.7.11 finding G).
  * Fugitive: "you may improve the result to a strong hit." The cost (filling a
  * clock) is carried separately via the ability's hasClock/clockMax. Returns
- * the target outcome to upgrade to, or null when the text doesn't offer one.
+ * the target outcome to upgrade to and the result it improves `from` (null:
+ * any result below it), or null when the text doesn't offer one.
  *
- * Conservative on purpose: only matches an explicit "improve … to a strong
- * hit" phrasing, so it never fires on adds/reroll abilities.
+ * "Improve … to a strong hit" improves any lower result. "Count (or treat) a
+ * weak hit as a strong hit" — Brawler, Heavy Cannons, Rockhorn, Demolitionist,
+ * Engine Upgrade — improves a WEAK HIT only (`from: "weak_hit"`): read like
+ * Fugitive's, it turned a miss into a strong hit at no cost, two steps, the
+ * miss's Pay the Price undone (issue #325 W13). Conservative on purpose: never
+ * fires on adds/reroll abilities.
  *
  * @param {string} text — plain-text ability description
- * @returns {{ improveTo: "strong_hit" }|null}
+ * @returns {{ improveTo: "strong_hit", from: "weak_hit"|null }|null}
  */
 export function extractResultImprovement(text) {
   const t = String(text ?? "").toLowerCase();
-  if (/\bimprove\b[^.]*\bto a strong hit\b/.test(t)) return { improveTo: "strong_hit" };
-  if (/\bcount\b[^.]*\bas a strong hit\b/.test(t))   return { improveTo: "strong_hit" };
-  if (/\btreat\b[^.]*\bas a strong hit\b/.test(t))   return { improveTo: "strong_hit" };
+  if (/\bimprove\b[^.]*\bto a strong hit\b/.test(t)) return { improveTo: "strong_hit", from: null };
+  if (/\b(?:count|treat)\b[^.]*\bas a strong hit\b/.test(t)) return { improveTo: "strong_hit", from: "weak_hit" };
   return null;
 }
 
@@ -397,26 +401,55 @@ export function extractStatReplacement(text) {
 }
 
 /**
- * Best-effort numeric adds extraction. Looks for "add +N" or "+N add"
- * patterns. Returns 0 when no clear match — the ability still surfaces
- * in the dialog, but contributes nothing to the roll unless the player
- * sets adds manually.
+ * The add an ability gives the move being made: "add +N" or "+N add".
+ * Returns 0 when no clause gives one — the ability still surfaces in the
+ * dialog, but contributes nothing to the roll.
+ *
+ * An ability's text holds several clauses for different triggers or later
+ * rolls, and every "add +N" in it used to be summed (issue #325 W12):
+ * Gunner's "When you Clash with it, add +1. When you Enter the Fray … add +1"
+ * gave a Clash +2; Diplomat's "add +1 … reroll all dice, and add +2" gave +3;
+ * Stealth Tech's "add +1 on your next Strike" landed on this Strike. Now:
+ *   1. the first add in a sentence that names the move (its
+ *      `@Compendium[…]{Move}` link), else
+ *   2. the first add in a sentence that names no move — a general trigger
+ *      ("When you make a move to defuse …") — or, with no move given, the
+ *      first add at all.
+ * An add "on your next …" is for a later roll and never counted here.
  *
  * Skips momentum / fire / heat references — those are resource changes,
  * not roll modifiers.
+ *
+ * @param {string} text — the ability's text (HTML stripped, links kept)
+ * @param {string|null} [moveName] — the move being made ("Clash")
+ * @returns {number}
  */
-export function extractAdds(text) {
-  const s = String(text ?? "");
-  // Direct "add +N" or "+N add"
+export function extractAdds(text, moveName = null) {
+  const target = normaliseName(moveName);
+  const clauses = String(text ?? "").split(/(?<=[.!?])\s+/).map(sentence => ({
+    moves: [...sentence.matchAll(/@Compendium\[[^\]]*\]\{([^}]+)\}/g)].map(m => normaliseName(m[1])),
+    add:   firstAddIn(sentence),
+  })).filter(c => c.add > 0);
+  if (target) {
+    const own = clauses.find(c => c.moves.includes(target));
+    if (own) return own.add;
+    return clauses.find(c => !c.moves.length)?.add ?? 0;
+  }
+  return clauses[0]?.add ?? 0;
+}
+
+/** The first "add +N" (1–5) in one sentence that is not for a later roll ("… on your next Strike"); 0 for none. */
+function firstAddIn(sentence) {
   const pattern = /(?:\badds?\s+\+?(\d+)|\+(\d+)\s+add)/gi;
   let m;
-  let total = 0;
-  let found = false;
-  while ((m = pattern.exec(s)) !== null) {
+  while ((m = pattern.exec(sentence)) !== null) {
     const n = Number(m[1] ?? m[2] ?? 0);
-    if (n > 0 && n <= 5) { total += n; found = true; }
+    if (!(n > 0 && n <= 5)) continue;
+    const rest = sentence.slice(m.index + m[0].length).split(/[,;]/)[0];
+    if (/\bnext\b/i.test(rest)) continue;
+    return n;
   }
-  return found ? total : 0;
+  return 0;
 }
 
 

@@ -106,11 +106,17 @@ describe("selectMilestoneVow", () => {
     expect(selectMilestoneVow(vows, "alpha")).toBeNull();
   });
 
-  it("falls back to the sole open vow when the named vow is completed", () => {
-    // Alpha completed, Beta the only one open → sole-open fallback (matches
-    // selectVowTrack / selectConnection convention).
+  // decisions.md ("Vow payoffs resolve vowId-first"): the sole-open rung never
+  // fires when the name matches a vow that is already completed — a won
+  // fight's card for a fulfilled vow marked the PC's other vow (issue #325 W29).
+  it("resolves nothing when the named vow is completed — never the sole open vow", () => {
     const vows = [vow({ id: "a", name: "Alpha", completed: true }), vow({ id: "b", name: "Beta" })];
-    expect(selectMilestoneVow(vows, "alpha")?.id).toBe("b");
+    expect(selectMilestoneVow(vows, "alpha")).toBeNull();
+  });
+
+  it("control: a name that matches nothing still falls back to the sole open vow", () => {
+    const vows = [vow({ id: "a", name: "Alpha", completed: true }), vow({ id: "b", name: "Beta" })];
+    expect(selectMilestoneVow(vows, "Gamma")?.id).toBe("b");
   });
 });
 

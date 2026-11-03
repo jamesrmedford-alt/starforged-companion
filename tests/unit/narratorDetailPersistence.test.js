@@ -576,8 +576,10 @@ describe('Confirm on a draft card keeps what the narration said about them (D3)'
 
     const mira = world().connectionIds.find(id => table.actors.get(id)?.name === 'Mira Sol');
     const record = table.actors.get(mira).flags[MODULE_ID].connection;
+    // The narrated goal is the record's `goal` — on `motivation`, the seed
+    // rolled a second goal beside it (issue #325 W31).
     expect(record).toMatchObject({
-      role: 'quartermaster', motivation: 'clear her debt to the Syndicate', pronouns: 'she/her',
+      role: 'quartermaster', goal: 'clear her debt to the Syndicate', pronouns: 'she/her',
       description: 'a stocky woman with a burned hand',
     });
   });

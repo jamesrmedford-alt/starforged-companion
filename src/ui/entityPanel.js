@@ -343,7 +343,7 @@ export class EntityPanelApp extends ApplicationV2 {
 
   #renderEntityRow(entity) {
     const thumb = entity.art?.dataUri
-      ? `<img class="entity-thumb" src="${entity.art.dataUri}" alt="${entity.name}" loading="lazy">`
+      ? `<img class="entity-thumb" src="${escapeHtml(entity.art.dataUri)}" alt="${escapeHtml(entity.name)}" loading="lazy">`
       : `<div class="entity-thumb entity-thumb-placeholder">${ENTITY_TYPES[entity.typeKey].icon}</div>`;
 
     const lockBadge = entity.art?.locked
@@ -351,11 +351,11 @@ export class EntityPanelApp extends ApplicationV2 {
       : '';
 
     return `
-      <li class="entity-row" data-action="selectEntity" data-journal-id="${entity.journalId}"
+      <li class="entity-row" data-action="selectEntity" data-journal-id="${escapeHtml(entity.journalId)}"
           role="button" tabindex="0">
         <div class="entity-thumb-wrap">${thumb}${lockBadge}</div>
         <div class="entity-row-info">
-          <span class="entity-row-name">${entity.name}</span>
+          <span class="entity-row-name">${escapeHtml(entity.name)}</span>
           ${this.#renderRowSubtitle(entity)}
         </div>
         <span class="entity-row-chevron">›</span>
@@ -374,7 +374,9 @@ export class EntityPanelApp extends ApplicationV2 {
       case 'location':    text = [d.type, d.status].filter(Boolean).join(' · '); break;
       case 'creature':    text = [d.scale, d.environment].filter(Boolean).join(' · '); break;
     }
-    return text ? `<span class="entity-row-subtitle">${text}</span>` : '';
+    // Escaped: a name or field holding markup ran as HTML in every client
+    // that opened the panel — the GM's included (issue #325 W26).
+    return text ? `<span class="entity-row-subtitle">${escapeHtml(text)}</span>` : '';
   }
 
   // -----------------------------------------------------------------------
@@ -521,7 +523,7 @@ export class EntityPanelApp extends ApplicationV2 {
         return `
           <div class="detail-field">
             <dt class="detail-label">${f.label}</dt>
-            <dd class="detail-value">${val}</dd>
+            <dd class="detail-value">${escapeHtml(val)}</dd>
           </div>`;
       }).join('');
 
