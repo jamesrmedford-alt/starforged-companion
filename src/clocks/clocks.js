@@ -282,14 +282,16 @@ export async function createClock(input) {
  * @returns {Promise<object|null>} the clock as stored, or null when there is none by that id
  */
 export async function retireClock(clockId) {
-  const state = foundry.utils.deepClone(readState());
-  const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
-  if (!clock) return null;
-  if (clock.active === false) return clock;
-  clock.active    = false;
-  clock.updatedAt = new Date().toISOString();
-  await writeState(state);
-  return clock;
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+    if (!clock) return null;
+    if (clock.active === false) return clock;
+    clock.active    = false;
+    clock.updatedAt = new Date().toISOString();
+    await writeState(state);
+    return clock;
+  });
 }
 
 /**
@@ -301,12 +303,14 @@ export async function retireClock(clockId) {
  * @returns {Promise<object|null>} the clock removed, or null when there was none by that id
  */
 export async function removeClock(clockId) {
-  const state = foundry.utils.deepClone(readState());
-  const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
-  if (!clock) return null;
-  state.clocks = state.clocks.filter(c => c._id !== clockId);
-  await writeState(state);
-  return clock;
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+    if (!clock) return null;
+    state.clocks = state.clocks.filter(c => c._id !== clockId);
+    await writeState(state);
+    return clock;
+  });
 }
 
 /**
@@ -322,20 +326,22 @@ export async function removeClock(clockId) {
  *   one entry per clock advanced; empty when there are no active tension clocks.
  */
 export async function advanceTensionClocksForPayThePrice() {
-  const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
-  const eligible = (state.clocks ?? []).filter(
-    c => c.active !== false && c.type === "tension" && (c.filled ?? 0) < c.segments,
-  );
-  if (!eligible.length) return [];
-  const now = new Date().toISOString();
-  const advanced = [];
-  for (const c of eligible) {
-    c.filled = Math.min((c.filled ?? 0) + 1, c.segments);
-    c.updatedAt = now;
-    advanced.push({ _id: c._id, name: c.name, filled: c.filled, segments: c.segments, triggered: c.filled >= c.segments });
-  }
-  await writeState(state);
-  return advanced;
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
+    const eligible = (state.clocks ?? []).filter(
+      c => c.active !== false && c.type === "tension" && (c.filled ?? 0) < c.segments,
+    );
+    if (!eligible.length) return [];
+    const now = new Date().toISOString();
+    const advanced = [];
+    for (const c of eligible) {
+      c.filled = Math.min((c.filled ?? 0) + 1, c.segments);
+      c.updatedAt = now;
+      advanced.push({ _id: c._id, name: c.name, filled: c.filled, segments: c.segments, triggered: c.filled >= c.segments });
+    }
+    await writeState(state);
+    return advanced;
+  });
 }
 
 /**
@@ -346,18 +352,20 @@ export async function advanceTensionClocksForPayThePrice() {
  * @param {string[]} ids  array of clock `_id` values to decrement by 1 segment
  */
 export async function revertTensionClocksForBurn(ids) {
-  if (!ids?.length) return;
-  const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
-  let dirty = false;
-  const now = new Date().toISOString();
-  for (const id of ids) {
-    const c = (state.clocks ?? []).find(x => x._id === id);
-    if (!c || (c.filled ?? 0) <= 0) continue;
-    c.filled = Math.max(0, (c.filled ?? 0) - 1);
-    c.updatedAt = now;
-    dirty = true;
-  }
-  if (dirty) await writeState(state);
+  return serialiseClockWrite(async () => {
+    if (!ids?.length) return;
+    const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
+    let dirty = false;
+    const now = new Date().toISOString();
+    for (const id of ids) {
+      const c = (state.clocks ?? []).find(x => x._id === id);
+      if (!c || (c.filled ?? 0) <= 0) continue;
+      c.filled = Math.max(0, (c.filled ?? 0) - 1);
+      c.updatedAt = now;
+      dirty = true;
+    }
+    if (dirty) await writeState(state);
+  });
 }
 
 /**
@@ -378,49 +386,51 @@ export async function revertTensionClocksForBurn(ids) {
  * @returns {Promise<Array<{_id, name, type, filled, segments, triggered, advanced, odds, roll, saved, error?}>>}
  */
 export async function advanceCampaignClocksForBeginSession() {
-  const state = foundry.utils.deepClone(readState());
-  const eligible = (state.clocks ?? []).filter(
-    c => c.active !== false && c.type === "campaign" && (c.filled ?? 0) < c.segments,
-  );
-  if (!eligible.length) return [];
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const eligible = (state.clocks ?? []).filter(
+      c => c.active !== false && c.type === "campaign" && (c.filled ?? 0) < c.segments,
+    );
+    if (!eligible.length) return [];
 
-  const now = new Date().toISOString();
-  const results = [];
-  let dirty = false;
+    const now = new Date().toISOString();
+    const results = [];
+    let dirty = false;
 
-  for (const c of eligible) {
-    const r = rollYesNo(c.advanceOdds);
-    const advanced = r.answer === "yes";
-    if (advanced) {
-      c.filled    = Math.min((c.filled ?? 0) + 1, c.segments);
-      c.updatedAt = now;
-      dirty = true;
+    for (const c of eligible) {
+      const r = rollYesNo(c.advanceOdds);
+      const advanced = r.answer === "yes";
+      if (advanced) {
+        c.filled    = Math.min((c.filled ?? 0) + 1, c.segments);
+        c.updatedAt = now;
+        dirty = true;
+      }
+      results.push({
+        _id:       c._id,
+        name:      c.name,
+        type:      "campaign",
+        filled:    c.filled,
+        segments:  c.segments,
+        triggered: c.filled >= c.segments,
+        advanced,
+        odds:      c.advanceOdds,
+        roll:      r.roll,
+        saved:     true,
+      });
     }
-    results.push({
-      _id:       c._id,
-      name:      c.name,
-      type:      "campaign",
-      filled:    c.filled,
-      segments:  c.segments,
-      triggered: c.filled >= c.segments,
-      advanced,
-      odds:      c.advanceOdds,
-      roll:      r.roll,
-      saved:     true,
-    });
-  }
 
-  if (dirty) {
-    try {
-      await writeState(state);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | Begin a Session: the campaign clock advance was not saved:`, err?.message ?? err);
-      for (const r of results) {
-        if (r.advanced) { r.saved = false; r.error = String(err?.message ?? err); }
+    if (dirty) {
+      try {
+        await writeState(state);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | Begin a Session: the campaign clock advance was not saved:`, err?.message ?? err);
+        for (const r of results) {
+          if (r.advanced) { r.saved = false; r.error = String(err?.message ?? err); }
+        }
       }
     }
-  }
-  return results;
+    return results;
+  });
 }
 
 /**
@@ -436,27 +446,29 @@ export async function advanceCampaignClocksForBeginSession() {
  *   | { ok: false, reason: "refused", error: string }>}
  */
 export async function applyClockAdvances(entries) {
-  const state   = foundry.utils.deepClone(readState());
-  const applied = [];
-  const missing = [];
-  for (const e of Array.isArray(entries) ? entries : []) {
-    const clock = (state.clocks ?? []).find(c => c._id === e?._id) ?? null;
-    if (!clock) { missing.push(String(e?._id ?? "?")); continue; }
-    const target = Math.min(Math.max(0, Math.floor(Number(e.filled) || 0)), clock.segments);
-    if ((clock.filled ?? 0) >= target) continue;
-    clock.filled    = target;
-    clock.updatedAt = new Date().toISOString();
-    applied.push({ _id: clock._id, name: clock.name, filled: clock.filled });
-  }
-  if (applied.length) {
-    try {
-      await writeState(state);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | clock advances not saved:`, err?.message ?? err);
-      return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+  return serialiseClockWrite(async () => {
+    const state   = foundry.utils.deepClone(readState());
+    const applied = [];
+    const missing = [];
+    for (const e of Array.isArray(entries) ? entries : []) {
+      const clock = (state.clocks ?? []).find(c => c._id === e?._id) ?? null;
+      if (!clock) { missing.push(String(e?._id ?? "?")); continue; }
+      const target = Math.min(Math.max(0, Math.floor(Number(e.filled) || 0)), clock.segments);
+      if ((clock.filled ?? 0) >= target) continue;
+      clock.filled    = target;
+      clock.updatedAt = new Date().toISOString();
+      applied.push({ _id: clock._id, name: clock.name, filled: clock.filled });
     }
-  }
-  return { ok: true, applied, missing };
+    if (applied.length) {
+      try {
+        await writeState(state);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | clock advances not saved:`, err?.message ?? err);
+        return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+      }
+    }
+    return { ok: true, applied, missing };
+  });
 }
 
 export async function handleClockCommand(message) {
@@ -662,6 +674,30 @@ async function writeState(state) {
   await game.settings.set(MODULE_ID, "campaignState", state);
 }
 
+/** The last clock write queued on this client (serialiseClockWrite). */
+let _clockWriteTail = Promise.resolve();
+
+/**
+ * Run one clock read-modify-write after the one before it on this client has
+ * landed. The clocks are one array in campaignState, written whole, and the
+ * cached value changes only when the server answers — so a write that read
+ * during another's round trip saved the old list over it: two clock actions
+ * (↻ on two clocks, two `!clock` verbs, a Pay the Price advance racing a
+ * click) lost one (issue #326 W53, the issue #321 U57 shape the Progress
+ * Tracks panel's writeTracks serialises). A write that fails does not hold up
+ * the next. `task` must read the state itself and must not call another
+ * clock writer: it would wait for itself.
+ *
+ * @template T
+ * @param {() => Promise<T>} task
+ * @returns {Promise<T>}
+ */
+function serialiseClockWrite(task) {
+  const run = _clockWriteTail.then(task);
+  _clockWriteTail = run.catch(() => {});
+  return run;
+}
+
 // Every writer here works on a copy of the state: `readState` returns this
 // client's cached campaignState, and a refused write must leave it as it was
 // — changed in place, the cache kept the change, which the next write of any
@@ -669,18 +705,22 @@ async function writeState(state) {
 
 /** Append a new clock to the stored list. */
 async function addClock(clock) {
-  const state = { ...readState() };
-  state.clocks = [...(state.clocks ?? []), clock];
-  await writeState(state);
+  return serialiseClockWrite(async () => {
+    const state = { ...readState() };
+    state.clocks = [...(state.clocks ?? []), clock];
+    await writeState(state);
+  });
 }
 
 async function mutateClock(id, fn) {
-  const state = foundry.utils.deepClone(readState());
-  const clock = (state.clocks ?? []).find(c => c._id === id);
-  if (!clock) return;
-  fn(clock);
-  clock.updatedAt = new Date().toISOString();
-  await writeState(state);
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === id);
+    if (!clock) return;
+    fn(clock);
+    clock.updatedAt = new Date().toISOString();
+    await writeState(state);
+  });
 }
 
 async function findClockByArg(parts) {
