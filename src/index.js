@@ -32,6 +32,7 @@ import {
   buildBurnState,
   renderBurnButtonHtml,
   registerBurnMomentumHook,
+  requesterOwnsActor,
 } from "./moves/burnMomentum.js";
 import {
   buildImproveState,
@@ -3599,9 +3600,17 @@ async function handlePayThePriceCommand(message) {
   });
 
   // Credit the roller: a routed suffer lands on the PC of the player who typed
-  // the command, not the first PC in the world.
+  // the command, not the first PC in the world. It runs on the canonical GM
+  // (relayed from a player's client, as the clocks below are): Sacrifice
+  // Resources marks every ally sharing the supply unprepared with the roller,
+  // and a player's client may not update another player's PC — the ally's
+  // write was refused and the ally sat at 0 supply without the impact
+  // (issue #325 W10).
   const speakerActorId = resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState"));
-  await dispatchPayThePriceSufferRoutes(result.sufferRoutes, speakerActorId, "!pay-the-price");
+  if (result.sufferRoutes?.length) {
+    await requestGmAction("payThePrice.suffer", { routes: result.sufferRoutes, actorId: speakerActorId }).catch(err =>
+      console.warn(`${MODULE_ID} | !pay-the-price: suffer dispatch failed:`, err?.message ?? err));
+  }
 
   // Countdown clocks advance on the canonical GM (world/actor writes) — run
   // locally there, relayed from a player's client.
@@ -5554,6 +5563,42 @@ function sufferRoutesFooter(routes) {
  * @param {string} where — for the log
  * @returns {Promise<Array<Object>>} the executors' results that came back (ptpMeterReceipts reads them)
  */
+/**
+ * gmRelay handler for "payThePrice.suffer" — runs on the canonical GM (issue
+ * #325 W10). A typed `!ptp` rolls on its author's client (RUN_ON.AUTHOR); its
+ * suffer routes land here, on the typist's PC (`actorId`), where every write
+ * they make — the allies Sacrifice Resources marks unprepared with the roller
+ * (issue #315 S07) among them — is allowed. The requester must own that PC or
+ * be a GM; a player with no PC of their own is refused rather than handed
+ * another player's. Each route is checked against the suffer moves the table
+ * annotates (a known move, an amount of 1–3).
+ *
+ * @param {{ routes?: Array<{ move: string, amount: number, soloFallback?: string }>, actorId?: string|null }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string, landed?: Array<Object> }>}
+ */
+export async function applyPayThePriceSufferFromRelay(payload = {}, ctx = {}) {
+  const { SUFFER_EXECUTORS } = await import("./moves/sufferExecutor.js");
+  const known  = (move) => typeof move === "string" && (move === "any" || Object.hasOwn(SUFFER_EXECUTORS, move));
+  const routes = (Array.isArray(payload.routes) ? payload.routes : []).slice(0, 4).filter(r =>
+    r && known(r.move) && Number.isInteger(r.amount) && r.amount >= 1 && r.amount <= 3
+    && (r.soloFallback === undefined || r.soloFallback === null || known(r.soloFallback)));
+  if (!routes.length) return { applied: false, reason: "no-routes" };
+
+  const actorId = typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null;
+  const actor   = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | !pay-the-price: ${actorId} is not a player character — the price is not applied.`);
+    return { applied: false, reason: "not-a-pc" };
+  }
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | !pay-the-price: user ${ctx?.requesterId ?? "?"} may not pay ${actor?.name ?? "a price with no PC of their own"} — refused.`);
+    return { applied: false, reason: "not-owner" };
+  }
+  const landed = await dispatchPayThePriceSufferRoutes(routes, actor?.id ?? null, "!pay-the-price");
+  return { applied: true, landed };
+}
+
 async function dispatchPayThePriceSufferRoutes(routes, actorId, where) {
   const landed = [];
   for (const route of routes ?? []) {

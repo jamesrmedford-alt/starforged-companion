@@ -155,6 +155,7 @@ export const GM_ACTIONS = Object.freeze({
   "oracle.narrate":            { load: () => import("../oracles/oracleFollowup.js"),                 fn: "narrateOracleFollowupOnGm", claude: true },
   "repair.apply":              { load: () => import("../moves/repair.js"),                           fn: "applyRepairSpends" },
   "payThePrice.advanceClocks": { load: () => import("../clocks/payThePriceClocks.js"),               fn: "advanceClocksForPayThePriceRelay" },
+  "payThePrice.suffer":        { load: () => import("../index.js"),                                  fn: "applyPayThePriceSufferFromRelay" },
   // Narration on a player's own key (no keyed GM online)
   "narrator.sidecar":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedNarratorSidecar" },
   // Chat-card buttons

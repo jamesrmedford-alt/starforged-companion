@@ -134,7 +134,10 @@ All real progress lands on **item ticks** (`system.current`) via
   Price ("⏳ The clock turns" card) via `advanceClocksOnPayThePrice`
   (`src/clocks/payThePriceClocks.js`) — called directly by the pipeline on
   the canonical GM; a player-typed `!ptp` relays `payThePrice.advanceClocks`
-  so the clocks advance once, on the GM. A shared vow's copies are one clock
+  so the clocks advance once, on the GM — and its suffer routes relay
+  `payThePrice.suffer` (`applyPayThePriceSufferFromRelay`, the typist's PC as
+  the roller), so the allies a Sacrifice Resources marks unprepared are
+  written where that is allowed (issue #325 W10). A shared vow's copies are one clock
   (issue #321 U55): one `lockstep` map rides every PC's call of an advance,
   so the first copy advances and each later copy is set to the value it
   reached (advancing each copy raced the sync hook, which had already moved

@@ -104,10 +104,12 @@ describe('across a booted table', () => {
     expect(scanForApplicableAbilities.mock.calls[0][0].characterActor.id).toBe('pc-a');
   });
 
-  it('!pay-the-price: the routed suffer lands on the typist\'s PC — once, on the typist\'s client', async () => {
+  // Relayed to the canonical GM, where the crew's writes are allowed (issue
+  // #325 W10) — still once, still on the typist's PC.
+  it('!pay-the-price: the routed suffer lands on the typist\'s PC — once, on the canonical GM', async () => {
     await table.client('pl-1').chat('!ptp', { speaker: { actor: 'pc-b' } });
     await table.settle();
-    expect(seen.suffer).toEqual([{ on: 'pl-1', move: 'endure_harm', actor: 'pc-b' }]);
+    expect(seen.suffer).toEqual([{ on: 'gm-1', move: 'endure_harm', actor: 'pc-b' }]);
   });
 
   describe('world-truths journal hooks — one writer however many GMs see the journal', () => {
