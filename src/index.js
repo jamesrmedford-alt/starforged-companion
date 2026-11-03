@@ -2731,6 +2731,21 @@ function registerCommandVehicleHook() {
  * - GM messages
  * - Messages starting with "\" (escape), "@" (direct commands), or "/" (slash commands)
  */
+/**
+ * True when chat content is a foundry-ironsworn chat card: its root element
+ * carries one of the system's own classes (`ironsworn-message`,
+ * `ironsworn-roll`, …). Issue #325 W08.
+ *
+ * @param {string} text — trimmed message content
+ * @returns {boolean}
+ */
+function isIronswornSystemCard(text) {
+  const root = /^<([a-z][a-z0-9-]*)\b([^>]*)>/i.exec(String(text ?? ""));
+  if (!root) return false;
+  const cls = /\bclass\s*=\s*(["'])([^"']*)\1/i.exec(root[2]);
+  return !!cls && /(?:^|\s)ironsworn-[a-z-]+(?:\s|$)/i.test(cls[2]);
+}
+
 export function isPlayerNarration(message) {
   // v13: the IC / OOC / EMOTE classification lives on `message.style`
   // (CONST.CHAT_MESSAGE_STYLES), NOT on `message.type` — in v13 `type` is the
@@ -2773,6 +2788,14 @@ export function isPlayerNarration(message) {
   if (message.speaker?.alias === 'Ironsworn') return false;
 
   const text = message.content?.trim() ?? "";
+
+  // A foundry-ironsworn chat card — a move's "Send to chat" reference
+  // (sf-move-chat-message.ts posts `<article class='ironsworn-message …'>`
+  // with no flags, no roll and the user's alias): the system's own markup at
+  // the root, never something a player typed. It passed every check above,
+  // and the canonical GM paced, interpreted and rolled the move's rules text
+  // for the player who only shared it (issue #325 W08).
+  if (isIronswornSystemCard(text)) return false;
 
   // No meaningful text content — system-generated empty or near-empty messages
   if (text.length < 10) return false;
