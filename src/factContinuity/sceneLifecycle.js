@@ -112,54 +112,17 @@ export async function startScene(campaignState, { reason = 'unknown' } = {}) {
 export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   if (!campaignState) return { migrated: 0, archived: 0, skipped: 0 };
 
-  let migrated = 0;
-  let archived = 0;
-  let skipped  = 0;
+  const counts = { migrated: 0, archived: 0, skipped: 0 };
+  const sceneId = campaignState.currentSceneId ?? null;
 
   const truths = Array.isArray(campaignState.sceneTruths) ? campaignState.sceneTruths : [];
   // Where this scene happened, for its scene-subject truths (resolved once).
-  let place;
+  const placeOf = { place: undefined };
+  const handled = new Set();
 
   for (const truth of truths) {
-    if (!truth || truth.retracted || truth.migratedTo) {
-      skipped += 1;
-      continue;
-    }
-    const subject = truth.subject;
-    if (!subject) { skipped += 1; continue; }
-
-    if (subject.kind === 'entity' && subject.entityId) {
-      const ok = await safeMigrateToEntityTier(truth, subject);
-      if (ok) {
-        truth.migratedTo = { kind: 'entityGenerativeTier', entityId: subject.entityId };
-        migrated += 1;
-      } else {
-        skipped += 1;
-      }
-      continue;
-    }
-
-    // Scene-kind → the recorded place the scene happened at (issue #286 C2:
-    // "the bar is called the Rusty Lantern" became place-less lore titled
-    // "Scene sc-…"). Place-less scene truths and text-kind truths → WJ Lore.
-    if (subject.kind === 'scene') {
-      if (place === undefined) place = resolveScenePlace(campaignState);
-      if (place) {
-        const ok = await safeMigrateToEntityTier(truth, { entityId: place.id, entityType: place.type });
-        if (ok) {
-          truth.migratedTo = { kind: 'entityGenerativeTier', entityId: place.id };
-          migrated += 1;
-          continue;
-        }
-      }
-    }
-    const result = await safeArchiveSceneTruth(truth, campaignState);
-    if (result?.pageId) {
-      truth.migratedTo = { kind: 'worldJournalLore', loreEntryId: result.pageId };
-      archived += 1;
-    } else {
-      skipped += 1;
-    }
+    if (truth?.id) handled.add(truth.id);
+    counts[await migrateSceneTruth(truth, campaignState, placeOf)] += 1;
   }
 
   // The scene's strikes outlive it for the rest of the session (issue #286
@@ -170,6 +133,13 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   // Where each recorded character was and what shape they were in outlives
   // the scene on their card (issue #286 C1) — scene state is discarded next.
   await keepLastKnownWhereabouts(campaignState);
+
+  // What reached the scene while the awaits above ran — a narration's sidecar
+  // persisted into the still-current scene — is migrated too. The final write
+  // below clears the scene on the latest store: such a fact was never
+  // migrated, archived or kept as LAST KNOWN, and was in no store afterwards
+  // (issue #325 W24). A few passes; each re-reads the store.
+  await migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts);
 
   // Discard active ledgers regardless of per-entry migration outcomes — the
   // truths array is preserved-with-retraction-and-migration markers but the
@@ -188,7 +158,97 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
 
   await persistCampaignStateFields(campaignState, fields, `endScene (${reason})`);
 
-  return { migrated, archived, skipped };
+  return { ...counts };
+}
+
+/**
+ * One scene truth leaving its scene (endScene): an entity's goes to its
+ * generative tier; a scene-kind one to the place the scene happened at; the
+ * rest — and a place-less scene truth — to World Journal Lore. Marks the
+ * truth's `migratedTo`.
+ *
+ * @param {Object} truth
+ * @param {Object} campaignState
+ * @param {{ place: Object|null|undefined }} placeOf — the scene's place, resolved once
+ * @returns {Promise<"migrated"|"archived"|"skipped">}
+ */
+async function migrateSceneTruth(truth, campaignState, placeOf) {
+  if (!truth || truth.retracted || truth.migratedTo) return 'skipped';
+  const subject = truth.subject;
+  if (!subject) return 'skipped';
+
+  if (subject.kind === 'entity' && subject.entityId) {
+    const ok = await safeMigrateToEntityTier(truth, subject);
+    if (!ok) return 'skipped';
+    truth.migratedTo = { kind: 'entityGenerativeTier', entityId: subject.entityId };
+    return 'migrated';
+  }
+
+  // Scene-kind → the recorded place the scene happened at (issue #286 C2:
+  // "the bar is called the Rusty Lantern" became place-less lore titled
+  // "Scene sc-…"). Place-less scene truths and text-kind truths → WJ Lore.
+  if (subject.kind === 'scene') {
+    if (placeOf.place === undefined) placeOf.place = resolveScenePlace(campaignState);
+    const place = placeOf.place;
+    if (place) {
+      const ok = await safeMigrateToEntityTier(truth, { entityId: place.id, entityType: place.type });
+      if (ok) {
+        truth.migratedTo = { kind: 'entityGenerativeTier', entityId: place.id };
+        return 'migrated';
+      }
+    }
+  }
+  const result = await safeArchiveSceneTruth(truth, campaignState);
+  if (!result?.pageId) return 'skipped';
+  truth.migratedTo = { kind: 'worldJournalLore', loreEntryId: result.pageId };
+  return 'archived';
+}
+
+const LATE_FACT_PASSES = 3;
+
+/**
+ * endScene's late arrivals (issue #325 W24): while the scene's truths were
+ * migrated and its whereabouts kept, a narration could persist more into the
+ * still-current scene. Re-read the store; while it is still this scene, migrate
+ * its truths this end has not handled and keep the whereabouts it now holds
+ * (keepLastKnownWhereabouts, for the subjects whose state changed). Bounded.
+ *
+ * @param {Object} campaignState — endScene's copy (its sceneState is merged)
+ * @param {string|null} sceneId — the scene being ended
+ * @param {Set<string>} handled — ids of the truths already migrated
+ * @param {{ place: Object|null|undefined }} placeOf
+ * @param {{ migrated: number, archived: number, skipped: number }} counts — mutated
+ */
+async function migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts) {
+  if (!sceneId) return;
+  for (let pass = 0; pass < LATE_FACT_PASSES; pass++) {
+    let latest = null;
+    try { latest = game.settings.get(MODULE_ID, 'campaignState'); } catch { latest = null; }
+    if (!latest || (latest.currentSceneId ?? null) !== sceneId) return;
+
+    const fresh = (Array.isArray(latest.sceneTruths) ? latest.sceneTruths : [])
+      .filter(t => t?.id && !handled.has(t.id))
+      .map(t => foundry.utils.deepClone(t));
+    const latestBySubject = latest.sceneState?.bySubject ?? {};
+    const ownBySubject    = campaignState.sceneState?.bySubject ?? {};
+    const changedState = {};
+    for (const [key, entries] of Object.entries(latestBySubject)) {
+      if (JSON.stringify(entries) !== JSON.stringify(ownBySubject[key])) changedState[key] = entries;
+    }
+    if (!fresh.length && !Object.keys(changedState).length) return;
+
+    for (const truth of fresh) {
+      handled.add(truth.id);
+      counts[await migrateSceneTruth(truth, campaignState, placeOf)] += 1;
+    }
+    if (Object.keys(changedState).length) {
+      await keepLastKnownWhereabouts({ ...campaignState, sceneState: { bySubject: changedState } });
+      campaignState.sceneState = {
+        ...(campaignState.sceneState ?? {}),
+        bySubject: { ...ownBySubject, ...changedState },
+      };
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------

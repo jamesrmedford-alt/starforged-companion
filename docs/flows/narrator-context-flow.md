@@ -445,7 +445,11 @@ scene truths → WJ Lore (titled with the frame's location, not the scene id).
 It keeps each recorded character's location / vessel / condition on their
 record as `lastKnown` (C1, rendered as LAST KNOWN on the card), keeps the
 scene's strikes for the session (B6), then discards state and clears the
-frame. Both persist only their scene fields
+frame. Before that final write it re-reads the store and, while the store is
+still this scene, migrates the truths and keeps the whereabouts that a
+narration persisted during its awaits (`migrateLateSceneFacts`, a few
+passes) — the final write used to clear them unmigrated (issue #325 W24).
+Both persist only their scene fields
 (`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`)
 onto the latest stored campaignState (`persistCampaignStateFields`) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
