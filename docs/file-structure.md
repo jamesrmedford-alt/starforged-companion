@@ -288,6 +288,7 @@ developer-only and excluded from the release.
 | `tests/helpers/documentStubs.js` | ChatMessage document stubs (ids, dotted-key `update`, flags, `author`) shared by `tests/setup.js` and the harness. |
 | `tests/helpers/sourceScan.js` | The lexer behind the static invariant tests (issue #282 item 5): production sources (src/ minus Quench) with comments and literals masked, bracket matching, `Hooks.on` registrations, function-body lookup. Used by `campaignStateFields.test.js` (every campaignState field has a writer and a reader) and `hookGates.test.js` (every document-hook handler has an author / canonical-GM gate, or is listed as local-only). |
 | `tests/helpers/cardDom.js` | Minimal DOM (HTML parser, selectors, events) the harness renders chat cards with, so a test can click a card's button on a given client. |
+| `tests/probes/<area>/*.probe.js` | The eighth bug audit's probes (`docs/testing/bug-audit-8-2026-11-03.md`, W01–W87 and D1–D8): each asserts the correct behaviour and fails until its finding is fixed. Named `*.probe.js` so `npm test` skips them; run with `npx vitest run --config tests/probes/vitest.probes.config.js`. `tests/probes/README.md` maps each probe to its finding and records the refuter verdicts. When a finding is fixed, its probe becomes a regression test in `tests/unit/` and is deleted. |
 | `test/ci/` | CI-only harness assets. |
 | `test/ci/playwright/` | Second-client E2E suites, run after the Cypress Quench run against the world it left live, in `mcr.microsoft.com/playwright:v1.56.1-noble` (`playwright` pinned to the same version in `package.json`). `multiplayer.mjs` (issue #282 item 6) drives a GM and a player browser — the X-Card, `!oracle` posting one card, a player's Begin a Session, Burn Momentum applying once, Private Lines reaching the GM. `playthrough.mjs` (issue #290 part 2) plays the scenarios in `playthroughs/*.json` (seed, pinned settings, steps, checks) through the GM's real narrator pipeline, with scripted dice; Claude is answered from `recordings/<scenario>.json` (`--record-playthroughs` records them with a key; a failed recording run is written to `artifacts/recordings/` instead). A `"strict": true` scenario (issue #302) names its steps and declares each step's Claude calls, required (with prompt contracts) and optional; an undeclared, unanswered or contract-breaking call fails the step. Each result reports replay validity, integration and narrator quality apart. `lib/claude.mjs` — the fetch bridge, call kinds from the caller's stack, step-bound recording match, stub, STALE / UNRECORDED reports, `checkStep` (the strict declarations), `requestContract`, prompt fingerprints, scenario revisions and recording provenance; its logic is unit-tested in `tests/unit/playthroughReplay.test.js`; `lib/foundry.mjs` — the client helpers both suites share. |
 | `styles/starforged-companion.css` | Bundled stylesheet. |
@@ -355,7 +356,8 @@ Pipeline Phase A deliverable, issue #214).
 
 `quench-coverage-audit-plan.md`, `behaviour-coverage-audit.md`,
 `behaviour-coverage-audit-plan.md`, the `vX.Y.Z-playtest-findings.md` logs,
-and `fix-sensitivity.md` (issue #302: for each #300 / #301 / #306 fix and
+`bug-audit-8-2026-11-03.md` (the eighth bug audit: 87 findings and 8
+decisions, each with a probe under `tests/probes/`) and `fix-sensitivity.md` (issue #302: for each #300 / #301 / #306 fix and
 each fix the #302 disturbance matrix led to, the tests that fail with the fix
 taken out, from `scripts/fix-sensitivity.mjs`).
 
