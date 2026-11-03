@@ -152,11 +152,18 @@ describe('extractAdds', () => {
   });
 
   it('extracts from "+N add" form', () => {
-    expect(extractAdds('Take +1 add on the next move.')).toBe(1);
+    expect(extractAdds('Take +1 add on this roll.')).toBe(1);
   });
 
-  it('sums when multiple add clauses are present', () => {
-    expect(extractAdds('add +1 to one roll, add +2 to another')).toBe(3);
+  // Issue #325 W12: the clauses of one ability belong to different rolls —
+  // the first counts, never the sum, and an add "on your next …" is for a
+  // later roll (abilityAddsPerClause.test.js has the vendored texts).
+  it('takes the first add clause, never the sum', () => {
+    expect(extractAdds('add +1 to one roll, add +2 to another')).toBe(1);
+  });
+
+  it('an add on the next move is not this roll\'s', () => {
+    expect(extractAdds('Take +1 add on the next move.')).toBe(0);
   });
 
   it('returns 0 when no add modifier is present (momentum etc are not adds)', () => {
