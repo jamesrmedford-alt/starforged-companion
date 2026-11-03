@@ -54,6 +54,35 @@ export function buildIncitingIncidentUserMessage(spark) {
 }
 
 /**
+ * Find a labelled proposal line (`Suggested vow: …`) in the narrator's reply.
+ * Markdown may wrap the label — "**Suggested vow:** …", "**Suggested vow**:",
+ * "- *Suggested vow:* …", a whole bold line — and emphasis is stripped from
+ * the value. The closing `**` after the colon leaked into it: the vow was
+ * sworn as "** I will find Dani", the clock was "** Dani's captivity", and the
+ * target "** Dani Okoro" no longer matched the established Dani Okoro, so the
+ * swear made a second connection (issue #325 W33).
+ *
+ * @param {string} full
+ * @param {string} label — e.g. "Suggested vow"
+ * @returns {{ line: string, value: string }|null} the whole matched line (to
+ *   cut from the prose) and the value with its Markdown emphasis removed
+ */
+function matchLabelLine(full, label) {
+  const m = full.match(new RegExp(`^[ \\t>*_-]*${label}[*_]*\\s*:[*_]*\\s*(.+?)\\s*$`, "im"));
+  if (!m) return null;
+  return { line: m[0], value: stripEmphasis(m[1]) };
+}
+
+/** Markdown emphasis out of a proposal value: paired `**` / `__` / `*` / `_` and stray edge markers. */
+function stripEmphasis(text) {
+  return String(text ?? "")
+    .replace(/(?<![\p{L}\p{N}])(\*\*|__)(?=\S)(.+?)(?<=\S)\1(?![\p{L}\p{N}])/gu, "$2")
+    .replace(/(?<![\p{L}\p{N}*_])([*_])(?=\S)(.+?)(?<=\S)\1(?![\p{L}\p{N}*_])/gu, "$2")
+    .replace(/^[*_\s]+|[*_\s]+$/g, "")
+    .trim();
+}
+
+/**
  * Split a trailing `Suggested vow: <statement> (<rank>)` line off the narrator
  * prose. Returns `{ prose, vow }` where `vow` is null when no line is present.
  * Pure — used by the card renderer and unit-tested.
@@ -63,11 +92,11 @@ export function buildIncitingIncidentUserMessage(spark) {
  */
 export function splitSuggestedVow(text) {
   const full = String(text ?? "");
-  const m = full.match(/^[ \t>*_-]*Suggested vow:\s*(.+?)\s*$/im);
+  const m = matchLabelLine(full, "Suggested vow");
   if (!m) return { prose: full.trim(), vow: null };
 
-  const vowLine = m[1].trim();
-  const prose   = full.replace(m[0], "").trim();
+  const vowLine = m.value;
+  const prose   = full.replace(m.line, "").trim();
   const rankMatch = vowLine.match(/\(([^)]+)\)\s*$/);
   const rank      = rankMatch ? rankMatch[1].trim().toLowerCase() : null;
   const statement = (rankMatch ? vowLine.replace(rankMatch[0], "") : vowLine).trim();
@@ -90,11 +119,11 @@ const VALID_CLOCK_SEGMENTS = [4, 6, 8, 10, 12];
  */
 export function splitSuggestedClock(text) {
   const full = String(text ?? "");
-  const m = full.match(/^[ \t>*_-]*Suggested clock:\s*(.+?)\s*$/im);
+  const m = matchLabelLine(full, "Suggested clock");
   if (!m) return { prose: full.trim(), clock: null };
 
-  const prose     = full.replace(m[0], "").trim();
-  const line      = m[1].trim();
+  const prose     = full.replace(m.line, "").trim();
+  const line      = m.value;
   const segsMatch = line.match(/\((\d+)\s*segments?\)\s*$/i);
   if (!segsMatch) return { prose, clock: null };
 
@@ -127,11 +156,11 @@ const VALID_TENSION_SEGMENTS = [4, 6, 8, 10];
  */
 export function splitImmediateCrisis(text) {
   const full = String(text ?? "");
-  const m = full.match(/^[ \t>*_-]*Immediate crisis:\s*(.+?)\s*$/im);
+  const m = matchLabelLine(full, "Immediate crisis");
   if (!m) return { prose: full.trim(), crisis: null };
 
-  const prose     = full.replace(m[0], "").trim();
-  const line      = m[1].trim();
+  const prose     = full.replace(m.line, "").trim();
+  const line      = m.value;
   const segsMatch = line.match(/\((\d+)\s*segments?\)\s*$/i);
   if (!segsMatch) return { prose, crisis: null };
 
@@ -167,11 +196,11 @@ export function splitImmediateCrisis(text) {
  */
 export function splitVowTarget(text) {
   const full = String(text ?? "");
-  const m = full.match(/^[ \t>*_-]*Vow target:\s*(.+?)\s*$/im);
+  const m = matchLabelLine(full, "Vow target");
   if (!m) return { prose: full.trim(), target: null };
 
-  const prose = full.replace(m[0], "").trim();
-  const line  = m[1].trim();
+  const prose = full.replace(m.line, "").trim();
+  const line  = m.value;
   const div   = line.match(/\s*(?:—|–|:|\s-\s)\s*/);
 
   const splitPronouns = (rawName) => {
@@ -205,10 +234,10 @@ export function splitVowTarget(text) {
  */
 export function splitSituationSummary(text) {
   const full = String(text ?? "");
-  const m = full.match(/^[ \t>*_-]*Situation:\s*(.+?)\s*$/im);
+  const m = matchLabelLine(full, "Situation");
   if (!m) return { prose: full.trim(), situation: null };
-  const situation = m[1].trim();
-  const prose     = full.replace(m[0], "").trim();
+  const situation = m.value;
+  const prose     = full.replace(m.line, "").trim();
   return { prose, situation: situation || null };
 }
 

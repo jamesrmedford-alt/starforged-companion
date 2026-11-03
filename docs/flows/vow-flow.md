@@ -59,7 +59,11 @@ Terminology up front, because it drives every gap below:
 
 **Inciting shared vow.** `runIncitingIncident` (`src/session/incitingIncident.js`)
 parses the narrator's `Suggested vow / Suggested clock / Immediate crisis /
-Vow target` lines into structured `incitingMeta` flags on the card. The card's
+Vow target` lines into structured `incitingMeta` flags on the card — a label
+in Markdown ("**Suggested vow:** …") is a label, and emphasis is stripped from
+the value (`matchLabelLine`; the closing `**` leaked into the vow, the clock
+and the target's name, which then matched no established NPC — issue #325
+W33). The card's
 **⚔ Swear this vow** button posts a forced `swear_an_iron_vow` ChatMessage
 carrying `incitingSwearMessageId` — the post itself is the relay; the
 canonical GM's pipeline swear branch calls `swearSharedVowForAll`
