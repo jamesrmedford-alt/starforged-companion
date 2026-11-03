@@ -932,8 +932,11 @@ export function registerChatHook() {
       }
 
       if (interpretation.mischiefApplied) {
+        // The aside plays on the gap between what the player SAID and the move
+        // the Trickster chose — the narration, not the model's rationale
+        // (issue #326 W50: the fight-reframe lines never fired).
         interpretation._mischiefAside = buildMischiefAside(
-          interpretation.rationale ?? "",
+          narration ?? "",
           interpretation.moveId,
           interpretation.statUsed,
           dial
