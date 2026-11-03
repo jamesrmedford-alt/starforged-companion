@@ -1417,8 +1417,12 @@ export function registerChatHook() {
       if (resolution.consequences?.fulfillVow && game.user.isGM) {
         try {
           const ranksDown = resolution.consequences.fulfillVow.ranksDown ?? 0;
+          // The vow the roll scored names the journal twin to close — a
+          // fulfilment that names none (the Attempt to Fulfill button) fell to
+          // the sole open journal vow, another vow's twin (issue #326 W44).
+          const scoredVowName = tickInfo?.source === "vow" ? (tickInfo.label ?? null) : null;
           const fin = await finishVow(
-            { moveTarget: interpretation.moveTarget, ranksDown },
+            { moveTarget: scoredVowName ?? interpretation.moveTarget, ranksDown },
             {
               listTracks:    () => listProgressTracks(),
               completeTrack: (id) => completeProgressTrack(id),

@@ -206,7 +206,10 @@ roll resolves gets the "not rolled" card (`postTrackGoneCard`).
 
 **Pipeline path** (typed, victory-card button, suggestion button, or a
 "Which vow?" pick):
-`finishVow` closes the journal twin if one exists; `completeVowItemByName`
+`finishVow` closes the journal twin if one exists — by the name of the vow
+the roll scored (`tickInfo.label`), else the move's target, and by name only:
+a name no journal track carries closes none (issue #326 W44 — the sole-open
+rung completed another vow's twin); `completeVowItemByName`
 closes **every open item copy** across PCs of the roller's vow — the Item
 the roll scored (`tickInfo.trackId`), else the roller's exact-name vow;
 payoff via `payFulfilledVowNative` with `skipLegacy:true`, `actorId` = the
