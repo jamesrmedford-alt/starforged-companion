@@ -89,9 +89,13 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
   if (interpretation?.isProgressMove) return interpretation.statValue ?? 0;
 
   // Play-kit "whichever is higher" rule for Endure Harm / Stress —
-  // override the interpreter's pick with the higher of the two stats.
+  // override the interpreter's pick with the higher of the two stats. It
+  // picks between the move's own two: a substitution the player chose on the
+  // confirm dialog (Vanguard's "you may roll +wits", recorded by the
+  // pipeline as statSubstitutedFrom) stands (issue #326 W49 — the rule
+  // overwrote it with +spirit).
   const moveId = interpretation?.moveId;
-  if (moveId && PICK_HIGHER_OF[moveId]) {
+  if (moveId && PICK_HIGHER_OF[moveId] && !interpretation?.statSubstitutedFrom) {
     const [a, b] = PICK_HIGHER_OF[moveId];
     const va = resolveStatValue(actor, a, campaignState);
     const vb = resolveStatValue(actor, b, campaignState);
