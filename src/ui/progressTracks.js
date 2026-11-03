@@ -16,7 +16,8 @@
 
 import { createClock, retireClock, removeClock, clocksFingerprint } from '../clocks/clocks.js';
 import { requestGmAction } from '../multiplayer/gmRelay.js';
-import { isTrackPosition } from '../moves/combat.js';
+import { isTrackPosition, combatPositionFor } from '../moves/combat.js';
+import { resolveUserActorId } from '../multiplayer/speaker.js';
 
 /**
  * A track's label (or any text) for HTML: a name holding markup — a player can
@@ -687,11 +688,20 @@ export class ProgressTrackApp extends ApplicationV2 {
    * Cycle a combat track's position: neutral → in_control → bad_spot → neutral.
    * Per play kit p. 5, combat moves write this automatically on resolution;
    * the toggle here lets the player correct it manually. The clicker's own
-   * character's sheet and combat-tracker badge follow the track (U19).
+   * character's sheet and combat-tracker badge follow the track (U19). The
+   * clicker's PC is resolved as everywhere else (resolveUserActorId): it was
+   * `User#character`, null for a GM with none assigned (the usual solo
+   * setup), so the toggle cycled the fight's last-set position while the
+   * roller's own — which every reader has preferred since issue #322 V03 —
+   * kept steering the next move (issue #326 W56).
    */
   static #onToggleCombatState(event, target) {
+    let actorId = null;
+    try {
+      actorId = resolveUserActorId(game.user, game.settings.get(MODULE_ID, 'campaignState'));
+    } catch { actorId = game.user?.character?.id ?? null; }
     const work = ProgressTrackApp.#requestEdit(this, {
-      op: 'position', trackId: target.dataset.trackId, actorId: game.user?.character?.id ?? null,
+      op: 'position', trackId: target.dataset.trackId, actorId,
     });
     this._lastAction = work;
     return work;
@@ -1148,9 +1158,14 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
       // the sheet disagreed with it).
       const fight = await readTrackAfterWrites(trackId);
       if (!isOpenPanelTrack(fight) || fight.type !== 'combat') return refusedEdit('no-track', payload);
-      const next = NEXT_POSITION[fight.combatState ?? 'null'] ?? null;
+      // The clicker's PC's own position is the one cycled — the one the
+      // interpreter and Take Decisive Action read (issue #326 W56); with no
+      // PC, the fight's.
+      const actor   = await positionMirrorActor(payload.actorId, ctx);
+      const current = actor ? combatPositionFor(fight, actor.id) : (fight.combatState ?? null);
+      const next    = NEXT_POSITION[current ?? 'null'] ?? null;
       const { applyCombatPositionToTrack } = await import('../moves/combatTracker.js');
-      await applyCombatPositionToTrack(trackId, next, await positionMirrorActor(payload.actorId, ctx));
+      await applyCombatPositionToTrack(trackId, next, actor);
       return { applied: true, trackId };
     }
     case 'complete': {
