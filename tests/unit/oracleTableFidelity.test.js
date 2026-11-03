@@ -54,6 +54,7 @@ const MAP = {
   planetside_peril_bearing: "Planets/Peril/Lifebearing", planetside_peril_less: "Planets/Peril/Lifeless",
   planetside_opportunity_bearing: "Planets/Opportunity/Lifebearing", planetside_opportunity_less: "Planets/Opportunity/Lifeless",
   settlement_location: "Settlements/Location", settlement_population: "Settlements/Population/Terminus",
+  settlement_population_outlands: "Settlements/Population/Outlands", settlement_population_expanse: "Settlements/Population/Expanse",
   settlement_first_look: "Settlements/First_Look", settlement_contact: "Settlements/Initial_Contact",
   settlement_authority: "Settlements/Authority", settlement_projects: "Settlements/Projects",
   settlement_trouble: "Settlements/Trouble", settlement_name: "Settlements/Name",

@@ -73,7 +73,12 @@ export const ORACLE_TABLES = {
 
   // Settlements
   settlement_location:    { name: "Settlement Location",     table: SETTLEMENTS.LOCATION,      category: "settlements" },
-  settlement_population:  { name: "Settlement Population",   table: SETTLEMENTS.POPULATION_TERMINUS, category: "settlements" },
+  // One id per region, as the starship missions (issue #326 W72 — one id was
+  // registered for the three, so !oracle always rolled the Terminus table).
+  // `settlement_population` stays the Terminus table's id.
+  settlement_population:          { name: "Settlement Population (Terminus)", table: SETTLEMENTS.POPULATION_TERMINUS, category: "settlements" },
+  settlement_population_outlands: { name: "Settlement Population (Outlands)", table: SETTLEMENTS.POPULATION_OUTLANDS, category: "settlements" },
+  settlement_population_expanse:  { name: "Settlement Population (Expanse)",  table: SETTLEMENTS.POPULATION_EXPANSE,  category: "settlements" },
   settlement_first_look:  { name: "Settlement First Look",   table: SETTLEMENTS.FIRST_LOOK,    category: "settlements" },
   settlement_contact:     { name: "Settlement Initial Contact", table: SETTLEMENTS.INITIAL_CONTACT, category: "settlements" },
   settlement_authority:   { name: "Settlement Authority",    table: SETTLEMENTS.AUTHORITY,     category: "settlements" },
