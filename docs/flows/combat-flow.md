@@ -96,7 +96,10 @@ doc opens with position/range badges.
 one-click **Face Danger / Compel / Secure an Advantage** buttons
 (`WAY_OUT_MOVES` / `buildWayOutHtml`), each posting the forced move so
 choosing an exit rolls it (2026-07 soft-spot cleanup — it used to be
-advisory text only).
+advisory text only). A pick relays `wayOut.pick` to the canonical GM
+(`cardActions.applyWayOutPick`), which claims the card once (`wayOutTaken`)
+and posts the move as the clicker's PC — disabled only in the clicker's DOM,
+a re-render rolled the off-ramp again (issue #325 W11).
 
 Combat tracks carry **no promised reward** of their own — `proposeRewards` runs
 only for vows; a fight's payoff rides the *linked vow's* promised reward (see
@@ -215,7 +218,14 @@ pick). A TDA **miss** does not end the fight — it routes Pay the Price.
 **Battle** (the "⚔ Battle instead" button) is the one-roll alternative: an
 action move that ends the fight on every outcome. The button forwards its
 card's `trackId` / `trackLabel`, so Battle ends that fight while another is
-open — without them, two open fights left it ending neither.
+open — without them, two open fights left it ending neither. The press relays
+`combatTrack.battle` (`cardActions.applyCombatTrackBattle`): the canonical GM
+claims the card once (`battleClaimed`; `"fight-over"` when its fight already
+ended, posting nothing) and posts the Battle as the clicker's PC; and the
+pipeline does not roll a Battle naming a finished fight by id — the "not
+rolled" card, as Take Decisive Action. The button was disabled only in the
+clicker's DOM, so a re-render or another client rolled Battle again on a
+finished fight, its +2 momentum or a second Pay the Price (issue #325 W11).
 
 **Face Defeat** closes the track as a loss (no payoff) and routes Pay the Price.
 

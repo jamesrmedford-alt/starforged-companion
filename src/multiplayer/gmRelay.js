@@ -85,12 +85,12 @@
  * Older ad-hoc relays still share the same socket channel with their own
  * `kind`s and listeners (not gmRelay-prefixed, so this listener ignores them):
  *   - "combat.enterFray"                          — src/index.js
- *   - "vow.setReward", "vow.linkConnection"       — src/session/swearVow.js
  *   - "errorLog.append"                           — src/logging/errorLog.js
  *   - "audio.cache.write", "audio.synth.*"        — src/audio/index.js
- * The world-writing ones (the first three) predate this module, have no
- * requester context, no serialisation and no no-GM warning; fold them into
- * GM_ACTIONS when next touched ("expedition.recommit" was, issue #321 U20).
+ * The world-writing one (the first) predates this module, has no requester
+ * context, no serialisation and no no-GM warning; fold it into GM_ACTIONS
+ * when next touched ("expedition.recommit" was, issue #321 U20; "vow.setReward"
+ * and "vow.linkConnection" became "vow.reward" and "vow.link", issue #325 W11).
  *
  * Handler signature: `async (payload, ctx) => void`, where
  *   ctx = { requesterId, requester, requesterIsGM, local }
@@ -164,6 +164,11 @@ export const GM_ACTIONS = Object.freeze({
   "milestone.pick":            { load: () => import("../moves/milestonePicker.js"),                  fn: "applyMilestonePick" },
   "connection.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionPick" },
   "waypoint.oracle":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWaypointOraclePick" },
+  "combatTrack.battle":        { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatTrackBattle" },
+  "wayOut.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyWayOutPick" },
+  "connection.suggest":        { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionSuggestion" },
+  "vow.reward":                { load: () => import("../session/swearVow.js"),                       fn: "applyRewardPickFromRelay" },
+  "vow.link":                  { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowLinkFromRelay" },
   "fightVow.markMilestone":    { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowMarkMilestone" },
   "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond" },
   "suffer.pick":               { load: () => import("../moves/sufferCard.js"),                       fn: "applySufferPickFromRelay" },

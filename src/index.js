@@ -195,7 +195,7 @@ import {
   applyClarificationSelection,
 } from "./world/clarificationDialog.js";
 import { registerDraftCardHooks } from "./entities/entityExtractor.js";
-import { registerSwearVowHandler, registerSharedVowSocket, registerSharedVowSyncHook, registerRewardChoiceHook, swearSharedVowForAll, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook } from "./session/swearVow.js";
+import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, swearSharedVowForAll, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
@@ -1126,6 +1126,18 @@ export function registerChatHook() {
         await postTrackGoneCard(interpretation).catch(err =>
           console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
         return;
+      }
+      // Battle is an action roll, so the guard above (progress moves) let a
+      // Battle naming a finished fight by id roll in full — its +2 momentum
+      // or a Pay the Price for a fight that was over (issue #325 W11).
+      if (interpretation.moveId === "battle" && interpretation.moveTargetId) {
+        const fights = await listProgressTracks().catch(() => []);
+        const fight  = fights.find(t => t.id === interpretation.moveTargetId);
+        if (!fight || fight.completed) {
+          await postTrackGoneCard(interpretation).catch(err =>
+            console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
+          return;
+        }
       }
 
       // Take Decisive Action — the resolver applies the bad-spot downgrade
@@ -4154,7 +4166,15 @@ function registerWayOutHook() {
   registerWayOutHook._installed = true;
   onChatMessageRender((message, root) => {
     if (!message?.flags?.[MODULE_ID]?.wayOutCard) return;
-    for (const btn of root.querySelectorAll('[data-action="sf-way-out-move"]')) {
+    const buttons = () => root.querySelectorAll('[data-action="sf-way-out-move"]');
+    // One off-ramp per card, claimed on the canonical GM (`wayOutTaken`,
+    // cardActions.applyWayOutPick): disabled only in the clicker's DOM, a
+    // re-render rolled the off-ramp again (issue #325 W11).
+    if (liveCardFlags(message)?.wayOutTaken) {
+      buttons().forEach(b => { b.disabled = true; });
+      return;
+    }
+    for (const btn of buttons()) {
       const fresh = btn.cloneNode(true);
       btn.replaceWith(fresh);
       fresh.addEventListener("click", async (event) => {
@@ -4164,16 +4184,13 @@ function registerWayOutHook() {
           console.warn(`${MODULE_ID} | way-out: unknown move id "${fresh.dataset.moveId}"`);
           return;
         }
-        root.querySelectorAll('[data-action="sf-way-out-move"]').forEach(b => { b.disabled = true; });
-        try {
-          await ChatMessage.create({
-            content: move.narration,
-            flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId } },
-          });
-        } catch (err) {
-          console.error(`${MODULE_ID} | way-out move post failed:`, err?.message ?? err);
-          root.querySelectorAll('[data-action="sf-way-out-move"]').forEach(b => { b.disabled = false; });
-        }
+        buttons().forEach(b => { b.disabled = true; });
+        await relayCardAction({
+          kind:       "wayOut.pick",
+          payload:    { messageId: message?.id ?? null, moveId: move.moveId, actorId: clickerActorId() },
+          isResolved: () => !!liveCardFlags(message)?.wayOutTaken,
+          restore:    () => buttons().forEach(b => { b.disabled = false; }),
+        });
       });
     }
   });
@@ -5337,12 +5354,20 @@ async function postMilestonePickerCard(vows, actorId) {
  * Post a picker card listing active connections so the player can choose which
  * one to develop or attempt to bond with. action is "develop" | "forge".
  * Forge shows only unbonded connections; develop shows all active ones.
+ * `connections` null reads the active connection records (the GM-side
+ * "connection.suggest" handler, issue #325 W11). Returns the posted card, or
+ * null when there was nothing to offer or the post failed.
+ *
+ * @param {Array<Object>|null} connections — records with `__hostId`
+ * @param {"develop"|"forge"} action
+ * @returns {Promise<ChatMessage|null>}
  */
-async function postConnectionPickerCard(connections, action) {
+export async function postConnectionPickerCard(connections, action) {
+  if (!Array.isArray(connections)) connections = await activeConnectionRecords();
   const eligible = action === "forge"
     ? connections.filter(c => !c.bonded)
     : connections;
-  if (!eligible.length) return;
+  if (!eligible.length) return null;
   const label = action === "develop" ? "🤝 Develop Relationship" : "🔗 Forge a Bond";
   const rows = eligible.map(c =>
     `<button type="button" class="sf-followup-btn" data-action="sf-connection-pick" ` +
@@ -5352,7 +5377,7 @@ async function postConnectionPickerCard(connections, action) {
     `${escapeChatHtml(c.name || "connection")} <em>(${escapeChatHtml(c.rank ?? "")})</em></button>`,
   ).join("");
   try {
-    await ChatMessage.create({
+    return await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>${label}</strong>` +
         `<p>Which connection?</p><div class="sf-milestone-picker">${rows}</div></div>`,
       // choices: what the GM-side "connection.pick" handler validates a
@@ -5364,7 +5389,17 @@ async function postConnectionPickerCard(connections, action) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postConnectionPickerCard: chat post failed:`, err?.message ?? err);
+    return null;
   }
+}
+
+/** The active connection records, each with its host Actor id as `__hostId`. */
+async function activeConnectionRecords() {
+  const { getConnection: gc } = await import("./entities/connection.js");
+  const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  return (state.connectionIds ?? [])
+    .map(hostId => { const c = gc(hostId); return c ? { ...c, __hostId: hostId } : null; })
+    .filter(c => c && c.active !== false);
 }
 
 async function postCombatFinishCard({ track }) {
@@ -6753,9 +6788,9 @@ Hooks.once("ready", () => {
     // never the chat log rendered at load (issue #322 V15).
     markAudioClientReady();
   }).catch(err => console.warn(`${MODULE_ID} | audio socket registration failed:`, err));
-  // Shared inciting-vow — GM-side relay (any player can swear it for the crew)
-  // and the cross-PC progress sync. Both no-op on non-canonical clients.
-  registerSharedVowSocket();
+  // Shared inciting-vow — the cross-PC progress sync (no-op on non-canonical
+  // clients). Its reward and link picks relay through GM_ACTIONS (issue #325
+  // W11: "vow.reward", "vow.link").
   registerSharedVowSyncHook();
   // Reward-choice card (#241 Phase 2) — pick a proposed reward or write your own.
   registerRewardChoiceHook();
@@ -6878,34 +6913,29 @@ export function wireCombatTrackCardButtons(message, root) {
   // battle move (same forced-move bridge as the NWMA "Roll <move>" button).
   // battle's resolver sets endCombat, so the track created by Enter the Fray
   // is closed when the move resolves.
+  // Relayed to the canonical GM, which claims the card once (`battleClaimed`)
+  // and posts the forced Battle — the card's own track by id and name — as
+  // the clicker's PC (cardActions.applyCombatTrackBattle). It was posted
+  // from the clicker's client and disabled only there: a re-render, or
+  // another client, rolled Battle again on a finished fight (issue #325 W11).
   const battleBtn = root?.querySelector?.('[data-action="sf-battle"]');
   if (battleBtn) {
+    if (liveCardFlags(message)?.battleClaimed) {
+      battleBtn.disabled = true;
+      return;
+    }
     const freshBattle = battleBtn.cloneNode(true);
     battleBtn.replaceWith(freshBattle);
     freshBattle.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
       freshBattle.disabled = true;
-      try {
-        // The card's own track rides the move by id (and name), so Battle
-        // ends this fight even while another is open — without it, two open
-        // fights left Battle ending neither. Older cards carry no id.
-        const trackId    = message.flags[MODULE_ID].trackId ?? null;
-        const trackLabel = message.flags[MODULE_ID].trackLabel ?? null;
-        await ChatMessage.create({
-          content: trackLabel
-            ? `Battle — resolve the fight against ${trackLabel} in a single, decisive clash.`
-            : "Battle — resolve the fight in a single, decisive clash.",
-          flags:   { [MODULE_ID]: {
-            bypassPacing: true, forcedMoveId: "battle",
-            ...(trackId ? { forcedMoveTargetId: trackId } : {}),
-            ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
-          } },
-        });
-      } catch (err) {
-        console.error(`${MODULE_ID} | Battle button failed:`, err);
-        freshBattle.disabled = false;
-      }
+      await relayCardAction({
+        kind:       "combatTrack.battle",
+        payload:    { messageId: message?.id ?? null, actorId: clickerActorId() },
+        isResolved: () => !!liveCardFlags(message)?.battleClaimed,
+        restore:    () => { freshBattle.disabled = false; },
+      });
     });
   }
 }
@@ -7306,10 +7336,17 @@ onChatMessageRender((message, root) => wireFinishExpeditionButton(message, root)
 export function wireConnectionSuggestionButtons(message, root) {
   const f = message?.flags?.[MODULE_ID];
   if (!f?.connectionSuggestion?.eligible) return;
-  for (const [dataAction, pickAction] of [
-    ["sf-develop-relationship", "develop"],
-    ["sf-forge-bond", "forge"],
-  ]) {
+  const pairs = [["sf-develop-relationship", "develop"], ["sf-forge-bond", "forge"]];
+  const allButtons = () => pairs.map(([a]) => root?.querySelector?.(`[data-action="${a}"]`)).filter(Boolean);
+  // One picker per card, claimed on the canonical GM
+  // (`connectionSuggestionTaken`, cardActions.applyConnectionSuggestion): each
+  // press posted a fresh picker from the clicker's client, so two presses
+  // developed the relationship twice (issue #325 W11).
+  if (liveCardFlags(message)?.connectionSuggestionTaken) {
+    allButtons().forEach(b => { b.disabled = true; });
+    return;
+  }
+  for (const [dataAction, pickAction] of pairs) {
     const btn = root?.querySelector?.(`[data-action="${dataAction}"]`);
     if (!btn) continue;
     const fresh = btn.cloneNode(true);
@@ -7317,18 +7354,13 @@ export function wireConnectionSuggestionButtons(message, root) {
     fresh.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      fresh.disabled = true;
-      try {
-        const { getConnection: gc } = await import("./entities/connection.js");
-        const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        const connections = (state.connectionIds ?? [])
-          .map(hostId => { const c = gc(hostId); return c ? { ...c, __hostId: hostId } : null; })
-          .filter(c => c && c.active !== false);
-        await postConnectionPickerCard(connections, pickAction);
-      } catch (err) {
-        console.error(`${MODULE_ID} | Connection suggestion button failed:`, err);
-        fresh.disabled = false;
-      }
+      allButtons().forEach(b => { b.disabled = true; });
+      await relayCardAction({
+        kind:       "connection.suggest",
+        payload:    { messageId: message?.id ?? null, pickAction },
+        isResolved: () => !!liveCardFlags(message)?.connectionSuggestionTaken,
+        restore:    () => allButtons().forEach(b => { b.disabled = false; }),
+      });
     });
   }
 }

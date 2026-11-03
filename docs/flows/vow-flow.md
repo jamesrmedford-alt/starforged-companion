@@ -14,11 +14,12 @@ since issue #321, `fulfilVow.pick` and `milestone.suggestion`, which claim
 their card and post the forced move once for the pipeline — flagged
 `deferWhileBusy`, so one that meets the move lock is held on the canonical
 GM and rolled when the lock frees, never dropped with its card claimed:
-issue #325 W02), or
-one of the two older ad-hoc socket relays from the swear cards
-(`vow.setReward`, `vow.linkConnection` in `src/session/swearVow.js`, not yet
-folded into `GM_ACTIONS`). Only the vendor sheet writes a vow from the
-owner's own client.
+issue #325 W02), and since issue #325 W11 the swear cards' reward pick
+and link (`vow.reward`, `vow.link` — `src/session/swearVow.js`
+`applyRewardPickFromRelay` / `applyPlayerVowLinkFromRelay`, each claiming its
+card once; they were the ad-hoc `vow.setReward` / `vow.linkConnection`
+socket relays). Only the vendor sheet writes a vow from the owner's own
+client.
 Effects credit the **roller**: the pipeline's `rollerActor` is the speaker
 resolved from the message, first PC only as a fallback (decisions.md →
 "Multiplayer attribution").
@@ -69,15 +70,20 @@ swear (`swearSharedVowForAll(message, { speakerActorId })` →
 `narrateAndPostVowSwearing`; issue #321 U23), and proposes two concrete
 **rewards** (`proposeRewards`) + a write-your-own on the reward-choice card.
 Chosen rewards land as `flags.reward = {status:"promised", description, form}`
-on every copy (`setSharedVowReward`, socket `vow.setReward` for players).
+on every copy (`setSharedVowReward`), on the canonical GM (`vow.reward`): the
+card is claimed once (`rewardChosen`), and a vow whose reward was already
+granted or lost is never promised again — an old card's pick re-promised a
+granted reward, so the next linked win or the fulfilment granted a second
+(issue #325 W11).
 
 **Player-authored vows.** `registerPlayerVowHook` (createItem hook, GM-side)
 catches sheet-made vows (no `vowId` yet), stamps `vowId = item.id`, and posts
 the "🆕 New vow recorded" card: stakes line, **⚔ Swear it (roll)** (forced
 `swear_an_iron_vow` without the inciting id — narrates + momentum, creates
 nothing twice), a **connection picker** when connections exist
-(`setVowLinkedConnection`, socket `vow.linkConnection`), and the same reward
-offer.
+(`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
+connection exists and claims the card once, `linkedConnection`), and the
+same reward offer.
 
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;

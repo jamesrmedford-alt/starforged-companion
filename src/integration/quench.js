@@ -8859,16 +8859,28 @@ function registerCombatCardButtonTests(quench) {
       });
 
       describe("Battle button (Enter the Fray combat track card)", function () {
-        it("clicking 'Battle instead' posts a forced battle message", async function () {
+        // The press relays to the canonical GM, which claims the card it finds
+        // in game.messages (`battleClaimed`) and posts the Battle once (issue
+        // #325 W11) — so the card is a real message here.
+        async function postBattleCard(flags) {
+          const card = await ChatMessage.create({
+            content: `<div class="sf-ptp-card"><p><button type="button" data-action="sf-battle">⚔ Battle instead</button></p></div>`,
+            flags: { [MODULE]: { combatTrackCard: true, created: true, ...flags } },
+          });
+          track(card?.id);
+          return game.messages.get(card.id) ?? card;
+        }
+
+        it("clicking 'Battle instead' posts a forced battle message, once per card", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireCombatTrackCardButtons } = await import(`${MODULE_PATH}/index.js`);
+          const msg = await postBattleCard({});
 
           const root = document.createElement("div");
           root.innerHTML = `<div class="sf-ptp-card"><p>`
             + `<button type="button" data-action="openProgressTracks">Open</button>`
             + `<button type="button" data-action="sf-battle">⚔ Battle instead</button></p></div>`;
-          const msg = { id: "quench-battle-btn", flags: { [MODULE]: { combatTrackCard: true, created: true } } };
-
           wireCombatTrackCardButtons(msg, root);
           const btn = root.querySelector('[data-action="sf-battle"]');
           assert.isOk(btn, "the wired Battle button should still be present");
@@ -8880,18 +8892,19 @@ function registerCombatCardButtonTests(quench) {
           if (synthetic) track(synthetic.id);
           assert.isOk(synthetic,
             "expected a synthetic message with flags[MODULE].forcedMoveId === 'battle'");
+          assert.isOk(game.messages.get(msg.id)?.flags?.[MODULE]?.battleClaimed, "the card is claimed");
         });
 
         it("a card that names its track forwards it with the Battle (TDA-BUTTON-NO-TARGET)", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireCombatTrackCardButtons } = await import(`${MODULE_PATH}/index.js`);
+          const { addProgressTrack, completeProgressTrack } = await import(`${MODULE_PATH}/ui/progressTracks.js`);
+          const fight = await addProgressTrack({ label: `Quench Turret ${Date.now()}`, type: "combat", rank: "dangerous" });
+          const msg = await postBattleCard({ trackId: fight.id, trackLabel: fight.label });
 
           const root = document.createElement("div");
           root.innerHTML = `<p><button type="button" data-action="sf-battle">⚔ Battle instead</button></p>`;
-          const msg = { id: "quench-battle-named", flags: { [MODULE]: {
-            combatTrackCard: true, created: true, trackId: "quench-fight-turret", trackLabel: "Turret",
-          } } };
-
           wireCombatTrackCardButtons(msg, root);
           const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
           root.querySelector('[data-action="sf-battle"]')
@@ -8899,10 +8912,11 @@ function registerCombatCardButtonTests(quench) {
 
           const synthetic = await awaitForcedMove(beforeIds, "battle");
           if (synthetic) track(synthetic.id);
+          await completeProgressTrack(fight.id).catch(() => {});
           assert.isOk(synthetic, "expected a forced battle message");
-          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, "quench-fight-turret",
+          assert.equal(synthetic.flags[MODULE].forcedMoveTargetId, fight.id,
             "the card's track rides the Battle by id");
-          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, "Turret");
+          assert.equal(synthetic.flags[MODULE].forcedMoveTarget, fight.label);
         });
       });
 

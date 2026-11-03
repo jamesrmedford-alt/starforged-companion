@@ -570,6 +570,241 @@ export async function applyRecommitOffer(payload = {}, _ctx = {}) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// COMBAT-TRACK CARD "⚔ Battle instead" — gmRelay "combatTrack.battle"
+// WAY-OUT CARD off-ramps — gmRelay "wayOut.pick"
+// MOVE CARD "🤝 Develop Relationship" / "🔗 Forge a Bond" — gmRelay
+//   "connection.suggest"
+// (issue #325 W11 — each posted from the clicker's client and disabled only in
+// its DOM: a re-render, or any other client, showed the button armed)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The clicker's PC a relayed press acts as: `payload.actorId`, which must be a
+ * player character the requester owns; none relayed, a GM's press speaks as
+ * nobody (the pipeline resolves the GM's own PC) and a player's is refused —
+ * a player with no PC of their own is never handed another's.
+ *
+ * @returns {{ actor: Actor|null, refused?: string }}
+ */
+function relayedClickerPc(payload, ctx, label) {
+  const actorId = typeof payload?.actorId === "string" && payload.actorId ? payload.actorId : null;
+  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | ${label}: ${actorId} is not a player character — refused.`);
+    return { actor: null, refused: "not-a-pc" };
+  }
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not act as ${actor?.name ?? "no PC of their own"} — refused.`);
+    return { actor: null, refused: "not-owner" };
+  }
+  return { actor };
+}
+
+/**
+ * gmRelay handler for "combatTrack.battle" — runs on the canonical GM (issue
+ * #325 W11). The Enter the Fray combat-track card offers "⚔ Battle instead":
+ * one roll resolves the whole fight. Its button posted the forced Battle from
+ * the clicker's client and stamped nothing, so a second press — another
+ * client's, or one after a re-render — rolled Battle again against a finished
+ * fight: its +2 momentum, or a second Pay the Price, for a fight that was over.
+ *
+ * One Battle per card, claimed on the GM-authored card (`battleClaimed`)
+ * before the post, behind the in-flight guard; a post that fails releases the
+ * claim. A fight already over closes the button instead (`battleClaimed:
+ * "fight-over"`) and posts nothing. The move speaks as the clicker's PC.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyCombatTrackBattle(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | battle: card ${messageId ?? "?"} not found — nothing rolled.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.combatTrackCard || !f.created) {
+    console.warn(`${MODULE_ID} | battle: message ${messageId} offers no Battle — ignored.`);
+    return { posted: false, reason: "not-a-battle-card" };
+  }
+  const key = `${messageId}:battle`;
+  if (f.battleClaimed || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | battle: card ${messageId} already taken — ignoring the press.`);
+    return { posted: false, reason: "already-claimed" };
+  }
+  const { actor, refused } = relayedClickerPc(payload, ctx, "battle");
+  if (refused) return { posted: false, reason: refused };
+
+  _inFlight.add(key);
+  try {
+    const trackId = typeof f.trackId === "string" && f.trackId ? f.trackId : null;
+    if (trackId) {
+      const { listProgressTracks } = await import("../ui/progressTracks.js");
+      const fight = (await listProgressTracks().catch(() => [])).find(t => t.id === trackId);
+      if (!fight || fight.completed) {
+        await message.update({ [`flags.${MODULE_ID}.battleClaimed`]: "fight-over" })
+          .catch(err => console.warn(`${MODULE_ID} | battle: closing the button failed:`, err?.message ?? err));
+        return { posted: false, reason: "fight-over" };
+      }
+    }
+    try {
+      await message.update({ [`flags.${MODULE_ID}.battleClaimed`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | battle: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    const trackLabel = typeof f.trackLabel === "string" && f.trackLabel ? f.trackLabel : null;
+    try {
+      await ChatMessage.create({
+        content: trackLabel
+          ? `Battle — resolve the fight against ${trackLabel} in a single, decisive clash.`
+          : "Battle — resolve the fight in a single, decisive clash.",
+        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        flags:   { [MODULE_ID]: {
+          bypassPacing: true, forcedMoveId: "battle", deferWhileBusy: true,
+          ...(trackId ? { forcedMoveTargetId: trackId } : {}),
+          ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+        } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | battle: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.battleClaimed`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | battle: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "post-failed" };
+    }
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+/**
+ * gmRelay handler for "wayOut.pick" — runs on the canonical GM (issue #325
+ * W11). The way-out card offers an off-ramp from a fight (Face Danger, Compel,
+ * Secure an Advantage); a pick posted the forced move from the clicker's
+ * client, disabled only there, so a re-render rolled it again. One off-ramp
+ * per card: the card is claimed (`wayOutTaken`: the move) before the post; a
+ * post that fails releases it. The move is one the card offers
+ * (combatThreshold.js WAY_OUT_MOVES) and speaks as the clicker's PC.
+ *
+ * @param {{ messageId?: string, moveId?: string, actorId?: string|null }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyWayOutPick(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | way out: card ${messageId ?? "?"} not found — nothing rolled.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.wayOutCard) {
+    console.warn(`${MODULE_ID} | way out: message ${messageId} is not a way-out card — ignored.`);
+    return { posted: false, reason: "not-a-way-out-card" };
+  }
+  const key = `${messageId}:wayOut`;
+  if (f.wayOutTaken || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | way out: card ${messageId} already taken (${f.wayOutTaken ?? "in flight"}) — ignoring the press.`);
+    return { posted: false, reason: "already-claimed" };
+  }
+  const { WAY_OUT_MOVES } = await import("./combatThreshold.js");
+  const move = WAY_OUT_MOVES.find(m => m.moveId === payload.moveId);
+  if (!move) {
+    console.warn(`${MODULE_ID} | way out: "${payload.moveId ?? "?"}" is not an off-ramp the card offers — refused.`);
+    return { posted: false, reason: "not-on-card" };
+  }
+  const { actor, refused } = relayedClickerPc(payload, ctx, "way out");
+  if (refused) return { posted: false, reason: refused };
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.wayOutTaken`]: move.moveId });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | way out: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    try {
+      await ChatMessage.create({
+        content: move.narration,
+        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | way out: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.wayOutTaken`]: null })
+        .catch(e => console.warn(`${MODULE_ID} | way out: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "post-failed" };
+    }
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+/**
+ * gmRelay handler for "connection.suggest" — runs on the canonical GM (issue
+ * #325 W11). A connection-category hit's move card offers "🤝 Develop
+ * Relationship" / "🔗 Forge a Bond"; each press posted a fresh connection
+ * picker from the clicker's client, so two presses — the player's and the
+ * GM's, or one after a re-render — gave two pickers and developed the
+ * relationship twice. One picker per card: the move card is claimed
+ * (`connectionSuggestionTaken`: "develop" | "forge") before the picker is
+ * posted (index.js postConnectionPickerCard — whose pick is claimed once,
+ * applyConnectionPick); a picker that could not be posted releases it.
+ *
+ * @param {{ messageId?: string, pickAction?: string }} payload
+ * @param {Object} [_ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyConnectionSuggestion(payload = {}, _ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | connection suggestion: card ${messageId ?? "?"} not found — no picker posted.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.connectionSuggestion?.eligible) {
+    console.warn(`${MODULE_ID} | connection suggestion: message ${messageId} offers no connection move — ignored.`);
+    return { posted: false, reason: "not-a-suggestion" };
+  }
+  const pickAction = payload.pickAction === "develop" || payload.pickAction === "forge" ? payload.pickAction : null;
+  if (!pickAction) return { posted: false, reason: "not-on-card" };
+  const key = `${messageId}:connectionSuggestion`;
+  if (f.connectionSuggestionTaken || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | connection suggestion: card ${messageId} already taken — ignoring the press.`);
+    return { posted: false, reason: "already-claimed" };
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.connectionSuggestionTaken`]: pickAction });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | connection suggestion: card ${messageId} could not be claimed — no picker posted:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    const { postConnectionPickerCard } = await import("../index.js");
+    const posted = await postConnectionPickerCard(null, pickAction).catch(err => {
+      console.warn(`${MODULE_ID} | connection suggestion: picker failed:`, err?.message ?? err);
+      return null;
+    });
+    if (!posted) {
+      await message.update({ [`flags.${MODULE_ID}.connectionSuggestionTaken`]: null })
+        .catch(e => console.warn(`${MODULE_ID} | connection suggestion: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "no-picker" };
+    }
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // WON-FIGHT CARD — gmRelay "fightVow.markMilestone" / "fightVow.deepenBond"
 // ─────────────────────────────────────────────────────────────────────────────
 

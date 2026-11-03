@@ -129,9 +129,13 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   connection's own `relationshipTicks` (not bonds legacy), scaled by the
   source's rank.
 - **Suggestion buttons** on connection-category move cards
-  (`wireConnectionSuggestionButtons`) post a **connection picker** card
-  (`postConnectionPickerCard` — `flags.choices` lists the offered
-  connections; forge offers only un-bonded ones). Any user's pick relays
+  (`wireConnectionSuggestionButtons`) relay `connection.suggest` to the
+  canonical GM (`cardActions.applyConnectionSuggestion`), which claims the
+  move card once (`connectionSuggestionTaken`) and posts a **connection
+  picker** card (`postConnectionPickerCard` — `flags.choices` lists the
+  offered connections; forge offers only un-bonded ones). Each press used to
+  post a fresh picker from the clicker's client, so two presses developed the
+  relationship twice (issue #325 W11). Any user's pick relays
   `connection.pick` to the canonical GM (`wireConnectionPickerButtons` →
   `relayCardAction` → `applyConnectionPick`, `src/moves/cardActions.js`),
   which checks the pick is one of the card's choices (its buttons' data
