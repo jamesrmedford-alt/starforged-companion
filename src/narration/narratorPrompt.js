@@ -1005,6 +1005,14 @@ const NARRATOR_MODES = new Set([
 // audio-markup instruction.
 const META_MODES = new Set(['campaign_recap']);
 
+// The modes whose length is the Length (sentences) setting — move narration
+// and paced narration, whose user messages repeat it. Every other mode states
+// its own (the @scene answer the Scene Response Length setting, the recap
+// 3–5 paragraphs, the vignettes, vow, clock, oracle and inciting beats their
+// sentence counts), so the STYLE block's Length line is theirs alone: it was
+// sent to every mode, beside the mode's own length (issue #326 W40).
+const NARRATION_LENGTH_MODES = new Set(['move_resolution', 'paced_narrative']);
+
 const ROLE_DESCRIPTIONS = {
   move_resolution:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
@@ -1445,8 +1453,10 @@ export function buildNarratorSystemPrompt(
   const styleLines = [
     `Perspective: ${perspectiveDesc}`,
     `Tone: ${toneDesc}`,
-    `Length: ${narrationLength} sentence${narrationLength !== 1 ? 's' : ''}`,
   ];
+  if (NARRATION_LENGTH_MODES.has(resolvedMode)) {
+    styleLines.push(`Length: ${narrationLength} sentence${narrationLength !== 1 ? 's' : ''}`);
+  }
   if (narrationInstructions?.trim()) {
     styleLines.push(`Custom instructions: ${narrationInstructions.trim()}`);
   }

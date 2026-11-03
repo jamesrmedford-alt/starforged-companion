@@ -1359,6 +1359,7 @@ export class SettingsPanelApp extends ApplicationV2 {
           <label class="narrator-field-label">Length (sentences)</label>
           <input class="settings-input narrator-number-input" name="narrationLength"
                  type="number" min="1" max="6" value="${ctx.narrationLength}" ${dis}>
+          <span class="narrator-field-hint">Move and paced narration. <code>@scene</code> answers use Scene Response Length; recaps, vignettes and other beats set their own length.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Context cards (memory horizon)</label>
