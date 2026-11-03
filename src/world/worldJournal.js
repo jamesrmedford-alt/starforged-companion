@@ -868,6 +868,23 @@ const COMMAND_PATTERN = /^!journal\s+(\w+)\s+("[^"]+"|\S+)\s+(\S+)(?:\s+[—-]\s
 
 const VALID_TYPES = new Set(["faction", "location", "lore", "threat"]);
 
+/** The World Journal's faction attitude vocabulary (entities/faction.js maps it onto a stance). */
+export const FACTION_ATTITUDES = ["hostile", "neutral", "allied", "unknown"];
+
+/**
+ * Each type's qualifier vocabulary — a `!journal` qualifier outside it is
+ * refused with the usage line, as an unknown type is: `threat … resolve`
+ * stored severity "resolve" (not "resolved"), so the threat stayed active;
+ * `faction … ally` stored an attitude no faction record maps, so the two
+ * stores disagreed; `lore … confirm` filed the GM's ruling as a rumour
+ * (issue #326 W62). A location's type is free text.
+ */
+export const JOURNAL_QUALIFIERS = {
+  faction: FACTION_ATTITUDES,
+  lore:    ["confirmed", "rumour", "rumor"],
+  threat:  THREAT_SEVERITIES,
+};
+
 /**
  * Parse a !journal chat command into a structured action.
  *
@@ -877,7 +894,8 @@ const VALID_TYPES = new Set(["faction", "location", "lore", "threat"]);
  *   !journal lore "Title" confirmed|rumour — text
  *   !journal threat "Name" severity — summary
  *
- * Returns null for unknown types or unparseable commands. The em-dash
+ * Returns null for unknown types, a qualifier outside the type's vocabulary
+ * (JOURNAL_QUALIFIERS — issue #326 W62), or unparseable commands. The em-dash
  * separator may be a literal "—", "--", or "-".
  *
  * @param {string} text
@@ -900,6 +918,7 @@ export function parseJournalCommand(text) {
 
   const qualifier = match[3].toLowerCase();
   const text2     = match[4]?.trim() ?? "";
+  if (JOURNAL_QUALIFIERS[type] && !JOURNAL_QUALIFIERS[type].includes(qualifier)) return null;
 
   return { type, name, qualifier, text: text2, raw: trimmed };
 }

@@ -3383,9 +3383,12 @@ async function handleJournalCommand(message) {
 
   const parsed = parseJournalCommand(message.content?.trim() ?? "");
   if (!parsed) {
+    // The qualifiers each type takes are named — a qualifier outside them is
+    // refused too (issue #326 W62).
     ui.notifications.warn(
       'Invalid !journal command. Format: !journal <type> "Name" qualifier — text  ' +
-      '(types: faction, location, lore, threat).'
+      '(types: faction hostile|neutral|allied|unknown, location <type>, ' +
+      'lore confirmed|rumour, threat immediate|active|looming|resolved).'
     );
     return;
   }
