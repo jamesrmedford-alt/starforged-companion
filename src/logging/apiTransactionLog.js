@@ -119,10 +119,16 @@ export function logApiTransaction(entry) {
     durationMs:       entry.durationMs,
   });
 
-  if (!globalThis.game?.ready || !globalThis.game?.user?.isGM) {
+  // Before ready the client's role may not be known yet: buffer, and the
+  // ready flush writes (a GM) or drops (a player) it. After ready a player's
+  // entry is dropped — only a GM writes the log — instead of growing the
+  // buffer for the life of the page: a player on their own key (the Private
+  // Channel) kept every call (issue #326 W77).
+  if (!globalThis.game?.ready) {
     pending.push(html);
     return;
   }
+  if (!globalThis.game?.user?.isGM) return;
   enqueue(html);
 }
 
