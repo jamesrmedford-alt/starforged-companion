@@ -36,7 +36,6 @@ function baseResolution(overrides = {}) {
       spiritChange:        0,
       supplyChange:        0,
       otherEffect:         'New insight but also complicates quest. Take +1 momentum.',
-      sufferMoveTriggered: null,
     },
     ...overrides,
   };
@@ -45,7 +44,6 @@ function baseResolution(overrides = {}) {
 function baseCampaignState(overrides = {}) {
   return {
     currentSessionId: 'sess-1',
-    sessionLogs:      {},
     ...overrides,
   };
 }
@@ -148,10 +146,12 @@ describe('persistResolution — actor attribution', () => {
     ).resolves.toBeDefined();
   });
 
-  it('appends a session log entry regardless of actor presence', async () => {
+  // The session move log (campaignState.sessionLogs) is retired: nothing read
+  // it, and it grew with every move (issue #326 W58). The write is stamped.
+  it('writes the campaign state, stamped, with no session move log', async () => {
     const out = await persistResolution(baseResolution(), baseCampaignState());
-    expect(out.campaignState.sessionLogs['sess-1']).toHaveLength(1);
-    expect(out.campaignState.sessionLogs['sess-1'][0].moveId).toBe('gather_information');
+    expect(out.campaignState.updatedAt).toBeTruthy();
+    expect(out.campaignState).not.toHaveProperty('sessionLogs');
   });
 
   // ── Progress is not this module's job ───────────────────────────────────

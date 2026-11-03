@@ -10307,8 +10307,8 @@ function registerMoveOutcomeMatrixTests(quench) {
         // ── Adventure ────────────────────────────────────────────────────────
         ["face_danger",    "strong_hit", c => c.momentumChange === 1,
          "face_danger strong_hit → +1 momentum"],
-        ["face_danger",    "weak_hit",   c => c.sufferMoveTriggered?.amount === 1,
-         "face_danger weak_hit → suffer move triggered (-1)"],
+        ["face_danger",    "weak_hit",   c => c.sufferPrompt?.amount === 1,
+         "face_danger weak_hit → suffer move prompted (-1)"],
         ["face_danger",    "miss",       c => /Pay the Price/i.test(c.otherEffect ?? ""),
          "face_danger miss → Pay the Price"],
         ["secure_an_advantage", "strong_hit", c => c.momentumChange === 2,
@@ -10368,7 +10368,7 @@ function registerMoveOutcomeMatrixTests(quench) {
           const c = mapConsequences("face_danger", "strong_hit", false);
           for (const key of [
             "momentumChange", "healthChange", "spiritChange", "supplyChange",
-            "sufferMoveTriggered", "combatPosition", "otherEffect",
+            "sufferPrompt", "combatPosition", "otherEffect",
           ]) {
             assert.property(c, key,
               `consequences must include ${key} field for downstream persistResolution`);

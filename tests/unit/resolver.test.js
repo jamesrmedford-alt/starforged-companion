@@ -315,14 +315,13 @@ describe("mapConsequences", () => {
 
     it("weak hit triggers a suffer move", () => {
       const c = mapConsequences("face_danger", "weak_hit", false);
-      // F16: sufferPrompt is the canonical surface; sufferMoveTriggered
-      // remains as a deprecated alias for one release.
+      // F16: sufferPrompt is the surface; the deprecated sufferMoveTriggered
+      // alias went with its last reader (issue #326 W58).
       expect(c.sufferPrompt).not.toBeNull();
       expect(c.sufferPrompt.kind).toBe("any");
       expect(c.sufferPrompt.amount).toBe(1);
       expect(c.sufferPrompt.count).toBe(1);
-      expect(c.sufferMoveTriggered).not.toBeNull();
-      expect(c.sufferMoveTriggered.amount).toBe(1);
+      expect(c).not.toHaveProperty("sufferMoveTriggered");
     });
 
     it("miss produces Pay the Price narrative", () => {
@@ -438,7 +437,7 @@ describe("mapConsequences", () => {
 
 const REQUIRED_KEYS = [
   "momentumChange", "healthChange", "spiritChange", "supplyChange",
-  "sufferMoveTriggered", "sufferPrompt",
+  "sufferPrompt",
   "otherEffect",
   "enterCombat", "combatProgress", "endCombat",
   "rollDecisiveActionCost", "routePayThePrice",

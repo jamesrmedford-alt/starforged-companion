@@ -68,9 +68,9 @@ import {
 
 const MODULE_ID = "starforged-companion";
 
-// narrate / persist / applyEffects injected by registerImproveResultHook
+// narrate / applyEffects injected by registerImproveResultHook
 // (src/index.js), kept at module scope for the GM-side relay handler.
-let _deps = { narrate: null, persist: null, applyEffects: null };
+let _deps = { narrate: null, applyEffects: null };
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,12 +172,11 @@ function improveButtonLabel(state) {
  *
  * @param {Object}   hooks
  * @param {Function} hooks.narrate        async (resolution, state, { speakerActorId }) => void
- * @param {Function} hooks.persist        async (resolution, state, speakerActorId) => void
  * @param {Function} [hooks.applyEffects] the strong hit's other effects — index.js
  *   applyUpgradedOutcomeEffects (as for registerBurnMomentumHook)
  */
-export function registerImproveResultHook({ narrate, persist, applyEffects } = {}) {
-  _deps = { narrate: narrate ?? null, persist: persist ?? null, applyEffects: applyEffects ?? null };
+export function registerImproveResultHook({ narrate, applyEffects } = {}) {
+  _deps = { narrate: narrate ?? null, applyEffects: applyEffects ?? null };
 
   onChatMessageRender((message, root) => {
     const flags   = message?.flags?.[MODULE_ID] ?? {};
@@ -295,7 +294,7 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
 // CLICK HANDLER (runs on the canonical GM via applyImproveFromRelay)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleImproveClick(message, { narrate, persist, applyEffects }) {
+async function handleImproveClick(message, { narrate, applyEffects }) {
   const improve = message?.flags?.[MODULE_ID]?.improve;
   if (!improve?.canImprove || improve.consumed) return { applied: false, reason: "already-consumed" };
 
@@ -361,7 +360,7 @@ async function handleImproveClick(message, { narrate, persist, applyEffects }) {
     console.warn(`${MODULE_ID} | improveResult: superseding original narration failed:`, err));
 
   // The improving PC is the card's actor, not the first PC (credit the roller).
-  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: improve.actorId ?? null, narrate, persist, kind: "improve" })
+  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: improve.actorId ?? null, narrate, kind: "improve" })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: re-narration failed:`, err));
 
   return { applied: true };

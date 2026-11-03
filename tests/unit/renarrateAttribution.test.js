@@ -8,8 +8,9 @@
  * (resolution, campaignState, options), so the narrator received null for
  * campaignState and no speakerActorId — in a 2-PC game the upgraded
  * narration described the first PC, not the one who burned (credit the
- * roller). Both now pass (resolution, campaignState, { speakerActorId }) and
- * thread the actor into the log-only persist too.
+ * roller). Both now pass (resolution, campaignState, { speakerActorId }).
+ * (The log-only persist that followed fed the session move log, retired
+ * with it — issue #326 W58: neither upgrade persists a log entry.)
  */
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
@@ -52,7 +53,6 @@ function makeCard(id, moduleFlags) {
 const ORIGINAL = { momentumChange: 1, healthChange: 0, spiritChange: 0, supplyChange: 0 };
 
 const narrate = vi.fn(async () => {});
-const persist = vi.fn(async () => {});
 
 beforeEach(() => {
   game.actors._reset();
@@ -60,9 +60,8 @@ beforeEach(() => {
   game.settings._store.set(`${MODULE_ID}.campaignState`, { currentSessionId: "s1" });
   ChatMessage._reset();
   narrate.mockClear();
-  persist.mockClear();
-  registerBurnMomentumHook({ narrate, persist });
-  registerImproveResultHook({ narrate, persist });
+  registerBurnMomentumHook({ narrate });
+  registerImproveResultHook({ narrate });
   installPc("pc-first", "Ash");    // first PC — the old fallback target
   installPc("pc-roller", "Kira");  // the PC whose card it is
 });
@@ -87,7 +86,6 @@ describe("re-narration credits the roller", () => {
     expect(resolution.outcome).toBe("strong_hit");
     expect(state).toMatchObject({ currentSessionId: "s1" });
     expect(options).toEqual({ speakerActorId: "pc-roller" });
-    expect(persist).toHaveBeenCalledWith(expect.objectContaining({ inputMethod: "burn" }), state, "pc-roller");
   });
 
   it("Improve Result narrates with campaignState and the improving PC as speaker", async () => {
@@ -107,6 +105,5 @@ describe("re-narration credits the roller", () => {
     expect(resolution.outcome).toBe("strong_hit");
     expect(state).toMatchObject({ currentSessionId: "s1" });
     expect(options).toEqual({ speakerActorId: "pc-roller" });
-    expect(persist).toHaveBeenCalledWith(expect.objectContaining({ inputMethod: "improve" }), state, "pc-roller");
   });
 });

@@ -7036,17 +7036,15 @@ Hooks.once("ready", () => {
   // ("fightVow.*" → src/moves/cardActions.js), one-shot per card.
   registerFightVowMilestoneHook();
   registerSettingsHooks();
-  // Both upgrades re-narrate and log through the pipeline's narrator and
-  // persist, and apply the upgraded outcome's other effects through its
-  // applier (UPGRADE-PIPELINE-EFFECTS).
+  // Both upgrades re-narrate through the pipeline's narrator and apply the
+  // upgraded outcome's other effects through its applier
+  // (UPGRADE-PIPELINE-EFFECTS).
   registerBurnMomentumHook({
     narrate:      narrateResolution,
-    persist:      persistResolution,
     applyEffects: applyUpgradedOutcomeEffects,
   });
   registerImproveResultHook({
     narrate:      narrateResolution,
-    persist:      persistResolution,
     applyEffects: applyUpgradedOutcomeEffects,
   });
   // Suffer choices are a non-blocking chat card (never a modal dialog inside the

@@ -517,34 +517,27 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
 }
 
 /**
- * Re-narrate an upgraded outcome and log it. The narrator gets the upgrade's
- * working copy of the campaign and the upgrading PC as the speaker (credit
- * the roller — the first PC used to be described); then the resolution is
- * persisted log-only, its meters already applied, so it carries none —
- * persistResolution merges the working copy onto the store. Best effort:
- * without a narrator (no key, narration off) the move card is still updated.
+ * Re-narrate an upgraded outcome. The narrator gets the upgrade's working
+ * copy of the campaign and the upgrading PC as the speaker (credit the
+ * roller — the first PC used to be described). Its sidecar saves its own
+ * ledger fields; the upgrade's effects were saved by their applier. (A
+ * log-only persistResolution followed, to feed the session move log nothing
+ * read — retired with it, issue #326 W58.) Best effort: without a narrator
+ * (no key, narration off) the move card is still updated.
  *
  * @param {Object} args
  * @param {Object} args.resolution — the upgraded outcome's resolution
  * @param {Object} args.campaignState — the upgrade's working copy
  * @param {string|null} args.speakerActorId — the upgrading PC
  * @param {Function|null} args.narrate — narrateResolution
- * @param {Function|null} args.persist — persistResolution
  * @param {"burn"|"improve"} args.kind
  */
-export async function renarrateUpgrade({ resolution, campaignState, speakerActorId, narrate, persist, kind }) {
+export async function renarrateUpgrade({ resolution, campaignState, speakerActorId, narrate, kind }) {
   if (typeof narrate !== "function") {
     console.warn(`${MODULE_ID} | ${kind}: no narrator registered — the upgraded outcome is not re-narrated.`);
     return;
   }
   await narrate(resolution, campaignState, { speakerActorId });
-  if (typeof persist === "function" && globalThis.game?.user?.isGM) {
-    const logOnly = { ...resolution, consequences: {
-      momentumChange: 0, healthChange: 0, spiritChange: 0, supplyChange: 0, otherEffect: "", sufferMoveTriggered: null,
-    } };
-    await persist(logOnly, campaignState, speakerActorId).catch(err =>
-      console.warn(`${MODULE_ID} | ${kind}: session-log persist failed:`, err?.message ?? err));
-  }
 }
 
 /**

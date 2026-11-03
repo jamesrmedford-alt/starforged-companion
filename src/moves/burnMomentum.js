@@ -96,11 +96,11 @@ const OWNERSHIP_OWNER = 3;
 // button would sit on "Burning…" forever.
 export const RELAY_RECOVERY_MS = 15000;
 
-// narrate / persist / applyEffects injected by registerBurnMomentumHook
-// (src/index.js). Kept at module scope so the GM-side relay handler — which
-// runs outside the click closure, possibly for another player's click — can
-// apply the burned outcome's effects, re-narrate and log.
-let _deps = { narrate: null, persist: null, applyEffects: null };
+// narrate / applyEffects injected by registerBurnMomentumHook (src/index.js).
+// Kept at module scope so the GM-side relay handler — which runs outside the
+// click closure, possibly for another player's click — can apply the burned
+// outcome's effects and re-narrate.
+let _deps = { narrate: null, applyEffects: null };
 
 // Move-card ids whose result is being upgraded — by a burn or an Improve
 // Result — on this (the canonical GM's) client. Two near-simultaneous clicks
@@ -303,17 +303,16 @@ function labelForOutcome(outcome) {
  * a click handler. Idempotent across re-renders — disables the button after
  * use so the same card cannot burn twice.
  *
- * @param {Object} hooks      — narrator, persist and effects injections so this
- *                              module can apply the burned outcome's effects,
- *                              re-narrate and re-persist after a burn without
- *                              pulling in the full pipeline graph.
+ * @param {Object} hooks      — narrator and effects injections so this module
+ *                              can apply the burned outcome's effects and
+ *                              re-narrate after a burn without pulling in the
+ *                              full pipeline graph.
  * @param {Function} hooks.narrate       async (resolution, state, { speakerActorId }) => void
- * @param {Function} hooks.persist       async (resolution, state, speakerActorId) => void
  * @param {Function} [hooks.applyEffects] async ({ resolution, against, interpretation, targets,
  *   actor, campaignState }) => { applied, notApplied } — index.js applyUpgradedOutcomeEffects
  */
-export function registerBurnMomentumHook({ narrate, persist, applyEffects } = {}) {
-  _deps = { narrate: narrate ?? null, persist: persist ?? null, applyEffects: applyEffects ?? null };
+export function registerBurnMomentumHook({ narrate, applyEffects } = {}) {
+  _deps = { narrate: narrate ?? null, applyEffects: applyEffects ?? null };
 
   onChatMessageRender((message, root) => {
     const flags = message?.flags?.[MODULE_ID] ?? {};
@@ -496,7 +495,7 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
 // CLICK HANDLER (runs on the canonical GM via applyBurnFromRelay)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleBurnClick(message, { narrate, persist, applyEffects }) {
+async function handleBurnClick(message, { narrate, applyEffects }) {
   const flags = message?.flags?.[MODULE_ID] ?? {};
   const burn  = flags.burn;
   if (!burn?.canBurn || burn.consumed) return { applied: false, reason: "already-consumed" };
@@ -587,7 +586,7 @@ async function handleBurnClick(message, { narrate, persist, applyEffects }) {
   // campaign has no API key configured or the narrator is otherwise disabled,
   // the move card is still correctly updated above. The burning PC is the
   // card's actor, not the first PC (credit the roller).
-  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: burn.actorId ?? null, narrate, persist, kind: "burn" })
+  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: burn.actorId ?? null, narrate, kind: "burn" })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: re-narration failed:`, err));
 
   return { applied: true };

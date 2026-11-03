@@ -77,9 +77,10 @@ describe('legacy box XP waits for the move\'s persist (issue #326 W52)', () => {
   });
 
   const xp = () => Number(bex.system.xp ?? 0);
-  // The move's own persist: the write that appends this session's move log.
+  // The move's own persist: the GM's campaignState write that carries a new
+  // updatedAt stamp (persistResolution's).
   const persistWrite = (w) => w.kind === 'setting' && w.key === CS_KEY && w.client === 'gm-1'
-    && (w.value?.sessionLogs?.['sess-1']?.length ?? 0) > 0;
+    && !!w.value?.updatedAt && w.value.updatedAt !== (table.world.campaignState().updatedAt ?? null);
 
   it('control: when the write lands, the box is saved and its 2 XP awarded', async () => {
     await table.client('pl-1').chat('The archive is found; my oath is kept.', { speaker: { actor: 'pc-bex' } });

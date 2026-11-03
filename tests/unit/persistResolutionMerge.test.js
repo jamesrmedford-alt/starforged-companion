@@ -37,7 +37,6 @@ beforeEach(() => {
   game.settings._store.clear();
   game.settings._store.set(KEY, {
     currentSessionId: "sess-1",
-    sessionLogs:      { "sess-1": [{ resolutionId: "old", moveId: "gather_information" }] },
     xCardActive:      false,
     pendingMove:      true,
     safety:           { lines: ["L"], veils: [], privateLines: [] },
@@ -58,8 +57,8 @@ describe("persistResolution — concurrent writes survive the stale working copy
     await persistResolution(resolution(), snapshot);
 
     expect(stored().xCardActive).toBe(true);
-    // The pipeline's own write still lands: the session log entry.
-    expect(stored().sessionLogs["sess-1"].map(e => e.resolutionId)).toEqual(["old", "res-1"]);
+    // The pipeline's own write still lands: its stamp.
+    expect(stored().updatedAt).toBeTruthy();
   });
 
   it("keeps the X-Card play count when the card is played and resumed mid-pipeline (issue #306 R01)", async () => {
@@ -205,13 +204,12 @@ describe("persistResolution — concurrent writes survive the stale working copy
     expect(stored().sceneTruths).toEqual([]);
   });
 
-  it("logs into the live session when the session id changed meanwhile", async () => {
+  it("keeps the live session id when it changed meanwhile", async () => {
     const snapshot = pipelineSnapshot();
     stored().currentSessionId = "sess-2";
-    stored().sessionLogs["sess-2"] = [];
     await persistResolution(resolution(), snapshot);
-    expect(stored().sessionLogs["sess-2"].map(e => e.resolutionId)).toEqual(["res-1"]);
-    expect(stored().sessionLogs["sess-1"]).toHaveLength(1);
+    expect(stored().currentSessionId).toBe("sess-2");
+    expect(stored()).not.toHaveProperty("sessionLogs");   // retired (issue #326 W58)
   });
 
   it("keeps the newer rolling session summary", async () => {

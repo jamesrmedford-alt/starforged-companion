@@ -250,7 +250,6 @@ function emptyConsequences() {
     healthChange:        0,
     spiritChange:        0,
     supplyChange:        0,
-    sufferMoveTriggered: null,
     // F16 §5.2: structured prompt that the SufferChoiceDialog renders
     // when the outcome requires a player choice (Shape B1 generic
     // suffer-pick or Shape B2 enumerated options). `null` means no
@@ -354,8 +353,8 @@ function withCost(recovery, costs) {
  *   (Shape B1). Player picks any of the six suffer moves.
  * - "Choose: X or Y or …" → `sufferPrompt: { kind: "enumerated", options: [...],
  *   allowComplication? }` (Shape B2). Player picks from listed options.
- *   `sufferMoveTriggered` remains set in parallel as a deprecated back-compat
- *   field for one release; new code reads from `sufferPrompt`.
+ *   (The deprecated `sufferMoveTriggered` alias went with its last reader,
+ *   persistResolution's impact step — issue #326 W58.)
  * - Progress marking is never a generic consequence field: each kind has its
  *   own pipeline flag (reachMilestone, combatProgress, expeditionProgress,
  *   legacyMark, developRelationship, …) applied in src/index.js.
@@ -404,7 +403,6 @@ const CONSEQUENCE_MAP = {
         ...emptyConsequences(),
         // B1: generic "make a suffer move (-1)" — player picks which.
         sufferPrompt:        { kind: "any", amount: 1, count: 1 },
-        sufferMoveTriggered: { move: "suffer", amount: 1 },  // deprecated alias
         otherEffect: "Success with a cost. Make a suffer move (-1).",
       };
       case "miss": return {
@@ -793,7 +791,6 @@ const CONSEQUENCE_MAP = {
         ...emptyConsequences(),
         // B1: generic "suffer move (-1)" pick.
         sufferPrompt:        { kind: "any", amount: 1, count: 1 },
-        sufferMoveTriggered: { move: "suffer", amount: 1 },  // deprecated alias
         combatPosition: "bad_spot",
         otherEffect: "Avoid worst danger but not without cost. Suffer move (-1). Stay in a bad spot."
       };

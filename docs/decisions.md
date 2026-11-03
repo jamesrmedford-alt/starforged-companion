@@ -1873,8 +1873,8 @@ never writes the whole snapshot back.
   #321 `xCardRedirect` and `xCardedNarrationIds` (U07) and `loreRecap` (U06g —
   a move resolved during `!lore` reverted the new recap)); entity id
   lists are an ordered union; `artAssetIds` (a map) keeps both sides' entries,
-  the store's winning a clash; `sessionLogs` come from the store plus this
-  resolution's entry; `sessionSummary` by newer `updatedAt`; `legacyTracks`
+  the store's winning a clash; (`sessionLogs` came from the store plus this
+  resolution's entry — the log is retired, issue #326 W58); `sessionSummary` by newer `updatedAt`; `legacyTracks`
   take the per-track max (`cleared` sticks); scene ledgers — if the store is
   on a different scene its scene wins wholesale, otherwise `sceneTruths` is
   unioned by id (a retraction on either side sticks) and `sceneState` /

@@ -206,7 +206,8 @@ For each row marked **B1**, **B2**, or **A-with-new-delta** above:
    delta payload.
 2. Keep `sufferMoveTriggered` for one release as a deprecated alias
    for `sufferPrompt.kind === "any"` (face_danger weak / react_under_fire
-   weak — both currently emit it).
+   weak — both currently emit it). *(Retired with its last reader,
+   persistResolution's impact step, in issue #326 W58.)*
 3. Update any unit test that asserts on the entry's current shape
    (most live in `tests/unit/resolver.test.js` and the various
    per-category Quench batches).

@@ -207,8 +207,10 @@ describe('a relayed write that lands while the GM\'s move pipeline is paused sur
 
     const after = world();
     expect(after.sceneTruths.map(t => t.fact)).toContain('Sealed from the inside');
-    const log = Object.values(after.sessionLogs ?? {}).flat();
-    expect(log.some(e => e?.moveId === 'face_danger')).toBe(true);
+    // persistResolution's own write landed (its stamp; the session move log it
+    // was checked by is retired — issue #326 W58).
+    expect(after.updatedAt).toBeTruthy();
+    expect(after.pendingMove).toBe(false);
     expect(table.cards(f => f.narratorCard).map(c => c.author)).toEqual(['gm-1']);
   });
 });

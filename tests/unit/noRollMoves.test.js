@@ -97,9 +97,8 @@ describe("T05 — Make a Discovery from a waypoint match rolls nothing and offer
 
     expect(pc.system.momentum.value).toBe(9);
     expect(world().legacyTracks.discoveries.ticks).toBe(2);
-    expect(world().sessionLogs["nr-s1"].at(-1)).toMatchObject({ moveId: "make_a_discovery", outcome: null });
     const narration = table.cards(f => f.narratorCard && f.moveId === "make_a_discovery").at(-1);
-    expect(narration.flags[MODULE_ID].outcome).toBeNull();
+    expect(narration.flags[MODULE_ID]).toMatchObject({ moveId: "make_a_discovery", outcome: null });
   });
 
   it("a typed Make a Discovery rolls nothing even when the interpreter names a stat", async () => {
