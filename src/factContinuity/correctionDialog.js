@@ -21,6 +21,7 @@ import {
   setStateValue,
   subjectKey,
   subjectFromStateKey,
+  sameStateAttribute,
 } from './ledgers.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { propagateRetraction, markSummaryForRegen } from './retractions.js';
@@ -52,6 +53,9 @@ export async function openCorrectionDialog(message) {
   const matchedIds   = new Set(message.flags?.[MODULE_ID]?.matchedEntityIds ?? []);
   const currentLocId = campaignState.currentLocationId;
   if (currentLocId) matchedIds.add(currentLocId);
+  // A Narrative Review card names the truth it caught (issue #326 W63): it is
+  // listed first, marked, whatever its subject's scope.
+  const flaggedId = message.flags?.[MODULE_ID]?.contradictedTruthId ?? null;
 
   const { DialogV2 } = foundry.applications.api;
 
@@ -60,7 +64,7 @@ export async function openCorrectionDialog(message) {
   const rerender = (dlg) => {
     const root = dlg.element;
     if (!root) return;
-    const fresh = renderDialogContent(readCampaignState() ?? {}, matchedIds, ctx);
+    const fresh = renderDialogContent(readCampaignState() ?? {}, matchedIds, ctx, flaggedId);
     const body  = root.querySelector('.sf-correct-body');
     if (body) body.innerHTML = fresh;
     attachRowHandlers(root, ctx, () => rerender(dlg));
@@ -69,7 +73,7 @@ export async function openCorrectionDialog(message) {
   const dlg = new DialogV2({
     window:  { title: 'Correct Active Scene Facts' },
     classes: ['sf-correct-dialog', 'sf-window'],
-    content: `<div class="sf-correct-body">${renderDialogContent(campaignState, matchedIds, ctx)}</div>`,
+    content: `<div class="sf-correct-body">${renderDialogContent(campaignState, matchedIds, ctx, flaggedId)}</div>`,
     buttons: [
       { action: 'close', label: 'Close', default: true, callback: () => true },
     ],
@@ -99,10 +103,10 @@ function readCampaignState() {
 // Rendering
 // ---------------------------------------------------------------------------
 
-function renderDialogContent(campaignState, matchedIds, ctx) {
+function renderDialogContent(campaignState, matchedIds, ctx, flaggedId = null) {
   const truths = (campaignState.sceneTruths ?? []).filter(t =>
-    t && !t.retracted && isSubjectInDialogScope(t.subject, matchedIds),
-  );
+    t && !t.retracted && (t.id === flaggedId || isSubjectInDialogScope(t.subject, matchedIds)),
+  ).sort((a, b) => (b.id === flaggedId ? 1 : 0) - (a.id === flaggedId ? 1 : 0));
   const stateRows = collectInScopeState(campaignState, matchedIds);
 
   if (!truths.length && !stateRows.length) {
@@ -110,7 +114,7 @@ function renderDialogContent(campaignState, matchedIds, ctx) {
   }
 
   const truthsHtml = truths.length
-    ? `<h4>Truths</h4><ul class="sf-correct-list">${truths.map(t => renderTruthRow(t, ctx)).join('')}</ul>`
+    ? `<h4>Truths</h4><ul class="sf-correct-list">${truths.map(t => renderTruthRow(t, ctx, t.id === flaggedId)).join('')}</ul>`
     : '';
   const stateHtml = stateRows.length
     ? `<h4>State</h4><ul class="sf-correct-list">${stateRows.map(s => renderStateRow(s, ctx)).join('')}</ul>`
@@ -119,7 +123,7 @@ function renderDialogContent(campaignState, matchedIds, ctx) {
   return `${truthsHtml}${stateHtml}`;
 }
 
-function renderTruthRow(truth, ctx) {
+function renderTruthRow(truth, ctx, flagged = false) {
   const canStrike = ctx.isGM || truth.asserter !== 'gm';
   const idPrefix  = String(truth.id ?? '').slice(0, 8);
   const subjLabel = escape(formatSubjectLabel(truth.subject));
@@ -132,12 +136,13 @@ function renderTruthRow(truth, ctx) {
       <button type="button" class="sf-correct-btn" data-action="replace-truth" data-truth-id="${escape(truth.id)}">Replace…</button>
     `
     : '';
+  const flagHint  = flagged ? ` <span class="sf-correct-flagged" title="The fact the Narrative Review caught">⚠ flagged by the review</span>` : '';
   return `
-    <li class="sf-correct-row">
+    <li class="sf-correct-row${flagged ? ' sf-correct-row--flagged' : ''}">
       <div class="sf-correct-meta">
         <code class="sf-correct-id">${idPrefix}</code>
         <span class="sf-correct-subject">${subjLabel}</span>
-        <span class="sf-correct-asserter">(${actor})</span>${lockHint}
+        <span class="sf-correct-asserter">(${actor})</span>${lockHint}${flagHint}
       </div>
       <div class="sf-correct-fact">${fact}</div>
       <div class="sf-correct-actions">${buttons}</div>
@@ -236,7 +241,7 @@ async function handleRowAction(button, ctx) {
       const key  = button.dataset.stateKey;
       const attr = button.dataset.attribute;
       const list = readCampaignState()?.sceneState?.bySubject?.[key] ?? [];
-      const cur  = list.find(e => e.attribute === attr);
+      const cur  = list.find(e => sameStateAttribute(e.attribute, attr));
       const next = await promptForText(`New value for "${attr}"`, String(cur?.value ?? ''));
       if (!next) return;
       const working = workingCopy();

@@ -38,7 +38,6 @@ beforeEach(() => {
   game.settings._store.set(`${MODULE_ID}.claudeApiKey`, "sk-ant-test");
   game.settings._store.set(KEY, {
     currentSessionId: "sess-1",
-    sessionLogs:      { "sess-1": [] },
     pendingMove:      true,
     connectionIds:    [],
     loreRecap:        "",

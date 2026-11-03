@@ -39,7 +39,7 @@ import {
   renderImproveButtonHtml,
   registerImproveResultHook,
 } from "./moves/improveResult.js";
-import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep } from "./moves/resultUpgrade.js";
+import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep, closeUpgradesForLaterMove } from "./moves/resultUpgrade.js";
 import { registerSufferCardHook, summarizeSufferCalls } from "./moves/sufferCard.js";
 import {
   scanForApplicableAbilities,
@@ -47,7 +47,7 @@ import {
 } from "./moves/abilityScanner.js";
 import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient, resolveAidedAlly, enrichBondAdds } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
-import { markLegacyTrack }       from "./moves/legacyTracks.js";
+import { markLegacyTrack, legacyProgress, deferLegacyXp, payDeferredLegacyXp } from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
 import {
   openSetFlagDialog,
@@ -85,7 +85,8 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, readMomentumState, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, readMomentumState, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
@@ -113,7 +114,7 @@ import {
   findShipMapScene,
   registerShipMapSceneHooks,
 } from "./moves/shipMapScene.js";
-import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack } from "./moves/combat.js";
+import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack, selectRollerFight } from "./moves/combat.js";
 import { buildCombatThresholdHtml, buildWayOutHtml, WAY_OUT_MOVES, thresholdPositionLine } from "./moves/combatThreshold.js";
 import {
   enterCombatTracker,
@@ -401,12 +402,18 @@ function registerCoreSettings() {
   });
 
   game.settings.register(MODULE_ID, "speechLanguage", {
-    name:    "Speech Input Language",
-    hint:    "BCP 47 language tag for speech recognition, e.g. en-US, en-GB.",
-    scope:   "client",
-    config:  true,
-    type:    String,
-    default: "en-US",
+    name:     "Speech Input Language",
+    hint:     "BCP 47 language tag for speech recognition, e.g. en-US, en-GB.",
+    scope:    "client",
+    config:   true,
+    type:     String,
+    default:  "en-US",
+    // The language is read when the speech controller is built, so a change
+    // was ignored until a reload (issue #326 W87): rebuild it, as the
+    // Push-to-Talk switch does (#306 R10). Push-to-talk switched off stays off.
+    onChange: () => {
+      if (game.settings.get(MODULE_ID, "speechInputEnabled")) initSpeechInput();
+    },
   });
 
   // -------------------------------------------------------------------------
@@ -639,7 +646,7 @@ export const CHAT_COMMAND_ROUTES = [
  * A4): interrogateScene starts one only when none is active (on the canonical
  * GM). It used to end the scene first, so the answer was written without the
  * frame, truths, state or CORRECTED list it was asked about. Scenes end at
- * `!scene end`, End Session, the 4-hour re-mint and closeWorld.
+ * `!scene end`, End Session and the 4-hour re-mint.
  */
 async function handleSceneQueryCommand(message) {
   const text     = message.content?.trim() ?? "";
@@ -853,6 +860,18 @@ export function registerChatHook() {
     }
     if (!pacingResult.runMove) return;
 
+    // A player with no character of their own, at a table of two or more PCs,
+    // is not rolled as another player's PC (issue #326 D8, following #321
+    // U23's rule): resolveSpeakerActorId gave them none — the first PC is only
+    // a GM's, or the one PC's in solo play — and the pipeline's own fallback
+    // to the first PC rolled the move with that PC's stats, landed its meters
+    // on it and named it the roller. They are told, and nothing is rolled.
+    if (!speakerActorId && getPlayerActors().length >= 2) {
+      await postNoCharacterNotice(message).catch(err =>
+        console.warn(`${MODULE_ID} | no-character notice failed:`, err?.message ?? err));
+      return;
+    }
+
     // Concurrency guard — one move at a time. A second narration that arrives
     // while a pipeline is running would otherwise race on campaignState writes
     // and post duplicate narration cards.
@@ -932,8 +951,11 @@ export function registerChatHook() {
       }
 
       if (interpretation.mischiefApplied) {
+        // The aside plays on the gap between what the player SAID and the move
+        // the Trickster chose — the narration, not the model's rationale
+        // (issue #326 W50: the fight-reframe lines never fired).
         interpretation._mischiefAside = buildMischiefAside(
-          interpretation.rationale ?? "",
+          narration ?? "",
           interpretation.moveId,
           interpretation.statUsed,
           dial
@@ -978,7 +1000,10 @@ export function registerChatHook() {
       }
 
       // The ROLLER's character (decisions.md → "Multiplayer attribution"):
-      // the speaker resolved from the message, first PC only as fallback.
+      // the speaker resolved from the message. The first PC is the fallback
+      // only where resolveSpeakerActorId leaves none and the move still runs —
+      // no PC of the author's own at a one-PC (or empty) table; a PC-less
+      // player at a table of several was told above (issue #326 D8).
       // One actor drives the ability scan, the stat substitution it offers,
       // and the stat values read below — scanning PC A's assets but reading
       // PC B's stats offered substitutions B doesn't have.
@@ -1060,22 +1085,6 @@ export function registerChatHook() {
         interpretation.adds = (interpretation.adds ?? 0) + abilityAdds;
       }
 
-      // Take a Break → "Move on": a single-use +1 on the next action roll (not
-      // a progress move). Consumed from the working copy (so persistResolution's
-      // clone can't resurrect it) and from the stored campaignState.
-      const breakAdd = takeNextMoveAdd(campaignState, interpretation.moveId);
-      if (breakAdd > 0) {
-        interpretation.adds = (interpretation.adds ?? 0) + breakAdd;
-        await clearPersistedNextMoveAdd();
-      }
-      // "+1 on your next move" the roller earned (Secure an Advantage, Gain
-      // Ground): their own, on their next action roll — claimed on the store
-      // first, so a refused claim adds nothing (issue #322 V02).
-      const bonusAdd = await consumeNextMoveBonus(campaignState, rollerActor?.id ?? null, interpretation.moveId);
-      if (bonusAdd > 0) {
-        interpretation.adds = (interpretation.adds ?? 0) + bonusAdd;
-      }
-
       // Stat substitution — when an asset ability (e.g. Empath's
       // "roll +heart in place of the listed stat") was offered AND the
       // player picked it on the confirm dialog, swap the move stat
@@ -1131,6 +1140,26 @@ export function registerChatHook() {
         console.warn(`${MODULE_ID} | bonded develop enrichment failed:`, err?.message ?? err);
         return null;
       });
+
+      // Take a Break → "Move on": a single-use +1 on the next action roll (not
+      // a progress move). Consumed from the working copy (so persistResolution's
+      // clone can't resurrect it) and from the stored campaignState. Taken
+      // after the enrichment, on the roll kind it resolved: a bonded Develop
+      // Your Relationship (no roll by its data) rolls +rank and takes the +1
+      // (issue #326 W48 — it was taken by the next roll after it).
+      const rollKind = interpretation.rollKind ?? null;
+      const breakAdd = takeNextMoveAdd(campaignState, interpretation.moveId, { rollKind });
+      if (breakAdd > 0) {
+        interpretation.adds = (interpretation.adds ?? 0) + breakAdd;
+        await clearPersistedNextMoveAdd();
+      }
+      // "+1 on your next move" the roller earned (Secure an Advantage, Gain
+      // Ground): their own, on their next action roll — claimed on the store
+      // first, so a refused claim adds nothing (issue #322 V02).
+      const bonusAdd = await consumeNextMoveBonus(campaignState, rollerActor?.id ?? null, interpretation.moveId, { rollKind });
+      if (bonusAdd > 0) {
+        interpretation.adds = (interpretation.adds ?? 0) + bonusAdd;
+      }
       // Heal: the patient — an ally the care is for, or a companion — resolved
       // before the dice; the recovery card checks and heals them, not the
       // healer (issue #325 W04).
@@ -1363,17 +1392,18 @@ export function registerChatHook() {
               console.warn(`${MODULE_ID} | expedition finish card failed:`, err?.message ?? err));
 
             // Reaching the end of an expedition discovers any unexplored sector
-            // site it led to (precursor vault / derelict). Mutate the in-memory
-            // campaignState so the discovered flag rides along with the pending
-            // persistResolution write below (setState is a no-op here); the
-            // scene pin + passage and the location Actor update apply at once.
+            // site it led to (precursor vault / derelict). The discovered flag
+            // is folded into the in-memory campaignState so it rides along with
+            // the pending persistResolution write below (revealSectorSite sets
+            // it on a copy — issue #326 W51); the scene pin + passage and the
+            // location Actor update apply at once.
             try {
               const { revealSectorSite, postSiteDiscoveryCard } = await import("./sectors/siteDiscovery.js");
               const revealed = await revealSectorSite(fin.track?.label ?? interpretation.moveTarget, {
                 source:   "expedition",
                 siteId:   fin.track?.siteId ?? null,
                 getState: () => campaignState,
-                setState: () => {},
+                setState: (next) => { campaignState.sectors = next.sectors; },
               });
               if (revealed) await postSiteDiscoveryCard(revealed);
             } catch (err) {
@@ -1382,6 +1412,33 @@ export function registerChatHook() {
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | finish expedition failed:`, err?.message ?? err);
+        }
+      }
+
+      // Finish the Scene (issue #326 D6) — the scene concludes on every
+      // outcome: its challenge track completes and its tension clock retires
+      // here, before a weak hit's or miss's Pay the Price (routed below) could
+      // advance the clock of a scene that has ended.
+      if (resolution.consequences?.finishScene && game.user.isGM) {
+        try {
+          const { finishSceneChallenge } = await import("./moves/sceneChallenge.js");
+          const { retireClock } = await import("./clocks/clocks.js");
+          const fin = await finishSceneChallenge(
+            { moveTarget: interpretation.moveTarget ?? null, moveTargetId: interpretation.moveTargetId ?? null },
+            {
+              listTracks:    () => listProgressTracks(),
+              completeTrack: (id) => completeProgressTrack(id),
+              retireClock:   (id) => retireClock(id),
+            },
+          );
+          if (fin?.track) {
+            await postSceneFinishCard(fin.track).catch(err =>
+              console.warn(`${MODULE_ID} | scene finish card failed:`, err?.message ?? err));
+          } else {
+            console.warn(`${MODULE_ID} | finish the scene: no open scene challenge matched "${interpretation.moveTarget ?? "?"}" — nothing finished.`);
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | finish the scene failed:`, err?.message ?? err);
         }
       }
 
@@ -1417,8 +1474,12 @@ export function registerChatHook() {
       if (resolution.consequences?.fulfillVow && game.user.isGM) {
         try {
           const ranksDown = resolution.consequences.fulfillVow.ranksDown ?? 0;
+          // The vow the roll scored names the journal twin to close — a
+          // fulfilment that names none (the Attempt to Fulfill button) fell to
+          // the sole open journal vow, another vow's twin (issue #326 W44).
+          const scoredVowName = tickInfo?.source === "vow" ? (tickInfo.label ?? null) : null;
           const fin = await finishVow(
-            { moveTarget: interpretation.moveTarget, ranksDown },
+            { moveTarget: scoredVowName ?? interpretation.moveTarget, ranksDown },
             {
               listTracks:    () => listProgressTracks(),
               completeTrack: (id) => completeProgressTrack(id),
@@ -1667,6 +1728,11 @@ export function registerChatHook() {
           await moveResultMessage.update(recorded).catch(err =>
             console.warn(`${MODULE_ID} | burn / improve metadata update failed:`, err));
         }
+        // This roller's earlier move cards: their Burn / Improve belonged to
+        // the moves being made then — closed now this one has resolved (issue
+        // #326 D4). Canonical GM: the pipeline runs there.
+        await closeUpgradesForLaterMove(rollerActor?.id ?? null, resolution._id ?? null).catch(err =>
+          console.warn(`${MODULE_ID} | closing earlier move cards' upgrades failed:`, err?.message ?? err));
 
         // The move is resolved, persisted, and narrated — the critical section
         // the concurrency lock guards (campaignState writes + narration) is now
@@ -1966,11 +2032,16 @@ async function applyOutcomeEffects({
     // "narrator says something happened, sheet shows nothing" trust
     // gap on every Set a Course. The card is informational —
     // SufferChoiceDialog handles the actual meter changes from the
-    // weak-hit choice in parallel.
-    await postSetACourseFeedbackCard(
-      moveTarget,
-      resolution,
-    ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
+    // weak-hit choice in parallel. Set a Course's only: a Finish an
+    // Expedition arrival was told "Course held cleanly (+1 momentum)" (the
+    // move grants none) or "see the suffer prompt" (it has none), beside
+    // its own "Expedition complete" card (issue #326 W46).
+    if (resolution.moveId === "set_a_course") {
+      await postSetACourseFeedbackCard(
+        moveTarget,
+        resolution,
+      ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
+    }
     applied.push(`arrived at ${moveTarget ?? "the destination"}`);
   }
 
@@ -2192,11 +2263,17 @@ async function applyOutcomeEffects({
   // to the fight its card named: open, it is the fight; over, there is none.
   if (next.combatPosition || TDA_OFFER_MOVES.has(resolution.moveId) || stampedId) {
     try {
-      out.moveFight = combatProgressTrack
-        ?? (stampedId
-          ? stampedOpen
-          : selectCombatTrack(await listProgressTracks(), moveTarget,
-            { trackId: interpretation?.moveTargetId ?? null }));
+      if (combatProgressTrack) out.moveFight = combatProgressTrack;
+      else if (stampedId) out.moveFight = stampedOpen;
+      else {
+        const tracks  = await listProgressTracks();
+        const trackId = interpretation?.moveTargetId ?? null;
+        // Two fights open and no foe named: the roller's own fight — the one
+        // recording their position (issue #326 W45; the position was written
+        // nowhere and their next Strike steered by the stale one).
+        out.moveFight = selectCombatTrack(tracks, moveTarget, { trackId })
+          ?? (!moveTarget && !trackId ? selectRollerFight(tracks, speakerActor?.id ?? rollerActor?.id ?? null) : null);
+      }
     } catch (err) {
       console.warn(`${MODULE_ID} | combat fight lookup failed:`, err?.message ?? err);
     }
@@ -3204,7 +3281,14 @@ async function handleClearSiteCommand(message) {
   const label = text.replace(/^!clear-site\s*/i, "").trim();
   try {
     const { clearSectorSite } = await import("./sectors/siteDiscovery.js");
-    const cleared = await clearSectorSite(label || null);
+    let cleared;
+    try {
+      cleared = await clearSectorSite(label || null);
+    } catch (err) {
+      // Refused: nothing changed on this client either (issue #326 W51).
+      ui.notifications?.error(`The site could not be marked cleared — the world did not take the write. Try again.`);
+      throw err;
+    }
     if (cleared) {
       await ChatMessage.create({
         content: `<div class="starforged-companion-card"><h3>◈ Site Cleared — ${escapeChatHtml(cleared.site.name)}</h3><p>The ${cleared.site.type === "vault" ? "vault" : "derelict"} is fully explored. Its secrets are yours — or spent.</p></div>`,
@@ -3232,7 +3316,15 @@ async function handleRevealSiteCommand(message) {
   const label = text.replace(/^!reveal-site\s*/i, "").trim();
   try {
     const { revealSectorSite, postSiteDiscoveryCard } = await import("./sectors/siteDiscovery.js");
-    const revealed = await revealSectorSite(label || null, { source: "manual" });
+    let revealed;
+    try {
+      revealed = await revealSectorSite(label || null, { source: "manual" });
+    } catch (err) {
+      // Refused: nothing changed on this client either, so a retry reveals it
+      // (issue #326 W51).
+      ui.notifications?.error(`The site could not be revealed — the world did not take the write. Try again.`);
+      throw err;
+    }
     if (revealed) {
       await postSiteDiscoveryCard(revealed);
     } else {
@@ -3345,9 +3437,12 @@ async function handleJournalCommand(message) {
 
   const parsed = parseJournalCommand(message.content?.trim() ?? "");
   if (!parsed) {
+    // The qualifiers each type takes are named — a qualifier outside them is
+    // refused too (issue #326 W62).
     ui.notifications.warn(
       'Invalid !journal command. Format: !journal <type> "Name" qualifier — text  ' +
-      '(types: faction, location, lore, threat).'
+      '(types: faction hostile|neutral|allied|unknown, location <type>, ' +
+      'lore confirmed|rumour, threat immediate|active|looming|resolved).'
     );
     return;
   }
@@ -3765,7 +3860,14 @@ function registerOracleMemoryCaptureHook() {
       const entry = message?.flags?.[MODULE_ID]?.oracleMemory;
       if (!entry || typeof entry !== "object") return;
 
-      const campaignState = game.settings.get(MODULE_ID, "campaignState");
+      // A copy, with its own ring (rules/foundry-api.md): recordOracleResult
+      // pushed onto the cached ring, so a refused write left the GM's cache
+      // holding a result the world did not (issue #326 W51).
+      const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const campaignState = {
+        ...cached,
+        recentOracles: Array.isArray(cached.recentOracles) ? [...cached.recentOracles] : [],
+      };
       const stored = recordOracleResult(campaignState, entry);
       if (!stored) return;
       game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
@@ -4027,12 +4129,15 @@ const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bo
  * Newly FILLED boxes award XP — 2 per box, 1 once the track has been cleared
  * (play kit rule 1.12), each box at the rate of the cycle it filled in — to
  * every player character (legacy tracks are shared crew tracks in this
- * module, like the shared supply), with a chat note. The award is
- * fire-and-forget so call sites stay synchronous; failures warn.
- * LEGACY-XP-DEAD fix: ticks used to accrue here with no XP ever awarded — the
- * awarding path (persistResolution.markLegacyProgress) required a consequence
- * field no resolver set. `awardXp: false` leaves the award to the caller:
- * writeLegacyTicks awards it once its write has landed.
+ * module, like the shared supply), with a chat note. The award is owed by
+ * the copy the ticks were marked on and paid once the write that saves that
+ * copy has landed (payDeferredLegacyXp — persistResolution's write for the
+ * move pipeline's working copy, bond.apply's and writeLegacyTicks' own): it
+ * was paid at the mark, so a refused persist awarded XP for ticks never
+ * saved (issue #326 W52). LEGACY-XP-DEAD fix: ticks used to accrue here with
+ * no XP ever awarded — the awarding path (persistResolution.markLegacyProgress)
+ * required a consequence field no resolver set. `awardXp: false` owes
+ * nothing: the caller awards it itself.
  *
  * @returns {{ boxes: number, xp: number, cleared: boolean }} the boxes this
  *   mark filled, the XP they earn (per character) and whether it cleared the
@@ -4040,16 +4145,35 @@ const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bo
  */
 export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {}) {
   campaignState.legacyTracks ??= {};
+  const before = legacyProgress(campaignState.legacyTracks[key]);
   const marked = markLegacyTrack(campaignState.legacyTracks[key], ticks);
   campaignState.legacyTracks[key] = marked.track;
-  if (marked.boxes > 0 && awardXp) {
-    // A PC whose award is refused is told to the GMs, with a Retry for that
-    // award alone (issue #309 N06).
-    awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared })
-      .then(failed => failed.length ? postPayoffFailureCard({ source: "legacyXp", failures: failed }) : null)
-      .catch(err => console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
+  if (awardXp && legacyProgress(marked.track) > before) {
+    // Once the copy is saved, every PC's sheet shows the mark — and the XP a
+    // filled box earns (issue #326 D3). A PC whose sheet write is refused is
+    // told to the GMs, with a Retry for that sheet alone (issue #309 N06).
+    deferLegacyXp(campaignState, async () => {
+      const failed = await payLegacyMark(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
+      if (failed.length) await postPayoffFailureCard({ source: "legacyXp", failures: failed });
+    });
   }
   return { boxes: marked.boxes, xp: marked.xp, cleared: marked.cleared };
+}
+
+/**
+ * Pay the legacy-box XP a saved working copy owes (addLegacyTicks). Call
+ * once the write that saved its ticks has landed; reports, never throws.
+ * Exported for bond.apply (src/moves/bondCommand.js).
+ *
+ * @param {Object} campaignState — the copy the ticks were marked on
+ * @returns {Promise<void>}
+ */
+export async function awardSavedLegacyXp(campaignState) {
+  try {
+    await payDeferredLegacyXp(campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err);
+  }
 }
 
 /**
@@ -4071,51 +4195,44 @@ async function writeLegacyTicks(key, ticks) {
   const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
   const marked = addLegacyTicks(cs, key, ticks, { awardXp: false });
   await game.settings.set(MODULE_ID, "campaignState", cs);
-  if (marked.boxes <= 0) return [];
-  return awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
+  return payLegacyMark(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
 }
 
 /**
- * Award legacy-box XP to each player character — or to `pcs`, a Retry's —
- * and post the earned-XP note once any award has landed. Each award stands
- * alone: a refused one is returned as a failed step (`xp`, its PC and
- * amount), which the payoff puts on the GMs' failure card, whose Retry gives
- * that PC's XP alone — never the ticks again. Each refusal used to be logged
- * and dropped, the payoff reported complete (issue #309 N06).
+ * A saved legacy mark reaches every player character's sheet — or `pcs`, a
+ * Retry's — and the earned-XP note posts once any sheet shows a filled box
+ * (issue #326 D3). The shared track is canonical; each PC's Starforged sheet
+ * mirrors it (`system.legacies.<track>`, src/multiplayer/sharedLegacies.js),
+ * where the sheet derives and spends the XP — the module wrote the XP to
+ * `system.xp`, a field that sheet does not have. Each sheet stands alone: a
+ * refused write is returned as a failed step (`xp`, its PC and the XP the
+ * box earned), which the payoff puts on the GMs' failure card, whose Retry
+ * mirrors that PC's sheet alone — never the ticks again (issue #309 N06).
  *
  * @param {"quests"|"bonds"|"discoveries"} key
- * @param {number} boxes — newly filled boxes
+ * @param {number} boxes — newly filled boxes (0: a mark that filled none)
  * @param {number} xp — per PC
  * @param {{ pcs?: Actor[]|null, clearedNow?: boolean }} [opts] — a Retry's PC;
  *   every PC when absent. `clearedNow`: this mark filled the tenth box, so
  *   the note says the track has cleared and started again
  * @returns {Promise<Array<{ step: "xp", pcId: string|null, xp: number, track: string, boxes: number, reason: string, error: string }>>}
  */
-async function awardLegacyBoxXP(key, boxes, xp, { pcs = null, clearedNow = false } = {}) {
-  const recipients = pcs ?? getPlayerActors();
-  const failed = [];
-  const given  = [];
-  for (const actor of recipients) {
-    try {
-      await awardXP(actor, xp);
-      given.push(actor);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | awardXP failed for ${actor?.name ?? actor?.id}:`, err?.message ?? err);
-      failed.push({ step: "xp", pcId: actor?.id ?? null, xp, track: key, boxes, reason: "refused", error: errText(err) });
-    }
-  }
-  if (recipients.length && !given.length) return failed;
+async function payLegacyMark(key, boxes, xp, { pcs = null, clearedNow = false } = {}) {
+  const { written, failed: refused } = await mirrorLegacyToSheets(key, { pcs });
+  const failed = refused.map(({ actor, error }) =>
+    ({ step: "xp", pcId: actor?.id ?? null, xp, track: key, boxes, reason: "refused", error }));
+  if (boxes <= 0 || !written.length) return failed;
   const label = LEGACY_LABELS[key] ?? key;
   // Named when not every PC was given it: a Retry's PC, or the PCs whose
-  // awards landed beside a refused one.
+  // sheets took it beside a refused one.
   const who = pcs || failed.length
-    ? given.map(a => escapeChatHtml(a?.name ?? "")).filter(Boolean)
+    ? written.map(a => escapeChatHtml(a?.name ?? "")).filter(Boolean)
     : [];
   const clearedNote = clearedNow
     ? ` The track is filled and cleared — it starts again from its first box, and each box earns 1 XP from now on.`
     : "";
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned${who.length ? ` by ${who.join(", ")}` : ""} (${boxes} box${boxes === 1 ? "" : "es"} filled).${clearedNote} Spend it on new assets or upgrades (Earn Experience).</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned${who.length ? ` by ${who.join(", ")}` : ""} (${boxes} box${boxes === 1 ? "" : "es"} filled).${clearedNote} It shows on the character sheet&rsquo;s Legacies tab &mdash; spend it there on new assets or upgrades (Earn Experience).</p></div>`,
     flags:   { [MODULE_ID]: { legacyXpCard: true, track: key, boxes, xp, ...(clearedNow ? { cleared: true } : {}) } },
   }).catch(err => console.warn(`${MODULE_ID} | legacy XP card failed:`, err?.message ?? err));
   return failed;
@@ -4131,6 +4248,38 @@ async function postLegacyMarkCard(track, ticks) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postLegacyMarkCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Tell a player with no character of their own that their move was not rolled
+ * (issue #326 D8): whispered to the author (and the GMs), flagged so it never
+ * reads as narration.
+ *
+ * @param {ChatMessage} message — the player's narration
+ * @returns {Promise<void>}
+ */
+async function postNoCharacterNotice(message) {
+  const authorId = messageAuthorId(message);
+  const whisper  = [...new Set([authorId, ...gmUserIds()].filter(Boolean))];
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>No character to roll for</strong><p>You don&rsquo;t have a character of your own yet, so this move was not rolled &mdash; another player&rsquo;s character can&rsquo;t make it for you. Ask the GM to assign you a character (or set one as yours under User Configuration), then try again.</p></div>`,
+    whisper,
+    flags: { [MODULE_ID]: { noCharacterNotice: true } },
+  });
+}
+
+/** Feedback for Finish the Scene — the challenge finished, its clock retired (issue #326 D6). */
+async function postSceneFinishCard(track) {
+  const label = escapeChatHtml(track?.label ?? "Scene challenge");
+  const clock = track?.tensionClockId ? " Its danger clock is retired." : "";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Scene finished</strong><p><strong>${label}</strong> is concluded.${clock}</p></div>`,
+      flags:   { [MODULE_ID]: { sceneFinishCard: true, trackId: track?.id ?? null } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postSceneFinishCard: chat post failed:`, err?.message ?? err);
   }
 }
 
@@ -4335,6 +4484,7 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
   const { primary } = resolveVowItemCopies(vowName, { actorId });
   const item = primary?.item?.system?.completed === true ? null : (primary?.item ?? null);
   const vowRank        = item?.system?.rank ?? null;
+  const vowId          = item?.flags?.[MODULE_ID]?.vowId ?? null;
   const connectionName = item?.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
   const safeVow   = escapeChatHtml(vowName ?? "your vow");
   const deepenBtn = connectionName
@@ -4347,8 +4497,9 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
         + `<p><button type="button" class="entity-btn" data-action="sf-mark-milestone">⚑ Mark milestone (×${marks})</button> `
         + `<button type="button" class="entity-btn" data-action="sf-fulfill-vow">🏁 Attempt to Fulfill</button>${deepenBtn}</p></div></div>`,
       // actorId: the PC whose winning roll ended the fight — the milestone
-      // marks their copy of the vow (credit the roller).
-      flags: { [MODULE_ID]: { fightVowCard: true, vowName, marks, connectionName, vowRank, actorId } },
+      // marks their copy of the vow (credit the roller). vowId: the vow whose
+      // payoff ledger 🤝 Deepen records on (deepenVowConnectionOnce).
+      flags: { [MODULE_ID]: { fightVowCard: true, vowName, vowId, marks, connectionName, vowRank, actorId } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postFightVowMilestoneCard: chat post failed:`, err?.message ?? err);
@@ -4436,6 +4587,42 @@ export async function deepenLinkedConnection(connectionName, marks) {
   } catch (err) {
     console.warn(`${MODULE_ID} | deepen connection failed:`, err?.message ?? err);
     return { ok: false, reason: "refused", error: errText(err) };
+  }
+}
+
+/**
+ * The won-fight card's 🤝 Deepen (issue #326 D1): a vow sworn for a
+ * connection deepens it once. The card's deepen and the vow's fulfilment
+ * (payFulfilledVowCopies) each deepened it by the vow's rank marks — one vow,
+ * two deepens. Whichever lands first pays: it is recorded on the vow's payoff
+ * ledger (`fulfilPayoff.deepen`, every copy), which the fulfilment and its
+ * Retry already skip a landed step by; a press after the fulfilment's deepen
+ * finds it there and deepens nothing (decisions.md → "A vow deepens its
+ * connection once").
+ *
+ * @param {{ vowName?: string|null, vowId?: string|null, actorId?: string|null,
+ *   connectionName?: string|null, marks?: number }} card
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string }>}
+ */
+export async function deepenVowConnectionOnce({ vowName = null, vowId = null, actorId = null, connectionName = null, marks = 1 } = {}) {
+  const copies = payoffVowCopies({ vowId, vowName, actorId });
+  if (payoffStepLanded(copies, "deepen")) {
+    await postDeepenAlreadyPaidCard(connectionName, vowName);
+    return { ok: true, skipped: true, reason: "already-deepened" };
+  }
+  const res = await deepenLinkedConnection(connectionName, marks);
+  if (res?.ok) await recordPayoffStep(copies, "deepen");
+  return res;
+}
+
+async function postDeepenAlreadyPaidCard(connectionName, vowName) {
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-card sf-deepen-bond"><div class="sf-card-body"><p>🤝 Your bond with <strong>${escapeChatHtml(connectionName ?? "your connection")}</strong> has already deepened for &ldquo;${escapeChatHtml(vowName ?? "this vow")}&rdquo; — a vow deepens it once.</p></div></div>`,
+      flags:   { [MODULE_ID]: { deepenBondCard: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | deepen already paid: chat post failed:`, err?.message ?? err);
   }
 }
 
@@ -4983,7 +5170,7 @@ const PAYOFF_TITLES = {
   fight:       (c) => `Victory reward incomplete — “${c.vowName ?? "your vow"}”`,
   forge:       (c) => `Bond payoff incomplete — ${c.connectionName ?? "the bond"}`,
   fightButton: (c) => `Victory card not applied — “${c.vowName ?? "your vow"}”`,
-  legacyXp:    ()  => `Legacy experience not given`,
+  legacyXp:    ()  => `Legacy not shown on a character sheet`,
   suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   upgrade:     (c) => `Upgraded result not fully applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   session:     ()  => `Session momentum not given`,
@@ -5095,10 +5282,14 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         return `Begin a Session's campaign clock advance: ${parts.join("; ")} — ${why}. The oracle's roll stands; Retry saves it without rolling again.`;
       }
       case "xp": {
-        const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
-        const who = escapeChatHtml(pc?.name ?? "a character");
-        const now = pc ? ` ${who} has ${readCharacterSnapshot(pc)?.xp?.value ?? 0} XP now.` : "";
-        return `+${f.xp} XP for ${who}, earned by a filled ${escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track)} legacy box — ${why}.${now}`;
+        // A legacy mark's write to a PC's sheet (issue #326 D3): the sheet's
+        // legacy, and the XP it shows, as they stand now.
+        const pc    = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
+        const who   = escapeChatHtml(pc?.name ?? "a character");
+        const label = escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track);
+        const now   = pc ? ` ${who}'s sheet shows ${readSheetLegacy(pc, f.track)} ${label} ticks and ${readCharacterSnapshot(pc)?.xp?.value ?? 0} XP now.` : "";
+        const earned = f.xp > 0 ? ` (+${f.xp} XP earned by a filled box)` : "";
+        return `The ${label} legacy on ${who}'s character sheet${earned} — ${why}.${now}`;
       }
       case "milestone": {
         const vow = readVows(resolveVowHolderActor(vowName, actorId)).find(v => v.name === vowName && !v.completed);
@@ -5211,12 +5402,14 @@ async function runPayoffStep(s, card, copies) {
       }
     }
     case "xp": {
-      // A legacy box's XP for one PC — the ticks already landed (issue #309 N06).
+      // A legacy mark's sheet write for one PC — the ticks already landed on
+      // the shared track (issue #309 N06); the sheet shows the XP it earns
+      // (issue #326 D3).
       const xp = Math.floor(Number(s.xp));
-      if (!LEGACY_LABELS[s.track] || !(xp > 0 && xp <= 20)) return { ok: false, reason: "invalid step" };
+      if (!LEGACY_LABELS[s.track] || !(xp >= 0 && xp <= 20)) return { ok: false, reason: "invalid step" };
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
       if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
-      const [failed] = await awardLegacyBoxXP(s.track, Math.max(1, Math.floor(Number(s.boxes)) || 1), xp, { pcs: [pc] });
+      const [failed] = await payLegacyMark(s.track, Math.max(0, Math.floor(Number(s.boxes)) || 0), xp, { pcs: [pc] });
       return failed ? { ...failed, ok: false } : { ok: true };
     }
     case "rewardGrant": {
@@ -5457,7 +5650,9 @@ async function applyReachMilestone(actor, target, marks = 1) {
     await markVowProgress(actor, plan.vow.id, ticks);
     await postReachMilestoneCard(plan.vow, ticks);
   } else if (plan.action === "pick") {
-    await postMilestonePickerCard(plan.vows, actor.id);
+    // The marks ride the picker: a won fight's ×2 that falls to the picker
+    // (its vow renamed since) marked the picked vow once (issue #326 W43).
+    await postMilestonePickerCard(plan.vows, actor.id, marks);
   }
   // action "none" → no open vow to mark; the move card's otherEffect already
   // tells the player Reach a Milestone marks vow progress.
@@ -5467,9 +5662,12 @@ async function applyReachMilestone(actor, target, marks = 1) {
 /**
  * Post a picker when several vows are open and none was named. Each button
  * relays one vow to the canonical GM (wireMilestonePickerButtons →
- * milestone.pick → src/moves/milestonePicker.js applyMilestonePick).
+ * milestone.pick → src/moves/milestonePicker.js applyMilestonePick). `marks`
+ * (a won fight's milestone count, #241) rides each choice, so the pick marks
+ * the vow that many times (issue #326 W43).
  */
-async function postMilestonePickerCard(vows, actorId) {
+async function postMilestonePickerCard(vows, actorId, marks = 1) {
+  const count = Math.max(1, Math.floor(Number(marks)) || 1);
   const rows = (vows ?? []).map(v =>
     `<button type="button" class="sf-followup-btn" data-action="sf-milestone-pick" ` +
     `data-vow-id="${escapeChatHtml(v.id ?? "")}" data-actor-id="${escapeChatHtml(actorId ?? "")}">` +
@@ -5477,13 +5675,14 @@ async function postMilestonePickerCard(vows, actorId) {
   ).join("");
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>` +
+      content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone${count > 1 ? ` (×${count})` : ""}</strong>` +
         `<p>Which vow advances?</p><div class="sf-milestone-picker">${rows}</div></div>`,
       // choices: what the GM-side "milestone.pick" handler validates a relayed
-      // click against (src/moves/milestonePicker.js applyMilestonePick).
+      // click against, and the marks it applies (src/moves/milestonePicker.js
+      // applyMilestonePick).
       flags:   { [MODULE_ID]: {
         milestonePicker: true, resolved: false,
-        choices: (vows ?? []).map(v => ({ vowId: v.id ?? "", actorId: actorId ?? "" })),
+        choices: (vows ?? []).map(v => ({ vowId: v.id ?? "", actorId: actorId ?? "", marks: count })),
       } },
     });
   } catch (err) {
@@ -5904,9 +6103,12 @@ async function handleRollCommand(_message) {
     return;
   }
   const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  await markForceNextAsMove(campaignState);
+  // A refused write sets nothing, and the card says so (issue #326 W51).
+  const marked = await markForceNextAsMove(campaignState);
   await ChatMessage.create({
-    content: `<div class="sf-pace-card"><strong>Pacing</strong> <p>Next undecorated input will route to the move interpreter, bypassing the classifier.</p></div>`,
+    content: marked
+      ? `<div class="sf-pace-card"><strong>Pacing</strong> <p>Next undecorated input will route to the move interpreter, bypassing the classifier.</p></div>`
+      : `<div class="sf-pace-card"><strong>Pacing</strong> <p>!roll was not recorded — the world did not take the write. Try again.</p></div>`,
     flags:   { [MODULE_ID]: { rollCommandCard: true } },
   });
 }
@@ -6848,7 +7050,10 @@ Hooks.once("ready", () => {
     // Settlements) into a flat per-sector folder (Sectors/<Name>). Idempotent:
     // when nothing needs moving the function walks the actor list once and
     // returns. Reports counts to the console so the GM can see what changed.
-    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames }) => {
+    // These migrations write world documents: the canonical GM runs them —
+    // two GMs whose clients reconnected together each ran them (issue #326
+    // W54). The help journal, macros and World Journal gate themselves.
+    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames }) => {
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
@@ -6912,6 +7117,13 @@ Hooks.once("ready", () => {
   registerChatHook();
   registerActorHook();
   registerSharedSupplyHook();   // crew-shared supply track (co-op/guided rule)
+  // #326 D3: the shared legacy tracks on every PC's sheet — a sheet edit flows
+  // back; the canonical GM backfills the sheets once the world is ready.
+  registerLegacySheetSyncHook();
+  if (isCanonicalGM()) {
+    backfillLegacySheets().catch(err =>
+      console.warn(`${MODULE_ID} | legacy sheet backfill failed:`, err?.message ?? err));
+  }
   registerEntityRenameSyncHook();
   registerStarshipSeedHook();
   registerCommandVehicleHook();
@@ -6959,17 +7171,15 @@ Hooks.once("ready", () => {
   // ("fightVow.*" → src/moves/cardActions.js), one-shot per card.
   registerFightVowMilestoneHook();
   registerSettingsHooks();
-  // Both upgrades re-narrate and log through the pipeline's narrator and
-  // persist, and apply the upgraded outcome's other effects through its
-  // applier (UPGRADE-PIPELINE-EFFECTS).
+  // Both upgrades re-narrate through the pipeline's narrator and apply the
+  // upgraded outcome's other effects through its applier
+  // (UPGRADE-PIPELINE-EFFECTS).
   registerBurnMomentumHook({
     narrate:      narrateResolution,
-    persist:      persistResolution,
     applyEffects: applyUpgradedOutcomeEffects,
   });
   registerImproveResultHook({
     narrate:      narrateResolution,
-    persist:      persistResolution,
     applyEffects: applyUpgradedOutcomeEffects,
   });
   // Suffer choices are a non-blocking chat card (never a modal dialog inside the
@@ -6989,23 +7199,6 @@ Hooks.once("ready", () => {
   if (game.settings.get(MODULE_ID, "speechInputEnabled")) {
     initSpeechInput();
   }
-});
-
-Hooks.once("closeWorld", async () => {
-  if (!game.user.isGM) return;
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
-  // Fact continuity: flush any active scene before the world closes so
-  // truths migrate to entity tiers / WJ Lore rather than vanishing on the
-  // next world load. See issue #227 (Fact Continuity) §9.2.
-  if (factContinuityEnabledFromSettings() && campaignState?.currentSceneId) {
-    try {
-      await endScene(campaignState, { reason: "session_close" });
-    } catch (err) {
-      console.warn(`${MODULE_ID} | closeWorld: endScene failed:`, err);
-    }
-  }
-  campaignState.lastSessionTimestamp = new Date().toISOString();
-  await game.settings.set(MODULE_ID, "campaignState", campaignState);
 });
 
 /**

@@ -13,6 +13,30 @@ import { PrivateChannelApp } from "./app.js";
 
 const MODULE_ID = "starforged-companion";
 
+// This client's listeners for a change of the Private Channel switch — the
+// floating toolbar, whose ✦ button the switch shows or hides.
+const _toggleListeners = new Set();
+
+/**
+ * Call `fn(enabled)` whenever the Private Channel setting changes on this
+ * client (the setting's onChange runs on every client). The toolbar listens,
+ * so the switch shows or hides its button at once (issue #326 W86).
+ *
+ * @param {(enabled: boolean) => void} fn
+ * @returns {() => void} unsubscribe
+ */
+export function onPrivateChannelToggled(fn) {
+  _toggleListeners.add(fn);
+  return () => _toggleListeners.delete(fn);
+}
+
+function notifyPrivateChannelToggled(enabled) {
+  for (const fn of _toggleListeners) {
+    try { fn(enabled); }
+    catch (err) { console.warn(`${MODULE_ID} | Private Channel toggle listener failed:`, err?.message ?? err); }
+  }
+}
+
 export function registerPrivateChannelSettings() {
   game.settings.register(MODULE_ID, "privateChannel.enabled", {
     name:    "Private Channel",
@@ -21,6 +45,9 @@ export function registerPrivateChannelSettings() {
     config:  false,
     type:    Boolean,
     default: true,
+    // The toolbar computes its buttons when it renders: without this, every
+    // client kept the old button set until a reload (issue #326 W86).
+    onChange: (value) => notifyPrivateChannelToggled(value !== false),
   });
   game.settings.register(MODULE_ID, "privateChannel.windowPosition", {
     scope:   "client",

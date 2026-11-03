@@ -36,11 +36,12 @@ const MODULE_ID = "starforged-companion";
 const flush = () => new Promise(r => setTimeout(r, 0));
 const settle = async () => { for (let i = 0; i < 6; i++) await flush(); };
 
-let savedHTMLElement, savedDocument, savedCombats, savedIsGM;
+let savedHTMLElement, savedDocument, savedCombats, savedCombat, savedIsGM;
 beforeEach(() => {
   savedHTMLElement = globalThis.HTMLElement;
   savedDocument    = globalThis.document;
   savedCombats     = game.combats;
+  savedCombat      = game.combat;
   savedIsGM        = game.user.isGM;
   globalThis.HTMLElement = StubElement;
   globalThis.document = { createElement: (tag) => new StubElement(tag) };
@@ -54,6 +55,7 @@ afterEach(() => {
   globalThis.HTMLElement = savedHTMLElement;
   globalThis.document    = savedDocument;
   game.combats           = savedCombats;
+  game.combat            = savedCombat;
   game.user.isGM         = savedIsGM;
 });
 
@@ -71,10 +73,13 @@ function renderTracker({ position = "none", actor = { id: "pc1", name: "Kira", t
     combatants: [combatant],
   };
   game.combats = { find: (fn) => [combat].find(fn) ?? null };
+  // The tracker decorates the combat it shows (app.viewed / game.combat —
+  // issue #326 W55).
+  game.combat  = combat;
   Hooks._handlers.delete("renderCombatTracker");
   registerCombatTrackerHooks();
   const root = parseHTML(`<ol><li data-combatant-id="cmb1"><div class="combatant-controls"></div></li></ol>`);
-  Hooks.call("renderCombatTracker", {}, root);
+  Hooks.call("renderCombatTracker", { viewed: combat }, root);
   return { badge: root.querySelector(".sf-pos-badge"), combatant };
 }
 

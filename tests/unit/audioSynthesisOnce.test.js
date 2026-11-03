@@ -117,8 +117,7 @@ describe('the canonical GM synthesises a clip once (issue #321 U59)', () => {
     const hash = await cacheKey(SPEC);
     vi.mocked(synthesise).mockRejectedValueOnce(new Error('ElevenLabs 503'));
     playerRequests(hash);
-    await flush();
-    expect(doneSignals()).toHaveLength(1);                       // the waiting player is still released
+    await vi.waitFor(() => expect(doneSignals()).toHaveLength(1));   // the waiting player is still released
     expect(getCapturedWarns().some(w => /keyless request\) failed: ElevenLabs 503/.test(w))).toBe(true);
 
     playerRequests(hash);

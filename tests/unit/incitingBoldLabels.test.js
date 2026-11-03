@@ -72,7 +72,7 @@ describe('splitIncitingMeta — a Markdown-bold label is a label', () => {
       vow:       { statement: 'I will find Dani before the Covenant does', rank: 'extreme' },
       clock:     { label: "Dani's captivity", segments: 6 },
       crisis:    { label: 'The relay is venting atmosphere', segments: 4 },
-      target:    { name: 'Dani Okoro', pronouns: 'she/her', description: 'your sister, a relay engineer taken by Covenant raiders.' },
+      target:    { name: 'Dani Okoro', pronouns: 'she/her', description: 'your sister, a relay engineer taken by Covenant raiders.', kind: 'person' },
       situation: 'Covenant raiders took Dani Okoro from the Ashwind relay.',
       prose:     'The distress call cuts out mid-word. Dani Okoro is gone from the Ashwind relay.',
     });
@@ -82,7 +82,7 @@ describe('splitIncitingMeta — a Markdown-bold label is a label', () => {
     expect(splitIncitingMeta('Prose.\n**Suggested vow**: Find the *Archive* (formidable)').vow)
       .toMatchObject({ statement: 'Find the Archive', rank: 'formidable' });
     expect(splitIncitingMeta('Prose.\n- *Vow target:* __Ren Ito__ — a fixer').target)
-      .toEqual({ name: 'Ren Ito', pronouns: '', description: 'a fixer' });
+      .toEqual({ name: 'Ren Ito', pronouns: '', description: 'a fixer', kind: 'person' });
     expect(splitIncitingMeta('Prose.\n**Suggested clock: The hunt closes in (8 segments)**').clock)
       .toEqual({ label: 'The hunt closes in', segments: 8 });
   });

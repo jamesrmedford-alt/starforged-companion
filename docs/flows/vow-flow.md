@@ -21,8 +21,9 @@ card once; they were the ad-hoc `vow.setReward` / `vow.linkConnection`
 socket relays). Only the vendor sheet writes a vow from the owner's own
 client.
 Effects credit the **roller**: the pipeline's `rollerActor` is the speaker
-resolved from the message, first PC only as a fallback (decisions.md →
-"Multiplayer attribution").
+resolved from the message, first PC only as a fallback — a GM's, or at a
+one-PC table; a PC-less player at a table of several rolls nothing (issue
+#326 D8; decisions.md → "Multiplayer attribution").
 
 Terminology up front, because it drives every gap below:
 
@@ -73,7 +74,11 @@ canonical GM's pipeline swear branch calls `swearSharedVowForAll`
 immediate-crisis **tension clock** when the meta has one, creates the **target
 NPC connection** — a bond Item on every PC the vow was sworn on
 (`registerConnectionOnActiveCharacter(…, { actors })`), not the first PC's
-alone — posts the sworn-confirmation card (rank→milestone/legacy
+alone; only for a **person** target: the target line carries its kind
+(`[person|creature|faction|vessel]`, read from the description's head when it
+has none — `vowTargetKind`), and a faction, creature or vessel is neither made
+a connection nor linked to the vow (`linkedConnectionName`, `swearToConnection`
+— issue #326 W70) — posts the sworn-confirmation card (rank→milestone/legacy
 stakes lines), narrates the vow-swearing scene for the PC who rolled the
 swear (`swearSharedVowForAll(message, { speakerActorId })` →
 `narrateAndPostVowSwearing`; issue #321 U23), and proposes two concrete
@@ -107,7 +112,9 @@ All real progress lands on **item ticks** (`system.current`) via
   `applyReachMilestone(rollerActor, moveTarget)` on the **roller's** vows —
   a named or sole open vow auto-marks (`postReachMilestoneCard`,
   `src/moves/milestonePicker.js`); several → a picker card whose
-  `flags.choices` record the offered (vowId, actorId) pairs. Any user's click
+  `flags.choices` record the offered (vowId, actorId) pairs and the marks
+  the pick applies (a won fight's ×N falls here when its vow was renamed —
+  issue #326 W43; a plain Reach a Milestone's picker marks once). Any user's click
   relays `milestone.pick` to the canonical GM → `applyMilestonePick`, which
   checks the pick is one of the card's choices and that the requester owns
   that PC (or is a GM), marks the vow, and stamps the card `resolved`
@@ -204,7 +211,10 @@ roll resolves gets the "not rolled" card (`postTrackGoneCard`).
 
 **Pipeline path** (typed, victory-card button, suggestion button, or a
 "Which vow?" pick):
-`finishVow` closes the journal twin if one exists; `completeVowItemByName`
+`finishVow` closes the journal twin if one exists — by the name of the vow
+the roll scored (`tickInfo.label`), else the move's target, and by name only:
+a name no journal track carries closes none (issue #326 W44 — the sole-open
+rung completed another vow's twin); `completeVowItemByName`
 closes **every open item copy** across PCs of the roller's vow — the Item
 the roll scored (`tickInfo.trackId`), else the roller's exact-name vow;
 payoff via `payFulfilledVowNative` with `skipLegacy:true`, `actorId` = the
@@ -252,14 +262,20 @@ flag, paid again). The native path, like a Retry, skips any step the vow's
 **A payoff step that does not land** (issue #306 R04, option 2):
 `payFulfilledVowCopies` runs three steps after the `fulfilPaid` stamp — the
 Quests legacy (`runLegacyStep` → `writeLegacyTicks`: written on a copy, the
-filled box's XP awarded only once the write lands — each PC's award on its
-own, `awardLegacyBoxXP`; one that is refused is an `xp` step of its own,
+filled box's XP awarded only once the write lands — since issue #326 D3 by
+writing the shared track to each PC's sheet (`payLegacyMark` →
+`sharedLegacies.mirrorLegacyToSheets`, where the sheet derives the XP), each
+PC's sheet on its own; one that is refused is an `xp` step of its own,
 for that PC alone, since re-running the legacy would add its ticks again,
-issue #309 N06), the connection deepen
+issue #309 N06; the pipeline's own fulfil marks its working copy, whose box
+XP is paid once `persistResolution`'s write lands — issue #326 W52), the connection deepen
 (`deepenLinkedConnection`), the reward (`grantLinkedVowReward`: the status
 flip is the claim, written first; then the grant — `giveReward`; "🎁 Reward
 earned" only once it lands). Each returns `{ ok }`; each that lands is
-recorded on every copy (`flags.fulfilPayoff.<legacy|deepen|reward>`), and
+recorded on every copy (`flags.fulfilPayoff.<legacy|deepen|reward>`) — the
+won-fight card's 🤝 Deepen records `deepen` there too, so a vow deepens its
+connection once, whichever lands first (`deepenVowConnectionOnce`, issue
+#326 D1) — and
 those that do not go on one card whispered to the GMs
 (`postPayoffFailureCard`, flagged `payoffFailureCard` with the steps a retry
 needs) showing each value as it stands now. Its "↻ Retry these steps"

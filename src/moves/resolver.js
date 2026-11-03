@@ -250,7 +250,6 @@ function emptyConsequences() {
     healthChange:        0,
     spiritChange:        0,
     supplyChange:        0,
-    sufferMoveTriggered: null,
     // F16 §5.2: structured prompt that the SufferChoiceDialog renders
     // when the outcome requires a player choice (Shape B1 generic
     // suffer-pick or Shape B2 enumerated options). `null` means no
@@ -267,6 +266,9 @@ function emptyConsequences() {
     // { ranksDown } — pipeline completes the open expedition track and pays its
     // rank's legacy reward (Finish an Expedition). null = not a finish.
     finishExpedition:    null,
+    // true → pipeline completes the scene challenge and retires its tension
+    // clock (Finish the Scene — every outcome; issue #326 D6).
+    finishScene:         false,
     // Combat lifecycle (audit 3.24–3.27): pipeline creates/reuses the combat track.
     enterCombat:           false,
     // Pipeline marks progress N times on the active combat track (Strike/Clash).
@@ -354,8 +356,8 @@ function withCost(recovery, costs) {
  *   (Shape B1). Player picks any of the six suffer moves.
  * - "Choose: X or Y or …" → `sufferPrompt: { kind: "enumerated", options: [...],
  *   allowComplication? }` (Shape B2). Player picks from listed options.
- *   `sufferMoveTriggered` remains set in parallel as a deprecated back-compat
- *   field for one release; new code reads from `sufferPrompt`.
+ *   (The deprecated `sufferMoveTriggered` alias went with its last reader,
+ *   persistResolution's impact step — issue #326 W58.)
  * - Progress marking is never a generic consequence field: each kind has its
  *   own pipeline flag (reachMilestone, combatProgress, expeditionProgress,
  *   legacyMark, developRelationship, …) applied in src/index.js.
@@ -404,7 +406,6 @@ const CONSEQUENCE_MAP = {
         ...emptyConsequences(),
         // B1: generic "make a suffer move (-1)" — player picks which.
         sufferPrompt:        { kind: "any", amount: 1, count: 1 },
-        sufferMoveTriggered: { move: "suffer", amount: 1 },  // deprecated alias
         otherEffect: "Success with a cost. Make a suffer move (-1).",
       };
       case "miss": return {
@@ -675,6 +676,23 @@ const CONSEQUENCE_MAP = {
     }
   },
 
+  // ── SCENE CHALLENGE MOVES ───────────────────────────────────────────────────
+
+  finish_the_scene: (outcome, _isMatch) => {
+    // Progress move (Starforged p. 241; issue #326 D6). The scene concludes on
+    // every outcome: the challenge track completes and its tension clock
+    // retires (the pipeline's finishScene). A weak hit pays a minor price, a
+    // miss a dire one — Pay the Price routed, as Take Decisive Action's miss.
+    switch (outcome) {
+      case "strong_hit": return { ...emptyConsequences(), finishScene: true,
+        otherEffect: "You achieve your objective unconditionally. The scene is finished." };
+      case "weak_hit": return { ...emptyConsequences(), finishScene: true, routePayThePrice: true,
+        otherEffect: "You succeed, but not without cost. Pay the Price — a minor cost relative to the scope of the scene." };
+      case "miss": return { ...emptyConsequences(), finishScene: true, routePayThePrice: true,
+        otherEffect: "You fail, or are undermined by a dramatic and costly turn of events. Pay the Price. Make it hurt." };
+    }
+  },
+
   set_a_course: (outcome, _isMatch) => {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), momentumChange: 1,
@@ -793,7 +811,6 @@ const CONSEQUENCE_MAP = {
         ...emptyConsequences(),
         // B1: generic "suffer move (-1)" pick.
         sufferPrompt:        { kind: "any", amount: 1, count: 1 },
-        sufferMoveTriggered: { move: "suffer", amount: 1 },  // deprecated alias
         combatPosition: "bad_spot",
         otherEffect: "Avoid worst danger but not without cost. Suffer move (-1). Stay in a bad spot."
       };
@@ -1398,16 +1415,16 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
       case "explore_a_waypoint": {
         // Per the Reference Guide: "If you roll a match on a strong hit,
         // envision a notable encounter or aspect of this place." Use Action +
-        // Theme as the prompt, plus the play-kit Make a Discovery table.
+        // Theme as the prompt. A match lets the player Make a Discovery (or,
+        // on a miss, Confront Chaos) INSTEAD — a choice the card's 🔭 / 🌀
+        // button makes, whose forced move rolls its own table. The waypoint
+        // seeds no table result: its narration depicted discovery X and the
+        // button's move rolled discovery Y, and a player who took the
+        // ordinary reward was narrated a discovery that never happened (issue
+        // #326 W47, the issue #321 U03 shape).
         if (outcome === "strong_hit" && isMatch) {
           const pair = safeRollPaired("action", "theme");
           if (pair) results.push(`Notable aspect of this waypoint: ${pair}`);
-          const disc = safeRoll("make_a_discovery");
-          if (disc) results.push(`Make a Discovery: ${disc}`);
-        }
-        if (outcome === "miss" && isMatch) {
-          const chaos = safeRoll("confront_chaos");
-          if (chaos) results.push(`Confront Chaos: ${chaos}`);
         }
         // Site-aware seeds (SITE-WAYPOINT-BLIND fix, 2026-07): exploring a
         // waypoint INSIDE a vault or derelict rolls that site's canonical

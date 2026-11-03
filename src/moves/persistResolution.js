@@ -7,14 +7,19 @@
 // document sync.
 //
 // Responsibilities:
-//   1. Append the move resolution to the current session's move log
 //   2. Apply meter changes to the rolling player's Actor via actorBridge.applyMeterChanges
-//   3. Apply impact (debility) state changes from suffer moves via actorBridge.setDebility
 //   4. Post the suffer-choice card when the outcome needs a player choice
 //   5. Persist the updated campaign state to game.settings — merged onto a
 //      fresh read of the store, so world writes that landed while the move
 //      resolved (X-Card, Take a Break, relays…) are not reverted by the
 //      pipeline's stale working copy (mergeWithLatestState)
+//
+// (The numbers are kept from the steps' history. Step 1, the session move
+// log `campaignState.sessionLogs`, and step 3, the automatic impact marks,
+// were retired with issue #326 W58: nothing read the log, which grew with
+// every move; and step 3 switched on a `sufferMoveTriggered` string no
+// resolver sets and a supply loss no consequence carries — the suffer
+// executors mark wounded / shaken / unprepared when a meter reaches 0.)
 //
 // Progress is NOT marked here. Vow progress (Reach a Milestone → markVowProgress),
 // legacy ticks (addLegacyTicks), combat/expedition/connection tracks and combat
@@ -31,13 +36,11 @@ import {
   getActor,
   getPlayerActors,
   applyMeterChanges,
-  setDebility,
 } from '../character/actorBridge.js';
 import { postSufferChoiceCard } from './sufferCard.js';
-import { markUnprepared } from './sufferExecutor.js';
 import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
-import { mergeLegacyTrack } from './legacyTracks.js';
+import { mergeLegacyTrack, payDeferredLegacyXp } from './legacyTracks.js';
 
 const MODULE_ID  = 'starforged-companion';
 
@@ -92,9 +95,6 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     }
     await applyMeterChanges(actor, meterChanges);
 
-    // 3. Impact (debility) state from suffer moves
-    await applySufferMoveDebilities(actor, resolution.consequences, meterChanges);
-
     // 4. Suffer prompt (F16 Phase D) — posts the non-blocking suffer-choice
     //    card that resolves the rulebook-mandated player choice into one or
     //    more executor calls on click (see resolveSufferPrompt below).
@@ -116,8 +116,13 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     game.settings.get(MODULE_ID, 'campaignState'),
   );
   updated.updatedAt = new Date().toISOString();
-  appendToSessionLog(resolution, updated);
   await game.settings.set(MODULE_ID, 'campaignState', updated);
+
+  // The legacy ticks the pipeline marked on its working copy are saved: their
+  // box XP is paid now, never before (issue #326 W52 — a refused persist had
+  // already paid it). Fire-and-forget, as the award was at the mark.
+  payDeferredLegacyXp(campaignState).catch(err =>
+    console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
 
   return { actor, campaignState: updated };
 }
@@ -178,7 +183,6 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //     union, store first.
 //   artAssetIds — the art index (asset id → journal entry name), a map both
 //     sides add to (a portrait stored during the move): every entry kept.
-//   sessionLogs — the store's logs; this resolution's entry is appended after.
 //   sessionSummary — whichever record has the newer updatedAt.
 //   legacyTracks — both sides add ticks (pipeline addLegacyTicks; `!bond`, the
 //     native-sheet vow hook): per track the record further along — by its
@@ -262,10 +266,6 @@ function mergeWithLatestState(working, latestRaw) {
     working.artAssetIds = { ...(working.artAssetIds ?? {}), ...(latest.artAssetIds ?? {}) };
   }
 
-  if (latest.sessionLogs && typeof latest.sessionLogs === 'object') {
-    working.sessionLogs = latest.sessionLogs;
-  }
-
   if (isNewerRecord(latest.sessionSummary, working.sessionSummary)) {
     working.sessionSummary = latest.sessionSummary;
   }
@@ -298,35 +298,9 @@ function mergeLegacyTracks(store, working) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 1. Session move log
+// 4. The suffer-choice card
 // ─────────────────────────────────────────────────────────────────────────────
 
-function appendToSessionLog(resolution, campaignState) {
-  if (!campaignState.currentSessionId) return;
-
-  if (!campaignState.sessionLogs) campaignState.sessionLogs = {};
-  if (!campaignState.sessionLogs[campaignState.currentSessionId]) {
-    campaignState.sessionLogs[campaignState.currentSessionId] = [];
-  }
-
-  campaignState.sessionLogs[campaignState.currentSessionId].push({
-    resolutionId: resolution._id ?? foundry.utils.randomID(),
-    moveId:       resolution.moveId,
-    outcome:      resolution.outcome,
-    timestamp:    new Date().toISOString(),
-  });
-}
-
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 3. Impact changes from suffer moves
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Apply automatic debility marks triggered by suffer-move outcomes.
- * Only the deterministic automatic cases (health/spirit/supply at zero
- * after taking damage) — player-choice branches are surfaced as otherEffect.
- */
 /**
  * F16 Phase D entry point. Called from persistResolution when the
  * resolved consequences carry a sufferPrompt. Opens the blocking
@@ -374,35 +348,3 @@ async function resolveSufferPrompt(resolution, actor, targets = {}) {
 }
 
 
-async function applySufferMoveDebilities(actor, consequences, appliedMeters) {
-  const { sufferMoveTriggered } = consequences;
-
-  // Auto-mark unprepared if supply just hit 0 — with the crew sharing it
-  // (markUnprepared, the zero-supply impact's one writer — issue #315 S07)
-  if (appliedMeters.supply < 0) {
-    const sys = actor.system ?? {};
-    const currentSupply = sys.supply?.value ?? sys.supply ?? 0;
-    if (currentSupply === 0) {
-      await markUnprepared(actor);
-    }
-  }
-
-  switch (sufferMoveTriggered) {
-    case 'endure_harm': {
-      const health = actor.system?.health?.value ?? actor.system?.health ?? 0;
-      if (health === 0 && !actor.system?.debility?.wounded) {
-        await setDebility(actor, 'wounded', true);
-      }
-      break;
-    }
-    case 'endure_stress': {
-      const spirit = actor.system?.spirit?.value ?? actor.system?.spirit ?? 0;
-      if (spirit === 0 && !actor.system?.debility?.shaken) {
-        await setDebility(actor, 'shaken', true);
-      }
-      break;
-    }
-    default:
-      break;
-  }
-}

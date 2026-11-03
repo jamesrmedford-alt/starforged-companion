@@ -12,7 +12,7 @@
  *
  * Field placement (per issue #228 (Entity → Actor Migration) §3.2):
  *   actor.system.subtype  = location.type
- *   actor.system.klass    = null
+ *   actor.system.klass    = data.klass (a site's rolled class), else null
  *   actor.system.description ← location.description
  *   actor.flags[MODULE].location  ← full Starforged payload
  *   actor.flags[MODULE].entityType ← "location"
@@ -71,10 +71,15 @@ export const LocationSchema = {
 export async function createLocation(data, campaignState, { persist = true } = {}) {
   const now = new Date().toISOString();
   const id  = generateId();
+  // The location's class (planetside / orbital / deep space) is the native
+  // sheet's `system.klass`, not a record field: a generated vault's or
+  // derelict's rolled class was dropped, so the sheet showed a blank class
+  // and its derelict Type oracle was disabled (issue #326 W74).
+  const { klass = null, ...fields } = data ?? {};
 
   const location = {
     ...LocationSchema,
-    ...data,
+    ...fields,
     _id:       id,
     sectorId:  data.sectorId ?? campaignState?.activeSectorId ?? null,
     createdAt: now,
@@ -89,7 +94,7 @@ export async function createLocation(data, campaignState, { persist = true } = {
     folder: folderId,
     system: {
       subtype:     location.type || "other",
-      klass:       null,
+      klass:       typeof klass === "string" && klass.trim() ? klass.trim() : null,
       description: location.description ?? "",
     },
     flags:  {

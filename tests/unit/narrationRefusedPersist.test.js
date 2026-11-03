@@ -57,7 +57,9 @@ const REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[],"stateChange
 let table;
 const world = () => table.world.campaignState();
 const momentumOf = (id) => table.actors.get(id)?.system?.momentum?.value;
-const sessionLog = () => world().sessionLogs?.['sess-1'] ?? [];
+// persistResolution's write stamps campaignState.updatedAt — the record the
+// move's persist landed (the session move log is retired, issue #326 W58).
+const persisted = () => !!world().updatedAt;
 
 beforeAll(async () => {
   table = await simulateTable({ users: [USERS.GM, USERS.P1] });
@@ -93,7 +95,7 @@ describe('a narration that cannot be posted leaves the result applied (NARRATION
     expect(table.cards(f => f.moveResolution)).toHaveLength(1);   // the result card is on the table
     // The result applied — persistResolution used to be skipped.
     expect(momentumOf('pc-pat')).toBe(3);
-    expect(sessionLog().filter(e => e.moveId === 'face_danger')).toHaveLength(1);
+    expect(persisted()).toBe(true);
     expect(world().pendingMove).toBe(false);
     // The GM is told the narration, not the move, failed.
     expect(getCapturedWarns().some(w => /narration could not be posted — its result is applied all the same/.test(w))).toBe(true);

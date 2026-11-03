@@ -62,7 +62,10 @@ let table, pc, journal;
 const world   = () => table.world.campaignState();
 const flags   = (id) => table.world.message(id).flags[MODULE_ID];
 const content = (id) => table.world.message(id).content;
-const lastLog = () => world().sessionLogs["effects-s1"].at(-1);
+// The newest move narration's flags (moveId, outcome): the move as resolved — an
+// upgrade's re-narration carries the upgraded outcome. (It read the session
+// move log, retired with issue #326 W58.)
+const lastLog = () => table.cards(f => f.narratorCard && f.resolutionId).at(-1)?.flags[MODULE_ID];
 const tracks  = () => journal.getFlag(MODULE_ID, "tracks") ?? [];
 const track   = (id) => tracks().find(t => t.id === id);
 

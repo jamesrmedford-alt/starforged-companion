@@ -233,10 +233,12 @@ Hooks.on("updateJournalEntry", (doc, change, options, userId) => { });
 // Chat log rendered
 // html is HTMLElement in v13 (NOT jQuery object)
 Hooks.on("renderChatLog", (chatLog, html, data) => { });
-
-// World closing
-Hooks.once("closeWorld", () => { });
 ```
+
+Foundry documents no hook for the world closing. A `closeWorld` handler the
+module had (listed here from a community source) was never exercised by the
+system or the tests, and was removed (issue #326 D7) — don't build on one: a
+scene left open at a reload closes at End Session or the idle re-mint.
 
 ### Hook behaviour notes
 

@@ -37,11 +37,17 @@ import { _resetFolderCache } from "../../src/entities/folder.js";
 
 const MODULE = "starforged-companion";
 
-/** A generated (terminus) sector matching the predicate. */
+/**
+ * A generated (terminus) sector matching the predicate, its settlements'
+ * names distinct: the roster line is found by name, and the name table can
+ * roll the same name twice in one sector — the line found was then the other
+ * settlement's, and the test failed now and then.
+ */
 function sectorWith(predicate) {
   for (let i = 0; i < 500; i += 1) {
     const s = generateSector("terminus");
-    if (predicate(s)) return s;
+    const distinct = new Set(s.settlements.map(x => x.name)).size === s.settlements.length;
+    if (distinct && predicate(s)) return s;
   }
   throw new Error("no matching sector rolled in 500 tries");
 }

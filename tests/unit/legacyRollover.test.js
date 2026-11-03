@@ -6,7 +6,9 @@
  * end on a booted GM / player table (tests/helpers/multiClient.js): a player's
  * Make a Discovery goes through the GM's real move pipeline — its +2
  * discoveries mark on the working copy, persistResolution's merge onto the
- * store, the box XP award to the PC.
+ * store, the box XP award to the PC — since issue #326 D3, the shared track
+ * written through to the PC's sheet (`system.legacies.discoveries`, ticks ever
+ * marked), where the Starforged sheet derives the XP.
  *
  * The track used to cap at 40 ticks with nothing clearing it: from 38, the
  * first discovery filled the tenth box (2 XP) and every later one was lost —
@@ -44,10 +46,12 @@ vi.mock("../../src/moves/resolver.js", async (original) => {
 import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
 import { scriptClaude } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
+import { readCharacterSnapshot, invalidateActorCache } from "../../src/character/actorBridge.js";
 
 let table, pc;
 const world = () => table.world.campaignState();
 const discoveries = () => world().legacyTracks?.discoveries ?? null;
+const sheetXp = () => { invalidateActorCache(pc.id); return readCharacterSnapshot(pc).xp.value; };
 
 async function setLegacy(legacyTracks) {
   await table.client("gm-1").run(() => game.settings.set(MODULE_ID, "campaignState", { ...world(), legacyTracks }));
@@ -80,12 +84,14 @@ describe("T02 — a legacy track clears at its tenth box and carries on", () => 
     const states = [];
     for (let i = 0; i < 3; i++) {
       await discover();
-      states.push({ ...discoveries(), xp: pc.system.xp });
+      states.push({ ...discoveries(), sheet: pc.system.legacies.discoveries, xp: sheetXp() });
     }
+    // The sheet shows the whole track (ticks ever marked) and the XP it earns:
+    // ten boxes (20), then a box past the clear (1).
     expect(states).toEqual([
-      { ticks: 0, cleared: true, cycles: 1, xp: 2 },
-      { ticks: 2, cleared: true, cycles: 1, xp: 2 },
-      { ticks: 4, cleared: true, cycles: 1, xp: 3 },
+      { ticks: 0, cleared: true, cycles: 1, sheet: 40, xp: 20 },
+      { ticks: 2, cleared: true, cycles: 1, sheet: 42, xp: 20 },
+      { ticks: 4, cleared: true, cycles: 1, sheet: 44, xp: 21 },
     ]);
     const xpCards = table.cards(f => f.legacyXpCard);
     expect(xpCards.map(m => m.flags[MODULE_ID].xp)).toEqual([2, 1]);
@@ -97,13 +103,15 @@ describe("T02 — a legacy track clears at its tenth box and carries on", () => 
     await setLegacy({ discoveries: { ticks: 40, cleared: false } });
     await discover();
     expect(discoveries()).toEqual({ ticks: 2, cleared: true, cycles: 1 });
-    expect(pc.system.xp).toBe(0);   // the tenth box's XP was paid when it filled
+    expect(pc.system.legacies.discoveries).toBe(42);
+    expect(pc.system.xp).toBe(0);   // the classic sheet's field is never written (issue #326 D3)
   });
 
   it("control: short of the tenth box, a discovery marks its ticks and clears nothing", async () => {
     await setLegacy({ discoveries: { ticks: 34, cleared: false } });
     await discover();
     expect(discoveries()).toEqual({ ticks: 36, cleared: false, cycles: 0 });
-    expect(pc.system.xp).toBe(2);
+    expect(pc.system.legacies.discoveries).toBe(36);
+    expect(table.cards(f => f.legacyXpCard).map(m => m.flags[MODULE_ID].xp)).toEqual([2]);
   });
 });

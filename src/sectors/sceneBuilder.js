@@ -571,7 +571,7 @@ export async function restyleSiteOnScene(scene, site) {
 function hasEstablishedPosition(position) {
   if (!position || typeof position !== "object") return false;
   return !!(position.sectorId || position.nearestSettlementId || position.nearestPlanetId
-    || String(position.freeText ?? "").trim());
+    || position.nearestLocationId || String(position.freeText ?? "").trim());
 }
 
 /**

@@ -87,10 +87,25 @@ async function ensureDir(dir) {
  * @returns {Promise<string|null>}
  */
 export async function lookup(hash) {
-  if (typeof hash !== "string" || hash.length !== 64) return null;
+  return (await lookupDetailed(hash)).path;
+}
+
+/**
+ * lookup(), and whether this client could read the cache directory at all.
+ * `browsed: false` means the browse threw — the directory does not exist
+ * yet, or this user may not browse (FilePicker "Use File Browser" is Trusted
+ * Player and above), which lookup() reads as a miss. A keyed default Player
+ * then asks the canonical GM for the clip before paying for a new one (issue
+ * #326 W79).
+ *
+ * @param {string} hash
+ * @returns {Promise<{ path: string|null, browsed: boolean }>}
+ */
+export async function lookupDetailed(hash) {
+  if (typeof hash !== "string" || hash.length !== 64) return { path: null, browsed: true };
   // Skip the browse for a clip we already resolved this session.
   const memoed = _lookupMemo.get(hash);
-  if (memoed) return memoed;
+  if (memoed) return { path: memoed, browsed: true };
   const { dir, filename } = pathFor(hash);
   try {
     const browse = await foundry.applications.apps.FilePicker.implementation.browse("data", dir);
@@ -101,10 +116,10 @@ export async function lookup(hash) {
     // one foundry.audio.Sound can load.
     const hit = files.find(f => typeof f === "string" && f.endsWith(`/${filename}`)) ?? null;
     if (hit) _lookupMemo.set(hash, hit);   // memoise positives only
-    return hit;
+    return { path: hit, browsed: true };
   } catch {
     // Directory doesn't exist yet, or permissions error — both are misses.
-    return null;
+    return { path: null, browsed: false };
   }
 }
 

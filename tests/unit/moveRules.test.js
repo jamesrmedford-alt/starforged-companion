@@ -47,13 +47,16 @@ vi.mock("../../src/oracles/roller.js", async (original) => {
   } };
 });
 
-import { simulateTable, USERS } from "../helpers/multiClient.js";
+import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
 import { scriptClaude } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 
 let table, pc;
 const world   = () => table.world.campaignState();
-const lastLog = () => world().sessionLogs["rules-s1"].at(-1);
+// The newest move narration's flags (moveId, outcome): the move as resolved — an
+// upgrade's re-narration carries the upgraded outcome. (It read the session
+// move log, retired with issue #326 W58.)
+const lastLog = () => table.cards(f => f.narratorCard && f.resolutionId).at(-1)?.flags[MODULE_ID];
 const choices = () => table.cards(f => f.sufferCard && f.sufferPrompt);
 const meters  = () => ({ health: pc.system.health.value, spirit: pc.system.spirit.value, supply: pc.system.supply.value,
   momentum: pc.system.momentum.value, wounded: pc.system.debility.wounded, shaken: pc.system.debility.shaken });

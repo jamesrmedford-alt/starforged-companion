@@ -28,8 +28,10 @@ spread:
   from the type, Roman-numeral deduped within the sector.
 
 `buildSiteLocationData` shapes each site for `createLocation` — a
-`location`-type Actor with `system.subtype` vault/derelict,
-`canonicalLocked: true` (narrator entity-discovery can never overwrite),
+`location`-type Actor with `system.subtype` vault/derelict, `system.klass`
+the rolled location (planetside / orbital / deep space — it was dropped, so
+the sheet's class was blank and its derelict Type oracle disabled; issue
+#326 W74), `canonicalLocked: true` (narrator entity-discovery can never overwrite),
 `status: "unexplored"`, and a `description` that bakes the exterior AND
 interior prep into one field. A parallel discovery record
 (`{id, name, type, discovered:false, actorId}`) lands on the sector's
@@ -47,7 +49,10 @@ Two reveal paths, both funnelling through `revealSectorSite`
    (`selectSectorSite`: exact → whole-word substring → type-keyword-when-unique →
    sole-undiscovered, each rung over every sector before the next — issue
    #300 F07 — the active sector first on every rung, since generated names
-   repeat across sectors — issue #321 U48). The link, or an exact name,
+   repeat across sectors — issue #321 U48; a site is named by its location
+   Actor — `siteDisplayName`, the record's generated name a fallback — so a
+   site the GM renamed matches, and the narrator's Charted sites and the
+   cards name it, by its new name: issue #326 W75). The link, or an exact name,
    resolves to that site or to nothing once it no longer qualifies (charted
    / cleared), never a sibling a looser rung finds ("…II" contains "…I"); a
    link to no stored site falls back to the label. The reveal mutates the in-memory campaignState so the

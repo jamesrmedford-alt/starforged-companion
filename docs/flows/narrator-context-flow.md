@@ -142,12 +142,16 @@ exclusion, a maintainer decision). In the same write as the pause,
 `applyXCardToNarratorMemory` (`narrator.js`), which picks the cards with
 `xCardedNarrationCards`: the newest narrator card of the session still in
 narrator memory, with the narrator cards of the same beat — those after the
-last message someone sent and at most two minutes older; an earlier X-Card's
+last message someone sent (a forced move's post — the Roll button's re-post
+of the player's line, a button's forced move — counts as one, issue #326 W42)
+and at most two minutes older; an earlier X-Card's
 card, its "X-Card cleared" card or a card an earlier X-Card removed bounds
 the beat, so a repeat play removes nothing more (fallback, burn-superseded
 and whispered cards are never chosen). It retracts what their sidecars wrote
 (`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"`, state
-values removed, a frame they wrote cleared), appends their `narrationId`s to
+values removed — each gives way to the value it superseded, kept on the entry
+as a bounded `previous` chain, so an earlier kept narration's value stands
+again (issue #326 W41) — a frame they wrote cleared), appends their `narrationId`s to
 `xCardedNarrationIds` (cap 50), drops a rolling summary that covered them
 (text emptied, a regen due — stamped with a fresh `updatedAt` and
 `xCardedAt`, so a move in flight cannot merge its working copy's older
@@ -426,7 +430,10 @@ went with the module, 2026-07 — issue #271).
 narration, **or the inciting incident** (so the premise sidecar writes into a
 real scene the first move then *continues* — the opening NPC state and frame
 survive), and since issue #321 U34 on an oracle follow-up, a session or clock
-vignette and a vow scene too — their facts used to land under no scene. A
+vignette and a vow scene too — their facts used to land under no scene; since
+issue #326 W59 a `!truth set` / `!state set` typed with no scene open starts
+one too (the next narration's scene start ended the phantom scene and
+discarded what the GM set). A
 caller whose snapshot holds no scene while the store has one adopts it
 (`startScene` → `adoptStoredScene`: the scene's id, truths, state, frame and
 spotlight cloned in, nothing written) instead of minting a second scene over
@@ -440,10 +447,14 @@ boundary is a world write, so a keyed player's client narrating `@scene` /
 scene when truths/state exist. `endScene` migrates entity-kind truths →
 generative tiers (deduped against existing tier details — live capture +
 migration no longer double-lands); scene-kind truths → the tier of the
-scene's recorded place (issue #286 C2, `resolveScenePlace`: the frame's
-location when it names or mentions exactly one recorded place, else the
-current location when the frame names no place); text truths and place-less
-scene truths → WJ Lore (titled with the frame's location, not the scene id).
+recorded place the truth was asserted at (issue #286 C2; issue #326 D2:
+each truth's `sceneLocation` — the frame's location when it was asserted —
+names or mentions exactly one recorded place, `placeNamedBy`; a truth with
+no stamp falls back to the end-of-scene place, `resolveScenePlace`: the
+frame's location by the same ladder, else the current location when the
+frame names no place); text truths and place-less scene truths → WJ Lore
+(titled with where the truth was asserted, else the frame's location, not
+the scene id).
 It keeps each recorded character's location / vessel / condition on their
 record as `lastKnown` (C1, rendered as LAST KNOWN on the card), keeps the
 scene's strikes for the session (B6), then discards state and clears the
@@ -456,7 +467,7 @@ Both persist only their scene fields
 onto the latest stored campaignState (`persistCampaignStateFields`) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
 pipeline's stale snapshot. Triggers for `endScene`: the two
-commands, the implicit path, `closeWorld`, **End Session**
+commands, the implicit path, **End Session**
 (`session_close`), and the close-out before a new session is minted
 (`rollSessionIfDue`: `session_gap_remint` for a session that went idle,
 `session_close` for one that was ended — which closes the scene End a
@@ -470,7 +481,10 @@ ring, and the closing scene's truths keep the closing session's number.
   the 5 most recent, never dropped under budget; Replace-corrections are
   exempt — the replacement truth stands; an X-Card retraction is never named
   there, issue #321 U07). The write layer refuses narrator
-  re-assertions of retracted facts; GM `!truth set` bypasses (GM authority).
+  re-assertions of retracted facts; GM `!truth set` bypasses (GM authority) —
+  and lifts the strike it re-establishes, linking it as a Replace does, so
+  the fact is not binding and CORRECTED at once; a player's set over a GM's
+  strike is refused (issue #326 W60).
 - **A Strike reaches every copy** (issue #286 B6): `!truth strike` and the
   correction dialog's Strike / Replace — and, since issue #321 U07, the
   X-Card for each truth it retracts — call `propagateRetraction` — the

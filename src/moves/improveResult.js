@@ -50,6 +50,7 @@ import {
   reportUpgradeFailures,
   reconcileChoices,
   consequenceChosen,
+  laterMoveFollows,
   applyUpgradedOutcomeEffects,
   renarrateUpgrade,
   effectsNoteHtml,
@@ -63,14 +64,15 @@ import {
   resultUpgradeBlocker,
   UPGRADE_PENDING_TITLE,
   UPGRADE_CHOSEN_TITLE,
+  UPGRADE_LATER_MOVE_TITLE,
   UPGRADE_REFUSALS,
 } from "./burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
 
-// narrate / persist / applyEffects injected by registerImproveResultHook
+// narrate / applyEffects injected by registerImproveResultHook
 // (src/index.js), kept at module scope for the GM-side relay handler.
-let _deps = { narrate: null, persist: null, applyEffects: null };
+let _deps = { narrate: null, applyEffects: null };
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -172,12 +174,11 @@ function improveButtonLabel(state) {
  *
  * @param {Object}   hooks
  * @param {Function} hooks.narrate        async (resolution, state, { speakerActorId }) => void
- * @param {Function} hooks.persist        async (resolution, state, speakerActorId) => void
  * @param {Function} [hooks.applyEffects] the strong hit's other effects — index.js
  *   applyUpgradedOutcomeEffects (as for registerBurnMomentumHook)
  */
-export function registerImproveResultHook({ narrate, persist, applyEffects } = {}) {
-  _deps = { narrate: narrate ?? null, persist: persist ?? null, applyEffects: applyEffects ?? null };
+export function registerImproveResultHook({ narrate, applyEffects } = {}) {
+  _deps = { narrate: narrate ?? null, applyEffects: applyEffects ?? null };
 
   onChatMessageRender((message, root) => {
     const flags   = message?.flags?.[MODULE_ID] ?? {};
@@ -196,6 +197,12 @@ export function registerImproveResultHook({ narrate, persist, applyEffects } = {
     if (blocker === "already-upgraded") {
       btn.disabled    = true;
       btn.textContent = "✦ Improve Result — momentum was already burned";
+      return;
+    }
+    if (blocker === "later-move") {
+      btn.disabled    = true;
+      btn.textContent = "✦ Improve Result — closed by a later move";
+      btn.title       = UPGRADE_LATER_MOVE_TITLE;
       return;
     }
     if (blocker === "choice-made") {
@@ -268,6 +275,7 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
     return { applied: false, reason: "already-consumed" };
   }
   const blocker = resultUpgradeBlocker(improve, flags.burn)
+    ?? (laterMoveFollows(message) ? "later-move" : null)
     ?? (consequenceChosen(improve.resolutionId) ? "choice-made" : null);
   if (blocker) {
     console.warn(`${MODULE_ID} | improveResult: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; improvement refused.`);
@@ -295,7 +303,7 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
 // CLICK HANDLER (runs on the canonical GM via applyImproveFromRelay)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleImproveClick(message, { narrate, persist, applyEffects }) {
+async function handleImproveClick(message, { narrate, applyEffects }) {
   const improve = message?.flags?.[MODULE_ID]?.improve;
   if (!improve?.canImprove || improve.consumed) return { applied: false, reason: "already-consumed" };
 
@@ -357,11 +365,11 @@ async function handleImproveClick(message, { narrate, persist, applyEffects }) {
   await reportUpgradeFailures(actor, failures);
 
   // The pre-improvement prose is now stale — strike it through, keep history.
-  await supersedeOriginalNarration(improve).catch(err =>
+  await supersedeOriginalNarration(improve, { kind: "improve" }).catch(err =>
     console.warn(`${MODULE_ID} | improveResult: superseding original narration failed:`, err));
 
   // The improving PC is the card's actor, not the first PC (credit the roller).
-  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: improve.actorId ?? null, narrate, persist, kind: "improve" })
+  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: improve.actorId ?? null, narrate, kind: "improve" })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: re-narration failed:`, err));
 
   return { applied: true };

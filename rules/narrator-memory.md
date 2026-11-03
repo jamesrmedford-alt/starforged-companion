@@ -63,13 +63,15 @@ layers. This file is the never-break list.
    are cleared/migrated by `startScene`/`endScene` only. Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
    migration, not in a lifecycle exemption. Since issue #286 that migration
-   also files scene-subject truths on the scene's recorded place
-   (`resolveScenePlace`) and keeps each recorded character's whereabouts —
+   also files scene-subject truths on the recorded place each was asserted
+   at (the truth's `sceneLocation` stamp, issue #326 D2 — a scene spans
+   travel; an unstamped truth falls back to `resolveScenePlace`, the place
+   the scene ended at) and keeps each recorded character's whereabouts —
    location / vessel / condition — on their record as `lastKnown` (rendered
    on the card as LAST KNOWN). Scenes close at their fiction's
    boundaries (2026-07): End Session (`session_close`), the close-out before
    a new session is minted (`rollSessionIfDue` — `session_gap_remint` for a
-   session that went idle), and `closeWorld` — do not add a session boundary
+   session that went idle) — do not add a session boundary
    that leaves a scene open. A session is over at End Session or after four
    hours without a chat message (issue #286 C4); only world load and Begin a
    Session mint, and the mint keeps the closing session's summary as
@@ -83,7 +85,9 @@ layers. This file is the never-break list.
 
 6b. **Retraction is enforced.** A bare Strike renders in the CORRECTED
    ledger block AND blocks narrator re-assertion at `applySidecar` (GM
-   `!truth set` bypasses). Do not "simplify" either half away — the render
+   `!truth set` bypasses, and lifts the strike — `correctedTo`, as a Replace
+   — so the two never render together; a player's set over a GM's strike is
+   refused, issue #326 W60). Do not "simplify" either half away — the render
    defense and the write defense cover different failure paths (model
    ignores instructions vs. model re-emits the fact). Since issue #286 (B6)
    a Strike also reaches the stores that copied the fact

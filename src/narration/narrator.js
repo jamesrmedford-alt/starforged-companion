@@ -1115,7 +1115,8 @@ function sessionNarratorCards(sessionId, { forRecap = false } = {}) {
 // Which cards: the narration on screen when the card is played — the newest
 // narrator card of the session still in narrator memory, with the narrator
 // cards posted in the same beat: those after the last message someone sent
-// (any chat message that is not one of this module's cards) and at most
+// (any chat message that is not one of this module's cards, or a forced
+// move's post — the Roll button's re-post of the player's line) and at most
 // XCARD_BEAT_WINDOW_MS older than it. An earlier X-Card's card, its "X-Card
 // cleared" card, or a card an earlier X-Card removed bounds the beat; when one
 // of those is newer than any narration, nothing was narrated since and the
@@ -1166,6 +1167,11 @@ export function xCardedNarrationCards(sessionId) {
     const m = messages[i];
     const f = m?.flags?.[MODULE_ID];
     if (!f) break;                              // someone spoke: the beat began after it
+    // A forced move's post — the Roll button's re-post of the player's line,
+    // a way-out / Battle / milestone / fulfil button, a token drag — is the
+    // player acting: the beat began after it too (issue #326 W42 — the walk
+    // passed it and took the paced narration before it).
+    if (f.bypassPacing || f.forcedMoveId) break;
     if (isBoundary(f) || f.xCarded) break;      // an earlier X-Card answered what came before
     if (!inMemory.has(m)) continue;             // one of this module's other cards
     const at = messageTime(m);
@@ -3245,10 +3251,16 @@ export function formatActiveSector(campaignState) {
     const charted = (sector.mapData?.discoveries ?? [])
       .filter(d => d && d.discovered)
       .map(d => {
+        // The site by its location Actor's name, the record's generated one a
+        // fallback (issue #326 W75 — a renamed site had two names).
         let status = "";
-        try { status = getLocation(d.actorId)?.status ?? ""; }
-        catch (err) { console.debug?.(`${MODULE_ID} | narrator: site status read failed:`, err?.message ?? err); }
-        return `- ${d.name} (${d.type}${status ? `, ${status}` : ""})`;
+        let name = d.name;
+        try {
+          const loc = getLocation(d.actorId);
+          status = loc?.status ?? "";
+          if (typeof loc?.name === "string" && loc.name.trim()) name = loc.name.trim();
+        } catch (err) { console.debug?.(`${MODULE_ID} | narrator: site status read failed:`, err?.message ?? err); }
+        return `- ${name} (${d.type}${status ? `, ${status}` : ""})`;
       });
     if (charted.length) {
       lines.push("Charted sites (established — do not reinvent them):");

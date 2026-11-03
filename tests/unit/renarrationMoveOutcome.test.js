@@ -73,8 +73,8 @@ beforeEach(() => {
   game.settings._store.set(`${MODULE_ID}.chronicleAutoEntry`, false);
   game.settings._store.set(`${MODULE_ID}.campaignState`, { currentSessionId: 's1', sessionNumber: 1, currentSceneId: 'sc-1' });
   ChatMessage._reset();
-  registerBurnMomentumHook({ narrate: narrateResolution, persist: vi.fn(async () => {}) });
-  registerImproveResultHook({ narrate: narrateResolution, persist: vi.fn(async () => {}) });
+  registerBurnMomentumHook({ narrate: narrateResolution });
+  registerImproveResultHook({ narrate: narrateResolution });
   installPc('pc-kira', 'Kira');
 });
 

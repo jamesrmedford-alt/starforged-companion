@@ -45,7 +45,11 @@ describe("revealSectorSite", () => {
     const result = await revealSectorSite("monument", d);
 
     expect(result?.site?.id).toBe("site-a");
-    expect(state.sectors[0].mapData.discoveries[0].discovered).toBe(true);
+    expect(result.site.discovered).toBe(true);
+    // Written on a copy (issue #326 W51): the state read is left as it was,
+    // and the state written carries the flag.
+    expect(state.sectors[0].mapData.discoveries[0].discovered).toBe(false);
+    expect(d.setState.mock.calls[0][0].sectors[0].mapData.discoveries[0].discovered).toBe(true);
     expect(d.updateLoc).toHaveBeenCalledWith("loc-a", { status: "visited" });
     expect(d.restyle).toHaveBeenCalledTimes(1);
     expect(d.setState).toHaveBeenCalledTimes(1);
@@ -94,16 +98,18 @@ describe("revealSectorSite — stored siteId link (expedition→site FK)", () =>
       { id: "d1", name: "Precursor Vault — Sunken Choir", type: "vault", discovered: false, actorId: null },
       { id: "d2", name: "Derelict Starship", type: "derelict", discovered: false, actorId: null },
     ] } }] };
+    const setState = vi.fn();
     const result = await revealSectorSite("totally unrelated label", {
       siteId: "d2",
       getState: () => state,
-      setState: () => {},
+      setState,
       getScene: () => null,
       updateLoc: async () => {},
     });
     expect(result?.site?.id).toBe("d2");
-    expect(state.sectors[0].mapData.discoveries[1].discovered).toBe(true);
-    expect(state.sectors[0].mapData.discoveries[0].discovered).toBe(false);
+    const written = setState.mock.calls[0][0].sectors[0].mapData.discoveries;
+    expect(written[1].discovered).toBe(true);
+    expect(written[0].discovered).toBe(false);
   });
 
   // Issue #321 U48: the link names one site. Once that site is charted (a
@@ -175,18 +181,24 @@ describe("clearSectorSite", () => {
     const result = await clearSectorSite("monument", { getState: () => state, setState, updateLoc });
 
     expect(result?.site?.id).toBe("site-a");
-    expect(state.sectors[0].mapData.discoveries[0].cleared).toBe(true);
-    expect(state.sectors[0].mapData.discoveries[1].cleared).toBe(false);
+    expect(result.site.cleared).toBe(true);
+    // Written on a copy (issue #326 W51).
+    expect(state.sectors[0].mapData.discoveries[0].cleared ?? false).toBe(false);
+    const written = setState.mock.calls[0][0].sectors[0].mapData.discoveries;
+    expect(written[0].cleared).toBe(true);
+    expect(written[1].cleared ?? false).toBe(false);
     expect(updateLoc).toHaveBeenCalledWith("loc-a", { status: "cleared" });
     expect(setState).toHaveBeenCalledTimes(1);
   });
 
   it("targets the derelict by type keyword, leaving the vault untouched", async () => {
     const state = clearedState();
-    const result = await clearSectorSite("derelict", { getState: () => state, setState: vi.fn(async () => {}), updateLoc: vi.fn(async () => {}) });
+    const setState = vi.fn(async () => {});
+    const result = await clearSectorSite("derelict", { getState: () => state, setState, updateLoc: vi.fn(async () => {}) });
     expect(result?.site?.id).toBe("site-b");
-    expect(state.sectors[0].mapData.discoveries[1].cleared).toBe(true);
-    expect(state.sectors[0].mapData.discoveries[0].cleared).toBe(false);
+    const written = setState.mock.calls[0][0].sectors[0].mapData.discoveries;
+    expect(written[1].cleared).toBe(true);
+    expect(written[0].cleared ?? false).toBe(false);
   });
 
   it("never clears an UNDISCOVERED site (not yet revealed)", async () => {

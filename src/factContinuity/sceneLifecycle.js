@@ -184,12 +184,13 @@ async function migrateSceneTruth(truth, campaignState, placeOf) {
     return 'migrated';
   }
 
-  // Scene-kind → the recorded place the scene happened at (issue #286 C2:
-  // "the bar is called the Rusty Lantern" became place-less lore titled
-  // "Scene sc-…"). Place-less scene truths and text-kind truths → WJ Lore.
+  // Scene-kind → the recorded place the truth was asserted at (issue #286
+  // C2: "the bar is called the Rusty Lantern" became place-less lore titled
+  // "Scene sc-…"; issue #326 D2: it landed on the place the scene ENDED at —
+  // a scene spans travel). Place-less scene truths and text-kind truths → WJ
+  // Lore.
   if (subject.kind === 'scene') {
-    if (placeOf.place === undefined) placeOf.place = resolveScenePlace(campaignState);
-    const place = placeOf.place;
+    const place = truthPlace(truth, campaignState, placeOf);
     if (place) {
       const ok = await safeMigrateToEntityTier(truth, { entityId: place.id, entityType: place.type });
       if (ok) {
@@ -352,8 +353,11 @@ async function safeMigrateToEntityTier(truth, subject) {
 
 async function safeArchiveSceneTruth(truth, campaignState) {
   try {
+    // Titled with where the truth was asserted (issue #326 D2), else where
+    // the scene ended.
+    const asserted = typeof truth?.sceneLocation === 'string' ? truth.sceneLocation.trim() : '';
     return await archiveSceneTruth(truth, campaignState, {
-      placeLabel: String(campaignState.sceneFrame?.location ?? '').trim() || null,
+      placeLabel: asserted || String(campaignState.sceneFrame?.location ?? '').trim() || null,
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | sceneLifecycle: archive scene truth failed:`, err);
@@ -383,19 +387,7 @@ const PLACE_TYPES = new Set(['settlement', 'planet', 'location', 'ship']);
 function resolveScenePlace(campaignState) {
   try {
     const where = String(campaignState.sceneFrame?.location ?? '').trim();
-    if (where) {
-      const places = collectAllEntities(campaignState).filter(e => PLACE_TYPES.has(e.entityType));
-      const named  = resolveEntityName(where, places, campaignState.dismissedEntities ?? []);
-      if (named) return { id: named.journalId ?? named._id, type: named.entityType };
-      const lower  = where.toLowerCase();
-      const within = places.filter(e => {
-        const name = String(e.name ?? '').trim().toLowerCase();
-        return name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}($|[^\\p{L}\\p{N}])`, 'u').test(lower);
-      });
-      const ids = new Set(within.map(e => e.journalId ?? e._id));
-      if (ids.size === 1) return { id: [...ids][0], type: within[0].entityType };
-      return null;
-    }
+    if (where) return placeNamedBy(where, campaignState);
     const id   = campaignState.currentLocationId ?? null;
     const type = campaignState.currentLocationType ?? null;
     return id && PLACE_TYPES.has(type) ? { id, type } : null;
@@ -403,6 +395,55 @@ function resolveScenePlace(campaignState) {
     console.warn(`${MODULE_ID} | sceneLifecycle: scene place lookup failed:`, err?.message ?? err);
     return null;
   }
+}
+
+/**
+ * The recorded place a frame location names (rungs 1–2 of resolveScenePlace's
+ * ladder) — or null: an unrecorded place gets none.
+ *
+ * @param {string} where — a scene frame's location
+ * @param {Object} campaignState
+ * @returns {{ id: string, type: string }|null}
+ */
+function placeNamedBy(where, campaignState) {
+  const places = collectAllEntities(campaignState).filter(e => PLACE_TYPES.has(e.entityType));
+  const named  = resolveEntityName(where, places, campaignState.dismissedEntities ?? []);
+  if (named) return { id: named.journalId ?? named._id, type: named.entityType };
+  const lower  = where.toLowerCase();
+  const within = places.filter(e => {
+    const name = String(e.name ?? '').trim().toLowerCase();
+    return name && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(name)}($|[^\\p{L}\\p{N}])`, 'u').test(lower);
+  });
+  const ids = new Set(within.map(e => e.journalId ?? e._id));
+  return ids.size === 1 ? { id: [...ids][0], type: within[0].entityType } : null;
+}
+
+/**
+ * The recorded place a scene truth is filed on (issue #326 D2): the place its
+ * stamped `sceneLocation` — the frame's location when it was asserted — names;
+ * a truth with no stamp (recorded before stamping, or asserted before any
+ * frame stood) falls back to the place the scene ended at. Resolved once per
+ * location for the whole scene end.
+ *
+ * @param {Object} truth
+ * @param {Object} campaignState
+ * @param {{ place?: Object|null, byLocation?: Map<string, Object|null> }} placeOf
+ * @returns {{ id: string, type: string }|null}
+ */
+function truthPlace(truth, campaignState, placeOf) {
+  const at = typeof truth?.sceneLocation === 'string' ? truth.sceneLocation.trim() : '';
+  if (!at) {
+    if (placeOf.place === undefined) placeOf.place = resolveScenePlace(campaignState);
+    return placeOf.place;
+  }
+  placeOf.byLocation ??= new Map();
+  if (!placeOf.byLocation.has(at)) {
+    let place = null;
+    try { place = placeNamedBy(at, campaignState); }
+    catch (err) { console.warn(`${MODULE_ID} | sceneLifecycle: truth place lookup failed:`, err?.message ?? err); }
+    placeOf.byLocation.set(at, place);
+  }
+  return placeOf.byLocation.get(at);
 }
 
 function escapeRegExp(s) {
@@ -557,8 +598,11 @@ export function mergeSceneLedgers(working, latest) {
     const k = truthKey(t);
     seen.add(k);
     const w = mine.get(k);
-    // A retraction (narrator contradiction or `!truth` correction) is one-way.
-    return (w?.retracted && !t?.retracted) ? w : t;
+    // A retraction (narrator contradiction or `!truth` correction) is one-way,
+    // and so is the link a correction adds to it — a Replace's, or a
+    // `!truth set` re-establishing a struck fact (issue #326 W60).
+    if (w?.retracted && !t?.retracted) return w;
+    return (w?.retracted && w.correctedTo && !t?.correctedTo) ? w : t;
   });
   for (const t of workingTruths) {
     if (!seen.has(truthKey(t))) merged.push(t);

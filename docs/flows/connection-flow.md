@@ -80,6 +80,10 @@ no first look for a record that has a `description` (the narration's, or the
 creation's first look folded into it); the Characteristics and Notes show the
 description in its place. The goal went to `motivation`, so the seed rolled a
 second goal beside it and a first look over the narrated one (issue #325 W31).
+The seed writes only the fields it seeds, each by path, onto the record as it
+is when the write lands — it wrote the record it read before its Notes' Claude
+call whole, reverting a canonical lock (or any record write) that landed
+during the call (issue #326 W69).
 
 `registerConnectionOnActiveCharacter(record, { actorId, actors })` puts the
 bond Item on each of `actors` (the inciting vow's crew), else on `actorId`
@@ -147,7 +151,10 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   saved.
 - **`deepenLinkedConnection`** — the vow/fight payoff path: marks the
   connection's own `relationshipTicks` (not bonds legacy), scaled by the
-  source's rank.
+  source's rank. A vow deepens its connection once (issue #326 D1): the
+  won-fight card's press (`deepenVowConnectionOnce`) and the fulfilment's
+  payoff share the vow's `fulfilPayoff.deepen` ledger step — whichever lands
+  first pays.
 - **Suggestion buttons** on connection-category move cards
   (`wireConnectionSuggestionButtons`) relay `connection.suggest` to the
   canonical GM (`cardActions.applyConnectionSuggestion`), which claims the

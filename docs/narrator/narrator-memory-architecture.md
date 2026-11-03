@@ -28,7 +28,7 @@ durability, capacity, and write discipline:
 | **1. Recent-narration ring** | chat history (per session) | every narrator-prose card via flags; each entry is the player's line + the prose (issue #286 B5) | paced, @scene, oracle follow-ups, move narration (last 4, B1), session recap | last N cards (`narratorContextCards`, default 20, 1–50) |
 | **2. Active-scene ledger** (truths + state + ship position) | scene-scoped; migrated at scene end | narrator sidecar (deterministic rules), `!truth`/`!state`, corrections | every narrator call (system prompt §6.5) | `factContinuity.maxLedgerTokens` soft cap (default 400) |
 | **3. Scene frame** | scene-scoped; cleared at scene end | narrator sidecar (`sceneFrame` key, every response) | every narrator call (top of §6.5); scoping + relevance unions | ~30–60 tokens |
-| **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the scene's recorded place — #286 C2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
+| **4. Entity records** (cards + generative tiers + last known whereabouts) | permanent | entity confirm flow, scene-end truth migration (entity truths; scene truths onto the recorded place each was asserted at — #286 C2, #326 D2), tier updates, scene-end `lastKnown` (#286 C1) | relevance resolver + the frame's cast → ENTITIES IN SCENE cards; current location card | per-entity (10 tier lines on the card) |
 | **5. Rolling session summary** | session-scoped; archived to Session Log at End Session; kept as `previousSessionSummary` when the next session is minted (issue #286 C3) | Haiku regen from the full session card feed (player lines included), debounced at ~1.5×N, run after a narrator card posts — never inside a narration (issue #286 B7); brought up to date before a session that went idle is closed | every non-meta narrator call (system prompt §[4c], ledger-wins caveat; a cached read) — this session's as STORY SO FAR, the one before as LAST SESSION | ~≤320 tokens each (Haiku-capped) |
 | **6. Recent oracle results** (2026-07) | rolling ring on campaignState (cap 8; session-scoped read) | canonical-GM capture hook from the `oracleMemory` card flag | every non-meta narrator call (§[3b]) + the assembler's RECENT ORACLES section | last 5 lines |
 
@@ -198,7 +198,9 @@ a sidecar writes, and the frame, carries the narration's `narrationId` (its
 card carries the same id). The X-Card retracts what the narration it answers
 wrote (`retractNarrations`): its truths `retractedBy: "xcard"` — rendered
 nowhere, not even under CORRECTED, never migrated, still blocking a
-re-assertion — its state values removed and its frame cleared, in the same
+re-assertion — its state values removed (each restoring the value it
+superseded: a state entry keeps a bounded `previous` chain, issue #326 W41)
+and its frame cleared, in the same
 write as the pause; the ids are kept on `xCardedNarrationIds`, so
 `mergeSceneLedgers` retracts them again from a stale writer's copy and a late
 relayed sidecar of that narration is dropped.
@@ -210,7 +212,7 @@ minted over the live one's ledgers, which were neither kept nor archived.
 Oracle follow-ups, session and clock vignettes and vow scenes start a scene
 when none is active, as move, paced and `@scene` narration do
 (`ensureSceneStarted`, canonical GM — issue #321 U34; their facts landed
-under no scene).
+under no scene), and so does a `!truth set` / `!state set` (issue #326 W59).
 
 **Subject resolution (Cluster A2; fixed by issue #286).** `applyNarratorSidecar`
 passes the full entity roster (`collectAllEntities`,

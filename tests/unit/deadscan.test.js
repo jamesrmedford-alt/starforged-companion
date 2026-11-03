@@ -9,7 +9,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { scan, stripComments } from "../../scripts/deadscan.mjs";
+import { scan, stripComments, consumerText } from "../../scripts/deadscan.mjs";
 
 const tree = (obj) => new Map(Object.entries(obj));
 const names = (rows) => rows.map(r => r.name);
@@ -71,6 +71,81 @@ describe("scan — exports", () => {
       "tests/unit/x.test.js":"import { seam } from '../../src/util.js'; seam();",
     }) });
     expect(names(r.testOnly)).toEqual(["seam"]);
+  });
+});
+
+// Issue #326 W82: the scan kept string literals, so a function's own log
+// line — `console.warn(\`… loadEntityAssets(${id}) scan failed …\`)` inside
+// its body — counted as its consumer. Three exports passed the strict gate
+// that way: one dead outright, two used only by Quench.
+describe("scan — a mention inside a string is not a consumer (issue #326 W82)", () => {
+  it("an export mentioned only in its own console.warn is DEAD", () => {
+    const r = scan({ files: tree({
+      "src/index.js": "import './util.js';",
+      "src/util.js":  "export async function loadAll(id) {\n  try { return []; } catch (err) { console.warn(`m | loadAll(${id}) scan failed:`, err); }\n}",
+    }) });
+    expect(names(r.dead)).toEqual(["loadAll"]);
+  });
+
+  it("…and one named only inside a longer quoted string", () => {
+    const r = scan({ files: tree({
+      "src/index.js": "import './util.js'; console.log('call loadAll later');",
+      "src/util.js":  "export function loadAll() {}",
+    }) });
+    expect(names(r.dead)).toEqual(["loadAll"]);
+  });
+
+  it("control: a whole-literal string dispatch still counts (GM_ACTIONS `fn: \"…\"`)", () => {
+    const r = scan({ files: tree({
+      "src/index.js":  "import './relay.js';",
+      "src/relay.js":  "const ACTIONS = { kind: { load: () => import('./h.js'), fn: \"applyThing\" } };",
+      "src/h.js":      "export async function applyThing() {}",
+    }) });
+    expect(names(r.dead)).not.toContain("applyThing");
+  });
+
+  it("control: a call inside a template expression still counts", () => {
+    const r = scan({ files: tree({
+      "src/index.js": "import { label } from './util.js'; const s = `Name: ${label()}`;",
+      "src/util.js":  "export function label() { return 'x'; }",
+    }) });
+    expect(names(r.dead)).toEqual([]);
+  });
+
+  it("an export used only by Quench, and named in its own log line, is QUENCH-ONLY", () => {
+    const r = scan({ files: tree({
+      "src/index.js":              "import './packs.js';",
+      "src/packs.js":              "export async function listAll() {\n  try { return []; } catch (err) { console.warn(`m | packs: listAll failed:`, err); return []; }\n}",
+      "src/integration/quench.js": "import { listAll } from '../packs.js'; await listAll();",
+    }), entries: ["src/index.js", "src/integration/quench.js"] });
+    expect(names(r.quenchOnly)).toEqual(["listAll"]);
+  });
+
+  it("control: a settings key is still found in its string", () => {
+    const r = scan({ files: tree({
+      "src/index.js": "game.settings.register(MODULE_ID, \"audio.volume\", {});\nconst v = game.settings.get(MODULE_ID, \"audio.volume\");",
+    }) });
+    expect(r.deadSettings).toEqual([]);
+  });
+});
+
+describe("consumerText", () => {
+  it("blanks string and template text, keeps whole-identifier strings and template code", () => {
+    const out = consumerText([
+      "warn(`m | loadAll(${id}) failed`); a();",
+      'dispatch("applyThing"); log("call helper soon"); b();',
+      "const t = `${label()} and more`; c(); // helperInComment",
+    ].join("\n"));
+    expect(out).not.toMatch(/loadAll|helper|and more|failed/);
+    expect(out).toContain('"applyThing"');
+    expect(out).toContain("${id}");
+    expect(out).toContain("label()");
+    for (const k of ["a();", "b();", "c();"]) expect(out).toContain(k);
+    expect(out.split("\n")).toHaveLength(3);
+  });
+
+  it("keeps a template that is one whole identifier", () => {
+    expect(consumerText("call(`applyThing`);")).toContain("`applyThing`");
   });
 });
 

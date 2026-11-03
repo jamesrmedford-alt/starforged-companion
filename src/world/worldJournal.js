@@ -19,6 +19,8 @@
  * via stubs; they will be wired in Phase 5.
  */
 
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
+
 const MODULE_ID = "starforged-companion";
 
 export const FOLDER_NAME = "Starforged Companion";
@@ -54,7 +56,9 @@ const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
  * @returns {Promise<void>}
  */
 export async function initWorldJournals() {
-  if (!game.user?.isGM) return;
+  // One GM creates the World Journal folder and its four journals — the canonical one: two GMs whose clients
+  // reconnected together each found none and created one (issue #326 W54).
+  if (!isCanonicalGM()) return;
 
   let folder = null;
   try {
@@ -697,8 +701,11 @@ export async function writeSessionLog(campaignState) {
   const { page, flag } = ctx;
   const sessionId = campaignState?.currentSessionId ?? "";
 
+  // Struck lore is not the session's lore: a fact the table struck or
+  // X-carded was listed beside the summary rebuilt to leave it out (issue
+  // #326 W64).
   const recentLore    = readEntries(await getOrCreateJournal(JOURNAL_NAMES.lore),    FLAG_KEYS.lore)
-                         .filter(e => e.sessionId === sessionId);
+                         .filter(e => e.sessionId === sessionId && e.retracted !== true);
   const recentThreats = readEntries(await getOrCreateJournal(JOURNAL_NAMES.threats), FLAG_KEYS.threats)
                          .filter(e => e.lastUpdated === sessionId);
 
@@ -864,6 +871,23 @@ const COMMAND_PATTERN = /^!journal\s+(\w+)\s+("[^"]+"|\S+)\s+(\S+)(?:\s+[—-]\s
 
 const VALID_TYPES = new Set(["faction", "location", "lore", "threat"]);
 
+/** The World Journal's faction attitude vocabulary (entities/faction.js maps it onto a stance). */
+export const FACTION_ATTITUDES = ["hostile", "neutral", "allied", "unknown"];
+
+/**
+ * Each type's qualifier vocabulary — a `!journal` qualifier outside it is
+ * refused with the usage line, as an unknown type is: `threat … resolve`
+ * stored severity "resolve" (not "resolved"), so the threat stayed active;
+ * `faction … ally` stored an attitude no faction record maps, so the two
+ * stores disagreed; `lore … confirm` filed the GM's ruling as a rumour
+ * (issue #326 W62). A location's type is free text.
+ */
+export const JOURNAL_QUALIFIERS = {
+  faction: FACTION_ATTITUDES,
+  lore:    ["confirmed", "rumour", "rumor"],
+  threat:  THREAT_SEVERITIES,
+};
+
 /**
  * Parse a !journal chat command into a structured action.
  *
@@ -873,7 +897,8 @@ const VALID_TYPES = new Set(["faction", "location", "lore", "threat"]);
  *   !journal lore "Title" confirmed|rumour — text
  *   !journal threat "Name" severity — summary
  *
- * Returns null for unknown types or unparseable commands. The em-dash
+ * Returns null for unknown types, a qualifier outside the type's vocabulary
+ * (JOURNAL_QUALIFIERS — issue #326 W62), or unparseable commands. The em-dash
  * separator may be a literal "—", "--", or "-".
  *
  * @param {string} text
@@ -896,6 +921,7 @@ export function parseJournalCommand(text) {
 
   const qualifier = match[3].toLowerCase();
   const text2     = match[4]?.trim() ?? "";
+  if (JOURNAL_QUALIFIERS[type] && !JOURNAL_QUALIFIERS[type].includes(qualifier)) return null;
 
   return { type, name, qualifier, text: text2, raw: trimmed };
 }
@@ -1101,7 +1127,8 @@ async function postContradictionNotification(transition) {
   const kind = String(transition.kind ?? "truth").toLowerCase();
   const REMEDY_HINTS = {
     frame:      "The scene frame refreshes with the next narration — nudge with <code>@scene</code> (or <code>!scene start</code>) if it stays stale.",
-    ship:       "Ship position lives on the ship record — correct it with <code>!ship</code> or by moving the command-vehicle token.",
+    // `!at <place>` sets the position — no `!ship` verb does (issue #326 W66).
+    ship:       "Ship position lives on the ship record — correct it with <code>!at &lt;place&gt;</code> or by moving the command-vehicle token.",
     identity:   "Recorded pronouns live on the character sheet / connection record — fix them there (entity panel or sheet).",
     retraction: "Re-asserting a retracted fact is already blocked at the ledger — no correction needed. Use Replace in the correction dialog if the fact should genuinely change.",
   };

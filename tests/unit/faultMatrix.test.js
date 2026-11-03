@@ -90,7 +90,12 @@ const meter = (actorId, name) => table.actors.get(actorId)?.system?.[name]?.valu
 const momentumOf = (actorId) => meter(actorId, 'momentum');
 const narrated = () => table.cards(f => f.narratorCard && !f.narrationFallback);
 const fallbacks = () => table.cards(f => f.narrationFallback);
-const sessionLog = () => world().sessionLogs?.['sess-1'] ?? [];
+// persistResolution's write stamps campaignState.updatedAt: the move's record
+// landed (the session move log it was checked by is retired, issue #326 W58).
+const persisted = () => !!world().updatedAt;
+/** A campaignState write from `userId` that carries a new persist stamp — the move's record. */
+const persistWrite = (userId) => (w) => campaignStateWrite(userId)(w)
+  && !!w.value?.updatedAt && w.value.updatedAt !== (world().updatedAt ?? null);
 const notices = (userId) => table.client(userId).notifications.map(n => `${n.level}: ${n.message}`);
 
 beforeAll(async () => {
@@ -126,7 +131,7 @@ async function move(userId = 'pl-1', text = 'I brace against the hull and push t
 /** The move stands and recovered: one result, recorded once, lock released. */
 function expectMoveRecordedOnce({ momentum = 3 } = {}) {
   expect(table.cards(f => f.moveResolution)).toHaveLength(1);
-  expect(sessionLog().filter(e => e.moveId === 'face_danger')).toHaveLength(1);
+  expect(persisted()).toBe(true);                 // recorded — once: the momentum below is applied once
   expect(momentumOf('pc-pat')).toBe(momentum);
   expect(world().pendingMove).toBe(false);
 }
@@ -280,7 +285,7 @@ describe('a move cut short', () => {
     await table.drain();
 
     expect(world()).toMatchObject({ sessionActive: false, sessionEndedId: 'sess-1', currentSessionId: 'sess-1', pendingMove: false });
-    expect(sessionLog().filter(e => e.moveId === 'face_danger')).toHaveLength(1);
+    expect(persisted()).toBe(true);
     expect(momentumOf('pc-pat')).toBe(3);
     expect(narrated().filter(c => c.flags[MODULE_ID].moveId === 'face_danger')).toHaveLength(1);
   });
@@ -295,15 +300,14 @@ describe('a world write is refused', () => {
     expectConsoleError(/Move interpretation failed/);
     traceTable(table);
     scriptClaude(table, { fallback: () => REPLY });
-    const refused = failWrites(table, w => campaignStateWrite('gm-1')(w)
-      && (w.value?.sessionLogs?.['sess-1'] ?? []).some(e => e.moveId === 'face_danger'));
+    const refused = failWrites(table, persistWrite('gm-1'));
 
     await move();
     await table.drain();
 
     expect(refused.refused).toBe(1);
     expect(table.cards(f => f.moveResolution)).toHaveLength(1);
-    expect(sessionLog()).toEqual([]);               // the record never landed …
+    expect(persisted()).toBe(false);                // the record never landed …
     expect(momentumOf('pc-pat')).toBe(3);           // … the PC's sheet was written first, and stands
     expect(world().pendingMove).toBe(false);
     expect(notices('gm-1')).toContainEqual(expect.stringMatching(/^error: /));

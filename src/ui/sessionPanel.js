@@ -132,6 +132,11 @@ export class SessionPanelApp extends ApplicationV2 {
       ? `<p class="muted">Session #${sessionNumber}</p>`
       : `<p class="muted">No session begun yet</p>`;
 
+    // Begin / End are anyone's: a player's press opens the same dialog as
+    // their !begin-session / !end-session, whose writes relay to the
+    // canonical GM (session.begin / session.end). They are disabled by the
+    // session state only — the "GM only" gate here predated that relay
+    // (issue #326 W85).
     const html = `
       <div class="sf-session-panel">
         <header class="panel-header">
@@ -141,12 +146,10 @@ export class SessionPanelApp extends ApplicationV2 {
 
         <section class="lifecycle-row">
           <button class="session-btn primary" data-action="beginSession"
-                  ${!isGM ? "disabled title=\"GM only\"" : ""}
                   ${active ? "disabled title=\"Session already active — end it first\"" : ""}>
             Begin Session
           </button>
           <button class="session-btn primary" data-action="endSession"
-                  ${!isGM ? "disabled title=\"GM only\"" : ""}
                   ${!active ? "disabled title=\"Session not active\"" : ""}>
             End Session
           </button>

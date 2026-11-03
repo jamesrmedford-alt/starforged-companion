@@ -149,7 +149,6 @@ const NARRATION_MODEL = "claude-sonnet-4-5-20250929";   // narrationModel defaul
 const NARRATION_REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
 const narrate = vi.fn(async () => {});
-const persist = vi.fn(async () => {});
 
 beforeEach(() => {
   game.actors._reset();
@@ -157,9 +156,8 @@ beforeEach(() => {
   game.settings._store.set(`${MODULE_ID}.campaignState`, { currentSessionId: "s1" });
   ChatMessage._reset();
   narrate.mockClear();
-  persist.mockClear();
-  registerBurnMomentumHook({ narrate, persist });
-  registerImproveResultHook({ narrate, persist });
+  registerBurnMomentumHook({ narrate });
+  registerImproveResultHook({ narrate });
 });
 
 

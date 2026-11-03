@@ -94,7 +94,10 @@ async function openTrack(label, { type = 'combat', rank = 'dangerous', ...fields
     return created;
   });
 }
-const sessionLog = () => world().sessionLogs?.['sess-1'] ?? [];
+// The moves narrated this session, as each move narration's flags (moveId,
+// outcome), oldest first — it read the session move log, retired with issue
+// #326 W58.
+const sessionLog = () => table.cards(f => f.narratorCard && f.resolutionId && !f.burnSuperseded).map(c => c.flags[MODULE_ID]);
 const sufferCards = (moveId) => table.cards(f => f.sufferCard && f.moveId === moveId);
 
 /** A vendor-shaped Companion asset (subtypes/asset.ts): its health is the track. */

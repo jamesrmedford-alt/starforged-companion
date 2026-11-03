@@ -3,16 +3,20 @@
  * tests/unit/flowDefectFixes.test.js
  *
  * Regressions for the 2026-07 flow-audit fixes that live in index.js:
- *   - addLegacyTicks awards XP for newly filled legacy boxes (LEGACY-XP-DEAD:
+ *   - addLegacyTicks earns XP for newly filled legacy boxes (LEGACY-XP-DEAD:
  *     ticks used to accrue with no XP ever awarded — the awarding path
- *     required a consequence field no resolver set).
+ *     required a consequence field no resolver set). The mark is owed by the
+ *     copy the ticks were marked on and paid once its save has landed
+ *     (awardSavedLegacyXp — issue #326 W52), which these tests stand in for;
+ *     since issue #326 D3 it is paid by writing the shared track to each PC's
+ *     sheet, where the XP shows.
  *   - resolveVowItemCopies resolves payoffs vowId-first with the name ladder
  *     (VOW-RENAME-PAYOFF: exact-name-only matching meant a renamed vow rolled
  *     hits that completed nothing and paid nothing).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { addLegacyTicks, resolveVowItemCopies } from "../../src/index.js";
+import { addLegacyTicks, awardSavedLegacyXp, resolveVowItemCopies } from "../../src/index.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -21,10 +25,17 @@ beforeEach(() => {
   globalThis.ChatMessage = { create: vi.fn(async (d) => d) };
 });
 
-describe("addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD)", () => {
-  it("awards 2 XP per newly filled box to every PC and posts the earned-XP note", async () => {
-    const a1 = makeTestActor({ id: "xp1", type: "character", system: { xp: 0 } });
-    const a2 = makeTestActor({ id: "xp2", type: "character", system: { xp: 3 } });
+// Issue #326 D3: the shared track is written through to each PC's sheet
+// (`system.legacies.<track>`, ticks ever marked), where the Starforged sheet
+// shows the boxes and the XP they earn; `system.xp` is no longer written.
+// The mirror reads the track as stored, so each test saves its copy first —
+// what the copy's writer does before awardSavedLegacyXp.
+const saveCopy = (cs) => game.settings._store.set(`${MODULE_ID}.campaignState`, cs);
+
+describe("addLegacyTicks — legacy boxes earn XP on the sheet (LEGACY-XP-DEAD, issue #326 D3)", () => {
+  it("a saved mark reaches every PC's sheet, whose two filled boxes earn 4 XP, and posts the earned-XP note", async () => {
+    const a1 = makeTestActor({ id: "xp1", type: "character" });
+    const a2 = makeTestActor({ id: "xp2", type: "character", system: { legacies: { bondsXpSpent: 2 } } });
     game.actors._setAll([a1, a2]);
 
     const cs = {};
@@ -33,60 +44,67 @@ describe("addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD)", () => {
     expect(boxes).toBe(2);
     expect(xp).toBe(4);
     expect(cs.legacyTracks.bonds).toEqual({ ticks: 8, cleared: false, cycles: 0 });
-    // The award is fire-and-forget and sequential — wait for both to land.
+    expect(a1.system.legacies.bonds).toBe(0);    // owed, not paid: the ticks are not saved yet
+    saveCopy(cs);
+    await awardSavedLegacyXp(cs);                 // the copy's save has landed
     await vi.waitFor(() => {
-      expect(a1.system.xp).toBe(4);
-      expect(a2.system.xp).toBe(7);
+      expect(a1.system.legacies.bonds).toBe(8);
+      expect(a2.system.legacies.bonds).toBe(8);
     });
+    expect(a2.system.legacies.bondsXpSpent).toBe(2);   // each PC's XP spent stays their own
     expect(ChatMessage.create).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringMatching(/Legacies tab/),
       flags: expect.objectContaining({
         [MODULE_ID]: expect.objectContaining({ legacyXpCard: true, track: "bonds", boxes: 2, xp: 4 }),
       }),
     }));
   });
 
-  // Issue #309 N01: a legacy box's XP crossed or started above 30 — the old
-  // 30-point cap wrote 30, erasing earned XP.
-  it("awards a box's XP past 30, and never lowers XP already above it", async () => {
+  it("no longer writes system.xp, the classic sheet's field", async () => {
     const a1 = makeTestActor({ id: "xp30a", type: "character", system: { xp: 29 } });
-    const a2 = makeTestActor({ id: "xp30b", type: "character", system: { xp: 42 } });
-    game.actors._setAll([a1, a2]);
-    expect(addLegacyTicks({}, "quests", 4)).toMatchObject({ boxes: 1, xp: 2 });
-    await vi.waitFor(() => {
-      expect(a1.system.xp).toBe(31);
-      expect(a2.system.xp).toBe(44);
-    });
+    game.actors._setAll([a1]);
+    const cs = {};
+    expect(addLegacyTicks(cs, "quests", 4)).toMatchObject({ boxes: 1, xp: 2 });
+    saveCopy(cs);
+    await awardSavedLegacyXp(cs);
+    await vi.waitFor(() => expect(a1.system.legacies.quests).toBe(4));
+    expect(a1.system.xp).toBe(29);
   });
 
-  it("awards nothing when no box fills", async () => {
-    game.actors._setAll([makeTestActor({ id: "xp3", type: "character", system: { xp: 0 } })]);
+  it("a mark that fills no box still reaches the sheets, with no earned-XP note", async () => {
+    game.actors._setAll([makeTestActor({ id: "xp3", type: "character" })]);
     const cs = { legacyTracks: { quests: { ticks: 2, cleared: false } } };
     expect(addLegacyTicks(cs, "quests", 1).boxes).toBe(0); // 3 ticks — still box 0
-    await new Promise((r) => setTimeout(r, 0));
-    expect(game.actors.get("xp3").system.xp).toBe(0);
+    saveCopy(cs);
+    await awardSavedLegacyXp(cs);
+    await vi.waitFor(() => expect(game.actors.get("xp3").system.legacies.quests).toBe(3));
     expect(ChatMessage.create).not.toHaveBeenCalled();
   });
 
-  it("pays 1 XP per box once the track has been cleared (rule 1.12)", async () => {
-    const a = makeTestActor({ id: "xp4", type: "character", system: { xp: 0 } });
+  it("a cleared track reaches the sheet as ticks ever marked, where a box earns 1 XP (rule 1.12)", async () => {
+    const a = makeTestActor({ id: "xp4", type: "character" });
     game.actors._setAll([a]);
     const cs = { legacyTracks: { quests: { ticks: 0, cleared: true } } };
     expect(addLegacyTicks(cs, "quests", 4)).toEqual({ boxes: 1, xp: 1, cleared: false });
-    await vi.waitFor(() => expect(a.system.xp).toBe(1));
+    saveCopy(cs);
+    await awardSavedLegacyXp(cs);
+    await vi.waitFor(() => expect(a.system.legacies.quests).toBe(44));   // one cycle (40) + 4
   });
 
   // Issue #316 T02: the track used to cap at 40 ticks, so the tenth box never
   // cleared it and every later mark was lost.
   it("the tenth box clears the track: the overflow carries on from the first box at 1 XP a box", async () => {
-    const a = makeTestActor({ id: "xp5", type: "character", system: { xp: 0 } });
+    const a = makeTestActor({ id: "xp5", type: "character" });
     game.actors._setAll([a]);
     const cs = { legacyTracks: { discoveries: { ticks: 39, cleared: false } } };
     // 39 + 10: the tenth box (2 XP), the track clears, 9 ticks over — two more boxes at 1 XP each.
     expect(addLegacyTicks(cs, "discoveries", 10)).toEqual({ boxes: 3, xp: 4, cleared: true });
     expect(cs.legacyTracks.discoveries).toEqual({ ticks: 9, cleared: true, cycles: 1 });
-    // The award is fire-and-forget: the note follows the XP write.
+    // Paid once the copy is saved: the note follows the sheet write.
+    saveCopy(cs);
+    await awardSavedLegacyXp(cs);
     await vi.waitFor(() => expect(ChatMessage.create).toHaveBeenCalled());
-    expect(a.system.xp).toBe(4);
+    expect(a.system.legacies.discoveries).toBe(49);
     expect(ChatMessage.create).toHaveBeenCalledWith(expect.objectContaining({
       content: expect.stringMatching(/filled and cleared/),
       flags: expect.objectContaining({

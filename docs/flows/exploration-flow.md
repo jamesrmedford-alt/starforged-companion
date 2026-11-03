@@ -86,10 +86,12 @@ passage" drawing.
   said so in text only until issue #321 U17, WAYPOINT-MISS-NO-PTP) — except
   a miss with a match, where the player may instead Confront Chaos, so the
   price is their choice and is not routed.
-  Strong-hit-with-match seeds a "notable aspect" + Make-a-Discovery oracle
-  roll into the narrator prompt and offers **🔭 Make a Discovery** on the
-  result card; miss-with-match seeds Confront Chaos and offers **🌀 Confront
-  Chaos**. The match's alternative is *instead* of the ordinary result: one
+  Strong-hit-with-match seeds a "notable aspect" prompt into the narrator
+  prompt and offers **🔭 Make a Discovery** on the result card;
+  miss-with-match offers **🌀 Confront Chaos**. Neither table is rolled for
+  the waypoint's own narration — the button's forced move rolls it, once
+  (issue #326 W47: the waypoint seeded its own roll, so the two narrations
+  told two different discoveries). The match's alternative is *instead* of the ordinary result: one
   claim per card (`waypointRewardClaimed` on the GM-authored move card,
   written on the canonical GM by the `waypoint.oracle` relay —
   `cardActions.applyWaypointOraclePick`, which posts the forced follow-up as
@@ -136,7 +138,8 @@ rolls nothing (a "not rolled" card). Strong hit → `finishExpedition` completes
 track and pays `legacyRewardTicks(rank)` (weak hit one rank down) onto the
 **discoveries** legacy; the finish card reports both. `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
-("docked at …"). Miss leaves the track open and posts the recommit offer
+("docked at …"); the Set a Course feedback card ("Course held cleanly (+1
+momentum)") is Set a Course's alone (issue #326 W46). Miss leaves the track open and posts the recommit offer
 (below, "Advisory-only branches"): its **🔁 Recommit** relays
 `expedition.recommit` to the canonical GM (`cardActions.applyRecommitOffer`),
 which claims the GM-authored offer card (`recommitted`) before running

@@ -42,6 +42,7 @@ import { readCharacterSnapshot, listCompanionAssets } from "../character/actorBr
 import { getCommandVehicleActor } from "./abilityScanner.js";
 import { selectCombatTrack, combatPositionFor } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
+import { selectSceneChallengeTrack } from "./sceneChallenge.js";
 import { selectVowTrack } from "./vow.js";
 import { selectFulfilVow } from "./milestone.js";
 import { selectConnection, bondedDevelopRoll } from "./developRelationship.js";
@@ -58,7 +59,7 @@ const PLAYER_METERS = new Set(["health", "spirit", "supply", "momentum"]);
 // stat is worth a warning.
 const NO_STAT_MOVES = new Set([
   "ask_the_oracle", "pay_the_price", "fulfill_your_vow", "forge_a_bond",
-  "finish_an_expedition", "take_decisive_action", "reach_a_milestone",
+  "finish_an_expedition", "finish_the_scene", "take_decisive_action", "reach_a_milestone",
   "develop_your_relationship",   // bonded: +rank, filled by enrichBondedDevelop; else no roll
 ]);
 
@@ -89,9 +90,13 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
   if (interpretation?.isProgressMove) return interpretation.statValue ?? 0;
 
   // Play-kit "whichever is higher" rule for Endure Harm / Stress —
-  // override the interpreter's pick with the higher of the two stats.
+  // override the interpreter's pick with the higher of the two stats. It
+  // picks between the move's own two: a substitution the player chose on the
+  // confirm dialog (Vanguard's "you may roll +wits", recorded by the
+  // pipeline as statSubstitutedFrom) stands (issue #326 W49 — the rule
+  // overwrote it with +spirit).
   const moveId = interpretation?.moveId;
-  if (moveId && PICK_HIGHER_OF[moveId]) {
+  if (moveId && PICK_HIGHER_OF[moveId] && !interpretation?.statSubstitutedFrom) {
     const [a, b] = PICK_HIGHER_OF[moveId];
     const va = resolveStatValue(actor, a, campaignState);
     const vb = resolveStatValue(actor, b, campaignState);
@@ -474,6 +479,7 @@ export const PROGRESS_TICK_SOURCES = {
   fulfill_your_vow:     "vow",
   forge_a_bond:         "connection",
   finish_an_expedition: "expedition",
+  finish_the_scene:     "scene_challenge",   // issue #326 D6
 };
 
 /**
@@ -517,7 +523,7 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
 
   let resolved = null; // { ticks, label, trackId, combatState }
 
-  if (source === "combat" || source === "expedition") {
+  if (source === "combat" || source === "expedition" || source === "scene_challenge") {
     // A row's id when the roll came from it (the Progress Tracks panel, an
     // expedition card): that track or nothing — a same-named sibling is a
     // different fight (issue #306 R06).
@@ -525,7 +531,9 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
     const tracks = (await deps.listTracks?.()) ?? [];
     const track = source === "combat"
       ? selectCombatTrack(tracks, target, { trackId })
-      : selectExpeditionTrack(tracks, target, { trackId });
+      : source === "expedition"
+        ? selectExpeditionTrack(tracks, target, { trackId })
+        : selectSceneChallengeTrack(tracks, target, { trackId });
     if (track) {
       resolved = {
         ticks:       Number(track.ticks ?? 0),

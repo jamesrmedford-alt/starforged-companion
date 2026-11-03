@@ -16,7 +16,8 @@
 
 import { createClock, retireClock, removeClock, clocksFingerprint } from '../clocks/clocks.js';
 import { requestGmAction } from '../multiplayer/gmRelay.js';
-import { isTrackPosition } from '../moves/combat.js';
+import { isTrackPosition, combatPositionFor } from '../moves/combat.js';
+import { resolveUserActorId } from '../multiplayer/speaker.js';
 
 /**
  * A track's label (or any text) for HTML: a name holding markup — a player can
@@ -232,13 +233,22 @@ function warnPairedClock(what, err) {
 // ---------------------------------------------------------------------------
 
 /**
- * Which move a panel Progress Roll resolves through the move pipeline.
- * scene_challenge is deliberately absent — no Starforged move maps to it, so
- * it keeps the bespoke display roll below. Exported for tests.
+ * Which move a panel Progress Roll resolves through the move pipeline. A
+ * scene challenge's is Finish the Scene (Starforged p. 241): it rolled a
+ * bespoke display card that asked no price, flagged no match and left the
+ * challenge open (issue #326 D6). Exported for tests.
  */
 export const TRACK_TYPE_TO_MOVE = {
-  combat:     'take_decisive_action',
-  expedition: 'finish_an_expedition',
+  combat:          'take_decisive_action',
+  expedition:      'finish_an_expedition',
+  scene_challenge: 'finish_the_scene',
+};
+
+/** The line a Progress Roll posts for the pipeline, per move. */
+const PROGRESS_ROLL_LINES = {
+  take_decisive_action: (label) => `Take decisive action — ${label}.`,
+  finish_an_expedition: (label) => `Attempt to finish the expedition — ${label}.`,
+  finish_the_scene:     (label) => `Finish the scene — ${label}.`,
 };
 
 /**
@@ -259,14 +269,14 @@ async function movePipelineAvailable() {
 /**
  * Execute a Progress Roll for a track.
  *
- * Combat and expedition rolls are real Starforged progress moves with
- * pipeline consequences (Take Decisive Action → endCombat → victory card /
- * linked-vow milestone; Finish an Expedition → legacy + arrival), so during
- * an active session they route through the forced-move bridge and the move
- * pipeline rolls, narrates, and applies consequences. The bespoke card below
- * looked right but had no consumer — a "won" fight never actually ended.
- * scene_challenge (no mapped move) and pre-session rolls keep the instant
- * display roll:
+ * Each track type's roll is a real Starforged progress move with pipeline
+ * consequences (Take Decisive Action → endCombat → victory card / linked-vow
+ * milestone; Finish an Expedition → legacy + arrival; Finish the Scene → the
+ * challenge and its clock end, a weak hit or miss pays the price — issue
+ * #326 D6), so during an active session they route through the forced-move
+ * bridge and the move pipeline rolls, narrates, and applies consequences. The
+ * bespoke card below looked right but had no consumer — a "won" fight never
+ * actually ended. Pre-session rolls keep the instant display roll:
  * Score = number of fully filled boxes (ticks / 4, floored).
  * Roll 2d10 challenge dice. Compare score against each:
  *   Strong Hit  — score > both dice
@@ -281,9 +291,7 @@ async function movePipelineAvailable() {
 export async function rollProgress(track) {
   const moveId = TRACK_TYPE_TO_MOVE[track.type];
   if (moveId && await movePipelineAvailable()) {
-    const content = moveId === 'take_decisive_action'
-      ? `Take decisive action — ${track.label}.`
-      : `Attempt to finish the expedition — ${track.label}.`;
+    const content = PROGRESS_ROLL_LINES[moveId](track.label);
     await ChatMessage.create({
       content,
       // The row's own id (and label): tick enrichment, scoring and completion
@@ -687,11 +695,20 @@ export class ProgressTrackApp extends ApplicationV2 {
    * Cycle a combat track's position: neutral → in_control → bad_spot → neutral.
    * Per play kit p. 5, combat moves write this automatically on resolution;
    * the toggle here lets the player correct it manually. The clicker's own
-   * character's sheet and combat-tracker badge follow the track (U19).
+   * character's sheet and combat-tracker badge follow the track (U19). The
+   * clicker's PC is resolved as everywhere else (resolveUserActorId): it was
+   * `User#character`, null for a GM with none assigned (the usual solo
+   * setup), so the toggle cycled the fight's last-set position while the
+   * roller's own — which every reader has preferred since issue #322 V03 —
+   * kept steering the next move (issue #326 W56).
    */
   static #onToggleCombatState(event, target) {
+    let actorId = null;
+    try {
+      actorId = resolveUserActorId(game.user, game.settings.get(MODULE_ID, 'campaignState'));
+    } catch { actorId = game.user?.character?.id ?? null; }
     const work = ProgressTrackApp.#requestEdit(this, {
-      op: 'position', trackId: target.dataset.trackId, actorId: game.user?.character?.id ?? null,
+      op: 'position', trackId: target.dataset.trackId, actorId,
     });
     this._lastAction = work;
     return work;
@@ -1148,9 +1165,14 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
       // the sheet disagreed with it).
       const fight = await readTrackAfterWrites(trackId);
       if (!isOpenPanelTrack(fight) || fight.type !== 'combat') return refusedEdit('no-track', payload);
-      const next = NEXT_POSITION[fight.combatState ?? 'null'] ?? null;
+      // The clicker's PC's own position is the one cycled — the one the
+      // interpreter and Take Decisive Action read (issue #326 W56); with no
+      // PC, the fight's.
+      const actor   = await positionMirrorActor(payload.actorId, ctx);
+      const current = actor ? combatPositionFor(fight, actor.id) : (fight.combatState ?? null);
+      const next    = NEXT_POSITION[current ?? 'null'] ?? null;
       const { applyCombatPositionToTrack } = await import('../moves/combatTracker.js');
-      await applyCombatPositionToTrack(trackId, next, await positionMirrorActor(payload.actorId, ctx));
+      await applyCombatPositionToTrack(trackId, next, actor);
       return { applied: true, trackId };
     }
     case 'complete': {

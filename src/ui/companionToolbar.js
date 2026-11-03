@@ -22,7 +22,7 @@ import { openProgressTracks }    from "./progressTracks.js";
 import { openEntityPanel }       from "./entityPanel.js";
 import { openChroniclePanel }    from "../character/chroniclePanel.js";
 import { openClocksPanel }       from "../clocks/clocks.js";
-import { openPrivateChannel, isPrivateChannelEnabled } from "../private-channel/index.js";
+import { openPrivateChannel, isPrivateChannelEnabled, onPrivateChannelToggled } from "../private-channel/index.js";
 import { openSettingsPanel }     from "./settingsPanel.js";
 import { openSectorCreator }     from "../sectors/sectorPanel.js";
 import { openWorldJournalPanel } from "../world/worldJournalPanel.js";
@@ -284,6 +284,9 @@ export class CompanionToolbarApp extends ApplicationV2 {
         if (changed) app.render();
         else app.refit();
       });
+      // The Private Channel switch shows or hides the ✦ button on every
+      // client at once, not after a reload (issue #326 W86).
+      onPrivateChannelToggled(() => CompanionToolbarApp.rerenderIfOpen());
     }
     CompanionToolbarApp.#instance.render({ force: true });
     return CompanionToolbarApp.#instance;

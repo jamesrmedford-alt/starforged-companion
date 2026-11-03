@@ -12,9 +12,11 @@
  * Corpora: PRODUCTION = src/** minus src/integration/** (the Quench suite is
  * test code that merely ships inside the module); QUENCH = src/integration/**;
  * TESTS = tests/**. Comments are stripped from every file before counting
- * (string, template and regex literals are preserved, so "//" inside a URL
- * or a regex is not mistaken for a comment) — a symbol mentioned only in a
- * comment is not consumed.
+ * (string, template and regex literals are lexed, so "//" inside a URL or a
+ * regex is not mistaken for a comment) — a symbol mentioned only in a
+ * comment is not consumed. Nor is one mentioned only inside a longer string
+ * or template text — a function's own log line (`consumerText`; issue #326
+ * W82); a string that is one whole identifier (a string dispatch) still is.
  *
  * Flags:
  *   DEAD exports       — exported symbols with no non-definition reference in
@@ -50,7 +52,7 @@
  *                        when Quench or tests still import it.
  *
  * Consumers are counted by word-boundary occurrence, so dynamic-import
- * destructuring and string dispatch both register as consumers. Names on
+ * destructuring and whole-literal string dispatch both register as consumers. Names on
  * `module.api` are treated as consumed (public surface).
  *
  * Known blind spot (regex, not a resolver): a LIVE same-named function masks
@@ -63,7 +65,7 @@
  *   node scripts/deadscan.mjs            advisory report, always exits 0
  *   node scripts/deadscan.mjs --strict   exit 1 if any DEAD export/setting
  *
- * The scan itself (`scan`, `stripComments`) is exported for
+ * The scan itself (`scan`, `stripComments`, `consumerText`) is exported for
  * tests/unit/deadscan.test.js; the report only runs when executed directly.
  */
 
@@ -109,11 +111,34 @@ const REGEX_KEYWORDS = new Set([
 ]);
 const WORD_CHAR = /[\w$]/;
 
+// A string literal whose whole content is one identifier — a name used for
+// dispatch (`fn: "applyPrivateLinesSync"`, `vi.spyOn(mod, "fn")`).
+const WHOLE_IDENT = /^[A-Za-z_$][\w$]*$/;
+const blank = (s) => s.replace(/[^\n]/g, " ");
+
 /**
  * @param {string} src — JavaScript source
  * @returns {string} the source with comments blanked to spaces
  */
 export function stripComments(src) {
+  return lexSource(src, { blankStrings: false });
+}
+
+/**
+ * The text consumers are counted in: comments blanked, and string and
+ * template text blanked too — except a string that is one whole identifier
+ * (a string dispatch). A name inside a longer string, such as a function's
+ * own log line (`console.warn(\`… loadAll(${id}) failed\`)`), is not a
+ * consumer (issue #326 W82). Template `${…}` expressions stay code.
+ *
+ * @param {string} src — JavaScript source
+ * @returns {string}
+ */
+export function consumerText(src) {
+  return lexSource(src, { blankStrings: true });
+}
+
+function lexSource(src, { blankStrings }) {
   let i = 0;
   const n = src.length;
   let out = "";
@@ -131,13 +156,18 @@ export function stripComments(src) {
   }
 
   function copyQuoted(q) {
-    out += src[i++];
+    const start = i++;
     while (i < n) {
       const c = src[i];
-      if (c === "\\") { out += src.slice(i, i + 2); i += 2; continue; }
-      out += c; i++;
-      if (c === q || c === "\n") return;
+      if (c === "\\") { i += 2; continue; }
+      i++;
+      if (c === q || c === "\n") break;
     }
+    const lit = src.slice(start, i);
+    if (!blankStrings) { out += lit; return; }
+    const closed = lit.length >= 2 && lit[lit.length - 1] === q;
+    const inner  = lit.slice(1, closed ? -1 : undefined);
+    out += WHOLE_IDENT.test(inner) ? lit : q + blank(inner) + (closed ? q : "");
   }
 
   function copyRegex() {
@@ -156,17 +186,28 @@ export function stripComments(src) {
   }
 
   function copyTemplate() {
+    const outStart = out.length;
+    const srcStart = i;
+    let hadExpr = false;
     out += src[i++];                         // opening backtick
     while (i < n) {
       const c = src[i];
-      if (c === "\\") { out += src.slice(i, i + 2); i += 2; continue; }
-      if (c === "`") { out += c; i++; return; }
+      if (c === "\\") { out += blankStrings ? blank(src.slice(i, i + 2)) : src.slice(i, i + 2); i += 2; continue; }
+      if (c === "`") {
+        out += c; i++;
+        // A template that is one whole identifier keeps it, as a string does.
+        if (blankStrings && !hadExpr && WHOLE_IDENT.test(src.slice(srcStart + 1, i - 1))) {
+          out = out.slice(0, outStart) + src.slice(srcStart, i);
+        }
+        return;
+      }
       if (c === "$" && src[i + 1] === "{") {
+        hadExpr = true;
         out += "${"; i += 2;
         code(true);
         continue;
       }
-      out += c; i++;
+      out += blankStrings && c !== "\n" ? " " : c; i++;
     }
   }
 
@@ -256,7 +297,6 @@ function specList(list, sep) {
     return [first, second || first];
   });
 }
-const blank = (s) => s.replace(/[^\n]/g, " ");
 
 // ── the scan ─────────────────────────────────────────────────────────────────
 
@@ -278,10 +318,18 @@ export function scan({ files, entries = ["src/index.js"] }) {
   const quenchFiles = srcFiles.filter(isQuench);
 
   const stripped = new Map(paths.map((f) => [f, stripComments(files.get(f))]));
-  const corpus = (list) => list.map((f) => stripped.get(f)).join("\n");
+  // Export consumers are counted with string text blanked (consumerText): a
+  // name in a log message is not a use; a whole-literal string dispatch is.
+  const consumers = new Map(paths.map((f) => [f, consumerText(files.get(f))]));
+  const corpus = (list) => list.map((f) => consumers.get(f)).join("\n");
   const prodAll   = corpus(prodFiles);
   const quenchAll = corpus(quenchFiles);
   const testAll   = corpus(testFiles);
+  // Settings keys are strings — "audio.volume" — so their uses are counted in
+  // the comment-stripped text with its strings intact.
+  const rawCorpus = (list) => list.map((f) => stripped.get(f)).join("\n");
+  const prodRaw   = rawCorpus(prodFiles);
+  const quenchRaw = rawCorpus(quenchFiles);
 
   // Exported definitions: name → Set(defining files).
   const definers = new Map();
@@ -512,7 +560,7 @@ export function scan({ files, entries = ["src/index.js"] }) {
   // reference to the constant the register() call went through, minus that
   // constant's own "value" definition and the register() calls themselves.
   const settingUses = (key, rec) => {
-    let uses = countLiteral(`"${key}"`, prodAll) + countLiteral(`'${key}'`, prodAll);
+    let uses = countLiteral(`"${key}"`, prodRaw) + countLiteral(`'${key}'`, prodRaw);
     for (const b of rec.via.values()) uses += constRefs(b, prodFiles) - 1;
     return uses - rec.count;
   };
@@ -522,7 +570,7 @@ export function scan({ files, entries = ["src/index.js"] }) {
   for (const [key, rec] of [...registered].sort(([a], [b]) => a.localeCompare(b))) {
     if (settingUses(key, rec) > 0) continue;
     const inQuench =
-      countLiteral(`"${key}"`, quenchAll) + countLiteral(`'${key}'`, quenchAll) > 0 ||
+      countLiteral(`"${key}"`, quenchRaw) + countLiteral(`'${key}'`, quenchRaw) > 0 ||
       [...rec.via.values()].some((b) => constRefs(b, quenchFiles) > 0);
     (inQuench ? quenchOnlySettings : deadSettings).push(key);
   }

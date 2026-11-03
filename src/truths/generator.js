@@ -40,6 +40,7 @@
 import { TRUTH_CATEGORIES, TRUTH_TABLES, SUB_TABLES } from "./tables.js";
 import { apiPost } from "../api-proxy.js";
 import { mergeOwnedFields } from "../factContinuity/sceneLifecycle.js";
+import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID      = "starforged-companion";
 const JOURNAL_NAME   = "World Truths";
@@ -527,7 +528,7 @@ function htmlText(fragment) {
  * Posts a chat card, writes a "The Story So Far" page to the World Truths journal,
  * and persists the text in campaignState for context injection.
  *
- * @param {Object} campaignState — mutated in place (loreRecap)
+ * @param {Object} campaignState — takes the recap (loreRecap) once it is saved
  * @returns {Promise<string|null>} recap text, or null on failure
  */
 export async function generateLoreRecap(campaignState) {
@@ -558,19 +559,27 @@ export async function generateLoreRecap(campaignState) {
   // (issue #321 U06a): campaignState was read before the Claude call, and
   // writing it whole reverted whatever landed meanwhile — a player's X-Card,
   // a move releasing its lock (rules/reachability.md §9).
-  campaignState.loreRecap = recap;
+  // Set on a copy: the caller hands in the cached setting, which kept a recap
+  // the world refused (issue #326 W51; rules/foundry-api.md). The caller's
+  // object takes it once the write has landed.
   try {
-    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(campaignState, ["loreRecap"], "!lore"));
+    await game.settings.set(MODULE_ID, "campaignState",
+      mergeOwnedFields({ ...campaignState, loreRecap: recap }, ["loreRecap"], "!lore"));
   } catch (err) {
     console.error(`${MODULE_ID} | lore: failed to persist loreRecap:`, err);
+    ui?.notifications?.error("Starforged Companion: the lore recap was not saved — the world did not take the write.");
     throw err;
   }
+  campaignState.loreRecap = recap;
 
   await writeLoreRecapToJournal(recap, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | lore: writeLoreRecapToJournal failed:`, err)
   );
 
-  const paragraphs = recap.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join("");
+  // The model's prose is text: escaped, with <npc> voice markers stripped —
+  // "<signal lost>" vanished as an unknown tag (issue #326 W71, the issue
+  // #322 V18 class the narration cards fixed).
+  const paragraphs = loreParagraphs(recap).join("");
   await ChatMessage.create({
     content: `
       <div class="sf-lore-card">
@@ -682,9 +691,26 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
   return text;
 }
 
+/**
+ * The recap's paragraphs as HTML: each escaped, its <npc> markers stripped.
+ *
+ * @param {string} recap
+ * @returns {string[]}
+ */
+function loreParagraphs(recap) {
+  return String(recap ?? "").split(/\n\n+/)
+    .map(p => p.trim()).filter(Boolean)
+    .map(p => `<p>${escapeLoreHtml(stripMarkup(p))}</p>`);
+}
+
+function escapeLoreHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 async function writeLoreRecapToJournal(recap, campaignState) {
   const PAGE_NAME = "The Story So Far";
-  const html      = recap.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join("\n");
+  const html      = loreParagraphs(recap).join("\n");
 
   async function upsertPage(je) {
     const existing = je.pages?.contents?.find(p => p.name === PAGE_NAME);

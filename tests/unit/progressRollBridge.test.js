@@ -29,10 +29,11 @@ const combatTrack = (over = {}) => ({
 });
 
 describe('TRACK_TYPE_TO_MOVE', () => {
-  it('maps combat and expedition to their progress moves; scene_challenge to nothing', () => {
+  // Issue #326 D6: a scene challenge's progress move is Finish the Scene.
+  it('maps each track type to its progress move', () => {
     expect(TRACK_TYPE_TO_MOVE.combat).toBe('take_decisive_action');
     expect(TRACK_TYPE_TO_MOVE.expedition).toBe('finish_an_expedition');
-    expect(TRACK_TYPE_TO_MOVE.scene_challenge).toBeUndefined();
+    expect(TRACK_TYPE_TO_MOVE.scene_challenge).toBe('finish_the_scene');
   });
 });
 
@@ -66,9 +67,14 @@ describe('rollProgress — pipeline bridge', () => {
     expect(chatCalls[0].flags[MODULE_ID].forcedMoveId).toBeUndefined();
   });
 
-  it('keeps the bespoke display roll for scene challenges even mid-session', async () => {
-    await rollProgress(combatTrack({ type: 'scene_challenge', label: 'Debate the council' }));
-    expect(chatCalls[0].flags[MODULE_ID].type).toBe('progressRoll');
+  // Issue #326 D6: mid-session, a scene challenge rolls Finish the Scene
+  // through the pipeline, as the other two types do.
+  it('posts a forced Finish the Scene bridge for a scene challenge mid-session', async () => {
+    await rollProgress(combatTrack({ id: 'sc1', type: 'scene_challenge', label: 'Debate the council' }));
+    expect(chatCalls[0].content).toBe('Finish the scene — Debate the council.');
+    expect(chatCalls[0].flags[MODULE_ID]).toMatchObject({
+      bypassPacing: true, forcedMoveId: 'finish_the_scene', forcedMoveTarget: 'Debate the council', forcedMoveTargetId: 'sc1',
+    });
   });
 });
 

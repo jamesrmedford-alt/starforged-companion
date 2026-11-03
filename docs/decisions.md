@@ -6,6 +6,118 @@ rejected.
 
 ---
 
+## Issue #326 audit: decisions D1–D8, and writes on copies, one emitter, checked relays (2026-11)
+
+**Decision:** (issue #326, part 2 of the eighth audit. The maintainer asked
+for the issue to be addressed on 2026-11-03 and decided D1–D8 that day, each
+the recommended option. Each finding's ID in brackets.)
+- **A refusable write changes a copy** [W51, W69]. A writer sets its change on
+  a copy of the cached setting (or writes only its own fields onto the record
+  as it then is), so a refused write leaves the GM's copy as it was —
+  rules/foundry-api.md's cached-by-reference rule, at the nine sites the audit
+  found; the commands say when the world did not take the write.
+- **What a mark earns is paid once its save lands** [W52]. A legacy box's XP
+  — since D3, the sheet mirror — is owed by the working copy it was marked on
+  and paid after that copy's write (`deferLegacyXp`).
+- **One emitter for world-creating work; one queue for a whole-array store**
+  [W53, W54]. The ready-time creators and migrations gate on the canonical
+  GM; every clock read-modify-write runs through one per-client queue.
+- **A relayed payload is checked against what the UI could send** [W81]. The
+  GM synthesises only a clip whose hash is its spec's key (rules/reachability.md
+  §8); a keyed Player asks the GM for a cached clip before paying for it
+  [W79], and a keyless canonical GM never relays to itself [W80].
+- **A string mention is not a consumer** [W82]. The dead-code scan blanks
+  string text except a whole-identifier string dispatch.
+- **The module's text is hard-coded English** [W84]. `lang/en.json` is kept
+  declared and empty; a key added there must be read.
+- **A vow deepens its connection once** [D1; maintainer]. A vow sworn for a
+  connection was deepened twice: by the won-fight card's 🤝 Deepen (the vow's
+  rank marks) and again by its fulfilment's payoff (the same marks). One
+  reward: whichever lands first pays and is recorded on the vow's payoff
+  ledger (`fulfilPayoff.deepen`, every copy); the other — the fulfilment, its
+  Retry, or a press after the fulfilment — finds it there and deepens
+  nothing. A second vow for the same connection deepens it on its own.
+  *Rejected:* two rewards (a won fight and the fulfilment each deepening) —
+  #241 frames the fulfilment's deepen as *the* vow→connection reward and the
+  card as its one-click prompt.
+- **The shared legacy tracks are mirrored to every sheet** [D3; maintainer].
+  The ticks lived in `campaignState.legacyTracks` and the XP in each PC's
+  `system.xp`, but the Starforged sheet shows neither: its Legacies tab draws
+  each legacy from `system.legacies.<track>` (ticks ever marked) and derives
+  the XP earned from it, and it has no `system.xp`. The shared track stays
+  canonical and is written through to every PC's sheet after each saved mark
+  (a mark that fills no box too); a sheet edit (the tab's ▸ / ◂) flows back
+  the way the shared supply does — the canonical GM sets the shared track to
+  it and mirrors it to the other PCs; at ready the canonical GM backfills the
+  sheets, raising the shared track to any sheet further along so no mark is
+  lost. Each PC's XP spent stays their own. `system.xp` is no longer written
+  (`awardXP` deleted); the earned-XP card stays and points at the Legacies
+  tab. *Rejected:* a module panel showing the legacy and XP — the sheet is
+  where XP is spent, so a second display would drift from it.
+- **An upgrade closes after the roller's next move** [D4; maintainer]. A
+  move card's Burn Momentum / Improve Result stayed live until used or its
+  choice was picked: an old card's 🔥 burned momentum at its current value,
+  swapped the old outcome's effects in after the fact and re-narrated a past
+  beat as the scene's latest — against "you must burn momentum before
+  applying any other effects of the move". Once the same roller's next move
+  has resolved (the pipeline, after its persist), their earlier cards' open
+  upgrades are stamped `laterMove` — the buttons read "closed by a later
+  move" — and the GM handlers refuse an upgrade on a card a later move by its
+  roller follows, stamped or not. Another character's move closes nothing.
+  *Rejected:* accepting late burns as a feature.
+- **A sector's passages are the book's** [D5; maintainer]. The Sector
+  Creator drew one passage per settlement (Terminus 4, Outlands 3, Expanse
+  2) so that one would run off the map edge — commit 160bc9b, no decision
+  recorded. The rulebook's region table gives one fewer: 4 / 3, 3 / 2,
+  2 / 1. The book's counts are back, the edge passage one of them: each
+  passage links a settlement to the next and the last leads off the map
+  edge (an Expanse's one passage is its edge passage). *Rejected:* keeping
+  the extra edge passage.
+- **A scene challenge ends with Finish the Scene** [D6; maintainer]. Its ⬡
+  Progress Roll was a bespoke display card: no price on a weak hit or miss,
+  no Pay the Price routed, no match flagged, and the challenge stayed open
+  with its clock advancing on every later Pay the Price. Finish the Scene
+  (Starforged p. 241) is now a progress move through the pipeline, like
+  Finish an Expedition (`finish_the_scene`, interpreter-typable too):
+  narrated, scored from the challenge's own track, a weak hit or miss routes
+  Pay the Price, a match flagged on the card, and every outcome ends the
+  challenge — its clock retired before the price is routed, then the track
+  completed. *Rejected:* a card that only asks for the price and ends the
+  challenge — the move belongs in the pipeline like its two siblings.
+- **No `closeWorld` hook** [D7; maintainer]. `Hooks.once("closeWorld")`
+  ended the active scene and stamped `lastSessionTimestamp` on world close,
+  but Foundry documents no such hook (the API reference listed it from a
+  community source) and nothing exercised it — dead code, and a stale
+  whole-state write had it ever run (CLOSEWORLD-STALE-WRITE, now moot). The
+  handler and its mentions are deleted; a scene left open at a reload closes
+  at End Session or the idle re-mint, which rules/narrator-memory.md §6
+  already treats as intended.
+- **A PC-less player is not rolled as another player's character** [D8;
+  maintainer]. `resolveSpeakerActorId` gives no PC to a player who owns
+  none at a table of two or more (issue #321 U23), but the pipeline fell
+  back to the first PC anyway — the move rolled with that PC's stats, its
+  meters landed on it and its card named it the roller. The pipeline now
+  follows U23: a GM's narration, or any at a one-PC table, still falls back
+  to the first PC; a PC-less player at a table of several is whispered that
+  they need a character (`noCharacterNotice`), and nothing is rolled — the
+  check runs before the move lock and the interpreter's Claude call.
+  Narration that is not a move is not refused. `persistResolution`'s
+  first-PC fallback stays for its other callers (a GM's, a one-PC table's).
+- **A scene truth is filed where it was asserted** [D2; maintainer]. Scene
+  end filed every scene-subject truth on the frame's location at the end of
+  the scene, but a scene spans travel (it ends only at `!scene end`, End a
+  Session and the re-mint): "the bar is called the Rusty
+  Lantern", recorded at Bleakhold, landed on Ironway's card. Each truth now
+  records the frame's location when it is asserted (`sceneLocation`: the
+  asserting narration's own frame, else the frame in place; a Replace keeps
+  its original's), and scene end files it on the recorded place that names —
+  or archives it as lore titled with that place. A truth with no stamp
+  (recorded before this, or asserted before any frame stood) falls back to
+  the end-of-scene place. *Rejected:* filing travelled-past truths as lore —
+  it loses the place a fact belongs to whenever the scene moved at all.
+
+---
+
 ## Issue #325 audit: an X-Card reaches every store its beat wrote, a held press is rolled later, the system's numbers read as names, effects land on whom the move is for (2026-11)
 
 **Decision:** (issue #325, part 1 of the eighth audit. The maintainer asked
@@ -687,7 +799,8 @@ marks — did not run until issue #313 (above).
 be fixed on 2026-10-29. Each finding's ID in brackets.)
 - **XP has no ceiling** [N01]. `awardXP` adds: the vendor's `system.xp` is a
   non-negative integer with no maximum. The 30 was the classic Ironsworn
-  sheet's track, never a Starforged rule.
+  sheet's track, never a Starforged rule. *(Issue #326 D3: `awardXP` is
+  deleted — the XP is derived on the sheet from its mirrored legacies.)*
 - **A move's consequence card carries what the move was about** [N02, N03,
   N04]. Stat enrichment stamps the vehicle an integrity roll read
   (`vehicleActorId`) and the companion a `companion_health` roll read
@@ -1517,7 +1630,12 @@ and the summary End a Session archives to the Session Log had no reader.
   scene's recorded place: the frame's location when it names, or mentions by
   full name, exactly one recorded settlement / planet / location / ship; else
   the current location when the frame names no place. Otherwise it is WJ
-  lore titled with the frame's location.
+  lore titled with the frame's location. *(Issue #326 D2, 2026-11-03: the
+  place is the one the truth was asserted at — each truth records the
+  frame's location then, `sceneLocation` — not the one the scene ended at; a
+  scene spans travel. An unstamped truth falls back to the end-of-scene
+  place. See "Issue #326 audit" → "A scene truth is filed where it was
+  asserted".)*
 - **Lore per turn.** ESTABLISHED LORE holds up to 5 entries that share the
   most words with the player text, the frame and the entities in play, then
   the most recent, 8 in all; the Locations journal's places join the pool.
@@ -1665,7 +1783,8 @@ continues that scene. The intercept no longer calls `startScene`;
 active, on the canonical GM. Scenes end at `!scene end`, End Session
 (`session_close`), the close-out before a new session is minted
 (`session_gap_remint` — see "A session ends at End Session or after four idle
-hours") and `closeWorld`. Pacing's move-density window still
+hours"). *(Issue #326 D7: the `closeWorld` handler that also ended a scene is
+deleted — Foundry documents no such hook.)* Pacing's move-density window still
 resets on `@scene`: that is a pacing heuristic, not a scene boundary.
 
 **Why:** scope #227 §2.3 / §9.1 made every `@scene` a scene boundary when it
@@ -1873,8 +1992,8 @@ never writes the whole snapshot back.
   #321 `xCardRedirect` and `xCardedNarrationIds` (U07) and `loreRecap` (U06g —
   a move resolved during `!lore` reverted the new recap)); entity id
   lists are an ordered union; `artAssetIds` (a map) keeps both sides' entries,
-  the store's winning a clash; `sessionLogs` come from the store plus this
-  resolution's entry; `sessionSummary` by newer `updatedAt`; `legacyTracks`
+  the store's winning a clash; (`sessionLogs` came from the store plus this
+  resolution's entry — the log is retired, issue #326 W58); `sessionSummary` by newer `updatedAt`; `legacyTracks`
   take the per-track max (`cleared` sticks); scene ledgers — if the store is
   on a different scene its scene wins wholesale, otherwise `sceneTruths` is
   unioned by id (a retraction on either side sticks) and `sceneState` /
@@ -2642,7 +2761,13 @@ known-issues AUDIT-DEAD-SURFACE. `markLegacyProgress` and the whole
 unreachable `persistResolution` steps; `addLegacyTicks` is the only legacy
 path.)* *(2026-10, issue #316 T02: the track clears at its tenth box and
 counts its cycles — `moves/legacyTracks.js`; `addLegacyTicks` returns
-`{ boxes, xp, cleared }`. See "Issue #316 audit".)*
+`{ boxes, xp, cleared }`. See "Issue #316 audit".)* *(Issue #326 D3,
+2026-11-03: the XP is no longer written to `system.xp` — a field the
+Starforged sheet does not have. The shared track stays canonical and is
+written through to every PC's `system.legacies.<track>`, where the sheet's
+Legacies tab shows the boxes and derives the XP; a sheet edit flows back.
+See "Issue #326 audit" → "The shared legacy tracks are mirrored to every
+sheet".)*
 
 **Rejected:**
 - *Per-character legacy tracks* (RAW-strict) — a data-model migration far
@@ -4738,6 +4863,10 @@ mechanics.
 - *Auto-deepen the connection on a vow's fulfilment* — same reasoning as auto-marking the vow; use a
   one-click "Deepen your bond" prompt so the deepening stays a player choice.
 
+*(Issue #326 D1, 2026-11-03: as built, the won-fight card's 🤝 Deepen and the fulfilment's payoff each
+deepened the connection by the vow's marks. Decided: one deepen per vow — whichever lands first pays,
+recorded on the vow's payoff ledger. See "Issue #326 audit" → "A vow deepens its connection once".)*
+
 ---
 
 ## Multiplayer attribution: roll effects credit the roller; the inciting vow is shared (2026-06-29)
@@ -4763,6 +4892,12 @@ mechanics.
    by every detection path that knows its narration's PC); the shared vow's target becomes a
    connection of every PC who swore it; the oath scene is written for the PC who swore; the
    Private Channel and the toolbar's Chronicle use the user's own PC.)*
+   *(Issue #326 D8, 2026-11-03: the move pipeline's own fallback follows U23 too. A GM's
+   narration, or any narration at a one-PC table, still rolls the first PC; a player with no PC
+   of their own at a table of several is whispered that they need a character, and nothing is
+   rolled — the pipeline rolled them as the first PC, landing the move's effects on another
+   player's character. See "Issue #326 audit" → "A PC-less player is not rolled as another
+   player's character".)*
 
 2. **The inciting vow is the crew's shared founding vow.** "⚔ Swear this vow" now creates the vow on
    **every** player character (each copy tagged `flags[MODULE].sharedVow` + the inciting message id),

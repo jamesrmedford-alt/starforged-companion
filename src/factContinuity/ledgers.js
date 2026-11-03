@@ -58,6 +58,9 @@ export function applySidecar(sidecar, ctx) {
   const entities  = Array.isArray(ctx.entities) ? ctx.entities : [];
   const stamp     = narrationStamp(ctx.narrationId);
   const now       = Date.now();
+  // Where the scene stands as these truths are asserted — the narration's own
+  // frame, else the frame in place (issue #326 D2).
+  const sceneLocation = assertedLocation(campaignState, sidecar.sceneFrame);
 
   // Sync the state ledger's sanity tag to the active scene.
   campaignState.sceneState.sceneId = sceneId;
@@ -108,6 +111,7 @@ export function applySidecar(sidecar, ctx) {
       retractedAt: null,
       correctedTo: null,
       migratedTo:  null,
+      sceneLocation,
       ...stamp,
     });
     truthIds.push(id);
@@ -125,8 +129,13 @@ export function applySidecar(sidecar, ctx) {
     const subject = resolveSubject(subjectRef, campaignState, entities);
     const key     = subjectKey(subject);
     const list    = (campaignState.sceneState.bySubject[key] ??= []);
-    const idx     = list.findIndex(e => e.attribute === attribute);
-    const entry   = { attribute, value, updatedAt: now, ...stamp };
+    const idx     = list.findIndex(e => sameStateAttribute(e.attribute, attribute));
+    // The value this one supersedes rides on it, so an X-Card on this
+    // narration restores it (issue #326 W41: retracting narration B's
+    // location left the dockmaster none, though narration A — kept — had
+    // put him in the cargo bay).
+    const previous = idx >= 0 ? supersededEntry(list[idx]) : null;
+    const entry   = { attribute, value, updatedAt: now, ...stamp, ...(previous ? { previous } : {}) };
     if (idx >= 0) list[idx] = entry;
     else list.push(entry);
     stateUpdates.push({ key, attribute });
@@ -156,8 +165,97 @@ function narrationStamp(narrationId) {
   return (typeof narrationId === 'string' && narrationId.trim()) ? { narrationId: narrationId.trim() } : {};
 }
 
+/**
+ * Where the scene stands for a truth asserted now: the asserting narration's
+ * own frame location (its sidecar's sceneFrame), else the frame in place,
+ * else null. Stamped on the truth as `sceneLocation`, so scene end files a
+ * scene truth on the place it was asserted at — a scene spans travel, and
+ * "the bar is called the Rusty Lantern", recorded at Bleakhold, used to land
+ * on the card of wherever the scene ended (issue #326 D2).
+ *
+ * @param {Object} campaignState
+ * @param {Object|null} [frame] — the asserting narration's sceneFrame
+ * @returns {string|null}
+ */
+function assertedLocation(campaignState, frame = null) {
+  const own = typeof frame?.location === 'string' ? frame.location.trim() : '';
+  if (own) return own;
+  const current = typeof campaignState?.sceneFrame?.location === 'string' ? campaignState.sceneFrame.location.trim() : '';
+  return current || null;
+}
+
 /** `retractedBy` of a truth the X-Card removed (retractNarrations). */
 export const XCARD_RETRACTED_BY = 'xcard';
+
+/**
+ * Two state attributes name the same fact when they match case-blind and
+ * trimmed: "Location" superseded nothing of "location", so CURRENT STATE
+ * showed two contradictory lines for one fact (issue #326 W61 — subjects
+ * already compared case-blind).
+ *
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {boolean}
+ */
+export function sameStateAttribute(a, b) {
+  return String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+}
+
+/**
+ * How many superseded values a state entry keeps (`previous`, newest first).
+ * An X-Card removes the latest beat's narrations, so a short chain covers it;
+ * the bound keeps a long scene's repeated updates from growing the setting.
+ */
+const STATE_PREVIOUS_DEPTH = 4;
+
+/**
+ * A state entry as the `previous` of the entry replacing it — its own chain
+ * trimmed so the new entry keeps at most STATE_PREVIOUS_DEPTH values.
+ *
+ * @param {Object} entry
+ * @returns {Object|null}
+ */
+function supersededEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const chain = [];
+  for (let cur = entry; cur && chain.length < STATE_PREVIOUS_DEPTH; cur = cur.previous ?? null) chain.push(cur);
+  return relinkStateChain(chain);
+}
+
+/**
+ * Rebuild a state entry from its chain (newest first): each link's
+ * `previous` is the next one, the last link has none.
+ *
+ * @param {Object[]} chain
+ * @returns {Object|null}
+ */
+function relinkStateChain(chain) {
+  let next = null;
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const rest = { ...chain[i] };
+    delete rest.previous;
+    next = next ? { ...rest, previous: next } : rest;
+  }
+  return next;
+}
+
+/**
+ * A state entry without the values the given narrations set: the newest value
+ * left (the one a removed narration superseded, when the entry is its), with
+ * the removed values gone from its `previous` chain too. null when every
+ * value in the chain was theirs.
+ *
+ * @param {Object} entry
+ * @param {Set<string>} ids — the removed narrations
+ * @returns {Object|null}
+ */
+function stateEntryWithout(entry, ids) {
+  const chain = [];
+  for (let cur = entry; cur; cur = cur.previous ?? null) {
+    if (!ids.has(cur.narrationId)) chain.push(cur);
+  }
+  return relinkStateChain(chain);
+}
 
 /**
  * Retract what the given narrations' sidecars wrote to the active-scene
@@ -165,7 +263,8 @@ export const XCARD_RETRACTED_BY = 'xcard';
  * retracted with `retractedBy: "xcard"`: it renders nowhere (not even under
  * CORRECTED — sessionRetractedFacts leaves it out), is never migrated at
  * scene end, and still blocks the narrator re-asserting it (applySidecar's
- * equivalence check). Each state value they set is removed, and a scene frame
+ * equivalence check). Each state value they set is removed — the value it
+ * superseded, when it kept one (`previous`), is restored — and a scene frame
  * they wrote is cleared.
  *
  * Replaces `sceneTruths`, `sceneState` and `sceneFrame` on `campaignState`
@@ -196,7 +295,10 @@ export function retractNarrations(campaignState, narrationIds) {
     const kept = {};
     for (const [key, list] of Object.entries(bySubject)) {
       if (!Array.isArray(list)) { kept[key] = list; continue; }
-      const rest = list.filter(e => !ids.has(e?.narrationId));
+      // A value a removed narration set gives way to the one it superseded
+      // (issue #326 W41), and no kept value can later fall back to one of
+      // theirs.
+      const rest = list.map(e => (e && typeof e === 'object' ? stateEntryWithout(e, ids) : e)).filter(Boolean);
       if (rest.length) kept[key] = rest;
     }
     campaignState.sceneState = { ...campaignState.sceneState, bySubject: kept };
@@ -241,6 +343,15 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
     updatedAt: Date.now(),
     ...narrationStamp(narrationId),
   };
+  // A truth this narration asserted before any frame stood is where its frame
+  // now says (issue #326 D2) — a caller may apply the sidecar's truths before
+  // its frame.
+  if (location && Array.isArray(campaignState.sceneTruths)) {
+    const nid = narrationStamp(narrationId).narrationId ?? null;
+    for (const t of campaignState.sceneTruths) {
+      if (t && t.sceneLocation === null && !t.retracted && (t.narrationId ?? null) === nid) t.sceneLocation = location;
+    }
+  }
   return true;
 }
 
@@ -317,7 +428,7 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
   if (oldKey !== newKey && campaignState.sceneState.bySubject[oldKey]) {
     const merged = campaignState.sceneState.bySubject[newKey] ?? [];
     for (const e of campaignState.sceneState.bySubject[oldKey]) {
-      const idx = merged.findIndex(m => m.attribute === e.attribute);
+      const idx = merged.findIndex(m => sameStateAttribute(m.attribute, e.attribute));
       if (idx >= 0) merged[idx] = e; else merged.push(e);
     }
     campaignState.sceneState.bySubject[newKey] = merged;
@@ -450,6 +561,8 @@ export function replaceTruth(truthId, replacement, campaignState, ctx = {}) {
     retractedAt: null,
     correctedTo: null,
     migratedTo:  null,
+    // A corrected wording stays where the fact was established (issue #326 D2).
+    sceneLocation: entry.sceneLocation !== undefined ? entry.sceneLocation : assertedLocation(campaignState),
   };
 
   entry.retracted   = true;
@@ -477,6 +590,15 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   if (!cleanFact) return null;
   ensureLedgerShape(campaignState);
 
+  // Re-establishing a struck fact lifts the strike, as a Replace does: the
+  // prompt carried the fact as binding and under CORRECTED ("do NOT
+  // re-assert") together for the rest of the session. A player may not
+  // overturn a GM's strike — they may not strike a GM truth either (issue
+  // #326 W60).
+  const strike = findBareStrike(campaignState.sceneTruths, subjectRef, cleanFact);
+  const isGM = ctx.isGM ?? true;
+  if (strike && !isGM && (strike.retractedBy === 'gm' || strike.asserter === 'gm')) return null;
+
   const entry = {
     id:          newTruthId(),
     subject:     subjectRef,
@@ -493,9 +615,31 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
     retractedAt: null,
     correctedTo: null,
     migratedTo:  null,
+    sceneLocation: assertedLocation(campaignState),   // issue #326 D2
   };
   campaignState.sceneTruths.push(entry);
+  if (strike) strike.correctedTo = entry.id;
   return entry;
+}
+
+/**
+ * The active scene's bare strike of this subject + fact — retracted by the
+ * table (not the X-Card, not a Replace's struck original), compared
+ * case-blind — or null. setTruth lifts it; the `!truth set` card names a
+ * player's set refused over a GM's strike.
+ *
+ * @param {Object[]} truths
+ * @param {Object} subjectRef
+ * @param {string} fact
+ * @returns {Object|null}
+ */
+export function findBareStrike(truths, subjectRef, fact) {
+  const key = subjectKey(subjectRef);
+  const lower = fact.toLowerCase();
+  return (Array.isArray(truths) ? truths : []).find(t =>
+    t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY
+    && subjectKey(t.subject) === key
+    && String(t.fact ?? '').trim().toLowerCase() === lower) ?? null;
 }
 
 /**
@@ -512,7 +656,7 @@ export function strikeStateValue(key, attribute, campaignState) {
   ensureLedgerShape(campaignState);
   const list = campaignState.sceneState.bySubject[key];
   if (!Array.isArray(list) || !list.length) return false;
-  const idx = list.findIndex(e => e.attribute === attribute);
+  const idx = list.findIndex(e => sameStateAttribute(e.attribute, attribute));
   if (idx < 0) return false;
   list.splice(idx, 1);
   if (!list.length) delete campaignState.sceneState.bySubject[key];
@@ -536,7 +680,7 @@ export function setStateValue(key, attribute, value, campaignState) {
   ensureLedgerShape(campaignState);
   const list  = (campaignState.sceneState.bySubject[key] ??= []);
   const entry = { attribute, value, updatedAt: Date.now() };
-  const idx   = list.findIndex(e => e.attribute === attribute);
+  const idx   = list.findIndex(e => sameStateAttribute(e.attribute, attribute));
   if (idx >= 0) list[idx] = entry; else list.push(entry);
   return { key, attribute };
 }

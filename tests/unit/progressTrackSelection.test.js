@@ -72,7 +72,10 @@ const CHALLENGE_3_4 = [0.25, 0.35];
 
 let table, journal;
 const world = () => table.world.campaignState();
-const sessionLog = () => world().sessionLogs?.['sess-1'] ?? [];
+// The moves narrated this session, as each move narration's flags (moveId,
+// outcome), oldest first — it read the session move log, retired with issue
+// #326 W58.
+const sessionLog = () => table.cards(f => f.narratorCard && f.resolutionId && !f.burnSuperseded).map(c => c.flags[MODULE_ID]);
 const tracks = () => journal.getFlag(MODULE_ID, 'tracks') ?? [];
 const track = (id) => tracks().find(t => t.id === id);
 

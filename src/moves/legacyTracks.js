@@ -22,7 +22,9 @@
  * records compare by their progress (legacyProgress), which only ever grows.
  *
  * Pure: no Foundry, no mutation of the records passed in. index.js
- * addLegacyTicks is the one writer; persistResolution.js merges with it.
+ * addLegacyTicks is the one writer; persistResolution.js merges with it. The
+ * one piece of state here is the XP a working copy owes until it is saved
+ * (deferLegacyXp / payDeferredLegacyXp, below).
  */
 
 export const LEGACY_TICKS_PER_BOX = 4;
@@ -111,6 +113,21 @@ export function legacyProgress(track) {
 }
 
 /**
+ * The record for a legacy track that has come `progress` ticks — the inverse
+ * of legacyProgress. A Starforged sheet keeps a legacy as ticks ever marked
+ * (`system.legacies.<track>`: 40 a filled track, more past a clear), so a
+ * sheet edit flows back to the shared track through this (issue #326 D3).
+ *
+ * @param {number} progress — ticks ever marked (a negative or non-numeric value reads as 0)
+ * @returns {{ ticks: number, cleared: boolean, cycles: number }}
+ */
+export function legacyTrackFromProgress(progress) {
+  const p = Math.max(0, Math.floor(Number(progress) || 0));
+  const cycles = Math.floor(p / LEGACY_CYCLE_TICKS);
+  return { ticks: p - cycles * LEGACY_CYCLE_TICKS, cleared: cycles > 0, cycles };
+}
+
+/**
  * The record further along of two copies of one legacy track (the stored one
  * and a pipeline's working copy): ticks only ever increase, so the one with
  * more progress has every mark the other has. Equal progress with a clear on
@@ -132,4 +149,49 @@ export function mergeLegacyTrack(a, b) {
   const pb = legacyProgress(nb);
   if (pb > pa || (pb === pa && nb.cycles > na.cycles)) return nb;
   return na;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// XP owed by a working copy (issue #326 W52)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The box XP owed by the ticks marked on a working copy, keyed by that copy.
+ * A legacy box's XP is paid only once the write that saves its ticks has
+ * landed: the move pipeline marks its working copy (index.js addLegacyTicks)
+ * and the ticks reach the world in persistResolution's write, but the XP was
+ * awarded at the mark — a refused persist paid XP for ticks never saved, as
+ * bond.apply's award did before its own save (issue #306 R04 fixed this
+ * order for writeLegacyTicks only). The copy's writer pays what it owes
+ * (payDeferredLegacyXp) once its write has landed; a copy never written
+ * pays nothing and is dropped with it.
+ */
+const DEFERRED_XP = new WeakMap();
+
+/**
+ * Record a payment owed by a working copy — run by payDeferredLegacyXp once
+ * that copy has been saved.
+ *
+ * @param {Object} campaignState — the working copy the ticks were marked on
+ * @param {() => Promise<void>} pay
+ */
+export function deferLegacyXp(campaignState, pay) {
+  if (!campaignState || typeof campaignState !== "object" || typeof pay !== "function") return;
+  const owed = DEFERRED_XP.get(campaignState) ?? [];
+  owed.push(pay);
+  DEFERRED_XP.set(campaignState, owed);
+}
+
+/**
+ * Pay the XP a working copy owes — call once the write that saved it has
+ * landed. Each payment runs once: the record is taken before they run.
+ *
+ * @param {Object} campaignState — the working copy (the object marked, not a clone)
+ * @returns {Promise<void>}
+ */
+export async function payDeferredLegacyXp(campaignState) {
+  const owed = (campaignState && typeof campaignState === "object") ? DEFERRED_XP.get(campaignState) : null;
+  if (!owed?.length) return;
+  DEFERRED_XP.delete(campaignState);
+  for (const pay of owed) await pay();
 }

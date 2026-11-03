@@ -11,7 +11,9 @@ Two cross-cutting facts to hold onto:
   gate at the top of the narration handler in `src/index.js`); the inner
   `game.user.isGM` checks on each consequence branch are belt-and-suspenders.
   Its effects credit the **roller**: one `rollerActor` (the message's speaker,
-  first PC only as a fallback) drives the stat enrichment, the decisive-action
+  first PC only as a fallback — a GM's, or at a one-PC table; a PC-less player
+  at a table of several is told they need a character and nothing is rolled,
+  issue #326 D8) drives the stat enrichment, the decisive-action
   cost and Face Defeat Pay the Price routes, and the won-fight card and reward
   (decisions.md → "Multiplayer attribution").
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
@@ -37,7 +39,11 @@ Two cross-cutting facts to hold onto:
   move's pending choice card (bound by `resolutionId`) and posts the upgraded
   outcome's choice for the move's fight, vehicle and companion; a write that
   does not land goes to the GMs' payoff card with a Retry (issue #311 P03–P06).
-  A consequence chosen first closes both. The upgraded outcome's other
+  A consequence chosen first closes both, and so does the roller's next
+  move: the pipeline stamps their earlier cards' open upgrades `laterMove`
+  after the new move's persist, and the GM handlers refuse a card a later move
+  by its roller follows (`resultUpgrade.closeUpgradesForLaterMove` /
+  `laterMoveFollows`, issue #326 D4). The upgraded outcome's other
   effects run through the pipeline's own applier (`applyOutcomeEffects`,
   `src/index.js` — the branches below are its body), for what the upgrade
   adds over the recorded original: a Strike burned from a miss marks its
@@ -145,16 +151,22 @@ left as they were, and each caller catches it (the pipeline lists it as not
 applied, a suffer pick reports it refused, the threshold card's create logs
 it). Every writer goes through it — the combat tracker's position badge (a
 GM's click; the clicked combatant's own flag too) and the Progress Tracks
-panel's toggle (relayed `progressTrack.edit` op `position`, cycled from the
-stored position on the canonical GM and mirrored to the clicker's assigned
-character, `game.user.character`, when it is a PC they own) included; the
+panel's toggle (relayed `progressTrack.edit` op `position`, cycled on the
+canonical GM from the clicker's PC's own stored position — the clicker's PC
+resolved by `resolveUserActorId`, the fight's position when they have none —
+and mirrored to that PC when they own it; it read `game.user.character`, null
+for a solo GM, and cycled the fight's position while the PC's own steered the
+next move, issue #326 W56) included; the
 badge wrote only the two mirrors and the toggle only the track, so the
 interpreter, TDA, the narrator, the sheet and the badge disagreed (issue #321
 U19). The pipeline
 writes it to the move's own fight (`moveFight`): the track its progress marked
 (or created), else `selectCombatTrack` on the move's target, else the sole
 open fight — with several fights open it used to be written only while
-exactly one was open (issue #306 R05). The same `moveFight` is stamped on the
+exactly one was open (issue #306 R05) — else, with several open and no foe
+named, the roller's own fight: the one that records their position
+(`selectRollerFight`, `src/moves/combat.js`; issue #326 W45 — written
+nowhere before). The same `moveFight` is stamped on the
 move card for its Finish the Fight button (§3). The **roller's** position —
 their own in the open fight, else the fight's (`getActiveCombatPosition(actorId)`;
 for Take Decisive Action, the scored fight's via `combatPositionFor` in
@@ -258,7 +270,12 @@ card's roller when they hold a copy, else the PC holding the resolved vow
 (`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks) and
 **🤝 Deepen your bond** when the vow links a connection
-(`deepenLinkedConnection`, scaled by the vow's rank). Once the card's vow is
+(`deepenVowConnectionOnce` → `deepenLinkedConnection`, scaled by the vow's
+rank). A vow deepens its connection once (issue #326 D1): the press is
+recorded on the vow's payoff ledger (`fulfilPayoff.deepen`, the card carries
+the vow's `vowId`), so the fulfilment's deepen is skipped; a press after the
+fulfilment's deepen deepens nothing and posts a short "already deepened"
+card. Once the card's vow is
 fulfilled its milestone and 🏁 are retired on every client and render
 (`wireFightVowButtons` → `linkedVowCompleted`), and a press that reaches the
 GM marks nothing (issue #325 W29). It then grants the
@@ -316,9 +333,15 @@ and the recommit offer all take that track (`selectCombatTrack` /
 `selectExpeditionTrack` `{ trackId }`), never a same-named sibling, and a row
 deleted or finished before the roll resolves rolls nothing — a "not rolled"
 card (`trackGoneCard`) instead (issue #306 R06).
-Pre-session (the pipeline's session gate would ignore the bridge) and for
-`scene_challenge` rows (no mapped move), it keeps the bespoke instant display
-roll (`type: 'progressRoll'` card — display-only by design).
+A `scene_challenge` row rolls Finish the Scene (issue #326 D6): scored from
+the challenge's own track (`PROGRESS_TICK_SOURCES.finish_the_scene` →
+`sceneChallenge.selectSceneChallengeTrack`), it finishes the scene on every
+outcome — the pipeline's `finishScene` consequence retires the tension clock,
+then completes the track (`finishSceneChallenge`), before a weak hit's or
+miss's Pay the Price is routed, so the ended scene's clock does not tick.
+Pre-session (the pipeline's session gate would ignore the bridge) it keeps
+the bespoke instant display roll (`type: 'progressRoll'` card — display-only
+by design).
 
 The panel's edits — add, +, −, ✓, ✕ and the position toggle — are written by
 the canonical GM for every user (gmRelay `progressTrack.edit` →

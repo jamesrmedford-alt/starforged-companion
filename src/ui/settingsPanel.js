@@ -975,6 +975,9 @@ export class SettingsPanelApp extends ApplicationV2 {
       sceneQueryEnabled:     readSetting(SETTING.SCENE_QUERY_ENABLED, true),
       sceneResponseLength:   readSetting(SETTING.SCENE_RESPONSE_LENGTH, 2),
       sceneContextCards:     readSetting(SETTING.SCENE_CONTEXT_CARDS, 3),
+      // config:false with no row: the API log could be switched off only from
+      // the console (issue #326 W78).
+      apiTransactionLog:     readSetting(SETTING.API_TX_LOG, true),
       chronicleAutoEntry:    readSetting(SETTING.CHRONICLE_AUTO_ENTRY, true),
       chronicleSalience:     readSetting(SETTING.CHRONICLE_SALIENCE, 'significant'),
       salienceChoices:       SALIENCE_CHOICES,
@@ -1359,12 +1362,20 @@ export class SettingsPanelApp extends ApplicationV2 {
           <label class="narrator-field-label">Length (sentences)</label>
           <input class="settings-input narrator-number-input" name="narrationLength"
                  type="number" min="1" max="6" value="${ctx.narrationLength}" ${dis}>
+          <span class="narrator-field-hint">Move and paced narration. <code>@scene</code> answers use Scene Response Length; recaps, vignettes and other beats set their own length.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Context cards (memory horizon)</label>
           <input class="settings-input narrator-number-input" name="narratorContextCards"
                  type="number" min="1" max="50" value="${ctx.narratorContextCards}" ${dis}>
           <span class="narrator-field-hint">How many recent narrator cards each narration sees as fiction context. Default 20 (full session memory). Range 1–50.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="${SETTING.API_TX_LOG}" ${ctx.apiTransactionLog ? 'checked' : ''} ${dis}>
+            API transaction log
+          </label>
+          <span class="narrator-field-hint">Record each Claude call (model, tokens, latency) to the "Starforged Companion — API Log" journal.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">
@@ -1907,6 +1918,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
         game.settings.set(MODULE_ID, SETTING.NARRATION_MAX_TOKENS,   maxTokens),
         game.settings.set(MODULE_ID, SETTING.SCENE_QUERY_ENABLED,    checked('sceneQueryEnabled', true)),
+        game.settings.set(MODULE_ID, SETTING.API_TX_LOG,             checked(SETTING.API_TX_LOG, true)),
         game.settings.set(MODULE_ID, SETTING.SCENE_RESPONSE_LENGTH,  number('sceneResponseLength', 1, 4, 2)),
         game.settings.set(MODULE_ID, SETTING.SCENE_CONTEXT_CARDS,    number('sceneContextCards', 1, 6, 3)),
         game.settings.set(MODULE_ID, SETTING.CHRONICLE_AUTO_ENTRY,   checked('chronicleAutoEntry', true)),

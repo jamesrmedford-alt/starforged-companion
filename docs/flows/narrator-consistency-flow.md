@@ -63,7 +63,10 @@ longer special-cases them).
   hint** instead (the dialog cannot address them — NARRCHK-REMEDY-MISMATCH
   fix). A standing contradiction posts **once per scene** (in-memory dedup
   on scene + subject + violated fact; telemetry still logs every audit). The card carries
-  `contradictedTruthId` + `matchedEntityIds` flags and co-marks
+  `contradictedTruthId` (the scene truth the catch names, matched from its
+  violated text — `resolveContradictedTruthId`; the audit returns no id, so
+  it was always null until issue #326 W63; the Retract dialog lists that
+  truth first, marked) + `matchedEntityIds` flags and co-marks
   `narratorCard` purely to surface the render hook — the ring's defensive
   excludes (`worldJournalContradiction`) keep it out of narrator memory.
   The card also carries `factContinuityReview`: the World Journal panel

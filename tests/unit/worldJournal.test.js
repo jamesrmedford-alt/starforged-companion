@@ -784,7 +784,7 @@ describe("postContradictionNotification — kind-aware remedies (NARRCHK-REMEDY-
   it("replaces the button with a targeted hint for identity/ship/frame/retraction kinds", async () => {
     for (const [kind, hint] of [
       ["identity",   /character sheet \/ connection record/],
-      ["ship",       /!ship/],
+      ["ship",       /!at &lt;place&gt;/],   // the command that sets it (issue #326 W66)
       ["frame",      /@scene/],
       ["retraction", /already blocked at the ledger/],
     ]) {

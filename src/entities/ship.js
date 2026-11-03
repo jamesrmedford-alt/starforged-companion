@@ -98,6 +98,7 @@ export const ShipSchema = {
     sectorId:            null,   // campaignState.sectors[*].id
     nearestPlanetId:     null,   // Actor / record id of nearest planet
     nearestSettlementId: null,   // Actor / record id of nearest settlement
+    nearestLocationId:   null,   // Actor id of a recorded location (derelict, vault, station) — issue #326 W65
     freeText:            "",     // free-text fallback
     updatedAt:           null,
     updatedBy:           null,   // "at_command" | "set_a_course" |

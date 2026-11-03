@@ -37,6 +37,7 @@ import { finalizeEntity }                                         from "../entit
 import { envisionShip, renderEnvisionHtml, appendNotesSection }  from "../entities/shipEnvision.js";
 import { isLoneShipCandidate }                                    from "../entities/ship.js";
 import { runIncitingIncident }                                    from "./incitingIncident.js";
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -204,7 +205,9 @@ export async function runCampaignStart(opts = {}) {
  * tested module code (same ensure-once pattern as the Quickstart macro).
  */
 export async function ensureCampaignStartMacro() {
-  if (!game.user?.isGM) return null;
+  // One GM creates the ✦ Campaign Start macro — the canonical one: two GMs whose clients
+  // reconnected together each found none and created one (issue #326 W54).
+  if (!isCanonicalGM()) return null;
   try {
     const existing = (game.macros?.contents ?? []).find(
       m => m.flags?.[MODULE_ID]?.campaignStartMacro === true,

@@ -35,14 +35,16 @@ import {
   setStateValue,
   resolveSubject,
   subjectKey,
+  findBareStrike,
+  canCorrectTruth,
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { propagateRetraction, markSummaryForRegen } from "./retractions.js";
-import { persistSceneLedgerFields } from "./sceneLifecycle.js";
+import { persistSceneLedgerFields, startScene } from "./sceneLifecycle.js";
 
 const MODULE_ID = "starforged-companion";
 
-const USAGE_ALL = 'Usage: !truth strike <id> | !truth set <subject> <fact> | !state strike <subject> <attribute> | !state set <subject> <attribute>=<value>';
+const USAGE_ALL = 'Usage: !truth list | !truth strike <id> | !truth set <subject> <fact> | !state strike <subject> <attribute> | !state set <subject> <attribute>=<value>';
 
 /**
  * Pure parser — validates the command's shape without touching state.
@@ -54,6 +56,9 @@ const USAGE_ALL = 'Usage: !truth strike <id> | !truth set <subject> <fact> | !st
  *          | { ok: false, usage: string }}
  */
 export function parseFactContinuityCommand(text) {
+  // `!truth list` — the scene's truths with the ids `!truth strike` takes
+  // (issue #326 W67: an id was shown nowhere).
+  if (/^!truth\s+list\s*$/i.test(String(text ?? "").trim())) return { ok: true, domain: "truth", verb: "list", rest: "" };
   const verbMatch = /^!(truth|state)\s+(strike|set)\s+(.*)$/i.exec(String(text ?? "").trim());
   if (!verbMatch) return { ok: false, usage: USAGE_ALL };
   const domain = verbMatch[1].toLowerCase();
@@ -103,8 +108,52 @@ export async function handleFactContinuityCommand(message) {
     ui.notifications?.warn(parsed.usage);
     return;
   }
+  // A read: listed on the typist's own client, to them.
+  if (parsed.verb === "list") {
+    await postTruthList(message);
+    return;
+  }
 
   await requestGmAction("factContinuity.command", { text });
+}
+
+/**
+ * `!truth list`: whisper the typist the active scene's live truths, each
+ * with the id prefix `!truth strike` takes and whether they may strike it —
+ * the id was shown nowhere, so a player could not strike a truth at all and
+ * `!truth strike` had no id to take in normal play (issue #326 W67).
+ *
+ * @param {ChatMessage} message — the typed command
+ * @returns {Promise<void>}
+ */
+async function postTruthList(message) {
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const isGM  = !!game.user?.isGM;
+  const live  = (campaignState.sceneTruths ?? []).filter(t => t?.id && !t.retracted && String(t.fact ?? "").trim());
+  let entities = [];
+  try { entities = collectAllEntities(campaignState); }
+  catch (err) { console.debug?.(`${MODULE_ID} | !truth list: entity roster collect failed:`, err?.message ?? err); }
+  const label = (subject) => {
+    if (subject?.kind === "scene") return "scene";
+    if (subject?.kind === "entity") {
+      const e = entities.find(x => (x.journalId ?? x._id) === subject.entityId || x._id === subject.entityId);
+      return e?.name ?? subject.entityId ?? "entity";
+    }
+    return String(subject?.text ?? "unknown");
+  };
+  const rows = live.map(t => {
+    const locked = !canCorrectTruth(t, { isGM });
+    return `<li><code>${escapeHtml(String(t.id).slice(0, 8))}</code> ${escapeHtml(label(t.subject))} — ${escapeHtml(t.fact)}` +
+      `${locked ? ` <em>(GM's — only a GM can strike it)</em>` : ""}</li>`;
+  }).join("");
+  const body = live.length
+    ? `<p>Truths in this scene — strike one with <code>!truth strike &lt;id&gt;</code>:</p><ul>${rows}</ul>`
+    : `<p>No truths are recorded in this scene.</p>`;
+  await ChatMessage.create({
+    content: `<div class="sf-fc-command-card"><div class="sf-fc-command-label">◈ Fact Continuity</div><div class="sf-fc-command-body">${body}</div></div>`,
+    whisper: [message?.author?.id ?? game.user?.id].filter(Boolean),
+    flags:   { [MODULE_ID]: { factContinuityCommand: true, domain: "truth", verb: "list" } },
+  });
 }
 
 /**
@@ -154,6 +203,18 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
   let changed = null;        // the ledger field this command changed
   let struckTruth = false;
   try {
+    // A truth or state set with no scene open starts one first, as a
+    // narration does (ensureSceneStarted — the issue #321 U34 rule for the
+    // other ledger writer): written scene-less, the next narration's
+    // startScene ended the phantom scene and the GM's state was discarded,
+    // the truth migrated out; and a move already in flight wrote its
+    // snapshot's empty ledgers over them (issue #326 W59). Started here, the
+    // scene is the store's, which the next narration (and that move's scene
+    // start, adoptStoredScene) continues.
+    if (parsed.verb !== "strike" && !campaignState.currentSceneId) {
+      await startScene(campaignState, { reason: "fact_continuity_command" });
+    }
+
     if (parsed.domain === "truth" && parsed.verb === "strike") {
       const struck = strikeTruth(parsed.rest, campaignState, permCtx);
       if (struck) {
@@ -168,11 +229,15 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
         : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
     } else if (parsed.domain === "truth") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
+      const struck  = findBareStrike(campaignState.sceneTruths, subject, String(parsed.fact ?? "").trim());
       const truth   = setTruth(subject, parsed.fact, campaignState, permCtx);
       if (truth) changed = "sceneTruths";
+      // The id `!truth strike` takes is shown (issue #326 W67).
       resultLine = truth
-        ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em>.`
-        : `Truth not recorded — empty subject or fact.`;
+        ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em> <code>${escapeHtml(String(truth.id).slice(0, 8))}</code>.${struck ? " The strike on it is lifted." : ""}`
+        : (struck && !isGM)
+          ? `Truth not recorded — the GM struck that fact; only a GM can restore it.`
+          : `Truth not recorded — empty subject or fact.`;
     } else if (parsed.verb === "strike") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const ok      = strikeStateValue(subjectKey(subject), parsed.attribute, campaignState);

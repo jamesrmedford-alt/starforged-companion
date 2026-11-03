@@ -14,7 +14,7 @@
  * Mischief is applied silently. The player sees the result, not the framing.
  */
 
-import { MOVES, STATS } from "../schemas.js";
+import { MOVES, STATS, toMoveId } from "../schemas.js";
 import { buildMischiefFraming } from "./mischief.js";
 import { apiPost } from "../api-proxy.js";
 import { getCanonicalMove } from "../system/ironswornPacks.js";
@@ -87,6 +87,9 @@ Given player narration, return a JSON object identifying:
 - **undertake_an_expedition** — When you travel through perilous or unknown space/terrain. Roll +edge (speed), +shadow (stealth), or +wits (vigilance).
 - **explore_a_waypoint** — When you examine a notable location during an expedition. Roll +wits.
 - **finish_an_expedition** — Progress move. When an expedition concludes.
+
+### SCENE CHALLENGE MOVES
+- **finish_the_scene** — Progress move. When a scene challenge's progress track or tension clock is filled, or events lead to the scene's conclusion.
 - **set_a_course** — When you follow a known route. Roll +supply.
 - **make_a_discovery** — Triggered by strong hit with match on explore_a_waypoint (no roll).
 - **confront_chaos** — Triggered by miss with match on explore_a_waypoint (no roll).
@@ -504,6 +507,15 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
   }
 
   if (expectedMoveId && parsed && typeof parsed === "object") parsed.moveId = expectedMoveId;
+
+  // The model may name the move by its display name ("Gather Information",
+  // "gather-information") instead of its key: read it as the key it names
+  // (issue #326 W38 — an unknown key fell back to Face Danger; issue #321
+  // U45's toMoveId was wired into the pacing classifier only).
+  if (parsed && typeof parsed === "object" && !MOVES[parsed.moveId]) {
+    const named = toMoveId(parsed.moveId) ?? toMoveId(parsed.moveName);
+    if (named) parsed.moveId = named;
+  }
 
   // Validate move ID
   const moveData = MOVES[parsed?.moveId];

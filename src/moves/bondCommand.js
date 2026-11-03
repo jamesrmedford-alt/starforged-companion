@@ -195,14 +195,29 @@ export async function applyBondEffects(payload = {}, ctx = {}) {
     return { applied: false };
   }
 
+  // A refused tick save is reported after the rest is applied: it threw
+  // past the match's rank raise and the momentum (issue #326 W52).
+  let ticksRefused = null;
   if (ticks > 0) {
     // Route through addLegacyTicks so filled boxes award XP like every other
     // legacy write. Lazy import: index.js is the module entry (already loaded
     // in Foundry), and a static import would make this module a cycle.
-    const { addLegacyTicks } = await import("../index.js");
-    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const { addLegacyTicks, awardSavedLegacyXp } = await import("../index.js");
+    // Marked on a copy (rules/foundry-api.md): the cached state took the
+    // ticks before a write that could be refused, and the GM's next
+    // whole-object write carried them into the world (issue #326 W51).
+    const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const campaignState = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
     addLegacyTicks(campaignState, "bonds", ticks);
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    try {
+      await game.settings.set(MODULE_ID, "campaignState", campaignState);
+      // The box XP once the ticks are saved — it was paid before the save,
+      // so a refusal paid XP for ticks never saved (issue #326 W52).
+      await awardSavedLegacyXp(campaignState);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | !bond: the bonds legacy ticks were not saved — no XP paid:`, err?.message ?? err);
+      ticksRefused = err;
+    }
   }
 
   if (raise) {
@@ -238,6 +253,7 @@ export async function applyBondEffects(payload = {}, ctx = {}) {
   if (momentum > 0 && momentumActor) {
     await applyMeterChanges(momentumActor, { momentum });
   }
+  if (ticksRefused) throw ticksRefused;
   return { applied: true };
 }
 

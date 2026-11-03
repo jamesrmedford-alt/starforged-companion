@@ -109,29 +109,6 @@ export async function loadArtAsset(assetId, campaignState = null) {
   }
 }
 
-/**
- * Load all art assets for a specific entity.
- *
- * @param {string} entityId
- * @param {Object} [campaignState]
- * @returns {Promise<ArtAsset[]>}
- */
-export async function loadEntityAssets(entityId, _campaignState = null) {
-  const assets = [];
-  try {
-    for (const entry of game.journal?.contents ?? []) {
-      if (entry.flags?.[MODULE_ID]?.entityType !== "artAsset") continue;
-      const page  = entry.pages?.contents?.[0];
-      const asset = page?.flags?.[MODULE_ID]?.[FLAG_KEY];
-      if (asset?.entityId === entityId) assets.push(asset);
-    }
-  } catch (err) {
-    console.warn(`${MODULE_ID} | art/storage: loadEntityAssets(${entityId}) scan failed; returning ${assets.length} partial result(s):`, err);
-  }
-  return assets;
-}
-
-
 // ─────────────────────────────────────────────────────────────────────────────
 // RENDERING
 // ─────────────────────────────────────────────────────────────────────────────

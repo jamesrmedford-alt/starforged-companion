@@ -80,6 +80,7 @@ import {
   reportUpgradeFailures,
   reconcileChoices,
   consequenceChosen,
+  laterMoveFollows,
   applyUpgradedOutcomeEffects,
   renarrateUpgrade,
   effectsNoteHtml,
@@ -96,11 +97,11 @@ const OWNERSHIP_OWNER = 3;
 // button would sit on "Burning…" forever.
 export const RELAY_RECOVERY_MS = 15000;
 
-// narrate / persist / applyEffects injected by registerBurnMomentumHook
-// (src/index.js). Kept at module scope so the GM-side relay handler — which
-// runs outside the click closure, possibly for another player's click — can
-// apply the burned outcome's effects, re-narrate and log.
-let _deps = { narrate: null, persist: null, applyEffects: null };
+// narrate / applyEffects injected by registerBurnMomentumHook (src/index.js).
+// Kept at module scope so the GM-side relay handler — which runs outside the
+// click closure, possibly for another player's click — can apply the burned
+// outcome's effects and re-narrate.
+let _deps = { narrate: null, applyEffects: null };
 
 // Move-card ids whose result is being upgraded — by a burn or an Improve
 // Result — on this (the canonical GM's) client. Two near-simultaneous clicks
@@ -132,14 +133,17 @@ export function releaseResultUpgrade(messageId) {
  * upgrade already changed the result ("already-upgraded"), or the move's
  * consequence was already chosen on its choice card ("choice-made" — what the
  * choice applied stands, so upgrading would stack two outcomes' choices;
- * issue #311 P03). The GM handlers also check the choice cards themselves
- * (resultUpgrade.js consequenceChosen).
+ * issue #311 P03), or the roller has made another move since ("later-move" —
+ * an upgrade belongs to the move being made, issue #326 D4). The GM handlers
+ * also check the choice cards and the later moves themselves (resultUpgrade.js
+ * consequenceChosen, laterMoveFollows).
  * @param {Object} upgrade   the card's `burn` or `improve` flag
  * @param {Object} [other]   the card's other upgrade flag
- * @returns {"original-pending"|"already-upgraded"|"choice-made"|null}
+ * @returns {"original-pending"|"already-upgraded"|"later-move"|"choice-made"|null}
  */
 export function resultUpgradeBlocker(upgrade, other) {
   if (other?.consumed) return "already-upgraded";
+  if (upgrade?.laterMove) return "later-move";
   if (upgrade?.choiceMade) return "choice-made";
   if (upgrade?.originalApplied !== true) return "original-pending";
   return null;
@@ -151,10 +155,14 @@ export const UPGRADE_CHOSEN_TITLE = "The consequence was already chosen — upgr
 /** Tooltip on a burn / improve button waiting for the original outcome to be recorded. */
 export const UPGRADE_PENDING_TITLE = "Available once the move's result is recorded";
 
+/** Tooltip on a burn / improve button closed by the roller's next move (issue #326 D4). */
+export const UPGRADE_LATER_MOVE_TITLE = "An upgrade belongs to the move being made — this character has made another move since";
+
 /** Why the GM handlers refused an upgrade (resultUpgradeBlocker's reasons), for the log. */
 export const UPGRADE_REFUSALS = {
   "original-pending": "the original outcome is not recorded yet",
   "already-upgraded": "the result was already upgraded",
+  "later-move":       "the roller has made another move since",
   "choice-made":      "the move's consequence was already chosen",
 };
 
@@ -303,17 +311,16 @@ function labelForOutcome(outcome) {
  * a click handler. Idempotent across re-renders — disables the button after
  * use so the same card cannot burn twice.
  *
- * @param {Object} hooks      — narrator, persist and effects injections so this
- *                              module can apply the burned outcome's effects,
- *                              re-narrate and re-persist after a burn without
- *                              pulling in the full pipeline graph.
+ * @param {Object} hooks      — narrator and effects injections so this module
+ *                              can apply the burned outcome's effects and
+ *                              re-narrate after a burn without pulling in the
+ *                              full pipeline graph.
  * @param {Function} hooks.narrate       async (resolution, state, { speakerActorId }) => void
- * @param {Function} hooks.persist       async (resolution, state, speakerActorId) => void
  * @param {Function} [hooks.applyEffects] async ({ resolution, against, interpretation, targets,
  *   actor, campaignState }) => { applied, notApplied } — index.js applyUpgradedOutcomeEffects
  */
-export function registerBurnMomentumHook({ narrate, persist, applyEffects } = {}) {
-  _deps = { narrate: narrate ?? null, persist: persist ?? null, applyEffects: applyEffects ?? null };
+export function registerBurnMomentumHook({ narrate, applyEffects } = {}) {
+  _deps = { narrate: narrate ?? null, applyEffects: applyEffects ?? null };
 
   onChatMessageRender((message, root) => {
     const flags = message?.flags?.[MODULE_ID] ?? {};
@@ -332,6 +339,12 @@ export function registerBurnMomentumHook({ narrate, persist, applyEffects } = {}
     if (blocker === "already-upgraded") {
       btn.disabled    = true;
       btn.textContent = "🔥 Burn Momentum — the result was already improved";
+      return;
+    }
+    if (blocker === "later-move") {
+      btn.disabled    = true;
+      btn.textContent = "🔥 Burn Momentum — closed by a later move";
+      btn.title       = UPGRADE_LATER_MOVE_TITLE;
       return;
     }
     if (blocker === "choice-made") {
@@ -472,6 +485,7 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
     return { applied: false, reason: "already-consumed" };
   }
   const blocker = resultUpgradeBlocker(burn, flags.improve)
+    ?? (laterMoveFollows(message) ? "later-move" : null)
     ?? (consequenceChosen(burn.resolutionId) ? "choice-made" : null);
   if (blocker) {
     console.warn(`${MODULE_ID} | burnMomentum: card ${messageId} — ${UPGRADE_REFUSALS[blocker] ?? blocker}; burn refused.`);
@@ -496,7 +510,7 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
 // CLICK HANDLER (runs on the canonical GM via applyBurnFromRelay)
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function handleBurnClick(message, { narrate, persist, applyEffects }) {
+async function handleBurnClick(message, { narrate, applyEffects }) {
   const flags = message?.flags?.[MODULE_ID] ?? {};
   const burn  = flags.burn;
   if (!burn?.canBurn || burn.consumed) return { applied: false, reason: "already-consumed" };
@@ -587,7 +601,7 @@ async function handleBurnClick(message, { narrate, persist, applyEffects }) {
   // campaign has no API key configured or the narrator is otherwise disabled,
   // the move card is still correctly updated above. The burning PC is the
   // card's actor, not the first PC (credit the roller).
-  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: burn.actorId ?? null, narrate, persist, kind: "burn" })
+  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: burn.actorId ?? null, narrate, kind: "burn" })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: re-narration failed:`, err));
 
   return { applied: true };
@@ -656,11 +670,14 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
  * Find the narration card posted for this resolution and mark it superseded
  * (F13a). The burn changed the outcome, so the original prose no longer matches;
  * we strike it through and add a note rather than deleting it. No-op when the
- * card can't be found (e.g. narration was disabled).
+ * card can't be found (e.g. narration was disabled). Improve Result supersedes
+ * the narration the same way, with its own note (`kind: "improve"` — the
+ * fixed burn note told the table momentum was burned, issue #326 W57).
  *
- * @param {Object} burn  the burn flag blob (carries resolutionId)
+ * @param {Object} burn  the burn (or improve) flag blob (carries resolutionId)
+ * @param {{ kind?: "burn"|"improve" }} [opts]
  */
-export async function supersedeOriginalNarration(burn) {
+export async function supersedeOriginalNarration(burn, { kind = "burn" } = {}) {
   const resolutionId = burn?.resolutionId;
   if (!resolutionId) return;
   const messages = globalThis.game?.messages?.contents ?? [];
@@ -673,22 +690,34 @@ export async function supersedeOriginalNarration(burn) {
   if (!card) return;
   await card.update({
     [`flags.${MODULE_ID}.burnSuperseded`]: true,
-    content: buildSupersededNarrationContent(card.content),
+    content: buildSupersededNarrationContent(card.content, kind),
   });
 }
 
+/** The note on a superseded narration, by what upgraded the outcome. */
+const SUPERSEDED_NOTES = {
+  burn:    "Superseded — momentum was burned to upgrade this outcome. See the updated narration below.",
+  improve: "Superseded — the result was improved. See the updated narration below.",
+};
+
 /**
- * Wrap a narration card's prose in a struck-through, dimmed block with a
- * "superseded by momentum burn" note. Idempotent — re-applying is a no-op.
+ * Wrap a narration card's prose in a struck-through, dimmed block with a note
+ * saying what superseded it — a momentum burn, or an Improve Result
+ * (issue #326 W57). Idempotent — re-applying is a no-op.
+ *
+ * @param {string} originalContent
+ * @param {"burn"|"improve"} [kind]
+ * @returns {string}
  */
-export function buildSupersededNarrationContent(originalContent) {
+export function buildSupersededNarrationContent(originalContent, kind = "burn") {
   const html = String(originalContent ?? "");
   if (html.includes("sf-narration-superseded")) return html;
+  const note = SUPERSEDED_NOTES[kind] ?? SUPERSEDED_NOTES.burn;
   return html.replace(
     /<div class="sf-narration-prose">([\s\S]*?)<\/div>/,
     (_full, inner) =>
       `<div class="sf-narration-prose sf-narration-superseded" style="opacity:0.55;text-decoration:line-through;"><s>${inner}</s></div>` +
-      `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">Superseded — momentum was burned to upgrade this outcome. See the updated narration below.</div>`,
+      `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">${note}</div>`,
   );
 }
 
@@ -701,11 +730,6 @@ export function buildSupersededNarrationContent(originalContent) {
 function buildBurnedCardContent(originalContent, burnResult, newConsequences, effectsNote = "") {
   const html = String(originalContent ?? "");
   const newLabel = labelForOutcome(burnResult.outcome) + (burnResult.isMatch ? " ✦ Match" : "");
-  // Strike the original outcome div and append a burned-result block.
-  const strikethrough = html.replace(
-    /<div class="sf-move-outcome">([\s\S]*?)<\/div>/,
-    (_full, inner) => `<div class="sf-move-outcome sf-move-outcome--burned"><s>${inner}</s></div>`,
-  );
   const burnNote = (
     `<div class="sf-move-burn-result">` +
       `<div class="sf-move-outcome sf-move-outcome--upgraded">🔥 Burned → ${newLabel}</div>` +
@@ -715,7 +739,20 @@ function buildBurnedCardContent(originalContent, burnResult, newConsequences, ef
       effectsNote +
     `</div>`
   );
-  return strikethrough.replace("</div>", `${burnNote}</div>`);
+  // Strike the original outcome div and put the burned-result block right
+  // after it. It was inserted before the card's FIRST `</div>` — the
+  // move-name header's — so the burned outcome rendered inside the bold
+  // title (issue #326 W57). A card with no outcome div takes it at its end.
+  let struck = false;
+  const out = html.replace(
+    /<div class="sf-move-outcome">([\s\S]*?)<\/div>/,
+    (_full, inner) => {
+      struck = true;
+      return `<div class="sf-move-outcome sf-move-outcome--burned"><s>${inner}</s></div>${burnNote}`;
+    },
+  );
+  if (struck) return out;
+  return /<\/div>\s*$/.test(html) ? html.replace(/<\/div>\s*$/, `${burnNote}</div>`) : html + burnNote;
 }
 
 

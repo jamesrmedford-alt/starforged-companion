@@ -503,6 +503,13 @@ global.makeTestActor = (overrides = {}) => {
         ...(sys.debility ?? {}),
       },
       xp: sys.xp ?? 0,
+      // vendor CharacterModel.legacies (subtypes/character.ts): each legacy as
+      // ticks ever marked, with the XP spent from it — the Starforged sheet's
+      // Legacies tab, which the shared legacy tracks mirror to (issue #326 D3).
+      legacies: {
+        quests: 0, questsXpSpent: 0, bonds: 0, bondsXpSpent: 0, discoveries: 0, discoveriesXpSpent: 0,
+        ...(sys.legacies ?? {}),
+      },
       // Biographical fields (ironsworn-api-scope.md §1.1).
       notes:     sys.notes     ?? '',
       biography: sys.biography ?? '',

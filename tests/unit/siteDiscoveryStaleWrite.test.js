@@ -104,15 +104,16 @@ describe("!reveal-site / !clear-site write onto the state as it is after their a
   });
 
   it("control: the expedition path's working copy still carries the flag", async () => {
-    // The expedition path passes the move pipeline's working copy and a no-op
-    // setState: the flag rides along on that copy (persistResolution writes
-    // it). This held before the fix too; it pins that the fix kept it.
+    // The expedition path passes the move pipeline's working copy and a
+    // setState that folds the flagged sectors into it: the flag rides along
+    // on that copy (persistResolution writes it). The flag is set on a copy
+    // first (issue #326 W51) — the seam is what puts it on the working copy.
     const working = { sectors: [{ id: "s1", sceneId: null, mapData: { discoveries: [
       { id: "site-1", name: "Derelict Starship", type: "derelict", discovered: false, actorId: null },
     ] } }] };
     const result = await revealSectorSite("Derelict Starship", {
       getState: () => working,
-      setState: () => {},
+      setState: (next) => { working.sectors = next.sectors; },
       getScene: () => null,
       updateLoc: async () => {},
     });
