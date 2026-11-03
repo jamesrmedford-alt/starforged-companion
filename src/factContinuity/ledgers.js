@@ -125,7 +125,7 @@ export function applySidecar(sidecar, ctx) {
     const subject = resolveSubject(subjectRef, campaignState, entities);
     const key     = subjectKey(subject);
     const list    = (campaignState.sceneState.bySubject[key] ??= []);
-    const idx     = list.findIndex(e => e.attribute === attribute);
+    const idx     = list.findIndex(e => sameStateAttribute(e.attribute, attribute));
     // The value this one supersedes rides on it, so an X-Card on this
     // narration restores it (issue #326 W41: retracting narration B's
     // location left the dockmaster none, though narration A — kept — had
@@ -163,6 +163,20 @@ function narrationStamp(narrationId) {
 
 /** `retractedBy` of a truth the X-Card removed (retractNarrations). */
 export const XCARD_RETRACTED_BY = 'xcard';
+
+/**
+ * Two state attributes name the same fact when they match case-blind and
+ * trimmed: "Location" superseded nothing of "location", so CURRENT STATE
+ * showed two contradictory lines for one fact (issue #326 W61 — subjects
+ * already compared case-blind).
+ *
+ * @param {unknown} a
+ * @param {unknown} b
+ * @returns {boolean}
+ */
+export function sameStateAttribute(a, b) {
+  return String(a ?? '').trim().toLowerCase() === String(b ?? '').trim().toLowerCase();
+}
 
 /**
  * How many superseded values a state entry keeps (`previous`, newest first).
@@ -382,7 +396,7 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
   if (oldKey !== newKey && campaignState.sceneState.bySubject[oldKey]) {
     const merged = campaignState.sceneState.bySubject[newKey] ?? [];
     for (const e of campaignState.sceneState.bySubject[oldKey]) {
-      const idx = merged.findIndex(m => m.attribute === e.attribute);
+      const idx = merged.findIndex(m => sameStateAttribute(m.attribute, e.attribute));
       if (idx >= 0) merged[idx] = e; else merged.push(e);
     }
     campaignState.sceneState.bySubject[newKey] = merged;
@@ -607,7 +621,7 @@ export function strikeStateValue(key, attribute, campaignState) {
   ensureLedgerShape(campaignState);
   const list = campaignState.sceneState.bySubject[key];
   if (!Array.isArray(list) || !list.length) return false;
-  const idx = list.findIndex(e => e.attribute === attribute);
+  const idx = list.findIndex(e => sameStateAttribute(e.attribute, attribute));
   if (idx < 0) return false;
   list.splice(idx, 1);
   if (!list.length) delete campaignState.sceneState.bySubject[key];
@@ -631,7 +645,7 @@ export function setStateValue(key, attribute, value, campaignState) {
   ensureLedgerShape(campaignState);
   const list  = (campaignState.sceneState.bySubject[key] ??= []);
   const entry = { attribute, value, updatedAt: Date.now() };
-  const idx   = list.findIndex(e => e.attribute === attribute);
+  const idx   = list.findIndex(e => sameStateAttribute(e.attribute, attribute));
   if (idx >= 0) list[idx] = entry; else list.push(entry);
   return { key, attribute };
 }

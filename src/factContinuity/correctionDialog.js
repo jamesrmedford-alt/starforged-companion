@@ -21,6 +21,7 @@ import {
   setStateValue,
   subjectKey,
   subjectFromStateKey,
+  sameStateAttribute,
 } from './ledgers.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { propagateRetraction, markSummaryForRegen } from './retractions.js';
@@ -236,7 +237,7 @@ async function handleRowAction(button, ctx) {
       const key  = button.dataset.stateKey;
       const attr = button.dataset.attribute;
       const list = readCampaignState()?.sceneState?.bySubject?.[key] ?? [];
-      const cur  = list.find(e => e.attribute === attr);
+      const cur  = list.find(e => sameStateAttribute(e.attribute, attr));
       const next = await promptForText(`New value for "${attr}"`, String(cur?.value ?? ''));
       if (!next) return;
       const working = workingCopy();
