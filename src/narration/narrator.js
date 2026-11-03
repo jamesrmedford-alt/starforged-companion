@@ -3048,10 +3048,16 @@ export function currentLocationName(campaignState) {
 export function formatSectorNpcProfile(c) {
   const lead = `${c.name}${c.role ? ` — ${c.role}` : ''}`;
   const bits = [];
+  // A lost connection says so first, with how it was lost, and its rolled
+  // disposition reads as the initial one: the line offered a severed NPC as
+  // friendly cast every turn, while only the entity card — rendered when the
+  // player names them — said the bond was broken (issue #325 W37).
+  const lost = c.active === false;
+  if (lost)          bits.push(lostConnectionNote(c));
   if (c.goal)        bits.push(`Goal: ${c.goal}`);
   if (c.motivation)  bits.push(`Motivation: ${c.motivation}`);
   if (c.pronouns)    bits.push(`Pronouns: ${c.pronouns}`);
-  if (c.disposition) bits.push(`Disposition: ${c.disposition}`);
+  if (c.disposition) bits.push(`${lost ? 'Initial disposition' : 'Disposition'}: ${c.disposition}`);
   const firstLook = Array.isArray(c.firstLook)
     ? c.firstLook.filter(Boolean).join(', ')
     : c.firstLook;
@@ -3059,6 +3065,16 @@ export function formatSectorNpcProfile(c) {
   if (c.rank)        bits.push(`Rank: ${c.rank}`);
   if (c.description) bits.push(c.description);
   return bits.length ? `${lead} (${bits.join('; ')})` : lead;
+}
+
+/** "connection lost: <how>" — the latest "Connection lost: …" history entry's reason, when there is one. */
+function lostConnectionNote(c) {
+  const entries = (Array.isArray(c?.history) ? c.history : [])
+    .map(h => (typeof h === 'string' ? h : h?.entry))
+    .filter(e => typeof e === 'string' && e.trim());
+  const loss   = [...entries].reverse().find(e => /^\s*connection lost\b/i.test(e));
+  const reason = loss ? loss.trim().replace(/^connection lost\s*:?\s*/i, '').trim() : '';
+  return reason ? `connection lost: ${reason}` : 'connection lost';
 }
 
 export function formatActiveSector(campaignState) {
@@ -3166,11 +3182,15 @@ export function formatActiveSector(campaignState) {
   // contradicting an oracle-rolled identity (PLAYTEST-1717 C: an inciting
   // incident recast a "Prophet" sector NPC as a researcher). Capped so a large
   // campaign can't bloat the prompt.
-  let npcLines = [];
+  // A lost connection (`!sever`) is listed apart, never as reuse-first cast
+  // (issue #325 W37).
+  let npcLines  = [];
+  let lostLines = [];
   try {
-    npcLines = listConnections(campaignState)
-      .filter(c => c && (!c.sectorId || c.sectorId === id))
-      .map(c => `- ${formatSectorNpcProfile(c)}`);
+    const inSector = listConnections(campaignState)
+      .filter(c => c && (!c.sectorId || c.sectorId === id));
+    npcLines  = inSector.filter(c => c.active !== false).map(c => `- ${formatSectorNpcProfile(c)}`);
+    lostLines = inSector.filter(c => c.active === false).map(c => `- ${formatSectorNpcProfile(c)}`);
   } catch (err) {
     console.debug?.(`${MODULE_ID} | formatActiveSector: connection read failed:`, err?.message ?? err);
   }
@@ -3182,6 +3202,15 @@ export function formatActiveSector(campaignState) {
       'or goal, change their pronouns or disposition, or invent a history that ' +
       'contradicts it. Build the fiction around who they already are:',
       ...npcLines,
+    );
+  }
+  if (lostLines.length) {
+    lines.push(
+      '',
+      'Lost connections in this sector — the bond with the crew is broken. ' +
+      'They are not allies and not cast to reuse as friends; if one appears, ' +
+      'the break shows:',
+      ...lostLines,
     );
   }
 

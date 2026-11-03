@@ -213,7 +213,9 @@ objective, position and linked vow, at most six; skipped for the recap.
 Issue #290: only the retired assembler had rendered them, TRACKS-UNPORTED)
 · [5] current location card · [5b]
 active-sector anchor (each settlement with its planet and stellar object, as
-its card shows them — `formatSettlementPlanet`, issue #321 U51) · [6] matched entity cards (a connection's card also
+its card shows them — `formatSettlementPlanet`, issue #321 U51; the sector's
+connections as reuse-first cast, and a lost one apart, its line saying how it
+was lost — issue #325 W37) · [6] matched entity cards (a connection's card also
 shows its goal, a lost or forged bond and its last three `history` events —
 C5) · [6.5] active-scene ledger
 (SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;

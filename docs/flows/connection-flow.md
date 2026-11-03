@@ -233,7 +233,11 @@ Live surfaces: **entity cards** ("ENTITIES IN SCENE" — the record via
 (the PC's bond *Items* via `readConnections` — the mirror). Since issue #286
 (C5) the card shows the rolled `goal` beside the `motivation`, a lost
 (`active:false`) or forged (`bonded`) bond, and the last three `history`
-events (`forgeBond`, `loseConnection`); CHARACTER STATE shows each bond's
+events (`forgeBond`, `loseConnection`); the ACTIVE SECTOR roster, which
+renders every turn, lists a lost connection apart from the reuse-first cast,
+"connection lost: <how>" leading its line and its rolled disposition read as
+the initial one (`formatSectorNpcProfile` — issue #325 W37: it offered a
+severed NPC as friendly cast); CHARACTER STATE shows each bond's
 progress and its rank by name (`readConnections` maps the vendor's numeric
 rank through `rankName` — issue #321 U62). `background` and `secrets` have no production writer, so neither
 renders. The legacy
