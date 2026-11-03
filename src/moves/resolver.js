@@ -836,8 +836,13 @@ const CONSEQUENCE_MAP = {
       case "miss": return {
         ...emptyConsequences(),
         // The miss-at-0-health → mortal wound d100 is executor-side (Phase C).
+        // The -1 goes through the Endure Harm executor, so harm the meter
+        // cannot take is momentum ("If your health is 0, Lose Momentum equal
+        // to any remaining harm" — issue #314 Q02): as a bare meter delta it
+        // clamped to 0, cost nothing at 0 health, and the card said "Applied:
+        // Health -1" (issue #325 W14).
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "-1 health",          health:  -1 },
+          { label: "-1 health",          suffer: "endure_harm", amount: 1 },
           { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2 },
         ]},
         otherEffect: "Worse than thought. Suffer -1 health or Lose Momentum (-2). If health 0, mark wounded or permanently harmed, or roll on the miss table."
@@ -867,8 +872,9 @@ const CONSEQUENCE_MAP = {
       };
       case "miss": return {
         ...emptyConsequences(),
+        // Through the Endure Stress executor, as Endure Harm's (issue #325 W14).
         sufferPrompt: { kind: "enumerated", options: [
-          { label: "-1 spirit",          spirit:  -1 },
+          { label: "-1 spirit",          suffer: "endure_stress", amount: 1 },
           { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2 },
         ]},
         otherEffect: "Worse than thought. Suffer -1 spirit or Lose Momentum (-2). If spirit 0, mark shaken or traumatized, or roll on the miss table."
