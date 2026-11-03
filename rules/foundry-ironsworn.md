@@ -65,7 +65,12 @@ vendor/foundry-ironsworn/src/module/model/item/
    - `actor.system.burnMomentum()` — not `actor.update({ momentum.value: x })`
 5. All debilities are under `system.debility` (singular) — never `system.debilities`
 6. Stats are flat on system: `system.edge`, not `system.stats.edge`
-7. XP is a flat number: `system.xp`, not `system.xp.value`
+7. XP is a flat number: `system.xp`, not `system.xp.value` — but it is the
+   classic sheet's field: the Starforged sheet has none, and derives XP from
+   its legacies, `system.legacies.<quests|bonds|discoveries>` (ticks ever
+   marked: 40 a filled track, more past a clear) less
+   `system.legacies.<track>XpSpent` (`legacy-track.vue`). The module mirrors
+   its shared legacy tracks there and never writes `system.xp` (issue #326 D3)
 8. Starship is a separate Actor (`type: "starship"`), not an embedded item
 9. The system **does** ship `character` / `npc` / `foe` / `starship` /
    `location` / `shared` / `site` actor types — never assert an actor type

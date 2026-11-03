@@ -192,7 +192,9 @@ describe('applyBondEffects — canonical GM handler', () => {
   it('effects named in the payload are ignored: the outcome is paid from the table', async () => {
     await applyBondEffects({ outcome: 'strong_hit', ticksOnBonds: 40, momentumChange: 10, actorId: 'pc-a' }, { requesterIsGM: true });
     expect(state().legacyTracks.bonds.ticks).toBe(2);
-    expect(pcA._updateHistory).toHaveLength(0);
+    // No momentum: the only write to the PC is the two ticks on its sheet's
+    // bonds legacy (the shared track mirrored — issue #326 D3).
+    expect(pcA._updateHistory).toEqual([{ 'system.legacies.bonds': 2 }]);
   });
 
   it.each([

@@ -113,6 +113,21 @@ export function legacyProgress(track) {
 }
 
 /**
+ * The record for a legacy track that has come `progress` ticks — the inverse
+ * of legacyProgress. A Starforged sheet keeps a legacy as ticks ever marked
+ * (`system.legacies.<track>`: 40 a filled track, more past a clear), so a
+ * sheet edit flows back to the shared track through this (issue #326 D3).
+ *
+ * @param {number} progress — ticks ever marked (a negative or non-numeric value reads as 0)
+ * @returns {{ ticks: number, cleared: boolean, cycles: number }}
+ */
+export function legacyTrackFromProgress(progress) {
+  const p = Math.max(0, Math.floor(Number(progress) || 0));
+  const cycles = Math.floor(p / LEGACY_CYCLE_TICKS);
+  return { ticks: p - cycles * LEGACY_CYCLE_TICKS, cleared: cycles > 0, cycles };
+}
+
+/**
  * The record further along of two copies of one legacy track (the stored one
  * and a pipeline's working copy): ticks only ever increase, so the one with
  * more progress has every mark the other has. Equal progress with a clear on

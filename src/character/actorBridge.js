@@ -116,10 +116,8 @@ export function readCharacterSnapshot(actor) {
     momentumMax,
     momentumReset,
     debilities: debs,
-    xp: {
-      value: sys.xp ?? 0,
-      max:   30,
-    },
+    // The XP the Starforged sheet shows — from its legacies (issue #326 D3).
+    xp: sheetXp(sys),
     assets:      readAssets(actor),
     vows:        readVows(actor),
     connections: readConnections(actor),
@@ -423,22 +421,67 @@ export async function setCombatPosition(actor, position) {
   invalidateActorCache(actor.id);
 }
 
-/**
- * Award XP to the Actor. `system.xp` is a non-negative integer with no maximum
- * in the vendor schema (subtypes/character.ts): a 30-point cap here once
- * wrote 30 over a character's 42 XP, and stopped every award at 30 (issue
- * #309 N01).
- * @param {Actor} actor
- * @param {number} amount
- * @returns {Promise<void>}
- */
-export async function awardXP(actor, amount) {
-  if (!actor || amount <= 0) return;
+// ── Legacy tracks on the sheet (issue #326 D3) ──────────────────────────────
+//
+// The Starforged character sheet's Legacies tab draws each legacy from the
+// PC's own `system.legacies.<track>` — ticks ever marked: 40 a filled track,
+// more past a clear (vendor subtypes/character.ts, legacy-track.vue) — and
+// derives the XP earned from it (2 a box, 1 a box past the first 40 ticks),
+// with `<track>XpSpent` the XP spent. The module's legacy tracks are shared by
+// the crew (campaignState.legacyTracks, canonical); each PC's sheet mirrors
+// them (src/multiplayer/sharedLegacies.js). `system.xp` is the classic sheet's
+// field — the module no longer writes it.
 
-  const sys     = actor.system ?? {};
-  const current = Number(sys.xp ?? 0) || 0;
-  await actor.update({ 'system.xp': current + amount });
+/** The legacy tracks a Starforged sheet shows. */
+export const SHEET_LEGACY_TRACKS = Object.freeze(['quests', 'bonds', 'discoveries']);
+
+/**
+ * A PC sheet's legacy track, as ticks ever marked (0 when unset).
+ *
+ * @param {Actor|null} actor
+ * @param {"quests"|"bonds"|"discoveries"} track
+ * @returns {number}
+ */
+export function readSheetLegacy(actor, track) {
+  const v = Number(actor?.system?.legacies?.[track]);
+  return Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+}
+
+/**
+ * Write a legacy track to a PC's sheet — the mirror of the shared track. A
+ * value already there is not written again.
+ *
+ * @param {Actor} actor
+ * @param {"quests"|"bonds"|"discoveries"} track
+ * @param {number} progress — ticks ever marked
+ * @param {Object} [options] — passed to Actor#update (the mirror marks its writes)
+ * @returns {Promise<boolean>} whether a write was made
+ */
+export async function writeSheetLegacy(actor, track, progress, options = {}) {
+  if (!actor || !SHEET_LEGACY_TRACKS.includes(track)) return false;
+  const value = Math.max(0, Math.floor(Number(progress) || 0));
+  if (readSheetLegacy(actor, track) === value) return false;
+  await actor.update({ [`system.legacies.${track}`]: value }, options);
   invalidateActorCache(actor.id);
+  return true;
+}
+
+/**
+ * The XP a PC sheet shows: earned from its legacy tracks (2 a box, 1 a box
+ * past the first 40 ticks — vendor legacy-track.vue), less the XP spent.
+ *
+ * @param {Object} sys — actor.system
+ * @returns {{ value: number, earned: number, spent: number }}
+ */
+function sheetXp(sys) {
+  let earned = 0;
+  let spent  = 0;
+  for (const track of SHEET_LEGACY_TRACKS) {
+    const ticks = Math.max(0, Math.floor(Number(sys?.legacies?.[track]) || 0));
+    earned += Math.min(Math.floor(ticks / 4), 10) * 2 + (ticks > 40 ? Math.floor((ticks - 40) / 4) : 0);
+    spent  += Math.max(0, Math.floor(Number(sys?.legacies?.[`${track}XpSpent`]) || 0));
+  }
+  return { value: Math.max(0, earned - spent), earned, spent };
 }
 
 /**

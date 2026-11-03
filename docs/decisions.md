@@ -21,6 +21,20 @@ brackets.)
   *Rejected:* two rewards (a won fight and the fulfilment each deepening) —
   #241 frames the fulfilment's deepen as *the* vow→connection reward and the
   card as its one-click prompt.
+- **The shared legacy tracks are mirrored to every sheet** [D3; maintainer].
+  The ticks lived in `campaignState.legacyTracks` and the XP in each PC's
+  `system.xp`, but the Starforged sheet shows neither: its Legacies tab draws
+  each legacy from `system.legacies.<track>` (ticks ever marked) and derives
+  the XP earned from it, and it has no `system.xp`. The shared track stays
+  canonical and is written through to every PC's sheet after each saved mark
+  (a mark that fills no box too); a sheet edit (the tab's ▸ / ◂) flows back
+  the way the shared supply does — the canonical GM sets the shared track to
+  it and mirrors it to the other PCs; at ready the canonical GM backfills the
+  sheets, raising the shared track to any sheet further along so no mark is
+  lost. Each PC's XP spent stays their own. `system.xp` is no longer written
+  (`awardXP` deleted); the earned-XP card stays and points at the Legacies
+  tab. *Rejected:* a module panel showing the legacy and XP — the sheet is
+  where XP is spent, so a second display would drift from it.
 - **A scene truth is filed where it was asserted** [D2; maintainer]. Scene
   end filed every scene-subject truth on the frame's location at the end of
   the scene, but a scene spans travel (it ends only at `!scene end`, End a
@@ -717,7 +731,8 @@ marks — did not run until issue #313 (above).
 be fixed on 2026-10-29. Each finding's ID in brackets.)
 - **XP has no ceiling** [N01]. `awardXP` adds: the vendor's `system.xp` is a
   non-negative integer with no maximum. The 30 was the classic Ironsworn
-  sheet's track, never a Starforged rule.
+  sheet's track, never a Starforged rule. *(Issue #326 D3: `awardXP` is
+  deleted — the XP is derived on the sheet from its mirrored legacies.)*
 - **A move's consequence card carries what the move was about** [N02, N03,
   N04]. Stat enrichment stamps the vehicle an integrity roll read
   (`vehicleActorId`) and the companion a `companion_health` roll read
@@ -2677,7 +2692,13 @@ known-issues AUDIT-DEAD-SURFACE. `markLegacyProgress` and the whole
 unreachable `persistResolution` steps; `addLegacyTicks` is the only legacy
 path.)* *(2026-10, issue #316 T02: the track clears at its tenth box and
 counts its cycles — `moves/legacyTracks.js`; `addLegacyTicks` returns
-`{ boxes, xp, cleared }`. See "Issue #316 audit".)*
+`{ boxes, xp, cleared }`. See "Issue #316 audit".)* *(Issue #326 D3,
+2026-11-03: the XP is no longer written to `system.xp` — a field the
+Starforged sheet does not have. The shared track stays canonical and is
+written through to every PC's `system.legacies.<track>`, where the sheet's
+Legacies tab shows the boxes and derives the XP; a sheet edit flows back.
+See "Issue #326 audit" → "The shared legacy tracks are mirrored to every
+sheet".)*
 
 **Rejected:**
 - *Per-character legacy tracks* (RAW-strict) — a data-model migration far

@@ -17,7 +17,8 @@ import {
   applyMeterChanges,
   readMomentumState,
   setDebility,
-  awardXP,
+  readSheetLegacy,
+  writeSheetLegacy,
   listCompanionAssets,
   getCompanionAsset,
   readCompanionHealth,
@@ -550,34 +551,39 @@ describe('momentum writes leave the sheet\'s base max and reset alone (issue #31
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// awardXP
+// The sheet's legacy tracks (issue #326 D3) — readSheetLegacy / writeSheetLegacy
+// and the XP the snapshot reads from them. awardXP (system.xp, the classic
+// sheet's field) is deleted: the Starforged sheet derives XP from its legacies.
 // ─────────────────────────────────────────────────────────────────────────────
 
-describe('awardXP', () => {
-  it('increments xp on actor', async () => {
-    const actor = freshActor({ system: { xp: 4 } });
-    await awardXP(actor, 2);
-    expect(actor._updateHistory[0]['system.xp']).toBe(6);
+describe('the sheet\'s legacy tracks', () => {
+  it('reads a legacy as ticks ever marked, 0 when unset or unreadable', () => {
+    expect(readSheetLegacy(freshActor({ system: { legacies: { quests: 12 } } }), 'quests')).toBe(12);
+    expect(readSheetLegacy(freshActor(), 'bonds')).toBe(0);
+    expect(readSheetLegacy({ system: {} }, 'quests')).toBe(0);
+    expect(readSheetLegacy(null, 'quests')).toBe(0);
   });
 
-  // Issue #309 N01: the vendor's system.xp has no maximum. A 30-point cap
-  // wrote 30 over 42 XP and stopped every award at 30.
-  it.each([[28, 5, 33], [29, 2, 31], [42, 2, 44]])('has no 30-point cap: %s + %s XP is %s', async (before, amount, after) => {
-    const actor = freshActor({ system: { xp: before } });
-    await awardXP(actor, amount);
-    expect(actor._updateHistory[0]['system.xp']).toBe(after);
-    expect(actor.system.xp).toBe(after);
-  });
-
-  it('does not call update if amount is zero or negative', async () => {
+  it('writes system.legacies.<track>, and nothing when it already holds the value', async () => {
     const actor = freshActor();
-    await awardXP(actor, 0);
-    await awardXP(actor, -1);
-    expect(actor._updateHistory).toHaveLength(0);
+    expect(await writeSheetLegacy(actor, 'discoveries', 44)).toBe(true);
+    expect(actor._updateHistory[0]).toEqual({ 'system.legacies.discoveries': 44 });
+    expect(await writeSheetLegacy(actor, 'discoveries', 44)).toBe(false);
+    expect(actor._updateHistory).toHaveLength(1);
   });
 
-  it('does not throw if actor is null', async () => {
-    await expect(awardXP(null, 2)).resolves.toBeUndefined();
+  it('writes no track the sheet does not have, and never system.xp', async () => {
+    const actor = freshActor({ system: { xp: 5 } });
+    expect(await writeSheetLegacy(actor, 'xp', 3)).toBe(false);
+    expect(actor._updateHistory).toHaveLength(0);
+    await writeSheetLegacy(actor, 'quests', 8);
+    expect(actor.system.xp).toBe(5);
+  });
+
+  it('the snapshot reads the XP the sheet shows: 2 a box, 1 a box past 40 ticks, less the XP spent', () => {
+    const actor = freshActor({ system: { legacies: { quests: 44, questsXpSpent: 3, bonds: 8 } } });
+    // quests: 10 boxes (20) + 1 box past 40 (1) = 21; bonds: 2 boxes (4); spent 3.
+    expect(readCharacterSnapshot(actor).xp).toEqual({ value: 22, earned: 25, spent: 3 });
   });
 });
 

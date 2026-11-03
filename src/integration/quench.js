@@ -232,8 +232,8 @@ Hooks.on("quenchReady", (quench) => {
   // tick-to-box floor.
   registerProgressMechanicsTests(quench);
   // XP economy — rule 1.12 (2 XP per legacy box; 1 XP after clear).
-  // Priority 9 of the rulebook audit. Pins the awardXP delta, with no
-  // ceiling at 30 (issue #309 N01).
+  // Priority 9 of the rulebook audit. Pins the sheet legacy write the shared
+  // tracks mirror to, where the Starforged sheet derives the XP (issue #326 D3).
   registerXpEconomyTests(quench);
   // Move outcome matrix — rules 3.7 / 3.9–3.12 / 3.13–3.16 / 3.17–3.21
   // / 3.23–3.29 / 3.30–3.36 / 3.37–3.39 / 3.43. Priorities 10/11/12/
@@ -10188,10 +10188,13 @@ function registerProgressMechanicsTests(quench) {
 // XP ECONOMY — Priority 9 of the rulebook coverage audit
 //
 // Rule 1.12 — Legacy box → 2 XP (1 XP after track cleared). The per-box
-// math lives in src/index.js addLegacyTicks (legacyBoxXp); the XP-write
-// surface is `awardXP(actor, amount)` in actorBridge.js. This batch pins
-// awardXP — the delta, and that XP has no ceiling: the vendor's system.xp has
-// no maximum (issue #309 N01 — a 30 cap erased XP above it).
+// math lives in src/moves/legacyTracks.js (markLegacyTrack); since issue #326
+// D3 the XP is not written anywhere: the shared legacy track is mirrored to
+// each PC's sheet (`system.legacies.<track>`, ticks ever marked — actorBridge
+// writeSheetLegacy), and the Starforged sheet's Legacies tab derives the XP
+// earned from it (2 a box, 1 a box past 40 ticks). This batch pins the live
+// write: the system schema takes the value, past a clear (no maximum), and
+// the snapshot reads the XP the sheet shows.
 // ─────────────────────────────────────────────────────────────────────────────
 
 function registerXpEconomyTests(quench) {
@@ -10212,7 +10215,6 @@ function registerXpEconomyTests(quench) {
             edge: 1, heart: 1, iron: 1, shadow: 1, wits: 1,
             health: { value: 5 }, spirit: { value: 5 }, supply: { value: 5 },
             momentum: { value: 0 },
-            xp: 0,
           },
         });
       });
@@ -10222,52 +10224,40 @@ function registerXpEconomyTests(quench) {
         if (testActor?.delete) await testActor.delete().catch(() => {});
       });
 
-      describe("awardXP — rule 1.12 per-box delta surface", function () {
-        it("awardXP(actor, 2) adds exactly 2 to system.xp (rule: 2 XP per unclearedlegacy box)", async function () {
+      describe("writeSheetLegacy — the shared legacy track on the sheet (issue #326 D3)", function () {
+        it("writes system.legacies.quests, and the snapshot reads 2 XP a box from it", async function () {
           if (!testActor) { this.skip(); return; }
           this.timeout(10000);
-          const { awardXP } = await import(`${MODULE_PATH}/character/actorBridge.js`);
-          await testActor.update({ "system.xp": 0 });
-          await awardXP(testActor, 2);
-          // Re-read from game.actors to pick up the persisted change.
+          const { writeSheetLegacy, readSheetLegacy, readCharacterSnapshot, invalidateActorCache } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          await testActor.update({ "system.legacies.quests": 0, "system.legacies.questsXpSpent": 0 });
+          await writeSheetLegacy(testActor, "quests", 8);
           const fresh = game.actors.get(testActor.id);
-          assert.equal(fresh.system.xp, 2,
-            "awardXP(actor, 2) should set xp from 0 to 2 — the per-box rate for uncleared legacy tracks");
+          assert.equal(readSheetLegacy(fresh, "quests"), 8, "the sheet's quests legacy should hold 8 ticks");
+          invalidateActorCache(fresh.id);
+          assert.equal(readCharacterSnapshot(fresh).xp.earned, 4, "two filled boxes earn 4 XP on the sheet");
         });
 
-        it("awardXP(actor, 1) adds exactly 1 (rule: 1 XP per cleared legacy box)", async function () {
+        it("takes a track past a clear — the schema has no maximum — at 1 XP a box", async function () {
           if (!testActor) { this.skip(); return; }
           this.timeout(10000);
-          const { awardXP } = await import(`${MODULE_PATH}/character/actorBridge.js`);
-          await testActor.update({ "system.xp": 5 });
-          await awardXP(testActor, 1);
+          const { writeSheetLegacy, readSheetLegacy, readCharacterSnapshot, invalidateActorCache } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          await writeSheetLegacy(testActor, "discoveries", 44);
           const fresh = game.actors.get(testActor.id);
-          assert.equal(fresh.system.xp, 6,
-            "awardXP(actor, 1) should set xp from 5 to 6 — the post-clear per-box rate");
+          assert.equal(readSheetLegacy(fresh, "discoveries"), 44, "one cleared track (40) and 4 ticks");
+          invalidateActorCache(fresh.id);
+          assert.equal(readCharacterSnapshot(fresh).xp.earned, 4 + 21, "quests 4 + discoveries 20 + 1 past the clear");
         });
 
-        it("awardXP has no 30-point ceiling (issue #309 N01)", async function () {
+        it("the XP spent on the sheet is the PC's own, and lowers the XP the snapshot reads", async function () {
           if (!testActor) { this.skip(); return; }
           this.timeout(10000);
-          const { awardXP } = await import(`${MODULE_PATH}/character/actorBridge.js`);
-          await testActor.update({ "system.xp": 28 });
-          await awardXP(testActor, 5);
-          assert.equal(game.actors.get(testActor.id).system.xp, 33,
-            "awardXP(actor, 5) should take xp from 28 to 33 — the system schema has no maximum");
-          await testActor.update({ "system.xp": 42 });
-          await awardXP(testActor, 2);
-          assert.equal(game.actors.get(testActor.id).system.xp, 44,
-            "awardXP must never lower XP already above 30");
-        });
-
-        it("awardXP(actor, 0) is a no-op", async function () {
-          if (!testActor) { this.skip(); return; }
-          this.timeout(10000);
-          const { awardXP } = await import(`${MODULE_PATH}/character/actorBridge.js`);
-          await testActor.update({ "system.xp": 7 });
-          await awardXP(testActor, 0);
+          const { readCharacterSnapshot, invalidateActorCache } = await import(`${MODULE_PATH}/character/actorBridge.js`);
+          await testActor.update({ "system.legacies.questsXpSpent": 3 });
           const fresh = game.actors.get(testActor.id);
-          assert.equal(fresh.system.xp, 7, "awardXP(actor, 0) should leave xp unchanged");
+          invalidateActorCache(fresh.id);
+          const xp = readCharacterSnapshot(fresh).xp;
+          assert.equal(xp.spent, 3);
+          assert.equal(xp.value, xp.earned - 3);
         });
       });
     },

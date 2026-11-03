@@ -260,7 +260,7 @@ to find each move's resolver branch.
 | Rule | Status | Pathway |
 |---|---|---|
 | Legacy tracks (quests, bonds, discoveries) | ✅ | `campaignState.legacyTracks` (`CampaignStateSchema`, `src/schemas.js`); every write goes through `addLegacyTicks` (`src/index.js`); filling the tenth box clears the track, which starts again with the overflow and counts its cycles (`src/moves/legacyTracks.js`, issue #316 T02) |
-| Earn XP on box fill (2 XP, 1 after first clear) | ✅ | `addLegacyTicks` awards box XP to every PC (LEGACY-XP-DEAD fix) via `awardXP` (`src/character/actorBridge.js`) — each box at the rate of the cycle it filled in: 2 XP, then 1 once the track has cleared (issue #316 T02) |
+| Earn XP on box fill (2 XP, 1 after first clear) | ✅ | `addLegacyTicks` marks the shared track (LEGACY-XP-DEAD fix) — each box at the rate of the cycle it filled in: 2 XP, then 1 once the track has cleared (issue #316 T02) — and, once saved, writes it through to every PC's sheet (`system.legacies.<track>`, `src/multiplayer/sharedLegacies.js`), whose Legacies tab derives and spends the XP (issue #326 D3) |
 | Vows persisted as `progress` items on the actor | ✅ | `src/character/actorBridge.js:347-355` (`createCharacterVowItem`) |
 | Connections mirrored as bond items | ✅ | `src/character/actorBridge.js:328-336` (`createCharacterBondItem`) |
 | Connection role/rank/bond, second-role on Bond | ✅ | `src/entities/connection.js:371-379` |

@@ -17,7 +17,10 @@ local Node process required.
 
 **System dependency:** foundry-ironsworn v1.27.0. Actor schema confirmed:
 stats flat on `system` (not nested), meters at `system.health.value` etc,
-debilities at `system.debility` (singular), xp flat at `system.xp`.
+debilities at `system.debility` (singular), xp flat at `system.xp` (the
+classic sheet's — the Starforged sheet derives XP from
+`system.legacies.<track>`, where the module mirrors its shared legacy tracks;
+issue #326 D3).
 See `vendor/foundry-ironsworn/` for authoritative source.
 
 **Current work in progress:** See `docs/known-issues.md` for open items.

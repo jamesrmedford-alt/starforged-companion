@@ -20,6 +20,11 @@
  * Now each failed step goes on one card whispered to the GMs, with the value
  * it changes as it stands now, and a Retry that re-runs only the failed steps,
  * once. A fulfilment's landed steps are recorded on the vow (`fulfilPayoff`).
+ *
+ * Issue #326 D3: a legacy's XP is no longer written to the classic sheet's XP
+ * field — the shared track is written through to each PC's sheet
+ * (`system.legacies.<track>`), where the Starforged sheet derives the XP. A
+ * refused "XP award" is now a refused write of that sheet legacy.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -66,6 +71,16 @@ const rookTicks  = () => rook.flags[MODULE_ID].connection.relationshipTicks ?? 0
 const failCards  = () => table.cards(f => f.payoffFailureCard);
 const rewardCards = () => table.cards(f => f.rewardGrantCard);
 const xpCards    = () => table.cards(f => f.legacyXpCard);
+// The XP a PC's Starforged sheet shows (vendor legacy-track.vue): 2 a box, 1 a
+// box past 40 ticks, from its own legacies, less the XP spent.
+const xpOf = (actor) => ['quests', 'bonds', 'discoveries'].reduce((sum, t) => {
+  const ticks = Number(actor.system.legacies?.[t]) || 0;
+  return sum + Math.min(Math.floor(ticks / 4), 10) * 2 + (ticks > 40 ? Math.floor((ticks - 40) / 4) : 0)
+    - (Number(actor.system.legacies?.[`${t}XpSpent`]) || 0);
+}, 0);
+// A write of a PC's sheet legacy — what the XP award became (issue #326 D3).
+const sheetLegacyWrite = (pcId) => (w) => w.kind === 'actor.update' && w.id === pcId
+  && Object.keys(w.changes ?? {}).some(k => k.startsWith('system.legacies.'));
 
 /** The one payoff failure card posted so far. */
 function theFailCard() {
@@ -177,7 +192,7 @@ describe('a vow fulfilled on the sheet: a step that does not land goes to the GM
     await fulfilOnSheet();
 
     expect(quests()).toBe(2);
-    expect(pat.system.xp).toBe(0);                       // no XP for ticks never saved
+    expect(xpOf(pat)).toBe(0);                       // no XP for ticks never saved
     expect(xpCards()).toHaveLength(0);
     const card = theFailCard();
     expect(card.whisper).toEqual(['gm-1']);
@@ -190,7 +205,7 @@ describe('a vow fulfilled on the sheet: a step that does not land goes to the GM
     await retry(card);
 
     expect(quests()).toBe(4);
-    expect(pat.system.xp).toBe(2);
+    expect(xpOf(pat)).toBe(2);
     expect(xpCards()).toHaveLength(1);
     expect(vow.flags[MODULE_ID].fulfilPayoff.legacy).toBe(true);
     expect(failCards()).toHaveLength(1);                 // nothing failed again
@@ -200,7 +215,7 @@ describe('a vow fulfilled on the sheet: a step that does not land goes to the GM
     await retry(card);
     expect((await requestRetry(card, 'gm-1')).result).toMatchObject({ applied: false, reason: 'already-resolved' });
     expect(quests()).toBe(4);
-    expect(pat.system.xp).toBe(2);
+    expect(xpOf(pat)).toBe(2);
   });
 
   it('a refused reward grant: no "Reward earned"; Retry gives it once', async () => {
@@ -293,7 +308,7 @@ describe('a vow fulfilled on the sheet: a step that does not land goes to the GM
   // Issue #309 N05: a refused paid flag was swallowed and the steps ran
   // anyway; once this client's in-flight claim was released, a duplicate
   // fulfilment found no paid flag and paid every step again.
-  const paidOut = () => ({ quests: quests(), deepen: rookTicks(), supply: supply(), xp: pat.system.xp });
+  const paidOut = () => ({ quests: quests(), deepen: rookTicks(), supply: supply(), xp: xpOf(pat) });
 
   it('a refused paid flag applies nothing and tells the GMs; a duplicate then pays once, and the Retry nothing more', async () => {
     vow.refuse.add('fulfilPaid');
@@ -338,44 +353,42 @@ describe('a vow fulfilled on the sheet: a step that does not land goes to the GM
   // have added its ticks again.
   it('a PC\'s refused box XP goes to the GMs; Retry gives that PC\'s XP alone, once', async () => {
     const ren = table.addActor({ id: 'pc-ren', name: 'Ren', ownership: { 'pl-1': 3 } });
-    refuseNext(w => w.kind === 'actor.update' && w.id === 'pc-pat'
-      && Object.prototype.hasOwnProperty.call(w.changes ?? {}, 'system.xp'));
+    refuseNext(sheetLegacyWrite('pc-pat'));
     await fulfilOnSheet();
 
     expect(quests()).toBe(4);
-    expect({ kira: pat.system.xp, ren: ren.system.xp }).toEqual({ kira: 0, ren: 2 });
+    expect({ kira: xpOf(pat), ren: xpOf(ren) }).toEqual({ kira: 0, ren: 2 });
     expect(vow.flags[MODULE_ID].fulfilPayoff).toEqual({ legacy: true, deepen: true, reward: true });
     expect(xpCards().map(c => c.content)).toEqual([expect.stringContaining('+2 XP earned by Ren')]);
     const card = theFailCard();
     expect(card.flags[MODULE_ID].steps).toEqual([{ step: 'xp', pcId: 'pc-pat', xp: 2, track: 'quests', boxes: 1 }]);
-    expect(card.content).toContain('Kira has 0 XP now');
+    expect(card.content).toContain("Kira's sheet shows 0 Quests ticks and 0 XP now");
 
     await retry(card);
-    expect({ quests: quests(), kira: pat.system.xp, ren: ren.system.xp }).toEqual({ quests: 4, kira: 2, ren: 2 });
+    expect({ quests: quests(), kira: xpOf(pat), ren: xpOf(ren) }).toEqual({ quests: 4, kira: 2, ren: 2 });
     expect(xpCards().at(-1).content).toContain('+2 XP earned by Kira');
     expect(failCards()).toHaveLength(1);
 
     await retry(card);
     await fulfilOnSheet();
-    expect({ quests: quests(), kira: pat.system.xp, ren: ren.system.xp }).toEqual({ quests: 4, kira: 2, ren: 2 });
+    expect({ quests: quests(), kira: xpOf(pat), ren: xpOf(ren) }).toEqual({ quests: 4, kira: 2, ren: 2 });
   });
 
   it('a refused box XP with every PC refused posts no "XP earned"; a Retry refused again goes on a fresh card', async () => {
-    const xpWrite = (w) => w.kind === 'actor.update' && w.id === 'pc-pat'
-      && Object.prototype.hasOwnProperty.call(w.changes ?? {}, 'system.xp');
+    const xpWrite = sheetLegacyWrite('pc-pat');
     refuseNext(xpWrite);
     await fulfilOnSheet();
     expect(xpCards()).toHaveLength(0);
 
     refuseNext(xpWrite);
     await retry(theFailCard());
-    expect(pat.system.xp).toBe(0);
+    expect(xpOf(pat)).toBe(0);
     const cards = failCards();
     expect(cards).toHaveLength(2);
     expect(cards[1].flags[MODULE_ID].steps).toEqual([{ step: 'xp', pcId: 'pc-pat', xp: 2, track: 'quests', boxes: 1 }]);
 
     await retry(cards[1]);
-    expect({ quests: quests(), xp: pat.system.xp }).toEqual({ quests: 4, xp: 2 });
+    expect({ quests: quests(), xp: xpOf(pat) }).toEqual({ quests: 4, xp: 2 });
   });
 
   it('only a GM may retry: a player\'s relayed press applies nothing', async () => {
@@ -430,20 +443,19 @@ describe('a bond forged on the sheet: a refused bonds legacy goes to the GMs (is
     const gm = table.client('gm-1');
     await gm.run(() => game.settings.set(MODULE_ID, 'campaignState', { ...world(), legacyTracks: { bonds: { ticks: 2, cleared: false } } }));
     const { payForgedBondNative } = await gm.import('../../src/index.js');
-    refuseNext(w => w.kind === 'actor.update' && w.id === 'pc-pat'
-      && Object.prototype.hasOwnProperty.call(w.changes ?? {}, 'system.xp'));
+    refuseNext(sheetLegacyWrite('pc-pat'));
     await gm.run(() => payForgedBondNative('Rook'));
     await table.settle();
 
     expect(bonds()).toBe(4);
-    expect(pat.system.xp).toBe(0);
+    expect(xpOf(pat)).toBe(0);
     expect(table.cards(f => f.forgeABondCard)[0].content).not.toContain('not yet marked');
     const card = theFailCard();
     expect(card.flags[MODULE_ID]).toMatchObject({ source: 'forge', steps: [{ step: 'xp', pcId: 'pc-pat', xp: 2, track: 'bonds', boxes: 1 }] });
 
     await retry(card);
     await retry(card);
-    expect({ bonds: bonds(), xp: pat.system.xp }).toEqual({ bonds: 4, xp: 2 });
+    expect({ bonds: bonds(), xp: xpOf(pat) }).toEqual({ bonds: 4, xp: 2 });
   });
 });
 
@@ -455,23 +467,23 @@ describe('a legacy box filled in the move pipeline: a refused XP award goes to t
   it('Retry gives that PC\'s XP once', async () => {
     const gm = table.client('gm-1');
     const { addLegacyTicks, awardSavedLegacyXp } = await gm.import('../../src/index.js');
-    refuseNext(w => w.kind === 'actor.update' && w.id === 'pc-pat'
-      && Object.prototype.hasOwnProperty.call(w.changes ?? {}, 'system.xp'));
+    refuseNext(sheetLegacyWrite('pc-pat'));
     await gm.run(async () => {
-      const working = { legacyTracks: { discoveries: { ticks: 3, cleared: false } } };
+      const working = { ...game.settings.get(MODULE_ID, 'campaignState'), legacyTracks: { discoveries: { ticks: 3, cleared: false } } };
       addLegacyTicks(working, 'discoveries', 1);
-      await awardSavedLegacyXp(working);
+      await game.settings.set(MODULE_ID, 'campaignState', working);   // the copy's save lands …
+      await awardSavedLegacyXp(working);                              // … then its mark is paid
     });
     await table.settle();
 
-    expect(pat.system.xp).toBe(0);
+    expect(xpOf(pat)).toBe(0);
     const card = theFailCard();
     expect(card.flags[MODULE_ID]).toMatchObject({ source: 'legacyXp', steps: [{ step: 'xp', pcId: 'pc-pat', xp: 2, track: 'discoveries', boxes: 1 }] });
-    expect(card.content).toContain('Legacy experience not given');
+    expect(card.content).toContain('Legacy not shown on a character sheet');
 
     await retry(card);
     await retry(card);
-    expect(pat.system.xp).toBe(2);
+    expect(xpOf(pat)).toBe(2);
   });
 });
 

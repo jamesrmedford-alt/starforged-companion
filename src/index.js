@@ -47,7 +47,7 @@ import {
 } from "./moves/abilityScanner.js";
 import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient, resolveAidedAlly, enrichBondAdds } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
-import { markLegacyTrack, deferLegacyXp, payDeferredLegacyXp } from "./moves/legacyTracks.js";
+import { markLegacyTrack, legacyProgress, deferLegacyXp, payDeferredLegacyXp } from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
 import {
   openSetFlagDialog,
@@ -85,7 +85,8 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, readMomentumState, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, awardXP, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, readMomentumState, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
@@ -4097,13 +4098,15 @@ const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bo
  */
 export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {}) {
   campaignState.legacyTracks ??= {};
+  const before = legacyProgress(campaignState.legacyTracks[key]);
   const marked = markLegacyTrack(campaignState.legacyTracks[key], ticks);
   campaignState.legacyTracks[key] = marked.track;
-  if (marked.boxes > 0 && awardXp) {
-    // A PC whose award is refused is told to the GMs, with a Retry for that
-    // award alone (issue #309 N06).
+  if (awardXp && legacyProgress(marked.track) > before) {
+    // Once the copy is saved, every PC's sheet shows the mark — and the XP a
+    // filled box earns (issue #326 D3). A PC whose sheet write is refused is
+    // told to the GMs, with a Retry for that sheet alone (issue #309 N06).
     deferLegacyXp(campaignState, async () => {
-      const failed = await awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
+      const failed = await payLegacyMark(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
       if (failed.length) await postPayoffFailureCard({ source: "legacyXp", failures: failed });
     });
   }
@@ -4145,51 +4148,44 @@ async function writeLegacyTicks(key, ticks) {
   const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
   const marked = addLegacyTicks(cs, key, ticks, { awardXp: false });
   await game.settings.set(MODULE_ID, "campaignState", cs);
-  if (marked.boxes <= 0) return [];
-  return awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
+  return payLegacyMark(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
 }
 
 /**
- * Award legacy-box XP to each player character — or to `pcs`, a Retry's —
- * and post the earned-XP note once any award has landed. Each award stands
- * alone: a refused one is returned as a failed step (`xp`, its PC and
- * amount), which the payoff puts on the GMs' failure card, whose Retry gives
- * that PC's XP alone — never the ticks again. Each refusal used to be logged
- * and dropped, the payoff reported complete (issue #309 N06).
+ * A saved legacy mark reaches every player character's sheet — or `pcs`, a
+ * Retry's — and the earned-XP note posts once any sheet shows a filled box
+ * (issue #326 D3). The shared track is canonical; each PC's Starforged sheet
+ * mirrors it (`system.legacies.<track>`, src/multiplayer/sharedLegacies.js),
+ * where the sheet derives and spends the XP — the module wrote the XP to
+ * `system.xp`, a field that sheet does not have. Each sheet stands alone: a
+ * refused write is returned as a failed step (`xp`, its PC and the XP the
+ * box earned), which the payoff puts on the GMs' failure card, whose Retry
+ * mirrors that PC's sheet alone — never the ticks again (issue #309 N06).
  *
  * @param {"quests"|"bonds"|"discoveries"} key
- * @param {number} boxes — newly filled boxes
+ * @param {number} boxes — newly filled boxes (0: a mark that filled none)
  * @param {number} xp — per PC
  * @param {{ pcs?: Actor[]|null, clearedNow?: boolean }} [opts] — a Retry's PC;
  *   every PC when absent. `clearedNow`: this mark filled the tenth box, so
  *   the note says the track has cleared and started again
  * @returns {Promise<Array<{ step: "xp", pcId: string|null, xp: number, track: string, boxes: number, reason: string, error: string }>>}
  */
-async function awardLegacyBoxXP(key, boxes, xp, { pcs = null, clearedNow = false } = {}) {
-  const recipients = pcs ?? getPlayerActors();
-  const failed = [];
-  const given  = [];
-  for (const actor of recipients) {
-    try {
-      await awardXP(actor, xp);
-      given.push(actor);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | awardXP failed for ${actor?.name ?? actor?.id}:`, err?.message ?? err);
-      failed.push({ step: "xp", pcId: actor?.id ?? null, xp, track: key, boxes, reason: "refused", error: errText(err) });
-    }
-  }
-  if (recipients.length && !given.length) return failed;
+async function payLegacyMark(key, boxes, xp, { pcs = null, clearedNow = false } = {}) {
+  const { written, failed: refused } = await mirrorLegacyToSheets(key, { pcs });
+  const failed = refused.map(({ actor, error }) =>
+    ({ step: "xp", pcId: actor?.id ?? null, xp, track: key, boxes, reason: "refused", error }));
+  if (boxes <= 0 || !written.length) return failed;
   const label = LEGACY_LABELS[key] ?? key;
   // Named when not every PC was given it: a Retry's PC, or the PCs whose
-  // awards landed beside a refused one.
+  // sheets took it beside a refused one.
   const who = pcs || failed.length
-    ? given.map(a => escapeChatHtml(a?.name ?? "")).filter(Boolean)
+    ? written.map(a => escapeChatHtml(a?.name ?? "")).filter(Boolean)
     : [];
   const clearedNote = clearedNow
     ? ` The track is filled and cleared — it starts again from its first box, and each box earns 1 XP from now on.`
     : "";
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned${who.length ? ` by ${who.join(", ")}` : ""} (${boxes} box${boxes === 1 ? "" : "es"} filled).${clearedNote} Spend it on new assets or upgrades (Earn Experience).</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(label)} legacy — box filled</strong><p>+${xp} XP earned${who.length ? ` by ${who.join(", ")}` : ""} (${boxes} box${boxes === 1 ? "" : "es"} filled).${clearedNote} It shows on the character sheet&rsquo;s Legacies tab &mdash; spend it there on new assets or upgrades (Earn Experience).</p></div>`,
     flags:   { [MODULE_ID]: { legacyXpCard: true, track: key, boxes, xp, ...(clearedNow ? { cleared: true } : {}) } },
   }).catch(err => console.warn(`${MODULE_ID} | legacy XP card failed:`, err?.message ?? err));
   return failed;
@@ -5095,7 +5091,7 @@ const PAYOFF_TITLES = {
   fight:       (c) => `Victory reward incomplete — “${c.vowName ?? "your vow"}”`,
   forge:       (c) => `Bond payoff incomplete — ${c.connectionName ?? "the bond"}`,
   fightButton: (c) => `Victory card not applied — “${c.vowName ?? "your vow"}”`,
-  legacyXp:    ()  => `Legacy experience not given`,
+  legacyXp:    ()  => `Legacy not shown on a character sheet`,
   suffer:      (c) => `Consequence not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   upgrade:     (c) => `Upgraded result not fully applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
   session:     ()  => `Session momentum not given`,
@@ -5207,10 +5203,14 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         return `Begin a Session's campaign clock advance: ${parts.join("; ")} — ${why}. The oracle's roll stands; Retry saves it without rolling again.`;
       }
       case "xp": {
-        const pc  = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
-        const who = escapeChatHtml(pc?.name ?? "a character");
-        const now = pc ? ` ${who} has ${readCharacterSnapshot(pc)?.xp?.value ?? 0} XP now.` : "";
-        return `+${f.xp} XP for ${who}, earned by a filled ${escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track)} legacy box — ${why}.${now}`;
+        // A legacy mark's write to a PC's sheet (issue #326 D3): the sheet's
+        // legacy, and the XP it shows, as they stand now.
+        const pc    = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
+        const who   = escapeChatHtml(pc?.name ?? "a character");
+        const label = escapeChatHtml(LEGACY_LABELS[f.track] ?? f.track);
+        const now   = pc ? ` ${who}'s sheet shows ${readSheetLegacy(pc, f.track)} ${label} ticks and ${readCharacterSnapshot(pc)?.xp?.value ?? 0} XP now.` : "";
+        const earned = f.xp > 0 ? ` (+${f.xp} XP earned by a filled box)` : "";
+        return `The ${label} legacy on ${who}'s character sheet${earned} — ${why}.${now}`;
       }
       case "milestone": {
         const vow = readVows(resolveVowHolderActor(vowName, actorId)).find(v => v.name === vowName && !v.completed);
@@ -5323,12 +5323,14 @@ async function runPayoffStep(s, card, copies) {
       }
     }
     case "xp": {
-      // A legacy box's XP for one PC — the ticks already landed (issue #309 N06).
+      // A legacy mark's sheet write for one PC — the ticks already landed on
+      // the shared track (issue #309 N06); the sheet shows the XP it earns
+      // (issue #326 D3).
       const xp = Math.floor(Number(s.xp));
-      if (!LEGACY_LABELS[s.track] || !(xp > 0 && xp <= 20)) return { ok: false, reason: "invalid step" };
+      if (!LEGACY_LABELS[s.track] || !(xp >= 0 && xp <= 20)) return { ok: false, reason: "invalid step" };
       const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
       if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
-      const [failed] = await awardLegacyBoxXP(s.track, Math.max(1, Math.floor(Number(s.boxes)) || 1), xp, { pcs: [pc] });
+      const [failed] = await payLegacyMark(s.track, Math.max(0, Math.floor(Number(s.boxes)) || 0), xp, { pcs: [pc] });
       return failed ? { ...failed, ok: false } : { ok: true };
     }
     case "rewardGrant": {
@@ -7036,6 +7038,13 @@ Hooks.once("ready", () => {
   registerChatHook();
   registerActorHook();
   registerSharedSupplyHook();   // crew-shared supply track (co-op/guided rule)
+  // #326 D3: the shared legacy tracks on every PC's sheet — a sheet edit flows
+  // back; the canonical GM backfills the sheets once the world is ready.
+  registerLegacySheetSyncHook();
+  if (isCanonicalGM()) {
+    backfillLegacySheets().catch(err =>
+      console.warn(`${MODULE_ID} | legacy sheet backfill failed:`, err?.message ?? err));
+  }
   registerEntityRenameSyncHook();
   registerStarshipSeedHook();
   registerCommandVehicleHook();

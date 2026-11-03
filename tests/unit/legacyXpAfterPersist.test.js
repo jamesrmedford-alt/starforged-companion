@@ -4,7 +4,9 @@
 // (addLegacyTicks) and the ticks reach the world in persistResolution's
 // write, but the XP was awarded at the mark: a refused persist paid XP for
 // a box never saved. The XP is now owed by the working copy and paid after
-// the persist (payDeferredLegacyXp).
+// the persist (payDeferredLegacyXp). Since issue #326 D3 the payment is the
+// shared track written through to each PC's sheet (system.legacies.quests,
+// ticks ever marked), where the Starforged sheet shows the XP.
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 
@@ -76,7 +78,7 @@ describe('legacy box XP waits for the move\'s persist (issue #326 W52)', () => {
     };
   });
 
-  const xp = () => Number(bex.system.xp ?? 0);
+  const sheet = () => Number(bex.system.legacies?.quests ?? 0);   // the sheet's quests legacy
   // The move's own persist: the GM's campaignState write that carries a new
   // updatedAt stamp (persistResolution's).
   const persistWrite = (w) => w.kind === 'setting' && w.key === CS_KEY && w.client === 'gm-1'
@@ -87,7 +89,8 @@ describe('legacy box XP waits for the move\'s persist (issue #326 W52)', () => {
     await table.settle();
     expect(resolveMove.mock.results[0].value.outcome).toBe('strong_hit');
     expect(table.world.campaignState().legacyTracks.quests).toMatchObject({ ticks: 0, cycles: 1 });
-    expect(xp()).toBe(2);
+    expect(sheet()).toBe(40);                                         // the tenth box — 2 XP — on the sheet
+    expect(table.cards(f => f.legacyXpCard).map(c => c.flags[MODULE_ID].xp)).toEqual([2]);
   });
 
   it('a refused write awards no XP for the box it did not save', async () => {
@@ -97,6 +100,7 @@ describe('legacy box XP waits for the move\'s persist (issue #326 W52)', () => {
     await table.settle();
     expect(refused.refused).toBe(1);
     expect(table.world.campaignState().legacyTracks.quests).toMatchObject({ ticks: 38, cycles: 0 });
-    expect(xp()).toBe(0);
+    expect(sheet()).toBe(0);                                          // the refused box never reached the sheet
+    expect(table.cards(f => f.legacyXpCard)).toEqual([]);
   });
 });

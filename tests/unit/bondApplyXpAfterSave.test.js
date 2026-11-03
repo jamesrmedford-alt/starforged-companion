@@ -4,6 +4,8 @@
 // applyBondEffects marked the ticks (addLegacyTicks awarding the box XP at
 // once) before its own save; a refused save had paid each PC 2 XP for ticks
 // never saved, and its throw skipped the strong-hit-with-a-match rank raise.
+// Since issue #326 D3 the payment is the shared track written through to
+// each PC's sheet (system.legacies.bonds), where the sheet shows the XP.
 
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
@@ -45,7 +47,8 @@ describe("bond.apply pays its box XP once the ticks are saved (issue #326 W52)",
     await applyBondEffects({ outcome: "strong_hit", isMatch: false }, gmCtx);
     await flush();
     expect(game.settings._store.get(KEY).legacyTracks.bonds.ticks).toBe(4);
-    expect([pcA.system.xp, pcB.system.xp]).toEqual([2, 2]);
+    expect([pcA.system.legacies.bonds, pcB.system.legacies.bonds]).toEqual([4, 4]);   // one box: 2 XP on each sheet
+    expect(ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.legacyXpCard).map(m => m.flags[MODULE_ID].xp)).toEqual([2]);
   });
 
   async function strongHitRefused() {
@@ -58,7 +61,8 @@ describe("bond.apply pays its box XP once the ticks are saved (issue #326 W52)",
 
   it("a refused save pays no XP", async () => {
     await strongHitRefused();
-    expect([pcA.system.xp, pcB.system.xp]).toEqual([0, 0]);                 // was [2, 2]
+    expect([pcA.system.legacies.bonds, pcB.system.legacies.bonds]).toEqual([0, 0]);   // nothing reached the sheets
+    expect(ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.legacyXpCard)).toEqual([]);
   });
 
   it("a refused tick save does not skip the match's rank raise", async () => {

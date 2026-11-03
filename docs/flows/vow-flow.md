@@ -261,8 +261,10 @@ flag, paid again). The native path, like a Retry, skips any step the vow's
 **A payoff step that does not land** (issue #306 R04, option 2):
 `payFulfilledVowCopies` runs three steps after the `fulfilPaid` stamp — the
 Quests legacy (`runLegacyStep` → `writeLegacyTicks`: written on a copy, the
-filled box's XP awarded only once the write lands — each PC's award on its
-own, `awardLegacyBoxXP`; one that is refused is an `xp` step of its own,
+filled box's XP awarded only once the write lands — since issue #326 D3 by
+writing the shared track to each PC's sheet (`payLegacyMark` →
+`sharedLegacies.mirrorLegacyToSheets`, where the sheet derives the XP), each
+PC's sheet on its own; one that is refused is an `xp` step of its own,
 for that PC alone, since re-running the legacy would add its ticks again,
 issue #309 N06; the pipeline's own fulfil marks its working copy, whose box
 XP is paid once `persistResolution`'s write lands — issue #326 W52), the connection deepen
