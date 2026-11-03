@@ -107,7 +107,9 @@ All real progress lands on **item ticks** (`system.current`) via
   `applyReachMilestone(rollerActor, moveTarget)` on the **roller's** vows —
   a named or sole open vow auto-marks (`postReachMilestoneCard`,
   `src/moves/milestonePicker.js`); several → a picker card whose
-  `flags.choices` record the offered (vowId, actorId) pairs. Any user's click
+  `flags.choices` record the offered (vowId, actorId) pairs and the marks
+  the pick applies (a won fight's ×N falls here when its vow was renamed —
+  issue #326 W43; a plain Reach a Milestone's picker marks once). Any user's click
   relays `milestone.pick` to the canonical GM → `applyMilestonePick`, which
   checks the pick is one of the card's choices and that the requester owns
   that PC (or is a GM), marks the vow, and stamps the card `resolved`

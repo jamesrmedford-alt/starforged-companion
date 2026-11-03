@@ -252,9 +252,11 @@ describe('across a booted table', () => {
 
   it('the GM\'s pipeline posts the picker, offering exactly the open vows', async () => {
     const card = await pickerFromPipeline();
+    // Each choice carries the marks the pick applies — one for a plain Reach
+    // a Milestone (a won fight's ×N rides it too, issue #326 W43).
     expect(card.flags[MODULE_ID].choices).toEqual([
-      { vowId: 'v-b1', actorId: 'pc-b' },
-      { vowId: 'v-b2', actorId: 'pc-b' },
+      { vowId: 'v-b1', actorId: 'pc-b', marks: 1 },
+      { vowId: 'v-b2', actorId: 'pc-b', marks: 1 },
     ]);
   });
 

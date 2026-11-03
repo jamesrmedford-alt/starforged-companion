@@ -5457,7 +5457,9 @@ async function applyReachMilestone(actor, target, marks = 1) {
     await markVowProgress(actor, plan.vow.id, ticks);
     await postReachMilestoneCard(plan.vow, ticks);
   } else if (plan.action === "pick") {
-    await postMilestonePickerCard(plan.vows, actor.id);
+    // The marks ride the picker: a won fight's ×2 that falls to the picker
+    // (its vow renamed since) marked the picked vow once (issue #326 W43).
+    await postMilestonePickerCard(plan.vows, actor.id, marks);
   }
   // action "none" → no open vow to mark; the move card's otherEffect already
   // tells the player Reach a Milestone marks vow progress.
@@ -5467,9 +5469,12 @@ async function applyReachMilestone(actor, target, marks = 1) {
 /**
  * Post a picker when several vows are open and none was named. Each button
  * relays one vow to the canonical GM (wireMilestonePickerButtons →
- * milestone.pick → src/moves/milestonePicker.js applyMilestonePick).
+ * milestone.pick → src/moves/milestonePicker.js applyMilestonePick). `marks`
+ * (a won fight's milestone count, #241) rides each choice, so the pick marks
+ * the vow that many times (issue #326 W43).
  */
-async function postMilestonePickerCard(vows, actorId) {
+async function postMilestonePickerCard(vows, actorId, marks = 1) {
+  const count = Math.max(1, Math.floor(Number(marks)) || 1);
   const rows = (vows ?? []).map(v =>
     `<button type="button" class="sf-followup-btn" data-action="sf-milestone-pick" ` +
     `data-vow-id="${escapeChatHtml(v.id ?? "")}" data-actor-id="${escapeChatHtml(actorId ?? "")}">` +
@@ -5477,13 +5482,14 @@ async function postMilestonePickerCard(vows, actorId) {
   ).join("");
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>` +
+      content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone${count > 1 ? ` (×${count})` : ""}</strong>` +
         `<p>Which vow advances?</p><div class="sf-milestone-picker">${rows}</div></div>`,
       // choices: what the GM-side "milestone.pick" handler validates a relayed
-      // click against (src/moves/milestonePicker.js applyMilestonePick).
+      // click against, and the marks it applies (src/moves/milestonePicker.js
+      // applyMilestonePick).
       flags:   { [MODULE_ID]: {
         milestonePicker: true, resolved: false,
-        choices: (vows ?? []).map(v => ({ vowId: v.id ?? "", actorId: actorId ?? "" })),
+        choices: (vows ?? []).map(v => ({ vowId: v.id ?? "", actorId: actorId ?? "", marks: count })),
       } },
     });
   } catch (err) {

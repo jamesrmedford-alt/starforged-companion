@@ -51,7 +51,8 @@ export async function postReachMilestoneCard(vow, ticks) {
 /**
  * gmRelay handler for "milestone.pick" — runs on the canonical GM.
  *
- * Marks the picked vow by its rank's milestone ticks, posts the result card,
+ * Marks the picked vow by its rank's milestone ticks (times the choice's
+ * `marks` — a won fight's ×N, issue #326 W43), posts the result card,
  * and stamps the picker card `resolved` so it can never fire twice. Idempotent:
  * a card that is already resolved (or currently being resolved) is a no-op.
  *
@@ -79,7 +80,8 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
     return { marked: false, reason: "already-resolved" };
   }
   const offered = milestonePickerChoices(message);
-  if (!offered.some(c => c.vowId === vowId && (c.actorId || null) === actorId)) {
+  const choice  = offered.find(c => c.vowId === vowId && (c.actorId || null) === actorId);
+  if (!choice) {
     console.warn(`${MODULE_ID} | milestone pick: vow ${vowId ?? "?"} / actor ${actorId ?? "?"} is not a choice on picker card ${messageId} — refused.`);
     return { marked: false, reason: "not-on-card" };
   }
@@ -100,7 +102,9 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
 
     let result;
     if (actor && vow) {
-      const ticks = milestoneTicks(vow.rank);
+      // A won fight's ×N milestone rides the choice (issue #326 W43); a plain
+      // Reach a Milestone's picker marks once.
+      const ticks = milestoneTicks(vow.rank) * choice.marks;
       await markVowProgress(actor, vow.id, ticks);
       await postReachMilestoneCard(vow, ticks);
       result = { marked: true, ticks };
@@ -118,20 +122,22 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
 }
 
 /**
- * The (vowId, actorId) pairs a picker card offers: the structured
- * `flags.choices` stamped by postMilestonePickerCard (src/index.js), or — for
- * a card posted before that flag existed — its buttons' data attributes.
+ * The (vowId, actorId) pairs a picker card offers, with the marks each
+ * applies: the structured `flags.choices` stamped by postMilestonePickerCard
+ * (src/index.js), or — for a card posted before that flag existed — its
+ * buttons' data attributes (one mark).
  *
  * @param {ChatMessage} message
- * @returns {Array<{ vowId: string, actorId: string }>}
+ * @returns {Array<{ vowId: string, actorId: string, marks: number }>}
  */
 function milestonePickerChoices(message) {
   const stamped = message?.flags?.[MODULE_ID]?.choices;
+  const marksOf = (c) => Math.max(1, Math.floor(Number(c?.marks)) || 1);
   if (Array.isArray(stamped)) {
-    return stamped.map(c => ({ vowId: String(c?.vowId ?? ""), actorId: String(c?.actorId ?? "") }));
+    return stamped.map(c => ({ vowId: String(c?.vowId ?? ""), actorId: String(c?.actorId ?? ""), marks: marksOf(c) }));
   }
   return parseCardButtons(message?.content, "sf-milestone-pick")
-    .map(b => ({ vowId: b.vowId ?? "", actorId: b.actorId ?? "" }));
+    .map(b => ({ vowId: b.vowId ?? "", actorId: b.actorId ?? "", marks: 1 }));
 }
 
 function escapeHtml(s) {
