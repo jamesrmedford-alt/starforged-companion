@@ -89,7 +89,7 @@ import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPla
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
 import { openSectorCreator } from "./sectors/sectorPanel.js";
-import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths } from "./truths/generator.js";
+import { openSystemTruthsDialog, generateLoreRecap, recordSystemTruths, reconcileSystemTruths, holdsTruths } from "./truths/generator.js";
 
 import {
   openProgressTracks,
@@ -7650,8 +7650,8 @@ onChatMessageRender((message, root) => {
  * worldTruthsJournalId unset. This hook closes that gap by capturing the ID
  * at journal creation time regardless of future page content.
  *
- * worldTruthsSet remains controlled by createJournalEntryPage and still
- * requires ≥2 <h2> elements.
+ * worldTruthsSet remains controlled by createJournalEntryPage, which records
+ * a page that holds at least one truth (holdsTruths).
  */
 Hooks.on("createJournalEntry", async (entry) => {
   if (!isCanonicalGM()) return;   // single emitter for the campaignState write
@@ -7681,7 +7681,7 @@ Hooks.on("createJournalEntry", async (entry) => {
  *
  * The system journal name matches i18n key IRONSWORN.JOURNALENTRYPAGES.TypeTruth
  * ("Setting Truths" in English). No module flags are written on either document.
- * Content has ≥2 <h2> elements — one per truth category saved.
+ * Content has one <h2> per truth category saved — one is enough (holdsTruths).
  *
  * Every save counts, not only the first: each Save in the dialog creates a NEW
  * journal, and the newest is the campaign's truths. `worldTruthsJournalId` used
@@ -7707,9 +7707,11 @@ Hooks.on("createJournalEntryPage", async (page) => {
   const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
   if (!systemTitle || entry.name !== systemTitle) return;
 
-  // Content must have ≥2 <h2> elements — a real truths journal has up to 14
+  // The page must hold at least one truth — one category saved is a save
+  // (an `<h2>` with a truth under it); it wanted two `<h2>`, so a one-truth
+  // save never reached the narrator (issue #325 W35).
   const content = page.text?.content ?? "";
-  if ((content.match(/<h2/gi) ?? []).length < 2) return;
+  if (!holdsTruths(content)) return;
 
   const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
   if (campaignState.worldTruthsSet && campaignState.worldTruthsJournalId === entry.id) return; // Already recorded

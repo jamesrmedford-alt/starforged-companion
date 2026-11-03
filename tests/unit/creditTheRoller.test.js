@@ -113,8 +113,12 @@ describe('across a booted table', () => {
   });
 
   describe('world-truths journal hooks — one writer however many GMs see the journal', () => {
+    // Each category holds a truth: a heading with nothing under it is no save
+    // (holdsTruths — issue #325 W35).
     const truthsPage = () => ({
-      type: 'text', flags: {}, text: { content: '<h2>Cataclysm</h2><h2>Exodus</h2>' },
+      type: 'text', flags: {},
+      text: { content: '<h2>Cataclysm</h2><p><strong>We escaped the ravages of a catastrophic war.</strong></p>'
+        + '<h2>Exodus</h2><p><strong>Millennia ago, in a desperate gambit, our ancestors launched the great ships.</strong></p>' },
       parent: { id: 'j-truths', name: 'Setting Truths', flags: {} },
     });
 
