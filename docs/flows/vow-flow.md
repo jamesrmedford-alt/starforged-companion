@@ -35,7 +35,7 @@ Terminology up front, because it drives every gap below:
   can't (see gaps) — effectively dormant.
 - **Matching:** creation, shared-sync, reward-set, and connection-link key
   on the **`vowId` flag**; fulfilment completion and payoff resolve through
-  `resolveVowItemCopies` — a name ladder (exact → substring → sole-open) that
+  `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
   then collects every copy by `vowId`. (The old exact-name-only payoff
   matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The
   sole-open rung is only for a name that matches nothing: it never applies
@@ -183,7 +183,7 @@ journal track only as fallback) — see `decisions.md` "Progress-move scores
 come from module data". The vow scored is `selectFulfilVow`'s
 (`src/moves/milestone.js`; issue #321 U02): a picked copy by id (that open
 copy, else nothing); else a name — the roller's own vow first, then anyone's,
-exact then substring; else one vow per `vowId`, the roller's own open vows
+exact then whole words ("Kade is avenged" never scores "Ade" — issue #325 W30); else one vow per `vowId`, the roller's own open vows
 first (a shared vow counts once, scored on the roller's copy). `readVows`
 carries each copy's `vowId`, and enrichment takes the roller
 (`rollerActorId`). A Fulfill Your Vow that names no vow while several
@@ -212,7 +212,7 @@ promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,
 weak = reduced/with-a-string, miss = lost; one-time via `reward.status`).
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
-exact → substring ladder, preferring the roller's, then collects **every**
+exact → whole-word substring ladder, preferring the roller's, then collects **every**
 PC's copy (by `vowId`, else name) — so the reward lands on the **roller's
 copy** when they hold one, else on the PC holding the promised reward (it
 used to collect only the first PC's copy, so a shared vow's reward went to

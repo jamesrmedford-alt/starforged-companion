@@ -16,6 +16,7 @@
  */
 
 import { rankTicks, rankName } from "../schemas.js";
+import { wholeWordsFit } from "../context/relevanceResolver.js";
 
 /**
  * Number of milestone marks a won challenge contributes to a track it's linked
@@ -62,7 +63,8 @@ export function milestoneTicks(rank) {
 
 /**
  * Select the target vow for a Reach a Milestone.
- * Priority: exact name → substring (either direction) → sole open vow → null
+ * Priority: exact name → whole words of one inside the other (either
+ * direction) → sole open vow → null
  * (ambiguous: more than one open vow and no name match).
  *
  * @param {Array<{id,name,rank,completed}>} vows  — readVows() output
@@ -100,8 +102,8 @@ export function namesCompletedVow(vows, target) {
  *
  *   1. `itemId` — the copy a "Which vow?" pick named: that open copy, else
  *      nothing (it was fulfilled or deleted meanwhile), never another.
- *   2. A name — the roller's own vow first, then anyone's: exact, then a
- *      substring either way.
+ *   2. A name — the roller's own vow first, then anyone's: exact, then one
+ *      inside the other as whole words, either way.
  *   3. Otherwise one vow per `vowId` (a vow not yet stamped counts as itself):
  *      the roller's own open vows first — one is the vow, several are the
  *      choices — then everyone's. A shared vow is scored on the roller's copy
@@ -133,15 +135,16 @@ export function selectFulfilVow(vows, target, { itemId = null, rollerActorId = n
   return { vow: null, choices: [] };
 }
 
-/** The vow `target` names: exact (case-insensitive), then a substring either way. */
+/**
+ * The vow `target` names: exact (case-insensitive), then one inside the other
+ * as whole words, either way — "Kade is avenged" never names the vow "Ade"
+ * (issue #325 W30).
+ */
 function vowByName(vows, target) {
   const lo = String(target ?? "").toLowerCase().trim();
   if (!lo) return null;
   return vows.find(v => (v.name ?? "").toLowerCase() === lo)
-    ?? vows.find(v => {
-      const n = (v.name ?? "").toLowerCase();
-      return n && (n.includes(lo) || lo.includes(n));
-    })
+    ?? vows.find(v => wholeWordsFit((v.name ?? "").toLowerCase(), lo))
     ?? null;
 }
 

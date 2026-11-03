@@ -44,7 +44,7 @@ Two reveal paths, both funnelling through `revealSectorSite`
 
 1. **Finishing an expedition** whose track was stamped with a `siteId` FK at
    creation (`requireLabelMatch` — no guessing) or whose label fuzzy-matches
-   (`selectSectorSite`: exact → substring → type-keyword-when-unique →
+   (`selectSectorSite`: exact → whole-word substring → type-keyword-when-unique →
    sole-undiscovered, each rung over every sector before the next — issue
    #300 F07 — the active sector first on every rung, since generated names
    repeat across sectors — issue #321 U48). The link, or an exact name,

@@ -87,7 +87,8 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
 
 - **`develop_your_relationship` / `test_your_relationship`** (GM-gated
   pipeline branch): `selectConnection` (a picker's host id → exact →
-  substring → sole-bonded → sole-active) + `planDevelopRelationship` —
+  one name inside the other as whole words, either way — "Lorenzo" is not Ren,
+  issue #325 W30 → sole-bonded → sole-active) + `planDevelopRelationship` —
   **un-bonded** → one rank-step of
   `relationshipTicks` on the record (`markRelationshipProgress`, cap 40);
   **bonded** → the roll is +rank: `enrichBondedDevelop` (statEnrichment.js)
@@ -105,8 +106,12 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   connection's rank (`nextRank`, never past epic), mirrored onto the bond
   Items by the record's `_id` (`setBondItemRank` — Q04). Ambiguous target (several active, none named)
   silently no-ops. `selectConnection`'s `strict` option is for an
-  irreversible write (`!sever`): a name that matches no connection exactly or
-  by substring resolves nothing, and an unnamed target resolves only when
+  irreversible write (`!sever`): a name resolves the connection it names
+  exactly, else the one connection whose name holds it as whole words (the
+  typed name a fragment OF the record's name — `!sever Lyssa Chen` severed
+  "Chen"; a fragment that fits two severed the first: now neither, and the GM
+  is told which it fits — `connectionsNamedByFragment`, issue #325 W30);
+  anything else resolves nothing, and an unnamed target resolves only when
   exactly one connection is active — never the sole-bonded fallback (issue
   #321 U14).
 - **`!bond [rank] [name]`** — the bonded develop roll
@@ -263,7 +268,8 @@ summary lives in the `known-issues.md` table and the code.
 - ~~No severance flow / dead flag togglers~~ — **addressed**: new GM
   **`!sever <name>`** command routes through `loseConnection` (record kept
   inactive, history entry, table card). It resolves strictly
-  (`selectConnection(…, { strict: true })`: exact or substring name; bare
+  (`selectConnection(…, { strict: true })`: exact name, or a whole-word
+  fragment of exactly one connection's name — issue #325 W30; bare
   only while one connection is active) — a misspelled name, or a bare
   `!sever` with several active, severed the table's sole bonded connection
   (issue #321 U14). The uncalled `setAllyFlag` /

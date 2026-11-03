@@ -122,7 +122,7 @@ import {
   registerCombatTrackerHooks,
   registerCombatTrackerSettings,
 } from "./moves/combatTracker.js";
-import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
+import { selectConnection, connectionsNamedByFragment, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
 import { handleBondCommand } from "./moves/bondCommand.js";
 import { postReachMilestoneCard } from "./moves/milestonePicker.js";
 import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank, selectFulfilVow, namesCompletedVow } from "./moves/milestone.js";
@@ -169,7 +169,7 @@ import {
 } from "./ui/companionToolbar.js";
 import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
-import { resolveRelevance } from "./context/relevanceResolver.js";
+import { resolveRelevance, wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, SESSION_MINT_FIELDS } from "./session/lifecycle.js";
@@ -4529,12 +4529,13 @@ function rollerVowEntry(all, lo, { actorId = null, itemId = null } = {}) {
 }
 
 // Name-ladder score of a vow entry against a lowercased target: 2 exact,
-// 1 substring (either way), 0 no match.
+// 1 one inside the other as whole words, either way (issue #325 W30), 0 no
+// match.
 function vowNameMatch(entry, lo) {
   const n = (entry.item.name ?? "").trim().toLowerCase();
   if (!n || !lo) return 0;
   if (n === lo) return 2;
-  return (n.includes(lo) || lo.includes(n)) ? 1 : 0;
+  return wholeWordsFit(n, lo) ? 1 : 0;
 }
 
 // Every PC's vow Items, as { actor, item } entries (completed ones included).
@@ -5875,11 +5876,15 @@ async function handleSeverCommand(message) {
     .filter(Boolean);
   // Strict: a severance is permanent, so a name that matches nobody severs
   // nobody, and a bare `!sever` acts only when one connection is active —
-  // never the develop ladder's sole-bonded guess (issue #321 U14).
+  // never the develop ladder's sole-bonded guess (issue #321 U14). The typed
+  // name is a whole-word fragment OF the connection's name, and a fragment
+  // that fits several severs none of them (issue #325 W30).
   const target = selectConnection(connections, arg || null, { strict: true });
   if (!target?.__hostId) {
-    ui.notifications?.warn(
-      `Starforged Companion: no active connection matched "${arg || ""}"${arg ? "" : " — name the connection (!sever <name>) when several are active"}.`);
+    const fits = arg ? connectionsNamedByFragment(connections, arg) : [];
+    ui.notifications?.warn(fits.length > 1
+      ? `Starforged Companion: "${arg}" fits ${fits.length} connections (${fits.map(c => c.name).join(", ")}) — type more of the name. Nobody was severed.`
+      : `Starforged Companion: no active connection matched "${arg || ""}"${arg ? "" : " — name the connection (!sever <name>) when several are active"}.`);
     return;
   }
   await conn.loseConnection(target.__hostId, "Severed (!sever).");

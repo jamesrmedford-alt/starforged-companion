@@ -26,6 +26,7 @@
  */
 
 import { rollOracle as defaultRollOracle } from "../oracles/roller.js";
+import { wholeWordsFit } from "../context/relevanceResolver.js";
 
 // Region base site count — lawless frontier carries more wrecks and ruins than
 // the settled core (rulebook: the Expanse is the wild edge, the Terminus the
@@ -258,7 +259,7 @@ function normalizeLabel(s) {
 /**
  * Choose the site a reveal, a clear or an expedition link targets, across
  * every stored sector. Mirrors selectExpeditionTrack's matching ladder —
- * exact name → substring (either direction) → type keyword (vault/derelict)
+ * exact name → whole words of one inside the other (either direction) → type keyword (vault/derelict)
  * when one eligible site of that type remains → the sole eligible site — but
  * runs each rung over ALL sectors before the next, weaker one, so a guess in
  * an earlier sector can never preempt an exact match in a later one (issue
@@ -316,10 +317,7 @@ export function selectSectorSite(sectors, label, {
       if (scope.length) return scope.find(c => eligible(c.site)) ?? null;
     }
 
-    const contains = (c) => {
-      const n = normalizeLabel(c.site.name);
-      return n && (n.includes(want) || want.includes(n));
-    };
+    const contains = (c) => wholeWordsFit(normalizeLabel(c.site.name), want);
     for (const scope of [inActive(candidates), candidates]) {
       const sub = scope.find(contains);
       if (sub) return sub;

@@ -488,3 +488,21 @@ function escapeRegExp(s) {
 export function wholeWordPattern(token, flags = "i") {
   return new RegExp(`(?<![\\p{L}\\p{N}_])${escapeRegExp(String(token ?? ""))}(?![\\p{L}\\p{N}_])`, `${flags}u`);
 }
+
+/**
+ * The selection ladders' substring rung: one name inside the other, as whole
+ * words, either way — "Captain Ren" and Ren fit each other; "Lorenzo" and Ren
+ * do not, nor "Kade is avenged" and the vow "Ade". Raw containment matched a
+ * short name inside another word, so the move landed on the wrong connection,
+ * vow, fight or expedition (issue #325 W30).
+ *
+ * @param {string} a
+ * @param {string} b
+ * @returns {boolean}
+ */
+export function wholeWordsFit(a, b) {
+  const x = String(a ?? "").trim();
+  const y = String(b ?? "").trim();
+  if (!x || !y) return false;
+  return wholeWordPattern(x).test(y) || wholeWordPattern(y).test(x);
+}

@@ -149,7 +149,7 @@ socket relay into `GM_ACTIONS`).
 
 `revealSectorSite` (shared by expedition-finish and `!reveal-site`):
 `selectSectorSite` picks the target — the expedition's `siteId` link first,
-then exact → substring → type-keyword vault/derelict → sole-undiscovered,
+then exact → whole-word substring → type-keyword vault/derelict → sole-undiscovered,
 each rung over every sector before the next (the guesses only when
 unambiguous: an earlier sector's sole site used to preempt a later sector's
 exact match, issue #300 F07), the active sector first on every rung

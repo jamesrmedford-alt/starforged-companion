@@ -19,6 +19,8 @@
  *         decisions.md → "Develop Your Relationship bond legacy".
  */
 
+import { wholeWordPattern, wholeWordsFit } from "../context/relevanceResolver.js";
+
 export const CONNECTION_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"];
 
 // Move categories where a "Develop Relationship / Forge a Bond" suggestion is shown
@@ -138,7 +140,8 @@ export function nextRank(rank) {
  *     matches no active connection resolves nothing rather than a guess
  *     (rules/reachability.md §6 — issue #301 B01)
  *  1. Exact name match (case-insensitive, ignoring a leading "the")
- *  2. Substring match in either direction
+ *  2. One name inside the other, as whole words, either way (`wholeWordsFit`:
+ *     "Captain Ren" is Ren; "Lorenzo" is not — issue #325 W30)
  *  3. Fallback: the sole bonded connection, else the sole active connection —
  *     with `unbonded` (Forge a Bond), the sole un-bonded one instead: a bonded
  *     connection is never what a forge with no matching target meant
@@ -148,6 +151,10 @@ export function nextRank(rank) {
  * matches no name resolves nothing, and an unnamed one resolves only the sole
  * active connection — never the sole bonded one among several. A typo must
  * not land on the table's one bond (rules/reachability.md §6 — issue #321 U14).
+ * Its rung 2 is one way: the typed name a whole-word fragment OF one
+ * connection's name (`connectionsNamedByFragment`) — `!sever Lyssa Chen`
+ * severed the connection named "Chen", and a fragment that fits two
+ * connections severed the first (issue #325 W30).
  *
  * @param {Array<{_id,name,rank,bonded,active,__hostId}>} connections
  * @param {string|null} target — interpretation.moveTarget (the named connection)
@@ -163,15 +170,15 @@ export function selectConnection(connections, target, { hostId = null, unbonded 
   }
 
   if (target) {
-    const norm = s => String(s ?? "").toLowerCase().replace(/^the\s+/, "").trim();
-    const needle = norm(target);
+    const needle = normConnectionName(target);
     if (needle) {
-      const exact = active.find(c => norm(c.name) === needle);
+      const exact = active.find(c => normConnectionName(c.name) === needle);
       if (exact) return exact;
-      const sub = active.find(c => {
-        const n = norm(c.name);
-        return n && (n.includes(needle) || needle.includes(n));
-      });
+      if (strict) {
+        const fits = connectionsNamedByFragment(active, needle);
+        return fits.length === 1 ? fits[0] : null;
+      }
+      const sub = active.find(c => wholeWordsFit(normConnectionName(c.name), needle));
       if (sub) return sub;
     }
   }
@@ -187,6 +194,29 @@ export function selectConnection(connections, target, { hostId = null, unbonded 
   const bonded = active.filter(c => c.bonded);
   if (bonded.length === 1) return bonded[0];
   return active.length === 1 ? active[0] : null;
+}
+
+/** A connection name as the ladder compares it: lowercased, a leading "the" dropped. */
+function normConnectionName(s) {
+  return String(s ?? "").toLowerCase().replace(/^the\s+/, "").trim();
+}
+
+/**
+ * The active connections whose names hold `fragment` as whole words — the
+ * typed name a fragment OF the record's name, never the other way ("Lyssa"
+ * and "Lyssa Chen" name "Dr. Lyssa Chen"; neither names "Chen"). `!sever`'s
+ * rung: one fit is the connection, two or more sever nobody, and the command
+ * names them (issue #325 W30).
+ *
+ * @param {Array<{name, active?}>} connections
+ * @param {string|null} fragment
+ * @returns {Array<object>}
+ */
+export function connectionsNamedByFragment(connections, fragment) {
+  const needle = normConnectionName(fragment);
+  if (!needle) return [];
+  const pattern = wholeWordPattern(needle);
+  return (connections ?? []).filter(c => c && c.active !== false && pattern.test(normConnectionName(c.name)));
 }
 
 /**
