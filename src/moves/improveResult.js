@@ -357,7 +357,7 @@ async function handleImproveClick(message, { narrate, persist, applyEffects }) {
   await reportUpgradeFailures(actor, failures);
 
   // The pre-improvement prose is now stale — strike it through, keep history.
-  await supersedeOriginalNarration(improve).catch(err =>
+  await supersedeOriginalNarration(improve, { kind: "improve" }).catch(err =>
     console.warn(`${MODULE_ID} | improveResult: superseding original narration failed:`, err));
 
   // The improving PC is the card's actor, not the first PC (credit the roller).

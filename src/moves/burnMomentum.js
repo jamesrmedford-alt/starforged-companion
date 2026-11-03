@@ -656,11 +656,14 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
  * Find the narration card posted for this resolution and mark it superseded
  * (F13a). The burn changed the outcome, so the original prose no longer matches;
  * we strike it through and add a note rather than deleting it. No-op when the
- * card can't be found (e.g. narration was disabled).
+ * card can't be found (e.g. narration was disabled). Improve Result supersedes
+ * the narration the same way, with its own note (`kind: "improve"` — the
+ * fixed burn note told the table momentum was burned, issue #326 W57).
  *
- * @param {Object} burn  the burn flag blob (carries resolutionId)
+ * @param {Object} burn  the burn (or improve) flag blob (carries resolutionId)
+ * @param {{ kind?: "burn"|"improve" }} [opts]
  */
-export async function supersedeOriginalNarration(burn) {
+export async function supersedeOriginalNarration(burn, { kind = "burn" } = {}) {
   const resolutionId = burn?.resolutionId;
   if (!resolutionId) return;
   const messages = globalThis.game?.messages?.contents ?? [];
@@ -673,22 +676,34 @@ export async function supersedeOriginalNarration(burn) {
   if (!card) return;
   await card.update({
     [`flags.${MODULE_ID}.burnSuperseded`]: true,
-    content: buildSupersededNarrationContent(card.content),
+    content: buildSupersededNarrationContent(card.content, kind),
   });
 }
 
+/** The note on a superseded narration, by what upgraded the outcome. */
+const SUPERSEDED_NOTES = {
+  burn:    "Superseded — momentum was burned to upgrade this outcome. See the updated narration below.",
+  improve: "Superseded — the result was improved. See the updated narration below.",
+};
+
 /**
- * Wrap a narration card's prose in a struck-through, dimmed block with a
- * "superseded by momentum burn" note. Idempotent — re-applying is a no-op.
+ * Wrap a narration card's prose in a struck-through, dimmed block with a note
+ * saying what superseded it — a momentum burn, or an Improve Result
+ * (issue #326 W57). Idempotent — re-applying is a no-op.
+ *
+ * @param {string} originalContent
+ * @param {"burn"|"improve"} [kind]
+ * @returns {string}
  */
-export function buildSupersededNarrationContent(originalContent) {
+export function buildSupersededNarrationContent(originalContent, kind = "burn") {
   const html = String(originalContent ?? "");
   if (html.includes("sf-narration-superseded")) return html;
+  const note = SUPERSEDED_NOTES[kind] ?? SUPERSEDED_NOTES.burn;
   return html.replace(
     /<div class="sf-narration-prose">([\s\S]*?)<\/div>/,
     (_full, inner) =>
       `<div class="sf-narration-prose sf-narration-superseded" style="opacity:0.55;text-decoration:line-through;"><s>${inner}</s></div>` +
-      `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">Superseded — momentum was burned to upgrade this outcome. See the updated narration below.</div>`,
+      `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">${note}</div>`,
   );
 }
 
@@ -701,11 +716,6 @@ export function buildSupersededNarrationContent(originalContent) {
 function buildBurnedCardContent(originalContent, burnResult, newConsequences, effectsNote = "") {
   const html = String(originalContent ?? "");
   const newLabel = labelForOutcome(burnResult.outcome) + (burnResult.isMatch ? " ✦ Match" : "");
-  // Strike the original outcome div and append a burned-result block.
-  const strikethrough = html.replace(
-    /<div class="sf-move-outcome">([\s\S]*?)<\/div>/,
-    (_full, inner) => `<div class="sf-move-outcome sf-move-outcome--burned"><s>${inner}</s></div>`,
-  );
   const burnNote = (
     `<div class="sf-move-burn-result">` +
       `<div class="sf-move-outcome sf-move-outcome--upgraded">🔥 Burned → ${newLabel}</div>` +
@@ -715,7 +725,20 @@ function buildBurnedCardContent(originalContent, burnResult, newConsequences, ef
       effectsNote +
     `</div>`
   );
-  return strikethrough.replace("</div>", `${burnNote}</div>`);
+  // Strike the original outcome div and put the burned-result block right
+  // after it. It was inserted before the card's FIRST `</div>` — the
+  // move-name header's — so the burned outcome rendered inside the bold
+  // title (issue #326 W57). A card with no outcome div takes it at its end.
+  let struck = false;
+  const out = html.replace(
+    /<div class="sf-move-outcome">([\s\S]*?)<\/div>/,
+    (_full, inner) => {
+      struck = true;
+      return `<div class="sf-move-outcome sf-move-outcome--burned"><s>${inner}</s></div>${burnNote}`;
+    },
+  );
+  if (struck) return out;
+  return /<\/div>\s*$/.test(html) ? html.replace(/<\/div>\s*$/, `${burnNote}</div>`) : html + burnNote;
 }
 
 
