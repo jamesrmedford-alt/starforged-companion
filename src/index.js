@@ -44,7 +44,7 @@ import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
-import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat } from "./moves/statEnrichment.js";
+import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
 import { markLegacyTrack }       from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
@@ -1109,6 +1109,10 @@ export function registerChatHook() {
         console.warn(`${MODULE_ID} | bonded develop enrichment failed:`, err?.message ?? err);
         return null;
       });
+      // Heal: the patient — an ally the care is for, or a companion — resolved
+      // before the dice; the recovery card checks and heals them, not the
+      // healer (issue #325 W04).
+      resolveHealPatient(interpretation, rollerActor, { players: getPlayerActors() });
 
       // A roll started from a track (a Progress Tracks row, an expedition
       // card, a "Which vow?" pick) names it by id. When that track was
@@ -1529,6 +1533,10 @@ export function registerChatHook() {
         vehicleActorId:  interpretation.vehicleActorId ?? null,
         companionItemId: interpretation.companionItemId ?? null,
         combatTrackId:   moveFight?.id ?? null,
+        // Heal's patient: its recovery is checked against and applied to them
+        // (issue #325 W04). Absent for every other move.
+        ...(interpretation.patientActorId ? { patientActorId: interpretation.patientActorId } : {}),
+        ...(interpretation.patientCompanionItemId ? { patientCompanionItemId: interpretation.patientCompanionItemId } : {}),
       };
       // What an upgrade of this result needs to apply the upgraded outcome's
       // other effects as this pipeline applied the original's — the move's

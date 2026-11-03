@@ -287,6 +287,20 @@ async function runSufferCall(call, actor, opts) {
       return { kind: "suffer", sufferId: call.sufferId, ...r };
     }
     case "meter": {
+      // Heal's recovery is the patient's — the ally under the roller's care,
+      // or the companion treated — never the healer's (issue #325 W04).
+      if (call.meterKey === "health" && call.delta > 0 && opts.patientCompanionItemId) {
+        const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
+        return { kind: "meter", meterKey: call.meterKey, delta: call.delta, companionItemId: opts.patientCompanionItemId,
+          ...(await applyCompanionHealthChange(actor, call.delta, { itemId: opts.patientCompanionItemId })) };
+      }
+      if (call.meterKey === "health" && call.delta > 0) {
+        const patient = await healPatientActor(opts);
+        if (patient) {
+          await applyMeterChanges(patient, { health: call.delta });
+          return { kind: "meter", meterKey: call.meterKey, delta: call.delta, actorId: patient.id };
+        }
+      }
       // A vehicle's integrity and a companion's health are no PC meters: the
       // generic write dropped them, and the card reported them applied
       // (issue #309 N02 / N03).
@@ -305,9 +319,15 @@ async function runSufferCall(call, actor, opts) {
     case "mark":
       await setDebility(actor, call.debility, true);
       return { kind: "mark", debility: call.debility };
-    case "clear-impact":
-      await setDebility(actor, call.debility, false);
-      return { kind: "clear-impact", debility: call.debility };
+    case "clear-impact": {
+      // Heal clears the patient's wound (issue #325 W04); a companion has none.
+      if (call.debility === "wounded" && opts.patientCompanionItemId) {
+        return { kind: "clear-impact", debility: call.debility, skipped: true };
+      }
+      const patient = call.debility === "wounded" ? await healPatientActor(opts) : null;
+      await setDebility(patient ?? actor, call.debility, false);
+      return { kind: "clear-impact", debility: call.debility, ...(patient ? { actorId: patient.id } : {}) };
+    }
     case "noop":
       return { kind: "noop" };
     case "combat-progress": {
@@ -406,6 +426,22 @@ async function runSufferCall(call, actor, opts) {
     default:
       return { kind: "unknown", call };
   }
+}
+
+/**
+ * The player character a Heal's care is for (`opts.patientActorId`, resolved
+ * before the dice — statEnrichment.js resolveHealPatient), or null when the
+ * roller tends their own wounds or the patient is gone. Issue #325 W04.
+ *
+ * @param {Object} opts — the card's executorOpts
+ * @returns {Promise<Actor|null>}
+ */
+async function healPatientActor(opts) {
+  const id = typeof opts?.patientActorId === "string" && opts.patientActorId ? opts.patientActorId : null;
+  if (!id) return null;
+  const { isPlayerCharacterActor } = await import("../character/actorBridge.js");
+  const actor = globalThis.game?.actors?.get?.(id) ?? null;
+  return isPlayerCharacterActor(actor) ? actor : null;
 }
 
 /**
@@ -508,7 +544,14 @@ export function isOptionAvailable(opt, ctx = {}) {
   const actor = ctx.actor;
   const debility = actor?.system?.debility ?? {};
 
-  if (req === "!wounded")    return !debility.wounded;
+  // Heal's wound is the patient's (issue #325 W04): the ally under the
+  // roller's care, or a companion, who has no impacts.
+  if (req === "wounded" || req === "!wounded") {
+    const wounded = ctx.patientCompanion ? false
+      : ctx.patient ? !!ctx.patient.system?.debility?.wounded
+      : !!debility.wounded;
+    return req === "wounded" ? wounded : !wounded;
+  }
   if (req === "!shaken")     return !debility.shaken;
   if (req === "!battered") {
     // The vehicle's own impact — its +integrity is what the option gives
@@ -517,7 +560,6 @@ export function isOptionAvailable(opt, ctx = {}) {
     return !debility.battered;
   }
   if (req === "!unprepared") return !debility.unprepared;
-  if (req === "wounded")     return !!debility.wounded;
   if (req === "shaken")      return !!debility.shaken;
   if (req === "unprepared")  return !!debility.unprepared;
 

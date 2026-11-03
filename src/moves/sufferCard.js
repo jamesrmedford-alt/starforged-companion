@@ -85,6 +85,11 @@ export function sufferMultiCap(prompt) {
  */
 function optionContext(actor, executorOpts = {}) {
   const companionHealth = readCompanionHealth(actor, executorOpts?.companionItemId ?? null) ?? 0;
+  // Heal's patient: the "wounded" options read their impacts (issue #325 W04).
+  const patientId = typeof executorOpts?.patientActorId === "string" && executorOpts.patientActorId
+    ? executorOpts.patientActorId : null;
+  const patient = patientId ? (globalThis.game?.actors?.get?.(patientId) ?? null) : null;
+  const patientCompanion = !!executorOpts?.patientCompanionItemId;
   let vehicleBattered = null;
   try {
     const vehicleId = executorOpts?.vehicleActorId
@@ -93,7 +98,7 @@ function optionContext(actor, executorOpts = {}) {
   } catch (err) {
     console.debug(`${MODULE_ID} | sufferCard: vehicle lookup failed:`, err?.message ?? err);
   }
-  return { actor, companionHealth, vehicleBattered };
+  return { actor, companionHealth, vehicleBattered, patient, patientCompanion };
 }
 
 /**
