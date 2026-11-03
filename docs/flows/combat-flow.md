@@ -258,7 +258,10 @@ card's roller when they hold a copy, else the PC holding the resolved vow
 (`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks) and
 **🤝 Deepen your bond** when the vow links a connection
-(`deepenLinkedConnection`, scaled by the vow's rank). It then grants the
+(`deepenLinkedConnection`, scaled by the vow's rank). Once the card's vow is
+fulfilled its milestone and 🏁 are retired on every client and render
+(`wireFightVowButtons` → `linkedVowCompleted`), and a press that reaches the
+GM marks nothing (issue #325 W29). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
 one-time (`reward.status` flips from "promised" — written first, as the

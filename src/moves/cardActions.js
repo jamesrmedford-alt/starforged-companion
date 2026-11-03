@@ -824,6 +824,9 @@ export async function applyFightVowMarkMilestone(payload = {}, ctx = {}) {
   return applyFightVowAction("markMilestone", payload, ctx, async (f) => {
     const { markLinkedVowMilestone } = await import("../index.js");
     const res = await markLinkedVowMilestone(f.vowName ?? null, f.marks, typeof f.actorId === "string" ? f.actorId : null);
+    // The card's vow is fulfilled: nothing to mark — no failure card, and no
+    // other vow marked in its place (issue #325 W29).
+    if (res?.reason === "vow-completed") return false;
     return { ...res, step: "milestone", marks: f.marks ?? 1 };
   });
 }

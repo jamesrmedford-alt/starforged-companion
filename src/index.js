@@ -125,7 +125,7 @@ import {
 import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
 import { handleBondCommand } from "./moves/bondCommand.js";
 import { postReachMilestoneCard } from "./moves/milestonePicker.js";
-import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank, selectFulfilVow } from "./moves/milestone.js";
+import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank, selectFulfilVow, namesCompletedVow } from "./moves/milestone.js";
 import {
   extractRiders,
   collectFiringRiders,
@@ -1000,8 +1000,15 @@ export function registerChatHook() {
       // posts the move again with that vow's copy, as the roller (issue #321
       // U02). A shared vow's copies are one vow (selectFulfilVow).
       if (interpretation.moveId === "fulfill_your_vow" && !interpretation.moveTargetId) {
-        const { vow, choices } = selectFulfilVow(await readAllVows(), interpretation.moveTarget ?? null,
+        const { vow, choices, completed } = selectFulfilVow(await readAllVows(), interpretation.moveTarget ?? null,
           { rollerActorId: rollerActor?.id ?? null });
+        // It names a vow that is already fulfilled: nothing is rolled, and no
+        // other vow is scored in its place (issue #325 W29).
+        if (!vow && completed) {
+          await postTrackGoneCard(interpretation).catch(err =>
+            console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
+          return;
+        }
         if (!vow && choices.length >= 2) {
           await postWhichVowCard({ narration, actorId: rollerActor?.id ?? null, vows: choices }).catch(err =>
             console.warn(`${MODULE_ID} | which-vow card failed:`, err?.message ?? err));
@@ -4360,6 +4367,9 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
 // @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
 export async function markLinkedVowMilestone(vowName, marks, actorId = null) {
   try {
+    // The card's vow is already fulfilled: nothing to mark, and no other vow
+    // marked in its place (issue #325 W29).
+    if (linkedVowCompleted(vowName, actorId)) return { ok: false, reason: "vow-completed" };
     const action = await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks);
     if (action === "mark" || action === "pick") return { ok: true };
     console.warn(`${MODULE_ID} | mark linked vow: no open vow "${vowName ?? "?"}" to mark — nothing marked.`);
@@ -4368,6 +4378,22 @@ export async function markLinkedVowMilestone(vowName, marks, actorId = null) {
     console.warn(`${MODULE_ID} | mark linked vow failed:`, err?.message ?? err);
     return { ok: false, reason: "refused", error: errText(err) };
   }
+}
+
+/**
+ * True when the vow a won-fight card serves is already complete — its holder's
+ * copy by name (resolveVowItemCopies prefers the roller's) is completed, and no
+ * open vow carries the name. Its card's buttons are retired (issue #325 W29).
+ *
+ * @param {string|null} vowName
+ * @param {string|null} [actorId]
+ * @returns {boolean}
+ */
+function linkedVowCompleted(vowName, actorId = null) {
+  if (!String(vowName ?? "").trim()) return false;
+  const vows = getPlayerActors().flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
+  const mine = actorId ? vows.filter(v => v.actorId === actorId) : [];
+  return namesCompletedVow(mine.length ? mine : vows, vowName);
 }
 
 /**
@@ -5263,9 +5289,19 @@ export function wireFightVowButtons(message, root) {
   const f = message?.flags?.[MODULE_ID];
   if (!f?.fightVowCard) return;
 
+  // The vow this card serves is fulfilled: its milestone and 🏁 are retired
+  // on every client and render — pressed, they acted on the PC's other vow
+  // (issue #325 W29).
+  if (linkedVowCompleted(f.vowName ?? null, typeof f.actorId === "string" ? f.actorId : null)) {
+    for (const action of ["sf-mark-milestone", "sf-fulfill-vow"]) {
+      const btn = root?.querySelector?.(`[data-action="${action}"]`);
+      if (btn) btn.disabled = true;
+    }
+  }
+
   const wireRelay = (dataAction, kind, action) => {
     const btn = root?.querySelector?.(`[data-action="${dataAction}"]`);
-    if (!btn) return;
+    if (!btn || btn.disabled) return;
     if (f.resolvedActions?.[action]) {
       btn.disabled = true;
       return;
@@ -5288,7 +5324,7 @@ export function wireFightVowButtons(message, root) {
   wireRelay("sf-deepen-bond",    "fightVow.deepenBond",    "deepenBond");
 
   const fulfilBtn = root?.querySelector?.('[data-action="sf-fulfill-vow"]');
-  if (fulfilBtn) {
+  if (fulfilBtn && !fulfilBtn.disabled) {
     const fresh = fulfilBtn.cloneNode(true);
     fulfilBtn.replaceWith(fresh);
     fresh.addEventListener("click", async (event) => {

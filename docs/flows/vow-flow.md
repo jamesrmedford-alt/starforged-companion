@@ -43,7 +43,12 @@ Terminology up front, because it drives every gap below:
   completed (fulfilling A used to resolve the one other open vow B and pay
   B's payoff). Likewise an exact name for a completed vow skips the substring
   rung, so fulfilling "Find the ship" can't resolve the open "Find the ship's
-  captain". **The roller's own vow comes first** (issue #301 B02): given the
+  captain". The milestone and fulfil ladders honour it too
+  (`selectMilestoneVow` / `planReachMilestone`, `selectFulfilVow` —
+  `namesCompletedVow`): a name matching only a completed vow marks nothing,
+  and a Fulfill Your Vow naming it is not rolled (the "not rolled" card) —
+  a won fight's card for a fulfilled vow marked, or scored and paid, the
+  PC's other vow (issue #325 W29). **The roller's own vow comes first** (issue #301 B02): given the
   roll's `itemId` (the Item it scored) and/or `actorId` (the roller), the
   resolver takes that Item, else the roller's own exact-name vow (open, then
   completed), before the global ladder — two PCs' *independent* vows can

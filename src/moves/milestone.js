@@ -70,21 +70,24 @@ export function milestoneTicks(rank) {
  * @returns {object|null}
  */
 export function selectMilestoneVow(vows, target) {
-  const open = (vows ?? []).filter(v => v && !v.completed);
+  const all  = (vows ?? []).filter(Boolean);
+  const open = all.filter(v => !v.completed);
   if (!open.length) return null;
-  if (target) {
-    const lo = String(target).toLowerCase().trim();
-    if (lo) {
-      const exact = open.find(v => (v.name ?? "").toLowerCase() === lo);
-      if (exact) return exact;
-      const sub = open.find(v => {
-        const n = (v.name ?? "").toLowerCase();
-        return n && (n.includes(lo) || lo.includes(n));
-      });
-      if (sub) return sub;
-    }
-  }
+  const named = vowByName(open, target);
+  if (named) return named;
+  // A name that matches a completed vow resolves nothing — never the sole
+  // open vow (decisions.md "Vow payoffs resolve vowId-first"): a won fight's
+  // card for a fulfilled vow marked the PC's other vow (issue #325 W29).
+  if (namesCompletedVow(all, target)) return null;
   return open.length === 1 ? open[0] : null;
+}
+
+/** True when `target` names a completed vow among `vows` and no open one. */
+export function namesCompletedVow(vows, target) {
+  const all = (vows ?? []).filter(Boolean);
+  if (!String(target ?? "").trim()) return false;
+  return !vowByName(all.filter(v => !v.completed), target)
+    && !!vowByName(all.filter(v => v.completed), target);
 }
 
 /**
@@ -117,6 +120,10 @@ export function selectFulfilVow(vows, target, { itemId = null, rollerActorId = n
 
   const named = vowByName(mine, target) ?? vowByName(open, target);
   if (named) return { vow: named, choices: [] };
+  // A name that matches a completed vow scores nothing and offers nothing —
+  // the won-fight card's 🏁 for a fulfilled vow scored, completed and paid
+  // the PC's other vow (issue #325 W29).
+  if (namesCompletedVow(vows, target)) return { vow: null, choices: [], completed: true };
 
   for (const pool of [mine, open]) {
     const distinct = distinctVows(pool, rollerActorId);
@@ -160,6 +167,7 @@ function distinctVows(vows, rollerActorId) {
  */
 export function planReachMilestone(vows, target) {
   const open = (vows ?? []).filter(v => v && !v.completed);
+  if (namesCompletedVow(vows, target)) return { action: "none", reason: "completed" };
   if (!open.length) return { action: "none" };
   const selected = selectMilestoneVow(open, target);
   if (selected) return { action: "mark", vow: selected, ticks: milestoneTicks(selected.rank) };
