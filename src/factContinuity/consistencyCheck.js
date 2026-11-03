@@ -26,6 +26,7 @@ import { applyStateTransition } from '../entities/entityExtractor.js';
 import { logConsistencyDecision } from '../pacing/telemetry.js';
 import { getPlayerActors, readCharacterSnapshot } from '../character/actorBridge.js';
 import { getConnection } from '../entities/connection.js';
+import { resolveEntityById } from '../entities/registry.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -122,7 +123,10 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
         name:             c.subject ?? '(unknown)',
         newValue:         c.evidence ?? '',
         summary:          c.violated ?? '',
-        truthId:          c.truthId  ?? null,
+        // The truth the catch names, found in the scene's ledger: the audit
+        // never returned an id, so the review card's flag was always null and
+        // the Retract dialog could not point at the fact (issue #326 W63).
+        truthId:          c.truthId ?? resolveContradictedTruthId(c, campaignState),
         matchedEntityIds: options.matchedEntityIds ?? [],
       }, campaignState);
       _dispatchedContradictions.add(dedupKey);
@@ -236,6 +240,53 @@ export function parseAuditResponse(rawText) {
       truthId:    typeof c.truthId    === 'string' ? c.truthId.trim()    : null,
     }))
     .filter(c => c.subject && c.violated);
+}
+
+/**
+ * The id of the active scene's truth a contradiction names, or null. The
+ * audit returns the violated fact as it read it in the ledger block —
+ * "walks with a limp", or the whole line "Vance — walks with a limp" — so
+ * a live truth matches when its fact (or its line) is the violated text, or
+ * the violated text holds its fact; several matches keep those whose subject
+ * is the catch's, and anything still ambiguous names none.
+ *
+ * @param {{ kind?: string, subject?: string, violated?: string }} contradiction
+ * @param {Object} campaignState
+ * @returns {string|null}
+ */
+export function resolveContradictedTruthId(contradiction, campaignState) {
+  if ((contradiction?.kind ?? 'truth') !== 'truth') return null;
+  const norm = (v) => String(v ?? '').trim().toLowerCase().replace(/\s+/g, ' ').replace(/[.!]+$/, '');
+  const violated = norm(contradiction?.violated);
+  if (!violated) return null;
+  const live = (Array.isArray(campaignState?.sceneTruths) ? campaignState.sceneTruths : [])
+    .filter(t => t?.id && !t.retracted && norm(t.fact));
+  const exact = live.filter(t => norm(t.fact) === violated || `${norm(truthSubjectLabel(t.subject))} — ${norm(t.fact)}` === violated);
+  let candidates = exact.length ? exact : live.filter(t => violated.includes(norm(t.fact)));
+  if (candidates.length > 1) {
+    const subject = norm(contradiction?.subject);
+    const bySubject = candidates.filter(t => norm(truthSubjectLabel(t.subject)) === subject);
+    if (bySubject.length) candidates = bySubject;
+  }
+  return candidates.length === 1 ? candidates[0].id : null;
+}
+
+/** A truth subject's label, as the ledger block prints it. */
+function truthSubjectLabel(subject) {
+  switch (subject?.kind) {
+    case 'entity': {
+      try {
+        const name = resolveEntityById(subject.entityId)?.data?.name;
+        if (typeof name === 'string' && name.trim()) return name.trim();
+      } catch (err) {
+        console.debug?.(`${MODULE_ID} | consistencyCheck: name lookup for ${subject.entityId} failed:`, err?.message ?? err);
+      }
+      return String(subject.entityId ?? '');
+    }
+    case 'scene': return 'scene';
+    case 'text':  return String(subject.text ?? '');
+    default:      return '';
+  }
 }
 
 // ---------------------------------------------------------------------------
