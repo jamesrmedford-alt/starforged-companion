@@ -6268,6 +6268,12 @@ function registerFactContinuityTests(quench) {
               setTruth({ kind: "scene", sceneId: "sc-quench-asm" },
                 "The blast door is welded shut", state,
                 { actor: "gm", isGM: true });
+              // Stored, as a sidecar's truth is: the narration reads the
+              // scene's ledgers from the store (issue #325 W05), so a truth
+              // only on this copy — beside an earlier test's stored state of
+              // the same session — never reached the block. The batch's
+              // after() restores the original state.
+              await writeCampaignState(state);
 
               const extras = await buildNarratorExtras(
                 "paced_narrative", state, { playerNarration: "" });
