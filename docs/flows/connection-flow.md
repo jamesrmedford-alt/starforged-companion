@@ -42,6 +42,12 @@ final `storeSector` write.
   `registerConnectionOnActiveCharacter`, which also creates the PC's bond
   Item — on the roller's PC: the narration's `actorId` rides
   `runPostNarrationPasses` → `runDiscoveryDetection` → `routeEntityDrafts`).
+  When it creates none, a pending draft row the move's narration names
+  (`namingText`, whole words — the detection pass leaves a pending name out)
+  is confirmed as the roller's connection (`confirmNamedPendingConnection` →
+  `confirmDraft` with the roller's `actorId`; issue #325 W23 — the card said
+  "Connection made" and nothing was made, and a later Confirm bonded the old
+  narration's PC).
 - **Entity-extraction drafts** — connections detected in any other narration
   queue on the GM-whispered "New Entities Detected" card; Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
