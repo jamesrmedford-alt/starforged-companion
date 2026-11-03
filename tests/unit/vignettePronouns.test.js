@@ -58,6 +58,14 @@ describe("selectEndSessionNPC — connection hint carries pronouns (finding R)",
     expect(npc.hint).toContain("Role: mechanic");
   });
 
+  it("carries the connection's goal — a detected NPC's narrated goal is on `goal` (issue #325 W31)", () => {
+    listConnections.mockReturnValue([
+      { name: "Mira Kade", bonded: true, pronouns: "she/her", role: "courier", goal: "pay off her debt" },
+    ]);
+    const npc = selectEndSessionNPC({});
+    expect(npc.hint).toContain("Goal: pay off her debt");
+  });
+
   it("propagates pronouns for a rank>=dangerous non-bonded connection too", () => {
     listConnections.mockReturnValue([
       { name: "Kade", bonded: false, active: true, rank: "formidable", pronouns: "he/him", role: "enforcer" },

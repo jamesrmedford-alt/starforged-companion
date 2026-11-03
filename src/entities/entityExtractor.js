@@ -559,7 +559,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           name:                      seedData.name,
           description:               seedData.description,
           role:                      seedData.role,
-          motivation:                seedData.motivation,
+          goal:                      seedData.goal,
           pronouns:                  seedData.pronouns,
           portraitSourceDescription: seedData.portraitSource,
           firstAppearance:           options.sessionId ?? "",
@@ -726,7 +726,7 @@ async function postRenameNoticeCard(applied) {
 //
 // New entities created from a detector draft (or auto-created on a
 // make_a_connection hit) carry only the detector's surface description.
-// The journal records would otherwise sit with empty role / motivation /
+// The journal records would otherwise sit with empty role / goal /
 // description and no portrait. To give the GM a minimal sketch to work
 // with, we backfill the structured fields from the Starforged oracle
 // tables and trigger a silent portrait generation. Output never goes to
@@ -740,7 +740,7 @@ async function postRenameNoticeCard(applied) {
  *
  * @param {Object} draft           — { name, description, pronouns?, role?, goal? } (detected)
  * @param {Object|null} seed       — { role, goal, firstLook, givenName }
- * @returns {{ name, description, role, motivation, portraitSource }}
+ * @returns {{ name, description, role, goal, pronouns, portraitSource }}
  */
 export function buildConnectionSeedData(draft, seed) {
   const s = seed ?? {};
@@ -759,12 +759,14 @@ export function buildConnectionSeedData(draft, seed) {
   if (s.role)      portraitParts.push(`role: ${s.role}`);
   // What the narration said wins over an oracle roll (issue #286 D3): the
   // confirm path rolls AFTER the narration, and a rolled role or goal the
-  // card then lists as ESTABLISHED FACTS could contradict it.
+  // card then lists as ESTABLISHED FACTS could contradict it. The goal is
+  // the record's `goal` — it went to `motivation`, so the seed found `goal`
+  // blank and rolled one beside it (issue #325 W31).
   return {
     name,
     description,
     role:           draft?.role || (s.role ?? ""),
-    motivation:     draft?.goal || (s.goal ?? ""),
+    goal:           draft?.goal || (s.goal ?? ""),
     // Pronouns the narration established (detector capture) — with these on
     // the record, seedConnectionActor keeps them instead of rolling a random
     // set against the fiction (CHAR-NPC-PRONOUN-ROLL-BLIND).
@@ -1767,7 +1769,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
         name:                      seedData.name,
         description:               seedData.description,
         role:                      seedData.role,
-        motivation:                seedData.motivation,
+        goal:                      seedData.goal,
         pronouns:                  seedData.pronouns,
         portraitSourceDescription: seedData.portraitSource,
       }, campaignState);

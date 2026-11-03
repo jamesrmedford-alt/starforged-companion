@@ -304,8 +304,10 @@ export const ConnectionSchema = {
                                 // Anchors portrait prompt, entity card, seeded Notes, audio voice.
   background: "",               // Known history
   motivation: "",               // What drives them (may be blank — unknown)
-  goal: "",                     // CHARACTERS.GOAL oracle result — the driving objective
-                                // rolled at creation (sector wizard / Make a Connection).
+  goal: "",                     // The driving objective: the goal the narration gave them
+                                // (detection / the Make a Connection seed the narration was
+                                // written from — issue #325 W31), else the CHARACTERS.GOAL
+                                // oracle result (sector wizard, seedConnectionActor).
                                 // F3: rolled by sector creator and passed to createConnection
                                 // but had no schema home, so it never reached the journal body.
   secrets: "",                  // Information hidden from the player character (GM only)

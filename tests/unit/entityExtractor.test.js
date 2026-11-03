@@ -1627,7 +1627,10 @@ describe("buildConnectionSeedData", () => {
     expect(result.description).toContain("Battle-scarred captain.");
     expect(result.description).toContain("Augmented arm");
     expect(result.role).toBe("Mercenary");
-    expect(result.motivation).toBe("Settle a debt");
+    // The goal is the record's `goal` — it went to `motivation`, and the seed
+    // rolled a second goal beside it (issue #325 W31).
+    expect(result.goal).toBe("Settle a debt");
+    expect(result.motivation).toBeUndefined();
   });
 
   it("falls back to the rolled given name when the draft has no name", () => {
@@ -1654,7 +1657,7 @@ describe("buildConnectionSeedData", () => {
     );
     expect(result.name).toBe("Anon");
     expect(result.role).toBe("");
-    expect(result.motivation).toBe("");
+    expect(result.goal).toBe("");
   });
 });
 
@@ -1691,7 +1694,7 @@ describe("buildShipSeedData", () => {
 });
 
 describe("routeEntityDrafts — connection seed backfill on auto-create", () => {
-  it("seeds the auto-created connection journal with role, motivation, and oracle first-look", async () => {
+  it("seeds the auto-created connection journal with role, goal, and oracle first-look", async () => {
     const fixture = buildFullCampaignState();
     const result = await routeEntityDrafts(
       [{ type: "connection", name: "Kael", description: "scarred captain", confidence: "high" }],
@@ -1709,7 +1712,7 @@ describe("routeEntityDrafts — connection seed backfill on auto-create", () => 
     expect(result.created).toHaveLength(1);
     const rec = result.created[0].record;
     expect(rec.role).toBe("Mercenary");
-    expect(rec.motivation).toBe("Settle a debt");
+    expect(rec.goal).toBe("Settle a debt");
     expect(rec.description).toContain("scarred captain");
     expect(rec.description).toContain("Augmented arm, eyepatch");
     // portraitSourceDescription must land atomically as part of the create —

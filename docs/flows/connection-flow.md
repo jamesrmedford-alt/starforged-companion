@@ -72,6 +72,15 @@ final `storeSector` write.
   setting → `seedConnectionActor` rolls role/goal/first-look/disposition,
   writes biography/notes/pronouns, fires a silent portrait.
 
+What the narration established wins over the seed's rolls (decisions.md,
+issue #286 D3): `buildConnectionSeedData` writes the detected (or Make a
+Connection seed's) goal to the record's `goal`, and `seedConnectionActor` —
+the `createActor` hook and ✦ Finalise alike — rolls only a blank field, and
+no first look for a record that has a `description` (the narration's, or the
+creation's first look folded into it); the Characteristics and Notes show the
+description in its place. The goal went to `motivation`, so the seed rolled a
+second goal beside it and a first look over the narrated one (issue #325 W31).
+
 `registerConnectionOnActiveCharacter(record, { actorId, actors })` puts the
 bond Item on each of `actors` (the inciting vow's crew), else on `actorId`
 when it is a PC, else on the acting user's own PC (`resolveUserActorId`); it

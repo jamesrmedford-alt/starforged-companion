@@ -1962,7 +1962,7 @@ function registerConnectionPipelineTests(quench) {
 // SEED ENRICHMENT — oracle backfill into the journal entry
 //
 // Before this fix, auto-creation on make_a_connection produced a journal entry
-// with name + (possibly empty) description and nothing else — role, motivation,
+// with name + (possibly empty) description and nothing else — role, goal,
 // and the first-look details were dropped on the floor even though the
 // resolver had already rolled them. Confirm-from-draft was the same. This
 // batch asserts those fields actually land on the persisted record.
@@ -2016,7 +2016,7 @@ function registerConnectionSeedEnrichmentTests(quench) {
       afterEach(flushCleanup);
 
       describe("make_a_connection auto-create — oracle seed lands on the journal", function () {
-        it("role, motivation, and first-look details all populate on the connection record", async function () {
+        it("role, goal, and first-look details all populate on the connection record", async function () {
           // routeEntityDrafts → createConnection cascade fires across the
           // entity panel, sector overview, and (if a player actor exists)
           // bond-item registration on the active character. With prior-
@@ -2063,8 +2063,8 @@ function registerConnectionSeedEnrichmentTests(quench) {
 
           assert.equal(conn.role, "Mercenary",
             "role should be seeded from oracle character_role");
-          assert.equal(conn.motivation, "Settle a debt with the Covenant",
-            "motivation should be seeded from oracle character_goal");
+          assert.equal(conn.goal, "Settle a debt with the Covenant",
+            "goal should be seeded from oracle character_goal (issue #325 W31: not motivation)");
           assert.include(conn.description, "wiry quartermaster",
             "description should retain the detector's narration snippet");
           assert.include(conn.description, "Augmented arm",
@@ -2099,13 +2099,13 @@ function registerConnectionSeedEnrichmentTests(quench) {
           assert.equal(data.name, "Vesna",
             "missing draft name should fall back to oracle given_name");
           assert.equal(data.role, "Drifter");
-          assert.equal(data.motivation, "Find kin");
+          assert.equal(data.goal, "Find kin");
           assert.include(data.description, "Heavy coat");
         });
       });
 
       describe("Confirm-from-draft — rolls fresh oracle on click", function () {
-        it("a confirmed connection draft gets role/motivation/description from a fresh oracle roll", async function () {
+        it("a confirmed connection draft gets role/goal/description from a fresh oracle roll", async function () {
           this.timeout(20000);
 
           const { routeEntityDrafts } = await import(
@@ -2160,13 +2160,13 @@ function registerConnectionSeedEnrichmentTests(quench) {
           const actor = game.actors?.get(newIds[0]);
           const conn  = actor?.getFlag?.(MODULE, "connection") ?? actor?.flags?.[MODULE]?.connection;
           assert.isOk(conn, "confirmed connection should carry a payload");
-          // Fresh oracle rolls produce some non-empty role and motivation in
+          // Fresh oracle rolls produce some non-empty role and goal in
           // virtually all rolls — we assert at least one of the three
           // first-look-derived fields is populated to confirm the seed
-          // rolled and applied.
-          const hasSeedDetail = !!(conn.role || conn.motivation || (conn.description && conn.description.includes("First look")));
+          // rolled and applied (the goal is on `goal` — issue #325 W31).
+          const hasSeedDetail = !!(conn.role || conn.goal || (conn.description && conn.description.includes("First look")));
           assert.isTrue(hasSeedDetail,
-            "at least one oracle-seeded field (role/motivation/first-look) should be populated after Confirm");
+            "at least one oracle-seeded field (role/goal/first-look) should be populated after Confirm");
           assert.isOk(conn.portraitSourceDescription,
             "Confirm path should also set portraitSourceDescription");
         });
