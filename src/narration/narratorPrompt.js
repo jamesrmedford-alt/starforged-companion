@@ -723,7 +723,10 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['role',             'Role'],
     ['secondRole',       'Also'],
     ['rank',             'Rank'],
-    ['relationshipType', 'Disposition'],
+    // The record's rolled / established disposition (the seed, the sector
+    // generator). The card read `relationshipType`, which nothing writes, so
+    // every NPC said "neutral" beside the roster's real one (issue #325 W22).
+    ['disposition',      'Disposition'],
     ['goal',             'Goal'],
     ['motivation',       'Motivation'],
     ['description',      'Description'],

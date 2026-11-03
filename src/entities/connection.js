@@ -340,7 +340,7 @@ export function renderEntityBody(connection) {
     value ? out.push(`<p><strong>${esc(label)}:</strong> ${esc(value)}</p>`) : null;
   meta("Role", connection?.role);
   meta("Rank", connection?.rank);
-  meta("Relationship", connection?.relationshipType);
+  meta("Disposition", connection?.disposition);   // not the unwritten relationshipType (issue #325 W22)
   if (connection?.description) out.push(`<p>${esc(connection.description)}</p>`);
   meta("Goal", connection?.goal);
   if (connection?.motivation)  out.push(`<p><strong>Motivation:</strong> ${esc(connection.motivation)}</p>`);

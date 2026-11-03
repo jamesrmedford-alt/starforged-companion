@@ -276,7 +276,9 @@ export const ConnectionSchema = {
   role: "",                     // Defining role — drives the +1 bonus on related moves
   secondRole: null,             // Set if bond forged and Expand Influence chosen
   rank: "dangerous",            // RANKS — governs progress per Develop Your Relationship
-  relationshipType: "neutral",  // "ally" | "neutral" | "antagonist" | "unknown"
+  // (relationshipType — always this default "neutral", never written — is
+  // retired: the record's `disposition` is what the narrator, the pacing
+  // classifier and the journal page show; issue #325 W22.)
 
   portraitId: null,             // ArtAsset _id — populated after first Loremaster description
   portraitSourceDescription: "",// The Loremaster narration excerpt that triggered art generation

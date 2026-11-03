@@ -714,7 +714,7 @@ describe('formatEntityCard', () => {
       _id:  'conn-1',
       name: 'Sable',
       role: 'AI navigator',
-      relationshipType: 'Neutral-wary',
+      disposition: 'Neutral-wary',
       motivation: 'Unknown',
       description: 'Lean, calculating.',
       canonicalLocked: false,

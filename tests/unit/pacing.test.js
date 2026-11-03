@@ -939,16 +939,16 @@ describe('buildClassifierContext — connection names', () => {
     pacingConfig:      BASE_PACING_CFG,
   }).userMessage.split('\n').find(l => l.startsWith('Connections:'));
 
-  it('names each Actor-hosted connection with its relationship', () => {
-    const kael  = addConnectionEntity(null, { name: 'Kael Dros', relationshipType: 'ally' });
-    const sable = addConnectionEntity(null, { name: 'Sable', relationshipType: 'rival' });
+  it('names each Actor-hosted connection with its disposition', () => {
+    const kael  = addConnectionEntity(null, { name: 'Kael Dros', disposition: 'Helpful' });
+    const sable = addConnectionEntity(null, { name: 'Sable', disposition: 'Hostile' });
     expect(connectionsLine({ connectionIds: [kael.journalId, sable.journalId] }))
-      .toBe('Connections: Kael Dros (ally), Sable (rival)');
+      .toBe('Connections: Kael Dros (Helpful), Sable (Hostile)');
   });
 
   it('says the names are unavailable only when no id resolves', () => {
-    const kael = addConnectionEntity(null, { name: 'Kael Dros', relationshipType: 'ally' });
-    expect(connectionsLine({ connectionIds: [kael.journalId, 'actor-gone'] })).toBe('Connections: Kael Dros (ally)');
+    const kael = addConnectionEntity(null, { name: 'Kael Dros', disposition: 'Helpful' });
+    expect(connectionsLine({ connectionIds: [kael.journalId, 'actor-gone'] })).toBe('Connections: Kael Dros (Helpful)');
     expect(connectionsLine({ connectionIds: ['actor-gone'] })).toBe('Connections: 1 active (names unavailable)');
     expect(connectionsLine({ connectionIds: [] })).toBe('Connections: (none recorded)');
   });
