@@ -136,7 +136,8 @@ rolls nothing (a "not rolled" card). Strong hit → `finishExpedition` completes
 track and pays `legacyRewardTicks(rank)` (weak hit one rank down) onto the
 **discoveries** legacy; the finish card reports both. `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
-("docked at …"). Miss leaves the track open and posts the recommit offer
+("docked at …"); the Set a Course feedback card ("Course held cleanly (+1
+momentum)") is Set a Course's alone (issue #326 W46). Miss leaves the track open and posts the recommit offer
 (below, "Advisory-only branches"): its **🔁 Recommit** relays
 `expedition.recommit` to the canonical GM (`cardActions.applyRecommitOffer`),
 which claims the GM-authored offer card (`recommitted`) before running

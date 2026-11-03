@@ -1970,11 +1970,16 @@ async function applyOutcomeEffects({
     // "narrator says something happened, sheet shows nothing" trust
     // gap on every Set a Course. The card is informational —
     // SufferChoiceDialog handles the actual meter changes from the
-    // weak-hit choice in parallel.
-    await postSetACourseFeedbackCard(
-      moveTarget,
-      resolution,
-    ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
+    // weak-hit choice in parallel. Set a Course's only: a Finish an
+    // Expedition arrival was told "Course held cleanly (+1 momentum)" (the
+    // move grants none) or "see the suffer prompt" (it has none), beside
+    // its own "Expedition complete" card (issue #326 W46).
+    if (resolution.moveId === "set_a_course") {
+      await postSetACourseFeedbackCard(
+        moveTarget,
+        resolution,
+      ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
+    }
     applied.push(`arrived at ${moveTarget ?? "the destination"}`);
   }
 
