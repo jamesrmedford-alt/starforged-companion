@@ -18,6 +18,19 @@ import { createClock, retireClock, removeClock, clocksFingerprint } from '../clo
 import { requestGmAction } from '../multiplayer/gmRelay.js';
 import { isTrackPosition } from '../moves/combat.js';
 
+/**
+ * A track's label (or any text) for HTML: a name holding markup — a player can
+ * Add a track named with an `img` and an onerror handler — ran in every client
+ * that opened the panel, the GM's included (issue #325 W26).
+ */
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
 const MODULE_ID = 'starforged-companion';
 const JOURNAL_NAME = 'Starforged Progress Tracks';
 const FLAG_KEY = 'tracks';
@@ -303,7 +316,7 @@ export async function rollProgress(track) {
     <div class="starforged-move-card progress-roll-card">
       <div class="move-header">
         <span class="move-type">Progress Roll</span>
-        <span class="move-name">${track.label}</span>
+        <span class="move-name">${escapeHtml(track.label)}</span>
       </div>
       <div class="move-body">
         <div class="progress-roll-detail">
@@ -437,7 +450,7 @@ export class ProgressTrackApp extends ApplicationV2 {
            data-track-id="${t.id}">
         <div class="track-header">
           <div class="track-labels">
-            <span class="track-name">${t.label}</span>
+            <span class="track-name">${escapeHtml(t.label)}</span>
             <span class="track-meta">${t.typeLabel} · ${t.rankLabel}</span>
           </div>
           <div class="track-actions">
@@ -488,7 +501,7 @@ export class ProgressTrackApp extends ApplicationV2 {
           ` : ''}
           ${t.tensionClock ? `
             <span class="tension-clock-meta${t.tensionClock.triggered ? ' is-triggered' : ''}"
-                  title="Linked tension clock — advance via !clock advance &quot;${t.label}&quot;">
+                  title="Linked tension clock — advance via !clock advance &quot;${escapeHtml(t.label)}&quot;">
               Tension: ${t.tensionClock.filled}/${t.tensionClock.segments}${t.tensionClock.triggered ? ' ⚠' : ''}
             </span>
           ` : ''}
@@ -697,7 +710,7 @@ export class ProgressTrackApp extends ApplicationV2 {
 
       const confirmed = await DialogV2.confirm({
         window:  { title: 'Remove Track' },
-        content: `<p>Permanently remove <strong>${track.label}</strong>?${track.type === 'scene_challenge' && track.tensionClockId ? ' Its danger clock goes with it.' : ''} This cannot be undone.</p>`,
+        content: `<p>Permanently remove <strong>${escapeHtml(track.label)}</strong>?${track.type === 'scene_challenge' && track.tensionClockId ? ' Its danger clock goes with it.' : ''} This cannot be undone.</p>`,
       });
       if (!confirmed) return;
 

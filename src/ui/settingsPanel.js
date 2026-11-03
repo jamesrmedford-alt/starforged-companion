@@ -1089,7 +1089,7 @@ export class SettingsPanelApp extends ApplicationV2 {
           ${items.length
             ? items.map((item, i) => `
               <li class="safety-item">
-                <span class="safety-item-text">${item}</span>
+                <span class="safety-item-text">${escapeAttr(item)}</span>
                 ${ctx.isGM || addAction.includes('Private')
                   ? `<button class="settings-btn btn-remove-item" data-action="${removeAction}"
                              data-index="${i}" title="Remove">✕</button>`
