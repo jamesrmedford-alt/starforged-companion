@@ -3251,10 +3251,16 @@ export function formatActiveSector(campaignState) {
     const charted = (sector.mapData?.discoveries ?? [])
       .filter(d => d && d.discovered)
       .map(d => {
+        // The site by its location Actor's name, the record's generated one a
+        // fallback (issue #326 W75 — a renamed site had two names).
         let status = "";
-        try { status = getLocation(d.actorId)?.status ?? ""; }
-        catch (err) { console.debug?.(`${MODULE_ID} | narrator: site status read failed:`, err?.message ?? err); }
-        return `- ${d.name} (${d.type}${status ? `, ${status}` : ""})`;
+        let name = d.name;
+        try {
+          const loc = getLocation(d.actorId);
+          status = loc?.status ?? "";
+          if (typeof loc?.name === "string" && loc.name.trim()) name = loc.name.trim();
+        } catch (err) { console.debug?.(`${MODULE_ID} | narrator: site status read failed:`, err?.message ?? err); }
+        return `- ${name} (${d.type}${status ? `, ${status}` : ""})`;
       });
     if (charted.length) {
       lines.push("Charted sites (established — do not reinvent them):");

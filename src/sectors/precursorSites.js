@@ -295,6 +295,11 @@ export function selectSectorSite(sectors, label, {
   siteId = null,
   activeSectorId = null,
   requireLabelMatch = false,
+  // A site's name as the table knows it: its location Actor's, when the
+  // caller can read it (siteDiscovery.siteDisplayName) — the record keeps the
+  // generated name, so a site the GM renamed matched nothing by its new name
+  // (issue #326 W75).
+  siteName = (site) => site?.name,
 } = {}) {
   const all = [];
   for (const sector of sectors ?? []) {
@@ -313,12 +318,12 @@ export function selectSectorSite(sectors, label, {
 
   const want = normalizeLabel(label);
   if (want) {
-    const named = all.filter(c => normalizeLabel(c.site.name) === want);
+    const named = all.filter(c => normalizeLabel(siteName(c.site)) === want || normalizeLabel(c.site.name) === want);
     for (const scope of [inActive(named), named]) {
       if (scope.length) return scope.find(c => eligible(c.site)) ?? null;
     }
 
-    const contains = (c) => wholeWordsFit(normalizeLabel(c.site.name), want);
+    const contains = (c) => wholeWordsFit(normalizeLabel(siteName(c.site)), want);
     for (const scope of [inActive(candidates), candidates]) {
       const sub = scope.find(contains);
       if (sub) return sub;

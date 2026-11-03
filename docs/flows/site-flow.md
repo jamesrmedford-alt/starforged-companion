@@ -49,7 +49,10 @@ Two reveal paths, both funnelling through `revealSectorSite`
    (`selectSectorSite`: exact → whole-word substring → type-keyword-when-unique →
    sole-undiscovered, each rung over every sector before the next — issue
    #300 F07 — the active sector first on every rung, since generated names
-   repeat across sectors — issue #321 U48). The link, or an exact name,
+   repeat across sectors — issue #321 U48; a site is named by its location
+   Actor — `siteDisplayName`, the record's generated name a fallback — so a
+   site the GM renamed matches, and the narrator's Charted sites and the
+   cards name it, by its new name: issue #326 W75). The link, or an exact name,
    resolves to that site or to nothing once it no longer qualifies (charted
    / cleared), never a sibling a looser rung finds ("…II" contains "…I"); a
    link to no stored site falls back to the label. The reveal mutates the in-memory campaignState so the

@@ -20,6 +20,28 @@ import { updateLocation, getLocation } from "../entities/location.js";
 const MODULE_ID = "starforged-companion";
 
 /**
+ * A discovery record's site as the table knows it: its location Actor's
+ * record name (kept in step with the Actor by the rename sync), else the
+ * record's own — the generated name the record keeps. A site renamed by the
+ * GM was named one way on the map and another in the narrator's Charted
+ * sites and `!clear-site` (issue #326 W75).
+ *
+ * @param {{ name?: string, actorId?: string|null }} site
+ * @returns {string}
+ */
+export function siteDisplayName(site) {
+  if (site?.actorId) {
+    try {
+      const name = getLocation(site.actorId)?.name;
+      if (typeof name === "string" && name.trim()) return name.trim();
+    } catch (err) {
+      console.debug?.(`${MODULE_ID} | site name lookup for ${site.actorId} failed:`, err?.message ?? err);
+    }
+  }
+  return String(site?.name ?? "");
+}
+
+/**
  * Reveal the first undiscovered site (across all stored sectors) matching a
  * destination label. Returns the revealed { sector, site } or null when nothing
  * matched. Persists campaign state only when a site is revealed.
@@ -53,6 +75,7 @@ export async function revealSectorSite(label, opts = {}) {
   const found = selectSectorSite(state?.sectors, label, {
     siteId:         opts.siteId ?? null,
     activeSectorId: state?.activeSectorId ?? null,
+    siteName:       siteDisplayName,
   });
   if (!found) return null;
   const { sector, site: match } = found;
@@ -61,7 +84,7 @@ export async function revealSectorSite(label, opts = {}) {
   // setting, by default), and setting it in place before a refused write left
   // the site revealed on the GM's client alone — a retried !reveal-site found
   // "no matching unexplored site" (issue #326 W51; rules/foundry-api.md).
-  const revealed = { ...match, discovered: true };
+  const revealed = { ...match, discovered: true, name: siteDisplayName(match) };
 
   if (match.actorId) {
     try { await updateLoc(match.actorId, { status: "visited" }); }
@@ -144,12 +167,13 @@ export async function clearSectorSite(label, opts = {}) {
   const found = selectSectorSite(state?.sectors, label, {
     eligible:       (site) => site.discovered && !site.cleared,
     activeSectorId: state?.activeSectorId ?? null,
+    siteName:       siteDisplayName,
   });
   if (!found) return null;
   const { sector, site: record } = found;
 
   // On a copy, as revealSectorSite (issue #326 W51).
-  const cleared = { ...record, cleared: true };
+  const cleared = { ...record, cleared: true, name: siteDisplayName(record) };
   if (record.actorId) {
     try { await updateLoc(record.actorId, { status: "cleared" }); }
     catch (err) { console.warn(`${MODULE_ID} | clearSectorSite: location status update failed:`, err?.message ?? err); }
