@@ -35,6 +35,7 @@ import {
   setStateValue,
   resolveSubject,
   subjectKey,
+  findBareStrike,
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { propagateRetraction, markSummaryForRegen } from "./retractions.js";
@@ -180,11 +181,14 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
         : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
     } else if (parsed.domain === "truth") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
+      const struck  = findBareStrike(campaignState.sceneTruths, subject, String(parsed.fact ?? "").trim());
       const truth   = setTruth(subject, parsed.fact, campaignState, permCtx);
       if (truth) changed = "sceneTruths";
       resultLine = truth
-        ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em>.`
-        : `Truth not recorded — empty subject or fact.`;
+        ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em>.${struck ? " The strike on it is lifted." : ""}`
+        : (struck && !isGM)
+          ? `Truth not recorded — the GM struck that fact; only a GM can restore it.`
+          : `Truth not recorded — empty subject or fact.`;
     } else if (parsed.verb === "strike") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const ok      = strikeStateValue(subjectKey(subject), parsed.attribute, campaignState);

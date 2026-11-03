@@ -83,7 +83,9 @@ layers. This file is the never-break list.
 
 6b. **Retraction is enforced.** A bare Strike renders in the CORRECTED
    ledger block AND blocks narrator re-assertion at `applySidecar` (GM
-   `!truth set` bypasses). Do not "simplify" either half away — the render
+   `!truth set` bypasses, and lifts the strike — `correctedTo`, as a Replace
+   — so the two never render together; a player's set over a GM's strike is
+   refused, issue #326 W60). Do not "simplify" either half away — the render
    defense and the write defense cover different failure paths (model
    ignores instructions vs. model re-emits the fact). Since issue #286 (B6)
    a Strike also reaches the stores that copied the fact

@@ -477,7 +477,10 @@ ring, and the closing scene's truths keep the closing session's number.
   the 5 most recent, never dropped under budget; Replace-corrections are
   exempt — the replacement truth stands; an X-Card retraction is never named
   there, issue #321 U07). The write layer refuses narrator
-  re-assertions of retracted facts; GM `!truth set` bypasses (GM authority).
+  re-assertions of retracted facts; GM `!truth set` bypasses (GM authority) —
+  and lifts the strike it re-establishes, linking it as a Replace does, so
+  the fact is not binding and CORRECTED at once; a player's set over a GM's
+  strike is refused (issue #326 W60).
 - **A Strike reaches every copy** (issue #286 B6): `!truth strike` and the
   correction dialog's Strike / Replace — and, since issue #321 U07, the
   X-Card for each truth it retracts — call `propagateRetraction` — the

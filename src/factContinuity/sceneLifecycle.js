@@ -557,8 +557,11 @@ export function mergeSceneLedgers(working, latest) {
     const k = truthKey(t);
     seen.add(k);
     const w = mine.get(k);
-    // A retraction (narrator contradiction or `!truth` correction) is one-way.
-    return (w?.retracted && !t?.retracted) ? w : t;
+    // A retraction (narrator contradiction or `!truth` correction) is one-way,
+    // and so is the link a correction adds to it — a Replace's, or a
+    // `!truth set` re-establishing a struck fact (issue #326 W60).
+    if (w?.retracted && !t?.retracted) return w;
+    return (w?.retracted && w.correctedTo && !t?.correctedTo) ? w : t;
   });
   for (const t of workingTruths) {
     if (!seen.has(truthKey(t))) merged.push(t);

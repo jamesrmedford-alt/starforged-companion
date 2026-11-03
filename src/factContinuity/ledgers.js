@@ -542,6 +542,15 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   if (!cleanFact) return null;
   ensureLedgerShape(campaignState);
 
+  // Re-establishing a struck fact lifts the strike, as a Replace does: the
+  // prompt carried the fact as binding and under CORRECTED ("do NOT
+  // re-assert") together for the rest of the session. A player may not
+  // overturn a GM's strike — they may not strike a GM truth either (issue
+  // #326 W60).
+  const strike = findBareStrike(campaignState.sceneTruths, subjectRef, cleanFact);
+  const isGM = ctx.isGM ?? true;
+  if (strike && !isGM && (strike.retractedBy === 'gm' || strike.asserter === 'gm')) return null;
+
   const entry = {
     id:          newTruthId(),
     subject:     subjectRef,
@@ -560,7 +569,28 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
     migratedTo:  null,
   };
   campaignState.sceneTruths.push(entry);
+  if (strike) strike.correctedTo = entry.id;
   return entry;
+}
+
+/**
+ * The active scene's bare strike of this subject + fact — retracted by the
+ * table (not the X-Card, not a Replace's struck original), compared
+ * case-blind — or null. setTruth lifts it; the `!truth set` card names a
+ * player's set refused over a GM's strike.
+ *
+ * @param {Object[]} truths
+ * @param {Object} subjectRef
+ * @param {string} fact
+ * @returns {Object|null}
+ */
+export function findBareStrike(truths, subjectRef, fact) {
+  const key = subjectKey(subjectRef);
+  const lower = fact.toLowerCase();
+  return (Array.isArray(truths) ? truths : []).find(t =>
+    t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY
+    && subjectKey(t.subject) === key
+    && String(t.fact ?? '').trim().toLowerCase() === lower) ?? null;
 }
 
 /**
