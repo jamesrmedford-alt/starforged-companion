@@ -8994,24 +8994,35 @@ function registerCombatCardButtonTests(quench) {
           }
         });
 
-        it("scene challenges never bridge (no move maps to them)", async function () {
+        // Issue #326 D6: a scene challenge's roll is Finish the Scene, bridged
+        // through the pipeline mid-session like the other two types (the unit
+        // suite pins that path); pre-session it keeps the display roll.
+        it("a scene challenge maps to Finish the Scene; pre-session it keeps the display roll", async function () {
           this.timeout(15000);
           const { rollProgress, TRACK_TYPE_TO_MOVE } = await import(`${MODULE_PATH}/ui/progressTracks.js`);
-          assert.notProperty(TRACK_TYPE_TO_MOVE, "scene_challenge",
-            "scene_challenge deliberately has no pipeline move mapping");
-          const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
-          await rollProgress({
-            id: "quench-panel-scene", label: "Quench Scene Challenge",
-            type: "scene_challenge", rank: "dangerous", ticks: 12, completed: false,
-          });
-          let posted = null;
-          for (let i = 0; i < 60 && !posted; i++) {
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            posted = (game.messages?.contents ?? []).find(m =>
-              !beforeIds.has(m.id) && m?.flags?.[MODULE]?.type === "progressRoll");
+          assert.equal(TRACK_TYPE_TO_MOVE.scene_challenge, "finish_the_scene",
+            "a scene challenge's progress move is Finish the Scene");
+          const priorActive = game.settings.get(MODULE, "campaignState")?.sessionActive === true;
+          await game.settings.set(MODULE, "campaignState", { ...(game.settings.get(MODULE, "campaignState") ?? {}), sessionActive: false });
+          try {
+            const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
+            await rollProgress({
+              id: "quench-panel-scene", label: "Quench Scene Challenge",
+              type: "scene_challenge", rank: "dangerous", ticks: 12, completed: false,
+            });
+            let posted = null;
+            for (let i = 0; i < 60 && !posted; i++) {
+              await new Promise((resolve) => setTimeout(resolve, 50));
+              posted = (game.messages?.contents ?? []).find(m =>
+                !beforeIds.has(m.id) && m?.flags?.[MODULE]?.type === "progressRoll");
+            }
+            if (posted) track(posted.id);
+            assert.isOk(posted, "pre-session, the scene challenge posted the bespoke display roll");
+            assert.notProperty(posted.flags[MODULE], "forcedMoveId",
+              "no forced-move bridge fires while the session gate is closed");
+          } finally {
+            await game.settings.set(MODULE, "campaignState", { ...(game.settings.get(MODULE, "campaignState") ?? {}), sessionActive: priorActive });
           }
-          if (posted) track(posted.id);
-          assert.isOk(posted, "the scene challenge posted the bespoke display roll");
         });
       });
     },
