@@ -11,6 +11,125 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Eighth bug audit (issue #326, part 2 of 2) — all fifty fixed and the eight decisions built in the v1.7.36 cycle
+
+Found by the eighth bug audit (2026-11-03) of `39331b4`, with a probe per
+finding (`tests/probes/` on branch `claude/affectionate-lamport-20ldyw`):
+fifty low-severity findings (W38–W87) and eight that needed a decision
+(D1–D8), which the maintainer made on 2026-11-03 — each the recommended
+option (decisions.md, "Issue #326 audit"). Each fix carries
+its own regression tests, converted from the audit's probes, which fail with
+the fix taken out (`docs/testing/fix-sensitivity.md`). None has been checked
+in a live Foundry world yet. The ones to try: open a Starforged character
+sheet's Legacies tab after a vow is fulfilled, mark a legacy tick there, and
+reload (D3 — the mirror, the flow back and the backfill); press an old move
+card's 🔥 after the same character's next move (D4); roll a scene
+challenge's ⬡ Progress Roll mid-session (D6); type a move as a player with
+no character at a two-PC table (D8); a player with their own ElevenLabs key
+playing a card the GM already played (W79); and a GM's Play with no key
+(W80). Eleven of its probe files fail by design, each replaced by its
+regression tests: they pin the old behaviour as a control, or assert the
+option not taken — `continuity/correctAFactHelp` (W67 corrected the help
+rather than restoring the button), `continuity/ledgerCommandNoScene` (its
+helper starts the scene unconditionally; W59 starts it only when none is
+open), `moves/legacyXpBeforePersist` and `upgrades/bondApplyXpBeforeSave`
+(they read `system.xp`, which D3 retired), `sectors/cachedStateMutatedBeforeWrite`
+(its `!oracle-add` case expects no card; W51 posts "not saved"),
+`session/legacyXpNotOnSheet` (it awaits an XP card W52 pays only after the
+save), `ui/audioKeyedPlayerCache` (no GM answers in it; W79 asks the GM),
+`ui/audioKeylessCanonicalGm` (its control pins the 30 s wait),
+`ui/deadscanStringMentions` (its real-tree case names the deleted
+`loadEntityAssets`), `ui/langStringsConsumed` (it expects the keys read; W84
+deleted them) and `upgrades/persistResolutionDeadSteps` (its controls pin the
+retired log and step). The other four failing probe files are outside part
+2: `moves/interpreterStatOffList` (part 1's W19, failing by decision),
+`session/rewardRepromisedAfterGrant` and `upgrades/healGiveHealsHealer`
+(part 1's W11 and W04 probes, failing before this work began) and the
+excluded `sectors/sectorsRevertedByMove`.
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| W38 INTERPRETER-DISPLAY-NAME | WRONG-DETAIL | `parseInterpretation` looked the model's `moveId` up as-is, so a reply naming "Gather Information" fell back to Face Danger → an unknown id (else the `moveName`) goes through `toMoveId` |
+| W39 NOTES-HTML-IN-PROMPT | WRONG-DETAIL | A ship's or NPC's Notes HTML (portrait block, envisioned-details headings) reached ENTITIES IN SCENE verbatim → `notesAsCardText` for every card type's Notes row |
+| W40 MODE-LENGTH-CONFLICT | WRONG-DETAIL | Every narrator mode's STYLE block carried the move narration's Length beside its own count → the Length line for move and paced narration only |
+| W41 XCARD-LOSES-EARLIER-STATE | SAFETY | A state change replaced its entry in place, so retracting narration B left no value → entries keep a bounded `previous` chain; `retractNarrations` restores the newest kept value and prunes removed ones |
+| W42 XCARD-BEAT-PAST-ROLL-REPOST | SAFETY | The X-Card's beat walk passed a button's re-posted act (`bypassPacing` / `forcedMoveId`) and removed the narration before it → that message bounds the beat |
+| W43 MILESTONE-PICKER-MARKS | LOSE-STATE | A won fight's ×2 milestone that fell to the vow picker marked once → the picker's choices carry `marks`; `applyMilestonePick` multiplies |
+| W44 FINISH-VOW-SOLE-TWIN | WRONG-TARGET | `finishVow` fell to the sole open journal vow when no track carried the name → `selectVowTrack(…, { byNameOnly })`; the pipeline passes the scored vow's name |
+| W45 POSITION-TWO-FIGHTS-DROPPED | LOSE-STATE | With two fights open and no foe named, a move's position was written nowhere → `selectRollerFight`, the fight that records the roller's position |
+| W46 FINISH-EXPEDITION-COURSE-CARD | WRONG-DETAIL | The arrival branch posted the Set a Course feedback card for Finish an Expedition too → Set a Course only |
+| W47 WAYPOINT-DISCOVERY-DOUBLE-ROLL | DUPLICATE | A matched waypoint seeded its narration with a discovery / chaos roll and the button's move rolled again → the waypoint seeds the notable-aspect prompt only |
+| W48 BONDED-DEVELOP-SKIPS-NEXT-MOVE-ADD | LOSE-STATE | Take a Break's +1 and the next-move bonus were taken before `enrichBondedDevelop` made the roll an action roll → taken after it, by `rollKind` |
+| W49 ENDURE-SUBSTITUTION-DISCARDED | WRONG-DETAIL | PICK_HIGHER_OF overwrote a chosen stat substitution for Endure Harm / Stress → skipped when `statSubstitutedFrom` is set |
+| W50 MISCHIEF-ASIDE-READS-RATIONALE | WRONG-DETAIL | The aside was passed the model's rationale, not the narration → the narration |
+| W51 CACHED-STATE-COMMAND-WRITES | LOSE-STATE | Nine writers (`!pace`, `!roll`, oracle memory, `!reveal-site` / `!clear-site`, `!oracle-add` / remove, `!lore`, Take a Break's clear, `bond.apply`'s legacy) mutated the cached setting before a refusable write → each writes a copy; the commands say when the write was refused |
+| W52 LEGACY-XP-BEFORE-PERSIST | LOSE-STATE | Box XP was paid at the mark, before the save → owed by the copy (`deferLegacyXp`) and paid once it is saved (`payDeferredLegacyXp`, `awardSavedLegacyXp`); a refused `!bond` save no longer skips the rank raise |
+| W53 CLOCK-LOST-UPDATE | RACE | Two clock actions within one round trip each wrote the old list → every clock read-modify-write runs through `serialiseClockWrite` |
+| W54 READY-CREATORS-TWO-GMS | DUPLICATE-EMIT | The help journal, macros, World Journal and ready-time migrations were gated on `isGM` → `isCanonicalGM()` |
+| W55 COMBAT-TRACKER-VIEWED-COMBAT | WRONG-TARGET | The tracker decorated the first module combat, and hid initiative on any combat → the viewed combat, and only one carrying a trackId |
+| W56 POSITION-TOGGLE-CLICKER | ATTRIBUTION | The panel's toggle sent `game.user.character` (null for a solo GM) → `resolveUserActorId`; the handler cycles that PC's position |
+| W57 BURN-BLOCK-IN-HEADER | WRONG-DETAIL | The burned outcome rendered inside the card title; Improve Result's struck note said momentum was burned → the block follows the struck outcome; the note is per kind |
+| W58 PERSIST-DEAD-STEPS | PRODUCED-BUT-DEAD | `appendToSessionLog` grew `campaignState.sessionLogs` for every move with no reader; `applySufferMoveDebilities` was unreachable → retired with the log-only upgrade persist and the `sufferMoveTriggered` alias |
+| W59 LEDGER-COMMAND-NO-SCENE | LOSE-STATE | A `!truth set` / `!state set` with no scene open wrote into a phantom scene the next narration ended → it starts the scene first |
+| W60 TRUTH-SET-OVER-STRIKE | WRONG-DETAIL | A set beside a bare strike of the same fact left both binding and CORRECTED → the set lifts the strike (`correctedTo`); a player's set over a GM strike is refused |
+| W61 STATE-ATTRIBUTE-CASE | DUPLICATE | Attributes compared case-sensitively → `sameStateAttribute` everywhere |
+| W62 JOURNAL-QUALIFIER-UNCHECKED | WRONG-DETAIL | `!journal` stored any qualifier → checked against `JOURNAL_QUALIFIERS`; the usage line names them |
+| W63 CONTRADICTED-TRUTH-ID-DEAD | PRODUCED-BUT-DEAD | The review card's `contradictedTruthId` was always null and unread → `resolveContradictedTruthId`; the Retract dialog lists that truth first |
+| W64 SESSION-LOG-RETRACTED-LORE | SAFETY | The Session Log's lore listed retracted lore → filtered out |
+| W65 SHIP-POSITION-LOCATION-LINE | WRONG-DETAIL | A recorded location became bare free text in SHIP POSITION → `nearestLocationId`, rendered "docked at" / "near" |
+| W66 REVIEW-CARD-SHIP-HINT | DOC-DRIFT | The ship review card named `!ship` → `!at <place>` |
+| W67 CORRECT-A-FACT-HELP | UX | No truth id was shown anywhere `!truth strike` could take it; the help described a removed button → the set card shows the id; `!truth list`; the help is rewritten |
+| W68 RENAME-FACTS-STAY-TEXT-BOUND | LOSE-STATE | A placeholder's rename never promoted the facts recorded under its new name → `applyEntityRenames` runs `promoteNewEntityLedgerSubjects` |
+| W69 AUTO-SEED-STALE-RECORD-WRITE | LOSE-STATE | The Auto-Seed wrote its pre-await record snapshot whole → only its seeded fields, by flag path |
+| W70 VOW-TARGET-FACTION-CONNECTION | WRONG-TARGET | Every inciting vow target became a connection → the target's kind is asked and parsed (`vowTargetKind`); only a person is connected |
+| W71 LORE-CARD-UNESCAPED | WRONG-DETAIL | The lore recap rendered the model's text as raw HTML → `loreParagraphs` / `escapeLoreHtml` |
+| W72 POPULATION-TABLES-UNREACHABLE | PRODUCED-BUT-DEAD | The Outlands and Expanse population tables had no `!oracle` id → `settlement_population_outlands` / `_expanse` |
+| W73 SECTOR-STUB-PERSPECTIVE | WRONG-DETAIL | The stubs compared the perspective with "first" → `resolveNarrationPerspective` |
+| W74 SITE-LOCATION-KLASS | WRONG-DETAIL | A site's rolled class was not written → `system.klass` |
+| W75 SITE-RENAME-STALE | WRONG-DETAIL | A renamed site kept its generated name in the discovery record's readers → `siteDisplayName` from the location Actor |
+| W76 TRUTH-QUEST-STARTERS | RULES | Eleven quest starters differed from the rulebook → regenerated from the vendored truths |
+| W77 API-LOG-PLAYER-BUFFER-GROWS | LEAK | A player's post-ready entries were buffered for the page's life → dropped (only a GM writes the log) |
+| W78 API-LOG-SETTING-REACHABLE | UX | `apiTransactionLog.enabled` had no panel row → Narrator tab row |
+| W79 AUDIO-KEYED-PLAYER-REBILLS | DUPLICATE | A keyed default Player's refused cache browse read as a miss, so every play was synthesised again → `lookupDetailed`; `audio.cache.ask` → `audio.cache.found` before synthesising |
+| W80 AUDIO-KEYLESS-GM-WAITS-ON-ITSELF | UX | A keyless canonical GM relayed to itself and waited 30 s → fails at once, naming the About tab |
+| W81 AUDIO-SYNTH-REQUEST-UNCHECKED | SECURITY | The GM synthesised any relayed request → refuses one whose hash is not `cacheKey(spec)` |
+| W82 DEADSCAN-STRING-SELF-MENTION | TOOLING | A function's own log line counted as its consumer → `consumerText` blanks string text except whole-identifier dispatch; `loadEntityAssets` deleted |
+| W83 HELP-DOC-DRIFT | DOC-DRIFT | Six help claims contradicted the code → corrected |
+| W84 LANG-FILE-DEAD | PRODUCED-BUT-DEAD | `lang/en.json`'s 159 keys were read by nothing → emptied; a test fails on an unread key |
+| W85 SESSION-PANEL-PLAYER-BEGIN | UX | Begin / End Session were GM-only in the panel → disabled by session state only |
+| W86 TOOLBAR-PC-TOGGLE-STALE | PRODUCED-BUT-DEAD | The Private Channel switch did not re-render the toolbar; `rerenderIfOpen` had no caller → `onPrivateChannelToggled` |
+| W87 SPEECH-LANGUAGE-CHANGE-IGNORED | UX | The language was read once → the setting's onChange rebuilds the controller |
+| D1 VOW-DEEPEN-TWICE | DUPLICATE | The victory card's deepen and the fulfilment's each deepened → one deepen per vow, recorded on its `fulfilPayoff.deepen` ledger (`deepenVowConnectionOnce`) |
+| D2 SCENE-PLACE-AT-END | WRONG-TARGET | Scene truths were filed on the end-of-scene place → each truth's `sceneLocation` stamp |
+| D3 LEGACY-XP-OFF-SHEET | PRODUCED-BUT-DEAD | The XP went to `system.xp`, which the Starforged sheet lacks → the shared tracks mirrored to `system.legacies.<track>` (`sharedLegacies.js`); `awardXP` deleted |
+| D4 UPGRADE-OLD-MOVE-CARD | RULES | An old card's upgrades stayed live → closed by the roller's next move (`closeUpgradesForLaterMove`, `laterMoveFollows`) |
+| D5 SECTOR-PASSAGE-COUNT | RULES | One passage per settlement → the book's 3 / 2 / 1, the last off the edge |
+| D6 SCENE-CHALLENGE-ROLL | RULES | The scene challenge's roll was a display card → Finish the Scene through the pipeline (`sceneChallenge.js`) |
+| D7 CLOSEWORLD-HANDLER | PRODUCED-BUT-DEAD | A handler on an undocumented hook → deleted |
+| D8 PCLESS-PLAYER-FIRST-PC | ATTRIBUTION | A PC-less player was rolled as the first PC → told, and nothing rolled (U23's rule) |
+
+Open — found while fixing, not fixed:
+
+- **PROMOTE-SUBJECTS-CACHED-MUTATE** (LOSE-STATE, low; the U58 shape).
+  `promoteNewEntityLedgerSubjects` re-keys the ledger subjects on the cached
+  `campaignState` it read before writing it, so a refused write leaves the
+  re-key on the GM's copy.
+- **SWEAR-PLAN-DEAD-BRANCH** (PRODUCED-BUT-DEAD, cosmetic).
+  `buildSwearVowPlan` returns a `queueTargetDraft` nothing reads, and its
+  `!isGM` branch is unreachable (the plan is built on the canonical GM).
+- **QUENCH-ONLY-HELPERS** (PRODUCED-BUT-DEAD, low). `isIronswornAvailable`
+  (`system/ironswornAssets.js`) and `listCanonicalEncounters`
+  (`system/ironswornPacks.js`) have no production caller — visible since W82
+  stopped counting their own log lines; delete or wire.
+- **LEGACY-SHEET-DECREASE** (LOSE-STATE, low). A legacy lowered on a sheet
+  (the Legacies tab's ◂ in edit mode) flows back to the shared track, but a
+  move whose working copy was read before it merges legacies by the higher
+  progress, so its persist can raise the track again (D3).
+- **SECTOR-DUPLICATE-NAMES** (WRONG-DETAIL, low). The settlement name table
+  can roll one name twice in a sector, and two settlements of one name are
+  matched by name in places (the roster, `!at`); seen as an intermittent test
+  failure, now fixed in the test.
+
 ### Eighth bug audit (issue #325, part 1 of 2) — all thirty-seven fixed in the v1.7.36 cycle
 
 Found by the eighth bug audit (2026-11-03) of `39331b4`, with a probe per
@@ -27,7 +146,7 @@ move waits at its confirm dialog, then resume (W05–W07); a player's `!ptp`
 with a shared supply at 0 (W10); press Battle twice, from two clients (W11);
 two GMs, the canonical one closing their browser mid-move (W25); and Begin a
 Session solo, with no User character set (W32). Part 2 (issue #326, W38–W87
-and D1–D8) is open.
+and D1–D8) is above.
 
 | Code | Class | Defect → fix |
 |---|---|---|

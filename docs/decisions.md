@@ -6,11 +6,30 @@ rejected.
 
 ---
 
-## Issue #326 audit: decisions D1–D8 (2026-11)
+## Issue #326 audit: decisions D1–D8, and writes on copies, one emitter, checked relays (2026-11)
 
-**Decision:** (issue #326, part 2 of the eighth audit. The maintainer decided
-D1–D8 on 2026-11-03, each the recommended option. Each finding's ID in
-brackets.)
+**Decision:** (issue #326, part 2 of the eighth audit. The maintainer asked
+for the issue to be addressed on 2026-11-03 and decided D1–D8 that day, each
+the recommended option. Each finding's ID in brackets.)
+- **A refusable write changes a copy** [W51, W69]. A writer sets its change on
+  a copy of the cached setting (or writes only its own fields onto the record
+  as it then is), so a refused write leaves the GM's copy as it was —
+  rules/foundry-api.md's cached-by-reference rule, at the nine sites the audit
+  found; the commands say when the world did not take the write.
+- **What a mark earns is paid once its save lands** [W52]. A legacy box's XP
+  — since D3, the sheet mirror — is owed by the working copy it was marked on
+  and paid after that copy's write (`deferLegacyXp`).
+- **One emitter for world-creating work; one queue for a whole-array store**
+  [W53, W54]. The ready-time creators and migrations gate on the canonical
+  GM; every clock read-modify-write runs through one per-client queue.
+- **A relayed payload is checked against what the UI could send** [W81]. The
+  GM synthesises only a clip whose hash is its spec's key (rules/reachability.md
+  §8); a keyed Player asks the GM for a cached clip before paying for it
+  [W79], and a keyless canonical GM never relays to itself [W80].
+- **A string mention is not a consumer** [W82]. The dead-code scan blanks
+  string text except a whole-identifier string dispatch.
+- **The module's text is hard-coded English** [W84]. `lang/en.json` is kept
+  declared and empty; a key added there must be read.
 - **A vow deepens its connection once** [D1; maintainer]. A vow sworn for a
   connection was deepened twice: by the won-fight card's 🤝 Deepen (the vow's
   rank marks) and again by its fulfilment's payoff (the same marks). One
