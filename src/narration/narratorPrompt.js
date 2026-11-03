@@ -1104,7 +1104,8 @@ const ROLE_DESCRIPTIONS = {
     `Suggested clock: <a short clock label> (<segments> segments)\n` +
     `Immediate crisis: <a short danger label> (<segments> segments)\n` +
     `Vow target: <Name> (<pronouns — the set your prose established for them, ` +
-    `e.g. she/her, he/him, they/them>) — <2-3 sentences on one line: who they are — for an ` +
+    `e.g. she/her, he/him, they/them>) [<kind — exactly one of: person, creature, faction, ` +
+    `vessel>] — <2-3 sentences on one line: who they are — for an ` +
     `already-established NPC (see ACTIVE SECTOR), consistent with their recorded ` +
     `role, goal, and pronouns, never reassigning or contradicting them — their ` +
     `history with the character, and their current situation and condition>\n` +

@@ -73,7 +73,11 @@ canonical GM's pipeline swear branch calls `swearSharedVowForAll`
 immediate-crisis **tension clock** when the meta has one, creates the **target
 NPC connection** — a bond Item on every PC the vow was sworn on
 (`registerConnectionOnActiveCharacter(…, { actors })`), not the first PC's
-alone — posts the sworn-confirmation card (rank→milestone/legacy
+alone; only for a **person** target: the target line carries its kind
+(`[person|creature|faction|vessel]`, read from the description's head when it
+has none — `vowTargetKind`), and a faction, creature or vessel is neither made
+a connection nor linked to the vow (`linkedConnectionName`, `swearToConnection`
+— issue #326 W70) — posts the sworn-confirmation card (rank→milestone/legacy
 stakes lines), narrates the vow-swearing scene for the PC who rolled the
 swear (`swearSharedVowForAll(message, { speakerActorId })` →
 `narrateAndPostVowSwearing`; issue #321 U23), and proposes two concrete

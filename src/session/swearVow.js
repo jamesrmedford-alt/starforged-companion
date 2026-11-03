@@ -76,7 +76,12 @@ export function buildSwearVowPlan(meta, ctx = {}) {
     createTarget: false,
   };
 
-  if (meta.target?.name) {
+  // Only a person is made a connection: a faction, creature or vessel the vow
+  // concerns became a connection with a bond on every PC, and fulfilling the
+  // vow offered "Deepen your bond with The Iron Covenant" (issue #326 W70).
+  if (meta.target?.name && !isPersonTarget(meta.target)) {
+    plan.targetNotice = `${meta.target.name} is the vow's ${meta.target.kind} — not made a connection.`;
+  } else if (meta.target?.name) {
     if (ctx.targetExists) {
       plan.targetNotice = `${meta.target.name} is already established — no new record created.`;
     } else if (!ctx.isGM) {
@@ -92,6 +97,17 @@ export function buildSwearVowPlan(meta, ctx = {}) {
   }
 
   return plan;
+}
+
+/**
+ * True for a vow target that is a person — the only kind made a connection.
+ * A target with no kind (a card proposed before kinds) is read as before.
+ *
+ * @param {{ kind?: string }|null} target
+ * @returns {boolean}
+ */
+export function isPersonTarget(target) {
+  return !target?.kind || target.kind === "person";
 }
 
 /**
@@ -114,7 +130,7 @@ export function buildSwearMovePost(message) {
       incitingSwearMessageId: message?.id ?? null,
       // The vow is sworn to its target — the connection every copy is linked
       // to: +1 to the roll, +2 when bonded (issue #325 W18).
-      ...(meta.target?.name ? { swearToConnection: meta.target.name } : {}),
+      ...(meta.target?.name && isPersonTarget(meta.target) ? { swearToConnection: meta.target.name } : {}),
     } },
   };
 }
@@ -204,7 +220,8 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
       vowId:                message.id,
       clock:                plan.vow.clock,
       shared:               true,
-      linkedConnectionName: meta?.target?.name ?? null,   // vow → connection (#241)
+      // vow → connection (#241) — a person only (issue #326 W70)
+      linkedConnectionName: meta?.target?.name && isPersonTarget(meta.target) ? meta.target.name : null,
     });
     if (vowItem) sworn.push(actor);
   }

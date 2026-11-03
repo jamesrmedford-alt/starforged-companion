@@ -200,7 +200,14 @@ export function splitVowTarget(text) {
   if (!m) return { prose: full.trim(), target: null };
 
   const prose = full.replace(m.line, "").trim();
-  const line  = m.value;
+  // The target's kind — "[faction]" after the name and pronouns — is taken
+  // out first; with none, it is read from the description (vowTargetKind).
+  // Only a person becomes a connection (issue #326 W70).
+  let kind = null;
+  const line  = m.value.replace(/\s*\[\s*(person|creature|faction|vessel)\s*\]/i, (_all, k) => {
+    kind = k.toLowerCase();
+    return "";
+  });
   const div   = line.match(/\s*(?:—|–|:|\s-\s)\s*/);
 
   const splitPronouns = (rawName) => {
@@ -213,14 +220,38 @@ export function splitVowTarget(text) {
 
   if (!div) {
     if (!line) return { prose, target: null };
-    const { name, pronouns } = splitPronouns(line);
-    return { prose, target: name ? { name, pronouns, description: "" } : null };
+    const { name, pronouns } = splitPronouns(line.trim());
+    return { prose, target: name ? { name, pronouns, description: "", kind: kind ?? vowTargetKind("") } : null };
   }
   const rawName     = line.slice(0, div.index).trim();
   const description = line.slice(div.index + div[0].length).trim();
   const { name, pronouns } = splitPronouns(rawName);
   if (!name) return { prose, target: null };
-  return { prose, target: { name, pronouns, description } };
+  return { prose, target: { name, pronouns, description, kind: kind ?? vowTargetKind(description) } };
+}
+
+// The head noun of a description's first phrase, by kind — "a zealot faction
+// that seized the relay" is a faction; "a smuggler who works for the Iron
+// Syndicate" a person (the faction is after the head).
+const VOW_TARGET_KIND_WORDS = [
+  ["faction",  /\b(faction|syndicate|cartel|guild|order|covenant|clan|corporation|consortium|collective|alliance|cult|movement|church|dynasty|house|regime|empire|union|brotherhood|sisterhood|league|federation|gang|pirates|raiders)\b/i],
+  ["vessel",   /\b(ship|starship|vessel|freighter|cruiser|frigate|dreadnought|corvette|hauler|shuttle|derelict|station|flagship|warship)\b/i],
+  ["creature", /\b(creature|beast|leviathan|lifeform|organism|monster|swarm|predator|horror|entity)\b/i],
+];
+
+/**
+ * The kind of a vow target a proposal line gave no kind for, read from its
+ * description's first phrase (up to "that" / "who" / "which" / a comma):
+ * faction, vessel or creature when its head names one, else person — the
+ * kind the line was read as before (issue #326 W70).
+ *
+ * @param {string} description
+ * @returns {"person"|"creature"|"faction"|"vessel"}
+ */
+export function vowTargetKind(description) {
+  const head = String(description ?? "").split(/\s+(?:that|who|whose|which|whom)\b|[,;.]/i)[0] ?? "";
+  for (const [kind, re] of VOW_TARGET_KIND_WORDS) if (re.test(head)) return kind;
+  return "person";
 }
 
 /**
