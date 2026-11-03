@@ -666,7 +666,14 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
       applied.push({ from: target.rec.name, to, id: target.id });
     } catch (err) {
       console.warn(`${MODULE_ID} | applyEntityRenames: ${from} → ${to} failed:`, err?.message ?? err);
+      continue;
     }
+    // The revealing narration recorded its facts under the new name as a
+    // text subject (no card was named that yet): they join the renamed card,
+    // as a new entity's do (issue #326 W68 — they neither rendered on the
+    // card nor migrated to it).
+    const promote = deps.promoteSubjects ?? promoteNewEntityLedgerSubjects;
+    await promote(to, "connection", target.rec, campaignState);
   }
 
   if (applied.length) {
