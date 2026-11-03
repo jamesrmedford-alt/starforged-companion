@@ -11,7 +11,9 @@ Two cross-cutting facts to hold onto:
   gate at the top of the narration handler in `src/index.js`); the inner
   `game.user.isGM` checks on each consequence branch are belt-and-suspenders.
   Its effects credit the **roller**: one `rollerActor` (the message's speaker,
-  first PC only as a fallback) drives the stat enrichment, the decisive-action
+  first PC only as a fallback — a GM's, or at a one-PC table; a PC-less player
+  at a table of several is told they need a character and nothing is rolled,
+  issue #326 D8) drives the stat enrichment, the decisive-action
   cost and Face Defeat Pay the Price routes, and the won-fight card and reward
   (decisions.md → "Multiplayer attribution").
 - **Card-button world writes run on the canonical GM.** The won-fight buttons

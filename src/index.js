@@ -860,6 +860,18 @@ export function registerChatHook() {
     }
     if (!pacingResult.runMove) return;
 
+    // A player with no character of their own, at a table of two or more PCs,
+    // is not rolled as another player's PC (issue #326 D8, following #321
+    // U23's rule): resolveSpeakerActorId gave them none — the first PC is only
+    // a GM's, or the one PC's in solo play — and the pipeline's own fallback
+    // to the first PC rolled the move with that PC's stats, landed its meters
+    // on it and named it the roller. They are told, and nothing is rolled.
+    if (!speakerActorId && getPlayerActors().length >= 2) {
+      await postNoCharacterNotice(message).catch(err =>
+        console.warn(`${MODULE_ID} | no-character notice failed:`, err?.message ?? err));
+      return;
+    }
+
     // Concurrency guard — one move at a time. A second narration that arrives
     // while a pipeline is running would otherwise race on campaignState writes
     // and post duplicate narration cards.
@@ -988,7 +1000,10 @@ export function registerChatHook() {
       }
 
       // The ROLLER's character (decisions.md → "Multiplayer attribution"):
-      // the speaker resolved from the message, first PC only as fallback.
+      // the speaker resolved from the message. The first PC is the fallback
+      // only where resolveSpeakerActorId leaves none and the move still runs —
+      // no PC of the author's own at a one-PC (or empty) table; a PC-less
+      // player at a table of several was told above (issue #326 D8).
       // One actor drives the ability scan, the stat substitution it offers,
       // and the stat values read below — scanning PC A's assets but reading
       // PC B's stats offered substitutions B doesn't have.
@@ -4234,6 +4249,24 @@ async function postLegacyMarkCard(track, ticks) {
   } catch (err) {
     console.warn(`${MODULE_ID} | postLegacyMarkCard: chat post failed:`, err?.message ?? err);
   }
+}
+
+/**
+ * Tell a player with no character of their own that their move was not rolled
+ * (issue #326 D8): whispered to the author (and the GMs), flagged so it never
+ * reads as narration.
+ *
+ * @param {ChatMessage} message — the player's narration
+ * @returns {Promise<void>}
+ */
+async function postNoCharacterNotice(message) {
+  const authorId = messageAuthorId(message);
+  const whisper  = [...new Set([authorId, ...gmUserIds()].filter(Boolean))];
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>No character to roll for</strong><p>You don&rsquo;t have a character of your own yet, so this move was not rolled &mdash; another player&rsquo;s character can&rsquo;t make it for you. Ask the GM to assign you a character (or set one as yours under User Configuration), then try again.</p></div>`,
+    whisper,
+    flags: { [MODULE_ID]: { noCharacterNotice: true } },
+  });
 }
 
 /** Feedback for Finish the Scene — the challenge finished, its clock retired (issue #326 D6). */

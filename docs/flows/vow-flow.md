@@ -21,8 +21,9 @@ card once; they were the ad-hoc `vow.setReward` / `vow.linkConnection`
 socket relays). Only the vendor sheet writes a vow from the owner's own
 client.
 Effects credit the **roller**: the pipeline's `rollerActor` is the speaker
-resolved from the message, first PC only as a fallback (decisions.md →
-"Multiplayer attribution").
+resolved from the message, first PC only as a fallback — a GM's, or at a
+one-PC table; a PC-less player at a table of several rolls nothing (issue
+#326 D8; decisions.md → "Multiplayer attribution").
 
 Terminology up front, because it drives every gap below:
 

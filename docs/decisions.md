@@ -73,6 +73,17 @@ brackets.)
   handler and its mentions are deleted; a scene left open at a reload closes
   at End Session or the idle re-mint, which rules/narrator-memory.md §6
   already treats as intended.
+- **A PC-less player is not rolled as another player's character** [D8;
+  maintainer]. `resolveSpeakerActorId` gives no PC to a player who owns
+  none at a table of two or more (issue #321 U23), but the pipeline fell
+  back to the first PC anyway — the move rolled with that PC's stats, its
+  meters landed on it and its card named it the roller. The pipeline now
+  follows U23: a GM's narration, or any at a one-PC table, still falls back
+  to the first PC; a PC-less player at a table of several is whispered that
+  they need a character (`noCharacterNotice`), and nothing is rolled — the
+  check runs before the move lock and the interpreter's Claude call.
+  Narration that is not a move is not refused. `persistResolution`'s
+  first-PC fallback stays for its other callers (a GM's, a one-PC table's).
 - **A scene truth is filed where it was asserted** [D2; maintainer]. Scene
   end filed every scene-subject truth on the frame's location at the end of
   the scene, but a scene spans travel (it ends only at `!scene end`, End a
@@ -4862,6 +4873,12 @@ recorded on the vow's payoff ledger. See "Issue #326 audit" → "A vow deepens i
    by every detection path that knows its narration's PC); the shared vow's target becomes a
    connection of every PC who swore it; the oath scene is written for the PC who swore; the
    Private Channel and the toolbar's Chronicle use the user's own PC.)*
+   *(Issue #326 D8, 2026-11-03: the move pipeline's own fallback follows U23 too. A GM's
+   narration, or any narration at a one-PC table, still rolls the first PC; a player with no PC
+   of their own at a table of several is whispered that they need a character, and nothing is
+   rolled — the pipeline rolled them as the first PC, landing the move's effects on another
+   player's character. See "Issue #326 audit" → "A PC-less player is not rolled as another
+   player's character".)*
 
 2. **The inciting vow is the crew's shared founding vow.** "⚔ Swear this vow" now creates the vow on
    **every** player character (each copy tagged `flags[MODULE].sharedVow` + the inciting message id),
