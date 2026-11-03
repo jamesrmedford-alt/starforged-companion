@@ -1175,8 +1175,9 @@ const PERSPECTIVE_DESCRIPTIONS = {
 
 /**
  * Resolve the effective narration perspective.
- * "auto" resolves to second_person for solo (1 active player) or third_person
- * for multiplayer (2+ active players). Explicit values pass through unchanged.
+ * "auto" resolves to second_person for solo (at most 1 active non-GM player)
+ * or third_person for multiplayer (2+ active players). Explicit values pass
+ * through unchanged.
  *
  * @param {string} setting — "auto" | "second_person" | "third_person"
  * @returns {"second_person"|"third_person"}
@@ -1184,8 +1185,12 @@ const PERSPECTIVE_DESCRIPTIONS = {
 export function resolveNarrationPerspective(setting) {
   if (setting !== 'auto') return setting;
   try {
-    const playerCount = game.users.filter(u => u.active).length;
-    return playerCount === 1 ? 'second_person' : 'third_person';
+    // Active NON-GM users (decisions.md "Narrator tone and perspective"): the
+    // GM counted too, so a GM running one player's character — or a solo GM
+    // with a second window open — got third person (issue #325 W21). A solo
+    // GM alone counts none: second person.
+    const playerCount = game.users.filter(u => u.active && !u.isGM).length;
+    return playerCount <= 1 ? 'second_person' : 'third_person';
   } catch {
     return 'second_person';
   }

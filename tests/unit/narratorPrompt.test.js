@@ -518,12 +518,30 @@ describe('resolveNarrationPerspective()', () => {
     expect(resolveNarrationPerspective('auto')).toBe('second_person');
   });
 
-  it('returns "third_person" for "auto" with 2+ active users (GM counts)', () => {
+  // Issue #325 W21: Auto counts active NON-GM users (decisions.md "Narrator
+  // tone and perspective") — a GM running one player's character is solo.
+  it('returns "second_person" for "auto" with a GM and one player — the GM does not count', () => {
     mockUsers = [
       { active: true, isGM: false },
       { active: true, isGM: true },
     ];
+    expect(resolveNarrationPerspective('auto')).toBe('second_person');
+  });
+
+  it('returns "third_person" for "auto" with 2+ active players', () => {
+    mockUsers = [
+      { active: true, isGM: false },
+      { active: true, isGM: false },
+      { active: true, isGM: true },
+    ];
     expect(resolveNarrationPerspective('auto')).toBe('third_person');
+  });
+
+  it('returns "second_person" for "auto" with a solo GM alone, or an inactive second player', () => {
+    mockUsers = [{ active: true, isGM: true }];
+    expect(resolveNarrationPerspective('auto')).toBe('second_person');
+    mockUsers = [{ active: true, isGM: true }, { active: true, isGM: false }, { active: false, isGM: false }];
+    expect(resolveNarrationPerspective('auto')).toBe('second_person');
   });
 
   it('returns "second_person" when explicitly set, regardless of user count', () => {
