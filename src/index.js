@@ -7391,8 +7391,14 @@ onChatMessageRender((message, root) => {
         // Player clients fall back to a local-only disable above.
         console.debug?.(`${MODULE_ID} | rolled-flag update skipped (non-owner):`, err?.message ?? err);
       }
+      // As the narrating PC the card recorded: the pipeline credits the
+      // message's speaker, and with none it resolved the clicker — the GM
+      // pressing Roll on Pat's card rolled Kira's action with the GM's first
+      // PC's stats (issue #325 W09).
+      const narrator = typeof f.actorId === "string" && f.actorId ? game.actors?.get(f.actorId) : null;
       await ChatMessage.create({
         content: f.playerText,
+        ...(narrator ? { speaker: { actor: narrator.id, alias: narrator.name } } : {}),
         flags:   { [MODULE_ID]: {
           bypassPacing:        true,
           fromPacedSuggestion: true,
