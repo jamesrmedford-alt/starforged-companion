@@ -214,6 +214,48 @@ export function resolveHealPatient(interpretation, roller, { players = [] } = {}
 }
 
 /**
+ * The bond adds a move's text gives (issue #325 W18), resolved before the
+ * dice: Test Your Relationship — "If you share a bond, add +1" — and Swear an
+ * Iron Vow — "If you swear this vow to a connection, add +1; if you share a
+ * bond, add +2". The pipeline rolls these moves itself and nothing added
+ * either: a bonded Test rolled bare +heart, and so did the inciting vow sworn
+ * to the sector's connection.
+ *
+ * Test Your Relationship's connection resolves as its develop branch does (a
+ * picker's host id, else the named one — selectConnection), and is stamped on
+ * the interpretation so that branch develops the same one. A swear's
+ * connection is the one its card names (`swearToConnection` — the inciting
+ * vow's target, or the connection a sheet-made vow is linked to), matched by
+ * name among the active connections; a vow sworn to nobody the crew knows adds
+ * nothing.
+ *
+ * @param {Object} interpretation — mutated: `bondAdd` (and the Test's
+ *   `moveTargetId` / `moveTarget` when its connection resolves)
+ * @param {{ listConnections: () => Promise<Array<Object>> }} deps
+ * @returns {Promise<number>} the add (0 when none applies)
+ */
+export async function enrichBondAdds(interpretation, { listConnections }) {
+  const moveId = interpretation?.moveId;
+  if (moveId !== "test_your_relationship" && moveId !== "swear_an_iron_vow") return 0;
+  const connections = (await listConnections()) ?? [];
+  let add = 0;
+  if (moveId === "test_your_relationship") {
+    const target = selectConnection(connections, interpretation.moveTarget ?? null,
+      { hostId: interpretation.moveTargetId ?? null });
+    if (target?.__hostId) interpretation.moveTargetId = target.__hostId;
+    if (target?.name)     interpretation.moveTarget   = target.name;
+    add = target?.bonded ? 1 : 0;
+  } else {
+    const name = typeof interpretation.swearToConnection === "string" ? interpretation.swearToConnection.trim() : "";
+    const norm = (s) => String(s ?? "").trim().toLowerCase();
+    const sworn = name ? connections.find(c => c && c.active !== false && norm(c.name) === norm(name)) : null;
+    add = sworn ? (sworn.bonded ? 2 : 1) : 0;
+  }
+  interpretation.bondAdd = add;
+  return add;
+}
+
+/**
  * Aid Your Ally: the ally aided, resolved before the dice (issue #325 W17) —
  * another player character named as the move's target, else the only other
  * PC the narration names. Their benefits are the ally's on a hit

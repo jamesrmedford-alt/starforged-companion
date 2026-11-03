@@ -45,7 +45,7 @@ import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
-import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient, resolveAidedAlly } from "./moves/statEnrichment.js";
+import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient, resolveAidedAlly, enrichBondAdds } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
 import { markLegacyTrack }       from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
@@ -825,6 +825,12 @@ export function registerChatHook() {
       ? message.flags[MODULE_ID].forcedMoveTargetId
       : null;
     const tokenDragSetCourse = message.flags?.[MODULE_ID]?.tokenDragSetCourse ?? null;
+    // The connection a forced Swear an Iron Vow is sworn to — its card's: the
+    // inciting vow's target, or the one a sheet-made vow is linked to. +1, or
+    // +2 when bonded (issue #325 W18).
+    const swearToConnection = typeof message.flags?.[MODULE_ID]?.swearToConnection === "string"
+      ? message.flags[MODULE_ID].swearToConnection
+      : null;
 
     // Pacing classifier — decides whether to run the move pipeline, narrate
     // only, or narrate with an inline move suggestion. The classifier runs
@@ -906,6 +912,9 @@ export function registerChatHook() {
             apiKey,
             combatPosition,
           });
+      if (swearToConnection && interpretation?.moveId === "swear_an_iron_vow") {
+        interpretation.swearToConnection = swearToConnection;
+      }
       // A forced move whose stat is a choice rolls the one its narration's
       // approach fits — a stat-only interpretation — not its first listed
       // stat (issue #321 U04). No key keeps the listed stat.
@@ -1116,6 +1125,13 @@ export function registerChatHook() {
       resolveHealPatient(interpretation, rollerActor, { players: getPlayerActors() });
       // Aid Your Ally: the ally whose benefits a hit is (issue #325 W17).
       resolveAidedAlly(interpretation, rollerActor, { players: getPlayerActors() });
+      // A bonded Test Your Relationship adds +1; a vow sworn to a connection
+      // +1, to a bonded one +2 (issue #325 W18).
+      const bondAdd = await enrichBondAdds(interpretation, { listConnections }).catch(err => {
+        console.warn(`${MODULE_ID} | bond add enrichment failed:`, err?.message ?? err);
+        return 0;
+      });
+      if (bondAdd > 0) interpretation.adds = (interpretation.adds ?? 0) + bondAdd;
 
       // A roll started from a track (a Progress Tracks row, an expedition
       // card, a "Which vow?" pick) names it by id. When that track was

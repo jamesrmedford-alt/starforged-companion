@@ -112,6 +112,9 @@ export function buildSwearMovePost(message) {
       forcedMoveId:           "swear_an_iron_vow",
       forcedMoveTarget:       meta.vow.statement,
       incitingSwearMessageId: message?.id ?? null,
+      // The vow is sworn to its target — the connection every copy is linked
+      // to: +1 to the roll, +2 when bonded (issue #325 W18).
+      ...(meta.target?.name ? { swearToConnection: meta.target.name } : {}),
     } },
   };
 }
@@ -686,17 +689,22 @@ export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
  * the vow already exists). Returns null for an empty name.
  *
  * @param {string} vowName
+ * @param {string|null} [linkedConnectionName] — the connection the vow is linked to
  * @returns {{ content: string, flags: object } | null}
  */
-export function buildSwearMovePostForName(vowName) {
+export function buildSwearMovePostForName(vowName, linkedConnectionName = null) {
   const name = String(vowName ?? "").trim();
   if (!name) return null;
+  const linked = typeof linkedConnectionName === "string" ? linkedConnectionName.trim() : "";
   return {
     content: `Swear an iron vow: ${name}.`,
     flags: { [MODULE_ID]: {
       bypassPacing:     true,
       forcedMoveId:     "swear_an_iron_vow",
       forcedMoveTarget: name,
+      // Linked to a connection (🤝 Link): sworn to them — +1, or +2 bonded
+      // (issue #325 W18).
+      ...(linked ? { swearToConnection: linked } : {}),
     } },
   };
 }
@@ -774,7 +782,7 @@ export function registerPlayerVowSwearHook() {
     fresh.addEventListener("click", async (e) => {
       e.preventDefault(); e.stopPropagation();
       fresh.disabled = true;   // stays disabled — the roll is firing; re-enable only on a post failure
-      const post = buildSwearMovePostForName(f.vowName);
+      const post = buildSwearMovePostForName(f.vowName, liveFlags(message)?.linkedConnection ?? null);
       if (!post) { fresh.disabled = false; return; }
       try {
         await globalThis.ChatMessage?.create?.(post);
