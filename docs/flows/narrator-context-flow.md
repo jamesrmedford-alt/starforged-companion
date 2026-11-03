@@ -153,7 +153,13 @@ values removed, a frame they wrote cleared), appends their `narrationId`s to
 `xCardedAt`, so a move in flight cannot merge its working copy's older
 summary back over it, and a regen whose Haiku call was out when the card was
 played discards its reply; issue #325 W06) and sets `xCardRedirect` — on
-every play. If that
+every play. A ship move the narration made is undone too: the sidecar's
+`ship / position` change is written to the command vehicle stamped with the
+narration's `narrationId` and the position before it (`previous`, up to
+three deep), and the X-Card's finish (`restoreShipPositionAfterXCard`) puts
+back the latest position no removed narration wrote — an empty one when
+there is none — and moves the sector token with it; SHIP POSITION kept
+naming the removed destination (issue #325 W07). If that
 part fails the pause is still written. After the write the cards are flagged
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
 `propagateRetraction`. Readers: the ring and the rolling summary skip

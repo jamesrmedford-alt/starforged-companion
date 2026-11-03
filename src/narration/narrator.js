@@ -3574,7 +3574,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   }
 
   if (shipPositionChanges.length) {
-    applyShipPositionChanges(shipPositionChanges, campaignState).catch(err =>
+    applyShipPositionChanges(shipPositionChanges, campaignState, { narrationId: ctx.narrationId ?? null }).catch(err =>
       console.debug?.(`${MODULE_ID} | shipPosition: sidecar update failed:`, err?.message ?? err),
     );
   }
@@ -4108,6 +4108,69 @@ function formatRecapEntries(entries) {
   }).filter(Boolean);
 }
 
+// How many earlier positions a narrated move keeps (`position.previous`),
+// for an X-Card whose beat moved the ship more than once.
+const SHIP_POSITION_HISTORY = 3;
+
+/** The command vehicle's stored position record, or null. */
+function shipPositionRecord(cvActorId, getShipFn) {
+  try {
+    const pos = getShipFn(cvActorId)?.position;
+    return pos && typeof pos === 'object' ? pos : null;
+  } catch {
+    return null;
+  }
+}
+
+/** A position with its `previous` chain cut to SHIP_POSITION_HISTORY − 1 links. */
+function trimPositionHistory(position, depth = 1) {
+  if (!position || typeof position !== 'object') return null;
+  const { previous, ...rest } = position;
+  return depth < SHIP_POSITION_HISTORY && previous
+    ? { ...rest, previous: trimPositionHistory(previous, depth + 1) }
+    : rest;
+}
+
+/**
+ * Put the command vehicle back where it was before an X-carded narration moved
+ * it (issue #325 W07). The narrator's REQUIRED ship / position emission is
+ * routed around the ledgers to the ship record (applyShipPositionChanges) —
+ * `retractNarrations` never touched it, so after a resume every prompt's
+ * never-dropped SHIP POSITION line still named the removed beat's destination.
+ * A position a removed narration wrote is replaced by the one it recorded as
+ * `previous` (again, while that one is also a removed narration's), or by an
+ * empty position when it recorded none; the sector token follows. Runs on the
+ * canonical GM (suppressScene's finish). Never throws.
+ *
+ * @param {string[]} narrationIds — the X-carded narrations
+ * @param {Object} [campaignState]
+ * @returns {Promise<boolean>} whether the ship was moved back
+ */
+export async function restoreShipPositionAfterXCard(narrationIds, campaignState = storedCampaignState()) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === 'string' && id));
+  if (!removed.size) return false;
+  try {
+    const { getCommandVehicleActorId, getShip, updateShip } = await import('../entities/ship.js');
+    const cvActorId = getCommandVehicleActorId(campaignState ?? {});
+    if (!cvActorId) return false;
+    let position = shipPositionRecord(cvActorId, getShip);
+    if (!position?.narrationId || !removed.has(position.narrationId)) return false;
+    while (position?.narrationId && removed.has(position.narrationId)) position = position.previous ?? null;
+    const { emptyPosition } = await import('../factContinuity/shipPosition.js');
+    const restored = position ? { ...position } : { ...emptyPosition(), updatedAt: new Date().toISOString(), updatedBy: 'manual' };
+    await updateShip(cvActorId, { position: restored });
+    if (restored.nearestSettlementId || restored.nearestPlanetId) {
+      const { syncCommandVehicleTokenToPosition } = await import('../sectors/sectorSceneHooks.js');
+      await syncCommandVehicleTokenToPosition(restored, campaignState).catch(err =>
+        console.debug?.(`${MODULE_ID} | shipPosition: X-Card token sync failed:`, err?.message ?? err));
+    }
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: the ship's position could not be restored:`, err?.message ?? err);
+    return false;
+  }
+}
+
 /**
  * Apply sidecar state changes with subject === "ship" and attribute ===
  * "position" to the command vehicle's persistent position record
@@ -4119,7 +4182,7 @@ function formatRecapEntries(entries) {
  * is gated off. Errors are swallowed at debug — the narrator's
  * primary output (the prose) has already posted by this point.
  */
-async function applyShipPositionChanges(changes, campaignState) {
+async function applyShipPositionChanges(changes, campaignState, { narrationId = null } = {}) {
   if (!Array.isArray(changes) || !changes.length) return;
   // Feature gate is checked lazily so this module stays import-safe in
   // unit tests where `game.settings` may be partial.
@@ -4140,6 +4203,15 @@ async function applyShipPositionChanges(changes, campaignState) {
     const cvActorId = getCommandVehicleActorId(campaignState);
     if (!cvActorId) return;
     const position = inferShipPosition(dest, campaignState, { source: 'narrator_sidecar' });
+    // The narration that moved the ship, and where it was before: an X-Card
+    // on that narration puts it back (restoreShipPositionAfterXCard, issue
+    // #325 W07 — the move was routed around the ledgers with no narration id,
+    // so SHIP POSITION kept naming the removed destination).
+    if (typeof narrationId === 'string' && narrationId) {
+      position.narrationId = narrationId;
+      const prior = shipPositionRecord(cvActorId, getShip);
+      if (prior) position.previous = trimPositionHistory(prior);
+    }
     await updateShip(cvActorId, { position });
 
     // Cluster C — the map follows the fiction (see index.js

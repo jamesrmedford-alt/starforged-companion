@@ -98,7 +98,12 @@ layers. This file is the never-break list.
    truth it retracts (issue #321 U07). An X-Card retraction
    (`retractedBy: "xcard"`) blocks re-assertion like a strike but is never
    named under CORRECTED or in the leave-out list: naming it would hand the
-   narrator the content the table removed.
+   narrator the content the table removed. Anything a narration writes
+   outside the ledgers carries its `narrationId` so the X-Card can undo it
+   too — the command vehicle's position does (issue #325 W07); a narration
+   is built from the ledgers as they stand in the store, never a pre-dialog
+   snapshot (W05), and a summary the X-Card emptied is stamped newer than any
+   working copy's (W06).
 
 7. **Sidecar subjects resolve against the full roster, in its own shape.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so
