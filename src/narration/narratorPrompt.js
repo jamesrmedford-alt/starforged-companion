@@ -10,6 +10,7 @@ import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/l
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
 import { resolveEntityById } from '../entities/registry.js';
 import { isLoneShipCandidate } from '../entities/ship.js';
+import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
 
 // ---------------------------------------------------------------------------
 // Fact-continuity sidecar instruction — fact-continuity scope §7
@@ -717,6 +718,38 @@ const ENTITY_TYPE_LABELS = {
   creature:   'Creature',
 };
 
+// The HTML tags an Actor's Notes carry (the editor's, the art pipeline's
+// portrait block, the envision sections). Named, so prose in angle brackets
+// ("<signal lost>") is kept as text (the issue #322 V18 class).
+const NOTES_HTML_TAG_RE = /<\/?(?:p|div|span|br|hr|h[1-6]|img|ul|ol|li|strong|em|b|i|u|s|a|blockquote|section|article|table|thead|tbody|tr|td|th|figure|figcaption|code|pre|sup|sub|small|mark)\b[^>]*>/gi;
+
+/**
+ * An entity record's Notes as card text. A ship's and an NPC's Notes tab is
+ * HTML — the embedded portrait block (`<div class="sf-ship-portrait"><img
+ * src=…>`), the `<hr><h4>✦ Envisioned details — …</h4>` sections — and the
+ * record keeps a copy, which the card printed verbatim (issue #326 W39; the
+ * CHARACTER block strips its notes). The portrait block and images are
+ * dropped, the other markup becomes spaces, entities are decoded.
+ *
+ * @param {unknown} notes
+ * @returns {string} '' when nothing is left
+ */
+function notesAsCardText(notes) {
+  if (notes === undefined || notes === null) return '';
+  return String(notes)
+    .replace(new RegExp(PORTRAIT_BLOCK_RE.source, 'g'), ' ')
+    .replace(/<img\b[^>]*>/gi, ' ')
+    .replace(NOTES_HTML_TAG_RE, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#0?39;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 const CANONICAL_FIELDS_BY_TYPE = {
   connection: [
     ['pronouns',         'Pronouns'],
@@ -730,13 +763,13 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['goal',             'Goal'],
     ['motivation',       'Motivation'],
     ['description',      'Description'],
-    ['notes',            'Notes'],
+    ['notes',            'Notes', notesAsCardText],
   ],
   ship: [
     ['type',        'Type'],
     ['mission',     'Mission'],
     ['description', 'Description'],
-    ['notes',       'Notes'],
+    ['notes',       'Notes', notesAsCardText],
   ],
   settlement: [
     ['location',   'Location'],
@@ -749,7 +782,7 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['planet',     'Planet', formatSettlementPlanet],
     ['stellar',    'Stellar object'],
     ['description','Description'],
-    ['notes',      'Notes'],
+    ['notes',      'Notes', notesAsCardText],
   ],
   faction: [
     ['type',         'Type'],
@@ -758,14 +791,14 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['relationship', 'Relationship'],
     ['quirk',        'Quirk'],
     ['description',  'Description'],
-    ['notes',        'Notes'],
+    ['notes',        'Notes', notesAsCardText],
   ],
   planet: [
     ['type',        'Type'],
     ['atmosphere',  'Atmosphere'],
     ['life',        'Life'],
     ['description', 'Description'],
-    ['notes',       'Notes'],
+    ['notes',       'Notes', notesAsCardText],
   ],
   location: [
     ['type',        'Type'],
@@ -774,7 +807,7 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['firstLook',   'First look'],
     ['feature',     'Feature'],
     ['description', 'Description'],
-    ['notes',       'Notes'],
+    ['notes',       'Notes', notesAsCardText],
   ],
   creature: [
     ['scale',       'Scale'],
@@ -783,7 +816,7 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['behavior',    'Behavior'],
     ['rank',        'Rank'],
     ['description', 'Description'],
-    ['notes',       'Notes'],
+    ['notes',       'Notes', notesAsCardText],
   ],
 };
 
