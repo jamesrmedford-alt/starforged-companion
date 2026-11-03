@@ -28,8 +28,10 @@ spread:
   from the type, Roman-numeral deduped within the sector.
 
 `buildSiteLocationData` shapes each site for `createLocation` — a
-`location`-type Actor with `system.subtype` vault/derelict,
-`canonicalLocked: true` (narrator entity-discovery can never overwrite),
+`location`-type Actor with `system.subtype` vault/derelict, `system.klass`
+the rolled location (planetside / orbital / deep space — it was dropped, so
+the sheet's class was blank and its derelict Type oracle disabled; issue
+#326 W74), `canonicalLocked: true` (narrator entity-discovery can never overwrite),
 `status: "unexplored"`, and a `description` that bakes the exterior AND
 interior prep into one field. A parallel discovery record
 (`{id, name, type, discovered:false, actorId}`) lands on the sector's

@@ -239,6 +239,7 @@ export function buildSiteLocationData(site, sector) {
   return {
     name:            site.name,
     type:            site.type,                 // → system.subtype ("vault" | "derelict")
+    klass:           site.klass ?? null,        // → system.klass (issue #326 W74)
     region:          sector?.regionLabel ?? sector?.region ?? "",
     status:          site.status ?? "unexplored",
     firstLook:       site.firstLook ?? "",
