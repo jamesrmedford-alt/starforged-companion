@@ -198,7 +198,9 @@ a sidecar writes, and the frame, carries the narration's `narrationId` (its
 card carries the same id). The X-Card retracts what the narration it answers
 wrote (`retractNarrations`): its truths `retractedBy: "xcard"` — rendered
 nowhere, not even under CORRECTED, never migrated, still blocking a
-re-assertion — its state values removed and its frame cleared, in the same
+re-assertion — its state values removed (each restoring the value it
+superseded: a state entry keeps a bounded `previous` chain, issue #326 W41)
+and its frame cleared, in the same
 write as the pause; the ids are kept on `xCardedNarrationIds`, so
 `mergeSceneLedgers` retracts them again from a stale writer's copy and a late
 relayed sidecar of that narration is dropped.

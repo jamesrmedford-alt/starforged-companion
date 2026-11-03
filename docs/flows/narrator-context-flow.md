@@ -147,7 +147,9 @@ card, its "X-Card cleared" card or a card an earlier X-Card removed bounds
 the beat, so a repeat play removes nothing more (fallback, burn-superseded
 and whispered cards are never chosen). It retracts what their sidecars wrote
 (`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"`, state
-values removed, a frame they wrote cleared), appends their `narrationId`s to
+values removed — each gives way to the value it superseded, kept on the entry
+as a bounded `previous` chain, so an earlier kept narration's value stands
+again (issue #326 W41) — a frame they wrote cleared), appends their `narrationId`s to
 `xCardedNarrationIds` (cap 50), drops a rolling summary that covered them
 (text emptied, a regen due — stamped with a fresh `updatedAt` and
 `xCardedAt`, so a move in flight cannot merge its working copy's older

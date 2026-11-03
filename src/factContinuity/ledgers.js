@@ -126,7 +126,12 @@ export function applySidecar(sidecar, ctx) {
     const key     = subjectKey(subject);
     const list    = (campaignState.sceneState.bySubject[key] ??= []);
     const idx     = list.findIndex(e => e.attribute === attribute);
-    const entry   = { attribute, value, updatedAt: now, ...stamp };
+    // The value this one supersedes rides on it, so an X-Card on this
+    // narration restores it (issue #326 W41: retracting narration B's
+    // location left the dockmaster none, though narration A — kept — had
+    // put him in the cargo bay).
+    const previous = idx >= 0 ? supersededEntry(list[idx]) : null;
+    const entry   = { attribute, value, updatedAt: now, ...stamp, ...(previous ? { previous } : {}) };
     if (idx >= 0) list[idx] = entry;
     else list.push(entry);
     stateUpdates.push({ key, attribute });
@@ -160,12 +165,69 @@ function narrationStamp(narrationId) {
 export const XCARD_RETRACTED_BY = 'xcard';
 
 /**
+ * How many superseded values a state entry keeps (`previous`, newest first).
+ * An X-Card removes the latest beat's narrations, so a short chain covers it;
+ * the bound keeps a long scene's repeated updates from growing the setting.
+ */
+const STATE_PREVIOUS_DEPTH = 4;
+
+/**
+ * A state entry as the `previous` of the entry replacing it — its own chain
+ * trimmed so the new entry keeps at most STATE_PREVIOUS_DEPTH values.
+ *
+ * @param {Object} entry
+ * @returns {Object|null}
+ */
+function supersededEntry(entry) {
+  if (!entry || typeof entry !== 'object') return null;
+  const chain = [];
+  for (let cur = entry; cur && chain.length < STATE_PREVIOUS_DEPTH; cur = cur.previous ?? null) chain.push(cur);
+  return relinkStateChain(chain);
+}
+
+/**
+ * Rebuild a state entry from its chain (newest first): each link's
+ * `previous` is the next one, the last link has none.
+ *
+ * @param {Object[]} chain
+ * @returns {Object|null}
+ */
+function relinkStateChain(chain) {
+  let next = null;
+  for (let i = chain.length - 1; i >= 0; i--) {
+    const rest = { ...chain[i] };
+    delete rest.previous;
+    next = next ? { ...rest, previous: next } : rest;
+  }
+  return next;
+}
+
+/**
+ * A state entry without the values the given narrations set: the newest value
+ * left (the one a removed narration superseded, when the entry is its), with
+ * the removed values gone from its `previous` chain too. null when every
+ * value in the chain was theirs.
+ *
+ * @param {Object} entry
+ * @param {Set<string>} ids — the removed narrations
+ * @returns {Object|null}
+ */
+function stateEntryWithout(entry, ids) {
+  const chain = [];
+  for (let cur = entry; cur; cur = cur.previous ?? null) {
+    if (!ids.has(cur.narrationId)) chain.push(cur);
+  }
+  return relinkStateChain(chain);
+}
+
+/**
  * Retract what the given narrations' sidecars wrote to the active-scene
  * ledgers — the X-Card (issue #321 U07). Each truth they recorded is
  * retracted with `retractedBy: "xcard"`: it renders nowhere (not even under
  * CORRECTED — sessionRetractedFacts leaves it out), is never migrated at
  * scene end, and still blocks the narrator re-asserting it (applySidecar's
- * equivalence check). Each state value they set is removed, and a scene frame
+ * equivalence check). Each state value they set is removed — the value it
+ * superseded, when it kept one (`previous`), is restored — and a scene frame
  * they wrote is cleared.
  *
  * Replaces `sceneTruths`, `sceneState` and `sceneFrame` on `campaignState`
@@ -196,7 +258,10 @@ export function retractNarrations(campaignState, narrationIds) {
     const kept = {};
     for (const [key, list] of Object.entries(bySubject)) {
       if (!Array.isArray(list)) { kept[key] = list; continue; }
-      const rest = list.filter(e => !ids.has(e?.narrationId));
+      // A value a removed narration set gives way to the one it superseded
+      // (issue #326 W41), and no kept value can later fall back to one of
+      // theirs.
+      const rest = list.map(e => (e && typeof e === 'object' ? stateEntryWithout(e, ids) : e)).filter(Boolean);
       if (rest.length) kept[key] = rest;
     }
     campaignState.sceneState = { ...campaignState.sceneState, bySubject: kept };
