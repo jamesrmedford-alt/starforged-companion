@@ -1202,21 +1202,27 @@ describe("buildOracleSeeds", () => {
       expect(seeds.results.some(r => r.includes("Vehicle damage"))).toBe(true);
     });
 
-    it("seeds Make a Discovery play-kit table on explore_a_waypoint strong-with-match", () => {
+    // A match lets the player Make a Discovery / Confront Chaos INSTEAD — the
+    // card's button rolls the table for its own move; the waypoint seeds the
+    // notable-aspect prompt only (issue #326 W47: two different discoveries).
+    it("seeds the notable-aspect prompt, not the Make a Discovery table, on explore_a_waypoint strong-with-match", () => {
       rollPaired.mockReturnValue({ combined: "Reveal · Wonder" });
       rollOracle.mockImplementation((t) =>
         t === "make_a_discovery" ? { result: "Ancient archive" } : { result: "—" }
       );
       const seeds = buildOracleSeeds("explore_a_waypoint", "strong_hit", true);
-      expect(seeds.results.some(r => r.includes("Make a Discovery: Ancient archive"))).toBe(true);
+      expect(seeds.results.some(r => r.startsWith("Notable aspect of this waypoint:"))).toBe(true);
+      expect(seeds.results.some(r => r.includes("Make a Discovery"))).toBe(false);
+      expect(rollOracle).not.toHaveBeenCalledWith("make_a_discovery");
     });
 
-    it("seeds Confront Chaos play-kit table on explore_a_waypoint miss-with-match", () => {
+    it("seeds no Confront Chaos table result on explore_a_waypoint miss-with-match", () => {
       rollOracle.mockImplementation((t) =>
         t === "confront_chaos" ? { result: "Dread hallucinations" } : { result: "—" }
       );
       const seeds = buildOracleSeeds("explore_a_waypoint", "miss", true);
-      expect(seeds.results.some(r => r.includes("Confront Chaos: Dread hallucinations"))).toBe(true);
+      expect((seeds?.results ?? []).some(r => r.includes("Confront Chaos"))).toBe(false);
+      expect(rollOracle).not.toHaveBeenCalledWith("confront_chaos");
     });
   });
 });
@@ -1265,7 +1271,9 @@ describe("one Pay the Price per result (issue #321 U03)", () => {
     const r = resolveMove(interp({ moveId: "explore_a_waypoint", moveName: "Explore a Waypoint", statUsed: "wits" }), {});
     dice.mockRestore();
     expect(r.outcome).toBe("miss");
-    expect(r.oracleSeeds.results).toContain("Confront Chaos: roll:confront_chaos");
+    // The waypoint's chaos is the 🌀 button's own roll (issue #326 W47); the
+    // vault / derelict and other seeds a miss rolls are kept.
+    expect(r.oracleSeeds?.results ?? []).not.toContain("Confront Chaos: roll:confront_chaos");
   });
 
   describe("withPayThePriceSeed — the card's price into the narration's seeds", () => {
@@ -1751,7 +1759,7 @@ describe("explore_a_waypoint — site-aware seeds (SITE-WAYPOINT-BLIND fix, 2026
     expect(miss.results.some(r => /Interior Peril:/.test(r))).toBe(true);
     const shm = buildOracleSeeds("explore_a_waypoint", "strong_hit", true, { kind: "vault", name: "V" });
     expect(shm.results.some(r => /Interior Opportunity:/.test(r))).toBe(true);
-    expect(shm.results.some(r => /Make a Discovery:/.test(r))).toBe(true); // generic chain preserved
+    expect(shm.results.some(r => /Make a Discovery:/.test(r))).toBe(false);   // the 🔭 button's roll (issue #326 W47)
   });
 
   it("seeds the derelict Access suite when the current site is a derelict", () => {

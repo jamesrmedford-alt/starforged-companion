@@ -1398,16 +1398,16 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
       case "explore_a_waypoint": {
         // Per the Reference Guide: "If you roll a match on a strong hit,
         // envision a notable encounter or aspect of this place." Use Action +
-        // Theme as the prompt, plus the play-kit Make a Discovery table.
+        // Theme as the prompt. A match lets the player Make a Discovery (or,
+        // on a miss, Confront Chaos) INSTEAD — a choice the card's 🔭 / 🌀
+        // button makes, whose forced move rolls its own table. The waypoint
+        // seeds no table result: its narration depicted discovery X and the
+        // button's move rolled discovery Y, and a player who took the
+        // ordinary reward was narrated a discovery that never happened (issue
+        // #326 W47, the issue #321 U03 shape).
         if (outcome === "strong_hit" && isMatch) {
           const pair = safeRollPaired("action", "theme");
           if (pair) results.push(`Notable aspect of this waypoint: ${pair}`);
-          const disc = safeRoll("make_a_discovery");
-          if (disc) results.push(`Make a Discovery: ${disc}`);
-        }
-        if (outcome === "miss" && isMatch) {
-          const chaos = safeRoll("confront_chaos");
-          if (chaos) results.push(`Confront Chaos: ${chaos}`);
         }
         // Site-aware seeds (SITE-WAYPOINT-BLIND fix, 2026-07): exploring a
         // waypoint INSIDE a vault or derelict rolls that site's canonical

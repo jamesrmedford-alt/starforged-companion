@@ -86,10 +86,12 @@ passage" drawing.
   said so in text only until issue #321 U17, WAYPOINT-MISS-NO-PTP) — except
   a miss with a match, where the player may instead Confront Chaos, so the
   price is their choice and is not routed.
-  Strong-hit-with-match seeds a "notable aspect" + Make-a-Discovery oracle
-  roll into the narrator prompt and offers **🔭 Make a Discovery** on the
-  result card; miss-with-match seeds Confront Chaos and offers **🌀 Confront
-  Chaos**. The match's alternative is *instead* of the ordinary result: one
+  Strong-hit-with-match seeds a "notable aspect" prompt into the narrator
+  prompt and offers **🔭 Make a Discovery** on the result card;
+  miss-with-match offers **🌀 Confront Chaos**. Neither table is rolled for
+  the waypoint's own narration — the button's forced move rolls it, once
+  (issue #326 W47: the waypoint seeded its own roll, so the two narrations
+  told two different discoveries). The match's alternative is *instead* of the ordinary result: one
   claim per card (`waypointRewardClaimed` on the GM-authored move card,
   written on the canonical GM by the `waypoint.oracle` relay —
   `cardActions.applyWaypointOraclePick`, which posts the forced follow-up as
