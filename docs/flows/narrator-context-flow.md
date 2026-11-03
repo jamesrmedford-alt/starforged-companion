@@ -45,8 +45,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   author's client with its own key (a keyed player at a keyless-GM table;
   keyless → the usual "key not configured" fallback). Every client reads the
   same setting and user list, so they agree on the runner.
-- **Oracle follow-ups** (after `!oracle yes`, `!oracle <tableId>`,
-  `!pay-the-price` and the pipeline's Face Defeat roll) go through
+- **Oracle follow-ups** (after `!oracle yes`, `!oracle <tableId>` and
+  `!pay-the-price`; a move's routed Pay the Price has none — its price seeds
+  the move's own narration, issue #325 W03) go through
   `requestOracleNarration` (`src/oracles/oracleFollowup.js`) with the same
   rule: a keyed GM is connected → `requestGmAction("oracle.narrate")` runs it
   on the keyed canonical GM; else a keyed author narrates locally; else it is

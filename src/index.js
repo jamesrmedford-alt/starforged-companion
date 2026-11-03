@@ -1470,14 +1470,16 @@ export function registerChatHook() {
           console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err));
       }
 
-      // Face Defeat — roll pay_the_price d100, post a visible card, and dispatch
-      // any routable suffer entry (same behaviour as typing !pay-the-price).
-      // Capture the PtP reversals (clocks advanced + suffer meter applied) so the
-      // burn button can undo them when the player burns momentum to upgrade the outcome.
+      // A result that routes Pay the Price (a Face Danger / Strike / Set a
+      // Course … miss, Face Defeat) — roll pay_the_price d100, post a visible
+      // card under the move that paid it, and dispatch any routable suffer
+      // entry (as typing !pay-the-price does). Capture the PtP reversals
+      // (clocks advanced + suffer meter applied) so the burn button can undo
+      // them when the player burns momentum to upgrade the outcome.
       let ptpReversals = null;
       if (resolution.consequences?.routePayThePrice && game.user.isGM) {
-        const ptp = await postFaceDefeatPayThePriceCard(rollerActor?.id ?? null).catch(err => {
-          console.warn(`${MODULE_ID} | face defeat PtP card failed:`, err?.message ?? err);
+        const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null).catch(err => {
+          console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
           return null;
         });
         ptpReversals = ptp?.reversals ?? null;
@@ -5362,50 +5364,63 @@ async function postDecisiveActionCostCard(actorId = null) {
   await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, "decisive action cost");
 }
 
-async function postFaceDefeatPayThePriceCard(actorId = null) {
+/**
+ * The Pay the Price a rolled result routes (`routePayThePrice` — a Face
+ * Danger, Strike, Set a Course … miss, Face Defeat): roll the table, post the
+ * card under the move that paid it, land its suffer routes on the roller and
+ * advance the countdown clocks. Its price seeds the move's own narration
+ * (the caller's withPayThePriceSeed), so it asks for no narration of its own.
+ *
+ * @param {string|null} actorId — the roller
+ * @param {string|null} moveName — the move that paid it ("Face Danger")
+ * @returns {Promise<{ reversals: Object, price: string }|null>}
+ */
+async function postMovePayThePriceCard(actorId = null, moveName = null) {
   const { rollOracle } = await import("./oracles/roller.js");
   let result;
   try {
     result = rollOracle("pay_the_price");
   } catch (err) {
-    console.warn(`${MODULE_ID} | face defeat pay_the_price roll failed:`, err);
+    console.warn(`${MODULE_ID} | ${moveName ?? "move"} pay_the_price roll failed:`, err);
     return null;
   }
   void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
+  // The price is recorded under the move that paid it: the card and RECENT
+  // ORACLE RESULTS said "Face Defeat" for every routed price — a Face Danger
+  // miss included — a defeat that never happened (issue #325 W03).
+  const paidFor = typeof moveName === "string" && moveName.trim() ? moveName.trim() : "";
+  const qBlock  = paidFor ? `<p><em>${escapeChatHtml(paidFor)}</em></p>` : "";
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong><p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
       flags:   {
         [MODULE_ID]: {
           payThePriceCard: true,
           sufferRoutes:    result.sufferRoutes,
-          oracleMemory:    { name: "Pay the Price", question: "Face Defeat", answer: result.result },
+          oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result },
         },
       },
     });
   } catch (err) {
-    console.warn(`${MODULE_ID} | postFaceDefeatPayThePriceCard: chat post failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | postMovePayThePriceCard: chat post failed:`, err?.message ?? err);
     return null;
   }
 
   // Dispatch the suffer executors first (before clock advance) so meter changes
   // land before the burn button is visible. The receipts are what landed — each
   // route's — so the upgrade reversal undoes only that.
-  const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, "face defeat PtP");
+  const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`);
   const sufferMeterDeltas = landed.flatMap(ptpMeterReceipts);
 
   const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
-    console.warn(`${MODULE_ID} | face defeat PtP clock advance failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | ${paidFor || "move"} PtP clock advance failed:`, err?.message ?? err);
     return [];
   });
 
-  requestOracleNarration({
-    kind:           "pay_the_price",
-    oracleName:     "Pay the Price",
-    question:       "Face Defeat",
-    rolledLine:     `d100 = ${result.roll} → ${result.result}`,
-    speakerActorId: actorId,
-  });
+  // No follow-up narration: the move's own narration is seeded with this
+  // price (withPayThePriceSeed, issue #321 U03) and depicts it. A second
+  // oracle narration told the price again, independently — free to
+  // contradict it — for one Claude call more (issue #325 W03).
 
   // reversals — what the price did, for an upgrade to undo; price — the
   // result the card shows, which the move's narration is seeded with.

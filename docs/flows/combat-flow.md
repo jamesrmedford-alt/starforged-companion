@@ -221,13 +221,17 @@ open — without them, two open fights left it ending neither.
 
 **One price per result.** A routed Pay the Price (`routePayThePrice` — Face
 Defeat on every outcome, the misses above) is rolled once, for its card
-(`postFaceDefeatPayThePriceCard`, which every routed price posts through), and
+(`postMovePayThePriceCard`, which every routed price posts through), and
 the pipeline seeds the narration with that card's result
 (`withPayThePriceSeed`, `src/moves/resolver.js`); `buildOracleSeeds` rolls no
 advisory price for a result that routes one (`routesPayThePrice`). The
 narration used to depict one price while the card showed — and the table
 paid — another (issue #321 U03). A miss that routes none (Sojourn's) keeps
-its advisory seed.
+its advisory seed. The card records the price under the move that paid it
+(its `oracleMemory.question` — "Face Danger" — which RECENT ORACLE RESULTS
+renders) and asks for no follow-up narration: the move's narration depicts
+the price. It used to say "Face Defeat" for every routed price and narrate
+the price a second time (issue #325 W03).
 
 ## 4. The win payoff (linked fights)
 
