@@ -1060,22 +1060,6 @@ export function registerChatHook() {
         interpretation.adds = (interpretation.adds ?? 0) + abilityAdds;
       }
 
-      // Take a Break → "Move on": a single-use +1 on the next action roll (not
-      // a progress move). Consumed from the working copy (so persistResolution's
-      // clone can't resurrect it) and from the stored campaignState.
-      const breakAdd = takeNextMoveAdd(campaignState, interpretation.moveId);
-      if (breakAdd > 0) {
-        interpretation.adds = (interpretation.adds ?? 0) + breakAdd;
-        await clearPersistedNextMoveAdd();
-      }
-      // "+1 on your next move" the roller earned (Secure an Advantage, Gain
-      // Ground): their own, on their next action roll — claimed on the store
-      // first, so a refused claim adds nothing (issue #322 V02).
-      const bonusAdd = await consumeNextMoveBonus(campaignState, rollerActor?.id ?? null, interpretation.moveId);
-      if (bonusAdd > 0) {
-        interpretation.adds = (interpretation.adds ?? 0) + bonusAdd;
-      }
-
       // Stat substitution — when an asset ability (e.g. Empath's
       // "roll +heart in place of the listed stat") was offered AND the
       // player picked it on the confirm dialog, swap the move stat
@@ -1131,6 +1115,26 @@ export function registerChatHook() {
         console.warn(`${MODULE_ID} | bonded develop enrichment failed:`, err?.message ?? err);
         return null;
       });
+
+      // Take a Break → "Move on": a single-use +1 on the next action roll (not
+      // a progress move). Consumed from the working copy (so persistResolution's
+      // clone can't resurrect it) and from the stored campaignState. Taken
+      // after the enrichment, on the roll kind it resolved: a bonded Develop
+      // Your Relationship (no roll by its data) rolls +rank and takes the +1
+      // (issue #326 W48 — it was taken by the next roll after it).
+      const rollKind = interpretation.rollKind ?? null;
+      const breakAdd = takeNextMoveAdd(campaignState, interpretation.moveId, { rollKind });
+      if (breakAdd > 0) {
+        interpretation.adds = (interpretation.adds ?? 0) + breakAdd;
+        await clearPersistedNextMoveAdd();
+      }
+      // "+1 on your next move" the roller earned (Secure an Advantage, Gain
+      // Ground): their own, on their next action roll — claimed on the store
+      // first, so a refused claim adds nothing (issue #322 V02).
+      const bonusAdd = await consumeNextMoveBonus(campaignState, rollerActor?.id ?? null, interpretation.moveId, { rollKind });
+      if (bonusAdd > 0) {
+        interpretation.adds = (interpretation.adds ?? 0) + bonusAdd;
+      }
       // Heal: the patient — an ally the care is for, or a companion — resolved
       // before the dice; the recovery card checks and heals them, not the
       // healer (issue #325 W04).

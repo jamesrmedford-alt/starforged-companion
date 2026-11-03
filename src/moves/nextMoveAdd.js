@@ -27,13 +27,18 @@ const MODULE_ID = "starforged-companion";
 /**
  * True for a move rolled with the action die + a stat (the moves a +1 add
  * applies to). Progress moves and no-roll moves are excluded — the one
- * classification (schemas.js moveRollKind) the resolver rolls by too.
+ * classification (schemas.js moveRollKind) the resolver rolls by too, with
+ * the interpretation's own `rollKind` beside it: a bonded Develop Your
+ * Relationship, a no-roll move by its data, is marked `rollKind: "action"`
+ * by its enrichment and rolls +rank (issue #316 T05), so it takes the adds
+ * too (issue #326 W48).
  *
  * @param {string} moveId
+ * @param {string|null} [rollKind] — the interpretation's `rollKind`, when set
  * @returns {boolean}
  */
-export function isActionRollMove(moveId) {
-  return moveRollKind(moveId) === "action";
+export function isActionRollMove(moveId, rollKind = null) {
+  return rollKind === "action" || moveRollKind(moveId) === "action";
 }
 
 /**
@@ -43,13 +48,14 @@ export function isActionRollMove(moveId) {
  *
  * @param {Object} campaignState — the pipeline's working copy (mutated)
  * @param {string} moveId
+ * @param {{ rollKind?: string|null }} [opts] — the interpretation's roll kind
  * @returns {number}
  */
-export function takeNextMoveAdd(campaignState, moveId) {
+export function takeNextMoveAdd(campaignState, moveId, { rollKind = null } = {}) {
   const grant = campaignState?.nextMoveAdd;
   const value = Number(grant?.value ?? 0);
   if (!grant || !(value > 0)) return 0;
-  if (!isActionRollMove(moveId)) return 0;
+  if (!isActionRollMove(moveId, rollKind)) return 0;
   delete campaignState.nextMoveAdd;
   return value;
 }
@@ -114,10 +120,11 @@ export async function grantNextMoveBonus(actorId, amount, source = null) {
  * @param {Object|null} campaignState — the pipeline's working copy (mutated)
  * @param {string|null} actorId — the roller
  * @param {string} moveId
+ * @param {{ rollKind?: string|null }} [opts] — the interpretation's roll kind
  * @returns {Promise<number>} the add (0 when none is pending or taken)
  */
-export async function consumeNextMoveBonus(campaignState, actorId, moveId) {
-  if (typeof actorId !== "string" || !actorId || !isActionRollMove(moveId)) return 0;
+export async function consumeNextMoveBonus(campaignState, actorId, moveId, { rollKind = null } = {}) {
+  if (typeof actorId !== "string" || !actorId || !isActionRollMove(moveId, rollKind)) return 0;
   let latest;
   try {
     latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
