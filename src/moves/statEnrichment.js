@@ -213,6 +213,28 @@ export function resolveHealPatient(interpretation, roller, { players = [] } = {}
   return out;
 }
 
+/**
+ * Aid Your Ally: the ally aided, resolved before the dice (issue #325 W17) —
+ * another player character named as the move's target, else the only other
+ * PC the narration names. Their benefits are the ally's on a hit
+ * (resolver.aidYourAllyConsequences). No ally found: the benefits stay the
+ * roller's, as before.
+ *
+ * @param {Object} interpretation — mutated: `allyActorId` set (or null)
+ * @param {Actor|null} roller
+ * @param {{ players?: Array<Actor> }} [deps] — every player character
+ * @returns {string|null} the ally's actor id; null for any other move
+ */
+export function resolveAidedAlly(interpretation, roller, { players = [] } = {}) {
+  if (interpretation?.moveId !== "aid_your_ally") return null;
+  const others = (Array.isArray(players) ? players : []).filter(a => a?.id && a.id !== roller?.id);
+  const target = typeof interpretation.moveTarget === "string" ? interpretation.moveTarget : "";
+  const prose  = typeof interpretation.playerNarration === "string" ? interpretation.playerNarration : "";
+  const ally   = namedOnce(others, target) ?? (!target ? namedOnce(others, prose) : null);
+  interpretation.allyActorId = ally?.id ?? null;
+  return interpretation.allyActorId;
+}
+
 /** The one document of `docs` whose name `text` names (whole words: the full name, or a first / last name no other shares) — null for none or several. */
 function namedOnce(docs, text) {
   const hay = String(text ?? "");

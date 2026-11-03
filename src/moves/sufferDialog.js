@@ -281,6 +281,14 @@ async function runSufferCall(call, actor, opts) {
       return { kind: "suffer", sufferId: call.sufferId, ...r };
     }
     case "meter": {
+      // Aid Your Ally's choice: the benefit is the ally's (issue #325 W17).
+      if (call.meterKey === "momentum" && call.delta > 0) {
+        const ally = await aidedAllyActor(opts);
+        if (ally) {
+          await applyMeterChanges(ally, { momentum: call.delta });
+          return { kind: "meter", meterKey: call.meterKey, delta: call.delta, actorId: ally.id };
+        }
+      }
       // Heal's recovery is the patient's — the ally under the roller's care,
       // or the companion treated — never the healer's (issue #325 W04).
       if (call.meterKey === "health" && call.delta > 0 && opts.patientCompanionItemId) {
@@ -382,12 +390,14 @@ async function runSufferCall(call, actor, opts) {
       // (nextMoveAdd.js consumeNextMoveBonus). It only posted a reminder card,
       // and the confirm dialog has nowhere to enter it (issue #322 V02). A
       // write the world refuses throws: the card reports it, with a Retry.
+      // Aid Your Ally's choice: the ally's next roll (issue #325 W17).
+      const taker = (await aidedAllyActor(opts)) ?? actor;
       const { grantNextMoveBonus } = await import("./nextMoveAdd.js");
-      const granted = await grantNextMoveBonus(actor?.id ?? null, call.amount, "choice");
+      const granted = await grantNextMoveBonus(taker?.id ?? null, call.amount, "choice");
       if (!granted.ok) return { kind: "next-bonus", amount: call.amount, ok: false, reason: granted.reason };
       await postDeferredCard(
         `+${call.amount} on your next move`,
-        `Added to ${escapeHtml(actor?.name ?? "your character")}'s next action roll (not a progress move).`,
+        `Added to ${escapeHtml(taker?.name ?? "your character")}'s next action roll (not a progress move).`,
       );
       return { kind: "next-bonus", amount: call.amount };
     }
@@ -441,6 +451,22 @@ export function unpreparedAtZeroSupply(actor) {
   const supply = actor.system?.supply;
   const value = Number(typeof supply === "object" ? supply?.value : supply);
   return !(value > 0);
+}
+
+/**
+ * The ally an Aid Your Ally's benefits go to (`opts.allyActorId`, resolved
+ * before the dice — statEnrichment.js resolveAidedAlly), or null. Issue #325
+ * W17.
+ *
+ * @param {Object} opts — the card's executorOpts
+ * @returns {Promise<Actor|null>}
+ */
+async function aidedAllyActor(opts) {
+  const id = typeof opts?.allyActorId === "string" && opts.allyActorId ? opts.allyActorId : null;
+  if (!id) return null;
+  const { isPlayerCharacterActor } = await import("../character/actorBridge.js");
+  const actor = globalThis.game?.actors?.get?.(id) ?? null;
+  return isPlayerCharacterActor(actor) ? actor : null;
 }
 
 /**

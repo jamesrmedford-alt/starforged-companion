@@ -45,7 +45,7 @@ import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
-import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient } from "./moves/statEnrichment.js";
+import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient, resolveAidedAlly } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
 import { markLegacyTrack }       from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
@@ -1114,6 +1114,8 @@ export function registerChatHook() {
       // before the dice; the recovery card checks and heals them, not the
       // healer (issue #325 W04).
       resolveHealPatient(interpretation, rollerActor, { players: getPlayerActors() });
+      // Aid Your Ally: the ally whose benefits a hit is (issue #325 W17).
+      resolveAidedAlly(interpretation, rollerActor, { players: getPlayerActors() });
 
       // A roll started from a track (a Progress Tracks row, an expedition
       // card, a "Which vow?" pick) names it by id. When that track was
@@ -1159,7 +1161,11 @@ export function registerChatHook() {
       // action die, it cancels the die (resolver cancelsActionDie). Never read,
       // a -3 momentum never cancelled a 3 (issue #311 P01).
       const momentum = rollerActor ? readMomentumState(rollerActor).value : null;
-      const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite, momentum });
+      // Aid Your Ally resolves as Gain Ground while a fight is open, else as
+      // Secure an Advantage (issue #325 W17).
+      const inFight = interpretation.moveId === "aid_your_ally"
+        && (await listProgressTracks().catch(() => [])).some(t => t.type === "combat" && !t.completed);
+      const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite, momentum, inFight });
       // resolveMove leaves the id to its caller. The move card's Burn / Improve
       // flags and the narration card both carry it, and superseding the
       // original narration after an upgrade finds that card by it — with no id
@@ -1550,6 +1556,10 @@ export function registerChatHook() {
         // (issue #325 W04). Absent for every other move.
         ...(interpretation.patientActorId ? { patientActorId: interpretation.patientActorId } : {}),
         ...(interpretation.patientCompanionItemId ? { patientCompanionItemId: interpretation.patientCompanionItemId } : {}),
+        // Aid Your Ally's ally: a hit's benefits — the choice card's too —
+        // are theirs (issue #325 W17).
+        ...(interpretation.allyActorId && resolution.consequences?.beneficiary === "ally"
+          ? { allyActorId: interpretation.allyActorId } : {}),
       };
       // What an upgrade of this result needs to apply the upgraded outcome's
       // other effects as this pipeline applied the original's — the move's
@@ -1994,10 +2004,14 @@ async function applyOutcomeEffects({
   // added to their next action roll (consumeNextMoveBonus); it was card text
   // alone (issue #322 V02). An upgrade grants what its outcome adds.
   const nextBonus = Number(next.nextMoveBonus ?? 0) - Number(orig.nextMoveBonus ?? 0);
+  // Aid Your Ally: the ally takes it (issue #325 W17).
+  const allyActor = next.beneficiary === "ally" && interpretation?.allyActorId
+    ? (game.actors?.get?.(interpretation.allyActorId) ?? null) : null;
+  const bonusTaker = isPlayerCharacterActor(allyActor) ? allyActor : rollerActor;
   if (nextBonus > 0) {
     try {
-      const granted = await grantNextMoveBonus(rollerActor?.id ?? null, nextBonus, resolution.moveId ?? null);
-      if (granted.ok) applied.push(`+${nextBonus} on ${rollerActor?.name ?? "the roller"}'s next move`);
+      const granted = await grantNextMoveBonus(bonusTaker?.id ?? null, nextBonus, resolution.moveId ?? null);
+      if (granted.ok) applied.push(`+${nextBonus} on ${bonusTaker?.name ?? "the roller"}'s next move`);
       else notApplied.push(`+${nextBonus} on the next move — no character to give it to`);
     } catch (err) {
       console.warn(`${MODULE_ID} | next-move bonus failed:`, err?.message ?? err);
@@ -2115,6 +2129,24 @@ async function applyOutcomeEffects({
             { trackId: interpretation?.moveTargetId ?? null }));
     } catch (err) {
       console.warn(`${MODULE_ID} | combat fight lookup failed:`, err?.message ?? err);
+    }
+  }
+
+  // Aid Your Ally in a fight: the ally's own position (issue #325 W17).
+  const allyPosition = next.allyCombatPosition ?? null;
+  if (allyPosition && allyPosition !== (orig.allyCombatPosition ?? null) && isPlayerCharacterActor(allyActor)) {
+    try {
+      const fight = out.moveFight ?? selectCombatTrack(await listProgressTracks(), moveTarget,
+        { trackId: interpretation?.moveTargetId ?? null });
+      if (fight) {
+        await applyCombatPositionToTrack(fight.id, allyPosition, allyActor);
+        applied.push(`${allyActor.name} ${allyPosition === "in_control" ? "in control" : "in a bad spot"}`);
+      } else {
+        notApplied.push(`${allyActor.name}'s position — no open fight matched`);
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ally combat position failed:`, err?.message ?? err);
+      notApplied.push(`${allyActor.name}'s position`);
     }
   }
 

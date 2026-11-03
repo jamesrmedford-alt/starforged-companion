@@ -82,6 +82,14 @@ export async function persistResolution(resolution, campaignState, speakerActorI
       supply:   supplyChange   ?? 0,
       momentum: momentumChange ?? 0,
     };
+    // Aid Your Ally: "they (instead of you) take the benefits of the move" —
+    // a hit's momentum is the ally's (issue #325 W17).
+    const ally = resolution.consequences?.beneficiary === "ally" && targets?.allyActorId
+      ? getActor(targets.allyActorId) : null;
+    if (ally && ally.id !== actor.id && meterChanges.momentum) {
+      await applyMeterChanges(ally, { momentum: meterChanges.momentum });
+      meterChanges.momentum = 0;
+    }
     await applyMeterChanges(actor, meterChanges);
 
     // 3. Impact (debility) state from suffer moves

@@ -200,6 +200,37 @@ export function applyMomentumBurn(momentum, challengeDice, markedImpactCount) {
  *
  * Source: Reference Guide pp.9-25 (each move's outcome text)
  */
+/**
+ * Aid Your Ally's consequences (issue #325 W17): Secure an Advantage's — Gain
+ * Ground's in a fight — with a hit's benefits for the ally (`beneficiary:
+ * "ally"`: the momentum, the next-move bonus and a choice card's benefits are
+ * the ally's — index.js resolves the ally). In a fight, "If you Gain Ground
+ * and score a strong hit, you are both in control. On a weak hit, your ally is
+ * in control but you are in a bad spot" (`allyCombatPosition` beside the
+ * roller's `combatPosition`). A miss is the move's own: Pay the Price.
+ *
+ * @param {string} outcome
+ * @param {boolean} isMatch
+ * @param {boolean} inFight
+ * @returns {Object} consequences
+ */
+export function aidYourAllyConsequences(outcome, isMatch, inFight) {
+  const base = mapConsequences(inFight ? "gain_ground" : "secure_an_advantage", outcome, isMatch);
+  const via  = inFight ? "Gain Ground" : "Secure an Advantage";
+  if (outcome !== "strong_hit" && outcome !== "weak_hit") {
+    return { ...base, otherEffect: `Aid Your Ally (as ${via}): ${base.otherEffect ?? ""}`.trim() };
+  }
+  const out = { ...base, beneficiary: "ally" };
+  let positions = "";
+  if (inFight) {
+    out.allyCombatPosition = "in_control";
+    out.combatPosition     = outcome === "strong_hit" ? "in_control" : "bad_spot";
+    positions = outcome === "strong_hit" ? " You are both in control." : " Your ally is in control; you are in a bad spot.";
+  }
+  out.otherEffect = `Aid Your Ally (as ${via}) — your ally, not you, takes the benefits: ${base.otherEffect ?? ""}${positions}`;
+  return out;
+}
+
 export function mapConsequences(moveId, outcome, isMatch) {
   const handler = CONSEQUENCE_MAP[moveId];
   if (!handler) {
@@ -430,17 +461,22 @@ const CONSEQUENCE_MAP = {
     switch (outcome) {
       case "strong_hit": return { ...emptyConsequences(), momentumChange: 1,
         otherEffect: "They do what you want. Take +1 momentum." };
-      case "weak_hit": return { ...emptyConsequences(),
-        otherEffect: "Agreement comes with a demand or complication. Envision their counteroffer." };
+      // "As above" — they agree and you take +1 momentum — "but their
+      // agreement comes with a demand or complication" (issue #325 W17).
+      case "weak_hit": return { ...emptyConsequences(), momentumChange: 1,
+        otherEffect: "They agree, but with a demand or complication — envision their counteroffer. Take +1 momentum." };
       case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "They refuse or make a demand that costs you greatly. Pay the Price." };
     }
   },
 
-  aid_your_ally: (_outcome, _isMatch) => ({
-    ...emptyConsequences(),
-    otherEffect: "Secure an Advantage or Gain Ground — ally takes the benefits on a hit.",
-  }),
+  // "Secure an Advantage or Gain Ground to take action. If you score a hit,
+  // they (instead of you) take the benefits of the move." Resolved as Secure
+  // an Advantage — as Gain Ground in a fight (resolveMove's `inFight`) — its
+  // hit's benefits marked for the ally (`beneficiary: "ally"`), its miss
+  // routing Pay the Price. It returned the same text for every outcome: no
+  // price on a miss, no benefit on a hit (issue #325 W17).
+  aid_your_ally: (outcome, isMatch) => aidYourAllyConsequences(outcome, isMatch, false),
 
   check_your_gear: (outcome, _isMatch) => {
     switch (outcome) {
@@ -938,8 +974,11 @@ const CONSEQUENCE_MAP = {
           { label: "-1 companion health", companionHealth: -1 },
           { label: "Lose Momentum (-2)",  suffer: "lose_momentum", amount: 2 },
         ]},
+        // Dead or destroyed only at 0 health — as the executor gates it; the
+        // card and the narrator's MOVE OUTCOME said so on the match alone
+        // (issue #325 W17).
         otherEffect: isMatch
-          ? "Miss with a match — companion is dead or destroyed. Discard the asset."
+          ? "Worse than thought. Companion suffers -1 health or you Lose Momentum (-2). If its health is 0, it is out of action until aided — and with this match, if its health is 0 it is dead or destroyed: discard the asset."
           : "Worse than thought. Companion suffers -1 health or you Lose Momentum (-2). If health 0, out of action until aided."
       };
     }
@@ -1019,12 +1058,16 @@ const CONSEQUENCE_MAP = {
           { label: "Acquire specific item + +1 momentum",    momentum: 1 },
         ]},
         otherEffect: "If unprepared, clear it and take/give +1 supply; otherwise take/give +2 supply. Or acquire a specific item and take +1 momentum." };
+      // "As above" — the strong hit's choice, the specific item included
+      // (issue #325 W17: issue #314 Q01 fixed the supply branches' gates and
+      // left it out) — after a cost, complication or demand.
       case "weak_hit": return { ...emptyConsequences(),
         sufferPrompt: { kind: "enumerated", options: [
           { label: "Clear unprepared + +1 supply (pay cost first)", chain: [{ clearImpact: "unprepared" }, { supply: 1 }], requires: "unprepared" },
           { label: "+2 supply (pay cost first)",                    supply: 2, requires: "!unprepared" },
+          { label: "Acquire specific item + +1 momentum (pay cost first)", momentum: 1 },
         ]},
-        otherEffect: "At cost. If unprepared, clear it and take +1 supply; otherwise take +2 supply." };
+        otherEffect: "At cost. If unprepared, clear it and take +1 supply; otherwise take +2 supply. Or acquire a specific item and take +1 momentum." };
       case "miss": return { ...emptyConsequences(), routePayThePrice: true,
         otherEffect: "Unexpected peril. Pay the Price." };
     }
@@ -1226,7 +1269,11 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   }
 
   const outcomeLabel   = rollKind === "none" ? "No roll" : buildOutcomeLabel(outcome, isMatch);
-  const consequences   = mapConsequences(moveId, outcome, isMatch);
+  // Aid Your Ally in a fight is Gain Ground's (the caller says whether a
+  // fight is open — options.inFight); otherwise Secure an Advantage's.
+  const consequences   = moveId === "aid_your_ally" && options.inFight === true
+    ? aidYourAllyConsequences(outcome, isMatch, true)
+    : mapConsequences(moveId, outcome, isMatch);
   if (downgradeApplied) {
     consequences.otherEffect = `In a bad spot — outcome downgraded (${downgradeApplied}). ${consequences.otherEffect ?? ""}`.trim();
   }
@@ -1312,7 +1359,7 @@ export function resolveMove(interpretation, campaignState, options = {}) {
 // pipeline; only a miss that routes none — Sojourn's, where Pay the Price is
 // one of its choices — gets an advisory roll here.
 const PAY_THE_PRICE_ON_MISS = new Set([
-  "face_danger", "secure_an_advantage", "gather_information", "compel",
+  "face_danger", "secure_an_advantage", "aid_your_ally", "gather_information", "compel",
   "check_your_gear", "set_a_course", "gain_ground", "react_under_fire",
   "strike", "clash", "take_decisive_action", "battle", "hearten",
   "resupply", "repair", "heal", "sojourn", "make_a_connection",
