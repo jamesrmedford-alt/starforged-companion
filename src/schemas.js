@@ -133,6 +133,9 @@ export const MOVES = {
   undertake_an_expedition:   { category: "exploration", stat: ["edge","shadow","wits"],                              narratorClass: "hybrid"         },
   explore_a_waypoint:        { category: "exploration", stat: ["wits"],                                              narratorClass: "discovery"      },
   finish_an_expedition:      { category: "exploration", stat: null,  progressMove: true,                             narratorClass: "hybrid"         },
+
+  // SCENE CHALLENGE (Starforged p. 241 — issue #326 D6)
+  finish_the_scene:          { category: "scene_challenge", stat: null, progressMove: true,                          narratorClass: "hybrid"         },
   set_a_course:              { category: "exploration", stat: ["supply"],                                            narratorClass: "embellishment" },
   make_a_discovery:          { category: "exploration", stat: null,                                                  narratorClass: "discovery"      },
   confront_chaos:            { category: "exploration", stat: null,                                                  narratorClass: "discovery"      },

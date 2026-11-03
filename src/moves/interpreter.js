@@ -87,6 +87,9 @@ Given player narration, return a JSON object identifying:
 - **undertake_an_expedition** — When you travel through perilous or unknown space/terrain. Roll +edge (speed), +shadow (stealth), or +wits (vigilance).
 - **explore_a_waypoint** — When you examine a notable location during an expedition. Roll +wits.
 - **finish_an_expedition** — Progress move. When an expedition concludes.
+
+### SCENE CHALLENGE MOVES
+- **finish_the_scene** — Progress move. When a scene challenge's progress track or tension clock is filled, or events lead to the scene's conclusion.
 - **set_a_course** — When you follow a known route. Roll +supply.
 - **make_a_discovery** — Triggered by strong hit with match on explore_a_waypoint (no roll).
 - **confront_chaos** — Triggered by miss with match on explore_a_waypoint (no roll).

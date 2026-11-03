@@ -266,6 +266,9 @@ function emptyConsequences() {
     // { ranksDown } — pipeline completes the open expedition track and pays its
     // rank's legacy reward (Finish an Expedition). null = not a finish.
     finishExpedition:    null,
+    // true → pipeline completes the scene challenge and retires its tension
+    // clock (Finish the Scene — every outcome; issue #326 D6).
+    finishScene:         false,
     // Combat lifecycle (audit 3.24–3.27): pipeline creates/reuses the combat track.
     enterCombat:           false,
     // Pipeline marks progress N times on the active combat track (Strike/Clash).
@@ -670,6 +673,23 @@ const CONSEQUENCE_MAP = {
         otherEffect: "Complete but with unforeseen complication. Legacy reward one rank lower (none for troublesome). Envision what you encounter." };
       case "miss": return { ...emptyConsequences(),
         otherEffect: "Destination lost or true cost revealed. Choose: abandon (Pay the Price) OR return (roll challenge dice, clear lowest in progress boxes, raise rank by one)." };
+    }
+  },
+
+  // ── SCENE CHALLENGE MOVES ───────────────────────────────────────────────────
+
+  finish_the_scene: (outcome, _isMatch) => {
+    // Progress move (Starforged p. 241; issue #326 D6). The scene concludes on
+    // every outcome: the challenge track completes and its tension clock
+    // retires (the pipeline's finishScene). A weak hit pays a minor price, a
+    // miss a dire one — Pay the Price routed, as Take Decisive Action's miss.
+    switch (outcome) {
+      case "strong_hit": return { ...emptyConsequences(), finishScene: true,
+        otherEffect: "You achieve your objective unconditionally. The scene is finished." };
+      case "weak_hit": return { ...emptyConsequences(), finishScene: true, routePayThePrice: true,
+        otherEffect: "You succeed, but not without cost. Pay the Price — a minor cost relative to the scope of the scene." };
+      case "miss": return { ...emptyConsequences(), finishScene: true, routePayThePrice: true,
+        otherEffect: "You fail, or are undermined by a dramatic and costly turn of events. Pay the Price. Make it hurt." };
     }
   },
 

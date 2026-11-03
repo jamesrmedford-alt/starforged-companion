@@ -76,6 +76,7 @@ const MOVE_KEYS = {
   undertake_an_expedition: { key: "IRONSWORN.MoveTitle.UndertakeAnExpedition", en: "Undertake an Expedition" },
   explore_a_waypoint:      { key: "IRONSWORN.MoveTitle.ExploreAWaypoint",      en: "Explore a Waypoint"      },
   finish_an_expedition:    { key: "IRONSWORN.MoveTitle.FinishAnExpedition",    en: "Finish an Expedition"    },
+  finish_the_scene:        { key: "IRONSWORN.MoveTitle.FinishTheScene",        en: "Finish the Scene"        },
   set_a_course:            { key: "IRONSWORN.MoveTitle.SetACourse",            en: "Set a Course"            },
   make_a_discovery:        { key: "IRONSWORN.MoveTitle.MakeADiscovery",        en: "Make a Discovery"        },
   confront_chaos:          { key: "IRONSWORN.MoveTitle.ConfrontChaos",         en: "Confront Chaos"          },

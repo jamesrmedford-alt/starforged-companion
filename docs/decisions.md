@@ -54,6 +54,17 @@ brackets.)
   passage links a settlement to the next and the last leads off the map
   edge (an Expanse's one passage is its edge passage). *Rejected:* keeping
   the extra edge passage.
+- **A scene challenge ends with Finish the Scene** [D6; maintainer]. Its ⬡
+  Progress Roll was a bespoke display card: no price on a weak hit or miss,
+  no Pay the Price routed, no match flagged, and the challenge stayed open
+  with its clock advancing on every later Pay the Price. Finish the Scene
+  (Starforged p. 241) is now a progress move through the pipeline, like
+  Finish an Expedition (`finish_the_scene`, interpreter-typable too):
+  narrated, scored from the challenge's own track, a weak hit or miss routes
+  Pay the Price, a match flagged on the card, and every outcome ends the
+  challenge — its clock retired before the price is routed, then the track
+  completed. *Rejected:* a card that only asks for the price and ends the
+  challenge — the move belongs in the pipeline like its two siblings.
 - **A scene truth is filed where it was asserted** [D2; maintainer]. Scene
   end filed every scene-subject truth on the frame's location at the end of
   the scene, but a scene spans travel (it ends only at `!scene end`, End a

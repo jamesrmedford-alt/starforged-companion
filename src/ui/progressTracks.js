@@ -233,13 +233,22 @@ function warnPairedClock(what, err) {
 // ---------------------------------------------------------------------------
 
 /**
- * Which move a panel Progress Roll resolves through the move pipeline.
- * scene_challenge is deliberately absent — no Starforged move maps to it, so
- * it keeps the bespoke display roll below. Exported for tests.
+ * Which move a panel Progress Roll resolves through the move pipeline. A
+ * scene challenge's is Finish the Scene (Starforged p. 241): it rolled a
+ * bespoke display card that asked no price, flagged no match and left the
+ * challenge open (issue #326 D6). Exported for tests.
  */
 export const TRACK_TYPE_TO_MOVE = {
-  combat:     'take_decisive_action',
-  expedition: 'finish_an_expedition',
+  combat:          'take_decisive_action',
+  expedition:      'finish_an_expedition',
+  scene_challenge: 'finish_the_scene',
+};
+
+/** The line a Progress Roll posts for the pipeline, per move. */
+const PROGRESS_ROLL_LINES = {
+  take_decisive_action: (label) => `Take decisive action — ${label}.`,
+  finish_an_expedition: (label) => `Attempt to finish the expedition — ${label}.`,
+  finish_the_scene:     (label) => `Finish the scene — ${label}.`,
 };
 
 /**
@@ -260,14 +269,14 @@ async function movePipelineAvailable() {
 /**
  * Execute a Progress Roll for a track.
  *
- * Combat and expedition rolls are real Starforged progress moves with
- * pipeline consequences (Take Decisive Action → endCombat → victory card /
- * linked-vow milestone; Finish an Expedition → legacy + arrival), so during
- * an active session they route through the forced-move bridge and the move
- * pipeline rolls, narrates, and applies consequences. The bespoke card below
- * looked right but had no consumer — a "won" fight never actually ended.
- * scene_challenge (no mapped move) and pre-session rolls keep the instant
- * display roll:
+ * Each track type's roll is a real Starforged progress move with pipeline
+ * consequences (Take Decisive Action → endCombat → victory card / linked-vow
+ * milestone; Finish an Expedition → legacy + arrival; Finish the Scene → the
+ * challenge and its clock end, a weak hit or miss pays the price — issue
+ * #326 D6), so during an active session they route through the forced-move
+ * bridge and the move pipeline rolls, narrates, and applies consequences. The
+ * bespoke card below looked right but had no consumer — a "won" fight never
+ * actually ended. Pre-session rolls keep the instant display roll:
  * Score = number of fully filled boxes (ticks / 4, floored).
  * Roll 2d10 challenge dice. Compare score against each:
  *   Strong Hit  — score > both dice
@@ -282,9 +291,7 @@ async function movePipelineAvailable() {
 export async function rollProgress(track) {
   const moveId = TRACK_TYPE_TO_MOVE[track.type];
   if (moveId && await movePipelineAvailable()) {
-    const content = moveId === 'take_decisive_action'
-      ? `Take decisive action — ${track.label}.`
-      : `Attempt to finish the expedition — ${track.label}.`;
+    const content = PROGRESS_ROLL_LINES[moveId](track.label);
     await ChatMessage.create({
       content,
       // The row's own id (and label): tick enrichment, scoring and completion

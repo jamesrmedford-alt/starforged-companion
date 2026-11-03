@@ -1400,6 +1400,33 @@ export function registerChatHook() {
         }
       }
 
+      // Finish the Scene (issue #326 D6) — the scene concludes on every
+      // outcome: its challenge track completes and its tension clock retires
+      // here, before a weak hit's or miss's Pay the Price (routed below) could
+      // advance the clock of a scene that has ended.
+      if (resolution.consequences?.finishScene && game.user.isGM) {
+        try {
+          const { finishSceneChallenge } = await import("./moves/sceneChallenge.js");
+          const { retireClock } = await import("./clocks/clocks.js");
+          const fin = await finishSceneChallenge(
+            { moveTarget: interpretation.moveTarget ?? null, moveTargetId: interpretation.moveTargetId ?? null },
+            {
+              listTracks:    () => listProgressTracks(),
+              completeTrack: (id) => completeProgressTrack(id),
+              retireClock:   (id) => retireClock(id),
+            },
+          );
+          if (fin?.track) {
+            await postSceneFinishCard(fin.track).catch(err =>
+              console.warn(`${MODULE_ID} | scene finish card failed:`, err?.message ?? err));
+          } else {
+            console.warn(`${MODULE_ID} | finish the scene: no open scene challenge matched "${interpretation.moveTarget ?? "?"}" — nothing finished.`);
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | finish the scene failed:`, err?.message ?? err);
+        }
+      }
+
       // Finish an Expedition MISS — offer the play kit's recommit as a click
       // (roll both challenge dice, clear filled boxes equal to the lowest,
       // raise the rank one step) instead of advisory text the GM applies by
@@ -4206,6 +4233,20 @@ async function postLegacyMarkCard(track, ticks) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postLegacyMarkCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
+/** Feedback for Finish the Scene — the challenge finished, its clock retired (issue #326 D6). */
+async function postSceneFinishCard(track) {
+  const label = escapeChatHtml(track?.label ?? "Scene challenge");
+  const clock = track?.tensionClockId ? " Its danger clock is retired." : "";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>Scene finished</strong><p><strong>${label}</strong> is concluded.${clock}</p></div>`,
+      flags:   { [MODULE_ID]: { sceneFinishCard: true, trackId: track?.id ?? null } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postSceneFinishCard: chat post failed:`, err?.message ?? err);
   }
 }
 
