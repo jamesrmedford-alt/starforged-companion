@@ -38,6 +38,7 @@ import {
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
 import { keepNotesPortrait } from "../art/notesPortrait.js";
+import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "ship";
@@ -826,6 +827,7 @@ async function generateStarshipIntroProse({ type, firstLook, mission, name, modu
   const body = {
     model,
     max_tokens: 220,
+    ...thinkingOffFor(model),   // its 220-token seed on the narration model (issue #325 W27)
     system:   [{ type: "text", text: system }],
     messages: [{ role: "user", content: userMsg }],
   };

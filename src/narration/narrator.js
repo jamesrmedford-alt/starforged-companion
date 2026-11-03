@@ -22,6 +22,7 @@ import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlig
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults } from '../oracles/oracleMemory.js';
+import { narrationDisablesThinking } from './thinking.js';
 import { logNarratorUsage } from '../pacing/telemetry.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
@@ -3587,29 +3588,10 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   return persisted;
 }
 
-/**
- * Whether to disable extended thinking for a narration call on `model`. Sonnet
- * 5 runs ADAPTIVE THINKING BY DEFAULT when the `thinking` param is omitted —
- * for short narration that only adds latency and lets thinking consume the
- * max_tokens cap, truncating the prose + memory sidecar. So we disable it
- * there; Opus 4.7/4.8 accept "disabled" too (they already default to off).
- * The older offered models (Sonnet 4.5, Haiku 4.5) default to thinking-off,
- * so we leave their request untouched.
- *
- * Exact ids, never a prefix (issue #286 F7): "claude-sonnet-5" also prefixes
- * "claude-sonnet-5-5", which rejects "disabled" with a 400 (its thinking-off
- * form is "between_tools"), as do the Fable tier and Opus 5.5. None of those
- * is offered as a narration model. Pure — exported for tests.
- *
- * @param {string} model
- * @returns {boolean}
- */
-export function narrationDisablesThinking(model) {
-  return THINKING_DISABLED_MODELS.test(String(model ?? ''));
-}
-
-/** The models narration sends `thinking: {type: "disabled"}` to — an id, optionally date-stamped. */
-const THINKING_DISABLED_MODELS = /^claude-(?:sonnet-5|opus-4-7|opus-4-8)(?:-\d{8})?$/;
+// Whether a call on `model` turns extended thinking off — the rule lives in
+// narration/thinking.js, shared with every short structured call that runs on
+// the narration model (issue #325 W27); re-exported here for its callers.
+export { narrationDisablesThinking };
 
 async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null }) {
   const body = {

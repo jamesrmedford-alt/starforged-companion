@@ -28,6 +28,8 @@ import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityIdInStore } from "./registry.js";
 import { keepNotesPortrait } from "../art/notesPortrait.js";
+import { thinkingOffFor } from "../narration/thinking.js";
+
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
 
@@ -650,6 +652,7 @@ async function generateConnectionIntroProse({ name, role, goal, firstLook, dispo
   const body = {
     model,
     max_tokens: 220,
+    ...thinkingOffFor(model),   // its 220-token seed on the narration model (issue #325 W27)
     system:   [{ type: "text", text: system }],
     messages: [{ role: "user", content: userMsg }],
   };
