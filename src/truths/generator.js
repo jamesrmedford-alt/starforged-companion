@@ -40,6 +40,7 @@
 import { TRUTH_CATEGORIES, TRUTH_TABLES, SUB_TABLES } from "./tables.js";
 import { apiPost } from "../api-proxy.js";
 import { mergeOwnedFields } from "../factContinuity/sceneLifecycle.js";
+import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID      = "starforged-companion";
 const JOURNAL_NAME   = "World Truths";
@@ -575,7 +576,10 @@ export async function generateLoreRecap(campaignState) {
     console.warn(`${MODULE_ID} | lore: writeLoreRecapToJournal failed:`, err)
   );
 
-  const paragraphs = recap.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join("");
+  // The model's prose is text: escaped, with <npc> voice markers stripped —
+  // "<signal lost>" vanished as an unknown tag (issue #326 W71, the issue
+  // #322 V18 class the narration cards fixed).
+  const paragraphs = loreParagraphs(recap).join("");
   await ChatMessage.create({
     content: `
       <div class="sf-lore-card">
@@ -687,9 +691,26 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
   return text;
 }
 
+/**
+ * The recap's paragraphs as HTML: each escaped, its <npc> markers stripped.
+ *
+ * @param {string} recap
+ * @returns {string[]}
+ */
+function loreParagraphs(recap) {
+  return String(recap ?? "").split(/\n\n+/)
+    .map(p => p.trim()).filter(Boolean)
+    .map(p => `<p>${escapeLoreHtml(stripMarkup(p))}</p>`);
+}
+
+function escapeLoreHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
 async function writeLoreRecapToJournal(recap, campaignState) {
   const PAGE_NAME = "The Story So Far";
-  const html      = recap.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join("\n");
+  const html      = loreParagraphs(recap).join("\n");
 
   async function upsertPage(je) {
     const existing = je.pages?.contents?.find(p => p.name === PAGE_NAME);
