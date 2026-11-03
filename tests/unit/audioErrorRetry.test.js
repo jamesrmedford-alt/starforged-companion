@@ -13,11 +13,16 @@
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-vi.mock('../../src/audio/cache.js', () => ({
-  cacheKey:        vi.fn(),
-  lookup:          vi.fn(),
-  write:           vi.fn(),
-}));
+vi.mock('../../src/audio/cache.js', () => {
+  const lookup = vi.fn();
+  return {
+    cacheKey:        vi.fn(),
+    lookup,
+    // The mocked lookup's answer, from a browse that worked (issue #326 W79).
+    lookupDetailed:  vi.fn(async (hash) => ({ path: (await lookup(hash)) ?? null, browsed: true })),
+    write:           vi.fn(),
+  };
+});
 vi.mock('../../src/audio/elevenlabs.js', () => ({ synthesise: vi.fn() }));
 
 import { onNarratorCardRendered, registerAudioSocket, AUDIO_SOCKET_NAME } from '../../src/audio/index.js';

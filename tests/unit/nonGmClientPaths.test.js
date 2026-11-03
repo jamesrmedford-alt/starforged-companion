@@ -22,11 +22,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 // Module mocks — must be declared before the imports they affect.
 // ---------------------------------------------------------------------------
 
-vi.mock('../../src/audio/cache.js', () => ({
-  cacheKey:        vi.fn().mockResolvedValue('deadbeefdeadbeef'),
-  lookup:          vi.fn().mockResolvedValue(null),
-  write:           vi.fn().mockResolvedValue('/worlds/test/audio/deadbeef.mp3'),
-}));
+vi.mock('../../src/audio/cache.js', () => {
+  const lookup = vi.fn().mockResolvedValue(null);
+  return {
+    cacheKey:        vi.fn().mockResolvedValue('deadbeefdeadbeef'),
+    lookup,
+    lookupDetailed:  vi.fn(async (hash) => ({ path: (await lookup(hash)) ?? null, browsed: true })),
+    write:           vi.fn().mockResolvedValue('/worlds/test/audio/deadbeef.mp3'),
+  };
+});
 
 vi.mock('../../src/multiplayer/gmGate.js', () => ({
   isCanonicalGM: vi.fn().mockReturnValue(true),

@@ -15,7 +15,15 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
-vi.mock("../../src/audio/cache.js", () => ({ cacheKey: vi.fn(async () => "c".repeat(64)), lookup: vi.fn(async () => null), write: vi.fn() }));
+vi.mock("../../src/audio/cache.js", () => {
+  const lookup = vi.fn(async () => null);
+  return {
+    cacheKey: vi.fn(async () => "c".repeat(64)),
+    lookup,
+    lookupDetailed: vi.fn(async (hash) => ({ path: (await lookup(hash)) ?? null, browsed: true })),
+    write: vi.fn(),
+  };
+});
 vi.mock("../../src/audio/elevenlabs.js", () => ({ synthesise: vi.fn() }));
 
 import { onNarratorCardRendered, registerAudioSocket, _resetSynthStateForTests } from "../../src/audio/index.js";
