@@ -1580,9 +1580,17 @@ function safeRollPaired(t1, t2) {
 
 /**
  * Build the formatted string injected into the Loremaster context packet.
- * Gives Loremaster the full mechanical picture so narration is coherent.
+ * Gives Loremaster the full mechanical picture so narration is coherent —
+ * the narrator's MOVE OUTCOME (buildNarratorUserMessage). Exported for the
+ * resolutions built outside resolveMove: a Burn Momentum's (`momentumBurned`),
+ * an Improve Result's (`resultImproved`, `improvedBy`) and a sheet-rolled
+ * progress move's — their narrations were asked to "narrate the consequence"
+ * of a move they were never named (issue #325 W20).
+ *
+ * @param {Object} r — the resolution's fields
+ * @returns {string}
  */
-function buildLoremasterContext(r) {
+export function buildLoremasterContext(r) {
   // A no-roll move: no dice, no outcome — only the move and what it does.
   if (r.rollKind === "none") {
     return [
@@ -1593,16 +1601,22 @@ function buildLoremasterContext(r) {
   }
 
   const dieStr = r.actionDieCancelled ? `${r.actionDie} (cancelled by momentum -${r.actionDie})` : `${r.actionDie}`;
-  const diceStr = r.isProgressMove
-    ? `Progress score: ${r.progressScore} vs Challenge: ${r.challengeDice[0]}, ${r.challengeDice[1]}`
-    : `Action: ${dieStr} + ${r.statValue}${r.adds ? ` + ${r.adds}` : ""} = ${r.actionScore} vs Challenge: ${r.challengeDice[0]}, ${r.challengeDice[1]}`;
+  const dice = Array.isArray(r.challengeDice) ? r.challengeDice : [];
+  const vs = dice.length >= 2 ? ` vs Challenge: ${dice[0]}, ${dice[1]}` : "";
+  const diceStr = r.momentumBurned
+    ? `Momentum burned (${r.momentumBurnedFrom ?? r.actionScore})${vs}`
+    : r.resultImproved
+      ? `Result improved to a strong hit${r.improvedBy ? ` (${r.improvedBy})` : ""}`
+      : r.isProgressMove
+        ? `Progress score: ${r.progressScore}${vs}`
+        : `Action: ${dieStr} + ${r.statValue}${r.adds ? ` + ${r.adds}` : ""} = ${r.actionScore}${vs}`;
 
   const matchStr = r.isMatch ? " [MATCH]" : "";
 
   return [
-    `[MOVE: ${r.moveName} +${r.statUsed}]`,
+    `[MOVE: ${r.moveName}${r.statUsed ? ` +${r.statUsed}` : ""}]`,
     `[ROLL: ${diceStr}]`,
     `[OUTCOME: ${r.outcomeLabel}${matchStr}]`,
-    r.consequences.otherEffect ? `[CONSEQUENCE: ${r.consequences.otherEffect}]` : "",
+    r.consequences?.otherEffect ? `[CONSEQUENCE: ${r.consequences.otherEffect}]` : "",
   ].filter(Boolean).join(" ");
 }

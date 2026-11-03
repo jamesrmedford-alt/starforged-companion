@@ -64,6 +64,7 @@ import {
   canBurnMomentum,
   applyMomentumBurn,
   mapConsequences,
+  buildLoremasterContext,
 } from "./resolver.js";
 import {
   getActor,
@@ -616,7 +617,7 @@ function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newCon
  * momentum set, the upgraded consequences.
  */
 function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequences, campaignState }) {
-  return {
+  const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          burn.moveId,
     moveName:        toDisplayName(burn.moveId),
@@ -639,6 +640,11 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
     inputMethod:     "burn",
     sessionId:       campaignState.currentSessionId ?? "",
   };
+  // The narrator's MOVE OUTCOME: the move and what the burn made of it. The
+  // re-narration was never told either — the burned move's own narration is
+  // superseded first (issue #325 W20).
+  resolution.loremasterContext = buildLoremasterContext({ ...resolution, rollKind: "action" });
+  return resolution;
 }
 
 

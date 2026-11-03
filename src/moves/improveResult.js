@@ -40,7 +40,7 @@
  * exclusive on one card (issue #300 F02 — see burnMomentum.js).
  */
 
-import { mapConsequences, OUTCOME_RANK } from "./resolver.js";
+import { mapConsequences, OUTCOME_RANK, buildLoremasterContext } from "./resolver.js";
 import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
 import {
@@ -430,7 +430,7 @@ function buildImprovedCardContent(originalContent, clockNote, effectsNote = "") 
  * roll.
  */
 function buildImprovedResolution({ improve, newConsequences, campaignState }) {
-  return {
+  const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          improve.moveId,
     moveName:        toDisplayName(improve.moveId),
@@ -452,6 +452,12 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
     inputMethod:     "improve",
     sessionId:       campaignState.currentSessionId ?? "",
   };
+  // The narrator's MOVE OUTCOME: the move and its improved result (issue
+  // #325 W20).
+  resolution.loremasterContext = buildLoremasterContext({
+    ...resolution, rollKind: "action", improvedBy: improve.assetName || null,
+  });
+  return resolution;
 }
 
 function toDisplayName(moveId) {

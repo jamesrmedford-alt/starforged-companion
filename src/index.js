@@ -24,7 +24,7 @@
 
 import { CampaignStateSchema, MOVES, rankName } from "./schemas.js";
 import { interpretMove }         from "./moves/interpreter.js";
-import { resolveMove, withPayThePriceSeed } from "./moves/resolver.js";
+import { resolveMove, withPayThePriceSeed, mapConsequences, buildLoremasterContext } from "./moves/resolver.js";
 import { buildMischiefAside }    from "./moves/mischief.js";
 import { persistResolution }     from "./moves/persistResolution.js";
 import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
@@ -2612,12 +2612,15 @@ function registerNativeProgressRollHook() {
         const campaignState = game.settings.get(MODULE_ID, "campaignState");
         // The roller's PC (the sheet's speaker), not this client's own.
         const speakerActorId = resolveSpeakerActorId(message, campaignState);
+        const isMatch = Array.isArray(parsed.challengeDice) && parsed.challengeDice.length >= 2
+          && parsed.challengeDice[0] === parsed.challengeDice[1];
         const resolution = {
           _id:             `native-${message.id}`,
           moveId,
           moveName,
           outcome:         parsed.outcome,
           outcomeLabel,
+          isMatch,
           isProgressMove:  true,
           statUsed:        null,
           statValue:       0,
@@ -2626,6 +2629,12 @@ function registerNativeProgressRollHook() {
           challengeDice:   parsed.challengeDice,
           playerNarration: parsed.source ? `Resolving: ${parsed.source}` : "",
         };
+        // The narrator's MOVE OUTCOME — the move, its score and outcome and
+        // what the outcome means — as a pipeline resolution carries it: a
+        // sheet-rolled Fulfill Your Vow was narrated from "Resolving: …"
+        // alone (issue #325 W20).
+        resolution.consequences = mapConsequences(moveId, parsed.outcome, isMatch);
+        resolution.loremasterContext = buildLoremasterContext({ ...resolution, rollKind: "progress" });
         // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
         // mechanics, just narrate the outcome.
         return narrateResolution(resolution, campaignState, { speakerActorId });
