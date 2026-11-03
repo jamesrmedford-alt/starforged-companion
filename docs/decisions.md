@@ -21,6 +21,18 @@ brackets.)
   *Rejected:* two rewards (a won fight and the fulfilment each deepening) —
   #241 frames the fulfilment's deepen as *the* vow→connection reward and the
   card as its one-click prompt.
+- **A scene truth is filed where it was asserted** [D2; maintainer]. Scene
+  end filed every scene-subject truth on the frame's location at the end of
+  the scene, but a scene spans travel (it ends only at `!scene end`, End a
+  Session, the re-mint and `closeWorld`): "the bar is called the Rusty
+  Lantern", recorded at Bleakhold, landed on Ironway's card. Each truth now
+  records the frame's location when it is asserted (`sceneLocation`: the
+  asserting narration's own frame, else the frame in place; a Replace keeps
+  its original's), and scene end files it on the recorded place that names —
+  or archives it as lore titled with that place. A truth with no stamp
+  (recorded before this, or asserted before any frame stood) falls back to
+  the end-of-scene place. *Rejected:* filing travelled-past truths as lore —
+  it loses the place a fact belongs to whenever the scene moved at all.
 
 ---
 
@@ -1535,7 +1547,12 @@ and the summary End a Session archives to the Session Log had no reader.
   scene's recorded place: the frame's location when it names, or mentions by
   full name, exactly one recorded settlement / planet / location / ship; else
   the current location when the frame names no place. Otherwise it is WJ
-  lore titled with the frame's location.
+  lore titled with the frame's location. *(Issue #326 D2, 2026-11-03: the
+  place is the one the truth was asserted at — each truth records the
+  frame's location then, `sceneLocation` — not the one the scene ended at; a
+  scene spans travel. An unstamped truth falls back to the end-of-scene
+  place. See "Issue #326 audit" → "A scene truth is filed where it was
+  asserted".)*
 - **Lore per turn.** ESTABLISHED LORE holds up to 5 entries that share the
   most words with the player text, the frame and the entities in play, then
   the most recent, 8 in all; the Locations journal's places join the pool.

@@ -63,8 +63,10 @@ layers. This file is the never-break list.
    are cleared/migrated by `startScene`/`endScene` only. Anything that must
    outlive the scene belongs in entity tiers or WJ Lore via the existing
    migration, not in a lifecycle exemption. Since issue #286 that migration
-   also files scene-subject truths on the scene's recorded place
-   (`resolveScenePlace`) and keeps each recorded character's whereabouts —
+   also files scene-subject truths on the recorded place each was asserted
+   at (the truth's `sceneLocation` stamp, issue #326 D2 — a scene spans
+   travel; an unstamped truth falls back to `resolveScenePlace`, the place
+   the scene ended at) and keeps each recorded character's whereabouts —
    location / vessel / condition — on their record as `lastKnown` (rendered
    on the card as LAST KNOWN). Scenes close at their fiction's
    boundaries (2026-07): End Session (`session_close`), the close-out before

@@ -58,6 +58,9 @@ export function applySidecar(sidecar, ctx) {
   const entities  = Array.isArray(ctx.entities) ? ctx.entities : [];
   const stamp     = narrationStamp(ctx.narrationId);
   const now       = Date.now();
+  // Where the scene stands as these truths are asserted — the narration's own
+  // frame, else the frame in place (issue #326 D2).
+  const sceneLocation = assertedLocation(campaignState, sidecar.sceneFrame);
 
   // Sync the state ledger's sanity tag to the active scene.
   campaignState.sceneState.sceneId = sceneId;
@@ -108,6 +111,7 @@ export function applySidecar(sidecar, ctx) {
       retractedAt: null,
       correctedTo: null,
       migratedTo:  null,
+      sceneLocation,
       ...stamp,
     });
     truthIds.push(id);
@@ -159,6 +163,25 @@ export function newNarrationId() {
 /** `{ narrationId }` for a usable narration id, else `{}` (nothing stamped). */
 function narrationStamp(narrationId) {
   return (typeof narrationId === 'string' && narrationId.trim()) ? { narrationId: narrationId.trim() } : {};
+}
+
+/**
+ * Where the scene stands for a truth asserted now: the asserting narration's
+ * own frame location (its sidecar's sceneFrame), else the frame in place,
+ * else null. Stamped on the truth as `sceneLocation`, so scene end files a
+ * scene truth on the place it was asserted at — a scene spans travel, and
+ * "the bar is called the Rusty Lantern", recorded at Bleakhold, used to land
+ * on the card of wherever the scene ended (issue #326 D2).
+ *
+ * @param {Object} campaignState
+ * @param {Object|null} [frame] — the asserting narration's sceneFrame
+ * @returns {string|null}
+ */
+function assertedLocation(campaignState, frame = null) {
+  const own = typeof frame?.location === 'string' ? frame.location.trim() : '';
+  if (own) return own;
+  const current = typeof campaignState?.sceneFrame?.location === 'string' ? campaignState.sceneFrame.location.trim() : '';
+  return current || null;
 }
 
 /** `retractedBy` of a truth the X-Card removed (retractNarrations). */
@@ -320,6 +343,15 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
     updatedAt: Date.now(),
     ...narrationStamp(narrationId),
   };
+  // A truth this narration asserted before any frame stood is where its frame
+  // now says (issue #326 D2) — a caller may apply the sidecar's truths before
+  // its frame.
+  if (location && Array.isArray(campaignState.sceneTruths)) {
+    const nid = narrationStamp(narrationId).narrationId ?? null;
+    for (const t of campaignState.sceneTruths) {
+      if (t && t.sceneLocation === null && !t.retracted && (t.narrationId ?? null) === nid) t.sceneLocation = location;
+    }
+  }
   return true;
 }
 
@@ -529,6 +561,8 @@ export function replaceTruth(truthId, replacement, campaignState, ctx = {}) {
     retractedAt: null,
     correctedTo: null,
     migratedTo:  null,
+    // A corrected wording stays where the fact was established (issue #326 D2).
+    sceneLocation: entry.sceneLocation !== undefined ? entry.sceneLocation : assertedLocation(campaignState),
   };
 
   entry.retracted   = true;
@@ -581,6 +615,7 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
     retractedAt: null,
     correctedTo: null,
     migratedTo:  null,
+    sceneLocation: assertedLocation(campaignState),   // issue #326 D2
   };
   campaignState.sceneTruths.push(entry);
   if (strike) strike.correctedTo = entry.id;

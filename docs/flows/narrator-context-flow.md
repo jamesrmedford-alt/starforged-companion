@@ -447,10 +447,14 @@ boundary is a world write, so a keyed player's client narrating `@scene` /
 scene when truths/state exist. `endScene` migrates entity-kind truths →
 generative tiers (deduped against existing tier details — live capture +
 migration no longer double-lands); scene-kind truths → the tier of the
-scene's recorded place (issue #286 C2, `resolveScenePlace`: the frame's
-location when it names or mentions exactly one recorded place, else the
-current location when the frame names no place); text truths and place-less
-scene truths → WJ Lore (titled with the frame's location, not the scene id).
+recorded place the truth was asserted at (issue #286 C2; issue #326 D2:
+each truth's `sceneLocation` — the frame's location when it was asserted —
+names or mentions exactly one recorded place, `placeNamedBy`; a truth with
+no stamp falls back to the end-of-scene place, `resolveScenePlace`: the
+frame's location by the same ladder, else the current location when the
+frame names no place); text truths and place-less scene truths → WJ Lore
+(titled with where the truth was asserted, else the frame's location, not
+the scene id).
 It keeps each recorded character's location / vessel / condition on their
 record as `lastKnown` (C1, rendered as LAST KNOWN on the card), keeps the
 scene's strikes for the session (B6), then discards state and clears the
