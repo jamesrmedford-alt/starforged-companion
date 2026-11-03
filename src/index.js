@@ -873,7 +873,11 @@ export function registerChatHook() {
     }
 
     // Claim the lock before any async work so other clients see it immediately.
+    // The claimant rides it: if their browser goes, the next canonical GM
+    // releases a lock nobody holds (releaseLockOfDisconnectedGM, issue #325
+    // W25).
     campaignState.pendingMove = true;
+    campaignState.pendingMoveBy = game.user?.id ?? null;
     try {
       await game.settings.set(MODULE_ID, "campaignState", campaignState);
     } catch (err) {
@@ -881,6 +885,7 @@ export function registerChatHook() {
       // setting value (Foundry returns it by reference): left set, the flag
       // refused every later move here until a reload (issue #302).
       campaignState.pendingMove = false;
+      campaignState.pendingMoveBy = null;
       console.error(`${MODULE_ID} | could not claim the move lock:`, err);
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
       return;
@@ -1690,6 +1695,42 @@ export function registerChatHook() {
   // — the pipeline's own release, a stale lock cleared at load (issue #325
   // W02).
   Hooks.on("updateSetting", (setting) => drainDeferredForcedMoves(setting, onMessage));
+  // A GM who leaves mid-move takes their lock with them (issue #325 W25).
+  Hooks.on("userConnected", (user, connected) => {
+    releaseLockOfDisconnectedGM(user, connected).catch(err =>
+      console.warn(`${MODULE_ID} | releasing a departed GM's move lock failed:`, err?.message ?? err));
+  });
+}
+
+// ── A move lock whose GM is gone (issue #325 W25) ──────────────────────────
+
+/**
+ * `userConnected(user, false)`: a GM who held the move lock left — their
+ * browser crashed, closed or dropped mid-move. With two GMs, canonicity passes
+ * to the other at once, but the only stale-lock reset was the `ready` hook of
+ * the client canonical at its own load: every move was refused ("A move is
+ * already being resolved") until such a GM reloaded. The new canonical GM
+ * releases a lock the departed user held (`pendingMoveBy` — or, on a lock from
+ * before the claimant was stamped, held by nobody named) and whispers the GMs
+ * that the move may be incomplete.
+ *
+ * @param {User} user — the user who connected or left
+ * @param {boolean} connected
+ */
+async function releaseLockOfDisconnectedGM(user, connected) {
+  if (connected || !user?.isGM || !isCanonicalGM()) return;
+  const cs = game.settings.get(MODULE_ID, "campaignState");
+  if (!cs?.pendingMove) return;
+  const holder = cs.pendingMoveBy ?? null;
+  if (holder && holder !== user.id) return;
+  const released = await releasePendingMoveLock();
+  if (!released) return;
+  console.warn(`${MODULE_ID} | ${user.name ?? user.id} left while a move was being resolved — the move lock is released.`);
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Move lock released</strong><p>${escapeChatHtml(user.name ?? "A GM")} disconnected while a move was being resolved. The table can move again; that move's narration or its result may be incomplete — check its card.</p></div>`,
+    whisper: gmUserIds(),
+    flags:   { [MODULE_ID]: { moveLockReleasedCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | move-lock card failed:`, err?.message ?? err));
 }
 
 // ── Forced moves held while another move is resolved (issue #325 W02) ───────
@@ -2349,7 +2390,7 @@ export async function releasePendingMoveLock() {
   // Write a copy: `get` returns this client's cached value, and clearing the
   // flag on it before a write that failed made the retry (the pipeline's
   // finally) read "released" and skip — the world kept the lock (issue #302).
-  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false }).then(() => true, err => {
+  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false, pendingMoveBy: null }).then(() => true, err => {
     console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err);
     return false;
   });
@@ -6655,6 +6696,7 @@ Hooks.once("ready", () => {
     // Reset a stale pendingMove lock — left set if Foundry was closed mid-move.
     if (prevState.pendingMove) {
       prevState.pendingMove = false;
+      prevState.pendingMoveBy = null;
       console.log(`${MODULE_ID} | Reset stale pendingMove lock on ready`);
     }
 
@@ -6670,7 +6712,7 @@ Hooks.once("ready", () => {
     // scene fields itself.
     initSessionId(prevState).then(updated =>
       game.settings.set(MODULE_ID, "campaignState",
-        mergeOwnedFields(updated, ["pendingMove", ...SESSION_MINT_FIELDS], "session start")),
+        mergeOwnedFields(updated, ["pendingMove", "pendingMoveBy", ...SESSION_MINT_FIELDS], "session start")),
     ).then(async () => {
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: post campaign recap when a new session is detected

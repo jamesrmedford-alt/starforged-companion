@@ -163,7 +163,8 @@ export async function persistResolution(resolution, campaignState, speakerActorI
 //                                   pacing from its separate pre-lock snapshot
 //       campaignRecapCache          narrator getCampaignRecap (store-only write)
 //       dismissedEntities           entity panel / extractor dismiss
-//       pendingMove                 the concurrency lock, claimed and released on the store
+//       pendingMove, pendingMoveBy  the concurrency lock and its claimant, claimed and
+//                                   released on the store (issue #325 W25)
 //       activeSectorId              `!sector`
 //       incitingIncident            session/incitingIncident.js
 //       worldTruths, worldTruthsSet, worldTruthsJournalId   truths flows
@@ -224,6 +225,7 @@ const STORE_OWNED_FIELDS = Object.freeze([
   'campaignRecapCache',
   'dismissedEntities',
   'pendingMove',
+  'pendingMoveBy',
   'activeSectorId',
   'incitingIncident',
   'worldTruths',

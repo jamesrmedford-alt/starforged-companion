@@ -478,6 +478,10 @@ export const CampaignStateSchema = {
   // Prevents two narration messages from kicking off parallel pipelines that
   // would race on campaignState writes. Cleared on ready if left stuck.
   pendingMove: false,
+  // The user id of the GM whose pipeline claimed the lock: when that GM
+  // disconnects, the next canonical GM releases it (index.js
+  // releaseLockOfDisconnectedGM — issue #325 W25).
+  pendingMoveBy: null,
 
   // Claude API configuration — read by the move interpreter (which falls back
   // to its own constants); nothing writes it, so it stays at these defaults.
