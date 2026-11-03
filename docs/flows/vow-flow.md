@@ -226,7 +226,10 @@ GM applies consequences
 `payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
 also pays quests legacy — from the roller's vow's rank). Idempotency:
 the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
-across both paths — and a claim on the vow (its `vowId`), taken before the
+across both paths — the pipeline's own Quests legacy write checks it too, for
+a vow fulfilled on the sheet (which leaves the Item open) and then through the
+pipeline (issue #325 W28: it paid the legacy a second time) — and a claim on
+the vow (its `vowId`), taken before the
 first await, keeps two fulfilments that arrive together (a duplicate sheet
 roll) from both passing the check before the flag lands (issue #306 R04). The
 flag is also the durable claim: nothing is paid until it has landed on a copy

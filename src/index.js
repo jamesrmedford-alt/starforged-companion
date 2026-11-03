@@ -1433,10 +1433,16 @@ export function registerChatHook() {
             actorId: rollerActor?.id ?? null,
             itemId:  tickInfo?.source === "vow" ? (tickInfo.trackId ?? null) : null,
           };
+          // A vow already fulfilled on the sheet carries `fulfilPaid` (the
+          // native payoff's claim — the vendor leaves the Item open, so it can
+          // be fulfilled again here): its Quests legacy is paid, and the write
+          // below paid it a second time (issue #325 W28).
+          const legacyPaid = resolveVowItemCopies(vowName, vowKey).copies
+            .some(({ item }) => item?.flags?.[MODULE_ID]?.fulfilPaid === true);
           const itemDone = await completeVowItemByName(vowName, vowKey);
 
           if (fin?.track) {
-            if (fin.legacyTicks > 0) addLegacyTicks(campaignState, "quests", fin.legacyTicks);
+            if (fin.legacyTicks > 0 && !legacyPaid) addLegacyTicks(campaignState, "quests", fin.legacyTicks);
             await postFulfillVowCard(fin).catch(err =>
               console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err));
             // Journal path already paid the quests legacy — deliver only the
@@ -1447,10 +1453,10 @@ export function registerChatHook() {
             // Item-only vow (no journal twin): legacy on the pipeline's
             // campaignState, deepen + reward via the shared payoff, then a
             // fulfil card synthesized from the item.
-            const ticks = legacyRewardTicks(itemDone.rank, ranksDown);
+            const ticks = legacyPaid ? 0 : legacyRewardTicks(itemDone.rank, ranksDown);
             if (ticks > 0) addLegacyTicks(campaignState, "quests", ticks);
             await payFulfilledVowNative(vowName, resolution.outcome, { skipLegacy: true, ...vowKey });
-            await postFulfillVowCard({ track: { label: itemDone.name, rank: itemDone.rank }, legacyTicks: ticks }).catch(err =>
+            await postFulfillVowCard({ track: { label: itemDone.name, rank: itemDone.rank }, legacyTicks: ticks, legacyPaid }).catch(err =>
               console.warn(`${MODULE_ID} | fulfill vow card failed:`, err?.message ?? err));
           } else {
             console.warn(`${MODULE_ID} | fulfil: hit but no vow track or item matched "${vowName ?? "?"}" — nothing completed.`);
@@ -5648,11 +5654,15 @@ function rankDisplayLabel(rank) {
   return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
-async function postFulfillVowCard({ track, legacyTicks }) {
+async function postFulfillVowCard({ track, legacyTicks, legacyPaid = false }) {
   const rankLabel = rankDisplayLabel(track.rank);
+  // Fulfilled on the sheet first: its legacy was paid then (issue #325 W28).
+  const legacyLine = legacyPaid
+    ? "Quests legacy track: already marked when it was fulfilled on the sheet."
+    : `Quests legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked.`;
   try {
     await ChatMessage.create({
-      content: `<div class="sf-card sf-card--vow-fulfilled"><div class="sf-card-header">⚑ Vow Fulfilled: ${escapeHtml(track.label ?? "vow")}</div><div class="sf-card-body"><p>The <strong>${rankLabel}</strong> vow is complete. Quests legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked.</p></div></div>`,
+      content: `<div class="sf-card sf-card--vow-fulfilled"><div class="sf-card-header">⚑ Vow Fulfilled: ${escapeHtml(track.label ?? "vow")}</div><div class="sf-card-body"><p>The <strong>${rankLabel}</strong> vow is complete. ${legacyLine}</p></div></div>`,
       flags: { [MODULE_ID]: { fulfillVowCard: true, trackLabel: track.label, legacyTicks } },
     });
   } catch (err) {
