@@ -1127,7 +1127,8 @@ async function postContradictionNotification(transition) {
   const kind = String(transition.kind ?? "truth").toLowerCase();
   const REMEDY_HINTS = {
     frame:      "The scene frame refreshes with the next narration — nudge with <code>@scene</code> (or <code>!scene start</code>) if it stays stale.",
-    ship:       "Ship position lives on the ship record — correct it with <code>!ship</code> or by moving the command-vehicle token.",
+    // `!at <place>` sets the position — no `!ship` verb does (issue #326 W66).
+    ship:       "Ship position lives on the ship record — correct it with <code>!at &lt;place&gt;</code> or by moving the command-vehicle token.",
     identity:   "Recorded pronouns live on the character sheet / connection record — fix them there (entity panel or sheet).",
     retraction: "Re-asserting a retracted fact is already blocked at the ledger — no correction needed. Use Replace in the correction dialog if the fact should genuinely change.",
   };
