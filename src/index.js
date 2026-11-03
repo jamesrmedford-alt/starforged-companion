@@ -4468,7 +4468,8 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
     }
   }
 
-  const rank      = item.system?.rank ?? null;
+  // The vendor's rank is a ChallengeRank number (issue #325 W01): its name.
+  const rank      = item.system?.rank != null ? rankName(item.system.rank) : null;
   const ranksDown = outcome === "weak_hit" ? 1 : 0;
   const legacyTicks    = skipLegacy ? 0 : legacyRewardTicks(rank, ranksDown);
   const connectionName = item.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
@@ -4534,7 +4535,9 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
 // actorBridge.completeVowItem. Returns { name, rank } of the resolved vow,
 // or null when nothing matched. `actorId` / `itemId` (the roller, the scored
 // Item) resolve the roller's own vow first — another PC's same-named vow used
-// to be the one completed (issue #301 B02).
+// to be the one completed (issue #301 B02). `rank` is the rank's NAME: the
+// Item holds the vendor's ChallengeRank number, which paid every vow as a
+// dangerous one and threw in the fulfil card (issue #325 W01).
 async function completeVowItemByName(vowName, { actorId = null, itemId = null } = {}) {
   const { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId });
   if (!primary) return null;
@@ -4547,7 +4550,8 @@ async function completeVowItemByName(vowName, { actorId = null, itemId = null } 
     });
     anyDone = anyDone || done;
   }
-  return anyDone ? { name: primary.item.name, rank: primary.item.system?.rank ?? null } : null;
+  const rank = primary.item.system?.rank;
+  return anyDone ? { name: primary.item.name, rank: rank != null ? rankName(rank) : null } : null;
 }
 
 // GM-gated companion to registerNativeProgressRollHook: when a vow is fulfilled
@@ -5370,8 +5374,15 @@ async function postForsakeVowCard(vowName) {
   }
 }
 
+/** "Epic" for a rank name or the vendor's ChallengeRank number (issue #325 W01); "unknown" for none. */
+function rankDisplayLabel(rank) {
+  if (rank == null || rank === "") return "unknown";
+  const name = rankName(rank);
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
 async function postFulfillVowCard({ track, legacyTicks }) {
-  const rankLabel = track.rank ? track.rank.charAt(0).toUpperCase() + track.rank.slice(1) : "unknown";
+  const rankLabel = rankDisplayLabel(track.rank);
   try {
     await ChatMessage.create({
       content: `<div class="sf-card sf-card--vow-fulfilled"><div class="sf-card-header">⚑ Vow Fulfilled: ${escapeHtml(track.label ?? "vow")}</div><div class="sf-card-body"><p>The <strong>${rankLabel}</strong> vow is complete. Quests legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked.</p></div></div>`,
@@ -5386,7 +5397,7 @@ async function postFulfillVowCard({ track, legacyTicks }) {
 // not yet marked rather than claiming the ticks (the GMs have a Retry).
 async function postForgeABondCard(connection, legacyTicks, { legacyPending = false } = {}) {
   const nameLabel = connection.name ?? "connection";
-  const rankLabel = connection.rank ? connection.rank.charAt(0).toUpperCase() + connection.rank.slice(1) : "unknown";
+  const rankLabel = rankDisplayLabel(connection.rank);
   const legacyLine = legacyPending
     ? `Bonds legacy track: not yet marked (${rankLabel} rank).`
     : `Bonds legacy track: <strong>+${legacyTicks} tick${legacyTicks !== 1 ? "s" : ""}</strong> marked (${rankLabel} rank).`;

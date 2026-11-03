@@ -29,6 +29,7 @@ import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActive
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { progressPerMilestoneLine, legacyRewardLine, proposeRewards, buildRewardChoiceHtml }
   from "../moves/rewards.js";
+import { rankName } from "../schemas.js";
 
 const MODULE_ID = "starforged-companion";
 const SOCKET    = `module.${MODULE_ID}`;
@@ -600,6 +601,9 @@ export function shouldOfferVowSetup(item) {
  * @returns {string}
  */
 export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
+  // A sheet-made vow's rank is the vendor's ChallengeRank number: the card
+  // names it — "(formidable)", never "(3)" (issue #325 W01).
+  if (rank != null && rank !== "") rank = rankName(rank);
   const vrank = rank ?? "dangerous";
   // Connection picker (#248 B-link): link this vow to a connection so fulfilling
   // it deepens that bond. Rendered only when connections exist.

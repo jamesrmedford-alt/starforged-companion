@@ -20,10 +20,23 @@ export const DEFAULT_EXPEDITION_RANK = "dangerous";
  * back to `dangerous`. The inferred rank is a best guess — the player can
  * re-rank the track in the Progress Tracks panel, so a wrong guess is cheap.
  *
+ * foundry-ironsworn stores a progress Item's rank as its ChallengeRank NUMBER
+ * (1 troublesome … 5 epic — `ChallengeRank._cast` turns a written "epic" into
+ * 5), so a vow or bond Item's rank reaches the legacy reward as a number: it
+ * maps to its name here. Every vow paid a dangerous vow's reward — an epic
+ * vow 2 ticks instead of 12 (issue #325 W01).
+ *
  * @param {*} rank
  * @returns {string}
  */
 export function normalizeExpeditionRank(rank) {
+  const numeric = typeof rank === "number" || (typeof rank === "string" && /^\s*\d+\s*$/.test(rank));
+  if (numeric) {
+    const n = Number(rank);
+    return Number.isInteger(n) && n >= 1 && n <= EXPEDITION_RANKS.length
+      ? EXPEDITION_RANKS[n - 1]
+      : DEFAULT_EXPEDITION_RANK;
+  }
   const r = String(rank ?? "").trim().toLowerCase();
   return EXPEDITION_RANKS.includes(r) ? r : DEFAULT_EXPEDITION_RANK;
 }
