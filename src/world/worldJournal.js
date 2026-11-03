@@ -19,6 +19,8 @@
  * via stubs; they will be wired in Phase 5.
  */
 
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
+
 const MODULE_ID = "starforged-companion";
 
 export const FOLDER_NAME = "Starforged Companion";
@@ -54,7 +56,9 @@ const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
  * @returns {Promise<void>}
  */
 export async function initWorldJournals() {
-  if (!game.user?.isGM) return;
+  // One GM creates the World Journal folder and its four journals — the canonical one: two GMs whose clients
+  // reconnected together each found none and created one (issue #326 W54).
+  if (!isCanonicalGM()) return;
 
   let folder = null;
   try {

@@ -1,3 +1,5 @@
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
+
 export const CONTENT_VERSION = "1.7.36";
 
 export const JOURNAL_NAME = "Starforged Companion — Help & Reference";
@@ -101,7 +103,10 @@ export const PAGES = [
 ];
 
 export async function ensureHelpJournal() {
-  if (!game.user.isGM) return;
+  // One GM writes it — the canonical one. Two GMs whose clients reconnected
+  // together (a server restart) each found no journal and created one, and
+  // each rebuilt its pages on a CONTENT_VERSION bump (issue #326 W54).
+  if (!isCanonicalGM()) return;
 
   const pages = PAGES.map(p => ({
     name: p.name,

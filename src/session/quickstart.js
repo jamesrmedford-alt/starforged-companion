@@ -32,6 +32,7 @@ import { getCanonicalAsset, listCanonicalAssetsByCategory } from "../system/iron
 import { seedStarshipActor }                  from "../entities/ship.js";
 import { STARFORGED_CHARACTER_SHEET }         from "../entities/connection.js";
 import { placeCommandVehicleTokenIfPresent }  from "../sectors/sceneBuilder.js";
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 const REGIONS   = ["terminus", "outlands", "expanse"];
@@ -316,7 +317,9 @@ async function postQuickstartSummary(phases, sectorName) {
  * one-liner into the module API so its logic stays in tested module code.
  */
 export async function ensureQuickstartMacro() {
-  if (!game.user?.isGM) return null;
+  // One GM creates the ✦ Quickstart macro — the canonical one: two GMs whose clients
+  // reconnected together each found none and created one (issue #326 W54).
+  if (!isCanonicalGM()) return null;
   try {
     const existing = (game.macros?.contents ?? []).find(
       m => m.flags?.[MODULE_ID]?.quickstartMacro === true,

@@ -6922,7 +6922,10 @@ Hooks.once("ready", () => {
     // Settlements) into a flat per-sector folder (Sectors/<Name>). Idempotent:
     // when nothing needs moving the function walks the actor list once and
     // returns. Reports counts to the console so the GM can see what changed.
-    import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames }) => {
+    // These migrations write world documents: the canonical GM runs them —
+    // two GMs whose clients reconnected together each ran them (issue #326
+    // W54). The help journal, macros and World Journal gate themselves.
+    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames }) => {
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
