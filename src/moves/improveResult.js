@@ -103,7 +103,11 @@ export function buildImproveState(resolution, applicableAbilities, actor, ptpRev
   // Only offer when there's room to improve (weak hit or miss → strong hit).
   if (OUTCOME_RANK[resolution.outcome] >= OUTCOME_RANK.strong_hit) return null;
 
-  const ability = applicableAbilities.find(a => a?.resultImprovement?.improveTo === "strong_hit");
+  // An ability improves the result it names: "count a weak hit as a strong
+  // hit" a weak hit only, never a miss (issue #325 W13); "improve the result
+  // to a strong hit" any result below.
+  const ability = applicableAbilities.find(a => a?.resultImprovement?.improveTo === "strong_hit"
+    && (!a.resultImprovement.from || a.resultImprovement.from === resolution.outcome));
   if (!ability) return null;
 
   return {

@@ -340,19 +340,23 @@ function annotate(detection, moveName = null) {
  * Detect a post-roll "improve the result" ability (v1.7.11 finding G).
  * Fugitive: "you may improve the result to a strong hit." The cost (filling a
  * clock) is carried separately via the ability's hasClock/clockMax. Returns
- * the target outcome to upgrade to, or null when the text doesn't offer one.
+ * the target outcome to upgrade to and the result it improves `from` (null:
+ * any result below it), or null when the text doesn't offer one.
  *
- * Conservative on purpose: only matches an explicit "improve … to a strong
- * hit" phrasing, so it never fires on adds/reroll abilities.
+ * "Improve … to a strong hit" improves any lower result. "Count (or treat) a
+ * weak hit as a strong hit" — Brawler, Heavy Cannons, Rockhorn, Demolitionist,
+ * Engine Upgrade — improves a WEAK HIT only (`from: "weak_hit"`): read like
+ * Fugitive's, it turned a miss into a strong hit at no cost, two steps, the
+ * miss's Pay the Price undone (issue #325 W13). Conservative on purpose: never
+ * fires on adds/reroll abilities.
  *
  * @param {string} text — plain-text ability description
- * @returns {{ improveTo: "strong_hit" }|null}
+ * @returns {{ improveTo: "strong_hit", from: "weak_hit"|null }|null}
  */
 export function extractResultImprovement(text) {
   const t = String(text ?? "").toLowerCase();
-  if (/\bimprove\b[^.]*\bto a strong hit\b/.test(t)) return { improveTo: "strong_hit" };
-  if (/\bcount\b[^.]*\bas a strong hit\b/.test(t))   return { improveTo: "strong_hit" };
-  if (/\btreat\b[^.]*\bas a strong hit\b/.test(t))   return { improveTo: "strong_hit" };
+  if (/\bimprove\b[^.]*\bto a strong hit\b/.test(t)) return { improveTo: "strong_hit", from: null };
+  if (/\b(?:count|treat)\b[^.]*\bas a strong hit\b/.test(t)) return { improveTo: "strong_hit", from: "weak_hit" };
   return null;
 }
 
