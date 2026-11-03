@@ -149,7 +149,11 @@ and whispered cards are never chosen). It retracts what their sidecars wrote
 (`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"`, state
 values removed, a frame they wrote cleared), appends their `narrationId`s to
 `xCardedNarrationIds` (cap 50), drops a rolling summary that covered them
-(text emptied, a regen due) and sets `xCardRedirect` — on every play. If that
+(text emptied, a regen due — stamped with a fresh `updatedAt` and
+`xCardedAt`, so a move in flight cannot merge its working copy's older
+summary back over it, and a regen whose Haiku call was out when the card was
+played discards its reply; issue #325 W06) and sets `xCardRedirect` — on
+every play. If that
 part fails the pause is still written. After the write the cards are flagged
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
 `propagateRetraction`. Readers: the ring and the rolling summary skip

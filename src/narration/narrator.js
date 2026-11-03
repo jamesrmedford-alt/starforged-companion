@@ -1208,7 +1208,13 @@ export function applyXCardToNarratorMemory(cs) {
     // it covers the first `coveredCount` of them.
     const firstIdx = sessionNarratorCards(sessionId).indexOf(cards[0]);
     if (firstIdx >= 0 && firstIdx < (Number(summary.coveredCount) || 0)) {
-      cs.sessionSummary = { ...summary, text: '', coveredCount: 0 };
+      // Stamped now: a move in flight merges its working copy's summary back
+      // only when that one is newer (persistResolution's sessionSummary
+      // rule). Kept at the old `updatedAt`, the tie wrote the removed beat
+      // back, text and coverage — and the restored coverage held the regen
+      // off for another K cards (issue #325 W06).
+      const now = new Date().toISOString();
+      cs.sessionSummary = { ...summary, text: '', coveredCount: 0, updatedAt: now, xCardedAt: now };
     }
   }
 
@@ -1568,6 +1574,10 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
       struck.map(f => `- ${f.label} — ${f.fact}`).join('\n')
     : '';
 
+  // An X-Card played while the call is out removes a narration this summary
+  // was made from: its reply is never stored (issue #325 W06).
+  const xCardPlaysAtStart = xCardPlayCount();
+
   let text;
   try {
     text = await callNarratorAPI({
@@ -1583,6 +1593,10 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     return cachedText;
   }
   if (!text?.trim()) return cachedText;
+  if (xCardPlayCount() !== xCardPlaysAtStart || isXCardActive(null)) {
+    console.debug(`${MODULE_ID} | narrator: X-Card played during the rolling summary's call — its summary is discarded.`);
+    return '';
+  }
 
   const record = {
     text:         text.trim(),
