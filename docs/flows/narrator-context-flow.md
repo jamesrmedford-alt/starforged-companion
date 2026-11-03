@@ -285,7 +285,17 @@ the check was the entry count alone, and the session-opening read had none).
 figures and places — the ledger holds only this scene) are always in scope
 (B4: they used to need their exact phrase in the player text or the frame);
 recorded entities are in scope when matched, at the current location, or in
-the frame's cast.
+the frame's cast. The ledger is read from the store when the narration is
+built — the scene, its truths, state and frame, and the session's strikes
+(`narratorPrompt.SCENE_LEDGER_FIELDS`, carried as `extras.sceneLedger` by
+`buildNarratorExtras`, which also reads the frame's cast, the lore query and
+the spotlight from it): the move pipeline narrates from a snapshot taken
+before its confirm dialog, and an X-Card played (and resumed) meanwhile had
+retracted the beat's truths, removed its state and cleared its frame only in
+the store — the narration rendered them as binding beside the X-CARD —
+REDIRECT block; a `!truth strike` made during the dialog rendered as binding
+the same way (issue #325 W05). A store holding another session than the
+snapshot's keeps the snapshot's ledger.
 
 **Budgets.** `SIDECAR_TOKEN_HEADROOM = 500`; move/paced use
 `narrationMaxTokens + 500`; every other mode passes

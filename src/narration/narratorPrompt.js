@@ -1258,9 +1258,24 @@ export function buildSharedStorySections(campaignState, narratorSettings = {}, e
       formatPreviousSessionBlock(extras.previousSessionSummary ?? null),
       formatStorySoFarBlock(extras.rollingSummary ?? ''),
       formatEntityCardsBlock(extras.entityCards),
-      formatLedgerSection(campaignState, narratorSettings, extras),
+      formatLedgerSection(withSceneLedger(campaignState, extras.sceneLedger), narratorSettings, extras),
     ]),
   };
+}
+
+/**
+ * The scene-ledger fields a narration renders as it stands in the store — the
+ * scene, its truths, state and frame, and the session's strikes — read by
+ * buildNarratorExtras at narration time (issue #325 W05). Every other field
+ * stays the caller's.
+ */
+export const SCENE_LEDGER_FIELDS = Object.freeze(
+  ['currentSessionId', 'currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame', 'sessionRetractions'],
+);
+
+/** `campaignState` with the live scene ledger (`extras.sceneLedger`) laid over it; the state itself when there is none. */
+function withSceneLedger(campaignState, sceneLedger) {
+  return sceneLedger && typeof sceneLedger === 'object' ? { ...(campaignState ?? {}), ...sceneLedger } : campaignState;
 }
 
 /**
@@ -1366,6 +1381,7 @@ export function buildNarratorSystemPrompt(
     clocks               = [],
     sessionFocus         = null,
     progressTracks       = [],
+    sceneLedger          = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1551,7 +1567,11 @@ export function buildNarratorSystemPrompt(
   // [6.5] Active scene ledger — binding truths + current state for in-scope
   //       subjects. Gated by both the master fact-continuity toggle and the
   //       ledger-in-context sub-toggle (fact-continuity scope §6).
-  const ledgerBlock = formatLedgerSection(campaignState, {
+  //       The scene's ledgers come from the store as it stands now
+  //       (`extras.sceneLedger` — buildNarratorExtras, issue #325 W05): a
+  //       move narrates from a snapshot taken before its confirm dialog, and
+  //       an X-Card or `!truth strike` made meanwhile is only in the store.
+  const ledgerBlock = formatLedgerSection(withSceneLedger(campaignState, sceneLedger), {
     factContinuityEnabled, factContinuityLedgerInContext, factContinuityMaxLedgerTokens, factContinuitySceneFrame,
   }, { matchedEntityIds, entityNamesById });
   if (ledgerBlock) parts.push(ledgerBlock);

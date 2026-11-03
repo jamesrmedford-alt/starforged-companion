@@ -13,6 +13,7 @@ import {
   formatEntityCard,
   formatSettlementPlanet,
   sanitizePlayerText,
+  SCENE_LEDGER_FIELDS,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
@@ -283,9 +284,19 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     oracleSeeds     = null,
   } = opts;
 
+  // The scene's ledgers as they stand in the store (issue #325 W05; rules/
+  // reachability.md §9): the move pipeline narrates from a snapshot taken
+  // before its confirm dialog, and an X-Card played meanwhile has retracted
+  // the removed beat's truths, removed its state and cleared its frame only
+  // in the store — the snapshot handed them back as binding beside the
+  // X-CARD — REDIRECT block. The frame's cast and lore read it too.
+  const sceneLedger = liveSceneLedger(campaignState);
+  const sceneState  = sceneLedger ? { ...(campaignState ?? {}), ...sceneLedger } : campaignState;
+
   // Context every narrator path receives.
   const extras = {
     mode,
+    sceneLedger,
     // Lines, Veils and Private Lines, read live (issue #321 U08; rules/
     // reachability.md §9: a safety-critical flag is read at the point of
     // use): the move pipeline narrates from a snapshot taken before its
@@ -301,7 +312,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     // Spotlight rotation (issue #232) — multiplayer turn-implication nudge.
     // Advances the per-scene pointer as a side effect; '' when not applicable.
-    spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState),
+    spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState, sceneState),
   };
 
   // Rolling session summary (architecture §8.6) — the cached text. It is
@@ -409,14 +420,14 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     // roster carries their cast — so this stays a single rule, not per-mode
     // special-casing. The permission class for these modes is supplied by
     // buildNarratorSystemPrompt's per-mode default, not here.
-    const lexical = await resolvePathRelevance(playerNarration, campaignState);
+    const lexical = await resolvePathRelevance(playerNarration, sceneState);
     extras.entityCards        = lexical.entityCards;
     extras.matchedEntityIds   = lexical.entityIds;
     extras.matchedEntityTypes = lexical.entityTypes;
     extras.entityNamesById    = lexical.entityNamesById;
   }
 
-  addSceneFrameCast(extras, campaignState);
+  addSceneFrameCast(extras, sceneState);
 
   // Established lore, picked for what this turn is about (issue #286 C2):
   // the player's text, the scene frame and the entities now in play. It was
@@ -426,7 +437,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     ? safeWjRead(() => selectLoreForContext(
         [...getConfirmedLore(campaignState), ...getRecordedLocations(campaignState)]
           .sort((a, b) => String(b.updatedAt ?? '').localeCompare(String(a.updatedAt ?? ''))),
-        loreQueryText(playerNarration, campaignState, extras),
+        loreQueryText(playerNarration, sceneState, extras),
       ), 'lore')
     : [];
 
@@ -437,6 +448,24 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
 function storedCampaignState() {
   try { return game.settings.get(MODULE_ID, 'campaignState') ?? null; }
   catch { return null; }
+}
+
+/**
+ * The scene-ledger fields (narratorPrompt.js SCENE_LEDGER_FIELDS) from the
+ * store, for a narration built from an older snapshot — null when the store
+ * cannot be read or holds another world's session than the snapshot's (a
+ * narration built for a session that has since ended keeps its own).
+ *
+ * @param {Object|null} campaignState — the caller's snapshot
+ * @returns {Object|null}
+ */
+function liveSceneLedger(campaignState) {
+  const stored = storedCampaignState();
+  if (!stored || typeof stored !== 'object') return null;
+  if (campaignState?.currentSessionId && stored.currentSessionId !== campaignState.currentSessionId) return null;
+  const out = {};
+  for (const field of SCENE_LEDGER_FIELDS) out[field] = stored[field] ?? null;
+  return out;
 }
 
 /**
@@ -3699,7 +3728,7 @@ function spotlightRotationEnabledFromSettings() {
  * @param {Object} campaignState
  * @returns {string}
  */
-function maybeAdvanceSpotlight(mode, campaignState) {
+function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState) {
   try {
     if (!spotlightRotationEnabledFromSettings()) return '';
     if (!SPOTLIGHT_MODES.has(mode)) return '';
@@ -3708,14 +3737,15 @@ function maybeAdvanceSpotlight(mode, campaignState) {
       .map(a => ({ id: a?.id, name: a?.name }))
       .filter(r => r.id && typeof r.name === 'string' && r.name.trim());
 
-    const presentNames = Array.isArray(campaignState?.sceneFrame?.present)
-      ? campaignState.sceneFrame.present
+    // The frame and scene as they stand in the store (issue #325 W05).
+    const presentNames = Array.isArray(frameState?.sceneFrame?.present)
+      ? frameState.sceneFrame.present
       : [];
 
     // The stored pointer only applies within the scene it was set in; a scene
     // change (new currentSceneId, or null when fact continuity is off) resets
     // the rotation to the start of the roster.
-    const sceneId = campaignState?.currentSceneId ?? null;
+    const sceneId = frameState?.currentSceneId ?? null;
     const lastActorId = (campaignState?.spotlight?.sceneId === sceneId)
       ? (campaignState?.spotlight?.lastActorId ?? null)
       : null;
