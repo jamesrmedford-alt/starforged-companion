@@ -270,6 +270,12 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
           stream:  false,
         });
         src = await commitToCache(hash, bytes);
+      } else if (isCanonicalGM()) {
+        // A keyless request goes to the canonical GM — this client. A socket
+        // emit never reaches its sender, so the request sat out its 30 s
+        // timeout on itself and then told the GM to "ask the GM" (issue #326
+        // W80). Fail at once and name where the key goes.
+        throw new Error("Narrator audio needs an ElevenLabs API key — add one in Companion Settings → About.");
       } else {
         // No key on this client — ask the GM to synthesise + cache it, then
         // play the resulting file. Players never need their own key.
