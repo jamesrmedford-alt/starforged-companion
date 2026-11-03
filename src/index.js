@@ -4409,6 +4409,7 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
   const { primary } = resolveVowItemCopies(vowName, { actorId });
   const item = primary?.item?.system?.completed === true ? null : (primary?.item ?? null);
   const vowRank        = item?.system?.rank ?? null;
+  const vowId          = item?.flags?.[MODULE_ID]?.vowId ?? null;
   const connectionName = item?.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
   const safeVow   = escapeChatHtml(vowName ?? "your vow");
   const deepenBtn = connectionName
@@ -4421,8 +4422,9 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
         + `<p><button type="button" class="entity-btn" data-action="sf-mark-milestone">⚑ Mark milestone (×${marks})</button> `
         + `<button type="button" class="entity-btn" data-action="sf-fulfill-vow">🏁 Attempt to Fulfill</button>${deepenBtn}</p></div></div>`,
       // actorId: the PC whose winning roll ended the fight — the milestone
-      // marks their copy of the vow (credit the roller).
-      flags: { [MODULE_ID]: { fightVowCard: true, vowName, marks, connectionName, vowRank, actorId } },
+      // marks their copy of the vow (credit the roller). vowId: the vow whose
+      // payoff ledger 🤝 Deepen records on (deepenVowConnectionOnce).
+      flags: { [MODULE_ID]: { fightVowCard: true, vowName, vowId, marks, connectionName, vowRank, actorId } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postFightVowMilestoneCard: chat post failed:`, err?.message ?? err);
@@ -4510,6 +4512,42 @@ export async function deepenLinkedConnection(connectionName, marks) {
   } catch (err) {
     console.warn(`${MODULE_ID} | deepen connection failed:`, err?.message ?? err);
     return { ok: false, reason: "refused", error: errText(err) };
+  }
+}
+
+/**
+ * The won-fight card's 🤝 Deepen (issue #326 D1): a vow sworn for a
+ * connection deepens it once. The card's deepen and the vow's fulfilment
+ * (payFulfilledVowCopies) each deepened it by the vow's rank marks — one vow,
+ * two deepens. Whichever lands first pays: it is recorded on the vow's payoff
+ * ledger (`fulfilPayoff.deepen`, every copy), which the fulfilment and its
+ * Retry already skip a landed step by; a press after the fulfilment's deepen
+ * finds it there and deepens nothing (decisions.md → "A vow deepens its
+ * connection once").
+ *
+ * @param {{ vowName?: string|null, vowId?: string|null, actorId?: string|null,
+ *   connectionName?: string|null, marks?: number }} card
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string }>}
+ */
+export async function deepenVowConnectionOnce({ vowName = null, vowId = null, actorId = null, connectionName = null, marks = 1 } = {}) {
+  const copies = payoffVowCopies({ vowId, vowName, actorId });
+  if (payoffStepLanded(copies, "deepen")) {
+    await postDeepenAlreadyPaidCard(connectionName, vowName);
+    return { ok: true, skipped: true, reason: "already-deepened" };
+  }
+  const res = await deepenLinkedConnection(connectionName, marks);
+  if (res?.ok) await recordPayoffStep(copies, "deepen");
+  return res;
+}
+
+async function postDeepenAlreadyPaidCard(connectionName, vowName) {
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-card sf-deepen-bond"><div class="sf-card-body"><p>🤝 Your bond with <strong>${escapeChatHtml(connectionName ?? "your connection")}</strong> has already deepened for &ldquo;${escapeChatHtml(vowName ?? "this vow")}&rdquo; — a vow deepens it once.</p></div></div>`,
+      flags:   { [MODULE_ID]: { deepenBondCard: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | deepen already paid: chat post failed:`, err?.message ?? err);
   }
 }
 

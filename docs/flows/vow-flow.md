@@ -269,7 +269,10 @@ XP is paid once `persistResolution`'s write lands — issue #326 W52), the conne
 (`deepenLinkedConnection`), the reward (`grantLinkedVowReward`: the status
 flip is the claim, written first; then the grant — `giveReward`; "🎁 Reward
 earned" only once it lands). Each returns `{ ok }`; each that lands is
-recorded on every copy (`flags.fulfilPayoff.<legacy|deepen|reward>`), and
+recorded on every copy (`flags.fulfilPayoff.<legacy|deepen|reward>`) — the
+won-fight card's 🤝 Deepen records `deepen` there too, so a vow deepens its
+connection once, whichever lands first (`deepenVowConnectionOnce`, issue
+#326 D1) — and
 those that do not go on one card whispered to the GMs
 (`postPayoffFailureCard`, flagged `payoffFailureCard` with the steps a retry
 needs) showing each value as it stands now. Its "↻ Retry these steps"

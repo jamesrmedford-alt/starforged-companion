@@ -6,6 +6,24 @@ rejected.
 
 ---
 
+## Issue #326 audit: decisions D1–D8 (2026-11)
+
+**Decision:** (issue #326, part 2 of the eighth audit. The maintainer decided
+D1–D8 on 2026-11-03, each the recommended option. Each finding's ID in
+brackets.)
+- **A vow deepens its connection once** [D1; maintainer]. A vow sworn for a
+  connection was deepened twice: by the won-fight card's 🤝 Deepen (the vow's
+  rank marks) and again by its fulfilment's payoff (the same marks). One
+  reward: whichever lands first pays and is recorded on the vow's payoff
+  ledger (`fulfilPayoff.deepen`, every copy); the other — the fulfilment, its
+  Retry, or a press after the fulfilment — finds it there and deepens
+  nothing. A second vow for the same connection deepens it on its own.
+  *Rejected:* two rewards (a won fight and the fulfilment each deepening) —
+  #241 frames the fulfilment's deepen as *the* vow→connection reward and the
+  card as its one-click prompt.
+
+---
+
 ## Issue #325 audit: an X-Card reaches every store its beat wrote, a held press is rolled later, the system's numbers read as names, effects land on whom the move is for (2026-11)
 
 **Decision:** (issue #325, part 1 of the eighth audit. The maintainer asked
@@ -4737,6 +4755,10 @@ mechanics.
   way out.
 - *Auto-deepen the connection on a vow's fulfilment* — same reasoning as auto-marking the vow; use a
   one-click "Deepen your bond" prompt so the deepening stays a player choice.
+
+*(Issue #326 D1, 2026-11-03: as built, the won-fight card's 🤝 Deepen and the fulfilment's payoff each
+deepened the connection by the vow's marks. Decided: one deepen per vow — whichever lands first pays,
+recorded on the vow's payoff ledger. See "Issue #326 audit" → "A vow deepens its connection once".)*
 
 ---
 

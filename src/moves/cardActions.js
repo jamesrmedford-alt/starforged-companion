@@ -845,9 +845,15 @@ export async function applyFightVowDeepenBond(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | fight-vow deepen: card has no linked connection — nothing deepened.`);
       return false;
     }
-    const { deepenLinkedConnection } = await import("../index.js");
+    // Once per vow (issue #326 D1): this press and the vow's fulfilment share
+    // one deepen — whichever lands first pays, recorded on the vow.
+    const { deepenVowConnectionOnce } = await import("../index.js");
     const marks = marksForSourceRank(f.vowRank);
-    const res = await deepenLinkedConnection(f.connectionName, marks);
+    const res = await deepenVowConnectionOnce({
+      vowName: f.vowName ?? null, vowId: typeof f.vowId === "string" ? f.vowId : null,
+      actorId: typeof f.actorId === "string" ? f.actorId : null,
+      connectionName: f.connectionName, marks,
+    });
     return { ...res, step: "deepen", connectionName: f.connectionName, marks };
   });
 }

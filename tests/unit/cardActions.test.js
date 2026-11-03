@@ -20,6 +20,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 vi.mock('../../src/index.js', () => ({
   markLinkedVowMilestone: vi.fn(async () => ({ ok: true })),
   deepenLinkedConnection: vi.fn(async () => ({ ok: true })),
+  deepenVowConnectionOnce: vi.fn(async () => ({ ok: true })),
   postPayoffFailureCard:  vi.fn(async () => {}),
   retryPayoffSteps:       vi.fn(async () => []),
   performRecommit:        vi.fn(async () => ({ ok: true })),
@@ -37,7 +38,7 @@ import {
   parseCardButtons,
   relayCardAction,
 } from '../../src/moves/cardActions.js';
-import { markLinkedVowMilestone, deepenLinkedConnection, postPayoffFailureCard, retryPayoffSteps, performRecommit } from '../../src/index.js';
+import { markLinkedVowMilestone, deepenLinkedConnection, deepenVowConnectionOnce, postPayoffFailureCard, retryPayoffSteps, performRecommit } from '../../src/index.js';
 import { GM_RELAY_SOCKET, _resetGmRelayForTests } from '../../src/multiplayer/gmRelay.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -78,6 +79,7 @@ beforeEach(() => {
   _resetGmRelayForTests();
   markLinkedVowMilestone.mockClear();
   deepenLinkedConnection.mockClear();
+  deepenVowConnectionOnce.mockClear();
   postPayoffFailureCard.mockClear();
   retryPayoffSteps.mockClear();
   pcA = makeTestActor({ id: 'pc-a', name: 'Ash' });
@@ -255,11 +257,12 @@ describe('won-fight card actions', () => {
     await applyFightVowMarkMilestone({ messageId: 'fight-1' }, P1_CTX);
     const res = await applyFightVowDeepenBond({ messageId: 'fight-1' }, P1_CTX);
     expect(res).toEqual({ applied: true });
-    expect(deepenLinkedConnection).toHaveBeenCalledTimes(1);
-    expect(deepenLinkedConnection.mock.calls[0][0]).toBe('Kira');
-    expect(deepenLinkedConnection.mock.calls[0][1]).toBeGreaterThan(0);
+    // Once per vow (issue #326 D1): the press goes through the vow's ledger.
+    expect(deepenVowConnectionOnce).toHaveBeenCalledTimes(1);
+    expect(deepenVowConnectionOnce.mock.calls[0][0]).toMatchObject({ connectionName: 'Kira', vowName: 'Find the Archive' });
+    expect(deepenVowConnectionOnce.mock.calls[0][0].marks).toBeGreaterThan(0);
     expect((await applyFightVowDeepenBond({ messageId: 'fight-1' }, P1_CTX)).reason).toBe('already-resolved');
-    expect(deepenLinkedConnection).toHaveBeenCalledTimes(1);
+    expect(deepenVowConnectionOnce).toHaveBeenCalledTimes(1);
   });
 
   it('Deepen bond on a card with no linked connection warns and stays unresolved', async () => {
@@ -291,7 +294,7 @@ describe('won-fight card actions', () => {
   });
 
   it('a deepen that does not land (the connection gone) stays unapplied and is reported', async () => {
-    deepenLinkedConnection.mockResolvedValueOnce({ ok: false, reason: 'not-found' });
+    deepenVowConnectionOnce.mockResolvedValueOnce({ ok: false, reason: 'not-found' });
     const res = await applyFightVowDeepenBond({ messageId: 'fight-1' }, P1_CTX);
     expect(res).toEqual({ applied: false, reason: 'not-found' });
     expect(fight.flags[MODULE_ID].resolvedActions).toBeUndefined();

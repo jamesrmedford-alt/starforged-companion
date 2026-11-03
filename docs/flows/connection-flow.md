@@ -151,7 +151,10 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   saved.
 - **`deepenLinkedConnection`** — the vow/fight payoff path: marks the
   connection's own `relationshipTicks` (not bonds legacy), scaled by the
-  source's rank.
+  source's rank. A vow deepens its connection once (issue #326 D1): the
+  won-fight card's press (`deepenVowConnectionOnce`) and the fulfilment's
+  payoff share the vow's `fulfilPayoff.deepen` ledger step — whichever lands
+  first pays.
 - **Suggestion buttons** on connection-category move cards
   (`wireConnectionSuggestionButtons`) relay `connection.suggest` to the
   canonical GM (`cardActions.applyConnectionSuggestion`), which claims the
