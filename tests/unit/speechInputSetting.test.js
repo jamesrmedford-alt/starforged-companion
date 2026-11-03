@@ -91,3 +91,54 @@ describe('the Push-to-Talk setting takes effect at once', () => {
     expect(FakeRecognition.all[0].calls).not.toContain('start');
   });
 });
+
+/**
+ * Issue #326 W87 — a changed Speech Input Language was ignored until a
+ * reload: the setting had no onChange or requiresReload, and the language is
+ * read once, when the controller is built. Its onChange now rebuilds the
+ * controller (when push-to-talk is on), as the Push-to-Talk switch does.
+ */
+describe('the Speech Input Language setting takes effect at once', () => {
+  const LANGUAGE = 'starforged-companion.speechLanguage';
+
+  /** Configure Settings stores the new value, then calls onChange. */
+  function setLanguage(value) {
+    game.settings._store.set(LANGUAGE, value);
+    game.settings._registry.get(LANGUAGE).onChange?.(value);
+  }
+
+  beforeEach(() => {
+    game.settings._store.set(LANGUAGE, 'en-US');
+    initSpeechInput();
+  });
+  afterEach(() => { game.settings._store.delete(LANGUAGE); });
+
+  it('the next capture uses the new language', () => {
+    expect(FakeRecognition.all.at(-1).lang).toBe('en-US');
+    setLanguage('de-DE');
+    window._sfSpeechInput.start();
+    const capturing = FakeRecognition.all.at(-1);
+    expect(capturing.lang).toBe('de-DE');
+    expect(capturing.calls).toEqual(['start']);
+  });
+
+  it('one controller: the old one is torn down, and a capture in progress stops', () => {
+    window._sfSpeechInput.start();
+    const old = FakeRecognition.all.at(-1);
+    old.onstart();
+    setLanguage('fr-FR');
+    expect(old.calls).toEqual(['start', 'abort']);
+    window._sfSpeechInput.start();
+    expect(old.calls).toEqual(['start', 'abort']);
+    expect(FakeRecognition.all.at(-1).calls).toEqual(['start']);
+  });
+
+  it('control: with push-to-talk off, a language change leaves it off', () => {
+    setPushToTalk(false);
+    const built = FakeRecognition.all.length;
+    setLanguage('de-DE');
+    expect(FakeRecognition.all).toHaveLength(built);
+    window._sfSpeechInput.start();
+    expect(FakeRecognition.all.every(r => !r.calls.includes('start'))).toBe(true);
+  });
+});

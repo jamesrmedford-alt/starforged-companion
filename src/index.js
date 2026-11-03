@@ -401,12 +401,18 @@ function registerCoreSettings() {
   });
 
   game.settings.register(MODULE_ID, "speechLanguage", {
-    name:    "Speech Input Language",
-    hint:    "BCP 47 language tag for speech recognition, e.g. en-US, en-GB.",
-    scope:   "client",
-    config:  true,
-    type:    String,
-    default: "en-US",
+    name:     "Speech Input Language",
+    hint:     "BCP 47 language tag for speech recognition, e.g. en-US, en-GB.",
+    scope:    "client",
+    config:   true,
+    type:     String,
+    default:  "en-US",
+    // The language is read when the speech controller is built, so a change
+    // was ignored until a reload (issue #326 W87): rebuild it, as the
+    // Push-to-Talk switch does (#306 R10). Push-to-talk switched off stays off.
+    onChange: () => {
+      if (game.settings.get(MODULE_ID, "speechInputEnabled")) initSpeechInput();
+    },
   });
 
   // -------------------------------------------------------------------------
