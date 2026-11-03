@@ -282,9 +282,17 @@ describe("generateSector('terminus')", () => {
     expect(sector.settlements).toHaveLength(4);
   });
 
-  it("produces 4 passages for terminus", () => {
+  // Issue #326 D5: the rulebook's region table — 4 settlements / 3 passages,
+  // the last one leading off the map edge.
+  it("produces 3 passages for terminus — two links and one off the map edge", () => {
     const sector = generateSector("terminus");
-    expect(sector.passages).toHaveLength(4);
+    const [a, b, c, d] = sector.settlements.map(s => s.id);
+    expect(sector.passages).toEqual([
+      { fromId: a, toId: b, toEdge: false },
+      { fromId: b, toId: c, toEdge: false },
+      { fromId: c, toId: null, toEdge: true, edgeDirection: "right" },
+    ]);
+    expect(d).toBeTruthy();
   });
 
   it("sector has a trouble string", () => {
@@ -317,9 +325,10 @@ describe("generateSector('outlands')", () => {
     expect(sector.settlements).toHaveLength(3);
   });
 
-  it("produces 3 passages for outlands", () => {
+  it("produces 2 passages for outlands — the last off the map edge", () => {
     const sector = generateSector("outlands");
-    expect(sector.passages).toHaveLength(3);
+    expect(sector.passages).toHaveLength(2);
+    expect(sector.passages.map(p => p.toEdge)).toEqual([false, true]);
   });
 });
 
@@ -329,9 +338,10 @@ describe("generateSector('expanse')", () => {
     expect(sector.settlements).toHaveLength(2);
   });
 
-  it("produces 2 passages for expanse", () => {
+  it("produces 1 passage for expanse, off the map edge", () => {
     const sector = generateSector("expanse");
-    expect(sector.passages).toHaveLength(2);
+    expect(sector.passages).toHaveLength(1);
+    expect(sector.passages[0]).toMatchObject({ fromId: sector.settlements[0].id, toEdge: true });
   });
 });
 

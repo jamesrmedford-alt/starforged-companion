@@ -1335,7 +1335,8 @@ function registerSectorCreatorTests(quench) {
           const drawingDocs = Array.from(testScene.drawings?.contents ?? testScene.drawings ?? []);
           const drawings = drawingDocs.filter(d => !d.getFlag("starforged-companion", "sitePassage")).length;
           // sceneBuilder renders both between-settlement passages and toEdge passages.
-          // generateSector("expanse") always produces cfg.passages = 2.
+          // generateSector("expanse") produces its region's one passage, off the
+          // map edge (the rulebook's count — issue #326 D5).
           const expected = (testSector.mapData?.passages ?? []).length;
           assert.equal(drawings, expected, "should have one drawing per passage");
         });

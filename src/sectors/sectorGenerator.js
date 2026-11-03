@@ -43,10 +43,15 @@ const MODULE_ID = "starforged-companion";
 // REGION CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The rulebook's region table (starting sector steps 2 and 7; issue #218 §2):
+// Terminus 4 settlements / 3 passages, Outlands 3 / 2, Expanse 2 / 1. The
+// passages were raised to one per settlement (4 / 3 / 2) so one would run off
+// the map edge; the book's counts are back, the last passage the edge one
+// (issue #326 D5).
 const REGION_CONFIG = {
-  terminus: { settlements: 4, passages: 4, label: "Terminus" },
-  outlands: { settlements: 3, passages: 3, label: "Outlands" },
-  expanse:  { settlements: 2, passages: 2, label: "Expanse"  },
+  terminus: { settlements: 4, passages: 3, label: "Terminus" },
+  outlands: { settlements: 3, passages: 2, label: "Outlands" },
+  expanse:  { settlements: 2, passages: 1, label: "Expanse"  },
 };
 
 const POPULATION_TABLE_BY_REGION = {
@@ -97,12 +102,15 @@ export function generateSector(region, _overrides = {}) {
   // Step 9: Local connection (uses first settlement as home)
   const connection = generateConnection(settlements[0]?.name ?? "the sector");
 
-  // Step 7: Passages (placeholder grid passages — wizard lets GM draw them)
+  // Step 7: Passages (placeholder grid passages — wizard lets GM draw them).
+  // The region's count, the book's: each links one settlement to the next,
+  // and the last leads off the map edge (issue #326 D5).
   const passages = [];
   for (let i = 0; i < cfg.passages; i++) {
-    if (settlements[i] && settlements[i + 1]) {
+    const last = i === cfg.passages - 1;
+    if (!last && settlements[i] && settlements[i + 1]) {
       passages.push({ fromId: settlements[i].id, toId: settlements[i + 1].id, toEdge: false });
-    } else {
+    } else if (settlements[i]) {
       passages.push({ fromId: settlements[i].id, toId: null, toEdge: true, edgeDirection: "right" });
     }
   }

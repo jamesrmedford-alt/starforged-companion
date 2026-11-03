@@ -46,6 +46,14 @@ brackets.)
   move" — and the GM handlers refuse an upgrade on a card a later move by its
   roller follows, stamped or not. Another character's move closes nothing.
   *Rejected:* accepting late burns as a feature.
+- **A sector's passages are the book's** [D5; maintainer]. The Sector
+  Creator drew one passage per settlement (Terminus 4, Outlands 3, Expanse
+  2) so that one would run off the map edge — commit 160bc9b, no decision
+  recorded. The rulebook's region table gives one fewer: 4 / 3, 3 / 2,
+  2 / 1. The book's counts are back, the edge passage one of them: each
+  passage links a settlement to the next and the last leads off the map
+  edge (an Expanse's one passage is its edge passage). *Rejected:* keeping
+  the extra edge passage.
 - **A scene truth is filed where it was asserted** [D2; maintainer]. Scene
   end filed every scene-subject truth on the frame's location at the end of
   the scene, but a scene spans travel (it ends only at `!scene end`, End a
