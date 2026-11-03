@@ -2510,7 +2510,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
 
     if (!text?.trim()) return null;
 
-    const buttonMove = reconcileSuggestedMove(text, suggestedMove);
+    const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
     await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null);
     schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
     schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
@@ -2535,7 +2535,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
         });
         if (text?.trim()) {
-          const buttonMove = reconcileSuggestedMove(text, suggestedMove);
+          const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
           await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null);
           schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
           schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
@@ -2767,15 +2767,13 @@ function escapeRegexLiteral(s) {
   return String(s ?? '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// Move-name → id matchers, built once. Sorted by display-name length descending
-// so the most specific name wins (e.g. "face desolation" before "face death"
-// could ever shadow it, and multi-word names before single-word ones). Each
-// matcher is a whole-phrase, case-insensitive regex.
+// Move-name → id matchers, built once: each a whole-phrase, case-insensitive,
+// global regex. extractMoveFromNarrationHint collects every move named in the
+// hint and picks the one it invites — not the longest name (issue #325 W36).
 const MOVE_HINT_MATCHERS = Object.keys(MOVES)
   .map(id => ({ id, name: formatMoveLabel(id).toLowerCase() }))
   .filter(m => m.name && m.name !== 'move')
-  .sort((a, b) => b.name.length - a.name.length)
-  .map(({ id, name }) => ({ id, re: new RegExp(`\\b${escapeRegexLiteral(name)}\\b`, 'i') }));
+  .map(({ id, name }) => ({ id, re: new RegExp(`\\b${escapeRegexLiteral(name)}\\b`, 'gi') }));
 
 /**
  * Extract the content of the LAST italic span in a narration string. The
@@ -2809,16 +2807,36 @@ function lastItalicSpan(text) {
  * (or there is no hint). Only the final italic span is scanned, so single-word
  * move names ("Compel", "Strike") in the prose body cannot false-match.
  *
+ * The hint can name more than one move-shaped word: "Binding that wound
+ * before the battle could be a Heal." The move it invites is the one written
+ * as a move — capitalised, and not just because it opens a sentence — else
+ * the last one named. A name inside a longer one named there is that longer
+ * move. The longest name used to win, so the common noun "battle" made the
+ * button "Roll Battle" (issue #325 W36).
+ *
  * @param {string} narrationText
  * @returns {string|null}
  */
 export function extractMoveFromNarrationHint(narrationText) {
   const hint = lastItalicSpan(narrationText);
   if (!hint) return null;
+  const found = [];
   for (const { id, re } of MOVE_HINT_MATCHERS) {
-    if (re.test(hint)) return id;
+    re.lastIndex = 0;
+    for (const m of hint.matchAll(re)) found.push({ id, start: m.index, end: m.index + m[0].length, text: m[0] });
   }
-  return null;
+  const named = found.filter(a => !found.some(b =>
+    b !== a && b.start <= a.start && b.end >= a.end && (b.end - b.start) > (a.end - a.start)));
+  if (!named.length) return null;
+  const asMove = named.filter(n => /^\p{Lu}/u.test(n.text) && !opensSentence(hint, n.start));
+  const pool   = asMove.length ? asMove : named;
+  return pool.reduce((last, n) => (n.start > last.start ? n : last)).id;
+}
+
+/** True when the text before `index` is empty or ends a sentence (quotes and brackets aside). */
+function opensSentence(text, index) {
+  const before = text.slice(0, index).replace(/[\s"'\u201C\u2018([]+$/u, '');
+  return before === '' || /[.!?]$/.test(before);
 }
 
 /**
@@ -2829,13 +2847,25 @@ export function extractMoveFromNarrationHint(narrationText) {
  * the source of truth the player reads, so when the hint names a recognised
  * move it wins; otherwise the classifier's nomination stands.
  *
+ * With `guard`, the hint's move passes the same finding-G guard the
+ * nomination did: a social move against a fellow PC ("Pressing Ren for the
+ * truth would be a Compel") never becomes the button — the hint reads as
+ * naming no move, and the (already guarded) nomination stands. Only the
+ * nomination was guarded, so the card offered a Compel against a PC (issue
+ * #325 W36).
+ *
  * @param {string} narrationText
  * @param {string|null} classifierMove
+ * @param {{ playerText: string, speakerName?: string|null, pcActors?: Array }} [guard]
  * @returns {string|null}
  */
-export function reconcileSuggestedMove(narrationText, classifierMove) {
+export function reconcileSuggestedMove(narrationText, classifierMove, guard = null) {
   if (!classifierMove) return null;
-  return extractMoveFromNarrationHint(narrationText) ?? classifierMove;
+  let hinted = extractMoveFromNarrationHint(narrationText);
+  if (hinted && guard) {
+    hinted = suppressPcDirectedSocialMove(hinted, guard.playerText, guard.speakerName ?? null, guard.pcActors);
+  }
+  return hinted ?? classifierMove;
 }
 
 // Social moves that act upon another character. Suggesting one against a fellow

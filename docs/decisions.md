@@ -2778,6 +2778,12 @@ classifier's `suggestedMove` is always a MOVES key or null — `toMoveId` maps a
 display name, so the button no longer fails with "Unknown move" (U45); and the
 forced move rolls the stat its narration fits, read by a stat-only
 interpretation, not the move's first listed stat (`enrichForcedMoveStat`, U04).)*
+*(Issue #325 W36: when the hint names several move-shaped words, the move it
+invites is the one written as a move — capitalised, and not only because it
+opens the sentence — else the last one named; the longest name used to win, so
+"before the battle could be a Heal" rolled Battle. And the hint's move passes
+the same finding-G guard as the nomination: a social move against a fellow PC
+is never the button, and the guarded nomination stands.)*
 
 **Rejected:**
 - *Make the classifier authoritative and forbid the narrator from deviating* —
