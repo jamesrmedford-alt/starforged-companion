@@ -701,8 +701,11 @@ export async function writeSessionLog(campaignState) {
   const { page, flag } = ctx;
   const sessionId = campaignState?.currentSessionId ?? "";
 
+  // Struck lore is not the session's lore: a fact the table struck or
+  // X-carded was listed beside the summary rebuilt to leave it out (issue
+  // #326 W64).
   const recentLore    = readEntries(await getOrCreateJournal(JOURNAL_NAMES.lore),    FLAG_KEYS.lore)
-                         .filter(e => e.sessionId === sessionId);
+                         .filter(e => e.sessionId === sessionId && e.retracted !== true);
   const recentThreats = readEntries(await getOrCreateJournal(JOURNAL_NAMES.threats), FLAG_KEYS.threats)
                          .filter(e => e.lastUpdated === sessionId);
 
