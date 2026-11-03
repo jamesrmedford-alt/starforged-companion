@@ -113,7 +113,7 @@ import {
   findShipMapScene,
   registerShipMapSceneHooks,
 } from "./moves/shipMapScene.js";
-import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack } from "./moves/combat.js";
+import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack, selectRollerFight } from "./moves/combat.js";
 import { buildCombatThresholdHtml, buildWayOutHtml, WAY_OUT_MOVES, thresholdPositionLine } from "./moves/combatThreshold.js";
 import {
   enterCombatTracker,
@@ -2196,11 +2196,17 @@ async function applyOutcomeEffects({
   // to the fight its card named: open, it is the fight; over, there is none.
   if (next.combatPosition || TDA_OFFER_MOVES.has(resolution.moveId) || stampedId) {
     try {
-      out.moveFight = combatProgressTrack
-        ?? (stampedId
-          ? stampedOpen
-          : selectCombatTrack(await listProgressTracks(), moveTarget,
-            { trackId: interpretation?.moveTargetId ?? null }));
+      if (combatProgressTrack) out.moveFight = combatProgressTrack;
+      else if (stampedId) out.moveFight = stampedOpen;
+      else {
+        const tracks  = await listProgressTracks();
+        const trackId = interpretation?.moveTargetId ?? null;
+        // Two fights open and no foe named: the roller's own fight — the one
+        // recording their position (issue #326 W45; the position was written
+        // nowhere and their next Strike steered by the stale one).
+        out.moveFight = selectCombatTrack(tracks, moveTarget, { trackId })
+          ?? (!moveTarget && !trackId ? selectRollerFight(tracks, speakerActor?.id ?? rollerActor?.id ?? null) : null);
+      }
     } catch (err) {
       console.warn(`${MODULE_ID} | combat fight lookup failed:`, err?.message ?? err);
     }

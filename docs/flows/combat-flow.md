@@ -154,7 +154,10 @@ U19). The pipeline
 writes it to the move's own fight (`moveFight`): the track its progress marked
 (or created), else `selectCombatTrack` on the move's target, else the sole
 open fight — with several fights open it used to be written only while
-exactly one was open (issue #306 R05). The same `moveFight` is stamped on the
+exactly one was open (issue #306 R05) — else, with several open and no foe
+named, the roller's own fight: the one that records their position
+(`selectRollerFight`, `src/moves/combat.js`; issue #326 W45 — written
+nowhere before). The same `moveFight` is stamped on the
 move card for its Finish the Fight button (§3). The **roller's** position —
 their own in the open fight, else the fight's (`getActiveCombatPosition(actorId)`;
 for Take Decisive Action, the scored fight's via `combatPositionFor` in

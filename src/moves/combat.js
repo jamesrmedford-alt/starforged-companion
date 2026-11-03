@@ -64,6 +64,25 @@ export function selectCombatTrack(allTracks, label, { trackId = null } = {}) {
 }
 
 /**
+ * The roller's own fight: the one open combat track that records a position
+ * for them (`positions[actorId]` — set by their moves, badge and toggle). With
+ * two fights open and no foe named, selectCombatTrack cannot tell which fight
+ * a move was about, but a character fights in one: React Under Fire's or
+ * Gain Ground's "in control" lands there instead of nowhere (issue #326 W45),
+ * as getActiveCombatPosition reads the roller's position from it. null when
+ * no open fight, or more than one, records the roller.
+ *
+ * @param {Array<{type,completed,positions?}>} allTracks
+ * @param {string|null} actorId
+ * @returns {object|null}
+ */
+export function selectRollerFight(allTracks, actorId) {
+  if (!actorId) return null;
+  const own = (allTracks ?? []).filter(t => t?.type === 'combat' && !t.completed && isTrackPosition(t.positions?.[actorId]));
+  return own.length === 1 ? own[0] : null;
+}
+
+/**
  * Resolve-or-create the combat track, then mark progress `markCount` times.
  *
  * A move's marks create a track only when no fight is open (issue #321 U16):
