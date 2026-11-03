@@ -736,9 +736,13 @@ async function handleBattleStationsCommand() {
  *   7. postMoveResult() posts HTML move result card
  *   8. narrateResolution() calls Claude directly, posts narration card
  *   9. persistResolution() applies meter/track changes to character and campaign state
+ *
+ * A forced move a claimed card button posted (`deferWhileBusy`) that arrives
+ * while another move holds the lock is held and run when the lock frees —
+ * see deferForcedMove (issue #325 W02).
  */
 export function registerChatHook() {
-  Hooks.on("createChatMessage", async (message) => {
+  const onMessage = async (message) => {
     // Chat commands (`@scene`, `!…`) — routed before the move pipeline. Every
     // command is consumed on EVERY client (so plain-narration handling below
     // never sees one) but executes only where its run-on policy says.
@@ -847,6 +851,12 @@ export function registerChatHook() {
     // and post duplicate narration cards.
     const campaignState = game.settings.get(MODULE_ID, "campaignState");
     if (campaignState.pendingMove) {
+      // A claimed card's forced move is held, not dropped: its button reads
+      // taken everywhere, so a drop lost the action (issue #325 W02).
+      if (message.flags?.[MODULE_ID]?.deferWhileBusy === true) {
+        deferForcedMove(message);
+        return;
+      }
       ui?.notifications?.info(
         "Starforged Companion: A move is already being resolved. " +
         "Please wait for the current narration to complete.",
@@ -1625,7 +1635,76 @@ export function registerChatHook() {
       // hold the lock by now (issue #315 S01).
       if (!lockReleased) await releasePendingMoveLock();
     }
-  });
+  };
+  Hooks.on("createChatMessage", onMessage);
+  // A held forced move runs once a campaignState write leaves the lock free
+  // — the pipeline's own release, a stale lock cleared at load (issue #325
+  // W02).
+  Hooks.on("updateSetting", (setting) => drainDeferredForcedMoves(setting, onMessage));
+}
+
+// ── Forced moves held while another move is resolved (issue #325 W02) ───────
+
+// Message ids, oldest first, of forced moves a claimed card button posted
+// while another move held the lock — this client's: only the canonical GM
+// runs the pipeline. Held in memory: a reload loses them (the claim stands).
+const _deferredForcedMoves = [];
+// Ids of held moves already handed back to the pipeline once: one that meets
+// the lock again (another move claimed it first) keeps its place at the front.
+const _drainedForcedMoves = new Set();
+
+/**
+ * Hold a forced move that met the move lock. A card button's GM handler
+ * (cardActions.js: "⚑ Mark Progress on Vow", a "Which vow?" pick, a
+ * connection pick, a waypoint's 🔭 / 🌀) claims its GM-authored card and then
+ * posts the move; dropped at the lock, the claim stood — the button read
+ * "⚑ Milestone marked" everywhere — and the milestone, fulfil roll,
+ * development or discovery was lost. The commonest case was the button's own
+ * move: its card is posted before the narration and the lock released after
+ * the persist, so the buttons are live for the whole narration.
+ *
+ * @param {ChatMessage} message — carries `flags[MODULE_ID].deferWhileBusy`
+ */
+function deferForcedMove(message) {
+  const id = message?.id ?? null;
+  if (!id || _deferredForcedMoves.includes(id)) return;
+  if (_drainedForcedMoves.has(id)) _deferredForcedMoves.unshift(id);
+  else _deferredForcedMoves.push(id);
+  ui?.notifications?.info(
+    "Starforged Companion: A move is already being resolved — the next one will be rolled when it completes.",
+    { permanent: false },
+  );
+}
+
+/**
+ * On a campaignState write that leaves the move lock free, hand the oldest
+ * held forced move back to the pipeline — on the canonical GM only. One per
+ * write: the move it starts claims the lock, and its release (another write)
+ * hands over the next. A held message deleted meanwhile is skipped.
+ *
+ * @param {{ key?: string }} setting — the updateSetting hook's document
+ * @param {(message: ChatMessage) => Promise<void>} runPipeline
+ */
+function drainDeferredForcedMoves(setting, runPipeline) {
+  if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+  if (!_deferredForcedMoves.length || !isCanonicalGM()) return;
+  if (game.settings.get(MODULE_ID, "campaignState")?.pendingMove) return;
+  let message = null;
+  while (!message && _deferredForcedMoves.length) {
+    const id = _deferredForcedMoves.shift();
+    message = game.messages?.get?.(id) ?? null;
+    if (message) _drainedForcedMoves.add(id);
+  }
+  if (!message) return;
+  const id = message.id;
+  // A move that stops before claiming the lock writes nothing: ask again
+  // once it settles, so the queue cannot stall behind it.
+  Promise.resolve(runPipeline(message))
+    .catch(err => console.warn(`${MODULE_ID} | a held forced move failed:`, err?.message ?? err))
+    .finally(() => {
+      if (!_deferredForcedMoves.includes(id)) _drainedForcedMoves.delete(id);
+      drainDeferredForcedMoves(setting, runPipeline);
+    });
 }
 
 

@@ -11,7 +11,10 @@ GM** — the move pipeline (gated on `isCanonicalGM()`), a card click relayed
 through `requestGmAction` (`src/multiplayer/gmRelay.js` `GM_ACTIONS`:
 `milestone.pick`, `fightVow.markMilestone`, `payThePrice.advanceClocks`; and,
 since issue #321, `fulfilVow.pick` and `milestone.suggestion`, which claim
-their card and post the forced move once for the pipeline), or
+their card and post the forced move once for the pipeline — flagged
+`deferWhileBusy`, so one that meets the move lock is held on the canonical
+GM and rolled when the lock frees, never dropped with its card claimed:
+issue #325 W02), or
 one of the two older ad-hoc socket relays from the swear cards
 (`vow.setReward`, `vow.linkConnection` in `src/session/swearVow.js`, not yet
 folded into `GM_ACTIONS`). Only the vendor sheet writes a vow from the

@@ -93,7 +93,9 @@ passage" drawing.
   claim per card (`waypointRewardClaimed` on the GM-authored move card,
   written on the canonical GM by the `waypoint.oracle` relay —
   `cardActions.applyWaypointOraclePick`, which posts the forced follow-up as
-  the roller (`actorId`) and retires the pending ordinary choice card — or by
+  the roller (`actorId`; `deferWhileBusy`, so it is held, not dropped, while
+  another move holds the lock — issue #325 W02) and retires the pending
+  ordinary choice card — or by
   the ordinary pick, `resultUpgrade.closeUpgradesForChoice`; issue #316 T06).
   The follow-up is a no-roll move (`rollKind: "none"` — no dice, no outcome,
   no Burn / Improve; T05) whose `legacyMark` marks the discoveries legacy,

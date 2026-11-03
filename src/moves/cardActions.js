@@ -207,7 +207,7 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content(label),
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, ...target } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...target } },
       });
     } catch (err) {
       // Leave the card unresolved so the pick can be retried.
@@ -328,7 +328,7 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | waypoint oracle: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -415,7 +415,7 @@ export async function applyFulfilVowPick(payload = {}, ctx = {}) {
         content: f.narration || `Attempt to fulfill ${choice.name || "my vow"}.`,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
         flags:   { [MODULE_ID]: {
-          bypassPacing: true, forcedMoveId: "fulfill_your_vow",
+          bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true,
           forcedMoveTargetId: choice.itemId,
           ...(choice.name ? { forcedMoveTarget: choice.name } : {}),
         } },
@@ -498,7 +498,7 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: "Mark progress on your vow.",
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone" } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone", deferWhileBusy: true } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | milestone suggestion: forced-move post failed — the claim is released:`, err?.message ?? err);

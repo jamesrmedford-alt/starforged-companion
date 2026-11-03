@@ -141,7 +141,10 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   roller although the GM authors the message, and naming the picked
   connection as `forcedMoveTargetId` (its host Actor id) and
   `forcedMoveTarget` (its name) — and stamps the card `resolved` (in-flight
-  guarded; a failed post leaves it open). A forced move skips the
+  guarded; a failed post leaves it open). The forced move carries
+  `deferWhileBusy`: met by the move lock, it is held on the canonical GM and
+  rolled when the lock frees (issue #325 W02 — it was dropped, the card
+  already claimed). A forced move skips the
   interpreter, so those flags are the only way the pick reaches the move: the
   chat pipeline carries them as `interpretation.moveTargetId` /
   `moveTarget`, and enrichment and the develop / forge branches resolve by
