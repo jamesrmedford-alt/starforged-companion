@@ -448,14 +448,20 @@ describe('a bond forged on the sheet: a refused bonds legacy goes to the GMs (is
 });
 
 // Issue #309 N06: a legacy mark inside the move pipeline (addLegacyTicks)
-// awards its box XP as the ticks are marked; a refused award was only logged.
+// awards its box XP once the copy it marked is saved (issue #326 W52:
+// awardSavedLegacyXp, which the persist runs); a refused award was only
+// logged.
 describe('a legacy box filled in the move pipeline: a refused XP award goes to the GMs', () => {
   it('Retry gives that PC\'s XP once', async () => {
     const gm = table.client('gm-1');
-    const { addLegacyTicks } = await gm.import('../../src/index.js');
+    const { addLegacyTicks, awardSavedLegacyXp } = await gm.import('../../src/index.js');
     refuseNext(w => w.kind === 'actor.update' && w.id === 'pc-pat'
       && Object.prototype.hasOwnProperty.call(w.changes ?? {}, 'system.xp'));
-    await gm.run(() => addLegacyTicks({ legacyTracks: { discoveries: { ticks: 3, cleared: false } } }, 'discoveries', 1));
+    await gm.run(async () => {
+      const working = { legacyTracks: { discoveries: { ticks: 3, cleared: false } } };
+      addLegacyTicks(working, 'discoveries', 1);
+      await awardSavedLegacyXp(working);
+    });
     await table.settle();
 
     expect(pat.system.xp).toBe(0);

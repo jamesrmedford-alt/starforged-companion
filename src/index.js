@@ -47,7 +47,7 @@ import {
 } from "./moves/abilityScanner.js";
 import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient, resolveAidedAlly, enrichBondAdds } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
-import { markLegacyTrack }       from "./moves/legacyTracks.js";
+import { markLegacyTrack, deferLegacyXp, payDeferredLegacyXp } from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
 import {
   openSetFlagDialog,
@@ -4072,12 +4072,15 @@ const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bo
  * Newly FILLED boxes award XP — 2 per box, 1 once the track has been cleared
  * (play kit rule 1.12), each box at the rate of the cycle it filled in — to
  * every player character (legacy tracks are shared crew tracks in this
- * module, like the shared supply), with a chat note. The award is
- * fire-and-forget so call sites stay synchronous; failures warn.
- * LEGACY-XP-DEAD fix: ticks used to accrue here with no XP ever awarded — the
- * awarding path (persistResolution.markLegacyProgress) required a consequence
- * field no resolver set. `awardXp: false` leaves the award to the caller:
- * writeLegacyTicks awards it once its write has landed.
+ * module, like the shared supply), with a chat note. The award is owed by
+ * the copy the ticks were marked on and paid once the write that saves that
+ * copy has landed (payDeferredLegacyXp — persistResolution's write for the
+ * move pipeline's working copy, bond.apply's and writeLegacyTicks' own): it
+ * was paid at the mark, so a refused persist awarded XP for ticks never
+ * saved (issue #326 W52). LEGACY-XP-DEAD fix: ticks used to accrue here with
+ * no XP ever awarded — the awarding path (persistResolution.markLegacyProgress)
+ * required a consequence field no resolver set. `awardXp: false` owes
+ * nothing: the caller awards it itself.
  *
  * @returns {{ boxes: number, xp: number, cleared: boolean }} the boxes this
  *   mark filled, the XP they earn (per character) and whether it cleared the
@@ -4090,11 +4093,28 @@ export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {
   if (marked.boxes > 0 && awardXp) {
     // A PC whose award is refused is told to the GMs, with a Retry for that
     // award alone (issue #309 N06).
-    awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared })
-      .then(failed => failed.length ? postPayoffFailureCard({ source: "legacyXp", failures: failed }) : null)
-      .catch(err => console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
+    deferLegacyXp(campaignState, async () => {
+      const failed = await awardLegacyBoxXP(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
+      if (failed.length) await postPayoffFailureCard({ source: "legacyXp", failures: failed });
+    });
   }
   return { boxes: marked.boxes, xp: marked.xp, cleared: marked.cleared };
+}
+
+/**
+ * Pay the legacy-box XP a saved working copy owes (addLegacyTicks). Call
+ * once the write that saved its ticks has landed; reports, never throws.
+ * Exported for bond.apply (src/moves/bondCommand.js).
+ *
+ * @param {Object} campaignState — the copy the ticks were marked on
+ * @returns {Promise<void>}
+ */
+export async function awardSavedLegacyXp(campaignState) {
+  try {
+    await payDeferredLegacyXp(campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err);
+  }
 }
 
 /**

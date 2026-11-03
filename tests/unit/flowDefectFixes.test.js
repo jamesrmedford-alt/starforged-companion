@@ -5,14 +5,16 @@
  * Regressions for the 2026-07 flow-audit fixes that live in index.js:
  *   - addLegacyTicks awards XP for newly filled legacy boxes (LEGACY-XP-DEAD:
  *     ticks used to accrue with no XP ever awarded — the awarding path
- *     required a consequence field no resolver set).
+ *     required a consequence field no resolver set). The XP is owed by the
+ *     copy the ticks were marked on and paid once its save has landed
+ *     (awardSavedLegacyXp — issue #326 W52), which these tests stand in for.
  *   - resolveVowItemCopies resolves payoffs vowId-first with the name ladder
  *     (VOW-RENAME-PAYOFF: exact-name-only matching meant a renamed vow rolled
  *     hits that completed nothing and paid nothing).
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { addLegacyTicks, resolveVowItemCopies } from "../../src/index.js";
+import { addLegacyTicks, awardSavedLegacyXp, resolveVowItemCopies } from "../../src/index.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -33,7 +35,8 @@ describe("addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD)", () => {
     expect(boxes).toBe(2);
     expect(xp).toBe(4);
     expect(cs.legacyTracks.bonds).toEqual({ ticks: 8, cleared: false, cycles: 0 });
-    // The award is fire-and-forget and sequential — wait for both to land.
+    expect(a1.system.xp).toBe(0);                 // owed, not paid: the ticks are not saved yet
+    await awardSavedLegacyXp(cs);                 // the copy's save has landed
     await vi.waitFor(() => {
       expect(a1.system.xp).toBe(4);
       expect(a2.system.xp).toBe(7);
@@ -51,7 +54,9 @@ describe("addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD)", () => {
     const a1 = makeTestActor({ id: "xp30a", type: "character", system: { xp: 29 } });
     const a2 = makeTestActor({ id: "xp30b", type: "character", system: { xp: 42 } });
     game.actors._setAll([a1, a2]);
-    expect(addLegacyTicks({}, "quests", 4)).toMatchObject({ boxes: 1, xp: 2 });
+    const cs = {};
+    expect(addLegacyTicks(cs, "quests", 4)).toMatchObject({ boxes: 1, xp: 2 });
+    await awardSavedLegacyXp(cs);
     await vi.waitFor(() => {
       expect(a1.system.xp).toBe(31);
       expect(a2.system.xp).toBe(44);
@@ -62,6 +67,7 @@ describe("addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD)", () => {
     game.actors._setAll([makeTestActor({ id: "xp3", type: "character", system: { xp: 0 } })]);
     const cs = { legacyTracks: { quests: { ticks: 2, cleared: false } } };
     expect(addLegacyTicks(cs, "quests", 1).boxes).toBe(0); // 3 ticks — still box 0
+    await awardSavedLegacyXp(cs);
     await new Promise((r) => setTimeout(r, 0));
     expect(game.actors.get("xp3").system.xp).toBe(0);
     expect(ChatMessage.create).not.toHaveBeenCalled();
@@ -72,6 +78,7 @@ describe("addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD)", () => {
     game.actors._setAll([a]);
     const cs = { legacyTracks: { quests: { ticks: 0, cleared: true } } };
     expect(addLegacyTicks(cs, "quests", 4)).toEqual({ boxes: 1, xp: 1, cleared: false });
+    await awardSavedLegacyXp(cs);
     await vi.waitFor(() => expect(a.system.xp).toBe(1));
   });
 
@@ -84,7 +91,8 @@ describe("addLegacyTicks — legacy boxes award XP (LEGACY-XP-DEAD)", () => {
     // 39 + 10: the tenth box (2 XP), the track clears, 9 ticks over — two more boxes at 1 XP each.
     expect(addLegacyTicks(cs, "discoveries", 10)).toEqual({ boxes: 3, xp: 4, cleared: true });
     expect(cs.legacyTracks.discoveries).toEqual({ ticks: 9, cleared: true, cycles: 1 });
-    // The award is fire-and-forget: the note follows the XP write.
+    // Paid once the copy is saved: the note follows the XP write.
+    await awardSavedLegacyXp(cs);
     await vi.waitFor(() => expect(ChatMessage.create).toHaveBeenCalled());
     expect(a.system.xp).toBe(4);
     expect(ChatMessage.create).toHaveBeenCalledWith(expect.objectContaining({

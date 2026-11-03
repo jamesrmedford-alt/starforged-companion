@@ -37,7 +37,7 @@ import { postSufferChoiceCard } from './sufferCard.js';
 import { markUnprepared } from './sufferExecutor.js';
 import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
-import { mergeLegacyTrack } from './legacyTracks.js';
+import { mergeLegacyTrack, payDeferredLegacyXp } from './legacyTracks.js';
 
 const MODULE_ID  = 'starforged-companion';
 
@@ -118,6 +118,12 @@ export async function persistResolution(resolution, campaignState, speakerActorI
   updated.updatedAt = new Date().toISOString();
   appendToSessionLog(resolution, updated);
   await game.settings.set(MODULE_ID, 'campaignState', updated);
+
+  // The legacy ticks the pipeline marked on its working copy are saved: their
+  // box XP is paid now, never before (issue #326 W52 — a refused persist had
+  // already paid it). Fire-and-forget, as the award was at the mark.
+  payDeferredLegacyXp(campaignState).catch(err =>
+    console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
 
   return { actor, campaignState: updated };
 }

@@ -260,7 +260,8 @@ Quests legacy (`runLegacyStep` → `writeLegacyTicks`: written on a copy, the
 filled box's XP awarded only once the write lands — each PC's award on its
 own, `awardLegacyBoxXP`; one that is refused is an `xp` step of its own,
 for that PC alone, since re-running the legacy would add its ticks again,
-issue #309 N06), the connection deepen
+issue #309 N06; the pipeline's own fulfil marks its working copy, whose box
+XP is paid once `persistResolution`'s write lands — issue #326 W52), the connection deepen
 (`deepenLinkedConnection`), the reward (`grantLinkedVowReward`: the status
 flip is the claim, written first; then the grant — `giveReward`; "🎁 Reward
 earned" only once it lands). Each returns `{ ok }`; each that lands is
