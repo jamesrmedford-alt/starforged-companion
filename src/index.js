@@ -85,7 +85,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, readMomentumState, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, readMomentumState, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
@@ -106,7 +106,7 @@ import {
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, finishExpedition, legacyRewardTicks, selectExpeditionTrack, planRecommit } from "./moves/expedition.js";
 import { selectSectorSite } from "./sectors/precursorSites.js";
-import { finishVow, shouldPayFulfilledVow } from "./moves/vow.js";
+import { finishVow, shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
   isShipMapCommand,
@@ -1477,6 +1477,35 @@ export function registerChatHook() {
               console.warn(`${MODULE_ID} | recommit offer card failed:`, err?.message ?? err));
           } else {
             console.debug(`${MODULE_ID} | recommit offer skipped — no open expedition matched "${interpretation.moveTarget ?? "?"}".`);
+          }
+        } catch (err) {
+          console.warn(`${MODULE_ID} | recommit offer failed:`, err?.message ?? err);
+        }
+      }
+
+      // Fulfill Your Vow and Forge a Bond MISS — the same recommit, offered as
+      // a click on the vow scored or the connection forged (issue #330 D1):
+      // "roll both challenge dice, take the lowest value, clear that number
+      // of progress boxes, and raise the rank by one". It was advisory text
+      // the GM applied by hand to the vow's copies or the connection's record
+      // and its bond Items.
+      if (resolution.outcome === "miss" && game.user.isGM
+          && (resolution.moveId === "fulfill_your_vow" || resolution.moveId === "forge_a_bond")) {
+        try {
+          if (resolution.moveId === "fulfill_your_vow") {
+            const vowName = (tickInfo?.source === "vow" ? tickInfo.label : null) ?? interpretation.moveTarget ?? null;
+            const itemId  = tickInfo?.source === "vow" ? (tickInfo.trackId ?? null) : null;
+            if (vowName) await postVowRecommitOfferCard({ vowName, itemId, actorId: rollerActor?.id ?? null });
+            else console.debug(`${MODULE_ID} | vow recommit offer skipped — no vow was scored.`);
+          } else {
+            const conn = await import("./entities/connection.js");
+            const connections = (campaignState.connectionIds ?? [])
+              .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+              .filter(Boolean);
+            const target = selectConnection(connections, interpretation.moveTarget ?? null,
+              { hostId: interpretation.moveTargetId ?? null, unbonded: true });
+            if (target?.__hostId && !target.bonded) await postBondRecommitOfferCard(target, rollerActor?.id ?? null);
+            else console.debug(`${MODULE_ID} | bond recommit offer skipped — no un-bonded connection matched "${interpretation.moveTarget ?? "?"}".`);
           }
         } catch (err) {
           console.warn(`${MODULE_ID} | recommit offer failed:`, err?.message ?? err);
@@ -4172,19 +4201,151 @@ export async function performRecommit(trackId) {
   return { ok: true };
 }
 
+// ── Fulfill Your Vow / Forge a Bond miss: recommit offers (issue #330 D1) ──
+
+async function postVowRecommitOfferCard({ vowName, itemId = null, actorId = null }) {
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Vow — recommit?</strong>`
+      + `<p>A complication undoes <strong>${escapeChatHtml(vowName)}</strong>. `
+      + `You may Forsake Your Vow, or <em>recommit</em>: roll both challenge dice, clear filled boxes equal to the lowest, `
+      + `and raise the vow's rank by one.</p>`
+      + `<div class="sf-milestone-suggest-row"><button type="button" class="sf-followup-btn" data-action="sf-vow-recommit" `
+      + `title="Roll challenge dice, clear the lowest die's boxes, raise the vow's rank">🔁 Recommit to the Vow</button></div></div>`,
+    flags: { [MODULE_ID]: { vowRecommitOfferCard: true, vowName, itemId, actorId } },
+  }).catch(err => console.warn(`${MODULE_ID} | vow recommit offer card failed:`, err?.message ?? err));
+}
+
+async function postBondRecommitOfferCard(target, actorId = null) {
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Bond — recommit?</strong>`
+      + `<p>A conflicting motivation stands between you and <strong>${escapeChatHtml(target.name ?? "your connection")}</strong>. `
+      + `You may <em>recommit</em>: roll both challenge dice, clear filled boxes on the relationship track equal to the lowest, `
+      + `and raise the connection's rank by one.</p>`
+      + `<div class="sf-milestone-suggest-row"><button type="button" class="sf-followup-btn" data-action="sf-bond-recommit" `
+      + `title="Roll challenge dice, clear the lowest die's boxes, raise the connection's rank">🔁 Recommit to the Bond</button></div></div>`,
+    flags: { [MODULE_ID]: { bondRecommitOfferCard: true, hostId: target.__hostId, connectionName: target.name ?? null, actorId } },
+  }).catch(err => console.warn(`${MODULE_ID} | bond recommit offer card failed:`, err?.message ?? err));
+}
+
+/** The "Recommitted" card: the dice, the boxes cleared, the new rank. */
+async function postRecommittedCard(label, dice, plan, what, flags) {
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Recommitted: ${escapeChatHtml(label)}</strong>`
+      + `<p>Challenge dice ${dice[0]}, ${dice[1]} — cleared <strong>${plan.clearedBoxes}</strong> box${plan.clearedBoxes === 1 ? "" : "es"} `
+      + `(now ${Math.floor(plan.newTicks / 4)}/10) and the ${what} rises to <strong>${escapeChatHtml(plan.newRank)}</strong>.</p></div>`,
+    flags: { [MODULE_ID]: { recommitCard: true, newRank: plan.newRank, newTicks: plan.newTicks, ...flags } },
+  }).catch(err => console.warn(`${MODULE_ID} | recommit card failed:`, err?.message ?? err));
+}
+
+/**
+ * GM-side: recommit to a vow after a Fulfill Your Vow miss (issue #330 D1) —
+ * the offer card's claim (cardActions.applyVowRecommitOffer, gmRelay
+ * "vow.recommit") runs it once per card. Rolls the challenge dice once and
+ * writes the plan to every copy of the roller's vow (by its vowId — a shared
+ * vow is one vow) and to its journal twin, the rank stepped once, never past
+ * epic. The roller's copy is written first: refused, nothing changed.
+ *
+ * @param {{ vowName?: string|null, itemId?: string|null, actorId?: string|null }} vow
+ * @returns {Promise<{ ok: boolean, reason?: "no-vow"|"write-refused" }>}
+ */
+export async function performVowRecommit({ vowName = null, itemId = null, actorId = null } = {}) {
+  const { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId });
+  let twin = null;
+  try {
+    twin = selectVowTrack((await listProgressTracks()).filter(t => !t.completed), primary?.item?.name ?? vowName);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | vow recommit: the progress tracks could not be read:`, err?.message ?? err);
+  }
+  if (!primary && !twin) {
+    console.warn(`${MODULE_ID} | vow recommit: no open vow "${vowName ?? "?"}" — nothing recommitted.`);
+    return { ok: false, reason: "no-vow" };
+  }
+  const ticks = primary ? Number(primary.item.system?.current ?? 0) : Number(twin.ticks ?? 0);
+  const dice  = rollChallengeDice();
+  const plan  = planRecommit(ticks, rankName(primary ? primary.item.system?.rank : twin.rank), dice);
+  const next  = { ticks: plan.newTicks, rank: plan.newRank };
+  if (primary) {
+    const first = await setVowItemTrack(primary.actor, primary.item.id, next);
+    if (!first.ok) return { ok: false, reason: "write-refused" };
+    for (const { actor, item } of copies) {
+      if (item.id === primary.item.id && actor?.id === primary.actor?.id) continue;
+      const res = await setVowItemTrack(actor, item.id, next);
+      if (!res.ok) console.warn(`${MODULE_ID} | vow recommit: ${actor?.name ?? "a"} copy was not changed (${res.reason}).`);
+    }
+  }
+  if (twin) {
+    try {
+      await updateTrackFields(twin.id, next);
+    } catch (err) {
+      if (!primary) {
+        console.warn(`${MODULE_ID} | vow recommit failed — the track was not changed:`, err?.message ?? err);
+        return { ok: false, reason: "write-refused" };
+      }
+      console.warn(`${MODULE_ID} | vow recommit: the vow's journal track was not changed:`, err?.message ?? err);
+    }
+  }
+  await postRecommittedCard(primary?.item?.name ?? twin?.label ?? vowName ?? "Vow", dice, plan, "vow's rank",
+    { vowName: primary?.item?.name ?? twin?.label ?? vowName ?? null });
+  return { ok: true };
+}
+
+/**
+ * GM-side: recommit to a bond after a Forge a Bond miss (issue #330 D1) —
+ * cardActions.applyBondRecommitOffer, gmRelay "bond.recommit". The record's
+ * relationship track and rank change, written through to every PC's bond
+ * Item (setBondItemTicks / setBondItemRank — BOND-ITEM-MIRROR).
+ *
+ * @param {{ hostId?: string|null }} bond
+ * @returns {Promise<{ ok: boolean, reason?: "no-connection"|"write-refused" }>}
+ */
+export async function performBondRecommit({ hostId = null } = {}) {
+  const conn   = await import("./entities/connection.js");
+  const record = hostId ? conn.getConnection(hostId) : null;
+  if (!record || record.active === false || record.bonded) {
+    console.warn(`${MODULE_ID} | bond recommit: connection ${hostId ?? "?"} is gone, lost or bonded — nothing recommitted.`);
+    return { ok: false, reason: "no-connection" };
+  }
+  const dice = rollChallengeDice();
+  const plan = planRecommit(Number(record.relationshipTicks ?? 0), rankName(record.rank), dice);
+  try {
+    await conn.updateConnection(hostId, { relationshipTicks: plan.newTicks, rank: plan.newRank });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | bond recommit failed — the connection was not changed:`, err?.message ?? err);
+    return { ok: false, reason: "write-refused" };
+  }
+  const keys = { connectionId: record._id ?? hostId, name: record.name ?? null };
+  await setBondItemTicks(keys, plan.newTicks).catch(err =>
+    console.warn(`${MODULE_ID} | bond recommit: bond item ticks mirror failed:`, err?.message ?? err));
+  await setBondItemRank(keys, plan.newRank).catch(err =>
+    console.warn(`${MODULE_ID} | bond recommit: bond item rank mirror failed:`, err?.message ?? err));
+  await conn.addHistoryEntry(hostId, `Recommitted after a failed Forge a Bond — ${plan.clearedBoxes} box${plan.clearedBoxes === 1 ? "" : "es"} cleared, rank now ${plan.newRank}.`)
+    .catch(err => console.warn(`${MODULE_ID} | bond recommit: history entry failed:`, err?.message ?? err));
+  await postRecommittedCard(record.name ?? "Connection", dice, plan, "connection's rank", { hostId });
+  return { ok: true };
+}
+
 // Wire the recommit button. A click relays to the canonical GM
 // ("expedition.recommit" → cardActions.applyRecommitOffer), which claims the
 // GM-authored offer card (`recommitted`) before recommitting: once, whoever
 // presses and however often the card re-renders (issue #321 U20 — a local
 // disable re-armed on every other client and on a re-render). A click that is
 // not delivered re-arms the button.
+// The recommit offers and the GM action each one relays: an expedition's,
+// and a vow's or a bond's (issue #330 D1).
+const RECOMMIT_OFFERS = [
+  { flag: "recommitOfferCard",     action: "sf-recommit",      kind: "expedition.recommit" },
+  { flag: "vowRecommitOfferCard",  action: "sf-vow-recommit",  kind: "vow.recommit" },
+  { flag: "bondRecommitOfferCard", action: "sf-bond-recommit", kind: "bond.recommit" },
+];
+
 function registerRecommitHook() {
   if (registerRecommitHook._installed) return;
   registerRecommitHook._installed = true;
   onChatMessageRender((message, root) => {
     const f = message?.flags?.[MODULE_ID];
-    if (!f?.recommitOfferCard) return;
-    const btn = root.querySelector('[data-action="sf-recommit"]');
+    const offer = f ? RECOMMIT_OFFERS.find(o => f[o.flag]) : null;
+    if (!offer) return;
+    const btn = root.querySelector(`[data-action="${offer.action}"]`);
     if (!btn) return;
     if (liveCardFlags(message)?.recommitted) {
       btn.disabled = true;
@@ -4196,7 +4357,7 @@ function registerRecommitHook() {
       event.preventDefault(); event.stopPropagation();
       fresh.disabled = true;
       await relayCardAction({
-        kind:       "expedition.recommit",
+        kind:       offer.kind,
         payload:    { messageId: message?.id ?? null },
         isResolved: () => !!liveCardFlags(message)?.recommitted,
         restore:    () => { fresh.disabled = false; },

@@ -245,6 +245,17 @@ used to collect only the first PC's copy, so a shared vow's reward went to
 the first PC). No journal track and no item matched → `console.warn`,
 nothing completes.
 
+On a **miss** the pipeline posts a recommit offer on the vow it scored
+(`postVowRecommitOfferCard`, issue #330 D1 — it was advisory text): **🔁
+Recommit to the Vow** relays `vow.recommit` to the canonical GM
+(`cardActions.applyVowRecommitOffer`), which checks the presser is the
+roller's player or a GM and claims the card (`recommitted`) before
+`performVowRecommit` rolls the challenge dice once (`planRecommit`) and
+writes every open copy of the roller's vow (`resolveVowItemCopies`; the
+roller's first — refused, nothing changed and the claim released) and its
+journal twin: the lowest die's boxes cleared and the rank stepped once, as
+the Item holds it (a vendor number or a name — `setVowItemTrack`).
+
 **Native-sheet path**: the vendor progress-roll card is narrated where a Claude
 key lives (`registerNativeProgressRollHook` → `nativeRollNarratesHere`, the
 `RUN_ON.CLAUDE` ladder decided on every client from shared data): the keyed

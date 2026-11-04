@@ -49,6 +49,20 @@ brackets.)
   narration may only half name. *Rejected:* keeping the fallback on the
   native path with `unbonded: true` (option B) — a sheet roll names its Item
   exactly, so a fallback can only reach the wrong connection.
+- **A vow's or a bond's miss offers the recommit as a click** [D1; option
+  A]. Finish an Expedition's miss offered "🔁 Recommit" (claimed per card
+  since issue #321 U20); Fulfill Your Vow's miss and Forge a Bond's — the
+  same mechanic in the vendored text — were advisory, the GM clearing boxes
+  and raising the rank by hand on the vow's copies, or on the connection's
+  record and its bond Items. Each miss now posts a claimed offer:
+  `performVowRecommit` rolls the challenge dice once and writes every open
+  copy of the roller's vow (by its vowId) and its journal twin, the rank
+  stepped once as the Item holds it (`setVowItemTrack`);
+  `performBondRecommit` writes the record and mirrors it to the bond Items.
+  The roller's player or a GM may press it (gmRelay `vow.recommit` /
+  `bond.recommit`). *Rejected:* keeping both advisory (option B) — "Flow-
+  audit soft spots" implements every gap a faithful mechanic exists for, and
+  the expedition's already holds the rule.
 - **A card's own follow-up closes its upgrades, and the card says so first**
   [D2; option B]. A weak Face Danger's card offers 🔥 Burn Momentum and ⚑
   Mark Progress on Vow (🤝 / 🔗 too); taking ⚑ first posts a forced Reach a
@@ -2958,7 +2972,8 @@ per-transition confirmation cards.
 
 **Decision:** The soft-spot cleanup that followed the flow audits implemented
 every gap where a faithful Starforged mechanic exists (way-out one-click
-moves, waypoint match-oracle buttons, expedition recommit, `!sever`, targeted
+moves, waypoint match-oracle buttons, expedition recommit (and, since issue
+#330 D1, the vow and bond recommits), `!sever`, targeted
 `!bond`, the expedition→site link, shared-vow rank sync, the no-reward
 fulfilment note, dead-code removal). Four observations were **reaffirmed as
 deliberate** rather than changed:

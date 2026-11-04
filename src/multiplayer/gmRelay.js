@@ -185,6 +185,9 @@ export const GM_ACTIONS = Object.freeze({
   // "🏁 Attempt to Fulfill", claimed once on the card
   "fulfilVow.attempt":         { load: () => import("../moves/cardActions.js"),                      fn: "applyAttemptFulfilVow" },
   "expedition.recommit":       { load: () => import("../moves/cardActions.js"),                      fn: "applyRecommitOffer" },
+  // Issue #330 D1 — a Fulfill Your Vow's / Forge a Bond's miss "🔁 Recommit", claimed once on the card
+  "vow.recommit":              { load: () => import("../moves/cardActions.js"),                      fn: "applyVowRecommitOffer" },
+  "bond.recommit":             { load: () => import("../moves/cardActions.js"),                      fn: "applyBondRecommitOffer" },
   // The Chronicle: the panel's edits and automatic entries (the GM is its one writer)
   "chronicle.edit":            { load: () => import("../character/chronicle.js"),                    fn: "applyChronicleEditFromRelay" },
   // The Progress Tracks and Entities panels: every edit, from any user (issue #321 U05)

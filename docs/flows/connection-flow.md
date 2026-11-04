@@ -204,7 +204,14 @@ BOND-NATIVE-FORGE fix) — on the connection the roller's bond Item names, by
 the record id it carries, else the one active connection of that exact name,
 never a fallback to another (`findSheetBondConnection`, issue #330 D5: a
 hand-made bond forged the crew's one connection) — and is narrated by the native progress-roll hook where
-a Claude key lives (`vow-flow.md` §4, issue #321 U11). Both hooks classify the
+a Claude key lives (`vow-flow.md` §4, issue #321 U11). On a **miss** the
+pipeline posts a recommit offer for the un-bonded connection it rolled
+(`postBondRecommitOfferCard`, issue #330 D1): **🔁 Recommit to the Bond**
+relays `bond.recommit` (`cardActions.applyBondRecommitOffer`, the roller's
+player or a GM, claimed once), and `performBondRecommit` clears the lowest
+die's boxes from `relationshipTicks`, steps the record's rank once, writes
+both through to the bond Items (`setBondItemTicks` / `setBondItemRank`) and
+adds a history entry. Both hooks classify the
 sheet roll through one subtype lookup (`nativeProgressSubtypeLookup`,
 `src/index.js`), which takes the vendor's `bond` subtype as a connection — the
 narration hook accepted only `connection`, so a forge rolled on the sheet's

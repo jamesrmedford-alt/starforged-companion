@@ -665,6 +665,79 @@ export async function applyRecommitOffer(payload = {}, _ctx = {}) {
   }
 }
 
+/**
+ * gmRelay handlers for "vow.recommit" and "bond.recommit" — run on the
+ * canonical GM (issue #330 D1). A Fulfill Your Vow's or Forge a Bond's miss
+ * offers "🔁 Recommit"; the GM-authored card is claimed (`recommitted`)
+ * before the recommit, behind the in-flight guard, as an expedition's is
+ * (applyRecommitOffer). The vow or bond is the roller's: their player or a
+ * GM may press it. A write the world refused changed nothing and releases
+ * the claim.
+ *
+ * @param {{ messageId?: string }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+export function applyVowRecommitOffer(payload = {}, ctx = {}) {
+  return applyRollerRecommit(payload, ctx, {
+    flag: "vowRecommitOfferCard", label: "vow recommit",
+    perform: async (f) => (await import("../index.js")).performVowRecommit({
+      vowName: f.vowName ?? null, itemId: f.itemId ?? null, actorId: f.actorId ?? null,
+    }),
+  });
+}
+
+/** gmRelay "bond.recommit" — see applyVowRecommitOffer. */
+export function applyBondRecommitOffer(payload = {}, ctx = {}) {
+  return applyRollerRecommit(payload, ctx, {
+    flag: "bondRecommitOfferCard", label: "bond recommit",
+    perform: async (f) => (await import("../index.js")).performBondRecommit({ hostId: f.hostId ?? null }),
+  });
+}
+
+async function applyRollerRecommit(payload, ctx, { flag, label, perform }) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | ${label}: offer card ${messageId ?? "?"} not found — nothing recommitted.`);
+    return { applied: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f[flag]) {
+    console.warn(`${MODULE_ID} | ${label}: message ${messageId} is not its offer — ignored.`);
+    return { applied: false, reason: "not-a-recommit-offer" };
+  }
+  const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not recommit ${actor?.name ?? "this card"}'s — refused.`);
+    return { applied: false, reason: "not-owner" };
+  }
+  const key = `${messageId}:recommit`;
+  if (f.recommitted || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | ${label}: offer ${messageId} already taken — ignoring the press.`);
+    return { applied: false, reason: "already-recommitted" };
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.recommitted`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ${label}: offer ${messageId} could not be claimed — nothing recommitted:`, err?.message ?? err);
+      return { applied: false, reason: "claim-refused" };
+    }
+    const res = await perform(f);
+    if (res?.reason === "write-refused") {
+      await message.update({ [`flags.${MODULE_ID}.recommitted`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | ${label}: releasing the claim failed:`, e?.message ?? e));
+    }
+    return { applied: res?.ok === true, ...(res?.reason ? { reason: res.reason } : {}) };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // COMBAT-TRACK CARD "⚔ Battle instead" — gmRelay "combatTrack.battle"
 // WAY-OUT CARD off-ramps — gmRelay "wayOut.pick"
