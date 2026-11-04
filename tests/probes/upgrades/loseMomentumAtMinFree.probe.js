@@ -34,6 +34,12 @@
  * W16 rule still blocks Sacrifice Resources while unprepared at 0.
  *
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/upgrades/loseMomentumAtMinFree.probe.js
+ *
+ * REFUTER VERDICT (ninth audit): refuted as a new finding — this is the known
+ * MOMENTUM-MIN-REDIRECT-MANUAL item (docs/known-issues.md), which the issue
+ * #314 decision parked for both the at-minimum pick and the overflow; and the
+ * executor's own card already says the remainder is owed. The probe is kept
+ * as a control of that known item, not as a finding (tests/probes/README.md).
  */
 
 /* global makeTestActor */
