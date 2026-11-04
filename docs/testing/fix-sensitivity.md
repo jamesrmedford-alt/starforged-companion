@@ -1,8 +1,8 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326 and #329
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329 and #330
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300, #301, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326 and #329 audits and from issue #302's disturbance
+#300, #301, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329 and #330 audits and from issue #302's disturbance
 matrix (slice B): the tests that fail with the fix taken out. It was produced
 by `scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to
 `ec08eb4`), for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for
@@ -10,7 +10,8 @@ the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
 2026-10-29 (the patch applied to `fd17788`), for issue #311 on 2026-10-29, for
 issues #313, #314 and #315 on 2026-10-30, for issue #316 on 2026-10-31,
 for issues #321 and #322 on 2026-11-01, for issues #325 and #326 on 2026-11-03 and for issue
-#329 — and the four fixes found while fixing it — on 2026-11-04. To reproduce:
+#329 — and the four fixes found while fixing it — and for issue #330's fifteen
+decisions on 2026-11-04. To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -133,6 +134,12 @@ node scripts/fix-sensitivity.mjs \
   --inject scripts/defects/notes-promoted-moved-twice.patch \
   --inject scripts/defects/notes-promoted-html-resurrected.patch \
   --inject scripts/defects/notes-promoted-any-client.patch \
+  --md details.md
+
+# issue #330 — the fifteen decisions, D14 … D3 in commit order
+node scripts/fix-sensitivity.mjs \
+  128f308 6f579ea d27f5e1 9fcdc7e 4864932 6114773 417c214 5e4d72f 9e28042 \
+  284ac94 539a04d 00765b5 6757724 f6bd121 f60c877 \
   --md details.md
 ```
 
@@ -609,6 +616,34 @@ a promoted detail, or runs on a player's client.
 | XCARD-CAPTURE-TRANSITIONS | f43d0bb | revert | 5 — `entityExtractor.test.js` (3), `xcardCaptureTransitions.test.js` (2) |
 | NOTES-PROMOTED-BEFORE | 082196a | revert; 4 injected defects | 1 — `notesPromotedBefore.test.js` (6 more only on the missing export); the defects: not moved 3, moved twice 1, HTML resurrected 1, any client 1 |
 
+### Issue #330 — the ninth audit, part 3 (the fifteen decisions)
+
+Every commit is **sensitive** (the run exits 0). One test needed a second
+look: D5's "the Item's record key finds a connection renamed since" passed
+both ways under its first fixture — Sable was the world's only connection,
+so the old ladder's sole-active rung forged her too. `bbd7c7f` renames her
+to a name the Item's old name is no part of, beside a second connection;
+with D5's `src/index.js` change reverted on that commit, five of the file's
+seven tests fail (the two controls pass), the renamed case among them.
+
+| Decision | Change | Shown by | Assertions that fail without the change |
+| --- | --- | --- | --- |
+| D1 VOW-BOND-MISS-RECOMMIT-ADVISORY | f6bd121 | revert | 3 — `vowBondRecommit.test.js` (3) |
+| D2 UPGRADE-CLOSED-BY-OWN-SUGGESTION | 00765b5 | revert | 1 — `upgradeFirstHint.test.js` (the hint and the titles); its other three keep D4's rule and the controls |
+| D3 ENDURE-HARM-STEP-ESCALATION | f60c877 | revert | 24 — `endureAtZeroChoice.test.js` (8), `harmStepOwesResist.test.js` (5), `sufferExecutor.test.js` (8), `payThePriceRoutes.test.js`, `persistResolution.test.js`, `resultUpgrade.test.js` |
+| D4 HEAL-SELF-LOWER-STAT | 6757724 | revert | 4 — `healSelfLowerStat.test.js` (4) |
+| D5 NATIVE-FORGE-NAME-STRICT | 9e28042 | revert; by hand after `bbd7c7f` | 4 — `nativeForgeNamesItsConnection.test.js` (4); 5 by hand on `bbd7c7f` |
+| D6 OVERCOME-DESTRUCTION-SCORES-ZERO | 284ac94 | revert | 10 — `legacyMovesScoreLegacyTracks.test.js` (9), `statEnrichment.test.js` |
+| D7 FORSAKE-STRESS-FIXED-AMOUNT | 539a04d | revert | 3 — `forsakeStressSized.test.js` (3) |
+| D8 SPOTLIGHT-NAMES-THE-ROLLER | 6114773 | revert | 4 — `spotlightSkipsTheActor.test.js` (4) |
+| D9 LORE-RUMOUR-RECONFIRMED | 4864932 | revert | 6 — `loreRumourRulingStands.test.js` (4), `entityExtractor.test.js` (2) |
+| D10 SEVER-BOND-ITEM-STAYS | 5e4d72f | revert | 3 — `severMarksBondItemLost.test.js` (3) |
+| D11 AUDIO-CACHE-WRITE-UNCHECKED | 417c214 | revert | 5 — `audioCacheWriteBounded.test.js` (5) |
+| D12 SESSION-NUMBER-BURNED-BY-PREP-LOAD | 9fcdc7e | revert | 4 — `sessionNumberCountsBegun.test.js` (3), `campaignStart.test.js` |
+| D13 ORACLE-REF-NOT-FOLLOWED | 6f579ea | revert | 6 — `oracleRefFollowed.test.js` (6) |
+| D14 SECTOR-NAMESAKE-FOLDERS | 128f308 | revert | 4 — `sectorNameNoNamesake.test.js` (4) |
+| D15 SESSION-PANEL-ENVISION-GM-ONLY | d27f5e1 | revert | 3 — `sessionPanelEnvisionPlayer.test.js` (2), `sessionPanelPlayerBegin.test.js` |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -734,6 +769,26 @@ X-Card, and an earlier narration's and a GM's change left alone; an
 still reaching the narrator's row); one is a guard the fix must keep — a
 faction stance changed on the record since the narration stands
 (XCARD-CAPTURE-TRANSITIONS).
+
+
+For issue #330 the script lists thirty new tests that pass both ways. Each
+was read: twenty-nine are named controls or keep a rule the change must
+not break — the first roll standing with no stored sector (D14); Ultra-scale
+still followed, the core chains, a plain row, and the rewritten Action +
+Theme case (D13); a GM's own press of ✦ Envision and the GM's button (D15);
+a begun session followed by the next number, a begun session's summary
+keeping its number, a world's first session, and an open gate counting as
+begun (D12); a GM's `confirmed` ruling or Confirm still promoting, a new
+narrator entry auto-confirming, a confirmed entry re-recorded, a struck
+entry staying struck (D9); the pointer on Kira drawing Orin, a solo scene,
+an actor who is not next (D8); an honest relayed write filed once (D11); a
+sheet roll on Sable and an exact name forging their connection (D5);
+Fulfill Your Vow still scoring from the vow Item (D6); the forsake card
+taking more costs (D7); D4's rule closing the burn, a burn before the ⚑,
+and a card with nothing to upgrade (D2); the other Heal situations and an
+asset's substitution (D4); a hit posting no offer (D1). The other — D5's
+renamed-connection case — passed only because its fixture had one
+connection, and `bbd7c7f` makes it fail without the change (above).
 
 ## Details
 
@@ -6271,3 +6326,295 @@ Test files: `tests/unit/notesPromotedBefore.test.js`.
 | Fails with the defect | First failure line |
 | --- | --- |
 | tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab control: a player's client moves nothing — not even on a card the player owns | AssertionError: expected { moved: 1, cleared: +0 } to deeply equal { moved: +0, cleared: +0 } |
+
+### 128f308 — fix: a new sector never takes a stored sector's name (issue #330 D14)
+
+Test files: `tests/unit/sectorNameNoNamesake.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sectorNameNoNamesake.test.js › issue #330 D14 — a sector name already stored is rolled again a rolled name a stored sector holds is rolled again | AssertionError: expected 'Accursed Abyss' to be 'Wasted Zenith' // Object.is equality |
+| (new) tests/unit/sectorNameNoNamesake.test.js › issue #330 D14 — a sector name already stored is rolled again the stored name is matched case-blind | AssertionError: expected 'Accursed Abyss' to be 'Wasted Zenith' // Object.is equality |
+| (new) tests/unit/sectorNameNoNamesake.test.js › issue #330 D14 — a sector name already stored is rolled again when every roll lands on a taken name, the last one is numbered | AssertionError: expected 'Accursed Abyss' to be 'Accursed Abyss III' // Object.is equality |
+| (new) tests/unit/sectorNameNoNamesake.test.js › issue #330 D14 — a sector name already stored is rolled again generateSector checks the world's stored sectors — the Sector Creator's and the quickstart's path | AssertionError: expected true to be false // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/sectorNameNoNamesake.test.js › issue #330 D14 — a sector name already stored is rolled again control: with no stored sectors the first roll stands
+
+### 6f579ea — fix: !oracle follows a table-reference row in place (issue #330 D13)
+
+Test files: `tests/unit/creditTheRoller.test.js`, `tests/unit/oracleRefFollowed.test.js`, `tests/unit/oracleRoller.test.js`, `tests/unit/seedKeepsNarratedIdentity.test.js`. Source restored: 1 file(s).
+
+- With the fix: 54 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 48 still pass (4 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/oracleRefFollowed.test.js › issue #330 D13 — a cross-reference row resolves to an answer, not a heading Space Sighting 'Stellar Object' (1–15) rolls the Stellar Object table under its heading | AssertionError: expected 'Stellar Object' to be 'Stellar Object: Glowing orange star' // Object.is equality |
+| (new) tests/unit/oracleRefFollowed.test.js › issue #330 D13 — a cross-reference row resolves to an answer, not a heading Starship Type 'Fleet' (85–94) rolls the Fleet table under its heading | AssertionError: expected 'Fleet' to be 'Fleet: Pirate wing' // Object.is equality |
+| (new) tests/unit/oracleRefFollowed.test.js › issue #330 D13 — a cross-reference row resolves to an answer, not a heading a chain of references is followed to its answer — Fleet 91–100 names a starship mission | AssertionError: expected 'Fleet' to be 'Fleet: Starship Mission: Hunt down an…' // Object.is equality |
+| (new) tests/unit/oracleRefFollowed.test.js › issue #330 D13 — a cross-reference row resolves to an answer, not a heading every reference row of every registered table resolves under its heading | AssertionError: expected [ …(26) ] to deeply equal [] |
+| (new) tests/unit/oracleRefFollowed.test.js › issue #330 D13 — a cross-reference row resolves to an answer, not a heading Initial Contact 96–100 'Derelict' rolls the derelict's location | AssertionError: expected 'Derelict' to match /^Derelict: \S/ |
+| (new) tests/unit/oracleRefFollowed.test.js › issue #330 D13 — a cross-reference row resolves to an answer, not a heading the result no longer carries the unread isRef / refTableId | AssertionError: expected { …(8) } to not have property "isRef" |
+
+- New test passing with and without the fix (a control?): tests/unit/oracleRefFollowed.test.js › issue #330 D13 — a cross-reference row resolves to an answer, not a heading control: Creature Scale 'Ultra-scale' is still followed in place (issue #321 U68)
+- New test passing with and without the fix (a control?): tests/unit/oracleRefFollowed.test.js › issue #330 D13 — a cross-reference row resolves to an answer, not a heading control: the Descriptor + Focus and Action + Theme chains still resolve without a heading
+- New test passing with and without the fix (a control?): tests/unit/oracleRefFollowed.test.js › issue #330 D13 — a cross-reference row resolves to an answer, not a heading control: a plain row is its own answer
+- New test passing with and without the fix (a control?): tests/unit/oracleRoller.test.js › rollOracle — directive resolution resolves an Action+Theme row to an action and a theme
+
+### d27f5e1 — fix: a player's ✦ Envision Inciting Incident on the Session panel posts their !incite (issue #330 D15)
+
+Test files: `tests/unit/sessionPanelEnvisionPlayer.test.js`, `tests/unit/sessionPanelPlayerBegin.test.js`. Source restored: 2 file(s).
+
+- With the fix: 10 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 7 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sessionPanelEnvisionPlayer.test.js › issue #330 D15 — a player's ✦ Envision Inciting Incident in the Session panel the panel offers a player the same ✦ Envision their typed `!incite` gives them | AssertionError: expected { disabled: true, title: 'GM only' } to deeply equal { disabled: false, …(1) } |
+| (new) tests/unit/sessionPanelEnvisionPlayer.test.js › issue #330 D15 — a player's ✦ Envision Inciting Incident in the Session panel a player's press posts their `!incite` line — the routed command, not a local run | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/sessionPanelPlayerBegin.test.js › a player's Begin / End Session in the Session panel (issue #326 W85) Envision Inciting Incident is a player's too (issue #330 D15) | AssertionError: expected true to be false // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/sessionPanelEnvisionPlayer.test.js › issue #330 D15 — a player's ✦ Envision Inciting Incident in the Session panel control: a GM's press runs the incident on the GM's own client, as before
+- New test passing with and without the fix (a control?): tests/unit/sessionPanelEnvisionPlayer.test.js › issue #330 D15 — a player's ✦ Envision Inciting Incident in the Session panel control: the GM's button reads the same as the player's
+
+### 9fcdc7e — fix: a session nobody began does not use up a session number (issue #330 D12)
+
+Test files: `tests/unit/campaignStart.test.js`, `tests/unit/narratorDetailPersistence.test.js`, `tests/unit/sessionManagement.test.js`, `tests/unit/sessionNumberCountsBegun.test.js`. Source restored: 4 file(s).
+
+- With the fix: 82 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 78 still pass (4 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/campaignStart.test.js › runCampaignStart — the session it begins (issue #330 D12) stamps the session begun, so it keeps its number and the next session is the one after | AssertionError: expected { shipIds: [ 'ship-1' ], …(5) } to match object { sessionActive: true, …(1) } |
+| (new) tests/unit/sessionNumberCountsBegun.test.js › issue #330 D12 — a world opened only to prepare does not burn a session number Wednesday's prep-only load mints session 4; Saturday's real session is still session 4 | AssertionError: expected 5 to be 4 // Object.is equality |
+| (new) tests/unit/sessionNumberCountsBegun.test.js › issue #330 D12 — a world opened only to prepare does not burn a session number any number of prep-only loads in a row keep the number | AssertionError: expected 7 to be 4 // Object.is equality |
+| (new) tests/unit/sessionNumberCountsBegun.test.js › issue #330 D12 — a world opened only to prepare does not burn a session number an unbegun session's summary is carried as LAST SESSION, with no number of its own | AssertionError: expected 5 to be 4 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/sessionNumberCountsBegun.test.js › issue #330 D12 — a world opened only to prepare does not burn a session number control: a session that was begun and went idle is followed by the next number
+- New test passing with and without the fix (a control?): tests/unit/sessionNumberCountsBegun.test.js › issue #330 D12 — a world opened only to prepare does not burn a session number control: a begun session's summary keeps its number
+- New test passing with and without the fix (a control?): tests/unit/sessionNumberCountsBegun.test.js › issue #330 D12 — a world opened only to prepare does not burn a session number control: a world's first session is session 1
+- New test passing with and without the fix (a control?): tests/unit/sessionNumberCountsBegun.test.js › issue #330 D12 — what counts as begun a session whose gate is open was begun, stamped or not (a world from before the stamp)
+
+### 4864932 — fix: a GM's lore ruling stands when the narrator mentions it again (issue #330 D9)
+
+Test files: `tests/unit/entityExtractor.test.js`, `tests/unit/loreRumourRulingStands.test.js`. Source restored: 3 file(s).
+
+- With the fix: 138 passed, 0 failed.
+- Without it: 6 failed (4 new; 0 only for a missing export); 132 still pass (4 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/entityExtractor.test.js › routeWorldJournalResults a narration's transitions carry its id, for the X-Card (XCARD-CAPTURE-TRANSITIONS) | AssertionError: expected "promoteLoreToConfirmed" to be called with arguments: [ 'Soft fact', …(2) ] |
+| tests/unit/entityExtractor.test.js › routeWorldJournalResults 'lore confirmed' transition delegates to promoteLoreToConfirmed | AssertionError: expected "promoteLoreToConfirmed" to be called with arguments: [ 'Soft fact', …(2) ] |
+| (new) tests/unit/loreRumourRulingStands.test.js › issue #330 D9 — a GM's lore ruling stands against the narrator a rumour ruling stays a rumour when the detection pass records the same title again | AssertionError: expected { …(18) } to match object { confirmed: false, …(2) } |
+| (new) tests/unit/loreRumourRulingStands.test.js › issue #330 D9 — a GM's lore ruling stands against the narrator the capture's 'lore confirmed' transition does not promote a rumour either | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/loreRumourRulingStands.test.js › issue #330 D9 — a GM's lore ruling stands against the narrator a rumour the GM filed before any narration stays the GM's when the narrator mentions it | AssertionError: expected { …(18) } to match object { confirmed: false, …(2) } |
+| (new) tests/unit/loreRumourRulingStands.test.js › issue #330 D9 — a GM's lore ruling stands against the narrator an entry the GM dismissed from review is not re-confirmed by the next mention | AssertionError: expected true to be false // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/loreRumourRulingStands.test.js › issue #330 D9 — a GM's lore ruling stands against the narrator a GM's `confirmed` ruling, or the panel's Confirm, still promotes it
+- New test passing with and without the fix (a control?): tests/unit/loreRumourRulingStands.test.js › issue #330 D9 — a GM's lore ruling stands against the narrator control: a new narrator-detected lore entry auto-confirms
+- New test passing with and without the fix (a control?): tests/unit/loreRumourRulingStands.test.js › issue #330 D9 — a GM's lore ruling stands against the narrator control: a confirmed narrator entry is re-recorded by the next mention
+- New test passing with and without the fix (a control?): tests/unit/loreRumourRulingStands.test.js › issue #330 D9 — a GM's lore ruling stands against the narrator control: a STRUCK entry stays struck when the detection pass records it again
+
+### 6114773 — fix: the spotlight nudge never names the character who just acted (issue #330 D8)
+
+Test files: `tests/unit/spotlightSkipsTheActor.test.js`. Source restored: 3 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/spotlightSkipsTheActor.test.js › issue #330 D8 — the spotlight nudge never names the PC who just acted the first beat of a scene, made by Kira: the nudge does not hand the spotlight back to Kira | AssertionError: expected '## SPOTLIGHT\n\nThis is a multiplayer…' to match /By the rotation, Orin is next/ |
+| (new) tests/unit/spotlightSkipsTheActor.test.js › issue #330 D8 — the spotlight nudge never names the PC who just acted a beat made out of turn: Orin acts while the pointer invites Orin — the nudge draws Kira in, not Orin again | AssertionError: expected '## SPOTLIGHT\n\nThis is a multiplayer…' to match /By the rotation, Kira is next/ |
+| (new) tests/unit/spotlightSkipsTheActor.test.js › issue #330 D8 — selectSpotlight skips the acting PC the first beat of a scene names the next PC after the one acting | AssertionError: expected 'a' to be 'b' // Object.is equality |
+| (new) tests/unit/spotlightSkipsTheActor.test.js › issue #330 D8 — selectSpotlight skips the acting PC a beat out of turn moves past the actor: the pointer on Kira, Orin acts → Pax | AssertionError: expected 'b' to be 'c' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/spotlightSkipsTheActor.test.js › issue #330 D8 — the spotlight nudge never names the PC who just acted control: with the pointer on Kira, a beat made by Kira draws Orin in
+- New test passing with and without the fix (a control?): tests/unit/spotlightSkipsTheActor.test.js › issue #330 D8 — the spotlight nudge never names the PC who just acted control: a solo scene carries no spotlight block
+- New test passing with and without the fix (a control?): tests/unit/spotlightSkipsTheActor.test.js › issue #330 D8 — selectSpotlight skips the acting PC control: an actor who is not next changes nothing
+
+### 417c214 — fix: the GM files a relayed audio clip only for a real card line, never over a cached clip (issue #330 D11)
+
+Test files: `tests/unit/audioCacheNoSweep.test.js`, `tests/unit/audioCacheWriteBounded.test.js`, `tests/unit/nonGmClientPaths.test.js`. Source restored: 1 file(s).
+
+- With the fix: 22 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 17 still pass (1 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/audioCacheWriteBounded.test.js › issue #330 D11 — a relayed audio cache write is bounded to what the UI could send a relayed write never replaces a clip that is already cached (the narration every client plays) | AssertionError: expected [ { source: 'data', …(2) }, …(1) ] to have a length of 1 but got 2 |
+| (new) tests/unit/audioCacheWriteBounded.test.js › issue #330 D11 — a relayed audio cache write is bounded to what the UI could send a hash that is no narrator card segment's clip key under the world's voices is not filed | AssertionError: expected [ { source: 'data', …(2) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/audioCacheWriteBounded.test.js › issue #330 D11 — a relayed audio cache write is bounded to what the UI could send a segment of an X-carded card is not filed — its card plays nothing | AssertionError: expected [ { source: 'data', …(2) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/audioCacheWriteBounded.test.js › issue #330 D11 — a relayed audio cache write is bounded to what the UI could send an NPC line of a card is filed under the world's NPC voice — and not under another voice | AssertionError: expected [ { source: 'data', …(2) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/audioCacheWriteBounded.test.js › issue #330 D11 — a relayed audio cache write is bounded to what the UI could send a second honest write of the same clip is not filed again | AssertionError: expected [ { source: 'data', …(2) }, …(1) ] to have a length of 1 but got 2 |
+
+- New test passing with and without the fix (a control?): tests/unit/audioCacheWriteBounded.test.js › issue #330 D11 — a relayed audio cache write is bounded to what the UI could send control: an honest relayed write of an uncached card segment is filed once
+
+### 5e4d72f — fix: !sever marks the connection's bond Items lost (issue #330 D10)
+
+Test files: `tests/unit/severMarksBondItemLost.test.js`. Source restored: 4 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/severMarksBondItemLost.test.js › issue #330 D10 — a severed connection is no longer a live bond on the PCs after !sever, every PC's bond to Vex reads lost — and Sable's does not | AssertionError: Kira: expected [ { id: '97tnCTjnQDONAF4S', …(5) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/severMarksBondItemLost.test.js › issue #330 D10 — a severed connection is no longer a live bond on the PCs the loss is a module flag, never the vendor's completed (a forged bond on the sheet) | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/severMarksBondItemLost.test.js › issue #330 D10 — a severed connection is no longer a live bond on the PCs CHARACTER STATE lists a severed bond apart, not among the character's connections | AssertionError: expected 'Connections: Sable (dangerous, progre…' not to contain 'Vex' |
+
+### 9e28042 — fix: a sheet Forge a Bond forges the connection its bond Item names, or nobody (issue #330 D5)
+
+Test files: `tests/unit/nativeForgeNamesItsConnection.test.js`. Source restored: 1 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/nativeForgeNamesItsConnection.test.js › issue #330 D5 — a sheet Forge a Bond forges the connection its Item names, or nobody a hand-made bond the module does not know forges nobody — not the crew's one connection | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/nativeForgeNamesItsConnection.test.js › issue #330 D5 — a sheet Forge a Bond forges the connection its Item names, or nobody with no roller known, a name matching no connection forges nobody | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/nativeForgeNamesItsConnection.test.js › issue #330 D5 — a sheet Forge a Bond forges the connection its Item names, or nobody a part of a name is not the name | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/nativeForgeNamesItsConnection.test.js › issue #330 D5 — a sheet Forge a Bond forges the connection its Item names, or nobody the Item's record key wins over another connection's exact name | AssertionError: expected false to be true // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/nativeForgeNamesItsConnection.test.js › issue #330 D5 — a sheet Forge a Bond forges the connection its Item names, or nobody the Item's record key finds a connection renamed since (its Item kept the old name)
+- New test passing with and without the fix (a control?): tests/unit/nativeForgeNamesItsConnection.test.js › issue #330 D5 — a sheet Forge a Bond forges the connection its Item names, or nobody control: a sheet Forge a Bond on Sable forges Sable and pays the Bonds legacy
+- New test passing with and without the fix (a control?): tests/unit/nativeForgeNamesItsConnection.test.js › issue #330 D5 — a sheet Forge a Bond forges the connection its Item names, or nobody control: an exact name forges its connection with no roller known
+
+### 284ac94 — fix: Overcome Destruction and Continue a Legacy roll against the shared legacy tracks (issue #330 D6)
+
+Test files: `tests/unit/legacyMovesScoreLegacyTracks.test.js`, `tests/unit/statEnrichment.test.js`. Source restored: 3 file(s).
+
+- With the fix: 73 passed, 0 failed.
+- Without it: 10 failed (10 new; 0 only for a missing export); 63 still pass (1 new).
+- Verdict: **sensitive** — 10 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/legacyMovesScoreLegacyTracks.test.js › issue #330 D6 — Overcome Destruction scores the bonds legacy track with 24 bonds ticks (6 boxes) statValue carries 24 ticks | AssertionError: expected null to match object { ticks: 24, source: 'legacy', …(1) } |
+| (new) tests/unit/legacyMovesScoreLegacyTracks.test.js › issue #330 D6 — Overcome Destruction scores the bonds legacy track a bonds track already cleared is rolled as if at 10 progress | AssertionError: expected +0 to be 40 // Object.is equality |
+| (new) tests/unit/legacyMovesScoreLegacyTracks.test.js › issue #330 D6 — Overcome Destruction scores the bonds legacy track an empty bonds track is a real 0, not a missing source | AssertionError: expected null to match object { ticks: +0, source: 'legacy' } |
+| (new) tests/unit/legacyMovesScoreLegacyTracks.test.js › issue #330 D6 — Overcome Destruction scores the bonds legacy track the score reaches the roll: 6 boxes beat challenge dice of 3 and 5 | AssertionError: expected +0 to be 6 // Object.is equality |
+| (new) tests/unit/legacyMovesScoreLegacyTracks.test.js › issue #330 D6 — Continue a Legacy scores the legacy track it names quests → 12 ticks | AssertionError: expected +0 to be 12 // Object.is equality |
+| (new) tests/unit/legacyMovesScoreLegacyTracks.test.js › issue #330 D6 — Continue a Legacy scores the legacy track it names the bonds legacy → 30 ticks | AssertionError: expected +0 to be 30 // Object.is equality |
+| (new) tests/unit/legacyMovesScoreLegacyTracks.test.js › issue #330 D6 — Continue a Legacy scores the legacy track it names Discoveries → 40 ticks | AssertionError: expected +0 to be 40 // Object.is equality |
+| (new) tests/unit/legacyMovesScoreLegacyTracks.test.js › issue #330 D6 — Continue a Legacy scores the legacy track it names my connections → 30 ticks | AssertionError: expected +0 to be 30 // Object.is equality |
+| (new) tests/unit/legacyMovesScoreLegacyTracks.test.js › issue #330 D6 — Continue a Legacy scores the legacy track it names quest legacy → 12 ticks | AssertionError: expected +0 to be 12 // Object.is equality |
+| (new) tests/unit/statEnrichment.test.js › enrichProgressTicks continue_a_legacy naming no legacy track scores 0, and the GM console says why (issue #330 D6) | AssertionError: expected null to match object { ticks: +0, source: 'legacy' } |
+
+- New test passing with and without the fix (a control?): tests/unit/legacyMovesScoreLegacyTracks.test.js › control Fulfill Your Vow still scores from the vow Item
+
+### 539a04d — fix: Forsake Your Vow's Endure Stress is minor, serious or major, as the fiction sizes it (issue #330 D7)
+
+Test files: `tests/unit/forsakeStressSized.test.js`. Source restored: 3 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/forsakeStressSized.test.js › issue #330 D7 — Forsake Your Vow's Endure Stress is minor, serious or major the cost names no fixed amount: picking it asks how much | AssertionError: expected 2 to be undefined |
+| (new) tests/unit/forsakeStressSized.test.js › issue #330 D7 — Forsake Your Vow's Endure Stress is minor, serious or major the pick posts a minor / serious / major card, and its major costs 3 spirit | AssertionError: expected 3 to be 5 // Object.is equality |
+| (new) tests/unit/forsakeStressSized.test.js › issue #330 D7 — Forsake Your Vow's Endure Stress is minor, serious or major a minor pick costs 1 | AssertionError: expected 3 to be 4 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/forsakeStressSized.test.js › issue #330 D7 — Forsake Your Vow's Endure Stress is minor, serious or major control: the forsake card still takes more costs after the stress pick
+
+### 00765b5 — fix: a move card says to burn or improve before taking its own follow-up (issue #330 D2)
+
+Test files: `tests/unit/upgradeFirstHint.test.js`. Source restored: 2 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/upgradeFirstHint.test.js › issue #330 D2 — a card's follow-ups say to take its upgrades first a weak hit offering a burn and a milestone: the card says to burn first, beside ⚑ and in its titles | AssertionError: expected '&lt;div class="sf-move-result sf-weak-hi…' to match /Burn momentum or improve the result f…/ |
+
+- New test passing with and without the fix (a control?): tests/unit/upgradeFirstHint.test.js › issue #330 D2 — a card's follow-ups say to take its upgrades first D4 stands: the ⚑ taken first is the roller's next move, and closes the burn
+- New test passing with and without the fix (a control?): tests/unit/upgradeFirstHint.test.js › issue #330 D2 — a card's follow-ups say to take its upgrades first control: burned before the ⚑, the weak hit becomes a strong hit and the milestone still marks
+- New test passing with and without the fix (a control?): tests/unit/upgradeFirstHint.test.js › issue #330 D2 — a card's follow-ups say to take its upgrades first control: a card with nothing to burn or improve carries no hint
+
+### 6757724 — fix: a Heal that mends your own wounds rolls the lower of iron and wits (issue #330 D4)
+
+Test files: `tests/unit/healSelfLowerStat.test.js`. Source restored: 4 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/healSelfLowerStat.test.js › issue #330 D4 — a self-mend rolls the lower of iron and wits iron 3, wits 1: the self-mend rolls +wits (1), whatever the interpreter named | AssertionError: expected 3 to be 1 // Object.is equality |
+| (new) tests/unit/healSelfLowerStat.test.js › issue #330 D4 — a self-mend rolls the lower of iron and wits iron 1, wits 3: the self-mend rolls +iron (1) | AssertionError: expected { moveId: 'heal', …(5) } to match object { statUsed: 'iron', statValue: 1 } |
+| (new) tests/unit/healSelfLowerStat.test.js › issue #330 D4 — the interpreter names the Heal situation a Heal keeps a known situation; an unknown one, or another move's, is dropped | AssertionError: expected undefined to be 'self' // Object.is equality |
+| (new) tests/unit/healSelfLowerStat.test.js › issue #330 D4 — the move card shows the rule a self-mend's card reads +wits (1), lower of iron / wits | AssertionError: expected '&lt;div class="sf-move-result sf-weak-hi…' to contain '+wits (1), lower of iron / wits' |
+
+- New test passing with and without the fix (a control?): tests/unit/healSelfLowerStat.test.js › issue #330 D4 — a self-mend rolls the lower of iron and wits the other situations roll the stat named: treated +iron, providing care +wits, a companion +heart
+- New test passing with and without the fix (a control?): tests/unit/healSelfLowerStat.test.js › issue #330 D4 — a self-mend rolls the lower of iron and wits a stat an asset substituted stands
+
+### f6bd121 — feat: a vow's or a bond's miss offers 🔁 Recommit as a click (issue #330 D1)
+
+Test files: `tests/unit/vowBondRecommit.test.js`. Source restored: 5 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/vowBondRecommit.test.js › issue #330 D1 — Fulfill Your Vow's miss offers 🔁 Recommit to the Vow the miss posts the offer; a press clears the lowest die's boxes on every copy and raises the rank once | AssertionError: expected undefined to be truthy |
+| (new) tests/unit/vowBondRecommit.test.js › issue #330 D1 — Fulfill Your Vow's miss offers 🔁 Recommit to the Vow a vow the vendor ranks by number keeps a number, stepped once | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/vowBondRecommit.test.js › issue #330 D1 — Forge a Bond's miss offers 🔁 Recommit to the Bond a press clears the relationship track's boxes, raises the rank, and mirrors both to the bond Item | AssertionError: expected undefined to be truthy |
+
+- New test passing with and without the fix (a control?): tests/unit/vowBondRecommit.test.js › issue #330 D1 — Fulfill Your Vow's miss offers 🔁 Recommit to the Vow control: a hit posts no offer
+
+### f60c877 — fix: a harm or stress step at 0 asks for the resist roll; that roll's miss offers the choice (issue #330 D3)
+
+Test files: `tests/unit/endureAtZeroChoice.test.js`, `tests/unit/harmStepOwesResist.test.js`, `tests/unit/payThePriceRoutes.test.js`, `tests/unit/persistResolution.test.js`, `tests/unit/resultUpgrade.test.js`, `tests/unit/sufferExecutor.test.js`. Source restored: 5 file(s).
+
+- With the fix: 95 passed, 0 failed.
+- Without it: 24 failed (12 new; 0 only for a missing export); 71 still pass (0 new).
+- Verdict: **sensitive** — 24 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both Endure Harm's miss at 1 health marks nothing and rolls nothing — the choice card offers the three | AssertionError: expected { before: 1, after: +0, …(5) } to match object { woundedMarked: false, …(2) } |
+| tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both Endure Stress's miss at 1 spirit marks nothing and rolls nothing — the choice card offers the three | AssertionError: expected { before: 1, after: +0, …(5) } to match object { shakenMarked: false, …(2) } |
+| tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both picking 'Mark wounded' marks wounded — and rolls no table | TypeError: Cannot read properties of null (reading 'id') |
+| tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both picking 'Mark permanently harmed' marks it — not wounded | TypeError: Cannot read properties of null (reading 'id') |
+| tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both picking the table rolls it — and marks no impact | TypeError: Cannot read properties of null (reading 'id') |
+| tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both Endure Stress: the desolation table, picked, marks neither shaken nor traumatized | TypeError: Cannot read properties of null (reading 'id') |
+| tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both an impact already marked is not offered (marking it again would cost nothing) | TypeError: Cannot read properties of null (reading 'content') |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both a Pay the Price 'You are harmed' at 1 health owes the resist roll — no choice, nothing marked (issue #330 D3) | AssertionError: expected { before: 1, after: +0, …(7) } to match object { after: +0, …(4) } |
+| (new) tests/unit/harmStepOwesResist.test.js › issue #330 D3 — the harm step at 0 owes the resist roll a Pay the Price 'You are harmed' at 1 health: health 0, nothing marked, nothing rolled — a resist card | AssertionError: expected { before: 1, after: +0, …(7) } to match object { after: +0, …(4) } |
+| (new) tests/unit/harmStepOwesResist.test.js › issue #330 D3 — the harm step at 0 owes the resist roll the resist card rolls Endure Harm as the PC; its miss's -1 health at 0 offers the mark-or-table choice | TypeError: Cannot read properties of undefined (reading '_id') |
+| (new) tests/unit/harmStepOwesResist.test.js › issue #330 D3 — the executor's two at-0 paths a harm step at 0 owes the resist roll; the resist roll's own miss offers the choice | AssertionError: expected { before: 1, after: +0, …(5) } to match object { Object (atZero, resistOwed, ...) } |
+| (new) tests/unit/harmStepOwesResist.test.js › issue #330 D3 — the executor's two at-0 paths Endure Stress the same: the stress step at 0 owes Endure Stress | AssertionError: expected { before: 1, after: +0, …(5) } to match object { Object (atZero, resistOwed, ...) } |
+| (new) tests/unit/harmStepOwesResist.test.js › issue #330 D3 — the executor's two at-0 paths control: harm that leaves health above 0 owes nothing | AssertionError: expected { before: 3, after: 2, …(5) } to match object { atZero: false, …(2) } |
+| tests/unit/payThePriceRoutes.test.js › Q02 — harm past 0 health is momentum, through the move pipeline a burn refunds no momentum — its reset replaces it — and no health the loss never took | AssertionError: expected [] to have a length of 1 but got +0 |
+| tests/unit/persistResolution.test.js › persistResolution — the suffer card carries the move's targets stamps the targets into the card's executorOpts beside the outcome flags | AssertionError: expected { isMiss: false, …(2) } to deeply equal { isMiss: false, …(3) } |
+| tests/unit/resultUpgrade.test.js › P04 — a burn refunds the Pay the Price loss that landed a loss at 0 health is momentum (issue #314 Q02): no health is refunded, and a burn's reset replaces the momentum | AssertionError: expected [] to deeply equal [ true ] |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm at 0 health the harm step owes the resist roll — a card that rolls Endure Harm; nothing is marked | AssertionError: expected { before: 2, after: +0, …(5) } to match object { atZero: true, …(4) } |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm an already wounded character at 0 owes the resist roll too, and nothing is marked | AssertionError: expected { before: 2, after: +0, …(5) } to match object { atZero: true, …(2) } |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm on the resist roll's miss at 0 health offers the choice — marks nothing, rolls nothing | AssertionError: expected { before: 1, after: +0, …(5) } to match object { atZero: true, …(4) } |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm another move's miss at 0 is a harm step: the resist roll is owed, not the choice (issue #330 D3) | AssertionError: expected { before: 1, after: +0, …(5) } to match object { atZero: true, …(3) } |
+| tests/unit/sufferExecutor.test.js › endureHarm harm past 0 health is momentum a loss of 3 at health 1: health 1 → 0, the other 2 as momentum 5 → 3 | AssertionError: expected [ false ] to deeply equal [ false, true ] |
+| (new) tests/unit/sufferExecutor.test.js › endureStress at 0 spirit the stress step owes the resist roll — Endure Stress — and marks nothing (issue #330 D3) | AssertionError: expected { before: 1, after: +0, …(5) } to match object { atZero: true, …(2) } |
+| (new) tests/unit/sufferExecutor.test.js › endureStress on the resist roll's miss at 0 spirit offers the choice — marks nothing, rolls nothing (issue #329 X03) | AssertionError: expected { before: 1, after: +0, …(5) } to match object { atZero: true, …(3) } |
+| tests/unit/sufferExecutor.test.js › endureStress stress past 0 spirit is momentum: a loss of 3 at spirit 1, momentum 5 → 3 | AssertionError: expected { before: 1, after: +0, …(5) } to match object { before: 1, after: +0, …(4) } |

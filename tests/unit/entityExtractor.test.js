@@ -685,7 +685,7 @@ describe("routeWorldJournalResults", () => {
     expect(spies.applyStateTransition).toHaveBeenCalledWith(
       expect.objectContaining({ change: "resolved" }), fixture.campaignState, { narrationId: "nar-1" });
     await applyStateTransition({ entryType: "lore", name: "Soft fact", change: "confirmed" }, fixture.campaignState, { narrationId: "nar-1" });
-    expect(spies.promoteLoreToConfirmed).toHaveBeenCalledWith("Soft fact", fixture.campaignState, { narrationId: "nar-1" });
+    expect(spies.promoteLoreToConfirmed).toHaveBeenCalledWith("Soft fact", fixture.campaignState, { narrationId: "nar-1", byNarrator: true });
     fixture.restore();
   });
 
@@ -700,7 +700,8 @@ describe("routeWorldJournalResults", () => {
       { entryType: "lore", name: "Soft fact", change: "confirmed" },
       fixture.campaignState,
     );
-    expect(spies.promoteLoreToConfirmed).toHaveBeenCalledWith("Soft fact", fixture.campaignState, {});
+    // The narrator's confirm: a GM-ruled entry is left as ruled (issue #330 D9).
+    expect(spies.promoteLoreToConfirmed).toHaveBeenCalledWith("Soft fact", fixture.campaignState, { byNarrator: true });
     expect(spies.applyStateTransition).not.toHaveBeenCalled();
     fixture.restore();
   });

@@ -1135,8 +1135,9 @@ export async function applyStateTransition(transition, campaignState, { narratio
   if (!transition?.entryType) return null;
   const fromNarration = typeof narrationId === "string" && narrationId ? { narrationId } : {};
 
+  // The narrator's "lore confirmed" never overturns a GM's ruling (issue #330 D9).
   if (transition.entryType === "lore" && transition.change === "confirmed") {
-    return promoteLoreToConfirmed(transition.name, campaignState, fromNarration);
+    return promoteLoreToConfirmed(transition.name, campaignState, { ...fromNarration, byNarrator: true });
   }
 
   return wjApplyStateTransition(transition, campaignState, fromNarration);

@@ -23,14 +23,18 @@
  *        - Endure Harm past 0 health → the remainder is Lose Momentum
  *          ("if your health is 0, suffer -momentum equal to any
  *          remaining harm" — issue #314 Q02; it used to vanish in the
- *          meter's clamp). At 0 on a miss the player chooses one: mark
- *          wounded, mark permanently harmed, or roll the MORTAL_WOUND
+ *          meter's clamp). "Then, if your health is 0 … roll +health or
+ *          +iron": the harm step marks nothing at 0 — it posts the resist
+ *          roll the move owes, a card whose press rolls Endure Harm as
+ *          the PC (issue #330 D3; it marked wounded, or on a Pay the
+ *          Price offered the miss's escalation with no roll made). On that
+ *          roll's own miss (`resistMiss`) at 0 the player chooses one:
+ *          mark wounded, mark permanently harmed, or roll the MORTAL_WOUND
  *          d100 — a follow-up choice card (issue #329 X03: it marked
- *          wounded AND rolled the table). At 0 otherwise it marks
- *          wounded (the harm step's escalation — issue #330 D3).
+ *          wounded AND rolled the table).
  *        - Endure Stress past 0 spirit → the remainder is Lose Momentum
- *          the same way; at 0 on a miss the choice is shaken,
- *          traumatized or the DESOLATION d100; otherwise shaken.
+ *          the same way; at 0 the resist roll (Endure Stress) is owed,
+ *          and its miss offers shaken, traumatized or the DESOLATION d100.
  *        - Withstand Damage at 0     → roll VEHICLE_DAMAGE d100; if
  *          this is the command vehicle, surface an Overcome
  *          Destruction prompt (Q2 — prompt, don't auto-fire).
@@ -268,6 +272,57 @@ async function postAtZeroChoice(actor, which, opts = {}) {
   }
 }
 
+// The resist roll each suffer move owes at 0 (issue #330 D3).
+const RESIST_ROLLS = {
+  harm:   { moveId: "endure_harm",   meter: "health", label: "🛡 Resist the harm — roll Endure Harm (+health or +iron)" },
+  stress: { moveId: "endure_stress", meter: "spirit", label: "🛡 Resist the stress — roll Endure Stress (+spirit or +heart)" },
+};
+
+/**
+ * The resist card's prompt: one pick, which rolls Endure Harm ("harm") or
+ * Endure Stress ("stress") as the PC (sufferDialog's `resist` option) —
+ * "Then, if your health is 0 … roll +health or +iron" (issue #330 D3).
+ *
+ * @param {"harm"|"stress"} which
+ * @returns {Object|null}
+ */
+export function resistRollPrompt(which) {
+  const r = RESIST_ROLLS[which];
+  if (!r) return null;
+  return { kind: "enumerated", resist: r.meter, options: [{ label: r.label, resist: r.moveId }] };
+}
+
+/**
+ * Post the resist card for `actor` at 0 health / spirit: a choice card, so
+ * it is claimed once and pressed by the PC's player or a GM, and a Burn
+ * Momentum or Improve Result of the move whose price it is retires it, as
+ * the at-0 choice card is (`resolutionId`). Never throws.
+ *
+ * @returns {Promise<boolean>} whether the card posted
+ */
+async function postResistRoll(actor, which, opts = {}) {
+  try {
+    const { postSufferChoiceCard } = await import("./sufferCard.js");
+    const posted = await postSufferChoiceCard({
+      sufferPrompt: resistRollPrompt(which),
+      actor,
+      executorOpts: {},
+      moveId: RESIST_ROLLS[which].moveId,
+      resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
+    });
+    return !!posted;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferExecutor: the resist card could not be posted:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/** The executor card's line for the resist roll owed at 0. */
+function resistLine(which) {
+  const r = RESIST_ROLLS[which];
+  return ` — at 0 ${r.meter} you must resist: roll ${r.moveId === "endure_harm" ? "Endure Harm" : "Endure Stress"} on the card below`;
+}
+
 /**
  * The at-0 choice after a miss's "Lose Momentum (-2)" (known-issues
  * ENDURE-ZERO-ON-OTHER-OPTION). "If your health is 0, you must also mark
@@ -284,7 +339,7 @@ async function postAtZeroChoice(actor, which, opts = {}) {
  */
 export async function offerAtZeroChoiceAfterMiss(actor, which, opts = {}) {
   const c = AT_ZERO_CHOICES[which];
-  if (!c || !actor || !opts.isMiss) return { offered: false };
+  if (!c || !actor || !(opts.resistMiss || opts.isMiss)) return { offered: false };
   if (readMeter(actor, c.meter) > 0) return { offered: false };
   return { offered: await postAtZeroChoice(actor, which, opts) };
 }
@@ -321,16 +376,19 @@ export async function rollImpactTable(tableId, opts = {}) {
  * @param {Actor} actor
  * @param {number} amount  1/2/3
  * @param {Object} [opts]
- * @param {boolean} [opts.isMiss]  true → at 0 health, the player chooses: mark
- *   wounded or permanently harmed, or roll the mortal-wound table (a follow-up
- *   choice card — issue #329 X03); false → at 0, wounded is marked
+ * @param {boolean} [opts.resistMiss]  true → this loss is Endure Harm's own
+ *   miss (the resist roll's "suffer an additional -1 health"): at 0 the
+ *   player chooses — mark wounded or permanently harmed, or roll the
+ *   mortal-wound table (a follow-up choice card — issue #329 X03). Otherwise
+ *   this is the harm step, and at 0 the resist roll is owed: a card whose
+ *   press rolls Endure Harm (issue #330 D3) — nothing is marked
  * @param {number} [opts.fixedRoll]  d100 override for deterministic tests
  * @param {boolean} [opts.skipCard]
  * @returns {Promise<{ before:number, after:number, atZero:boolean, woundedMarked?:boolean,
- *   mortalWound?:Object|null, impactChoice?:boolean, momentumLoss?:Object|null }>}
+ *   mortalWound?:Object|null, impactChoice?:boolean, resistOwed?:boolean, momentumLoss?:Object|null }>}
  *   `impactChoice`: the at-0 choice was offered (nothing marked, nothing rolled
- *   here); `momentumLoss` is the harm past 0 health, taken as momentum
- *   (overflowToMomentum)
+ *   here); `resistOwed`: the resist card was posted; `momentumLoss` is the
+ *   harm past 0 health, taken as momentum (overflowToMomentum)
  */
 export async function endureHarm(actor, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
@@ -343,37 +401,39 @@ export async function endureHarm(actor, amount, opts = {}) {
   const atZero = after <= 0;
   const momentumLoss = await overflowToMomentum(actor, overflow);
 
-  let woundedMarked = false;
+  const woundedMarked = false;
   const mortalWound = null;
-  // At 0 on a miss the player chooses one — mark wounded, mark permanently
-  // harmed, or roll the mortal-wound table — never an impact AND the table
-  // (issue #329 X03). The choice card follows the summary card.
-  const impactChoice = atZero && !!opts.isMiss;
-  if (atZero && !impactChoice && !actor.system?.debility?.wounded) {
-    await setDebility(actor, "wounded", true);
-    woundedMarked = true;
-  }
+  // At 0 the harm step owes the resist roll, which nothing used to make
+  // (issue #330 D3); on that roll's own miss the player chooses one — mark
+  // wounded, mark permanently harmed, or roll the mortal-wound table — never
+  // an impact AND the table (issue #329 X03). Either card follows the
+  // summary card.
+  const impactChoice = atZero && !!opts.resistMiss;
+  const resistOwed   = atZero && !opts.resistMiss;
 
   if (!opts.skipCard) {
     let body = `Health: ${before} → ${after}${overflowLine(momentumLoss)}`;
-    if (woundedMarked) body += " — marked <strong>wounded</strong>";
-    if (impactChoice)  body += atZeroChoiceLine("harm");
+    if (impactChoice) body += atZeroChoiceLine("harm");
+    if (resistOwed)   body += resistLine("harm");
     await postSufferCard({
       title: `Endure Harm (-${amount})`,
       body,
-      flags: { suffer: "endure_harm", amount, before, after, atZero, woundedMarked, mortalWound, impactChoice, momentumLoss },
+      flags: { suffer: "endure_harm", amount, before, after, atZero, woundedMarked, mortalWound, impactChoice, resistOwed, momentumLoss },
     });
   }
   if (impactChoice) await postAtZeroChoice(actor, "harm", opts);
+  if (resistOwed)   await postResistRoll(actor, "harm", opts);
 
-  return { before, after, atZero, woundedMarked, mortalWound, impactChoice, momentumLoss };
+  return { before, after, atZero, woundedMarked, mortalWound, impactChoice, resistOwed, momentumLoss };
 }
 
 /**
  * Endure Stress executor — symmetric to Endure Harm against spirit, the
- * stress past 0 spirit taken as momentum (`momentumLoss`). At 0 on a miss
- * the player chooses: mark shaken or traumatized, or roll the desolation
- * table (`impactChoice` — issue #329 X03); at 0 otherwise shaken is marked.
+ * stress past 0 spirit taken as momentum (`momentumLoss`). At 0 the stress
+ * step owes the resist roll — Endure Stress, on its card (`resistOwed`,
+ * issue #330 D3); on that roll's own miss (`resistMiss`) the player chooses:
+ * mark shaken or traumatized, or roll the desolation table (`impactChoice` —
+ * issue #329 X03).
  */
 export async function endureStress(actor, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
@@ -386,27 +446,25 @@ export async function endureStress(actor, amount, opts = {}) {
   const atZero = after <= 0;
   const momentumLoss = await overflowToMomentum(actor, overflow);
 
-  let shakenMarked = false;
+  const shakenMarked = false;
   const desolation = null;
-  const impactChoice = atZero && !!opts.isMiss;
-  if (atZero && !impactChoice && !actor.system?.debility?.shaken) {
-    await setDebility(actor, "shaken", true);
-    shakenMarked = true;
-  }
+  const impactChoice = atZero && !!opts.resistMiss;
+  const resistOwed   = atZero && !opts.resistMiss;
 
   if (!opts.skipCard) {
     let body = `Spirit: ${before} → ${after}${overflowLine(momentumLoss)}`;
-    if (shakenMarked) body += " — marked <strong>shaken</strong>";
     if (impactChoice) body += atZeroChoiceLine("stress");
+    if (resistOwed)   body += resistLine("stress");
     await postSufferCard({
       title: `Endure Stress (-${amount})`,
       body,
-      flags: { suffer: "endure_stress", amount, before, after, atZero, shakenMarked, desolation, impactChoice, momentumLoss },
+      flags: { suffer: "endure_stress", amount, before, after, atZero, shakenMarked, desolation, impactChoice, resistOwed, momentumLoss },
     });
   }
   if (impactChoice) await postAtZeroChoice(actor, "stress", opts);
+  if (resistOwed)   await postResistRoll(actor, "stress", opts);
 
-  return { before, after, atZero, shakenMarked, desolation, impactChoice, momentumLoss };
+  return { before, after, atZero, shakenMarked, desolation, impactChoice, resistOwed, momentumLoss };
 }
 
 /**

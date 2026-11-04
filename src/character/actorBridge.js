@@ -254,7 +254,8 @@ export function readVows(actor) {
  * "who am I" / "who do I know" need this.
  *
  * @param {Actor} actor
- * @returns {Array<{ id, name, rank, progress, ticks, completed }>}
+ * @returns {Array<{ id, name, rank, progress, ticks, completed, lost }>}
+ *   `lost`: the connection was severed (`!sever`) — no live bond
  */
 export function readConnections(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
@@ -270,6 +271,9 @@ export function readConnections(actor) {
       ticks,
       progress:  Math.floor(ticks / 4),
       completed: !!b.system?.completed,
+      // The connection was severed: its record is `active: false`, written
+      // through as this flag (setBondItemLost, issue #330 D10).
+      lost:      b.flags?.[MODULE_ID]?.lost === true,
     };
   });
 }
@@ -590,6 +594,39 @@ export async function markVowProgress(actor, vowItemId, ticks) {
 }
 
 /**
+ * Set a vow Item's progress and rank — Fulfill Your Vow's miss recommit
+ * ("clear that number of progress boxes, raise the vow's rank by one" —
+ * issue #330 D1). The rank is written the way the Item holds it: the
+ * vendor's ChallengeRank number (1–5), or the name the module's creators
+ * wrote.
+ *
+ * @param {Actor} actor
+ * @param {string} vowItemId
+ * @param {{ ticks: number, rank: string }} next — the rank by name
+ * @returns {Promise<{ ok: boolean, reason?: "not-found"|"refused", error?: string }>}
+ */
+export async function setVowItemTrack(actor, vowItemId, { ticks, rank }) {
+  const item = actor?.items?.find?.(i => i.id === vowItemId) ?? null;
+  if (!item) {
+    console.warn(`actorBridge | setVowItemTrack: vow item ${vowItemId} not found on actor ${actor?.id ?? "?"}`);
+    return { ok: false, reason: "not-found" };
+  }
+  const stored  = item.system?.rank;
+  const numeric = typeof stored === "number" || /^\d+$/.test(String(stored ?? ""));
+  const rankIdx = VALID_RANKS.indexOf(rank);
+  const patch   = { "system.current": Math.max(0, Math.min(Number(ticks) || 0, 40)) };
+  if (rankIdx >= 0) patch["system.rank"] = numeric ? rankIdx + 1 : rank;
+  try {
+    await item.update(patch);
+  } catch (err) {
+    console.warn(`actorBridge | setVowItemTrack: the write was refused:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+  }
+  invalidateActorCache(actor.id);
+  return { ok: true };
+}
+
+/**
  * Mark an embedded vow Item completed (Fulfill Your Vow hit). The pipeline's
  * fulfil branch calls this so item-stored vows — the live store for inciting,
  * shared, and hand-made vows — actually close when fulfilled through the move
@@ -791,6 +828,31 @@ export async function setBondItemTicks(keys = {}, ticks) {
     if (Number(item.system?.current ?? 0) === next) continue;
     await item.update({ "system.current": next }).catch(err =>
       console.warn(`actorBridge | setBondItemTicks failed:`, err?.message ?? err));
+    invalidateActorCache(actor.id);
+    updated++;
+  }
+  return updated;
+}
+
+/**
+ * Mirror a connection's loss onto each PC's bond Item: the record's
+ * `active: false` (`!sever`, connection.loseConnection) written through as
+ * `flags[MODULE].lost`, so CHARACTER STATE (readConnections) stops listing a
+ * live bond the record says is lost (issue #330 D10). A module flag, not the
+ * vendor's `system.completed` — the sheet shows that as a forged bond. The
+ * Item stays on the sheet's Connections tab as its history. Same matching as
+ * setBondItemTicks (bondItemsFor).
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys
+ * @param {boolean} [lost=true]
+ * @returns {Promise<number>} how many items were updated
+ */
+export async function setBondItemLost(keys = {}, lost = true) {
+  let updated = 0;
+  for (const { actor, item } of bondItemsFor(keys)) {
+    if ((item.flags?.[MODULE_ID]?.lost === true) === lost) continue;
+    await item.update({ [`flags.${MODULE_ID}.lost`]: lost }).catch(err =>
+      console.warn(`actorBridge | setBondItemLost failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
   }

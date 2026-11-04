@@ -142,10 +142,15 @@ export async function runCampaignStart(opts = {}) {
   }
 
   // ── Phase 4: Begin Session ────────────────────────────────────────────────
-  campaignState = readCampaignState();
+  // On a copy: get() returns the cached value, and a refused write must leave
+  // it as the world has it (rules/foundry-api.md).
+  campaignState = { ...readCampaignState() };
   try {
     const wasActive = campaignState.sessionActive === true;
     beginSession(campaignState);
+    // The session is begun: it counts toward the session number, and a later
+    // Begin a Session in it repeats no start effects (issue #330 D12; #300 F11).
+    campaignState.sessionStartedId = campaignState.currentSessionId ?? null;
     await game.settings.set(MODULE_ID, "campaignState", campaignState);
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     await ChatMessage.create({

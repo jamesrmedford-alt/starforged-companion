@@ -175,7 +175,12 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
  * Start a new session: keep the closing session's rolling summary as
  * `previousSessionSummary` (an older one stays when the closing session has
  * none), then mint the id, bump `sessionNumber` and stamp
- * `lastSessionTimestamp`. The new session has not been begun, so its
+ * `lastSessionTimestamp`. `sessionNumber` counts the sessions a table began:
+ * a closing session nobody began (no Begin stamped it `sessionStartedId`,
+ * and its gate is shut) — a world opened only to prepare — hands its number on
+ * to the next instead of burning one, so the table's session after session 3
+ * is "Session #4" however often the world was opened between them (issue
+ * #330 D12). The id changes either way. The new session has not been begun, so its
  * session-active gate is closed until Begin a Session opens it: a session
  * nobody ended (it went idle) used to hand its open gate to the next one —
  * "Active" since last week, Begin disabled, and the campaign clocks, the
@@ -189,16 +194,25 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
 export function mintSession(campaignState, now = Date.now()) {
   const closing = campaignState.currentSessionId;
   const summary = campaignState.sessionSummary;
+  // Begun: Begin a Session (or the Campaign Start's) stamped it, or its gate
+  // is open — only a Begin opens it, and a world from before the stamp has
+  // its open gate to show for it.
+  const closingUnbegun = !!closing && campaignState.sessionStartedId !== closing
+    && campaignState.sessionActive !== true;
   if (closing && summary?.sessionId === closing && typeof summary.text === "string" && summary.text.trim()) {
     campaignState.previousSessionSummary = {
       sessionId:     closing,
-      sessionNumber: campaignState.sessionNumber ?? null,
+      // An unbegun session's number passes to the next one, so its summary
+      // carries none — LAST SESSION, not "Session 4" while session 4 runs.
+      sessionNumber: closingUnbegun ? null : (campaignState.sessionNumber ?? null),
       text:          summary.text.trim(),
       updatedAt:     summary.updatedAt ?? null,
     };
   }
   campaignState.currentSessionId       = newSessionId();
-  campaignState.sessionNumber          = (campaignState.sessionNumber ?? 0) + 1;
+  campaignState.sessionNumber          = closingUnbegun && campaignState.sessionNumber > 0
+    ? campaignState.sessionNumber
+    : (campaignState.sessionNumber ?? 0) + 1;
   campaignState.lastSessionTimestamp   = new Date(now).toISOString();
   campaignState.sessionEndedId         = null;
   campaignState.sessionActive          = false;

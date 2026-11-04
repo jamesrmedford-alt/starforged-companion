@@ -296,15 +296,47 @@ export function generateConnection(homeSettlementName) {
   };
 }
 
+// How many prefix + suffix pairs a sector name rolls before it is numbered.
+const SECTOR_NAME_ROLLS = 50;
+const NAME_NUMERALS = ["II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X"];
+
+/** The stored sectors' names — what a new sector's name must not repeat. */
+function storedSectorNames() {
+  try {
+    const sectors = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.sectors;
+    return (Array.isArray(sectors) ? sectors : []).map(s => s?.name).filter(n => typeof n === "string");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sector name: the stored sectors could not be read — the name is not checked:`, err?.message ?? err);
+    return [];
+  }
+}
+
 /**
- * Generate the sector name from prefix + suffix rolls.
+ * Generate the sector name from prefix + suffix rolls — never one a stored
+ * sector already has (issue #330 D14). Two sectors of one name shared their
+ * Actor, NPC and Journal folders (keyed by name) and `!sector <name>` only
+ * ever reached the older; a name already taken is rolled again, and after
+ * SECTOR_NAME_ROLLS taken pairs (2,500 names in all) the last roll is
+ * numbered ("Vega Reach II").
  *
+ * @param {Iterable<string>} [taken] — names in use (compared case-blind);
+ *   defaults to the stored sectors'
  * @returns {{ prefix: string, suffix: string, full: string }}
  */
-export function generateSectorName() {
-  const prefix = rollTableResult(SPACE.SECTOR_NAME_PREFIX);
-  const suffix = rollTableResult(SPACE.SECTOR_NAME_SUFFIX);
-  return { prefix, suffix, full: `${prefix} ${suffix}` };
+export function generateSectorName(taken = storedSectorNames()) {
+  const used = new Set(Array.from(taken ?? [], n => String(n ?? "").trim().toLowerCase()).filter(Boolean));
+  let prefix = "";
+  let suffix = "";
+  for (let i = 0; i < SECTOR_NAME_ROLLS; i++) {
+    prefix = rollTableResult(SPACE.SECTOR_NAME_PREFIX);
+    suffix = rollTableResult(SPACE.SECTOR_NAME_SUFFIX);
+    if (!used.has(`${prefix} ${suffix}`.toLowerCase())) return { prefix, suffix, full: `${prefix} ${suffix}` };
+  }
+  for (let n = 0; ; n++) {
+    const numeral = NAME_NUMERALS[n] ?? String(n + 2);
+    const numbered = `${prefix} ${suffix} ${numeral}`;
+    if (!used.has(numbered.toLowerCase())) return { prefix, suffix: `${suffix} ${numeral}`, full: numbered };
+  }
 }
 
 /**

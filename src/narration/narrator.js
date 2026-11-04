@@ -313,7 +313,8 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     // Spotlight rotation (issue #232) — multiplayer turn-implication nudge.
     // Advances the per-scene pointer as a side effect; '' when not applicable.
-    spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState, sceneState),
+    // The acting PC is never the one named next (issue #330 D8).
+    spotlightBlock:     maybeAdvanceSpotlight(mode, campaignState, sceneState, character?.actorId ?? null),
   };
 
   // Rolling session summary (architecture §8.6) — the cached text. It is
@@ -3843,13 +3844,19 @@ function spotlightRotationEnabledFromSettings() {
  * the rotation restart automatically on a new scene even before sceneLifecycle
  * clears it.
  *
+ * The PC whose beat this is (`actingActorId`, the narration's CHARACTER) is
+ * skipped when another PC is in the scene: naming the player who just acted
+ * spreads nothing (issue #330 D8).
+ *
  * Never throws: any failure yields '' so narration proceeds without the nudge.
  *
  * @param {string} mode
  * @param {Object} campaignState
+ * @param {Object} [frameState]
+ * @param {string|null} [actingActorId]
  * @returns {string}
  */
-function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState) {
+function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState, actingActorId = null) {
   try {
     if (!spotlightRotationEnabledFromSettings()) return '';
     if (!SPOTLIGHT_MODES.has(mode)) return '';
@@ -3871,7 +3878,7 @@ function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState) 
       ? (campaignState?.spotlight?.lastActorId ?? null)
       : null;
 
-    const selection = selectSpotlight({ roster, presentNames, lastActorId });
+    const selection = selectSpotlight({ roster, presentNames, lastActorId, actingActorId });
     if (!selection) return '';
 
     const record = { lastActorId: selection.nextActorId, sceneId };

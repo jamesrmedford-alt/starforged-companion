@@ -22,6 +22,9 @@ import { getPlayerActors, readVows } from "../character/actorBridge.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
+
+// Heal's four situations (vendored Heal): each rolls its own stat.
+const HEAL_SITUATIONS = new Set(["self", "treated", "companion", "ally"]);
 const MODEL         = "claude-haiku-4-5-20251001";
 
 // Combat moves that are only legal in one position. When the interpreter
@@ -114,7 +117,7 @@ Given player narration, return a JSON object identifying:
 
 ### RECOVER MOVES
 - **sojourn** — When recovering in a community. Roll +heart.
-- **heal** — When receiving or providing medical care. Roll +iron or +wits or +heart (situation dependent).
+- **heal** — When receiving or providing medical care. Receive treatment from someone (not an ally): +iron. Mend your own wounds: +iron or +wits, whichever is lower. Obtain treatment for a companion: +heart. Provide care: +wits.
 - **hearten** — When finding comfort or peace. Roll +heart.
 - **resupply** — When replenishing supplies. Roll +heart/iron/shadow/wits (approach dependent).
 - **repair** — When fixing vehicles or equipment. Roll +wits or +supply.
@@ -122,12 +125,12 @@ Given player narration, return a JSON object identifying:
 ### THRESHOLD MOVES
 - **face_death** — When at the brink of death. Roll +heart.
 - **face_desolation** — When at the brink of desolation. Roll +heart.
-- **overcome_destruction** — Progress move. When your command vehicle is destroyed.
+- **overcome_destruction** — Progress move. When your command vehicle is destroyed. Rolls against the bonds legacy track.
 
 ### LEGACY MOVES
 - **earn_experience** — When filling a legacy box (no roll).
 - **advance** — When spending experience on assets (no roll).
-- **continue_a_legacy** — Progress move. When retiring or dying.
+- **continue_a_legacy** — Progress move. When retiring or dying. One roll per legacy track — name the track rolled (quests, bonds or discoveries).
 
 ### FATE MOVES
 - **ask_the_oracle** — When seeking answers or resolving uncertainty (no roll).
@@ -161,6 +164,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
   "moveTarget": null,
   "expeditionRank": null,
   "combatRank": null,
+  "healSituation": null,
   "rationale": "Player is threading their ship through a debris field — risky navigation requiring focus and observation.",
   "mischiefApplied": false,
   "confidence": "high"
@@ -169,8 +173,9 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
 confidence: "high" | "medium" | "low" — your certainty in the interpretation.
 statValue: ALWAYS leave as 0 — filled in by the calling code (from the character sheet for action moves, from the live progress track / vow / connection data for progress moves — see enrichInterpretationStatValue and enrichProgressTicks in src/moves/statEnrichment.js). Module data is ground truth; never estimate a value.
 progressTicks: ALWAYS leave as 0 — for progress moves the module fills the score from the live track / vow / connection data. Never estimate a tick count.
-moveTarget: the named thing the move acts on, taken from the player's narration. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided. null when nothing is named or implied.
+moveTarget: the named thing the move acts on, taken from the player's narration. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided. null when nothing is named or implied.
 expeditionRank: only for undertake_an_expedition. When the narration implies the journey's scope, infer its rank — "troublesome" (a short, easy hop), "dangerous" (default), "formidable" (a long or hostile crossing), "extreme", or "epic" (a vast, perilous undertaking). null otherwise; the player can re-rank the track later.
+healSituation: only for heal — "self" (the character mends their own wounds), "treated" (they receive treatment from someone who is not an ally), "companion" (they obtain treatment for a companion) or "ally" (they provide care to someone else). null for every other move.
 combatRank: only for enter_the_fray. When the narration implies the foe’s danger level, infer its rank — "troublesome" (minor, easy to defeat), "dangerous" (default), "formidable" (a tough, seasoned opponent), "extreme" (an overwhelming threat), or "epic" (near-impossible odds). null otherwise; the player can re-rank the combat track later.`;
 }
 
@@ -581,6 +586,9 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
     moveTarget:              typeof parsed.moveTarget === "string" && parsed.moveTarget.trim() ? parsed.moveTarget.trim() : null,
     expeditionRank:          typeof parsed.expeditionRank === "string" && parsed.expeditionRank.trim() ? parsed.expeditionRank.trim().toLowerCase() : null,
     combatRank:              typeof parsed.combatRank === "string" && parsed.combatRank.trim() ? parsed.combatRank.trim().toLowerCase() : null,
+    // Which of Heal's four situations the narration is — the self-mend rolls
+    // the lower of iron / wits (statEnrichment, issue #330 D4).
+    healSituation:           parsed.moveId === "heal" && HEAL_SITUATIONS.has(parsed.healSituation) ? parsed.healSituation : null,
     rationale,
     mischiefApplied:        parsed.mischiefApplied ?? false,
     confidence:             parsed.confidence ?? "medium",
@@ -612,6 +620,7 @@ function fallbackInterpretation(narration, mischiefLevel, expectedMoveId = null)
     moveTarget:              null,
     expeditionRank:          null,
     combatRank:              null,
+    healSituation:           null,
     rationale:               "Fallback — API response could not be parsed.",
     mischiefApplied:         false,
     confidence:              "low",

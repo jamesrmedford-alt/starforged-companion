@@ -330,7 +330,11 @@ async function resolveSufferPrompt(resolution, actor, targets = {}) {
   // whichever one a lookup finds when the card is clicked (issue #309).
   const isMiss = resolution.outcome === 'miss';
   const isMissWithMatch = isMiss && !!resolution.isMatch;
-  const executorOpts = { isMiss, isMissWithMatch, ...targets };
+  // Endure Harm / Stress's own miss is the resist roll's: its loss at 0
+  // offers the mark-or-table choice; any other loss is a harm step, which
+  // owes the resist roll instead (issue #330 D3).
+  const resistMiss = isMiss && (resolution.moveId === 'endure_harm' || resolution.moveId === 'endure_stress');
+  const executorOpts = { isMiss, isMissWithMatch, resistMiss, ...targets };
 
   // Non-blocking: post a choice card the player taps, instead of awaiting a
   // modal dialog INSIDE the move-concurrency lock. A dialog that failed to

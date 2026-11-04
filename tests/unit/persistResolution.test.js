@@ -194,6 +194,6 @@ describe('persistResolution — the suffer card carries the move\'s targets', ()
     await persistResolution(resolution, baseCampaignState(), 'pc-1', { vehicleActorId: 'ship-1' });
     const card = ChatMessage._created.find(m => m.flags['starforged-companion']?.sufferCard);
     expect(card.flags['starforged-companion'].executorOpts)
-      .toEqual({ isMiss: false, isMissWithMatch: false, vehicleActorId: 'ship-1' });
+      .toEqual({ isMiss: false, isMissWithMatch: false, resistMiss: false, vehicleActorId: 'ship-1' });
   });
 });

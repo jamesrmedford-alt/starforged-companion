@@ -6,6 +6,204 @@ rejected.
 
 ---
 
+## Issue #330 decisions: D1–D15 (2026-11)
+
+**Decision:** (issue #330, part 3 of the ninth audit — the fifteen rows that
+needed the maintainer. The maintainer asked for the issue to be addressed on
+2026-11-04 and took the recommended option on every row. Each row's ID in
+brackets.)
+- **A vow's or a bond's miss offers the recommit as a click** [D1; option
+  A]. Finish an Expedition's miss offered "🔁 Recommit" (claimed per card
+  since issue #321 U20); Fulfill Your Vow's miss and Forge a Bond's — the
+  same mechanic in the vendored text — were advisory, the GM clearing boxes
+  and raising the rank by hand on the vow's copies, or on the connection's
+  record and its bond Items. Each miss now posts a claimed offer:
+  `performVowRecommit` rolls the challenge dice once and writes every open
+  copy of the roller's vow (by its vowId) and its journal twin, the rank
+  stepped once as the Item holds it (`setVowItemTrack`);
+  `performBondRecommit` writes the record and mirrors it to the bond Items.
+  The roller's player or a GM may press it (gmRelay `vow.recommit` /
+  `bond.recommit`). *Rejected:* keeping both advisory (option B) — "Flow-
+  audit soft spots" implements every gap a faithful mechanic exists for, and
+  the expedition's already holds the rule.
+- **A card's own follow-up closes its upgrades, and the card says so first**
+  [D2; option B]. A weak Face Danger's card offers 🔥 Burn Momentum and ⚑
+  Mark Progress on Vow (🤝 / 🔗 too); taking ⚑ first posts a forced Reach a
+  Milestone as the roller, and issue #326 D4 then closes the card's burn — by
+  its letter, since the follow-up is the roller's next move, but with no
+  hint. D4 stands: a burn after the milestone card would re-narrate the Face
+  Danger as the latest beat. A card that offers a burn or an improvement now
+  says "Burn momentum or improve the result first — a follow-up below is
+  your next move, and closes them" beside its follow-ups and in their
+  titles; the help's Troubleshooting entry says the same. *Rejected:*
+  exempting a no-roll follow-up posted from the card itself (option A) —
+  the smallest deviation from D4, but still an upgrade applied after other
+  effects of the move.
+- **A harm or stress step at 0 owes the resist roll** [D3; option A]. Every
+  Pay the Price "You are harmed / stressed" route ran the Endure Harm /
+  Stress executor as a miss ("Pay the Price always implies a miss context"),
+  and a weak hit's pick ran it without: at 0 the step offered the resist
+  roll's miss escalation (the mark-or-table choice, issue #329 X03) or
+  marked wounded / shaken — with no Endure Harm ever rolled. The vendored
+  move puts both on the resist roll: "Then, if your health is 0 … roll
+  +health or +iron … On a miss … If your health is 0, you must also mark
+  wounded or permanently harmed, or roll on the table". The step now takes
+  only the meter and the overflow; at 0 it posts a card whose press rolls
+  Endure Harm (Endure Stress) as the PC through the pipeline
+  (`resistRollPrompt`, the choice card's `resist` call), bound to the move
+  its price came from, so an upgrade retires it. The choice is offered only
+  for that roll's own miss (`resistMiss` — persistResolution sets it on
+  Endure Harm / Stress's miss card). The optional resist above 0 ("or you
+  choose to resist the harm") stays a typed move. *Rejected:* keeping the
+  approximation (option B) — it skipped a roll the move makes mandatory and
+  could land Face Death on a Face Danger miss.
+- **A Heal that mends your own wounds rolls the lower of iron and wits**
+  [D4; option A]. The vendored Heal's self-mend reads "Roll +iron or +wits,
+  whichever is lower" (`"Method": "Lowest"`); the pipeline had only
+  PICK_HIGHER_OF and could not tell a self-mend from "Receive treatment from
+  someone (not an ally): Roll +iron", so it rolled whichever stat the
+  interpreter named — +3 where the rule says +1. The interpreter now names
+  the situation (`healSituation`: self / treated / companion / ally — a
+  forced Heal reads it with its stat), and statEnrichment's PICK_LOWER_OF
+  rolls a self-mend's lower stat, the card reading "+wits (1), lower of iron
+  / wits" (`statRule`). An asset's stat substitution stands. *Rejected:*
+  accepting the approximation (option B) — the vendored data carries the
+  rule, and the interpreter already reads the narration.
+- **A sheet Forge a Bond forges the connection its bond Item names, or
+  nobody** [D5; option A]. The native consequence hook resolved the roll's
+  Item name through the develop ladder's full fallback, so a bond the player
+  made by hand on the Connections tab (no module record) forged the crew's
+  one connection — bonded, history, Bonds legacy, a forge card for a roll
+  about someone else. It now resolves the roller's bond Item by the record
+  id it carries (`flags[MODULE].connectionId` — a renamed connection's Item
+  still finds it), else the one active connection of exactly that name, and
+  otherwise forges nothing (`findSheetBondConnection`). The decided Forge a
+  Bond fallback (issue #301 B01) stays the pipeline's, whose target the
+  narration may only half name. *Rejected:* keeping the fallback on the
+  native path with `unbonded: true` (option B) — a sheet roll names its Item
+  exactly, so a fallback can only reach the wrong connection.
+- **Overcome Destruction and Continue a Legacy score the shared legacy
+  tracks** [D6; option A]. Both were progress moves with no tick source
+  ("roll against the player's own legacy tracks, which the module doesn't
+  store"), so every roll scored 0 — a certain miss. The shared tracks are
+  stored (`campaignState.legacyTracks`) and mirrored to every sheet since
+  issue #326 D3: Overcome Destruction now scores the bonds track ("compare to
+  the progress on your bonds legacy track") and Continue a Legacy the track
+  its target names (the interpreter names it), each at 10 progress once the
+  track has been cleared ("resolve the outcome as if at 10 progress"). A
+  Continue a Legacy naming no track still scores 0, with a console warning.
+  *Rejected:* keeping the no-op and saying so on the card (option B) — the
+  data the rule needs is the module's own.
+- **Forsake Your Vow's Endure Stress is sized in the fiction** [D7; option
+  A]. Its cost option was "Endure Stress (-2)", but the vendored move says
+  only "You are demoralized or dispirited: Endure Stress" — the amount is the
+  suffer move's own minor / serious / major (-1 / -2 / -3). The option now
+  carries `amountPick: [1, 2, 3]` and no amount: picking it posts a "Minor
+  stress (-1) / Serious stress (-2) / Major stress (-3)" card
+  (`needs-amount`, `amountPickPrompt`), as an "any" cost posts its picker.
+  *Rejected:* keeping -2 as a house default (option B) — the book leaves the
+  size to the fiction, and the card already asks the player for the costs.
+- **The spotlight nudge never names the PC who just acted** [D8; option A].
+  `selectSpotlight` picked the PC after the per-scene pointer by actor-id
+  order and was never told whose beat it was: the first beat of a scene, or
+  a beat made out of turn, could end "By the rotation, Kira is next" on
+  Kira's own beat. The narration's CHARACTER (`actingActorId`) is now
+  skipped when another candidate is in the scene, and the pointer records
+  whom it named, so it moves on past both. The rest of "Multiplayer
+  spotlight is implied by narration" stands — a per-scene round-robin by
+  actor id, a nudge, never a gate. *Rejected:* keeping the pure pointer and
+  documenting that the roller may be named (option B) — the nudge exists to
+  move the spotlight toward quieter players.
+- **A GM's lore ruling stands until a GM changes it** [D9; option A]. The
+  detection pass re-recorded a title the GM had ruled a rumour as
+  `confirmed: true, narratorAsserted: true` — only a stored `retracted` mark
+  survived a re-record — so the narrator mentioning it again made it canon
+  again; the panel's Dismiss was overturned the same way. A narrator write
+  (`recordLoreDiscovery` with `narratorAsserted: true`; the capture's "lore
+  confirmed" transition, `promoteLoreToConfirmed(…, { byNarrator: true })`)
+  now leaves an entry the GM ruled — not canon, not the narrator's, not
+  struck — as the GM left it; `!journal lore "<title>" confirmed` or the
+  panel's Confirm promotes it. "World lore auto-confirms" still holds for
+  everything the GM has not ruled. *Rejected:* letting the narrator's
+  re-assertion re-confirm it (option B) — a ruling the narrator overturns by
+  repeating itself is not a ruling ("nothing auto-corrects — the GM stays
+  the authority").
+- **`!sever` marks the bond Items lost** [D10; option A with B's reader
+  change]. `loseConnection` wrote the record's `active: false` only; the
+  PCs' bond Items — its write-through mirror for ticks and rank — kept
+  "Vex (dangerous, 3/10)" a live bond in CHARACTER STATE. The loss is now
+  written through to every bond Item `bondItemsFor` finds as
+  `flags[MODULE].lost` (`setBondItemLost`, rules/reachability.md §5), and
+  `readConnections` reports it, so CHARACTER STATE lists a severed bond
+  under "Connections lost". A module flag, not the vendor's
+  `system.completed`, which the sheet renders as a forged bond. The record
+  name selectors already skip an inactive connection. *Rejected:* deleting
+  the Items — the sheet's Connections tab keeps them as history (a GM may
+  delete one there); the vendor tab cannot read the flag, so it still lists
+  the Item.
+- **A relayed audio clip is filed only for a real card, never over a cached
+  one** [D11; option A]. A keyed client that is not the canonical GM relays
+  its synthesis as `audio.cache.write { hash, b64 }`; the GM wrote it as
+  `<hash>.mp3` unchecked, and `FilePicker.upload` overwrites — a forged write
+  under a real narration's hash replaced the audio every client plays for
+  that card (the risk issue #326 W81 closed for `audio.synth.request` only).
+  The GM cannot check bytes against a text's hash, so it now files a relayed
+  clip only under the clip key of a segment of a narrator card in chat under
+  the world's voice, model and speed (an X-carded card keys nothing), and
+  never over a clip that is cached or that it is making. *Rejected:*
+  retiring the relay (option B) — it serves a keyed player at a keyless
+  GM's table, whose clip the GM then serves to the keyless players.
+- **The session number counts the sessions a table began** [D12; option A,
+  narrowed]. Every world load after End a Session (or four idle hours) mints
+  a session, and `mintSession` always bumped `sessionNumber`: a GM who opened
+  the world only to prepare burned a number, so Saturday's play read
+  "Session #5" after Tuesday's session 3 on the panel, the Session Log,
+  `!recap session N` and every narrator card. A closing session nobody began
+  (no `sessionStartedId` stamp, and its gate shut) now hands its number on to
+  the next; the id still changes, and its summary is carried as LAST SESSION
+  with no number of its own. The Campaign Start's Begin Session stamps
+  `sessionStartedId` too — it did not, so its session would have read as
+  unbegun — and an open gate counts as begun for a world from before the
+  stamp (issue #300 F11). The load-time mint itself stands ("A
+  session ends at End Session or after four idle hours"). *Rejected:*
+  keeping the mint count and documenting it (option B) — the table reads
+  the number as its own count of sessions played.
+- **`!oracle` follows a cross-reference row in place** [D13; option A]. A
+  row whose word is a heading the rulebook links onward — Space Sighting's
+  "Stellar Object", "Planet", "Settlement", "Starship", "Derelict",
+  "Precursor Vault", "Creature"; Starship Type's "Multipurpose" and "Fleet";
+  Fleet's "Starship Mission"; Initial Contact's "Derelict" — is rolled on the
+  table its `ref` names, under the heading ("Stellar Object: Red star"), as
+  issue #321 U68 did for Ultra-scale alone. The unread `isRef` /
+  `refTableId` return fields are retired. The Sector Creator's own roller
+  (`rollTableResult`) is unchanged: a settlement's Initial Contact
+  "Derelict" says the settlement itself is the derelict. *Rejected:* keeping
+  the heading and naming the next table on the card (option B) — the data
+  names the table, and the roller already follows Ultra-scale the same way.
+- **A new sector never repeats a stored sector's name** [D14; option B]. Two
+  sectors of one rolled name shared their Actor, NPC and Journal folders
+  (keyed by name) and `!sector <name>` reached only the older one.
+  `generateSectorName` rolls again while the name is a stored sector's
+  (case-blind) and numbers the last roll ("Vega Reach II") after fifty taken
+  pairs. *Rejected:* keying the folders by sector id and disambiguating
+  `!sector` (option A) — a sector name is rolled, never typed, so one check
+  where it is minted makes every name-keyed reader right at once. A GM's
+  rename of a Scene or record to another sector's name is the GM's own call.
+- **Envision Inciting Incident is anyone's, on the panel as by command**
+  [D15; option A]. `!incite` is RUN_ON.CLAUDE with no role check (see "Chat
+  commands run once"), so a player could type it, while the Session panel
+  disabled its button for every non-GM — the shape issue #326 W85 fixed for
+  Begin / End. A player's press now posts their
+  `!incite` line, which the router runs where a Claude key lives, exactly
+  as typing it does; a GM's press runs it on the GM's client as before. The
+  help's Toolbar row drops "(GM)". *Rejected:* gating `!incite` to GMs like
+  `!at` (option B) — the inciting incident founds the crew's shared vow, and
+  the command was already open to players.
+
+**Reason:** each row's probe failed at the audited commit; the tests that
+replace them fail with the change taken out
+(`docs/testing/fix-sensitivity.md`).
+
 ## Issue #329 audit: what a narration wrote leaves with it, the scene as it stands, the player's choice at 0, the card's own roller, the sheet's notes (2026-11)
 
 **Decision:** (issue #329, part 1 of the ninth audit — X01–X14. The
@@ -29,8 +227,8 @@ ID in brackets.)
   impact, mark the lasting one, or roll the table — a follow-up card, never an
   impact and the table both. *Rejected:* marking when unmarked and rolling
   otherwise (the audit's fallback) — the book gives the player the choice.
-  Whether a Pay the Price harm step runs the miss escalation at all is issue
-  #330 D3, open.
+  Since issue #330 D3 the choice is the resist roll's own miss's: a harm
+  step at 0 owes that roll instead.
 - **An ability adds what its text gives the move being made** [X04]: a move
   named only as a cost keys nothing; on the ability's own trigger, an outcome
   sentence's add is for later moves (#325 W12's rule, extended).
@@ -2792,7 +2990,8 @@ per-transition confirmation cards.
 
 **Decision:** The soft-spot cleanup that followed the flow audits implemented
 every gap where a faithful Starforged mechanic exists (way-out one-click
-moves, waypoint match-oracle buttons, expedition recommit, `!sever`, targeted
+moves, waypoint match-oracle buttons, expedition recommit (and, since issue
+#330 D1, the vow and bond recommits), `!sever`, targeted
 `!bond`, the expedition→site link, shared-vow rank sync, the no-reward
 fulfilment note, dead-code removal). Four observations were **reaffirmed as
 deliberate** rather than changed:
@@ -2896,8 +3095,11 @@ creation-time mirrors that are never tick-synced), connection records
 (`relationshipTicks`). The interpreter is instructed to leave `statValue` and
 `progressTicks` at 0 and only name the `moveTarget`; the resolver reads
 `statValue` as the tick carrier. `PROGRESS_TICK_SOURCES` is the move→source
-map; `continue_a_legacy` / `overcome_destruction` are deliberate no-ops (the
-module doesn't store legacy tracks per-player).
+map; `overcome_destruction` scores the crew's shared bonds legacy track and
+`continue_a_legacy` the legacy track it names (`campaignState.legacyTracks`,
+40 once the track has been cleared — issue #330 D6; they were deliberate
+no-ops while the module "did not store" legacy tracks, which it has since
+issue #326 D3).
 
 **Reason:** Before this, *nothing* filled the tick carrier, so every pipeline
 progress roll scored 0 — a guaranteed miss. Take Decisive Action could never

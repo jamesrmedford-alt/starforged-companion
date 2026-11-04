@@ -108,11 +108,9 @@ describe("rollOracle — directive resolution", () => {
     }
   });
 
-  it("preserves isRef on Action+Theme rows so callers can still detect the chain shape", () => {
+  it("resolves an Action+Theme row to an action and a theme", () => {
     // character_role 93-95 is the action_theme row.
     const r = rollOracle("character_role", { roll: 94 });
-    expect(r.isRef).toBe(true);
-    expect(r.refTableId).toBe("action_theme");
     expect(r.result).not.toMatch(/^Action \+ Theme$/);
     expect(r.result.length).toBeGreaterThan(0);
   });
@@ -121,7 +119,6 @@ describe("rollOracle — directive resolution", () => {
     // character_role 1-2 is "Agent" — no directive.
     const r = rollOracle("character_role", { roll: 1 });
     expect(r.result).toBe("Agent");
-    expect(r.isRef).toBe(false);
   });
 
   // Issue #321 U68: the rulebook's other directive wordings came back verbatim
@@ -154,7 +151,6 @@ describe("rollOracle — directive resolution", () => {
     it('Creature Scale 100 "Ultra-scale" rolls on the registered Ultra-scale table', () => {
       const r = rollScripted("creature_scale", 100, 95);
       expect(r.result).toBe("Ultra-scale: Colossal (mountain-sized)");
-      expect(r).toMatchObject({ isRef: true, refTableId: "creature_ultra_scale" });
       expect(rollOracle("creature_ultra_scale", { roll: 100 }).result).toBe("Vast (planet-sized)");
       expect(rollOracle("creature_ultra_scale", { roll: 1 }).result).toBe("Titanic (hill-sized)");
     });

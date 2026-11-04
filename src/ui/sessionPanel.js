@@ -117,12 +117,12 @@ export class SessionPanelApp extends ApplicationV2 {
     const active        = isSessionActive(campaignState);
     const minutes       = sessionMinutesActive(campaignState);
     const sessionNumber = Number(campaignState?.sessionNumber ?? 0);
-    return { active, minutes, sessionNumber, isGM: !!globalThis.game?.user?.isGM };
+    return { active, minutes, sessionNumber };
   }
 
   /** @override */
   async _renderHTML(context, _options) {
-    const { active, minutes, sessionNumber, isGM } = context;
+    const { active, minutes, sessionNumber } = context;
 
     const stateBadge = active
       ? `<span class="badge active">Active${minutes ? ` · ${minutes} min` : ""}</span>`
@@ -136,7 +136,8 @@ export class SessionPanelApp extends ApplicationV2 {
     // their !begin-session / !end-session, whose writes relay to the
     // canonical GM (session.begin / session.end). They are disabled by the
     // session state only — the "GM only" gate here predated that relay
-    // (issue #326 W85).
+    // (issue #326 W85). Envision Inciting Incident is anyone's too: a
+    // player's press posts their `!incite` (issue #330 D15).
     const html = `
       <div class="sf-session-panel">
         <header class="panel-header">
@@ -169,7 +170,7 @@ export class SessionPanelApp extends ApplicationV2 {
 
         <section class="launch-row">
           <button class="session-btn" data-action="envisionIncite"
-                  ${!isGM ? "disabled title=\"GM only\"" : "title=\"Roll an Action+Theme spark and envision the campaign's inciting incident\""}>
+                  title="Roll an Action+Theme spark and envision the campaign's inciting incident">
             ✦ Envision Inciting Incident
           </button>
         </section>
@@ -216,9 +217,21 @@ export class SessionPanelApp extends ApplicationV2 {
   static async #onChangeFate() { await openChangeYourFateDialog(); }
   static async #onTakeBreak()  { await openTakeABreakDialog(); }
 
+  /**
+   * Envision Inciting Incident is anyone's, as `!incite` is (issue #330 D15).
+   * A player's press is their `!incite` line: the chat-command router runs it
+   * where a Claude key lives (RUN_ON.CLAUDE — the keyed canonical GM, else
+   * the player's own key), exactly as when they type it. The panel used to
+   * disable the button for every non-GM while the typed command worked.
+   */
   static async #onEnvisionIncite() {
     if (!game.user?.isGM) {
-      ui.notifications?.warn?.("Envision Inciting Incident is GM-only.");
+      try {
+        await ChatMessage.create({ content: "!incite" });
+      } catch (err) {
+        console.warn("starforged-companion | session panel: the !incite line could not be posted:", err?.message ?? err);
+        ui.notifications?.warn?.("Envision Inciting Incident could not be sent. Check the console.");
+      }
       return;
     }
     try {

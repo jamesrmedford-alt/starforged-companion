@@ -205,7 +205,7 @@ describe('session boundaries (issue #286 C3, C4)', () => {
   });
 
   it('End → Begin (no reload) starts a new session: initSessionId mints on the End marker', async () => {
-    const state = makeState({ currentSessionId: 's1', sessionNumber: 4, lastSessionTimestamp: hoursAgo(0.2), sessionEndedId: 's1' });
+    const state = makeState({ currentSessionId: 's1', sessionNumber: 4, sessionStartedId: 's1', lastSessionTimestamp: hoursAgo(0.2), sessionEndedId: 's1' });
     await initSessionId(state);
     expect(state.currentSessionId).not.toBe('s1');
     expect(state.sessionNumber).toBe(5);
@@ -214,7 +214,7 @@ describe('session boundaries (issue #286 C3, C4)', () => {
 
   it('the mint keeps the closing session\'s summary as previousSessionSummary', () => {
     const state = makeState({
-      currentSessionId: 's1', sessionNumber: 4,
+      currentSessionId: 's1', sessionNumber: 4, sessionStartedId: 's1',
       sessionSummary: { sessionId: 's1', text: ' The crew paid Vex 300 credits. ', coveredCount: 9, updatedAt: '2026-10-01T00:00:00Z' },
     });
     mintSession(state);
@@ -227,7 +227,7 @@ describe('session boundaries (issue #286 C3, C4)', () => {
   // one — the panel read "Active" since last week and Begin was disabled.
   it('a new session starts with its session-active gate closed, and its caller persists the gate', () => {
     const state = makeState({
-      currentSessionId: 's1', sessionNumber: 4, lastSessionTimestamp: hoursAgo(170),
+      currentSessionId: 's1', sessionNumber: 4, sessionStartedId: 's1', lastSessionTimestamp: hoursAgo(170),
       sessionActive: true, sessionActiveStartedAt: hoursAgo(173),
     });
     mintSession(state);

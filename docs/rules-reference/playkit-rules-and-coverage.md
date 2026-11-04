@@ -159,7 +159,7 @@ control; weak/miss = in a bad spot).
 | Move | Roll | Outcome essentials |
 |---|---|---|
 | Sojourn | +heart | strong: pick two recover moves as automatic strong hits (community) • weak: one each (limit 3 group) • miss: community demand or Pay the Price |
-| Heal | +iron / +iron-or-wits / +heart / +wits (situation) | strong: clear wounded + take/give +2 health, else +3 • weak: as strong, Lose Momentum (−2) or Sacrifice Resources (−2) • miss: Pay the Price |
+| Heal | +iron / +iron-or-wits (whichever lower — the interpreter names the situation, issue #330 D4) / +heart / +wits (situation) | strong: clear wounded + take/give +2 health, else +3 • weak: as strong, Lose Momentum (−2) or Sacrifice Resources (−2) • miss: Pay the Price |
 | Hearten | +heart | strong: clear shaken + +1 spirit, else +2; +1 more if part of Sojourn • weak: as strong, Lose Momentum (−1) • miss: Pay the Price |
 | Resupply | +heart/iron/shadow/wits | strong: clear unprepared + +1 supply, else +2; may acquire a specific item + +1 momentum • weak: as strong with cost • miss: Pay the Price |
 | Repair | +wits or +supply | Earn repair points (facility 5/3, field 3/1, under fire 2/0). Optional trade: −1 supply ↔ +1 point (max 3). Spend: 2 pts clear battered / fix module, 1 pt +1 integrity or +1 mechanical-companion health, 3 pts repair any other device (2 with complication). miss: Pay the Price |
@@ -267,7 +267,7 @@ to find each move's resolver branch.
 | Vehicle integrity read for Withstand Damage | ✅ | `src/moves/statEnrichment.js` (`integrity` stat) |
 | Companion-health stat | 🔄 | `src/moves/statEnrichment.js:133-197` — heuristic picks highest-health enabled Companion asset; multi-companion warning but no player picker |
 | Auto-mark wounded/shaken/unprepared on meter = 0 | ✅ | `src/moves/persistResolution.js:129-159` |
-| Mortal-wound / desolation / vehicle-damage tables | ✅ | Endure Harm / Endure Stress at 0 on a miss post a choice card — mark the impact, mark the lasting one (permanently harmed / traumatized), or roll the table (`rollImpactTable`) — the player's one choice (`src/moves/sufferExecutor.js`, issue #329 X03), whichever miss option was taken ("-1 health" or "Lose Momentum (-2)" — ENDURE-ZERO-ON-OTHER-OPTION); Withstand Damage at 0 rolls the vehicle-damage d100 |
+| Mortal-wound / desolation / vehicle-damage tables | ✅ | A harm or stress step that reaches 0 owes the resist roll — a card that rolls Endure Harm / Stress as the PC (issue #330 D3); that roll's miss at 0 posts a choice card — mark the impact, mark the lasting one (permanently harmed / traumatized), or roll the table (`rollImpactTable`) — the player's one choice (`src/moves/sufferExecutor.js`, issue #329 X03), whichever miss option was taken ("-1 health" or "Lose Momentum (-2)" — ENDURE-ZERO-ON-OTHER-OPTION); Withstand Damage at 0 rolls the vehicle-damage d100 |
 | All 10 impacts auto-marked from move outcomes | 🔄 | Only wounded/shaken/unprepared automated; other 7 surface as text choices for manual marking |
 | Chronicle records narrative beats | ✅ | `src/character/chronicle.js`, `src/character/chronicleWriter.js`, `src/character/chroniclePanel.js`; entry types `revelation / relationship / vow / scar / legacy / annotation` |
 

@@ -151,13 +151,25 @@ describe('registerAudioSocket — GM relay contract', () => {
     registerAudioSocket();
     const [handler] = game.socket._handlers.get(AUDIO_SOCKET_NAME);
 
+    // The relayed clip is a line of a narrator card in chat — the only clip
+    // the GM files (issue #330 D11; the mocked cacheKey keys it to this hash).
+    vi.mocked(mockCacheKey).mockResolvedValue('deadbeefdeadbeef');
+    const savedMessages = game.messages;
+    game.messages = { contents: [{ id: 'card-1', flags: { [MODULE_ID]: { narratorCard: true, narrationText: 'The hull holds.' } } }] };
+    game.settings._store.set(`${MODULE_ID}.audio.narratorVoiceId`, 'voice-narrator');
+
     // Simulate what commitToCache() emits from a non-GM client.
     const audioData = 'simulated-audio-bytes';
-    await handler({
-      kind: 'audio.cache.write',
-      hash: 'deadbeefdeadbeef',
-      b64:  btoa(audioData),
-    });
+    try {
+      await handler({
+        kind: 'audio.cache.write',
+        hash: 'deadbeefdeadbeef',
+        b64:  btoa(audioData),
+      });
+    } finally {
+      game.messages = savedMessages;
+      game.settings._store.delete(`${MODULE_ID}.audio.narratorVoiceId`);
+    }
 
     expect(mockWrite).toHaveBeenCalledOnce();
     expect(mockWrite).toHaveBeenCalledWith(

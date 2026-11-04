@@ -49,6 +49,28 @@ const ANY_SUFFER_MOVES = [
   { id: "companion_takes_a_hit", label: "Companion Takes a Hit" },
 ];
 
+// What a suffer move's sizes are called — Endure Harm / Stress: "suffer -1
+// health for minor harm, -2 for serious harm, or -3 for major harm".
+const SUFFER_SIZES = { 1: "Minor", 2: "Serious", 3: "Major" };
+const SUFFER_NOUNS = { endure_harm: "harm", endure_stress: "stress" };
+
+/**
+ * The follow-up card for an option the player sizes (amountPick, issue #330
+ * D7): one pick of the suffer move at each amount — "Minor stress (-1)",
+ * "Serious stress (-2)", "Major stress (-3)".
+ *
+ * @param {string} sufferId
+ * @param {number[]} amounts
+ * @returns {Object} an enumerated sufferPrompt
+ */
+function amountPickPrompt(sufferId, amounts) {
+  const noun = SUFFER_NOUNS[sufferId] ? ` ${SUFFER_NOUNS[sufferId]}` : "";
+  return {
+    kind: "enumerated",
+    options: amounts.map(a => ({ label: `${SUFFER_SIZES[a] ?? labelForSuffer(sufferId)}${noun} (-${a})`, suffer: sufferId, amount: a })),
+  };
+}
+
 function escapeHtml(s) {
   return String(s ?? "")
     .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -201,6 +223,7 @@ export function summarizeSufferCalls(calls) {
         : (c.position === "in_control" ? "you are in control" : "you are in a bad spot")); break;
       case "next-bonus":          parts.push(`+${c.amount} next move`); break;
       case "roll-table":          parts.push(`rolled the ${c.table === "desolation" ? "desolation" : "mortal-wound"} table`); break;
+      case "resist":              parts.push(`${labelForSuffer(c.moveId)} rolled to resist`); break;
       case "route":               parts.push(`see "Trigger: ${c.route}"`); break;
       case "complication":        parts.push("complication pending"); break;
       default: break;
@@ -459,8 +482,14 @@ async function handleSufferPick(message, dataset) {
 
   const calls = resolveSufferSelection(prompt, selection);
   // A nested "any" sub-prompt (e.g. set_a_course's "One suffer move (-2)"):
-  // a fresh B1 picker card follows rather than a default being applied.
-  const needsAny = calls.find(c => c.kind === "needs-any");
+  // a fresh B1 picker card follows rather than a default being applied. An
+  // option the player sizes (amountPick — Forsake Your Vow's Endure Stress,
+  // issue #330 D7) is followed by its minor / serious / major card.
+  const needsAny    = calls.find(c => c.kind === "needs-any");
+  const needsAmount = calls.find(c => c.kind === "needs-amount");
+  const followUpPrompt = needsAny
+    ? { kind: "any", amount: needsAny.amount, count: needsAny.count }
+    : (needsAmount ? amountPickPrompt(needsAmount.sufferId, needsAmount.amounts) : null);
 
   // Multi-select: accumulate picks until the cap is reached, then resolve.
   // An "any" prompt of `count` > 1 takes one suffer move per pick (issue
@@ -474,6 +503,7 @@ async function handleSufferPick(message, dataset) {
   const notes  = Array.isArray(f.notApplied) ? f.notApplied : [];
   const ctx    = optionContext(actor, executorOpts);
   const doneText = needsAny ? "Suffer move chosen — resolve it on the follow-up card."
+    : needsAmount ? `${labelForSuffer(needsAmount.sufferId)} chosen — choose how much on the follow-up card.`
     : multi ? "Applied your selections."
     : `Applied: ${summarizeSufferCalls(calls)}`;
 
@@ -497,9 +527,9 @@ async function handleSufferPick(message, dataset) {
   // (resultUpgrade.js consequenceChosen) — once the choice stands.
   const closeUpgrades = () => (f.resolutionId && f.upgraded !== true ? closeUpgradesForChoice(f.resolutionId) : null);
 
-  if (needsAny) {
+  if (followUpPrompt) {
     const followUp = await postSufferChoiceCard({
-      sufferPrompt: { kind: "any", amount: needsAny.amount, count: needsAny.count },
+      sufferPrompt: followUpPrompt,
       actor, executorOpts, moveId: f.moveId,
     });
     if (followUp) {

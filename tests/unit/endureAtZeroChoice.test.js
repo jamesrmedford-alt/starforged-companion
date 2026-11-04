@@ -15,9 +15,9 @@
  * table). Now the executor marks nothing and rolls nothing: a follow-up
  * choice card offers the three, and a pick applies exactly that one.
  *
- * Whether a Pay the Price harm at 0 should run the miss escalation at all
- * (the resist roll it stands in for) is issue #330 D3, undecided; either way
- * the "or" is the player's choice.
+ * The choice is the resist roll's own miss's (`resistMiss` — Endure Harm /
+ * Stress's miss card): a Pay the Price harm, or any other harm step, at 0
+ * owes that roll instead (issue #330 D3).
  *
  * (Converted from the ninth audit's probe
  * tests/probes/upgrades/endureAtZeroMarkAndRoll.probe.js.)
@@ -55,7 +55,7 @@ const pick = (card, index) => applySufferPickFromRelay({ messageId: card.id, pic
 
 describe("issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both", () => {
   it("Endure Harm's miss at 1 health marks nothing and rolls nothing — the choice card offers the three", async () => {
-    const res = await endureHarm(pc, 1, { isMiss: true, fixedRoll: 60 });
+    const res = await endureHarm(pc, 1, { resistMiss: true, fixedRoll: 60 });
     expect(res.after).toBe(0);
     expect(res).toMatchObject({ woundedMarked: false, mortalWound: null, impactChoice: true });
     expect(pc.system.debility.wounded).toBe(false);
@@ -67,7 +67,7 @@ describe("issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, 
   });
 
   it("Endure Stress's miss at 1 spirit marks nothing and rolls nothing — the choice card offers the three", async () => {
-    const res = await endureStress(pc, 1, { isMiss: true, fixedRoll: 60 });
+    const res = await endureStress(pc, 1, { resistMiss: true, fixedRoll: 60 });
     expect(res.after).toBe(0);
     expect(res).toMatchObject({ shakenMarked: false, desolation: null, impactChoice: true });
     expect(pc.system.debility.shaken).toBe(false);
@@ -75,7 +75,7 @@ describe("issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, 
   });
 
   it("picking 'Mark wounded' marks wounded — and rolls no table", async () => {
-    await endureHarm(pc, 1, { isMiss: true, fixedRoll: 60 });
+    await endureHarm(pc, 1, { resistMiss: true, fixedRoll: 60 });
     expect(await pick(atZeroCard("health"), 0)).toMatchObject({ applied: true });
     expect(pc.system.debility.wounded).toBe(true);
     expect(pc.system.debility.permanentlyharmed).toBe(false);
@@ -83,14 +83,14 @@ describe("issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, 
   });
 
   it("picking 'Mark permanently harmed' marks it — not wounded", async () => {
-    await endureHarm(pc, 1, { isMiss: true, fixedRoll: 60 });
+    await endureHarm(pc, 1, { resistMiss: true, fixedRoll: 60 });
     expect(await pick(atZeroCard("health"), 1)).toMatchObject({ applied: true });
     expect(pc.system.debility.permanentlyharmed).toBe(true);
     expect(pc.system.debility.wounded).toBe(false);
   });
 
   it("picking the table rolls it — and marks no impact", async () => {
-    await endureHarm(pc, 1, { isMiss: true, fixedRoll: 1 });
+    await endureHarm(pc, 1, { resistMiss: true, fixedRoll: 1 });
     expect(await pick(atZeroCard("health"), 2)).toMatchObject({ applied: true });
     const rolled = ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.suffer === "impact_table");
     expect(rolled.flags[MODULE_ID]).toMatchObject({ table: "mortal_wound", roll: 1 });
@@ -100,7 +100,7 @@ describe("issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, 
   });
 
   it("Endure Stress: the desolation table, picked, marks neither shaken nor traumatized", async () => {
-    await endureStress(pc, 1, { isMiss: true, fixedRoll: 5 });
+    await endureStress(pc, 1, { resistMiss: true, fixedRoll: 5 });
     expect(await pick(atZeroCard("spirit"), 2)).toMatchObject({ applied: true });
     expect(ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.suffer === "impact_table").flags[MODULE_ID].table).toBe("desolation");
     expect(pc.system.debility.shaken).toBe(false);
@@ -109,23 +109,24 @@ describe("issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, 
 
   it("an impact already marked is not offered (marking it again would cost nothing)", async () => {
     pc.system.debility.wounded = true;
-    await endureHarm(pc, 1, { isMiss: true, fixedRoll: 60 });
+    await endureHarm(pc, 1, { resistMiss: true, fixedRoll: 60 });
     const card = atZeroCard("health");
     expect(card.content).toMatch(/Mark wounded \(unavailable\)/);
     expect(await pick(card, 0)).toMatchObject({ applied: false, reason: "not-offered" });
   });
 
-  it("a Pay the Price 'You are harmed' at 1 health offers the choice — never both", async () => {
+  it("a Pay the Price 'You are harmed' at 1 health owes the resist roll — no choice, nothing marked (issue #330 D3)", async () => {
     const res = await applyPayThePriceSufferFromRelay({ routes: [{ move: "endure_harm", amount: 1 }], actorId: pc.id }, GM);
     expect(res.applied).toBe(true);
-    expect(res.landed[0]).toMatchObject({ after: 0, woundedMarked: false, mortalWound: null, impactChoice: true });
-    expect(atZeroCard("health")).not.toBeNull();
+    expect(res.landed[0]).toMatchObject({ after: 0, woundedMarked: false, mortalWound: null, impactChoice: false, resistOwed: true });
+    expect(atZeroCard("health")).toBeNull();
+    expect(pc.system.debility.wounded).toBe(false);
   });
 
   it("control: harm that leaves health above 0 marks nothing, rolls nothing and offers no choice", async () => {
     pc.system.health.value = 3;
     invalidateActorCache(pc.id);
-    const res = await endureHarm(pc, 1, { isMiss: true, fixedRoll: 60 });
+    const res = await endureHarm(pc, 1, { resistMiss: true, fixedRoll: 60 });
     expect(res.after).toBe(2);
     expect(res).toMatchObject({ woundedMarked: false, mortalWound: null, impactChoice: false });
     expect(atZeroCard("health")).toBeNull();

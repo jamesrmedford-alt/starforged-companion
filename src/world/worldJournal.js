@@ -133,6 +133,20 @@ export async function initWorldJournals() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * True for a lore entry a GM ruled: not canon, not the narrator's, not
+ * struck — a rumour (`!journal lore "<title>" rumour — text`, which also
+ * files a GM's own entry) or one the GM dismissed from review. A GM's ruling
+ * stands until a GM changes it (issue #330 D9): only `!journal lore
+ * "<title>" confirmed` or the panel's Confirm promotes it.
+ *
+ * @param {Object|null|undefined} entry — a stored loreEntry
+ * @returns {boolean}
+ */
+function isGmRuledLore(entry) {
+  return !!entry && entry.retracted !== true && entry.confirmed !== true && entry.narratorAsserted !== true;
+}
+
+/**
  * Record a lore discovery. Creates a page named after the title; on duplicate
  * titles the existing entry is updated.
  *
@@ -144,6 +158,12 @@ export async function initWorldJournals() {
  * and its `retracted` mark unless the caller sets one: Foundry's setFlag
  * merges the object into the stored flag key by key, so `retracted` is always
  * written explicitly (issue #321 U40 — a restore left it set).
+ *
+ * A narrator write (`narratorAsserted: true` — the detection pass, a scene
+ * truth's archive, the inciting incident) never overturns a GM's ruling: an
+ * entry the GM ruled a rumour or dismissed from review (isGmRuledLore) is
+ * left as the GM left it, and returned unchanged (issue
+ * #330 D9 — the narrator mentioning it again made it canon again).
  *
  * Empty titles are rejected.
  *
@@ -162,7 +182,12 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.lore);
   if (!journal) return null;
 
-  const existing  = findPageByName(journal, cleanTitle)?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
+  const existingPage = findPageByName(journal, cleanTitle);
+  const existing  = existingPage?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
+  if (entry?.narratorAsserted === true && isGmRuledLore(existing)) {
+    console.debug(`${MODULE_ID} | worldJournal: lore "${cleanTitle}" stands as the GM ruled it — the narrator's mention does not change it.`);
+    return { ...existing, pageId: existingPage.id, journalId: journal.id };
+  }
   const now       = new Date().toISOString();
   const retracted = typeof entry?.retracted === "boolean" ? entry.retracted : existing?.retracted === true;
 
@@ -481,13 +506,15 @@ export async function updateThreatSeverity(name, severity, campaignState, { narr
  * promotedAt. Does NOT change narratorAsserted — the entry retains its
  * provenance. A narration's capture (a "lore confirmed" transition) passes
  * its `narrationId`, stamped as updateThreatSeverity's
- * (XCARD-CAPTURE-TRANSITIONS); a GM's confirm owns the entry.
+ * (XCARD-CAPTURE-TRANSITIONS); a GM's confirm owns the entry. The capture
+ * also passes `byNarrator`: a narrator's confirm leaves a GM-ruled entry as
+ * ruled (isGmRuledLore, issue #330 D9) — only a GM's confirm promotes it.
  *
  * @param {string} title
  * @param {Object} [_campaignState]
- * @param {{ narrationId?: string|null }} [options]
+ * @param {{ narrationId?: string|null, byNarrator?: boolean }} [options]
  */
-export async function promoteLoreToConfirmed(title, _campaignState, { narrationId = null } = {}) {
+export async function promoteLoreToConfirmed(title, _campaignState, { narrationId = null, byNarrator = false } = {}) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.lore);
   if (!journal) return null;
 
@@ -504,6 +531,12 @@ export async function promoteLoreToConfirmed(title, _campaignState, { narrationI
   // restores one with `!journal lore "<title>" confirmed`.
   if (existing.retracted) {
     console.debug(`${MODULE_ID} | worldJournal: lore "${title}" was retracted by the table — not re-confirmed.`);
+    return null;
+  }
+  // The capture's "lore confirmed" is the narrator re-asserting it: a GM's
+  // ruling stands until a GM changes it (issue #330 D9).
+  if (byNarrator && isGmRuledLore(existing)) {
+    console.debug(`${MODULE_ID} | worldJournal: lore "${title}" is the GM's ruling — the narration does not confirm it.`);
     return null;
   }
 

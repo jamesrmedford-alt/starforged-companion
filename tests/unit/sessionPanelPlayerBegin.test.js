@@ -82,9 +82,10 @@ describe("a player's Begin / End Session in the Session panel (issue #326 W85)",
     expect(openEndSessionDialog).toHaveBeenCalledTimes(1);
   });
 
-  it("control: Envision Inciting Incident stays the GM's", async () => {
+  it("Envision Inciting Incident is a player's too (issue #330 D15)", async () => {
     const { incite } = await renderPanel({ sessionActive: false, sessionNumber: 3 });
-    expect(incite).toEqual({ disabled: true, title: "GM only" });
+    expect(incite.disabled).toBe(false);
+    expect(incite.title).toMatch(/inciting incident/i);
   });
 
   it("control: a GM's buttons follow the same state", async () => {

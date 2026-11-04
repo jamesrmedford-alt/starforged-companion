@@ -148,30 +148,34 @@ describe("endureHarm", () => {
     expect(chatCalls[0].content).toContain("Health: 3 → 2");
   });
 
-  it("marks wounded when health hits 0 from a hit (no mortal-wound roll)", async () => {
+  // Issue #330 D3: at 0 the harm step owes the resist roll — "Then, if your
+  // health is 0 … roll +health or +iron" — and marks nothing (it marked
+  // wounded with no roll made).
+  it("at 0 health the harm step owes the resist roll — a card that rolls Endure Harm; nothing is marked", async () => {
     const a = actor(2);
     const r = await endureHarm(a, 2);
-    expect(r.atZero).toBe(true);
-    expect(r.woundedMarked).toBe(true);
-    expect(r.mortalWound).toBeNull();
-    expect(bridgeCalls.setDebility).toContainEqual({ actor: a, key: "wounded", value: true });
+    expect(r).toMatchObject({ atZero: true, woundedMarked: false, mortalWound: null, impactChoice: false, resistOwed: true });
+    expect(bridgeCalls.setDebility).toHaveLength(0);
+    expect(chatCalls[0].content).toContain("at 0 health you must resist: roll Endure Harm on the card below");
+    const resist = chatCalls[1].flags["starforged-companion"];
+    expect(resist.sufferCard).toBe(true);
+    expect(resist.sufferPrompt).toMatchObject({ resist: "health", options: [{ resist: "endure_harm" }] });
   });
 
-  it("does not re-mark wounded if already wounded", async () => {
+  it("an already wounded character at 0 owes the resist roll too, and nothing is marked", async () => {
     const a = actor(2, true);
     const r = await endureHarm(a, 2);
-    expect(r.atZero).toBe(true);
-    expect(r.woundedMarked).toBe(false);
+    expect(r).toMatchObject({ atZero: true, woundedMarked: false, resistOwed: true });
     expect(bridgeCalls.setDebility).toHaveLength(0);
   });
 
-  // Issue #329 X03: at 0 on a miss the player chooses — mark wounded, mark
-  // permanently harmed, or roll the mortal-wound table. It marked wounded AND
-  // rolled the table.
-  it("on a miss at 0 health offers the choice — marks nothing, rolls nothing", async () => {
+  // Issue #329 X03: at 0 on the resist roll's miss the player chooses — mark
+  // wounded, mark permanently harmed, or roll the mortal-wound table. It
+  // marked wounded AND rolled the table.
+  it("on the resist roll's miss at 0 health offers the choice — marks nothing, rolls nothing", async () => {
     const a = actor(1);
-    const r = await endureHarm(a, 1, { isMiss: true, fixedRoll: 1 });
-    expect(r).toMatchObject({ atZero: true, woundedMarked: false, mortalWound: null, impactChoice: true });
+    const r = await endureHarm(a, 1, { resistMiss: true, fixedRoll: 1 });
+    expect(r).toMatchObject({ atZero: true, woundedMarked: false, mortalWound: null, impactChoice: true, resistOwed: false });
     expect(bridgeCalls.setDebility).toHaveLength(0);
     expect(chatCalls[0].content).toContain("at 0 health, choose one on the card below");
     const choice = chatCalls[1].flags["starforged-companion"];
@@ -180,11 +184,10 @@ describe("endureHarm", () => {
       ["Mark wounded", "Mark permanently harmed", "Roll on the mortal-wound table"]);
   });
 
-  it("does not roll mortal-wound if not a miss", async () => {
+  it("another move's miss at 0 is a harm step: the resist roll is owed, not the choice (issue #330 D3)", async () => {
     const a = actor(1);
-    const r = await endureHarm(a, 1, { fixedRoll: 1 });
-    expect(r.atZero).toBe(true);
-    expect(r.mortalWound).toBeNull();
+    const r = await endureHarm(a, 1, { isMiss: true, fixedRoll: 1 });
+    expect(r).toMatchObject({ atZero: true, mortalWound: null, impactChoice: false, resistOwed: true });
   });
 
   it("skips on zero / negative amount", async () => {
@@ -209,7 +212,8 @@ describe("endureHarm", () => {
       expect(r).toMatchObject({ before: 1, after: 0, atZero: true,
         momentumLoss: { amount: 2, taken: 2, remaining: 0, before: 5, after: 3, atMin: false } });
       expect(a.system.momentum.value).toBe(3);
-      expect(chatCalls).toHaveLength(1);   // one card: the overflow has no card of its own
+      // The summary card and the resist card it owes at 0 — the overflow has no card of its own.
+      expect(chatCalls.map(c => !!c.flags["starforged-companion"].sufferPrompt)).toEqual([false, true]);
       expect(chatCalls[0].content).toContain("Health: 1 → 0 — 2 more as momentum: 5 → 3");
       expect(chatCalls[0].flags["starforged-companion"].momentumLoss).toMatchObject({ amount: 2, taken: 2 });
     });
@@ -274,14 +278,15 @@ describe("endureStress", () => {
     expect(chatCalls[0].content).toContain("Spirit: 4 → 3");
   });
 
-  it("marks shaken on at-0", async () => {
+  it("at 0 spirit the stress step owes the resist roll — Endure Stress — and marks nothing (issue #330 D3)", async () => {
     const r = await endureStress(actor(1), 1);
-    expect(r.shakenMarked).toBe(true);
-    expect(bridgeCalls.setDebility[0]).toMatchObject({ key: "shaken", value: true });
+    expect(r).toMatchObject({ atZero: true, shakenMarked: false, resistOwed: true });
+    expect(bridgeCalls.setDebility).toHaveLength(0);
+    expect(chatCalls[1].flags["starforged-companion"].sufferPrompt).toMatchObject({ resist: "spirit", options: [{ resist: "endure_stress" }] });
   });
 
-  it("on a miss at 0 spirit offers the choice — marks nothing, rolls nothing (issue #329 X03)", async () => {
-    const r = await endureStress(actor(1), 1, { isMiss: true, fixedRoll: 5 });
+  it("on the resist roll's miss at 0 spirit offers the choice — marks nothing, rolls nothing (issue #329 X03)", async () => {
+    const r = await endureStress(actor(1), 1, { resistMiss: true, fixedRoll: 5 });
     expect(r).toMatchObject({ atZero: true, shakenMarked: false, desolation: null, impactChoice: true });
     expect(bridgeCalls.setDebility).toHaveLength(0);
     expect(chatCalls[1].flags["starforged-companion"].sufferPrompt.options.map(o => o.label)).toEqual(
@@ -294,9 +299,9 @@ describe("endureStress", () => {
     a.system.momentum = { value: 5, max: 10, min: -6 };
     const r = await endureStress(a, 3);
     expect(bridgeCalls.applyMeterChanges.map(c => c.changes)).toEqual([{ spirit: -1 }, { momentum: -2 }]);
-    expect(r).toMatchObject({ before: 1, after: 0, atZero: true, shakenMarked: true,
+    expect(r).toMatchObject({ before: 1, after: 0, atZero: true, shakenMarked: false, resistOwed: true,
       momentumLoss: { amount: 2, taken: 2, remaining: 0, before: 5, after: 3 } });
-    expect(chatCalls[0].content).toContain("Spirit: 1 → 0 — 2 more as momentum: 5 → 3 — marked <strong>shaken</strong>");
+    expect(chatCalls[0].content).toContain("Spirit: 1 → 0 — 2 more as momentum: 5 → 3 — at 0 spirit you must resist");
   });
 });
 
