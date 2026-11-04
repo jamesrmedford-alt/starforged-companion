@@ -122,12 +122,12 @@ Given player narration, return a JSON object identifying:
 ### THRESHOLD MOVES
 - **face_death** — When at the brink of death. Roll +heart.
 - **face_desolation** — When at the brink of desolation. Roll +heart.
-- **overcome_destruction** — Progress move. When your command vehicle is destroyed.
+- **overcome_destruction** — Progress move. When your command vehicle is destroyed. Rolls against the bonds legacy track.
 
 ### LEGACY MOVES
 - **earn_experience** — When filling a legacy box (no roll).
 - **advance** — When spending experience on assets (no roll).
-- **continue_a_legacy** — Progress move. When retiring or dying.
+- **continue_a_legacy** — Progress move. When retiring or dying. One roll per legacy track — name the track rolled (quests, bonds or discoveries).
 
 ### FATE MOVES
 - **ask_the_oracle** — When seeking answers or resolving uncertainty (no roll).
@@ -169,7 +169,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
 confidence: "high" | "medium" | "low" — your certainty in the interpretation.
 statValue: ALWAYS leave as 0 — filled in by the calling code (from the character sheet for action moves, from the live progress track / vow / connection data for progress moves — see enrichInterpretationStatValue and enrichProgressTicks in src/moves/statEnrichment.js). Module data is ground truth; never estimate a value.
 progressTicks: ALWAYS leave as 0 — for progress moves the module fills the score from the live track / vow / connection data. Never estimate a tick count.
-moveTarget: the named thing the move acts on, taken from the player's narration. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided. null when nothing is named or implied.
+moveTarget: the named thing the move acts on, taken from the player's narration. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided. null when nothing is named or implied.
 expeditionRank: only for undertake_an_expedition. When the narration implies the journey's scope, infer its rank — "troublesome" (a short, easy hop), "dangerous" (default), "formidable" (a long or hostile crossing), "extreme", or "epic" (a vast, perilous undertaking). null otherwise; the player can re-rank the track later.
 combatRank: only for enter_the_fray. When the narration implies the foe’s danger level, infer its rank — "troublesome" (minor, easy to defeat), "dangerous" (default), "formidable" (a tough, seasoned opponent), "extreme" (an overwhelming threat), or "epic" (near-impossible odds). null otherwise; the player can re-rank the combat track later.`;
 }

@@ -469,10 +469,11 @@ export function resolveCompanionHealth(actor) {
 // ---------------------------------------------------------------------------
 
 /**
- * Which module data source scores each progress move. Progress moves absent
- * from this map (continue_a_legacy, overcome_destruction) roll against the
- * player's own legacy tracks, which the module doesn't store — those stay a
- * deliberate no-op.
+ * Which module data source scores each progress move. Overcome Destruction
+ * and Continue a Legacy roll against the crew's shared legacy tracks
+ * (`campaignState.legacyTracks`, mirrored to every PC's sheet since issue
+ * #326 D3) — they scored 0, a certain miss, while the module "did not store"
+ * them (issue #330 D6).
  */
 export const PROGRESS_TICK_SOURCES = {
   take_decisive_action: "combat",
@@ -480,7 +481,26 @@ export const PROGRESS_TICK_SOURCES = {
   forge_a_bond:         "connection",
   finish_an_expedition: "expedition",
   finish_the_scene:     "scene_challenge",   // issue #326 D6
+  overcome_destruction: "legacy",            // the bonds legacy track (issue #330 D6)
+  continue_a_legacy:    "legacy",            // the legacy track it names (issue #330 D6)
 };
+
+const LEGACY_TRACK_LABELS = { quests: "Quests", bonds: "Bonds", discoveries: "Discoveries" };
+
+/**
+ * The legacy track a Continue a Legacy names — "quests", "bonds" or
+ * "discoveries", by any of their words — or null.
+ *
+ * @param {string|null} target
+ * @returns {"quests"|"bonds"|"discoveries"|null}
+ */
+function legacyTrackNamed(target) {
+  const t = String(target ?? "").toLowerCase();
+  if (/\bquest/.test(t)) return "quests";
+  if (/\b(bond|connection)/.test(t)) return "bonds";
+  if (/\bdiscover/.test(t)) return "discoveries";
+  return null;
+}
 
 /**
  * Fill interpretation.statValue (and progressTicks, for card display) with the
@@ -495,6 +515,7 @@ export const PROGRESS_TICK_SOURCES = {
  * @param {Object} interpretation — mutated in place (statValue, progressTicks)
  * @param {{ listTracks?:    () => Promise<Array<{id,label,type,rank,ticks,completed,combatState}>>,
  *           readAllVows?:   () => Promise<Array<{id,name,rank,ticks,completed,actorId,vowId}>>,
+ *           readLegacyTracks?: () => Promise<Object<string,{ticks,cleared,cycles}>>,
  *           rollerActorId?: string|null,
  *           listConnections?: () => Promise<Array<{name,rank,relationshipTicks,bonded,active,__hostId}>> }} deps
  *   — `rollerActorId`: whose vows a Fulfill Your Vow prefers (credit the roller),
@@ -568,6 +589,17 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
           trackId: track.id ?? null, combatState: null,
         };
       }
+    }
+  } else if (source === "legacy") {
+    // The crew's shared legacy tracks: Overcome Destruction rolls the bonds
+    // track ("compare to the progress on your bonds legacy track"), Continue
+    // a Legacy the one it names. A track already cleared is rolled "as if at
+    // 10 progress" (Earn Experience) — issue #330 D6.
+    const track = moveId === "overcome_destruction" ? "bonds" : legacyTrackNamed(target);
+    if (track) {
+      const legacy = ((await deps.readLegacyTracks?.()) ?? {})[track] ?? null;
+      const ticks  = legacy?.cleared ? 40 : Math.max(0, Math.min(40, Number(legacy?.ticks ?? 0) || 0));
+      resolved = { ticks, label: `${LEGACY_TRACK_LABELS[track]} legacy`, trackId: track, combatState: null };
     }
   } else if (source === "connection") {
     // A picker's host id first; Forge a Bond never scores a bonded connection

@@ -12,6 +12,18 @@ rejected.
 needed the maintainer. The maintainer asked for the issue to be addressed on
 2026-11-04 and took the recommended option on every row. Each row's ID in
 brackets.)
+- **Overcome Destruction and Continue a Legacy score the shared legacy
+  tracks** [D6; option A]. Both were progress moves with no tick source
+  ("roll against the player's own legacy tracks, which the module doesn't
+  store"), so every roll scored 0 — a certain miss. The shared tracks are
+  stored (`campaignState.legacyTracks`) and mirrored to every sheet since
+  issue #326 D3: Overcome Destruction now scores the bonds track ("compare to
+  the progress on your bonds legacy track") and Continue a Legacy the track
+  its target names (the interpreter names it), each at 10 progress once the
+  track has been cleared ("resolve the outcome as if at 10 progress"). A
+  Continue a Legacy naming no track still scores 0, with a console warning.
+  *Rejected:* keeping the no-op and saying so on the card (option B) — the
+  data the rule needs is the module's own.
 - **A sheet Forge a Bond forges the connection its bond Item names, or
   nobody** [D5; option A]. The native consequence hook resolved the roll's
   Item name through the develop ladder's full fallback, so a bond the player
@@ -3016,8 +3028,11 @@ creation-time mirrors that are never tick-synced), connection records
 (`relationshipTicks`). The interpreter is instructed to leave `statValue` and
 `progressTicks` at 0 and only name the `moveTarget`; the resolver reads
 `statValue` as the tick carrier. `PROGRESS_TICK_SOURCES` is the move→source
-map; `continue_a_legacy` / `overcome_destruction` are deliberate no-ops (the
-module doesn't store legacy tracks per-player).
+map; `overcome_destruction` scores the crew's shared bonds legacy track and
+`continue_a_legacy` the legacy track it names (`campaignState.legacyTracks`,
+40 once the track has been cleared — issue #330 D6; they were deliberate
+no-ops while the module "did not store" legacy tracks, which it has since
+issue #326 D3).
 
 **Reason:** Before this, *nothing* filled the tick carrier, so every pipeline
 progress roll scored 0 — a guaranteed miss. Take Decisive Action could never

@@ -472,17 +472,14 @@ describe('enrichProgressTicks', () => {
     expect(interp.statValue).toBe(20);
   });
 
-  it('continue_a_legacy: deliberate no-op — debug, not warn, score untouched', async () => {
-    const warn  = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
+  it('continue_a_legacy naming no legacy track scores 0, and the GM console says why (issue #330 D6)', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const interp = interpFor('continue_a_legacy');
-    const info = await enrichProgressTicks(interp, { listTracks: async () => [] });
-    expect(info).toBeNull();
+    const info = await enrichProgressTicks(interp, { readLegacyTracks: async () => ({ quests: { ticks: 20 } }) });
+    expect(info).toMatchObject({ ticks: 0, source: 'legacy' });
     expect(interp.statValue).toBe(0);
-    expect(debug).toHaveBeenCalled();
-    expect(warn).not.toHaveBeenCalled();
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/continue_a_legacy/));
     warn.mockRestore();
-    debug.mockRestore();
   });
 
   it('leaves non-progress moves untouched', async () => {

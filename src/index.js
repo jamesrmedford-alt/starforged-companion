@@ -1143,6 +1143,9 @@ export function registerChatHook() {
       const tickInfo = await enrichProgressTicks(interpretation, {
         listTracks: () => listProgressTracks(),
         readAllVows,
+        // The crew's shared legacy tracks as they stand (Overcome
+        // Destruction, Continue a Legacy — issue #330 D6).
+        readLegacyTracks: async () => (game.settings.get(MODULE_ID, "campaignState") ?? campaignState)?.legacyTracks ?? {},
         rollerActorId: rollerActor?.id ?? null,
         listConnections,
       }).catch(err => {
