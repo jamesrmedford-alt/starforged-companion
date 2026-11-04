@@ -37,8 +37,13 @@ const HAVE_VENDOR = fs.existsSync(DIR) && fs.readdirSync(DIR).length > 0;
 const strip = (s) => String(s ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
 const LINK = /@Compendium\[[^\]]*\]\{([^}]+)\}/g;
 
-/** Every vendored asset: { name, category, abilities: [{ text (links kept), enabled }] }. */
+/**
+ * Every vendored asset: { name, category, abilities: [{ text (links kept), enabled }] }.
+ * None without the vendored data — the suite below is then skipped, and its
+ * body (which describe.skipIf still collects) must not read a missing folder.
+ */
 function loadAssets() {
+  if (!HAVE_VENDOR) return [];
   return fs.readdirSync(DIR).sort().map(f => JSON.parse(fs.readFileSync(path.join(DIR, f), "utf8")))
     .filter(d => d.type === "asset")
     .map(d => ({ name: d.name, category: d.system.category,
