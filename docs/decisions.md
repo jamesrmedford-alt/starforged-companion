@@ -6,6 +6,26 @@ rejected.
 
 ---
 
+## Issue #330 decisions: D1–D15 (2026-11)
+
+**Decision:** (issue #330, part 3 of the ninth audit — the fifteen rows that
+needed the maintainer. The maintainer asked for the issue to be addressed on
+2026-11-04 and took the recommended option on every row. Each row's ID in
+brackets.)
+- **A new sector never repeats a stored sector's name** [D14; option B]. Two
+  sectors of one rolled name shared their Actor, NPC and Journal folders
+  (keyed by name) and `!sector <name>` reached only the older one.
+  `generateSectorName` rolls again while the name is a stored sector's
+  (case-blind) and numbers the last roll ("Vega Reach II") after fifty taken
+  pairs. *Rejected:* keying the folders by sector id and disambiguating
+  `!sector` (option A) — a sector name is rolled, never typed, so one check
+  where it is minted makes every name-keyed reader right at once. A GM's
+  rename of a Scene or record to another sector's name is the GM's own call.
+
+**Reason:** each row's probe failed at the audited commit; the tests that
+replace them fail with the change taken out
+(`docs/testing/fix-sensitivity.md`).
+
 ## Issue #329 audit: what a narration wrote leaves with it, the scene as it stands, the player's choice at 0, the card's own roller, the sheet's notes (2026-11)
 
 **Decision:** (issue #329, part 1 of the ninth audit — X01–X14. The
