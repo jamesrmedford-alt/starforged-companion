@@ -163,8 +163,27 @@ narration's `narrationId` and the position before it (`previous`, up to
 three deep), and the X-Card's finish (`restoreShipPositionAfterXCard`) puts
 back the latest position no removed narration wrote — an empty one when
 there is none — and moves the sector token with it; SHIP POSITION kept
-naming the removed destination (issue #325 W07). If that
-part fails the pause is still written. After the write the cards are flagged
+naming the removed destination (issue #325 W07). So is what the narration's
+**capture** recorded (issue #329 X01): every capture entry point
+(`runPostNarrationPasses`, `schedulePacedDetection` /
+`schedulePacedTierUpdate`, `scheduleNarrationCapture` /
+`runNarrationTierUpdate`, the inciting capture) hands the narration's id to
+`routeWorldJournalResults` and the tier pass, which stamp it on each Lore /
+Threat / Faction / Location entry (an entry it rewrote keeps the versions
+before as `previous`, newest first, up to three), Session Log beat and tier
+detail; the X-Card's finish (`retractNarrationCapture`, `retractions.js` →
+`undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
+retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
+threat, faction or place page, takes the beats off the Session Log page and
+drops the tier details — most of these restate no sidecar truth, so
+`propagateRetraction` never reached them. A state transition the capture
+applies to an entry it did not make — a threat resolved or escalated
+(`updateThreatSeverity`), lore confirmed (`promoteLoreToConfirmed`), a
+faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
+put back with it; the stance an attitude moved on the faction's record (the
+canonical stance, `recordStance` before → after) is put back too, where the
+record still holds what the narration set (known-issues
+XCARD-CAPTURE-TRANSITIONS). If that part fails the pause is still written. After the write the cards are flagged
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
 `propagateRetraction`. Readers: the ring and the rolling summary skip
 `xCarded` cards (`sessionNarratorCards`), the session recap keeps the move
@@ -280,7 +299,9 @@ galley vignette) run once per session id: `applyBeginSession` stamps
 `sessionStartedId`, and a second Begin on that session posts a note instead
 (the dialog does not open for it) — issue #300 F11. Begin works on a copy of
 the stored value, so a refused save leaves the GM's cache unbegun and a retry
-starts the session (issue #309 N09). End a Session's effects (scene close,
+starts the session (issue #309 N09) — and the table is told: the GM posts "The
+session was not started … No momentum was applied … Try Begin a Session
+again" where the Begin card is (issue #329 X13). End a Session's effects (scene close,
 summary, Session Log, the focus momentum, the closing vignette) run once per
 session id too: `applyEndSession` runs one End at a time on the canonical GM,
 and an End on a session already ended only replaces the focus for next

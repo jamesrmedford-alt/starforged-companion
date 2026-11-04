@@ -55,9 +55,8 @@ Two cross-cutting facts to hold onto:
   (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS). The
-  threshold card's **Enter the Fray** still uses its older ad-hoc relay
-  (socket kind `combat.enterFray` on `module.starforged-companion`, handled on
-  the canonical GM — no no-GM warning).
+  threshold card's buttons relay `combat.threshold` to the canonical GM (its
+  older ad-hoc `combat.enterFray` socket is retired — issue #329 X06).
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the
   Starforged Progress Tracks journal flag), not on the Foundry Combat document.
   The Combat document (combat tracker) is a UI mirror, created/deleted
@@ -86,9 +85,17 @@ does **not** create a track. If no matching open combat track exists (`selectCom
   in control / in a bad spot") when Enter the Fray's own outcome set one;
 - **⚔ Enter the Fray** and **🚪 Find another way** buttons.
 
-**Enter the Fray** reads rank/vow/objective (+ the carried position) from the
-card and creates the track on the canonical GM (socket kind `combat.enterFray`
-relays player clicks). `createCombatTrackFromThreshold` → `applyCombatProgress`
+**One choice per card** (issue #329 X06): both buttons relay
+`combat.threshold` to the canonical GM (`cardActions.applyCombatThresholdChoice`),
+which claims the GM-authored card (`thresholdTaken`: `"fray"` | `"wayOut"`)
+behind an in-flight guard before acting, and a claimed card renders both
+buttons disabled on every client — they were disabled in the clicker's DOM
+only, so a re-render or another client posted a second way-out card, or began
+a won fight again. An effect that does not land releases the claim.
+**Enter the Fray** takes the presser's rank, vow (one the card's picker
+offers) and objective, with the card's own label, carried position and
+roller, and creates the track (its id recorded on the card,
+`thresholdTrackId`). `createCombatTrackFromThreshold` → `applyCombatProgress`
 (`beginsFight: true` — a new foe is a new fight however many are open, issue
 #321 U16) → `addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
 `linkedVowName`, and gets its `combatState` set from the carried position via
@@ -98,7 +105,8 @@ the actor's sheet field, and the combatant badge). A combat-track card posts
 track's `trackId` / `trackLabel`, which Battle forwards) and the Foundry Combat
 doc opens with position/range badges.
 
-**Find another way** posts the way-out card: the `WAY_OUT_PROMPT` nudge plus
+**Find another way** posts the way-out card (from the canonical GM, once per
+threshold card): the `WAY_OUT_PROMPT` nudge plus
 one-click **Face Danger / Compel / Secure an Advantage** buttons
 (`WAY_OUT_MOVES` / `buildWayOutHtml`), each posting the forced move so
 choosing an exit rolls it (2026-07 soft-spot cleanup — it used to be
@@ -211,7 +219,10 @@ pipeline's `moveFight` as `combatTrackId` / `combatTrackLabel`, and
 `forcedMoveTarget`, so with two fights open the roll scores that fight — it
 posted no target, scored nothing and was a certain miss
 (TDA-BUTTON-NO-TARGET). A card whose fight nothing named (or one posted
-before the stamp) posts no target and resolves the sole open fight. A TDA
+before the stamp) posts no target and resolves the sole open fight. The
+forced post speaks as the card's roller (its `actorId`,
+`cardRollerSpeaker`), whoever presses it: a GM's press rolled as the
+campaign's first PC — their position, their +1 momentum (issue #329 X05). A TDA
 that names no fight while two or more are open — typed narration, or such a
 card — is not rolled: the pipeline posts a **Which fight?** card instead
 (`postWhichFightCard`, flagged `whichFightCard` with the open fights' ids and
@@ -268,7 +279,10 @@ weak-hit win −1, min 1), each mark adding ticks by the *vow's* rank
 `applyReachMilestone` → `markVowProgress`) on the vow's **holder** — the
 card's roller when they hold a copy, else the PC holding the resolved vow
 (`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
-`fulfill_your_vow` bridge, which scores the vow's real item ticks) and
+`fulfill_your_vow` bridge, which scores the vow's real item ticks — spoken as
+the card's roller, with their copy of the vow by its Item id, issue #329
+X05; relayed `fulfilVow.attempt` and claimed once on the card,
+`fulfilAttempted` — the roller's player or a GM may press it) and
 **🤝 Deepen your bond** when the vow links a connection
 (`deepenVowConnectionOnce` → `deepenLinkedConnection`, scaled by the vow's
 rank). A vow deepens its connection once (issue #326 D1): the press is

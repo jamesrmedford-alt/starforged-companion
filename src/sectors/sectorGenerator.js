@@ -507,16 +507,6 @@ export async function storeSector(sector, extras, campaignState) {
   if (campaignState === undefined) {
     campaignState = extras ?? {};
   }
-  // Defensive init — Quench test mock predates these fields in CampaignStateSchema.
-  campaignState.sectors     ??= [];
-  campaignState.locationIds ??= [];
-  // createEntityJournals pre-registers a {id, name} stub so the actor-folder
-  // helpers can resolve the per-sector folder before any settlement is
-  // created (F4). Replace that stub in-place rather than push-and-duplicate.
-  const stubIdx = campaignState.sectors.findIndex(s => s?.id === stored.id);
-  if (stubIdx >= 0) campaignState.sectors[stubIdx] = stored;
-  else              campaignState.sectors.push(stored);
-  campaignState.activeSectorId = stored.id;
 
   // §3.5: saveSectorToJournal removed — no production code read the
   // "Starforged Sectors" JournalEntry flag, and campaignState.sectors[] is
@@ -538,9 +528,33 @@ export async function storeSector(sector, extras, campaignState) {
     }
   }
 
+  // The record and the active sector reach the caller's object only once the
+  // world has taken them: set before the write, a refusal left the GM's
+  // cached campaignState claiming the sector, and the retry found it "already
+  // stored" there and wrote nothing (issue #329 X11).
   await persistSectorOntoStore(stored, campaignState);
+  applyStoredSector(campaignState, stored);
 
   return stored;
+}
+
+/**
+ * Put a sector the world has stored onto the caller's campaignState: its
+ * record (replacing the {id, name} stub createEntityJournals registered so
+ * the actor-folder helpers could resolve the sector's folder — F4) and the
+ * active sector.
+ *
+ * @param {Object} campaignState
+ * @param {Object} stored
+ */
+function applyStoredSector(campaignState, stored) {
+  // Defensive init — Quench test mock predates these fields in CampaignStateSchema.
+  campaignState.sectors     ??= [];
+  campaignState.locationIds ??= [];
+  const stubIdx = campaignState.sectors.findIndex(s => s?.id === stored.id);
+  if (stubIdx >= 0) campaignState.sectors[stubIdx] = stored;
+  else              campaignState.sectors.push(stored);
+  campaignState.activeSectorId = stored.id;
 }
 
 /**

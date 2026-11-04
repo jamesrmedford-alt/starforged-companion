@@ -115,7 +115,7 @@ import {
   registerShipMapSceneHooks,
 } from "./moves/shipMapScene.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack, selectRollerFight } from "./moves/combat.js";
-import { buildCombatThresholdHtml, buildWayOutHtml, WAY_OUT_MOVES, thresholdPositionLine } from "./moves/combatThreshold.js";
+import { buildCombatThresholdHtml, WAY_OUT_MOVES, thresholdPositionLine } from "./moves/combatThreshold.js";
 import {
   enterCombatTracker,
   endCombatTracker,
@@ -173,7 +173,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 import { resolveRelevance, wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
-import { rollSessionIfDue, registerSessionActivityHook, SESSION_MINT_FIELDS } from "./session/lifecycle.js";
+import { rollSessionIfDue, registerSessionActivityHook, SESSION_MINT_FIELDS, isSessionActive } from "./session/lifecycle.js";
 import { getCurrentSiteKind } from "./entities/location.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
@@ -655,7 +655,10 @@ async function handleSceneQueryCommand(message) {
     console.debug(`${MODULE_ID} | @scene: empty question — nothing to ask.`);
     return;
   }
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A working copy: the answer mints a scene and applies its sidecar on the
+  // object it is given, and a refused write must leave this client's cached
+  // setting as the world has it (issue #329 X09).
+  const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
   resetRecentDensity();
   // Full speaker resolution (token selection → bound character →
   // ownership → fallback) — the bound-character-only read this
@@ -747,7 +750,8 @@ async function handleBattleStationsCommand() {
  *
  * A forced move a claimed card button posted (`deferWhileBusy`) that arrives
  * while another move holds the lock is held and run when the lock frees —
- * see deferForcedMove (issue #325 W02).
+ * see deferForcedMove (issue #325 W02) — and one that arrives before a
+ * session has begun is held until one does (issue #329 X14).
  */
 export function registerChatHook() {
   const onMessage = async (message) => {
@@ -777,18 +781,28 @@ export function registerChatHook() {
     // !oracle yes, !pay-the-price, !lore — all caught by earlier
     // predicates above) without burning Claude credit on every chat
     // message during setup. See `src/session/lifecycle.js`.
+    // The author is told why nothing happened (issue #329 X14): the line just
+    // sat in chat, and a card button's forced move vanished. A claimed card's
+    // forced move is held until a session begins, as the move lock holds it
+    // (issue #325 W02) — its button reads taken everywhere.
+    let sessionActive = true;
     try {
-      const { isSessionActive } = await import("./session/lifecycle.js");
-      const cs = game.settings.get(MODULE_ID, "campaignState");
-      if (!isSessionActive(cs)) return;
+      sessionActive = isSessionActive(game.settings.get(MODULE_ID, "campaignState"));
     } catch (err) {
-      // Defensive: if the import or read fails, fail-OPEN — treat the
-      // session as active and run the pipeline. The downside of
-      // fail-closed is "narration completely stops working on a
-      // module-load edge case", which is worse than "pre-session
-      // narration runs once".
+      // Defensive: if the read fails, fail-OPEN — treat the session as
+      // active and run the pipeline. The downside of fail-closed is
+      // "narration completely stops working on a module-load edge case",
+      // which is worse than "pre-session narration runs once".
       console.warn(`${MODULE_ID} | session-active gate check failed (failing open):`, err?.message ?? err);
     }
+    if (!sessionActive) {
+      const held = message.flags?.[MODULE_ID]?.deferWhileBusy === true;
+      if (held) deferForcedMove(message, { untilSession: true });
+      await postSessionGateNotice(message, { held }).catch(err =>
+        console.warn(`${MODULE_ID} | the no-session notice failed:`, err?.message ?? err));
+      return;
+    }
+    _sessionGateTold.clear();
 
     // Resolve the speaking player's character — message.author.character
     // first, then ownership scan, then campaignState fallback. Pre-gate,
@@ -894,9 +908,13 @@ export function registerChatHook() {
     // Claim the lock before any async work so other clients see it immediately.
     // The claimant rides it: if their browser goes, the next canonical GM
     // releases a lock nobody holds (releaseLockOfDisconnectedGM, issue #325
-    // W25).
+    // W25). So does the claim's own token: this pipeline releases the lock
+    // only while the store still holds this claim — after a handover its GM
+    // may have claimed it again for a later move (issue #329 X08).
+    const lockClaim = foundry.utils.randomID();
     campaignState.pendingMove = true;
     campaignState.pendingMoveBy = game.user?.id ?? null;
+    campaignState.pendingMoveClaim = lockClaim;
     try {
       await game.settings.set(MODULE_ID, "campaignState", campaignState);
     } catch (err) {
@@ -905,6 +923,7 @@ export function registerChatHook() {
       // refused every later move here until a reload (issue #302).
       campaignState.pendingMove = false;
       campaignState.pendingMoveBy = null;
+      campaignState.pendingMoveClaim = null;
       console.error(`${MODULE_ID} | could not claim the move lock:`, err);
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
       return;
@@ -1596,7 +1615,7 @@ export function registerChatHook() {
       // them when the player burns momentum to upgrade the outcome.
       let ptpReversals = null;
       if (resolution.consequences?.routePayThePrice && game.user.isGM) {
-        const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null).catch(err => {
+        const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null).catch(err => {
           console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
           return null;
         });
@@ -1744,7 +1763,7 @@ export function registerChatHook() {
         // (known-issues PLAYTEST-1712 M/N, fixed here). The finally below
         // releases for the throw / cancelled-confirm paths, and retries a
         // release that was refused here.
-        lockReleased = await releasePendingMoveLock();
+        lockReleased = await releasePendingMoveLock(lockClaim);
 
         // Auto-apply asset consequence riders from this outcome — meters and
         // progress — so the player never adjusts resources by hand. Runs after
@@ -1766,7 +1785,7 @@ export function registerChatHook() {
       // dialog was cancelled before the success-path release above ran, or
       // that release was refused. Never once it has landed: a later move may
       // hold the lock by now (issue #315 S01).
-      if (!lockReleased) await releasePendingMoveLock();
+      if (!lockReleased) await releasePendingMoveLock(lockClaim);
     }
   };
   Hooks.on("createChatMessage", onMessage);
@@ -1834,15 +1853,53 @@ const _drainedForcedMoves = new Set();
  *
  * @param {ChatMessage} message — carries `flags[MODULE_ID].deferWhileBusy`
  */
-function deferForcedMove(message) {
+function deferForcedMove(message, { untilSession = false } = {}) {
   const id = message?.id ?? null;
   if (!id || _deferredForcedMoves.includes(id)) return;
   if (_drainedForcedMoves.has(id)) _deferredForcedMoves.unshift(id);
   else _deferredForcedMoves.push(id);
-  ui?.notifications?.info(
-    "Starforged Companion: A move is already being resolved — the next one will be rolled when it completes.",
-    { permanent: false },
-  );
+  ui?.notifications?.info(untilSession
+    ? "Starforged Companion: No session has begun — the move will be rolled once Begin a Session starts one."
+    : "Starforged Companion: A move is already being resolved — the next one will be rolled when it completes.",
+  { permanent: false });
+}
+
+// Authors told — since a message last passed the session gate — that no
+// session has begun: one notice each for their typed lines, not one per line.
+const _sessionGateTold = new Set();
+
+/**
+ * Tell the author of a message the session gate stopped why nothing happened
+ * (issue #329 X14 — the line sat in chat, and a card button's forced move
+ * vanished, with no word and not even a console line): whispered to the
+ * author and the GMs. A typed line's author is told once until a message
+ * passes the gate again; a button's forced move is told every time.
+ *
+ * @param {ChatMessage} message
+ * @param {{ held?: boolean }} [opts] — the forced move is held until a session begins
+ * @returns {Promise<void>}
+ */
+async function postSessionGateNotice(message, { held = false } = {}) {
+  const forced   = !!message?.flags?.[MODULE_ID]?.forcedMoveId;
+  const authorId = messageAuthorId(message);
+  if (!forced) {
+    if (authorId && _sessionGateTold.has(authorId)) {
+      console.debug(`${MODULE_ID} | session gate: no session has begun — line not narrated (its author was told).`);
+      return;
+    }
+    if (authorId) _sessionGateTold.add(authorId);
+  }
+  const how = "Begin a Session (the Session panel, or <code>!begin-session</code>)";
+  const body = !forced
+    ? `No session has begun, so this was not narrated and no move was rolled. Press ${how} to start play.`
+    : held
+      ? `No session has begun — this move will be rolled once ${how} starts one.`
+      : `This move was not rolled: no session has begun. Press ${how}, then press the button again.`;
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>No session has begun</strong><p>${body}</p></div>`,
+    whisper: [...new Set([authorId, ...gmUserIds()].filter(Boolean))],
+    flags:   { [MODULE_ID]: { sessionGateNotice: true } },
+  });
 }
 
 /**
@@ -1857,7 +1914,10 @@ function deferForcedMove(message) {
 function drainDeferredForcedMoves(setting, runPipeline) {
   if (setting?.key !== `${MODULE_ID}.campaignState`) return;
   if (!_deferredForcedMoves.length || !isCanonicalGM()) return;
-  if (game.settings.get(MODULE_ID, "campaignState")?.pendingMove) return;
+  const state = game.settings.get(MODULE_ID, "campaignState");
+  if (state?.pendingMove) return;
+  // Held until a session begins: the gate would only hold it again (issue #329 X14).
+  if (!isSessionActive(state)) return;
   let message = null;
   while (!message && _deferredForcedMoves.length) {
     const id = _deferredForcedMoves.shift();
@@ -2084,7 +2144,7 @@ async function applyOutcomeEffects({
             console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
           }
         }
-        await postExpeditionProgressCard(result).catch(err =>
+        await postExpeditionProgressCard({ ...result, actorId: rollerActor?.id ?? null }).catch(err =>
           console.warn(`${MODULE_ID} | expedition progress card failed:`, err?.message ?? err));
         applied.push(`progress marked on the ${result.track.label ?? "expedition"} expedition`);
       }
@@ -2471,16 +2531,29 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * during the pipeline (entity records, progress ticks, recap caches).
  * World-scoped write → effective on the GM client only.
  *
- * @returns {Promise<boolean>} whether the lock is free now — false when the
- *   release was refused (the caller retries it)
+ * A pipeline passes its claim's token: it releases the lock only while the
+ * store still holds that claim. Its lock may have been released while its GM
+ * was away (the W25 handover) and claimed again, by that GM, for a later
+ * move — whose lock the returning pipeline used to clear mid-narration,
+ * letting a third pipeline run beside it (issue #329 X08). A lock from before
+ * claims carried a token is released as before. The handover and the ready
+ * reset release without a token, unconditionally.
+ *
+ * @param {string|null} [claim] — the releasing pipeline's `pendingMoveClaim`
+ * @returns {Promise<boolean>} whether the lock is free now, or no longer this
+ *   claim's — false when the release was refused (the caller retries it)
  */
-export async function releasePendingMoveLock() {
+export async function releasePendingMoveLock(claim = null) {
   const latestState = game.settings.get(MODULE_ID, "campaignState");
   if (!latestState?.pendingMove) return true;   // already released — cheap no-op
+  if (claim && latestState.pendingMoveClaim && latestState.pendingMoveClaim !== claim) {
+    console.debug?.(`${MODULE_ID} | the move lock is another move's claim now — not released.`);
+    return true;
+  }
   // Write a copy: `get` returns this client's cached value, and clearing the
   // flag on it before a write that failed made the retry (the pipeline's
   // finally) read "released" and skip — the world kept the lock (issue #302).
-  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false, pendingMoveBy: null }).then(() => true, err => {
+  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false, pendingMoveBy: null, pendingMoveClaim: null }).then(() => true, err => {
     console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err);
     return false;
   });
@@ -3380,20 +3453,31 @@ async function handleSceneCommand(message) {
   const verb = /^!scene\s+(start|end)\b/i.exec(text)?.[1]?.toLowerCase();
   if (verb !== "start" && verb !== "end") return;
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A working copy: startScene / endScene set or clear the scene fields on
+  // the object they are given before their write, and a write the world
+  // refused left this client's cache with a scene the world never opened (or
+  // closed one it kept) — the GM's next narration continued the phantom scene
+  // and its sidecar persist wrote it into the world (issue #329 X10).
+  const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+  const priorSceneId  = campaignState.currentSceneId ?? null;
+  const storedSceneId = () => game.settings.get(MODULE_ID, "campaignState")?.currentSceneId ?? null;
+  const notSaved = (what) => `Scene ${what} not saved — the world did not take the write. Try again.`;
 
   let resultLine = "";
   try {
     if (verb === "start") {
       const id = await startScene(campaignState, { reason: "scene_command" });
-      resultLine = id
-        ? `Scene started — <code>${id}</code>.`
-        : "Scene start failed.";
+      // The card says what the world holds: the write's refusal is only
+      // logged by the scene lifecycle.
+      resultLine = !id ? "Scene start failed."
+        : storedSceneId() !== id ? notSaved("start")
+        : `Scene started — <code>${id}</code>.`;
     } else {
       const summary = await endScene(campaignState, { reason: "scene_command" });
-      resultLine =
-        `Scene ended — migrated ${summary.migrated} entity truth${summary.migrated === 1 ? "" : "s"}, ` +
-        `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}.`;
+      resultLine = priorSceneId && storedSceneId() === priorSceneId
+        ? notSaved("end")
+        : `Scene ended — migrated ${summary.migrated} entity truth${summary.migrated === 1 ? "" : "s"}, ` +
+          `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}.`;
     }
   } catch (err) {
     console.error(`${MODULE_ID} | handleSceneCommand failed:`, err);
@@ -3915,9 +3999,11 @@ async function postSetACourseFeedbackCard(destination, resolution) {
  * the player they can re-rank it in the Progress Tracks panel (the inference
  * is a best guess, so it stays cheap to correct). See moves/expedition.js.
  *
- * @param {{ track: Object, created: boolean }} result
+ * @param {{ track: Object, created: boolean, actorId?: string|null }} result —
+ *   `actorId`: the PC who marked the progress; the card's 🗺 Finish posts as
+ *   them, whoever presses it (issue #329 X05)
  */
-async function postExpeditionProgressCard({ track, created }) {
+async function postExpeditionProgressCard({ track, created, actorId = null }) {
   const label = escapeChatHtml(track?.label ?? "Expedition");
   const rank  = escapeChatHtml(String(track?.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
   const boxes = Math.floor(Number(track?.ticks ?? 0) / 4);
@@ -3934,7 +4020,7 @@ async function postExpeditionProgressCard({ track, created }) {
       // forcedMoveTargetId / forcedMoveTarget so the finish roll resolves THIS
       // expedition even with several open, same-named ones included
       // (EXPEDITION-FINISH-TARGET fix; issue #306 R06).
-      flags:   { [MODULE_ID]: { expeditionProgressCard: true, created: created === true, trackLabel: track?.label ?? null, trackId: track?.id ?? null } },
+      flags:   { [MODULE_ID]: { expeditionProgressCard: true, created: created === true, trackLabel: track?.label ?? null, trackId: track?.id ?? null, actorId } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postExpeditionProgressCard: chat post failed:`, err?.message ?? err);
@@ -4354,64 +4440,48 @@ export async function createCombatTrackFromThreshold({ label, rank, vowName, obj
   return result;
 }
 
-// Wire the threshold card's buttons. Enter the Fray is a privileged world write
-// (creates a track), so non-canonical clients relay to the GM over the module
-// socket; the way out just posts a narration nudge (any client may post chat).
+// Wire the threshold card's buttons. One choice per card, claimed on the
+// canonical GM (relayed "combat.threshold" → cardActions.applyCombatThresholdChoice,
+// issue #329 X06): Enter the Fray creates the fight's track, Find another way
+// posts the way-out card. A card already taken renders both disabled; a press
+// that is not delivered (no GM) re-arms them. The presser's rank, vow and
+// objective ride the relay; the label, carried position and roller are the
+// card's own.
 function registerCombatThresholdHook() {
   if (registerCombatThresholdHook._installed) return;
   registerCombatThresholdHook._installed = true;
   onChatMessageRender((message, root) => {
     if (!message?.flags?.[MODULE_ID]?.combatThresholdCard) return;
-    const enterBtn = root.querySelector('[data-action="sf-enter-fray"]');
-    const wayBtn   = root.querySelector('[data-action="sf-way-out"]');
-    const readChoice = () => ({
-      label:     message.flags[MODULE_ID].label ?? "the enemy",
-      rank:      root.querySelector('.sf-threshold-rank')?.value
-                 || root.querySelector('.sf-combat-threshold')?.dataset?.suggestedRank,
-      vowName:   root.querySelector('.sf-threshold-vow')?.value || "",
-      objective: root.querySelector('.sf-threshold-objective')?.value || "",
-      // Enter the Fray's carried opening position + whose sheet mirrors it —
-      // read at click time so a weak-hit choice stashed after the card posted
-      // (sufferDialog combat-position executor) is picked up too. The socket
-      // relay spreads the whole choice, so non-canonical clients carry it.
-      position:  message.flags[MODULE_ID].position ?? null,
-      actorId:   message.flags[MODULE_ID].actorId ?? null,
-    });
-    const disable = () => { if (enterBtn) enterBtn.disabled = true; if (wayBtn) wayBtn.disabled = true; };
-
-    if (enterBtn) {
-      const fresh = enterBtn.cloneNode(true);
-      enterBtn.replaceWith(fresh);
-      fresh.addEventListener("click", async (event) => {
-        event.preventDefault(); event.stopPropagation();
-        const choice = readChoice();
-        disable();
-        if (isCanonicalGM()) {
-          await createCombatTrackFromThreshold(choice).catch(err =>
-            console.warn(`${MODULE_ID} | enter the fray failed:`, err?.message ?? err));
-        } else {
-          try {
-            game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "combat.enterFray", ...choice });
-          } catch (err) {
-            console.warn(`${MODULE_ID} | enter-fray relay emit failed:`, err?.message ?? err);
-          }
-        }
-      });
+    const found = [["sf-enter-fray", "fray"], ["sf-way-out", "wayOut"]]
+      .map(([action, choice]) => ({ btn: root.querySelector(`[data-action="${action}"]`), choice }))
+      .filter(x => x.btn);
+    if (!found.length) return;
+    if (liveCardFlags(message)?.thresholdTaken) {
+      for (const { btn } of found) btn.disabled = true;
+      return;
     }
-    if (wayBtn) {
-      const freshWay = wayBtn.cloneNode(true);
-      wayBtn.replaceWith(freshWay);
-      freshWay.addEventListener("click", async (event) => {
+    const wired = found.map(({ btn, choice }) => {
+      const fresh = btn.cloneNode(true);
+      btn.replaceWith(fresh);
+      return { btn: fresh, choice };
+    });
+    const buttons = wired.map(w => w.btn);
+    for (const { btn, choice } of wired) {
+      btn.addEventListener("click", async (event) => {
         event.preventDefault(); event.stopPropagation();
-        disable();
-        try {
-          await ChatMessage.create({
-            content: buildWayOutHtml(),
-            flags:   { [MODULE_ID]: { wayOutCard: true } },
-          });
-        } catch (err) {
-          console.warn(`${MODULE_ID} | way-out card failed:`, err?.message ?? err);
-        }
+        const input = {
+          rank:      root.querySelector('.sf-threshold-rank')?.value
+                     || root.querySelector('.sf-combat-threshold')?.dataset?.suggestedRank,
+          vowName:   root.querySelector('.sf-threshold-vow')?.value || "",
+          objective: root.querySelector('.sf-threshold-objective')?.value || "",
+        };
+        for (const b of buttons) b.disabled = true;
+        await relayCardAction({
+          kind:       "combat.threshold",
+          payload:    { messageId: message?.id ?? null, choice, ...input },
+          isResolved: () => !!liveCardFlags(message)?.thresholdTaken,
+          restore:    () => { for (const b of buttons) b.disabled = false; },
+        });
       });
     }
   });
@@ -4452,22 +4522,6 @@ function registerWayOutHook() {
           restore:    () => buttons().forEach(b => { b.disabled = false; }),
         });
       });
-    }
-  });
-}
-
-// GM-side socket: a non-canonical client chose Enter the Fray; create the track.
-function registerCombatThresholdSocket() {
-  if (registerCombatThresholdSocket._installed) return;
-  if (!game?.socket?.on) return;
-  registerCombatThresholdSocket._installed = true;
-  game.socket.on(`module.${MODULE_ID}`, async (payload) => {
-    try {
-      if (!payload || payload.kind !== "combat.enterFray") return;
-      if (!isCanonicalGM()) return;
-      await createCombatTrackFromThreshold(payload);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | enter-fray socket handler failed:`, err?.message ?? err);
     }
   });
 }
@@ -5474,8 +5528,8 @@ function registerFightVowMilestoneHook() {
  * src/moves/cardActions.js), which applies the card's own values once and
  * stamps `resolvedActions.<action>`; an action already applied renders
  * disabled, and a click that is not delivered (no GM) re-arms its button.
- * "🏁 Attempt to Fulfill" posts the existing fulfill_your_vow bridge (the
- * pipeline handles it).
+ * "🏁 Attempt to Fulfill" relays too ("fulfilVow.attempt" — wireFulfilAttempt):
+ * the GM claims the card and posts the roller's Fulfill Your Vow once.
  *
  * Exported for unit testing.
  */
@@ -5516,21 +5570,7 @@ export function wireFightVowButtons(message, root) {
 
   wireRelay("sf-mark-milestone", "fightVow.markMilestone", "markMilestone");
   wireRelay("sf-deepen-bond",    "fightVow.deepenBond",    "deepenBond");
-
-  const fulfilBtn = root?.querySelector?.('[data-action="sf-fulfill-vow"]');
-  if (fulfilBtn && !fulfilBtn.disabled) {
-    const fresh = fulfilBtn.cloneNode(true);
-    fulfilBtn.replaceWith(fresh);
-    fresh.addEventListener("click", async (event) => {
-      event.preventDefault(); event.stopPropagation();
-      fresh.disabled = true;
-      await ChatMessage.create({
-        content: "Attempt to fulfill your vow.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "fulfill_your_vow", forcedMoveTarget: f.vowName ?? null } },
-      }).catch(err =>
-        console.warn(`${MODULE_ID} | fight-vow action failed:`, err?.message ?? err));
-    });
-  }
+  wireFulfilAttempt(message, root, "sf-fulfill-vow");
 }
 
 // The live module flags of a rendered card — the ChatMessage in game.messages
@@ -5538,6 +5578,24 @@ export function wireFightVowButtons(message, root) {
 function liveCardFlags(message) {
   const live = message?.id ? (game.messages?.get?.(message.id) ?? null) : null;
   return (live ?? message)?.flags?.[MODULE_ID] ?? null;
+}
+
+/**
+ * The speaker a card's forced follow-up posts as: the card's roller (its
+ * `actorId`), whoever presses the button. The pipeline credits a message's
+ * speaker — with none, its author, and a GM's press fell to the campaign's
+ * first PC: 🏁 scored and paid that PC's vow, ⚔ rolled Take Decisive Action
+ * with their position and momentum (issue #329 X05; decisions.md →
+ * "Multiplayer attribution"). Nothing when the card names no roller (an older
+ * card): the author's, as before. (The 🏁 buttons relay to the GM, which
+ * speaks as the roller itself — cardActions.applyAttemptFulfilVow.)
+ *
+ * @param {ChatMessage} message — the card
+ * @returns {{ speaker?: { actor: string } }}
+ */
+function cardRollerSpeaker(message) {
+  const actorId = message?.flags?.[MODULE_ID]?.actorId;
+  return typeof actorId === "string" && actorId ? { speaker: { actor: actorId } } : {};
 }
 
 async function postCombatTrackCard({ track, created }) {
@@ -5788,9 +5846,12 @@ async function postDecisiveActionCostCard(actorId = null) {
  *
  * @param {string|null} actorId — the roller
  * @param {string|null} moveName — the move that paid it ("Face Danger")
+ * @param {string|null} [resolutionId] — the move's resolution: a choice the
+ *   price leaves the player (Endure Harm / Stress at 0 — issue #329 X03) is
+ *   bound to it, so an upgrade of the move retires it
  * @returns {Promise<{ reversals: Object, price: string }|null>}
  */
-async function postMovePayThePriceCard(actorId = null, moveName = null) {
+async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null) {
   const { rollOracle } = await import("./oracles/roller.js");
   let result;
   try {
@@ -5824,7 +5885,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null) {
   // Dispatch the suffer executors first (before clock advance) so meter changes
   // land before the burn button is visible. The receipts are what landed — each
   // route's — so the upgrade reversal undoes only that.
-  const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`);
+  const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`, { resolutionId });
   const sufferMeterDeltas = landed.flatMap(ptpMeterReceipts);
 
   const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
@@ -5978,10 +6039,10 @@ export async function applyPayThePriceSufferFromRelay(payload = {}, ctx = {}) {
   return { applied: true, landed };
 }
 
-async function dispatchPayThePriceSufferRoutes(routes, actorId, where) {
+async function dispatchPayThePriceSufferRoutes(routes, actorId, where, { resolutionId = null } = {}) {
   const landed = [];
   for (const route of routes ?? []) {
-    const res = await dispatchPayThePriceSufferRoute(route, actorId).catch(err => {
+    const res = await dispatchPayThePriceSufferRoute(route, actorId, { resolutionId }).catch(err => {
       console.warn(`${MODULE_ID} | ${where}: suffer dispatch (${route?.move}) failed:`, err?.message ?? err);
       return null;
     });
@@ -6004,11 +6065,14 @@ async function dispatchPayThePriceSufferRoutes(routes, actorId, where) {
  *
  * @param {{ move: string, amount: number, soloFallback?: string }} route
  * @param {string|null} [actorId]
+ * @param {{ resolutionId?: string|null }} [opts] — the move that paid the
+ *   price: the at-0 choice an Endure Harm / Stress leaves is bound to it
+ *   (issue #329 X03)
  * @returns {Promise<Object|undefined>} the executor's result with the move it
  *   ran (`move` — the fallback, when taken) and the PC (`actorId`); nothing
  *   for an "any" route, which posts a picker
  */
-async function dispatchPayThePriceSufferRoute(route, actorId = null) {
+async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutionId = null } = {}) {
   const { executeSuffer } = await import("./moves/sufferExecutor.js");
 
   const actor = (actorId ? game.actors?.get?.(actorId) : null) ?? getPlayerActors()[0] ?? null;
@@ -6047,6 +6111,7 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null) {
     amount: route.amount ?? 1,
     itemId,
     isMiss: true,  // Pay the Price always implies a miss context.
+    resolutionId,
   });
   return { ...landed, move, actorId: actor.id };
 }
@@ -6950,6 +7015,7 @@ Hooks.once("ready", () => {
     if (prevState.pendingMove) {
       prevState.pendingMove = false;
       prevState.pendingMoveBy = null;
+      prevState.pendingMoveClaim = null;
       console.log(`${MODULE_ID} | Reset stale pendingMove lock on ready`);
     }
 
@@ -6965,7 +7031,7 @@ Hooks.once("ready", () => {
     // scene fields itself.
     initSessionId(prevState).then(updated =>
       game.settings.set(MODULE_ID, "campaignState",
-        mergeOwnedFields(updated, ["pendingMove", "pendingMoveBy", ...SESSION_MINT_FIELDS], "session start")),
+        mergeOwnedFields(updated, ["pendingMove", "pendingMoveBy", "pendingMoveClaim", ...SESSION_MINT_FIELDS], "session start")),
     ).then(async () => {
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: post campaign recap when a new session is detected
@@ -7053,7 +7119,7 @@ Hooks.once("ready", () => {
     // These migrations write world documents: the canonical GM runs them —
     // two GMs whose clients reconnected together each ran them (issue #326
     // W54). The help journal, macros and World Journal gate themselves.
-    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames }) => {
+    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames, moveRecordNotesToSheets }) => {
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
@@ -7104,6 +7170,17 @@ Hooks.once("ready", () => {
         }
       } catch (err) {
         console.warn(`${MODULE_ID} | entity name sync failed:`, err?.message ?? err);
+      }
+      try {
+        // Known-issues NOTES-PROMOTED-BEFORE — a detail promoted to an NPC
+        // card's or ship's record notes before issue #329 X12 made the sheet's
+        // Notes tab canonical moves to the tab, where it is shown again.
+        const notes = await moveRecordNotesToSheets();
+        if (notes.moved || notes.cleared) {
+          console.log(`${MODULE_ID} | record notes: moved ${notes.moved} card(s)' promoted details to the Notes tab, cleared ${notes.cleared} duplicate copy(ies)`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | record notes move failed:`, err?.message ?? err);
       }
     }).catch(err => console.warn(`${MODULE_ID} | sector-folder flatten dynamic import failed:`, err));
   }
@@ -7162,7 +7239,6 @@ Hooks.once("ready", () => {
   // Combat threshold (#241) — Enter the Fray vs. way out: button wiring + the
   // GM-side enter-fray relay (track creation is GM-gated).
   registerCombatThresholdHook();
-  registerCombatThresholdSocket();
   registerWayOutHook();
   // Recommit relays through gmRelay "expedition.recommit" (issue #321 U20).
   registerRecommitHook();
@@ -7398,6 +7474,7 @@ export function wireTakeDecisiveActionButton(message, root) {
         content: trackLabel
           ? `Take decisive action to seize the objective — ${trackLabel}.`
           : "Take decisive action to seize the objective.",
+        ...cardRollerSpeaker(message),
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: "take_decisive_action",
           ...(trackId ? { forcedMoveTargetId: trackId } : {}),
@@ -7598,35 +7675,47 @@ onChatMessageRender((message, root) => wireMilestonePickerButtons(message, root)
 /**
  * Wire the "🏁 Attempt to Fulfill Vow" button on move-result cards.
  * Appears alongside "Mark Progress on Vow" when a vow milestone is eligible.
- * Clicking posts a forced fulfill_your_vow move so the interpreter, narrator,
- * and pipeline handle the progress roll, narration, track closure, and quests
- * legacy reward automatically.
+ * A click relays to the canonical GM ("fulfilVow.attempt" →
+ * cardActions.applyAttemptFulfilVow), which claims the GM-authored card
+ * (`fulfilAttempted`) and posts the forced fulfill_your_vow once, as the
+ * card's roller, naming the roller's sole open vow (when the card was posted)
+ * by its Item id; with several, the pipeline asks which. The pipeline handles
+ * the progress roll, narration, track closure and the quests legacy reward.
  *
  * Exported so Quench can drive it with a synthetic message + root.
  */
 export function wireAttemptFulfillVowButton(message, root) {
-  const f = message?.flags?.[MODULE_ID];
-  if (!f?.milestoneSuggestion?.eligible) return;
-  const btn = root?.querySelector?.('[data-action="sf-attempt-fulfill-vow"]');
-  if (!btn) return;
+  if (!message?.flags?.[MODULE_ID]?.milestoneSuggestion?.eligible) return;
+  wireFulfilAttempt(message, root, "sf-attempt-fulfill-vow");
+}
+onChatMessageRender((message, root) => wireAttemptFulfillVowButton(message, root));
+
+// A card's "🏁 Attempt to Fulfill" (the move card's and the won-fight card's):
+// one press per card. The click disabled only the clicker's DOM button, so the
+// player and the GM — or one client after a re-render — each rolled the vow
+// again (known-issues FULFIL-BUTTON-LOCAL-DISABLE). It relays; a card already
+// pressed renders it disabled, and a click that is not delivered re-arms it.
+function wireFulfilAttempt(message, root, dataAction) {
+  const btn = root?.querySelector?.(`[data-action="${dataAction}"]`);
+  if (!btn || btn.disabled) return;
+  if (liveCardFlags(message)?.fulfilAttempted) {
+    btn.disabled = true;
+    return;
+  }
   const fresh = btn.cloneNode(true);
   btn.replaceWith(fresh);
   fresh.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
     fresh.disabled = true;
-    try {
-      await ChatMessage.create({
-        content: "Attempt to fulfill your vow.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "fulfill_your_vow" } },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | Attempt to Fulfill Vow button failed:`, err);
-      fresh.disabled = false;
-    }
+    await relayCardAction({
+      kind:       "fulfilVow.attempt",
+      payload:    { messageId: message?.id ?? null, actorId: clickerActorId() },
+      isResolved: () => !!liveCardFlags(message)?.fulfilAttempted,
+      restore:    () => { fresh.disabled = false; },
+    });
   });
 }
-onChatMessageRender((message, root) => wireAttemptFulfillVowButton(message, root));
 
 /**
  * Wire the "🗺 Finish the Expedition" button on expedition progress cards.
@@ -7655,6 +7744,7 @@ export function wireFinishExpeditionButton(message, root) {
       const trackId    = message.flags[MODULE_ID].trackId ?? null;
       await ChatMessage.create({
         content: trackLabel ? `Finish the expedition — ${trackLabel}.` : "Finish the expedition.",
+        ...cardRollerSpeaker(message),
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: "finish_an_expedition",
           ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),

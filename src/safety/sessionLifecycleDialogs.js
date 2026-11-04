@@ -215,6 +215,10 @@ async function beginSessionOnce(payload) {
     begun = true;
   } catch (err) {
     console.warn(`${MODULE_ID} | beginSession state flip failed — start effects skipped:`, err?.message ?? err);
+    // The table is told: the Begin card already posted ("scene set", "+1
+    // momentum") and the relay has no ack, so a refusal was silent on every
+    // client (issue #329 X13).
+    await postSessionNotStartedCard(vignetteRolled);
   }
   if (!begun) return;
 
@@ -261,7 +265,8 @@ async function beginSessionOnce(payload) {
         setTimeout(async () => {
           try {
             const { narrateClockAdvancement } = await import("../narration/narrator.js");
-            const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+            // A working copy — each vignette applies its sidecar on it (issue #329 X09).
+            const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
             for (const cd of advanced) {
               const narrationId = newNarrationId();
               const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId });
@@ -333,6 +338,21 @@ async function beginSessionOnce(payload) {
  *
  * @param {string|null} sessionId
  */
+/**
+ * Begin a Session's start write was refused: nothing began. Posted where the
+ * Begin card is, so its promise ("scene set", "+1 momentum") is not the last
+ * word (issue #329 X13 — End a Session reports its own write failure).
+ *
+ * @param {boolean} vignetteRolled — the card promised the vignette's momentum
+ */
+async function postSessionNotStartedCard(vignetteRolled) {
+  const momentum = vignetteRolled ? " No momentum was applied, and no clock advanced." : " No clock advanced.";
+  await ChatMessage.create({
+    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>The session was not started — the world did not save it.${momentum} Try Begin a Session again.</p></div>`,
+    flags:   { [MODULE_ID]: { sessionLifecycleCard: true, sessionNotStarted: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | Begin a Session: the not-started card failed:`, err?.message ?? err));
+}
+
 async function postSessionAlreadyBegunCard(sessionId = null) {
   const owed = outstandingSessionClocks(sessionId);
   const owedNote = owed.length

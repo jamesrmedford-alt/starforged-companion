@@ -267,7 +267,7 @@ to find each move's resolver branch.
 | Vehicle integrity read for Withstand Damage | ✅ | `src/moves/statEnrichment.js` (`integrity` stat) |
 | Companion-health stat | 🔄 | `src/moves/statEnrichment.js:133-197` — heuristic picks highest-health enabled Companion asset; multi-companion warning but no player picker |
 | Auto-mark wounded/shaken/unprepared on meter = 0 | ✅ | `src/moves/persistResolution.js:129-159` |
-| Mortal-wound / desolation / vehicle-damage tables | ❌ | Surfaced as text choices in `otherEffect` only — no roller |
+| Mortal-wound / desolation / vehicle-damage tables | ✅ | Endure Harm / Endure Stress at 0 on a miss post a choice card — mark the impact, mark the lasting one (permanently harmed / traumatized), or roll the table (`rollImpactTable`) — the player's one choice (`src/moves/sufferExecutor.js`, issue #329 X03), whichever miss option was taken ("-1 health" or "Lose Momentum (-2)" — ENDURE-ZERO-ON-OTHER-OPTION); Withstand Damage at 0 rolls the vehicle-damage d100 |
 | All 10 impacts auto-marked from move outcomes | 🔄 | Only wounded/shaken/unprepared automated; other 7 surface as text choices for manual marking |
 | Chronicle records narrative beats | ✅ | `src/character/chronicle.js`, `src/character/chronicleWriter.js`, `src/character/chroniclePanel.js`; entry types `revelation / relationship / vow / scar / legacy / annotation` |
 

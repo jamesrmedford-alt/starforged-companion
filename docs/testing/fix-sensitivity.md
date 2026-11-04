@@ -1,16 +1,16 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325 and #326
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326 and #329
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
-#300, #301, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325 and #326 audits and from issue #302's disturbance
+#300, #301, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326 and #329 audits and from issue #302's disturbance
 matrix (slice B): the tests that fail with the fix taken out. It was produced
 by `scripts/fix-sensitivity.mjs` on 2026-10-27 (the patch applied to
 `ec08eb4`), for issue #306 on 2026-10-28 (the patch applied to `8bee894`; for
 the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
 2026-10-29 (the patch applied to `fd17788`), for issue #311 on 2026-10-29, for
 issues #313, #314 and #315 on 2026-10-30, for issue #316 on 2026-10-31,
-for issues #321 and #322 on 2026-11-01 and for issues #325 and #326 on 2026-11-03. To
-reproduce:
+for issues #321 and #322 on 2026-11-01, for issues #325 and #326 on 2026-11-03 and for issue
+#329 — and the four fixes found while fixing it — on 2026-11-04. To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -114,6 +114,25 @@ node scripts/fix-sensitivity.mjs \
   e798d69 a890747 aa07659 04f8ede 4ba3f9d e313d2c b12b35e ee89103 b2a9762 \
   546a7b6 ced7270 70dc332 d5655f6 96d320e 7049b10 b17542d e157be0 e3f4ee0 \
   5004de1 a85398d cf27461 676aeb3 \
+  --md details.md
+
+# issue #329 (X04's is shown by hand: its test reads the vendored assets,
+# which the worktrees do not check out — as committed in d6c2de4 the file
+# failed to load there, so this command exits 1, on X04; 6026775 makes it
+# skip instead)
+node scripts/fix-sensitivity.mjs \
+  c1c3791 e488234 dc4d2bd d6c2de4 0726854 5e38a44 9badb9b ae7e50e 91cae82 \
+  9136c7b 77ed8bd f16e093 2310da9 a8deb17 \
+  --md details.md
+
+# issue #329 — the four found while fixing it (FULFIL-BUTTON-LOCAL-DISABLE,
+# ENDURE-ZERO-ON-OTHER-OPTION, XCARD-CAPTURE-TRANSITIONS, NOTES-PROMOTED-BEFORE)
+node scripts/fix-sensitivity.mjs \
+  9ef6fde a93ba76 f43d0bb 082196a \
+  --inject scripts/defects/notes-promoted-not-moved.patch \
+  --inject scripts/defects/notes-promoted-moved-twice.patch \
+  --inject scripts/defects/notes-promoted-html-resurrected.patch \
+  --inject scripts/defects/notes-promoted-any-client.patch \
   --md details.md
 ```
 
@@ -546,6 +565,50 @@ assertions fail on the behaviour.
 | D7 CLOSEWORLD-HANDLER | cf27461 | revert | 1 — `noCloseWorldHook.test.js` |
 | D8 PCLESS-PLAYER-FIRST-PC | 676aeb3 | revert | 1 — `pclessPlayerNotRolled.test.js` |
 
+### Issue #329 — the ninth audit, part 1
+
+Every fix commit is **sensitive**. One is shown by hand: **X04**'s test
+reads the vendored assets (its sweep covers every ability), which the
+script's worktrees do not check out — run with the data present and
+`src/moves/abilityScanner.js` restored from its parent, four of its six
+assertions fail (the two that pass are the control and the "When you must …"
+guard). **X06**'s two direct-handler tests fail under revert only on the
+missing `applyCombatThresholdChoice` export; its two re-render tests fail on
+the behaviour.
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| X01 XCARD-CAPTURE-NO-NARRATION-ID | c1c3791 | revert | 11 — `captureNarrationIdThreading.test.js` (5), `incitingIncident.test.js`, `xcardCaptureNarrationId.test.js` (5) |
+| X02 CONSISTENCY-CHECK-STALE-LEDGER | e488234 | revert | 4 — `consistencyCheckLiveLedger.test.js` (3), `consistencyCheckLiveLedgerPipeline.test.js` |
+| X03 ENDURE-AT-ZERO-MARK-AND-ROLL | dc4d2bd | revert | 13 — `endureAtZeroChoice.test.js` (9), `payThePriceRoutes.test.js`, `resultUpgrade.test.js`, `sufferExecutor.test.js` (2) |
+| X04 ASSET-ADD-ON-COST-MENTION | d6c2de4 | revert, by hand | 4 — `assetAddsCostMention.test.js` (4), run with the vendored assets present |
+| X05 CARD-REPOST-AS-CLICKER | 0726854 | revert | 9 — `cardButtonsRollerPipeline.test.js` (2), `cardRepostAsRoller.test.js` (6), `milestone.test.js` |
+| X06 THRESHOLD-CARD-NO-CLAIM | 5e38a44 | revert | 2 — `thresholdCardClaim.test.js` (2); 2 more fail only on a missing export |
+| X07 REWARD-LINK-REFUSED-WRITE | 9badb9b | revert | 4 — `rewardLinkRefusedWrite.test.js` (4) |
+| X08 MOVE-LOCK-RELEASED-BY-STALE-PIPELINE | ae7e50e | revert | 3 — `moveLockClaimToken.test.js` (3) |
+| X09 SIDECAR-APPLY-CACHED-MUTATE | 91cae82 | revert | 7 — `narrationCachedStoreWrites.test.js` (2), `narrationWorkingCopy.test.js` (5) |
+| X10 SCENE-COMMAND-CACHED-MUTATE | 9136c7b | revert | 3 — `sceneCommandCachedWrite.test.js` (3) |
+| X11 SECTOR-STORE-CACHED-MUTATE | 77ed8bd | revert | 2 — `sectorStoreCachedMutation.test.js` (2) |
+| X12 NOTES-SHEET-NOT-MIRRORED | f16e093 | revert | 6 — `entityPanelRelay.test.js`, `notesSheetCanonical.test.js` (5) |
+| X13 BEGIN-REFUSED-SILENT | 2310da9 | revert | 2 — `beginSessionRefusedWrite.test.js` (2) |
+| X14 SESSION-GATE-SILENT-DROP | a8deb17 | revert | 5 — `helpDocDrift.test.js`, `sessionGateNotice.test.js` (4) |
+
+### Issue #329 — the four found while fixing it
+
+Every fix commit is **sensitive**. **NOTES-PROMOTED-BEFORE**'s migration
+tests fail under revert only on its missing export
+(`moveRecordNotesToSheets`), so four injected defects show them on the
+behaviour: the move that clears the copy without appending it, appends a
+detail the tab already holds, treats `updateShip`'s whole-notes HTML copy as
+a promoted detail, or runs on a player's client.
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| FULFIL-BUTTON-LOCAL-DISABLE | 9ef6fde | revert | 6 — `cardButtonWiring.test.js` (2), `fulfilButtonOnce.test.js` (4) |
+| ENDURE-ZERO-ON-OTHER-OPTION | a93ba76 | revert | 3 — `endureZeroOnMomentumPick.test.js` (3) |
+| XCARD-CAPTURE-TRANSITIONS | f43d0bb | revert | 5 — `entityExtractor.test.js` (3), `xcardCaptureTransitions.test.js` (2) |
+| NOTES-PROMOTED-BEFORE | 082196a | revert; 4 injected defects | 1 — `notesPromotedBefore.test.js` (6 more only on the missing export); the defects: not moved 3, moved twice 1, HTML resurrected 1, any client 1 |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -653,6 +716,24 @@ releases no keyless player's synthesis wait (W79), a player's Begin / End
 opens the same dialogs as their commands (W85), a truth recorded before the
 stamp still falls back to the scene's end place (D2), the move just made
 keeps its own upgrades (D4) and a one-PC table still rolls its one PC (D8).
+
+For issue #329 the script lists 22 new tests that pass both ways. Each was
+read: 18 are named controls; four are guards the fix must keep — a
+narration's own new truth is audited beside the live ledger (X02), a card
+with no roller still posts as its author (X05), a milestone suggestion with
+several open vows names none so the roller is asked (X05), and a Begin a
+Session retried after a refusal begins the session and pays its momentum
+once (X13). X04's two passing assertions, run by hand, are its control and
+the "When you must …" guard.
+
+For the four found while fixing it the script lists seven new tests that pass
+both ways. Each was read: six are named controls (above 0 health no at-0
+choice, and "-1 health" offers it once; the capture's transitions before the
+X-Card, and an earlier narration's and a GM's change left alone; an
+`updateShip` that leaves the notes alone, and an `!ship envision` append
+still reaching the narrator's row); one is a guard the fix must keep — a
+faction stance changed on the record since the narration stands
+(XCARD-CAPTURE-TRANSITIONS).
 
 ## Details
 
@@ -5805,3 +5886,388 @@ Test files: `tests/unit/pclessPlayerNotRolled.test.js`. Source restored: 2 file(
 - New test passing with and without the fix (a control?): tests/unit/pclessPlayerNotRolled.test.js › a PC-less player is not rolled as another player's character (issue #326 D8) control: a GM's narration still falls back to the first PC
 - New test passing with and without the fix (a control?): tests/unit/pclessPlayerNotRolled.test.js › a PC-less player is not rolled as another player's character (issue #326 D8) control: narration that is not a move is not refused
 - New test passing with and without the fix (a control?): tests/unit/pclessPlayerNotRolled.test.js › in a one-PC world the sole PC is the roller (issue #326 D8) a PC-less player's move rolls the one PC, as solo play does
+
+### c1c3791 — fix: the X-Card undoes what an X-carded narration's capture recorded (issue #329 X01)
+
+Test files: `tests/unit/captureNarrationIdThreading.test.js`, `tests/unit/incitingIncident.test.js`, `tests/unit/xcardCaptureNarrationId.test.js`. Source restored: 6 file(s).
+
+- With the fix: 63 passed, 0 failed.
+- Without it: 11 failed (10 new; 0 only for a missing export); 52 still pass (1 new).
+- Verdict: **sensitive** — 11 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/captureNarrationIdThreading.test.js › issue #329 X01 — the capture is handed the narration id the paced / @scene detection pass routes its World Journal results with the id | AssertionError: expected "spy" to be called with arguments: [ { lore: [ { …(2) } ], …(4) }, …(2) ] |
+| (new) tests/unit/captureNarrationIdThreading.test.js › issue #329 X01 — the capture is handed the narration id the paced / @scene tier pass stamps the id on its details | AssertionError: expected "spy" to be called with arguments: [ 'Vex smiles.', …(4) ] |
+| (new) tests/unit/captureNarrationIdThreading.test.js › issue #329 X01 — the capture is handed the narration id runPacedDetection (the oracle / inciting capture) passes the id it was given | AssertionError: expected "spy" to be called with arguments: [ { lore: [ { …(2) } ], …(4) }, …(2) ] |
+| (new) tests/unit/captureNarrationIdThreading.test.js › issue #329 X01 — the capture is handed the narration id a move narration's interaction passes stamp the id on its lore and tier details | AssertionError: expected "spy" to be called with arguments: [ { lore: [ { …(2) } ], …(4) }, …(2) ] |
+| (new) tests/unit/captureNarrationIdThreading.test.js › issue #329 X01 — the capture is handed the narration id a Make a Connection hit's synchronous detection routes with the id | AssertionError: expected "spy" to be called with arguments: [ { lore: [ { …(2) } ], …(4) }, …(2) ] |
+| tests/unit/incitingIncident.test.js › runIncitingIncident — durable premise storage (PLAYTEST-1712 S) runs BOTH entity detection and the tier update on the opening prose (GM) | AssertionError: expected "spy" to be called with arguments: [ …(3) ] |
+| (new) tests/unit/xcardCaptureNarrationId.test.js › issue #329 X01 — what the capture wrote from an X-carded narration leaves canon with it after the X-Card on the narration, its captured lore is out of ESTABLISHED LORE and its beat off the Session Log | AssertionError: expected [ 'The interrogation rig' ] to not include 'The interrogation rig' |
+| (new) tests/unit/xcardCaptureNarrationId.test.js › issue #329 X01 — the X-Card undoes the capture by narration id a lore entry the X-carded capture rewrote is put back as it was, still canon | AssertionError: expected { …(16) } to match object { …(2) } |
+| (new) tests/unit/xcardCaptureNarrationId.test.js › issue #329 X01 — the X-Card undoes the capture by narration id a threat the X-carded capture made leaves the journal; one it rewrote is put back | AssertionError: expected [ 'The torturer', 'The warden' ] to deeply equal [ 'The warden' ] |
+| (new) tests/unit/xcardCaptureNarrationId.test.js › issue #329 X01 — the X-Card undoes the capture by narration id a tier detail the X-carded narration added leaves the card; another narration's stays | AssertionError: expected [ …(2) ] to deeply equal [ 'Owes the dockmaster a favour.' ] |
+| (new) tests/unit/xcardCaptureNarrationId.test.js › issue #329 X01 — the X-Card undoes the capture by narration id nothing an earlier narration captured is touched | AssertionError: expected [ 'The interrogation rig', …(1) ] to not include 'The interrogation rig' |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardCaptureNarrationId.test.js › issue #329 X01 — what the capture wrote from an X-carded narration leaves canon with it control: before the X-Card the capture's lore is confirmed canon and its beat is on the Session Log
+
+### e488234 — fix: the consistency check audits the ledger as it stands, not the pre-dialog snapshot (issue #329 X02)
+
+Test files: `tests/unit/consistencyCheckLiveLedger.test.js`, `tests/unit/consistencyCheckLiveLedgerPipeline.test.js`. Source restored: 1 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/consistencyCheckLiveLedger.test.js › issue #329 X02 — the consistency check audits the ledger as it stands, not the pre-dialog snapshot after the X-Card on the torch beat (played while the next move waited), the audit is not handed the removed beat | AssertionError: expected '\nTRUTHS:\n  the guard — Carries the …' not to match /cutting torch/ |
+| (new) tests/unit/consistencyCheckLiveLedger.test.js › issue #329 X02 — the consistency check audits the ledger as it stands, not the pre-dialog snapshot an X-Card that leaves the scene nothing to audit against sends no audit | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+| (new) tests/unit/consistencyCheckLiveLedger.test.js › issue #329 X02 — the consistency check audits the ledger as it stands, not the pre-dialog snapshot a `!truth strike` made while the next move waited is audited as RETRACTED, not as a binding truth | AssertionError: expected '\nTRUTHS:\n  the guard — Carries the …' not to match /cutting torch/ |
+| (new) tests/unit/consistencyCheckLiveLedgerPipeline.test.js › issue #329 X02 (pipeline) — a move held at its confirm dialog is audited against the ledger as it stands then the audit of the post-resume narration is not handed the X-carded beat's truth, state or frame | AssertionError: expected '\nTRUTHS:\n  the guard — Carries the …' not to match /cutting torch/ |
+
+- New test passing with and without the fix (a control?): tests/unit/consistencyCheckLiveLedger.test.js › issue #329 X02 — the consistency check audits the ledger as it stands, not the pre-dialog snapshot control: the audit of the torch narration lists its truth under ACTIVE SCENE TRUTHS
+- New test passing with and without the fix (a control?): tests/unit/consistencyCheckLiveLedger.test.js › issue #329 X02 — the consistency check audits the ledger as it stands, not the pre-dialog snapshot the narration's own new truth is audited beside the live ledger
+
+### dc4d2bd — fix: at 0 health or spirit on a miss the player chooses the impact or the table, not both (issue #329 X03)
+
+Test files: `tests/unit/endureAtZeroChoice.test.js`, `tests/unit/payThePriceRoutes.test.js`, `tests/unit/resultUpgrade.test.js`, `tests/unit/sufferExecutor.test.js`. Source restored: 4 file(s).
+
+- With the fix: 81 passed, 0 failed.
+- Without it: 13 failed (11 new; 0 only for a missing export); 68 still pass (1 new).
+- Verdict: **sensitive** — 13 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both Endure Harm's miss at 1 health marks nothing and rolls nothing — the choice card offers the three | AssertionError: expected { before: 1, after: +0, …(4) } to match object { woundedMarked: false, …(2) } |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both Endure Stress's miss at 1 spirit marks nothing and rolls nothing — the choice card offers the three | AssertionError: expected { before: 1, after: +0, …(4) } to match object { shakenMarked: false, …(2) } |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both picking 'Mark wounded' marks wounded — and rolls no table | TypeError: Cannot read properties of null (reading 'id') |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both picking 'Mark permanently harmed' marks it — not wounded | TypeError: Cannot read properties of null (reading 'id') |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both picking the table rolls it — and marks no impact | TypeError: Cannot read properties of null (reading 'id') |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both Endure Stress: the desolation table, picked, marks neither shaken nor traumatized | TypeError: Cannot read properties of null (reading 'id') |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both an impact already marked is not offered (marking it again would cost nothing) | TypeError: Cannot read properties of null (reading 'content') |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both a Pay the Price 'You are harmed' at 1 health offers the choice — never both | AssertionError: expected { before: 1, after: +0, …(6) } to match object { after: +0, …(3) } |
+| (new) tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both control: harm that leaves health above 0 marks nothing, rolls nothing and offers no choice | AssertionError: expected { before: 3, after: 2, …(4) } to match object { woundedMarked: false, …(2) } |
+| tests/unit/payThePriceRoutes.test.js › Q02 — harm past 0 health is momentum, through the move pipeline a burn refunds no momentum — its reset replaces it — and no health the loss never took | AssertionError: expected 3 to be 4 // Object.is equality |
+| tests/unit/resultUpgrade.test.js › P04 — a burn refunds the Pay the Price loss that landed a loss at 0 health is momentum (issue #314 Q02): no health is refunded, and a burn's reset replaces the momentum | AssertionError: expected 3 to be 4 // Object.is equality |
+| (new) tests/unit/sufferExecutor.test.js › endureHarm on a miss at 0 health offers the choice — marks nothing, rolls nothing | AssertionError: expected { before: 1, after: +0, …(4) } to match object { atZero: true, …(3) } |
+| (new) tests/unit/sufferExecutor.test.js › endureStress on a miss at 0 spirit offers the choice — marks nothing, rolls nothing (issue #329 X03) | AssertionError: expected { before: 1, after: +0, …(4) } to match object { atZero: true, …(3) } |
+
+- New test passing with and without the fix (a control?): tests/unit/endureAtZeroChoice.test.js › issue #329 X03 — at 0 on a miss: mark the impact OR roll the table, never both control (issue #314 Q02): harm past 0 overflows to momentum
+
+### d6c2de4 — fix: an asset ability adds nothing to a move it names only as a cost (issue #329 X04)
+
+Test files: `tests/unit/assetAddsCostMention.test.js`. Source restored: 1 file(s).
+
+- With the fix: 0 passed, 0 failed.
+- Without it: 0 failed (0 new; 0 only for a missing export), 1 file(s) failed to load; 0 still pass (0 new).
+- Verdict: **NOT sensitive** here — the file read the vendored assets, which the worktree lacks. Shown by hand above: with the data present and the source restored, 4 assertions fail; 6026775 makes the file skip without the data.
+
+- Failed to load: `tests/unit/assetAddsCostMention.test.js` — ENOENT: no such file or directory, scandir '/tmp/claude-0/-home-user-starforged-companion/db3399d5-e8b0-5f7f-a50a-2eebf0f770d1/scratchpad/fix-sensitivity-d6c2de4-GTba40/vendor/foundry-ironsworn/json-p
+
+### 0726854 — fix: a card's forced follow-up is rolled as the card's PC, whoever presses it (issue #329 X05)
+
+Test files: `tests/unit/cardButtonsRollerPipeline.test.js`, `tests/unit/cardRepostAsRoller.test.js`, `tests/unit/milestone.test.js`. Source restored: 3 file(s).
+
+- With the fix: 49 passed, 0 failed.
+- Without it: 9 failed (9 new; 0 only for a missing export); 40 still pass (4 new).
+- Verdict: **sensitive** — 9 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/cardButtonsRollerPipeline.test.js › issue #329 X05 (pipeline) — a move card's follow-up button pressed by the GM is the card's roller's move "🏁 Attempt to Fulfill Vow" on Kira's card fulfils Kira's vow, not the first PC's | AssertionError: expected null to be 'pc-kira' // Object.is equality |
+| (new) tests/unit/cardButtonsRollerPipeline.test.js › issue #329 X05 (pipeline) — a move card's follow-up button pressed by the GM is the card's roller's move "⚔ Attempt to Finish the Fight" on Kira's Strike card rolls Kira's Take Decisive Action | AssertionError: expected null to be 'pc-kira' // Object.is equality |
+| (new) tests/unit/cardRepostAsRoller.test.js › issue #329 X05 — a forced-move button pressed by someone else speaks as the card's PC "⚔ Attempt to Finish the Fight" on Bex's Strike card rolls Take Decisive Action as Bex | AssertionError: expected null to be 'pc-b' // Object.is equality |
+| (new) tests/unit/cardRepostAsRoller.test.js › issue #329 X05 — a forced-move button pressed by someone else speaks as the card's PC "🏁 Attempt to Fulfill Vow" on Bex's move card rolls Fulfill Your Vow as Bex | AssertionError: expected null to be 'pc-b' // Object.is equality |
+| (new) tests/unit/cardRepostAsRoller.test.js › issue #329 X05 — a forced-move button pressed by someone else speaks as the card's PC the victory card's "🏁 Attempt to Fulfill" rolls as the PC who won the fight | AssertionError: expected null to be 'pc-b' // Object.is equality |
+| (new) tests/unit/cardRepostAsRoller.test.js › issue #329 X05 — a forced-move button pressed by someone else speaks as the card's PC "🗺 Finish the Expedition" on the card for Bex's expedition progress finishes it as Bex | AssertionError: expected null to be 'pc-b' // Object.is equality |
+| (new) tests/unit/cardRepostAsRoller.test.js › issue #329 X05 — a forced-move button pressed by someone else speaks as the card's PC "⚔ Swear it (roll)" on the card for Bex's sheet-made vow swears it as Bex | AssertionError: expected null to be 'pc-b' // Object.is equality |
+| (new) tests/unit/cardRepostAsRoller.test.js › issue #329 X05 — a forced-move button pressed by someone else speaks as the card's PC "⚔ Swear it (roll)" on a card that names the vow's holder speaks as them | AssertionError: expected null to be 'pc-a' // Object.is equality |
+| (new) tests/unit/milestone.test.js › buildMilestoneSuggestion is eligible on a quest-advancing hit with an open vow — the sole vow's Item id rides it (issue #329 X05) | AssertionError: expected { eligible: true, vowCount: 1 } to deeply equal { eligible: true, vowCount: 1, …(1) } |
+
+- New test passing with and without the fix (a control?): tests/unit/cardButtonsRollerPipeline.test.js › issue #329 X05 (pipeline) — a move card's follow-up button pressed by the GM is the card's roller's move control: "⚑ Mark Progress on Vow" pressed by the GM on Kira's card marks Kira's vow (issue #321 U20)
+- New test passing with and without the fix (a control?): tests/unit/cardRepostAsRoller.test.js › issue #329 X05 — a forced-move button pressed by someone else speaks as the card's PC a card that names no roller (an older card) posts as its author, as before
+- New test passing with and without the fix (a control?): tests/unit/cardRepostAsRoller.test.js › issue #329 X05 — a forced-move button pressed by someone else speaks as the card's PC control: the relayed "⚑ Mark Progress on Vow" posts its forced move as the card's roller
+- New test passing with and without the fix (a control?): tests/unit/milestone.test.js › buildMilestoneSuggestion names no vow when several are open — the roller is asked which
+
+### 5e38a44 — fix: the fight-threshold card takes one choice, claimed on the GM (issue #329 X06)
+
+Test files: `tests/unit/thresholdCardClaim.test.js`. Source restored: 3 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 2 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/thresholdCardClaim.test.js › issue #329 X06 — the threshold card's buttons act once per card "Find another way" pressed by the player, then by the GM on a re-render, posts one way-out card | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/thresholdCardClaim.test.js › issue #329 X06 — the threshold card's buttons act once per card "Enter the Fray" pressed again on the old card after the fight ended begins no new fight | AssertionError: expected false to be true // Object.is equality |
+| (new) (API) tests/unit/thresholdCardClaim.test.js › issue #329 X06 — the threshold card's buttons act once per card a vow the card does not offer is not linked to the fight; one it offers is | TypeError: (0 , applyCombatThresholdChoice) is not a function |
+| (new) (API) tests/unit/thresholdCardClaim.test.js › issue #329 X06 — the threshold card's buttons act once per card an Enter the Fray whose fight could not be saved releases the claim — the card can be pressed again | TypeError: (0 , applyCombatThresholdChoice) is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/thresholdCardClaim.test.js › issue #329 X06 — the threshold card's buttons act once per card control: the first "Find another way" posts one way-out card with its three off-ramps
+- New test passing with and without the fix (a control?): tests/unit/thresholdCardClaim.test.js › issue #329 X06 — the threshold card's buttons act once per card control: the first "Enter the Fray" creates the fight the card names, once
+
+### 9badb9b — fix: a reward pick or vow link the vow did not take is not reported as set (issue #329 X07)
+
+Test files: `tests/unit/rewardLinkRefusedWrite.test.js`. Source restored: 2 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/rewardLinkRefusedWrite.test.js › issue #329 X07 — a reward pick whose vow write is refused does not say "Reward set", and the pick is not silently spent | AssertionError: expected [ { …(11) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/rewardLinkRefusedWrite.test.js › issue #329 X07 — a reward pick whose vow write is refused a pick for a vow no character holds any more is not reported as set | AssertionError: expected { applied: true } to deeply equal { applied: false, …(1) } |
+| (new) tests/unit/rewardLinkRefusedWrite.test.js › issue #329 X07 — a reward pick whose vow write is refused a player's pick that is refused is whispered to them and the GMs | TypeError: Cannot read properties of undefined (reading 'whisper') |
+| (new) tests/unit/rewardLinkRefusedWrite.test.js › issue #329 X07 — a 🤝 Link whose vow write is refused does not say "Linked", and the link is not silently spent | AssertionError: expected [ { …(11) } ] to have a length of +0 but got 1 |
+
+- New test passing with and without the fix (a control?): tests/unit/rewardLinkRefusedWrite.test.js › issue #329 X07 — a reward pick whose vow write is refused control: an accepted write promises the reward once and says so
+- New test passing with and without the fix (a control?): tests/unit/rewardLinkRefusedWrite.test.js › issue #329 X07 — a 🤝 Link whose vow write is refused control: an accepted write links the vow once and says so
+
+### ae7e50e — fix: a move's pipeline releases only its own claim of the move lock (issue #329 X08)
+
+Test files: `tests/unit/moveLockClaimToken.test.js`. Source restored: 3 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/moveLockClaimToken.test.js › issue #329 X08 — a pipeline whose lock was released while its GM was away control (W25): the GM who drops mid-move has their lock released by the other GM, who whispers the GMs | AssertionError: expected undefined to deeply equal Any&lt;String> |
+| (new) tests/unit/moveLockClaimToken.test.js › issue #329 X08 — a pipeline whose lock was released while its GM was away does not release the lock a later move holds when its narration finally returns | AssertionError: expected { worldTruths: { …(14) }, …(38) } to match object { pendingMove: true, …(1) } |
+| (new) tests/unit/moveLockClaimToken.test.js › issue #329 X08 — a pipeline whose lock was released while its GM was away a pipeline releases its own claim; a lock from before claims carried a token is released as before | AssertionError: expected { worldTruths: { …(14) }, …(38) } to match object { pendingMove: true, …(1) } |
+
+### 91cae82 — fix: a narration never applies its facts onto the cached campaignState (issue #329 X09)
+
+Test files: `tests/unit/narrationCachedStoreWrites.test.js`, `tests/unit/narrationWorkingCopy.test.js`. Source restored: 6 file(s).
+
+- With the fix: 9 passed, 0 failed.
+- Without it: 7 failed (7 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 7 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/narrationCachedStoreWrites.test.js › issue #329 X09 — a narration never applies its facts onto the cached setting oracle follow-up on the keyed GM: a refused ledger write leaves the GM's cache equal to the world | AssertionError: expected [ { id: 'tr-d9c1b32c', …(16) } ] to deeply equal [] |
+| (new) tests/unit/narrationCachedStoreWrites.test.js › issue #329 X09 — a narration never applies its facts onto the cached setting @scene on the GM with no scene open: a refused scene start leaves no scene in the GM's cache | AssertionError: expected 'sc-1e13fa8e' to be null |
+| (new) tests/unit/narrationWorkingCopy.test.js › issue #329 X09 — the narrator is handed a working copy, not the cached setting a `!clock advance` vignette | AssertionError: expected { currentSessionId: 's-1', …(1) } not to be { currentSessionId: 's-1', …(1) } // Object.is equality |
+| (new) tests/unit/narrationWorkingCopy.test.js › issue #329 X09 — the narrator is handed a working copy, not the cached setting Pay the Price's trigger vignette | AssertionError: expected { currentSessionId: 's-1', …(1) } not to be { currentSessionId: 's-1', …(1) } // Object.is equality |
+| (new) tests/unit/narrationWorkingCopy.test.js › issue #329 X09 — the narrator is handed a working copy, not the cached setting Begin a Session's clock vignette | AssertionError: expected { …(10) } not to be { …(10) } // Object.is equality |
+| (new) tests/unit/narrationWorkingCopy.test.js › issue #329 X09 — the narrator is handed a working copy, not the cached setting the oracle follow-up on the GM | AssertionError: expected { currentSessionId: 's-1' } not to be { currentSessionId: 's-1' } // Object.is equality |
+| (new) tests/unit/narrationWorkingCopy.test.js › issue #329 X09 — the narrator is handed a working copy, not the cached setting a relayed sidecar whose write the world refused leaves the cache untouched | AssertionError: expected [ { id: 'tr-9c579580', …(16) } ] to deeply equal [] |
+
+- New test passing with and without the fix (a control?): tests/unit/narrationCachedStoreWrites.test.js › issue #329 X09 — a narration never applies its facts onto the cached setting control: without a refusal the oracle follow-up's facts land in the world
+- New test passing with and without the fix (a control?): tests/unit/narrationCachedStoreWrites.test.js › issue #329 X09 — a narration never applies its facts onto the cached setting control: @scene with no scene open mints one in the world and files its facts under it
+
+### 9136c7b — fix: !scene start / end work on a copy and say when the world did not take the change (issue #329 X10)
+
+Test files: `tests/unit/sceneCommandCachedWrite.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sceneCommandCachedWrite.test.js › issue #329 X10 — `!scene` on a refused write leaves the GM's cache equal to the world `!scene start`: no scene opens on the GM alone, and the card does not claim one | AssertionError: expected 'sc-54b07805' to be null |
+| (new) tests/unit/sceneCommandCachedWrite.test.js › issue #329 X10 — `!scene` on a refused write leaves the GM's cache equal to the world `!scene end`: the live scene stays open on the GM, its truths kept, and the card does not claim it ended | AssertionError: expected null to be 'sc-1' // Object.is equality |
+| (new) tests/unit/sceneCommandCachedWrite.test.js › issue #329 X10 — `!scene` on a refused write leaves the GM's cache equal to the world `!scene start` over a live scene that the world refused to replace keeps the live scene everywhere | AssertionError: expected 'sc-c44149db' to be 'sc-1' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/sceneCommandCachedWrite.test.js › issue #329 X10 — `!scene` on a refused write leaves the GM's cache equal to the world control: without a refusal `!scene start` opens a scene in the world and `!scene end` closes it
+
+### 77ed8bd — fix: a refused Create Sector write leaves the GM's cache as the world has it (issue #329 X11)
+
+Test files: `tests/unit/sectorStoreCachedMutation.test.js`. Source restored: 2 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sectorStoreCachedMutation.test.js › issue #329 X11 — a refused sector write leaves the GM's cache as it was storeSector: after a refused write the cached state holds neither the record nor the active sector | AssertionError: expected { sectorId: 'sector-refused', …(5) } to be undefined |
+| (new) tests/unit/sectorStoreCachedMutation.test.js › issue #329 X11 — a refused sector write leaves the GM's cache as it was the retry after a refused write stores the sector (it is not found 'already stored' in the mutated cache) | AssertionError: expected [ { id: 'oT0ze6PbKzeJW1jv', …(16) } ] to deeply equal [] |
+
+- New test passing with and without the fix (a control?): tests/unit/sectorStoreCachedMutation.test.js › issue #329 X11 — a refused sector write leaves the GM's cache as it was control: with the write accepted, storeSector lands the record and the active sector
+- New test passing with and without the fix (a control?): tests/unit/sectorStoreCachedMutation.test.js › issue #329 X11 — a refused sector write leaves the GM's cache as it was control: a second pipeline run for a stored sector is idempotent (issue #321 U46)
+
+### f16e093 — fix: an NPC card's or ship's notes are its sheet's Notes tab — what the narrator reads (issue #329 X12)
+
+Test files: `tests/unit/entityPanelRelay.test.js`, `tests/unit/notesSheetCanonical.test.js`. Source restored: 5 file(s).
+
+- With the fix: 17 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 11 still pass (1 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/entityPanelRelay.test.js › Entities panel — a player's edits land on the NPC card (issue #321 U05) Promote, once the player confirms on their own screen, appends the detail to the NPC card's Notes tab | AssertionError: expected '' to be '&lt;p>Owes the Syndicate&lt;/p>' // Object.is equality |
+| (new) tests/unit/notesSheetCanonical.test.js › issue #329 X12 — the sheet's Notes tab reaches the narrator's Notes row a ship: the seed's introduction and a GM's Notes-tab edit reach ENTITIES IN SCENE | AssertionError: expected '' to contain 'hull plates scarred' |
+| (new) tests/unit/notesSheetCanonical.test.js › issue #329 X12 — the sheet's Notes tab reaches the narrator's Notes row an NPC card: the seed's introduction and a GM's Notes-tab edit reach ENTITIES IN SCENE | AssertionError: expected '' to contain 'does not look away' |
+| (new) tests/unit/notesSheetCanonical.test.js › issue #329 X12 — the sheet's Notes tab reaches the narrator's Notes row notes the GM cleared from the sheet are gone from the card, whatever the record still holds | AssertionError: expected 'Notes: An old note the record kept.' to be '' // Object.is equality |
+| (new) tests/unit/notesSheetCanonical.test.js › issue #329 X12 — the sheet's Notes tab reaches the narrator's Notes row ⤴ Promote appends the detail to the NPC card's Notes tab, where the narrator reads it | AssertionError: expected '&lt;p>Keeps her own counsel.&lt;/p>' to be '&lt;p>Keeps her own counsel.&lt;/p>&lt;p>Owes …' // Object.is equality |
+| (new) tests/unit/notesSheetCanonical.test.js › issue #329 X12 — the Entities panel shows an NPC card's Notes tab as text, from the sheet — not the record's own notes | AssertionError: expected 'An old note the record kept.' to be 'She is secretly on the Syndicate payr…' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/notesSheetCanonical.test.js › issue #329 X12 — the sheet's Notes tab reaches the narrator's Notes row control: an `!ship envision` append reaches the row (it writes both stores)
+
+### 2310da9 — fix: a Begin a Session the world did not save says the session was not started (issue #329 X13)
+
+Test files: `tests/unit/beginSessionRefusedWrite.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/beginSessionRefusedWrite.test.js › issue #329 X13 — a Begin a Session whose session-start write the world refused a player's Begin: the session did not start, and nothing tells the table — their card promises a session and +1 momentum | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/beginSessionRefusedWrite.test.js › issue #329 X13 — a Begin a Session whose session-start write the world refused the GM's own Begin: the same silence on the local path | AssertionError: expected false to be true // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/beginSessionRefusedWrite.test.js › issue #329 X13 — a Begin a Session whose session-start write the world refused a retry after the refusal begins the session and pays the momentum once
+- New test passing with and without the fix (a control?): tests/unit/beginSessionRefusedWrite.test.js › issue #329 X13 — a Begin a Session whose session-start write the world refused control: without the refusal the session begins, the card promises the momentum and the GM pays it
+
+### a8deb17 — fix: the session gate tells the author why nothing was narrated or rolled (issue #329 X14)
+
+Test files: `tests/unit/helpDocDrift.test.js`, `tests/unit/sessionGateNotice.test.js`. Source restored: 2 file(s).
+
+- With the fix: 12 passed, 0 failed.
+- Without it: 5 failed (4 new; 0 only for a missing export); 7 still pass (2 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/helpDocDrift.test.js › the help journal against the code (issue #326 W83) a. Troubleshooting: GM narration is not excluded; a session not begun is named | AssertionError: expected '/**\n * STARFORGED COMPANION\n * src/…' to match /sessionActive = isSessionActive\(game…/ |
+| (new) tests/unit/sessionGateNotice.test.js › issue #329 X14 — the session gate tells the author why nothing ran (a) a player's typed narration before Begin a Session: nothing runs, and nothing tells the player why | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/sessionGateNotice.test.js › issue #329 X14 — the session gate tells the author why nothing ran a typed line's author is told once, not once per line — and again after a session has run | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/sessionGateNotice.test.js › issue #329 X14 — the session gate tells the author why nothing ran (b) the inciting card's ⚔ Swear this vow before Begin a Session: the forced move is dropped and nobody is told | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/sessionGateNotice.test.js › issue #329 X14 — the session gate tells the author why nothing ran a claimed card's forced move is held until Begin a Session starts one, then rolled | TypeError: Cannot read properties of undefined (reading 'content') |
+
+- New test passing with and without the fix (a control?): tests/unit/sessionGateNotice.test.js › issue #329 X14 — the session gate tells the author why nothing ran control: with the session active the typed line reaches the pipeline and posts a move card
+- New test passing with and without the fix (a control?): tests/unit/sessionGateNotice.test.js › issue #329 X14 — the session gate tells the author why nothing ran control: with the session active the ⚔ press reaches the pipeline and rolls Swear an Iron Vow
+
+### 9ef6fde — fix: a card's 🏁 Attempt to Fulfill rolls the vow once, claimed on the GM
+
+Test files: `tests/unit/cardButtonWiring.test.js`, `tests/unit/cardRepostAsRoller.test.js`, `tests/unit/fulfilButtonOnce.test.js`. Source restored: 3 file(s).
+
+- With the fix: 49 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 43 still pass (0 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/cardButtonWiring.test.js › wireFightVowButtons — one-shot Mark milestone / Deepen bond Attempt to Fulfill relays to the GM too — the player's client posts nothing | AssertionError: expected [ { …(12) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/cardButtonWiring.test.js › wireFightVowButtons — one-shot Mark milestone / Deepen bond on the canonical GM Attempt to Fulfill posts the forced fulfil move once, as the roller | AssertionError: expected [ { …(12) }, { …(12) } ] to have a length of 1 but got 2 |
+| (new) tests/unit/fulfilButtonOnce.test.js › FULFIL-BUTTON-LOCAL-DISABLE — a card's "🏁 Attempt to Fulfill" rolls once the player and the GM both pressing a move card's 🏁 roll Fulfill Your Vow once, as Kira | AssertionError: expected [ { …(8) }, { …(8) } ] to have a length of 1 but got 2 |
+| (new) tests/unit/fulfilButtonOnce.test.js › FULFIL-BUTTON-LOCAL-DISABLE — a card's "🏁 Attempt to Fulfill" rolls once after a re-render the pressed 🏁 stays pressed | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/fulfilButtonOnce.test.js › FULFIL-BUTTON-LOCAL-DISABLE — a card's "🏁 Attempt to Fulfill" rolls once the player and the GM both pressing a won-fight card's 🏁 roll it once, Kira's vow by name and Item id | AssertionError: expected [ { …(8) }, { …(8) } ] to have a length of 1 but got 2 |
+| (new) tests/unit/fulfilButtonOnce.test.js › FULFIL-BUTTON-LOCAL-DISABLE — a card's "🏁 Attempt to Fulfill" rolls once another player may not roll Kira's vow from her card; the GM may, as Kira | AssertionError: expected [ { …(8) } ] to have a length of +0 but got 1 |
+
+### a93ba76 — fix: an Endure Harm / Stress miss at 0 offers the at-0 choice after Lose Momentum too
+
+Test files: `tests/unit/endureZeroOnMomentumPick.test.js`. Source restored: 3 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option Endure Harm miss at 0 health, 'Lose Momentum (-2)': momentum 5 → 3, then the at-0 choice | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option Endure Stress miss at 0 spirit, 'Lose Momentum (-2)': the desolation choice follows | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option …and a pick on it applies that one: 'Mark permanently harmed' | TypeError: Cannot read properties of undefined (reading '_id') |
+
+- New test passing with and without the fix (a control?): tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option control: above 0 health, 'Lose Momentum (-2)' offers no at-0 choice
+- New test passing with and without the fix (a control?): tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option control: '-1 health' at 0 offers the at-0 choice once (the executor's)
+
+### f43d0bb — fix: the X-Card undoes the state transitions an X-carded narration's capture applied
+
+Test files: `tests/unit/entityExtractor.test.js`, `tests/unit/xcardCaptureTransitions.test.js`. Source restored: 2 file(s).
+
+- With the fix: 135 passed, 0 failed.
+- Without it: 5 failed (3 new; 0 only for a missing export); 130 still pass (3 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/entityExtractor.test.js › routeWorldJournalResults delegates state transitions through applyStateTransition | AssertionError: expected "applyStateTransition" to be called with arguments: [ ObjectContaining{…}, …(2) ] |
+| (new) tests/unit/entityExtractor.test.js › routeWorldJournalResults a narration's transitions carry its id, for the X-Card (XCARD-CAPTURE-TRANSITIONS) | AssertionError: expected "applyStateTransition" to be called with arguments: [ ObjectContaining{…}, …(2) ] |
+| tests/unit/entityExtractor.test.js › routeWorldJournalResults 'lore confirmed' transition delegates to promoteLoreToConfirmed | AssertionError: expected "promoteLoreToConfirmed" to be called with arguments: [ 'Soft fact', …(2) ] |
+| (new) tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied after the X-Card the threat is looming again, the lore unconfirmed, the Syndicate neutral — entry and record | AssertionError: expected null to match object { severity: 'looming', …(1) } |
+| (new) tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied two X-carded narrations that each moved the stance put back the one before both | AssertionError: expected 'open_alliance' to be 'apathetic' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied control: the capture resolves the threat, confirms the lore and turns the Syndicate hostile
+- New test passing with and without the fix (a control?): tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied a stance changed on the record since the narration stands
+- New test passing with and without the fix (a control?): tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied control: an earlier narration's transitions are untouched; a GM's own change owns the entry
+
+### 082196a — fix: details promoted to an NPC's or ship's record notes before X12 reach the Notes tab
+
+Test files: `tests/unit/entityCardNotesText.test.js`, `tests/unit/notesPromotedBefore.test.js`, `tests/unit/notesSheetCanonical.test.js`. Source restored: 3 file(s).
+
+- With the fix: 18 passed, 0 failed.
+- Without it: 7 failed (7 new; 6 only for a missing export); 11 still pass (2 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab an NPC card's promoted details join its Notes tab — the narrator's Notes row shows them again | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a detail the tab already holds is not added twice — the copy is only cleared | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a ship: its envision section (already in the tab) stays once; the promoted detail joins it | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a GM's trim of the envision section in the tab stands — the record's whole-notes copy is not put back | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a second world load moves nothing | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab control: a player's client moves nothing — not even on a card the player owns | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — updateShip writes a ship's notes to its Notes tab alone the tab takes the notes; the record keeps no copy | AssertionError: expected '&lt;p>A battered hauler.&lt;/p>&lt;hr>&lt;h4>✦ En…' to be '' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — updateShip writes a ship's notes to its Notes tab alone control: an update that leaves the notes alone leaves the record as it was
+- New test passing with and without the fix (a control?): tests/unit/notesSheetCanonical.test.js › issue #329 X12 — the sheet's Notes tab reaches the narrator's Notes row control: an `!ship envision` append reaches the row (it writes the Notes tab)
+
+### `scripts/defects/notes-promoted-not-moved.patch` — NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move clears the record's copy of a promoted detail without appending it to the Notes tab
+
+Test files: `tests/unit/notesPromotedBefore.test.js`.
+
+- On HEAD: 8 passed, 0 failed.
+- With the defect: 3 failed (0 only for a missing export); 5 still pass.
+- Verdict: **sensitive** — 3 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab an NPC card's promoted details join its Notes tab — the narrator's Notes row shows them again | AssertionError: expected '&lt;p>Keeps her own counsel.&lt;/p>' to be '&lt;p>Keeps her own counsel.&lt;/p>&lt;p>Owes …' // Object.is equality |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a ship: its envision section (already in the tab) stays once; the promoted detail joins it | AssertionError: expected '&lt;p>A battered hauler.&lt;/p>&lt;hr>&lt;h4>✦ En…' to be '&lt;p>A battered hauler.&lt;/p>&lt;hr>&lt;h4>✦ En…' // Object.is equality |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a GM's trim of the envision section in the tab stands — the record's whole-notes copy is not put back | AssertionError: expected '&lt;p>A battered hauler.&lt;/p>' to be '&lt;p>A battered hauler.&lt;/p>&lt;p>A stowawa…' // Object.is equality |
+
+### `scripts/defects/notes-promoted-moved-twice.patch` — NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move appends a promoted detail the Notes tab already holds, so it shows twice
+
+Test files: `tests/unit/notesPromotedBefore.test.js`.
+
+- On HEAD: 8 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 7 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a detail the tab already holds is not added twice — the copy is only cleared | AssertionError: expected { moved: 1, cleared: +0 } to deeply equal { moved: +0, cleared: 1 } |
+
+### `scripts/defects/notes-promoted-html-resurrected.patch` — NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move treats updateShip's whole-notes HTML copy as a promoted detail, putting back an envision section the GM trimmed from the tab
+
+Test files: `tests/unit/notesPromotedBefore.test.js`.
+
+- On HEAD: 8 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 7 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a GM's trim of the envision section in the tab stands — the record's whole-notes copy is not put back | AssertionError: expected '&lt;p>A battered hauler.&lt;/p>&lt;p>&lt;hr&gt…' to be '&lt;p>A battered hauler.&lt;/p>&lt;p>A stowawa…' // Object.is equality |
+
+### `scripts/defects/notes-promoted-any-client.patch` — NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move runs on a player's client too, writing world documents there
+
+Test files: `tests/unit/notesPromotedBefore.test.js`.
+
+- On HEAD: 8 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 7 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab control: a player's client moves nothing — not even on a card the player owns | AssertionError: expected { moved: 1, cleared: +0 } to deeply equal { moved: +0, cleared: +0 } |

@@ -449,8 +449,12 @@ describe("runIncitingIncident — durable premise storage (PLAYTEST-1712 S)", ()
     const cleanProse = "Councilor Vex was murdered three cycles ago aboard Paradox Station.";
     // skipLore: the inciting path records its own cohesive "Situation" entry
     // instead of the per-item lore spray.
-    expect(runPacedDetection).toHaveBeenCalledWith(cleanProse, campaignState, { skipLore: true });
-    expect(runNarrationTierUpdate).toHaveBeenCalledWith(cleanProse, campaignState);
+    // The narration's id rides along so an X-Card on the inciting card undoes
+    // what the capture records (issue #329 X01) — the id the card carries.
+    const narrationId = vi.mocked(narrateIncitingIncident).mock.calls[0][0].narrationId;
+    expect(narrationId).toEqual(expect.any(String));
+    expect(runPacedDetection).toHaveBeenCalledWith(cleanProse, campaignState, { skipLore: true, narrationId });
+    expect(runNarrationTierUpdate).toHaveBeenCalledWith(cleanProse, campaignState, { narrationId });
   });
 
   it("records ONE cohesive 'Inciting Incident' lore entry from the Situation line", async () => {

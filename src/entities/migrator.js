@@ -26,7 +26,7 @@ import { createPlanet }     from "./planet.js";
 import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
 import { STARFORGED_CHARACTER_SHEET } from "./connection.js";
-import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag, iterEntityDocuments, hasSheetNotes } from "./registry.js";
 import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder, getOrCreateSectorNpcActorFolder, getOrCreateActorFolder, folderParentId } from "./folder.js";
 import {
   rewriteSectorOverviewSettlements,
@@ -797,6 +797,61 @@ export async function syncEntityRecordNames(campaignState) {
         summary.synced += 1;
       } catch (err) {
         console.warn(`${MODULE_ID} | syncEntityRecordNames: ${typeKey} ${id} failed:`, err?.message ?? err);
+      }
+    }
+  }
+  return summary;
+}
+
+// The record-notes blocks a pre-X12 ⤴ Promote wrote: plain text joined by a
+// blank line (entityPanel's promote). A block with markup is a whole-notes
+// copy `updateShip({ notes })` wrote to the sheet as well — never moved.
+function promotedNoteBlocks(notes) {
+  return String(notes ?? "").split(/\n\s*\n/)
+    .map(b => b.trim())
+    .filter(b => b && !/<[a-z/][^>]*>/i.test(b));
+}
+
+const plainNotes = (html) => String(html ?? "")
+  .replace(/<[^>]*>/g, " ")
+  .replace(/&nbsp;/g, " ").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&amp;/g, "&")
+  .replace(/\s+/g, " ").trim().toLowerCase();
+
+const escapeNoteHtml = (s) => String(s ?? "")
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/**
+ * Ready-time repair (known-issues NOTES-PROMOTED-BEFORE). An NPC card's or a
+ * ship's notes are its sheet's Notes tab (issue #329 X12; decisions.md → "An
+ * NPC card's or ship's notes are its sheet's Notes tab"): the record's own
+ * `notes` is no longer read. A detail ⤴ Promoted before that change sits only
+ * there — each such paragraph the tab does not already hold is appended to
+ * the tab, and the record's copy is cleared (an `!ship envision` / `!ship
+ * history` section, which `updateShip` wrote to both, is in the tab already).
+ * GM-only, idempotent: a record with no notes is left alone.
+ *
+ * @returns {Promise<{ moved: number, cleared: number }>} records whose notes
+ *   reached the tab / whose copy was only cleared
+ */
+export async function moveRecordNotesToSheets() {
+  const summary = { moved: 0, cleared: 0 };
+  if (globalThis.game?.user && !globalThis.game.user.isGM) return summary;
+
+  for (const typeKey of ["connection", "ship"]) {
+    if (!hasSheetNotes(typeKey)) continue;
+    for (const { document, data } of [...iterEntityDocuments(typeKey)]) {
+      try {
+        if (typeof data?.notes !== "string" || !data.notes.trim() || !document?.system) continue;
+        const sheet   = String(document.system.notes ?? "");
+        const onSheet = plainNotes(sheet);
+        const missing = promotedNoteBlocks(data.notes).filter(b => !onSheet.includes(plainNotes(b)));
+        if (missing.length) {
+          await document.update({ "system.notes": `${sheet}${missing.map(b => `<p>${escapeNoteHtml(b)}</p>`).join("")}` });
+        }
+        await writeEntityFlag(typeKey, document, { ...data, notes: "", updatedAt: new Date().toISOString() });
+        summary[missing.length ? "moved" : "cleared"] += 1;
+      } catch (err) {
+        console.warn(`${MODULE_ID} | moveRecordNotesToSheets: ${typeKey} ${document?.id ?? "?"} failed:`, err?.message ?? err);
       }
     }
   }

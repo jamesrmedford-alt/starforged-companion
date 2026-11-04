@@ -1,0 +1,20 @@
+Defect: NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move clears the record's copy of a promoted detail without appending it to the Notes tab
+Tests: tests/unit/notesPromotedBefore.test.js
+Catches: an NPC card's promoted details join its Notes tab
+Catches: the promoted detail joins it
+Catches: a GM's trim of the envision section in the tab stands
+
+diff --git a/src/entities/migrator.js b/src/entities/migrator.js
+index b491b91..c86cf79 100644
+--- a/src/entities/migrator.js
++++ b/src/entities/migrator.js
+@@ -845,9 +845,6 @@ export async function moveRecordNotesToSheets() {
+         const sheet   = String(document.system.notes ?? "");
+         const onSheet = plainNotes(sheet);
+         const missing = promotedNoteBlocks(data.notes).filter(b => !onSheet.includes(plainNotes(b)));
+-        if (missing.length) {
+-          await document.update({ "system.notes": `${sheet}${missing.map(b => `<p>${escapeNoteHtml(b)}</p>`).join("")}` });
+-        }
+         await writeEntityFlag(typeKey, document, { ...data, notes: "", updatedAt: new Date().toISOString() });
+         summary[missing.length ? "moved" : "cleared"] += 1;
+       } catch (err) {

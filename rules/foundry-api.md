@@ -130,6 +130,15 @@ cs.pendingMove = false;                                   // a copy
 await game.settings.set(MODULE_ID, "campaignState", cs);  // a refusal leaves the cache as it was
 ```
 
+That includes handing the cached value to code that changes what it is
+given: the narrator mints a scene on its `campaignState` and applies its
+sidecar's truths, state and frame onto it (`ensureSceneStarted`,
+`applyNarratorSidecar`), and the scene lifecycle sets or clears the scene
+fields on it. A caller that narrates from the store gives it a working copy —
+`foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState"))` — as
+the oracle follow-up, `@scene`, the clock vignettes and the relayed sidecar do
+(issue #329 X09).
+
 **Specific things confirmed to have changed in v13 — always verify:**
 
 | API | v12 | v13 | Status in this codebase |

@@ -504,8 +504,10 @@ export async function runIncitingIncident(campaignState) {
       // spray — the opening fiction otherwise scattered into several loose,
       // incoherent WJ-Lore pages (playtest v1.7.22). Instead record ONE cohesive
       // entry from the narrator's own Situation summary.
-      await narrator.runPacedDetection(prose, campaignState ?? {}, { skipLore: true });
-      await narrator.runNarrationTierUpdate(prose, campaignState ?? {});
+      // The narration's id rides along, so an X-Card on the inciting card
+      // undoes what this capture records (issue #329 X01).
+      await narrator.runPacedDetection(prose, campaignState ?? {}, { skipLore: true, narrationId });
+      await narrator.runNarrationTierUpdate(prose, campaignState ?? {}, { narrationId });
       if (situation) {
         const { recordLoreDiscovery } = await import("../world/worldJournal.js");
         await recordLoreDiscovery("Inciting Incident", {
@@ -514,6 +516,7 @@ export async function runIncitingIncident(campaignState) {
           salience:         "significant",
           narratorAsserted: true,
           confirmed:        true,
+          narrationId,
         }, campaignState ?? {}).catch(err =>
           console.warn(`${MODULE_ID} | runIncitingIncident: cohesive lore write failed:`, err?.message ?? err));
       }

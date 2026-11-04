@@ -62,8 +62,10 @@ passage" drawing.
   that is over marks nothing (`reason: "ambiguous" | "gone"`) — an unnamed
   Undertake used to begin a phantom "Expedition" that took the progress
   (issue #321 U16). The progress card shows boxes filled and carries a
-  **"🗺 Finish the Expedition"** button. Deliberately **not** an arrival move
-  — no position write mid-journey.
+  **"🗺 Finish the Expedition"** button — its forced move names the track by
+  id and speaks as the PC who marked the progress (the card's `actorId`,
+  issue #329 X05). Deliberately **not** an arrival move — no position write
+  mid-journey.
 - **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
   ship record, `currentLocationId`, the feedback card), and an Undertake an
   Expedition miss upgraded marks the expedition as a rolled hit would — the
@@ -96,7 +98,8 @@ passage" drawing.
   written on the canonical GM by the `waypoint.oracle` relay —
   `cardActions.applyWaypointOraclePick`, which posts the forced follow-up as
   the roller (`actorId`; `deferWhileBusy`, so it is held, not dropped, while
-  another move holds the lock — issue #325 W02) and retires the pending
+  another move holds the lock — issue #325 W02 — or before a session has
+  begun, until one does — issue #329 X14) and retires the pending
   ordinary choice card — or by
   the ordinary pick, `resultUpgrade.closeUpgradesForChoice`; issue #316 T06).
   The follow-up is a no-roll move (`rollKind: "none"` — no dice, no outcome,

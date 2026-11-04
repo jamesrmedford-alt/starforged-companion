@@ -734,7 +734,7 @@ const NOTES_HTML_TAG_RE = /<\/?(?:p|div|span|br|hr|h[1-6]|img|ul|ol|li|strong|em
  * @param {unknown} notes
  * @returns {string} '' when nothing is left
  */
-function notesAsCardText(notes) {
+export function notesAsCardText(notes) {
   if (notes === undefined || notes === null) return '';
   return String(notes)
     .replace(new RegExp(PORTRAIT_BLOCK_RE.source, 'g'), ' ')

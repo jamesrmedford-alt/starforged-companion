@@ -21,7 +21,9 @@
  * Make a Discovery / Confront Chaos ("waypoint.oracle", issue #316 T06), a
  * "Which vow?" card's pick ("fulfilVow.pick", issue #321 U02), a move card's
  * "⚑ Mark Progress on Vow" ("milestone.suggestion") and an expedition's
- * "🔁 Recommit" ("expedition.recommit", both issue #321 U20). The
+ * "🔁 Recommit" ("expedition.recommit", both issue #321 U20), and a move
+ * card's or won-fight card's "🏁 Attempt to Fulfill" ("fulfilVow.attempt",
+ * known-issues FULFIL-BUTTON-LOCAL-DISABLE). The
  * handlers below run on the canonical GM, check
  * and stamp the card's resolved flag behind an in-flight guard (the
  * milestone-picker pattern, src/moves/milestonePicker.js), and take every
@@ -512,6 +514,100 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
   }
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// "🏁 Attempt to Fulfill" — gmRelay "fulfilVow.attempt"
+// (known-issues FULFIL-BUTTON-LOCAL-DISABLE)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * gmRelay handler for "fulfilVow.attempt" — runs on the canonical GM. A move
+ * card's "🏁 Attempt to Fulfill Vow" (beside "⚑ Mark Progress on Vow") and a
+ * won-fight card's "🏁 Attempt to Fulfill" posted the forced Fulfill Your Vow
+ * from the clicker's client and disabled only their own DOM button: the
+ * player and the GM — or one client after a re-render — each rolled the vow
+ * again (issue #329 X05 fixed whose vow they roll, not how often).
+ *
+ * One attempt per card, claimed on the GM-authored card (`fulfilAttempted`)
+ * before the post, behind the in-flight guard; a post that fails releases the
+ * claim. The roll is the card's roller's (`actorId`): their player or a GM may
+ * press it, and the move speaks as that PC. The vow rides by its Item id —
+ * the move card's, the roller's sole open vow when it was posted; the
+ * won-fight card's by its name, the roller's copy. A card posted before the
+ * roller was stamped rolls for the clicker's own PC (the payload's `actorId`,
+ * which the requester must own).
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | attempt to fulfil: card ${messageId ?? "?"} not found — nothing rolled.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  const fightCard = f.fightVowCard === true;
+  if (!fightCard && !f.milestoneSuggestion?.eligible) {
+    console.warn(`${MODULE_ID} | attempt to fulfil: message ${messageId} offers no fulfilment — ignored.`);
+    return { posted: false, reason: "not-a-fulfil-card" };
+  }
+  const key = `${messageId}:fulfilAttempt`;
+  if (f.fulfilAttempted || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | attempt to fulfil: card ${messageId} already pressed — ignoring the press.`);
+    return { posted: false, reason: "already-attempted" };
+  }
+
+  const cardActorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  const actorId = cardActorId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
+  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | attempt to fulfil: ${actorId} is not a player character — refused.`);
+    return { posted: false, reason: "not-a-pc" };
+  }
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | attempt to fulfil: user ${ctx?.requesterId ?? "?"} may not roll ${actor?.name ?? "this card"}'s vow — refused.`);
+    return { posted: false, reason: "not-owner" };
+  }
+
+  const vowName = fightCard && typeof f.vowName === "string" && f.vowName ? f.vowName : null;
+  let vowItemId = fightCard ? null : (f.milestoneSuggestion.vowItemId ?? null);
+  if (vowName) {
+    const { resolveVowItemCopies } = await import("../index.js");
+    vowItemId = resolveVowItemCopies(vowName, { actorId: actor?.id ?? null }).primary?.item?.id ?? null;
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.fulfilAttempted`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | attempt to fulfil: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    try {
+      await ChatMessage.create({
+        content: "Attempt to fulfill your vow.",
+        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        flags:   { [MODULE_ID]: {
+          bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true,
+          ...(vowName ? { forcedMoveTarget: vowName } : {}),
+          ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
+        } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | attempt to fulfil: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.fulfilAttempted`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | attempt to fulfil: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "post-failed" };
+    }
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
 /**
  * gmRelay handler for "expedition.recommit" — runs on the canonical GM (issue
  * #321 U20). A Finish an Expedition miss offers "🔁 Recommit"; its button
@@ -675,6 +771,110 @@ export async function applyCombatTrackBattle(payload = {}, ctx = {}) {
       return { posted: false, reason: "post-failed" };
     }
     return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+/** The vow names a threshold card's "This fight serves" picker offers (its HTML), unescaped. */
+function thresholdVowOptions(content) {
+  const select = /<select class="sf-threshold-vow">([\s\S]*?)<\/select>/i.exec(String(content ?? ""))?.[1] ?? "";
+  const unescape = (v) => v.replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+  return [...select.matchAll(/<option value="([^"]*)"/gi)].map(m => unescape(m[1])).filter(Boolean);
+}
+
+/**
+ * gmRelay handler for "combat.threshold" — runs on the canonical GM (issue
+ * #329 X06). The "⚔ A fight looms" threshold card offers ⚔ Enter the Fray
+ * (create the fight's track) or 🚪 Find another way (post the way-out card).
+ * Its buttons were disabled in the clicker's DOM only, nothing was stamped
+ * and nothing checked at render, so every other client — and the clicker's
+ * next render — showed both armed: a second "Find another way" posted a
+ * second way-out card (two exits from one fight), and a stale "Enter the
+ * Fray" after the fight was won began it again. Enter the Fray's press was
+ * also the raw `combat.enterFray` socket (known-issues RELAY-LEGACY-KINDS).
+ *
+ * One choice per card: claimed on the GM-authored card (`thresholdTaken`:
+ * "fray" | "wayOut") behind the in-flight guard, before the track is created
+ * or the way-out card posted; an effect that does not land releases the
+ * claim. The fight takes the card's own label, carried position and roller;
+ * the rank, the vow (one the card's picker offers) and the objective come
+ * from the presser's inputs.
+ *
+ * @param {{ messageId?: string, choice?: "fray"|"wayOut", rank?: string, vowName?: string, objective?: string }} payload
+ * @param {Object} [_ctx] — relay context (anyone at the table may press)
+ * @returns {Promise<{ applied: boolean, reason?: string }>}
+ */
+export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | fight threshold: card ${messageId ?? "?"} not found — nothing done.`);
+    return { applied: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!f.combatThresholdCard) {
+    console.warn(`${MODULE_ID} | fight threshold: message ${messageId} is not a threshold card — ignored.`);
+    return { applied: false, reason: "not-a-threshold-card" };
+  }
+  const choice = payload.choice === "fray" || payload.choice === "wayOut" ? payload.choice : null;
+  if (!choice) {
+    console.warn(`${MODULE_ID} | fight threshold: "${payload.choice ?? "?"}" is not a choice the card offers — refused.`);
+    return { applied: false, reason: "not-on-card" };
+  }
+  const key = `${messageId}:threshold`;
+  if (f.thresholdTaken || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | fight threshold: card ${messageId} already taken (${f.thresholdTaken ?? "in flight"}) — ignoring the press.`);
+    return { applied: false, reason: "already-claimed" };
+  }
+
+  _inFlight.add(key);
+  const release = () => message.update({ [`flags.${MODULE_ID}.thresholdTaken`]: null })
+    .catch(err => console.warn(`${MODULE_ID} | fight threshold: releasing the claim failed:`, err?.message ?? err));
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.thresholdTaken`]: choice });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | fight threshold: card ${messageId} could not be claimed — nothing done:`, err?.message ?? err);
+      return { applied: false, reason: "claim-refused" };
+    }
+
+    if (choice === "wayOut") {
+      const { buildWayOutHtml } = await import("./combatThreshold.js");
+      try {
+        await ChatMessage.create({ content: buildWayOutHtml(), flags: { [MODULE_ID]: { wayOutCard: true } } });
+      } catch (err) {
+        console.warn(`${MODULE_ID} | fight threshold: the way-out card could not be posted — the claim is released:`, err?.message ?? err);
+        await release();
+        return { applied: false, reason: "post-failed" };
+      }
+      return { applied: true };
+    }
+
+    const { normalizeCombatRank } = await import("./combat.js");
+    const vowName   = typeof payload.vowName === "string" ? payload.vowName.trim() : "";
+    const objective = typeof payload.objective === "string" ? payload.objective.trim().slice(0, 120) : "";
+    const { createCombatTrackFromThreshold } = await import("../index.js");
+    let result = null;
+    try {
+      result = await createCombatTrackFromThreshold({
+        label:     typeof f.label === "string" && f.label ? f.label : "the enemy",
+        rank:      normalizeCombatRank(payload.rank),
+        vowName:   vowName && thresholdVowOptions(message.content).includes(vowName) ? vowName : "",
+        objective,
+        position:  f.position ?? null,
+        actorId:   typeof f.actorId === "string" && f.actorId ? f.actorId : null,
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | fight threshold: the fight could not be begun:`, err?.message ?? err);
+    }
+    if (!result?.track) {
+      await release();
+      return { applied: false, reason: "not-created" };
+    }
+    await message.update({ [`flags.${MODULE_ID}.thresholdTrackId`]: result.track.id })
+      .catch(err => console.debug?.(`${MODULE_ID} | fight threshold: recording the fight on the card failed:`, err?.message ?? err));
+    return { applied: true };
   } finally {
     _inFlight.delete(key);
   }

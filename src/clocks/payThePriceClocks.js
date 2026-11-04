@@ -83,7 +83,8 @@ export async function advanceClocksOnPayThePrice() {
     setTimeout(async () => {
       try {
         const { narrateClockAdvancement } = await import("../narration/narrator.js");
-        const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        // A working copy — each vignette applies its sidecar on it (issue #329 X09).
+        const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
         for (const cd of justTriggered) {
           const narrationId = newNarrationId();
           const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId });

@@ -159,6 +159,33 @@ export async function rerenderEntityPageBody(typeKey, page, record) {
   }
 }
 
+// Entity types whose host Actor has a Notes tab (`system.notes`): an NPC card
+// (an ironsworn `character`) and a ship (`starship`). For them the sheet's
+// Notes are the entity's notes — what the GM edits and what the Auto-Seed
+// writes; the record's own `notes` field is not read (issue #329 X12:
+// decisions.md → "An NPC card's or ship's notes are its sheet's Notes tab").
+const SHEET_NOTES_TYPES = new Set(['connection', 'ship']);
+
+/** True when `typeKey`'s notes live on its host Actor's Notes tab. */
+export function hasSheetNotes(typeKey) {
+  return SHEET_NOTES_TYPES.has(typeKey);
+}
+
+/**
+ * An entity record with its notes taken from its sheet's Notes tab, for the
+ * types that have one (hasSheetNotes) — the record as stored otherwise.
+ *
+ * @param {string} typeKey
+ * @param {ClientDocument|null} document
+ * @param {Object|null} data — readEntityFlag's payload
+ * @returns {Object|null}
+ */
+export function withSheetNotes(typeKey, document, data) {
+  if (!data || !SHEET_NOTES_TYPES.has(typeKey)) return data;
+  const notes = document?.system?.notes;
+  return typeof notes === 'string' ? { ...data, notes } : data;
+}
+
 /**
  * Iterate every host document that carries a flag payload for `typeKey`.
  * Yields { document, data } pairs. Callers can read the same data via

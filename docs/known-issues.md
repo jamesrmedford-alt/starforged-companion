@@ -11,6 +11,85 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Ninth bug audit (issue #329, part 1 of 3) — all fourteen fixed in the v1.7.36 cycle, and four of the five found while fixing
+
+Found by the ninth bug audit (2026-11-04) of `8715172`, with a probe per
+finding (`tests/probes/` on branch `claude/focused-mayer-4v90oo`; the full
+report is `docs/testing/bug-audit-9-2026-11-04.md` there): the two X-Card
+safety findings (X01–X02) and twelve medium ones (X03–X14). Parts 2 and 3
+(issues #331 — X15–X61 — and #330 — the decisions D1–D15) are open. Each fix
+carries its own regression tests, converted from the audit's probes, which
+fail with the fix taken out (`docs/testing/fix-sensitivity.md`). None has been
+checked in a live Foundry world yet. The ones to try: play the X-Card on a
+narration whose capture recorded lore or a Session Log beat (X01); miss an
+Endure Harm at 1 health and pick each option on the choice card (X03); a GM
+pressing 🏁 / ⚔ on a player's card at a two-PC table (X05); a GM whose socket
+drops and comes back mid-move at a two-GM table (X08 — **(Foundry)**: the
+harness models the reconnect with leave / join); edit an NPC card's Notes
+tab and read the narrator's card (X12); and type a line before Begin a
+Session (X14). And for the four found while fixing: press 🏁 on the same
+card from a player's and the GM's client; take "Lose Momentum (-2)" on an
+Endure Harm miss at 0 health; X-Card a narration that turned a faction
+hostile; load a world played before this version whose NPC had a ⤴ Promoted
+detail. The seventeen probe files of X01–X14 are converted and
+removed; the 57 of parts 2 and 3 still fail by design (86 failing tests, 80
+controls passing — unchanged by this work).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| X01 XCARD-CAPTURE-NO-NARRATION-ID | SAFETY | The capture's lore, threats, places, Session Log beats and tier details carried no narration id, so the X-Card's `propagateRetraction` (which reaches only copies restating a retracted sidecar truth) left them: the lore came back as ESTABLISHED LORE → every capture entry point hands the narration's id down; each record is stamped (an entry it rewrote keeps the versions before as `previous`); the X-Card's finish runs `retractNarrationCapture` — a rewritten entry restored, a new lore entry retracted, a new threat / faction / place page deleted, the beats and tier details dropped |
+| X02 CONSISTENCY-CHECK-STALE-LEDGER | SAFETY | The consistency check audited the pipeline's pre-dialog snapshot: an X-Card played while the move waited handed the removed beat to the audit as binding; a `!truth strike` then sat under ACTIVE SCENE TRUTHS → `auditCampaignState`: the live ledgers with the narration's own entries merged by the persist's policy |
+| X03 ENDURE-AT-ZERO-MARK-AND-ROLL | RULES | At 0 health / spirit on a miss the executor marked wounded / shaken AND rolled the table → nothing marked or rolled; a follow-up choice card (mark the impact, mark the lasting one, roll the table — `rollTable` option, `rollImpactTable`), bound to the move's resolution when its Pay the Price ran it, so an upgrade retires it |
+| X04 ASSET-ADD-ON-COST-MENTION | RULES | An ability's move link that names the move only as a cost ("Endure Harm (-2)", "also …", "you must Repair") keyed it to that move with the general trigger's add; an outcome sentence's later-move add was offered on the trigger itself → cost mentions key nothing; on the ability's own trigger an outcome sentence's add is skipped |
+| X05 CARD-REPOST-AS-CLICKER | ATTRIBUTION | Five forced-move buttons posted with no speaker, so a GM's press rolled as the first PC → each speaks as the card's roller (`cardRollerSpeaker`); the expedition and player-vow cards record it; the 🏁 buttons name the roller's vow by its Item id |
+| X06 THRESHOLD-CARD-NO-CLAIM | DUPLICATE | The fight-threshold card disabled its buttons locally only: a second Find another way posted a second way-out card, a stale Enter the Fray began a won fight again → relayed `combat.threshold`, claimed once on the card (`thresholdTaken`); the `combat.enterFray` socket is retired |
+| X07 REWARD-LINK-REFUSED-WRITE | LOSE-STATE | A refused reward / link write after the claim was reported as set → the writers report whether they landed (no copy counts as not); the claim is released and the presser and GMs whispered |
+| X08 MOVE-LOCK-RELEASED-BY-STALE-PIPELINE | RACE | A pipeline whose lock was handed over (W25) released the lock a later move held → each claim stamps `pendingMoveClaim`; a pipeline releases only its own |
+| X09 SIDECAR-APPLY-CACHED-MUTATE | LOSE-STATE | Six callers narrated from the cached campaignState, so a refused write left facts, a frame or a scene on the GM alone → each narrates from a working copy |
+| X10 SCENE-COMMAND-CACHED-MUTATE | LOSE-STATE | `!scene start` / `end` changed the cached setting and claimed success whatever the write did → a working copy; the card says "not saved" when the world kept its scene |
+| X11 SECTOR-STORE-CACHED-MUTATE | LOSE-STATE | `storeSector` put the record on the cached setting before its write, so the retry found it "stored" → the record reaches the caller's object only once written; `createSector` works on a copy |
+| X12 NOTES-SHEET-NOT-MIRRORED | LOSE-PLOT | The narrator's Notes row read the record's `notes`, which the sheet's Notes tab and the Auto-Seed never reached → the sheet is canonical for NPC cards and ships (`withSheetNotes` in the getters, the panel's display, ⤴ Promote) — decisions.md |
+| X13 BEGIN-REFUSED-SILENT | UX | A refused session-start write was a console warning; the Begin card's "+1 momentum" was the last word → a "The session was not started" card |
+| X14 SESSION-GATE-SILENT-DROP | UX | The session gate dropped typed lines and button moves with no word → the author and GMs whispered (a typed line's author once); a claimed card's forced move held until a session begins |
+
+Found while fixing — fixed in the same cycle (the maintainer asked for the
+known issues to be addressed, 2026-11-04), each with regression tests that
+fail with its fix taken out:
+
+- ~~**XCARD-CAPTURE-TRANSITIONS**~~ (SAFETY) — fixed. A state transition the
+  capture applied to an existing World Journal entry — a threat resolved or
+  escalated, lore confirmed, a faction's attitude — carried no narration id,
+  so an X-Card on that narration did not undo it → `applyStateTransition`
+  takes the narration's id, and `updateThreatSeverity`,
+  `promoteLoreToConfirmed` and `recordFactionIntelligence` stamp it with the
+  version they replaced, which the X-Card restores; a faction entry records
+  the stance its write moved on the faction's record (`recordStance`
+  { entityId, before, after }), put back where the record still holds it
+  (`tests/unit/xcardCaptureTransitions.test.js`).
+- ~~**ENDURE-ZERO-ON-OTHER-OPTION**~~ (RULES) — fixed. "If your health is 0,
+  you must also mark … or roll" holds whichever miss option is picked; the
+  at-0 choice card followed only "-1 health" → the "Lose Momentum (-2)"
+  option carries `atZeroChoice`, and `offerAtZeroChoiceAfterMiss` posts the
+  card when the meter is 0 (`tests/unit/endureZeroOnMomentumPick.test.js`).
+- ~~**NOTES-PROMOTED-BEFORE**~~ (LOSE-STATE) — fixed. A detail promoted to
+  an NPC's or ship's record notes before X12 was no longer shown, and
+  `updateShip` still wrote a ship's notes onto the record → the canonical
+  GM's world load moves each promoted paragraph the Notes tab lacks into it
+  and clears the record's copy (`migrator.moveRecordNotesToSheets`);
+  `updateShip` writes the tab alone (`tests/unit/notesPromotedBefore.test.js`).
+- ~~**FULFIL-BUTTON-LOCAL-DISABLE**~~ (DUPLICATE) — fixed. The 🏁 buttons
+  disabled only locally, so a second client or a re-render rolled the vow
+  again → both relay `fulfilVow.attempt`, claimed once on the card
+  (`fulfilAttempted`) by the canonical GM, which posts the roller's move — the
+  roller's player or a GM may press it (`tests/unit/fulfilButtonOnce.test.js`).
+
+Open — needs a decision:
+
+- **ENDURE-HARM-STEP (issue #330 D3)** — undecided. A Pay the Price harm at 0
+  now offers the X03 choice card where it marked and rolled; whether the harm
+  step should run the miss escalation at all (the resist roll it stands in
+  for) is the open decision.
+
 ### Eighth bug audit (issue #326, part 2 of 2) — all fifty fixed and the eight decisions built in the v1.7.36 cycle
 
 Found by the eighth bug audit (2026-11-03) of `39331b4`, with a probe per
@@ -398,11 +477,15 @@ Open — found while fixing, not fixed:
   the removed beat can return at the next session start.
 - **XCARD-LATE-CAPTURE** (SAFETY). The detection and tier passes run about
   2 s after a narration; an X-Card played inside that window does not stop
-  them writing lore and tier details from the removed prose (the X-Card's
-  `propagateRetraction` reaches only copies already written).
+  them writing lore and tier details from the removed prose (the X-Card
+  undoes only what was written before it — `propagateRetraction`, and since
+  issue #329 X01 `retractNarrationCapture`, by the narration id the records
+  now carry; a capture that checks `xCardedNarrationIds` before writing would
+  close this).
 - **XCARD-INCITING-PREMISE** (SAFETY). X-carding the inciting card leaves its
-  prose in `campaignState.incitingIncident` (rendered in every prompt) and its
-  "Inciting Incident" lore entry.
+  prose in `campaignState.incitingIncident` (rendered in every prompt). Its
+  "Inciting Incident" lore entry and what its capture recorded now leave with
+  it (issue #329 X01).
 - **XCARD-AUDIO-PLAYING** (SAFETY, low). Narrator audio already playing when
   the X-Card is played keeps playing.
 - **XCARD-POST-RACE** (SAFETY, low). A narration that passes its interrupted
@@ -438,10 +521,12 @@ Open — found while fixing, not fixed:
   open, Enter the Fray uses `selectCombatTrack`'s sole-open fallback and never
   posts its threshold card; an Undertake naming a new destination marks the
   one open expedition.
-- **WHICH-FIGHT-LOCAL-DISABLE**, **FULFIL-BUTTON-LOCAL-DISABLE** (DUPLICATE).
-  The "Which fight?" pick (now also for Strike, Clash and Undertake) and the
-  🏁 Attempt to Fulfill Vow button are still disabled only locally; a second
-  client or a re-render rolls again. The fix is U02's relay-and-claim.
+- **WHICH-FIGHT-LOCAL-DISABLE**, ~~**FULFIL-BUTTON-LOCAL-DISABLE**~~
+  (DUPLICATE). The "Which fight?" pick (now also for Strike, Clash and
+  Undertake) is still disabled only locally; a second client or a re-render
+  rolls again. The fix is U02's relay-and-claim — which the 🏁 Attempt to
+  Fulfill buttons now have (`fulfilVow.attempt`, fixed in the issue #329
+  cycle).
 - **PACED-CARD-OLD-MOVE-NAME** (WRONG-DETAIL, low). Paced cards posted before
   U45 may hold a display-name suggestion; their Roll button posts it
   unvalidated. A `toMoveId` guard on the button would cover them.
@@ -1147,12 +1232,11 @@ lives in the matching `docs/flows/*-flow.md` maps.
 
 **Open follow-ups** (found during the audit or while verifying this write-up):
 
-- **RELAY-LEGACY-KINDS** — three older world-writing socket relays predate
-  gmRelay and have no requester context, serialisation or no-GM warning:
-  `combat.enterFray` (`src/index.js`), `vow.setReward`, `vow.linkConnection`
-  (`src/session/swearVow.js`). Fold them into `GM_ACTIONS` when next touched
-  (listed in the gmRelay header). `expedition.recommit` was folded in by issue
-  #321 U20 (a `GM_ACTIONS` kind, claimed once on its card).
+- ~~**RELAY-LEGACY-KINDS**~~ — **resolved**: the older world-writing socket
+  relays are all folded into `GM_ACTIONS` — `expedition.recommit` (issue #321
+  U20), `vow.setReward` / `vow.linkConnection` as `vow.reward` / `vow.link`
+  (issue #325 W11) and `combat.enterFray` as `combat.threshold` (issue #329
+  X06).
 - **CARD-STAMP-NONOWNER** (from source; not reproduced live) — two more
   GM-authored cards are stamped "used" from the clicker's client, which a
   player can't do (Foundry lets only a message's author or a GM update it):

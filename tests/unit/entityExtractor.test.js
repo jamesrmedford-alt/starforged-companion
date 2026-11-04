@@ -672,7 +672,20 @@ describe("routeWorldJournalResults", () => {
     expect(spies.applyStateTransition).toHaveBeenCalledWith(
       expect.objectContaining({ change: "resolved" }),
       fixture.campaignState,
+      {},   // no narration: nothing stamped
     );
+    fixture.restore();
+  });
+
+  it("a narration's transitions carry its id, for the X-Card (XCARD-CAPTURE-TRANSITIONS)", async () => {
+    const fixture = buildFullCampaignState();
+    await routeWorldJournalResults({
+      stateTransitions: [{ entryType: "threat", name: "AI fragment", change: "resolved" }],
+    }, fixture.campaignState, { narrationId: "nar-1" });
+    expect(spies.applyStateTransition).toHaveBeenCalledWith(
+      expect.objectContaining({ change: "resolved" }), fixture.campaignState, { narrationId: "nar-1" });
+    await applyStateTransition({ entryType: "lore", name: "Soft fact", change: "confirmed" }, fixture.campaignState, { narrationId: "nar-1" });
+    expect(spies.promoteLoreToConfirmed).toHaveBeenCalledWith("Soft fact", fixture.campaignState, { narrationId: "nar-1" });
     fixture.restore();
   });
 
@@ -687,7 +700,7 @@ describe("routeWorldJournalResults", () => {
       { entryType: "lore", name: "Soft fact", change: "confirmed" },
       fixture.campaignState,
     );
-    expect(spies.promoteLoreToConfirmed).toHaveBeenCalledWith("Soft fact", fixture.campaignState);
+    expect(spies.promoteLoreToConfirmed).toHaveBeenCalledWith("Soft fact", fixture.campaignState, {});
     expect(spies.applyStateTransition).not.toHaveBeenCalled();
     fixture.restore();
   });

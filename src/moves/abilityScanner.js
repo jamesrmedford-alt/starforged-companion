@@ -125,10 +125,54 @@ function stripHtml(s) {
 // DETECTION — STRUCTURED PASS
 // ─────────────────────────────────────────────────────────────────────────────
 
+const MOVE_LINK = /@Compendium\[[^\]]*\]\{([^}]+)\}/g;
+
+/**
+ * True when a move link names its move as a COST of another trigger, not as
+ * a move the ability applies to (issue #329 X04): "… take +2 fire but
+ * [Endure Harm] (-2)", "On a weak hit, also [Endure Stress] (-1)", "the
+ * augment is broken; you must [Repair] and spend 3 repair points". A "must"
+ * in a trigger's own condition names the trigger: "When you must [Endure
+ * Harm], you may instead let your armor take the hit" (Armored), "When you
+ * … must [Endure Stress], you may …" (Survivor).
+ *
+ * @param {string} text
+ * @param {number} index — the link's offset in `text`
+ * @param {number} length — the link's length
+ * @returns {boolean}
+ */
+function isCostMention(text, index, length) {
+  if (/^\s*\(\s*-\s*\d/.test(text.slice(index + length, index + length + 8))) return true;
+  if (!/\b(?:must|also)\s+$/i.test(text.slice(Math.max(0, index - 8), index))) return false;
+  // The clause the link sits in (a link's compendium id holds dots, so ids
+  // are dropped before looking for the clause's start).
+  const head   = text.slice(0, index).replace(/@Compendium\[[^\]]*\]/g, "@");
+  const clause = head.slice(head.search(/[.!?;][^.!?;]*$/) + 1);
+  return !(/^\s*(?:when|if)\b/i.test(clause) && !clause.includes(","));
+}
+
+/**
+ * The moves a text names as moves it applies to: its `@Compendium[…]{Move}`
+ * links, normalised, less the cost mentions (isCostMention).
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+function namedMoves(text) {
+  const s = String(text ?? "");
+  return [...s.matchAll(MOVE_LINK)]
+    .filter(m => !isCostMention(s, m.index, m[0].length))
+    .map(m => normaliseName(m[1]));
+}
+
 /**
  * Find abilities that explicitly reference the chosen move via a
  * `@Compendium[…]{MoveName}` link. Display-name match is
- * case-insensitive and ignores punctuation/whitespace.
+ * case-insensitive and ignores punctuation/whitespace. A link that names the
+ * move only as the cost of another trigger — Firebrand's "On a miss, take +2
+ * fire but Endure Harm (-2)", Haunted's "also Endure Stress (-1)",
+ * Augmented's "you must Repair" — does not key the ability to it: their add
+ * is another move's, and it was offered pre-checked (issue #329 X04).
  *
  * @param {Array} abilities — output of collectEnabledAbilities
  * @param {string} moveName — display name e.g. "Gather Information"
@@ -137,20 +181,8 @@ function stripHtml(s) {
 export function structuredMatches(abilities, moveName) {
   const target = normaliseName(moveName);
   if (!target) return [];
-
-  const re = /@Compendium\[[^\]]*\]\{([^}]+)\}/g;
-  const matches = [];
-  for (const ab of abilities) {
-    // Stored text has already had HTML stripped; @Compendium tokens survive.
-    re.lastIndex = 0;
-    let m;
-    let hit = false;
-    while ((m = re.exec(ab.text ?? "")) !== null) {
-      if (normaliseName(m[1]) === target) { hit = true; break; }
-    }
-    if (hit) matches.push(ab);
-  }
-  return matches;
+  // Stored text has already had HTML stripped; @Compendium tokens survive.
+  return abilities.filter(ab => namedMoves(ab.text).includes(target));
 }
 
 function normaliseName(s) {
@@ -415,7 +447,14 @@ export function extractStatReplacement(text) {
  *   2. the first add in a sentence that names no move — a general trigger
  *      ("When you make a move to defuse …") — or, with no move given, the
  *      first add at all.
- * An add "on your next …" is for a later roll and never counted here.
+ * An add "on your next …" is for a later roll and never counted here. When
+ * the move being made is the ability's own trigger, neither is an add in an
+ * outcome's sentence: Scavenger's "When you Secure an Advantage to cobble
+ * together … On a hit, you may add +1 when making a move aided by the item"
+ * is for the moves the item later aids, not the Secure an Advantage (issue
+ * #329 X04). A move named only as a cost ("… and Lose Momentum (-1)") does
+ * not make a sentence another move's: Service Pod's "Careful: Add +2 and
+ * Lose Momentum (-1)" is its trigger's add.
  *
  * Skips momentum / fire / heat references — those are resource changes,
  * not roll modifiers.
@@ -426,9 +465,10 @@ export function extractStatReplacement(text) {
  */
 export function extractAdds(text, moveName = null) {
   const target = normaliseName(moveName);
+  const ownTrigger = !!target && namedMoves(text).includes(target);
   const clauses = String(text ?? "").split(/(?<=[.!?])\s+/).map(sentence => ({
-    moves: [...sentence.matchAll(/@Compendium\[[^\]]*\]\{([^}]+)\}/g)].map(m => normaliseName(m[1])),
-    add:   firstAddIn(sentence),
+    moves: namedMoves(sentence),
+    add:   ownTrigger && OUTCOME_SENTENCE.test(sentence) ? 0 : firstAddIn(sentence),
   })).filter(c => c.add > 0);
   if (target) {
     const own = clauses.find(c => c.moves.includes(target));
@@ -437,6 +477,9 @@ export function extractAdds(text, moveName = null) {
   }
   return clauses[0]?.add ?? 0;
 }
+
+/** A sentence about the trigger roll's outcome — "On a hit, …", "On a strong hit with a match, …": its adds are for later rolls. */
+const OUTCOME_SENTENCE = /^\s*on\s+a\s+(?:strong\s+|weak\s+)?(?:hit|miss)\b/i;
 
 /** The first "add +N" (1–5) in one sentence that is not for a later roll ("… on your next Strike"); 0 for none. */
 function firstAddIn(sentence) {

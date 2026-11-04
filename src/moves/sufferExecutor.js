@@ -23,12 +23,14 @@
  *        - Endure Harm past 0 health → the remainder is Lose Momentum
  *          ("if your health is 0, suffer -momentum equal to any
  *          remaining harm" — issue #314 Q02; it used to vanish in the
- *          meter's clamp); then mark wounded/maimed; roll
- *          MORTAL_WOUND d100 if the trigger was a miss; otherwise just
- *          mark and surface.
+ *          meter's clamp). At 0 on a miss the player chooses one: mark
+ *          wounded, mark permanently harmed, or roll the MORTAL_WOUND
+ *          d100 — a follow-up choice card (issue #329 X03: it marked
+ *          wounded AND rolled the table). At 0 otherwise it marks
+ *          wounded (the harm step's escalation — issue #330 D3).
  *        - Endure Stress past 0 spirit → the remainder is Lose Momentum
- *          the same way; mark shaken/traumatized; roll DESOLATION d100
- *          on miss.
+ *          the same way; at 0 on a miss the choice is shaken,
+ *          traumatized or the DESOLATION d100; otherwise shaken.
  *        - Withstand Damage at 0     → roll VEHICLE_DAMAGE d100; if
  *          this is the command vehicle, surface an Overcome
  *          Destruction prompt (Q2 — prompt, don't auto-fire).
@@ -183,17 +185,152 @@ function overflowLine(momentumLoss) {
   return line;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// At 0 on a miss — the player's choice (issue #329 X03)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What Endure Harm / Endure Stress offer at 0 on a miss: "If your health is
+ * 0, you must also mark wounded or permanently harmed, or roll on the table
+ * below" (vendored Endure_Harm; Endure Stress: shaken or traumatized, or the
+ * desolation table). One of the three, the player's choice. An impact already
+ * marked is not offered (marking it again would cost nothing).
+ */
+const AT_ZERO_CHOICES = {
+  harm: {
+    meter:  "health",
+    impact: "wounded",
+    lasting: "permanentlyharmed",
+    table:  "mortal_wound",
+    labels: ["Mark wounded", "Mark permanently harmed", "Roll on the mortal-wound table"],
+  },
+  stress: {
+    meter:  "spirit",
+    impact: "shaken",
+    lasting: "traumatized",
+    table:  "desolation",
+    labels: ["Mark shaken", "Mark traumatized", "Roll on the desolation table"],
+  },
+};
+
+/** The d100 tables the at-0 choice can roll, by id. */
+const IMPACT_TABLES = {
+  mortal_wound: { table: MORTAL_WOUND, title: "Mortal Wound" },
+  desolation:   { table: DESOLATION,   title: "Desolation" },
+};
+
+/**
+ * The choice card's prompt for Endure Harm ("harm") or Endure Stress
+ * ("stress") at 0 on a miss — an enumerated sufferPrompt: mark the impact,
+ * mark the lasting one, or roll the table (sufferDialog's `mark` and
+ * `rollTable` options).
+ *
+ * @param {"harm"|"stress"} which
+ * @returns {Object|null}
+ */
+export function atZeroChoicePrompt(which) {
+  const c = AT_ZERO_CHOICES[which];
+  if (!c) return null;
+  return {
+    kind: "enumerated",
+    atZero: c.meter,
+    options: [
+      { label: c.labels[0], mark: c.impact,  requires: `!${c.impact}` },
+      { label: c.labels[1], mark: c.lasting, requires: `!${c.lasting}` },
+      { label: c.labels[2], rollTable: c.table },
+    ],
+  };
+}
+
+/**
+ * Post the at-0 choice card for `actor` (sufferCard's choice card; loaded on
+ * demand — it imports this module). A move's Pay the Price passes the move's
+ * `resolutionId`: the card is that outcome's, so a Burn Momentum or Improve
+ * Result of the move retires it (resultUpgrade.js). A test's fixed d100 rides
+ * to the table option. Never throws.
+ *
+ * @returns {Promise<boolean>} whether the card posted
+ */
+async function postAtZeroChoice(actor, which, opts = {}) {
+  try {
+    const { postSufferChoiceCard } = await import("./sufferCard.js");
+    const posted = await postSufferChoiceCard({
+      sufferPrompt: atZeroChoicePrompt(which),
+      actor,
+      executorOpts: Number.isInteger(opts.fixedRoll) ? { fixedRoll: opts.fixedRoll } : {},
+      moveId: which === "harm" ? "endure_harm" : "endure_stress",
+      resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
+    });
+    return !!posted;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferExecutor: the at-0 choice card could not be posted:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * The at-0 choice after a miss's "Lose Momentum (-2)" (known-issues
+ * ENDURE-ZERO-ON-OTHER-OPTION). "If your health is 0, you must also mark
+ * wounded or permanently harmed, or roll on the table below" holds whichever
+ * option the miss took: the -1 health / spirit pick's executor offers it
+ * itself (endureHarm / endureStress `impactChoice`), the momentum pick
+ * through this. Posts the choice card when it is a miss and `actor`'s health
+ * ("harm") or spirit ("stress") is 0; nothing otherwise.
+ *
+ * @param {Actor} actor
+ * @param {"harm"|"stress"} which
+ * @param {Object} [opts] — the choice card's executor opts (`isMiss`, `fixedRoll`, `resolutionId`)
+ * @returns {Promise<{ offered: boolean }>}
+ */
+export async function offerAtZeroChoiceAfterMiss(actor, which, opts = {}) {
+  const c = AT_ZERO_CHOICES[which];
+  if (!c || !actor || !opts.isMiss) return { offered: false };
+  if (readMeter(actor, c.meter) > 0) return { offered: false };
+  return { offered: await postAtZeroChoice(actor, which, opts) };
+}
+
+/** The executor card's line for the at-0 choice that follows it. */
+function atZeroChoiceLine(which) {
+  const c = AT_ZERO_CHOICES[which];
+  const what = `${c.labels[0].toLowerCase()} or ${c.labels[1].replace(/^Mark /, "").toLowerCase()}, or ${c.labels[2].toLowerCase()}`;
+  return ` — at 0 ${c.meter}, choose one on the card below: ${what}`;
+}
+
+/**
+ * Roll an at-0 table — the choice card's "Roll on the … table" (issue #329
+ * X03) — and post its result.
+ *
+ * @param {string} tableId — "mortal_wound" | "desolation"
+ * @param {Object} [opts] — `fixedRoll` for deterministic tests
+ * @returns {Promise<{ roll: number, result: string|null }|null>} null for an unknown table
+ */
+export async function rollImpactTable(tableId, opts = {}) {
+  const t = IMPACT_TABLES[tableId];
+  if (!t) return null;
+  const rolled = rollD100Table(t.table, opts);
+  await postSufferCard({
+    title: t.title,
+    body:  `d100 ${rolled.roll}: <em>${rolled.result}</em>`,
+    flags: { suffer: "impact_table", table: tableId, ...rolled },
+  });
+  return rolled;
+}
+
 /**
  * Endure Harm executor.
  * @param {Actor} actor
  * @param {number} amount  1/2/3
  * @param {Object} [opts]
- * @param {boolean} [opts.isMiss]  true → if at 0 health, roll mortal-wound
+ * @param {boolean} [opts.isMiss]  true → at 0 health, the player chooses: mark
+ *   wounded or permanently harmed, or roll the mortal-wound table (a follow-up
+ *   choice card — issue #329 X03); false → at 0, wounded is marked
  * @param {number} [opts.fixedRoll]  d100 override for deterministic tests
  * @param {boolean} [opts.skipCard]
  * @returns {Promise<{ before:number, after:number, atZero:boolean, woundedMarked?:boolean,
- *   mortalWound?:Object|null, momentumLoss?:Object|null }>} `momentumLoss` is
- *   the harm past 0 health, taken as momentum (overflowToMomentum)
+ *   mortalWound?:Object|null, impactChoice?:boolean, momentumLoss?:Object|null }>}
+ *   `impactChoice`: the at-0 choice was offered (nothing marked, nothing rolled
+ *   here); `momentumLoss` is the harm past 0 health, taken as momentum
+ *   (overflowToMomentum)
  */
 export async function endureHarm(actor, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
@@ -207,36 +344,36 @@ export async function endureHarm(actor, amount, opts = {}) {
   const momentumLoss = await overflowToMomentum(actor, overflow);
 
   let woundedMarked = false;
-  let mortalWound = null;
-  if (atZero) {
-    const alreadyWounded = !!actor.system?.debility?.wounded;
-    if (!alreadyWounded) {
-      await setDebility(actor, "wounded", true);
-      woundedMarked = true;
-    }
-    if (opts.isMiss) {
-      // At 0 + miss → roll mortal wound d100.
-      mortalWound = rollD100Table(MORTAL_WOUND, opts);
-    }
+  const mortalWound = null;
+  // At 0 on a miss the player chooses one — mark wounded, mark permanently
+  // harmed, or roll the mortal-wound table — never an impact AND the table
+  // (issue #329 X03). The choice card follows the summary card.
+  const impactChoice = atZero && !!opts.isMiss;
+  if (atZero && !impactChoice && !actor.system?.debility?.wounded) {
+    await setDebility(actor, "wounded", true);
+    woundedMarked = true;
   }
 
   if (!opts.skipCard) {
     let body = `Health: ${before} → ${after}${overflowLine(momentumLoss)}`;
     if (woundedMarked) body += " — marked <strong>wounded</strong>";
-    if (mortalWound)   body += `<br/>Mortal Wound (d100 ${mortalWound.roll}): <em>${mortalWound.result}</em>`;
+    if (impactChoice)  body += atZeroChoiceLine("harm");
     await postSufferCard({
       title: `Endure Harm (-${amount})`,
       body,
-      flags: { suffer: "endure_harm", amount, before, after, atZero, woundedMarked, mortalWound, momentumLoss },
+      flags: { suffer: "endure_harm", amount, before, after, atZero, woundedMarked, mortalWound, impactChoice, momentumLoss },
     });
   }
+  if (impactChoice) await postAtZeroChoice(actor, "harm", opts);
 
-  return { before, after, atZero, woundedMarked, mortalWound, momentumLoss };
+  return { before, after, atZero, woundedMarked, mortalWound, impactChoice, momentumLoss };
 }
 
 /**
  * Endure Stress executor — symmetric to Endure Harm against spirit, the
- * stress past 0 spirit taken as momentum (`momentumLoss`).
+ * stress past 0 spirit taken as momentum (`momentumLoss`). At 0 on a miss
+ * the player chooses: mark shaken or traumatized, or roll the desolation
+ * table (`impactChoice` — issue #329 X03); at 0 otherwise shaken is marked.
  */
 export async function endureStress(actor, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
@@ -250,30 +387,26 @@ export async function endureStress(actor, amount, opts = {}) {
   const momentumLoss = await overflowToMomentum(actor, overflow);
 
   let shakenMarked = false;
-  let desolation = null;
-  if (atZero) {
-    const alreadyShaken = !!actor.system?.debility?.shaken;
-    if (!alreadyShaken) {
-      await setDebility(actor, "shaken", true);
-      shakenMarked = true;
-    }
-    if (opts.isMiss) {
-      desolation = rollD100Table(DESOLATION, opts);
-    }
+  const desolation = null;
+  const impactChoice = atZero && !!opts.isMiss;
+  if (atZero && !impactChoice && !actor.system?.debility?.shaken) {
+    await setDebility(actor, "shaken", true);
+    shakenMarked = true;
   }
 
   if (!opts.skipCard) {
     let body = `Spirit: ${before} → ${after}${overflowLine(momentumLoss)}`;
     if (shakenMarked) body += " — marked <strong>shaken</strong>";
-    if (desolation)   body += `<br/>Desolation (d100 ${desolation.roll}): <em>${desolation.result}</em>`;
+    if (impactChoice) body += atZeroChoiceLine("stress");
     await postSufferCard({
       title: `Endure Stress (-${amount})`,
       body,
-      flags: { suffer: "endure_stress", amount, before, after, atZero, shakenMarked, desolation, momentumLoss },
+      flags: { suffer: "endure_stress", amount, before, after, atZero, shakenMarked, desolation, impactChoice, momentumLoss },
     });
   }
+  if (impactChoice) await postAtZeroChoice(actor, "stress", opts);
 
-  return { before, after, atZero, shakenMarked, desolation, momentumLoss };
+  return { before, after, atZero, shakenMarked, desolation, impactChoice, momentumLoss };
 }
 
 /**

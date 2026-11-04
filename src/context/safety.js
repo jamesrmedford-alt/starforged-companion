@@ -206,10 +206,12 @@ function removeXCardedNarration(narrator, cs) {
 
 /**
  * After the pause is written: flag the X-carded cards (the ring and the
- * rolling summary leave them out) and carry their retracted facts to the
- * stores that copied them — entity tier details and this session's lore
- * (rules/narrator-memory.md 6b: every correction path calls
- * propagateRetraction). Fail-open per step.
+ * rolling summary leave them out), undo what the narrations wrote outside the
+ * ledgers by their narration id (the ship's position; the capture's World
+ * Journal entries, Session Log beats and tier details — issue #329 X01), and
+ * carry their retracted facts to the stores that copied them — entity tier
+ * details and this session's lore (rules/narrator-memory.md 6b: every
+ * correction path calls propagateRetraction). Fail-open per step.
  *
  * @param {Object|null} narrator
  * @param {{ cards: Object[], retracted: Object[] }} removal
@@ -218,11 +220,22 @@ function removeXCardedNarration(narrator, cs) {
 async function finishXCardRemoval(narrator, removal) {
   if (!removal.cards.length) return;
   await narrator.flagXCardedCards(removal.cards);
+  const ids = removal.cards.map(m => m?.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === "string" && id);
   // A ship move the removed narration made is undone with its ledger facts
   // (issue #325 W07): the position record carries the narration's id.
   if (typeof narrator.restoreShipPositionAfterXCard === "function") {
-    const ids = removal.cards.map(m => m?.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === "string" && id);
     await narrator.restoreShipPositionAfterXCard(ids);
+  }
+  // So does what its capture recorded — lore, threats, factions, places,
+  // Session Log beats and tier details, which mostly restate no sidecar truth
+  // and so are out of propagateRetraction's reach (issue #329 X01).
+  if (ids.length) {
+    try {
+      const { retractNarrationCapture } = await import("../factContinuity/retractions.js");
+      await retractNarrationCapture(ids);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: undoing what the narration's capture recorded failed:`, err?.message ?? err);
+    }
   }
   if (!removal.retracted.length) return;
   try {

@@ -200,6 +200,7 @@ export function summarizeSufferCalls(calls) {
         ? "combat position not applied"
         : (c.position === "in_control" ? "you are in control" : "you are in a bad spot")); break;
       case "next-bonus":          parts.push(`+${c.amount} next move`); break;
+      case "roll-table":          parts.push(`rolled the ${c.table === "desolation" ? "desolation" : "mortal-wound"} table`); break;
       case "route":               parts.push(`see "Trigger: ${c.route}"`); break;
       case "complication":        parts.push("complication pending"); break;
       default: break;
@@ -219,6 +220,7 @@ const NOT_APPLIED = {
   "fight-over":   "its fight is over",
   "ambiguous":    "more than one is open — mark it in the Progress Tracks panel",
   "refused":      "the world did not save it",
+  "no-table":     "no such table",
 };
 
 /**

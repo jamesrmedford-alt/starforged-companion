@@ -25,7 +25,7 @@
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -54,6 +54,9 @@ const MODULE_ID = "starforged-companion";
  *     { kind: "complication", scope }
  *     { kind: "route",        route, rank?, mark? }
  *     { kind: "mark",         debility }
+ *     { kind: "roll-table",   table }   — Endure Harm / Stress at 0 on a miss (issue #329 X03)
+ *     { kind: "at-zero-choice", which } — the at-0 choice after a miss's
+ *                                         Lose Momentum (ENDURE-ZERO-ON-OTHER-OPTION)
  */
 export function resolveSufferSelection(sufferPrompt, selection = {}) {
   if (!sufferPrompt) return [];
@@ -124,6 +127,12 @@ function optionToCalls(opt, selection) {
     return [{ kind: "expedition-progress", count: opt.expeditionProgress }];
   }
 
+  // Roll an at-0 table — Endure Harm's mortal wound, Endure Stress's
+  // desolation — the third choice at 0 on a miss (issue #329 X03).
+  if (typeof opt.rollTable === "string") {
+    return [{ kind: "roll-table", table: opt.rollTable }];
+  }
+
   // "+1 on next move" situational bonus — surfaced as a reminder card;
   // the player applies it manually to the next action die roll.
   if (typeof opt.nextBonus === 'number') {
@@ -148,7 +157,14 @@ function optionToCalls(opt, selection) {
   // "any" sub-prompt (e.g. set_a_course's "One suffer move (-2)" option
   // which carries `kind: "any", amount, count`).
   if (opt.suffer) {
-    return [{ kind: "suffer", sufferId: opt.suffer, amount: opt.amount ?? 1, itemId: selection.itemId ?? null }];
+    const calls = [{ kind: "suffer", sufferId: opt.suffer, amount: opt.amount ?? 1, itemId: selection.itemId ?? null }];
+    // Endure Harm / Stress's miss: "If your health is 0, you must also mark …
+    // or roll on the table" whichever option is taken — the Lose Momentum
+    // pick's at-0 choice follows it (known-issues ENDURE-ZERO-ON-OTHER-OPTION).
+    if (opt.atZeroChoice === "harm" || opt.atZeroChoice === "stress") {
+      calls.push({ kind: "at-zero-choice", which: opt.atZeroChoice });
+    }
+    return calls;
   }
   if (opt.kind === "any") {
     const sufferId = selection.anyChoice;
@@ -332,6 +348,15 @@ async function runSufferCall(call, actor, opts) {
     }
     case "noop":
       return { kind: "noop" };
+    case "at-zero-choice":
+      // A miss at 0 health / spirit: the choice card (nothing otherwise).
+      return { kind: "at-zero-choice", which: call.which, ...(await offerAtZeroChoiceAfterMiss(actor, call.which, opts)) };
+    case "roll-table": {
+      const rolled = await rollImpactTable(call.table, opts);
+      return rolled
+        ? { kind: "roll-table", table: call.table, ...rolled }
+        : { kind: "roll-table", table: call.table, skipped: true, ok: false, reason: "no-table" };
+    }
     case "combat-progress": {
       const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
       const { fight, reason } = progressFight(await listProgressTracks(), opts);
@@ -599,6 +624,9 @@ export function isOptionAvailable(opt, ctx = {}) {
     return req === "wounded" ? wounded : !wounded;
   }
   if (req === "!shaken")     return !debility.shaken;
+  // The at-0 choice's lasting impacts (issue #329 X03).
+  if (req === "!permanentlyharmed") return !debility.permanentlyharmed;
+  if (req === "!traumatized")       return !debility.traumatized;
   if (req === "!battered") {
     // The vehicle's own impact — its +integrity is what the option gives
     // (issue #309 N02: the PC's impacts were read instead).

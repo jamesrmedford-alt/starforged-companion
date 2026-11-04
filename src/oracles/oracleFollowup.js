@@ -78,7 +78,10 @@ export async function narrateOracleFollowupOnGm(payload = {}, _ctx = {}) {
 async function runOracleFollowup(args) {
   try {
     const { narrateOracleFollowup } = await import("../narration/narrator.js");
-    const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+    // A working copy: the narration mints a scene and applies its sidecar on
+    // the object it is given, and a write the world refuses must leave this
+    // client's cached setting as the world has it (issue #329 X09).
+    const campaignState = foundry.utils.deepClone(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {});
     return await narrateOracleFollowup({
       kind:           args?.kind,
       oracleName:     args?.oracleName,

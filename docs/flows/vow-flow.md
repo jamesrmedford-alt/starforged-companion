@@ -10,7 +10,8 @@ Multiplayer, up front: module-side vow Item writes run on the **canonical
 GM** — the move pipeline (gated on `isCanonicalGM()`), a card click relayed
 through `requestGmAction` (`src/multiplayer/gmRelay.js` `GM_ACTIONS`:
 `milestone.pick`, `fightVow.markMilestone`, `payThePrice.advanceClocks`; and,
-since issue #321, `fulfilVow.pick` and `milestone.suggestion`, which claim
+since issue #321, `fulfilVow.pick` and `milestone.suggestion` — and
+`fulfilVow.attempt`, a card's 🏁 — which claim
 their card and post the forced move once for the pipeline — flagged
 `deferWhileBusy`, so one that meets the move lock is held on the canonical
 GM and rolled when the lock frees, never dropped with its card claimed:
@@ -88,16 +89,21 @@ on every copy (`setSharedVowReward`), on the canonical GM (`vow.reward`): the
 card is claimed once (`rewardChosen`), and a vow whose reward was already
 granted or lost is never promised again — an old card's pick re-promised a
 granted reward, so the next linked win or the fulfilment granted a second
-(issue #325 W11).
+(issue #325 W11). A write that does not land — refused, or no copy of the vow
+to hold it — posts no "🎁 Reward set": the claim is released for another pick
+and the presser and the GMs are whispered (issue #329 X07).
 
 **Player-authored vows.** `registerPlayerVowHook` (createItem hook, GM-side)
 catches sheet-made vows (no `vowId` yet), stamps `vowId = item.id`, and posts
 the "🆕 New vow recorded" card: stakes line, **⚔ Swear it (roll)** (forced
 `swear_an_iron_vow` without the inciting id — narrates + momentum, creates
-nothing twice), a **connection picker** when connections exist
+nothing twice; spoken as the vow's holder, the card's `actorId` or the PC
+holding its `vowId`, whoever presses it — issue #329 X05), a **connection
+picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
-connection exists and claims the card once, `linkedConnection`), and the
-same reward offer.
+connection exists and claims the card once, `linkedConnection`; a link the
+vow did not take releases the claim and whispers the presser, with no
+"🤝 Linked" card — issue #329 X07), and the same reward offer.
 
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;
@@ -133,8 +139,14 @@ All real progress lands on **item ticks** (`system.current`) via
   roller's player or a GM may press it (a card from before the roller was
   stamped marks the clicker's own PC), and a failed post releases the claim
   (issue #321 U20 — every client's press, or a re-render, marked the vow
-  again). "🏁 Attempt to Fulfill Vow" still posts its forced move from the
-  clicker's client, disabled only there.
+  again). "🏁 Attempt to Fulfill Vow" relays `fulfilVow.attempt`
+  (`wireAttemptFulfillVowButton` → `cardActions.applyAttemptFulfilVow`, the
+  same rules: claim `fulfilAttempted`) and posts the forced fulfil once, as
+  the card's roller, naming their sole open vow by its Item id
+  (`milestoneSuggestion.vowItemId`; with several, the pipeline asks which): a
+  GM's press scored and paid the first PC's vow (issue #329 X05), and it was
+  disabled only on the clicker's screen, so each client's press rolled again
+  (known-issues FULFIL-BUTTON-LOCAL-DISABLE).
 - **Won-fight milestone** (see `combat-flow.md` §4): marks scale by the
   fight's rank, ticks-per-mark by the vow's rank. Marked on the vow's
   **holder** — the card's roller (`actorId`) when they hold the vow, else

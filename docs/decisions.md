@@ -6,6 +6,53 @@ rejected.
 
 ---
 
+## Issue #329 audit: what a narration wrote leaves with it, the scene as it stands, the player's choice at 0, the card's own roller, the sheet's notes (2026-11)
+
+**Decision:** (issue #329, part 1 of the ninth audit — X01–X14. The
+maintainer asked for the issue to be addressed on 2026-11-04. Each finding's
+ID in brackets.)
+- **Everything a narration's capture records carries its narration id**
+  [X01]. The detection and tier passes stamp the narration's id on every
+  World Journal entry (an entry they rewrite keeps the versions before),
+  Session Log beat and tier detail; the X-Card undoes them by that id
+  (`retractNarrationCapture`) — restored, retracted (lore) or deleted (a
+  threat, faction or place it made). A new capture writer takes the id from
+  its caller (rules/narrator-memory.md 6b). The transitions it applies to
+  entries it did not make (a threat resolved or escalated, lore confirmed, a
+  faction's attitude) are stamped and undone the same way, the faction's
+  stance on its record included unless it changed since (known-issues
+  XCARD-CAPTURE-TRANSITIONS, found while fixing X01).
+- **The consistency check audits the ledger the persist leaves in the store**
+  [X02], not the caller's snapshot — the W05 rule for the prompt, applied to
+  the audit.
+- **At 0 health or spirit on a miss the player chooses** [X03]: mark the
+  impact, mark the lasting one, or roll the table — a follow-up card, never an
+  impact and the table both. *Rejected:* marking when unmarked and rolling
+  otherwise (the audit's fallback) — the book gives the player the choice.
+  Whether a Pay the Price harm step runs the miss escalation at all is issue
+  #330 D3, open.
+- **An ability adds what its text gives the move being made** [X04]: a move
+  named only as a cost keys nothing; on the ability's own trigger, an outcome
+  sentence's add is for later moves (#325 W12's rule, extended).
+- **A card's forced follow-up is the card's roller's move** [X05], whoever
+  presses it (decisions "Multiplayer attribution"); a threshold card takes one
+  choice, claimed on the GM [X06]; a claimed card's forced move is held, not
+  dropped, before a session begins as while the lock is held [X14].
+- **A claim is released when its effect does not land** [X07]; a pipeline
+  releases only its own claim of the move lock [X08].
+- **A narration or a command works on a copy of the stored campaignState**
+  [X09, X10, X11] — the narrator and the scene lifecycle change the object
+  they are handed (rules/foundry-api.md).
+- **An NPC card's or ship's notes are its sheet's Notes tab** [X12] — see the
+  section of that name.
+- **No silent no-op on a player's action** [X13, X14]: a refused Begin a
+  Session says the session was not started; the session gate whispers the
+  author why nothing ran.
+
+**Reason:** the ninth audit's findings, each with a probe that failed before
+its fix; the tests that replace them fail with the fix taken out
+(`docs/testing/fix-sensitivity.md`).
+
 ## Issue #326 audit: decisions D1–D8, and writes on copies, one emitter, checked relays (2026-11)
 
 **Decision:** (issue #326, part 2 of the eighth audit. The maintainer asked
@@ -1950,10 +1997,12 @@ Retry, GM only), `narrator.sidecar` (issue #286 D2), `waypoint.oracle` (issue #3
 finish-miss card's "🔁 Recommit", each claimed once on its card), `progressTrack.edit` and
 `entity.edit` (issue #321 U05 — every Progress Tracks and Entities panel edit, from any user, as
 an `op` the handler validates), `privateChannel.createJournal` (issue #321 U10 — the GM creates a
-player's Private Channel journal with the player as OWNER). Three older world-writing socket
-relays predate it (`combat.enterFray`, `vow.setReward`, `vow.linkConnection`) — fold them in
-when next touched (known-issues RELAY-LEGACY-KINDS); `expedition.recommit` was folded in
-(issue #321 U20).
+player's Private Channel journal with the player as OWNER). The older world-writing socket
+relays that predated it are all folded in: `expedition.recommit` (issue #321 U20),
+`vow.setReward` / `vow.linkConnection` as `vow.reward` / `vow.link` (issue #325 W11) and
+`combat.enterFray` as `combat.threshold` (issue #329 X06). `fulfilVow.attempt` is a move
+card's or won-fight card's "🏁 Attempt to Fulfill", claimed once on its card (known-issues
+FULFIL-BUTTON-LOCAL-DISABLE).
 
 **Reason:** world settings and other users' documents are GM-write only, so
 player-invoked flows (Set a Flag, Take a Break, Begin / End a Session, the
@@ -2357,6 +2406,33 @@ client makes it, with the author's own key as the no-keyed-GM fallback.
   player typed.
 - *Always the canonical GM* — a keyless-GM table loses every Claude command.
 - *Send the key to the GM* — violates #209 (keys never leave the browser).
+
+## An NPC card's or ship's notes are its sheet's Notes tab (2026-11)
+
+**Decision:** For the two entity types whose host Actor has a Notes tab — an
+NPC / connection card (an ironsworn `character`) and a ship (`starship`) —
+the sheet's `system.notes` is the entity's notes, the one store. The record
+getters read it (`getConnection` / `getShip` → `registry.withSheetNotes`), so
+the narrator's ENTITIES IN SCENE Notes row (`notesAsCardText`), the tier pass
+and the Entities panel's Notes field all show what the tab holds; the panel's
+⤴ Promote appends the detail to the tab; `updateShip({ notes })` (an `!ship
+envision` / `!ship history` append) writes the tab. The record's own `notes`
+field is not read for these types (an empty tab is no notes, whatever the
+record still holds); the other types, which have no Notes tab, keep theirs on
+the record.
+
+**Reason:** issue #329 X12 (NOTES-SHEET-NOT-MIRRORED) — the Auto-Seed writes
+the introduction and portrait into the tab, and the GM edits the tab, but the
+card read the record's `notes`, a second store only an envision and Promote
+wrote: the narrator's Notes row was empty for every seeded NPC and ship and
+never saw the GM's edits. One fact, two stores, no canonical one named
+(rules/reachability.md §5); the sheet is what the GM edits and what the seed
+writes, as for a starship's battered impact below. A detail promoted before
+this change sat in the record's old `notes`, no longer shown: the canonical
+GM's world load moves each such paragraph the tab does not already hold into
+the tab and clears the record's copy (`migrator.moveRecordNotesToSheets`), and
+`updateShip({ notes })` writes the tab alone (known-issues
+NOTES-PROMOTED-BEFORE).
 
 ## Starship battered: the native sheet field is canonical (2026-10)
 
