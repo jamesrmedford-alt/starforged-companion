@@ -84,13 +84,12 @@
  *
  * Older ad-hoc relays still share the same socket channel with their own
  * `kind`s and listeners (not gmRelay-prefixed, so this listener ignores them):
- *   - "combat.enterFray"                          — src/index.js
  *   - "errorLog.append"                           — src/logging/errorLog.js
  *   - "audio.cache.write", "audio.synth.*"        — src/audio/index.js
- * The world-writing one (the first) predates this module, has no requester
- * context, no serialisation and no no-GM warning; fold it into GM_ACTIONS
- * when next touched ("expedition.recommit" was, issue #321 U20; "vow.setReward"
- * and "vow.linkConnection" became "vow.reward" and "vow.link", issue #325 W11).
+ * The world-writing ones that predated this module are folded into
+ * GM_ACTIONS: "expedition.recommit" (issue #321 U20), "vow.setReward" and
+ * "vow.linkConnection" as "vow.reward" and "vow.link" (issue #325 W11), and
+ * "combat.enterFray" as "combat.threshold" (issue #329 X06).
  *
  * Handler signature: `async (payload, ctx) => void`, where
  *   ctx = { requesterId, requester, requesterIsGM, local }
@@ -166,6 +165,9 @@ export const GM_ACTIONS = Object.freeze({
   "waypoint.oracle":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWaypointOraclePick" },
   "combatTrack.battle":        { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatTrackBattle" },
   "wayOut.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyWayOutPick" },
+  // Issue #329 X06 — the "⚔ A fight looms" card's Enter the Fray / Find another
+  // way, claimed once on the card (the legacy "combat.enterFray" socket, folded in)
+  "combat.threshold":          { load: () => import("../moves/cardActions.js"),                      fn: "applyCombatThresholdChoice" },
   "connection.suggest":        { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionSuggestion" },
   "vow.reward":                { load: () => import("../session/swearVow.js"),                       fn: "applyRewardPickFromRelay" },
   "vow.link":                  { load: () => import("../session/swearVow.js"),                       fn: "applyPlayerVowLinkFromRelay" },

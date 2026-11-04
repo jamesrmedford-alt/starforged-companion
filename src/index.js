@@ -115,7 +115,7 @@ import {
   registerShipMapSceneHooks,
 } from "./moves/shipMapScene.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack, selectRollerFight } from "./moves/combat.js";
-import { buildCombatThresholdHtml, buildWayOutHtml, WAY_OUT_MOVES, thresholdPositionLine } from "./moves/combatThreshold.js";
+import { buildCombatThresholdHtml, WAY_OUT_MOVES, thresholdPositionLine } from "./moves/combatThreshold.js";
 import {
   enterCombatTracker,
   endCombatTracker,
@@ -4356,64 +4356,48 @@ export async function createCombatTrackFromThreshold({ label, rank, vowName, obj
   return result;
 }
 
-// Wire the threshold card's buttons. Enter the Fray is a privileged world write
-// (creates a track), so non-canonical clients relay to the GM over the module
-// socket; the way out just posts a narration nudge (any client may post chat).
+// Wire the threshold card's buttons. One choice per card, claimed on the
+// canonical GM (relayed "combat.threshold" → cardActions.applyCombatThresholdChoice,
+// issue #329 X06): Enter the Fray creates the fight's track, Find another way
+// posts the way-out card. A card already taken renders both disabled; a press
+// that is not delivered (no GM) re-arms them. The presser's rank, vow and
+// objective ride the relay; the label, carried position and roller are the
+// card's own.
 function registerCombatThresholdHook() {
   if (registerCombatThresholdHook._installed) return;
   registerCombatThresholdHook._installed = true;
   onChatMessageRender((message, root) => {
     if (!message?.flags?.[MODULE_ID]?.combatThresholdCard) return;
-    const enterBtn = root.querySelector('[data-action="sf-enter-fray"]');
-    const wayBtn   = root.querySelector('[data-action="sf-way-out"]');
-    const readChoice = () => ({
-      label:     message.flags[MODULE_ID].label ?? "the enemy",
-      rank:      root.querySelector('.sf-threshold-rank')?.value
-                 || root.querySelector('.sf-combat-threshold')?.dataset?.suggestedRank,
-      vowName:   root.querySelector('.sf-threshold-vow')?.value || "",
-      objective: root.querySelector('.sf-threshold-objective')?.value || "",
-      // Enter the Fray's carried opening position + whose sheet mirrors it —
-      // read at click time so a weak-hit choice stashed after the card posted
-      // (sufferDialog combat-position executor) is picked up too. The socket
-      // relay spreads the whole choice, so non-canonical clients carry it.
-      position:  message.flags[MODULE_ID].position ?? null,
-      actorId:   message.flags[MODULE_ID].actorId ?? null,
-    });
-    const disable = () => { if (enterBtn) enterBtn.disabled = true; if (wayBtn) wayBtn.disabled = true; };
-
-    if (enterBtn) {
-      const fresh = enterBtn.cloneNode(true);
-      enterBtn.replaceWith(fresh);
-      fresh.addEventListener("click", async (event) => {
-        event.preventDefault(); event.stopPropagation();
-        const choice = readChoice();
-        disable();
-        if (isCanonicalGM()) {
-          await createCombatTrackFromThreshold(choice).catch(err =>
-            console.warn(`${MODULE_ID} | enter the fray failed:`, err?.message ?? err));
-        } else {
-          try {
-            game.socket?.emit?.(`module.${MODULE_ID}`, { kind: "combat.enterFray", ...choice });
-          } catch (err) {
-            console.warn(`${MODULE_ID} | enter-fray relay emit failed:`, err?.message ?? err);
-          }
-        }
-      });
+    const found = [["sf-enter-fray", "fray"], ["sf-way-out", "wayOut"]]
+      .map(([action, choice]) => ({ btn: root.querySelector(`[data-action="${action}"]`), choice }))
+      .filter(x => x.btn);
+    if (!found.length) return;
+    if (liveCardFlags(message)?.thresholdTaken) {
+      for (const { btn } of found) btn.disabled = true;
+      return;
     }
-    if (wayBtn) {
-      const freshWay = wayBtn.cloneNode(true);
-      wayBtn.replaceWith(freshWay);
-      freshWay.addEventListener("click", async (event) => {
+    const wired = found.map(({ btn, choice }) => {
+      const fresh = btn.cloneNode(true);
+      btn.replaceWith(fresh);
+      return { btn: fresh, choice };
+    });
+    const buttons = wired.map(w => w.btn);
+    for (const { btn, choice } of wired) {
+      btn.addEventListener("click", async (event) => {
         event.preventDefault(); event.stopPropagation();
-        disable();
-        try {
-          await ChatMessage.create({
-            content: buildWayOutHtml(),
-            flags:   { [MODULE_ID]: { wayOutCard: true } },
-          });
-        } catch (err) {
-          console.warn(`${MODULE_ID} | way-out card failed:`, err?.message ?? err);
-        }
+        const input = {
+          rank:      root.querySelector('.sf-threshold-rank')?.value
+                     || root.querySelector('.sf-combat-threshold')?.dataset?.suggestedRank,
+          vowName:   root.querySelector('.sf-threshold-vow')?.value || "",
+          objective: root.querySelector('.sf-threshold-objective')?.value || "",
+        };
+        for (const b of buttons) b.disabled = true;
+        await relayCardAction({
+          kind:       "combat.threshold",
+          payload:    { messageId: message?.id ?? null, choice, ...input },
+          isResolved: () => !!liveCardFlags(message)?.thresholdTaken,
+          restore:    () => { for (const b of buttons) b.disabled = false; },
+        });
       });
     }
   });
@@ -4454,22 +4438,6 @@ function registerWayOutHook() {
           restore:    () => buttons().forEach(b => { b.disabled = false; }),
         });
       });
-    }
-  });
-}
-
-// GM-side socket: a non-canonical client chose Enter the Fray; create the track.
-function registerCombatThresholdSocket() {
-  if (registerCombatThresholdSocket._installed) return;
-  if (!game?.socket?.on) return;
-  registerCombatThresholdSocket._installed = true;
-  game.socket.on(`module.${MODULE_ID}`, async (payload) => {
-    try {
-      if (!payload || payload.kind !== "combat.enterFray") return;
-      if (!isCanonicalGM()) return;
-      await createCombatTrackFromThreshold(payload);
-    } catch (err) {
-      console.warn(`${MODULE_ID} | enter-fray socket handler failed:`, err?.message ?? err);
     }
   });
 }
@@ -7196,7 +7164,6 @@ Hooks.once("ready", () => {
   // Combat threshold (#241) — Enter the Fray vs. way out: button wiring + the
   // GM-side enter-fray relay (track creation is GM-gated).
   registerCombatThresholdHook();
-  registerCombatThresholdSocket();
   registerWayOutHook();
   // Recommit relays through gmRelay "expedition.recommit" (issue #321 U20).
   registerRecommitHook();

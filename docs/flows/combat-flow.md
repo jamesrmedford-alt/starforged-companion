@@ -55,9 +55,8 @@ Two cross-cutting facts to hold onto:
   (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
   UPGRADE-PIPELINE-EFFECTS). The
-  threshold card's **Enter the Fray** still uses its older ad-hoc relay
-  (socket kind `combat.enterFray` on `module.starforged-companion`, handled on
-  the canonical GM — no no-GM warning).
+  threshold card's buttons relay `combat.threshold` to the canonical GM (its
+  older ad-hoc `combat.enterFray` socket is retired — issue #329 X06).
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the
   Starforged Progress Tracks journal flag), not on the Foundry Combat document.
   The Combat document (combat tracker) is a UI mirror, created/deleted
@@ -86,9 +85,17 @@ does **not** create a track. If no matching open combat track exists (`selectCom
   in control / in a bad spot") when Enter the Fray's own outcome set one;
 - **⚔ Enter the Fray** and **🚪 Find another way** buttons.
 
-**Enter the Fray** reads rank/vow/objective (+ the carried position) from the
-card and creates the track on the canonical GM (socket kind `combat.enterFray`
-relays player clicks). `createCombatTrackFromThreshold` → `applyCombatProgress`
+**One choice per card** (issue #329 X06): both buttons relay
+`combat.threshold` to the canonical GM (`cardActions.applyCombatThresholdChoice`),
+which claims the GM-authored card (`thresholdTaken`: `"fray"` | `"wayOut"`)
+behind an in-flight guard before acting, and a claimed card renders both
+buttons disabled on every client — they were disabled in the clicker's DOM
+only, so a re-render or another client posted a second way-out card, or began
+a won fight again. An effect that does not land releases the claim.
+**Enter the Fray** takes the presser's rank, vow (one the card's picker
+offers) and objective, with the card's own label, carried position and
+roller, and creates the track (its id recorded on the card,
+`thresholdTrackId`). `createCombatTrackFromThreshold` → `applyCombatProgress`
 (`beginsFight: true` — a new foe is a new fight however many are open, issue
 #321 U16) → `addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
 `linkedVowName`, and gets its `combatState` set from the carried position via
@@ -98,7 +105,8 @@ the actor's sheet field, and the combatant badge). A combat-track card posts
 track's `trackId` / `trackLabel`, which Battle forwards) and the Foundry Combat
 doc opens with position/range badges.
 
-**Find another way** posts the way-out card: the `WAY_OUT_PROMPT` nudge plus
+**Find another way** posts the way-out card (from the canonical GM, once per
+threshold card): the `WAY_OUT_PROMPT` nudge plus
 one-click **Face Danger / Compel / Secure an Advantage** buttons
 (`WAY_OUT_MOVES` / `buildWayOutHtml`), each posting the forced move so
 choosing an exit rolls it (2026-07 soft-spot cleanup — it used to be
