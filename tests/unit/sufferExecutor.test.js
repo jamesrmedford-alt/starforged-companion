@@ -24,6 +24,9 @@ const bridgeCalls = { applyMeterChanges: [], setDebility: [] };
 // The player characters the shared-supply crew is drawn from (sharedSupply.js).
 const roster = vi.hoisted(() => ({ actors: [] }));
 vi.mock("../../src/character/actorBridge.js", () => ({
+  // The at-0 choice card (sufferCard.js, issue #329 X03) reads these.
+  getActor:            vi.fn(() => null),
+  readCompanionHealth: vi.fn(() => null),
   getPlayerActors: vi.fn(() => roster.actors.filter(a => a.type === "character" && !a.flags?.["starforged-companion"]?.entityType)),
   isPlayerCharacterActor: (a) => a?.type === "character" && !a?.flags?.["starforged-companion"]?.entityType,
   applyMeterChanges: vi.fn(async (actor, changes) => {
@@ -162,13 +165,19 @@ describe("endureHarm", () => {
     expect(bridgeCalls.setDebility).toHaveLength(0);
   });
 
-  it("rolls mortal-wound d100 on miss at 0 health", async () => {
+  // Issue #329 X03: at 0 on a miss the player chooses — mark wounded, mark
+  // permanently harmed, or roll the mortal-wound table. It marked wounded AND
+  // rolled the table.
+  it("on a miss at 0 health offers the choice — marks nothing, rolls nothing", async () => {
     const a = actor(1);
-    // Fixed roll 1 → "You suffer mortal harm. Face Death." (1-10 band)
     const r = await endureHarm(a, 1, { isMiss: true, fixedRoll: 1 });
-    expect(r.atZero).toBe(true);
-    expect(r.mortalWound).toEqual({ roll: 1, result: expect.stringMatching(/mortal harm/i) });
-    expect(chatCalls[0].content).toMatch(/Mortal Wound \(d100 1\)/);
+    expect(r).toMatchObject({ atZero: true, woundedMarked: false, mortalWound: null, impactChoice: true });
+    expect(bridgeCalls.setDebility).toHaveLength(0);
+    expect(chatCalls[0].content).toContain("at 0 health, choose one on the card below");
+    const choice = chatCalls[1].flags["starforged-companion"];
+    expect(choice.sufferCard).toBe(true);
+    expect(choice.sufferPrompt.options.map(o => o.label)).toEqual(
+      ["Mark wounded", "Mark permanently harmed", "Roll on the mortal-wound table"]);
   });
 
   it("does not roll mortal-wound if not a miss", async () => {
@@ -271,9 +280,12 @@ describe("endureStress", () => {
     expect(bridgeCalls.setDebility[0]).toMatchObject({ key: "shaken", value: true });
   });
 
-  it("rolls desolation d100 on miss at 0 spirit", async () => {
+  it("on a miss at 0 spirit offers the choice — marks nothing, rolls nothing (issue #329 X03)", async () => {
     const r = await endureStress(actor(1), 1, { isMiss: true, fixedRoll: 5 });
-    expect(r.desolation).toEqual({ roll: 5, result: expect.stringMatching(/overwhelmed/i) });
+    expect(r).toMatchObject({ atZero: true, shakenMarked: false, desolation: null, impactChoice: true });
+    expect(bridgeCalls.setDebility).toHaveLength(0);
+    expect(chatCalls[1].flags["starforged-companion"].sufferPrompt.options.map(o => o.label)).toEqual(
+      ["Mark shaken", "Mark traumatized", "Roll on the desolation table"]);
   });
 
   // Issue #314 Q02 — symmetric to Endure Harm.

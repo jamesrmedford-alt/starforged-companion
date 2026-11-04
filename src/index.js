@@ -1596,7 +1596,7 @@ export function registerChatHook() {
       // them when the player burns momentum to upgrade the outcome.
       let ptpReversals = null;
       if (resolution.consequences?.routePayThePrice && game.user.isGM) {
-        const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null).catch(err => {
+        const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null).catch(err => {
           console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
           return null;
         });
@@ -5788,9 +5788,12 @@ async function postDecisiveActionCostCard(actorId = null) {
  *
  * @param {string|null} actorId — the roller
  * @param {string|null} moveName — the move that paid it ("Face Danger")
+ * @param {string|null} [resolutionId] — the move's resolution: a choice the
+ *   price leaves the player (Endure Harm / Stress at 0 — issue #329 X03) is
+ *   bound to it, so an upgrade of the move retires it
  * @returns {Promise<{ reversals: Object, price: string }|null>}
  */
-async function postMovePayThePriceCard(actorId = null, moveName = null) {
+async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null) {
   const { rollOracle } = await import("./oracles/roller.js");
   let result;
   try {
@@ -5824,7 +5827,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null) {
   // Dispatch the suffer executors first (before clock advance) so meter changes
   // land before the burn button is visible. The receipts are what landed — each
   // route's — so the upgrade reversal undoes only that.
-  const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`);
+  const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`, { resolutionId });
   const sufferMeterDeltas = landed.flatMap(ptpMeterReceipts);
 
   const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
@@ -5978,10 +5981,10 @@ export async function applyPayThePriceSufferFromRelay(payload = {}, ctx = {}) {
   return { applied: true, landed };
 }
 
-async function dispatchPayThePriceSufferRoutes(routes, actorId, where) {
+async function dispatchPayThePriceSufferRoutes(routes, actorId, where, { resolutionId = null } = {}) {
   const landed = [];
   for (const route of routes ?? []) {
-    const res = await dispatchPayThePriceSufferRoute(route, actorId).catch(err => {
+    const res = await dispatchPayThePriceSufferRoute(route, actorId, { resolutionId }).catch(err => {
       console.warn(`${MODULE_ID} | ${where}: suffer dispatch (${route?.move}) failed:`, err?.message ?? err);
       return null;
     });
@@ -6004,11 +6007,14 @@ async function dispatchPayThePriceSufferRoutes(routes, actorId, where) {
  *
  * @param {{ move: string, amount: number, soloFallback?: string }} route
  * @param {string|null} [actorId]
+ * @param {{ resolutionId?: string|null }} [opts] — the move that paid the
+ *   price: the at-0 choice an Endure Harm / Stress leaves is bound to it
+ *   (issue #329 X03)
  * @returns {Promise<Object|undefined>} the executor's result with the move it
  *   ran (`move` — the fallback, when taken) and the PC (`actorId`); nothing
  *   for an "any" route, which posts a picker
  */
-async function dispatchPayThePriceSufferRoute(route, actorId = null) {
+async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutionId = null } = {}) {
   const { executeSuffer } = await import("./moves/sufferExecutor.js");
 
   const actor = (actorId ? game.actors?.get?.(actorId) : null) ?? getPlayerActors()[0] ?? null;
@@ -6047,6 +6053,7 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null) {
     amount: route.amount ?? 1,
     itemId,
     isMiss: true,  // Pay the Price always implies a miss context.
+    resolutionId,
   });
   return { ...landed, move, actorId: actor.id };
 }
