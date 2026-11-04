@@ -12,6 +12,21 @@ rejected.
 needed the maintainer. The maintainer asked for the issue to be addressed on
 2026-11-04 and took the recommended option on every row. Each row's ID in
 brackets.)
+- **The session number counts the sessions a table began** [D12; option A,
+  narrowed]. Every world load after End a Session (or four idle hours) mints
+  a session, and `mintSession` always bumped `sessionNumber`: a GM who opened
+  the world only to prepare burned a number, so Saturday's play read
+  "Session #5" after Tuesday's session 3 on the panel, the Session Log,
+  `!recap session N` and every narrator card. A closing session nobody began
+  (no `sessionStartedId` stamp, and its gate shut) now hands its number on to
+  the next; the id still changes, and its summary is carried as LAST SESSION
+  with no number of its own. The Campaign Start's Begin Session stamps
+  `sessionStartedId` too — it did not, so its session would have read as
+  unbegun — and an open gate counts as begun for a world from before the
+  stamp (issue #300 F11). The load-time mint itself stands ("A
+  session ends at End Session or after four idle hours"). *Rejected:*
+  keeping the mint count and documenting it (option B) — the table reads
+  the number as its own count of sessions played.
 - **`!oracle` follows a cross-reference row in place** [D13; option A]. A
   row whose word is a heading the rulebook links onward — Space Sighting's
   "Stellar Object", "Planet", "Settlement", "Starship", "Derelict",

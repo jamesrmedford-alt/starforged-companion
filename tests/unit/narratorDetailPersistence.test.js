@@ -80,7 +80,7 @@ beforeEach(async () => {
   replies.length = 0;
   await table.reset({ world: { settings: { campaignState: {
     ...CampaignStateSchema,
-    sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 3, currentSceneId: 'sc-1', sceneTruths: [],
+    sessionActive: true, currentSessionId: 'sess-1', sessionStartedId: 'sess-1', sessionNumber: 3, currentSceneId: 'sc-1', sceneTruths: [],
   } } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 } });

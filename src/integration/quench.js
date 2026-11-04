@@ -4190,6 +4190,9 @@ function registerSessionTests(quench) {
           const state = JSON.parse(JSON.stringify(
             game.settings.get(MODULE_ID, "campaignState")));
           state.currentSessionId = "session-old";
+          // A session the table began — an unbegun one hands its number on
+          // instead (issue #330 D12).
+          state.sessionStartedId = "session-old";
           state.lastSessionTimestamp = new Date(Date.now() - 5 * 3600 * 1000).toISOString();
           state.sessionNumber = state.sessionNumber ?? 1;
           // No scene on the copy: a session that is over closes its scene
@@ -12278,6 +12281,7 @@ function registerPromptContractTests(quench) {
           // session's first narration makes no recap call).
           const cs = {
             currentSessionId: "quench-contract-s1", sessionNumber: 1, sessionActive: true,
+            sessionStartedId: "quench-contract-s1",   // begun: its number is its own (issue #330 D12)
             sessionSummary: { text: N.lastSession, sessionId: "quench-contract-s1", coveredCount: 4, updatedAt: new Date().toISOString() },
             safety: {
               lines: ["No harm to children"], veils: [],

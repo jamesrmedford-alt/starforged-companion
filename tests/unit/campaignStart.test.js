@@ -104,6 +104,22 @@ describe("runCampaignStart — gate and confirm", () => {
   });
 });
 
+describe("runCampaignStart — the session it begins (issue #330 D12)", () => {
+  it("stamps the session begun, so it keeps its number and the next session is the one after", async () => {
+    await game.settings.set(MODULE_ID, "campaignState", {
+      shipIds: ["ship-1"], connectionIds: ["npc-1"], sessionActive: false,
+      currentSessionId: "s1", sessionNumber: 1,
+    });
+    await runCampaignStart({ skipConfirm: true });
+    expect(state()).toMatchObject({ sessionActive: true, sessionStartedId: "s1" });
+
+    const { endSession, mintSession } = await import("../../src/session/lifecycle.js");
+    const next = endSession({ ...state() });
+    mintSession(next);
+    expect(next.sessionNumber).toBe(2);
+  });
+});
+
 describe("runCampaignStart — happy path", () => {
   it("runs all five phases in order and reports each as ok", async () => {
     const result = await runCampaignStart();
