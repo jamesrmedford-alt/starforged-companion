@@ -2308,10 +2308,16 @@ function buildCharacterBlock(character) {
     if (others.length) lines.push(`Other vows: ${others.map(v => `${v.name} (${formatTrackDetail(v)})`).join('; ')}`);
   }
 
-  // Connections (bonds) the character holds.
+  // Connections (bonds) the character holds — a severed one apart, as the
+  // sector roster lists it (issue #330 D10; W37).
   const connections = Array.isArray(character.connections) ? character.connections : [];
-  if (connections.length) {
-    lines.push(`Connections: ${connections.map(c => `${c.name} (${formatTrackDetail(c)})`).join('; ')}`);
+  const held = connections.filter(c => c?.lost !== true);
+  const lost = connections.filter(c => c?.lost === true);
+  if (held.length) {
+    lines.push(`Connections: ${held.map(c => `${c.name} (${formatTrackDetail(c)})`).join('; ')}`);
+  }
+  if (lost.length) {
+    lines.push(`Connections lost (severed — no longer a bond): ${lost.map(c => c.name).join('; ')}`);
   }
 
   // Rewards the character was granted — gear, contacts, knowledge (#241;

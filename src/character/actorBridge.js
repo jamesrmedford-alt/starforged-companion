@@ -254,7 +254,8 @@ export function readVows(actor) {
  * "who am I" / "who do I know" need this.
  *
  * @param {Actor} actor
- * @returns {Array<{ id, name, rank, progress, ticks, completed }>}
+ * @returns {Array<{ id, name, rank, progress, ticks, completed, lost }>}
+ *   `lost`: the connection was severed (`!sever`) — no live bond
  */
 export function readConnections(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
@@ -270,6 +271,9 @@ export function readConnections(actor) {
       ticks,
       progress:  Math.floor(ticks / 4),
       completed: !!b.system?.completed,
+      // The connection was severed: its record is `active: false`, written
+      // through as this flag (setBondItemLost, issue #330 D10).
+      lost:      b.flags?.[MODULE_ID]?.lost === true,
     };
   });
 }
@@ -791,6 +795,31 @@ export async function setBondItemTicks(keys = {}, ticks) {
     if (Number(item.system?.current ?? 0) === next) continue;
     await item.update({ "system.current": next }).catch(err =>
       console.warn(`actorBridge | setBondItemTicks failed:`, err?.message ?? err));
+    invalidateActorCache(actor.id);
+    updated++;
+  }
+  return updated;
+}
+
+/**
+ * Mirror a connection's loss onto each PC's bond Item: the record's
+ * `active: false` (`!sever`, connection.loseConnection) written through as
+ * `flags[MODULE].lost`, so CHARACTER STATE (readConnections) stops listing a
+ * live bond the record says is lost (issue #330 D10). A module flag, not the
+ * vendor's `system.completed` — the sheet shows that as a forged bond. The
+ * Item stays on the sheet's Connections tab as its history. Same matching as
+ * setBondItemTicks (bondItemsFor).
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys
+ * @param {boolean} [lost=true]
+ * @returns {Promise<number>} how many items were updated
+ */
+export async function setBondItemLost(keys = {}, lost = true) {
+  let updated = 0;
+  for (const { actor, item } of bondItemsFor(keys)) {
+    if ((item.flags?.[MODULE_ID]?.lost === true) === lost) continue;
+    await item.update({ [`flags.${MODULE_ID}.lost`]: lost }).catch(err =>
+      console.warn(`actorBridge | setBondItemLost failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
   }

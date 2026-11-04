@@ -37,6 +37,19 @@ brackets.)
   re-assertion re-confirm it (option B) — a ruling the narrator overturns by
   repeating itself is not a ruling ("nothing auto-corrects — the GM stays
   the authority").
+- **`!sever` marks the bond Items lost** [D10; option A with B's reader
+  change]. `loseConnection` wrote the record's `active: false` only; the
+  PCs' bond Items — its write-through mirror for ticks and rank — kept
+  "Vex (dangerous, 3/10)" a live bond in CHARACTER STATE. The loss is now
+  written through to every bond Item `bondItemsFor` finds as
+  `flags[MODULE].lost` (`setBondItemLost`, rules/reachability.md §5), and
+  `readConnections` reports it, so CHARACTER STATE lists a severed bond
+  under "Connections lost". A module flag, not the vendor's
+  `system.completed`, which the sheet renders as a forged bond. The record
+  name selectors already skip an inactive connection. *Rejected:* deleting
+  the Items — the sheet's Connections tab keeps them as history (a GM may
+  delete one there); the vendor tab cannot read the flag, so it still lists
+  the Item.
 - **A relayed audio clip is filed only for a real card, never over a cached
   one** [D11; option A]. A keyed client that is not the canonical GM relays
   its synthesis as `audio.cache.write { hash, b64 }`; the GM wrote it as

@@ -17,7 +17,10 @@ and the Actor id listed in `campaignState.connectionIds[]`
 Item with `system.subtype:"bond"` (the vendor sheet's Connections tab and
 CHARACTER STATE). Since the BOND-ITEM-MIRROR fix, `markRelationshipProgress`
 mirrors `relationshipTicks` onto the bond Items (`setBondItemTicks`), so the
-two stay in step. The Items are keyed by the record's `_id`
+two stay in step; `loseConnection` (`!sever`) writes the record's
+`active: false` through as `flags[MODULE].lost` (`setBondItemLost` — issue
+#330 D10; a module flag, not the vendor's `completed`, which the sheet shows
+as a forged bond). The Items are keyed by the record's `_id`
 (`flags[MODULE].connectionId`, written by every creator) and matched by it
 alone (`actorBridge.bondItemsFor`); the name reaches only an Item with no
 key, and only the PC's one of that name — a same-named sibling's Item is
@@ -246,7 +249,10 @@ renders every turn, lists a lost connection apart from the reuse-first cast,
 the initial one (`formatSectorNpcProfile` — issue #325 W37: it offered a
 severed NPC as friendly cast); CHARACTER STATE shows each bond's
 progress and its rank by name (`readConnections` maps the vendor's numeric
-rank through `rankName` — issue #321 U62). `background` and `secrets` have no production writer, so neither
+rank through `rankName` — issue #321 U62), and a severed one apart, under
+"Connections lost" (`readConnections`' `lost` — issue #330 D10). The vendor
+sheet's Connections tab, which the module cannot filter, keeps the lost
+bond's Item as history. `background` and `secrets` have no production writer, so neither
 renders. The legacy
 "ACTIVE CONNECTIONS" assembler section still reads `game.journal.get(id)` and
 finds nothing for actor-hosted connections (kept for backwards
@@ -287,7 +293,8 @@ summary lives in the `known-issues.md` table and the code.
   lives on `relationshipTicks`, mirrored to bond Items).
 - ~~No severance flow / dead flag togglers~~ — **addressed**: new GM
   **`!sever <name>`** command routes through `loseConnection` (record kept
-  inactive, history entry, table card). It resolves strictly
+  inactive, history entry, table card; the bond Items marked lost — issue
+  #330 D10). It resolves strictly
   (`selectConnection(…, { strict: true })`: exact name, or a whole-word
   fragment of exactly one connection's name — issue #325 W30; bare
   only while one connection is active) — a misspelled name, or a bare

@@ -302,12 +302,27 @@ export async function forgeBond(journalEntryId, options = {}) {
  * @returns {Promise<Object>}
  */
 export async function loseConnection(journalEntryId, reason = "", sessionId = "") {
+  const connection = getConnection(journalEntryId);
   const updated = await updateConnection(journalEntryId, {
     active:        false,
   });
 
   if (reason) {
     await addHistoryEntry(journalEntryId, `Connection lost: ${reason}`, sessionId);
+  }
+
+  // The bond Items mirror the record (BOND-ITEM-MIRROR): the loss is written
+  // through, as ticks and rank are, so CHARACTER STATE stops listing a live
+  // bond the record says is lost (issue #330 D10). Best-effort — the record
+  // stays the source of truth. Dynamic import avoids an actorBridge cycle.
+  try {
+    const { setBondItemLost } = await import("../character/actorBridge.js");
+    await setBondItemLost(
+      { connectionId: updated?._id ?? connection?._id ?? journalEntryId, name: updated?.name ?? connection?.name ?? null },
+      true,
+    );
+  } catch (err) {
+    console.warn(`${MODULE_ID} | bond item loss mirror failed:`, err?.message ?? err);
   }
 
   return updated;
