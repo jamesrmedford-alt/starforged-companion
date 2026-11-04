@@ -65,8 +65,16 @@ describe("the audio cache has no size-cap sweep", () => {
     const spec = { voiceId: "voice-narrator", modelId: "eleven_flash_v2_5", text: "The hull holds.", speed: 1 };
     send({ kind: "audio.synth.request", hash: await cache.cacheKey(spec), spec });   // the GM synthesises and caches
     await vi.waitFor(() => expect(fp._uploads).toHaveLength(1));
-    send({ kind: "audio.cache.write", hash: "e".repeat(64), b64: "AQID" });          // a keyed player's clip
+    // A keyed player's clip of a narrator card's line — the only relayed write
+    // the GM files (issue #330 D11).
+    game.settings._store.set(`${MODULE_ID}.audio.narratorVoiceId`, "voice-narrator");
+    const savedMessages = game.messages;
+    game.messages = { contents: [{ id: "card-1", flags: { [MODULE_ID]: { narratorCard: true, narrationText: "The airlock cycles." } } }] };
+    const relayed = await cache.cacheKey({ voiceId: "voice-narrator", modelId: "eleven_flash_v2_5", text: "The airlock cycles.", speed: 1 });
+    send({ kind: "audio.cache.write", hash: relayed, b64: "AQID" });
     await vi.waitFor(() => expect(fp._uploads).toHaveLength(2));
+    game.messages = savedMessages;
+    game.settings._store.delete(`${MODULE_ID}.audio.narratorVoiceId`);
     for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0));          // a fire-and-forget sweep would run now
 
     expect(browse.mock.calls.filter(([, dir]) => dir === "worlds/test-world/audio")).toHaveLength(0);

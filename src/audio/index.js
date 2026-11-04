@@ -425,15 +425,57 @@ export function registerAudioSocket() {
   });
 }
 
-// GM-side: a keyed client synthesised a clip and relayed the bytes for caching.
+// GM-side: a keyed client synthesised a clip and relayed the bytes for
+// caching. A relayed payload is checked against what the UI could send
+// (rules/reachability.md §8; issue #330 D11 — W81's rule for its sibling
+// request): the GM cannot check the bytes — the key is the text's, not the
+// audio's — so it files them only under the clip key of a segment of a
+// narrator card in chat under the world's voices, and never over a clip that
+// is cached or that this client is making. Unchecked, a forged write under a
+// real narration's hash replaced the audio every client plays for that card,
+// and any hash was filed.
 async function handleCacheWrite(payload) {
   if (!isCanonicalGM()) return;
+  const hash = typeof payload.hash === "string" ? payload.hash : "";
+  if (!hash || typeof payload.b64 !== "string") return;
   try {
-    const bytes = base64ToBytes(payload.b64 ?? "");
-    await cacheWrite(payload.hash, bytes);
+    if (_synthInFlight.has(hash) || await cacheLookup(hash)) {
+      console.debug(`${MODULE_ID} | audio cache relay: clip ${hash.slice(0, 8)}… is already cached — not overwritten.`);
+      return;
+    }
+    if (!(await isNarratorCardClipKey(hash))) {
+      console.warn(`${MODULE_ID} | audio cache relay refused: ${hash.slice(0, 8)}… is no narrator card segment's clip key.`);
+      return;
+    }
+    await cacheWrite(hash, base64ToBytes(payload.b64));
   } catch (err) {
     console.warn(`${MODULE_ID} | audio cache GM-relay write failed:`, err);
   }
+}
+
+/**
+ * Whether `hash` is the clip key of a segment of a narrator card in chat
+ * under the world's voices — a clip a keyed client's Play could have made
+ * (buildPlayableSegments, the NPC voice by resolveNpcVoiceForCard). Newest
+ * card first; an X-carded card plays nothing, so it keys nothing.
+ *
+ * @param {string} hash
+ * @returns {Promise<boolean>}
+ */
+async function isNarratorCardClipKey(hash) {
+  const voices   = getVoiceConfig();
+  const messages = Array.from(globalThis.game?.messages?.contents ?? []).reverse();
+  for (const message of messages) {
+    const f = message?.flags?.[MODULE_ID];
+    if (typeof f?.narrationText !== "string" || !f.narrationText.trim() || f.xCarded) continue;
+    const npcVoiceId = await resolveNpcVoiceForCard(message, voices);
+    for (const p of splitSegments(f.narrationText)) {
+      const voiceId = p.voice === SEGMENT_VOICE.NPC ? (npcVoiceId || voices.npcVoiceId) : voices.narratorVoiceId;
+      if (!voiceId) continue;
+      if (await cacheKey({ text: p.text, voiceId, modelId: voices.modelId, speed: voices.speed }) === hash) return true;
+    }
+  }
+  return false;
 }
 
 // GM-side: a keyless client asked us to synthesise + cache a clip it can't make

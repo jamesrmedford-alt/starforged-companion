@@ -37,6 +37,18 @@ brackets.)
   re-assertion re-confirm it (option B) — a ruling the narrator overturns by
   repeating itself is not a ruling ("nothing auto-corrects — the GM stays
   the authority").
+- **A relayed audio clip is filed only for a real card, never over a cached
+  one** [D11; option A]. A keyed client that is not the canonical GM relays
+  its synthesis as `audio.cache.write { hash, b64 }`; the GM wrote it as
+  `<hash>.mp3` unchecked, and `FilePicker.upload` overwrites — a forged write
+  under a real narration's hash replaced the audio every client plays for
+  that card (the risk issue #326 W81 closed for `audio.synth.request` only).
+  The GM cannot check bytes against a text's hash, so it now files a relayed
+  clip only under the clip key of a segment of a narrator card in chat under
+  the world's voice, model and speed (an X-carded card keys nothing), and
+  never over a clip that is cached or that it is making. *Rejected:*
+  retiring the relay (option B) — it serves a keyed player at a keyless
+  GM's table, whose clip the GM then serves to the keyless players.
 - **The session number counts the sessions a table began** [D12; option A,
   narrowed]. Every world load after End a Session (or four idle hours) mints
   a session, and `mintSession` always bumped `sessionNumber`: a GM who opened
