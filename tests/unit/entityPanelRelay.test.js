@@ -132,10 +132,13 @@ describe("Entities panel — a player's edits land on the NPC card (issue #321 U
     expect(tierEntry("Has a scar over one eye").pinned).toBe(false);
   });
 
-  it("Promote, once the player confirms on their own screen, appends the detail to the notes", async () => {
+  it("Promote, once the player confirms on their own screen, appends the detail to the NPC card's Notes tab", async () => {
     table.client("pl-1").answerDialogs(d => d.choose("yes"));
     await click("pl-1", "promoteTier", { journalId: "npc-vex", detail: "Owes the Syndicate" });
-    expect(record().notes).toBe("A smuggler.\n\nOwes the Syndicate");
+    // The sheet's Notes tab is the NPC's notes (issue #329 X12) — not the
+    // record's own `notes`, which nothing shows.
+    expect(table.actors.get("npc-vex").system.notes).toBe("<p>Owes the Syndicate</p>");
+    expect(record().notes).toBe("A smuggler.");
     expect(tierEntry("Owes the Syndicate")).toMatchObject({ promoted: true });
     expect(table.client("gm-1").dialogs).toHaveLength(0);
   });

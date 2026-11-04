@@ -11,7 +11,10 @@
  * Field placement:
  *   actor.name                            ← ship.name (also kept on the flag)
  *   actor.img                             ← portrait dataUri (set by art pipeline)
- *   actor.system.notes                    ← ship.notes
+ *   actor.system.notes                    ← ship.notes — canonical: getShip reads
+ *                                           the ship's notes from the sheet's
+ *                                           Notes tab (issue #329 X12); the
+ *                                           flag's copy is not read
  *   actor.system.debility.battered        ← ship.battered (clearable). The NATIVE
  *                                           field is canonical for battered:
  *                                           the starship sheet's impact toggle
@@ -35,6 +38,7 @@ import {
   readEntityFlag,
   writeEntityFlag,
   registerEntityIdInStore,
+  withSheetNotes,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
 import { keepNotesPortrait } from "../art/notesPortrait.js";
@@ -170,7 +174,8 @@ export async function createShip(data, campaignState) {
 export function getShip(actorId) {
   try {
     const document = getEntityDocument("ship", actorId);
-    return readEntityFlag("ship", document);
+    // The starship sheet's Notes tab is the ship's notes (issue #329 X12).
+    return withSheetNotes("ship", document, readEntityFlag("ship", document));
   } catch {
     return null;
   }

@@ -27,7 +27,9 @@ import {
   writeEntityFlag,
   iterEntityDocuments,
   resolveEntityById,
+  hasSheetNotes,
 } from '../entities/registry.js';
+import { notesAsCardText } from '../narration/narratorPrompt.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -513,9 +515,14 @@ export class EntityPanelApp extends ApplicationV2 {
     // canonical (the sheet toggle and the suffer dialog write only that); the
     // flag record's copy is a write-through mirror (decisions.md → "Starship
     // battered: the native sheet field is canonical").
-    const fieldData = entity.typeKey === 'ship'
-      ? { ...entity.data, ...shipImpactsFromSheet(entity.journalId) }
-      : entity.data;
+    // An NPC card's or ship's notes are its sheet's Notes tab, shown as text
+    // (decisions.md → "An NPC card's or ship's notes are its sheet's Notes
+    // tab", issue #329 X12).
+    const fieldData = {
+      ...entity.data,
+      ...(entity.typeKey === 'ship' ? shipImpactsFromSheet(entity.journalId) : {}),
+      ...(hasSheetNotes(entity.typeKey) ? notesFromSheet(entity.journalId) : {}),
+    };
     const fieldsHtml = fields
       .filter(f => fieldData[f.key] !== undefined && fieldData[f.key] !== null && fieldData[f.key] !== '')
       .map(f => {
@@ -1189,6 +1196,12 @@ function shipImpactsFromSheet(actorId) {
   return out;
 }
 
+/** An NPC card's or ship's notes, as text, from its sheet's Notes tab (issue #329 X12). */
+function notesFromSheet(actorId) {
+  const notes = game.actors?.get?.(actorId)?.system?.notes;
+  return typeof notes === 'string' ? { notes: notesAsCardText(notes) } : {};
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
@@ -1269,11 +1282,21 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
   if (op === 'pin') {
     next = { ...data, generativeTier: tier.map((e, i) => (i === idx ? { ...e, pinned: !e.pinned } : e)) };
   } else if (op === 'promote') {
-    next = {
-      ...data,
-      notes:          data.notes ? `${data.notes}\n\n${detail}` : detail,
-      generativeTier: tier.map((e, i) => (i === idx ? { ...e, promoted: true, promotedAt: now } : e)),
-    };
+    const promoted = tier.map((e, i) => (i === idx ? { ...e, promoted: true, promotedAt: now } : e));
+    if (hasSheetNotes(typeKey) && document?.system) {
+      // An NPC card's or ship's notes are its sheet's Notes tab: the detail is
+      // appended there, where the narrator reads it — the record's own
+      // `notes` was a second store nothing showed (issue #329 X12).
+      const sheetNotes = String(document.system.notes ?? '');
+      await document.update({ 'system.notes': `${sheetNotes}<p>${escapeHtml(detail)}</p>` });
+      next = { ...data, generativeTier: promoted };
+    } else {
+      next = {
+        ...data,
+        notes:          data.notes ? `${data.notes}\n\n${detail}` : detail,
+        generativeTier: promoted,
+      };
+    }
   } else {
     next = { ...data, generativeTier: tier.filter(e => !shown(e)) };
   }

@@ -26,7 +26,7 @@
 
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
-import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityIdInStore } from "./registry.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityIdInStore, withSheetNotes } from "./registry.js";
 import { keepNotesPortrait } from "../art/notesPortrait.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
@@ -127,7 +127,8 @@ export function getConnection(actorId) {
   try {
     const document = getEntityDocument(FLAG_KEY, actorId);
     if (!document) return null;
-    return readEntityFlag(FLAG_KEY, document);
+    // The NPC card's Notes tab is its notes (issue #329 X12).
+    return withSheetNotes(FLAG_KEY, document, readEntityFlag(FLAG_KEY, document));
   } catch (err) {
     console.error(`${MODULE_ID} | getConnection(${actorId}) failed:`, err);
     return null;

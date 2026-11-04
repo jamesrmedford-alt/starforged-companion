@@ -2358,6 +2358,30 @@ client makes it, with the author's own key as the no-keyed-GM fallback.
 - *Always the canonical GM* — a keyless-GM table loses every Claude command.
 - *Send the key to the GM* — violates #209 (keys never leave the browser).
 
+## An NPC card's or ship's notes are its sheet's Notes tab (2026-11)
+
+**Decision:** For the two entity types whose host Actor has a Notes tab — an
+NPC / connection card (an ironsworn `character`) and a ship (`starship`) —
+the sheet's `system.notes` is the entity's notes, the one store. The record
+getters read it (`getConnection` / `getShip` → `registry.withSheetNotes`), so
+the narrator's ENTITIES IN SCENE Notes row (`notesAsCardText`), the tier pass
+and the Entities panel's Notes field all show what the tab holds; the panel's
+⤴ Promote appends the detail to the tab; `updateShip({ notes })` (an `!ship
+envision` / `!ship history` append) writes the tab. The record's own `notes`
+field is not read for these types (an empty tab is no notes, whatever the
+record still holds); the other types, which have no Notes tab, keep theirs on
+the record.
+
+**Reason:** issue #329 X12 (NOTES-SHEET-NOT-MIRRORED) — the Auto-Seed writes
+the introduction and portrait into the tab, and the GM edits the tab, but the
+card read the record's `notes`, a second store only an envision and Promote
+wrote: the narrator's Notes row was empty for every seeded NPC and ship and
+never saw the GM's edits. One fact, two stores, no canonical one named
+(rules/reachability.md §5); the sheet is what the GM edits and what the seed
+writes, as for a starship's battered impact below. A detail promoted before
+this change sits in the record's old `notes`, which is no longer shown —
+known-issues NOTES-PROMOTED-BEFORE.
+
 ## Starship battered: the native sheet field is canonical (2026-10)
 
 **Decision:** For a starship's impacts, the foundry-ironsworn native
