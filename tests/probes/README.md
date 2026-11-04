@@ -4,9 +4,9 @@ Probe tests from the ninth bug audit of `8715172`
 (`docs/testing/bug-audit-9-2026-11-04.md`: 61 findings X01–X61 and 15
 decisions D1–D15).
 
-Filed as GitHub issues [#NNN](https://github.com/jamesrmedford-alt/starforged-companion/issues/NNN)
-(X01–X14) and [#NNN](https://github.com/jamesrmedford-alt/starforged-companion/issues/NNN)
-(X15–X61 and D1–D15).
+Filed as GitHub issues [#329](https://github.com/jamesrmedford-alt/starforged-companion/issues/329) (X01–X14),
+[#331](https://github.com/jamesrmedford-alt/starforged-companion/issues/331) (X15–X61) and
+[#330](https://github.com/jamesrmedford-alt/starforged-companion/issues/330) (D1–D15, the excluded rows and the refuter pass).
 
 Each probe asserts the **correct** behaviour, so it fails while its finding is
 open and passes once the finding is fixed. Tests named `control: …` pass today
