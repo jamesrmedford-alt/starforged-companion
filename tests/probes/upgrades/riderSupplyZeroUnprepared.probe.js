@@ -24,6 +24,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/upgrades/riderSupplyZeroUnprepared.probe.js
  */
 
+/* global makeTestActor */
 import { describe, it, expect, beforeEach } from "vitest";
 import { applyMeterRiders } from "../../../src/moves/consequenceRiders.js";
 import { sacrificeResources } from "../../../src/moves/sufferExecutor.js";

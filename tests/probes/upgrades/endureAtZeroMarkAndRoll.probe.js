@@ -39,12 +39,12 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/upgrades/endureAtZeroMarkAndRoll.probe.js
  */
 
+/* global makeTestActor */
 import { describe, it, expect, beforeEach } from "vitest";
 import { endureHarm, endureStress } from "../../../src/moves/sufferExecutor.js";
 import { invalidateActorCache } from "../../../src/character/actorBridge.js";
 import { applyPayThePriceSufferFromRelay } from "../../../src/index.js";
 
-const MODULE_ID = "starforged-companion";
 const GM = { requesterId: "gm-1", requesterIsGM: true, requester: { id: "gm-1", isGM: true } };
 
 let pc;

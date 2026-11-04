@@ -23,6 +23,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/sweep/recapCardUnescaped.probe.js
  */
 
+/* global makeTestActor */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { postCampaignRecap, postNarrationCard } from "../../../src/narration/narrator.js";
 

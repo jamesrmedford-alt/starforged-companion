@@ -33,6 +33,7 @@
  * booted client (join does not reboot a client that already booted).
  */
 
+/* global silenceConsoleErrors */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 
 vi.mock('../../../src/pacing/router.js', async (importOriginal) => ({

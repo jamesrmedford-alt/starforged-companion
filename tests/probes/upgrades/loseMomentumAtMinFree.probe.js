@@ -36,6 +36,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/upgrades/loseMomentumAtMinFree.probe.js
  */
 
+/* global makeTestActor */
 import { describe, it, expect, beforeEach } from "vitest";
 import { applySufferPickFromRelay, renderSufferCard } from "../../../src/moves/sufferCard.js";
 import { invalidateActorCache } from "../../../src/character/actorBridge.js";

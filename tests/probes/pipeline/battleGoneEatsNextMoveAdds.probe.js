@@ -34,6 +34,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/pipeline/battleGoneEatsNextMoveAdds.probe.js
  */
 
+/* global silenceConsoleErrors, structuredClone */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 
 const control = vi.hoisted(() => ({ dice: [] }));

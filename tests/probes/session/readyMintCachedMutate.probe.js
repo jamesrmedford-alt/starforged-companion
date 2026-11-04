@@ -32,6 +32,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/session/readyMintCachedMutate.probe.js
  */
 
+/* global expectConsoleError */
 import { describe, it, expect, afterEach, vi } from 'vitest';
 
 vi.mock('../../../src/narration/narrator.js', async (orig) => ({

@@ -29,10 +29,10 @@
  * Controls: with no refusal both siblings mirror; the refused PC is reported.
  */
 
+/* global makeTestActor */
 import { describe, it, expect, beforeAll, beforeEach, vi } from 'vitest';
 import { registerSharedSupplyHook } from '../../../src/multiplayer/sharedSupply.js';
 
-const MODULE_ID = 'starforged-companion';
 
 let onUpdate;
 beforeAll(() => {

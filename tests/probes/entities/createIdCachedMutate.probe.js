@@ -31,6 +31,7 @@
  * Control: with the write accepted, the id reaches the world and the cache.
  */
 
+/* global silenceConsoleErrors */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
 import { CampaignStateSchema } from '../../../src/schemas.js';

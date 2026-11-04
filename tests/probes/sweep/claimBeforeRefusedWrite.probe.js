@@ -34,6 +34,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/sweep/claimBeforeRefusedWrite.probe.js
  */
 
+/* global makeTestActor, makeTestMessage */
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { applyRewardPickFromRelay, applyPlayerVowLinkFromRelay } from "../../../src/session/swearVow.js";
 

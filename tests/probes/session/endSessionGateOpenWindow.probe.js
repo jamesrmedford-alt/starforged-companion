@@ -28,6 +28,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/session/endSessionGateOpenWindow.probe.js
  */
 
+/* global silenceConsoleErrors */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 
 const control = vi.hoisted(() => ({ dice: [0.25, 0.35, 0.9], hold: null }));

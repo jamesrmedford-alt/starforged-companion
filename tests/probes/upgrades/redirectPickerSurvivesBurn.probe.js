@@ -33,6 +33,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/upgrades/redirectPickerSurvivesBurn.probe.js
  */
 
+/* global silenceConsoleErrors */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
 
 const control = vi.hoisted(() => ({ dice: [], interpretation: null, ptp: 70 }));

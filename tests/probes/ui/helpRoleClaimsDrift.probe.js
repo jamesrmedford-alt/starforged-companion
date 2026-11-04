@@ -44,7 +44,7 @@ describe('UI-04 the help says who may press 🛡 and type !sector list', () => {
   it('control: the code — 🛡 is every user\'s; `!sector list` has no GM gate; the Toolbar page says Everyone', () => {
     expect(companionToolbarTools({ isGM: false }).map(t => t.key)).toContain('sfSettings');
     const src = readFileSync('src/index.js', 'utf8');
-    const listBranch = src.match(/if \(sub === "list"\) \{[\s\S]*?\n  \}/)?.[0] ?? '';
+    const listBranch = src.match(/if \(sub === "list"\) \{[\s\S]*?\n {2}\}/)?.[0] ?? '';
     expect(listBranch).toMatch(/sectorList: true/);
     expect(listBranch).not.toMatch(/isGM/);
     expect(plain(page('Toolbar Buttons')).match(/Companion Settings\s+(GM|Everyone)/)?.[1]).toBe('Everyone');

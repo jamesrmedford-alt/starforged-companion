@@ -34,6 +34,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/pipeline/refusedPersistLosesLegacyMark.probe.js
  */
 
+/* global expectConsoleError */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 
 vi.mock('../../../src/pacing/router.js', async (original) => ({

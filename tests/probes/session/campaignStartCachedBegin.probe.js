@@ -33,6 +33,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/session/campaignStartCachedBegin.probe.js
  */
 
+/* global expectConsoleError */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../../../src/session/quickstart.js', () => ({ runPlaytestQuickstart: vi.fn() }));

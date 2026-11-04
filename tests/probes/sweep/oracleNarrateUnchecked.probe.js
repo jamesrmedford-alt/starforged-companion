@@ -30,6 +30,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/sweep/oracleNarrateUnchecked.probe.js
  */
 
+/* global makeTestMessage */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
 vi.mock("../../../src/narration/narrator.js", async (importOriginal) => ({

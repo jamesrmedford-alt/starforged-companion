@@ -26,7 +26,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/session/rollForceConsumedByRefusedLine.probe.js
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 
 const control = vi.hoisted(() => ({ dice: [0.25, 0.35, 0.9] }));
 vi.mock('../../../src/moves/interpreter.js', async (orig) => ({

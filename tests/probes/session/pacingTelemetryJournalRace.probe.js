@@ -28,6 +28,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/session/pacingTelemetryJournalRace.probe.js
  */
 
+/* global structuredClone */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { logPacingDecision } from '../../../src/pacing/telemetry.js';
 

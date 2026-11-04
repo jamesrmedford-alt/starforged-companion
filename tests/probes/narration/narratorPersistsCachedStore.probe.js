@@ -30,6 +30,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/narration/narratorPersistsCachedStore.probe.js
  */
 
+/* global expectConsoleError, makeTestActor */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../../../src/api-proxy.js', () => ({ apiPost: vi.fn() }));

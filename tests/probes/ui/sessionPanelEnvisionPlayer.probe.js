@@ -30,6 +30,7 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/ui/sessionPanelEnvisionPlayer.probe.js
  */
 
+/* global asPlayer */
 import { describe, it, expect, beforeAll, beforeEach, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { StubElement } from '../../helpers/cardDom.js';

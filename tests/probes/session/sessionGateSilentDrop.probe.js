@@ -34,7 +34,8 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/session/sessionGateSilentDrop.probe.js
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+/* global silenceConsoleErrors */
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 
 const control = vi.hoisted(() => ({ dice: [0.25, 0.35, 0.9] }));   // challenge 3, 4; action 6 — a strong hit
 vi.mock('../../../src/pacing/router.js', async (orig) => ({
