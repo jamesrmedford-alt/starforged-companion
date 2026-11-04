@@ -203,7 +203,11 @@ superseded: a state entry keeps a bounded `previous` chain, issue #326 W41)
 and its frame cleared, in the same
 write as the pause; the ids are kept on `xCardedNarrationIds`, so
 `mergeSceneLedgers` retracts them again from a stale writer's copy and a late
-relayed sidecar of that narration is dropped.
+relayed sidecar of that narration is dropped. What the narration's capture
+(the detection and tier passes) recorded carries the same id — World Journal
+entries (with the versions they replaced), Session Log beats, tier details —
+and the X-Card's finish undoes it by id (`retractNarrationCapture`, issue
+#329 X01).
 
 **Scene start.** A narration whose snapshot holds no scene while the store has
 one continues it (`startScene` → `adoptStoredScene`, issue #321 U06f): the

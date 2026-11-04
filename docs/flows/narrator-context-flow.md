@@ -163,8 +163,22 @@ narration's `narrationId` and the position before it (`previous`, up to
 three deep), and the X-Card's finish (`restoreShipPositionAfterXCard`) puts
 back the latest position no removed narration wrote — an empty one when
 there is none — and moves the sector token with it; SHIP POSITION kept
-naming the removed destination (issue #325 W07). If that
-part fails the pause is still written. After the write the cards are flagged
+naming the removed destination (issue #325 W07). So is what the narration's
+**capture** recorded (issue #329 X01): every capture entry point
+(`runPostNarrationPasses`, `schedulePacedDetection` /
+`schedulePacedTierUpdate`, `scheduleNarrationCapture` /
+`runNarrationTierUpdate`, the inciting capture) hands the narration's id to
+`routeWorldJournalResults` and the tier pass, which stamp it on each Lore /
+Threat / Faction / Location entry (an entry it rewrote keeps the versions
+before as `previous`, newest first, up to three), Session Log beat and tier
+detail; the X-Card's finish (`retractNarrationCapture`, `retractions.js` →
+`undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
+retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
+threat, faction or place page, takes the beats off the Session Log page and
+drops the tier details — most of these restate no sidecar truth, so
+`propagateRetraction` never reached them (a state transition the capture
+applied to an existing entry is not undone — known-issues
+XCARD-CAPTURE-TRANSITIONS). If that part fails the pause is still written. After the write the cards are flagged
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
 `propagateRetraction`. Readers: the ring and the rolling summary skip
 `xCarded` cards (`sessionNarratorCards`), the session recap keeps the move

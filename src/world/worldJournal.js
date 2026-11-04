@@ -45,6 +45,45 @@ export const THREAT_SEVERITIES = ["immediate", "active", "looming", "resolved"];
 const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// NARRATION PROVENANCE — what the X-Card undoes (issue #329 X01)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The capture that runs after a narration (entityExtractor
+// routeWorldJournalResults) records what the prose established. Each entry it
+// writes carries that narration's `narrationId`, and an entry it rewrote keeps
+// the versions before as `previous` (newest first) — so an X-Card on the
+// narration puts the earlier version back, or takes an entry the narration
+// made out of play (undoNarrationEntries; rules/narrator-memory.md 6b). A
+// later write that carries no narration id (a GM's `!journal`, a scene-end
+// archive) owns the entry from then on: it clears both.
+//
+// Both are always written, null when cleared: Foundry's setFlag merges the
+// object into the stored flag key by key (see recordLoreDiscovery), so a key
+// left out keeps its stored value. `previous` is an array because a merge
+// replaces an array whole, where it would merge a nested object into the
+// stored one.
+
+/** How many earlier versions a narration-written entry keeps, for an X-Card whose beat rewrote it more than once. */
+const NARRATION_HISTORY = 3;
+
+/**
+ * The provenance fields of an entry write: the narration it came from and the
+ * stored versions it replaces (null for a new entry), or both null when the
+ * write is not a narration's.
+ *
+ * @param {string|null|undefined} narrationId
+ * @param {Object|null|undefined} existing — the stored entry
+ * @returns {{ narrationId: string|null, previous: Object[]|null }}
+ */
+function narrationStamp(narrationId, existing) {
+  if (typeof narrationId !== "string" || !narrationId) return { narrationId: null, previous: null };
+  if (!existing) return { narrationId, previous: null };
+  const { previous: older, ...version } = existing;
+  const previous = [version, ...(Array.isArray(older) ? older : [])].slice(0, NARRATION_HISTORY);
+  return { narrationId, previous };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // INIT
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -148,6 +187,9 @@ export async function recordLoreDiscovery(title, entry, campaignState) {
     sceneId:          entry?.sceneId ?? existing?.sceneId ?? null,
     createdAt:        existing?.createdAt ?? now,
     updatedAt:        now,
+    // The narration whose capture wrote it, and the version it replaced —
+    // for the X-Card (issue #329 X01).
+    ...narrationStamp(entry?.narrationId, existing),
   };
 
   const page = await upsertPage(journal, cleanTitle, FLAG_KEYS.lore, data);
@@ -260,6 +302,7 @@ export async function recordThreat(name, entry, campaignState) {
     history,
     createdAt:   existing?.createdAt ?? now,
     updatedAt:   now,
+    ...narrationStamp(entry?.narrationId, existing),   // for the X-Card (issue #329 X01)
   };
 
   const page = await upsertPage(journal, cleanName, FLAG_KEYS.threats, data);
@@ -326,6 +369,7 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
     encounters,
     createdAt:    existing?.createdAt ?? now,
     updatedAt:    now,
+    ...narrationStamp(entry?.narrationId, existing),   // for the X-Card (issue #329 X01)
   };
 
   const page = await upsertPage(journal, cleanName, FLAG_KEYS.factions, data);
@@ -369,6 +413,7 @@ export async function recordLocation(name, entry, campaignState) {
     visits,
     createdAt:    existing?.createdAt ?? now,
     updatedAt:    now,
+    ...narrationStamp(entry?.narrationId, existing),   // for the X-Card (issue #329 X01)
   };
 
   const page = await upsertPage(journal, cleanName, FLAG_KEYS.locations, data);
@@ -663,8 +708,11 @@ async function persistSessionLogPage(page, flag) {
  * entry each. Gated on sessionLogAutoWrite; GM-only (journal writes need a
  * permitted client — getOrCreateJournal returns null for players).
  *
+ * A beat from a narration's capture carries its `narrationId`, so an X-Card
+ * on that narration takes the beat off the page (issue #329 X01).
+ *
  * @param {Object} campaignState
- * @param {{kind:"lore"|"threat", title:string, text?:string}} beat
+ * @param {{kind:"lore"|"threat", title:string, text?:string, narrationId?:string}} beat
  * @returns {Promise<Object|null>} the page, or null if skipped
  */
 export async function appendSessionLogBeat(campaignState, beat) {
@@ -681,8 +729,84 @@ export async function appendSessionLogBeat(campaignState, beat) {
     title: String(beat.title),
     text:  beat.text ? String(beat.text) : "",
     at:    new Date().toISOString(),
+    ...(typeof beat.narrationId === "string" && beat.narrationId ? { narrationId: beat.narrationId } : {}),
   });
   return persistSessionLogPage(page, flag);
+}
+
+/**
+ * Undo what X-carded narrations' captures wrote to the World Journal (issue
+ * #329 X01; rules/narrator-memory.md 6b — the X-Card's U07 full exclusion).
+ * For every Lore, Threats, Factions and Locations entry stamped with one of
+ * `narrationIds`:
+ *   - one the narrations rewrote is put back as it was before them (the
+ *     newest `previous` no removed narration wrote);
+ *   - one they made is taken out of play: a lore entry is retracted (kept,
+ *     unconfirmed — the narrator's ESTABLISHED LORE and the pending queue
+ *     leave it out, and the capture cannot re-confirm the same title, as for
+ *     a struck fact), any other entry's page is deleted (threats, factions
+ *     and places have no retracted state their readers honour).
+ * And every Session Log beat they wrote leaves its page. Runs on the
+ * canonical GM after the pause is written (suppressScene's finish). Fail-open
+ * per entry; never throws.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<{ restored: number, retracted: number, deleted: number, beats: number }>}
+ */
+export async function undoNarrationEntries(narrationIds) {
+  const out = { restored: 0, retracted: 0, deleted: 0, beats: 0 };
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  if (!removed.size) return out;
+  const fromRemoved = (entry) => typeof entry?.narrationId === "string" && removed.has(entry.narrationId);
+
+  for (const category of ["lore", "threats", "factions", "locations"]) {
+    const journal = findJournal(JOURNAL_NAMES[category]);
+    const flagKey = FLAG_KEYS[category];
+    for (const page of [...(journal?.pages?.contents ?? [])]) {
+      const entry = page?.flags?.[MODULE_ID]?.[flagKey];
+      if (!fromRemoved(entry)) continue;
+      try {
+        const versions = Array.isArray(entry.previous) ? entry.previous : [];
+        const at = versions.findIndex(v => v && !fromRemoved(v));
+        if (at >= 0) {
+          const older = versions.slice(at + 1);
+          await writeEntryPage(page, flagKey, {
+            ...versions[at],
+            narrationId: versions[at].narrationId ?? null,
+            previous:    older.length ? older : null,
+          });
+          out.restored += 1;
+        } else if (category === "lore") {
+          const now = new Date().toISOString();
+          await writeEntryPage(page, flagKey, {
+            ...entry, confirmed: false, retracted: true, retractedAt: now, updatedAt: now,
+          });
+          out.retracted += 1;
+        } else {
+          await page.delete();
+          out.deleted += 1;
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | X-Card: could not undo the World Journal entry "${page?.name}":`, err?.message ?? err);
+      }
+    }
+  }
+
+  const logJournal = findJournal(JOURNAL_NAMES.sessionLog);
+  for (const page of logJournal?.pages?.contents ?? []) {
+    const flag  = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.sessionLogPage];
+    const beats = Array.isArray(flag?.beats) ? flag.beats : [];
+    const kept  = beats.filter(b => !fromRemoved(b));
+    if (kept.length === beats.length) continue;
+    if (await persistSessionLogPage(page, { ...flag, beats: kept })) out.beats += beats.length - kept.length;
+  }
+  return out;
+}
+
+/** Replace a World Journal page's entry and re-render its body from it. */
+async function writeEntryPage(page, flagKey, data) {
+  await page.setFlag(MODULE_ID, flagKey, data);
+  await page.update({ text: { format: 1, content: renderPageBody(flagKey, data) } });
 }
 
 /**

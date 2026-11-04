@@ -1014,6 +1014,11 @@ function findEntityForLoreRouting(entityName, campaignState) {
   return null;
 }
 
+/** The less durable of two salience tiers. */
+function lowerSalience(a, b) {
+  return (SALIENCE_ORDER[a] ?? Infinity) <= (SALIENCE_ORDER[b] ?? Infinity) ? a : b;
+}
+
 /**
  * Route the World Journal section of the detection response to the
  * worldJournal.js write functions. Per WJ scope §4 the routing rule is:
@@ -1024,17 +1029,20 @@ function findEntityForLoreRouting(entityName, campaignState) {
  *   - Location: only when no entity record exists → recordLocation
  *   - State transitions: applyStateTransition (delegates by entryType)
  *
+ * Each record is stamped with the narration it came from (`narrationId`):
+ * a lore, threat, faction or place entry, a Session Log beat and a tier
+ * detail alike, so an X-Card on that narration undoes them (issue #329 X01;
+ * rules/narrator-memory.md 6b).
+ *
  * @param {Object} wj — parsed worldJournal section
  * @param {Object} campaignState
+ * @param {{ narrationId?: string|null }} [options] — the narration the detection read
  * @returns {Promise<void>}
  */
-/** The less durable of two salience tiers. */
-function lowerSalience(a, b) {
-  return (SALIENCE_ORDER[a] ?? Infinity) <= (SALIENCE_ORDER[b] ?? Infinity) ? a : b;
-}
-
-export async function routeWorldJournalResults(wj, campaignState) {
+export async function routeWorldJournalResults(wj, campaignState, { narrationId = null } = {}) {
   if (!wj) return;
+  // Only a real id is stamped: a write without one owns the entry it touches.
+  const fromNarration = typeof narrationId === "string" && narrationId ? { narrationId } : {};
 
   // Below-threshold lore/threat items are transient scene beats: route them to
   // the running session log (D7 / F18) instead of spawning a WJ entry each.
@@ -1063,13 +1071,14 @@ export async function routeWorldJournalResults(wj, campaignState) {
         promoted:   false,
         promotedAt: null,
         createdAt:  Date.now(),
+        ...fromNarration,
       }).catch(err =>
         console.warn(`${MODULE_ID} | routeWorldJournalResults: entity-lore migration failed:`, err),
       );
       continue;
     }
     if (!passesSalience(lore.salience, loreThreshold)) {
-      await appendSessionLogBeat(campaignState, { kind: "lore", title: lore.title, text: lore.text ?? "" });
+      await appendSessionLogBeat(campaignState, { kind: "lore", title: lore.title, text: lore.text ?? "", ...fromNarration });
       continue;
     }
     // Auto-confirm (Task C): narrator-detected lore goes straight to confirmed
@@ -1078,6 +1087,7 @@ export async function routeWorldJournalResults(wj, campaignState) {
       ...lore,
       narratorAsserted: true,
       confirmed:        true,
+      ...fromNarration,
     }, campaignState);
   }
 
@@ -1085,22 +1095,22 @@ export async function routeWorldJournalResults(wj, campaignState) {
   for (const threat of wj.threats ?? []) {
     if (!threat?.name) continue;
     if (!passesSalience(threat.salience, threatThreshold)) {
-      await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "" });
+      await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "", ...fromNarration });
       continue;
     }
-    await recordThreat(threat.name, threat, campaignState);
+    await recordThreat(threat.name, { ...threat, ...fromNarration }, campaignState);
   }
 
   for (const faction of wj.factionUpdates ?? []) {
     if (!faction?.name) continue;
     if (entityExistsForName(faction.name, "faction", campaignState)) continue;
-    await recordFactionIntelligence(faction.name, faction, campaignState);
+    await recordFactionIntelligence(faction.name, { ...faction, ...fromNarration }, campaignState);
   }
 
   for (const location of wj.locationUpdates ?? []) {
     if (!location?.name) continue;
     if (entityExistsForName(location.name, "location", campaignState)) continue;
-    await recordLocation(location.name, location, campaignState);
+    await recordLocation(location.name, { ...location, ...fromNarration }, campaignState);
   }
 
   for (const transition of wj.stateTransitions ?? []) {
@@ -1315,6 +1325,7 @@ const TIER_SALIENCE_FLOOR = "notable";
  * @param {number}   sessionNum
  * @param {Object}   [options]
  * @param {Function} [options.callTierAPI]  — async (prompt) => raw JSON text
+ * @param {string}   [options.narrationId]  — the narration read; stamped on each detail, for the X-Card (issue #329 X01)
  * @returns {Promise<Array>}                — list of applied { journalId, detail }
  */
 export async function appendGenerativeTierUpdates(
@@ -1358,7 +1369,7 @@ export async function appendGenerativeTierUpdates(
       || r.record?.name === update.entityId,
     );
     if (!matched) continue;
-    const ok = await appendDetailToTier(matched, update.detail, sessionId, sessionNum);
+    const ok = await appendDetailToTier(matched, update.detail, sessionId, sessionNum, { narrationId: options.narrationId });
     if (ok) applied.push({ journalId: matched.journalId, detail: update.detail });
   }
 
@@ -1368,9 +1379,11 @@ export async function appendGenerativeTierUpdates(
 /**
  * Append a generative-tier detail to an entity record and save it on the
  * record's host document. Returns true when the detail was saved, false when
- * it was deduplicated or could not be saved.
+ * it was deduplicated or could not be saved. A detail a narration's capture
+ * added carries its `narrationId`, so an X-Card on that narration drops it
+ * (issue #329 X01).
  */
-export async function appendDetailToTier(entityRef, detail, sessionId, sessionNum) {
+export async function appendDetailToTier(entityRef, detail, sessionId, sessionNum, { narrationId = null } = {}) {
   const cleanDetail = detail?.trim();
   if (!cleanDetail || !entityRef?.record || !entityRef?.journalId) return false;
 
@@ -1383,6 +1396,7 @@ export async function appendDetailToTier(entityRef, detail, sessionId, sessionNu
     promoted:   false,
     promotedAt: null,
     createdAt:  Date.now(),
+    ...(typeof narrationId === "string" && narrationId ? { narrationId } : {}),
   };
 
   const updated = await persistGenerativeTier(entityRef, newEntry);

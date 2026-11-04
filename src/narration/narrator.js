@@ -756,7 +756,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     }
 
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
-    await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null });
+    await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId });
     scheduleChronicleEntry({
       narrationText: narration,
       campaignState,
@@ -788,7 +788,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
         });
         if (narration?.trim()) {
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
-          await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null });
+          await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId });
           scheduleChronicleEntry({
             narrationText: narration,
             campaignState,
@@ -832,10 +832,12 @@ const ASYNC_DETECTION_DELAY_MS = 2000;
  *
  * `actorId` is the PC the narration was for (the roller): a connection it
  * creates — or a draft card's Confirm — puts the bond Item on their sheet,
- * not the first PC's (issue #321 U23).
+ * not the first PC's (issue #321 U23). `narrationId` is the narration's id,
+ * stamped on what the passes record — lore, threats, Session Log beats, tier
+ * details — so an X-Card on it undoes them (issue #329 X01).
  */
 export function runPostNarrationPasses(
-  narrationText, resolution, relevance, campaignState, { actorId = null } = {},
+  narrationText, resolution, relevance, campaignState, { actorId = null, narrationId = null } = {},
 ) {
   if (!resolution || !relevance) return Promise.resolve();
 
@@ -871,13 +873,14 @@ export function runPostNarrationPasses(
           autoCreateConnection: true,
           connectionSeed:       resolution.oracleSeeds?.connectionSeed ?? null,
           actorId,
+          narrationId,
         },
       );
     }
 
     // Other discovery-class moves — async ~2 s, fire and forget.
     setTimeout(() => {
-      runDiscoveryDetection(narrationText, resolution, campaignState, { actorId })
+      runDiscoveryDetection(narrationText, resolution, campaignState, { actorId, narrationId })
         .catch(err => console.error(`${MODULE_ID} | post-narration detection failed:`, err));
     }, ASYNC_DETECTION_DELAY_MS);
     return Promise.resolve();
@@ -889,7 +892,7 @@ export function runPostNarrationPasses(
   // auto-created).
   if (cls === 'interaction') {
     setTimeout(() => {
-      runDiscoveryDetection(narrationText, resolution, campaignState, { actorId })
+      runDiscoveryDetection(narrationText, resolution, campaignState, { actorId, narrationId })
         .catch(err => console.error(`${MODULE_ID} | post-narration detection failed:`, err));
     }, ASYNC_DETECTION_DELAY_MS);
   }
@@ -904,6 +907,7 @@ export function runPostNarrationPasses(
         refs,
         campaignState?.currentSessionId,
         campaignState?.sessionNumber,
+        { narrationId },
       ).catch(err =>
         console.error(`${MODULE_ID} | post-narration tier update failed:`, err),
       );
@@ -921,7 +925,7 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       resolution.outcome,
       campaignState,
     );
-    await routeWorldJournalResults(detection.worldJournal, campaignState);
+    await routeWorldJournalResults(detection.worldJournal, campaignState, { narrationId: options.narrationId ?? null });
     // Renames before drafts: a placeholder figure revealed to have a proper
     // name is renamed in place, not duplicated into a new connection card.
     await applyEntityRenames(detection.renames, campaignState);
@@ -1873,7 +1877,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
     }
 
     await postSceneCard(question, response, sessionId, character?.name ?? null, narrationId);
-    scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null);
+    scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null, narrationId);
     return response;
 
   } catch (err) {
@@ -1895,7 +1899,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
         });
         if (response?.trim()) {
           await postSceneCard(question, response, sessionId, character?.name ?? null, narrationId);
-          scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null);
+          scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null, narrationId);
           return response;
         }
       } catch (retryErr) {
@@ -1927,11 +1931,12 @@ export async function interrogateScene(question, campaignState, options = {}) {
  * @param {{ matchedEntityIds?: string[], matchedEntityTypes?: string[] }} extras
  * @param {Object} campaignState
  * @param {string|null} [actorId] — the asking PC, stamped on any draft card (issue #321 U23)
+ * @param {string|null} [narrationId] — the answer's id, stamped on what the passes record (issue #329 X01)
  */
-function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = null) {
+function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = null, narrationId = null) {
   if (!isCanonicalGM()) return;
-  schedulePacedDetection(response, campaignState, { actorId });
-  schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
+  schedulePacedDetection(response, campaignState, { actorId, narrationId });
+  schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
 }
 
 /**
@@ -2025,7 +2030,7 @@ export async function narrateOracleFollowup({
 
     await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId });
     // The narration of a roll the table made — discovery by nature (#286 D4).
-    scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null });
+    scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -2041,7 +2046,7 @@ export async function narrateOracleFollowup({
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId });
-          scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null });
+          scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
           return text;
         }
       } catch (retryErr) {
@@ -2153,7 +2158,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
     if (xCard.interrupted('narrateSessionVignette')) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
     if (!text?.trim()) return null;
-    scheduleNarrationCapture(text, campaignState);   // its NPCs' developments → their cards (#286 D4)
+    scheduleNarrationCapture(text, campaignState, { narrationId });   // its NPCs' developments → their cards (#286 D4)
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -2168,7 +2173,7 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
         if (xCard.interrupted('narrateSessionVignette')) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (!text?.trim()) return null;
-        scheduleNarrationCapture(text, campaignState);
+        scheduleNarrationCapture(text, campaignState, { narrationId });
         return text;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateSessionVignette retry failed:`, retryErr);
@@ -2377,7 +2382,7 @@ export async function narrateAndPostVowSwearing({ vow, campaignState, speakerAct
   } catch (err) {
     console.warn(`${MODULE_ID} | narrateAndPostVowSwearing: card post failed:`, err?.message ?? err);
   }
-  scheduleNarrationCapture(text, campaignState);   // the oath scene's NPCs → their cards (#286 D4)
+  scheduleNarrationCapture(text, campaignState, { narrationId });   // the oath scene's NPCs → their cards (#286 D4)
   return text;
 }
 
@@ -2518,8 +2523,8 @@ export async function narratePacedInput(playerText, campaignState, options = {})
 
     const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
     await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null);
-    schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
-    schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
+    schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
+    schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
     scheduleChronicleEntry({
       narrationText: text,
       campaignState,
@@ -2543,8 +2548,8 @@ export async function narratePacedInput(playerText, campaignState, options = {})
         if (text?.trim()) {
           const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
           await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null);
-          schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null });
-          schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState);
+          schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
+          schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
           scheduleChronicleEntry({
             narrationText: text,
             campaignState,
@@ -2569,12 +2574,14 @@ export async function narratePacedInput(playerText, campaignState, options = {})
  *
  * @param {string} narrationText
  * @param {Object} campaignState
- * @param {{ actorId?: string|null }} [options] — the PC the narration was for;
- *   the draft card carries it, so Confirm puts a connection's bond Item on them
+ * @param {{ actorId?: string|null, narrationId?: string|null }} [options] — the PC
+ *   the narration was for (the draft card carries it, so Confirm puts a
+ *   connection's bond Item on them), and the narration's id (stamped on what
+ *   the pass records, for the X-Card — issue #329 X01)
  */
-export function schedulePacedDetection(narrationText, campaignState, { actorId = null } = {}) {
+export function schedulePacedDetection(narrationText, campaignState, { actorId = null, narrationId = null } = {}) {
   setTimeout(() => {
-    runPacedDetection(narrationText, campaignState, { actorId })
+    runPacedDetection(narrationText, campaignState, { actorId, narrationId })
       .catch(err => console.error(`${MODULE_ID} | paced detection failed:`, err));
   }, ASYNC_DETECTION_DELAY_MS);
 }
@@ -2593,14 +2600,16 @@ export function schedulePacedDetection(narrationText, campaignState, { actorId =
  * @param {string[]} matchedEntityIds   — in-scene confirmed entity ids (extras)
  * @param {string[]} matchedEntityTypes — parallel entity types (extras)
  * @param {Object}   campaignState
+ * @param {{ narrationId?: string|null }} [options] — stamped on each detail (issue #329 X01)
  */
-export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matchedEntityTypes, campaignState) {
+export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matchedEntityTypes, campaignState, { narrationId = null } = {}) {
   if (!Array.isArray(matchedEntityIds) || !matchedEntityIds.length) return;
   setTimeout(() => {
     const refs = matchedEntityIds.map((id, i) => ({ journalId: id, type: matchedEntityTypes?.[i] }));
     appendGenerativeTierUpdates(
       narrationText, refs,
       campaignState?.currentSessionId, campaignState?.sessionNumber,
+      { narrationId },
     ).catch(err => console.error(`${MODULE_ID} | paced tier update failed:`, err));
   }, ASYNC_DETECTION_DELAY_MS);
 }
@@ -2617,8 +2626,9 @@ export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matched
  *
  * @param {string} narrationText
  * @param {Object} campaignState
- * @param {{ skipLore?: boolean, source?: string, actorId?: string|null }} [options] — `source` labels the draft card
- *   (default "paced_narrative"); `actorId`, the PC the narration was for, rides it to Confirm
+ * @param {{ skipLore?: boolean, source?: string, actorId?: string|null, narrationId?: string|null }} [options] —
+ *   `source` labels the draft card (default "paced_narrative"); `actorId`, the PC the narration was for,
+ *   rides it to Confirm; `narrationId` is stamped on what the pass records (issue #329 X01)
  * @returns {Promise<void>}
  */
 export async function runPacedDetection(narrationText, campaignState, options = {}) {
@@ -2636,7 +2646,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
     const worldJournal = options.skipLore
       ? { ...detection.worldJournal, lore: [] }
       : detection.worldJournal;
-    await routeWorldJournalResults(worldJournal, campaignState);
+    await routeWorldJournalResults(worldJournal, campaignState, { narrationId: options.narrationId ?? null });
     // Renames before drafts: a placeholder figure revealed to have a proper
     // name is renamed in place, not duplicated into a new connection card.
     await applyEntityRenames(detection.renames, campaignState);
@@ -2663,13 +2673,14 @@ export async function runPacedDetection(narrationText, campaignState, options = 
  *
  * @param {string} narrationText
  * @param {Object} campaignState
- * @param {{ detect?: boolean, source?: string, actorId?: string|null }} [opts]
+ * @param {{ detect?: boolean, source?: string, actorId?: string|null, narrationId?: string|null }} [opts] —
+ *   `narrationId`: stamped on what both passes record, for the X-Card (issue #329 X01)
  */
-function scheduleNarrationCapture(narrationText, campaignState, { detect = false, source, actorId = null } = {}) {
+function scheduleNarrationCapture(narrationText, campaignState, { detect = false, source, actorId = null, narrationId = null } = {}) {
   if (!narrationText?.trim() || !isCanonicalGM()) return;
   setTimeout(() => {
-    if (detect) runPacedDetection(narrationText, campaignState, { source, actorId });
-    runNarrationTierUpdate(narrationText, campaignState);
+    if (detect) runPacedDetection(narrationText, campaignState, { source, actorId, narrationId });
+    runNarrationTierUpdate(narrationText, campaignState, { narrationId });
   }, ASYNC_DETECTION_DELAY_MS);
 }
 
@@ -2690,9 +2701,10 @@ function scheduleNarrationCapture(narrationText, campaignState, { detect = false
  *
  * @param {string} narrationText
  * @param {Object} campaignState
+ * @param {{ narrationId?: string|null }} [options] — stamped on each detail, for the X-Card (issue #329 X01)
  * @returns {Promise<Array>} applied tier updates ({ journalId, detail })
  */
-export async function runNarrationTierUpdate(narrationText, campaignState) {
+export async function runNarrationTierUpdate(narrationText, campaignState, { narrationId = null } = {}) {
   try {
     if (!narrationText?.trim()) return [];
     const { entityIds, entityTypes } = await resolvePathRelevance(narrationText, campaignState);
@@ -2701,6 +2713,7 @@ export async function runNarrationTierUpdate(narrationText, campaignState) {
     return await appendGenerativeTierUpdates(
       narrationText, refs,
       campaignState?.currentSessionId, campaignState?.sessionNumber,
+      { narrationId },
     );
   } catch (err) {
     console.warn(`${MODULE_ID} | runNarrationTierUpdate failed:`, err?.message ?? err);

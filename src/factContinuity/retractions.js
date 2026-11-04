@@ -20,6 +20,12 @@
  *     block and the summary prompt still name them.
  *   - sessionRetractedFacts(campaignState) — the current session's struck
  *     facts, newest last, for those two readers.
+ *   - retractNarrationCapture(narrationIds) — on an X-Card: undo what the
+ *     X-carded narrations' captures recorded, by their narration id (issue
+ *     #329 X01) — the World Journal entries and Session Log beats
+ *     (undoNarrationEntries) and the entity tier details. Those copies
+ *     mostly restate no sidecar truth, so propagateRetraction never finds
+ *     them.
  *
  * "Same session" is the bound: tier details and detection lore carry a
  * sessionId, not a sceneId. Matching is word overlap (factsOverlap), so the
@@ -30,8 +36,8 @@
  * apart by subject and fact together.
  */
 
-import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById } from '../entities/registry.js';
-import { retractSessionLore } from '../world/worldJournal.js';
+import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments } from '../entities/registry.js';
+import { retractSessionLore, undoNarrationEntries } from '../world/worldJournal.js';
 import { XCARD_RETRACTED_BY } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -187,6 +193,52 @@ async function dropTierDetails(subject, fact, sessionId) {
     updatedAt:      new Date().toISOString(),
   });
   return dropped;
+}
+
+/** The entity types whose records carry a generative tier. */
+const TIER_ENTITY_TYPES = ['connection', 'ship', 'settlement', 'faction', 'planet', 'location', 'creature'];
+
+/**
+ * Undo what X-carded narrations' captures recorded (issue #329 X01;
+ * rules/narrator-memory.md 6b: anything a narration writes outside the
+ * ledgers carries its `narrationId` so the X-Card can undo it too). The
+ * capture — the detection and tier passes that run after a narration —
+ * stamps the narration's id on every World Journal entry, Session Log beat
+ * and tier detail it writes; this takes them back by that id: World Journal
+ * entries are restored to their version before or taken out of play
+ * (undoNarrationEntries), beats leave the Session Log, and tier details
+ * leave every entity's card — pinned or not, since the table removed them.
+ * Runs on the canonical GM after the pause is written (suppressScene's
+ * finish). Fail-open: never throws.
+ *
+ * @param {string[]} narrationIds — the X-carded narrations
+ * @returns {Promise<{ entries: Object, tierDetails: number }>}
+ */
+export async function retractNarrationCapture(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === 'string' && id));
+  const out = { entries: { restored: 0, retracted: 0, deleted: 0, beats: 0 }, tierDetails: 0 };
+  if (!removed.size) return out;
+  try {
+    out.entries = await undoNarrationEntries([...removed]);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: undoing the capture's World Journal entries failed:`, err?.message ?? err);
+  }
+  for (const typeKey of TIER_ENTITY_TYPES) {
+    let docs = [];
+    try { docs = [...iterEntityDocuments(typeKey)]; } catch { docs = []; }
+    for (const { document, data } of docs) {
+      const tier = Array.isArray(data?.generativeTier) ? data.generativeTier : [];
+      const keep = tier.filter(e => !(typeof e?.narrationId === 'string' && removed.has(e.narrationId)));
+      if (keep.length === tier.length) continue;
+      try {
+        await writeEntityFlag(typeKey, document, { ...data, generativeTier: keep, updatedAt: new Date().toISOString() });
+        out.tierDetails += tier.length - keep.length;
+      } catch (err) {
+        console.warn(`${MODULE_ID} | X-Card: dropping the capture's tier details from ${typeKey} ${document?.id} failed:`, err?.message ?? err);
+      }
+    }
+  }
+  return out;
 }
 
 /** A ledger subject as the CORRECTED block and the summary prompt name it. */
