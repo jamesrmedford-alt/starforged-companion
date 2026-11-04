@@ -42,14 +42,20 @@ export const SPOTLIGHT_MODES = Object.freeze(new Set([
  * Ordering is stable by actor id so the rotation is deterministic across
  * turns and survives a mid-scene rename (which changes name, not id).
  *
+ * The PC whose beat this closes is never named back to the table when another
+ * candidate is in the scene (issue #330 D8): the rotation skips past them, so
+ * the first beat of a scene, or a beat made out of turn, draws in someone
+ * else — the nudge exists to move the spotlight toward quieter players.
+ *
  * @param {Object} args
  * @param {Array<{id: string, name: string}>} args.roster — all PCs in the world
  * @param {string[]} [args.presentNames] — scene-frame `present` names (PCs + NPCs)
  * @param {string|null} [args.lastActorId] — actor id addressed on the prior beat
+ * @param {string|null} [args.actingActorId] — actor id of the PC whose beat this is
  * @returns {{ nextActorId: string, nextActorName: string,
  *             candidates: Array<{id: string, name: string}> } | null}
  */
-export function selectSpotlight({ roster, presentNames = [], lastActorId = null } = {}) {
+export function selectSpotlight({ roster, presentNames = [], lastActorId = null, actingActorId = null } = {}) {
   const pcs = Array.isArray(roster)
     ? roster.filter(r => r && typeof r.id === 'string' && r.id
         && typeof r.name === 'string' && r.name.trim())
@@ -78,7 +84,9 @@ export function selectSpotlight({ roster, presentNames = [], lastActorId = null 
   const lastIdx = lastActorId
     ? ordered.findIndex(pc => pc.id === lastActorId)
     : -1;
-  const next = ordered[(lastIdx + 1) % ordered.length];
+  let nextIdx = (lastIdx + 1) % ordered.length;
+  if (actingActorId && ordered[nextIdx].id === actingActorId) nextIdx = (nextIdx + 1) % ordered.length;
+  const next = ordered[nextIdx];
 
   return { nextActorId: next.id, nextActorName: next.name.trim(), candidates: ordered };
 }

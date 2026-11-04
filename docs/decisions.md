@@ -12,6 +12,17 @@ rejected.
 needed the maintainer. The maintainer asked for the issue to be addressed on
 2026-11-04 and took the recommended option on every row. Each row's ID in
 brackets.)
+- **The spotlight nudge never names the PC who just acted** [D8; option A].
+  `selectSpotlight` picked the PC after the per-scene pointer by actor-id
+  order and was never told whose beat it was: the first beat of a scene, or
+  a beat made out of turn, could end "By the rotation, Kira is next" on
+  Kira's own beat. The narration's CHARACTER (`actingActorId`) is now
+  skipped when another candidate is in the scene, and the pointer records
+  whom it named, so it moves on past both. The rest of "Multiplayer
+  spotlight is implied by narration" stands — a per-scene round-robin by
+  actor id, a nudge, never a gate. *Rejected:* keeping the pure pointer and
+  documenting that the roller may be named (option B) — the nudge exists to
+  move the spotlight toward quieter players.
 - **A GM's lore ruling stands until a GM changes it** [D9; option A]. The
   detection pass re-recorded a title the GM had ruled a rumour as
   `confirmed: true, narratorAsserted: true` — only a stored `retracted` mark
