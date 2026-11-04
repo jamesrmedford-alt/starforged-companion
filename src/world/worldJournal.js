@@ -348,18 +348,24 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
   // the record via entityId. The WJ entry remains the intelligence log.
   // Fail-open: a sync failure never blocks the journal write.
   let linkedEntityId = entry?.entityId ?? existing?.entityId ?? null;
+  // The record's stance this write changed — for the X-Card, which puts it
+  // back when the narration is removed (XCARD-CAPTURE-TRANSITIONS).
+  let recordStance = null;
   try {
     const { findFactionByName, applyAttitudeToFactionRecord } = await import("../entities/faction.js");
     const hit = findFactionByName(cleanName, campaignState);
     if (hit) {
       linkedEntityId = linkedEntityId ?? hit.id;
       if (attitude !== "unknown") {
-        await applyAttitudeToFactionRecord(cleanName, attitude, campaignState);
+        const before  = hit.faction?.relationship ?? null;
+        const changed = await applyAttitudeToFactionRecord(cleanName, attitude, campaignState);
+        if (changed) recordStance = { entityId: hit.id, before, after: changed.relationship ?? null };
       }
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | worldJournal: faction record sync failed:`, err?.message ?? err);
   }
+  const stamp = narrationStamp(entry?.narrationId, existing);
 
   const data = {
     factionName:  cleanName,
@@ -369,7 +375,10 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
     encounters,
     createdAt:    existing?.createdAt ?? now,
     updatedAt:    now,
-    ...narrationStamp(entry?.narrationId, existing),   // for the X-Card (issue #329 X01)
+    ...stamp,   // for the X-Card (issue #329 X01)
+    // Always written (null when none): the stance a narration's write moved
+    // on the faction's record, { entityId, before, after }.
+    recordStance: stamp.narrationId ? recordStance : null,
   };
 
   const page = await upsertPage(journal, cleanName, FLAG_KEYS.factions, data);
@@ -423,9 +432,18 @@ export async function recordLocation(name, entry, campaignState) {
 /**
  * Update a threat's severity. Appends to the history array. If the named
  * threat does not exist this logs a warning and returns null — the function
- * never creates a new threat from this path.
+ * never creates a new threat from this path. A narration's capture passes its
+ * `narrationId`: the write is stamped with it and keeps the version it
+ * replaced, so an X-Card on that narration puts the threat back
+ * (XCARD-CAPTURE-TRANSITIONS); any other write owns the entry (no stamp), as
+ * the record writers' (issue #329 X01).
+ *
+ * @param {string} name
+ * @param {string} severity
+ * @param {Object} campaignState
+ * @param {{ narrationId?: string|null }} [options]
  */
-export async function updateThreatSeverity(name, severity, campaignState) {
+export async function updateThreatSeverity(name, severity, campaignState, { narrationId = null } = {}) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.threats);
   if (!journal) return null;
 
@@ -452,6 +470,7 @@ export async function updateThreatSeverity(name, severity, campaignState) {
     lastUpdated: sessionId,
     history,
     updatedAt:   new Date().toISOString(),
+    ...narrationStamp(narrationId, existing),
   };
   await page.setFlag(MODULE_ID, FLAG_KEYS.threats, updated);
   return updated;
@@ -460,9 +479,15 @@ export async function updateThreatSeverity(name, severity, campaignState) {
 /**
  * Promote a narrator-asserted lore entry to confirmed (canonical). Stamps
  * promotedAt. Does NOT change narratorAsserted — the entry retains its
- * provenance.
+ * provenance. A narration's capture (a "lore confirmed" transition) passes
+ * its `narrationId`, stamped as updateThreatSeverity's
+ * (XCARD-CAPTURE-TRANSITIONS); a GM's confirm owns the entry.
+ *
+ * @param {string} title
+ * @param {Object} [_campaignState]
+ * @param {{ narrationId?: string|null }} [options]
  */
-export async function promoteLoreToConfirmed(title, _campaignState) {
+export async function promoteLoreToConfirmed(title, _campaignState, { narrationId = null } = {}) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.lore);
   if (!journal) return null;
 
@@ -487,6 +512,7 @@ export async function promoteLoreToConfirmed(title, _campaignState) {
     confirmed:  true,
     promotedAt: new Date().toISOString(),
     updatedAt:  new Date().toISOString(),
+    ...narrationStamp(narrationId, existing),
   };
   await page.setFlag(MODULE_ID, FLAG_KEYS.lore, updated);
   return updated;
@@ -530,18 +556,27 @@ export async function retractSessionLore(sessionId, matches) {
  *   - threat resolved/escalated → updateThreatSeverity
  *   - faction attitudeShift     → recordFactionIntelligence with the new attitude
  *   - lore contradicted         → no state change; posts GM-only chat card
+ *
+ * A narration's capture passes its `narrationId`: the entry the transition
+ * changes is stamped with it, so an X-Card on that narration undoes the
+ * change (undoNarrationEntries — XCARD-CAPTURE-TRANSITIONS).
+ *
+ * @param {Object} transition
+ * @param {Object} campaignState
+ * @param {{ narrationId?: string|null }} [options]
  */
-export async function applyStateTransition(transition, campaignState) {
+export async function applyStateTransition(transition, campaignState, { narrationId = null } = {}) {
   if (!transition?.entryType) return null;
+  const fromNarration = typeof narrationId === "string" && narrationId ? { narrationId } : {};
 
   switch (transition.entryType) {
     case "threat": {
       if (transition.change === "resolved") {
-        return updateThreatSeverity(transition.name, "resolved", campaignState);
+        return updateThreatSeverity(transition.name, "resolved", campaignState, fromNarration);
       }
       if (transition.change === "escalated") {
         const next = transition.newValue ?? "active";
-        return updateThreatSeverity(transition.name, next, campaignState);
+        return updateThreatSeverity(transition.name, next, campaignState, fromNarration);
       }
       return null;
     }
@@ -550,7 +585,7 @@ export async function applyStateTransition(transition, campaignState) {
       if (transition.change !== "attitudeShift") return null;
       return recordFactionIntelligence(
         transition.name,
-        { attitude: transition.newValue, summary: transition.summary ?? "" },
+        { attitude: transition.newValue, summary: transition.summary ?? "", ...fromNarration },
         campaignState,
       );
     }
@@ -746,6 +781,11 @@ export async function appendSessionLogBeat(campaignState, beat) {
  *     leave it out, and the capture cannot re-confirm the same title, as for
  *     a struck fact), any other entry's page is deleted (threats, factions
  *     and places have no retracted state their readers honour).
+ * That covers the transitions a capture applies to an entry it did not make
+ * — a threat resolved or escalated, lore confirmed, a faction's attitude
+ * (XCARD-CAPTURE-TRANSITIONS) — and a faction's stance on its record, the
+ * canonical home, is put back too where the record still holds what the
+ * narration set (revertFactionStances).
  * And every Session Log beat they wrote leaves its page. Runs on the
  * canonical GM after the pause is written (suppressScene's finish). Fail-open
  * per entry; never throws.
@@ -768,12 +808,18 @@ export async function undoNarrationEntries(narrationIds) {
       try {
         const versions = Array.isArray(entry.previous) ? entry.previous : [];
         const at = versions.findIndex(v => v && !fromRemoved(v));
+        if (category === "factions") {
+          // The removed narrations' versions, newest first: each one's stance change on the record.
+          await revertFactionStances([entry, ...(at >= 0 ? versions.slice(0, at) : versions)].filter(fromRemoved));
+        }
         if (at >= 0) {
           const older = versions.slice(at + 1);
           await writeEntryPage(page, flagKey, {
             ...versions[at],
             narrationId: versions[at].narrationId ?? null,
             previous:    older.length ? older : null,
+            // setFlag merges: a key the restored version lacks keeps the removed one's value
+            ...(category === "factions" ? { recordStance: versions[at].recordStance ?? null } : {}),
           });
           out.restored += 1;
         } else if (category === "lore") {
@@ -801,6 +847,27 @@ export async function undoNarrationEntries(narrationIds) {
     if (await persistSessionLogPage(page, { ...flag, beats: kept })) out.beats += beats.length - kept.length;
   }
   return out;
+}
+
+/**
+ * Put back the stance X-carded narrations moved on faction records — the
+ * canonical stance home (decisions.md → "Faction stance: the entity record is
+ * canonical"): each version's `recordStance`, newest first, where the record
+ * still holds the stance that narration set. A stance changed since (a GM's
+ * edit, a later narration) stands.
+ *
+ * @param {Object[]} versions — faction entries a removed narration wrote, newest first
+ * @returns {Promise<void>}
+ */
+async function revertFactionStances(versions) {
+  const moves = versions.map(v => v?.recordStance).filter(s => typeof s?.entityId === "string" && typeof s.after === "string");
+  if (!moves.length) return;
+  const { getFaction, updateFaction } = await import("../entities/faction.js");
+  for (const s of moves) {
+    const record = getFaction(s.entityId);
+    if (!record || record.relationship !== s.after) continue;
+    await updateFaction(s.entityId, { relationship: s.before ?? "unknown" });
+  }
 }
 
 /** Replace a World Journal page's entry and re-render its body from it. */

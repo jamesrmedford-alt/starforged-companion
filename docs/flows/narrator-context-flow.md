@@ -176,8 +176,13 @@ detail; the X-Card's finish (`retractNarrationCapture`, `retractions.js` →
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
 threat, faction or place page, takes the beats off the Session Log page and
 drops the tier details — most of these restate no sidecar truth, so
-`propagateRetraction` never reached them (a state transition the capture
-applied to an existing entry is not undone — known-issues
+`propagateRetraction` never reached them. A state transition the capture
+applies to an entry it did not make — a threat resolved or escalated
+(`updateThreatSeverity`), lore confirmed (`promoteLoreToConfirmed`), a
+faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
+put back with it; the stance an attitude moved on the faction's record (the
+canonical stance, `recordStance` before → after) is put back too, where the
+record still holds what the narration set (known-issues
 XCARD-CAPTURE-TRANSITIONS). If that part fails the pause is still written. After the write the cards are flagged
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
 `propagateRetraction`. Readers: the ring and the rolling summary skip

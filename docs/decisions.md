@@ -17,7 +17,11 @@ ID in brackets.)
   Session Log beat and tier detail; the X-Card undoes them by that id
   (`retractNarrationCapture`) — restored, retracted (lore) or deleted (a
   threat, faction or place it made). A new capture writer takes the id from
-  its caller (rules/narrator-memory.md 6b).
+  its caller (rules/narrator-memory.md 6b). The transitions it applies to
+  entries it did not make (a threat resolved or escalated, lore confirmed, a
+  faction's attitude) are stamped and undone the same way, the faction's
+  stance on its record included unless it changed since (known-issues
+  XCARD-CAPTURE-TRANSITIONS, found while fixing X01).
 - **The consistency check audits the ledger the persist leaves in the store**
   [X02], not the caller's snapshot — the W05 rule for the prompt, applied to
   the audit.

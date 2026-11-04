@@ -107,7 +107,9 @@ layers. This file is the never-break list.
    too — the command vehicle's position does (issue #325 W07), and so does
    everything its capture records: World Journal entries (with the versions
    they replaced), Session Log beats and tier details (issue #329 X01 — a new
-   capture writer takes the id from its caller); a narration
+   capture writer takes the id from its caller), and the state transitions
+   it applies to existing entries, a faction's record stance included
+   (XCARD-CAPTURE-TRANSITIONS); a narration
    is built from the ledgers as they stand in the store, never a pre-dialog
    snapshot (W05), and a summary the X-Card emptied is stamped newer than any
    working copy's (W06).

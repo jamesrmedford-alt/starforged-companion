@@ -1032,7 +1032,8 @@ function lowerSalience(a, b) {
  * Each record is stamped with the narration it came from (`narrationId`):
  * a lore, threat, faction or place entry, a Session Log beat and a tier
  * detail alike, so an X-Card on that narration undoes them (issue #329 X01;
- * rules/narrator-memory.md 6b).
+ * rules/narrator-memory.md 6b) — and the entry a state transition changes
+ * (XCARD-CAPTURE-TRANSITIONS).
  *
  * @param {Object} wj — parsed worldJournal section
  * @param {Object} campaignState
@@ -1113,24 +1114,32 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
     await recordLocation(location.name, { ...location, ...fromNarration }, campaignState);
   }
 
+  // A transition changes an entry the capture did not make — stamped all the
+  // same, so the X-Card undoes it (XCARD-CAPTURE-TRANSITIONS).
   for (const transition of wj.stateTransitions ?? []) {
-    await applyStateTransition(transition, campaignState);
+    await applyStateTransition(transition, campaignState, fromNarration);
   }
 }
 
 /**
  * Apply a state transition. Delegates to worldJournal.applyStateTransition
  * for threat / faction / lore-contradicted, and adds a "lore confirmed"
- * change that promotes a soft entry to canonical.
+ * change that promotes a soft entry to canonical. A narration's capture
+ * passes its `narrationId`, stamped on the entry it changes.
+ *
+ * @param {Object} transition
+ * @param {Object} campaignState
+ * @param {{ narrationId?: string|null }} [options]
  */
-export async function applyStateTransition(transition, campaignState) {
+export async function applyStateTransition(transition, campaignState, { narrationId = null } = {}) {
   if (!transition?.entryType) return null;
+  const fromNarration = typeof narrationId === "string" && narrationId ? { narrationId } : {};
 
   if (transition.entryType === "lore" && transition.change === "confirmed") {
-    return promoteLoreToConfirmed(transition.name, campaignState);
+    return promoteLoreToConfirmed(transition.name, campaignState, fromNarration);
   }
 
-  return wjApplyStateTransition(transition, campaignState);
+  return wjApplyStateTransition(transition, campaignState, fromNarration);
 }
 
 
