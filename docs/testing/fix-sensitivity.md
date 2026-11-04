@@ -10,7 +10,7 @@ the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
 2026-10-29 (the patch applied to `fd17788`), for issue #311 on 2026-10-29, for
 issues #313, #314 and #315 on 2026-10-30, for issue #316 on 2026-10-31,
 for issues #321 and #322 on 2026-11-01, for issues #325 and #326 on 2026-11-03 and for issue
-#329 on 2026-11-04. To reproduce:
+#329 — and the four fixes found while fixing it — on 2026-11-04. To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -123,6 +123,16 @@ node scripts/fix-sensitivity.mjs \
 node scripts/fix-sensitivity.mjs \
   c1c3791 e488234 dc4d2bd d6c2de4 0726854 5e38a44 9badb9b ae7e50e 91cae82 \
   9136c7b 77ed8bd f16e093 2310da9 a8deb17 \
+  --md details.md
+
+# issue #329 — the four found while fixing it (FULFIL-BUTTON-LOCAL-DISABLE,
+# ENDURE-ZERO-ON-OTHER-OPTION, XCARD-CAPTURE-TRANSITIONS, NOTES-PROMOTED-BEFORE)
+node scripts/fix-sensitivity.mjs \
+  9ef6fde a93ba76 f43d0bb 082196a \
+  --inject scripts/defects/notes-promoted-not-moved.patch \
+  --inject scripts/defects/notes-promoted-moved-twice.patch \
+  --inject scripts/defects/notes-promoted-html-resurrected.patch \
+  --inject scripts/defects/notes-promoted-any-client.patch \
   --md details.md
 ```
 
@@ -583,6 +593,22 @@ the behaviour.
 | X13 BEGIN-REFUSED-SILENT | 2310da9 | revert | 2 — `beginSessionRefusedWrite.test.js` (2) |
 | X14 SESSION-GATE-SILENT-DROP | a8deb17 | revert | 5 — `helpDocDrift.test.js`, `sessionGateNotice.test.js` (4) |
 
+### Issue #329 — the four found while fixing it
+
+Every fix commit is **sensitive**. **NOTES-PROMOTED-BEFORE**'s migration
+tests fail under revert only on its missing export
+(`moveRecordNotesToSheets`), so four injected defects show them on the
+behaviour: the move that clears the copy without appending it, appends a
+detail the tab already holds, treats `updateShip`'s whole-notes HTML copy as
+a promoted detail, or runs on a player's client.
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| FULFIL-BUTTON-LOCAL-DISABLE | 9ef6fde | revert | 6 — `cardButtonWiring.test.js` (2), `fulfilButtonOnce.test.js` (4) |
+| ENDURE-ZERO-ON-OTHER-OPTION | a93ba76 | revert | 3 — `endureZeroOnMomentumPick.test.js` (3) |
+| XCARD-CAPTURE-TRANSITIONS | f43d0bb | revert | 5 — `entityExtractor.test.js` (3), `xcardCaptureTransitions.test.js` (2) |
+| NOTES-PROMOTED-BEFORE | 082196a | revert; 4 injected defects | 1 — `notesPromotedBefore.test.js` (6 more only on the missing export); the defects: not moved 3, moved twice 1, HTML resurrected 1, any client 1 |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -699,6 +725,15 @@ several open vows names none so the roller is asked (X05), and a Begin a
 Session retried after a refusal begins the session and pays its momentum
 once (X13). X04's two passing assertions, run by hand, are its control and
 the "When you must …" guard.
+
+For the four found while fixing it the script lists seven new tests that pass
+both ways. Each was read: six are named controls (above 0 health no at-0
+choice, and "-1 health" offers it once; the capture's transitions before the
+X-Card, and an earlier narration's and a GM's change left alone; an
+`updateShip` that leaves the notes alone, and an `!ship envision` append
+still reaching the narrator's row); one is a guard the fix must keep — a
+faction stance changed on the record since the narration stands
+(XCARD-CAPTURE-TRANSITIONS).
 
 ## Details
 
@@ -6111,3 +6146,128 @@ Test files: `tests/unit/helpDocDrift.test.js`, `tests/unit/sessionGateNotice.tes
 
 - New test passing with and without the fix (a control?): tests/unit/sessionGateNotice.test.js › issue #329 X14 — the session gate tells the author why nothing ran control: with the session active the typed line reaches the pipeline and posts a move card
 - New test passing with and without the fix (a control?): tests/unit/sessionGateNotice.test.js › issue #329 X14 — the session gate tells the author why nothing ran control: with the session active the ⚔ press reaches the pipeline and rolls Swear an Iron Vow
+
+### 9ef6fde — fix: a card's 🏁 Attempt to Fulfill rolls the vow once, claimed on the GM
+
+Test files: `tests/unit/cardButtonWiring.test.js`, `tests/unit/cardRepostAsRoller.test.js`, `tests/unit/fulfilButtonOnce.test.js`. Source restored: 3 file(s).
+
+- With the fix: 49 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 43 still pass (0 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/cardButtonWiring.test.js › wireFightVowButtons — one-shot Mark milestone / Deepen bond Attempt to Fulfill relays to the GM too — the player's client posts nothing | AssertionError: expected [ { …(12) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/cardButtonWiring.test.js › wireFightVowButtons — one-shot Mark milestone / Deepen bond on the canonical GM Attempt to Fulfill posts the forced fulfil move once, as the roller | AssertionError: expected [ { …(12) }, { …(12) } ] to have a length of 1 but got 2 |
+| (new) tests/unit/fulfilButtonOnce.test.js › FULFIL-BUTTON-LOCAL-DISABLE — a card's "🏁 Attempt to Fulfill" rolls once the player and the GM both pressing a move card's 🏁 roll Fulfill Your Vow once, as Kira | AssertionError: expected [ { …(8) }, { …(8) } ] to have a length of 1 but got 2 |
+| (new) tests/unit/fulfilButtonOnce.test.js › FULFIL-BUTTON-LOCAL-DISABLE — a card's "🏁 Attempt to Fulfill" rolls once after a re-render the pressed 🏁 stays pressed | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/fulfilButtonOnce.test.js › FULFIL-BUTTON-LOCAL-DISABLE — a card's "🏁 Attempt to Fulfill" rolls once the player and the GM both pressing a won-fight card's 🏁 roll it once, Kira's vow by name and Item id | AssertionError: expected [ { …(8) }, { …(8) } ] to have a length of 1 but got 2 |
+| (new) tests/unit/fulfilButtonOnce.test.js › FULFIL-BUTTON-LOCAL-DISABLE — a card's "🏁 Attempt to Fulfill" rolls once another player may not roll Kira's vow from her card; the GM may, as Kira | AssertionError: expected [ { …(8) } ] to have a length of +0 but got 1 |
+
+### a93ba76 — fix: an Endure Harm / Stress miss at 0 offers the at-0 choice after Lose Momentum too
+
+Test files: `tests/unit/endureZeroOnMomentumPick.test.js`. Source restored: 3 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option Endure Harm miss at 0 health, 'Lose Momentum (-2)': momentum 5 → 3, then the at-0 choice | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option Endure Stress miss at 0 spirit, 'Lose Momentum (-2)': the desolation choice follows | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option …and a pick on it applies that one: 'Mark permanently harmed' | TypeError: Cannot read properties of undefined (reading '_id') |
+
+- New test passing with and without the fix (a control?): tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option control: above 0 health, 'Lose Momentum (-2)' offers no at-0 choice
+- New test passing with and without the fix (a control?): tests/unit/endureZeroOnMomentumPick.test.js › ENDURE-ZERO-ON-OTHER-OPTION — the at-0 choice follows either miss option control: '-1 health' at 0 offers the at-0 choice once (the executor's)
+
+### f43d0bb — fix: the X-Card undoes the state transitions an X-carded narration's capture applied
+
+Test files: `tests/unit/entityExtractor.test.js`, `tests/unit/xcardCaptureTransitions.test.js`. Source restored: 2 file(s).
+
+- With the fix: 135 passed, 0 failed.
+- Without it: 5 failed (3 new; 0 only for a missing export); 130 still pass (3 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/entityExtractor.test.js › routeWorldJournalResults delegates state transitions through applyStateTransition | AssertionError: expected "applyStateTransition" to be called with arguments: [ ObjectContaining{…}, …(2) ] |
+| (new) tests/unit/entityExtractor.test.js › routeWorldJournalResults a narration's transitions carry its id, for the X-Card (XCARD-CAPTURE-TRANSITIONS) | AssertionError: expected "applyStateTransition" to be called with arguments: [ ObjectContaining{…}, …(2) ] |
+| tests/unit/entityExtractor.test.js › routeWorldJournalResults 'lore confirmed' transition delegates to promoteLoreToConfirmed | AssertionError: expected "promoteLoreToConfirmed" to be called with arguments: [ 'Soft fact', …(2) ] |
+| (new) tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied after the X-Card the threat is looming again, the lore unconfirmed, the Syndicate neutral — entry and record | AssertionError: expected null to match object { severity: 'looming', …(1) } |
+| (new) tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied two X-carded narrations that each moved the stance put back the one before both | AssertionError: expected 'open_alliance' to be 'apathetic' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied control: the capture resolves the threat, confirms the lore and turns the Syndicate hostile
+- New test passing with and without the fix (a control?): tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied a stance changed on the record since the narration stands
+- New test passing with and without the fix (a control?): tests/unit/xcardCaptureTransitions.test.js › XCARD-CAPTURE-TRANSITIONS — the X-Card undoes the transitions its narration's capture applied control: an earlier narration's transitions are untouched; a GM's own change owns the entry
+
+### 082196a — fix: details promoted to an NPC's or ship's record notes before X12 reach the Notes tab
+
+Test files: `tests/unit/entityCardNotesText.test.js`, `tests/unit/notesPromotedBefore.test.js`, `tests/unit/notesSheetCanonical.test.js`. Source restored: 3 file(s).
+
+- With the fix: 18 passed, 0 failed.
+- Without it: 7 failed (7 new; 6 only for a missing export); 11 still pass (2 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab an NPC card's promoted details join its Notes tab — the narrator's Notes row shows them again | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a detail the tab already holds is not added twice — the copy is only cleared | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a ship: its envision section (already in the tab) stays once; the promoted detail joins it | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a GM's trim of the envision section in the tab stands — the record's whole-notes copy is not put back | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a second world load moves nothing | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) (API) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab control: a player's client moves nothing — not even on a card the player owns | TypeError: (0 , moveRecordNotesToSheets) is not a function |
+| (new) tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — updateShip writes a ship's notes to its Notes tab alone the tab takes the notes; the record keeps no copy | AssertionError: expected '&lt;p>A battered hauler.&lt;/p>&lt;hr>&lt;h4>✦ En…' to be '' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — updateShip writes a ship's notes to its Notes tab alone control: an update that leaves the notes alone leaves the record as it was
+- New test passing with and without the fix (a control?): tests/unit/notesSheetCanonical.test.js › issue #329 X12 — the sheet's Notes tab reaches the narrator's Notes row control: an `!ship envision` append reaches the row (it writes the Notes tab)
+
+### `scripts/defects/notes-promoted-not-moved.patch` — NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move clears the record's copy of a promoted detail without appending it to the Notes tab
+
+Test files: `tests/unit/notesPromotedBefore.test.js`.
+
+- On HEAD: 8 passed, 0 failed.
+- With the defect: 3 failed (0 only for a missing export); 5 still pass.
+- Verdict: **sensitive** — 3 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab an NPC card's promoted details join its Notes tab — the narrator's Notes row shows them again | AssertionError: expected '&lt;p>Keeps her own counsel.&lt;/p>' to be '&lt;p>Keeps her own counsel.&lt;/p>&lt;p>Owes …' // Object.is equality |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a ship: its envision section (already in the tab) stays once; the promoted detail joins it | AssertionError: expected '&lt;p>A battered hauler.&lt;/p>&lt;hr>&lt;h4>✦ En…' to be '&lt;p>A battered hauler.&lt;/p>&lt;hr>&lt;h4>✦ En…' // Object.is equality |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a GM's trim of the envision section in the tab stands — the record's whole-notes copy is not put back | AssertionError: expected '&lt;p>A battered hauler.&lt;/p>' to be '&lt;p>A battered hauler.&lt;/p>&lt;p>A stowawa…' // Object.is equality |
+
+### `scripts/defects/notes-promoted-moved-twice.patch` — NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move appends a promoted detail the Notes tab already holds, so it shows twice
+
+Test files: `tests/unit/notesPromotedBefore.test.js`.
+
+- On HEAD: 8 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 7 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a detail the tab already holds is not added twice — the copy is only cleared | AssertionError: expected { moved: 1, cleared: +0 } to deeply equal { moved: +0, cleared: 1 } |
+
+### `scripts/defects/notes-promoted-html-resurrected.patch` — NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move treats updateShip's whole-notes HTML copy as a promoted detail, putting back an envision section the GM trimmed from the tab
+
+Test files: `tests/unit/notesPromotedBefore.test.js`.
+
+- On HEAD: 8 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 7 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab a GM's trim of the envision section in the tab stands — the record's whole-notes copy is not put back | AssertionError: expected '&lt;p>A battered hauler.&lt;/p>&lt;p>&lt;hr&gt…' to be '&lt;p>A battered hauler.&lt;/p>&lt;p>A stowawa…' // Object.is equality |
+
+### `scripts/defects/notes-promoted-any-client.patch` — NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move runs on a player's client too, writing world documents there
+
+Test files: `tests/unit/notesPromotedBefore.test.js`.
+
+- On HEAD: 8 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 7 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/notesPromotedBefore.test.js › NOTES-PROMOTED-BEFORE — details promoted to the record before X12 reach the Notes tab control: a player's client moves nothing — not even on a card the player owns | AssertionError: expected { moved: 1, cleared: +0 } to deeply equal { moved: +0, cleared: +0 } |

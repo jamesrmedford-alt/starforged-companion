@@ -1,0 +1,17 @@
+Defect: NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move treats updateShip's whole-notes HTML copy as a promoted detail, putting back an envision section the GM trimmed from the tab
+Tests: tests/unit/notesPromotedBefore.test.js
+Catches: a GM's trim of the envision section in the tab stands
+
+diff --git a/src/entities/migrator.js b/src/entities/migrator.js
+index b491b91..981d8c2 100644
+--- a/src/entities/migrator.js
++++ b/src/entities/migrator.js
+@@ -809,7 +809,7 @@ export async function syncEntityRecordNames(campaignState) {
+ function promotedNoteBlocks(notes) {
+   return String(notes ?? "").split(/\n\s*\n/)
+     .map(b => b.trim())
+-    .filter(b => b && !/<[a-z/][^>]*>/i.test(b));
++    .filter(b => b);
+ }
+ 
+ const plainNotes = (html) => String(html ?? "")

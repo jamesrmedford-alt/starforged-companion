@@ -1,0 +1,17 @@
+Defect: NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move appends a promoted detail the Notes tab already holds, so it shows twice
+Tests: tests/unit/notesPromotedBefore.test.js
+Catches: a detail the tab already holds is not added twice
+
+diff --git a/src/entities/migrator.js b/src/entities/migrator.js
+index b491b91..67a1371 100644
+--- a/src/entities/migrator.js
++++ b/src/entities/migrator.js
+@@ -844,7 +844,7 @@ export async function moveRecordNotesToSheets() {
+         if (typeof data?.notes !== "string" || !data.notes.trim() || !document?.system) continue;
+         const sheet   = String(document.system.notes ?? "");
+         const onSheet = plainNotes(sheet);
+-        const missing = promotedNoteBlocks(data.notes).filter(b => !onSheet.includes(plainNotes(b)));
++        const missing = promotedNoteBlocks(data.notes);
+         if (missing.length) {
+           await document.update({ "system.notes": `${sheet}${missing.map(b => `<p>${escapeNoteHtml(b)}</p>`).join("")}` });
+         }

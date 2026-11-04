@@ -1,0 +1,16 @@
+Defect: NOTES-PROMOTED-BEFORE (issue #329 follow-up) — the world-load move runs on a player's client too, writing world documents there
+Tests: tests/unit/notesPromotedBefore.test.js
+Catches: a player's client moves nothing
+
+diff --git a/src/entities/migrator.js b/src/entities/migrator.js
+index b491b91..921f16d 100644
+--- a/src/entities/migrator.js
++++ b/src/entities/migrator.js
+@@ -835,7 +835,6 @@ const escapeNoteHtml = (s) => String(s ?? "")
+  */
+ export async function moveRecordNotesToSheets() {
+   const summary = { moved: 0, cleared: 0 };
+-  if (globalThis.game?.user && !globalThis.game.user.isGM) return summary;
+ 
+   for (const typeKey of ["connection", "ship"]) {
+     if (!hasSheetNotes(typeKey)) continue;
