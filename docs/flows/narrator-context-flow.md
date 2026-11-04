@@ -294,7 +294,9 @@ galley vignette) run once per session id: `applyBeginSession` stamps
 `sessionStartedId`, and a second Begin on that session posts a note instead
 (the dialog does not open for it) — issue #300 F11. Begin works on a copy of
 the stored value, so a refused save leaves the GM's cache unbegun and a retry
-starts the session (issue #309 N09). End a Session's effects (scene close,
+starts the session (issue #309 N09) — and the table is told: the GM posts "The
+session was not started … No momentum was applied … Try Begin a Session
+again" where the Begin card is (issue #329 X13). End a Session's effects (scene close,
 summary, Session Log, the focus momentum, the closing vignette) run once per
 session id too: `applyEndSession` runs one End at a time on the canonical GM,
 and an End on a session already ended only replaces the focus for next
