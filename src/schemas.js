@@ -487,6 +487,11 @@ export const CampaignStateSchema = {
   // disconnects, the next canonical GM releases it (index.js
   // releaseLockOfDisconnectedGM — issue #325 W25).
   pendingMoveBy: null,
+  // The claim's own token: a pipeline releases the lock only while it still
+  // holds its claim — one whose lock was released while its GM was away must
+  // not release a later move's (index.js releasePendingMoveLock — issue #329
+  // X08).
+  pendingMoveClaim: null,
 
   // Claude API configuration — read by the move interpreter (which falls back
   // to its own constants); nothing writes it, so it stays at these defaults.

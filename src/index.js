@@ -894,9 +894,13 @@ export function registerChatHook() {
     // Claim the lock before any async work so other clients see it immediately.
     // The claimant rides it: if their browser goes, the next canonical GM
     // releases a lock nobody holds (releaseLockOfDisconnectedGM, issue #325
-    // W25).
+    // W25). So does the claim's own token: this pipeline releases the lock
+    // only while the store still holds this claim — after a handover its GM
+    // may have claimed it again for a later move (issue #329 X08).
+    const lockClaim = foundry.utils.randomID();
     campaignState.pendingMove = true;
     campaignState.pendingMoveBy = game.user?.id ?? null;
+    campaignState.pendingMoveClaim = lockClaim;
     try {
       await game.settings.set(MODULE_ID, "campaignState", campaignState);
     } catch (err) {
@@ -905,6 +909,7 @@ export function registerChatHook() {
       // refused every later move here until a reload (issue #302).
       campaignState.pendingMove = false;
       campaignState.pendingMoveBy = null;
+      campaignState.pendingMoveClaim = null;
       console.error(`${MODULE_ID} | could not claim the move lock:`, err);
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
       return;
@@ -1744,7 +1749,7 @@ export function registerChatHook() {
         // (known-issues PLAYTEST-1712 M/N, fixed here). The finally below
         // releases for the throw / cancelled-confirm paths, and retries a
         // release that was refused here.
-        lockReleased = await releasePendingMoveLock();
+        lockReleased = await releasePendingMoveLock(lockClaim);
 
         // Auto-apply asset consequence riders from this outcome — meters and
         // progress — so the player never adjusts resources by hand. Runs after
@@ -1766,7 +1771,7 @@ export function registerChatHook() {
       // dialog was cancelled before the success-path release above ran, or
       // that release was refused. Never once it has landed: a later move may
       // hold the lock by now (issue #315 S01).
-      if (!lockReleased) await releasePendingMoveLock();
+      if (!lockReleased) await releasePendingMoveLock(lockClaim);
     }
   };
   Hooks.on("createChatMessage", onMessage);
@@ -2471,16 +2476,29 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * during the pipeline (entity records, progress ticks, recap caches).
  * World-scoped write → effective on the GM client only.
  *
- * @returns {Promise<boolean>} whether the lock is free now — false when the
- *   release was refused (the caller retries it)
+ * A pipeline passes its claim's token: it releases the lock only while the
+ * store still holds that claim. Its lock may have been released while its GM
+ * was away (the W25 handover) and claimed again, by that GM, for a later
+ * move — whose lock the returning pipeline used to clear mid-narration,
+ * letting a third pipeline run beside it (issue #329 X08). A lock from before
+ * claims carried a token is released as before. The handover and the ready
+ * reset release without a token, unconditionally.
+ *
+ * @param {string|null} [claim] — the releasing pipeline's `pendingMoveClaim`
+ * @returns {Promise<boolean>} whether the lock is free now, or no longer this
+ *   claim's — false when the release was refused (the caller retries it)
  */
-export async function releasePendingMoveLock() {
+export async function releasePendingMoveLock(claim = null) {
   const latestState = game.settings.get(MODULE_ID, "campaignState");
   if (!latestState?.pendingMove) return true;   // already released — cheap no-op
+  if (claim && latestState.pendingMoveClaim && latestState.pendingMoveClaim !== claim) {
+    console.debug?.(`${MODULE_ID} | the move lock is another move's claim now — not released.`);
+    return true;
+  }
   // Write a copy: `get` returns this client's cached value, and clearing the
   // flag on it before a write that failed made the retry (the pipeline's
   // finally) read "released" and skip — the world kept the lock (issue #302).
-  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false, pendingMoveBy: null }).then(() => true, err => {
+  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false, pendingMoveBy: null, pendingMoveClaim: null }).then(() => true, err => {
     console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err);
     return false;
   });
@@ -6952,6 +6970,7 @@ Hooks.once("ready", () => {
     if (prevState.pendingMove) {
       prevState.pendingMove = false;
       prevState.pendingMoveBy = null;
+      prevState.pendingMoveClaim = null;
       console.log(`${MODULE_ID} | Reset stale pendingMove lock on ready`);
     }
 
@@ -6967,7 +6986,7 @@ Hooks.once("ready", () => {
     // scene fields itself.
     initSessionId(prevState).then(updated =>
       game.settings.set(MODULE_ID, "campaignState",
-        mergeOwnedFields(updated, ["pendingMove", "pendingMoveBy", ...SESSION_MINT_FIELDS], "session start")),
+        mergeOwnedFields(updated, ["pendingMove", "pendingMoveBy", "pendingMoveClaim", ...SESSION_MINT_FIELDS], "session start")),
     ).then(async () => {
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: post campaign recap when a new session is detected
