@@ -37,9 +37,10 @@ describe("a ship's entity card is text, not its Notes HTML (issue #326 W39)", ()
   });
 
   it("after !ship envision, ENTITIES IN SCENE carries no HTML markup or image path", async () => {
-    // The production writer of the ship record's notes.
+    // The production writer of the ship's notes — its Notes tab (issue #329
+    // X12; the record keeps no copy since NOTES-PROMOTED-BEFORE).
     await appendNotesSection(game.actors.get("ship-1"), "Envisioned details", "<p>The galley smells of burnt coffee.</p>");
-    expect(game.actors.get("ship-1").flags[MODULE_ID].ship.notes).toContain("<h4>");
+    expect(game.actors.get("ship-1").system.notes).toContain("<h4>");
 
     const extras = await buildNarratorExtras("paced_narrative", game.settings.get(MODULE_ID, "campaignState"), {
       playerNarration: "I climb back aboard the Wayfarer and seal the lock.",

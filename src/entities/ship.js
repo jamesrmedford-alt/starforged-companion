@@ -346,7 +346,11 @@ export async function updateShip(actorId, updates) {
   if (current.cursed !== updated.cursed) systemPatch["system.debility.cursed"]   = !!updated.cursed;
   if (Object.keys(systemPatch).length) await document.update(systemPatch);
 
-  await writeEntityFlag("ship", document, updated);
+  // The notes go to the sheet's Notes tab only — the ship's notes (issue #329
+  // X12). The record's copy was a second store nothing read; one left there
+  // is cleared (known-issues NOTES-PROMOTED-BEFORE; migrator.js
+  // moveRecordNotesToSheets moves what only the record held).
+  await writeEntityFlag("ship", document, updates.notes !== undefined ? { ...updated, notes: "" } : updated);
 
   if (updates.name && updates.name !== document.name) {
     await document.update({ name: updates.name });

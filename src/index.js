@@ -7119,7 +7119,7 @@ Hooks.once("ready", () => {
     // These migrations write world documents: the canonical GM runs them —
     // two GMs whose clients reconnected together each ran them (issue #326
     // W54). The help journal, macros and World Journal gate themselves.
-    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames }) => {
+    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames, moveRecordNotesToSheets }) => {
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
@@ -7170,6 +7170,17 @@ Hooks.once("ready", () => {
         }
       } catch (err) {
         console.warn(`${MODULE_ID} | entity name sync failed:`, err?.message ?? err);
+      }
+      try {
+        // Known-issues NOTES-PROMOTED-BEFORE — a detail promoted to an NPC
+        // card's or ship's record notes before issue #329 X12 made the sheet's
+        // Notes tab canonical moves to the tab, where it is shown again.
+        const notes = await moveRecordNotesToSheets();
+        if (notes.moved || notes.cleared) {
+          console.log(`${MODULE_ID} | record notes: moved ${notes.moved} card(s)' promoted details to the Notes tab, cleared ${notes.cleared} duplicate copy(ies)`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | record notes move failed:`, err?.message ?? err);
       }
     }).catch(err => console.warn(`${MODULE_ID} | sector-folder flatten dynamic import failed:`, err));
   }

@@ -2428,8 +2428,11 @@ wrote: the narrator's Notes row was empty for every seeded NPC and ship and
 never saw the GM's edits. One fact, two stores, no canonical one named
 (rules/reachability.md §5); the sheet is what the GM edits and what the seed
 writes, as for a starship's battered impact below. A detail promoted before
-this change sits in the record's old `notes`, which is no longer shown —
-known-issues NOTES-PROMOTED-BEFORE.
+this change sat in the record's old `notes`, no longer shown: the canonical
+GM's world load moves each such paragraph the tab does not already hold into
+the tab and clears the record's copy (`migrator.moveRecordNotesToSheets`), and
+`updateShip({ notes })` writes the tab alone (known-issues
+NOTES-PROMOTED-BEFORE).
 
 ## Starship battered: the native sheet field is canonical (2026-10)
 

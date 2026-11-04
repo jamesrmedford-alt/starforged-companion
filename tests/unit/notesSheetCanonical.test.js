@@ -110,7 +110,7 @@ describe("issue #329 X12 — the sheet's Notes tab reaches the narrator's Notes 
     expect(notesRow(formatEntityCard(getConnection(npc.id), 'connection'))).toContain('payroll');
   });
 
-  it('control: an `!ship envision` append reaches the row (it writes both stores)', async () => {
+  it('control: an `!ship envision` append reaches the row (it writes the Notes tab)', async () => {
     const actor = makeShip();
     await appendNotesSection(actor, 'History', '<p>Once a smuggler, always a smuggler.</p>');
     expect(notesRow(formatEntityCard(getShip(actor.id), 'ship'))).toContain('Once a smuggler');
