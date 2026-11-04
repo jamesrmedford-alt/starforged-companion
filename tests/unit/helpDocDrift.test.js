@@ -39,7 +39,8 @@ describe("the help journal against the code (issue #326 W83)", () => {
     const gmLine = { content: "I brace against the hull and push through the breach.", whisper: [], rolls: [], flags: {}, author: { isGM: true } };
     expect(isPlayerNarration(gmLine)).toBe(true);                        // control: the code runs it
     const src = readFileSync("src/index.js", "utf8");
-    expect(src).toMatch(/if \(!isSessionActive\(cs\)\) return;/);         // control: the session gate
+    expect(src).toMatch(/sessionActive = isSessionActive\(game\.settings\.get\(MODULE_ID, "campaignState"\)\)/);   // control: the session gate
+    expect(src).toMatch(/if \(!sessionActive\) \{/);
     const entry = plain(page("Troubleshooting")).match(/No move card after typing narration(.*?)(?=Safety settings not applying)/)?.[1] ?? "";
     expect(entry).not.toMatch(/GM messages are excluded/);
     expect(entry).toMatch(/Begin Session/);

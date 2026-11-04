@@ -98,7 +98,8 @@ passage" drawing.
   written on the canonical GM by the `waypoint.oracle` relay —
   `cardActions.applyWaypointOraclePick`, which posts the forced follow-up as
   the roller (`actorId`; `deferWhileBusy`, so it is held, not dropped, while
-  another move holds the lock — issue #325 W02) and retires the pending
+  another move holds the lock — issue #325 W02 — or before a session has
+  begun, until one does — issue #329 X14) and retires the pending
   ordinary choice card — or by
   the ordinary pick, `resultUpgrade.closeUpgradesForChoice`; issue #316 T06).
   The follow-up is a no-roll move (`rollKind: "none"` — no dice, no outcome,

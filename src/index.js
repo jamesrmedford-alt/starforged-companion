@@ -173,7 +173,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 import { resolveRelevance, wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
-import { rollSessionIfDue, registerSessionActivityHook, SESSION_MINT_FIELDS } from "./session/lifecycle.js";
+import { rollSessionIfDue, registerSessionActivityHook, SESSION_MINT_FIELDS, isSessionActive } from "./session/lifecycle.js";
 import { getCurrentSiteKind } from "./entities/location.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
@@ -750,7 +750,8 @@ async function handleBattleStationsCommand() {
  *
  * A forced move a claimed card button posted (`deferWhileBusy`) that arrives
  * while another move holds the lock is held and run when the lock frees —
- * see deferForcedMove (issue #325 W02).
+ * see deferForcedMove (issue #325 W02) — and one that arrives before a
+ * session has begun is held until one does (issue #329 X14).
  */
 export function registerChatHook() {
   const onMessage = async (message) => {
@@ -780,18 +781,28 @@ export function registerChatHook() {
     // !oracle yes, !pay-the-price, !lore — all caught by earlier
     // predicates above) without burning Claude credit on every chat
     // message during setup. See `src/session/lifecycle.js`.
+    // The author is told why nothing happened (issue #329 X14): the line just
+    // sat in chat, and a card button's forced move vanished. A claimed card's
+    // forced move is held until a session begins, as the move lock holds it
+    // (issue #325 W02) — its button reads taken everywhere.
+    let sessionActive = true;
     try {
-      const { isSessionActive } = await import("./session/lifecycle.js");
-      const cs = game.settings.get(MODULE_ID, "campaignState");
-      if (!isSessionActive(cs)) return;
+      sessionActive = isSessionActive(game.settings.get(MODULE_ID, "campaignState"));
     } catch (err) {
-      // Defensive: if the import or read fails, fail-OPEN — treat the
-      // session as active and run the pipeline. The downside of
-      // fail-closed is "narration completely stops working on a
-      // module-load edge case", which is worse than "pre-session
-      // narration runs once".
+      // Defensive: if the read fails, fail-OPEN — treat the session as
+      // active and run the pipeline. The downside of fail-closed is
+      // "narration completely stops working on a module-load edge case",
+      // which is worse than "pre-session narration runs once".
       console.warn(`${MODULE_ID} | session-active gate check failed (failing open):`, err?.message ?? err);
     }
+    if (!sessionActive) {
+      const held = message.flags?.[MODULE_ID]?.deferWhileBusy === true;
+      if (held) deferForcedMove(message, { untilSession: true });
+      await postSessionGateNotice(message, { held }).catch(err =>
+        console.warn(`${MODULE_ID} | the no-session notice failed:`, err?.message ?? err));
+      return;
+    }
+    _sessionGateTold.clear();
 
     // Resolve the speaking player's character — message.author.character
     // first, then ownership scan, then campaignState fallback. Pre-gate,
@@ -1842,15 +1853,53 @@ const _drainedForcedMoves = new Set();
  *
  * @param {ChatMessage} message — carries `flags[MODULE_ID].deferWhileBusy`
  */
-function deferForcedMove(message) {
+function deferForcedMove(message, { untilSession = false } = {}) {
   const id = message?.id ?? null;
   if (!id || _deferredForcedMoves.includes(id)) return;
   if (_drainedForcedMoves.has(id)) _deferredForcedMoves.unshift(id);
   else _deferredForcedMoves.push(id);
-  ui?.notifications?.info(
-    "Starforged Companion: A move is already being resolved — the next one will be rolled when it completes.",
-    { permanent: false },
-  );
+  ui?.notifications?.info(untilSession
+    ? "Starforged Companion: No session has begun — the move will be rolled once Begin a Session starts one."
+    : "Starforged Companion: A move is already being resolved — the next one will be rolled when it completes.",
+  { permanent: false });
+}
+
+// Authors told — since a message last passed the session gate — that no
+// session has begun: one notice each for their typed lines, not one per line.
+const _sessionGateTold = new Set();
+
+/**
+ * Tell the author of a message the session gate stopped why nothing happened
+ * (issue #329 X14 — the line sat in chat, and a card button's forced move
+ * vanished, with no word and not even a console line): whispered to the
+ * author and the GMs. A typed line's author is told once until a message
+ * passes the gate again; a button's forced move is told every time.
+ *
+ * @param {ChatMessage} message
+ * @param {{ held?: boolean }} [opts] — the forced move is held until a session begins
+ * @returns {Promise<void>}
+ */
+async function postSessionGateNotice(message, { held = false } = {}) {
+  const forced   = !!message?.flags?.[MODULE_ID]?.forcedMoveId;
+  const authorId = messageAuthorId(message);
+  if (!forced) {
+    if (authorId && _sessionGateTold.has(authorId)) {
+      console.debug(`${MODULE_ID} | session gate: no session has begun — line not narrated (its author was told).`);
+      return;
+    }
+    if (authorId) _sessionGateTold.add(authorId);
+  }
+  const how = "Begin a Session (the Session panel, or <code>!begin-session</code>)";
+  const body = !forced
+    ? `No session has begun, so this was not narrated and no move was rolled. Press ${how} to start play.`
+    : held
+      ? `No session has begun — this move will be rolled once ${how} starts one.`
+      : `This move was not rolled: no session has begun. Press ${how}, then press the button again.`;
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>No session has begun</strong><p>${body}</p></div>`,
+    whisper: [...new Set([authorId, ...gmUserIds()].filter(Boolean))],
+    flags:   { [MODULE_ID]: { sessionGateNotice: true } },
+  });
 }
 
 /**
@@ -1865,7 +1914,10 @@ function deferForcedMove(message) {
 function drainDeferredForcedMoves(setting, runPipeline) {
   if (setting?.key !== `${MODULE_ID}.campaignState`) return;
   if (!_deferredForcedMoves.length || !isCanonicalGM()) return;
-  if (game.settings.get(MODULE_ID, "campaignState")?.pendingMove) return;
+  const state = game.settings.get(MODULE_ID, "campaignState");
+  if (state?.pendingMove) return;
+  // Held until a session begins: the gate would only hold it again (issue #329 X14).
+  if (!isSessionActive(state)) return;
   let message = null;
   while (!message && _deferredForcedMoves.length) {
     const id = _deferredForcedMoves.shift();
