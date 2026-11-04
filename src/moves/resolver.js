@@ -1324,6 +1324,9 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     moveName,
     statUsed,
     statValue,
+    // How the stat was chosen when the rule chose it — "lower of iron / wits"
+    // for Heal's self-mend (statEnrichment, issue #330 D4); shown on the card.
+    statRule: typeof interpretation.statRule === "string" ? interpretation.statRule : null,
     adds,
     rationale,
     mischiefApplied,

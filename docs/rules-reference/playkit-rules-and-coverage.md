@@ -159,7 +159,7 @@ control; weak/miss = in a bad spot).
 | Move | Roll | Outcome essentials |
 |---|---|---|
 | Sojourn | +heart | strong: pick two recover moves as automatic strong hits (community) • weak: one each (limit 3 group) • miss: community demand or Pay the Price |
-| Heal | +iron / +iron-or-wits / +heart / +wits (situation) | strong: clear wounded + take/give +2 health, else +3 • weak: as strong, Lose Momentum (−2) or Sacrifice Resources (−2) • miss: Pay the Price |
+| Heal | +iron / +iron-or-wits (whichever lower — the interpreter names the situation, issue #330 D4) / +heart / +wits (situation) | strong: clear wounded + take/give +2 health, else +3 • weak: as strong, Lose Momentum (−2) or Sacrifice Resources (−2) • miss: Pay the Price |
 | Hearten | +heart | strong: clear shaken + +1 spirit, else +2; +1 more if part of Sojourn • weak: as strong, Lose Momentum (−1) • miss: Pay the Price |
 | Resupply | +heart/iron/shadow/wits | strong: clear unprepared + +1 supply, else +2; may acquire a specific item + +1 momentum • weak: as strong with cost • miss: Pay the Price |
 | Repair | +wits or +supply | Earn repair points (facility 5/3, field 3/1, under fire 2/0). Optional trade: −1 supply ↔ +1 point (max 3). Spend: 2 pts clear battered / fix module, 1 pt +1 integrity or +1 mechanical-companion health, 3 pts repair any other device (2 with complication). miss: Pay the Price |

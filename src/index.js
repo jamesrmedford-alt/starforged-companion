@@ -6800,7 +6800,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
     ? `no action roll — the move's effect applies as written`
     : resolution.isProgressMove
       ? `progress (${resolution.statValue} ticks)`
-      : `+${resolution.statUsed} (${resolution.statValue})`;
+      : `+${resolution.statUsed} (${resolution.statValue})${resolution.statRule ? `, ${escapeChatHtml(resolution.statRule)}` : ""}`;
   const diceLine = noRoll
     ? ""
     : resolution.isProgressMove

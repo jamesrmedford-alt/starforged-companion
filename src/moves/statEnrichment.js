@@ -71,6 +71,14 @@ const PICK_HIGHER_OF = {
   endure_stress: ["spirit", "heart"],
 };
 
+// Moves whose rule is "roll +X or +Y, whichever is lower" in one situation:
+// Heal's "Mend your own wounds" (vendored `"Method": "Lowest"`). The
+// interpreter names the situation (`healSituation`); a self-mend rolled
+// whichever of iron / wits it named (issue #330 D4).
+const PICK_LOWER_OF = {
+  heal: { situation: "self", stats: ["iron", "wits"] },
+};
+
 /**
  * Look up the numeric value of `statUsed` for this character.
  *
@@ -103,6 +111,18 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
     const winner = vb > va ? b : a;
     interpretation.statUsed  = winner;
     interpretation.statValue = Math.max(va, vb);
+    return interpretation.statValue;
+  }
+
+  // "Whichever is lower" — Heal's self-mend. The card says so (statRule).
+  const lower = moveId ? PICK_LOWER_OF[moveId] : null;
+  if (lower && interpretation?.healSituation === lower.situation && !interpretation?.statSubstitutedFrom) {
+    const [a, b] = lower.stats;
+    const va = resolveStatValue(actor, a, campaignState);
+    const vb = resolveStatValue(actor, b, campaignState);
+    interpretation.statUsed  = vb < va ? b : a;
+    interpretation.statValue = Math.min(va, vb);
+    interpretation.statRule  = `lower of ${a} / ${b}`;
     return interpretation.statValue;
   }
 
@@ -333,6 +353,8 @@ export async function enrichForcedMoveStat(interpretation, { interpret = null } 
   }
   if (!stats.includes(reading?.statUsed)) return null;
   interpretation.statUsed = reading.statUsed;
+  // A forced Heal's situation is read with its stat (issue #330 D4).
+  if (moveId === "heal" && reading?.healSituation) interpretation.healSituation = reading.healSituation;
   if (reading.rationale) interpretation.rationale = [interpretation.rationale, reading.rationale].filter(Boolean).join(" ");
   return reading.statUsed;
 }

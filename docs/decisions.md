@@ -24,6 +24,18 @@ brackets.)
   Continue a Legacy naming no track still scores 0, with a console warning.
   *Rejected:* keeping the no-op and saying so on the card (option B) — the
   data the rule needs is the module's own.
+- **A Heal that mends your own wounds rolls the lower of iron and wits**
+  [D4; option A]. The vendored Heal's self-mend reads "Roll +iron or +wits,
+  whichever is lower" (`"Method": "Lowest"`); the pipeline had only
+  PICK_HIGHER_OF and could not tell a self-mend from "Receive treatment from
+  someone (not an ally): Roll +iron", so it rolled whichever stat the
+  interpreter named — +3 where the rule says +1. The interpreter now names
+  the situation (`healSituation`: self / treated / companion / ally — a
+  forced Heal reads it with its stat), and statEnrichment's PICK_LOWER_OF
+  rolls a self-mend's lower stat, the card reading "+wits (1), lower of iron
+  / wits" (`statRule`). An asset's stat substitution stands. *Rejected:*
+  accepting the approximation (option B) — the vendored data carries the
+  rule, and the interpreter already reads the narration.
 - **A sheet Forge a Bond forges the connection its bond Item names, or
   nobody** [D5; option A]. The native consequence hook resolved the roll's
   Item name through the develop ladder's full fallback, so a bond the player
