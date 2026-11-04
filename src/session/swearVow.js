@@ -579,7 +579,16 @@ export async function applyRewardPickFromRelay(payload = {}, _ctx = {}) {
       console.warn(`${MODULE_ID} | swearVow: reward card ${messageId} could not be claimed — nothing promised:`, err?.message ?? err);
       return { applied: false, reason: "claim-refused" };
     }
-    await setSharedVowReward(f.vowId, { status: "promised", ...reward });
+    // The vow must hold the reward before the card says so: a refused write
+    // left no reward on the vow — the fulfilment granted none — while the
+    // card said "Reward set" and stayed claimed (issue #329 X07). The claim is
+    // released so the pick can be made again, and the presser told.
+    if (!(await setSharedVowReward(f.vowId, { status: "promised", ...reward }))) {
+      await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: null })
+        .catch(err => console.warn(`${MODULE_ID} | swearVow: releasing reward card ${messageId} failed:`, err?.message ?? err));
+      await postVowWriteRefusedNotice(_ctx, "The reward could not be saved on the vow — nothing was promised. Choose it again.");
+      return { applied: false, reason: "write-refused" };
+    }
     await ChatMessage.create({
       content: `<p class="sf-incite-sworn">🎁 Reward set: <em>${escapeHtml(reward.description)}</em></p>`,
       flags:   { [MODULE_ID]: { rewardSetCard: true } },
@@ -591,6 +600,24 @@ export async function applyRewardPickFromRelay(payload = {}, _ctx = {}) {
 }
 
 const _rewardPicksInFlight = new Set();
+
+/**
+ * Tell the presser — and the GMs — that a vow card's pick did not land (a
+ * refused vow write, issue #329 X07): whispered, so it never reads as the
+ * story. Never throws.
+ *
+ * @param {{ requesterId?: string|null }} ctx — the relay context
+ * @param {string} text
+ */
+async function postVowWriteRefusedNotice(ctx, text) {
+  const gmIds = Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM).map(u => u.id);
+  const whisper = [...new Set([ctx?.requesterId ?? globalThis.game?.user?.id ?? null, ...gmIds].filter(Boolean))];
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Not saved</strong><p>${escapeHtml(text)}</p></div>`,
+    whisper,
+    flags: { [MODULE_ID]: { vowWriteRefusedNotice: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | swearVow: the not-saved notice failed:`, err?.message ?? err));
+}
 
 /** Every copy's reward status for a vow, by its vowId (copies on every PC). */
 function vowRewardStatuses(vowId) {
@@ -906,7 +933,14 @@ export async function applyPlayerVowLinkFromRelay(payload = {}, _ctx = {}) {
     console.warn(`${MODULE_ID} | playerVow: card ${messageId} could not be claimed — not linked:`, err?.message ?? err);
     return { applied: false, reason: "claim-refused" };
   }
-  await setVowLinkedConnection(f.vowId, connectionName);
+  // The vow must hold the link before the card says so (issue #329 X07): a
+  // refused write is released for another press, and the presser told.
+  if (!(await setVowLinkedConnection(f.vowId, connectionName))) {
+    await message.update({ [`flags.${MODULE_ID}.linkedConnection`]: null })
+      .catch(err => console.warn(`${MODULE_ID} | playerVow: releasing card ${messageId} failed:`, err?.message ?? err));
+    await postVowWriteRefusedNotice(_ctx, `The link to ${connectionName} could not be saved on the vow — it is not linked. Link it again.`);
+    return { applied: false, reason: "write-refused" };
+  }
   await ChatMessage.create({
     content: `<p class="sf-incite-sworn">🤝 Linked to <strong>${escapeHtml(connectionName)}</strong> — fulfilling this vow will deepen that bond.</p>`,
     flags:   { [MODULE_ID]: { vowLinkedCard: true } },

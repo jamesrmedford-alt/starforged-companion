@@ -624,15 +624,18 @@ export async function completeVowItem(actor, vowItemId) {
  * @param {{ description: string, form: string, status?: string }} reward
  * @returns {Promise<boolean>} false when a copy's write was refused (each is
  *   still attempted) — a reward's status is its grant's claim, so a payoff
- *   must know when it did not land (issue #306 R04)
+ *   must know when it did not land (issue #306 R04) — or when no copy of the
+ *   vow was found to hold it (issue #329 X07)
  */
 export async function setSharedVowReward(vowId, reward) {
   if (!vowId || !reward?.description) return true;
   let landed = true;
+  let copies = 0;
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
       if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
+        copies += 1;
         await item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward }).catch(err => {
           landed = false;
           console.warn(`${MODULE_ID} | setSharedVowReward failed:`, err?.message ?? err);
@@ -640,7 +643,7 @@ export async function setSharedVowReward(vowId, reward) {
       }
     }
   }
-  return landed;
+  return landed && copies > 0;
 }
 
 /**
@@ -650,19 +653,28 @@ export async function setSharedVowReward(vowId, reward) {
  *
  * @param {string} vowId
  * @param {string} connectionName
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} whether the link landed: false when a copy's
+ *   write was refused (each is still attempted) or no copy of the vow was
+ *   found (issue #329 X07 — a refusal was a console warning, and the card said
+ *   "Linked")
  */
 export async function setVowLinkedConnection(vowId, connectionName) {
-  if (!vowId || !connectionName) return;
+  if (!vowId || !connectionName) return false;
+  let landed = true;
+  let copies = 0;
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
       if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
-        await item.setFlag(MODULE_ID, "linkedConnectionName", connectionName).catch(err =>
-          console.warn(`${MODULE_ID} | setVowLinkedConnection failed:`, err?.message ?? err));
+        copies += 1;
+        await item.setFlag(MODULE_ID, "linkedConnectionName", connectionName).catch(err => {
+          landed = false;
+          console.warn(`${MODULE_ID} | setVowLinkedConnection failed:`, err?.message ?? err);
+        });
       }
     }
   }
+  return landed && copies > 0;
 }
 
 /**

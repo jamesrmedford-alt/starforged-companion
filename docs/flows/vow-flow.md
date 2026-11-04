@@ -88,7 +88,9 @@ on every copy (`setSharedVowReward`), on the canonical GM (`vow.reward`): the
 card is claimed once (`rewardChosen`), and a vow whose reward was already
 granted or lost is never promised again — an old card's pick re-promised a
 granted reward, so the next linked win or the fulfilment granted a second
-(issue #325 W11).
+(issue #325 W11). A write that does not land — refused, or no copy of the vow
+to hold it — posts no "🎁 Reward set": the claim is released for another pick
+and the presser and the GMs are whispered (issue #329 X07).
 
 **Player-authored vows.** `registerPlayerVowHook` (createItem hook, GM-side)
 catches sheet-made vows (no `vowId` yet), stamps `vowId = item.id`, and posts
@@ -98,8 +100,9 @@ nothing twice; spoken as the vow's holder, the card's `actorId` or the PC
 holding its `vowId`, whoever presses it — issue #329 X05), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
-connection exists and claims the card once, `linkedConnection`), and the
-same reward offer.
+connection exists and claims the card once, `linkedConnection`; a link the
+vow did not take releases the claim and whispers the presser, with no
+"🤝 Linked" card — issue #329 X07), and the same reward offer.
 
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;
