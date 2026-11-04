@@ -78,10 +78,16 @@ describe("issue #330 D5 — a sheet Forge a Bond forges the connection its Item 
   });
 
   it("the Item's record key finds a connection renamed since (its Item kept the old name)", async () => {
-    sable.flags[MODULE_ID].connection.name = "Sable Varn";
+    // Renamed to something the old name is no part of, beside a second
+    // connection — no name rung and no sole-connection rung can reach her.
+    const rook = connectionActor("npc-rook", "Rook");
+    const cs = game.settings.get(MODULE_ID, "campaignState");
+    game.settings._store.set(`${MODULE_ID}.campaignState`, { ...cs, connectionIds: ["npc-sable", "npc-rook"] });
+    sable.flags[MODULE_ID].connection.name = "Vara Kest";
     roller([["Sable", "npc-sable"]]);
     await payForgedBondNative("Sable", { actorId: "pc-kira" });
     expect(sable.flags[MODULE_ID].connection.bonded).toBe(true);
+    expect(rook.flags[MODULE_ID].connection.bonded).toBe(false);
     expect(forgeCards()).toHaveLength(1);
   });
 
