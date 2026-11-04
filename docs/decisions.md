@@ -12,6 +12,20 @@ rejected.
 needed the maintainer. The maintainer asked for the issue to be addressed on
 2026-11-04 and took the recommended option on every row. Each row's ID in
 brackets.)
+- **A GM's lore ruling stands until a GM changes it** [D9; option A]. The
+  detection pass re-recorded a title the GM had ruled a rumour as
+  `confirmed: true, narratorAsserted: true` — only a stored `retracted` mark
+  survived a re-record — so the narrator mentioning it again made it canon
+  again; the panel's Dismiss was overturned the same way. A narrator write
+  (`recordLoreDiscovery` with `narratorAsserted: true`; the capture's "lore
+  confirmed" transition, `promoteLoreToConfirmed(…, { byNarrator: true })`)
+  now leaves an entry the GM ruled — not canon, not the narrator's, not
+  struck — as the GM left it; `!journal lore "<title>" confirmed` or the
+  panel's Confirm promotes it. "World lore auto-confirms" still holds for
+  everything the GM has not ruled. *Rejected:* letting the narrator's
+  re-assertion re-confirm it (option B) — a ruling the narrator overturns by
+  repeating itself is not a ruling ("nothing auto-corrects — the GM stays
+  the authority").
 - **The session number counts the sessions a table began** [D12; option A,
   narrowed]. Every world load after End a Session (or four idle hours) mints
   a session, and `mintSession` always bumped `sessionNumber`: a GM who opened
