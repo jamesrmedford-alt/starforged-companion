@@ -4659,13 +4659,14 @@ function registerPacingTests(quench) {
       });
 
       describe("!pace command — scene override persistence", function () {
+        // Each command's write lands only after its server round trip: wait
+        // for it (waitForCampaignState) — a fixed number of ticks raced it,
+        // and the !roll case lost the race on CI.
         it("!pace hot sets a +3 override and posts a confirmation card", async function () {
           if (skipNotGM(this)) return;
           const before = game.messages.size;
           await ChatMessage.create({ content: "!pace hot" }).then(m => cardIds.push(m.id));
-          await flushMicrotasks();
-          await flushMicrotasks();
-          const state = game.settings.get(MODULE_ID, "campaignState");
+          const state = await waitForCampaignState(s => s.pacing?.sceneOverride?.label === "hot");
           assert.deepEqual(state.pacing?.sceneOverride, { modifier: 3, label: "hot" });
           assert.isAtLeast(game.messages.size, before, "should post a confirmation card");
         });
@@ -4673,9 +4674,7 @@ function registerPacingTests(quench) {
         it("!pace clear removes the override", async function () {
           if (skipNotGM(this)) return;
           await ChatMessage.create({ content: "!pace clear" }).then(m => cardIds.push(m.id));
-          await flushMicrotasks();
-          await flushMicrotasks();
-          const state = game.settings.get(MODULE_ID, "campaignState");
+          const state = await waitForCampaignState(s => s.pacing?.sceneOverride == null);
           assert.isNull(state.pacing?.sceneOverride);
         });
       });
@@ -4684,12 +4683,9 @@ function registerPacingTests(quench) {
         it("sets pacing.forceNextAsMove on campaignState", async function () {
           if (skipNotGM(this)) return;
           await ChatMessage.create({ content: "!roll" }).then(m => cardIds.push(m.id));
-          await flushMicrotasks();
-          await flushMicrotasks();
-          const state = game.settings.get(MODULE_ID, "campaignState");
+          const state = await waitForCampaignState(s => s.pacing?.forceNextAsMove === true);
           assert.isTrue(state.pacing?.forceNextAsMove === true);
-          state.pacing.forceNextAsMove = false;
-          await game.settings.set(MODULE_ID, "campaignState", state);
+          await game.settings.set(MODULE_ID, "campaignState", { ...state, pacing: { ...state.pacing, forceNextAsMove: false } });
         });
       });
 
