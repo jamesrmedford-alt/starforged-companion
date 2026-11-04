@@ -211,7 +211,10 @@ pipeline's `moveFight` as `combatTrackId` / `combatTrackLabel`, and
 `forcedMoveTarget`, so with two fights open the roll scores that fight — it
 posted no target, scored nothing and was a certain miss
 (TDA-BUTTON-NO-TARGET). A card whose fight nothing named (or one posted
-before the stamp) posts no target and resolves the sole open fight. A TDA
+before the stamp) posts no target and resolves the sole open fight. The
+forced post speaks as the card's roller (its `actorId`,
+`cardRollerSpeaker`), whoever presses it: a GM's press rolled as the
+campaign's first PC — their position, their +1 momentum (issue #329 X05). A TDA
 that names no fight while two or more are open — typed narration, or such a
 card — is not rolled: the pipeline posts a **Which fight?** card instead
 (`postWhichFightCard`, flagged `whichFightCard` with the open fights' ids and
@@ -268,7 +271,9 @@ weak-hit win −1, min 1), each mark adding ticks by the *vow's* rank
 `applyReachMilestone` → `markVowProgress`) on the vow's **holder** — the
 card's roller when they hold a copy, else the PC holding the resolved vow
 (`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
-`fulfill_your_vow` bridge, which scores the vow's real item ticks) and
+`fulfill_your_vow` bridge, which scores the vow's real item ticks — spoken as
+the card's roller, with their copy of the vow by its Item id, issue #329
+X05) and
 **🤝 Deepen your bond** when the vow links a connection
 (`deepenVowConnectionOnce` → `deepenLinkedConnection`, scaled by the vow's
 rank). A vow deepens its connection once (issue #326 D1): the press is

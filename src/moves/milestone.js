@@ -189,7 +189,7 @@ export function planReachMilestone(vows, target) {
  * @param {Object} resolution
  * @param {Array} vows — readVows() output for the active character
  * @param {string|null} moveCategory — MOVES[moveId]?.category
- * @returns {{eligible:true, vowCount:number}|null}
+ * @returns {{eligible:true, vowCount:number, vowItemId?:string}|null}
  */
 export function buildMilestoneSuggestion(resolution, vows, moveCategory) {
   if (!resolution) return null;
@@ -199,5 +199,8 @@ export function buildMilestoneSuggestion(resolution, vows, moveCategory) {
   if (!MILESTONE_SUGGEST_CATEGORIES.has(moveCategory)) return null;
   const open = (vows ?? []).filter(v => v && !v.completed);
   if (!open.length) return null;
-  return { eligible: true, vowCount: open.length };
+  // The roller's sole open vow rides the card's 🏁 Attempt to Fulfill by its
+  // Item id (issue #329 X05); with several, the pipeline asks which.
+  const vowItemId = open.length === 1 && typeof open[0].id === "string" && open[0].id ? open[0].id : null;
+  return { eligible: true, vowCount: open.length, ...(vowItemId ? { vowItemId } : {}) };
 }

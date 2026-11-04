@@ -94,7 +94,9 @@ granted reward, so the next linked win or the fulfilment granted a second
 catches sheet-made vows (no `vowId` yet), stamps `vowId = item.id`, and posts
 the "🆕 New vow recorded" card: stakes line, **⚔ Swear it (roll)** (forced
 `swear_an_iron_vow` without the inciting id — narrates + momentum, creates
-nothing twice), a **connection picker** when connections exist
+nothing twice; spoken as the vow's holder, the card's `actorId` or the PC
+holding its `vowId`, whoever presses it — issue #329 X05), a **connection
+picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`), and the
 same reward offer.
@@ -134,7 +136,10 @@ All real progress lands on **item ticks** (`system.current`) via
   stamped marks the clicker's own PC), and a failed post releases the claim
   (issue #321 U20 — every client's press, or a re-render, marked the vow
   again). "🏁 Attempt to Fulfill Vow" still posts its forced move from the
-  clicker's client, disabled only there.
+  clicker's client, disabled only there — but as the card's roller, naming
+  their sole open vow by its Item id (`milestoneSuggestion.vowItemId`; with
+  several, the pipeline asks which): a GM's press scored and paid the first
+  PC's vow (issue #329 X05).
 - **Won-fight milestone** (see `combat-flow.md` §4): marks scale by the
   fight's rank, ticks-per-mark by the vow's rank. Marked on the vow's
   **holder** — the card's roller (`actorId`) when they hold the vow, else

@@ -2084,7 +2084,7 @@ async function applyOutcomeEffects({
             console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
           }
         }
-        await postExpeditionProgressCard(result).catch(err =>
+        await postExpeditionProgressCard({ ...result, actorId: rollerActor?.id ?? null }).catch(err =>
           console.warn(`${MODULE_ID} | expedition progress card failed:`, err?.message ?? err));
         applied.push(`progress marked on the ${result.track.label ?? "expedition"} expedition`);
       }
@@ -3915,9 +3915,11 @@ async function postSetACourseFeedbackCard(destination, resolution) {
  * the player they can re-rank it in the Progress Tracks panel (the inference
  * is a best guess, so it stays cheap to correct). See moves/expedition.js.
  *
- * @param {{ track: Object, created: boolean }} result
+ * @param {{ track: Object, created: boolean, actorId?: string|null }} result —
+ *   `actorId`: the PC who marked the progress; the card's 🗺 Finish posts as
+ *   them, whoever presses it (issue #329 X05)
  */
-async function postExpeditionProgressCard({ track, created }) {
+async function postExpeditionProgressCard({ track, created, actorId = null }) {
   const label = escapeChatHtml(track?.label ?? "Expedition");
   const rank  = escapeChatHtml(String(track?.rank ?? "dangerous").replace(/^\w/, c => c.toUpperCase()));
   const boxes = Math.floor(Number(track?.ticks ?? 0) / 4);
@@ -3934,7 +3936,7 @@ async function postExpeditionProgressCard({ track, created }) {
       // forcedMoveTargetId / forcedMoveTarget so the finish roll resolves THIS
       // expedition even with several open, same-named ones included
       // (EXPEDITION-FINISH-TARGET fix; issue #306 R06).
-      flags:   { [MODULE_ID]: { expeditionProgressCard: true, created: created === true, trackLabel: track?.label ?? null, trackId: track?.id ?? null } },
+      flags:   { [MODULE_ID]: { expeditionProgressCard: true, created: created === true, trackLabel: track?.label ?? null, trackId: track?.id ?? null, actorId } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postExpeditionProgressCard: chat post failed:`, err?.message ?? err);
@@ -5524,9 +5526,17 @@ export function wireFightVowButtons(message, root) {
     fresh.addEventListener("click", async (event) => {
       event.preventDefault(); event.stopPropagation();
       fresh.disabled = true;
+      // As the PC who won the fight, their copy of the vow by its Item id
+      // (issue #329 X05: the clicker's — a GM's first PC's — vow was scored).
+      const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+      const vowItemId = resolveVowItemCopies(f.vowName ?? null, { actorId }).primary?.item?.id ?? null;
       await ChatMessage.create({
         content: "Attempt to fulfill your vow.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "fulfill_your_vow", forcedMoveTarget: f.vowName ?? null } },
+        ...cardRollerSpeaker(message),
+        flags:   { [MODULE_ID]: {
+          bypassPacing: true, forcedMoveId: "fulfill_your_vow", forcedMoveTarget: f.vowName ?? null,
+          ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
+        } },
       }).catch(err =>
         console.warn(`${MODULE_ID} | fight-vow action failed:`, err?.message ?? err));
     });
@@ -5538,6 +5548,23 @@ export function wireFightVowButtons(message, root) {
 function liveCardFlags(message) {
   const live = message?.id ? (game.messages?.get?.(message.id) ?? null) : null;
   return (live ?? message)?.flags?.[MODULE_ID] ?? null;
+}
+
+/**
+ * The speaker a card's forced follow-up posts as: the card's roller (its
+ * `actorId`), whoever presses the button. The pipeline credits a message's
+ * speaker — with none, its author, and a GM's press fell to the campaign's
+ * first PC: 🏁 scored and paid that PC's vow, ⚔ rolled Take Decisive Action
+ * with their position and momentum (issue #329 X05; decisions.md →
+ * "Multiplayer attribution"). Nothing when the card names no roller (an older
+ * card): the author's, as before.
+ *
+ * @param {ChatMessage} message — the card
+ * @returns {{ speaker?: { actor: string } }}
+ */
+function cardRollerSpeaker(message) {
+  const actorId = message?.flags?.[MODULE_ID]?.actorId;
+  return typeof actorId === "string" && actorId ? { speaker: { actor: actorId } } : {};
 }
 
 async function postCombatTrackCard({ track, created }) {
@@ -7405,6 +7432,7 @@ export function wireTakeDecisiveActionButton(message, root) {
         content: trackLabel
           ? `Take decisive action to seize the objective — ${trackLabel}.`
           : "Take decisive action to seize the objective.",
+        ...cardRollerSpeaker(message),
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: "take_decisive_action",
           ...(trackId ? { forcedMoveTargetId: trackId } : {}),
@@ -7623,9 +7651,16 @@ export function wireAttemptFulfillVowButton(message, root) {
     event.stopPropagation();
     fresh.disabled = true;
     try {
+      // The roller's sole open vow when the card was posted rides by its
+      // Item id; with several, the pipeline asks the roller which.
+      const vowItemId = f.milestoneSuggestion.vowItemId ?? null;
       await ChatMessage.create({
         content: "Attempt to fulfill your vow.",
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "fulfill_your_vow" } },
+        ...cardRollerSpeaker(message),
+        flags:   { [MODULE_ID]: {
+          bypassPacing: true, forcedMoveId: "fulfill_your_vow",
+          ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
+        } },
       });
     } catch (err) {
       console.error(`${MODULE_ID} | Attempt to Fulfill Vow button failed:`, err);
@@ -7662,6 +7697,7 @@ export function wireFinishExpeditionButton(message, root) {
       const trackId    = message.flags[MODULE_ID].trackId ?? null;
       await ChatMessage.create({
         content: trackLabel ? `Finish the expedition — ${trackLabel}.` : "Finish the expedition.",
+        ...cardRollerSpeaker(message),
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: "finish_an_expedition",
           ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),

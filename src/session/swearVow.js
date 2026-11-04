@@ -517,6 +517,22 @@ function liveFlags(message) {
 }
 
 /**
+ * The player character holding the vow Item `vowId` (its id or its module
+ * `vowId` flag), or null.
+ *
+ * @param {string|null} vowId
+ * @returns {string|null} the actor id
+ */
+function vowHolderActorId(vowId) {
+  if (typeof vowId !== "string" || !vowId) return null;
+  for (const actor of getPlayerActors()) {
+    const holds = (actor?.items?.contents ?? []).some(i => i?.id === vowId || i?.flags?.[MODULE_ID]?.vowId === vowId);
+    if (holds) return actor.id;
+  }
+  return null;
+}
+
+/**
  * gmRelay handler for "vow.reward" — runs on the canonical GM (issue #325
  * W11). A reward-choice card's pick — one of its proposed options (`idx`, from
  * the GM-authored card's `rewardOptions`) or the clicker's own words (`own`,
@@ -707,14 +723,18 @@ export function buildPlayerVowSetupHtml({ name, rank, connections = [] } = {}) {
  *
  * @param {string} vowName
  * @param {string|null} [linkedConnectionName] — the connection the vow is linked to
- * @returns {{ content: string, flags: object } | null}
+ * @param {string|null} [actorId] — the PC whose vow it is: the post speaks as
+ *   them, so the swear's roll, momentum and oath scene are theirs whoever
+ *   presses the button (issue #329 X05)
+ * @returns {{ content: string, flags: object, speaker?: object } | null}
  */
-export function buildSwearMovePostForName(vowName, linkedConnectionName = null) {
+export function buildSwearMovePostForName(vowName, linkedConnectionName = null, actorId = null) {
   const name = String(vowName ?? "").trim();
   if (!name) return null;
   const linked = typeof linkedConnectionName === "string" ? linkedConnectionName.trim() : "";
   return {
     content: `Swear an iron vow: ${name}.`,
+    ...(typeof actorId === "string" && actorId ? { speaker: { actor: actorId } } : {}),
     flags: { [MODULE_ID]: {
       bypassPacing:     true,
       forcedMoveId:     "swear_an_iron_vow",
@@ -761,9 +781,10 @@ export function registerPlayerVowHook() {
       } catch (err) {
         console.warn(`${MODULE_ID} | playerVow: connection enumeration failed:`, err?.message ?? err);
       }
+      // actorId: the vow's holder — ⚔ Swear it posts as them (issue #329 X05).
       await ChatMessage.create({
         content: buildPlayerVowSetupHtml({ name, rank, connections }),
-        flags:   { [MODULE_ID]: { playerVowCard: true, vowName: name, vowId: item.id } },
+        flags:   { [MODULE_ID]: { playerVowCard: true, vowName: name, vowId: item.id, actorId: item.parent?.id ?? null } },
       }).catch(err => console.warn(`${MODULE_ID} | playerVow: setup card failed:`, err?.message ?? err));
 
       // Same reward flow as swearing the inciting vow — propose two (or
@@ -784,7 +805,10 @@ export function registerPlayerVowHook() {
 /**
  * Wire the ⚔ Swear it (roll) button on the player-vow setup card: posts a forced
  * Swear an Iron Vow move for the vow (the pipeline rolls +heart → momentum /
- * complication, credited to the clicker; the vow already exists). Register once.
+ * complication; the vow already exists), spoken as the vow's holder — the
+ * card's `actorId`, or the PC holding its `vowId` on an older card — so a GM's
+ * or a crewmate's press swears it for them, not the clicker's or the first PC
+ * (issue #329 X05). Register once.
  */
 export function registerPlayerVowSwearHook() {
   if (registerPlayerVowSwearHook._installed) return;
@@ -799,7 +823,8 @@ export function registerPlayerVowSwearHook() {
     fresh.addEventListener("click", async (e) => {
       e.preventDefault(); e.stopPropagation();
       fresh.disabled = true;   // stays disabled — the roll is firing; re-enable only on a post failure
-      const post = buildSwearMovePostForName(f.vowName, liveFlags(message)?.linkedConnection ?? null);
+      const post = buildSwearMovePostForName(f.vowName, liveFlags(message)?.linkedConnection ?? null,
+        (typeof f.actorId === "string" && f.actorId) ? f.actorId : vowHolderActorId(f.vowId));
       if (!post) { fresh.disabled = false; return; }
       try {
         await globalThis.ChatMessage?.create?.(post);

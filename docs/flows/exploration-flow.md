@@ -62,8 +62,10 @@ passage" drawing.
   that is over marks nothing (`reason: "ambiguous" | "gone"`) — an unnamed
   Undertake used to begin a phantom "Expedition" that took the progress
   (issue #321 U16). The progress card shows boxes filled and carries a
-  **"🗺 Finish the Expedition"** button. Deliberately **not** an arrival move
-  — no position write mid-journey.
+  **"🗺 Finish the Expedition"** button — its forced move names the track by
+  id and speaks as the PC who marked the progress (the card's `actorId`,
+  issue #329 X05). Deliberately **not** an arrival move — no position write
+  mid-journey.
 - **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
   ship record, `currentLocationId`, the feedback card), and an Undertake an
   Expedition miss upgraded marks the expedition as a rolled hit would — the

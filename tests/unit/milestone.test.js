@@ -151,10 +151,15 @@ describe("planReachMilestone", () => {
 describe("buildMilestoneSuggestion", () => {
   const res = (over = {}) => ({ moveId: "gather_information", outcome: "strong_hit", isProgressMove: false, ...over });
 
-  it("is eligible on a quest-advancing hit with an open vow", () => {
-    expect(buildMilestoneSuggestion(res(), [vow()], "adventure")).toEqual({ eligible: true, vowCount: 1 });
+  it("is eligible on a quest-advancing hit with an open vow — the sole vow's Item id rides it (issue #329 X05)", () => {
+    expect(buildMilestoneSuggestion(res(), [vow()], "adventure")).toEqual({ eligible: true, vowCount: 1, vowItemId: "v1" });
     expect(buildMilestoneSuggestion(res({ outcome: "weak_hit" }), [vow()], "exploration"))
-      .toEqual({ eligible: true, vowCount: 1 });
+      .toEqual({ eligible: true, vowCount: 1, vowItemId: "v1" });
+  });
+
+  it("names no vow when several are open — the roller is asked which", () => {
+    expect(buildMilestoneSuggestion(res(), [vow({ id: "a" }), vow({ id: "b" })], "adventure"))
+      .toEqual({ eligible: true, vowCount: 2 });
   });
 
   it("is null on a miss", () => {
