@@ -33,6 +33,16 @@ brackets.)
   `!sector` (option A) — a sector name is rolled, never typed, so one check
   where it is minted makes every name-keyed reader right at once. A GM's
   rename of a Scene or record to another sector's name is the GM's own call.
+- **Envision Inciting Incident is anyone's, on the panel as by command**
+  [D15; option A]. `!incite` is RUN_ON.CLAUDE with no role check (see "Chat
+  commands run once"), so a player could type it, while the Session panel
+  disabled its button for every non-GM — the shape issue #326 W85 fixed for
+  Begin / End. A player's press now posts their
+  `!incite` line, which the router runs where a Claude key lives, exactly
+  as typing it does; a GM's press runs it on the GM's client as before. The
+  help's Toolbar row drops "(GM)". *Rejected:* gating `!incite` to GMs like
+  `!at` (option B) — the inciting incident founds the crew's shared vow, and
+  the command was already open to players.
 
 **Reason:** each row's probe failed at the audited commit; the tests that
 replace them fail with the change taken out
