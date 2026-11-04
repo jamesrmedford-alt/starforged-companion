@@ -11,13 +11,75 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Ninth bug audit (issue #330, part 3 of 3) — the fifteen decisions built in the v1.7.36 cycle
+
+Found by the ninth bug audit (2026-11-04) of `8715172`: the fifteen rows that
+needed the maintainer (D1–D15), each with a probe or a traced reading
+(`tests/probes/` on branch `claude/focused-mayer-4v90oo`; the report is
+`docs/testing/bug-audit-9-2026-11-04.md` there). The maintainer decided them
+on 2026-11-04, each the recommended option (decisions.md, "Issue #330
+decisions"). Each change carries its own regression tests — converted from
+the probes where one existed — which fail with the change taken out
+(`docs/testing/fix-sensitivity.md`). None has been checked in a live Foundry
+world yet. The ones to try: miss a Fulfill Your Vow and a Forge a Bond and
+press 🔁 Recommit (D1 — a shared vow's other copy, and the sheet's
+Connections tab); a Face Danger miss whose Pay the Price harms a character
+at 1 health, then the 🛡 resist card and that roll's miss (D3); a Heal on
+your own wounds with iron above wits (D4); a Forge a Bond rolled on the
+sheet's Connections tab for a bond added there by hand (D5); `!sever` and
+the narrator's next CHARACTER STATE (D10); a player with their own
+ElevenLabs key playing a card the GM has not (D11); open the world after
+End a Session without pressing Begin, then again a day later (D12); and a
+player pressing ✦ Envision Inciting Incident (D15). Of the twelve probe
+files for this part, nine pass and are replaced by their tests; three fail by
+design, asserting the option not taken or a shape the decision changed:
+`upgrades/upgradeClosedByOwnSuggestion` (option A; D2 took B),
+`sectors/sectorNamesakeFolders` (option A's id-keyed folders; D14 took B)
+and `entities/severBondItemStays` (it reads a live bond as not `completed`;
+D10 writes a module `lost` flag, not the vendor's `completed`, which the
+sheet shows as a forged bond).
+
+| ID | Decision | What changed |
+|---|---|---|
+| D1 VOW-BOND-MISS-RECOMMIT-ADVISORY | A | A Fulfill Your Vow's or Forge a Bond's miss posts a claimed "🔁 Recommit" (gmRelay `vow.recommit` / `bond.recommit` — the roller's player or a GM): every open copy of the roller's vow and its journal twin, or the connection's record mirrored to its bond Items — the lowest die's boxes cleared, the rank stepped once (`performVowRecommit`, `performBondRecommit`, `setVowItemTrack`) |
+| D2 UPGRADE-CLOSED-BY-OWN-SUGGESTION | B | Issue #326 D4 stands; a card that offers a burn or an improvement says "burn or improve first" beside its ⚑ / 🏁 / 🤝 / 🔗 follow-ups and in their titles, and the help says the same |
+| D3 ENDURE-HARM-STEP-ESCALATION | A | The harm / stress step takes the meter and the overflow; at 0 it posts a resist card that rolls Endure Harm / Stress as the PC (bound to the move whose price it was); only that roll's own miss (`resistMiss`) offers the X03 mark-or-table choice |
+| D4 HEAL-SELF-LOWER-STAT | A | The interpreter names the Heal situation (`healSituation`); a self-mend rolls the lower of iron / wits (`PICK_LOWER_OF`), the card reading "lower of iron / wits" |
+| D5 NATIVE-FORGE-NAME-STRICT | A | A sheet Forge a Bond resolves the roller's bond Item by its record id, else the one connection of that exact name, else nothing (`findSheetBondConnection`) |
+| D6 OVERCOME-DESTRUCTION-SCORES-ZERO | A | Overcome Destruction scores the shared bonds legacy track, Continue a Legacy the track it names; a cleared track rolls as 10 progress |
+| D7 FORSAKE-STRESS-FIXED-AMOUNT | A | Forsake Your Vow's Endure Stress is picked at minor / serious / major (-1 / -2 / -3) on a follow-up card (`amountPick`) |
+| D8 SPOTLIGHT-NAMES-THE-ROLLER | A | The spotlight rotation skips the narration's CHARACTER when another PC is in the scene |
+| D9 LORE-RUMOUR-RECONFIRMED | A | A narrator write never overturns an entry the GM ruled a rumour or dismissed from review; `!journal lore … confirmed` or Confirm promotes it |
+| D10 SEVER-BOND-ITEM-STAYS | A + B's reader | `!sever` marks the bond Items `flags[MODULE].lost` (`setBondItemLost`); `readConnections` reports it and CHARACTER STATE lists the bond as lost |
+| D11 AUDIO-CACHE-WRITE-UNCHECKED | A | A relayed clip is filed only under a narrator card segment's key under the world's voices, and never over a clip cached or in the making |
+| D12 SESSION-NUMBER-BURNED-BY-PREP-LOAD | A, narrowed | A closing session nobody began hands its number on (its id still changes); the Campaign Start's Begin stamps `sessionStartedId` |
+| D13 ORACLE-REF-NOT-FOLLOWED | A | `!oracle` rolls every cross-reference row's table under its heading; the unread `isRef` / `refTableId` are retired |
+| D14 SECTOR-NAMESAKE-FOLDERS | B | A new sector's name is rolled again while a stored sector has it (numbered after fifty taken pairs) |
+| D15 SESSION-PANEL-ENVISION-GM-ONLY | A | The Session panel's ✦ Envision Inciting Incident is a player's too: their press posts their `!incite` |
+
+Found while building them — open:
+
+- **RECOMMIT-SHEET-MISS** (UX) — a Fulfill Your Vow or Forge a Bond rolled
+  on the Starforged sheet that misses gets no 🔁 Recommit: the native
+  consequence hook pays hits only, so the offer (D1) comes from the move
+  pipeline alone. Recommit by hand on the sheet, or type the move.
+- **LEGACY-ROLL-UNNAMED** (UX) — a Continue a Legacy whose narration names
+  no legacy track scores 0 with a console warning only; the card shows
+  "Progress: 0" as if it were the track's (D6). Name the track — "my
+  quests legacy" — when you roll it.
+- **SESSION-NUMBER-PRE-STAMP** (edge) — a world whose last session was ended
+  before issue #300 F11 (no `sessionStartedId`, the gate shut) reads that
+  session as unbegun once, so the next one keeps its number (D12). Any
+  Begin a Session since then stamps it.
+
 ### Ninth bug audit (issue #329, part 1 of 3) — all fourteen fixed in the v1.7.36 cycle, and four of the five found while fixing
 
 Found by the ninth bug audit (2026-11-04) of `8715172`, with a probe per
 finding (`tests/probes/` on branch `claude/focused-mayer-4v90oo`; the full
 report is `docs/testing/bug-audit-9-2026-11-04.md` there): the two X-Card
 safety findings (X01–X02) and twelve medium ones (X03–X14). Parts 2 and 3
-(issues #331 — X15–X61 — and #330 — the decisions D1–D15) are open. Each fix
+(issues #331 — X15–X61 — and #330 — the decisions D1–D15): #330 is built
+(the section above); #331 is open. Each fix
 carries its own regression tests, converted from the audit's probes, which
 fail with the fix taken out (`docs/testing/fix-sensitivity.md`). None has been
 checked in a live Foundry world yet. The ones to try: play the X-Card on a
@@ -83,12 +145,11 @@ fail with its fix taken out:
   (`fulfilAttempted`) by the canonical GM, which posts the roller's move — the
   roller's player or a GM may press it (`tests/unit/fulfilButtonOnce.test.js`).
 
-Open — needs a decision:
+Decided since:
 
-- **ENDURE-HARM-STEP (issue #330 D3)** — undecided. A Pay the Price harm at 0
-  now offers the X03 choice card where it marked and rolled; whether the harm
-  step should run the miss escalation at all (the resist roll it stands in
-  for) is the open decision.
+- ~~**ENDURE-HARM-STEP (issue #330 D3)**~~ — decided (option A) and built: a
+  harm step at 0 owes the resist roll, and only that roll's miss offers the
+  X03 choice (the section above).
 
 ### Eighth bug audit (issue #326, part 2 of 2) — all fifty fixed and the eight decisions built in the v1.7.36 cycle
 

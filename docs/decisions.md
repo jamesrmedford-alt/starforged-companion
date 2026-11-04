@@ -12,18 +12,33 @@ rejected.
 needed the maintainer. The maintainer asked for the issue to be addressed on
 2026-11-04 and took the recommended option on every row. Each row's ID in
 brackets.)
-- **Overcome Destruction and Continue a Legacy score the shared legacy
-  tracks** [D6; option A]. Both were progress moves with no tick source
-  ("roll against the player's own legacy tracks, which the module doesn't
-  store"), so every roll scored 0 — a certain miss. The shared tracks are
-  stored (`campaignState.legacyTracks`) and mirrored to every sheet since
-  issue #326 D3: Overcome Destruction now scores the bonds track ("compare to
-  the progress on your bonds legacy track") and Continue a Legacy the track
-  its target names (the interpreter names it), each at 10 progress once the
-  track has been cleared ("resolve the outcome as if at 10 progress"). A
-  Continue a Legacy naming no track still scores 0, with a console warning.
-  *Rejected:* keeping the no-op and saying so on the card (option B) — the
-  data the rule needs is the module's own.
+- **A vow's or a bond's miss offers the recommit as a click** [D1; option
+  A]. Finish an Expedition's miss offered "🔁 Recommit" (claimed per card
+  since issue #321 U20); Fulfill Your Vow's miss and Forge a Bond's — the
+  same mechanic in the vendored text — were advisory, the GM clearing boxes
+  and raising the rank by hand on the vow's copies, or on the connection's
+  record and its bond Items. Each miss now posts a claimed offer:
+  `performVowRecommit` rolls the challenge dice once and writes every open
+  copy of the roller's vow (by its vowId) and its journal twin, the rank
+  stepped once as the Item holds it (`setVowItemTrack`);
+  `performBondRecommit` writes the record and mirrors it to the bond Items.
+  The roller's player or a GM may press it (gmRelay `vow.recommit` /
+  `bond.recommit`). *Rejected:* keeping both advisory (option B) — "Flow-
+  audit soft spots" implements every gap a faithful mechanic exists for, and
+  the expedition's already holds the rule.
+- **A card's own follow-up closes its upgrades, and the card says so first**
+  [D2; option B]. A weak Face Danger's card offers 🔥 Burn Momentum and ⚑
+  Mark Progress on Vow (🤝 / 🔗 too); taking ⚑ first posts a forced Reach a
+  Milestone as the roller, and issue #326 D4 then closes the card's burn — by
+  its letter, since the follow-up is the roller's next move, but with no
+  hint. D4 stands: a burn after the milestone card would re-narrate the Face
+  Danger as the latest beat. A card that offers a burn or an improvement now
+  says "Burn momentum or improve the result first — a follow-up below is
+  your next move, and closes them" beside its follow-ups and in their
+  titles; the help's Troubleshooting entry says the same. *Rejected:*
+  exempting a no-roll follow-up posted from the card itself (option A) —
+  the smallest deviation from D4, but still an upgrade applied after other
+  effects of the move.
 - **A harm or stress step at 0 owes the resist roll** [D3; option A]. Every
   Pay the Price "You are harmed / stressed" route ran the Endure Harm /
   Stress executor as a miss ("Pay the Price always implies a miss context"),
@@ -67,33 +82,18 @@ brackets.)
   narration may only half name. *Rejected:* keeping the fallback on the
   native path with `unbonded: true` (option B) — a sheet roll names its Item
   exactly, so a fallback can only reach the wrong connection.
-- **A vow's or a bond's miss offers the recommit as a click** [D1; option
-  A]. Finish an Expedition's miss offered "🔁 Recommit" (claimed per card
-  since issue #321 U20); Fulfill Your Vow's miss and Forge a Bond's — the
-  same mechanic in the vendored text — were advisory, the GM clearing boxes
-  and raising the rank by hand on the vow's copies, or on the connection's
-  record and its bond Items. Each miss now posts a claimed offer:
-  `performVowRecommit` rolls the challenge dice once and writes every open
-  copy of the roller's vow (by its vowId) and its journal twin, the rank
-  stepped once as the Item holds it (`setVowItemTrack`);
-  `performBondRecommit` writes the record and mirrors it to the bond Items.
-  The roller's player or a GM may press it (gmRelay `vow.recommit` /
-  `bond.recommit`). *Rejected:* keeping both advisory (option B) — "Flow-
-  audit soft spots" implements every gap a faithful mechanic exists for, and
-  the expedition's already holds the rule.
-- **A card's own follow-up closes its upgrades, and the card says so first**
-  [D2; option B]. A weak Face Danger's card offers 🔥 Burn Momentum and ⚑
-  Mark Progress on Vow (🤝 / 🔗 too); taking ⚑ first posts a forced Reach a
-  Milestone as the roller, and issue #326 D4 then closes the card's burn — by
-  its letter, since the follow-up is the roller's next move, but with no
-  hint. D4 stands: a burn after the milestone card would re-narrate the Face
-  Danger as the latest beat. A card that offers a burn or an improvement now
-  says "Burn momentum or improve the result first — a follow-up below is
-  your next move, and closes them" beside its follow-ups and in their
-  titles; the help's Troubleshooting entry says the same. *Rejected:*
-  exempting a no-roll follow-up posted from the card itself (option A) —
-  the smallest deviation from D4, but still an upgrade applied after other
-  effects of the move.
+- **Overcome Destruction and Continue a Legacy score the shared legacy
+  tracks** [D6; option A]. Both were progress moves with no tick source
+  ("roll against the player's own legacy tracks, which the module doesn't
+  store"), so every roll scored 0 — a certain miss. The shared tracks are
+  stored (`campaignState.legacyTracks`) and mirrored to every sheet since
+  issue #326 D3: Overcome Destruction now scores the bonds track ("compare to
+  the progress on your bonds legacy track") and Continue a Legacy the track
+  its target names (the interpreter names it), each at 10 progress once the
+  track has been cleared ("resolve the outcome as if at 10 progress"). A
+  Continue a Legacy naming no track still scores 0, with a console warning.
+  *Rejected:* keeping the no-op and saying so on the card (option B) — the
+  data the rule needs is the module's own.
 - **Forsake Your Vow's Endure Stress is sized in the fiction** [D7; option
   A]. Its cost option was "Endure Stress (-2)", but the vendored move says
   only "You are demoralized or dispirited: Endure Stress" — the amount is the
