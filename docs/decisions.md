@@ -37,6 +37,19 @@ brackets.)
   narration may only half name. *Rejected:* keeping the fallback on the
   native path with `unbonded: true` (option B) — a sheet roll names its Item
   exactly, so a fallback can only reach the wrong connection.
+- **A card's own follow-up closes its upgrades, and the card says so first**
+  [D2; option B]. A weak Face Danger's card offers 🔥 Burn Momentum and ⚑
+  Mark Progress on Vow (🤝 / 🔗 too); taking ⚑ first posts a forced Reach a
+  Milestone as the roller, and issue #326 D4 then closes the card's burn — by
+  its letter, since the follow-up is the roller's next move, but with no
+  hint. D4 stands: a burn after the milestone card would re-narrate the Face
+  Danger as the latest beat. A card that offers a burn or an improvement now
+  says "Burn momentum or improve the result first — a follow-up below is
+  your next move, and closes them" beside its follow-ups and in their
+  titles; the help's Troubleshooting entry says the same. *Rejected:*
+  exempting a no-roll follow-up posted from the card itself (option A) —
+  the smallest deviation from D4, but still an upgrade applied after other
+  effects of the move.
 - **Forsake Your Vow's Endure Stress is sized in the fiction** [D7; option
   A]. Its cost option was "Endure Stress (-2)", but the vendored move says
   only "You are demoralized or dispirited: Endure Stress" — the amount is the

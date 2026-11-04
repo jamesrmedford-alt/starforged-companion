@@ -6784,6 +6784,10 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
 
   const addsStr  = resolution.adds    ? ` + ${resolution.adds}` : "";
   const matchStr = resolution.isMatch ? " ✦ Match"              : "";
+  // The card offers Burn Momentum or Improve Result: its follow-ups say to
+  // take them first — a follow-up is the roller's next move, which closes
+  // them (issue #326 D4; issue #330 D2: ⚑ taken first spent the burn).
+  const upgradeOffered = !!(burnState?.canBurn || improveState?.canImprove);
 
   // Progress moves roll no action die — the score is the track's filled boxes
   // (statValue carries the ticks; progressScore = floor(ticks / 4)). Rendering
@@ -6826,8 +6830,11 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
         : ""}
       ${renderBurnButtonHtml(burnState)}
       ${renderImproveButtonHtml(improveState)}
-      ${renderMilestoneSuggestionHtml(milestoneState)}
-      ${renderConnectionSuggestionHtml(connectionState)}
+      ${renderMilestoneSuggestionHtml(milestoneState, upgradeOffered)}
+      ${renderConnectionSuggestionHtml(connectionState, upgradeOffered)}
+      ${upgradeOffered && (milestoneState?.eligible || connectionState?.eligible)
+        ? `<p class="sf-card-hint">${UPGRADE_FIRST_HINT}</p>`
+        : ""}
       ${TDA_OFFER_MOVES.has(resolution.moveId)
         ? `<div class="sf-combat-followup"><button type="button" class="sf-followup-btn" data-action="sf-take-decisive-action" title="Roll your combat progress against the challenge dice to seize the objective">⚔ Attempt to Finish the Fight${fight?.label ? `: ${escapeChatHtml(fight.label)}` : ""}</button></div>`
         : ""}
@@ -6899,18 +6906,26 @@ export function wireWaypointOracleButton(message, root) {
 }
 onChatMessageRender((message, root) => wireWaypointOracleButton(message, root));
 
+// A move card's follow-ups beside its open upgrades (issue #330 D2): the
+// follow-up is the roller's next move, and their next move closes the card's
+// Burn Momentum / Improve Result (issue #326 D4) — so they come first.
+const UPGRADE_FIRST_HINT = "Burn momentum or improve the result first — a follow-up below is your next move, and closes them.";
+const UPGRADE_FIRST_TITLE = " — burn momentum or improve the result first: this is your next move, and closes them";
+
 /**
  * Render the "Reach a Milestone" suggestion button for a move-result card.
  * Returns "" when not eligible. Clicking marks vow progress without retyping
- * the move (wireMilestoneSuggestionButton).
+ * the move (wireMilestoneSuggestionButton). `upgradeOffered`: the card offers
+ * a burn or an improvement, which its titles say to take first.
  */
-function renderMilestoneSuggestionHtml(milestoneState) {
+function renderMilestoneSuggestionHtml(milestoneState, upgradeOffered = false) {
   if (!milestoneState?.eligible) return "";
+  const first = upgradeOffered ? UPGRADE_FIRST_TITLE : "";
   return `<div class="sf-milestone-suggest-row">` +
     `<button type="button" class="sf-followup-btn" data-action="sf-reach-milestone" ` +
-    `title="Mark progress on your vow per its rank">⚑ Mark Progress on Vow</button>` +
+    `title="Mark progress on your vow per its rank${first}">⚑ Mark Progress on Vow</button>` +
     `<button type="button" class="sf-followup-btn" data-action="sf-attempt-fulfill-vow" ` +
-    `title="Roll to fulfill your vow (progress roll)">🏁 Attempt to Fulfill Vow</button>` +
+    `title="Roll to fulfill your vow (progress roll)${first}">🏁 Attempt to Fulfill Vow</button>` +
     `</div>`;
 }
 
@@ -6918,14 +6933,16 @@ function renderMilestoneSuggestionHtml(milestoneState) {
  * Render the "Develop Relationship / Forge a Bond" suggestion buttons for a
  * move-result card. Returns "" when not eligible. Clicking opens a connection
  * picker (wireConnectionSuggestionButtons / wireConnectionPickerButtons).
+ * `upgradeOffered` as for the milestone row.
  */
-function renderConnectionSuggestionHtml(connectionState) {
+function renderConnectionSuggestionHtml(connectionState, upgradeOffered = false) {
   if (!connectionState?.eligible) return "";
+  const first = upgradeOffered ? UPGRADE_FIRST_TITLE : "";
   return `<div class="sf-milestone-suggest-row">` +
     `<button type="button" class="sf-followup-btn" data-action="sf-develop-relationship" ` +
-    `title="Mark progress on a connection's relationship track">🤝 Develop Relationship</button>` +
+    `title="Mark progress on a connection's relationship track${first}">🤝 Develop Relationship</button>` +
     `<button type="button" class="sf-followup-btn" data-action="sf-forge-bond" ` +
-    `title="Attempt to forge a bond with a connection (progress roll)">🔗 Forge a Bond</button>` +
+    `title="Attempt to forge a bond with a connection (progress roll)${first}">🔗 Forge a Bond</button>` +
     `</div>`;
 }
 
