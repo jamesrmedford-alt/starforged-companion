@@ -223,6 +223,7 @@ export function summarizeSufferCalls(calls) {
         : (c.position === "in_control" ? "you are in control" : "you are in a bad spot")); break;
       case "next-bonus":          parts.push(`+${c.amount} next move`); break;
       case "roll-table":          parts.push(`rolled the ${c.table === "desolation" ? "desolation" : "mortal-wound"} table`); break;
+      case "resist":              parts.push(`${labelForSuffer(c.moveId)} rolled to resist`); break;
       case "route":               parts.push(`see "Trigger: ${c.route}"`); break;
       case "complication":        parts.push("complication pending"); break;
       default: break;

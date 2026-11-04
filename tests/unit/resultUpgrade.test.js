@@ -117,11 +117,11 @@ describe("P04 — a burn refunds the Pay the Price loss that landed", () => {
     expect(lastLog().outcome).toBe("strong_hit");
     expect(pc.system.health.value).toBe(0);
     // Reset 2 + the strong hit's +2; nothing refunded. At 0 health the price
-    // marked nothing — it left the player a choice (issue #329 X03), which
-    // the burn retired with the miss it belonged to.
+    // marked nothing — it owed the resist roll (issue #330 D3), whose card the
+    // burn retired with the miss it belonged to.
     expect(pc.system.momentum.value).toBe(4);
     expect(pc.system.debility.wounded).toBe(false);
-    expect(table.cards(f => f.sufferCard && f.sufferPrompt?.atZero === "health").map(c => c.flags[MODULE_ID].superseded)).toEqual([true]);
+    expect(table.cards(f => f.sufferCard && f.sufferPrompt?.resist === "health").map(c => c.flags[MODULE_ID].superseded)).toEqual([true]);
     expect(table.cards(f => f.burnReversal)).toHaveLength(0);
   });
 

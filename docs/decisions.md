@@ -24,6 +24,24 @@ brackets.)
   Continue a Legacy naming no track still scores 0, with a console warning.
   *Rejected:* keeping the no-op and saying so on the card (option B) — the
   data the rule needs is the module's own.
+- **A harm or stress step at 0 owes the resist roll** [D3; option A]. Every
+  Pay the Price "You are harmed / stressed" route ran the Endure Harm /
+  Stress executor as a miss ("Pay the Price always implies a miss context"),
+  and a weak hit's pick ran it without: at 0 the step offered the resist
+  roll's miss escalation (the mark-or-table choice, issue #329 X03) or
+  marked wounded / shaken — with no Endure Harm ever rolled. The vendored
+  move puts both on the resist roll: "Then, if your health is 0 … roll
+  +health or +iron … On a miss … If your health is 0, you must also mark
+  wounded or permanently harmed, or roll on the table". The step now takes
+  only the meter and the overflow; at 0 it posts a card whose press rolls
+  Endure Harm (Endure Stress) as the PC through the pipeline
+  (`resistRollPrompt`, the choice card's `resist` call), bound to the move
+  its price came from, so an upgrade retires it. The choice is offered only
+  for that roll's own miss (`resistMiss` — persistResolution sets it on
+  Endure Harm / Stress's miss card). The optional resist above 0 ("or you
+  choose to resist the harm") stays a typed move. *Rejected:* keeping the
+  approximation (option B) — it skipped a roll the move makes mandatory and
+  could land Face Death on a Face Danger miss.
 - **A Heal that mends your own wounds rolls the lower of iron and wits**
   [D4; option A]. The vendored Heal's self-mend reads "Roll +iron or +wits,
   whichever is lower" (`"Method": "Lowest"`); the pipeline had only
@@ -209,8 +227,8 @@ ID in brackets.)
   impact, mark the lasting one, or roll the table — a follow-up card, never an
   impact and the table both. *Rejected:* marking when unmarked and rolling
   otherwise (the audit's fallback) — the book gives the player the choice.
-  Whether a Pay the Price harm step runs the miss escalation at all is issue
-  #330 D3, open.
+  Since issue #330 D3 the choice is the resist roll's own miss's: a harm
+  step at 0 owes that roll instead.
 - **An ability adds what its text gives the move being made** [X04]: a move
   named only as a cost keys nothing; on the ability's own trigger, an outcome
   sentence's add is for later moves (#325 W12's rule, extended).

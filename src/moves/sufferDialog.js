@@ -133,6 +133,12 @@ function optionToCalls(opt, selection) {
     return [{ kind: "roll-table", table: opt.rollTable }];
   }
 
+  // The resist roll a suffer move owes at 0 (issue #330 D3): roll Endure
+  // Harm / Endure Stress as the PC.
+  if (opt.resist === "endure_harm" || opt.resist === "endure_stress") {
+    return [{ kind: "resist", moveId: opt.resist }];
+  }
+
   // "+1 on next move" situational bonus — surfaced as a reminder card;
   // the player applies it manually to the next action die roll.
   if (typeof opt.nextBonus === 'number') {
@@ -356,6 +362,24 @@ async function runSufferCall(call, actor, opts) {
     case "at-zero-choice":
       // A miss at 0 health / spirit: the choice card (nothing otherwise).
       return { kind: "at-zero-choice", which: call.which, ...(await offerAtZeroChoiceAfterMiss(actor, call.which, opts)) };
+    case "resist": {
+      // The resist roll at 0 (issue #330 D3): Endure Harm / Stress posted as
+      // the card's PC — the move pipeline rolls it +health / +iron (or
+      // +spirit / +heart), whichever is higher, and its miss card offers the
+      // at-0 choice. Held while another move resolves (deferWhileBusy).
+      const what = call.moveId === "endure_stress" ? "the stress" : "the harm";
+      try {
+        await ChatMessage.create({
+          content: `${actor?.name ?? "The character"} resists ${what}.`,
+          ...(actor ? { speaker: { actor: actor.id, alias: actor.name } } : {}),
+          flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: call.moveId, deferWhileBusy: true } },
+        });
+      } catch (err) {
+        console.warn(`${MODULE_ID} | resist roll: the move could not be posted:`, err?.message ?? err);
+        return { kind: "resist", moveId: call.moveId, ok: false, reason: "post-failed" };
+      }
+      return { kind: "resist", moveId: call.moveId };
+    }
     case "roll-table": {
       const rolled = await rollImpactTable(call.table, opts);
       return rolled

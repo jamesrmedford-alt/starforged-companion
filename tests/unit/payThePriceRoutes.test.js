@@ -142,15 +142,14 @@ describe("Q02 — harm past 0 health is momentum, through the move pipeline", ()
 
     expect(lastLog().outcome).toBe("strong_hit");
     expect(pc.system.health.value).toBe(0);
-    // The reset is 2 + the strong hit's +2: at 0 health the price left the
-    // player a choice (mark wounded / permanently harmed / roll the table —
-    // issue #329 X03) and marked nothing; the burn retired that choice, which
-    // belonged to the miss.
+    // The reset is 2 + the strong hit's +2: at 0 health the price owed the
+    // resist roll (issue #330 D3) and marked nothing; the burn retired that
+    // card, which belonged to the miss.
     expect(pc.system.momentum.value).toBe(4);
     expect(pc.system.debility.wounded).toBe(false);
-    const atZero = table.cards(f => f.sufferCard && f.sufferPrompt?.atZero === "health");
-    expect(atZero).toHaveLength(1);
-    expect(atZero[0].flags[MODULE_ID]).toMatchObject({ resolved: true, superseded: true });
+    const resist = table.cards(f => f.sufferCard && f.sufferPrompt?.resist === "health");
+    expect(resist).toHaveLength(1);
+    expect(resist[0].flags[MODULE_ID]).toMatchObject({ resolved: true, superseded: true });
     expect(table.cards(f => f.burnReversal)).toHaveLength(0);
   });
 
