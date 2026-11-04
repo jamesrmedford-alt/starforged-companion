@@ -5087,7 +5087,10 @@ function registerNativeFulfilConsequenceHook() {
       } else if (shouldForgeBond({ moveId, outcome: parsed.outcome })) {
         // BOND-NATIVE-FORGE fix — a Forge a Bond rolled on the vendor sheet
         // used to narrate only; the record kept bonded:false and no legacy.
-        payForgedBondNative(parsed.source).catch(err =>
+        // The roller's bond Item names the connection (issue #330 D5).
+        payForgedBondNative(parsed.source, {
+          actorId: typeof message?.speaker?.actor === "string" ? message.speaker.actor : null,
+        }).catch(err =>
           console.warn(`${MODULE_ID} | native-forge consequence failed:`, err?.message ?? err));
       }
     } catch (err) {
@@ -5096,18 +5099,52 @@ function registerNativeFulfilConsequenceHook() {
   });
 }
 
+/**
+ * The module connection a Forge a Bond rolled on the sheet is about (issue
+ * #330 D5): the roller's bond Item of that name, by the record id it carries
+ * (`flags[MODULE].connectionId`, written by every creator — a renamed
+ * connection's Item still finds its record), else the one active connection
+ * of exactly that name. Never a fallback to another connection: the sheet
+ * roll names its Item exactly, so a name no module connection has is a bond
+ * the player made by hand, which the module does not track — the ladder's
+ * sole-active rung forged the crew's one connection instead. The decided
+ * Forge a Bond fallback (issue #301 B01) stays the pipeline's, whose target
+ * the narration may only half name.
+ *
+ * @param {string|null} itemName — the roll card's source: the bond Item's name
+ * @param {string|null} [actorId] — the roller (the roll card's speaker)
+ * @returns {Promise<Object|null>} the record with `__hostId`, or null
+ */
+async function findSheetBondConnection(itemName, actorId = null) {
+  const conn = await import("./entities/connection.js");
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const connections = (campaignState.connectionIds ?? [])
+    .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+    .filter(c => c && c.active !== false);
+  const wanted = String(itemName ?? "").trim().toLowerCase();
+  if (!wanted) return null;
+  const actor = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+  const item = actor?.items?.find?.(i => i?.type === "progress"
+    && /bond|connection/i.test(String(i?.system?.subtype ?? ""))
+    && String(i?.name ?? "").trim().toLowerCase() === wanted) ?? null;
+  const keyedId = item?.flags?.[MODULE_ID]?.connectionId ?? null;
+  if (keyedId) return connections.find(c => c._id === keyedId || c.__hostId === keyedId) ?? null;
+  const named = connections.filter(c => String(c.name ?? "").trim().toLowerCase() === wanted);
+  return named.length === 1 ? named[0] : null;
+}
+
 // GM-side companion to registerNativeFulfilConsequenceHook for Forge a Bond:
 // flip the record to bonded and pay the rank-scaled bonds legacy, exactly as
 // the pipeline forgeABond branch does. Idempotent — an already-bonded
 // connection pays nothing (the bond can only forge once). Exported for unit
 // testing.
-export async function payForgedBondNative(connectionName) {
+export async function payForgedBondNative(connectionName, { actorId = null } = {}) {
   let claim = null;
   try {
     const conn = await import("./entities/connection.js");
-    const target = await findOpenConnection(connectionName);
+    const target = await findSheetBondConnection(connectionName, actorId);
     if (!target?.__hostId) {
-      console.debug(`${MODULE_ID} | native-forge: no connection matched "${connectionName ?? "?"}" — no payoff.`);
+      console.debug(`${MODULE_ID} | native-forge: no module connection is "${connectionName ?? "?"}" — nothing forged.`);
       return;
     }
     if (target.bonded) return; // pay once — the bond can only forge once

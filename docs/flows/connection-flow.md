@@ -200,7 +200,10 @@ their request in the fiction) the pipeline branch flips the record
 marks rank-scaled bonds-legacy ticks (`legacyRewardTicks`), and posts the
 forge card; a sheet-rolled forge pays the same way via the native consequence
 hook (`shouldForgeBond` into `payForgedBondNative`, idempotent —
-BOND-NATIVE-FORGE fix), and is narrated by the native progress-roll hook where
+BOND-NATIVE-FORGE fix) — on the connection the roller's bond Item names, by
+the record id it carries, else the one active connection of that exact name,
+never a fallback to another (`findSheetBondConnection`, issue #330 D5: a
+hand-made bond forged the crew's one connection) — and is narrated by the native progress-roll hook where
 a Claude key lives (`vow-flow.md` §4, issue #321 U11). Both hooks classify the
 sheet roll through one subtype lookup (`nativeProgressSubtypeLookup`,
 `src/index.js`), which takes the vendor's `bond` subtype as a connection — the

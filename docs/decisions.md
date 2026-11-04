@@ -12,6 +12,19 @@ rejected.
 needed the maintainer. The maintainer asked for the issue to be addressed on
 2026-11-04 and took the recommended option on every row. Each row's ID in
 brackets.)
+- **A sheet Forge a Bond forges the connection its bond Item names, or
+  nobody** [D5; option A]. The native consequence hook resolved the roll's
+  Item name through the develop ladder's full fallback, so a bond the player
+  made by hand on the Connections tab (no module record) forged the crew's
+  one connection — bonded, history, Bonds legacy, a forge card for a roll
+  about someone else. It now resolves the roller's bond Item by the record
+  id it carries (`flags[MODULE].connectionId` — a renamed connection's Item
+  still finds it), else the one active connection of exactly that name, and
+  otherwise forges nothing (`findSheetBondConnection`). The decided Forge a
+  Bond fallback (issue #301 B01) stays the pipeline's, whose target the
+  narration may only half name. *Rejected:* keeping the fallback on the
+  native path with `unbonded: true` (option B) — a sheet roll names its Item
+  exactly, so a fallback can only reach the wrong connection.
 - **The spotlight nudge never names the PC who just acted** [D8; option A].
   `selectSpotlight` picked the PC after the per-scene pointer by actor-id
   order and was never told whose beat it was: the first beat of a scene, or
