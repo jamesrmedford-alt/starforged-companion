@@ -3401,20 +3401,31 @@ async function handleSceneCommand(message) {
   const verb = /^!scene\s+(start|end)\b/i.exec(text)?.[1]?.toLowerCase();
   if (verb !== "start" && verb !== "end") return;
 
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A working copy: startScene / endScene set or clear the scene fields on
+  // the object they are given before their write, and a write the world
+  // refused left this client's cache with a scene the world never opened (or
+  // closed one it kept) — the GM's next narration continued the phantom scene
+  // and its sidecar persist wrote it into the world (issue #329 X10).
+  const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+  const priorSceneId  = campaignState.currentSceneId ?? null;
+  const storedSceneId = () => game.settings.get(MODULE_ID, "campaignState")?.currentSceneId ?? null;
+  const notSaved = (what) => `Scene ${what} not saved — the world did not take the write. Try again.`;
 
   let resultLine = "";
   try {
     if (verb === "start") {
       const id = await startScene(campaignState, { reason: "scene_command" });
-      resultLine = id
-        ? `Scene started — <code>${id}</code>.`
-        : "Scene start failed.";
+      // The card says what the world holds: the write's refusal is only
+      // logged by the scene lifecycle.
+      resultLine = !id ? "Scene start failed."
+        : storedSceneId() !== id ? notSaved("start")
+        : `Scene started — <code>${id}</code>.`;
     } else {
       const summary = await endScene(campaignState, { reason: "scene_command" });
-      resultLine =
-        `Scene ended — migrated ${summary.migrated} entity truth${summary.migrated === 1 ? "" : "s"}, ` +
-        `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}.`;
+      resultLine = priorSceneId && storedSceneId() === priorSceneId
+        ? notSaved("end")
+        : `Scene ended — migrated ${summary.migrated} entity truth${summary.migrated === 1 ? "" : "s"}, ` +
+          `archived ${summary.archived} lore entr${summary.archived === 1 ? "y" : "ies"}.`;
     }
   } catch (err) {
     console.error(`${MODULE_ID} | handleSceneCommand failed:`, err);
