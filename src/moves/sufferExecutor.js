@@ -268,6 +268,27 @@ async function postAtZeroChoice(actor, which, opts = {}) {
   }
 }
 
+/**
+ * The at-0 choice after a miss's "Lose Momentum (-2)" (known-issues
+ * ENDURE-ZERO-ON-OTHER-OPTION). "If your health is 0, you must also mark
+ * wounded or permanently harmed, or roll on the table below" holds whichever
+ * option the miss took: the -1 health / spirit pick's executor offers it
+ * itself (endureHarm / endureStress `impactChoice`), the momentum pick
+ * through this. Posts the choice card when it is a miss and `actor`'s health
+ * ("harm") or spirit ("stress") is 0; nothing otherwise.
+ *
+ * @param {Actor} actor
+ * @param {"harm"|"stress"} which
+ * @param {Object} [opts] — the choice card's executor opts (`isMiss`, `fixedRoll`, `resolutionId`)
+ * @returns {Promise<{ offered: boolean }>}
+ */
+export async function offerAtZeroChoiceAfterMiss(actor, which, opts = {}) {
+  const c = AT_ZERO_CHOICES[which];
+  if (!c || !actor || !opts.isMiss) return { offered: false };
+  if (readMeter(actor, c.meter) > 0) return { offered: false };
+  return { offered: await postAtZeroChoice(actor, which, opts) };
+}
+
 /** The executor card's line for the at-0 choice that follows it. */
 function atZeroChoiceLine(which) {
   const c = AT_ZERO_CHOICES[which];

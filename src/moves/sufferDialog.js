@@ -25,7 +25,7 @@
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -55,6 +55,8 @@ const MODULE_ID = "starforged-companion";
  *     { kind: "route",        route, rank?, mark? }
  *     { kind: "mark",         debility }
  *     { kind: "roll-table",   table }   — Endure Harm / Stress at 0 on a miss (issue #329 X03)
+ *     { kind: "at-zero-choice", which } — the at-0 choice after a miss's
+ *                                         Lose Momentum (ENDURE-ZERO-ON-OTHER-OPTION)
  */
 export function resolveSufferSelection(sufferPrompt, selection = {}) {
   if (!sufferPrompt) return [];
@@ -155,7 +157,14 @@ function optionToCalls(opt, selection) {
   // "any" sub-prompt (e.g. set_a_course's "One suffer move (-2)" option
   // which carries `kind: "any", amount, count`).
   if (opt.suffer) {
-    return [{ kind: "suffer", sufferId: opt.suffer, amount: opt.amount ?? 1, itemId: selection.itemId ?? null }];
+    const calls = [{ kind: "suffer", sufferId: opt.suffer, amount: opt.amount ?? 1, itemId: selection.itemId ?? null }];
+    // Endure Harm / Stress's miss: "If your health is 0, you must also mark …
+    // or roll on the table" whichever option is taken — the Lose Momentum
+    // pick's at-0 choice follows it (known-issues ENDURE-ZERO-ON-OTHER-OPTION).
+    if (opt.atZeroChoice === "harm" || opt.atZeroChoice === "stress") {
+      calls.push({ kind: "at-zero-choice", which: opt.atZeroChoice });
+    }
+    return calls;
   }
   if (opt.kind === "any") {
     const sufferId = selection.anyChoice;
@@ -339,6 +348,9 @@ async function runSufferCall(call, actor, opts) {
     }
     case "noop":
       return { kind: "noop" };
+    case "at-zero-choice":
+      // A miss at 0 health / spirit: the choice card (nothing otherwise).
+      return { kind: "at-zero-choice", which: call.which, ...(await offerAtZeroChoiceAfterMiss(actor, call.which, opts)) };
     case "roll-table": {
       const rolled = await rollImpactTable(call.table, opts);
       return rolled
