@@ -16,13 +16,25 @@ ledger, §4 the dispositions.
 
 ## 1. Trigger and audit scope
 
-`applyNarratorSidecar` fires `runConsistencyCheck(prose, campaignState,
-{matchedEntityIds, currentLocationId, playerNarration})` on the **canonical
-GM only**, fire-and-forget (never blocks or delays the narration post), for
-every mode that applies a sidecar — all nine narrator paths. Gated on
-`factContinuity.consistencyCheck` (**default ON** since 2026-07; the
-unregistered-settings fallback stays false so unit tests never fire API
-calls).
+`applyNarratorSidecar` fires `runConsistencyCheck(prose,
+auditCampaignState(campaignState), {matchedEntityIds, currentLocationId,
+playerNarration})` on the **canonical GM only**, fire-and-forget (never
+blocks or delays the narration post), for every mode that applies a sidecar
+— all nine narrator paths. Gated on `factContinuity.consistencyCheck`
+(**default ON** since 2026-07; the unregistered-settings fallback stays false
+so unit tests never fire API calls).
+
+The ledger it audits is the one the sidecar persist leaves in the store
+(`auditCampaignState`, issue #329 X02): the latest stored ledgers with this
+narration's own entries merged in by the persist's policy
+(`mergeSceneLedgers` — a truth the X-Card or a `!truth strike` retracted
+meanwhile stays retracted, an X-carded narration's state and frame are
+dropped, a store on another scene wins) and the session's strikes as stored.
+The move pipeline narrates from a snapshot taken before its confirm dialog;
+W05 made the narration's prompt read the live ledgers, and the audit kept the
+snapshot, so an X-Card played while the move waited handed the removed beat
+to the audit as binding, and a strike typed then was not under RETRACTED
+FACTS. When nothing is left to audit against, no audit is sent.
 
 Which client that is: move narration always runs on the canonical GM, and
 the Claude-calling commands (`@scene`, `!recap`, `!ship envision/history`,

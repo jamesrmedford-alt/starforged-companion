@@ -26,7 +26,7 @@ import { narrationDisablesThinking } from './thinking.js';
 import { logNarratorUsage } from '../pacing/telemetry.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
-import { startScene, persistSceneLedgerFields } from '../factContinuity/sceneLifecycle.js';
+import { startScene, persistSceneLedgerFields, mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
 import { runConsistencyCheck } from '../factContinuity/consistencyCheck.js';
 import {
@@ -467,6 +467,35 @@ function liveSceneLedger(campaignState) {
   const out = {};
   for (const field of SCENE_LEDGER_FIELDS) out[field] = stored[field] ?? null;
   return out;
+}
+
+/**
+ * What a narration's consistency check audits its prose against (issue #329
+ * X02): the scene ledgers as the sidecar persist leaves them in the store —
+ * the latest stored ledgers with this narration's own entries merged in by
+ * the persist's own policy (mergeSceneLedgers: a truth the X-Card or a
+ * `!truth strike` retracted meanwhile stays retracted, what an X-carded
+ * narration wrote is dropped, a store on another scene wins) — and the
+ * session's strikes as stored. The caller's object may be the move
+ * pipeline's pre-dialog snapshot: W05 made the narration's prompt read the
+ * live ledgers, and the audit kept the snapshot, so an X-carded beat was its
+ * binding truth and a struck fact was not under RETRACTED FACTS. The caller's
+ * own object when it is the store, or a narration built for a session that
+ * has since ended (liveSceneLedger's rule).
+ *
+ * @param {Object} campaignState — the caller's object, the sidecar applied to it
+ * @returns {Object} a new object (never the store's), or campaignState itself
+ */
+function auditCampaignState(campaignState) {
+  const latest = storedCampaignState();
+  if (!latest || typeof latest !== 'object' || latest === campaignState) return campaignState;
+  if (campaignState?.currentSessionId && latest.currentSessionId !== campaignState.currentSessionId) return campaignState;
+  const ledgers = {};
+  for (const key of ['currentSceneId', 'sceneTruths', 'sceneState', 'sceneFrame']) {
+    if (Object.prototype.hasOwnProperty.call(campaignState, key)) ledgers[key] = campaignState[key];
+  }
+  mergeSceneLedgers(ledgers, latest);
+  return { ...campaignState, ...ledgers, sessionRetractions: latest.sessionRetractions ?? null };
 }
 
 /**
@@ -3507,9 +3536,11 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
   // ledger. Gated inside runConsistencyCheck on the
   // factContinuity.consistencyCheck setting; fire-and-forget. Also gated on
   // the canonical GM here: the audit makes an API call and posts a GM-only
-  // review card, so it must be single-emitter like the writes above.
+  // review card, so it must be single-emitter like the writes above. It
+  // audits the ledger as it stands in the store, never the caller's
+  // pre-dialog snapshot (auditCampaignState, issue #329 X02).
   if (campaignState && prose?.trim() && isCanonicalGM()) {
-    runConsistencyCheck(prose, campaignState, {
+    runConsistencyCheck(prose, auditCampaignState(campaignState), {
       matchedEntityIds:  ctx.matchedEntityIds ?? [],
       currentLocationId: campaignState.currentLocationId ?? null,
     }).catch(err =>
