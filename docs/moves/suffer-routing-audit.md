@@ -62,7 +62,7 @@ suffer choice (e.g. "and choose a suffer move"), both fire.
 | `swear_an_iron_vow` miss | significant obstacle (no PtP per play kit) | text | **TEXT** (rulebook explicit — no PtP) |
 | `reach_a_milestone` (—) | Mark progress per vow rank | `progressMarked:1` | **PROGRESS** (unchanged) |
 | `fulfill_your_vow` strong / weak / miss | progress vs challenge; legacy reward / undone | text only | **TEXT** + progress-reward writes are existing legacy-tick logic, not suffer |
-| `forsake_your_vow` (—) | Choose costs (Endure Stress, Test Relationship, discard asset…) | text | **B2** `{ kind: "enumerated", options: [{label:"Endure Stress (-2)", suffer:"endure_stress", amount:2}, {label:"Test Your Relationship", route:"test_your_relationship"}, {label:"Discard an asset", route:"asset_discard"}, {label:"Narrative cost", complication:true}] }` — note routes that aren't suffer-direct |
+| `forsake_your_vow` (—) | Choose costs (Endure Stress, Test Relationship, discard asset…) | text | **B2** `{ kind: "enumerated", options: [{label:"Endure Stress (-1, -2 or -3)", suffer:"endure_stress", amountPick:[1,2,3]}, {label:"Test Your Relationship", route:"test_your_relationship"}, {label:"Discard an asset", route:"asset_discard"}, {label:"Narrative cost", complication:true}] }` — note routes that aren't suffer-direct. The stress is the move's own minor / serious / major, picked on a follow-up card (`amountPick`, issue #330 D7 — it was a fixed -2 the vendored text does not give) |
 
 ## Connection moves
 

@@ -37,6 +37,15 @@ brackets.)
   narration may only half name. *Rejected:* keeping the fallback on the
   native path with `unbonded: true` (option B) — a sheet roll names its Item
   exactly, so a fallback can only reach the wrong connection.
+- **Forsake Your Vow's Endure Stress is sized in the fiction** [D7; option
+  A]. Its cost option was "Endure Stress (-2)", but the vendored move says
+  only "You are demoralized or dispirited: Endure Stress" — the amount is the
+  suffer move's own minor / serious / major (-1 / -2 / -3). The option now
+  carries `amountPick: [1, 2, 3]` and no amount: picking it posts a "Minor
+  stress (-1) / Serious stress (-2) / Major stress (-3)" card
+  (`needs-amount`, `amountPickPrompt`), as an "any" cost posts its picker.
+  *Rejected:* keeping -2 as a house default (option B) — the book leaves the
+  size to the fiction, and the card already asks the player for the costs.
 - **The spotlight nudge never names the PC who just acted** [D8; option A].
   `selectSpotlight` picked the PC after the per-scene pointer by actor-id
   order and was never told whose beat it was: the first beat of a scene, or

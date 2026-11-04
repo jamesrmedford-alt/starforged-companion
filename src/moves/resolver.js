@@ -542,7 +542,9 @@ const CONSEQUENCE_MAP = {
     // (test relationship, asset discard, narrative cost) post a card and
     // hand off to the GM.
     sufferPrompt: { kind: "enumerated", multi: true, options: [
-      { label: "Endure Stress (-2)",          suffer: "endure_stress", amount: 2 },
+      // Endure Stress at the size the fiction gives it — the move's own
+      // minor / serious / major, picked next (issue #330 D7; was a fixed -2).
+      { label: "Endure Stress (-1, -2 or -3)", suffer: "endure_stress", amountPick: [1, 2, 3] },
       { label: "Test Your Relationship",      route:  "test_your_relationship" },
       { label: "Discard an asset",            route:  "asset_discard" },
       { label: "Narrative cost",              complication: true },

@@ -157,6 +157,11 @@ function optionToCalls(opt, selection) {
   // "any" sub-prompt (e.g. set_a_course's "One suffer move (-2)" option
   // which carries `kind: "any", amount, count`).
   if (opt.suffer) {
+    // A suffer move the fiction sizes: the move's own minor / serious / major
+    // (-1 / -2 / -3), picked on a follow-up card — Forsake Your Vow's "Endure
+    // Stress" names no amount (issue #330 D7; it was a fixed -2).
+    const amounts = Array.isArray(opt.amountPick) ? opt.amountPick.filter(a => Number.isInteger(a) && a >= 1 && a <= 3) : [];
+    if (amounts.length) return [{ kind: "needs-amount", sufferId: opt.suffer, amounts }];
     const calls = [{ kind: "suffer", sufferId: opt.suffer, amount: opt.amount ?? 1, itemId: selection.itemId ?? null }];
     // Endure Harm / Stress's miss: "If your health is 0, you must also mark …
     // or roll on the table" whichever option is taken — the Lose Momentum
@@ -452,6 +457,10 @@ async function runSufferCall(call, actor, opts) {
       // embeds a B1-style sub-prompt. Defer to a recursive prompt —
       // the dialog handles this by re-opening with the sub-prompt.
       return { kind: "needs-any", amount: call.amount, count: call.count };
+    case "needs-amount":
+      // An option whose amount the player picks (amountPick, issue #330 D7):
+      // the card posts the minor / serious / major follow-up.
+      return { kind: "needs-amount", sufferId: call.sufferId, amounts: call.amounts };
     default:
       return { kind: "unknown", call };
   }
