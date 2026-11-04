@@ -31,7 +31,7 @@ vi.mock('../../src/oracles/roller.js', async (importOriginal) => {
   return {
     ...actual,
     rollOracle: (id, opts) => (ROLLED[id]
-      ? { tableId: id, tableName: id, die: 100, roll: 50, result: ROLLED[id], isRef: false, sufferRoutes: [] }
+      ? { tableId: id, tableName: id, die: 100, roll: 50, result: ROLLED[id], sufferRoutes: [] }
       : actual.rollOracle(id, opts)),
   };
 });

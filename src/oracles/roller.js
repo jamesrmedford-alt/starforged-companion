@@ -297,10 +297,9 @@ export function unregisterOracleTable(tableId) {
  *
  * Directive entries are resolved in-place so callers never receive raw
  * `"Roll twice"`, `"Roll three times"`, `"Roll again …"`, `"… (roll twice)"`
- * or `"Action + Theme"` strings, nor an Ultra-scale row left unrolled. See
- * `resolveDirective` for the resolution rules. The original directive
- * type is reported via `isRef` / `refTableId` for callers that still want
- * to distinguish a direct hit from a resolved chain.
+ * or `"Action + Theme"` strings, nor a cross-reference row ("Stellar Object",
+ * "Fleet", "Ultra-scale") left as a heading. See `resolveDirective` for the
+ * resolution rules.
  *
  * F16 Phase E: the Pay-the-Price entries "You are harmed" / "Your vehicle
  * suffers damage" / etc. carry a `sufferRoute` annotation. `sufferRoutes`
@@ -318,7 +317,7 @@ export function unregisterOracleTable(tableId) {
  * @param {string} tableId   — key from ORACLE_TABLES
  * @param {Object} [options]
  * @param {number} [options.roll]   — override the roll (for testing)
- * @returns {{ tableId, tableName, die, roll, result, isRef, refTableId, sufferRoutes: Array<Object> }}
+ * @returns {{ tableId, tableName, die, roll, result, sufferRoutes: Array<Object> }}
  */
 export function rollOracle(tableId, options = {}) {
   const entry = ORACLE_TABLES[tableId];
@@ -330,7 +329,7 @@ export function rollOracle(tableId, options = {}) {
 
   if (!result) {
     console.warn(`Oracle | No result for roll ${roll} (d${die}) on table ${tableId}`);
-    return { tableId, tableName: entry.name, die, roll, result: "—", isRef: false, sufferRoutes: [] };
+    return { tableId, tableName: entry.name, die, roll, result: "—", sufferRoutes: [] };
   }
 
   const resolved = resolveDirective(result, entry.table, 0, die);
@@ -340,18 +339,9 @@ export function rollOracle(tableId, options = {}) {
     die,
     roll,
     result:       resolved.text,
-    isRef:        !!result.ref,
-    refTableId:   result.ref ?? null,
     sufferRoutes: resolved.leaves.filter(leaf => leaf.sufferRoute).map(leaf => leaf.sufferRoute),
   };
 }
-
-/**
- * Cross-references the roller follows in place: the row's word is a heading,
- * not the answer. Every other ref (Space Sighting's "Stellar Object", Starship
- * Type's "Fleet", …) stays a label its caller may follow via `refTableId`.
- */
-const REFS_ROLLED_IN_PLACE = new Set(["creature_ultra_scale"]);
 
 /**
  * How many rolls a directive row asks for on its own table: 3 for "Roll three
@@ -378,8 +368,12 @@ function directiveRollCount(text) {
  * Resolution:
  *   - `entry.ref === "action_theme"` → roll CORE.ACTION + CORE.THEME, join `" "`.
  *   - `entry.ref === "descriptor_focus"` → roll CORE.DESCRIPTOR + CORE.FOCUS, join `" "`.
- *   - a ref in REFS_ROLLED_IN_PLACE (Creature Scale's "Ultra-scale") → roll
- *     on that table: `"Ultra-scale: Titanic (hill-sized)"`.
+ *   - any other ref naming a registered table — a cross-reference row, whose
+ *     word is a heading, not the answer → roll on that table under it:
+ *     `"Ultra-scale: Titanic (hill-sized)"`, `"Stellar Object: Red star"`,
+ *     `"Fleet: Raider horde"` (issue #330 D13; Ultra-scale alone was
+ *     followed, U68, and every other ref was left a heading for a caller that
+ *     never followed it).
  *   - `result === "Roll twice"`      → roll twice on `parentTable`, join `" / "`.
  *   - `result === "Roll three times"` → roll three times, join `" / "`.
  *   - `result === "Roll again …"`    → roll twice on `parentTable`, join `" / "`.
@@ -421,7 +415,7 @@ function resolveDirective(entry, parentTable, depth = 0, parentDie = 100) {
     return joinResolved(" ", rollAndResolve(CORE.DESCRIPTOR, depth + 1), rollAndResolve(CORE.FOCUS, depth + 1));
   }
 
-  if (REFS_ROLLED_IN_PLACE.has(entry.ref) && ORACLE_TABLES[entry.ref]) {
+  if (entry.ref && Object.prototype.hasOwnProperty.call(ORACLE_TABLES, entry.ref)) {
     const target = ORACLE_TABLES[entry.ref];
     const sub    = rollAndResolve(target.table, depth + 1, target.die ?? 100);
     return { text: `${entry.result}: ${sub.text}`, leaves: sub.leaves };

@@ -12,6 +12,18 @@ rejected.
 needed the maintainer. The maintainer asked for the issue to be addressed on
 2026-11-04 and took the recommended option on every row. Each row's ID in
 brackets.)
+- **`!oracle` follows a cross-reference row in place** [D13; option A]. A
+  row whose word is a heading the rulebook links onward — Space Sighting's
+  "Stellar Object", "Planet", "Settlement", "Starship", "Derelict",
+  "Precursor Vault", "Creature"; Starship Type's "Multipurpose" and "Fleet";
+  Fleet's "Starship Mission"; Initial Contact's "Derelict" — is rolled on the
+  table its `ref` names, under the heading ("Stellar Object: Red star"), as
+  issue #321 U68 did for Ultra-scale alone. The unread `isRef` /
+  `refTableId` return fields are retired. The Sector Creator's own roller
+  (`rollTableResult`) is unchanged: a settlement's Initial Contact
+  "Derelict" says the settlement itself is the derelict. *Rejected:* keeping
+  the heading and naming the next table on the card (option B) — the data
+  names the table, and the roller already follows Ultra-scale the same way.
 - **A new sector never repeats a stored sector's name** [D14; option B]. Two
   sectors of one rolled name shared their Actor, NPC and Journal folders
   (keyed by name) and `!sector <name>` reached only the older one.
