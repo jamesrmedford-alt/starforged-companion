@@ -778,7 +778,8 @@ function fireClockVignette(clockData) {
   setTimeout(async () => {
     try {
       const { narrateClockAdvancement } = await import("../narration/narrator.js");
-      const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      // A working copy — the vignette applies its sidecar on it (issue #329 X09).
+      const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
       const narrationId = newNarrationId();
       const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs, narrationId });
       if (text) {

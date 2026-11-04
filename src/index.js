@@ -655,7 +655,10 @@ async function handleSceneQueryCommand(message) {
     console.debug(`${MODULE_ID} | @scene: empty question — nothing to ask.`);
     return;
   }
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A working copy: the answer mints a scene and applies its sidecar on the
+  // object it is given, and a refused write must leave this client's cached
+  // setting as the world has it (issue #329 X09).
+  const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
   resetRecentDensity();
   // Full speaker resolution (token selection → bound character →
   // ownership → fallback) — the bound-character-only read this

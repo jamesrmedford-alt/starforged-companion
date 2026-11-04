@@ -3599,8 +3599,12 @@ export async function applyRelayedNarratorSidecar(payload = {}, _ctx = {}) {
   sidecar.stateChanges = sidecar.stateChanges.slice(0, RELAYED_SIDECAR_MAX_ENTRIES);
   const narrationId = (typeof payload.narrationId === 'string' && /^[\w-]{1,64}$/.test(payload.narrationId))
     ? payload.narrationId : null;
-  const campaignState = game.settings.get(MODULE_ID, 'campaignState');
-  if (!campaignState) return;
+  // A working copy: the scene start and the sidecar apply change the object
+  // they are given, and a write the world refuses must leave this client's
+  // cached setting as the world has it (issue #329 X09).
+  const stored = game.settings.get(MODULE_ID, 'campaignState');
+  if (!stored) return;
+  const campaignState = foundry.utils.deepClone(stored);
   if (payload.sceneId && payload.sceneId !== (campaignState.currentSceneId ?? null)) {
     console.debug?.(`${MODULE_ID} | factContinuity: relayed narrator side-data belongs to a scene that has ended — dropped.`);
     return;
