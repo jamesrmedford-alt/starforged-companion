@@ -254,14 +254,31 @@ describe('wireFightVowButtons — one-shot Mark milestone / Deepen bond', () => 
     expect(warn).toHaveBeenCalledTimes(1);
   });
 
-  it('Attempt to Fulfill still posts the forced fulfil move on the clicker', async () => {
+  it('Attempt to Fulfill relays to the GM too — the player\'s client posts nothing', async () => {
     setUsers([GM, P1], 'pl-1');
     const root = fightRoot();
     wireFightVowButtons(fight, root);
     await click(btnFor(root, 'sf-fulfill-vow'));
+    expect(ChatMessage._created).toHaveLength(0);
+    expect(game.socket._emitted).toEqual([{
+      event: GM_RELAY_SOCKET,
+      payload: { kind: 'gmRelay.fulfilVow.attempt', payload: { messageId: 'fight-1', actorId: 'pc-b' }, requesterId: 'pl-1' },
+    }]);
+  });
+
+  it('on the canonical GM Attempt to Fulfill posts the forced fulfil move once, as the roller', async () => {
+    setUsers([GM, P1], 'gm-1');
+    const root = fightRoot();
+    wireFightVowButtons(fight, root);
+    const btn = btnFor(root, 'sf-fulfill-vow');
+    await click(btn);
+    await click(btn);
+    expect(ChatMessage._created).toHaveLength(1);
     expect(ChatMessage._created[0].flags[MODULE_ID]).toMatchObject({
-      forcedMoveId: 'fulfill_your_vow', forcedMoveTarget: 'Find the Archive',
+      forcedMoveId: 'fulfill_your_vow', forcedMoveTarget: 'Find the Archive', forcedMoveTargetId: 'v-b', deferWhileBusy: true,
     });
+    expect(ChatMessage._created[0].speaker?.actor).toBe('pc-b');
+    expect(fight.flags[MODULE_ID].fulfilAttempted).toBe(true);
   });
 
   it('the legacy raw socket relays are gone (no vow.markMilestone / connection.deepen listener)', async () => {

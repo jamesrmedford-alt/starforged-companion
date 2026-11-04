@@ -133,6 +133,7 @@ describe('issue #329 X05 — a forced-move button pressed by someone else speaks
 
   it('"🏁 Attempt to Fulfill Vow" on Bex\'s move card rolls Fulfill Your Vow as Bex', async () => {
     const card = makeCard('explore-1', { moveResolution: true, milestoneSuggestion: { eligible: true, vowCount: 1, vowItemId: 'v-b' }, actorId: 'pc-b' });
+    game.messages = { get: (id) => (id === card.id ? card : null) };   // the GM claims the card (FULFIL-BUTTON-LOCAL-DISABLE)
     const root = makeRoot([{ action: 'sf-attempt-fulfill-vow' }]);
     wireAttemptFulfillVowButton(card, root);
     await click(btnFor(root, 'sf-attempt-fulfill-vow'));
@@ -147,6 +148,7 @@ describe('issue #329 X05 — a forced-move button pressed by someone else speaks
 
   it('the victory card\'s "🏁 Attempt to Fulfill" rolls as the PC who won the fight', async () => {
     const card = makeCard('fight-vow-1', { fightVowCard: true, vowName: 'Break the Covenant', vowId: 'v-b', marks: 1, actorId: 'pc-b' });
+    game.messages = { get: (id) => (id === card.id ? card : null) };
     const root = makeRoot([{ action: 'sf-mark-milestone' }, { action: 'sf-fulfill-vow' }]);
     wireFightVowButtons(card, root);
     await click(btnFor(root, 'sf-fulfill-vow'));

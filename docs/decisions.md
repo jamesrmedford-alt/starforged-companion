@@ -1996,7 +1996,9 @@ an `op` the handler validates), `privateChannel.createJournal` (issue #321 U10 ‚
 player's Private Channel journal with the player as OWNER). The older world-writing socket
 relays that predated it are all folded in: `expedition.recommit` (issue #321 U20),
 `vow.setReward` / `vow.linkConnection` as `vow.reward` / `vow.link` (issue #325 W11) and
-`combat.enterFray` as `combat.threshold` (issue #329 X06).
+`combat.enterFray` as `combat.threshold` (issue #329 X06). `fulfilVow.attempt` is a move
+card's or won-fight card's "üèÅ Attempt to Fulfill", claimed once on its card (known-issues
+FULFIL-BUTTON-LOCAL-DISABLE).
 
 **Reason:** world settings and other users' documents are GM-write only, so
 player-invoked flows (Set a Flag, Take a Break, Begin / End a Session, the

@@ -281,7 +281,8 @@ card's roller when they hold a copy, else the PC holding the resolved vow
 (`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks — spoken as
 the card's roller, with their copy of the vow by its Item id, issue #329
-X05) and
+X05; relayed `fulfilVow.attempt` and claimed once on the card,
+`fulfilAttempted` — the roller's player or a GM may press it) and
 **🤝 Deepen your bond** when the vow links a connection
 (`deepenVowConnectionOnce` → `deepenLinkedConnection`, scaled by the vow's
 rank). A vow deepens its connection once (issue #326 D1): the press is

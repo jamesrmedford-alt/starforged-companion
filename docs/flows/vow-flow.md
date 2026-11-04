@@ -10,7 +10,8 @@ Multiplayer, up front: module-side vow Item writes run on the **canonical
 GM** — the move pipeline (gated on `isCanonicalGM()`), a card click relayed
 through `requestGmAction` (`src/multiplayer/gmRelay.js` `GM_ACTIONS`:
 `milestone.pick`, `fightVow.markMilestone`, `payThePrice.advanceClocks`; and,
-since issue #321, `fulfilVow.pick` and `milestone.suggestion`, which claim
+since issue #321, `fulfilVow.pick` and `milestone.suggestion` — and
+`fulfilVow.attempt`, a card's 🏁 — which claim
 their card and post the forced move once for the pipeline — flagged
 `deferWhileBusy`, so one that meets the move lock is held on the canonical
 GM and rolled when the lock frees, never dropped with its card claimed:
@@ -138,11 +139,14 @@ All real progress lands on **item ticks** (`system.current`) via
   roller's player or a GM may press it (a card from before the roller was
   stamped marks the clicker's own PC), and a failed post releases the claim
   (issue #321 U20 — every client's press, or a re-render, marked the vow
-  again). "🏁 Attempt to Fulfill Vow" still posts its forced move from the
-  clicker's client, disabled only there — but as the card's roller, naming
-  their sole open vow by its Item id (`milestoneSuggestion.vowItemId`; with
-  several, the pipeline asks which): a GM's press scored and paid the first
-  PC's vow (issue #329 X05).
+  again). "🏁 Attempt to Fulfill Vow" relays `fulfilVow.attempt`
+  (`wireAttemptFulfillVowButton` → `cardActions.applyAttemptFulfilVow`, the
+  same rules: claim `fulfilAttempted`) and posts the forced fulfil once, as
+  the card's roller, naming their sole open vow by its Item id
+  (`milestoneSuggestion.vowItemId`; with several, the pipeline asks which): a
+  GM's press scored and paid the first PC's vow (issue #329 X05), and it was
+  disabled only on the clicker's screen, so each client's press rolled again
+  (known-issues FULFIL-BUTTON-LOCAL-DISABLE).
 - **Won-fight milestone** (see `combat-flow.md` §4): marks scale by the
   fight's rank, ticks-per-mark by the vow's rank. Marked on the vow's
   **holder** — the card's roller (`actorId`) when they hold the vow, else

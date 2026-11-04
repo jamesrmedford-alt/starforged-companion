@@ -5528,8 +5528,8 @@ function registerFightVowMilestoneHook() {
  * src/moves/cardActions.js), which applies the card's own values once and
  * stamps `resolvedActions.<action>`; an action already applied renders
  * disabled, and a click that is not delivered (no GM) re-arms its button.
- * "🏁 Attempt to Fulfill" posts the existing fulfill_your_vow bridge (the
- * pipeline handles it).
+ * "🏁 Attempt to Fulfill" relays too ("fulfilVow.attempt" — wireFulfilAttempt):
+ * the GM claims the card and posts the roller's Fulfill Your Vow once.
  *
  * Exported for unit testing.
  */
@@ -5570,29 +5570,7 @@ export function wireFightVowButtons(message, root) {
 
   wireRelay("sf-mark-milestone", "fightVow.markMilestone", "markMilestone");
   wireRelay("sf-deepen-bond",    "fightVow.deepenBond",    "deepenBond");
-
-  const fulfilBtn = root?.querySelector?.('[data-action="sf-fulfill-vow"]');
-  if (fulfilBtn && !fulfilBtn.disabled) {
-    const fresh = fulfilBtn.cloneNode(true);
-    fulfilBtn.replaceWith(fresh);
-    fresh.addEventListener("click", async (event) => {
-      event.preventDefault(); event.stopPropagation();
-      fresh.disabled = true;
-      // As the PC who won the fight, their copy of the vow by its Item id
-      // (issue #329 X05: the clicker's — a GM's first PC's — vow was scored).
-      const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
-      const vowItemId = resolveVowItemCopies(f.vowName ?? null, { actorId }).primary?.item?.id ?? null;
-      await ChatMessage.create({
-        content: "Attempt to fulfill your vow.",
-        ...cardRollerSpeaker(message),
-        flags:   { [MODULE_ID]: {
-          bypassPacing: true, forcedMoveId: "fulfill_your_vow", forcedMoveTarget: f.vowName ?? null,
-          ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
-        } },
-      }).catch(err =>
-        console.warn(`${MODULE_ID} | fight-vow action failed:`, err?.message ?? err));
-    });
-  }
+  wireFulfilAttempt(message, root, "sf-fulfill-vow");
 }
 
 // The live module flags of a rendered card — the ChatMessage in game.messages
@@ -5609,7 +5587,8 @@ function liveCardFlags(message) {
  * first PC: 🏁 scored and paid that PC's vow, ⚔ rolled Take Decisive Action
  * with their position and momentum (issue #329 X05; decisions.md →
  * "Multiplayer attribution"). Nothing when the card names no roller (an older
- * card): the author's, as before.
+ * card): the author's, as before. (The 🏁 buttons relay to the GM, which
+ * speaks as the roller itself — cardActions.applyAttemptFulfilVow.)
  *
  * @param {ChatMessage} message — the card
  * @returns {{ speaker?: { actor: string } }}
@@ -7685,42 +7664,47 @@ onChatMessageRender((message, root) => wireMilestonePickerButtons(message, root)
 /**
  * Wire the "🏁 Attempt to Fulfill Vow" button on move-result cards.
  * Appears alongside "Mark Progress on Vow" when a vow milestone is eligible.
- * Clicking posts a forced fulfill_your_vow move so the interpreter, narrator,
- * and pipeline handle the progress roll, narration, track closure, and quests
- * legacy reward automatically.
+ * A click relays to the canonical GM ("fulfilVow.attempt" →
+ * cardActions.applyAttemptFulfilVow), which claims the GM-authored card
+ * (`fulfilAttempted`) and posts the forced fulfill_your_vow once, as the
+ * card's roller, naming the roller's sole open vow (when the card was posted)
+ * by its Item id; with several, the pipeline asks which. The pipeline handles
+ * the progress roll, narration, track closure and the quests legacy reward.
  *
  * Exported so Quench can drive it with a synthetic message + root.
  */
 export function wireAttemptFulfillVowButton(message, root) {
-  const f = message?.flags?.[MODULE_ID];
-  if (!f?.milestoneSuggestion?.eligible) return;
-  const btn = root?.querySelector?.('[data-action="sf-attempt-fulfill-vow"]');
-  if (!btn) return;
+  if (!message?.flags?.[MODULE_ID]?.milestoneSuggestion?.eligible) return;
+  wireFulfilAttempt(message, root, "sf-attempt-fulfill-vow");
+}
+onChatMessageRender((message, root) => wireAttemptFulfillVowButton(message, root));
+
+// A card's "🏁 Attempt to Fulfill" (the move card's and the won-fight card's):
+// one press per card. The click disabled only the clicker's DOM button, so the
+// player and the GM — or one client after a re-render — each rolled the vow
+// again (known-issues FULFIL-BUTTON-LOCAL-DISABLE). It relays; a card already
+// pressed renders it disabled, and a click that is not delivered re-arms it.
+function wireFulfilAttempt(message, root, dataAction) {
+  const btn = root?.querySelector?.(`[data-action="${dataAction}"]`);
+  if (!btn || btn.disabled) return;
+  if (liveCardFlags(message)?.fulfilAttempted) {
+    btn.disabled = true;
+    return;
+  }
   const fresh = btn.cloneNode(true);
   btn.replaceWith(fresh);
   fresh.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
     fresh.disabled = true;
-    try {
-      // The roller's sole open vow when the card was posted rides by its
-      // Item id; with several, the pipeline asks the roller which.
-      const vowItemId = f.milestoneSuggestion.vowItemId ?? null;
-      await ChatMessage.create({
-        content: "Attempt to fulfill your vow.",
-        ...cardRollerSpeaker(message),
-        flags:   { [MODULE_ID]: {
-          bypassPacing: true, forcedMoveId: "fulfill_your_vow",
-          ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
-        } },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | Attempt to Fulfill Vow button failed:`, err);
-      fresh.disabled = false;
-    }
+    await relayCardAction({
+      kind:       "fulfilVow.attempt",
+      payload:    { messageId: message?.id ?? null, actorId: clickerActorId() },
+      isResolved: () => !!liveCardFlags(message)?.fulfilAttempted,
+      restore:    () => { fresh.disabled = false; },
+    });
   });
 }
-onChatMessageRender((message, root) => wireAttemptFulfillVowButton(message, root));
 
 /**
  * Wire the "🗺 Finish the Expedition" button on expedition progress cards.

@@ -181,6 +181,9 @@ export const GM_ACTIONS = Object.freeze({
   // (the legacy "expedition.recommit" socket relay, folded in — RELAY-LEGACY-KINDS)
   "fulfilVow.pick":            { load: () => import("../moves/cardActions.js"),                      fn: "applyFulfilVowPick" },
   "milestone.suggestion":      { load: () => import("../moves/cardActions.js"),                      fn: "applyMilestoneSuggestion" },
+  // Known-issues FULFIL-BUTTON-LOCAL-DISABLE — a move card's and a won-fight card's
+  // "🏁 Attempt to Fulfill", claimed once on the card
+  "fulfilVow.attempt":         { load: () => import("../moves/cardActions.js"),                      fn: "applyAttemptFulfilVow" },
   "expedition.recommit":       { load: () => import("../moves/cardActions.js"),                      fn: "applyRecommitOffer" },
   // The Chronicle: the panel's edits and automatic entries (the GM is its one writer)
   "chronicle.edit":            { load: () => import("../character/chronicle.js"),                    fn: "applyChronicleEditFromRelay" },

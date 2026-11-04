@@ -21,7 +21,9 @@
  * Make a Discovery / Confront Chaos ("waypoint.oracle", issue #316 T06), a
  * "Which vow?" card's pick ("fulfilVow.pick", issue #321 U02), a move card's
  * "⚑ Mark Progress on Vow" ("milestone.suggestion") and an expedition's
- * "🔁 Recommit" ("expedition.recommit", both issue #321 U20). The
+ * "🔁 Recommit" ("expedition.recommit", both issue #321 U20), and a move
+ * card's or won-fight card's "🏁 Attempt to Fulfill" ("fulfilVow.attempt",
+ * known-issues FULFIL-BUTTON-LOCAL-DISABLE). The
  * handlers below run on the canonical GM, check
  * and stamp the card's resolved flag behind an in-flight guard (the
  * milestone-picker pattern, src/moves/milestonePicker.js), and take every
@@ -504,6 +506,100 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
       console.warn(`${MODULE_ID} | milestone suggestion: forced-move post failed — the claim is released:`, err?.message ?? err);
       await message.update({ [`flags.${MODULE_ID}.milestoneMarked`]: false })
         .catch(e => console.warn(`${MODULE_ID} | milestone suggestion: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "post-failed" };
+    }
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// "🏁 Attempt to Fulfill" — gmRelay "fulfilVow.attempt"
+// (known-issues FULFIL-BUTTON-LOCAL-DISABLE)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * gmRelay handler for "fulfilVow.attempt" — runs on the canonical GM. A move
+ * card's "🏁 Attempt to Fulfill Vow" (beside "⚑ Mark Progress on Vow") and a
+ * won-fight card's "🏁 Attempt to Fulfill" posted the forced Fulfill Your Vow
+ * from the clicker's client and disabled only their own DOM button: the
+ * player and the GM — or one client after a re-render — each rolled the vow
+ * again (issue #329 X05 fixed whose vow they roll, not how often).
+ *
+ * One attempt per card, claimed on the GM-authored card (`fulfilAttempted`)
+ * before the post, behind the in-flight guard; a post that fails releases the
+ * claim. The roll is the card's roller's (`actorId`): their player or a GM may
+ * press it, and the move speaks as that PC. The vow rides by its Item id —
+ * the move card's, the roller's sole open vow when it was posted; the
+ * won-fight card's by its name, the roller's copy. A card posted before the
+ * roller was stamped rolls for the clicker's own PC (the payload's `actorId`,
+ * which the requester must own).
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | attempt to fulfil: card ${messageId ?? "?"} not found — nothing rolled.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  const fightCard = f.fightVowCard === true;
+  if (!fightCard && !f.milestoneSuggestion?.eligible) {
+    console.warn(`${MODULE_ID} | attempt to fulfil: message ${messageId} offers no fulfilment — ignored.`);
+    return { posted: false, reason: "not-a-fulfil-card" };
+  }
+  const key = `${messageId}:fulfilAttempt`;
+  if (f.fulfilAttempted || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | attempt to fulfil: card ${messageId} already pressed — ignoring the press.`);
+    return { posted: false, reason: "already-attempted" };
+  }
+
+  const cardActorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  const actorId = cardActorId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
+  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | attempt to fulfil: ${actorId} is not a player character — refused.`);
+    return { posted: false, reason: "not-a-pc" };
+  }
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | attempt to fulfil: user ${ctx?.requesterId ?? "?"} may not roll ${actor?.name ?? "this card"}'s vow — refused.`);
+    return { posted: false, reason: "not-owner" };
+  }
+
+  const vowName = fightCard && typeof f.vowName === "string" && f.vowName ? f.vowName : null;
+  let vowItemId = fightCard ? null : (f.milestoneSuggestion.vowItemId ?? null);
+  if (vowName) {
+    const { resolveVowItemCopies } = await import("../index.js");
+    vowItemId = resolveVowItemCopies(vowName, { actorId: actor?.id ?? null }).primary?.item?.id ?? null;
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.fulfilAttempted`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | attempt to fulfil: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    try {
+      await ChatMessage.create({
+        content: "Attempt to fulfill your vow.",
+        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        flags:   { [MODULE_ID]: {
+          bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true,
+          ...(vowName ? { forcedMoveTarget: vowName } : {}),
+          ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
+        } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | attempt to fulfil: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.fulfilAttempted`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | attempt to fulfil: releasing the claim failed:`, e?.message ?? e));
       return { posted: false, reason: "post-failed" };
     }
     return { posted: true };
