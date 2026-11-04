@@ -297,7 +297,11 @@ function findStoredSector(id) {
 }
 
 async function createSector(sector) {
-  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  // A working copy: sector creation registers the sector's stub and its
+  // entities' ids on the object it holds, and the one write at the end can be
+  // refused — the GM's cached setting must then still say what the world
+  // says, or the retry finds the sector "already stored" (issue #329 X11).
+  const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
 
   const artEnabled   = getSetting("sectorArtEnabled",            true);
   const stubsEnabled = getSetting("sectorNarratorStubsEnabled",  true);
