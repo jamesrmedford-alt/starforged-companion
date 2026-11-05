@@ -734,9 +734,13 @@ Open — found while fixing, not fixed (outside the audited paths):
   refused whole, and its `suffer` Retry would take the meter again. Proposed:
   the executors report a refused impact apart from the meter, and the Retry
   marks the impact alone (as Q05 split the vow clocks).
-- **RIDERS-SETTING-UNDOCUMENTED** (UX, doc). The "Auto-apply asset
-  consequence riders" world setting (`riders.autoApply`) is not on the help
-  journal's Settings Reference page.
+- ~~**RIDERS-SETTING-UNDOCUMENTED**~~ (UX, doc) — fixed (issue #331 X60).
+  The "Auto-apply asset consequence riders" world setting
+  (`riders.autoApply`) was not on the help journal's Settings Reference
+  page → it has a row in its Configure Settings table, with "Combat Tracker
+  Integration", the other `config: true` setting it lacked; a sweep test
+  (`tests/unit/settingsReferenceCoverage.test.js`) requires a row for every
+  one.
 
 ### Bug audit after #312 (issue #314) — all six fixed in the v1.7.36 cycle
 
