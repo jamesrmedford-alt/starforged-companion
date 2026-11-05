@@ -586,7 +586,12 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     // never appeared anywhere until the GM happened to confirm its draft. We
     // still queue the draft below so the GM can build a full faction entity
     // record; the WJ entry gives the table an immediate, durable home for it.
-    if (entity.type === "faction" && !entityExistsForName(entity.name, "faction", campaignState)) {
+    // Once: a faction this pass's factionUpdates already put on the Factions
+    // journal — routed first (runDiscoveryDetection) — has its encounter, and
+    // a second surface doubled every new faction's first encounter (issue
+    // #331 X33). A page from an earlier pass has served this purpose too.
+    if (entity.type === "faction" && !entityExistsForName(entity.name, "faction", campaignState)
+        && !getFactionEntry(entity.name)) {
       await recordFactionIntelligence(
         entity.name,
         { summary: entity.description ?? "", isNew: true },
