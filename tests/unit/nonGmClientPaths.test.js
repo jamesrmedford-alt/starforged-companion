@@ -69,7 +69,13 @@ describe('audioEnabledForThisClient — non-GM player context', () => {
     game.settings._store.clear();
   });
 
-  afterEach(() => restore());
+  // The key these cases set must not outlive them: left set, it made the
+  // later blocks' canonical GM a keyed one, which files no relayed clip
+  // (issue #338 D10).
+  afterEach(() => {
+    restore();
+    game.settings._store.delete(`${MODULE_ID}.elevenLabsApiKey`);
+  });
 
   it('returns false when audio.clientEnabled is false even if world audio is on', () => {
     // PLAYTEST-1712 H: the most common new-player state. World audio is
@@ -157,9 +163,9 @@ describe('registerAudioSocket — GM relay contract', () => {
     const savedMessages = game.messages;
     game.messages = { contents: [{ id: 'card-1', flags: { [MODULE_ID]: { narratorCard: true, narrationText: 'The hull holds.' } } }] };
     game.settings._store.set(`${MODULE_ID}.audio.narratorVoiceId`, 'voice-narrator');
-    // A keyless GM — the table the relay serves; a GM with a key makes its
-    // own clips and files no relayed one (issue #338 D10).
-    game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, '');
+    // No ElevenLabs key is set: a keyless GM — the table the relay serves; a
+    // GM with a key makes its own clips and files no relayed one (issue #338
+    // D10).
 
     // Simulate what commitToCache() emits from a non-GM client.
     const audioData = 'simulated-audio-bytes';
@@ -172,7 +178,6 @@ describe('registerAudioSocket — GM relay contract', () => {
     } finally {
       game.messages = savedMessages;
       game.settings._store.delete(`${MODULE_ID}.audio.narratorVoiceId`);
-      game.settings._store.delete(`${MODULE_ID}.elevenLabsApiKey`);
     }
 
     expect(mockWrite).toHaveBeenCalledOnce();
