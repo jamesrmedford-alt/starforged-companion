@@ -128,8 +128,9 @@ layers. This file is the never-break list.
    Session Log beats, tier details (a promoted one's line in the notes too,
    issue #338 D7), a placeholder's rename, the draft card
    it queues — its pending rows are withdrawn, issue #338 D6(i) — and a
-   connection it auto-creates, deleted while unused, else named to the GMs
-   (D6(ii)) (issue #329 X01 — a new capture writer takes the id from its
+   connection it auto-creates or confirms from a pending draft row, deleted
+   while unused (the row back to pending), else named to the GMs (D6(ii);
+   MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) (issue #329 X01 — a new capture writer takes the id from its
    caller), and the state transitions
    it applies to existing entries, a faction's record stance included
    (XCARD-CAPTURE-TRANSITIONS); so does what a scene end migrates from its

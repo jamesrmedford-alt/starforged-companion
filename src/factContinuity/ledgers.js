@@ -487,6 +487,55 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
 }
 
 /**
+ * promoteTextSubject's inverse, for an entity whose card is gone: every
+ * ledger entry about it goes back to a text subject under its name. The
+ * X-Card's removal of a connection its narration created deletes the card
+ * (connection.retractNarrationConnections, issue #338 D6(ii)), and the facts
+ * a kept narration had recorded about the name — promoted to the card when
+ * it was made — stood keyed to an id no card answers: out of every prompt
+ * (an entity subject is in scope only when matched) and lost at scene end
+ * (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). A later card of that name
+ * promotes them again.
+ *
+ * Replaces `sceneTruths` and `sceneState` on `campaignState` with new objects
+ * and never changes the ones it was given, so the caller may pass a shallow
+ * copy of the stored (cached) value. Pure, no I/O.
+ *
+ * @param {string} entityId — the gone card's host id
+ * @param {string} name     — its name
+ * @param {Object} campaignState — the copy to update
+ * @returns {number} truths rewritten, plus one for a state subject moved
+ */
+export function demoteEntitySubject(entityId, name, campaignState) {
+  const text = typeof name === 'string' ? name.trim() : '';
+  if (!entityId || !text || !campaignState) return 0;
+  const isGone = (s) => s?.kind === 'entity' && s.entityId === entityId;
+  let rewritten = 0;
+  if (Array.isArray(campaignState.sceneTruths) && campaignState.sceneTruths.some(t => isGone(t?.subject))) {
+    campaignState.sceneTruths = campaignState.sceneTruths.map((t) => {
+      if (!isGone(t?.subject)) return t;
+      rewritten += 1;
+      return { ...t, subject: { kind: 'text', text } };
+    });
+  }
+  const bySubject = campaignState.sceneState?.bySubject;
+  const oldKey = subjectKey({ kind: 'entity', entityId });
+  if (bySubject && typeof bySubject === 'object' && Array.isArray(bySubject[oldKey])) {
+    const newKey = subjectKey({ kind: 'text', text });
+    const merged = [...(Array.isArray(bySubject[newKey]) ? bySubject[newKey] : [])];
+    for (const e of bySubject[oldKey]) {
+      const idx = merged.findIndex(m => sameStateAttribute(m?.attribute, e?.attribute));
+      if (idx >= 0) merged[idx] = e; else merged.push(e);
+    }
+    const next = { ...bySubject, [newKey]: merged };
+    delete next[oldKey];
+    campaignState.sceneState = { ...campaignState.sceneState, bySubject: next };
+    rewritten += 1;
+  }
+  return rewritten;
+}
+
+/**
  * State attributes that say where a character is and what shape they are in —
  * the stateChanges the sidecar instruction REQUIRES. The ledger block keeps
  * them longest under its token cap (A6), and scene end keeps a recorded

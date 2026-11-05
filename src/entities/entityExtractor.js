@@ -615,9 +615,10 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   // Make a Connection: the NPC its narration names may sit in a pending draft
-  // row the detection left out — confirm it as the roller's (issue #325 W23).
+  // row the detection left out — confirm it as the roller's (issue #325 W23),
+  // stamped with the narration like an auto-created one.
   if (options.autoCreateConnection && !created.length && options.namingText) {
-    const confirmed = await confirmNamedPendingConnection(options.namingText, options.actorId ?? null)
+    const confirmed = await confirmNamedPendingConnection(options.namingText, options.actorId ?? null, narrationId)
       .catch(err => {
         console.warn(`${MODULE_ID} | routeEntityDrafts: confirming the pending connection failed:`, err?.message ?? err);
         return null;
@@ -1827,7 +1828,10 @@ async function handleDraftConfirm(message, draftIndex) {
  *
  * @param {ChatMessage} message — the draft card
  * @param {number} draftIndex
- * @param {{ actorId?: string|null }} [opts]
+ * @param {{ actorId?: string|null, narrationId?: string|null }} [opts] —
+ *   `narrationId`: the Make a Connection narration confirming the row,
+ *   stamped on the connection with the row (`createdFromNarrationId`,
+ *   `createdFromDraft`)
  * @returns {Promise<Object|null>}
  */
 async function confirmDraft(message, draftIndex, opts = {}) {
@@ -1884,6 +1888,11 @@ async function confirmDraft(message, draftIndex, opts = {}) {
         goal:                      seedData.goal,
         pronouns:                  seedData.pronouns,
         portraitSourceDescription: seedData.portraitSource,
+        // A Make a Connection's narration made it (confirmNamedPendingConnection).
+        ...(opts.narrationId ? {
+          createdFromNarrationId: opts.narrationId,
+          createdFromDraft:       { messageId: message?.id ?? null, index: draftIndex },
+        } : {}),
       }, campaignState);
       await registerConnectionOnActiveCharacter(record, {
         actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
@@ -1990,13 +1999,17 @@ async function confirmDraft(message, draftIndex, opts = {}) {
  * card said "Connection made" and nothing was made — and a later Confirm gave
  * the bond to the PC of the old narration. The pending connection row the
  * move's narration names (whole words, the full name) is confirmed now, with
- * the bond on the roller.
+ * the bond on the roller — stamped with the move's narration and the row, so
+ * an X-Card on that narration removes the connection while unused and puts
+ * the row back to pending (connection.retractNarrationConnections;
+ * MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED).
  *
  * @param {string} text — the player's narration and the narrator's
  * @param {string|null} actorId — the roller
+ * @param {string|null} [narrationId] — the Make a Connection's narration
  * @returns {Promise<{ entity: Object, record: Object }|null>}
  */
-async function confirmNamedPendingConnection(text, actorId) {
+async function confirmNamedPendingConnection(text, actorId, narrationId = null) {
   const hay = String(text ?? "");
   if (!hay.trim()) return null;
   const messages = [...(globalThis.game?.messages?.contents ?? [])].reverse();   // the newest card first
@@ -2007,7 +2020,7 @@ async function confirmNamedPendingConnection(text, actorId) {
       if (draft?.type !== "connection" || (draft.status && draft.status !== "pending")) continue;
       const name = typeof draft.name === "string" ? draft.name.trim() : "";
       if (!name || !wholeWordPattern(name).test(hay)) continue;
-      const record = await confirmDraft(message, draft.index, { actorId });
+      const record = await confirmDraft(message, draft.index, { actorId, narrationId });
       return record ? { entity: draft, record } : null;
     }
   }
@@ -2125,6 +2138,33 @@ export async function withdrawNarrationDrafts(narrationIds) {
     }
   }
   return withdrawn;
+}
+
+/**
+ * Reopen the draft row a Make a Connection confirmed, once the X-Card has
+ * removed that connection (connection.retractNarrationConnections —
+ * MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED): the NPC was the earlier
+ * narration's, which the X-Card kept, so the row is pending again — Confirm
+ * and Dismiss back on the card. A row whose own narration an X-Card removed
+ * is withdrawn instead (`xCarded`, issue #338 D6(i)). A row no longer
+ * confirmed is left as it is. Canonical GM (the X-Card's finish).
+ *
+ * @param {{ messageId?: string|null, index?: number }} link — the connection's `createdFromDraft`
+ * @returns {Promise<string|null>} the row's new status, or null when nothing changed
+ */
+export async function reopenConfirmedDraftRow(link) {
+  const message = globalThis.game?.messages?.get?.(link?.messageId);
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.draftEntityCard) return null;
+  const removed = globalThis.game?.settings?.get(MODULE_ID, "campaignState")?.xCardedNarrationIds ?? [];
+  const status = f.narrationId && removed.includes(f.narrationId) ? DRAFT_XCARDED : "pending";
+  const rows = await changeDraftRows(message, (drafts) => {
+    const at = drafts.findIndex(d => d?.index === link.index);
+    if (at < 0 || drafts[at].status !== "confirmed") return null;
+    drafts[at] = { ...drafts[at], status };
+    return drafts;
+  });
+  return rows ? status : null;
 }
 
 async function updateDraftCard(message, drafts) {

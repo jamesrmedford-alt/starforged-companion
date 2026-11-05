@@ -353,6 +353,12 @@ export async function loseConnection(journalEntryId, reason = "", sessionId = ""
  * notice (safety.js). Canonical GM (the X-Card's finish). Fail-open per
  * connection.
  *
+ * A Make a Connection that confirmed an earlier narration's pending draft row
+ * (issue #325 W23) is stamped too, with the row (`createdFromDraft`): deleted,
+ * the row goes back to pending — the NPC was that earlier narration's, which
+ * the X-Card kept (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). Either way the
+ * ledger facts promoted to the deleted card go back to its name.
+ *
  * @param {string[]} narrationIds
  * @returns {Promise<{ deleted: string[], kept: Array<{ id: string, name: string }> }>}
  */
@@ -372,7 +378,11 @@ export async function retractNarrationConnections(narrationIds) {
       const bonds = await deleteUnmarkedBondItems({ connectionId: data._id ?? null });
       if (bonds.marked) { out.kept.push({ id: document.id, name }); continue; }
       await document.delete();
-      await unregisterConnectionId(document.id);
+      await unregisterDeletedConnection(document.id, String(data.name || document.name || ""));
+      if (data.createdFromDraft) {
+        const { reopenConfirmedDraftRow } = await import("./entityExtractor.js");
+        await reopenConfirmedDraftRow(data.createdFromDraft);
+      }
       out.deleted.push(name);
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: removing the connection ${name} the removed narration created failed:`, err?.message ?? err);
@@ -433,20 +443,27 @@ function sheetWrittenByTable(document, record) {
 }
 
 /**
- * Take a deleted NPC card's id out of the latest stored `connectionIds` (a
- * copy written; no await between the read and the write — the
- * registerEntityIdInStore pattern). A refused write leaves an id no Actor
- * answers, which every reader skips.
+ * Take a deleted NPC card's id out of the latest stored `connectionIds`, and
+ * hand the scene-ledger facts keyed to it back to its name (ledgers.js
+ * demoteEntitySubject — a kept narration's facts about the NPC, promoted to
+ * the card when it was made). One write of a copy; no await between the read
+ * and the write — the registerEntityIdInStore pattern. A refused write leaves
+ * an id no Actor answers, which every reader skips.
  *
  * @param {string} actorId
+ * @param {string} name — the card's name
  * @returns {Promise<void>}
  */
-async function unregisterConnectionId(actorId) {
+async function unregisterDeletedConnection(actorId, name) {
+  const { demoteEntitySubject } = await import("../factContinuity/ledgers.js");
   const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  if (!Array.isArray(latest.connectionIds) || !latest.connectionIds.includes(actorId)) return;
+  const target = { ...latest };
+  const listed = Array.isArray(latest.connectionIds) && latest.connectionIds.includes(actorId);
+  if (listed) target.connectionIds = latest.connectionIds.filter(id => id !== actorId);
+  const demoted = demoteEntitySubject(actorId, name, target) > 0;
+  if (!listed && !demoted) return;
   try {
-    await game.settings.set(MODULE_ID, "campaignState",
-      { ...latest, connectionIds: latest.connectionIds.filter(id => id !== actorId) });
+    await game.settings.set(MODULE_ID, "campaignState", target);
   } catch (err) {
     console.warn(`${MODULE_ID} | X-Card: unlisting the deleted connection ${actorId} failed:`, err?.message ?? err);
   }

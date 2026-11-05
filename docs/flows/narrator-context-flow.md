@@ -187,7 +187,10 @@ re-detection skip, not added to `dismissedEntities`: issue #338 D6(i),
 capture auto-creates (`createdFromNarrationId` — after the capture undo the
 X-Card's finish deletes it with its bond Items while nobody has used it,
 else keeps it and whispers the GMs once, naming it: D6(ii),
-`retractNarrationConnections`); the X-Card's
+`retractNarrationConnections` — so, stamped with the row it confirmed, does a
+connection the hit confirmed from an earlier narration's pending draft row,
+whose row then goes back to pending, and the ledger facts promoted to a
+deleted card go back to its name: MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED); the X-Card's
 finish (`retractNarrationCapture`, `retractions.js` →
 `undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new

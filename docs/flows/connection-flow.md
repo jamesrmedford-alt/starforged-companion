@@ -64,8 +64,17 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
   bond Item a mark (`retractNarrationConnections` → actorBridge
   `deleteUnmarkedBondItems`);
   one the table has used stays and the GMs are whispered once, naming it
-  (issue #338 D6(ii)). A pending row this path confirms is not stamped — the
-  NPC came from an earlier narration's draft.
+  (issue #338 D6(ii)). A pending row this path confirms is stamped the same
+  way, with the row it confirmed (`confirmDraft`'s `narrationId` →
+  `createdFromNarrationId` + `createdFromDraft`): deleted by the X-Card, the
+  row goes back to pending (`entityExtractor.reopenConfirmedDraftRow`;
+  withdrawn instead when the X-Card removed the row's own narration too) —
+  the NPC came from the earlier narration's draft, which the X-Card kept
+  (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). Either delete hands the
+  scene-ledger facts promoted to the card back to its name
+  (`ledgers.demoteEntitySubject`, in the same write as the `connectionIds`
+  removal): keyed to an id no card answers, a kept narration's facts about the
+  NPC fell out of every prompt's scope and out of the scene-end migration.
 - **Entity-extraction drafts** — connections detected in any other narration
   queue on the GM-whispered "New Entities Detected" card; Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
