@@ -67,10 +67,7 @@ async function writePacingDecision(entry) {
     };
 
     if (existing) {
-      const prev = existing.getFlag(MODULE_ID, FLAG_KEY) ?? { entries: [] };
-      const entries = Array.isArray(prev.entries) ? prev.entries : [];
-      entries.push(record);
-      while (entries.length > MAX_ENTRIES_PER_SESSION) entries.shift();
+      const entries = appendEntry(existing.getFlag(MODULE_ID, FLAG_KEY), record);
       await existing.setFlag(MODULE_ID, FLAG_KEY, { entries, sessionNumber, sessionId: entry.sessionId ?? null });
       // Mirror to page content for human review.
       await existing.update({ "text.content": renderHtml(entries, pageName) }).catch(() => {});
@@ -131,10 +128,7 @@ async function writeConsistencyDecision(entry) {
     };
 
     if (existing) {
-      const prev    = existing.getFlag(MODULE_ID, "consistencyCheckTelemetry") ?? { entries: [] };
-      const entries = Array.isArray(prev.entries) ? prev.entries : [];
-      entries.push(record);
-      while (entries.length > MAX_ENTRIES_PER_SESSION) entries.shift();
+      const entries = appendEntry(existing.getFlag(MODULE_ID, "consistencyCheckTelemetry"), record);
       await existing.setFlag(MODULE_ID, "consistencyCheckTelemetry", { entries });
       await existing.update({ "text.content": renderConsistencyHtml(entries) }).catch(() => {});
     } else {
@@ -213,10 +207,7 @@ async function writeNarratorUsage(entry) {
     };
 
     if (existing) {
-      const prev    = existing.getFlag(MODULE_ID, "narratorUsageTelemetry") ?? { entries: [] };
-      const entries = Array.isArray(prev.entries) ? prev.entries : [];
-      entries.push(record);
-      while (entries.length > MAX_ENTRIES_PER_SESSION) entries.shift();
+      const entries = appendEntry(existing.getFlag(MODULE_ID, "narratorUsageTelemetry"), record);
       await existing.setFlag(MODULE_ID, "narratorUsageTelemetry", { entries });
       await existing.update({ "text.content": renderUsageHtml(entries) }).catch(() => {});
     } else {
@@ -267,6 +258,23 @@ async function getOrCreateJournal() {
     console.warn(`${MODULE_ID} | pacing telemetry: create journal failed:`, err);
     return null;
   }
+}
+
+/**
+ * A page's entries with `record` appended, the oldest past the cap dropped —
+ * on a copy. getFlag hands back the page's own stored array: it was pushed
+ * onto (and shifted) before setFlag, so a refused write left this client's
+ * page holding an entry the world never took and, at the cap, missing one it
+ * still has (issue #331 X42; rules/foundry-api.md "a refusable write changes
+ * a copy").
+ *
+ * @param {{ entries?: Array }|undefined} prev — the page's flag
+ * @param {Object} record
+ * @returns {Array}
+ */
+function appendEntry(prev, record) {
+  const entries = Array.isArray(prev?.entries) ? prev.entries : [];
+  return [...entries, record].slice(-MAX_ENTRIES_PER_SESSION);
 }
 
 function truncate(s, max) {
