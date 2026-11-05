@@ -4418,7 +4418,10 @@ export async function performRecommit(trackId) {
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>Recommitted: ${escapeChatHtml(track.label ?? "Expedition")}</strong>`
       + `<p>Challenge dice ${dice[0]}, ${dice[1]} — cleared <strong>${plan.clearedBoxes}</strong> box${plan.clearedBoxes === 1 ? "" : "es"} `
-      + `(now ${Math.floor(plan.newTicks / 4)}/10) and the expedition hardens to <strong>${escapeChatHtml(plan.newRank)}</strong>. `
+      + `(now ${Math.floor(plan.newTicks / 4)}/10) and the `
+      + (recommitRankStays(plan, track.rank)
+        ? `expedition's rank stays <strong>epic</strong> — it cannot rise further. `
+        : `expedition hardens to <strong>${escapeChatHtml(plan.newRank)}</strong>. `)
       + `The journey continues.</p></div>`,
     flags: { [MODULE_ID]: { recommitCard: true, trackId, newRank: plan.newRank, newTicks: plan.newTicks } },
   }).catch(err => console.warn(`${MODULE_ID} | recommit card failed:`, err?.message ?? err));
@@ -4451,12 +4454,22 @@ async function postBondRecommitOfferCard(target, actorId = null) {
   }).catch(err => console.warn(`${MODULE_ID} | bond recommit offer card failed:`, err?.message ?? err));
 }
 
-/** The "Recommitted" card: the dice, the boxes cleared, the new rank. */
-async function postRecommittedCard(label, dice, plan, what, flags) {
+// Whether a recommit's rank step was clamped: the rank rises by one "if not
+// already epic" — an epic track's card said its rank rose to epic (issue #336
+// Y26). `fromRank` is the rank before, as planRecommit was given it.
+function recommitRankStays(plan, fromRank) {
+  return plan.newRank === "epic" && rankName(fromRank) === "epic";
+}
+
+/** The "Recommitted" card: the dice, the boxes cleared, the new rank (or that it stays epic). */
+async function postRecommittedCard(label, dice, plan, what, fromRank, flags) {
+  const rankLine = recommitRankStays(plan, fromRank)
+    ? `the ${what} stays <strong>epic</strong> — it cannot rise further`
+    : `the ${what} rises to <strong>${escapeChatHtml(plan.newRank)}</strong>`;
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>Recommitted: ${escapeChatHtml(label)}</strong>`
       + `<p>Challenge dice ${dice[0]}, ${dice[1]} — cleared <strong>${plan.clearedBoxes}</strong> box${plan.clearedBoxes === 1 ? "" : "es"} `
-      + `(now ${Math.floor(plan.newTicks / 4)}/10) and the ${what} rises to <strong>${escapeChatHtml(plan.newRank)}</strong>.</p></div>`,
+      + `(now ${Math.floor(plan.newTicks / 4)}/10) and ${rankLine}.</p></div>`,
     flags: { [MODULE_ID]: { recommitCard: true, newRank: plan.newRank, newTicks: plan.newTicks, ...flags } },
   }).catch(err => console.warn(`${MODULE_ID} | recommit card failed:`, err?.message ?? err));
 }
@@ -4515,8 +4528,9 @@ export async function performVowRecommit({ vowName = null, itemId = null, actorI
     return { ok: false, reason: "no-vow" };
   }
   const ticks = primary ? Number(primary.item.system?.current ?? 0) : Number(twin.ticks ?? 0);
+  const rank  = rankName(primary ? primary.item.system?.rank : twin.rank);
   const dice  = rollChallengeDice();
-  const plan  = planRecommit(ticks, rankName(primary ? primary.item.system?.rank : twin.rank), dice);
+  const plan  = planRecommit(ticks, rank, dice);
   const next  = { ticks: plan.newTicks, rank: plan.newRank };
   if (primary) {
     const first = await setVowItemTrack(primary.actor, primary.item.id, next);
@@ -4539,7 +4553,7 @@ export async function performVowRecommit({ vowName = null, itemId = null, actorI
       console.warn(`${MODULE_ID} | vow recommit: the vow's journal track was not changed:`, err?.message ?? err);
     }
   }
-  await postRecommittedCard(primary?.item?.name ?? twin?.label ?? vowName ?? "Vow", dice, plan, "vow's rank",
+  await postRecommittedCard(primary?.item?.name ?? twin?.label ?? vowName ?? "Vow", dice, plan, "vow's rank", rank,
     { vowName: primary?.item?.name ?? twin?.label ?? vowName ?? null });
   return { ok: true };
 }
@@ -4575,7 +4589,7 @@ export async function performBondRecommit({ hostId = null } = {}) {
     console.warn(`${MODULE_ID} | bond recommit: bond item rank mirror failed:`, err?.message ?? err));
   await conn.addHistoryEntry(hostId, `Recommitted after a failed Forge a Bond — ${plan.clearedBoxes} box${plan.clearedBoxes === 1 ? "" : "es"} cleared, rank now ${plan.newRank}.`)
     .catch(err => console.warn(`${MODULE_ID} | bond recommit: history entry failed:`, err?.message ?? err));
-  await postRecommittedCard(record.name ?? "Connection", dice, plan, "connection's rank", { hostId });
+  await postRecommittedCard(record.name ?? "Connection", dice, plan, "connection's rank", record.rank, { hostId });
   return { ok: true };
 }
 
