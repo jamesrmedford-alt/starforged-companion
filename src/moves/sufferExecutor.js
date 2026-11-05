@@ -528,7 +528,8 @@ export async function endureStress(actor, amount, opts = {}) {
  * an asset rider's supply cost (consequenceRiders.js, issue #331 X16) all
  * come here (no move's own consequence costs supply). Issue #315 S04 (the
  * trade marked no one) and S07 (only the PC who paid was marked).
- * Raising supply clears nothing: the impact is cleared by a recovery move.
+ * Raising supply clears nothing: a recovery move clears the impact — for the
+ * crew, as it is marked (clearUnprepared).
  *
  * @param {Actor} actor  whose supply is now 0
  * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesNotMarked: string[] }>}
@@ -554,6 +555,56 @@ export async function markUnprepared(actor) {
     }
   }
   return marks;
+}
+
+/**
+ * A recovery move has cleared `actor`'s unprepared — Resupply's "clear
+ * unprepared": clear it on every ally sharing the supply too. The crew marks
+ * the impact together (markUnprepared, issue #315 S07), so the recovery that
+ * clears it clears it for them all: it cleared the roller's alone, and each
+ * ally stayed unprepared at a supply above 0 until their own Resupply or a
+ * sheet edit (known-issues UNPREPARED-CLEAR-ONE-PC; issue #338 D3). The
+ * impact's one clearer, as markUnprepared is its one marker. The roller's write is not caught — refused, the pick reports it
+ * (runSufferResolution); an ally's refused write is warned and named, never
+ * thrown: the roller's clear has landed.
+ *
+ * @param {Actor} actor  the PC whose recovery cleared it
+ * @returns {Promise<{ alliesCleared: string[], alliesNotCleared: string[] }>}
+ *   the allies by name — cleared now, or whose write the world refused
+ */
+export async function clearUnprepared(actor) {
+  const clears = { alliesCleared: [], alliesNotCleared: [] };
+  if (!actor) return clears;
+  await setDebility(actor, "unprepared", false);
+  for (const ally of supplyAllies(actor)) {
+    if (!ally.system?.debility?.unprepared) continue;
+    try {
+      await setDebility(ally, "unprepared", false);
+      clears.alliesCleared.push(ally.name ?? ally.id);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | sufferExecutor: clearing ${ally.name ?? ally.id}'s unprepared failed:`, err?.message ?? err);
+      clears.alliesNotCleared.push(ally.name ?? ally.id);
+    }
+  }
+  return clears;
+}
+
+/**
+ * The allies' part of clearUnprepared's clears, for a card line ("" when no
+ * ally was unprepared): who, sharing the supply, is prepared again with the
+ * roller, and whose clear the world refused.
+ *
+ * @param {{ alliesCleared?: string[], alliesNotCleared?: string[] }} clears
+ * @returns {string} HTML
+ */
+export function crewClearedNote({ alliesCleared = [], alliesNotCleared = [] } = {}) {
+  const names = (list) => list.map(escapeHtml).join(", ");
+  return [
+    alliesCleared.length
+      ? `${names(alliesCleared)}, sharing the supply, ${alliesCleared.length === 1 ? "is" : "are"} no longer <strong>unprepared</strong> either`
+      : "",
+    alliesNotCleared.length ? `${names(alliesNotCleared)} could not be cleared of unprepared — clear it on the sheet` : "",
+  ].filter(Boolean).join("; ");
 }
 
 /**

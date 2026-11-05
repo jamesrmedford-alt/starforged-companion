@@ -17,7 +17,7 @@
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -344,6 +344,14 @@ async function runSufferCall(call, actor, opts) {
       // Heal clears the patient's wound (issue #325 W04); a companion has none.
       if (call.debility === "wounded" && opts.patientCompanionItemId) {
         return { kind: "clear-impact", debility: call.debility, skipped: true };
+      }
+      // Resupply's clear is the crew's: every PC sharing the supply, as they
+      // were marked together (known-issues UNPREPARED-CLEAR-ONE-PC, issue #338 D3).
+      if (call.debility === "unprepared") {
+        const clears = await clearUnprepared(actor);
+        const crew = crewClearedNote(clears);
+        if (crew) await postDeferredCard("Unprepared cleared for the crew", `${crew}.`);
+        return { kind: "clear-impact", debility: call.debility, ...clears };
       }
       const patient = call.debility === "wounded" ? await healPatientActor(opts) : null;
       await setDebility(patient ?? actor, call.debility, false);
