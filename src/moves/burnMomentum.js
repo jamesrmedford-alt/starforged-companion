@@ -84,6 +84,7 @@ import {
   applyUpgradedOutcomeEffects,
   renarrateUpgrade,
   effectsNoteHtml,
+  retractSupersededNarrations,
 } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -596,7 +597,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // so the prose describing the pre-burn result is now stale. Strike it through
   // and label it rather than delete it, so the history is preserved. The new
   // (upgraded) narration is posted below.
-  await supersedeOriginalNarration(burn).catch(err =>
+  await supersedeOriginalNarration(burn, { campaignState }).catch(err =>
     console.warn(`${MODULE_ID} | burnMomentum: superseding original narration failed:`, err));
 
   // Re-narrate on the upgraded outcome and log it. Best-effort — if the
@@ -676,10 +677,16 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
  * the narration the same way, with its own note (`kind: "improve"` — the
  * fixed burn note told the table momentum was burned, issue #326 W57).
  *
+ * What its sidecar wrote is retracted by its `narrationId` — its truths, state
+ * and frame stayed binding beside the re-narration's (issue #338 D8) — in the
+ * store and on the upgrade's working copy (`campaignState`), which the
+ * re-narration applies its sidecar to (resultUpgrade.js
+ * retractSupersededNarrations).
+ *
  * @param {Object} burn  the burn (or improve) flag blob (carries resolutionId)
- * @param {{ kind?: "burn"|"improve" }} [opts]
+ * @param {{ kind?: "burn"|"improve", campaignState?: Object|null }} [opts]
  */
-export async function supersedeOriginalNarration(burn, { kind = "burn" } = {}) {
+export async function supersedeOriginalNarration(burn, { kind = "burn", campaignState = null } = {}) {
   const resolutionId = burn?.resolutionId;
   if (!resolutionId) return;
   const messages = globalThis.game?.messages?.contents ?? [];
@@ -694,6 +701,7 @@ export async function supersedeOriginalNarration(burn, { kind = "burn" } = {}) {
     [`flags.${MODULE_ID}.burnSuperseded`]: true,
     content: buildSupersededNarrationContent(card.content, kind),
   });
+  await retractSupersededNarrations([card.flags?.[MODULE_ID]?.narrationId], { campaignState, label: kind });
 }
 
 /** The note on a superseded narration, by what upgraded the outcome. */

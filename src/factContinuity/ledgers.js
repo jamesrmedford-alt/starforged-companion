@@ -15,7 +15,7 @@
  *   - promoteTextSubject   Rewrite text-subject ledger entries to entity-subject.
  *   - subjectKey           Stable key for indexing state-ledger entries.
  *   - subjectFromStateKey  The subject a state-ledger key stands for.
- *   - retractNarrations    Retract what X-carded narrations' sidecars wrote.
+ *   - retractNarrations    Retract what X-carded (or superseded) narrations' sidecars wrote.
  */
 
 import { resolveEntityName } from '../context/relevanceResolver.js';
@@ -188,6 +188,16 @@ function assertedLocation(campaignState, frame = null) {
 export const XCARD_RETRACTED_BY = 'xcard';
 
 /**
+ * `retractedBy` of a truth a superseded narration wrote — Burn Momentum or
+ * Improve Result replaced the outcome it narrated, or rewound the clock whose
+ * trigger it narrated (retractNarrations `{ by }`, issue #338 D8). Like the
+ * X-Card's, it renders nowhere and is never named under CORRECTED; unlike
+ * it, it is no bar to a later narration stating the same fact — the
+ * re-narration of the upgraded outcome, or the clock's next trigger.
+ */
+export const SUPERSEDED_RETRACTED_BY = 'superseded';
+
+/**
  * Two state attributes name the same fact when they match case-blind and
  * trimmed: "Location" superseded nothing of "location", so CURRENT STATE
  * showed two contradictory lines for one fact (issue #326 W61 — subjects
@@ -271,11 +281,17 @@ function stateEntryWithout(entry, ids) {
  * with new objects and never changes the ones it was given, so the caller
  * may pass a shallow copy of the stored (cached) value. Pure, no I/O.
  *
+ * `by`: the truths' `retractedBy` — the X-Card's by default; a Burn Momentum
+ * or Improve Result that superseded the narrations passes
+ * SUPERSEDED_RETRACTED_BY (issue #338 D8), which a later narration may
+ * state again.
+ *
  * @param {Object}   campaignState — the copy to update
  * @param {string[]} narrationIds  — the removed narrations (their cards' `narrationId`)
+ * @param {{ by?: string }} [opts]
  * @returns {Object[]} the truths it retracted (the new entries)
  */
-export function retractNarrations(campaignState, narrationIds) {
+export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETRACTED_BY } = {}) {
   const ids = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === 'string' && id));
   if (!campaignState || !ids.size) return [];
   const now = Date.now();
@@ -284,7 +300,7 @@ export function retractNarrations(campaignState, narrationIds) {
   if (Array.isArray(campaignState.sceneTruths)) {
     campaignState.sceneTruths = campaignState.sceneTruths.map((t) => {
       if (!t || t.retracted || !ids.has(t.narrationId)) return t;
-      const next = { ...t, retracted: true, retractedBy: XCARD_RETRACTED_BY, retractedAt: now };
+      const next = { ...t, retracted: true, retractedBy: by, retractedAt: now };
       retracted.push(next);
       return next;
     });
@@ -631,7 +647,8 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
 
 /**
  * The active scene's bare strike of this subject + fact — retracted by the
- * table (not the X-Card, not a Replace's struck original), compared
+ * table (not the X-Card, not a superseded narration's — issue #338 D8 — not a
+ * Replace's struck original), compared
  * case-blind — or null. setTruth lifts it; the `!truth set` card names a
  * player's set refused over a GM's strike.
  *
@@ -644,7 +661,7 @@ export function findBareStrike(truths, subjectRef, fact) {
   const key = subjectKey(subjectRef);
   const lower = fact.toLowerCase();
   return (Array.isArray(truths) ? truths : []).find(t =>
-    t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY
+    t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY && t.retractedBy !== SUPERSEDED_RETRACTED_BY
     && subjectKey(t.subject) === key
     && String(t.fact ?? '').trim().toLowerCase() === lower) ?? null;
 }
@@ -712,8 +729,10 @@ export function canCorrectTruth(truth, ctx = {}) {
 /**
  * Find an existing truth equivalent to (subject, fact) — same subjectKey and
  * the same fact text after normalisation. Includes retracted entries so a
- * struck fact blocks narrator re-assertion (see applySidecar). Exported for
- * unit testing.
+ * struck fact blocks narrator re-assertion (see applySidecar) — but not one
+ * a superseded narration wrote (SUPERSEDED_RETRACTED_BY, issue #338 D8): the
+ * narration of the upgraded outcome may state it again. Exported for unit
+ * testing.
  *
  * @param {Array} truths
  * @param {Object} subject — resolved subject ({kind, ...})
@@ -726,7 +745,8 @@ export function findEquivalentTruth(truths, subject, fact) {
   const norm = normaliseFactText(fact);
   if (!norm) return null;
   return truths.find(t =>
-    t && subjectKey(t.subject) === key && normaliseFactText(t.fact) === norm,
+    t && t.retractedBy !== SUPERSEDED_RETRACTED_BY
+    && subjectKey(t.subject) === key && normaliseFactText(t.fact) === norm,
   ) ?? null;
 }
 

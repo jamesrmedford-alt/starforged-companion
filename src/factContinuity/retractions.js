@@ -38,7 +38,7 @@
 
 import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments, hasSheetNotes } from '../entities/registry.js';
 import { retractSessionLore, undoNarrationEntries } from '../world/worldJournal.js';
-import { XCARD_RETRACTED_BY } from './ledgers.js';
+import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -465,10 +465,13 @@ function subjectLabel(subject) {
  * retracted truth with no replacement. A truth the X-Card removed is not one
  * (issue #321 U07): naming it — even as "do not re-assert" — would hand the
  * narrator the content the table removed. It stays retracted in the ledger,
- * which is what blocks its re-assertion.
+ * which is what blocks its re-assertion. Nor is one a superseded narration
+ * wrote (issue #338 D8): the table corrected nothing — an upgrade replaced
+ * the outcome — and the narration of the upgraded one may state it again.
  */
 function isNamedStrike(t) {
-  return !!t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY && !!String(t.fact ?? '').trim();
+  return !!t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY
+    && t.retractedBy !== SUPERSEDED_RETRACTED_BY && !!String(t.fact ?? '').trim();
 }
 
 /**

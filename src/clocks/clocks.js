@@ -645,7 +645,7 @@ function triggeredSuffix(clock) {
 }
 
 function vignetteData(clock) {
-  return { name: clock.name, type: clock.type, filled: clock.filled, segments: clock.segments, triggered: isFull(clock) };
+  return { _id: clock._id, name: clock.name, type: clock.type, filled: clock.filled, segments: clock.segments, triggered: isFull(clock) };
 }
 
 function postAlreadyTriggered(clock) {
@@ -832,6 +832,8 @@ function fireClockVignette(clockData) {
           narrationText:     text,
           sessionId:         cs.currentSessionId ?? null,
           narrationId,
+          // A trigger vignette names its clock (issue #338 D8).
+          ...(clockData.triggered && clockData._id ? { clockId: clockData._id } : {}),
         });
       }
     } catch (err) {

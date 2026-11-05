@@ -115,7 +115,7 @@ should remember* must carry all three flags:
 | inciting incident (`postIncitingIncidentCard`) | Cluster A1 | `narrationText` is prose only (vow line stripped); fallback cards excluded |
 | galley / end-session vignettes | 2026-06-15 | |
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
-| clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix |
+| clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix; a trigger vignette also names its clock (`clockId`, issue #338 D8) |
 | oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
 | published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`), which stamps the card's `narrationId` on the details it records (issue #335 Y03). No sidecar, so no ledger facts |
 
@@ -160,7 +160,13 @@ CLAUDE.md "audit consumers" rule):
   with the X-Card lifted — not a fallback, a published reflection or an
   X-carded card
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
-  `resolutionId`, unaffected
+  `resolutionId`, unaffected; it flags the card `burnSuperseded`, which
+  `sessionNarratorCards` leaves out (ring, summary, recap). Since issue #338
+  D8 a Burn Momentum / Improve Result that rewinds a clock out of its trigger
+  flags that clock's newest live trigger vignette of the session (found by
+  its `clockId`) the same way (`resultUpgrade.js` supersedeTriggerVignettes),
+  and both narrations' ledger entries are retracted by their `narrationId`
+  (§3)
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
@@ -221,6 +227,19 @@ card was played (issue #335 Y01 — the pick is session-scoped, the ledger is
 empty by then): the tier detail, the archived Lore page and the LAST KNOWN
 value, which keeps the values it superseded and falls back to the newest one
 no removed narration set.
+
+**Narration ids and an upgrade (issue #338 D8).** A Burn Momentum or Improve
+Result retracts the ledger entries of the narrations it supersedes — the move
+narration it replaces, and the trigger vignette of a clock its reversal
+rewinds — by their `narrationId`, through the same `retractNarrations` with
+`{ by: "superseded" }` (`resultUpgrade.js` retractSupersededNarrations, on the
+canonical GM, merged onto the latest store, and on the upgrade's working copy,
+which its re-narration applies its sidecar to). A superseded truth is
+rendered nowhere and never named under CORRECTED, like an X-carded one, but it
+blocks nothing: the re-narration of the upgraded outcome — or the clock's next
+trigger — may state the same fact, and it is recorded live. Only the ledgers:
+what the superseded narration's capture recorded stands, and no id list keeps
+a stale writer from writing its state back (the accepted no-baseline merge).
 
 **Scene start.** A narration whose snapshot holds no scene while the store has
 one continues it (`startScene` → `adoptStoredScene`, issue #321 U06f): the

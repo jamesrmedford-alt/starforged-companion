@@ -115,6 +115,9 @@ export async function advanceClocksOnPayThePrice() {
                   narrationText:     text,
                   sessionId:         cs.currentSessionId ?? null,
                   narrationId,
+                  // The clock it narrates: a burn or improvement that rewinds
+                  // the clock supersedes it (issue #338 D8).
+                  clockId:           vignetteClockId(cd),
                 },
               },
             });
@@ -130,6 +133,22 @@ export async function advanceClocksOnPayThePrice() {
   }
 
   return advanced;
+}
+
+/**
+ * The clock a trigger vignette narrates, as its card names it (`clockId`): a
+ * tension clock's `_id`, or a vow's countdown clock by its vow (`vowId` — the
+ * copies of a shared vow are one clock — else the Item's id). A Burn Momentum
+ * or Improve Result that rewinds the clock out of its trigger finds the
+ * vignette by it (resultUpgrade.js revertPayThePrice, issue #338 D8).
+ *
+ * @param {{ type?: string, _id?: string, vowId?: string|null, itemId?: string }} entry
+ *   — an advanced-clock entry (advanceClocksOnPayThePrice)
+ * @returns {string|null}
+ */
+export function vignetteClockId(entry) {
+  const id = entry?.type === "vow" ? (entry.vowId ?? entry.itemId) : entry?._id;
+  return typeof id === "string" && id ? id : null;
 }
 
 /**

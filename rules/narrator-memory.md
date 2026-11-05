@@ -20,7 +20,10 @@ layers. This file is the never-break list.
    read leaves it out by its `narrationFallback` flag (`sessionNarratorCards`)
    — it was fed back as story and counted as the session's first narration. A
    card the X-Card removed is flagged `xCarded` and left out the same way
-   (U07), and each narration's card carries its `narrationId`, which its
+   (U07), as is one a Burn Momentum / Improve Result superseded —
+   `burnSuperseded`: the move narration, and the trigger vignette of a clock
+   its reversal rewinds, which names its clock (`clockId`, issue #338 D8) —
+   and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).
    When adding a new card type or co-marking an existing one,
@@ -111,7 +114,10 @@ layers. This file is the never-break list.
    truth it retracts (issue #321 U07). An X-Card retraction
    (`retractedBy: "xcard"`) blocks re-assertion like a strike but is never
    named under CORRECTED or in the leave-out list: naming it would hand the
-   narrator the content the table removed. Anything a narration writes
+   narrator the content the table removed. A superseded narration's
+   (`retractedBy: "superseded"` — what a Burn Momentum / Improve Result
+   replaced, retracted by its `narrationId`, issue #338 D8) is never named
+   either, and blocks nothing: the re-narration may state the fact again. Anything a narration writes
    outside the ledgers carries its `narrationId` so the X-Card can undo it
    too — the command vehicle's position does (issue #325 W07), and so does
    everything its capture records: World Journal entries (with the versions

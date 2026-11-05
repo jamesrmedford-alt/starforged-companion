@@ -30,7 +30,10 @@ Two cross-cutting facts to hold onto:
   (issue #322 V04) — within the bounds from `actorBridge.readMomentumState`,
   and spends the other, so one
   card is upgraded at most once. The pipeline gives each resolution an `_id`
-  so the upgrade can strike the original narration card. Each upgrade claims
+  so the upgrade can strike the original narration card — and retract its
+  ledger entries by its `narrationId`; a clock the reversal rewinds out of
+  its trigger has its trigger vignette struck and retracted the same way
+  (issue #338 D8). Each upgrade claims
   the card (`consumed`) before any effect; then (`src/moves/resultUpgrade.js`)
   it reverts the miss's Pay the Price from what each route landed — a "Roll
   twice" lands each leaf's route (issue #314 Q03), and harm past a meter is a

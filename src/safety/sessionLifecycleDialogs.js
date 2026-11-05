@@ -316,6 +316,8 @@ async function beginSessionOnce(payload) {
                       narrationText:     text,
                       sessionId:         cs.currentSessionId ?? null,
                       narrationId,
+                      // A trigger vignette names its clock (issue #338 D8).
+                      ...(cd.triggered && cd._id ? { clockId: cd._id } : {}),
                     },
                   },
                 });

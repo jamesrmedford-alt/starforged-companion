@@ -222,6 +222,20 @@ narrator to take the story elsewhere without naming the removed beat;
 card posts with the X-Card lifted — not a fallback, a published reflection or
 an X-carded card.
 
+**A Burn Momentum or Improve Result** supersedes what narrated the outcome it
+replaced (issue #338 D8): the move's narration card is flagged
+`burnSuperseded` and struck (`supersedeOriginalNarration`), and so is the
+trigger vignette of a clock its reversal rewinds out of its triggered state —
+the clock's newest live trigger vignette of the session, found by the
+`clockId` every trigger vignette carries (`resultUpgrade.js`
+`supersedeTriggerVignettes`); `sessionNarratorCards` leaves both out of the
+ring, the rolling summary's source and the recap. Their ledger entries are
+retracted by `narrationId` through the X-Card's `retractNarrations`, with
+`{ by: "superseded" }` (`retractSupersededNarrations` — the store and the
+upgrade's working copy): rendered nowhere, never named under CORRECTED, and,
+unlike an X-Card's, no bar to the re-narration — or the clock's next
+trigger — stating the same fact.
+
 **System prompt section map** (`buildNarratorSystemPrompt`,
 `src/narration/narratorPrompt.js`): [0] role/style per mode · [0b]
 campaign recap (a session's first narration in any prose mode, from
