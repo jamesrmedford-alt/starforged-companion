@@ -74,11 +74,24 @@ const FORGE_ASSETS_ORIGIN = "https://assets.forge-vtt.com/";
 /**
  * Whether `path` is one this cache can name for the clip `hash` — what
  * `write` returns and `lookupDetailed` finds: the world's own
- * `worlds/<world>/audio/<xx>/<hash>.mp3` (pathFor), or on The Forge an
- * Assets Library URL ending in `/<hash>.mp3`. A path that comes back over the
- * socket (the GM's `audio.synth.done` / `audio.cache.found`) is played only
- * when it is one: the socket does not say who sent it, and a Sound loads any
- * URL (issue #337 Y42).
+ * `worlds/<world>/audio/<xx>/<hash>.mp3` (pathFor), or an Assets Library URL
+ * ending in `/<hash>.mp3` (what The Forge's upload and browse answer with). A
+ * path that comes back over the socket (the GM's `audio.synth.done` /
+ * `audio.cache.found`) is played only when it is one: the socket does not say
+ * who sent it, and a Sound loads any URL (issue #337 Y42).
+ *
+ * What it cannot bind (known-issues AUDIO-FORGE-ORIGIN-SHARED): the Assets
+ * Library origin is every Forge account's, so a user of the world with a
+ * Forge account of their own can upload a file named `<hash>.mp3` to their
+ * library and send its URL, and it passes — in any world, since nothing here
+ * knows whether this one is on The Forge. Nothing here tells the GM's
+ * library from theirs either. This module never builds a Forge URL — `write`
+ * returns the upload response's and `lookupDetailed` the browse listing's,
+ * whatever their layout — so it does not establish that one ends in the
+ * world's `worlds/<world>/audio/<xx>/<hash>.mp3`. Requiring that ending waits
+ * on a live Forge world showing the layout, and would still pass another
+ * account's file kept at the same path: only the GM's own library prefix
+ * would bind it.
  *
  * @param {string} hash
  * @param {*} path

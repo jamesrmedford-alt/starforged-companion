@@ -578,7 +578,13 @@ function resolvePendingCacheAsk(hash, path) {
  * reachability.md §8, the W81 / D11 / X51 rule): the socket does not say who
  * sent it, and any path ending in `/<hash>.mp3` was played — another user's
  * emit naming their own file replaced the narration a keyless player waited
- * for, and the GM's real answer then found no waiter (issue #337 Y42).
+ * for, and the GM's real answer then found no waiter (issue #337 Y42). Two
+ * forgeries still pass (known-issues AUDIO-FORGE-ORIGIN-SHARED): a file
+ * another Forge account keeps in The Forge's Assets Library under the clip's
+ * name, in any world (see isCachePathFor); and a forged "no clip"
+ * (`path: null`), which has the GM's honest answer's form and cannot be told
+ * from it — it ends the wait early with "not ready": a nuisance, not a
+ * substitution.
  *
  * @param {string} hash
  * @param {*} path
