@@ -654,7 +654,7 @@ describe('routePacedInput()', () => {
     expect(narratePacedInput).not.toHaveBeenCalled();
   });
 
-  it('honours forceNextAsMove and clears the flag', async () => {
+  it('honours forceNextAsMove and leaves the flag for the pipeline to spend (issue #331 X37)', async () => {
     const state = {
       ...BASE_STATE,
       pacing: { sceneOverride: null, forceNextAsMove: true },
@@ -667,9 +667,10 @@ describe('routePacedInput()', () => {
       apiKey: 'sk-ant-test',
     });
 
-    expect(result.runMove).toBe(true);
+    expect(result).toMatchObject({ runMove: true, forced: true });
     expect(apiPost).not.toHaveBeenCalled();
-    expect(state.pacing.forceNextAsMove).toBe(false);
+    // Spent once the line holds the move lock — a refused line keeps it.
+    expect(state.pacing.forceNextAsMove).toBe(true);
   });
 
   it('forces NARRATIVE_WITH_MOVE_AVAILABLE to MOVE when combat is active', async () => {

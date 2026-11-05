@@ -182,6 +182,7 @@ import { requestOracleNarration } from "./oracles/oracleFollowup.js";
 import { inferShipPosition, inferShipPositionFromEntityId } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
+  consumeForceMove,
   applyPaceCommand,
   markForceNextAsMove,
   resetRecentDensity,
@@ -938,6 +939,11 @@ export function registerChatHook() {
     const dial   = getMischiefDial();
 
     try {
+      // A `!roll` is spent by the line that runs — this one, now it holds the
+      // lock — never by one the lock or the no-character check refused (issue
+      // #331 X37). Inside the try: the finally releases the lock whatever it does.
+      if (pacingResult.forced) await consumeForceMove(campaignState);
+
       // The roller's combat position, resolved once: their own in the open
       // fight, else the fight's when one is open (position is per character —
       // issue #322 V03: one PC's bad spot remapped another's Strike to Clash).
