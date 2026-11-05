@@ -583,21 +583,22 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
   const existing = actor.flags?.[MODULE_ID]?.ship ?? {};
   const now = new Date().toISOString();
   const id  = existing._id || generateId();
-  const ship = {
-    ...ShipSchema,
-    ...existing,
-    _id:        id,
-    name:       actor.name,                    // actor.name is authoritative
+  // The fields the seed writes. Only these are written — by path, onto the
+  // record as it is when the write lands, as seedConnectionActor does since
+  // issue #326 W69: the record is read here, before the module install and
+  // the Notes' narrator call, and writing that snapshot whole reverted what
+  // landed meanwhile — a `!at` position, a Withstand Damage / Repair
+  // integrity change, the STARSHIP asset's command-vehicle sync, a tier
+  // detail, a rename (issue #331 X32).
+  const seededFields = {
     type:       existing.type      || rolledType      || "",
     firstLook:  existing.firstLook || rolledFirstLook || "",
     mission:    existing.mission   || rolledMission   || "",
-    isCommandVehicle: existing.isCommandVehicle || actorHasCommandVehicleAsset(actor),
-    description:               existing.description ?? "",
     portraitSourceDescription: existing.portraitSourceDescription || portraitSource,
     ...(opts.finalizedAt ? { finalizedAt: opts.finalizedAt } : {}),
-    createdAt:  existing.createdAt ?? now,
     updatedAt:  now,
   };
+  const ship = { ...ShipSchema, ...existing, _id: id, name: actor.name, ...seededFields };
 
   // F18: install canonical Modules that match the rolled identity. Pure mapping
   // (no LLM/IO) runs first; the install step fetches each asset from the
@@ -638,9 +639,21 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     // The portrait embedded at the top of the old Notes stays (issue #322
     // V30): a regenerated flavour keeps the ship's existing portrait, which
     // generatePortrait does not attach again.
+    // The record as it is now: the seeded fields over it; the schema's
+    // defaults, the id and the creation stamp only where it has none; the
+    // name as the Actor holds it now; and the command-vehicle flag only when
+    // it turns true (the asset sync may have set it meanwhile).
+    const current = actor.flags?.[MODULE_ID]?.ship ?? {};
+    const fields = { ...seededFields, name: actor.name };
+    for (const [key, value] of Object.entries({ ...ShipSchema, _id: id, description: "", createdAt: now })) {
+      if (current[key] === undefined && !(key in fields)) fields[key] = value;
+    }
+    if (!current.isCommandVehicle && actorHasCommandVehicleAsset(actor)) fields.isCommandVehicle = true;
+    const fieldPaths = Object.fromEntries(Object.entries(fields)
+      .map(([key, value]) => [`flags.${MODULE_ID}.ship.${key}`, value]));
     await actor.update({
       "system.notes":                      keepNotesPortrait(actor.system?.notes, notesHtml),
-      [`flags.${MODULE_ID}.ship`]:         ship,
+      ...fieldPaths,
       [`flags.${MODULE_ID}.entityType`]:   actor.flags?.[MODULE_ID]?.entityType ?? "ship",
       [`flags.${MODULE_ID}.entityId`]:     actor.flags?.[MODULE_ID]?.entityId   ?? id,
     });
@@ -648,6 +661,8 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     console.error(`${MODULE_ID} | seedStarshipActor: update failed:`, err);
     return null;
   }
+  // The record as written, for the portrait and the deck plan below.
+  Object.assign(ship, ShipSchema, actor.flags?.[MODULE_ID]?.ship ?? {}, seededFields, { _id: id, name: actor.name });
 
   // Register on campaignState.shipIds if not already tracked (e.g. sidebar
   // creation didn't go through createShip()).
