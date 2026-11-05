@@ -177,7 +177,8 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
  * none), then mint the id, bump `sessionNumber` and stamp
  * `lastSessionTimestamp`. `sessionNumber` counts the sessions a table began:
  * a closing session nobody began (no Begin stamped it `sessionStartedId`,
- * and its gate is shut) — a world opened only to prepare — hands its number on
+ * its gate is shut, and End a Session did not close it — issue #331 X64) — a
+ * world opened only to prepare — hands its number on
  * to the next instead of burning one, so the table's session after session 3
  * is "Session #4" however often the world was opened between them (issue
  * #330 D12). The id changes either way. The new session has not been begun, so its
@@ -194,11 +195,14 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
 export function mintSession(campaignState, now = Date.now()) {
   const closing = campaignState.currentSessionId;
   const summary = campaignState.sessionSummary;
-  // Begun: Begin a Session (or the Campaign Start's) stamped it, or its gate
-  // is open — only a Begin opens it, and a world from before the stamp has
-  // its open gate to show for it.
+  // Begun: Begin a Session (or the Campaign Start's) stamped it, its gate is
+  // open — only a Begin opens it, and a world from before the stamp has its
+  // open gate to show for it — or End a Session closed it. A session ended
+  // before the stamp existed (issue #300 F11), or begun by a Campaign Start
+  // before it stamped, read as unbegun: the next session took its number,
+  // and the count stayed one behind (issue #331 X64).
   const closingUnbegun = !!closing && campaignState.sessionStartedId !== closing
-    && campaignState.sessionActive !== true;
+    && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
   if (closing && summary?.sessionId === closing && typeof summary.text === "string" && summary.text.trim()) {
     campaignState.previousSessionSummary = {
       sessionId:     closing,
