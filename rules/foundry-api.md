@@ -111,7 +111,11 @@ async close(options) {
 **Prefer the framework primitives** `DialogV2.wait` / `.prompt` / `.confirm`
 wherever the dialog fits them: they already settle on close (reject or
 resolve-null) and cannot hang. Reserve the custom-promise ApplicationV2
-pattern for dialogs the primitives can't express.
+pattern for dialogs the primitives can't express. `wait` **rejects** on a
+close without a button unless it is passed `rejectClose: false` (its
+default is true; `confirm` / `prompt` default it to false): pass it, or catch
+the rejection — Take a Break's × escaped as an unhandled rejection (issue
+#331 X43).
 
 **`game.settings.get` returns an object setting's cached value by reference —
 set nothing on it before a write that can fail:**
