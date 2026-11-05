@@ -28,7 +28,7 @@ import {
   isRetryableSufferCall,
   unpreparedAtZeroSupply,
 } from "./sufferDialog.js";
-import { getActor, getPlayerActors, readCompanionHealth } from "../character/actorBridge.js";
+import { getActor, readCompanionHealth } from "../character/actorBridge.js";
 import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
@@ -423,13 +423,30 @@ export async function applySufferPickFromRelay(payload = {}, ctx = {}) {
     await retireChoiceCard(message, upgradedBy);
     return { applied: false, reason: "superseded" };
   }
-  const actor = getActor(f.actorId) ?? null;
+  // The card's own PC, by its id. One deleted since the card was posted is
+  // gone for good: the pick fell back to the world's first PC — another
+  // player's character, applied unchecked (issue #336 Y20). A player is
+  // refused; a GM's press applies nothing and the card says why.
+  const actor = cardActor(f);
+  if (!actor) {
+    if (!ctx?.requesterIsGM) {
+      console.warn(`${MODULE_ID} | sufferCard: card ${messageId}'s character is gone — user ${ctx?.requesterId ?? "?"}'s pick refused.`);
+      return { applied: false, reason: "no-actor" };
+    }
+    _picksInFlight.add(messageId);
+    try {
+      await retireGoneActorCard(message);
+    } finally {
+      _picksInFlight.delete(messageId);
+    }
+    return { applied: false, reason: "no-actor" };
+  }
   const pick  = offeredPick(f, payload, actor);
   if (!pick) {
     console.warn(`${MODULE_ID} | sufferCard: card ${messageId} offers no such pick — ignoring.`);
     return { applied: false, reason: "not-offered" };
   }
-  if (actor && !requesterOwnsActor(actor, ctx)) {
+  if (!requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | sufferCard: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — pick refused.`);
     return { applied: false, reason: "not-owner" };
   }
@@ -439,6 +456,27 @@ export async function applySufferPickFromRelay(payload = {}, ctx = {}) {
   } finally {
     _picksInFlight.delete(messageId);
   }
+}
+
+/** A suffer card's PC — the one it names (`actorId`), never another: null when it names none or that Actor is gone. */
+function cardActor(flags) {
+  return typeof flags?.actorId === "string" && flags.actorId ? (getActor(flags.actorId) ?? null) : null;
+}
+
+/**
+ * A card whose PC is gone can apply nothing: resolved, its buttons gone, and
+ * it says why — a GM's press on it (issue #336 Y20). Best effort.
+ *
+ * @param {ChatMessage} message
+ */
+async function retireGoneActorCard(message) {
+  console.warn(`${MODULE_ID} | sufferCard: card ${message?.id ?? "?"}'s character is gone — nothing applied.`);
+  await message.update({
+    [`flags.${MODULE_ID}.resolved`]: true,
+    content: `<div class="sf-card sf-suffer-choice-card sf-suffer-resolved">`
+      + `<div class="sf-card-header">◈ Consequence not applied</div>`
+      + `<div class="sf-card-body"><p>The character this card was for is no longer in the world — nothing on it was applied.</p></div></div>`,
+  }).catch(err => console.warn(`${MODULE_ID} | sufferCard: card ${message?.id ?? "?"} could not say its character is gone:`, err?.message ?? err));
 }
 
 /** The pick a relayed click names, shaped like its button's dataset — or null when the card offers no such pick. */
@@ -467,7 +505,9 @@ async function handleSufferPick(message, dataset) {
   const f = message?.flags?.[MODULE_ID] ?? {};
   const prompt = f.sufferPrompt;
   if (!f.sufferCard || f.resolved || !prompt) return { applied: false, reason: "already-resolved" };
-  const actor = getActor(f.actorId) ?? getPlayerActors()[0] ?? null;
+  // The card always carries its PC: never the world's first PC in its place
+  // (issue #336 Y20 — applySufferPickFromRelay answers a gone one first).
+  const actor = cardActor(f);
   if (!actor) {
     console.warn(`${MODULE_ID} | sufferCard: no actor to apply suffer against`);
     return { applied: false, reason: "no-actor" };
