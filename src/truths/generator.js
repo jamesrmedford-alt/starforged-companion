@@ -631,7 +631,15 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
     }
   }
 
-  if (entry) {
+  if (entry && isModuleTruthsJournal(entry)) {
+    // The module's own (Playtest Quickstart) journal: its page's flag holds the
+    // truths and the page's text is a printout of them, never read back (issue
+    // #337 Y39). The flag is summarised, printed as the page prints it — the
+    // printout was read live, so a GM's edit of it reached the recap but not
+    // the narrator's truths (known-issues LORE-READS-QUICKSTART-PRINTOUT).
+    const truths = truthsFromJournal(entry);
+    if (truths && Object.keys(truths).length) truthsContent = htmlText(formatTruthsAsHtml(truths));
+  } else if (entry) {
     const page = entry.pages?.contents?.[0];
     const html = page?.text?.content ?? "";
     if (html.trim()) {
