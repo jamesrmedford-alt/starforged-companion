@@ -9370,7 +9370,7 @@ function registerStarshipNarratedNotesTests(quench) {
                   assert.isTrue(ok, "Notes should contain the stubbed Sonnet prose paragraph");
 
                   const fresh = game.actors.get(actor.id);
-                  assert.notInclude(fresh.system.notes, "<ul>",
+                  assert.notMatch(fresh.system.notes, /<ul\b/,
                     "prose path should not emit the oracle bullet list");
                   assert.include(fresh.system.notes, "&middot;",
                     "the compact fact-line separator should be present");
@@ -9400,8 +9400,8 @@ function registerStarshipNarratedNotesTests(quench) {
                 "without a key the bullet-list fallback should populate Notes");
 
               const fresh = game.actors.get(actor.id);
-              assert.include(fresh.system.notes, "<ul>",
-                "fallback path emits the bullet list");
+              assert.match(fresh.system.notes, /<ul\b/,
+                "fallback path emits the bullet list (marked as the seed's own — issue #338 D4)");
             });
           });
         });

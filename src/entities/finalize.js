@@ -117,6 +117,16 @@ function notesHaveText(actor) {
 }
 
 /**
+ * Whether a ship's seed has already run: an identity rolled (type, first look
+ * or mission) and Notes that hold text — the Auto-Seed's introduction. A ship
+ * made by hand has no identity, whatever its Notes hold: they are the GM's.
+ */
+function shipAlreadySeeded(actor, record) {
+  const rolled = ["type", "firstLook", "mission"].some(key => String(record?.[key] ?? "").trim());
+  return rolled && notesHaveText(actor);
+}
+
+/**
  * Run the oracle/module/art seed for a ship or connection Actor as its Finalise
  * action, under the generic path's completion contract: a finalized record is
  * left untouched unless `force` (Regenerate) is set, and a successful seed
@@ -136,14 +146,16 @@ async function finalizeViaSeed(typeKey, hostId, campaignState, force) {
   try {
     if (typeKey === "ship") {
       const { seedStarshipActor } = await import("./ship.js");
-      // A ship whose Notes already hold its introduction — the Auto-Seed's,
-      // or the GM's own — is stamped by its first Finalise, nothing else: the
-      // connection contract (issue #311 P07, `seeded`). Re-seeding it wrote a
-      // fresh introduction over the whole Notes, an envisioned section and
-      // the GM's edits included, and asked the narrator again (issue #331
-      // X34). A ship with empty Notes is seeded, its rolled type kept;
-      // ↻ Regenerate (`force`) stays the re-write path.
-      if (!force && notesHaveText(actor)) {
+      // A ship the Auto-Seed already populated is stamped by its first
+      // Finalise, nothing else: the connection contract (issue #311 P07,
+      // `seeded`) — re-seeding it asked the narrator again (issue #331 X34).
+      // The seed keeps the rest of the Notes tab now, so a ship made by hand
+      // — no rolled identity, its Notes the GM's own — is seeded by its
+      // Finalise, its Notes kept (issue #338 D4: the stamp left ↻ Regenerate
+      // the only way to its type / first look / mission). A ship with empty
+      // Notes is seeded, its rolled type kept; ↻ Regenerate (`force`) stays
+      // the re-write path.
+      if (!force && shipAlreadySeeded(actor, existing)) {
         try {
           await actor.update({ [`flags.${MODULE_ID}.ship.finalizedAt`]: finalizedAt });
         } catch (err) {

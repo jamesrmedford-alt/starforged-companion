@@ -86,7 +86,14 @@ second goal beside it and a first look over the narrated one (issue #325 W31).
 The seed writes only the fields it seeds, each by path, onto the record as it
 is when the write lands — it wrote the record it read before its Notes' Claude
 call whole, reverting a canonical lock (or any record write) that landed
-during the call (issue #326 W69).
+during the call (issue #326 W69). On the sheet it writes only its own part:
+its introduction in the Notes tab, each element marked `sf-seed-intro`
+(`entities/seedIntro.js`), and its labelled lines in Characteristics — the
+rest of both stays (the GM's paragraphs and lines, a ⤴ promoted detail, the
+portrait block), and a tab with no marked introduction gets one at its top
+(issue #338 D4; issue #335 Y12 — ↻ Regenerate flavour, which re-runs the seed,
+erased a promoted detail from every surface, and a Finalise on an unseeded
+card replaced what the GM had typed).
 
 `registerConnectionOnActiveCharacter(record, { actorId, actors })` puts the
 bond Item on each of `actors` (the inciting vow's crew), else on `actorId`

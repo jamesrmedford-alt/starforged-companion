@@ -27,7 +27,7 @@
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes } from "./registry.js";
-import { keepNotesPortrait } from "../art/notesPortrait.js";
+import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID  = "starforged-companion";
@@ -472,13 +472,19 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
   };
 
   // Characteristics is a plain <textarea> on the Starforged sheet — plain text
-  // only (finding B). Notes is a rich-text field — HTML there is fine.
-  const characteristics = buildConnectionCharacteristics({ role, goal, firstLook, description, disposition, pronouns });
-  // The portrait embedded at the top of the old Notes stays: a regenerated
-  // flavour keeps its existing portrait, which is not attached again (issue
-  // #322 V30).
-  const notesHtml       = keepNotesPortrait(actor.system?.notes,
+  // only (finding B). Notes is a rich-text field — HTML there is fine. Each
+  // keeps what the seed did not write (issue #338 D4): Characteristics every
+  // line but the seed's own, and the Notes tab — read as it is when the write
+  // lands — everything but its marked introduction: the GM's paragraphs, a
+  // ⤴ promoted detail (issue #335 Y12) and the portrait block (issue #322 V30).
+  const introHtml = markSeedIntro(
     await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, description, disposition, pronouns }));
+  const characteristics = withSeedCharacteristics(actor.system?.biography,
+    buildConnectionCharacteristics({ role, goal, firstLook, description, disposition, pronouns }),
+    [{ pronouns: existing.pronouns, firstLook: firstLookEx, description, disposition: existing.disposition,
+       role: existing.role, goal: existing.goal },
+     { pronouns, firstLook, description, disposition, role, goal }]);
+  const notesHtml = writeSeedIntro(actor.system?.notes, introHtml);
 
   const fieldPaths = Object.fromEntries(Object.entries(seededFields)
     .map(([key, value]) => [`flags.${MODULE_ID}.${FLAG_KEY}.${key}`, value]));
@@ -596,13 +602,49 @@ export function pronounsToPortraitDescriptor(pronouns) {
  */
 function buildConnectionCharacteristics({ role, goal, firstLook, description = "", disposition, pronouns }) {
   const lines = [];
-  if (pronouns)    lines.push(`Pronouns: ${pronouns}`);
-  if (firstLook)   lines.push(`First look: ${firstLook}`);
-  else if (description) lines.push(`Description: ${description}`);   // the narrated look (issue #325 W31)
-  if (disposition) lines.push(`Initial disposition: ${disposition}`);
-  if (role)        lines.push(`Role: ${role}`);
-  if (goal)        lines.push(`Goal: ${goal}`);
+  const line = (label, value) => lines.push(`${label}: ${oneLine(value)}`);
+  if (pronouns)    line("Pronouns", pronouns);
+  if (firstLook)   line("First look", firstLook);
+  else if (description) line("Description", description);   // the narrated look (issue #325 W31)
+  if (disposition) line("Initial disposition", disposition);
+  if (role)        line("Role", role);
+  if (goal)        line("Goal", goal);
   return lines.join("\n");
+}
+
+// The Characteristics lines the seed writes: label → the record field each shows.
+const SEED_CHARACTERISTIC_FIELDS = Object.freeze({
+  "Pronouns": "pronouns", "First look": "firstLook", "Description": "description",
+  "Initial disposition": "disposition", "Role": "role", "Goal": "goal",
+});
+
+const oneLine = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+
+/**
+ * The Characteristics field with the seed's lines in it (issue #338 D4). The
+ * field is a plain textarea, so the seed's own lines are known by what they
+ * say: a line in the seed's form ("Role: …") reading the value the record held
+ * (what the last seed wrote) or the value this seed writes. Those are replaced
+ * by `seedText`; every other line — what the GM typed, a seed line they
+ * changed — stays, below it.
+ *
+ * @param {string} previous — the field as it is now
+ * @param {string} seedText — the seed's lines (buildConnectionCharacteristics)
+ * @param {Object[]} valueSets — the record's fields before the seed, and as it writes them
+ * @returns {string}
+ */
+function withSeedCharacteristics(previous, seedText, valueSets) {
+  const isSeedLine = (text) => {
+    const m = /^([^:]+):(.*)$/.exec(text.trim());
+    const field = m ? SEED_CHARACTERISTIC_FIELDS[m[1].trim()] : null;
+    if (!field) return false;
+    const value = oneLine(m[2]);
+    return valueSets.some(set => set?.[field] && oneLine(set[field]) === value);
+  };
+  const kept = String(previous ?? "").split(/\r?\n/).filter(text => !isSeedLine(text));
+  while (kept.length && !kept[0].trim()) kept.shift();
+  while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
+  return [seedText, kept.join("\n")].filter(Boolean).join("\n\n");
 }
 
 /**

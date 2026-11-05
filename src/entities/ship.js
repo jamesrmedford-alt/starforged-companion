@@ -41,7 +41,7 @@ import {
   withSheetNotes,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
-import { keepNotesPortrait } from "../art/notesPortrait.js";
+import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID = "starforged-companion";
@@ -626,9 +626,11 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     // document between the first and last setFlag and see only some of
     // the fields populated. Foundry V13 auto-creates intermediate paths
     // in dot-notation flag writes, so this single update form is safe.
-    // The portrait embedded at the top of the old Notes stays (issue #322
-    // V30): a regenerated flavour keeps the ship's existing portrait, which
-    // generatePortrait does not attach again.
+    // The Notes tab keeps everything but the seed's own marked introduction
+    // (issue #338 D4): the GM's paragraphs, an `!ship envision` / `!ship
+    // history` section, a ⤴ promoted detail (issue #335 Y12) and the portrait
+    // block (issue #322 V30) — a regenerated flavour keeps the existing
+    // portrait, which generatePortrait does not attach again.
     // The record as it is now: the seeded fields over it; the schema's
     // defaults, the id and the creation stamp only where it has none; the
     // name as the Actor holds it now; and the command-vehicle flag only when
@@ -642,7 +644,7 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     const fieldPaths = Object.fromEntries(Object.entries(fields)
       .map(([key, value]) => [`flags.${MODULE_ID}.ship.${key}`, value]));
     await actor.update({
-      "system.notes":                      keepNotesPortrait(actor.system?.notes, notesHtml),
+      "system.notes":                      writeSeedIntro(actor.system?.notes, markSeedIntro(notesHtml)),
       ...fieldPaths,
       [`flags.${MODULE_ID}.entityType`]:   actor.flags?.[MODULE_ID]?.entityType ?? "ship",
       [`flags.${MODULE_ID}.entityId`]:     actor.flags?.[MODULE_ID]?.entityId   ?? id,
