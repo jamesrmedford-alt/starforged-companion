@@ -19,6 +19,7 @@
 import { splitSegments, stripMarkup, SEGMENT_VOICE } from "./segments.js";
 import {
   cacheKey,
+  isCachePathFor,
   lookup         as cacheLookup,
   lookupDetailed as cacheLookupDetailed,
   write          as cacheWrite,
@@ -547,14 +548,37 @@ async function handleCacheAsk(payload) {
   game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.cache.found", hash, path: path ?? null });
 }
 
-// Requester side: resolve the asks waiting on this hash — only a path that
-// names this clip's file is played; anything else is no path.
+// Requester side: resolve the asks waiting on this hash with the GM's answer
+// (relayedClipPath) — a forged one is no answer: they keep waiting.
 function resolvePendingCacheAsk(hash, path) {
   const set = _pendingCacheAsk.get(hash);
   if (!set) return;
+  const src = relayedClipPath(hash, path);
+  if (src === undefined) return;
   _pendingCacheAsk.delete(hash);
-  const src = typeof path === "string" && path.endsWith(`/${hash}.mp3`) ? path : null;
   for (const resolve of set) resolve(src);
+}
+
+/**
+ * What a GM's `audio.synth.done` / `audio.cache.found` answers for a clip: its
+ * path when it is one the GM's cache could name (cache.js isCachePathFor —
+ * `worlds/<world>/audio/<xx>/<hash>.mp3`, or a Forge Assets Library URL),
+ * null for the GM's "no clip", and undefined for anything else. A relayed
+ * value is bounded to what the sender could honestly send (rules/
+ * reachability.md §8, the W81 / D11 / X51 rule): the socket does not say who
+ * sent it, and any path ending in `/<hash>.mp3` was played — another user's
+ * emit naming their own file replaced the narration a keyless player waited
+ * for, and the GM's real answer then found no waiter (issue #337 Y42).
+ *
+ * @param {string} hash
+ * @param {*} path
+ * @returns {string|null|undefined}
+ */
+function relayedClipPath(hash, path) {
+  if (path == null) return null;
+  if (isCachePathFor(hash, path)) return path;
+  console.warn(`${MODULE_ID} | audio: an answer for clip ${String(hash).slice(0, 8)}… names no file of the GM's audio cache — ignored.`);
+  return undefined;
 }
 
 // Keyed Player who may not browse: ask the canonical GM for a clip's cached
@@ -572,13 +596,15 @@ async function askGmForCachedPath(hash) {
   return answer;
 }
 
-// Requester side: resolve everyone waiting on this hash with the cached path —
-// only a path that names this clip's file is played; anything else is no path.
+// Requester side: resolve everyone waiting on this hash with the GM's answer
+// (relayedClipPath) — a forged one is no answer: they keep waiting for the
+// GM's, or time out to "not ready".
 function resolvePendingSynth(hash, path) {
   const set = _pendingSynth.get(hash);
   if (!set) return;
+  const src = relayedClipPath(hash, path);
+  if (src === undefined) return;
   _pendingSynth.delete(hash);
-  const src = typeof path === "string" && path.endsWith(`/${hash}.mp3`) ? path : null;
   for (const resolve of set) resolve(src);
 }
 

@@ -67,6 +67,29 @@ function pathFor(hash) {
   return { dir, filename: `${hash}.mp3`, full: `${dir}/${hash}.mp3` };
 }
 
+// The Forge's Assets Library: where its FilePicker.upload stores a file and
+// the URL its browse listing names (write / lookupDetailed below).
+const FORGE_ASSETS_ORIGIN = "https://assets.forge-vtt.com/";
+
+/**
+ * Whether `path` is one this cache can name for the clip `hash` — what
+ * `write` returns and `lookupDetailed` finds: the world's own
+ * `worlds/<world>/audio/<xx>/<hash>.mp3` (pathFor), or on The Forge an
+ * Assets Library URL ending in `/<hash>.mp3`. A path that comes back over the
+ * socket (the GM's `audio.synth.done` / `audio.cache.found`) is played only
+ * when it is one: the socket does not say who sent it, and a Sound loads any
+ * URL (issue #337 Y42).
+ *
+ * @param {string} hash
+ * @param {*} path
+ * @returns {boolean}
+ */
+export function isCachePathFor(hash, path) {
+  if (typeof hash !== "string" || !/^[0-9a-f]{64}$/.test(hash) || typeof path !== "string") return false;
+  if (globalThis.game?.world?.id && path === pathFor(hash).full) return true;
+  return path.startsWith(FORGE_ASSETS_ORIGIN) && path.endsWith(`/${hash}.mp3`);
+}
+
 async function ensureDir(dir) {
   try {
     await foundry.applications.apps.FilePicker.implementation.createDirectory("data", dir, {});
