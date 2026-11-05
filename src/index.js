@@ -7332,7 +7332,13 @@ Hooks.once("ready", () => {
   // the re-mint / stale-scene close / auto-recap once per GM. Players read
   // from state.
   if (isCanonicalGM()) {
-    const prevState = game.settings.get(MODULE_ID, "campaignState");
+    // A copy: the lock reset and the session mint below change it before the
+    // write, and get() hands back the cached value — a refused write left the
+    // GM's cache on a session the world never minted (gate closed, a new id
+    // on this client's narrator cards), which the next whole-object write
+    // carried in (issue #331 X40). A refused mint is retried at the next load
+    // or Begin a Session.
+    const prevState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
 
     // Reset a stale pendingMove lock — left set if Foundry was closed mid-move.
     if (prevState.pendingMove) {
