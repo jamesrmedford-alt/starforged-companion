@@ -2,7 +2,7 @@
 
 Probe tests from the tenth bug audit of `8fb7bfa` (the report is
 `docs/testing/bug-audit-10-2026-11-05.md`, its per-area notes
-`docs/testing/bug-audit-10-2026-11-05-area-notes.md`): 50 findings Y01–Y50
+`docs/testing/bug-audit-10-2026-11-05-area-notes.md`): 49 findings Y01–Y49
 and 10 decisions D1–D10.
 
 Each probe asserts the **correct** behaviour, so it fails while its finding is
@@ -17,8 +17,8 @@ All probes:
 npx vitest run --config tests/probes/vitest.probes.config.js
 ```
 
-Add `tests/probes/<area>/`, or one file, to run part of them (65 files; 107
-tests fail as designed, 84 controls pass). Several probes read the vendored
+Add `tests/probes/<area>/`, or one file, to run part of them (64 files; 101
+tests fail as designed, 83 controls pass). Several probes read the vendored
 system data (the move, asset, oracle and truths packs); check out the
 submodule first:
 
@@ -40,7 +40,7 @@ decision.
 
 A finding two auditors reached from different sides keeps both probes (Y02,
 Y03, Y04, Y15, Y28, D6). `entities/finaliseRewritesHandNotes` also carries
-D4's ship case. Y49 (a flow-doc claim) is traced, with no probe.
+D4's ship case. Y48 (a flow-doc claim) is traced, with no probe.
 
 | Probe | Finding |
 |---|---|
@@ -60,7 +60,7 @@ D4's ship case. Y49 (a flow-doc claim) is traced, with no probe.
 | `continuity/xcardFactionSurfaceUnstamped.probe.js` | Y02 |
 | `continuity/xcardPromotedDetailNotes.probe.js` | D7 |
 | `continuity/xcardPublishedReflectionCapture.probe.js` | Y03 |
-| `entities/finaliseRewritesHandNotes.probe.js` | Y12 |
+| `entities/finaliseRewritesHandNotes.probe.js` | Y12 (and D4) |
 | `entities/npcPronounsSheetEdit.probe.js` | Y13 |
 | `entities/refusedRegistrationOrphan.probe.js` | Y34 |
 | `multiplayer/advertiseRefusedSilent.probe.js` | Y40 |
@@ -82,7 +82,7 @@ D4's ship case. Y49 (a flow-doc claim) is traced, with no probe.
 | `pipeline/sessionGateHeldPresserUntold.probe.js` | Y17 |
 | `rules/combatBotClashAdd.probe.js` | Y15 |
 | `rules/nonNumericAbilityAdds.probe.js` | Y22 |
-| `rules/playkitPunchListStale.probe.js` | Y50 |
+| `rules/playkitPunchListStale.probe.js` | Y49 |
 | `rules/sacrificeWhileUnpreparedAboveZero.probe.js` | D3 |
 | `rules/sceneChallengeVariantMoves.probe.js` | D2 |
 | `rules/sufferMissTableSeeds.probe.js` | Y21 |
@@ -104,7 +104,6 @@ D4's ship case. Y49 (a flow-doc claim) is traced, with no probe.
 | `ui/panelRerenderWipesInput.probe.js` | Y45 |
 | `ui/promoteRaceDropsCapture.probe.js` | Y35 |
 | `ui/readmeCommandsDrift.probe.js` | Y46 |
-| `ui/settingsReferenceDefaultsUnstated.probe.js` | Y48 |
 | `upgrades/priceStandsRetiresResistCard.probe.js` | Y09 |
 | `upgrades/riderSupplyLossWhileUnprepared.probe.js` | Y19 |
 | `upgrades/sufferCardCompanionNameUnescaped.probe.js` | Y28 |
