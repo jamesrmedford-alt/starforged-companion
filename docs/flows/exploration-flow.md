@@ -50,7 +50,15 @@ passage" drawing.
   arrival needs both — by Ship Positioning and Auto-Move Ship on Set a Course:
   with either off the drag is a plain token move (with positioning on, a
   position note, no roll), where it used to roll Set a Course and leave the
-  ship in place (issue #321 U54).
+  ship in place (issue #321 U54). A drop on a **site** pin is never a Set a
+  Course — sites are reached by expedition — but a charted site's pin is a
+  position anchor both ways (issue #335 Y14): the token parked on or near it
+  records the site's location Actor (`nearestLocationId`, read "near" it),
+  and an arrival recorded at a site moves the token onto its pin (§2). An
+  undiscovered pin names no place from the token side ("deep space"); the
+  sync follows a record that already names its site, since the Finish an
+  Expedition that charts a site records its arrival before the reveal flips
+  the pin.
 - **`undertake_an_expedition`** (perilous/unknown): strong/weak hit →
   `applyExpeditionProgress` resolve-or-creates the expedition track (label =
   destination, rank = interpreter's `expeditionRank`, default dangerous) and
@@ -121,9 +129,15 @@ passage" drawing.
   so those sources read as stationary ("docked at" / "in orbit of";
   SHIP-TRANSIT-LINE fix — `set_a_course` used to say "in transit to" a place
   the ship had reached); a token's own place on the map (placed, auto-placed
-  or moved off a pin, source `token_placement`) reads "near" its nearest pin
-  (issue #321 U53 — it was `scene_token`, "docked at"); with no position it explicitly instructs the
-  narrator not to invent one.
+  or moved off a pin, source `token_placement`) reads "near" its nearest pin,
+  a settlement's or a charted site's (issue #321 U53 — it was `scene_token`,
+  "docked at"; the site's since issue #335 Y14); with no position it explicitly instructs the
+  narrator not to invent one. The token follows a recorded position onto
+  the pin that anchors it — a settlement's, or a site's for a recorded
+  location (`syncCommandVehicleTokenToPosition` reads `nearestLocationId`
+  too: a Finish an Expedition, `!at`, Entities-panel, narrator or
+  X-Card-restore arrival at a derelict left the token on the settlement it
+  had left — Y14); a free-text position leaves it where it is.
   Active expeditions appear only in the generic Progress Tracks context
   section (up to 4 active tracks) — no dedicated journey block.
 

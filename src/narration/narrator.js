@@ -4284,11 +4284,12 @@ export async function restoreShipPositionAfterXCard(narrationIds, campaignState 
     const { emptyPosition } = await import('../factContinuity/shipPosition.js');
     const restored = position ? { ...position } : { ...emptyPosition(), updatedAt: new Date().toISOString(), updatedBy: 'manual' };
     await updateShip(cvActorId, { position: restored });
-    if (restored.nearestSettlementId || restored.nearestPlanetId) {
-      const { syncCommandVehicleTokenToPosition } = await import('../sectors/sectorSceneHooks.js');
-      await syncCommandVehicleTokenToPosition(restored, campaignState).catch(err =>
-        console.debug?.(`${MODULE_ID} | shipPosition: X-Card token sync failed:`, err?.message ?? err));
-    }
+    // The token follows whatever pin the restored position names — a
+    // settlement's or a site's (a recorded location — issue #335 Y14); the
+    // sync leaves it where it is for a position no pin anchors.
+    const { syncCommandVehicleTokenToPosition } = await import('../sectors/sectorSceneHooks.js');
+    await syncCommandVehicleTokenToPosition(restored, campaignState).catch(err =>
+      console.debug?.(`${MODULE_ID} | shipPosition: X-Card token sync failed:`, err?.message ?? err));
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | X-Card: the ship's position could not be restored:`, err?.message ?? err);

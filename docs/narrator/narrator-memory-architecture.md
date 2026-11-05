@@ -450,8 +450,11 @@ regressions, all are known scope cuts:
    `ship/position` emission; and an empty record renders an explicit
    *"SHIP POSITION: not yet established — do NOT assert or invent"* guard
    line instead of nothing (see decisions.md → "Ship position: a sector-map
-   token is authoritative when present"). Remaining refinement: free-text
-   positions still don't move the Token (no pin to anchor to) — the
+   token is authoritative when present"). A charted site's pin anchors the
+   position like a settlement's, both ways — the token parked on it records
+   the site's location (`nearestLocationId`), and a record naming a location
+   moves the token onto its site pin (issue #335 Y14). Remaining refinement:
+   free-text positions still don't move the Token (no pin to anchor to) — the
    "position uncertain" Token badge stays the open idea.
 6. **A4 escalation — rolling session summary. ✅ shipped (2026-06-15).** A
    maintained, session-scoped prose "story so far" that *complements* the
