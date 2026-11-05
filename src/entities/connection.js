@@ -26,7 +26,7 @@
 
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
-import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes, adoptUnlistedEntityActor } from "./registry.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes, adoptUnlistedEntityActor, iterEntityDocuments } from "./registry.js";
 import { readSheetPronouns } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { thinkingOffFor } from "../narration/thinking.js";
@@ -332,6 +332,96 @@ export async function loseConnection(journalEntryId, reason = "", sessionId = ""
   }
 
   return updated;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE X-CARD — a connection the removed narration created
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The connections X-carded narrations created (issue #338 D6(ii) — U07 full
+ * exclusion; X01 already deletes a threat, faction or place page the capture
+ * made): a Make a Connection hit's capture auto-creates the NPC its narration
+ * names, stamped `createdFromNarrationId` (entityExtractor.routeEntityDrafts).
+ * One that holds nothing beyond its creation (connectionUsed — read after the
+ * X-Card's finish has undone the narration's own details and LAST KNOWN) and
+ * whose bond Items hold no mark is deleted: its NPC card, its bond Items and
+ * its `connectionIds` entry. One the table has used stays — a safety tool does
+ * not delete what the table has built on — and is returned, for the GMs'
+ * notice (safety.js). Canonical GM (the X-Card's finish). Fail-open per
+ * connection.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<{ deleted: string[], kept: Array<{ id: string, name: string }> }>}
+ */
+export async function retractNarrationConnections(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  const out = { deleted: [], kept: [] };
+  if (!removed.size) return out;
+  let docs = [];
+  try { docs = [...iterEntityDocuments(FLAG_KEY)]; } catch { docs = []; }
+  for (const { document, data } of docs) {
+    if (!removed.has(data?.createdFromNarrationId)) continue;
+    const name = String(data.name || document.name || "").trim() || "A connection";
+    try {
+      if (connectionUsed(data)) { out.kept.push({ id: document.id, name }); continue; }
+      // Dynamic import avoids an actorBridge cycle.
+      const { deleteUnmarkedBondItems } = await import("../character/actorBridge.js");
+      const bonds = await deleteUnmarkedBondItems({ connectionId: data._id ?? null });
+      if (bonds.marked) { out.kept.push({ id: document.id, name }); continue; }
+      await document.delete();
+      await unregisterConnectionId(document.id);
+      out.deleted.push(name);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: removing the connection ${name} the removed narration created failed:`, err?.message ?? err);
+    }
+  }
+  return out;
+}
+
+/**
+ * True when a connection record holds anything beyond its creation: a history
+ * entry, a narrator-added detail, a last-known whereabouts, a bond, a
+ * relationship tick, a loss (`!sever`), the GM's canonical lock, a second
+ * role, or a later narration's rename. Read after the X-Card has undone what
+ * the removed narration recorded, so what is left came from elsewhere.
+ *
+ * @param {Object} record
+ * @returns {boolean}
+ */
+function connectionUsed(record) {
+  const listed  = (v) => Array.isArray(v) && v.length > 0;
+  const hasText = (v) => !!String(v?.value ?? "").trim();
+  return listed(record.history)
+    || listed(record.generativeTier)
+    || Object.values(record.lastKnown ?? {}).some(hasText)
+    || record.bonded === true
+    || Number(record.relationshipTicks) > 0
+    || record.active === false
+    || record.canonicalLocked === true
+    || !!record.secondRole
+    || !!record.renamedBy;
+}
+
+/**
+ * Take a deleted NPC card's id out of the latest stored `connectionIds` (a
+ * copy written; no await between the read and the write — the
+ * registerEntityIdInStore pattern). A refused write leaves an id no Actor
+ * answers, which every reader skips.
+ *
+ * @param {string} actorId
+ * @returns {Promise<void>}
+ */
+async function unregisterConnectionId(actorId) {
+  const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  if (!Array.isArray(latest.connectionIds) || !latest.connectionIds.includes(actorId)) return;
+  try {
+    await game.settings.set(MODULE_ID, "campaignState",
+      { ...latest, connectionIds: latest.connectionIds.filter(id => id !== actorId) });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: unlisting the deleted connection ${actorId} failed:`, err?.message ?? err);
+  }
 }
 
 

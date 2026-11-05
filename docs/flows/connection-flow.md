@@ -55,7 +55,14 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
   is confirmed as the roller's connection (`confirmNamedPendingConnection` →
   `confirmDraft` with the roller's `actorId`; issue #325 W23 — the card said
   "Connection made" and nothing was made, and a later Confirm bonded the old
-  narration's PC).
+  narration's PC). The auto-created record carries the narration's id
+  (`createdFromNarrationId`): an X-Card on that narration deletes the NPC
+  card, its bond Items and its `connectionIds` entry while the record holds
+  nothing beyond its creation and no bond Item a mark
+  (`retractNarrationConnections` → actorBridge `deleteUnmarkedBondItems`);
+  one the table has used stays and the GMs are whispered once, naming it
+  (issue #338 D6(ii)). A pending row this path confirms is not stamped — the
+  NPC came from an earlier narration's draft.
 - **Entity-extraction drafts** — connections detected in any other narration
   queue on the GM-whispered "New Entities Detected" card; Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
@@ -70,7 +77,10 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
   Placeholder-name reveals rename in place rather than duplicating; a reveal
   whose `from` names no recorded placeholder connection drafts the newly
   named NPC (`findPlaceholderConnection` — it used to be dropped, issue #321
-  U27).
+  U27). A rename carries its narration's id (`renamedBy`), and an X-Card on
+  that narration puts the placeholder name back unless the card was renamed
+  since; the card's still-pending rows are withdrawn (`xCarded`) — issue
+  #335 Y02, #338 D6(i).
 - **Sector creation** — the canonical local connection, `canonicalLocked`,
   bond Item mirrored to every PC.
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates

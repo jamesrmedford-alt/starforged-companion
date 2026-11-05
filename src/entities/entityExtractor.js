@@ -531,7 +531,9 @@ function detectionFromParsed(parsed, campaignState) {
  * @param {string|null} [options.narrationId] — the narration whose capture
  *   this is: stamped on the faction it surfaces to the World Journal, so an
  *   X-Card on the narration deletes that page (issue #335 Y02; issue #329
- *   X01 — a capture writer takes the id from its caller).
+ *   X01 — a capture writer takes the id from its caller), on the draft card
+ *   (issue #338 D6(i)) and on the connection it auto-creates
+ *   (`createdFromNarrationId`, D6(ii)).
  * @returns {Promise<{ created: Array, queued: Array }>}
  */
 export async function routeEntityDrafts(entities, campaignState, options = {}) {
@@ -568,6 +570,10 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           pronouns:                  seedData.pronouns,
           portraitSourceDescription: seedData.portraitSource,
           firstAppearance:           options.sessionId ?? "",
+          // The narration that made them: an X-Card on it takes the card
+          // away again while nobody has used it (retractNarrationConnections
+          // — issue #338 D6(ii)).
+          ...(narrationId ? { createdFromNarrationId: narrationId } : {}),
         }, campaignState);
         await postCreationEnrichment("connection", record, campaignState);
         await registerConnectionOnActiveCharacter(record, { actorId: options.actorId ?? null }).catch(err =>

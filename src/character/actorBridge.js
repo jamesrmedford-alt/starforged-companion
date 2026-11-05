@@ -881,6 +881,32 @@ export async function setBondItemLost(keys = {}, lost = true) {
 }
 
 /**
+ * Delete the bond Items keyed to one connection, across every PC — unless the
+ * table has marked one (a tick, a forged bond, a loss), which is a use of the
+ * connection: then none is deleted and `marked` is true. Only Items keyed by
+ * `connectionId` are matched (bondItemsFor without a name), never an unkeyed
+ * same-named one. The X-Card's removal of a connection its removed narration
+ * created (connection.retractNarrationConnections — issue #338 D6(ii)).
+ *
+ * @param {{ connectionId: string }} keys
+ * @returns {Promise<{ marked: boolean, deleted: number }>}
+ */
+export async function deleteUnmarkedBondItems({ connectionId } = {}) {
+  if (!connectionId) return { marked: false, deleted: 0 };
+  const items = bondItemsFor({ connectionId });
+  const marked = items.some(({ item }) => Number(item.system?.current ?? 0) > 0
+    || item.system?.completed === true || item.flags?.[MODULE_ID]?.lost === true);
+  if (marked) return { marked: true, deleted: 0 };
+  let deleted = 0;
+  for (const { actor, item } of items) {
+    await item.delete();
+    invalidateActorCache(actor.id);
+    deleted++;
+  }
+  return { marked: false, deleted };
+}
+
+/**
  * Mirror a connection's rank onto each PC's bond Item (NARR-BOND-RANK-STALE,
  * narrator-context audit 2026-07): the item's rank was seeded at creation and
  * never updated when the connection record's rank rose (develop-match /

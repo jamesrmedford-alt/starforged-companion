@@ -177,7 +177,11 @@ the placeholder name back unless the card was renamed since), and on the
 ◈ New Entities card it queues (its rows still pending are withdrawn —
 `xCarded`, no Confirm / Dismiss, out of PENDING DRAFTS and the
 re-detection skip, not added to `dismissedEntities`: issue #338 D6(i),
-`withdrawNarrationDrafts`); the X-Card's
+`withdrawNarrationDrafts`), and on a connection a Make a Connection hit's
+capture auto-creates (`createdFromNarrationId` — after the capture undo the
+X-Card's finish deletes it with its bond Items while nobody has used it,
+else keeps it and whispers the GMs once, naming it: D6(ii),
+`retractNarrationConnections`); the X-Card's
 finish (`retractNarrationCapture`, `retractions.js` →
 `undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new

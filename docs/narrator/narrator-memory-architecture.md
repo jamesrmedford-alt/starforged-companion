@@ -208,7 +208,9 @@ relayed sidecar of that narration is dropped. What the narration's capture
 entries (with the versions they replaced; a faction the draft routing
 surfaces, issue #335 Y02), Session Log beats, tier details, a placeholder
 figure's rename (the X-Card puts the placeholder name back), the draft card
-it queued (its pending rows are withdrawn, issue #338 D6(i)),
+it queued (its pending rows are withdrawn, issue #338 D6(i)), a connection a
+Make a Connection hit auto-created (deleted with its bond while unused, else
+kept and named to the GMs — D6(ii)),
 and the state transitions it applied to existing entries (a faction's stance
 on its record included) — and the X-Card's finish undoes it by id
 (`retractNarrationCapture`, issue #329 X01; XCARD-CAPTURE-TRANSITIONS). So

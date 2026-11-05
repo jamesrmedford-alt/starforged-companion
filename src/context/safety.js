@@ -236,6 +236,17 @@ async function finishXCardRemoval(narrator, removal) {
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: undoing what the narration's capture recorded failed:`, err?.message ?? err);
     }
+    // A connection the narration created (a Make a Connection hit) goes with
+    // it while nobody has used it; one the table has used stays, and the GMs
+    // are told so (issue #338 D6(ii)). After the capture undo, which takes
+    // the narration's own details off the card first.
+    try {
+      const { retractNarrationConnections } = await import("../entities/connection.js");
+      const { kept } = await retractNarrationConnections(ids);
+      if (kept.length) await postKeptConnectionsNotice(kept);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: removing the connections the narration created failed:`, err?.message ?? err);
+    }
   }
   if (!removal.retracted.length) return;
   try {
@@ -247,6 +258,41 @@ async function finishXCardRemoval(narrator, removal) {
   } catch (err) {
     console.warn(`${MODULE_ID} | X-Card: carrying the retracted facts to entity details and lore failed:`, err?.message ?? err);
   }
+}
+
+/**
+ * Whisper the GMs, once per X-Card, the connections the removed narration
+ * created that stay because the table has used them since (issue #338
+ * D6(ii)). Names them without pronouns — what to do is the table's call.
+ *
+ * @param {Array<{ name: string }>} kept
+ * @returns {Promise<Object|null>} the created ChatMessage
+ */
+async function postKeptConnectionsNotice(kept) {
+  const whisper = (game.users?.filter?.(u => u.isGM) ?? []).map(u => u.id);
+  const lines = kept.map(({ name }) => {
+    const who = escapeHtml(name);
+    return `<li><strong>${who}</strong>, a connection the removed narration created, remains: the table has used the card since. `
+      + `If the table wants ${who} gone, delete the NPC card and its bond on the character sheet.</li>`;
+  }).join("");
+  return ChatMessage.create({
+    content: `
+      <div class="starforged-move-card xcard-card xcard-connection-notice">
+        <div class="move-header">
+          <span class="move-type">X-Card</span>
+        </div>
+        <div class="move-body"><ul>${lines}</ul></div>
+      </div>
+    `.trim(),
+    whisper,
+    flags: { [MODULE_ID]: { xcardConnectionNotice: true } },
+  });
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 
