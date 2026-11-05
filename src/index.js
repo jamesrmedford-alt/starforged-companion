@@ -3886,9 +3886,14 @@ function resolveOracleTableId(raw) {
  * @param {string} question  optional context text
  */
 async function handleOracleTableCommand(message, tableId, question) {
+  // The active sector's region: a Fleet "Starship Mission" or Starship Type
+  // "Multipurpose" row rolls that region's mission table, the Terminus one
+  // with no sector (issue #338 D5 — the Sector Creator picks by region too).
+  const campaignState = game.settings.get(MODULE_ID, "campaignState");
+  const region = (campaignState?.sectors ?? []).find(s => s?.id === campaignState?.activeSectorId)?.region ?? null;
   let result;
   try {
-    result = rollOracle(tableId);
+    result = rollOracle(tableId, { region });
   } catch (err) {
     console.warn(`${MODULE_ID} | !oracle ${tableId}: roll failed:`, err?.message ?? err);
     await ChatMessage.create({
@@ -3909,7 +3914,7 @@ async function handleOracleTableCommand(message, tableId, question) {
     oracleName:     tableName,
     question,
     rolledLine:     `d${die} = ${result.roll} → ${result.result}`,
-    speakerActorId: resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState")),
+    speakerActorId: resolveSpeakerActorId(message, campaignState),
   };
   const card = await ChatMessage.create({
     content: `<div class="sf-oracle-card"><strong>Oracle: ${escapeChatHtml(tableName)}</strong>${qBlock}<p>d${die} = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p></div>`,
