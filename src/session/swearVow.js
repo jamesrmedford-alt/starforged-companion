@@ -402,43 +402,6 @@ function escapeHtml(s) {
 // Shared inciting-vow: cross-PC progress sync + GM relay
 // ─────────────────────────────────────────────────────────────────────────────
 
-/**
- * Pure: given a just-updated shared-vow Item and the full PC roster, return the
- * sibling vow Items (same vowId on the other PCs) whose synced progress fields
- * differ, paired with the update that brings them into lockstep — only the
- * fields that differ. Returns [] when `source` is not a shared vow or nothing
- * needs changing. The source item itself is skipped. Exported for unit tests.
- *
- * `fields` — the values a change set, field by field — limits the sync to
- * those fields (the sync hook passes the change's own; issue #322 V32: every
- * synced field was copied from the source, so a pass reverted a change made
- * meanwhile on a sibling). Without it, every synced field the source holds.
- *
- * @param {Item} source
- * @param {Actor[]} allActors
- * @param {Object} [fields] — { current?, clockTicks?, completed?, rank? }
- * @returns {Array<{ item: Item, update: object }>}
- */
-export function computeSharedVowSyncUpdates(source, allActors, fields = null) {
-  const sf = source?.flags?.[MODULE_ID];
-  if (!sf?.sharedVow || !sf.vowId) return [];
-
-  const target = {};
-  for (const field of SHARED_VOW_SYNC_FIELDS) {
-    const v = fields ? fields[field] : source.system?.[field];
-    if (v !== undefined && v !== null) target[field] = v;
-  }
-  if (!Object.keys(target).length) return [];
-
-  const out = [];
-  for (const item of sharedVowCopies(sf.vowId, allActors)) {
-    if (item.id === source.id) continue;
-    const update = syncUpdateFor(item, target);
-    if (update) out.push({ item, update });
-  }
-  return out;
-}
-
 /** Every copy of a shared vow across the roster. */
 function sharedVowCopies(vowId, allActors) {
   const out = [];

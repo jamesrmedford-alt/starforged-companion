@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest';
 import {
-  buildSwearVowPlan, computeSharedVowSyncUpdates, buildSwearMovePost,
+  buildSwearVowPlan, buildSwearMovePost,
   shouldOfferVowSetup, buildPlayerVowSetupHtml, buildSwearMovePostForName,
 } from '../../src/session/swearVow.js';
 
@@ -89,64 +89,6 @@ describe('buildSwearVowPlan', () => {
   it('refuses when no player character exists', () => {
     const plan = buildSwearVowPlan(META, { ...CTX, hasActor: false });
     expect(plan).toMatchObject({ ok: false, reason: 'no_character' });
-  });
-});
-
-// The inciting vow is the crew's shared founding vow: created on every PC and
-// kept in lockstep. computeSharedVowSyncUpdates is the pure core of the
-// updateItem sync hook — it decides which sibling copies need to catch up.
-function vowItem(id, vowId, current, { shared = true, clockTicks } = {}) {
-  const flags  = shared ? { sharedVow: true, vowId } : { vowId };
-  const system = { current };
-  if (clockTicks !== undefined) system.clockTicks = clockTicks;
-  return { id, type: 'progress', flags: { [MODULE_ID]: flags }, system };
-}
-
-describe('computeSharedVowSyncUpdates', () => {
-  it('returns [] when the source item is not a shared vow', () => {
-    const src = vowItem('i1', 'm1', 8, { shared: false });
-    expect(computeSharedVowSyncUpdates(src, [{ items: [src] }])).toEqual([]);
-  });
-
-  it('targets sibling shared vows (same vowId) whose progress is behind', () => {
-    const src    = vowItem('i1', 'm1', 8);
-    const behind = vowItem('i2', 'm1', 4);   // a different PC's copy, behind
-    const synced = vowItem('i3', 'm1', 8);   // already in lockstep
-    const other  = vowItem('i4', 'm2', 0);   // an unrelated vow
-    const actors = [{ items: [src] }, { items: [behind, synced] }, { items: [other] }];
-
-    const out = computeSharedVowSyncUpdates(src, actors);
-    expect(out).toHaveLength(1);
-    expect(out[0].item).toBe(behind);
-    expect(out[0].update).toEqual({ 'system.current': 8 });
-  });
-
-  it('never targets the source item itself', () => {
-    const src = vowItem('i1', 'm1', 8);
-    expect(computeSharedVowSyncUpdates(src, [{ items: [src] }])).toEqual([]);
-  });
-
-  it('returns [] when every sibling is already in lockstep', () => {
-    const src = vowItem('i1', 'm1', 12);
-    const sib = vowItem('i2', 'm1', 12);
-    expect(computeSharedVowSyncUpdates(src, [{ items: [src, sib] }])).toEqual([]);
-  });
-
-  it('syncs the attached clock ticks alongside progress', () => {
-    const src = vowItem('i1', 'm1', 8, { clockTicks: 3 });
-    const sib = vowItem('i2', 'm1', 8, { clockTicks: 0 });   // progress equal, clock behind
-    const out = computeSharedVowSyncUpdates(src, [{ items: [src, sib] }]);
-    expect(out).toHaveLength(1);
-    // Only the field that differs: copying every field from the source is how
-    // a pass reverted a change made meanwhile on a sibling (issue #322 V32).
-    expect(out[0].update).toEqual({ 'system.clockTicks': 3 });
-  });
-
-  it("limited to a change's own fields, it writes only those", () => {
-    const src = vowItem('i1', 'm1', 12, { clockTicks: 0 });
-    const sib = vowItem('i2', 'm1', 4,  { clockTicks: 1 });   // the sibling's own tick, made meanwhile
-    const out = computeSharedVowSyncUpdates(src, [{ items: [src, sib] }], { current: 12 });
-    expect(out[0].update).toEqual({ 'system.current': 12 });   // its clockTicks 1 is left alone
   });
 });
 
