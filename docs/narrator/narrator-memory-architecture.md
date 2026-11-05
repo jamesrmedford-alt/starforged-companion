@@ -166,7 +166,9 @@ CLAUDE.md "audit consumers" rule):
   flags that clock's newest live trigger vignette of the session (found by
   its `clockId`) the same way (`resultUpgrade.js` supersedeTriggerVignettes),
   and both narrations' ledger entries are retracted by their `narrationId`
-  (§3)
+  (§3). A vignette still being written then never posts: it is narrated only
+  while its clock is still full when its reply comes in (`stillTriggered`,
+  TRIGGER-VIGNETTE-LATE-POST), so its sidecar is never applied
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last

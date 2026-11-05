@@ -296,11 +296,15 @@ async function beginSessionOnce(payload) {
         clockVignettes = new Promise(resolve => setTimeout(async () => {
           try {
             const { narrateClockAdvancement } = await import("../narration/narrator.js");
+            const { clockStillTriggered } = await import("../clocks/payThePriceClocks.js");
             // A working copy — each vignette applies its sidecar on it (issue #329 X09).
             const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
             for (const cd of advanced) {
               const narrationId = newNarrationId();
-              const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId });
+              // A trigger is narrated only while the clock is still full when
+              // the reply comes in (TRIGGER-VIGNETTE-LATE-POST).
+              const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId,
+                stillTriggered: () => clockStillTriggered(cd) });
               if (text) {
                 // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction
                 // must enter the ring/summary or it is forgotten instantly.

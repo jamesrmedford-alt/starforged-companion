@@ -431,13 +431,17 @@ async function supersedeTriggerVignettes(clocks, kind) {
   try {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
     if (!isCanonicalGM()) return;
-    const { vignetteClockId } = await import("../clocks/payThePriceClocks.js");
+    const { vignetteClockId, triggerVignetteInFlight } = await import("../clocks/payThePriceClocks.js");
     const clockIds = new Set(clocks.map(vignetteClockId).filter(Boolean));
     if (!clockIds.size) return;
     const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
     const newestFirst = [...allMessages()].reverse();
     const narrationIds = [];
     for (const clockId of clockIds) {
+      // Its vignette is still being written: it is narrated only while the
+      // clock is full, so it drops itself — and the newest card of the clock
+      // is an earlier trigger's, which happened (TRIGGER-VIGNETTE-LATE-POST).
+      if (triggerVignetteInFlight(clockId)) continue;
       const card = newestFirst.find(m => {
         const f = m?.flags?.[MODULE_ID];
         return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId

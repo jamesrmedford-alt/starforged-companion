@@ -27,6 +27,7 @@
 
 import { rollYesNo } from "../oracles/roller.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
+import { clockStillTriggered } from "./payThePriceClocks.js";
 import { stripMarkup } from "../audio/segments.js";
 import { replaceKeepingInput } from "../ui/keepTypedInput.js";
 
@@ -854,7 +855,10 @@ function fireClockVignette(clockData) {
       // A working copy — the vignette applies its sidecar on it (issue #329 X09).
       const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
       const narrationId = newNarrationId();
-      const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs, narrationId });
+      // A trigger is narrated only while the clock is still full when the
+      // reply comes in — a fill taken back meanwhile (TRIGGER-VIGNETTE-LATE-POST).
+      const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs, narrationId,
+        stillTriggered: () => clockStillTriggered(clockData) });
       if (text) {
         // Flag family (NARR-RING-CLOCKVIG, narrator-context audit 2026-07):
         // vignette prose must enter the recent-narration ring and rolling

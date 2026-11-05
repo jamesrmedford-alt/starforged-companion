@@ -25,6 +25,34 @@ const TRIGGER_VIGNETTE_WAIT_MS = 60_000;
 let _triggerVignettes = Promise.resolve();
 
 /**
+ * The clocks (`vignetteClockId`) whose Pay the Price trigger vignette is being
+ * written on this client, each with a count. A Burn Momentum or Improve Result
+ * that rewinds one finds no card of it — the vignette, its clock no longer
+ * full, drops itself (clockStillTriggered) — and must not strike an earlier
+ * trigger's of the same clock in its place (TRIGGER-VIGNETTE-LATE-POST;
+ * resultUpgrade.js supersedeTriggerVignettes).
+ */
+const _vignettesInFlight = new Map();
+
+/**
+ * Whether a Pay the Price trigger vignette of this clock is being written on
+ * this client now.
+ *
+ * @param {string|null} clockId — as `vignetteClockId` names it
+ * @returns {boolean}
+ */
+export function triggerVignetteInFlight(clockId) {
+  return !!clockId && (_vignettesInFlight.get(clockId) ?? 0) > 0;
+}
+
+function trackVignetteInFlight(clockId, delta) {
+  if (!clockId) return;
+  const n = (_vignettesInFlight.get(clockId) ?? 0) + delta;
+  if (n > 0) _vignettesInFlight.set(clockId, n);
+  else _vignettesInFlight.delete(clockId);
+}
+
+/**
  * Advance countdown clocks in response to a Pay the Price. The module's clock
  * contract is that tension clocks advance when you Pay the Price (clocks.js
  * header; issue #203 (Clocks)) — wiring that was documented but never
@@ -105,28 +133,39 @@ export async function advanceClocksOnPayThePrice({ skipClockIds = [] } = {}) {
         const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
         for (const cd of justTriggered) {
           const narrationId = newNarrationId();
-          const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId });
-          if (text) {
-            // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction must
-            // enter the ring/summary or the narrator forgets it immediately.
-            // narrationId: what an X-Card on it retracts (issue #321 U07).
-            await ChatMessage.create({
-              // NPC dialogue markup stripped, as on every fiction card (issue #331 X27).
-              content: `<div class="sf-clock-card"><strong>⚠ TRIGGERED — </strong><em>${escapeChatHtml(stripMarkup(text))}</em></div>`,
-              flags:   {
-                [MODULE_ID]: {
-                  clockCard:         true,
-                  clockVignetteCard: true,
-                  narratorCard:      true,
-                  narrationText:     text,
-                  sessionId:         cs.currentSessionId ?? null,
-                  narrationId,
-                  // The clock it narrates: a burn or improvement that rewinds
-                  // the clock supersedes it (issue #338 D8).
-                  clockId:           vignetteClockId(cd),
+          // Narrated only while the clock is still full when the reply comes
+          // in: a burn or improvement that rewound it meanwhile (issue #338
+          // D8) found no card to strike, and the late vignette landed live
+          // (TRIGGER-VIGNETTE-LATE-POST). In flight until its card is posted.
+          const clockId = vignetteClockId(cd);
+          trackVignetteInFlight(clockId, +1);
+          try {
+            const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId,
+              stillTriggered: () => clockStillTriggered(cd) });
+            if (text) {
+              // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction must
+              // enter the ring/summary or the narrator forgets it immediately.
+              // narrationId: what an X-Card on it retracts (issue #321 U07).
+              await ChatMessage.create({
+                // NPC dialogue markup stripped, as on every fiction card (issue #331 X27).
+                content: `<div class="sf-clock-card"><strong>⚠ TRIGGERED — </strong><em>${escapeChatHtml(stripMarkup(text))}</em></div>`,
+                flags:   {
+                  [MODULE_ID]: {
+                    clockCard:         true,
+                    clockVignetteCard: true,
+                    narratorCard:      true,
+                    narrationText:     text,
+                    sessionId:         cs.currentSessionId ?? null,
+                    narrationId,
+                    // The clock it narrates: a burn or improvement that rewinds
+                    // the clock supersedes it (issue #338 D8).
+                    clockId,
+                  },
                 },
-              },
-            });
+              });
+            }
+          } finally {
+            trackVignetteInFlight(clockId, -1);
           }
         }
       } catch (err) {
@@ -155,6 +194,28 @@ export async function advanceClocksOnPayThePrice({ skipClockIds = [] } = {}) {
 export function vignetteClockId(entry) {
   const id = entry?.type === "vow" ? (entry.vowId ?? entry.itemId) : entry?._id;
   return typeof id === "string" && id ? id : null;
+}
+
+/**
+ * Whether the clock an advanced-clock entry names is still full: a trigger
+ * vignette is narrated only while it is (TRIGGER-VIGNETTE-LATE-POST — every
+ * post site hands it to narrateClockAdvancement as `stillTriggered`). A
+ * tension or campaign clock is read from the store; a vow's countdown clock
+ * from its vow (the entry's copy — an upgrade rewinds every copy of a shared
+ * vow). A clock no longer found stands: it triggered, and was removed since.
+ *
+ * @param {{ type?: string, _id?: string, actorId?: string, itemId?: string }} entry
+ * @returns {Promise<boolean>}
+ */
+export async function clockStillTriggered(entry) {
+  if (entry?.type === "vow") {
+    const { getActor, readVows } = await import("../character/actorBridge.js");
+    const actor = entry.actorId ? getActor(entry.actorId) : null;
+    const clock = readVows(actor).find(v => v.id === entry.itemId)?.clock ?? null;
+    return !clock || !(clock.max > 0) || clock.ticks >= clock.max;
+  }
+  const clock = (game.settings.get(MODULE_ID, "campaignState")?.clocks ?? []).find(c => c?._id === entry?._id) ?? null;
+  return !clock || (clock.filled ?? 0) >= clock.segments;
 }
 
 /**

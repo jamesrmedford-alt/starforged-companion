@@ -265,7 +265,13 @@ retracted by `narrationId` through the X-Card's `retractNarrations`, with
 `{ by: "superseded" }` (`retractSupersededNarrations` — the store and the
 upgrade's working copy): rendered nowhere, never named under CORRECTED, and,
 unlike an X-Card's, no bar to the re-narration — or the clock's next
-trigger — stating the same fact.
+trigger — stating the same fact. A trigger vignette still being written when
+the reversal lands has no card to strike: it is narrated only while its clock
+is still full when its reply comes in (`narrateClockAdvancement`'s
+`stillTriggered`, `payThePriceClocks.js` `clockStillTriggered`, all three
+post sites), so it posts nothing and its sidecar is never applied — and the
+reversal strikes no earlier trigger's card of that clock in its place
+(`triggerVignetteInFlight`; TRIGGER-VIGNETTE-LATE-POST).
 
 **System prompt section map** (`buildNarratorSystemPrompt`,
 `src/narration/narratorPrompt.js`): [0] role/style per mode · [0b]

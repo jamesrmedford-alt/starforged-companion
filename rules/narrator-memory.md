@@ -22,7 +22,9 @@ layers. This file is the never-break list.
    card the X-Card removed is flagged `xCarded` and left out the same way
    (U07), as is one a Burn Momentum / Improve Result superseded —
    `burnSuperseded`: the move narration, and the trigger vignette of a clock
-   its reversal rewinds, which names its clock (`clockId`, issue #338 D8) —
+   its reversal rewinds, which names its clock (`clockId`, issue #338 D8; a
+   trigger rewound while its vignette is still being written is never
+   narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST) —
    and each narration's card carries its `narrationId`, which its
    sidecar stamps on what it writes (U07; a fallback card carries none) —
    a published reflection's too, which its capture stamps (issue #335 Y03).

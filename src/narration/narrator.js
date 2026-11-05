@@ -2245,10 +2245,19 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
  * arrives. Returns null when narration is off / no key / the call fails
  * (the caller falls back silently).
  *
- * @param {{ clock: { name:string, type:string, filled:number, segments:number, triggered:boolean }, campaignState: Object }} args
+ * A trigger is narrated only while it stands (TRIGGER-VIGNETTE-LATE-POST):
+ * `stillTriggered`, asked once the reply is in and before its sidecar is
+ * applied, says whether the clock is still full. One rewound meanwhile — a
+ * Burn Momentum or Improve Result undoing the price that filled it (issue
+ * #338 D8), a GM taking the fill back — returns null: no card, and nothing of
+ * the narration is written (its ledger persist, a relay of it from a co-GM's
+ * client, a ship move, the consistency audit), so there is nothing to retract.
+ *
+ * @param {{ clock: { name:string, type:string, filled:number, segments:number, triggered:boolean }, campaignState: Object,
+ *           narrationId?: string, stillTriggered?: (() => boolean|Promise<boolean>)|null }} args
  * @returns {Promise<string|null>}
  */
-export async function narrateClockAdvancement({ clock, campaignState, narrationId = newNarrationId() }) {
+export async function narrateClockAdvancement({ clock, campaignState, narrationId = newNarrationId(), stillTriggered = null }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
   if (isXCardActive(campaignState))  return null;
@@ -2275,6 +2284,19 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     ? `The clock "${clock.name}" (${typeFlair}) has TRIGGERED — it has now filled all ${clock.segments} segments. Write exactly 2-3 sentences of vivid fiction describing the moment this threat materialises or this deadline arrives. Pure narrative — no game mechanics, no clock language, no numbers.`
     : `The clock "${clock.name}" (${typeFlair}) has advanced to ${clock.filled}/${clock.segments} segments. Write exactly 2-3 sentences of vivid fiction describing how this pressure or looming threat grows by a notch. Pure narrative — no game mechanics, no clock language, no numbers.`;
 
+  // A rewound trigger did not happen: nothing of it is applied (see above).
+  const triggerStands = async () => {
+    if (!clock.triggered || typeof stillTriggered !== 'function') return true;
+    try {
+      if (await stillTriggered()) return true;
+    } catch (err) {
+      console.debug?.(`${MODULE_ID} | narrateClockAdvancement: the clock could not be read — narrating:`, err?.message ?? err);
+      return true;
+    }
+    console.debug?.(`${MODULE_ID} | narrateClockAdvancement: "${clock.name}" was rewound before its trigger vignette — not narrated.`);
+    return false;
+  };
+
   try {
     const raw = await callNarratorAPI({
       label: 'narrateClockAdvancement',
@@ -2283,6 +2305,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateClockAdvancement')) return null;
+    if (!(await triggerStands())) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
     return (text && text.trim()) ? text : null;
   } catch (err) {
@@ -2296,6 +2319,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
           maxTokens: maxTokensWithSidecar(16000),
         });
         if (xCard.interrupted('narrateClockAdvancement')) return null;
+        if (!(await triggerStands())) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         return (text && text.trim()) ? text : null;
       } catch (retryErr) {
