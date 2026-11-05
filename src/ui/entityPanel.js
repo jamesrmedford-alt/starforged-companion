@@ -1286,7 +1286,9 @@ const ENTITY_EDIT_OPS = new Set(['lock', 'pin', 'promote', 'remove']);
  * clicker to confirm first. The payload is checked against what the panel
  * can produce: an entity the registry resolves, and for Pin / Promote /
  * Remove a narrator-added detail the panel still shows (not promoted). Each
- * edit reads the record and writes it with no await in between.
+ * edit reads the record and writes it with no await in between — a Promote
+ * that first appends to an NPC card's or ship's Notes tab reads the record
+ * again after that write (issue #337 Y35).
  *
  * @param {{ op: "lock"|"pin"|"promote"|"remove", entityId?: string, detail?: string }} payload
  * @param {Object} [_ctx]  gmRelay context — no edit is restricted to a role
@@ -1325,7 +1327,13 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
       // `notes` was a second store nothing showed (issue #329 X12).
       const sheetNotes = String(document.system.notes ?? '');
       await document.update({ 'system.notes': `${sheetNotes}<p>${escapeHtml(detail)}</p>` });
-      next = { ...data, generativeTier: promoted };
+      // The record as it is after that await: a detail the narrator's capture
+      // appended meanwhile is kept — the write was built from the record read
+      // before it, and dropped it (issue #337 Y35).
+      const fresh     = readEntityFlag(typeKey, document) ?? data;
+      const freshTier = Array.isArray(fresh.generativeTier) ? fresh.generativeTier : [];
+      const at        = freshTier.findIndex(shown);
+      next = { ...fresh, generativeTier: freshTier.map((e, i) => (i === at ? { ...e, promoted: true, promotedAt: now } : e)) };
     } else {
       next = {
         ...data,
