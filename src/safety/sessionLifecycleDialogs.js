@@ -31,6 +31,7 @@
 import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
+import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -275,7 +276,8 @@ async function beginSessionOnce(payload) {
                 // must enter the ring/summary or it is forgotten instantly.
                 // narrationId: what an X-Card on it retracts (issue #321 U07).
                 await ChatMessage.create({
-                  content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${escapeHtml(text)}</em></div>`,
+                  // NPC dialogue markup stripped, as on every fiction card (issue #331 X27).
+                  content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${escapeHtml(stripMarkup(text))}</em></div>`,
                   flags:   {
                     [MODULE_ID]: {
                       clockCard:         true,

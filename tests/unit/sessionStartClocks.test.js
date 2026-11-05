@@ -145,3 +145,19 @@ describe("T04 — a refused session-start clock advance is saved by the GMs' Ret
     expect(table.world.message(retryCards()[0]._id).flags[MODULE_ID].resolved).toBe(false);
   });
 });
+
+describe("X27 — Begin a Session's clock vignette strips the narrator's NPC markup", () => {
+  it("the card shows the dialogue without <npc> tags", async () => {
+    scriptClaude(table, { fallback: () => 'The fleet masses at the border. <npc>"Hold the line."</npc> The clock turns.' });
+    await begin();
+    let card = null;
+    for (let i = 0; i < 50 && !card; i++) {
+      await table.settle(); await table.drain();
+      card = table.cards(f => f.clockVignetteCard).at(-1) ?? null;
+    }
+    expect(card).toBeTruthy();
+    expect(card.content).toContain("Hold the line.");
+    expect(card.content).not.toMatch(/npc&gt;|<npc>/);
+  });
+});
+

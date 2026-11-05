@@ -27,6 +27,7 @@
 
 import { rollYesNo } from "../oracles/roller.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
+import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -787,7 +788,10 @@ function fireClockVignette(clockData) {
         // vignette prose must enter the recent-narration ring and rolling
         // summary like every other narrator fiction card. narrationId: what
         // an X-Card on it retracts (issue #321 U07).
-        await postCard(`<em>${escapeHtml(text)}</em>`, {
+        // The prose is the reader's: the narrator's NPC dialogue markup is
+        // stripped, as on every fiction card — a clock card has no Play button
+        // (issue #331 X27).
+        await postCard(`<em>${escapeHtml(stripMarkup(text))}</em>`, {
           clockVignetteCard: true,
           narratorCard:      true,
           narrationText:     text,
