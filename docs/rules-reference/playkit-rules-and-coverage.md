@@ -422,10 +422,11 @@ impacts and `corrupted`, `encumbered`, `maimed` — the foundry-ironsworn
 character's own `ImpactField`s (`vendor/foundry-ironsworn/src/module/actor/subtypes/character.ts`,
 the `debility` schema), which its `#impactCount` counts toward
 `momentumMax` / `momentumReset` like any other: counting them is the
-sheet's rule, not a bug. `custom1` / `custom2` are no longer read; the
-vendor schema has them too (with `custom1name` / `custom2name`), and its
-getters — which `momentumBounds` prefers when the system provides them —
-count them when marked. This item first said the five fields were invented
+sheet's rule, not a bug. `readDebilities` does not name `custom1` /
+`custom2` (CHARACTER STATE would read "custom1"); the vendor schema has them
+too (with `custom1name` / `custom2name`), and its getters — which
+`momentumBounds` prefers when the system provides them — count them when
+marked, as the bridge's own fallback does (`IMPACT_KEYS`). This item first said the five fields were invented
 and that `encumbered` must not count.
 
 ### 3.2 Missing tables (play-kit content not in code) — FIXED

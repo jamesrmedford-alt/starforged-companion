@@ -59,8 +59,9 @@ export const FactionSchema = {
   canonicalLocked: false,
   generativeTier:  [],
 
-  // Oracle seeding ran (draft-confirm path; sector-generator factions arrive
-  // pre-populated and never need it). See seedFactionRecord.
+  // Oracle seeding ran (the draft-confirm path, the only creator of a faction
+  // record — the Sector Creator keeps a faction's name on the sector, not a
+  // record). See seedFactionRecord.
   seeded: false,
 
   createdAt: null,

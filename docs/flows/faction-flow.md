@@ -43,8 +43,9 @@ World Journal categories keep exact titles.
 records with the full Starforged shape — type/subtype, influence,
 dominion/leadership, `projects[]`, `rumors[]`, quirk, and
 `relationship ∈ antagonistic | apathetic | distrustful | does_business |
-open_alliance | temporary_alliance | warring | unknown`. Created by the
-sector generator (pre-populated) and by draft-card confirmation, which since
+open_alliance | temporary_alliance | warring | unknown`. Created only by
+draft-card confirmation (the Sector Creator rolls a faction's name onto the
+sector — `sector.faction` — and makes no record), which since
 2026-07 reconciles any WJ intelligence and rolls the faction oracles
 (`seedFactionRecord`), then mirrors the faction into the World Journal with
 no attitude — the entry keeps the one the narration established (a new
