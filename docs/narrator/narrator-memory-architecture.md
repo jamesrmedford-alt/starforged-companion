@@ -220,7 +220,7 @@ surfaces, issue #335 Y02), Session Log beats, tier details (one the GM had
 promoted takes the line its Promote added to the notes with it, issue #338
 D7), a placeholder figure's rename (the X-Card puts the placeholder name back), the draft card
 it queued (its pending rows are withdrawn, issue #338 D6(i)), a connection a
-Make a Connection hit auto-created (deleted with its bond while unused, else
+Make a Connection hit auto-created (deleted with its bond and its portrait while unused, else
 kept and named to the GMs — D6(ii); one the hit confirmed from an earlier
 narration's pending draft row too, the row going back to pending —
 MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED),

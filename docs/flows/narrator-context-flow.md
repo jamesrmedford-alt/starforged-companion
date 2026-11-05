@@ -185,7 +185,8 @@ the placeholder name back unless the card was renamed since), and on the
 re-detection skip, not added to `dismissedEntities`: issue #338 D6(i),
 `withdrawNarrationDrafts`), and on a connection a Make a Connection hit's
 capture auto-creates (`createdFromNarrationId` — after the capture undo the
-X-Card's finish deletes it with its bond Items while nobody has used it,
+X-Card's finish deletes it with its bond Items and its portrait (the "Art:"
+journal entry and its index entry — XCARD-CONNECTION-PORTRAIT-ORPHAN) while nobody has used it,
 else keeps it and whispers the GMs once, naming it: D6(ii),
 `retractNarrationConnections` — so, stamped with the row it confirmed, does a
 connection the hit confirmed from an earlier narration's pending draft row,

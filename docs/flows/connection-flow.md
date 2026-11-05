@@ -57,7 +57,10 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
   "Connection made" and nothing was made, and a later Confirm bonded the old
   narration's PC). The auto-created record carries the narration's id
   (`createdFromNarrationId`): an X-Card on that narration deletes the NPC
-  card, its bond Items and its `connectionIds` entry while the record holds
+  card, its bond Items, its `connectionIds` entry and its portraits (the
+  "Art:" journal entries and their `artAssetIds` index entries —
+  `art/storage.deleteEntityArtAssets`, canonical GM, the index written on a
+  copy; XCARD-CONNECTION-PORTRAIT-ORPHAN) while the record holds
   nothing beyond its creation, its sheet nothing the table wrote (Notes text
   outside the seed's marked introduction and the portrait block, or a
   Characteristics line the seed did not write — `sheetWrittenByTable`) and no

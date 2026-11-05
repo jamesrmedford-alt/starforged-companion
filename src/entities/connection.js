@@ -30,6 +30,7 @@ import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, w
 import { readSheetPronouns } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { PORTRAIT_BLOCK_RE } from "../art/notesPortrait.js";
+import { deleteEntityArtAssets } from "../art/storage.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID  = "starforged-companion";
@@ -347,8 +348,10 @@ export async function loseConnection(journalEntryId, reason = "", sessionId = ""
  * names, stamped `createdFromNarrationId` (entityExtractor.routeEntityDrafts).
  * One that holds nothing beyond its creation (connectionUsed — read after the
  * X-Card's finish has undone the narration's own details and LAST KNOWN) and
- * whose bond Items hold no mark is deleted: its NPC card, its bond Items and
- * its `connectionIds` entry. One the table has used stays — a safety tool does
+ * whose bond Items hold no mark is deleted: its NPC card, its bond Items, its
+ * `connectionIds` entry and its portraits (art/storage.js
+ * deleteEntityArtAssets — XCARD-CONNECTION-PORTRAIT-ORPHAN: the "Art:" journal
+ * entry and its index entry were left behind). One the table has used stays — a safety tool does
  * not delete what the table has built on — and is returned, for the GMs'
  * notice (safety.js). Canonical GM (the X-Card's finish). Fail-open per
  * connection.
@@ -379,6 +382,7 @@ export async function retractNarrationConnections(narrationIds) {
       if (bonds.marked) { out.kept.push({ id: document.id, name }); continue; }
       await document.delete();
       await unregisterDeletedConnection(document.id, String(data.name || document.name || ""));
+      await deleteEntityArtAssets(FLAG_KEY, data._id ?? null, { portraitId: data.portraitId ?? null });
       if (data.createdFromDraft) {
         const { reopenConfirmedDraftRow } = await import("./entityExtractor.js");
         await reopenConfirmedDraftRow(data.createdFromDraft);
