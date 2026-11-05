@@ -302,7 +302,7 @@ describe("End a Session", () => {
     'input[name="connectionFocus"]': "Mara",
   });
 
-  it("canonical GM: every sub-step runs in the original order", async () => {
+  it("canonical GM: every sub-step runs in order — End's own fields first (issue #331 X41)", async () => {
     setUsers([GM, PLAYER], "gm-1");
     game.settings._store.set(`${MODULE_ID}.campaignState`, { sessionActive: true });
     const setSpy = vi.spyOn(game.settings, "set");
@@ -314,10 +314,13 @@ describe("End a Session", () => {
     installDialog({ form });
     await openEndSessionDialog();
 
+    // The gate is shut in the store before the scene close and the summary's
+    // call: written after them, a line typed meanwhile was rolled into the
+    // session being ended (issue #331 X41).
     expect(calls).toEqual([
+      "set:campaignState",
       "endScene",
       "summary",
-      "set:campaignState",
       "sessionLog",
       "momentum:a1:1",
       "momentum:a2:1",
