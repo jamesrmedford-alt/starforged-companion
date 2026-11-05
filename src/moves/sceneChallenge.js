@@ -21,6 +21,8 @@
  */
 
 import { wholeWordsFit } from "../context/relevanceResolver.js";
+import { toMoveId } from "../schemas.js";
+import { moveDisplayName } from "../system/i18n.js";
 
 /** Normalise a track label for matching ("The Storm" ≈ "storm"). */
 function normalizeLabel(s) {
@@ -82,6 +84,23 @@ export const SCENE_CHALLENGE_VARIANTS = Object.freeze({
   face_danger_scene_challenge:         "face_danger",
   secure_an_advantage_scene_challenge: "secure_an_advantage",
 });
+
+/**
+ * The move an asset ability is matched against for a move given by id or
+ * display name: a scene-challenge variant is the ordinary move it varies —
+ * "When you Face Danger …" applies to Face Danger made within a scene
+ * challenge, its add, stat substitution and riders with it. The variants
+ * matched no ability linked to their twin, so a challenge's rolls lost them
+ * (SCENE-VARIANT-ABILITIES-UNKEYED). Any other move is itself, as given.
+ *
+ * @param {{ moveId?: string|null, moveName?: string|null }} move
+ * @returns {{ moveId: string|null, moveName: string|null }}
+ */
+export function assetMatchMove({ moveId = null, moveName = null } = {}) {
+  const id = moveId ?? toMoveId(moveName);
+  const twin = id && Object.prototype.hasOwnProperty.call(SCENE_CHALLENGE_VARIANTS, id) ? SCENE_CHALLENGE_VARIANTS[id] : null;
+  return twin ? { moveId: twin, moveName: moveDisplayName(twin) } : { moveId, moveName };
+}
 
 /**
  * The move a scene-challenge variant is made as when no scene challenge is

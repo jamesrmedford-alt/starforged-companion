@@ -25,6 +25,7 @@
 
 import { applyMeterChanges, readCharacterSnapshot, invalidateActorCache } from "../character/actorBridge.js";
 import { markUnprepared, crewUnpreparedNote, isUnprepared } from "./sufferExecutor.js";
+import { assetMatchMove } from "./sceneChallenge.js";
 
 const MODULE_ID    = "starforged-companion";
 const HAIKU_MODEL  = "claude-haiku-4-5-20251001";
@@ -344,8 +345,10 @@ export async function extractRiders({ abilities, moveName, apiKey, _call = callH
   const list = (abilities ?? []).filter(a => a && a.text);
   if (!list.length) return [];
 
+  // A scene-challenge variant's riders are its ordinary move's: "When you
+  // Face Danger …" holds within the challenge (SCENE-VARIANT-ABILITIES-UNKEYED).
   const userPrompt =
-    `Move: ${moveName}\n\nAbilities:\n` +
+    `Move: ${assetMatchMove({ moveName }).moveName}\n\nAbilities:\n` +
     list.map(a => `[key:${a.key}] ${a.assetName}: ${a.text}`).join("\n");
 
   let raw;

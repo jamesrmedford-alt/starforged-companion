@@ -42,6 +42,7 @@ import { apiPost } from "../api-proxy.js";
 import { moveRollKind } from "../schemas.js";
 import { listShips, isLoneShipCandidate } from "../entities/ship.js";
 import { readCharacterSnapshot, readCompanionHealth, readAssetIntegrity } from "../character/actorBridge.js";
+import { assetMatchMove } from "./sceneChallenge.js";
 
 const MODULE_ID    = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -187,7 +188,7 @@ function namedMoves(text) {
  * @returns {Array} subset of abilities whose text references this move
  */
 export function structuredMatches(abilities, moveName) {
-  const target = normaliseName(moveName);
+  const target = moveTarget(moveName);
   if (!target) return [];
   // Stored text has already had HTML stripped; @Compendium tokens survive.
   return abilities.filter(ab => namedMoves(ab.text).includes(target));
@@ -195,6 +196,19 @@ export function structuredMatches(abilities, moveName) {
 
 function normaliseName(s) {
   return String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * The normalised name an ability's move links are matched against for the
+ * move being made: a scene-challenge variant's is the ordinary move's —
+ * "Face Danger (Scene Challenge)" matches an ability linked to Face Danger
+ * (sceneChallenge.assetMatchMove — SCENE-VARIANT-ABILITIES-UNKEYED).
+ *
+ * @param {string|null} moveName
+ * @returns {string}
+ */
+function moveTarget(moveName) {
+  return normaliseName(assetMatchMove({ moveName }).moveName);
 }
 
 
@@ -338,13 +352,16 @@ export async function scanForApplicableAbilities({
   const all = collectEnabledAbilities(characterActor, commandShipActor);
   if (!all.length) return [];
 
-  const structured = structuredMatches(all, moveName);
+  // A scene-challenge variant is scanned as the ordinary move it varies — its
+  // links, its Haiku pass, its adds and stat (SCENE-VARIANT-ABILITIES-UNKEYED).
+  const move = assetMatchMove({ moveId, moveName });
+  const structured = structuredMatches(all, move.moveName);
   if (structured.length > 0) {
-    return structured.map(annotate("structured", moveName, moveId, characterActor));
+    return structured.map(annotate("structured", move.moveName, move.moveId, characterActor));
   }
 
-  const llm = await haikuFallback(all, moveId, moveName, narration, apiKey);
-  return llm.map(annotate("haiku", moveName, moveId, characterActor));
+  const llm = await haikuFallback(all, move.moveId, move.moveName, narration, apiKey);
+  return llm.map(annotate("haiku", move.moveName, move.moveId, characterActor));
 }
 
 /**
@@ -478,7 +495,7 @@ export function extractStatReplacement(text, moveName = null) {
   const bare     = new RegExp(`\\broll\\s+\\+${stat}`, "i");
   const cued     = (sentence, re) => { const m = sentence.match(re); return m ? (m[1] ?? m[2]).toLowerCase() : null; };
 
-  const target    = normaliseName(moveName);
+  const target    = moveTarget(moveName);
   const sentences = s.split(/(?<=[.!?])\s+/);
   // With no move named anywhere, the ability's own sentences are the move's.
   let own = !sentences.some(sentence => namedMoves(sentence).length);
@@ -566,7 +583,7 @@ export function extractAdds(text, moveName = null, values = {}) {
  * @returns {{ add: number, from: string|null }}
  */
 function addFor(text, moveName = null, values = {}) {
-  const target = normaliseName(moveName);
+  const target = moveTarget(moveName);
   const ownTrigger = !!target && namedMoves(text).includes(target);
   const sentences = String(text ?? "").split(/(?<=[.!?])\s+/);
   const clauses = sentences.flatMap((sentence, at) => {
