@@ -74,6 +74,7 @@ Return ONLY a valid JSON object — no preamble, no markdown, no text outside th
 {
   "decision":      "MOVE" | "NARRATIVE" | "NARRATIVE_WITH_MOVE_AVAILABLE",
   "suggestedMove": "<move id from the MOVE CATALOG>" | null,
+  "sceneChallenge": "<the open scene challenge a scene-challenge move is part of, named as the CURRENT SCENE names it>" | null,
   "category":      "combat" | "investigation" | "exploration" | "social" | "downtime",
   "confidence":    <number between 0.0 and 1.0>,
   "reasoning":     "<one short sentence — internal, not shown to the player>"
@@ -139,9 +140,10 @@ CHALLENGE: OPEN", the scene is an extended challenge against a threat or a
 time limit (a negotiation, a chase, a heist). A Face Danger or Secure an
 Advantage made as part of it is its scene-challenge move: nominate
 face_danger_scene_challenge or secure_an_advantage_scene_challenge, not
-face_danger / secure_an_advantage. A fight is still combat (enter_the_fray …)
-even mid-challenge, and any other move is itself. With no scene challenge
-open, never nominate them.
+face_danger / secure_an_advantage, and name the challenge it is part of in
+sceneChallenge (null for any other move). A fight is still combat
+(enter_the_fray …) even mid-challenge, and any other move is itself. With no
+scene challenge open, never nominate them.
 
 MOVEMENT WITH STAKES — if the input expresses movement or travel intent
 (setting out, picking a route, closing on a destination) AND there is an
@@ -448,9 +450,17 @@ function parseDecision(rawText) {
 
   const confidence = clampConfidence(parsed.confidence);
 
+  // The scene challenge a scene-challenge nomination is part of, by name: the
+  // router resolves it against the open challenges, and the paced card's Roll
+  // carries it as the move's target (PACED-VARIANT-NO-TARGET).
+  const sceneChallenge = typeof parsed.sceneChallenge === "string" && parsed.sceneChallenge.trim()
+    ? parsed.sceneChallenge.trim().slice(0, 80)
+    : null;
+
   return {
     decision,
     suggestedMove,
+    sceneChallenge,
     category:   safeCategory,
     confidence,
     reasoning:  String(parsed.reasoning ?? "").slice(0, 280),

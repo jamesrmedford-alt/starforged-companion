@@ -912,7 +912,12 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
     isCard: (f) => f.pacedNarrative === true
       && typeof f.suggestedMove === "string" && !!f.suggestedMove
       && typeof f.playerText === "string" && !!f.playerText,
-    build: (f) => ({ content: f.playerText, flags: { forcedMoveId: f.suggestedMove } }),
+    build: (f) => ({ content: f.playerText, flags: {
+      forcedMoveId: f.suggestedMove,
+      // A scene-challenge Roll's challenge, as the Finish an Expedition
+      // button forwards its track (PACED-VARIANT-NO-TARGET).
+      ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
+    } }),
   });
 }
 

@@ -2600,7 +2600,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     if (!text?.trim()) return null;
 
     const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null);
+    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
     schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
     schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
     scheduleChronicleEntry({
@@ -2625,7 +2625,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
         });
         if (text?.trim()) {
           const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null);
+          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
           schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
           schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
           scheduleChronicleEntry({
@@ -2806,7 +2806,7 @@ export async function runNarrationTierUpdate(narrationText, campaignState, { nar
   }
 }
 
-async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null) {
+async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null, suggestedTargetId = null) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove
     ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(moveDisplayName(suggestedMove))}</button></div>`
@@ -2839,6 +2839,12 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
         // whoever presses it (issue #325 W09 — it rolled as the clicker).
         actorId:          typeof actorId === 'string' && actorId ? actorId : null,
         suggestedMove:    suggestedMove ?? null,
+        // The scene challenge a scene-challenge Roll is part of (the router's
+        // resolution of the classifier's pick): its Roll's target. None for
+        // any other move — a hint may have made the button one
+        // (PACED-VARIANT-NO-TARGET).
+        suggestedMoveTargetId: SCENE_CHALLENGE_VARIANTS[suggestedMove] && typeof suggestedTargetId === 'string' && suggestedTargetId
+          ? suggestedTargetId : null,
         sessionId:        sessionId ?? null,
         // The scene's matched entities, as the move narration card stamps
         // them: the audio picks an NPC's pronoun-keyed voice from them
