@@ -21,7 +21,9 @@ and link (`vow.reward`, `vow.link` — `src/session/swearVow.js`
 `applyRewardPickFromRelay` / `applyPlayerVowLinkFromRelay`, each claiming its
 card once; they were the ad-hoc `vow.setReward` / `vow.linkConnection`
 socket relays). Only the vendor sheet writes a vow from the owner's own
-client.
+client. A press refused for whose the card is (another player's character,
+or one gone) whispers the presser and the GMs whose button it is
+(`gmRelay.refusePress`, known-issues RELAY-REFUSED-PRESS-UNTOLD).
 Effects credit the **roller**: the pipeline's `rollerActor` is the speaker
 resolved from the message, first PC only as a fallback — a GM's, or at a
 one-PC table; a PC-less player at a table of several rolls nothing (issue

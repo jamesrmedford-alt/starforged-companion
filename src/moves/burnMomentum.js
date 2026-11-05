@@ -72,7 +72,7 @@ import {
   readMomentumState,
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { requestGmAction }     from "../multiplayer/gmRelay.js";
+import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
 import {
   revertPayThePrice,
   claimUpgradeCard,
@@ -495,12 +495,15 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
   const actor = resolveActor(burn.actorId);
   if (actor && !requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | burnMomentum: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — burn refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { applied: false, reason: "not-owner" };
   }
 
   if (!claimResultUpgrade(messageId)) return { applied: false, reason: "already-consumed" };
   try {
-    return await handleBurnClick(message, _deps);
+    const res = await handleBurnClick(message, _deps);
+    if (res?.reason === "no-actor") refusePress(ctx, "no-actor");
+    return res;
   } finally {
     releaseResultUpgrade(messageId);
   }

@@ -19,7 +19,10 @@ Two cross-cutting facts to hold onto:
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
-  a no-GM warning and a re-armed button when the click is not delivered).
+  a no-GM warning and a re-armed button when the click is not delivered; a
+  press refused for whose the card is — not the presser's character, or one
+  gone — whispers the presser and the GMs whose button it is, `refusePress`,
+  known-issues RELAY-REFUSED-PRESS-UNTOLD).
   Burn and Improve open only once the pipeline has persisted the original
   outcome and stamped the card `originalApplied` (until then the button is
   disabled and the GM handler refuses — issue #300 F02); each swaps that

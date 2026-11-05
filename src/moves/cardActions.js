@@ -38,7 +38,7 @@
  * button.
  */
 
-import { requestGmAction } from "../multiplayer/gmRelay.js";
+import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank } from "./milestone.js";
@@ -313,10 +313,12 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | waypoint oracle: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | waypoint oracle: user ${ctx?.requesterId ?? "?"} may not take ${actor?.name ?? "this card"}'s reward — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -407,10 +409,12 @@ export async function applyFulfilVowPick(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | which vow: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | which vow: user ${ctx?.requesterId ?? "?"} may not pick for ${actor?.name ?? "this card"} — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -496,10 +500,12 @@ export async function applyLegacyTrackPick(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | which legacy track: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | which legacy track: user ${ctx?.requesterId ?? "?"} may not pick for ${actor?.name ?? "this card"} — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -579,10 +585,12 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | milestone suggestion: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | milestone suggestion: user ${ctx?.requesterId ?? "?"} may not mark ${actor?.name ?? "this card"}'s vow — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -662,10 +670,12 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | attempt to fulfil: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | attempt to fulfil: user ${ctx?.requesterId ?? "?"} may not roll ${actor?.name ?? "this card"}'s vow — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -777,10 +787,12 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | ${label}: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not roll ${actor?.name ?? "this card"}'s move — only their player or a GM may — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
   const move = build(f, actor);
@@ -1045,6 +1057,7 @@ async function applyRollerRecommit(payload, ctx, { flag, label, perform }) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not recommit ${actor?.name ?? "this card"}'s — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { applied: false, reason: "not-owner" };
   }
   const key = `${messageId}:recommit`;
@@ -1094,10 +1107,12 @@ function relayedClickerPc(payload, ctx, label) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | ${label}: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { actor: null, refused: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not act as ${actor?.name ?? "no PC of their own"} — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { actor: null, refused: "not-owner" };
   }
   return { actor };
@@ -1121,10 +1136,12 @@ function cardRollerPc(f, payload, ctx, label) {
   const actor = globalThis.game?.actors?.get?.(rollerId) ?? null;
   if (!isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | ${label}: ${rollerId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { actor: null, refused: "not-a-pc" };
   }
   if (!requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not roll ${actor.name}'s move — only their player or a GM may — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { actor: null, refused: "not-owner" };
   }
   return { actor };

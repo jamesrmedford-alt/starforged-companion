@@ -34,6 +34,7 @@ import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
 import { relayCardAction } from "./cardActions.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
+import { refusePress } from "../multiplayer/gmRelay.js";
 import { retireChoiceCard, closeUpgradesForChoice, upgradeKindFor } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -436,6 +437,7 @@ export async function applySufferPickFromRelay(payload = {}, ctx = {}) {
   if (!actor) {
     if (!ctx?.requesterIsGM) {
       console.warn(`${MODULE_ID} | sufferCard: card ${messageId}'s character is gone — user ${ctx?.requesterId ?? "?"}'s pick refused.`);
+      refusePress(ctx, "no-actor");
       return { applied: false, reason: "no-actor" };
     }
     _picksInFlight.add(messageId);
@@ -453,6 +455,7 @@ export async function applySufferPickFromRelay(payload = {}, ctx = {}) {
   }
   if (!requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | sufferCard: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — pick refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { applied: false, reason: "not-owner" };
   }
   _picksInFlight.add(messageId);

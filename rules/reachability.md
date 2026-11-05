@@ -208,6 +208,12 @@ the reachability failure on the write side.
   `resolved` / `resolvedActions.<action>` stamp on the card), and its client
   re-arms the button when the click is not delivered (`relayCardAction`). A
   local `disabled` is not a guard — another client, or a re-render, re-arms it.
+- A press the handler refuses for whose the card is — `requesterOwnsActor`
+  fails, or the card's character is gone — is named with
+  `refusePress(ctx, reason, actor)`: the relay has no ack, so the dispatch
+  whispers the presser (and the GMs) whose button it is. A refusal logged on
+  the GM's console only is a silent no-op on the player's action
+  (known-issues RELAY-REFUSED-PRESS-UNTOLD).
 - Never call `requestGmAction` from inside a handler on the canonical GM: the
   nested action queues behind its own caller until the caller's run budget
   (`GM_ACTION_TIMEOUT_MS`, or `GM_CLAUDE_ACTION_TIMEOUT_MS` for a `claude: true`

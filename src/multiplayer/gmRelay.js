@@ -97,6 +97,15 @@
  * enforce permissions (e.g. GM-only fact-continuity corrections) must check
  * `ctx.requesterIsGM`, never `game.user.isGM` — on the relay path the code is
  * running on the GM's client on the player's behalf.
+ *
+ * A refused card press is told
+ * ----------------------------
+ * The relay has no ack: a press the handler refuses re-arms its button after
+ * 15 s (burnMomentum.js RELAY_RECOVERY_MS) and nothing more. A handler that refuses a press for
+ * whose the card is — the requester owns none of its character, or that
+ * character is gone — names it with refusePress(ctx, reason, actor), and
+ * runGmAction whispers the requester and the GMs once, saying whose button it
+ * is (known-issues RELAY-REFUSED-PRESS-UNTOLD).
  */
 
 import { isCanonicalGM } from "./gmGate.js";
@@ -331,9 +340,72 @@ export async function runGmAction(kind, payload = {}, { requesterId = null, loca
       requesterIsGM: !!requester?.isGM,
       local,
     };
-    return handler(payload ?? {}, ctx);
+    const result = await handler(payload ?? {}, ctx);
+    const refused = _refusedPresses.get(ctx);
+    if (refused) await tellRefusedPress(ctx, refused);
+    return result;
   };
   return UNQUEUED_ACTIONS.has(kind) ? task() : enqueueGmAction(kind, task);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A refused card press is told to the presser
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The ctx runGmAction built → the card press its handler refused for whose
+// the card is (refusePress). Keyed by the dispatch's own ctx, so a handler's
+// word reaches its own dispatch only and no handler's result changes shape.
+const _refusedPresses = new WeakMap();
+
+/**
+ * A handler refused its requester's card press for whose the card is
+ * (known-issues RELAY-REFUSED-PRESS-UNTOLD): "not-owner" — the press acts for
+ * a character the requester does not own (a card that names none of theirs
+ * is a GM's to press); "no-actor" / "not-a-pc" — the character it is for is
+ * no longer one of the table's player characters. The relay has no ack, so
+ * the press was logged on the GM's console only and its button re-armed
+ * 15 s later with nothing said. runGmAction tells the requester
+ * — and the GMs, as the module's refusal notices do — once, when the handler
+ * returns; a helper's record and its caller's are the one refusal (the last
+ * stands).
+ *
+ * @param {Object} ctx — the handler's relay context
+ * @param {"not-owner"|"no-actor"|"not-a-pc"} reason
+ * @param {{ name?: string }|null} [actor] — the character the press was for
+ */
+export function refusePress(ctx, reason, actor = null) {
+  if (!ctx || typeof ctx !== "object") return;
+  const name = typeof actor?.name === "string" && actor.name.trim() ? actor.name.trim() : null;
+  _refusedPresses.set(ctx, { reason, name });
+}
+
+/** Whisper the requester and the GMs why their press changed nothing (refusePress). Never throws. */
+async function tellRefusedPress(ctx, { reason, name }) {
+  const presser = typeof ctx?.requester?.name === "string" && ctx.requester.name ? ctx.requester.name : null;
+  const [title, why] = reason !== "not-owner"
+    ? ["Character gone", "The character that button was for is no longer one of the table&rsquo;s player characters."]
+    : name
+      ? ["Not your button", `That button is ${escapeHtml(name)}&rsquo;s: only ${escapeHtml(name)}&rsquo;s player or a GM can press it.`]
+      : ["Not your button", "That button names no character of yours, so only a GM can press it."];
+  const outcome = presser ? `${escapeHtml(presser)}&rsquo;s press changed nothing.` : "The press changed nothing.";
+  const gmIds = Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM).map(u => u.id);
+  try {
+    await globalThis.ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>${title}</strong><p>${why} ${outcome}</p></div>`,
+      whisper: [...new Set([ctx?.requesterId, ...gmIds].filter(Boolean))],
+      flags:   { [MODULE_ID]: { pressRefusedNotice: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | gmRelay: telling ${ctx?.requesterId ?? "?"} their press was refused failed:`, err?.message ?? err);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /**

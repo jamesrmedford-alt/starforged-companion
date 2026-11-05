@@ -19,6 +19,7 @@ import { getPlayerActors, readVows, markVowProgress } from "../character/actorBr
 import { milestoneTicks } from "./milestone.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
 import { parseCardButtons } from "./cardActions.js";
+import { refusePress } from "../multiplayer/gmRelay.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -96,6 +97,7 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
     ?? null;
   if (actor && !requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | milestone pick: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { marked: false, reason: "not-owner" };
   }
 
