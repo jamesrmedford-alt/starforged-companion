@@ -151,7 +151,17 @@ async function runMigration() {
   const anyMigrated = TYPES.some(t => summary[t.key].migrated > 0);
   if (anyMigrated) {
     try {
-      await globalThis.game.settings.set(MODULE_ID, "campaignState", campaignState);
+      // The move lock as the store holds it now, never as this snapshot held
+      // it across the awaits above: a move that claimed or released the lock
+      // meanwhile keeps it — the lock's own paths alone write it
+      // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
+      const latest = globalThis.game.settings.get(MODULE_ID, "campaignState") ?? {};
+      await globalThis.game.settings.set(MODULE_ID, "campaignState", {
+        ...campaignState,
+        pendingMove:      latest.pendingMove ?? false,
+        pendingMoveBy:    latest.pendingMoveBy ?? null,
+        pendingMoveClaim: latest.pendingMoveClaim ?? null,
+      });
     } catch (err) {
       console.error(`${MODULE_ID} | migrator: persistCampaignState failed:`, err);
       summary.notes.push(`Failed to persist campaignState: ${err.message}`);

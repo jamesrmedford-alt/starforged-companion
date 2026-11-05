@@ -954,6 +954,10 @@ export function registerChatHook() {
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
       return;
     }
+    // This client's pipeline holds the lock now: a stale write that carries
+    // back a claim this client released puts this one back over it
+    // (restoreLockOverCarriedBackClaim).
+    _heldMoveLockClaim = lockClaim;
     // Whether this move has released its lock. Once it has, the lock may be
     // another move's: the early release below lets the next move start while
     // this one's rider prompt is open, so this move's finally must not clear
@@ -1924,6 +1928,11 @@ export function registerChatHook() {
   // — the pipeline's own release, a stale lock cleared at load (issue #325
   // W02).
   Hooks.on("updateSetting", (setting) => drainDeferredForcedMoves(setting, onMessage));
+  // A claim this client released, carried back by a write built from a cache
+  // that had not seen the release, is put back by its claimant
+  // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
+  Hooks.on("updateSetting", (setting) => Promise.resolve(restoreLockOverCarriedBackClaim(setting)).catch(err =>
+    console.warn(`${MODULE_ID} | putting the move lock back failed:`, err?.message ?? err)));
   // A GM who leaves mid-move takes their lock with them (issue #325 W25).
   Hooks.on("userConnected", (user, connected) => {
     releaseLockOfDisconnectedGM(user, connected).catch(err =>
@@ -1982,6 +1991,57 @@ function staleMoveLockAtReady(state) {
     return null;
   }
   return { claim: state?.pendingMoveClaim ?? null };
+}
+
+// ── A released claim a stale write carries back ─────────────────────────────
+// (LOCK-RESURRECTED-BY-COGM-STALE-WRITE, found while fixing issue #335 Y07.)
+// Only the lock's own paths change the lock — this pipeline's claim and
+// release, the W25 handover, the ready reset — and every other campaignState
+// writer takes the three fields from its store. But a store can lag the world
+// by one delivery: a lower-id GM who joined mid-move is canonical, the old
+// GM's narration relays its side-data to her, and her ledger persist, built
+// from a cache that has not yet seen the old GM's release, lands after it with
+// `pendingMove` and the spent claim — the lock held until the old GM left or
+// reloaded. No writer can see past its own store; the claimant alone knows the
+// claim is spent, so it puts back what it last wrote.
+
+// Claims this client released, newest last (a handful: a stale write lands
+// within a delivery or two of the release).
+const _releasedMoveLockClaims = [];
+const RELEASED_MOVE_LOCK_CLAIMS_KEPT = 16;
+// The claim this client's pipeline holds now (claimed, not yet released).
+let _heldMoveLockClaim = null;
+
+/** Remember a claim this client released — its lock is free, or another claim's. */
+function noteMoveLockClaimReleased(claim) {
+  if (!claim) return;
+  if (_heldMoveLockClaim === claim) _heldMoveLockClaim = null;
+  if (_releasedMoveLockClaims.includes(claim)) return;
+  _releasedMoveLockClaims.push(claim);
+  if (_releasedMoveLockClaims.length > RELEASED_MOVE_LOCK_CLAIMS_KEPT) _releasedMoveLockClaims.shift();
+}
+
+/**
+ * `updateSetting`: a campaignState write carried the move lock back under a
+ * claim this client released. The claimant puts back what it last wrote — the
+ * claim a later move of its own holds now, else a free lock (released under
+ * the spent claim's token, so a claim stored since is left alone). Another
+ * client's claim is never touched: only the user the lock names acts.
+ *
+ * @param {{ key?: string }} setting — the updateSetting hook's document
+ * @returns {Promise<unknown>|undefined}
+ */
+function restoreLockOverCarriedBackClaim(setting) {
+  if (setting?.key !== `${MODULE_ID}.campaignState`) return undefined;
+  const state = game.settings.get(MODULE_ID, "campaignState");
+  const claim = state?.pendingMove ? (state.pendingMoveClaim ?? null) : null;
+  if (!claim || state.pendingMoveBy !== game.user?.id || !_releasedMoveLockClaims.includes(claim)) return undefined;
+  console.warn(`${MODULE_ID} | A write carried back a move lock this client had released — putting it back.`);
+  if (!_heldMoveLockClaim) return releasePendingMoveLock(claim);
+  // A later move of this client's holds the lock: the stale write overwrote
+  // its claim, which goes back (on a copy of the store as it is now).
+  return game.settings.set(MODULE_ID, "campaignState",
+    { ...state, pendingMove: true, pendingMoveBy: game.user.id, pendingMoveClaim: _heldMoveLockClaim });
 }
 
 // ── Forced moves held while another move is resolved (issue #325 W02) ───────
@@ -2810,21 +2870,33 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * other connected user holds — and only while the store still holds the lock
  * it found (issue #335 Y07; staleMoveLockAtReady).
  *
+ * A claim it releases — or finds free, or another claim's — is remembered: a
+ * co-GM's write built before the release reached her can carry it back, and
+ * this client puts the lock back then (restoreLockOverCarriedBackClaim —
+ * LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
+ *
  * @param {string|null} [claim] — the releasing pipeline's `pendingMoveClaim`
  * @returns {Promise<boolean>} whether the lock is free now, or no longer this
  *   claim's — false when the release was refused (the caller retries it)
  */
 export async function releasePendingMoveLock(claim = null) {
   const latestState = game.settings.get(MODULE_ID, "campaignState");
-  if (!latestState?.pendingMove) return true;   // already released — cheap no-op
+  if (!latestState?.pendingMove) {               // already released — cheap no-op
+    noteMoveLockClaimReleased(claim);
+    return true;
+  }
   if (claim && latestState.pendingMoveClaim && latestState.pendingMoveClaim !== claim) {
     console.debug?.(`${MODULE_ID} | the move lock is another move's claim now — not released.`);
+    noteMoveLockClaimReleased(claim);
     return true;
   }
   // Write a copy: `get` returns this client's cached value, and clearing the
   // flag on it before a write that failed made the retry (the pipeline's
   // finally) read "released" and skip — the world kept the lock (issue #302).
-  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false, pendingMoveBy: null, pendingMoveClaim: null }).then(() => true, err => {
+  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false, pendingMoveBy: null, pendingMoveClaim: null }).then(() => {
+    noteMoveLockClaimReleased(claim);
+    return true;
+  }, err => {
     console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err);
     return false;
   });

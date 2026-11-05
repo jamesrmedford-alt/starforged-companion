@@ -293,12 +293,12 @@ async function detectOpenSceneChallenges() {
 
 /**
  * Spend a `!roll` force: clear `pacing.forceNextAsMove` on the store (a copy
- * of `campaignState` with the flag off) and on `campaignState` once the write
- * lands. The move pipeline calls it once a forced line holds the move lock
- * (issue #331 X37). GM only; a refused clear leaves the flag for the next
- * line. Never throws.
+ * of the latest stored campaignState with the flag off) and on `campaignState`
+ * once the write lands. The move pipeline calls it once a forced line holds
+ * the move lock (issue #331 X37). GM only; a refused clear leaves the flag for
+ * the next line. Never throws.
  *
- * @param {Object} campaignState
+ * @param {Object} campaignState — the pipeline's working copy
  * @returns {Promise<void>}
  */
 export async function consumeForceMove(campaignState) {
@@ -311,10 +311,16 @@ export async function consumeForceMove(campaignState) {
     return;
   }
   // A copy (rules/foundry-api.md): a refused clear leaves the flag set
-  // everywhere, for the next pass to clear (issue #326 W51).
+  // everywhere, for the next pass to clear (issue #326 W51). Onto the store
+  // as it is now, not the working copy (rules/reachability.md §9): that holds
+  // the move lock as the pipeline claimed it, and the lock's fields are the
+  // lock's own paths' to write — a whole working copy carries a lock back
+  // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
   const pacing = { ...campaignState.pacing, forceNextAsMove: false };
   try {
-    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", { ...campaignState, pacing });
+    const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState;
+    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState",
+      { ...latest, pacing: { ...(latest.pacing ?? campaignState.pacing), forceNextAsMove: false } });
     campaignState.pacing = pacing;
   } catch (err) {
     console.warn(`${MODULE_ID} | pacing: failed to clear forceNextAsMove:`, err);

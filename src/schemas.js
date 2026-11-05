@@ -487,7 +487,12 @@ export const CampaignStateSchema = {
 
   // Concurrency lock — true while the move interpretation pipeline is running.
   // Prevents two narration messages from kicking off parallel pipelines that
-  // would race on campaignState writes. Cleared on ready if left stuck.
+  // would race on campaignState writes. Cleared on ready if left stuck. These
+  // three fields are written by the lock's own paths only (index.js: the
+  // claim, releasePendingMoveLock, the W25 handover, the ready reset); every
+  // other writer takes them from the store, and a claim a stale co-GM write
+  // carries back is put back by its claimant (index.js
+  // restoreLockOverCarriedBackClaim — LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
   pendingMove: false,
   // The user id of the GM whose pipeline claimed the lock: when that GM
   // disconnects, the next canonical GM releases it (index.js

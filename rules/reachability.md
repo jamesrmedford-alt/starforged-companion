@@ -253,6 +253,16 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
   instead of replacing them. End a Session held its snapshot across a Claude
   call and wrote it whole — reverting a move and resurrecting its released
   `pendingMove` lock.
+- **A store can lag the world by a delivery.** Re-reading before the write
+  defends against a snapshot held across an await, not against another
+  client's write still in flight: a co-GM's write built from a cache that has
+  not yet seen a release lands after it and carries the old value back. A
+  fact only one client knows is defended by that client — the move lock's
+  claimant remembers the claims it released and puts the lock back when a
+  write carries one back (`restoreLockOverCarriedBackClaim`,
+  LOCK-RESURRECTED-BY-COGM-STALE-WRITE). The lock's three fields are written
+  by its own paths only (claim, release, the W25 handover, the ready reset);
+  every other writer takes them from the store.
 - A safety-critical flag is read **live** at the point of use, not from the
   snapshot (the narrator's `isXCardActive` checks the stored setting too).
 - Writers that must not interleave run through one queue (the `gmRelay`

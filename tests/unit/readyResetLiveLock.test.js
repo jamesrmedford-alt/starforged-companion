@@ -18,6 +18,16 @@
  *
  * (Converted from the tenth audit's probe
  * tests/probes/session/readyResetReleasesLiveLock.probe.js.)
+ *
+ * LOCK-RESURRECTED-BY-COGM-STALE-WRITE (found while fixing Y07): with fact
+ * continuity on, gm-2's narration relays its side-data to gm-1 (canonical by
+ * then), whose ledger persist merges onto her cache. Built from a cache one
+ * delivery behind gm-2's release and landing after it, the write carried
+ * `pendingMove: true` and gm-2's claim back: the lock held until gm-2 left or
+ * reloaded. Every writer takes the lock from its store, but a store can lag
+ * the world by a delivery, so the claimant puts back what it last wrote: it
+ * remembers the claims it released and releases one a write carries back —
+ * or, when a later move of its own holds the lock, restores that claim.
  */
 
 /* global silenceConsoleErrors */
@@ -48,7 +58,7 @@ vi.mock('../../src/narration/narrator.js', async (orig) => ({
 }));
 
 import { simulateTable, USERS } from '../helpers/multiClient.js';
-import { scriptClaude, deferred } from '../helpers/faults.js';
+import { scriptClaude, deferred, campaignStateWrite } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 let table;
@@ -172,5 +182,125 @@ describe('issue #335 Y07 — the ready-time stale-lock reset', () => {
     expect(world().currentSessionId).not.toBe('rl-s1');    // the mint landed …
     expect(world().pendingMove).toBe(true);               // … and left the live claim alone
     expect(world().pendingMoveClaim).toBe('live-claim');
+  }, 60_000);
+});
+
+// A narration whose side-data gives the canonical GM a ledger write to make.
+const NARRATION = 'Kira forces the hatch; it gives with a groan.\n```json\n'
+  + '{"newTruths":[{"subject":"hatch","fact":"The hatch is forced open."}],"stateChanges":[]}\n```';
+const isNarration = (call) => /NARRATOR ROLE|SIDECAR/.test(call?.system ?? '');
+const holdsTheTruth = (state) => (state?.sceneTruths ?? []).some(t => /forced open/.test(t?.fact ?? t?.text ?? ''));
+
+/** A world write the test lets land only after `gate`. */
+function landsAfter(gate) { return gate.promise.then(() => undefined); }
+
+describe('LOCK-RESURRECTED-BY-COGM-STALE-WRITE — a released claim a stale write carries back', () => {
+  it("fact continuity on: gm-1's relayed ledger write, built before gm-2's release reached her, does not hold the lock again", async () => {
+    silenceConsoleErrors();
+    // The Y07 table above, with fact continuity on (its default).
+    table = await simulateTable({
+      users: [{ ...USERS.GM, active: false }, USERS.GM2, USERS.P1],
+      world: { settings: { ...SETTINGS, keyedGmUserIds: ['gm-1', 'gm-2'], campaignState: liveSession() } },
+      clientSettings: { 'gm-1': { claudeApiKey: 'sk-ant-test' } },
+    });
+    await table.setClaudeKey('gm-2', 'sk-ant-test');
+    table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
+    const claude = scriptClaude(table);
+    const held = claude.hold(isNarration);                // the move's narration, in flight on gm-2
+
+    await table.client('pl-1').chat(LINE, { speaker: { actor: 'pc-kira' } });
+    await held.arrived;
+    await table.settle();
+    const claim = world().pendingMoveClaim;
+    expect(world().pendingMoveBy).toBe('gm-2');
+
+    await table.join('gm-1');                             // canonical from now on
+    await table.settle();
+    expect(world().pendingMoveClaim).toBe(claim);         // Y07: gm-2's live lock stands
+
+    // The write order the race needs, made deterministic: gm-2's release
+    // waits until gm-1 has built her ledger write — from a cache that still
+    // holds gm-2's lock — and her write lands after the release.
+    const gm1Built = deferred();
+    const releaseLanded = deferred();
+    table.onEvent((e) => {
+      if (e.type === 'write' && e.outcome === 'applied' && e.kind === 'setting' && e.client === 'gm-2'
+        && world().pendingMove === false) releaseLanded.resolve();
+    });
+    let ledgerWrite = null;
+    table.interceptWrites((w) => {
+      if (!campaignStateWrite()(w)) return undefined;
+      if (w.client === 'gm-1' && w.value.pendingMoveClaim === claim && holdsTheTruth(w.value)) {
+        ledgerWrite = w.value;
+        gm1Built.resolve();
+        return landsAfter(releaseLanded);
+      }
+      if (w.client === 'gm-2' && w.value.pendingMove === false) return landsAfter(gm1Built);
+      return undefined;
+    });
+
+    held.release(NARRATION);
+    await table.drain();
+
+    // The race happened: gm-1's write carried gm-2's claim, after the release.
+    expect(ledgerWrite?.pendingMove).toBe(true);
+    expect(holdsTheTruth(world())).toBe(true);            // her ledger write landed …
+    expect(world().pendingMove).toBe(false);              // … and the lock is free again
+    expect(world().pendingMoveBy).toBeNull();
+    expect(world().pendingMoveClaim).toBeNull();
+  }, 60_000);
+
+  it("a later move's claim the stale write overwrote is put back, and released by its own move", async () => {
+    silenceConsoleErrors();
+    // gm-1 runs the table (canonical); gm-2 is a co-GM whose write is built
+    // while gm-1's first move holds the lock and lands once a second move holds it.
+    table = await simulateTable({
+      users: [USERS.GM, USERS.GM2, USERS.P1],
+      world: { settings: { ...SETTINGS, campaignState: liveSession() } },
+      clientSettings: { 'gm-1': { claudeApiKey: 'sk-ant-test' } },
+    });
+    table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
+    const claude = scriptClaude(table);
+    const first = claude.hold(isNarration);
+
+    await table.client('pl-1').chat(LINE, { speaker: { actor: 'pc-kira' } });
+    await first.arrived;
+    await table.settle();
+    const c1 = world().pendingMoveClaim;
+    expect(world().pendingMoveBy).toBe('gm-1');
+
+    // gm-2's write (a GM-side store write: a dismissed name), built now — its
+    // cache holds c1 — is held, and lands once a second move holds the lock.
+    const gm2Lands = deferred();
+    table.interceptWrites((w) => (campaignStateWrite('gm-2')(w) ? landsAfter(gm2Lands) : undefined));
+    const stale = table.client('gm-2').run(() => game.settings.set('starforged-companion', 'campaignState',
+      { ...game.settings.get('starforged-companion', 'campaignState'), dismissedEntities: ['Vex'] }));
+
+    first.release();
+    await table.drain();
+    expect(world().pendingMove).toBe(false);              // the first move released c1
+
+    const second = claude.hold(isNarration);
+    await table.client('pl-1').chat('Kira hauls herself through the hatch.', { speaker: { actor: 'pc-kira' } });
+    await second.arrived;                                 // the second move holds its claim, parked at its narration
+    await table.settle();
+    const c2 = world().pendingMoveClaim;
+    expect(world().pendingMove).toBe(true);
+    expect(c2).not.toBe(c1);
+
+    gm2Lands.resolve();
+    await stale;                                          // gm-2's write lands, carrying c1 over c2
+    await table.settle();
+
+    expect(world().dismissedEntities).toEqual(['Vex']);   // gm-2's own change stands
+    expect(world().pendingMove).toBe(true);               // the second move's lock is held …
+    expect(world().pendingMoveClaim).toBe(c2);            // … under its own claim, not c1's
+    expect(world().pendingMoveBy).toBe('gm-1');
+
+    second.release();
+    await table.drain();
+    expect(world().pendingMove).toBe(false);              // its own release frees the table
+    expect(world().pendingMoveClaim).toBeNull();
+    expect(world().dismissedEntities).toEqual(['Vex']);
   }, 60_000);
 });
