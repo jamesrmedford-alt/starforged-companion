@@ -11,7 +11,7 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Ninth bug audit (issue #331, part 2 of 3) — all fifty-two fixed in the v1.7.36 cycle
+### Ninth bug audit (issue #331, part 2 of 3) — all fifty-two fixed in the v1.7.36 cycle, and the three found while fixing
 
 Found by the ninth bug audit (2026-11-04) of `8715172`, with a probe per
 finding (`tests/probes/` on branch `claude/focused-mayer-4v90oo`; the report
@@ -90,27 +90,30 @@ already reading "(GM only)" (decisions.md, "Issue #331 audit").
 | X65 UNBEGUN-SUMMARY-REPLACES-LAST | LOSE-PLOT | A prep session's summary replaced LAST SESSION → appended to it |
 | X66 SECTOR-NAME-PARTS-DEAD | PRODUCED-BUT-DEAD | `namePrefix` / `nameSuffix` were written and never read → retired |
 
-Open — found while fixing, not fixed:
+Found while fixing — fixed in the same cycle (the maintainer asked for them
+to be fixed, 2026-11-05), each with tests that fail with its fix taken out:
 
-- **SUPPLY-SYNC-TWINS** (LOSE-STATE, latent) — X52's shape at two more
-  syncs. The shared-vow lockstep (`swearVow.js` `registerSharedVowSyncHook`)
-  writes each copy with no per-write guard: a refused copy write throws out
-  of its pass, skipping the copies after it and stranding a queued change
-  until the vow's next edit. The legacy sheet sync
-  (`sharedLegacies.js` `registerLegacySheetSyncHook`) does the same when
-  `setSharedProgress`'s campaignState write is refused (its per-sheet mirror
-  is already guarded). Proposed: X52's per-write try/catch, the pass going on.
-- **TEST-AID-ALLY-ROLL-FLAKE** (test) — `moveTextConsequences.test.js`'s
-  "resolveMove resolves it as Gain Ground only while a fight is open" rolls
-  real dice: at +9 (capped at 10), both challenge dice at 10 — 1 run in 100
-  — is a miss, which carries no `allyCombatPosition`, and the test fails.
-  Seen once in this cycle. Proposed: script the dice, as its neighbours do.
-- **HARNESS-UPDATEACTOR-FLAT** (test harness) — `tests/helpers/multiClient.js`
-  fires `updateActor` with the update as it was passed (flat keys:
-  `{ "system.supply.value": 0 }`); Foundry passes the expanded diff. A hook
-  that reads the expanded form (`sharedSupply`'s `change.system.supply.value`)
-  never fires on a booted table. Proposed: expand the change before the
-  broadcast, as `expandUpdate` does.
+- ~~**SUPPLY-SYNC-TWINS**~~ (LOSE-STATE) — fixed. X52's shape at two more
+  syncs: the shared-vow lockstep (`registerSharedVowSyncHook`) wrote each
+  copy with no per-write guard, so a refused copy write threw out of its
+  pass, skipping the copies after it and stranding a queued change until the
+  vow's next edit; the legacy sheet sync (`registerLegacySheetSyncHook`) did
+  the same when a shared track's campaignState save was refused, and left the
+  edited sheet ahead of the track it mirrors → each write stands alone, the
+  refusal warned and named to the GM, the pass going on to the other copies
+  or tracks and the queued change; a refused track is mirrored as the world
+  kept it (`sharedVowSyncRefusedWrite.test.js`,
+  `legacySheetSyncRefusedWrite.test.js`).
+- ~~**HARNESS-UPDATEACTOR-FLAT**~~ (test harness) — fixed.
+  `tests/helpers/multiClient.js` fired `updateActor` with the update as it was
+  passed (flat keys), where Foundry passes the expanded diff, so the
+  crew-shared supply sync never fired on a booted table → the broadcast
+  expands the change; X16's check of the ally's mirrored supply is restored,
+  and two tests that leaned on the flat shape say what a world does
+  (`multiClientHarness.test.js`).
+- ~~**TEST-AID-ALLY-ROLL-FLAKE**~~ (test) — fixed. `moveTextConsequences`'s
+  Aid Your Ally fight test rolled real dice, failing 1 run in 100 on a
+  double-10 miss → its dice are scripted to the hit it relies on.
 
 ### Ninth bug audit (issue #330, part 3 of 3) — the fifteen decisions built in the v1.7.36 cycle
 

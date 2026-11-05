@@ -41,6 +41,7 @@ All notable changes to Starforged Companion are documented here.
 - Fixed: **The GM narrates only an oracle result a card shows** (issue #331 X49). A crafted request could have the GM's Claude key narrate any text into the shared story.
 - Fixed: **The GM's ElevenLabs key voices only a narrator card's lines** (issue #331 X51). A crafted request could bill it for any voice, model, speed or text.
 - Fixed: **A supply change one character's sheet would not take no longer stops the crew's** (issue #331 X52). The characters after it kept the old value, and a change made meanwhile was lost. The GM is told whose supply to set.
+- Fixed: **A shared vow or legacy that one sheet would not take no longer stops the rest of the crew's** (found while fixing issue #331 X52). The other copies of a shared vow — or the edit's other legacy tracks — kept the old value, and a change made meanwhile was lost. The GM is told which to set, and a legacy track the world kept as it was shows on every sheet as it stands.
 - Fixed: **A player's error-log entries are saved as text** (issue #331 X53). A crafted entry could put live markup in the Error Log every GM opens.
 - Fixed: **The Campaign Setup card reaches every GM** (issue #331 X54). A second GM never saw it.
 - Fixed: **An open Entities panel follows `!at` and Dismiss made elsewhere** (issue #331 X56). It stayed as it was, and its “Set as current location” could then clear the place just set.

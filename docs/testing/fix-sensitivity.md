@@ -11,8 +11,8 @@ the two follow-ups, the patches applied to `514f5eb`), for issue #309 on
 issues #313, #314 and #315 on 2026-10-30, for issue #316 on 2026-10-31,
 for issues #321 and #322 on 2026-11-01, for issues #325 and #326 on 2026-11-03 and for issue
 #329 — and the four fixes found while fixing it — and for issue #330's fifteen
-decisions on 2026-11-04, and for issue #331 on 2026-11-05 (the X48 patch
-applied to `6405a27`). To reproduce:
+decisions on 2026-11-04, and for issue #331 — and the three found while
+fixing it — on 2026-11-05 (the X48 patch applied to `6405a27`). To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -157,6 +157,12 @@ node scripts/fix-sensitivity.mjs \
   d0da1ff b7dcf58 8ecbdfc 6bb6063 1435c1a 779dbb7 65d4b0a fc26baf 27d1ee5 \
   85acd42 7f57659 052269c f484a0c 9efeae8 \
   --inject scripts/defects/x48-planet-name-not-its-class.patch \
+  --md details.md
+
+# issue #331 — the three found while fixing it (SUPPLY-SYNC-TWINS; the other
+# two change tests/ only, which the script does not revert — shown by hand)
+node scripts/fix-sensitivity.mjs \
+  21a51c0 \
   --md details.md
 ```
 
@@ -731,6 +737,22 @@ also shown on the behaviour.
 | X62 RECOMMIT-SHEET-MISS | f484a0c | revert | 2 — `sheetMissRecommitOffer.test.js` (2) |
 | X63 LEGACY-ROLL-UNNAMED | 9efeae8 | revert | 3 — `continueLegacyWhichTrack.test.js` (3) |
 
+### Issue #331 — the three found while fixing it
+
+**SUPPLY-SYNC-TWINS** is sensitive by revert. The other two change only
+`tests/`, which the script does not revert. **HARNESS-UPDATEACTOR-FLAT** is
+shown by hand: with `tests/helpers/multiClient.js` restored from its parent,
+`multiClientHarness.test.js`'s expanded-diff test and `assetEffects.test.js`'s
+X16 test (its restored check of the ally's mirrored supply) fail.
+**TEST-AID-ALLY-ROLL-FLAKE** made a flaky test deterministic — there is no
+defect to put back; the test now pins the strong hit its scripted dice give.
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| SUPPLY-SYNC-TWINS | 21a51c0 | revert | 5 — `legacySheetSyncRefusedWrite.test.js` (3), `sharedVowSyncRefusedWrite.test.js` (2) |
+| HARNESS-UPDATEACTOR-FLAT | 4c6b2d5 | by hand | 2 — `multiClientHarness.test.js`, `assetEffects.test.js` |
+| TEST-AID-ALLY-ROLL-FLAKE | 0498768 | — | a test made deterministic; nothing to revert |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -905,7 +927,9 @@ sweep's control (X60); X61's tests (shown by hand, above); a session nobody
 began or ended, a world's first summary, a begun session's summary (X64,
 X65); the name's prefix and suffix (X66); a hit, a hand-made bond and a
 bonded connection getting no offer (X62); and a named track rolling at once
-(X63).
+(X63). For the three found while fixing it, the script lists two, both
+named controls: an edit of two legacy tracks saving and mirroring both, and a
+shared vow's change reaching every copy with no refusal (SUPPLY-SYNC-TWINS).
 
 ## Details
 
@@ -7552,3 +7576,22 @@ Test files: `tests/unit/planetSampleNames.test.js`.
 | Fails with the defect | First failure line |
 | --- | --- |
 | tests/unit/planetSampleNames.test.js › X48 — a planet's name is a row of its class's table each rolled planet is named from SAMPLE_NAMES_&lt;CLASS> | AssertionError: Furnace World: expected [ 'Ash', 'Azula', 'Cinder', …(17) ] to include 'Crag' |
+
+### 21a51c0 — fix: a refused write to one vow copy or legacy track no longer stops the crew's sync (SUPPLY-SYNC-TWINS)
+
+Test files: `tests/unit/legacySheetSyncRefusedWrite.test.js`, `tests/unit/sharedVowSyncRefusedWrite.test.js`. Source restored: 2 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/legacySheetSyncRefusedWrite.test.js › a refused save of one shared legacy track during the sheet sync (SUPPLY-SYNC-TWINS) is that track's alone: the edit's other track is still saved and mirrored, and the refusal is named | AssertionError: expected null to match object { ticks: 5 } |
+| (new) tests/unit/legacySheetSyncRefusedWrite.test.js › a refused save of one shared legacy track during the sheet sync (SUPPLY-SYNC-TWINS) the edited sheet is set back to the shared track the world kept — no sheet stays ahead of it | AssertionError: expected [ 9, 8 ] to deeply equal [ 8, 8 ] |
+| (new) tests/unit/legacySheetSyncRefusedWrite.test.js › a refused save of one shared legacy track during the sheet sync (SUPPLY-SYNC-TWINS) an edit queued while a refused save was in flight still gets its pass | AssertionError: expected null to match object { ticks: 3 } |
+| (new) tests/unit/sharedVowSyncRefusedWrite.test.js › a refused copy write during the shared-vow sync (SUPPLY-SYNC-TWINS) is that copy's alone: the next copy is still updated, and the refusal names whose copy | AssertionError: expected 4 to be 12 // Object.is equality |
+| (new) tests/unit/sharedVowSyncRefusedWrite.test.js › a refused copy write during the shared-vow sync (SUPPLY-SYNC-TWINS) does not strand a change queued during the pass: the newer value still reaches every copy | AssertionError: expected { subtype: 'vow', current: 4, …(3) } to match object { current: 12, clockTicks: 1 } |
+
+- New test passing with and without the fix (a control?): tests/unit/legacySheetSyncRefusedWrite.test.js › a refused save of one shared legacy track during the sheet sync (SUPPLY-SYNC-TWINS) control: an edit of two tracks saves and mirrors both
+- New test passing with and without the fix (a control?): tests/unit/sharedVowSyncRefusedWrite.test.js › a refused copy write during the shared-vow sync (SUPPLY-SYNC-TWINS) control: with no refusal, every copy is brought to the change

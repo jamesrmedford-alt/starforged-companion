@@ -27,8 +27,10 @@ addressed on 2026-11-05. Each finding's ID in brackets.)
   sends one, and a refusal keeps the log to what the UI wrote.
 - **One write's refusal is its own** [X52]: the crew-shared supply sync goes
   on to the other PCs and to a queued change, and the GM is told whose
-  supply to set. Its twins in the shared-vow and legacy-sheet syncs are
-  open (known-issues SUPPLY-SYNC-TWINS).
+  supply to set. The shared-vow and legacy-sheet syncs do the same (known-
+  issues SUPPLY-SYNC-TWINS, found while fixing it); a legacy track the world
+  refused is mirrored to the sheets as the world kept it — the sheet is the
+  mirror, the shared track canonical (rules/reachability.md §5).
 - **A card bound to a move leaves with the move's result** [X15]; **a roll
   that is not made takes nothing** [X17, X37]; **a refused move record goes
   to the GMs' failure card with a Retry** [X18].
