@@ -31,7 +31,7 @@ import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
 import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
 import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
 import { rememberSessionRetractions } from './retractions.js';
-import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations } from './ledgers.js';
+import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -638,10 +638,19 @@ export function mergeSceneLedgers(working, latest) {
   const truthKey = (t) => t?.id ?? JSON.stringify(t);
   const mine = new Map(workingTruths.map(t => [truthKey(t), t]));
   const seen = new Set();
+  const refiled = new Set();   // replacements of a truth the X-Card removed
   const merged = storeTruths.map((t) => {
     const k = truthKey(t);
     seen.add(k);
     const w = mine.get(k);
+    // A truth the X-Card retracted stays the X-Card's: a correction made on
+    // a copy read before it landed — a Replace whose awaits it played
+    // during — neither relabels it nor files its replacement, which would be
+    // the removed fact again, live (issue #336 Y30; U07).
+    if (t?.retractedBy === XCARD_RETRACTED_BY) {
+      if (w?.correctedTo && w.correctedTo !== t.correctedTo) refiled.add(w.correctedTo);
+      return t;
+    }
     // A retraction (narrator contradiction or `!truth` correction) is one-way,
     // and so is the link a correction adds to it — a Replace's, or a
     // `!truth set` re-establishing a struck fact (issue #326 W60).
@@ -649,7 +658,7 @@ export function mergeSceneLedgers(working, latest) {
     return (w?.retracted && w.correctedTo && !t?.correctedTo) ? w : t;
   });
   for (const t of workingTruths) {
-    if (!seen.has(truthKey(t))) merged.push(t);
+    if (!seen.has(truthKey(t)) && !refiled.has(t?.id)) merged.push(t);
   }
   working.sceneTruths = merged;
   return true;

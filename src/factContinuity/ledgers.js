@@ -500,8 +500,12 @@ export function subjectFromStateKey(key) {
  * Mark a truth retracted in place. Does not remove the entry — strike-through
  * is recorded for audit (scope §4.1).
  *
- * Returns the matched entry on success, null when no entry has the given ID
- * or the actor lacks permission. Permission is enforced via canCorrectTruth.
+ * Returns the matched entry on success, null when no entry has the given ID,
+ * the entry is already retracted, or the actor lacks permission. Permission
+ * is enforced via canCorrectTruth. An entry already retracted — a strike, a
+ * Replace's original, the X-Card's — is left as it is: relabelling the
+ * X-Card's retraction a GM's made it a strike `!truth set` could lift (issue
+ * #336 Y30; U07: an X-Card retraction is never lifted).
  *
  * @param {string} truthId — full id or 6-char prefix
  * @param {Object} campaignState
@@ -514,7 +518,7 @@ export function strikeTruth(truthId, campaignState, ctx = {}) {
   if (!campaignState || !truthId) return null;
   ensureLedgerShape(campaignState);
   const entry = findTruthByIdOrPrefix(campaignState.sceneTruths, truthId);
-  if (!entry) return null;
+  if (!entry || entry.retracted) return null;
   if (!canCorrectTruth(entry, ctx)) return null;
   entry.retracted   = true;
   entry.retractedBy = ctx.actor ?? 'gm';
@@ -525,7 +529,10 @@ export function strikeTruth(truthId, campaignState, ctx = {}) {
 /**
  * Replace a truth (strike the old, append a new one with `correctedTo`
  * link). Returns { struck, replacement } on success, null on permission /
- * lookup failure.
+ * lookup failure — or when the entry is already retracted: a Replace saved
+ * after the X-Card removed its fact (the prompt was open meanwhile)
+ * overwrote the X-Card's mark and filed the removed fact again, live, under
+ * the GM's wording (issue #336 Y30; U07).
  *
  * @param {string} truthId
  * @param {Object} replacement — { subject, fact, sessionId, sceneId, moveId }
@@ -537,7 +544,7 @@ export function replaceTruth(truthId, replacement, campaignState, ctx = {}) {
   if (!campaignState || !truthId || !replacement) return null;
   ensureLedgerShape(campaignState);
   const entry = findTruthByIdOrPrefix(campaignState.sceneTruths, truthId);
-  if (!entry) return null;
+  if (!entry || entry.retracted) return null;
   if (!canCorrectTruth(entry, ctx)) return null;
 
   const newId = newTruthId();
@@ -737,9 +744,10 @@ function normaliseFactText(fact) {
 
 /**
  * Locate a truth by full ID or 6+ char prefix. Returns the entry or null
- * if no match / ambiguous match.
+ * if no match / ambiguous match. `!truth strike` uses it to say a truth it
+ * could not strike is already retracted (issue #336 Y30).
  */
-function findTruthByIdOrPrefix(truths, needle) {
+export function findTruthByIdOrPrefix(truths, needle) {
   if (!Array.isArray(truths)) return null;
   const exact = truths.find(t => t?.id === needle);
   if (exact) return exact;

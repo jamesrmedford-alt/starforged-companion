@@ -37,6 +37,7 @@ import {
   subjectKey,
   findBareStrike,
   canCorrectTruth,
+  findTruthByIdOrPrefix,
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { propagateRetraction, markSummaryForRegen } from "./retractions.js";
@@ -225,9 +226,15 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
         // the fact (issue #286 B6).
         await propagateRetraction(struck, campaignState);
       }
+      // A truth already retracted — struck, replaced or removed by the X-Card
+      // — is left as it is (issue #336 Y30), and the card says so; its fact
+      // is not named (it may be one the table removed).
+      const already = struck ? null : findTruthByIdOrPrefix(campaignState.sceneTruths, parsed.rest);
       resultLine = struck
         ? `Truth <code>${struck.id.slice(0, 8)}</code> struck.`
-        : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
+        : already?.retracted
+          ? `Truth <code>${escapeHtml(String(already.id).slice(0, 8))}</code> is already retracted — nothing changed.`
+          : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
     } else if (parsed.domain === "truth") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const struck  = findBareStrike(campaignState.sceneTruths, subject, String(parsed.fact ?? "").trim());

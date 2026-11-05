@@ -523,7 +523,11 @@ ring, and the closing scene's truths keep the closing session's number.
   re-assertions of retracted facts; GM `!truth set` bypasses (GM authority) —
   and lifts the strike it re-establishes, linking it as a Replace does, so
   the fact is not binding and CORRECTED at once; a player's set over a GM's
-  strike is refused (issue #326 W60).
+  strike is refused (issue #326 W60). A truth already retracted — struck,
+  replaced, or the X-Card's — is struck or replaced no further
+  (`!truth strike` says "already retracted"), and no correction made on a
+  copy older than the X-Card relabels its retraction or files a replacement
+  (issue #336 Y30).
 - **A Strike reaches every copy** (issue #286 B6): `!truth strike` and the
   correction dialog's Strike / Replace — and, since issue #321 U07, the
   X-Card for each truth it retracts — call `propagateRetraction` — the
