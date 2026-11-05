@@ -4095,6 +4095,13 @@ async function handlePayThePriceCommand(message) {
   // write was refused and the ally sat at 0 supply without the impact
   // (issue #325 W10).
   const speakerActorId = resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState"));
+  // A player with no character of their own resolves to none at a table of
+  // several (issue #321 U23), and the canonical GM rightly refuses their route
+  // — another player's PC never pays it (#326 D8) — but said nothing: the card
+  // read "Routes to endure_harm (-1)" and nobody was harmed (issue #337 Y43).
+  // Refused here, before the card: it says the price was not applied, and the
+  // player is told why, as a move they narrate is.
+  const noPayer = !!result.sufferRoutes?.length && !speakerActorId && !game.user?.isGM;
   const narration = {
     kind:       "pay_the_price",
     oracleName: "Pay the Price",
@@ -4102,8 +4109,11 @@ async function handlePayThePriceCommand(message) {
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
     speakerActorId,
   };
+  const routesLine = noPayer
+    ? sufferRoutesFooter(result.sufferRoutes, { notApplied: `${escapeChatHtml(game.user?.name ?? "the player who rolled it")} has no character of their own to pay it` })
+    : sufferRoutesFooter(result.sufferRoutes);
   const card = await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routesLine}</div>`,
     flags:   {
       [MODULE_ID]: {
         payThePriceCard: true,
@@ -4114,7 +4124,11 @@ async function handlePayThePriceCommand(message) {
       },
     },
   });
-  if (result.sufferRoutes?.length) {
+  if (noPayer) {
+    console.debug?.(`${MODULE_ID} | !pay-the-price: ${game.user?.name ?? "this player"} has no character of their own — the price is not applied (they are told).`);
+    await postNoCharacterNotice(message, { price: true }).catch(err =>
+      console.warn(`${MODULE_ID} | !pay-the-price: no-character notice failed:`, err?.message ?? err));
+  } else if (result.sufferRoutes?.length) {
     await requestGmAction("payThePrice.suffer", { routes: result.sufferRoutes, actorId: speakerActorId }).catch(err =>
       console.warn(`${MODULE_ID} | !pay-the-price: suffer dispatch failed:`, err?.message ?? err));
   }
@@ -4749,17 +4763,22 @@ async function postLegacyMarkCard(track, ticks) {
 
 /**
  * Tell a player with no character of their own that their move was not rolled
- * (issue #326 D8): whispered to the author (and the GMs), flagged so it never
+ * (issue #326 D8) — or, for a `!ptp` (`price`), that its price was not applied
+ * (issue #337 Y43): whispered to the author (and the GMs), flagged so it never
  * reads as narration.
  *
- * @param {ChatMessage} message — the player's narration
+ * @param {ChatMessage} message — the player's narration, or their `!ptp`
+ * @param {{ price?: boolean }} [opts]
  * @returns {Promise<void>}
  */
-async function postNoCharacterNotice(message) {
+async function postNoCharacterNotice(message, { price = false } = {}) {
   const authorId = messageAuthorId(message);
   const whisper  = [...new Set([authorId, ...gmUserIds()].filter(Boolean))];
+  const body = price
+    ? `<strong>No character to pay the price</strong><p>You don&rsquo;t have a character of your own yet, so this price was not applied &mdash; another player&rsquo;s character can&rsquo;t pay it for you. Ask the GM to assign you a character (or set one as yours under User Configuration), then try again.</p>`
+    : `<strong>No character to roll for</strong><p>You don&rsquo;t have a character of your own yet, so this move was not rolled &mdash; another player&rsquo;s character can&rsquo;t make it for you. Ask the GM to assign you a character (or set one as yours under User Configuration), then try again.</p>`;
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>No character to roll for</strong><p>You don&rsquo;t have a character of your own yet, so this move was not rolled &mdash; another player&rsquo;s character can&rsquo;t make it for you. Ask the GM to assign you a character (or set one as yours under User Configuration), then try again.</p></div>`,
+    content: `<div class="sf-ptp-card">${body}</div>`,
     whisper,
     flags: { [MODULE_ID]: { noCharacterNotice: true } },
   });
@@ -6503,11 +6522,16 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
   }
 }
 
-/** The Pay the Price card's footer: "Routes to endure_harm (-1), endure_stress (-1)." — nothing for none. */
-function sufferRoutesFooter(routes) {
+/**
+ * The Pay the Price card's footer: "Routes to endure_harm (-1), endure_stress (-1)." — nothing for none.
+ * `notApplied` (markup, escaped by the caller) says why the routes were not applied (issue #337 Y43).
+ */
+function sufferRoutesFooter(routes, { notApplied = null } = {}) {
   if (!routes?.length) return "";
   const list = routes.map(r => `${escapeChatHtml(r.move)} (-${r.amount})`).join(", ");
-  return `<p><em>Routes to ${list}.</em></p>`;
+  return notApplied
+    ? `<p><em>Routes to ${list} &mdash; not applied: ${notApplied}.</em></p>`
+    : `<p><em>Routes to ${list}.</em></p>`;
 }
 
 /**
