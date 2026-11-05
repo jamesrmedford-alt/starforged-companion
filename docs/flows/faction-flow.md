@@ -25,6 +25,20 @@ the auto-surface was unstamped and the removed faction stayed in [4e]. Read
 by `getFactionLandscape` (up to 3, most recently updated) and `!journal
 faction` commands.
 
+**Identity by name** (issue #336 Y31): one faction is one page and one
+stance whatever article, case or spacing names it. Every faction lookup by
+name keys on `factionNameKey` (`faction.js` — lowercased, whitespace
+collapsed, a leading "the" / "a" / "an" dropped): the record
+(`findFactionByName`, an exact match first), the Factions page
+(`recordFactionIntelligence` updates the page matching by key under its own
+name, and a new page takes the matching record's name; `getFactionEntry`),
+the entity gates (`entityExistsForName`'s faction branch,
+`entityExistsAnyType`) and the landscape's dedup (`mergeFactionLandscape`).
+The detection prompt names factions with the article ("the Compact"), so a
+shift for "The Iron Syndicate" used to make a second page and never reach
+the "Iron Syndicate" record — one faction, two stances in [4e]. The other
+World Journal categories keep exact titles.
+
 **Faction entity records** (`src/entities/faction.js`): journal-entry-backed
 records with the full Starforged shape — type/subtype, influence,
 dominion/leadership, `projects[]`, `rumors[]`, quirk, and

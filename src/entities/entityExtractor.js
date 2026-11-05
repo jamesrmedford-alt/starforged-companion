@@ -37,7 +37,7 @@ import { getConnection, createConnection, updateConnection, roleTitleFromName } 
 import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
-import { getFaction,    createFaction }    from "./faction.js";
+import { getFaction,    createFaction, findFactionByName } from "./faction.js";
 import { getShip,       createShip }       from "./ship.js";
 import { getPlanet,     createPlanet }     from "./planet.js";
 import { getLocation,   createLocation }   from "./location.js";
@@ -1182,6 +1182,9 @@ export async function applyStateTransition(transition, campaignState, { narratio
  */
 export function entityExistsForName(name, type, campaignState) {
   if (!name || !type) return false;
+  // A faction is one faction whatever article, case or spacing names it
+  // (factionNameKey, issue #336 Y31) — besides the title-stripped match below.
+  if (type === "faction" && findFactionByName(name, campaignState)) return true;
   const idsField = ENTITY_ID_FIELDS[type];
   const getter   = ENTITY_GETTERS[type];
   if (!idsField || !getter) return false;
@@ -1234,7 +1237,9 @@ export function entityExistsAnyType(name, campaignState) {
   if (sectorNameMatches(target, campaignState)) return true;
 
   // 3. Our own bookkeeping ID lists (connection/settlement/faction/ship/
-  //    planet/location/creature). This was the only check before F14.
+  //    planet/location/creature). This was the only check before F14. A
+  //    faction matches with or without its article too (issue #336 Y31).
+  if (findFactionByName(name, campaignState)) return true;
   for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
     const getter = ENTITY_GETTERS[type];
     if (!getter) continue;
