@@ -143,6 +143,10 @@ export function attributeHtml(html, user) {
     : html;
 }
 
+// One entry as formatEntry writes it: `<p>[time] LEVEL: text</p>`, the text
+// escaped, its only tag the `<br>` a newline became.
+const ENTRY_RE = /^<p>\[[^\]<>]*\] (?:WARN|ERROR): (?:[^<>]|<br>)*<\/p>\n?$/;
+
 /**
  * GM-side socket handler — writes relayed non-GM client errors to the journal.
  * Single-writer via isCanonicalGM so a multi-GM world doesn't double-log.
@@ -155,6 +159,14 @@ export function registerErrorLogSocket() {
       if (!payload || payload.kind !== "errorLog.append") return;
       if (typeof payload.html !== "string" || !payload.html) return;
       if (!isCanonicalGM()) return;
+      // A relayed entry is client-asserted (rules/reachability.md §8): only
+      // one entry as formatEntry writes it is filed. Anything else — live
+      // markup a console or macro sent — was appended verbatim to the GM's
+      // journal (issue #331 X53), and is refused.
+      if (!ENTRY_RE.test(payload.html)) {
+        _rawConsoleError?.("error-log relay refused: the entry is not one formatted log line.");
+        return;
+      }
       enqueue(attributeHtml(payload.html, payload.user));
     } catch (err) {
       // Raw console — never re-enter capture from the socket layer.
