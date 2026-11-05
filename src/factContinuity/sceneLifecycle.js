@@ -620,7 +620,9 @@ export function mergeSceneLedgers(working, latest) {
  * or `!scene` closed this one and archived its truths), and sceneTruths are
  * unioned by id otherwise, so a `!truth` correction or an oracle follow-up's
  * truth that landed during the narration survives. When the caller's object
- * IS the stored one it is written as-is. Failures are logged, never thrown.
+ * IS the stored one a copy of it is written — never the cached object itself,
+ * which a refused write must leave as the world has it (issue #331 X38).
+ * Failures are logged, never thrown.
  *
  * A caller that owns a further change — a correction's mark on the rolling
  * summary, the inciting premise — makes it with `opts.onto` on the latest
@@ -644,7 +646,11 @@ export async function persistSceneLedgerFields(campaignState, fields, label, { o
     } catch (err) {
       console.debug?.(`${MODULE_ID} | sceneLifecycle: latest campaignState read failed (${label}); writing the caller's copy:`, err?.message ?? err);
     }
-    let target = campaignState;
+    // Always a copy: a caller may hand over the cached setting itself, and
+    // `onto` (or the merge) set on it before a refused write left this
+    // client's cache holding what the world never took (issue #331 X38 —
+    // the inciting premise).
+    let target = { ...campaignState };
     let ledgersWritten = true;
     if (latest && typeof latest === 'object' && latest !== campaignState) {
       const ledgers = {};
