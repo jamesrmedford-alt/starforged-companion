@@ -465,9 +465,6 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
   const lines = [];
   if (questFocus)      lines.push(`<li><strong>Quest focus:</strong> ${escapeHtml(questFocus)}</li>`);
   if (connectionFocus) lines.push(`<li><strong>Connection focus:</strong> ${escapeHtml(connectionFocus)}</li>`);
-  const focusBlock = lines.length
-    ? `<ul>${lines.join("")}</ul><p>You take <strong>+1 momentum</strong>.</p>`
-    : `<p class="muted"><em>No focus set — no momentum bonus.</em></p>`;
   const endedBefore = sessionAlreadyEnded(game.settings.get(MODULE_ID, "campaignState") ?? {});
 
   // The world writes (foci, session-active flip, scene close, summary, log,
@@ -476,8 +473,32 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
   // Ended already (issue #309 N08): the GM's note card says what changed — a
   // second card here would promise momentum that is not paid again.
   if (res?.ok !== false && (res?.result?.alreadyEnded === true || (endedBefore && res?.relayed))) return;
-  const notRecorded = res?.ok === false
-    ? `<p class="muted sf-not-recorded"><em>${res.reason === "no-gm"
+  const failed = res?.ok === false;
+  const noGm   = failed && res.reason === "no-gm";
+
+  // A failed End is worded by what happened: no momentum is promised. Ended
+  // already, nothing was ended — only the focus correction did not land, and
+  // this card is the only word on the GM's own End (the handler's note is a
+  // relayed End's). It read "+1 momentum" and "could not be ended".
+  if (failed && endedBefore) {
+    const why = noGm ? "no GM is connected" : "see the console";
+    const text = lines.length
+      ? `This session has already ended, so nothing was ended. The focus for next session was not recorded, and no momentum was given — ${why}. Try End a Session again${noGm ? " once a GM has joined" : ""}.`
+      : `This session has already ended, so nothing was ended — ${why}.`;
+    await ChatMessage.create({
+      content: `<div class="sf-session-card"><strong>End a Session</strong><p class="muted sf-not-recorded"><em>${escapeHtml(text)}</em></p></div>`,
+      flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
+    });
+    return;
+  }
+
+  const focusBlock = !lines.length
+    ? `<p class="muted"><em>No focus set — no momentum bonus.</em></p>`
+    : failed
+      ? `<ul>${lines.join("")}</ul>`
+      : `<ul>${lines.join("")}</ul><p>You take <strong>+1 momentum</strong>.</p>`;
+  const notRecorded = failed
+    ? `<p class="muted sf-not-recorded"><em>${noGm
         ? "No GM is connected — the session was not ended, and no focus or momentum was recorded. Try again once a GM has joined."
         : "The session could not be ended — see the console."}</em></p>`
     : "";

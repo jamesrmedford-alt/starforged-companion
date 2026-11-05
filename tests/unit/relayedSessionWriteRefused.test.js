@@ -137,6 +137,37 @@ describe("issue #335 Y06 — a player's session write the world refused on the G
     expect(sessionCards()[0].content).toMatch(/focus for next session was not updated/);
   }, 30_000);
 
+  it("the GM's own End on a session already ended, the focus correction refused: the card says what happened — nothing was ended, the focus was not recorded", async () => {
+    // Its card read "You take +1 momentum" and "The session could not be ended":
+    // no momentum was given, and the session had ended already.
+    await resetTable(liveSession({ sessionActive: false, sessionEndedId: 'es-s1' }));
+    expectConsoleError(/session\.end/);
+    const fault = failWrites(table, w => campaignStateWrite('gm-1')(w) && w.value?.questFocus === 'Find the beacon');
+    await end('gm-1');
+
+    expect(fault.refused).toBe(1);
+    expect(world().questFocus ?? '').toBe('');
+    expect(applyMeterChanges).not.toHaveBeenCalled();
+    expect(sessionCards()).toHaveLength(1);              // the local path's card, once
+    const card = sessionCards()[0].content;
+    expect(card).toMatch(/This session has already ended/);
+    expect(card).toMatch(/focus for next session was not recorded/);
+    expect(card).not.toMatch(/\+1 momentum/);
+    expect(card).not.toMatch(/could not be ended/);
+  }, 30_000);
+
+  it("the GM's own End under the refusal promises no momentum — none was given", async () => {
+    expectConsoleError(/session\.end/);
+    failWrites(table, endGateWrite);
+    await end('gm-1');
+
+    expect(applyMeterChanges).not.toHaveBeenCalled();
+    const card = sessionCards()[0].content;
+    expect(card).toMatch(/could not be ended/);
+    expect(card).toMatch(/Find the beacon/);             // the focus it was given, listed
+    expect(card).not.toMatch(/\+1 momentum/);
+  }, 30_000);
+
   it("a player's public Set a Flag: the GM posts that the flag was not saved", async () => {
     expectConsoleError(/safety\.setFlag/);
     const fault = failWrites(table, w => campaignStateWrite('gm-1')(w) && (w.value?.safetyFlags?.length ?? 0) > 0);
