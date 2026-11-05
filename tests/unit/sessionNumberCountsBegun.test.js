@@ -63,7 +63,6 @@ describe("issue #330 D12 — a world opened only to prepare does not burn a sess
     const cs = {
       currentSessionId: "S4", sessionNumber: 4, sessionStartedId: "S3",
       sessionSummary: { sessionId: "S4", text: "The crew read the inciting incident.", updatedAt: null },
-      previousSessionSummary: { sessionId: "S3", sessionNumber: 3, text: "Session three.", updatedAt: null },
     };
     mintSession(cs, T0);
     expect(cs.sessionNumber).toBe(4);

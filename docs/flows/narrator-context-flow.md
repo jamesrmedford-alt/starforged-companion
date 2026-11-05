@@ -291,8 +291,12 @@ over (`registerSessionActivityHook`). The next world load (`initSessionId`,
 ready hook) or Begin a Session, whichever comes first, runs `rollSessionIfDue`:
 an unended session's summary is brought up to date
 (`finalizeSessionSummary`), its scene closes under its own id, then
-`mintSession` keeps that summary as `previousSessionSummary`, mints the next
-id and closes the session-active gate (`sessionActive` / `sessionActiveStartedAt`
+`mintSession` keeps that summary as `previousSessionSummary` — a session
+nobody began (no Begin stamped it, its gate shut, End a Session did not close
+it) hands its number on (issue #330 D12; one End a Session closed counts as
+begun, issue #331 X64) and adds its summary to the one before it, which stays
+LAST SESSION under its own number (it replaced it — issue #331 X65) — mints
+the next id and closes the session-active gate (`sessionActive` / `sessionActiveStartedAt`
 joined `SESSION_MINT_FIELDS`): the new session is begun by Begin a Session —
 a session nobody ended handed its open gate to the next, so Begin did nothing
 (issue #321 U12). Begin a Session's start effects (Spotlight momentum, campaign clocks, the

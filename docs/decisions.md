@@ -161,7 +161,10 @@ brackets.)
   `!recap session N` and every narrator card. A closing session nobody began
   (no `sessionStartedId` stamp, its gate shut, and not closed by End a
   Session — a session ended before the stamp existed counts as begun, issue
-  #331 X64) now hands its number on to the next; the id still changes, and its summary is carried as LAST SESSION
+  #331 X64) now hands its number on to the next; the id still changes, and its summary is carried: added to the
+  summary of the session before it, which stays LAST SESSION under its own
+  number (it replaced that summary, so the narrator lost what the table last
+  played — issue #331 X65), or, when there is none, carried as LAST SESSION
   with no number of its own. The Campaign Start's Begin Session stamps
   `sessionStartedId` too — it did not, so its session would have read as
   unbegun — and an open gate counts as begun for a world from before the

@@ -174,7 +174,9 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
 /**
  * Start a new session: keep the closing session's rolling summary as
  * `previousSessionSummary` (an older one stays when the closing session has
- * none), then mint the id, bump `sessionNumber` and stamp
+ * none; a closing session nobody began adds its summary to the older one,
+ * which keeps its number — issue #331 X65), then mint the id, bump
+ * `sessionNumber` and stamp
  * `lastSessionTimestamp`. `sessionNumber` counts the sessions a table began:
  * a closing session nobody began (no Begin stamped it `sessionStartedId`,
  * its gate is shut, and End a Session did not close it — issue #331 X64) — a
@@ -204,14 +206,30 @@ export function mintSession(campaignState, now = Date.now()) {
   const closingUnbegun = !!closing && campaignState.sessionStartedId !== closing
     && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
   if (closing && summary?.sessionId === closing && typeof summary.text === "string" && summary.text.trim()) {
-    campaignState.previousSessionSummary = {
-      sessionId:     closing,
-      // An unbegun session's number passes to the next one, so its summary
-      // carries none — LAST SESSION, not "Session 4" while session 4 runs.
-      sessionNumber: closingUnbegun ? null : (campaignState.sessionNumber ?? null),
-      text:          summary.text.trim(),
-      updatedAt:     summary.updatedAt ?? null,
-    };
+    const text     = summary.text.trim();
+    const prev     = campaignState.previousSessionSummary;
+    const prevText = typeof prev?.text === "string" ? prev.text.trim() : "";
+    if (closingUnbegun && prevText) {
+      // What was narrated in a session nobody began — a world opened to
+      // prepare (`@scene`, `!oracle`) — is added to the summary of the
+      // session before it, which stays LAST SESSION under its own number. It
+      // replaced that summary, so the narrator lost what the table last
+      // played (issue #331 X65).
+      campaignState.previousSessionSummary = {
+        ...prev,
+        text:      `${prevText}\n\nNarrated between sessions, while no session was begun: ${text}`,
+        updatedAt: summary.updatedAt ?? prev.updatedAt ?? null,
+      };
+    } else {
+      campaignState.previousSessionSummary = {
+        sessionId:     closing,
+        // An unbegun session's number passes to the next one, so its summary
+        // carries none — LAST SESSION, not "Session 4" while session 4 runs.
+        sessionNumber: closingUnbegun ? null : (campaignState.sessionNumber ?? null),
+        text,
+        updatedAt:     summary.updatedAt ?? null,
+      };
+    }
   }
   campaignState.currentSessionId       = newSessionId();
   campaignState.sessionNumber          = closingUnbegun && campaignState.sessionNumber > 0
