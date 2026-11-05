@@ -6781,6 +6781,10 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
     itemId,
     isMiss: true,  // Pay the Price always implies a miss context.
     resolutionId,
+    // A move's price: the cards its route posts — the resist roll a harm
+    // owes, a redirected loss's picker — are stamped `priceCard`, so a burn
+    // to a result that pays the price too keeps them (issue #335 Y09).
+    ...(resolutionId ? { priceCard: true } : {}),
     ...(upgradeOffered ? { upgradeOffered: true } : {}),
   });
   return { ...landed, move, actorId: actor.id };

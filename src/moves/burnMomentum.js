@@ -570,11 +570,13 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   }
 
   // The original outcome's pending choice is retired and the burned outcome's
-  // offered once (issue #311 P03).
-  await reconcileChoices({
+  // offered once (issue #311 P03). A price that stands keeps the cards it
+  // posted — the resist roll its harm owes, a redirected loss's picker
+  // (issue #335 Y09).
+  const { kept: priceCardsKept = 0 } = await reconcileChoices({
     resolutionId: burn.resolutionId, kind: "burn", actor, moveId: burn.moveId,
-    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: burn.targets ?? {}, failures,
-  }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: choice reconciliation failed:`, err));
+    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: burn.targets ?? {}, failures, priceStands,
+  }).catch(err => { console.warn(`${MODULE_ID} | burnMomentum: choice reconciliation failed:`, err); return {}; }) ?? {};
 
   // The burned outcome's other effects — the fight's progress and position,
   // the expedition's progress, a legacy mark, the companion's health, an
@@ -586,7 +588,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: burnable, newConsequences, campaignState });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: burn, actor, campaignState, kind: "burn" });
 
-  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands })) })
+  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands, priceCardsKept })) })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 

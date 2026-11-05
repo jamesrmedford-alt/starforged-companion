@@ -62,7 +62,10 @@ Two cross-cutting facts to hold onto:
   from a lost miss pays the won fight's milestone and reward
   (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
-  UPGRADE-PIPELINE-EFFECTS). The
+  UPGRADE-PIPELINE-EFFECTS) — and the cards it posted, stamped `priceCard`
+  (the resist roll its harm owes, a redirected loss's picker): kept as the
+  upgraded outcome's, not retired with the superseded outcome's (issue #335
+  Y09). The
   threshold card's buttons relay `combat.threshold` to the canonical GM (its
   older ad-hoc `combat.enterFray` socket is retired — issue #329 X06).
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the

@@ -343,11 +343,12 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   }
 
   // The original outcome's pending choice is retired and the strong hit's
-  // offered once (issue #311 P03).
-  await reconcileChoices({
+  // offered once (issue #311 P03); a price that stands keeps its cards, as
+  // the burn's does (issue #335 Y09).
+  const { kept: priceCardsKept = 0 } = await reconcileChoices({
     resolutionId: improve.resolutionId, kind: "improve", actor, moveId: improve.moveId,
-    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: improve.targets ?? {}, failures,
-  }).catch(err => console.warn(`${MODULE_ID} | improveResult: choice reconciliation failed:`, err));
+    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: improve.targets ?? {}, failures, priceStands,
+  }).catch(err => { console.warn(`${MODULE_ID} | improveResult: choice reconciliation failed:`, err); return {}; }) ?? {};
 
   // The strong hit's other effects, for what it adds over the recorded
   // original, through the pipeline's own applier (UPGRADE-PIPELINE-EFFECTS).
@@ -360,7 +361,7 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);
 
-  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands })) })
+  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands, priceCardsKept })) })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 

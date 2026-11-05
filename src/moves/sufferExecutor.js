@@ -342,7 +342,9 @@ async function postResistRoll(actor, which, opts = {}, upgradeFirst = false) {
     const posted = await postSufferChoiceCard({
       sufferPrompt: resistRollPrompt(which, { upgradeFirst }),
       actor,
-      executorOpts: {},
+      // A move's Pay the Price owes it: the card is the price's, kept when an
+      // upgrade keeps the price (issue #335 Y09).
+      executorOpts: opts.priceCard === true ? { priceCard: true } : {},
       moveId: RESIST_ROLLS[which].moveId,
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });

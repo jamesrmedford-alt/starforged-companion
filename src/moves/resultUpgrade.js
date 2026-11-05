@@ -510,14 +510,61 @@ export async function retireChoiceCard(message, kind) {
  * Retire every pending (unchosen) choice card of a resolution's own outcome —
  * after an upgrade's claim (reconcileChoices), or once a waypoint match's
  * alternative is taken (cardActions.js applyWaypointOraclePick, issue #316
- * T06).
+ * T06). `keepPriceCards`: an upgrade that keeps the price the original
+ * already rolled keeps the cards that price posted (`priceCard`) — see
+ * keepPriceCard.
  *
  * @param {string|null} resolutionId
  * @param {"burn"|"improve"|"discovery"|"chaos"} kind
+ * @param {{ keepPriceCards?: boolean }} [opts]
+ * @returns {Promise<number>} the price's cards kept
  */
-export async function retireOutcomeChoiceCards(resolutionId, kind) {
+export async function retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCards = false } = {}) {
+  let kept = 0;
   for (const card of outcomeChoiceCards(resolutionId)) {
-    if (!chosen(card.flags[MODULE_ID])) await retireChoiceCard(card, kind);
+    const f = card.flags[MODULE_ID];
+    if (chosen(f)) continue;
+    if (keepPriceCards && f.priceCard === true) {
+      if (await keepPriceCard(card)) kept += 1;
+      continue;
+    }
+    await retireChoiceCard(card, kind);
+  }
+  return kept;
+}
+
+/**
+ * Keep a card the move's kept Pay the Price posted — the resist roll its harm
+ * owes, a redirected loss's picker: the upgraded result pays that price too
+ * (issue #313), so the card is the upgraded outcome's now (`upgraded` — a
+ * pick on it is not refused as the superseded outcome's, and it closes
+ * nothing), and a "burn or improve first" hint it carried goes — the upgrade
+ * is spent. The burn used to retire it with the superseded outcome's cards,
+ * and the roll the kept harm owes was never made (issue #335 Y09). Best
+ * effort: a refused update leaves the card as it was.
+ *
+ * @param {ChatMessage} card
+ * @returns {Promise<boolean>} whether the card was kept
+ */
+async function keepPriceCard(card) {
+  const f = card.flags[MODULE_ID];
+  const update = { [`flags.${MODULE_ID}.upgraded`]: true };
+  if (f.sufferPrompt?.hint) {
+    update[`flags.${MODULE_ID}.sufferPrompt.hint`] = null;
+    try {
+      const { renderSufferCard } = await import("./sufferCard.js");
+      const actor = f.actorId ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
+      update.content = renderSufferCard({ ...f.sufferPrompt, hint: null }, actor, f.pickedIndices ?? [], undefined, f.notApplied ?? [], f.pickedSuffers ?? []);
+    } catch (err) {
+      console.debug(`${MODULE_ID} | kept price card ${card.id}: its hint stays —`, err?.message ?? err);
+    }
+  }
+  try {
+    await card.update(update);
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the kept price's card ${card.id} could not be kept for the upgraded result:`, err?.message ?? err);
+    return false;
   }
 }
 
@@ -525,7 +572,10 @@ export async function retireOutcomeChoiceCards(resolutionId, kind) {
  * After an upgrade's claim: retire the superseded outcome's pending choice
  * cards, then post the upgraded outcome's own choice, once — for the move's
  * vehicle, companion and fight (`targets`, as persistResolution gives its
- * card). A card that cannot be posted goes onto `failures`.
+ * card). A card that cannot be posted goes onto `failures`. `priceStands`:
+ * the upgraded outcome pays the price the original already rolled (a burn
+ * from a miss to a weak hit of Battle or Clash, issue #313) — its cards are
+ * kept, not retired (issue #335 Y09).
  *
  * @param {Object} args
  * @param {string|null} args.resolutionId
@@ -535,14 +585,18 @@ export async function retireOutcomeChoiceCards(resolutionId, kind) {
  * @param {string|null} args.moveId
  * @param {Object} [args.targets]
  * @param {Array<Object>} args.failures
+ * @param {boolean} [args.priceStands]
+ * @returns {Promise<{ kept: number }>} the kept price's cards still owed
  */
-export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt, moveId, targets = {}, failures }) {
-  await retireOutcomeChoiceCards(resolutionId, kind);
-  if (!sufferPrompt || !actor) return;
-  await applyUpgradeStep({
-    effect: "choiceCard", pcId: actor.id, sufferPrompt, moveId: moveId ?? null, resolutionId: resolutionId ?? null,
-    executorOpts: { isMiss: false, isMissWithMatch: false, ...(targets ?? {}) },
-  }, failures);
+export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt, moveId, targets = {}, failures, priceStands = false }) {
+  const kept = await retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCards: priceStands });
+  if (sufferPrompt && actor) {
+    await applyUpgradeStep({
+      effect: "choiceCard", pcId: actor.id, sufferPrompt, moveId: moveId ?? null, resolutionId: resolutionId ?? null,
+      executorOpts: { isMiss: false, isMissWithMatch: false, ...(targets ?? {}) },
+    }, failures);
+  }
+  return { kept };
 }
 
 
@@ -619,15 +673,18 @@ export async function renarrateUpgrade({ resolution, campaignState, speakerActor
 /**
  * The line an upgraded move card carries for the outcome's other effects:
  * what was applied beyond the meters, what was not, and a Pay the Price kept
- * because the upgraded outcome pays it too.
+ * because the upgraded outcome pays it too — with the roll or choice its
+ * card still asks for, when it kept one (`priceCardsKept`, issue #335 Y09).
  *
- * @param {{ applied?: string[], notApplied?: string[], priceStands?: boolean }} [effects]
+ * @param {{ applied?: string[], notApplied?: string[], priceStands?: boolean, priceCardsKept?: number }} [effects]
  * @returns {string} HTML; "" when there is nothing to say
  */
-export function effectsNoteHtml({ applied = [], notApplied = [], priceStands = false } = {}) {
+export function effectsNoteHtml({ applied = [], notApplied = [], priceStands = false, priceCardsKept = 0 } = {}) {
   const parts = [];
   if (applied.length)    parts.push(`Also applied: ${applied.map(escapeHtml).join("; ")}.`);
   if (notApplied.length) parts.push(`Not applied: ${notApplied.map(escapeHtml).join("; ")}.`);
-  if (priceStands)       parts.push("The Pay the Price already rolled stands — this result pays it too.");
+  if (priceStands)       parts.push(priceCardsKept > 0
+    ? "The Pay the Price already rolled stands — this result pays it too, and the roll or choice its card asks for is still owed."
+    : "The Pay the Price already rolled stands — this result pays it too.");
   return parts.length ? `<div class="sf-move-effect sf-upgrade-effects">${parts.join(" ")}</div>` : "";
 }

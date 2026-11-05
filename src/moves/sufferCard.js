@@ -311,7 +311,11 @@ function labelForSuffer(id) {
  * `resolutionId` binds the card to its move's outcome, which a Burn Momentum or
  * Improve Result can replace: the card of the superseded outcome is retired
  * and refuses picks, and `upgraded` marks the upgraded outcome's own card
- * (resultUpgrade.js — issue #311 P03).
+ * (resultUpgrade.js — issue #311 P03). A card posted in a move's Pay the
+ * Price — its executor opts carry `priceCard` (index.js
+ * dispatchPayThePriceSufferRoute): the resist roll its harm owes, the picker
+ * of a loss it redirected — is stamped `priceCard`, so an upgrade that keeps
+ * the price keeps it too (resultUpgrade.js reconcileChoices, issue #335 Y09).
  *
  * @param {{ sufferPrompt: Object, actor: Actor, executorOpts?: Object, moveId?: string|null,
  *   resolutionId?: string|null, upgraded?: boolean }} args
@@ -330,6 +334,7 @@ export async function postSufferChoiceCard({ sufferPrompt, actor, executorOpts =
           moveId,
           resolutionId,
           ...(upgraded ? { upgraded: true } : {}),
+          ...(executorOpts?.priceCard === true ? { priceCard: true } : {}),
           pickedIndices: [],
           resolved:      false,
         },
