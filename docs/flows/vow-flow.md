@@ -293,7 +293,13 @@ unavailable" at a table whose GM holds the key (issue #321 U11). The canonical
 GM applies consequences
 (`registerNativeFulfilConsequenceHook` → `shouldPayFulfilledVow` → full
 `payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
-also pays quests legacy — from the roller's vow's rank). Idempotency:
+also pays quests legacy — from the roller's vow's rank). Both hooks act only
+on a player character's roll (`rolledByPlayerCharacter`; a debug line
+otherwise): an NPC or connection card carries the full sheet (FOLDER-002),
+and a GM's roll of an NPC's own vow there paid the crew's sole open vow
+(stamped `fulfilPaid`, so its real fulfilment paid nothing), offered a
+recommit for the NPC card and was narrated as the GM's first PC fulfilling a
+vow (issue #336 Y23). Idempotency:
 the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
 across both paths — the pipeline's own Quests legacy write checks it too, for
 a vow fulfilled on the sheet (which leaves the Item open) and then through the

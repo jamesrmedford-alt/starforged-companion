@@ -2942,6 +2942,25 @@ function nativeProgressSubtypeLookup(message, label) {
 }
 
 /**
+ * Whether a native sheet roll is a player character's — the two native-roll
+ * hooks' other shared read: they act only for one. NPC and connection cards
+ * carry the full Starforged sheet (FOLDER-002), so a GM can keep an NPC's own
+ * goal as a vow there and roll it: the payoff hook paid the crew's sole open
+ * vow for it (resolveVowItemCopies' sole-open rung — stamped `fulfilPaid`, so
+ * that PC's real fulfilment later paid nothing), offered a recommit for the
+ * NPC card, and the narration hook narrated it as the GM's first PC
+ * fulfilling a vow (issue #336 Y23; CLAUDE.md — never `type === "character"`
+ * alone for a player character).
+ *
+ * @param {ChatMessage} message  the native roll card
+ * @returns {boolean}
+ */
+function rolledByPlayerCharacter(message) {
+  const actorId = typeof message?.speaker?.actor === "string" ? message.speaker.actor : null;
+  return isPlayerCharacterActor(actorId ? (game.actors?.get?.(actorId) ?? null) : null);
+}
+
+/**
  * Narrate NATIVE foundry-ironsworn vow/connection progress rolls (#236
  * follow-up). When a player rolls a vow (or connection) progress on the system
  * character sheet, the system posts only its own roll card and fires no hook,
@@ -2987,6 +3006,10 @@ function registerNativeProgressRollHook() {
           : `${MODULE_ID} | native-roll: ${plan.reason}${tag} — skipping`);
       }
       if (!plan.act) return;
+      if (!rolledByPlayerCharacter(message)) {
+        console.debug(`${MODULE_ID} | native-roll: "${parsed.source || "?"}" is not a player character's roll — not narrated.`);
+        return;
+      }
 
       const moveName     = moveId === "fulfill_your_vow" ? "Fulfill Your Vow" : "Forge a Bond";
       const outcomeLabel = parsed.outcome === "strong_hit" ? "Strong Hit"
@@ -5560,6 +5583,11 @@ function registerNativeFulfilConsequenceHook() {
       const parsed = parseIronswornProgressRoll(message?.content ?? "");
       if (!parsed) return;
       const moveId = classifyProgressRoll(parsed, nativeProgressSubtypeLookup(message, "native-fulfil"));
+      if (!moveId) return;
+      if (!rolledByPlayerCharacter(message)) {
+        console.debug(`${MODULE_ID} | native-fulfil: "${parsed.source || "?"}" is not a player character's roll — no payoff, no recommit.`);
+        return;
+      }
       // The sheet roll's speaker is the PC who rolled.
       const actorId = typeof message?.speaker?.actor === "string" ? message.speaker.actor : null;
       if (shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) {
