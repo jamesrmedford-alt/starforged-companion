@@ -599,8 +599,18 @@ export async function applyRewardPickFromRelay(payload = {}, _ctx = {}) {
     // The vow must hold the reward before the card says so: a refused write
     // left no reward on the vow — the fulfilment granted none — while the
     // card said "Reward set" and stayed claimed (issue #329 X07). The claim is
-    // released so the pick can be made again, and the presser told.
-    if (!(await setSharedVowReward(f.vowId, { status: "promised", ...reward }))) {
+    // released so the pick can be made again, and the presser told. A vow no
+    // character holds (its Item deleted, or its vowId flag never landed) can
+    // hold no pick: the card is closed and the presser told why — "Choose it
+    // again" asked for a retry that could never land (issue #336 Y27).
+    const saved = await setSharedVowReward(f.vowId, { status: "promised", ...reward });
+    if (!saved.ok && saved.reason === "no-copy") {
+      await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: "no-vow" })
+        .catch(err => console.warn(`${MODULE_ID} | swearVow: closing reward card ${messageId} failed:`, err?.message ?? err));
+      await postVowWriteRefusedNotice(_ctx, "No character holds this vow any more — nothing to promise; the card is closed.");
+      return { applied: false, reason: "no-copy" };
+    }
+    if (!saved.ok) {
       await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: null })
         .catch(err => console.warn(`${MODULE_ID} | swearVow: releasing reward card ${messageId} failed:`, err?.message ?? err));
       await postVowWriteRefusedNotice(_ctx, "The reward could not be saved on the vow — nothing was promised. Choose it again.");
@@ -938,7 +948,9 @@ export function registerPlayerVowLinkHook() {
     if (!f?.playerVowCard) return;
     const btn = root.querySelector('[data-action="sf-player-vow-link"]');
     if (!btn) return;
-    if (liveFlags(message)?.linkedConnection) {
+    // Linked, or closed because no character holds the vow (issue #336 Y27).
+    const taken = () => !!(liveFlags(message)?.linkedConnection || liveFlags(message)?.vowGone);
+    if (taken()) {
       btn.disabled = true;
       return;
     }
@@ -952,7 +964,7 @@ export function registerPlayerVowLinkHook() {
       await relayCardAction({
         kind:       "vow.link",
         payload:    { messageId: message?.id ?? null, connectionName },
-        isResolved: () => !!liveFlags(message)?.linkedConnection,
+        isResolved: taken,
         restore:    () => { fresh.disabled = false; },
       });
     });
@@ -977,6 +989,7 @@ export async function applyPlayerVowLinkFromRelay(payload = {}, _ctx = {}) {
   const f = message.flags?.[MODULE_ID] ?? {};
   if (!f.playerVowCard || !f.vowId) return { applied: false, reason: "not-a-vow-card" };
   if (f.linkedConnection) return { applied: false, reason: "already-linked" };
+  if (f.vowGone) return { applied: false, reason: "no-copy" };
   const wanted = typeof payload.connectionName === "string" ? payload.connectionName.trim() : "";
   let connectionName = null;
   try {
@@ -994,8 +1007,18 @@ export async function applyPlayerVowLinkFromRelay(payload = {}, _ctx = {}) {
     return { applied: false, reason: "claim-refused" };
   }
   // The vow must hold the link before the card says so (issue #329 X07): a
-  // refused write is released for another press, and the presser told.
-  if (!(await setVowLinkedConnection(f.vowId, connectionName))) {
+  // refused write is released for another press, and the presser told. A vow
+  // no character holds can take no link: the Link is closed (`vowGone`, the
+  // claim on a name the vow does not carry released) and the presser told
+  // why (issue #336 Y27).
+  const linked = await setVowLinkedConnection(f.vowId, connectionName);
+  if (!linked.ok && linked.reason === "no-copy") {
+    await message.update({ [`flags.${MODULE_ID}.linkedConnection`]: null, [`flags.${MODULE_ID}.vowGone`]: true })
+      .catch(err => console.warn(`${MODULE_ID} | playerVow: closing card ${messageId} failed:`, err?.message ?? err));
+    await postVowWriteRefusedNotice(_ctx, "No character holds this vow any more — nothing to link; the card is closed.");
+    return { applied: false, reason: "no-copy" };
+  }
+  if (!linked.ok) {
     await message.update({ [`flags.${MODULE_ID}.linkedConnection`]: null })
       .catch(err => console.warn(`${MODULE_ID} | playerVow: releasing card ${messageId} failed:`, err?.message ?? err));
     await postVowWriteRefusedNotice(_ctx, `The link to ${connectionName} could not be saved on the vow — it is not linked. Link it again.`);

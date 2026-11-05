@@ -5382,7 +5382,7 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, ac
   const plan = planRewardGrant(reward, outcome);
   const rollerCopy = actorId ? copies.find(({ actor }) => actor?.id === actorId) : null;
   const pc   = rollerCopy?.actor ?? rewardHolder ?? getPlayerActors()[0] ?? null;
-  if (vowId && !(await setSharedVowReward(vowId, { ...reward, status: plan.status }))) {
+  if (vowId && !(await setSharedVowReward(vowId, { ...reward, status: plan.status })).ok) {
     return { ok: false, step: "reward", reason: "refused", vowId, rewardDescription: reward.description ?? null };
   }
   if (plan.status === "granted") {

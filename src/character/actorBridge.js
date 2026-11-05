@@ -680,14 +680,16 @@ export async function completeVowItem(actor, vowItemId) {
  *
  * @param {string} vowId
  * @param {{ description: string, form: string, status?: string }} reward
- * @returns {Promise<boolean>} false when a copy's write was refused (each is
- *   still attempted) — a reward's status is its grant's claim, so a payoff
- *   must know when it did not land (issue #306 R04) — or when no copy of the
- *   vow was found to hold it (issue #329 X07)
+ * @returns {Promise<{ ok: boolean, reason?: "refused"|"no-copy" }>} `ok` once
+ *   every copy holds it. "refused": a copy's write was refused (each is still
+ *   attempted) — a reward's status is its grant's claim, so a payoff must know
+ *   when it did not land (issue #306 R04). "no-copy": no copy of the vow was
+ *   found to hold it (issue #329 X07) — told apart, so a pick is never asked
+ *   to retry what can never land (issue #336 Y27). Nothing to set is `ok`.
  */
 export async function setSharedVowReward(vowId, reward) {
-  if (!vowId || !reward?.description) return true;
-  let landed = true;
+  if (!vowId || !reward?.description) return { ok: true };
+  let refused = false;
   let copies = 0;
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
@@ -695,13 +697,14 @@ export async function setSharedVowReward(vowId, reward) {
       if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
         copies += 1;
         await item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward }).catch(err => {
-          landed = false;
+          refused = true;
           console.warn(`${MODULE_ID} | setSharedVowReward failed:`, err?.message ?? err);
         });
       }
     }
   }
-  return landed && copies > 0;
+  if (refused) return { ok: false, reason: "refused" };
+  return copies > 0 ? { ok: true } : { ok: false, reason: "no-copy" };
 }
 
 /**
@@ -711,14 +714,17 @@ export async function setSharedVowReward(vowId, reward) {
  *
  * @param {string} vowId
  * @param {string} connectionName
- * @returns {Promise<boolean>} whether the link landed: false when a copy's
- *   write was refused (each is still attempted) or no copy of the vow was
- *   found (issue #329 X07 — a refusal was a console warning, and the card said
- *   "Linked")
+ * @returns {Promise<{ ok: boolean, reason?: "refused"|"no-copy"|"no-name" }>}
+ *   whether the link landed (issue #329 X07 — a refusal was a console
+ *   warning, and the card said "Linked"). "refused": a copy's write was
+ *   refused (each is still attempted). "no-copy": no copy of the vow was
+ *   found — told apart from a refusal, which a press can retry (issue #336
+ *   Y27). "no-name": no connection named.
  */
 export async function setVowLinkedConnection(vowId, connectionName) {
-  if (!vowId || !connectionName) return false;
-  let landed = true;
+  if (!vowId) return { ok: false, reason: "no-copy" };
+  if (!connectionName) return { ok: false, reason: "no-name" };
+  let refused = false;
   let copies = 0;
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
@@ -726,13 +732,14 @@ export async function setVowLinkedConnection(vowId, connectionName) {
       if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
         copies += 1;
         await item.setFlag(MODULE_ID, "linkedConnectionName", connectionName).catch(err => {
-          landed = false;
+          refused = true;
           console.warn(`${MODULE_ID} | setVowLinkedConnection failed:`, err?.message ?? err);
         });
       }
     }
   }
-  return landed && copies > 0;
+  if (refused) return { ok: false, reason: "refused" };
+  return copies > 0 ? { ok: true } : { ok: false, reason: "no-copy" };
 }
 
 /**
