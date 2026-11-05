@@ -253,6 +253,26 @@ function factContinuityEnabledFromSettings() {
 // SETTINGS REGISTRATION
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * The world refused the keyed-GM registry write a GM's key change made
+ * (claudeApiKey's onChange). The rejection was swallowed whole: every client
+ * kept routing Claude work as before — the key just pasted never used, the
+ * table still keyless — with no word to anyone (issue #337 Y40). Warned as
+ * the ready-time advertise is, and the GM who changed the key is told. Only
+ * a reload retries it: saving the same key again changes no setting.
+ *
+ * @param {Error} err
+ */
+function warnKeyAdvertiseRefused(err) {
+  console.warn(`${MODULE_ID} | keyed-GM advertise failed:`, err);
+  let keyed = true;
+  try { keyed = !!game.settings.get(MODULE_ID, "claudeApiKey"); }
+  catch (e) { console.debug?.(`${MODULE_ID} | keyed-GM advertise: key state unread:`, e?.message ?? e); }
+  ui.notifications?.warn?.(keyed
+    ? "Starforged Companion: your Claude key could not be registered for the table (the world did not save it) — the table will not route its narration to your key until you reload Foundry."
+    : "Starforged Companion: your cleared Claude key could not be unregistered for the table (the world did not save it) — narration may still be routed to your client until you reload Foundry.");
+}
+
 function registerCoreSettings() {
   game.settings.register(MODULE_ID, "campaignState", {
     name:    "Campaign State",
@@ -273,7 +293,7 @@ function registerCoreSettings() {
     // Keep the keyed-GM routing registry in sync the moment a GM enters or
     // clears their key, so the single-emitter pipeline always runs on a GM
     // that actually holds a key (see gmGate.js / advertiseClaudeKeyPresence).
-    onChange: () => { advertiseClaudeKeyPresence().catch(() => {}); },
+    onChange: () => { advertiseClaudeKeyPresence().catch(warnKeyAdvertiseRefused); },
   });
 
   // Keyed-GM routing registry — world-scoped list of GM user IDs whose client
