@@ -9,6 +9,7 @@
  * key, else nowhere (debug-logged).
  */
 
+/* global makeTestMessage, makeTestActor */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../../src/narration/narrator.js', async (importOriginal) => ({
@@ -25,10 +26,14 @@ const GM  = { id: 'gm-1', isGM: true,  active: true };
 const GM2 = { id: 'gm-2', isGM: true,  active: true };
 const P1  = { id: 'pl-1', isGM: false, active: true };
 
-const ARGS = {
+const SPEC = {
   kind: 'oracle_yes_no', oracleName: 'Ask the Oracle (50/50)', question: 'does it hold',
   rolledLine: 'd100 = 12 ≤ 50 → YES', speakerActorId: 'pc-b',
 };
+// The raw card the command posted (pl-1's), carrying its narration — the GM
+// narrates what the card carries (issue #331 X49). A fresh card per test: a
+// card is narrated once.
+let card, ARGS;
 
 function setUsers(users, currentUserId) {
   global.game.users = Object.assign([...users], {
@@ -45,6 +50,12 @@ beforeEach(() => {
   game.settings._store.delete(`${MODULE_ID}.keyedGmUserIds`);
   game.settings._store.set(`${MODULE_ID}.campaignState`, { currentSessionId: 's1' });
   _resetGmRelayForTests();
+  card = makeTestMessage({ content: '<div class="sf-oracle-card"></div>',
+    flags: { [MODULE_ID]: { oracleCommandCard: true, oracleNarration: SPEC } } }, { author: 'pl-1' });
+  game.messages = { contents: [card], get: (id) => (id === card.id ? card : null) };
+  game.actors._reset();
+  game.actors._set('pc-b', makeTestActor({ id: 'pc-b', name: 'Bex', ownership: { 'pl-1': 3 } }));
+  ARGS = { ...SPEC, messageId: card.id };
 });
 
 afterEach(() => {
@@ -65,7 +76,7 @@ describe('requestOracleNarration', () => {
     expect(narrateOracleFollowup).not.toHaveBeenCalled();
     expect(game.socket._emitted).toEqual([{
       event:   GM_RELAY_SOCKET,
-      payload: { kind: 'gmRelay.oracle.narrate', payload: { ...ARGS }, requesterId: 'pl-1' },
+      payload: { kind: 'gmRelay.oracle.narrate', payload: { messageId: card.id }, requesterId: 'pl-1' },
     }]);
   });
 
@@ -139,7 +150,7 @@ describe('requestOracleNarration', () => {
 describe('narrateOracleFollowupOnGm (relay handler)', () => {
   it('narrates with the GM-side campaignState and the relayed speaker', async () => {
     setUsers([GM, P1], 'gm-1');
-    const text = await narrateOracleFollowupOnGm(ARGS, { requesterId: 'pl-1' });
+    const text = await narrateOracleFollowupOnGm({ messageId: card.id }, { requesterId: 'pl-1', requester: P1 });
     expect(text).toBe('The airlock groans.');
     expect(narrateOracleFollowup.mock.calls[0][0]).toMatchObject({
       oracleName: 'Ask the Oracle (50/50)', speakerActorId: 'pc-b', campaignState: { currentSessionId: 's1' },
@@ -150,7 +161,7 @@ describe('narrateOracleFollowupOnGm (relay handler)', () => {
     setUsers([GM, P1], 'gm-1');
     narrateOracleFollowup.mockRejectedValueOnce(new Error('boom'));
     const warn = vi.spyOn(console, 'warn');
-    expect(await narrateOracleFollowupOnGm(ARGS, {})).toBeNull();
+    expect(await narrateOracleFollowupOnGm({ messageId: card.id }, { requesterIsGM: true })).toBeNull();
     expect(warn.mock.calls.some(c => /narration failed/.test(String(c[0])))).toBe(true);
   });
 });

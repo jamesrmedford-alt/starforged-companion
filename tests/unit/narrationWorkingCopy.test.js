@@ -14,6 +14,7 @@
  * write are pinned on the table, narrationCachedStoreWrites.test.js.)
  */
 
+/* global makeTestMessage */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../../src/narration/narrator.js', async (importOriginal) => ({
@@ -90,7 +91,13 @@ describe('issue #329 X09 — the narrator is handed a working copy, not the cach
 
   it('the oracle follow-up on the GM', async () => {
     game.settings._store.set(KEY, { currentSessionId: 's-1' });
-    await narrateOracleFollowupOnGm({ kind: 'yes_no', oracleName: 'Ask the Oracle', question: 'Is it safe?', rolledLine: 'Yes' }, {});
+    // The relay names the raw card; the GM narrates what it carries (issue #331 X49).
+    const card = makeTestMessage({ content: '<div class="sf-oracle-card"></div>', flags: { 'starforged-companion': {
+      oracleCommandCard: true,
+      oracleNarration: { kind: 'yes_no', oracleName: 'Ask the Oracle', question: 'Is it safe?', rolledLine: 'Yes' },
+    } } });
+    game.messages = { contents: [card], get: (id) => (id === card.id ? card : null) };
+    await narrateOracleFollowupOnGm({ messageId: card.id }, { requesterIsGM: true });
     expectWorkingCopy(narrateOracleFollowup);
   });
 

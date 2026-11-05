@@ -3813,11 +3813,21 @@ async function handleOracleCommand(message) {
     ? `<p><em>${escapeChatHtml(question)}</em></p>`
     : "";
 
-  await ChatMessage.create({
+  // The narration the card asks for travels on it: the canonical GM narrates
+  // what the card carries, never a relayed payload's text (issue #331 X49).
+  const narration = {
+    kind:           "oracle_yes_no",
+    oracleName:     `Ask the Oracle (${oddsLabel})`,
+    question,
+    rolledLine:     `d100 = ${result.roll} ${result.answer === "yes" ? "≤" : ">"} ${result.threshold} → ${result.answer.toUpperCase()}${result.isMatch ? " (MATCH — extreme/twist)" : ""}`,
+    speakerActorId: resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState")),
+  };
+  const card = await ChatMessage.create({
     content: `<div class="sf-oracle-card"><strong>Ask the Oracle (${escapeChatHtml(oddsLabel)})</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> ≤ ${result.threshold}? <strong>${result.answer.toUpperCase()}</strong>${matchBadge}</p></div>`,
     flags:   {
       [MODULE_ID]: {
         oracleCommandCard: true,
+        oracleNarration:   narration,
         // Structured payload for the canonical GM's oracle-memory capture
         // hook (narrator-context audit 2026-07 — raw oracle results had no
         // memory home). The command may run on a player client that cannot
@@ -3836,13 +3846,7 @@ async function handleOracleCommand(message) {
   // client, else the canonical GM). Reuses the same `oracle_followup` mode as
   // Pay the Price below so safety, tone, scene anchor, and length come from
   // the configured narrator settings.
-  requestOracleNarration({
-    kind:           "oracle_yes_no",
-    oracleName:     `Ask the Oracle (${oddsLabel})`,
-    question,
-    rolledLine:     `d100 = ${result.roll} ${result.answer === "yes" ? "≤" : ">"} ${result.threshold} → ${result.answer.toUpperCase()}${result.isMatch ? " (MATCH — extreme/twist)" : ""}`,
-    speakerActorId: resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState")),
-  });
+  requestOracleNarration({ ...narration, messageId: card?.id ?? null });
 }
 
 /**
@@ -3888,24 +3892,27 @@ async function handleOracleTableCommand(message, tableId, question) {
 
   const tableName = result.tableName ?? tableId;
   const qBlock = question ? `<p><em>${escapeChatHtml(question)}</em></p>` : "";
-  await ChatMessage.create({
+  const narration = {
+    kind:           "oracle_table",
+    oracleName:     tableName,
+    question,
+    rolledLine:     `d${die} = ${result.roll} → ${result.result}`,
+    speakerActorId: resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState")),
+  };
+  const card = await ChatMessage.create({
     content: `<div class="sf-oracle-card"><strong>Oracle: ${escapeChatHtml(tableName)}</strong>${qBlock}<p>d${die} = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p></div>`,
     flags:   {
       [MODULE_ID]: {
         oracleCommandCard: true,
         oracleTableId:     tableId,
         oracleMemory:      { name: tableName, question, answer: result.result },
+        // What the GM narrates — the card's, never a relay's (issue #331 X49).
+        oracleNarration:   narration,
       },
     },
   });
 
-  requestOracleNarration({
-    kind:           "oracle_table",
-    oracleName:     tableName,
-    question,
-    rolledLine:     `d${die} = ${result.roll} → ${result.result}`,
-    speakerActorId: resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState")),
-  });
+  requestOracleNarration({ ...narration, messageId: card?.id ?? null });
 }
 
 /**
@@ -3952,17 +3959,6 @@ async function handlePayThePriceCommand(message) {
   // the corresponding suffer executor against the active character — each leaf
   // of a "Roll twice" (issue #314 Q03). Narrative entries (no route) pass
   // through unchanged — narrator and GM resolve.
-  await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
-    flags:   {
-      [MODULE_ID]: {
-        payThePriceCard: true,
-        sufferRoutes:    result.sufferRoutes,
-        oracleMemory:    { name: "Pay the Price", question, answer: result.result },
-      },
-    },
-  });
-
   // Credit the roller: a routed suffer lands on the PC of the player who typed
   // the command, not the first PC in the world. It runs on the canonical GM
   // (relayed from a player's client, as the clocks below are): Sacrifice
@@ -3971,6 +3967,25 @@ async function handlePayThePriceCommand(message) {
   // write was refused and the ally sat at 0 supply without the impact
   // (issue #325 W10).
   const speakerActorId = resolveSpeakerActorId(message, game.settings.get(MODULE_ID, "campaignState"));
+  const narration = {
+    kind:       "pay_the_price",
+    oracleName: "Pay the Price",
+    question,
+    rolledLine: `d100 = ${result.roll} → ${result.result}`,
+    speakerActorId,
+  };
+  const card = await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+    flags:   {
+      [MODULE_ID]: {
+        payThePriceCard: true,
+        sufferRoutes:    result.sufferRoutes,
+        oracleMemory:    { name: "Pay the Price", question, answer: result.result },
+        // What the GM narrates — the card's, never a relay's (issue #331 X49).
+        oracleNarration: narration,
+      },
+    },
+  });
   if (result.sufferRoutes?.length) {
     await requestGmAction("payThePrice.suffer", { routes: result.sufferRoutes, actorId: speakerActorId }).catch(err =>
       console.warn(`${MODULE_ID} | !pay-the-price: suffer dispatch failed:`, err?.message ?? err));
@@ -3982,13 +3997,7 @@ async function handlePayThePriceCommand(message) {
     console.warn(`${MODULE_ID} | !pay-the-price: clock advance failed:`, err?.message ?? err));
 
   // Narration follow-up — once, where a Claude key lives (oracleFollowup.js).
-  requestOracleNarration({
-    kind:       "pay_the_price",
-    oracleName: "Pay the Price",
-    question,
-    rolledLine: `d100 = ${result.roll} → ${result.result}`,
-    speakerActorId,
-  });
+  requestOracleNarration({ ...narration, messageId: card?.id ?? null });
 }
 
 /**
