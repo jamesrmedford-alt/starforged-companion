@@ -143,7 +143,7 @@ control; weak/miss = in a bad spot).
 | Endure Harm | +health **or** +iron (whichever higher) | −1/−2/−3 health; at 0 also Lose Momentum by the remainder. Resist roll: strong → +1 health or +1 momentum • weak → trade or press on • miss → extra −1 health or Lose Momentum (−2); at 0 mark wounded/permanently harmed or roll the **mortal-wound d100** |
 | Endure Stress | +spirit **or** +heart (whichever higher) | Symmetric to Endure Harm against spirit; miss at 0 marks shaken/traumatized or rolls the **desolation d100** |
 | Companion Takes a Hit | +companion health | −1/−2/−3 companion health; resist analogously; **miss + match at 0 health → companion dies/destroyed; discard the asset** |
-| Sacrifice Resources | — | suffer −1/−2/−3 supply. At 0 mark unprepared; further losses redirect to another suffer move |
+| Sacrifice Resources | — | suffer −1/−2/−3 supply. At 0 mark unprepared (with every ally sharing the supply); a loss of resources while unprepared goes to a different suffer move |
 | Withstand Damage | +integrity | −1/−2/−3 integrity on the vehicle; at 0 apply the **vehicle-damage d100** by vehicle type (command / support / incidental); command vehicle destruction triggers Overcome Destruction |
 
 #### Threshold moves (3)
@@ -238,19 +238,20 @@ missing.
 ### 2.2 Per-move implementation
 
 All 51 moves are recognised and routed by `src/moves/interpreter.js` and have
-mechanical handlers in `src/moves/resolver.js`. The table below shows where
+mechanical handlers in `src/moves/resolver.js` — and so do the rulebook's
+scene-challenge moves (§2.7). The table below shows where
 to find each move's resolver branch.
 
 | Category | Resolver lines | Coverage |
 |---|---|---|
-| Session (5) | `src/moves/resolver.js:224-237` | all 5 recognised — narrative-only handlers, no UI flow (see §3) |
+| Session (5) | `src/moves/resolver.js:224-237` | all 5 recognised; their flows are the session dialogs (`!begin-session`, `!end-session`, `!flag`, `!fate`, `!break` — §2.6) |
 | Adventure (6) | `src/moves/resolver.js:242-311` | all 6 mechanically resolved |
 | Quest (4) | `src/moves/resolver.js:317-349` | all 4; Fulfill Your Vow is a progress move |
 | Connection (4) | `src/moves/resolver.js:354-391` | all 4; Make a Connection seeds role/goal/first-look/given-name oracles (`src/moves/resolver.js:856-875`) |
 | Exploration (6) | `src/moves/resolver.js:397-455` | all 6; explore_a_waypoint dispatches to Make a Discovery on strong+match and Confront Chaos on miss+match (`src/moves/resolver.js:408-455`); a miss without a match routes Pay the Price (issue #321 U17) |
-| Combat (8) | `src/moves/resolver.js:460-541` | all 8; combat positioning exposed via otherEffect text only (see §3) |
+| Combat (8) | `src/moves/resolver.js:460-541` | all 8; each move's position is written to its fight (`setCombatTrackPosition` / `applyCombatPositionToTrack` — §3.3.3) |
 | Suffer (6) | `src/moves/resolver.js:547-601` | all 6 |
-| Recover (5) | `src/moves/resolver.js:606-658` | all 5; Repair points/spends not auto-applied to vehicle integrity (advice only) |
+| Recover (5) | `src/moves/resolver.js:606-658` | all 5; Repair's points are spent through `!repair` (`applyRepairSpends`, `src/moves/repair.js` — +1 integrity, clear battered and the supply trade applied; the module / companion / device spends recorded on the card — §3.3.6) |
 | Threshold (3) | `src/moves/resolver.js:664-695` | all 3; Overcome Destruction rolls against bonds legacy track |
 | Legacy (3) | `src/moves/resolver.js:701-720` | all 3; legacy ticks and their box XP land through `addLegacyTicks` (`src/index.js`) — the old `persistResolution` legacy path was dead and was deleted (2026-10) |
 | Fate (2) | `src/moves/resolver.js:726-734` | both recognised — see §2.4 for gaps |
@@ -278,14 +279,14 @@ to find each move's resolver branch.
 | Oracle table registry & roller | ✅ | `src/oracles/roller.js:41-159` (~120 RG tables: core, space, planets, settlements, starships, characters, creatures, factions, derelicts, vaults, themes, misc) |
 | Ask the Oracle — Spark an idea | ✅ | `src/moves/resolver.js:912-921` (action + theme seed) |
 | Ask the Oracle — Draw a conclusion | 🔄 | Implicit (no roll required); no UI mode selector |
-| Ask the Oracle — **Yes/no with odds** | ❌ | `ORACLE_ODDS` constant declared at `src/schemas.js:218-224` but no consumer; no roller, no UI |
+| Ask the Oracle — **Yes/no with odds** | ✅ | `rollYesNo(odds)` (`src/oracles/roller.js` — yes at ≤ 10 / 25 / 50 / 75 / 90 over `ORACLE_ODDS`); `!oracle yes [odds] [question]` (`src/index.js`); campaign clocks roll their odds with it (`src/clocks/clocks.js`) |
 | Ask the Oracle — **Pick two** | ❌ | not implemented |
-| Match → "extreme result or twist" on yes/no | ❌ | no yes/no path exists |
-| **Pay the Price** d100 (play-kit, 16 entries) | ❌ | not present; closest analogue is `STORY_COMPLICATION` (RG table) at `src/oracles/tables/misc.js:8-38` (29 entries) but this is a different table and is not auto-rolled on Pay the Price |
-| **Make a Discovery** d100 (play-kit, 25 entries) | ❌ | substituted with paired descriptor + focus oracle (`src/moves/resolver.js:889-896`) |
-| **Confront Chaos** d100 (play-kit, 25 entries) | ❌ | substituted with paired action + theme oracle (`src/moves/resolver.js:902-910`) |
-| **Take Decisive Action** weak-hit d100 (6 entries) | ❌ | not present |
-| **Spotlight Vignette** d100 (Begin a Session, 10 entries) | ❌ | not present; `begin_a_session` returns `momentumChange: 1` text only |
+| Match → "extreme result or twist" on yes/no | ✅ | `rollYesNo` flags a match (tens = ones, 100 as 00) and the `!oracle yes` card marks it "MATCH — extreme/twist" (also in RECENT ORACLE RESULTS) |
+| **Pay the Price** d100 (play-kit, 16 entries) | ✅ | `pay_the_price` (`src/oracles/tables/payThePrice.js`): rolled once for a result that routes it (the move's card, `postMovePayThePriceCard`, its suffer entries dispatched — issue #321 U03) and by `!pay-the-price` |
+| **Make a Discovery** d100 (play-kit, 25 entries) | ✅ | `make_a_discovery` (`src/oracles/tables/discoveryAndChaos.js`), the move's own roll (`buildOracleSeeds`, with a descriptor + focus prompt beside it) |
+| **Confront Chaos** d100 (play-kit, 25 entries) | ✅ | `confront_chaos` (`src/oracles/tables/discoveryAndChaos.js`), the move's own roll (`buildOracleSeeds`, with an action + theme prompt beside it) |
+| **Take Decisive Action** weak-hit d100 (6 entries) | ✅ | `decisive_action_cost` (`src/oracles/tables/sufferAndCombat.js`), rolled on the weak hit's card (`postDecisiveActionCostCard`, `src/index.js`) |
+| **Spotlight Vignette** d100 (Begin a Session, 10 entries) | ✅ | `spotlight_vignette` (`src/oracles/tables/sessionVignette.js`), the Begin a Session dialog's optional roll (+1 momentum to every PC — §2.6) |
 | `STORY_COMPLICATION`, `STORY_CLUE`, `ANOMALY_EFFECT`, `COMBAT_ACTION`, `SECTOR_TROUBLE` | ✅ | `src/oracles/tables/misc.js` (RG tables, not in play kit) |
 
 ### 2.5 Sector, world, and connection mechanics
@@ -372,7 +373,9 @@ of the offending or missing code.
 
 ### 3.1 Bugs (rules are wrong in code)
 
-**3.1.1 Momentum reset formula is inverted.**
+**3.1.1 Momentum reset formula is inverted. — FIXED (`momentumBounds`, `src/character/actorBridge.js`)**
+The bounds are the vendor's formula over the sheet's bases — reset = `momentum.resetValue` (+2) − impacts, floored at 0; max = `momentum.max` (10) − impacts — preferring the system's `momentumMax` / `momentumReset` getters when present (decisions.md, issue #316: "the sheet owns the momentum bases"). 0 impacts → +2, 1 → +1, 2+ → 0. Kept below as it was found:
+
 `src/character/actorBridge.js:84` and the duplicate at `src/character/actorBridge.js:178`:
 
 ```js
@@ -392,8 +395,10 @@ momentumReset: Math.max(0, 2 - condCount),
 …and remove the special-case for `condCount === 0`. Apply the same fix at
 line 178.
 
-**3.1.2 `CONDITION_DEBILITIES` filter excludes 6 impacts that should reduce
-max momentum.**
+**3.1.2 `CONDITION_DEBILITIES` filter excludes 6 impacts that should reduce max momentum. — FIXED (`IMPACT_KEYS`, `src/character/actorBridge.js`)**
+Every marked impact counts toward max momentum and the reset — the ten
+play-kit impacts and the vendor's three (3.1.3). Kept below as it was found:
+
 `src/character/actorBridge.js:11`:
 
 ```js
@@ -411,37 +416,42 @@ extras called out in 3.1.3), or — preferred — use the system's computed
 `actor.system.momentumMax` and `actor.system.momentumReset` getters and
 delete the local recompute.
 
-**3.1.3 `readDebilities` invents 5 fields that don't exist in the canonical
-schema.**
-`src/character/actorBridge.js:139-153` reads `corrupted`, `encumbered`,
-`maimed`, `custom1`, `custom2`. None of these appear in the play-kit list of
-10 impacts (§1.2; the unused `schemas.js` `IMPACTS` copy of that list was
-deleted in 2026-10). They are
-either leftovers from Ironsworn (the classic game) or speculative. Read
-them at most for forward-compat, but do not include them in the momentum
-calculation. `encumbered`, in particular, is currently counted toward
-momentum and is wrong.
+**3.1.3 `readDebilities` reads the vendor's impacts beyond the play kit's ten. — FIXED (wrongly listed: it is the vendor's rule)**
+`readDebilities` (`src/character/actorBridge.js`) reads the play kit's ten
+impacts and `corrupted`, `encumbered`, `maimed` — the foundry-ironsworn
+character's own `ImpactField`s (`vendor/foundry-ironsworn/src/module/actor/subtypes/character.ts`,
+the `debility` schema), which its `#impactCount` counts toward
+`momentumMax` / `momentumReset` like any other: counting them is the
+sheet's rule, not a bug. `custom1` / `custom2` are no longer read; the
+vendor schema has them too (with `custom1name` / `custom2name`), and its
+getters — which `momentumBounds` prefers when the system provides them —
+count them when marked. This item first said the five fields were invented
+and that `encumbered` must not count.
 
-### 3.2 Missing tables (play-kit content not in code)
+### 3.2 Missing tables (play-kit content not in code) — FIXED
 
-| Table | Used by | Suggested home |
+All eight are registered in `ORACLE_TABLES` (`src/oracles/roller.js`) and
+pinned roll for roll against the vendored Dataforged data
+(`tests/unit/oracleTableFidelity.test.js`, issue #321 U63):
+
+| Table | Where it lives now | Rolled by |
 |---|---|---|
-| Pay the Price d100 (16 entries) | `pay_the_price` resolver branch (`src/moves/resolver.js:731`) | new `src/oracles/tables/payThePrice.js`, registered in `ORACLE_TABLES` |
-| Begin a Session — Spotlight Vignette d100 (10 entries) | new Begin-a-Session flow (see 3.4.1) | `src/oracles/tables/session.js` |
-| Make a Discovery d100 (25 entries) | `make_a_discovery` resolver branch (`src/moves/resolver.js:447-450`) | `src/oracles/tables/discovery.js` |
-| Confront Chaos d100 (25 entries) | `confront_chaos` resolver branch (`src/moves/resolver.js:452-455`) | `src/oracles/tables/chaos.js` |
-| Take Decisive Action weak-hit d100 (6 entries) | `take_decisive_action` resolver branch (`src/moves/resolver.js:516-525`) | extend `src/moves/resolver.js` or `src/oracles/tables/combat.js` |
-| Endure Harm mortal-wound d100 (5 entries) | `endure_harm` miss-at-0 branch (`src/moves/resolver.js:552-560`) | `src/oracles/tables/suffer.js` |
-| Endure Stress desolation d100 (4 entries) | `endure_stress` miss-at-0 branch (`src/moves/resolver.js:563-571`) | `src/oracles/tables/suffer.js` |
-| Withstand Damage vehicle-damage d100 (10 entries) | `withstand_damage` miss-at-0 branch (`src/moves/resolver.js:574-582`) | `src/oracles/tables/suffer.js` |
+| Pay the Price d100 (16 entries) — FIXED | `pay_the_price`, `src/oracles/tables/payThePrice.js` | a result that routes it (its card) and `!pay-the-price` |
+| Begin a Session — Spotlight Vignette d100 (10 entries) — FIXED | `spotlight_vignette`, `src/oracles/tables/sessionVignette.js` | the Begin a Session dialog |
+| Make a Discovery d100 (25 entries) — FIXED | `make_a_discovery`, `src/oracles/tables/discoveryAndChaos.js` | the Make a Discovery move |
+| Confront Chaos d100 (25 entries) — FIXED | `confront_chaos`, `src/oracles/tables/discoveryAndChaos.js` | the Confront Chaos move |
+| Take Decisive Action weak-hit d100 (6 entries) — FIXED | `decisive_action_cost`, `src/oracles/tables/sufferAndCombat.js` | the weak hit's card |
+| Endure Harm mortal-wound d100 (5 entries) — FIXED | `mortal_wound`, `src/oracles/tables/sufferAndCombat.js` | the at-0 choice card's table option (`rollImpactTable`, issue #329 X03) |
+| Endure Stress desolation d100 (4 entries) — FIXED | `desolation`, `src/oracles/tables/sufferAndCombat.js` | the at-0 choice card's table option |
+| Withstand Damage vehicle-damage d100 (10 entries) — FIXED | `vehicle_damage`, `src/oracles/tables/sufferAndCombat.js` | the Withstand Damage executor at 0 integrity (known-issues SUFFER-EXECUTOR-ASSET-SCHEMA) |
 
 ### 3.3 Missing mechanics
 
-**3.3.1 Yes/No oracle with odds.**
-`ORACLE_ODDS` exists at `src/schemas.js:218-224` but has no consumer. Need a
-`rollYesNo(odds)` function, match detection on both rolled d10s (extreme
-twist), and a chat surface (e.g. `!oracle yes|no <odds> [question]`) or
-panel control. Touch point: `src/oracles/roller.js`, `src/index.js`.
+**3.3.1 Yes/No oracle with odds. — FIXED (`rollYesNo`, `src/oracles/roller.js`; `!oracle yes`, `src/index.js`)**
+`rollYesNo(odds)` answers yes at ≤ 10 / 25 / 50 / 75 / 90 and flags a match
+(tens = ones, 100 as 00) for an extreme result or twist; `!oracle yes [odds]
+[question]` is its chat surface, and campaign clocks roll their odds with it
+(`src/clocks/clocks.js`).
 
 **3.3.2 "Mark progress twice" on Strike and Clash strong hits. — FIXED**
 `combatProgress: 2` consequence on strike/clash strong (and weak) hits drives
@@ -454,12 +464,10 @@ track via `setCombatTrackPosition` after every combat move resolution. The panel
 reads and toggles `combatState` on the track object. `src/ui/progressTracks.js`.
 Take Decisive Action reads back via `getActiveCombatPosition()` (unchanged).
 
-**3.3.4 Higher-of-two-stat selection not dynamic for Endure Harm / Stress.**
-The play kit says "roll +health **or** +iron, whichever is higher" (and
-spirit/heart for Endure Stress). `src/schemas.js:129-130` declares the stat
-options but `src/moves/resolver.js:552, 563` does not pick the higher; the
-player gets whatever stat was chosen by the interpreter. Either pre-resolve
-the higher in `statEnrichment.js` or add a stat picker in the confirm dialog.
+**3.3.4 Higher-of-two-stat selection not dynamic for Endure Harm / Stress. — FIXED (`PICK_HIGHER_OF`, `src/moves/statEnrichment.js`)**
+Endure Harm rolls +health or +iron and Endure Stress +spirit or +heart,
+whichever is higher, read from the sheet before the dice; Heal's self-mend
+rolls the lower of iron / wits (`PICK_LOWER_OF`, issue #330 D4).
 
 **3.3.5 Develop Your Relationship — bond legacy ticks when bonded. — FIXED (2026-06-17)**
 Once bonded, Develop Your Relationship rolls +rank and pays the move's text —
@@ -472,29 +480,30 @@ progress"). Implemented in `src/moves/developRelationship.js` (pure, unit-tested
 `developRelationship` consequence flag; the pipeline resolves the target
 connection (by name, with a sole-bonded/sole-active fallback) and applies it.
 
-**3.3.6 Vehicle Repair point spends not applied automatically.**
-`src/moves/resolver.js:650-658` surfaces the points table but no code
-applies "+1 integrity" / "clear battered" / "fix module" to the vehicle
-actor.
+**3.3.6 Vehicle Repair point spends not applied automatically. — FIXED (`applyRepairSpends`, `src/moves/repair.js`)**
+`!repair` allocates the earned points (and the supply trade); Apply relays
+to the canonical GM, which clears battered and raises the command vehicle's
+integrity, pays the trade (marking unprepared at 0 supply), and records the
+module, companion and device spends on the card.
 
 ### 3.4 Missing UI / chat surface for declared moves
 
-| Move | What's missing |
-|---|---|
-| **3.4.1 Begin a Session** | A panel or chat flow that: (a) lists flagged content for review, (b) shows the last-session recap (already auto-posts), (c) offers an optional spotlight vignette roll for +1 momentum to all players |
-| **3.4.2 End a Session** | A dialog that prompts for `questFocus` / `connectionFocus`, awards +1 momentum if either is set, posts a milestone reminder |
-| **3.4.3 Set a Flag** | A flag-creation dialog feeding into `safety.js` (or a parallel `flags` store) |
-| **3.4.4 Change Your Fate** | A 5-option chooser (Reframe / Refocus / Replace / Redirect / Reshape); could be a `DialogV2` and a `!fate <option> <reason>` chat command |
-| **3.4.5 Take a Break** | Mandatory prompt after progress-move resolution or scene end (already detected via `endScene`); offers "Move on (+1 next non-progress)" or "Stop for now (End a Session)" |
-| **3.4.6 Background Vow** | No UI to read/write the character-sheet background vow; the foundry-ironsworn sheet has the field but this module does not surface it in the chronicle or assembler |
+| Move | What was missing | Status |
+|---|---|---|
+| **3.4.1 Begin a Session** | A panel or chat flow that: (a) lists flagged content for review, (b) shows the last-session recap (already auto-posts), (c) offers an optional spotlight vignette roll for +1 momentum to all players | ✅ FIXED — `!begin-session` / Session panel → `openBeginSessionDialog` (`src/safety/sessionLifecycleDialogs.js`, §2.6) |
+| **3.4.2 End a Session** | A dialog that prompts for `questFocus` / `connectionFocus`, awards +1 momentum if either is set, posts a milestone reminder | ✅ FIXED — `!end-session` → `openEndSessionDialog` (§2.6) |
+| **3.4.3 Set a Flag** | A flag-creation dialog feeding into `safety.js` (or a parallel `flags` store) | ✅ FIXED — `!flag` → `openSetFlagDialog` (`src/safety/sessionDialogs.js`, §2.6) |
+| **3.4.4 Change Your Fate** | A 5-option chooser (Reframe / Refocus / Replace / Redirect / Reshape); could be a `DialogV2` and a `!fate <option> <reason>` chat command | ✅ FIXED — `!fate` → `openChangeYourFateDialog` (§2.6) |
+| **3.4.5 Take a Break** | Mandatory prompt after progress-move resolution or scene end (already detected via `endScene`); offers "Move on (+1 next non-progress)" or "Stop for now (End a Session)" | ✅ FIXED — `!break` → `openTakeABreakDialog`, *Move on*'s +1 added to the next action roll (§2.6); it is not prompted automatically after a progress move |
+| **3.4.6 Background Vow** | No UI to read/write the character-sheet background vow; the foundry-ironsworn sheet has the field but this module does not surface it in the chronicle or assembler | 🔄 PARTLY FIXED — the narrator's character block names it with its progress ("Background vow: …", `src/narration/narratorPrompt.js`; the shared inciting vow, else the PC's earliest — `readVows` `isBackground`); the module has no UI of its own to write one (vows are sworn on the sheet or through Swear an Iron Vow) |
 
 ### 3.5 Worksheets / extensibility
 
 | Worksheet | Status | Notes |
 |---|---|---|
-| Clocks | ❌ | schema exists (`src/schemas.js:429-444`); needs creation panel, advance roll, and Begin-a-Session / Pay-the-Price advance hooks |
-| Scene Challenges | ❌ | schema fields exist (`src/schemas.js:346-350`); needs a setup walkthrough and tension-clock binding |
-| Custom oracle tables | ❌ | `ORACLE_TABLES` is hardcoded; player-defined d4/d6/d8/d10 grids cannot be added without a code change |
+| Clocks | ✅ | FIXED — `src/clocks/clocks.js`: `!clock` and the Clocks panel; campaign clocks roll their odds at Begin a Session, tension and vow clocks advance on Pay the Price (§2.7) |
+| Scene Challenges | ✅ | FIXED — the Progress Tracks panel's scene challenge (a track and its paired 4-segment clock), Face Danger / Secure an Advantage within it as their scene-challenge moves (issue #338 D2) and Finish the Scene (issue #326 D6); Begin the Scene has no move of its own — the panel's Add sets the challenge up (§2.7) |
+| Custom oracle tables | ✅ | FIXED — `!oracle-add` / the Custom Oracles panel (`src/oracles/customOracles.js`, §2.7) |
 
 ### 3.6 Recap of what is solid
 
@@ -503,8 +512,14 @@ To be clear about what is *not* a gap:
 - All 51 move names parse and route correctly from natural language.
 - All 7 outcome types (3 base × match ± burn) resolve.
 - Burn momentum logic correctly blocks progress moves, requires positive
-  momentum, and only fires when it improves the outcome. *(Reset value
-  depends on the bridge bug above — fix 3.1.1 and the burn is correct.)*
+  momentum, and only fires when it improves the outcome; the reset it burns
+  to is the sheet's (3.1.1, fixed).
+- Momentum bounds count every marked impact, the vendor's way (3.1.1–3.1.3,
+  fixed); the play kit's eight tables are registered and rolled where the
+  rules roll them (3.2, fixed); yes/no with odds, the higher-of-two stat and
+  Repair's spends are applied (3.3.1, 3.3.4, 3.3.6, fixed); the session
+  moves have their dialogs (3.4.1–3.4.5, fixed); clocks, scene challenges
+  and custom oracle tables have their surfaces (3.5, fixed).
 - Progress tracks correctly tally filled boxes only and resolve against 2d10
   with no momentum burn and no asset adds.
 - Rank multipliers for marking progress are correct.
@@ -518,7 +533,12 @@ To be clear about what is *not* a gap:
 ## Document maintenance
 
 This file is a snapshot taken on 2026-05-17 against branch
-`claude/document-game-rules-7KrzY`. Update when:
+`claude/document-game-rules-7KrzY`. Part 3 was re-audited against the code on
+2026-11-05 (issue #337 Y49, at `8fb7bfa` with the issue #338 scene-challenge
+moves): every item the tree had fixed is marked "— FIXED (where)", and the
+Part 2 rows that restated them (2.2, 2.4) say what is there now. File:line
+references outside those rows date from the snapshot — search by name.
+Update when:
 
 - A new move-resolver branch is added or rewritten (Part 2.2).
 - An oracle table is added to `src/oracles/tables/` (Part 2.4).
