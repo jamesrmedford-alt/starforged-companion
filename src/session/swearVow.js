@@ -146,7 +146,7 @@ export function buildSwearMovePost(message) {
  * Never throws — failures surface as notifications + console warnings.
  *
  * @param {ChatMessage} message
- * @returns {Promise<null>}
+ * @returns {Promise<ChatMessage|null>} the forced post, or null when none was made
  */
 export async function executeSwearVow(message) {
   const post = buildSwearMovePost(message);
@@ -155,7 +155,7 @@ export async function executeSwearVow(message) {
     return null;
   }
   try {
-    await globalThis.ChatMessage?.create?.(post);
+    return (await globalThis.ChatMessage?.create?.(post)) ?? null;
   } catch (err) {
     console.warn(`${MODULE_ID} | swearVow: forced swear-move post failed:`, err?.message ?? err);
     globalThis.ui?.notifications?.error(
@@ -380,14 +380,65 @@ export function registerSwearVowHandler() {
     fresh.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      fresh.disabled = true;   // stays disabled — the roll is firing; re-enable only if the post itself fails
+      // Stays disabled — the roll is firing; re-enabled if the post itself
+      // fails, or if the session gate drops it (rearmSwearOnGateRefusal). The
+      // wait is set before the post: on the canonical GM the gate's notice
+      // can come back before the post's own create resolves.
+      fresh.disabled = true;
+      const cardId = message?.id ?? null;
+      if (cardId) awaitSessionGate(cardId, () => { fresh.disabled = false; });
       executeSwearVow(message)
+        .then(posted => {
+          if (posted) return;
+          if (cardId) _swearAwaitingGate.delete(cardId);
+          fresh.disabled = false;
+        })
         .catch(err => {
           console.error(`${MODULE_ID} | swearVow: execute failed:`, err);
           fresh.disabled = false;
         });
     });
   });
+  Hooks.on("createChatMessage", rearmSwearOnGateRefusal);
+}
+
+// Inciting cards whose ⚔ this client pressed → re-arm that press's button.
+// The card is not claimed: before Begin a Session the gate drops the forced
+// post and whispers "press the button again" (issue #329 X14), and the
+// disabled button could not be pressed again here until a reload (issue #337
+// Y36). Bounded: the oldest is forgotten (a press that rolled is never
+// refused, and its card is rewritten sworn).
+const _swearAwaitingGate = new Map();
+const SWEAR_AWAITING_GATE_MAX = 20;
+
+function awaitSessionGate(cardId, rearm) {
+  _swearAwaitingGate.delete(cardId);
+  _swearAwaitingGate.set(cardId, rearm);
+  while (_swearAwaitingGate.size > SWEAR_AWAITING_GATE_MAX) {
+    _swearAwaitingGate.delete(_swearAwaitingGate.keys().next().value);
+  }
+}
+
+/**
+ * createChatMessage: the session gate's notice naming the forced ⚔ post it
+ * dropped (`gatedMessageId`) re-arms the button that made it — only on the
+ * post's author's client: the button disabled itself there alone.
+ *
+ * @param {ChatMessage} notice
+ */
+function rearmSwearOnGateRefusal(notice) {
+  const f = notice?.flags?.[MODULE_ID];
+  const postId = f?.sessionGateNotice ? f.gatedMessageId : null;
+  if (!postId || !_swearAwaitingGate.size) return;
+  const post = globalThis.game?.messages?.get?.(postId) ?? null;
+  const cardId = post?.flags?.[MODULE_ID]?.incitingSwearMessageId ?? null;
+  if (!cardId || !_swearAwaitingGate.has(cardId)) return;
+  const postAuthorId = post.author?.id ?? post._source?.author ?? null;
+  if (postAuthorId !== game.user?.id) return;
+  const rearm = _swearAwaitingGate.get(cardId);
+  _swearAwaitingGate.delete(cardId);
+  console.debug?.(`${MODULE_ID} | swearVow: no session had begun — the ⚔ press was not rolled; its button is live again.`);
+  rearm();
 }
 
 // Quotes too: the card's attributes take these strings — a connection named

@@ -1998,7 +1998,9 @@ async function postSessionGateNotice(message, { held = false } = {}) {
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>No session has begun</strong><p>${body}</p></div>`,
     whisper: [...new Set([authorId, ...rollerPlayerIds, ...gmUserIds()].filter(Boolean))],
-    flags:   { [MODULE_ID]: { sessionGateNotice: true } },
+    // A forced move told to press again names the post the gate dropped: the
+    // client that posted it re-arms its button (the inciting ⚔ — issue #337 Y36).
+    flags:   { [MODULE_ID]: { sessionGateNotice: true, ...(forced && !held && message?.id ? { gatedMessageId: message.id } : {}) } },
   });
 }
 
