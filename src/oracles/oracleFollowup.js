@@ -29,6 +29,7 @@ import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { hasKeyedActiveGM, isCanonicalGM } from "../multiplayer/gmGate.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor } from "../moves/burnMomentum.js";
+import { triggerVignettesSettled } from "../clocks/payThePriceClocks.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -126,7 +127,8 @@ async function runOracleFollowup(args) {
     // filling a tension clock fires both): the follow-up continues its scene,
     // read with its beat in it (issue #335 Y05). Bounded; nothing in flight —
     // every other follow-up, and any off the canonical GM — waits for nothing.
-    const { triggerVignettesSettled } = await import("../clocks/payThePriceClocks.js");
+    // Imported statically: a module load on this path is real I/O no queued
+    // wait can see, and the narration ran only after it.
     await triggerVignettesSettled();
     const { narrateOracleFollowup } = await import("../narration/narrator.js");
     // A working copy: the narration mints a scene and applies its sidecar on
