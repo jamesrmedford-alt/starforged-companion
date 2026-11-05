@@ -59,7 +59,10 @@ const MODULE_ID  = 'starforged-companion';
  *   vehicle (`vehicleActorId`, Withstand Damage's integrity), the
  *   companion (`companionItemId`, Companion Takes a Hit's health) and the
  *   fight (`combatTrackId`, Gain Ground's "mark progress")
- * @returns {Promise<{ actor: Actor|null, campaignState: Object }>}
+ * @returns {Promise<{ actor: Actor|null, campaignState: Object, meterFailures: Array<Object> }>}
+ *   `meterFailures`: the meter changes the world refused (see applyMetersOrNote) —
+ *   the record was still written. A refused record throws `moveRecordRefused`,
+ *   carrying them as its `meterFailures`.
  */
 export async function persistResolution(resolution, campaignState, speakerActorId = null, targets = {}) {
   // 2–4: Apply mechanical consequences to the rolling player's Actor.
@@ -76,6 +79,14 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     ?? getPlayerActors()[0]
     ?? null;
 
+  // The roller's meters and the move's record are two writes, and one
+  // refused does not stop the other (issue #331 X52's rule): a refused meter
+  // write threw before the record was attempted, so the arrival, legacy mark
+  // or site reveal on the working copy was lost under the pipeline's "check
+  // your API key" (issue #336 Y16). It is noted here and goes on the GMs'
+  // payoff failure card with a Retry, as the record's own steps do (X18).
+  const meterFailures = [];
+
   if (actor) {
     // 2. Meter changes
     const { healthChange, spiritChange, supplyChange, momentumChange } = resolution.consequences;
@@ -90,10 +101,10 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     const ally = resolution.consequences?.beneficiary === "ally" && targets?.allyActorId
       ? getActor(targets.allyActorId) : null;
     if (ally && ally.id !== actor.id && meterChanges.momentum) {
-      await applyMeterChanges(ally, { momentum: meterChanges.momentum });
+      await applyMetersOrNote(ally, { momentum: meterChanges.momentum }, meterFailures, { allyActorId: ally.id });
       meterChanges.momentum = 0;
     }
-    await applyMeterChanges(actor, meterChanges);
+    await applyMetersOrNote(actor, meterChanges, meterFailures);
 
     // 4. Suffer prompt (F16 Phase D) — posts the non-blocking suffer-choice
     //    card that resolves the rulebook-mandated player choice into one or
@@ -119,12 +130,13 @@ export async function persistResolution(resolution, campaignState, speakerActorI
   try {
     await game.settings.set(MODULE_ID, 'campaignState', updated);
   } catch (err) {
-    // The roller's meters (written above) stand; what the working copy alone
-    // holds — a legacy mark, an arrival, a site reveal — never reached the
-    // world. Tagged so the pipeline tells the GMs what, with a Retry, rather
-    // than blaming the API key (issue #331 X18).
+    // The roller's meters (written above) stand, unless they were refused
+    // too; what the working copy alone holds — a legacy mark, an arrival, a
+    // site reveal — never reached the world. Tagged so the pipeline tells the
+    // GMs what, with a Retry, rather than blaming the API key (issue #331 X18).
     const refused = new Error(`the world did not save the move's record: ${err?.message ?? err}`);
     refused.moveRecordRefused = true;
+    refused.meterFailures = meterFailures;
     refused.cause = err;
     throw refused;
   }
@@ -135,7 +147,34 @@ export async function persistResolution(resolution, campaignState, speakerActorI
   payDeferredLegacyXp(campaignState).catch(err =>
     console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
 
-  return { actor, campaignState: updated };
+  return { actor, campaignState: updated, meterFailures };
+}
+
+/**
+ * Write a move's meter changes to `actor`; a write the world refuses is noted
+ * on `failures` — one `suffer` step per changed meter, a `meter` call the GMs'
+ * payoff failure card's Retry re-applies for the card's PC (sufferDialog
+ * `isRetryableSufferCall`; issue #309 N07's step) — never thrown (issue #336
+ * Y16). `opts` rides the step: an aided ally's momentum names the ally
+ * (`allyActorId`), as a choice card's Aid Your Ally benefit does.
+ *
+ * @param {Actor} actor
+ * @param {{ health?: number, spirit?: number, supply?: number, momentum?: number }} changes
+ * @param {Array<Object>} failures — appended to
+ * @param {Object} [opts]
+ * @returns {Promise<void>}
+ */
+async function applyMetersOrNote(actor, changes, failures, opts = null) {
+  try {
+    await applyMeterChanges(actor, changes);
+  } catch (err) {
+    console.error(`${MODULE_ID} | the world did not save ${actor?.name ?? "the roller"}'s meters:`, err);
+    const error = String(err?.message ?? err);
+    for (const [meterKey, delta] of Object.entries(changes)) {
+      if (!delta) continue;
+      failures.push({ step: 'suffer', call: { kind: 'meter', meterKey, delta }, ...(opts ? { opts } : {}), reason: 'refused', error });
+    }
+  }
 }
 
 

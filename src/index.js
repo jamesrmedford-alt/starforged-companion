@@ -1817,14 +1817,23 @@ export function registerChatHook() {
         // so a choice changes that vehicle, companion or fight (issue #309).
         // A refused record is not a failed interpretation: the move resolved
         // and its meters stand, so the pipeline goes on — what the record
-        // carried is on the GMs' card, with a Retry (issue #331 X18).
+        // carried is on the GMs' card, with a Retry (issue #331 X18). So are
+        // the roller's meters when the world refused them, the record saved
+        // or not (issue #336 Y16).
         try {
-          await persistResolution(resolution, campaignState, speakerActorId, moveTargets);
+          const persisted = await persistResolution(resolution, campaignState, speakerActorId, moveTargets);
+          if (persisted?.meterFailures?.length) {
+            await reportUnsavedMoveRecord(campaignState, {
+              actorId: rollerActor?.id ?? null, moveName: resolution.moveName ?? null,
+              recordSaved: true, meterFailures: persisted.meterFailures,
+            });
+          }
         } catch (err) {
           if (!err?.moveRecordRefused) throw err;
           console.error(`${MODULE_ID} | ${err.message}`);
           await reportUnsavedMoveRecord(campaignState, {
             actorId: rollerActor?.id ?? null, moveName: resolution.moveName ?? null, error: String(err.cause?.message ?? err.cause ?? err.message),
+            meterFailures: err.meterFailures ?? [],
           });
         }
         // The original outcome is on the sheet: open the card's Burn Momentum /
@@ -4717,22 +4726,33 @@ function noteUnsavedOnCopy(campaignState, step) {
 }
 
 /**
- * The move's record — persistResolution's one campaignState write — was
- * refused: the roller's meters (written before it) stand, and the working
- * copy's legacy marks, arrival and site reveal never reached the world. Tell
- * the GM running the pipeline why (not the API key — the move resolved), and
- * put each owed step on the GMs' payoff failure card, whose Retry applies it
- * alone (issue #331 X18; the #306 R04 / #315 S08 / #326 W52 rule).
+ * A write of persistResolution's was refused. The move's record — its one
+ * campaignState write: the working copy's legacy marks, arrival and site
+ * reveal never reached the world. The roller's meters — the Actor write
+ * before it (issue #336 Y16): written apart, so the record was still saved
+ * unless it was refused as well (`recordSaved`). Tell the GM running the
+ * pipeline which (not the API key — the move resolved), and put each owed
+ * step on the GMs' payoff failure card, whose Retry applies it alone (issue
+ * #331 X18; the #306 R04 / #315 S08 / #326 W52 rule).
  *
  * @param {Object} campaignState — the pipeline's working copy
- * @param {{ actorId?: string|null, moveName?: string|null, error?: string }} ctx
+ * @param {{ actorId?: string|null, moveName?: string|null, error?: string,
+ *   recordSaved?: boolean, meterFailures?: Array<Object> }} ctx — `meterFailures`:
+ *   persistResolution's refused meter steps
  */
-async function reportUnsavedMoveRecord(campaignState, { actorId = null, moveName = null, error = "" } = {}) {
-  const failures = (UNSAVED_ON_COPY.get(campaignState) ?? []).map(step => ({ ...step, reason: "refused", error }));
+async function reportUnsavedMoveRecord(campaignState, { actorId = null, moveName = null, error = "", recordSaved = false, meterFailures = [] } = {}) {
+  const copySteps = recordSaved ? [] : (UNSAVED_ON_COPY.get(campaignState) ?? []).map(step => ({ ...step, reason: "refused", error }));
   UNSAVED_ON_COPY.delete(campaignState);
-  const move = moveName ? `${moveName}'s` : "The move's";
-  ui.notifications?.error?.(`Starforged Companion: the world did not save ${move} record — the roller's meters stand. `
-    + (failures.length ? "What it marked is on the GMs' card, with a Retry." : "Nothing else it changed needs a Retry."));
+  const failures = [...(Array.isArray(meterFailures) ? meterFailures : []), ...copySteps];
+  const move  = moveName ? `${moveName}'s` : "the move's";
+  const whose = `${game.actors?.get?.(actorId)?.name ?? "the roller"}'s meters`;
+  const what  = recordSaved
+    ? `${whose} from ${moveName ?? "the move"} — the rest of the move was saved. They are on the GMs' card, with a Retry.`
+    : meterFailures.length
+      ? `${move} record, nor ${whose}. What it changed is on the GMs' card, with a Retry.`
+      : `${move} record — the roller's meters stand. `
+        + (failures.length ? "What it marked is on the GMs' card, with a Retry." : "Nothing else it changed needs a Retry.");
+  ui.notifications?.error?.(`Starforged Companion: the world did not save ${what}`);
   if (!failures.length) return;
   await postPayoffFailureCard({ source: "persist", actorId, failures }).catch(err =>
     console.warn(`${MODULE_ID} | the move record's failure card failed:`, err?.message ?? err));
@@ -5840,7 +5860,7 @@ const PAYOFF_TITLES = {
   session:     ()  => `Session momentum not given`,
   sessionClocks: () => `Session-start clock advance not saved`,
   rider:       (c) => `Asset effects not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
-  persist:     (c) => `Move not saved — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
+  persist:     (c) => `Move not fully saved — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
 };
 
 /**
@@ -5919,7 +5939,11 @@ async function describePayoffFailure(f, { vowName, actorId }) {
       }
       case "suffer": {
         // A suffer pick's write (issue #309 N07): the PC meter it changes, as it stands now.
-        const pc    = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+        // An aided ally's momentum is the ally's, as its Retry applies it
+        // (sufferDialog runSufferResolution; a move's refused meters, issue #336 Y16).
+        const allyId = f.call?.kind === "meter" && f.call.meterKey === "momentum" && f.call.delta > 0 ? f.opts?.allyActorId : null;
+        const pc    = (allyId ? (game.actors?.get?.(allyId) ?? null) : null)
+          ?? (actorId ? (game.actors?.get?.(actorId) ?? null) : null);
         const meter = f.call?.kind === "meter" ? f.call.meterKey : SUFFER_METERS[f.call?.sufferId];
         const value = meter ? readCharacterSnapshot(pc)?.meters?.[meter] : undefined;
         const now   = value !== undefined ? ` ${escapeChatHtml(pc?.name ?? "")}'s ${meter} stands at ${value} now.` : "";
