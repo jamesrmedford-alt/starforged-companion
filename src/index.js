@@ -2887,7 +2887,9 @@ function registerNativeProgressRollHook() {
         : parsed.outcome === "weak_hit" ? "Weak Hit" : "Miss";
 
       import("./narration/narrator.js").then(({ narrateResolution }) => {
-        const campaignState = game.settings.get(MODULE_ID, "campaignState");
+        // A working copy: narrateResolution starts the scene and applies the
+        // sidecar on it (issue #335 Y04, the X09 rule).
+        const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
         // The roller's PC (the sheet's speaker), not this client's own.
         const speakerActorId = resolveSpeakerActorId(message, campaignState);
         const isMatch = Array.isArray(parsed.challengeDice) && parsed.challengeDice.length >= 2
@@ -3390,7 +3392,9 @@ export function isIncitingIncidentCommand(message) {
 async function handleIncitingIncidentCommand(_message) {
   try {
     const { runIncitingIncident } = await import("./session/incitingIncident.js");
-    const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    // A working copy: the narration mints its scene and applies its sidecar
+    // on it (issue #335 Y04 — the cached setting kept what a refused write lost).
+    const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
     await runIncitingIncident(campaignState);
   } catch (err) {
     console.warn(`${MODULE_ID} | inciting incident command failed:`, err?.message ?? err);

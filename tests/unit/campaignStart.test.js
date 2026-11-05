@@ -150,6 +150,17 @@ describe("runCampaignStart — happy path", () => {
     expect(card.content).not.toMatch(/❌|⚠️/);
   });
 
+  it("hands the inciting incident a working copy of the begun state, never the cached setting (issue #335 Y04)", async () => {
+    // The narration mints a scene and applies its sidecar on the object it is
+    // given: handed the cache, a refused write left the GM's client holding a
+    // scene and facts the world lacked (issue #329 X09's rule).
+    await runCampaignStart({ skipConfirm: true });
+    const given = runIncitingIncident.mock.calls[0][0];
+    expect(given).not.toBe(state());
+    expect(given).toEqual(state());          // the state as Begin Session left it
+    expect(given.sessionActive).toBe(true);
+  });
+
   it("fires sessionStateChanged when the session begins", async () => {
     const seen = [];
     Hooks.on(`${MODULE_ID}.sessionStateChanged`, (p) => seen.push(p));

@@ -236,7 +236,8 @@ export class SessionPanelApp extends ApplicationV2 {
     }
     try {
       const { runIncitingIncident } = await import("../session/incitingIncident.js");
-      const campaignState = game.settings.get("starforged-companion", "campaignState") ?? {};
+      // A working copy, as `!incite`'s (issue #335 Y04).
+      const campaignState = foundry.utils.deepClone(game.settings.get("starforged-companion", "campaignState") ?? {});
       await runIncitingIncident(campaignState);
     } catch (err) {
       console.warn("starforged-companion | session panel: envision incident failed:", err?.message ?? err);

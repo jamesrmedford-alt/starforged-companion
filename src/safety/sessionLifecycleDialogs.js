@@ -317,7 +317,10 @@ async function beginSessionOnce(payload) {
       const { collectGalleyParticipants, buildGalleyVignetteUserMessage, postGalleyVignetteCard }
         = await import("../session/galleyVignette.js");
       const { narrateSessionVignette } = await import("../narration/narrator.js");
-      const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      // A working copy — the narration starts its scene and applies its
+      // sidecar on it, and a refused write must leave this client's cache as
+      // the world has it (issue #335 Y04, the clock vignette's X09 copy).
+      const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
       const participants = collectGalleyParticipants(cs);
       const userMessage  = buildGalleyVignetteUserMessage(participants, cs);
       const narrationId  = newNarrationId();
@@ -585,7 +588,9 @@ async function endSessionOnce(payload) {
       const { selectEndSessionNPC, buildEndSessionVignetteUserMessage, postEndSessionVignetteCard }
         = await import("../session/endSessionVignette.js");
       const { narrateSessionVignette } = await import("../narration/narrator.js");
-      const cs  = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      // A working copy, as the galley's (issue #335 Y04): its scene opens on
+      // the copy, never on the cache after End closed the real one.
+      const cs  = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
       const npc = selectEndSessionNPC(cs);
       const userMessage = buildEndSessionVignetteUserMessage(npc, cs);
       const narrationId = newNarrationId();

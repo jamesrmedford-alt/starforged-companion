@@ -184,8 +184,9 @@ export async function runCampaignStart(opts = {}) {
 
   // ── Phase 5: Inciting Incident ────────────────────────────────────────────
   // runIncitingIncident never throws: with no narrator prose it posts a
-  // spark-only (Action + Theme) card and returns text: null.
-  campaignState = readCampaignState();
+  // spark-only (Action + Theme) card and returns text: null. It narrates on a
+  // working copy, as `!incite` does (issue #335 Y04).
+  campaignState = foundry.utils.deepClone(readCampaignState());
   try {
     const res = await runIncitingIncident(campaignState);
     if (res?.text) {
