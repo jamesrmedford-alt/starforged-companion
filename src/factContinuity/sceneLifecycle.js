@@ -36,6 +36,17 @@ import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations } from '
 const MODULE_ID = 'starforged-companion';
 
 /**
+ * How long a scene start waits for the one ahead of it (issue #335 Y05). A
+ * start is a campaignState write or two (and an implicit end's migration):
+ * seconds at most. One whose write never settles is passed, with a warning,
+ * so it cannot hold every later scene start.
+ */
+const SCENE_START_WAIT_MS = 10_000;
+
+/** The last scene start on this client: settles (never rejects) once it is done. */
+let _sceneStartTail = Promise.resolve();
+
+/**
  * Assign a fresh `currentSceneId`. If active-scene ledgers contain entries
  * the previous scene was never cleanly ended; that scene is flushed first
  * with reason "implicit_due_to_new_scene".
@@ -50,6 +61,15 @@ const MODULE_ID = 'starforged-companion';
  * active scene (`!scene start` reads the store first) still ends it and
  * starts a new one.
  *
+ * Scene starts run one at a time on this client (the canonical GM, the scene
+ * lifecycle's single emitter): a start waits for the one in flight — at most
+ * SCENE_START_WAIT_MS — and only then looks for the store's scene, so it
+ * adopts the scene that start opened (issue #335 Y05). Two narrations one
+ * command fires each narrate on their own working copy (issue #329 X09), and
+ * with no scene open both read the store inside the first start's write
+ * round trip: each minted a scene, and the narration on the losing one had
+ * its truths, state and frame dropped as "the scene changed meanwhile".
+ *
  * @param {Object} campaignState
  * @param {Object} [opts]
  * @param {string} [opts.reason] — diagnostic only ("@scene_intercept",
@@ -58,7 +78,31 @@ const MODULE_ID = 'starforged-companion';
  */
 export async function startScene(campaignState, { reason = 'unknown' } = {}) {
   if (!campaignState) return null;
+  const ahead = _sceneStartTail;
+  let release;
+  _sceneStartTail = new Promise(resolve => { release = resolve; });
+  try {
+    await waitForSceneStartAhead(ahead, reason);
+    return await openScene(campaignState, reason);
+  } finally {
+    release();   // the next start goes, whatever this one did
+  }
+}
 
+async function waitForSceneStartAhead(ahead, reason) {
+  let timer = null;
+  const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(true), SCENE_START_WAIT_MS); });
+  try {
+    if (await Promise.race([ahead.then(() => false), timedOut])) {
+      console.warn(`${MODULE_ID} | sceneLifecycle: startScene (${reason}) — the scene start ahead of it is still running after ${SCENE_START_WAIT_MS}ms; starting anyway.`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** startScene's work, one start at a time: adopt the store's active scene, or open one. */
+async function openScene(campaignState, reason) {
   if (!campaignState.currentSceneId && adoptStoredScene(campaignState)) {
     console.debug(`${MODULE_ID} | sceneLifecycle: startScene (${reason}) — scene ${campaignState.currentSceneId} is already active; continuing it.`);
     return campaignState.currentSceneId;

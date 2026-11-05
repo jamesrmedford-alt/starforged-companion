@@ -218,6 +218,12 @@ Oracle follow-ups, session and clock vignettes and vow scenes start a scene
 when none is active, as move, paced and `@scene` narration do
 (`ensureSceneStarted`, canonical GM — issue #321 U34; their facts landed
 under no scene), and so does a `!truth set` / `!state set` (issue #326 W59).
+Scene starts run one at a time on the GM: a start waits for the one in
+flight, then adopts it — two narrations one command fires, each on its own
+working copy, minted two scenes inside the first start's write round trip,
+and the loser's facts were dropped (issue #335 Y05). Begin's galley vignette
+follows its clock vignettes, and `!pay-the-price`'s oracle follow-up its
+trigger vignette, each reading its copy once the one ahead is done.
 
 **Subject resolution (Cluster A2; fixed by issue #286).** `applyNarratorSidecar`
 passes the full entity roster (`collectAllEntities`,

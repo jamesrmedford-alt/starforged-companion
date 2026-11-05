@@ -122,6 +122,12 @@ export async function narrateOracleFollowupOnGm(payload = {}, ctx = {}) {
 
 async function runOracleFollowup(args) {
   try {
+    // After a trigger vignette in flight on this client (`!pay-the-price`
+    // filling a tension clock fires both): the follow-up continues its scene,
+    // read with its beat in it (issue #335 Y05). Bounded; nothing in flight —
+    // every other follow-up, and any off the canonical GM — waits for nothing.
+    const { triggerVignettesSettled } = await import("../clocks/payThePriceClocks.js");
+    await triggerVignettesSettled();
     const { narrateOracleFollowup } = await import("../narration/narrator.js");
     // A working copy: the narration mints a scene and applies its sidecar on
     // the object it is given, and a write the world refuses must leave this

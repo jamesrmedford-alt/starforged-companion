@@ -78,7 +78,10 @@ layers. This file is the never-break list.
    `previousSessionSummary` (LAST SESSION) — the one prose surface that
    crosses sessions besides the campaign recap. A scene is never minted over
    a live one: a caller whose snapshot holds no scene while the store has one
-   adopts it (`startScene` → `adoptStoredScene`, issue #321 U06f), and every
+   adopts it (`startScene` → `adoptStoredScene`, issue #321 U06f), scene
+   starts run one at a time on the canonical GM — a start waits for the one
+   in flight before it looks, so two narrations on their own copies share one
+   scene (issue #335 Y05) — and every
    sidecar-applying narration — oracle follow-ups, session and clock
    vignettes and vow scenes included — starts a scene when none is active
    (`ensureSceneStarted`, canonical GM, issue #321 U34).

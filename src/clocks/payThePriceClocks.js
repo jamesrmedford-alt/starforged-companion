@@ -16,6 +16,15 @@ import { stripMarkup } from "../audio/segments.js";
 const MODULE_ID = "starforged-companion";
 
 /**
+ * How long a narration waits for the trigger vignettes in flight (issue #335
+ * Y05): each is a bounded Claude call, so this only passes one that hangs.
+ */
+const TRIGGER_VIGNETTE_WAIT_MS = 60_000;
+
+/** The trigger vignettes in flight on this client, settled once they are done (never rejects). */
+let _triggerVignettes = Promise.resolve();
+
+/**
  * Advance countdown clocks in response to a Pay the Price. The module's clock
  * contract is that tension clocks advance when you Pay the Price (clocks.js
  * header; issue #203 (Clocks)) — wiring that was documented but never
@@ -79,9 +88,11 @@ export async function advanceClocksOnPayThePrice() {
 
   // Fire-and-forget vignette for any clock that just triggered — the
   // narrative beat for when a deadline arrives or a threat materialises.
+  // Tracked until it is done: `!ptp`'s oracle follow-up narrates after it
+  // (triggerVignettesSettled, issue #335 Y05).
   const justTriggered = clocks.filter(a => a.triggered);
   if (justTriggered.length) {
-    setTimeout(async () => {
+    const run = new Promise(resolve => setTimeout(async () => {
       try {
         const { narrateClockAdvancement } = await import("../narration/narrator.js");
         // A working copy — each vignette applies its sidecar on it (issue #329 X09).
@@ -111,11 +122,37 @@ export async function advanceClocksOnPayThePrice() {
         }
       } catch (err) {
         console.warn(`${MODULE_ID} | advanceClocksOnPayThePrice: trigger vignette failed:`, err?.message ?? err);
+      } finally {
+        resolve();
       }
-    }, 0);
+    }, 0));
+    _triggerVignettes = Promise.all([_triggerVignettes, run]).then(() => {});
   }
 
   return advanced;
+}
+
+/**
+ * Settles once the trigger vignettes in flight on this client are done — or
+ * after TRIGGER_VIGNETTE_WAIT_MS, with a warning. `!pay-the-price` filling a
+ * tension clock fires its trigger vignette and the oracle follow-up together,
+ * each on its own working copy: with no scene open both started one, and the
+ * narration on the losing scene lost its facts (issue #335 Y05). The follow-up
+ * reads its copy after this, so it continues the vignette's scene with its
+ * beat in it. Never rejects.
+ *
+ * @returns {Promise<void>}
+ */
+export async function triggerVignettesSettled() {
+  let timer = null;
+  const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(true), TRIGGER_VIGNETTE_WAIT_MS); });
+  try {
+    if (await Promise.race([_triggerVignettes.then(() => false), timedOut])) {
+      console.warn(`${MODULE_ID} | Pay the Price: a trigger vignette is still running after ${TRIGGER_VIGNETTE_WAIT_MS}ms — narrating anyway.`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /**

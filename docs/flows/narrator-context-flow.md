@@ -468,7 +468,16 @@ caller whose snapshot holds no scene while the store has one adopts it
 (`startScene` → `adoptStoredScene`: the scene's id, truths, state, frame and
 spotlight cloned in, nothing written) instead of minting a second scene over
 its ledgers (issue #321 U06f); `!scene start`, holding the active scene,
-still ends it and starts another. `@scene` **continues** the scene in progress (issue #286 A4): it
+still ends it and starts another. Scene starts run one at a time on the
+canonical GM: a start waits for the one in flight (at most 10 s) and only
+then looks for the store's scene, so two narrations one command fires — each
+on its own working copy — share one scene; they each minted one inside the
+first start's write round trip, and the narration on the losing scene lost
+its facts (issue #335 Y05). Begin's galley vignette also runs after its clock
+vignettes, and `!pay-the-price`'s oracle follow-up after its trigger vignette
+(`triggerVignettesSettled`), each reading its copy once the one ahead is done
+(bounded, 60 s), so the second continues the first's scene with its beat in
+it. `@scene` **continues** the scene in progress (issue #286 A4): it
 used to call `startScene`, which ended the scene it was asked about and wrote
 the answer without the frame, truths, state or CORRECTED list.
 `ensureSceneStarted` starts a scene on the **canonical GM only** — a scene

@@ -153,6 +153,33 @@ async function sessionAlreadyBegun(campaignState) {
 let _beginChain = Promise.resolve();
 
 /**
+ * How long Begin's galley vignette waits for its clock vignettes (issue #335
+ * Y05): each is a bounded Claude call, so this only passes one that hangs.
+ */
+const OPENING_VIGNETTE_WAIT_MS = 60_000;
+
+/**
+ * Settle once `promise` has, or after `ms` — whichever is first, with a
+ * warning when the wait ran out. Never rejects.
+ *
+ * @param {Promise} promise
+ * @param {number}  ms
+ * @param {string}  label — for the warning
+ * @returns {Promise<void>}
+ */
+async function settledWithin(promise, ms, label) {
+  let timer = null;
+  const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(true), ms); });
+  try {
+    if (await Promise.race([Promise.resolve(promise).then(() => false, () => false), timedOut])) {
+      console.warn(`${MODULE_ID} | ${label}: still waiting after ${ms}ms — going ahead.`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * GM-relay handler for `"session.begin"` (GM_ACTIONS in
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Sub-steps, in
  * order: a new session when the last one is over → session-active flip
@@ -233,6 +260,9 @@ async function beginSessionOnce(payload) {
   // repeats nothing: an advance the world refused is a `clocks` step on the
   // GMs' payoff failure card, whose Retry saves the rolled fills without
   // rolling again (issue #316 T04 — it was caught and logged, and lost).
+  // The clock vignettes' run, settled once they are done: the galley follows
+  // it (issue #335 Y05).
+  let clockVignettes = null;
   try {
     const { advanceCampaignClocksForBeginSession } = await import("../clocks/clocks.js");
     const clockResults = await advanceCampaignClocksForBeginSession();
@@ -263,7 +293,7 @@ async function beginSessionOnce(payload) {
       }
       const advanced = clockResults.filter(r => r.advanced);
       if (advanced.length) {
-        setTimeout(async () => {
+        clockVignettes = new Promise(resolve => setTimeout(async () => {
           try {
             const { narrateClockAdvancement } = await import("../narration/narrator.js");
             // A working copy — each vignette applies its sidecar on it (issue #329 X09).
@@ -293,8 +323,10 @@ async function beginSessionOnce(payload) {
             }
           } catch (err) {
             console.warn(`${MODULE_ID} | session-start clock vignette generation failed:`, err?.message ?? err);
+          } finally {
+            resolve();
           }
-        }, 0);
+        }, 0));
       }
     }
   } catch (err) {
@@ -313,6 +345,11 @@ async function beginSessionOnce(payload) {
     return;
   }
   setTimeout(async () => {
+    // After the clock vignettes, and read once they are done: the galley
+    // continues the scene they opened with their beat in it. Together, each
+    // minted a scene on its own copy and the one on the losing scene lost its
+    // facts (issue #335 Y05). A vignette is a Claude call — the wait is bounded.
+    if (clockVignettes) await settledWithin(clockVignettes, OPENING_VIGNETTE_WAIT_MS, "galley vignette");
     try {
       const { collectGalleyParticipants, buildGalleyVignetteUserMessage, postGalleyVignetteCard }
         = await import("../session/galleyVignette.js");
