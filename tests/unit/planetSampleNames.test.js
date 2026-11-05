@@ -38,7 +38,9 @@ function sampleNamesByClass() {
 }
 
 describe.skipIf(!HAVE_VENDOR)("X48 — a generated planet is named from its class's Sample Names", () => {
-  const names = sampleNamesByClass();
+  // A skipped describe's body still runs to collect its tests: read the pack
+  // only when it is there.
+  const names = HAVE_VENDOR ? sampleNamesByClass() : {};
   const classes = new Set(PLANET_TYPE.map(r => r.result));
 
   it("control: the vendored Sample Names cover every class the module rolls, and the class rolled is one of them", () => {
