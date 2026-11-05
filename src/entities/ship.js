@@ -77,11 +77,6 @@ export const ShipSchema = {
   portraitId:                null,
   portraitSourceDescription: "",
 
-  // Battle Stations! ship-map deck-plan Scene (shipboard-combat mini-game
-  // Phase A). The id of the generated deck-plan Scene, or null when none has
-  // been built. Command vehicle only.
-  shipMapSceneId: null,
-
   // Crew / ownership
   ownerCharacterId: "",    // Primary owner (null for command vehicle — shared)
 

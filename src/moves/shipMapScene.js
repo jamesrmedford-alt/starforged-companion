@@ -465,8 +465,9 @@ export function findShipMapScene(shipActorId) {
 /**
  * Generate (or regenerate) the deck-plan Scene for a command-vehicle Actor:
  * resolve the deck-plan background art when enabled, run the vision pass to
- * place pins on the art, create the Scene, and link it back onto the ship
- * record (`shipMapSceneId`). Never throws — every failure path logs and
+ * place pins on the art, and create the Scene — found again by its own flags
+ * (findShipMapScene). The `shipMapSceneId` link this wrote onto the ship
+ * record had no reader and is retired (issue #331 X50). Never throws — every failure path logs and
  * returns null so it can't break ship creation.
  *
  * @param {Actor} shipActor
@@ -523,14 +524,6 @@ export async function generateShipMapForActor(shipActor, ship, campaignState, { 
   } catch (err) {
     console.error(`${MODULE_ID} | generateShipMapForActor: scene creation failed:`, err);
     return null;
-  }
-
-  // Link the Scene id onto the ship record for fast lookup / navigation.
-  try {
-    const { updateShip } = await import("../entities/ship.js");
-    await updateShip(shipActor.id, { shipMapSceneId: scene?.id ?? null });
-  } catch (err) {
-    console.debug?.(`${MODULE_ID} | generateShipMapForActor: shipMapSceneId link failed:`, err?.message ?? err);
   }
 
   return scene ?? null;
