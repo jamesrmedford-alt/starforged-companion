@@ -1,0 +1,19 @@
+Defect: Y12 / D4 (issues #335 / #338) — a re-seed writes the Notes tab whole, keeping only the portrait block: the GM's paragraphs, envision sections and promoted details go
+Tests: tests/unit/seedKeepsHandNotes.test.js
+Catches: the GM's Notes paragraph and Characteristics line survive the seed
+Catches: after Regenerate the promoted detail still reaches the narrator's card and the Notes tab
+Catches: an introduction written before the mark is kept
+Catches: replaces the seed's elements where the first stood and keeps everything else in place
+
+diff --git a/src/entities/seedIntro.js b/src/entities/seedIntro.js
+index 02e96ae..6bd3bd1 100644
+--- a/src/entities/seedIntro.js
++++ b/src/entities/seedIntro.js
+@@ -98,6 +98,7 @@ export function markSeedIntro(html) {
+ export function writeSeedIntro(previousNotes, introHtml) {
+   const notes = String(previousNotes ?? "");
+   const intro = String(introHtml ?? "").trim();
++  { const portrait = PORTRAIT_BLOCK_RE.exec(notes); return (portrait ? portrait[0] : "") + intro; }   // DEFECT: the old whole rewrite
+   const marked = markedElements(notes);
+   if (marked.length) {
+     let out = "";
