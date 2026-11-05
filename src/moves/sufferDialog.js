@@ -10,14 +10,14 @@
  *
  * The pure logic for "selection → executor call sequence" is exported
  * separately (`resolveSufferSelection`) so unit tests can pin it; the option
- * filters (`isOptionAvailable`, `unpreparedAtZeroSupply`) decide what the
- * card offers, and `isRetryableSufferCall` bounds what a payoff failure
- * card's Retry re-applies.
+ * filter (`isOptionAvailable`) decides what the card offers, and
+ * `isRetryableSufferCall` bounds what a payoff failure card's Retry
+ * re-applies.
  *
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, isUnprepared } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -498,20 +498,6 @@ function optionSuffers(opt) {
 }
 
 /**
- * True when the PC is unprepared with no supply left: a further loss of
- * resources goes to another suffer move (issue #325 W16).
- *
- * @param {Actor|null} actor
- * @returns {boolean}
- */
-export function unpreparedAtZeroSupply(actor) {
-  if (!actor?.system?.debility?.unprepared) return false;
-  const supply = actor.system?.supply;
-  const value = Number(typeof supply === "object" ? supply?.value : supply);
-  return !(value > 0);
-}
-
-/**
  * The ally an Aid Your Ally's benefits go to (`opts.allyActorId`, resolved
  * before the dice — statEnrichment.js resolveAidedAlly), or null. Issue #325
  * W17.
@@ -641,8 +627,9 @@ export function isOptionAvailable(opt, ctx = {}) {
   // A loss of resources while unprepared is applied to a different suffer
   // move (Sacrifice Resources: "When you suffer a loss of resources while
   // unprepared … apply the cost to a different suffer move"): at 0 supply it
-  // cost nothing and settled the choice (issue #325 W16).
-  if (optionSuffers(opt).includes("sacrifice_resources") && unpreparedAtZeroSupply(ctx.actor)) return false;
+  // cost nothing and settled the choice (issue #325 W16), and above 0 it was
+  // paid from the supply — keyed on the impact, at any supply (issue #338 D3).
+  if (optionSuffers(opt).includes("sacrifice_resources") && isUnprepared(ctx.actor)) return false;
   if (!opt?.requires) return true;
   const req = String(opt.requires);
   const actor = ctx.actor;

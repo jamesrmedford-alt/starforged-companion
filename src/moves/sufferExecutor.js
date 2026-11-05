@@ -38,8 +38,10 @@
  *        - Withstand Damage at 0     → roll VEHICLE_DAMAGE d100; if
  *          this is the command vehicle, surface an Overcome
  *          Destruction prompt (Q2 — prompt, don't auto-fire).
- *        - Sacrifice Resources at 0  → mark unprepared; further losses
- *          recurse into the dialog as a redirect-to-another-suffer.
+ *        - Sacrifice Resources at 0  → mark unprepared (the crew sharing
+ *          the supply with the PC); a loss while unprepared, at any
+ *          supply, goes to a picker of the other suffer moves (issue #325
+ *          W16; issue #338 D3).
  *        - Lose Momentum at min (-6) → recurse into the dialog with
  *          the "redirect or clear progress" two-branch prompt (Q3).
  *        - Companion Takes a Hit at 0 + miss + match → companion
@@ -630,21 +632,41 @@ function escapeHtml(s) {
 }
 
 /**
+ * True when `actor` is unprepared — a loss of resources then goes to a
+ * different suffer move: "When you suffer a loss of resources while
+ * unprepared, envision how this causes you hardship and apply the cost to a
+ * different suffer move" (vendored Sacrifice Resources). Keyed on the impact,
+ * not the meter (issue #338 D3): issue #325 W16 redirected the loss at 0
+ * supply alone, so a PC unprepared above 0 — Outcast's "+1 supply" at 0
+ * clears nothing — paid it from the supply. Read by this executor's guard,
+ * the choice card's greyed Sacrifice Resources (sufferDialog
+ * isOptionAvailable, sufferCard) and an asset rider's supply cost
+ * (consequenceRiders.js).
+ *
+ * @param {Actor|null} actor
+ * @returns {boolean}
+ */
+export function isUnprepared(actor) {
+  return !!actor?.system?.debility?.unprepared;
+}
+
+/**
  * Sacrifice Resources executor.
- * At 0 supply → mark unprepared; further losses prompt a redirect via the
- * dialog (handled in Phase D — executor surfaces atZero so the dialog
- * can recurse).
+ * At 0 supply → mark unprepared, with the crew (markUnprepared). A loss
+ * while unprepared, at any supply, is not taken from the supply: it posts a
+ * picker of the other suffer moves (`redirected`).
  */
 export async function sacrificeResources(actor, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
     return { before: 0, after: 0, atZero: false, skipped: true };
   }
   const before = readMeter(actor, "supply");
-  // Already unprepared with nothing left: "When you suffer a loss of
-  // resources while unprepared … apply the cost to a different suffer move."
-  // The loss went 0 → 0 and the cost was settled for nothing (issue #325
-  // W16): a picker of the other suffer moves takes it instead.
-  if (before <= 0 && actor.system?.debility?.unprepared) {
+  // Unprepared: "When you suffer a loss of resources while unprepared …
+  // apply the cost to a different suffer move." At 0 the loss went 0 → 0 and
+  // the cost was settled for nothing (issue #325 W16); above 0 it was paid
+  // from the supply (issue #338 D3). A picker of the other suffer moves takes
+  // it instead.
+  if (isUnprepared(actor)) {
     const { postSufferChoiceCard } = await import("./sufferCard.js");
     // The move's context (miss, the vehicle / companion it was made against),
     // without this call's own arguments.
@@ -660,14 +682,15 @@ export async function sacrificeResources(actor, amount, opts = {}) {
       executorOpts,
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });
+    const atZero = before <= 0;
     if (!opts.skipCard) {
       await postSufferCard({
         title: `Sacrifice Resources (-${amount})`,
-        body: `Supply: 0 — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? " (choose below)" : " — choose one and apply it on the sheet"}.`,
-        flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero: true, unpreparedMarked: false, redirected: true },
+        body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? " (choose below)" : " — choose one and apply it on the sheet"}.`,
+        flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero, unpreparedMarked: false, redirected: true },
       });
     }
-    return { before, after: before, atZero: true, unpreparedMarked: false, redirected: true };
+    return { before, after: before, atZero, unpreparedMarked: false, redirected: true };
   }
   await applyMeterChanges(actor, { supply: -amount });
   const after = readMeter(actor, "supply");

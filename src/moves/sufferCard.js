@@ -26,8 +26,8 @@ import {
   runSufferResolution,
   isOptionAvailable,
   isRetryableSufferCall,
-  unpreparedAtZeroSupply,
 } from "./sufferDialog.js";
+import { isUnprepared } from "./sufferExecutor.js";
 import { getActor, readCompanionHealth } from "../character/actorBridge.js";
 import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
@@ -130,12 +130,12 @@ function optionContext(actor, executorOpts = {}) {
 /**
  * True when an "any" card cannot take this suffer move: one the prompt
  * excludes (a redirected loss — sufferExecutor.sacrificeResources), or
- * Sacrifice Resources while the PC is unprepared at 0 supply, whose loss goes
- * to a different suffer move (issue #325 W16).
+ * Sacrifice Resources while the PC is unprepared, at any supply, whose loss
+ * goes to a different suffer move (issue #325 W16; issue #338 D3).
  */
 function anySufferBlocked(prompt, sufferId, ctx) {
   if (Array.isArray(prompt?.exclude) && prompt.exclude.includes(sufferId)) return true;
-  return sufferId === "sacrifice_resources" && unpreparedAtZeroSupply(ctx?.actor ?? null);
+  return sufferId === "sacrifice_resources" && isUnprepared(ctx?.actor ?? null);
 }
 
 /**

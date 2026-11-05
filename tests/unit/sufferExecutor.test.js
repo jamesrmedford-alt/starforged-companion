@@ -70,6 +70,7 @@ import {
   endureHarm,
   endureStress,
   sacrificeResources,
+  markUnprepared,
   companionTakesAHit,
   withstandDamage,
   executeSuffer,
@@ -334,11 +335,15 @@ describe("sacrificeResources", () => {
     expect(r.unpreparedMarked).toBe(true);
   });
 
-  it("does not re-mark if already unprepared", async () => {
+  // Already unprepared, the loss is not the supply's at any supply (issue #338
+  // D3): this pinned a PC unprepared at 1 paying it 1 → 0 ("does not re-mark
+  // if already unprepared") — the loss now goes to another suffer move.
+  it("already unprepared at supply 1: nothing is taken or re-marked — the loss goes to another suffer move", async () => {
     const r = await sacrificeResources(actor(1, true), 1);
-    expect(r.atZero).toBe(true);
-    expect(r.unpreparedMarked).toBe(false);
-    expect(chatCalls[0].content).toMatch(/redirect/i);
+    expect(r).toMatchObject({ before: 1, after: 1, atZero: false, unpreparedMarked: false, redirected: true });
+    expect(bridgeCalls.applyMeterChanges).toEqual([]);
+    expect(bridgeCalls.setDebility).toEqual([]);
+    expect(chatCalls.some(c => /the loss goes to another suffer move/.test(c.content ?? ""))).toBe(true);
   });
 
   // Issue #315 S07: the crew shares one supply, and "because you and your
@@ -369,11 +374,25 @@ describe("sacrificeResources", () => {
       expect(chatCalls[0].content).not.toMatch(/Ren/);
     });
 
-    it("the roller already unprepared: the allies are still marked", async () => {
+    // A roller already unprepared loses no supply to Sacrifice Resources
+    // (issue #338 D3 — this drove the mark through it, 1 → 0); the crew's
+    // mark still reaches an ally the impact's other writers leave unmarked —
+    // Repair's trade, an asset rider's supply cost (markUnprepared).
+    it("the roller already unprepared: markUnprepared still marks the allies", async () => {
       const a = pc("pc-a", "Kira", { unprepared: true }), b = pc("pc-b", "Ren");
       roster.actors = [a, b];
-      await sacrificeResources(a, 1);
+      const marks = await markUnprepared(a);
+      expect(marks).toMatchObject({ unpreparedMarked: false, alliesMarked: ["Ren"] });
       expect(marked()).toEqual(["pc-b:unprepared"]);
+    });
+
+    it("the roller already unprepared: its Sacrifice Resources is redirected, and marks no one", async () => {
+      const a = pc("pc-a", "Kira", { unprepared: true }), b = pc("pc-b", "Ren");
+      roster.actors = [a, b];
+      const r = await sacrificeResources(a, 1);
+      expect(r.redirected).toBe(true);
+      expect(a.system.supply.value).toBe(1);
+      expect(marked()).toEqual([]);
     });
 
     it("an ally's refused write: the others stand, nothing throws, and the card says to mark it", async () => {
