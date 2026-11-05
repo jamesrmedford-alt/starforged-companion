@@ -8,9 +8,13 @@
  * Regenerate-flavour button (force) — never automatically (decisions.md → entity
  * finalize lifecycle: D1 hybrid trigger, D2 leave-and-manual-regen).
  *
- * Scope: the four Actor-backed types (ship / settlement / planet / location).
- * connection / faction / creature are seeded richly at creation and stay out of
- * this affordance.
+ * Scope: the five Actor-hosted types (`supportsFinalize`). A settlement,
+ * planet or location gets the flavour pass below. A ship or a connection (an
+ * NPC card) — created blank (FOLDER-002 finalize-first) and populated on
+ * demand — runs its oracle / module / art seed instead (`finalizeViaSeed`:
+ * seedStarshipActor / seedConnectionActor), under the same completion
+ * contract. faction / creature live on journals and stay out of this
+ * affordance.
  *
  * Generation is grounded ONLY in the entity's stored fields (the migration's
  * flag payload). Art respects the generate-once / locked rule: a portrait is
