@@ -177,19 +177,15 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
     return { posted: false, reason: "not-on-card" };
   }
 
-  // The clicker's PC — credit the roller. Must be a PC the requester owns.
-  const actorId = typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null;
-  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
-  if (actorId && !isPlayerCharacterActor(actor)) {
-    console.warn(`${MODULE_ID} | connection pick: ${actorId} is not a player character — refused.`);
-    return { posted: false, reason: "not-a-pc" };
-  }
-  if (actor && !requesterOwnsActor(actor, ctx)) {
-    console.warn(`${MODULE_ID} | connection pick: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — refused.`);
-    return { posted: false, reason: "not-owner" };
-  }
+  // The clicker's PC — credit the roller. Must be a PC the requester owns; a
+  // GM with no PC relays none (the pipeline resolves their speaker), and a
+  // player with no PC of their own is refused — with no speaker the forced
+  // move was rolled as the GM's first PC, another player's character
+  // developing or forging the bond (issue #331 X19; #326 D8).
+  const { actor, refused } = relayedClickerPc(payload, ctx, "connection pick");
+  if (refused) return { posted: false, reason: refused };
   if (!actor) {
-    console.debug(`${MODULE_ID} | connection pick: no clicker PC relayed — the pipeline resolves the speaker from the message author.`);
+    console.debug(`${MODULE_ID} | connection pick: no clicker PC relayed (a GM's press) — the pipeline resolves the speaker from the message author.`);
   }
 
   _inFlight.add(key);
