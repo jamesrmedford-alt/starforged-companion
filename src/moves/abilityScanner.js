@@ -20,9 +20,13 @@
  *      implicit phrasing like "when you attack" or "when you draw on
  *      this energy" that pattern matching can't reliably identify.
  *
- * Adds extraction is regex-based ("add +1", "+2", etc.); when no number
- * is found the ability still surfaces but contributes zero adds — the
- * player reads the text and decides what to do.
+ * Adds extraction is regex-based ("add +1", "+2", etc.). An add naming a
+ * value the module holds is resolved to its number: "add +heart" from the
+ * roller's sheet, "add +its health" from the companion asset's own track
+ * (issue #336 Y22 — the confirm dialog has no adds input, issue #322 V02).
+ * When no add is found — or it names a value the module does not hold
+ * ("+cargo", "add that amount") — the ability still surfaces with zero adds
+ * and its text is shown.
  *
  * Asset sources:
  *   - Character actor: paths, companions, deeds, support vehicles
@@ -35,6 +39,7 @@
 import { apiPost } from "../api-proxy.js";
 import { moveRollKind } from "../schemas.js";
 import { listShips, isLoneShipCandidate } from "../entities/ship.js";
+import { readCharacterSnapshot, readCompanionHealth } from "../character/actorBridge.js";
 
 const MODULE_ID    = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -333,45 +338,69 @@ export async function scanForApplicableAbilities({
 
   const structured = structuredMatches(all, moveName);
   if (structured.length > 0) {
-    return structured.map(annotate("structured", moveName, moveId));
+    return structured.map(annotate("structured", moveName, moveId, characterActor));
   }
 
   const llm = await haikuFallback(all, moveId, moveName, narration, apiKey);
-  return llm.map(annotate("haiku", moveName, moveId));
+  return llm.map(annotate("haiku", moveName, moveId, characterActor));
 }
 
-function annotate(detection, moveName = null, moveId = null) {
+/**
+ * The values an ability's add may name that the module holds (issue #336
+ * Y22): the roller's stats (Bonded's "add +heart") and, for a companion on
+ * the character, that asset's own health (Glowcat's "add +its health" — its
+ * condition track, readCompanionHealth). A command vehicle's module has no
+ * health of its own here.
+ *
+ * @param {Object} ab — a collectEnabledAbilities entry
+ * @param {Actor|null} characterActor — the roller
+ * @returns {{ stats: Object|null, ownHealth: number|null }}
+ */
+function heldValuesFor(ab, characterActor) {
+  return {
+    stats:     readCharacterSnapshot(characterActor)?.stats ?? null,
+    ownHealth: ab.source === "character" && ab.assetId ? readCompanionHealth(characterActor, ab.assetId) : null,
+  };
+}
+
+function annotate(detection, moveName = null, moveId = null, characterActor = null) {
   // A stat substitution replaces an action roll's stat: a progress move, a
   // no-roll move or a suffer move with none listed has no stat to replace
   // (Outcast's "When you Sacrifice Resources …, roll +wits" is its own roll —
   // issue #331 X23).
   const rollsAStat = !moveId || moveRollKind(moveId) === "action";
-  return (ab) => ({
-    key:             ab.key,
-    assetName:       ab.assetName,
-    category:        ab.category,
-    source:          ab.source,
-    abilityName:     ab.abilityName,
-    summary:         ab.summary ?? "",
-    text:            ab.text,
-    adds:            extractAdds(ab.text, moveName),
-    // The Haiku path already populated statReplacement on its return shape;
-    // the structured path lands here with no such field, so derive it from
-    // the ability text via the regex fallback.
-    statReplacement: rollsAStat ? (ab.statReplacement ?? extractStatReplacement(ab.text, moveName)) : null,
-    // Post-roll outcome improvement (v1.7.11 finding G) + the per-ability
-    // clock that is its cost. Pass these through so the post-roll affordance
-    // (improveResult.js) can offer the upgrade and advance the right clock.
-    resultImprovement: extractResultImprovement(ab.text),
-    hasClock:        !!ab.hasClock,
-    clockTicks:      Number(ab.clockTicks ?? 0),
-    clockMax:        Number(ab.clockMax ?? 4),
-    assetId:         ab.assetId ?? (typeof ab.key === "string" ? ab.key.split(":")[0] : null),
-    abilityIndex:    Number.isInteger(ab.abilityIndex)
-      ? ab.abilityIndex
-      : (typeof ab.key === "string" ? Number(ab.key.split(":")[1]) : null),
-    detection,
-  });
+  return (ab) => {
+    const { add, from } = addFor(ab.text, moveName, heldValuesFor(ab, characterActor));
+    return {
+      key:             ab.key,
+      assetName:       ab.assetName,
+      category:        ab.category,
+      source:          ab.source,
+      abilityName:     ab.abilityName,
+      summary:         ab.summary ?? "",
+      text:            ab.text,
+      adds:            add,
+      // What the add is, when the text names a value the sheet holds — "heart",
+      // "its health" — for the confirm dialog's label (issue #336 Y22).
+      addsFrom:        from,
+      // The Haiku path already populated statReplacement on its return shape;
+      // the structured path lands here with no such field, so derive it from
+      // the ability text via the regex fallback.
+      statReplacement: rollsAStat ? (ab.statReplacement ?? extractStatReplacement(ab.text, moveName)) : null,
+      // Post-roll outcome improvement (v1.7.11 finding G) + the per-ability
+      // clock that is its cost. Pass these through so the post-roll affordance
+      // (improveResult.js) can offer the upgrade and advance the right clock.
+      resultImprovement: extractResultImprovement(ab.text),
+      hasClock:        !!ab.hasClock,
+      clockTicks:      Number(ab.clockTicks ?? 0),
+      clockMax:        Number(ab.clockMax ?? 4),
+      assetId:         ab.assetId ?? (typeof ab.key === "string" ? ab.key.split(":")[0] : null),
+      abilityIndex:    Number.isInteger(ab.abilityIndex)
+        ? ab.abilityIndex
+        : (typeof ab.key === "string" ? Number(ab.key.split(":")[1]) : null),
+      detection,
+    };
+  };
 }
 
 /**
@@ -485,30 +514,62 @@ export function extractStatReplacement(text, moveName = null) {
  * not make a sentence another move's: Service Pod's "Careful: Add +2 and
  * Lose Momentum (-1)" is its trigger's add.
  *
+ * An add may name a value the module holds instead of a number (issue #336
+ * Y22): "add +heart" is the roller's heart (Bonded's Set a Course home), "add
+ * +its health" the ability's own companion's health (Glowcat, Sprite,
+ * Symbiote) — resolved from `values` (the scanner passes the roller's
+ * snapshot stats and the asset's track, heldValuesFor). Unresolved — no
+ * value given, or one the module does not hold ("+cargo", "add that
+ * amount") — it adds nothing and the text stays on the dialog. "Add +wits
+ * instead of +integrity" (Tech) swaps a stat on a reroll; it is no add. A
+ * value is a general trigger's only when the ability names the move nowhere
+ * (the fallback pass's match): keyed to the move by a link elsewhere, it is
+ * another trigger's — Symbiote's "When you make aggressive moves …, add +its
+ * health" is not its "choose either the Endure Harm or Companion Takes a Hit
+ * move".
+ *
  * Skips momentum / fire / heat references — those are resource changes,
  * not roll modifiers.
  *
  * @param {string} text — the ability's text (HTML stripped, links kept)
  * @param {string|null} [moveName] — the move being made ("Clash")
+ * @param {{ stats?: Object|null, ownHealth?: number|null }} [values] — what a
+ *   value add resolves to: the roller's stats, the asset's own health
  * @returns {number}
  */
-export function extractAdds(text, moveName = null) {
+export function extractAdds(text, moveName = null, values = {}) {
+  return addFor(text, moveName, values).add;
+}
+
+/**
+ * extractAdds' add and what it names ("heart", "its health"; null for a
+ * number) — the scanner's offer and the confirm dialog's label.
+ *
+ * @param {string} text
+ * @param {string|null} moveName
+ * @param {{ stats?: Object|null, ownHealth?: number|null }} [values]
+ * @returns {{ add: number, from: string|null }}
+ */
+function addFor(text, moveName = null, values = {}) {
   const target = normaliseName(moveName);
   const ownTrigger = !!target && namedMoves(text).includes(target);
   const clauses = String(text ?? "").split(/(?<=[.!?])\s+/).flatMap(sentence => {
     const outcome = ownTrigger && OUTCOME_SENTENCE.test(sentence);
     return clausesOf(sentence).map(clause => ({
       moves: clause.moves,
-      add:   outcome ? 0 : firstAddIn(clause.text),
+      ...(outcome ? NO_ADD : firstAddIn(clause.text, values)),
     }));
   }).filter(c => c.add > 0);
+  const offer = (c) => (c ? { add: c.add, from: c.from } : NO_ADD);
   if (target) {
     const own = clauses.find(c => c.moves.includes(target));
-    if (own) return own.add;
-    return clauses.find(c => !c.moves.length)?.add ?? 0;
+    if (own) return offer(own);
+    return offer(clauses.find(c => !c.moves.length && !(c.from && ownTrigger)));
   }
-  return clauses[0]?.add ?? 0;
+  return offer(clauses[0]);
 }
+
+const NO_ADD = Object.freeze({ add: 0, from: null });
 
 /** A sentence about the trigger roll's outcome — "On a hit, …", "On a strong hit with a match, …": its adds are for later rolls. */
 const OUTCOME_SENTENCE = /^\s*on\s+a\s+(?:strong\s+|weak\s+)?(?:hit|miss)\b/i;
@@ -535,18 +596,34 @@ function clausesOf(sentence) {
   return out;
 }
 
-/** The first "add +N" (1–5) in one clause that is not for a later roll ("… on your next Strike"); 0 for none. */
-function firstAddIn(sentence) {
-  const pattern = /(?:\badds?\s+\+?(\d+)|\+(\d+)\s+add)/gi;
+/**
+ * The first add in one clause that is not for a later roll ("… on your next
+ * Strike"): "add +N" (1–5), or a value the module holds — "add +<stat>", "add
+ * +its health" — resolved from `values` (an unresolved one is passed over, as
+ * before it was never read). `from` names the value; null for a number.
+ *
+ * @param {string} clause
+ * @param {{ stats?: Object|null, ownHealth?: number|null }} [values]
+ * @returns {{ add: number, from: string|null }}
+ */
+function firstAddIn(clause, values = {}) {
+  const pattern = /(?:\badds?\s+\+?(\d+)|\+(\d+)\s+add|\badds?\s+\+(its\s+health|edge|heart|iron|shadow|wits)\b)/gi;
   let m;
-  while ((m = pattern.exec(sentence)) !== null) {
+  while ((m = pattern.exec(clause)) !== null) {
+    const rest = clause.slice(m.index + m[0].length).split(/[,;]/)[0];
+    if (/\bnext\b/i.test(rest)) continue;
+    if (m[3]) {
+      if (/^\s*(?:instead|in\s+place)\b/i.test(rest)) continue;   // a stat swapped on a reroll, not an add
+      const from = m[3].toLowerCase().replace(/\s+/g, " ");
+      const n = Number(from === "its health" ? values?.ownHealth : values?.stats?.[from]);
+      if (Number.isFinite(n) && n > 0) return { add: n, from };
+      continue;
+    }
     const n = Number(m[1] ?? m[2] ?? 0);
     if (!(n > 0 && n <= 5)) continue;
-    const rest = sentence.slice(m.index + m[0].length).split(/[,;]/)[0];
-    if (/\bnext\b/i.test(rest)) continue;
-    return n;
+    return { add: n, from: null };
   }
-  return 0;
+  return NO_ADD;
 }
 
 

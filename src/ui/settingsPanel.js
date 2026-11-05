@@ -2308,7 +2308,13 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
     // are concrete mechanical effects the player will almost always want
     // to apply when the ability fires.
     const checked   = (adds > 0 || stat) ? 'checked' : '';
-    const addsLabel = adds > 0 ? `<span class="sf-ability-adds">+${adds}</span>` : '';
+    // An add the text names as a value the sheet holds ("add +heart", "add
+    // +its health") shows the number the scanner read for it, and what it is
+    // (issue #336 Y22) — there is no adds input to type one (issue #322 V02).
+    const from      = adds > 0 && typeof a.addsFrom === 'string' && a.addsFrom ? a.addsFrom : '';
+    const addsLabel = adds > 0
+      ? `<span class="sf-ability-adds"${from ? ` title="Adds +${escapeAttr(from)}"` : ''}>+${adds}${from ? ` (${escapeAttr(from)})` : ''}</span>`
+      : '';
     const statLabel = stat ? `<span class="sf-ability-stat-sub" title="May substitute the listed stat">↻ +${escapeAttr(stat)}</span>` : '';
     const tag       = a.source === 'command_vehicle' ? 'Vehicle' : (a.category || 'Asset');
     const summary   = a.summary ? `<div class="sf-ability-summary">${escapeAttr(a.summary)}</div>` : '';
