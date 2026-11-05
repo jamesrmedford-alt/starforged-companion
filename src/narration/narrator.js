@@ -2047,10 +2047,12 @@ export async function narrateOracleFollowup({
     campaignState, settings, character, '', extras,
   );
 
-  const sentenceTarget = settings.narrationLength ?? 3;
+  // One sentence count: the oracle_followup role's "2-3 sentences". The
+  // Length setting governs move and paced narration only (issue #326 W40); it
+  // was read into this user message while the role said 2-3 (issue #331 X28).
   const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards());
   const userMessage    = buildOracleUserMessage({
-    oracleName, question, rolledLine, recentContext, sentenceTarget,
+    oracleName, question, rolledLine, recentContext,
   });
 
   try {
@@ -2096,7 +2098,7 @@ export async function narrateOracleFollowup({
 }
 
 function buildOracleUserMessage({
-  oracleName, question, rolledLine, recentContext, sentenceTarget,
+  oracleName, question, rolledLine, recentContext,
 }) {
   // recentContext is a pre-joined STRING (getRecentNarrationContext), matching
   // the scene/paced builders. Use it directly — calling .join here threw
@@ -2112,7 +2114,7 @@ function buildOracleUserMessage({
     q +
     `Mechanical result: ${rolledLine}\n` +
     `${recent}\n\n` +
-    `Render this result as ${sentenceTarget} sentence(s) of in-fiction prose anchored to ` +
+    `Render this result as 2-3 sentences of in-fiction prose anchored to ` +
     `the current scene. Do not repeat the dice number or the literal table text — transform ` +
     `it into narrative.`
   );
