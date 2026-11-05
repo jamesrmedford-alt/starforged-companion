@@ -151,7 +151,7 @@ the oracle follow-up, `@scene`, the clock vignettes and the relayed sidecar do
 | `message.type = "other"` | valid | invalid — use no type or `"base"` | ✅ Fixed |
 | `CONST.CHAT_MESSAGE_TYPES` | valid | restructured — use string literals | ✅ Fixed |
 | `getSceneControlButtons` | Array | Object keyed by group name | ✅ Fixed |
-| `Dialog.confirm()` | valid | deprecated → use `DialogV2.confirm()` | ⚠️ Not yet fixed |
+| `Dialog.confirm()` | valid | deprecated → use `DialogV2.confirm()` | ✅ Fixed (known-issues DIALOG-001) |
 | jQuery `$` / `.find()` | available | removed — use DOM API | ✅ Fixed |
 | `Application` (v1) | valid | deprecated → `ApplicationV2` (removed v16) | ✅ Fixed in our code |
 

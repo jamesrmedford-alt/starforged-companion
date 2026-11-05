@@ -1,26 +1,18 @@
 /**
  * STARFORGED COMPANION
- * src/moves/sufferDialog.js — Suffer-choice dialog (F16 Phase D)
+ * src/moves/sufferDialog.js — suffer-choice resolution (F16 Phase D)
  *
- * Blocking ApplicationV2 dialog that surfaces a `sufferPrompt` (emitted
- * by Phase B's CONSEQUENCE_MAP) to the player and turns their
- * selection into one or more `executeSuffer` calls (Phase C).
- *
- * Per F16 scope-doc Q1: blocking. The move resolution pipeline awaits
- * the player's selection before posting the narrator card or firing
- * downstream side effects. AFK-player mitigation:
- *
- *   - **GM override** button — visible only on the GM client; lets
- *     the GM resolve on the player's behalf.
- *   - **Cancel** button — closes the dialog without writes; the
- *     resolution stops there with a "no meter changes" chat card.
- *
- * No auto-timeout default. Silent picks would erode trust worse than
- * the original silent-meter bug we're fixing.
+ * Turns a `sufferPrompt` (emitted by Phase B's CONSEQUENCE_MAP) and the
+ * player's pick into one or more `executeSuffer` calls (Phase C), and runs
+ * them. The blocking ApplicationV2 dialog this file was named for is retired:
+ * the non-blocking suffer-choice card (sufferCard.js — the move lock-up fix, PR #243) offers
+ * the options and runs the pick through `runSufferResolution`.
  *
  * The pure logic for "selection → executor call sequence" is exported
- * separately (`resolveSufferSelection`) so unit tests can pin it
- * without spinning up a real ApplicationV2.
+ * separately (`resolveSufferSelection`) so unit tests can pin it; the option
+ * filters (`isOptionAvailable`, `unpreparedAtZeroSupply`) decide what the
+ * card offers, and `isRetryableSufferCall` bounds what a payoff failure
+ * card's Retry re-applies.
  *
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
@@ -679,10 +671,6 @@ export function isOptionAvailable(opt, ctx = {}) {
   return true;
 }
 
-
-// ─────────────────────────────────────────────────────────────────────────────
-// ApplicationV2 dialog
-// ─────────────────────────────────────────────────────────────────────────────
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HTML helpers (pure-ish; readers test these via snapshot)
