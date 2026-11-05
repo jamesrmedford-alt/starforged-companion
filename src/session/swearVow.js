@@ -390,9 +390,12 @@ export function registerSwearVowHandler() {
   });
 }
 
+// Quotes too: the card's attributes take these strings — a connection named
+// with a quoted nickname (`Mara "Doc" Reyes`) closed the link picker's
+// `<option value="…">`, so its Link sent "Mara " (issue #331 X21).
 function escapeHtml(s) {
   return String(s ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
