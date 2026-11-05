@@ -19,6 +19,7 @@ import {
   renderTurnsHtml,
   parseTurnsHtml,
   loadCurrentSessionTranscript,
+  isTranscriptUnsaved,
 } from "./transcript.js";
 
 const MODULE_ID = "starforged-companion";
@@ -121,6 +122,8 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       transcriptHtml: renderTurnsHtml(this.turns),
       initialMessage: this.initialMessage,
       errorBanner:    this.errorBanner,
+      // A flush found no journal to save to (issue #337 Y41): said while it lasts.
+      unsaved:        isTranscriptUnsaved(this.userId),
       busy:           this.busy,
     };
   }
@@ -130,6 +133,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     el.className = "sf-private-channel-body";
     el.innerHTML = `
       <div class="pc-error-banner"${context.errorBanner ? "" : " hidden"}>${escapeHtml(context.errorBanner)}</div>
+      <div class="pc-error-banner pc-unsaved"${context.unsaved ? "" : " hidden"}>This conversation is not saved yet — it is kept in this browser until its journal can be written (a GM's game creates it). Don't reload before then.</div>
       <div class="pc-transcript" data-pc-transcript>${context.transcriptHtml || '<p class="pc-empty">A private aside. Nothing here reaches the table until you publish it.</p>'}</div>
       <div class="pc-input-row">
         <textarea class="pc-input" data-pc-input rows="3" placeholder="Speak to the narrator privately… (Enter to send, Shift+Enter for a newline)"${context.busy ? " disabled" : ""}>${escapeHtml(context.initialMessage)}</textarea>

@@ -43,7 +43,8 @@ const MAX_AUTO_RETRIES = 3;
 /** How long a flush waits for the journal the GM creates before keeping its turns for a retry. */
 const JOURNAL_RELAY_WAIT_MS = 15_000;
 
-// userId → { batches: Batch[], timerId, chain: Promise, failures: number }
+// userId → { batches: Batch[], timerId, chain: Promise, failures: number, unsaved: boolean }
+// (`unsaved`: a flush found no journal and the player was told — issue #337 Y41)
 // Batch = { sessionId: string, turns: Turn[] } — turns waiting for their page
 // write, oldest first; the session id is captured on the batch's first append.
 // Turn  = { who: "player"|"narrator", name: string, text: string }
@@ -347,7 +348,7 @@ export function appendToBuffer(userId, turn) {
   registerFlushOnHide();
   let entry = _buffers.get(userId);
   if (!entry) {
-    entry = { batches: [], timerId: null, chain: Promise.resolve(), failures: 0 };
+    entry = { batches: [], timerId: null, chain: Promise.resolve(), failures: 0, unsaved: false };
     _buffers.set(userId, entry);
   }
   const sessionId = currentSessionId();
@@ -408,13 +409,56 @@ async function writePending(userId, entry) {
     }
     page = written;
   }
-  if (page) entry.failures = 0;
+  if (page) {
+    entry.failures = 0;
+    noteTranscriptSaved(entry);
+  }
   return page;
+}
+
+/**
+ * True while this user's Private Channel turns are kept in memory only, for
+ * want of a transcript journal (noteTranscriptUnsaved) — the window says so.
+ *
+ * @param {string} userId
+ * @returns {boolean}
+ */
+export function isTranscriptUnsaved(userId) {
+  return !!_buffers.get(userId)?.unsaved;
+}
+
+/**
+ * A flush found no journal to write to: a default Player with no GM connected
+ * to create it (Foundry refuses JOURNAL_CREATE below Trusted Player), a GM's
+ * create not answered in time, or a GM's own create refused. The turns live
+ * only in this browser's memory — a reload loses them — and only the console
+ * said so (issue #337 Y41). The player is told once, until a write lands.
+ *
+ * @param {Object|undefined} entry — the user's buffer entry
+ */
+function noteTranscriptUnsaved(entry) {
+  if (!entry || entry.unsaved) return;
+  entry.unsaved = true;
+  globalThis.ui?.notifications?.warn?.(game.user?.isGM
+    ? "Starforged Companion: your Private Channel conversation is not being saved — its journal could not be created. It is kept in this browser and tried again. Don't reload before it saves."
+    : "Starforged Companion: your Private Channel conversation is not being saved — a GM's game creates its journal, and no GM is connected (or answering). It is kept in this browser and saved once one is, at your next message or when you close the window. Don't reload before then.");
+}
+
+/** A write landed after the player was told it could not: said once, and the window's line goes. */
+function noteTranscriptSaved(entry) {
+  if (!entry?.unsaved) return;
+  entry.unsaved = false;
+  globalThis.ui?.notifications?.info?.("Starforged Companion: your Private Channel conversation is saved now.");
 }
 
 /** Append one batch to its session page; the page, or null when the write failed. */
 async function writeBatch(userId, { sessionId, turns }) {
   const journal = await getOrCreatePrivateJournal(userId);
+  if (!journal) {
+    console.warn(`${MODULE_ID} | privateChannel: no transcript journal to write to — ${turns.length} turn(s) kept for a retry`);
+    noteTranscriptUnsaved(_buffers.get(userId));
+    return null;
+  }
   const page    = await getOrCreateSessionPage(journal, sessionId);
   if (!page) {
     console.warn(`${MODULE_ID} | privateChannel: no session page — ${turns.length} turn(s) kept for a retry`);
