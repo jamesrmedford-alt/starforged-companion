@@ -161,7 +161,10 @@ first: when that write is refused the function rejects and the mirrors are
 left as they were, and each caller catches it (the pipeline lists it as not
 applied, a suffer pick reports it refused, the threshold card's create logs
 it). Every writer goes through it — the combat tracker's position badge (a
-GM's click; the clicked combatant's own flag too) and the Progress Tracks
+GM's click; the clicked combatant's own flag too; a player's click on their
+own character's badge relays the toggle below, and every other badge — and
+the range badge, the GM's — renders disabled for a player with a title
+naming who may change it, issue #331 X22) and the Progress Tracks
 panel's toggle (relayed `progressTrack.edit` op `position`, cycled on the
 canonical GM from the clicker's PC's own stored position — the clicker's PC
 resolved by `resolveUserActorId`, the fight's position when they have none —
