@@ -803,20 +803,31 @@ export async function syncEntityRecordNames(campaignState) {
   return summary;
 }
 
+// The entity types the load-time registration repair lists: the Actor-hosted
+// ones, and the two a JournalEntry hosts (a faction, a creature — known-issues
+// JOURNAL-ORPHAN-ON-REFUSAL), each with its campaignState id list.
+const UNLISTED_ENTITY_TYPES = [
+  ...ACTOR_HOSTED_NAME_SYNC,
+  { typeKey: "faction",  campaignField: "factionIds"  },
+  { typeKey: "creature", campaignField: "creatureIds" },
+];
+
 /**
- * Ready-time repair (issue #337 Y34): an Actor-hosted entity whose
- * registration the world refused — an NPC card, a ship, a settlement, a
- * planet or a location carrying the module's record (`entityType` and its
- * flag) that its campaignState id list does not name — is listed. The
+ * Ready-time repair (issue #337 Y34): an entity whose registration the world
+ * refused — an NPC card, a ship, a settlement, a planet or a location Actor,
+ * or a faction's or creature's JournalEntry (known-issues
+ * JOURNAL-ORPHAN-ON-REFUSAL), carrying the module's record (`entityType` and
+ * its flag) that its campaignState id list does not name — is listed. The
  * Entities panel shows such an Actor (it walks every flagged Actor) while
  * every list-driven reader skips it: a sidebar ship never reached
- * getCommandVehicle, SHIP POSITION or Withstand Damage, and no other load
- * pass lists an Actor that already carries a record. Left alone: a copy of a
- * listed record (the sidebar's Duplicate, or a card whose journal the
- * connection migration has yet to swap — the same record id), and the
- * leftovers of a sector creation whose sector the campaign never stored
- * (known-issues SECTOR-CREATE-PARTIAL — a retry of that creation adopts
- * them). GM-only; one write, onto the latest store; idempotent.
+ * getCommandVehicle, SHIP POSITION or Withstand Damage, a faction never
+ * reached the FACTION LANDSCAPE, and no other load pass lists a document
+ * that already carries a record. Left alone: a copy of a listed record (the
+ * sidebar's Duplicate, or a card whose journal the connection migration has
+ * yet to swap — the same record id), and the leftovers of a sector creation
+ * whose sector the campaign never stored (known-issues SECTOR-CREATE-PARTIAL
+ * — a retry of that creation adopts them). GM-only; one write, onto the
+ * latest store; idempotent.
  *
  * @returns {Promise<{ listed: number }>}
  */
@@ -827,7 +838,7 @@ export async function registerUnlistedEntityActors() {
   const state     = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
   const sectorIds = new Set((Array.isArray(state.sectors) ? state.sectors : []).map(s => s?.id).filter(Boolean));
   const additions = {};
-  for (const { typeKey, campaignField } of ACTOR_HOSTED_NAME_SYNC) {
+  for (const { typeKey, campaignField } of UNLISTED_ENTITY_TYPES) {
     const listed = new Set(Array.isArray(state[campaignField]) ? state[campaignField] : []);
     // The record ids the list already names — on an Actor, or on a legacy journal page.
     const known = new Set();

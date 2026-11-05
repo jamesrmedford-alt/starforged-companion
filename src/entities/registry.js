@@ -309,11 +309,7 @@ export async function adoptUnlistedEntityActor(typeKey, listKey, name, campaignS
   if (HOST_COLLECTION[typeKey] !== 'actor' || !campaignState || typeof campaignState !== 'object') return null;
   const target = String(name ?? '').trim().toLowerCase();
   if (!target) return null;
-  const stored = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState') ?? {};
-  const listed = new Set([
-    ...(Array.isArray(stored?.[listKey]) ? stored[listKey] : []),
-    ...(Array.isArray(campaignState[listKey]) ? campaignState[listKey] : []),
-  ]);
+  const listed = listedEntityIds(listKey, campaignState);
   for (const { document, data } of iterEntityDocuments(typeKey)) {
     if (!document?.id || listed.has(document.id)) continue;
     if (document.flags?.[MODULE_ID]?.entityType !== typeKey) continue;
@@ -326,6 +322,62 @@ export async function adoptUnlistedEntityActor(typeKey, listKey, name, campaignS
     return data;
   }
   return null;
+}
+
+/**
+ * The journal-hosted twin of adoptUnlistedEntityActor (known-issues
+ * JOURNAL-ORPHAN-ON-REFUSAL): a faction or creature lives on a JournalEntry
+ * its creator makes before the id-list write (issue #331 X35's order), and a
+ * refused write left an entry no list names — the retried draft Confirm made
+ * a second one. The unlisted entry of `typeKey` (`entityType` on the entry,
+ * the type's flag on its page) whose record bears this name is registered as
+ * a new entity would be, and its record returned; the creator makes no
+ * second. The name matches case-blind, else by `opts.nameKey` — a faction's
+ * identity key (faction.factionNameKey, issue #336 Y31), so "The Iron
+ * Syndicate" is the Iron Syndicate's — an exact name first, as
+ * findFactionByName. null when there is none (or no name to match).
+ *
+ * @param {string} typeKey — a journal-hosted type: faction, creature
+ * @param {string} listKey — its campaignState id list, e.g. "factionIds"
+ * @param {string} name
+ * @param {Object} campaignState — the caller's copy
+ * @param {{ label?: string, nameKey?: (name: string) => string }} [opts]
+ * @returns {Promise<Object|null>} the adopted record; rejects when its registration is refused
+ */
+export async function adoptUnlistedEntityJournal(typeKey, listKey, name, campaignState, { label = typeKey, nameKey = caseBlindName } = {}) {
+  if (HOST_COLLECTION[typeKey] !== 'journal' || !campaignState || typeof campaignState !== 'object') return null;
+  const exact = caseBlindName(name);
+  const key   = nameKey(name);
+  if (!exact || !key) return null;
+  const listed = listedEntityIds(listKey, campaignState);
+  let match = null;
+  for (const { document, data } of iterEntityDocuments(typeKey)) {
+    if (!document?.id || listed.has(document.id)) continue;
+    if (document.flags?.[MODULE_ID]?.entityType !== typeKey) continue;
+    const recordName = data?.name || document.name;
+    if (caseBlindName(recordName) === exact) { match = { document, data }; break; }
+    if (!match && nameKey(recordName) === key) match = { document, data };
+  }
+  if (!match) return null;
+  if (await registerEntityId(campaignState, listKey, match.document.id, { label })) {
+    campaignState[listKey].push(match.document.id);
+  }
+  console.log(`${MODULE_ID} | ${label}: adopted the unregistered journal "${match.document.name}" (${match.document.id})`);
+  return match.data;
+}
+
+/** A name trimmed and lowercased — "" for none. */
+function caseBlindName(name) {
+  return String(name ?? '').trim().toLowerCase();
+}
+
+/** The ids `listKey` names, in the stored campaignState or the caller's copy. */
+function listedEntityIds(listKey, campaignState) {
+  const stored = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState') ?? {};
+  return new Set([
+    ...(Array.isArray(stored?.[listKey]) ? stored[listKey] : []),
+    ...(Array.isArray(campaignState?.[listKey]) ? campaignState[listKey] : []),
+  ]);
 }
 
 /**

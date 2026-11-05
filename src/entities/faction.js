@@ -16,7 +16,7 @@
  */
 
 import { getOrCreateEntitiesFolder } from "./folder.js";
-import { registerEntityId, rerenderEntityPageBody } from "./registry.js";
+import { registerEntityId, rerenderEntityPageBody, adoptUnlistedEntityJournal } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "faction";
@@ -69,6 +69,14 @@ export const FactionSchema = {
 
 
 export async function createFaction(data, campaignState) {
+  // The journal an earlier creation of this faction made, whose registration
+  // the world refused, is adopted — listed now — never a second one (known-
+  // issues JOURNAL-ORPHAN-ON-REFUSAL, issue #337 Y34's get-or-create). One
+  // faction whatever article, case or spacing names it (issue #336 Y31).
+  const adopted = await adoptUnlistedEntityJournal(FLAG_KEY, "factionIds", data?.name, campaignState,
+    { label: "faction", nameKey: factionNameKey });
+  if (adopted) return adopted;
+
   const now = new Date().toISOString();
   const id  = generateId();
 

@@ -51,7 +51,14 @@ no attitude — the entry keeps the one the narration established (a new
 entry starts `unknown`) — backlinked by the record's host JournalEntry id
 (`findFactionByName(…).id`, as the reconcile writes it). The mirror passed
 `attitude: "unknown"` and the record's `_id`, resetting a hostile faction to
-unknown and re-pointing the backlink (issue #321 U28). Read by the relevance resolver → ENTITIES IN SCENE cards
+unknown and re-pointing the backlink (issue #321 U28). A creation whose
+registration the world refused leaves its journal unlisted; the next creation
+of that faction — matched by `factionNameKey` — adopts it instead of making a
+second (`registry.adoptUnlistedEntityJournal`, a creature's creator likewise),
+and the canonical GM's world load lists a faction or creature journal its list
+misses (`migrator.registerUnlistedEntityActors` — known-issues
+JOURNAL-ORPHAN-ON-REFUSAL: a retried Confirm made a second journal, the first
+left unlisted and never seeded). Read by the relevance resolver → ENTITIES IN SCENE cards
 (`formatEntityCard` has a faction field table including `relationship`) and
 the entity panel (which shows `relationship` as a label and edits no record
 field — the GM's manual stance correction is `!journal faction "Name"

@@ -18,7 +18,7 @@
  */
 
 import { getOrCreateEntitiesFolder } from "./folder.js";
-import { registerEntityId } from "./registry.js";
+import { registerEntityId, adoptUnlistedEntityJournal } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "creature";
@@ -60,6 +60,12 @@ export const CreatureSchema = {
 
 
 export async function createCreature(data, campaignState) {
+  // The journal an earlier creation of this creature made, whose registration
+  // the world refused, is adopted — listed now — never a second one (known-
+  // issues JOURNAL-ORPHAN-ON-REFUSAL, issue #337 Y34's get-or-create).
+  const adopted = await adoptUnlistedEntityJournal(FLAG_KEY, "creatureIds", data?.name, campaignState, { label: "creature" });
+  if (adopted) return adopted;
+
   const now = new Date().toISOString();
   const id  = generateId();
 
