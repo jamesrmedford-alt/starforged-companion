@@ -1503,19 +1503,18 @@ export function registerChatHook() {
       }
 
       // Finish the Scene (issue #326 D6) — the scene concludes on every
-      // outcome: its challenge track completes and its tension clock retires
-      // here, before a weak hit's or miss's Pay the Price (routed below) could
-      // advance the clock of a scene that has ended.
+      // outcome: its challenge track completes here, which retires its
+      // tension clock (completeProgressTrack), before a weak hit's or miss's
+      // Pay the Price (routed below) could advance the clock of a scene that
+      // has ended.
       if (resolution.consequences?.finishScene && game.user.isGM) {
         try {
           const { finishSceneChallenge } = await import("./moves/sceneChallenge.js");
-          const { retireClock } = await import("./clocks/clocks.js");
           const fin = await finishSceneChallenge(
             { moveTarget: interpretation.moveTarget ?? null, moveTargetId: interpretation.moveTargetId ?? null },
             {
               listTracks:    () => listProgressTracks(),
               completeTrack: (id) => completeProgressTrack(id),
-              retireClock:   (id) => retireClock(id),
             },
           );
           if (fin?.track) {

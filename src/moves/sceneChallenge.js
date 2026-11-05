@@ -53,21 +53,23 @@ export function selectSceneChallengeTrack(allTracks, label, { trackId = null } =
 }
 
 /**
- * Finish the scene: retire the challenge's tension clock, then complete its
- * track. The clock goes first — retiring is idempotent, so a refused track
- * save leaves only the save to redo — and before the move's Pay the Price,
- * which would otherwise advance the clock of a scene that has ended.
+ * Finish the scene: complete the challenge's track. Completing a scene
+ * challenge retires its tension clock first (completeProgressTrack, issue
+ * #316 T03 — idempotent, so a refused track save leaves only the save to
+ * redo), so it is retired before the move's Pay the Price, which would
+ * otherwise advance the clock of a scene that has ended. This read the clock
+ * id off the listed track to retire it itself, but the list does not carry
+ * it — the completion's retire was the only one that ran
+ * (FINISH-SCENE-CLOCKID-DEAD).
  *
  * @param {{ moveTarget?: string|null, moveTargetId?: string|null }} move
  * @param {{ listTracks: () => Promise<Array<Object>>,
- *           completeTrack: (id: string) => Promise<Object|null>,
- *           retireClock: (id: string) => Promise<unknown> }} deps
+ *           completeTrack: (id: string) => Promise<Object|null> }} deps
  * @returns {Promise<{ track: Object }|null>} the finished challenge, or null when none matched
  */
 export async function finishSceneChallenge({ moveTarget = null, moveTargetId = null } = {}, deps = {}) {
   const track = selectSceneChallengeTrack(await deps.listTracks(), moveTarget, { trackId: moveTargetId });
   if (!track) return null;
-  if (track.tensionClockId) await deps.retireClock(track.tensionClockId);
   const completed = await deps.completeTrack(track.id);
   return { track: completed ?? track };
 }

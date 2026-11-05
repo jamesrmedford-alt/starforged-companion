@@ -400,9 +400,10 @@ card (`trackGoneCard`) instead (issue #306 R06).
 A `scene_challenge` row rolls Finish the Scene (issue #326 D6): scored from
 the challenge's own track (`PROGRESS_TICK_SOURCES.finish_the_scene` →
 `sceneChallenge.selectSceneChallengeTrack`), it finishes the scene on every
-outcome — the pipeline's `finishScene` consequence retires the tension clock,
-then completes the track (`finishSceneChallenge`), before a weak hit's or
-miss's Pay the Price is routed, so the ended scene's clock does not tick.
+outcome — the pipeline's `finishScene` consequence completes the track
+(`finishSceneChallenge` → `completeProgressTrack`, which retires the tension
+clock before the track write), before a weak hit's or miss's Pay the Price
+is routed, so the ended scene's clock does not tick.
 Pre-session (the pipeline's session gate would ignore the bridge) it keeps
 the bespoke instant display roll (`type: 'progressRoll'` card — display-only
 by design).
