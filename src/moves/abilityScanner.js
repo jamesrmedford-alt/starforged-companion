@@ -370,7 +370,9 @@ function annotate(detection, moveName = null, moveId = null, characterActor = nu
   // issue #331 X23).
   const rollsAStat = !moveId || moveRollKind(moveId) === "action";
   return (ab) => {
-    const { add, from } = addFor(ab.text, moveName, heldValuesFor(ab, characterActor));
+    const values = heldValuesFor(ab, characterActor);
+    const add    = extractAdds(ab.text, moveName, values);
+    const from   = add > 0 ? addFor(ab.text, moveName, values).from : null;
     return {
       key:             ab.key,
       assetName:       ab.assetName,
