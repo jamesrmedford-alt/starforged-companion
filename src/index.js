@@ -4488,7 +4488,14 @@ async function postVowRecommitFulfilledCard(vowName) {
  * @returns {Promise<{ ok: boolean, reason?: "no-vow"|"vow-completed"|"write-refused" }>}
  */
 export async function performVowRecommit({ vowName = null, itemId = null, actorId = null } = {}) {
-  const { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId });
+  // The vow the miss scored, and nothing by a guess (issue #336 Y25): the
+  // Item by its id or the roller's exact-name vow (`ownOnly` — the sole open
+  // Item rung rewrote the crew's one open vow for a journal-only vow's miss),
+  // and the journal twin by its id or the vow's name (`byNameOnly` — the sole
+  // open journal vow was cleared and raised beside an Item that has no twin,
+  // W44's rule for finishVow). With no Item, the journal vow recommits from
+  // its own ticks.
+  const { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId, ownOnly: true });
   if (primary?.item?.system?.completed === true) {
     console.warn(`${MODULE_ID} | vow recommit: "${primary.item.name ?? vowName ?? "?"}" is fulfilled — nothing recommitted.`);
     await postVowRecommitFulfilledCard(primary.item.name ?? vowName);
@@ -4496,7 +4503,10 @@ export async function performVowRecommit({ vowName = null, itemId = null, actorI
   }
   let twin = null;
   try {
-    twin = selectVowTrack((await listProgressTracks()).filter(t => !t.completed), primary?.item?.name ?? vowName);
+    const openVows = (await listProgressTracks()).filter(t => t.type === "vow" && !t.completed);
+    const twinName = primary?.item?.name ?? vowName;
+    twin = (itemId ? openVows.find(t => t.id === itemId) : null)
+      ?? (twinName ? selectVowTrack(openVows, twinName, { byNameOnly: true }) : null);
   } catch (err) {
     console.warn(`${MODULE_ID} | vow recommit: the progress tracks could not be read:`, err?.message ?? err);
   }
@@ -5177,16 +5187,20 @@ async function postDeepenBondCard(name, marks) {
 // below took whichever PC came first — another PC's vow was completed,
 // forsaken, stamped paid and rewarded, its rank set the legacy and its
 // connection was deepened. The global ladder applies only when the roller
-// holds no such vow.
+// holds no such vow — and never with `ownOnly`: a write that is a costly
+// guess (a recommit) takes the scored Item or the roller's exact-name vow or
+// nothing, never another vow by a looser name or the sole open one
+// (rules/reachability.md §6; issue #336 Y25, W44's rule for finishVow).
 //
 // @param {string|null} vowName
-// @param {{ actorId?: string|null, itemId?: string|null }} [opts]
+// @param {{ actorId?: string|null, itemId?: string|null, ownOnly?: boolean }} [opts]
 // @returns {{ primary: {actor, item}|null, copies: Array<{actor, item}> }}
-export function resolveVowItemCopies(vowName, { actorId = null, itemId = null } = {}) {
+export function resolveVowItemCopies(vowName, { actorId = null, itemId = null, ownOnly = false } = {}) {
   const all  = collectPlayerVowItems();
   const open = all.filter(e => e.item.system?.completed !== true);
   const lo   = String(vowName ?? "").trim().toLowerCase();
   let primary = rollerVowEntry(all, lo, { actorId, itemId });
+  if (!primary && ownOnly) return { primary: null, copies: [] };
   const completedMatch = (score) => !!lo && all.some(e =>
     e.item.system?.completed === true && vowNameMatch(e, lo) >= score);
   if (!primary && lo) {

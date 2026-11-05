@@ -259,9 +259,14 @@ Recommit to the Vow** relays `vow.recommit` to the canonical GM
 (`cardActions.applyVowRecommitOffer`), which checks the presser is the
 roller's player or a GM and claims the card (`recommitted`) before
 `performVowRecommit` rolls the challenge dice once (`planRecommit`) and
-writes every open copy of the roller's vow (`resolveVowItemCopies`; the
-roller's first — refused, nothing changed and the claim released) and its
-journal twin: the lowest die's boxes cleared and the rank stepped once, as
+writes every open copy of the roller's vow (`resolveVowItemCopies` with
+`ownOnly`: the Item the miss scored, else the roller's exact-name vow —
+never another by a looser name or the sole open one; the roller's first —
+refused, nothing changed and the claim released) and its journal twin (by
+its id or the vow's name only — `selectVowTrack`'s `byNameOnly`, W44's rule;
+the sole open journal vow, or the crew's one open Item vow, was rewritten
+beside a vow that had no twin — issue #336 Y25; with no Item, the journal
+vow recommits from its own ticks): the lowest die's boxes cleared and the rank stepped once, as
 the Item holds it (a vendor number or a name — `setVowItemTrack`). A vow
 fulfilled since the miss (a later roll, a crewmate's fulfilment, the sheet)
 is refused with a short card and the offer stays closed — a fulfilled vow's
