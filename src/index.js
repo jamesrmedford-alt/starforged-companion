@@ -4298,15 +4298,23 @@ async function handlePayThePriceCommand(message) {
   const routesLine = noPayer
     ? sufferRoutesFooter(result.sufferRoutes, { notApplied: `${escapeChatHtml(game.user?.name ?? "the player who rolled it")} has no character of their own to pay it` })
     : sufferRoutesFooter(result.sufferRoutes);
+  // A price nobody pays is not part of the story (PTP-PCLESS-NARRATED-AS-FIRST-PC):
+  // its card carries no oracle memory — RECENT ORACLE RESULTS tells the
+  // narrator "the dice established these outcomes" — and nothing to narrate,
+  // so no follow-up is asked for below and a relay naming the card is refused
+  // (oracleFollowup.js narrates only a card's own `oracleNarration`).
+  const story = noPayer ? {} : {
+    oracleMemory:    { name: "Pay the Price", question, answer: result.result },
+    // What the GM narrates — the card's, never a relay's (issue #331 X49).
+    oracleNarration: narration,
+  };
   const card = await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${routesLine}</div>`,
     flags:   {
       [MODULE_ID]: {
         payThePriceCard: true,
         sufferRoutes:    result.sufferRoutes,
-        oracleMemory:    { name: "Pay the Price", question, answer: result.result },
-        // What the GM narrates — the card's, never a relay's (issue #331 X49).
-        oracleNarration: narration,
+        ...story,
       },
     },
   });
@@ -4325,7 +4333,12 @@ async function handlePayThePriceCommand(message) {
     console.warn(`${MODULE_ID} | !pay-the-price: clock advance failed:`, err?.message ?? err));
 
   // Narration follow-up — once, where a Claude key lives (oracleFollowup.js).
-  requestOracleNarration({ ...narration, messageId: card?.id ?? null });
+  // Not for a price nobody pays: the card says it was not applied, and with
+  // no speaker the narrator's character fell back to the first PC — "You are
+  // harmed" narrated for a character whose meters never moved
+  // (PTP-PCLESS-NARRATED-AS-FIRST-PC; #326 D8 narrates no PC-less player's
+  // move either).
+  if (!noPayer) requestOracleNarration({ ...narration, messageId: card?.id ?? null });
 }
 
 /**

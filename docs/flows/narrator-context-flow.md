@@ -47,7 +47,10 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   same setting and user list, so they agree on the runner.
 - **Oracle follow-ups** (after `!oracle yes`, `!oracle <tableId>` and
   `!pay-the-price`; a move's routed Pay the Price has none — its price seeds
-  the move's own narration, issue #325 W03) go through
+  the move's own narration, issue #325 W03 — nor does a routed `!ptp` price
+  nobody pays, a PC-less player's at a table of several: its card says it was
+  not applied and carries no `oracleNarration` or `oracleMemory`,
+  PTP-PCLESS-NARRATED-AS-FIRST-PC) go through
   `requestOracleNarration` (`src/oracles/oracleFollowup.js`) with the same
   rule: a keyed GM is connected → `requestGmAction("oracle.narrate")` runs it
   on the keyed canonical GM; else a keyed author narrates locally; else it is
@@ -519,7 +522,8 @@ clock-vignette sites, the inciting card — makes the id (`newNarrationId`) and
 passes it to the narration too. Raw oracle
 *results* — and the at-0 choice card's mortal-wound / desolation roll
 (`rollImpactTable`, issue #336 Y21) — additionally carry a structured
-`oracleMemory` flag; the canonical
+`oracleMemory` flag (not a `!ptp` price nobody pays — the dice established
+nothing a character took, PTP-PCLESS-NARRATED-AS-FIRST-PC); the canonical
 GM's capture hook (`registerOracleMemoryCaptureHook`, `src/index.js`) ledgers
 them into `campaignState.recentOracles` (`src/oracles/oracleMemory.js`,
 cap 8) — one capture at a time, each reading the ring as the last left it,

@@ -18,10 +18,18 @@
  *
  * (Converted from the tenth audit's probe
  * tests/probes/multiplayer/ptpPclessPlayerSilent.probe.js.)
+ *
+ * PTP-PCLESS-NARRATED-AS-FIRST-PC (found while fixing Y43): the refused price
+ * still asked for its oracle narration, with no speaker, and the narrator's
+ * character fell back to the first PC — "You are harmed" narrated for Kira,
+ * whose meters never moved, while the card said the price was not applied.
+ * A price nobody pays is not part of the story: no follow-up narration, and
+ * no oracle memory telling the narrator "the dice established" it.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
+import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 let table;
@@ -86,5 +94,36 @@ describe('issue #337 Y43 — a PC-less player types !ptp', () => {
     await payThePrice('gm-1');
     expect(health('pc-kira')).toBe(4);
     expect(notices()).toHaveLength(0);
+  }, 30_000);
+});
+
+describe('PTP-PCLESS-NARRATED-AS-FIRST-PC — a price nobody pays is not narrated', () => {
+  const followUps = () => table.cards(f => f.oracleNarrationCard);
+  const recentOracles = () => table.world.campaignState()?.recentOracles ?? [];
+
+  beforeEach(async () => {
+    // A keyed GM: every !ptp follow-up is narrated on the GM's key.
+    await table.setClaudeKey('gm-1', 'sk-ant-gina');
+    scriptClaude(table);
+  });
+
+  it("the PC-less player's refused price gets no narration, and the narrator is not told it was established", async () => {
+    const card = await payThePrice('pl-2');
+
+    expect(health('pc-kira')).toBe(5);                     // nobody paid it …
+    expect(followUps()).toHaveLength(0);                   // … and nobody is narrated paying it
+    expect(table.claude.calls.filter(c => /Pay the Price/.test(c.userText))).toEqual([]);
+    expect(card.flags[MODULE_ID].oracleNarration).toBeUndefined();   // nothing a relay could ask the GM to narrate
+    expect(recentOracles().filter(o => o.name === 'Pay the Price')).toEqual([]);
+    expect(card.content).toMatch(/not applied/);           // Y43's card and notice stand
+    expect(notices()).toHaveLength(1);
+  }, 30_000);
+
+  it('control: a price its payer pays is narrated, and remembered', async () => {
+    await payThePrice('pl-1');
+
+    expect(health('pc-kira')).toBe(4);
+    expect(followUps()).toHaveLength(1);
+    expect(recentOracles().filter(o => o.name === 'Pay the Price')).toHaveLength(1);
   }, 30_000);
 });
