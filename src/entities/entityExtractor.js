@@ -1210,6 +1210,31 @@ export function entityExistsForName(name, type, campaignState) {
 }
 
 /**
+ * The listed connection record a name names, by entityExistsForName's rule
+ * (normalizeEntityName — a title aside), a record of exactly that name
+ * first. null when none.
+ *
+ * @param {string} name
+ * @param {Object} campaignState
+ * @returns {Object|null}
+ */
+function listedConnectionNamed(name, campaignState) {
+  const exact  = String(name ?? "").trim().toLowerCase();
+  const target = normalizeEntityName(name);
+  if (!target) return null;
+  let same = null;
+  for (const id of campaignState?.connectionIds ?? []) {
+    let rec = null;
+    try { rec = getConnection(id); }
+    catch { continue; }
+    if (!rec?.name) continue;
+    if (rec.name.trim().toLowerCase() === exact) return rec;
+    if (!same && normalizeEntityName(rec.name) === target) same = rec;
+  }
+  return same;
+}
+
+/**
  * Cross-type variant of entityExistsForName — returns true if any entity of
  * any type already carries this name. Used as the primary dedup gate in
  * routeEntityDrafts so the detector's type classification cannot smuggle a
@@ -1821,8 +1846,19 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
 
   // Already created — by a Confirm whose card write was lost, or another GM's:
-  // mark the row, create nothing twice (issue #321 U25).
+  // mark the row, create nothing twice (issue #321 U25). A connection's bond
+  // still goes on the PC this Confirm bonds (idempotent per PC and
+  // connection): a refused Confirm's card, listed by the world load before
+  // this press (issue #337 Y34), never reached it (known-issues
+  // BOND-ITEM-AFTER-RELIST).
   if (entityExistsForName(draft.name, draft.type, campaignState)) {
+    const existing = draft.type === "connection" ? listedConnectionNamed(draft.name, campaignState) : null;
+    if (existing) {
+      await registerConnectionOnActiveCharacter(existing, {
+        actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
+    }
     await setDraftStatus(message, draftIndex, "confirmed");
     return null;
   }

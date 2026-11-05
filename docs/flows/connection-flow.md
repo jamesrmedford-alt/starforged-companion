@@ -76,7 +76,11 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
   own row's status, one write at a time per card, on the live card
   (`setDraftStatus`) — a whole-card copy written back reverted a row resolved
   meanwhile — and Confirm creates nothing when an entity of that name and
-  type already exists (`entityExistsForName`; issue #321 U25).
+  type already exists (`entityExistsForName`; issue #321 U25), save the bond:
+  a connection row's Confirm puts the bond Item on the card's PC when it has
+  none (`registerConnectionOnActiveCharacter`, idempotent) — a card the world
+  load listed after a refused Confirm (§1, Y34) never reached the sheet
+  (known-issues BOND-ITEM-AFTER-RELIST).
   Placeholder-name reveals rename in place rather than duplicating; a reveal
   whose `from` names no recorded placeholder connection drafts the newly
   named NPC (`findPlaceholderConnection` — it used to be dropped, issue #321
