@@ -244,7 +244,8 @@ C5) · [6.5] active-scene ledger
 (SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
 condition last — frame/truths/corrections/ship are
-never dropped) · [7] legacy connections summary (count only) · [8]
+never dropped) · ([7], a legacy count of `connectionIds` that counted a
+lost connection as active, is retired — issue #331 X29) · [8]
 CHARACTER STATE (vows and bonds with progress and their rank by name — issue
 #321 U62 — granted rewards — C5) · [8b]
 party roster · [8c] spotlight nudge · [9] sidecar

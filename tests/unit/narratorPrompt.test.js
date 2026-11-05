@@ -318,13 +318,14 @@ describe('buildNarratorSystemPrompt()', () => {
     expect(prompt).toContain('Last session');
   });
 
-  it('includes ACTIVE CONNECTIONS when connectionIds is non-empty', () => {
+  it('renders no count-only ACTIVE CONNECTIONS block — it counted lost connections as active (issue #331 X29)', () => {
     const prompt = buildNarratorSystemPrompt(
       makeCampaignState({ connectionIds: ['c1', 'c2'] }),
       makeNarratorSettings(),
       null,
     );
-    expect(prompt).toContain('ACTIVE CONNECTIONS');
+    expect(prompt).not.toContain('ACTIVE CONNECTIONS');
+    expect(prompt).not.toMatch(/active connection\(s\)/);
   });
 
   it('includes CHARACTER block with name and meters when character is provided', () => {
