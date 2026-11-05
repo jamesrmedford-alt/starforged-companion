@@ -3999,29 +3999,42 @@ async function handlePayThePriceCommand(message) {
  * The commands themselves run on whichever client typed them — possibly a
  * player who cannot write world settings — hence capture-on-GM via the hook.
  */
+// The ring's read-modify-writes, one at a time on this client: two oracle
+// cards inside one write round trip each read the ring before the other's
+// write landed, and the second write dropped the first result (issue #331
+// X44 — the CLOCK-LOST-UPDATE shape; serialiseClockWrite's queue).
+let _oracleMemoryWrites = Promise.resolve();
+
 function registerOracleMemoryCaptureHook() {
   Hooks.on("createChatMessage", (message) => {
     try {
       if (!isCanonicalGM()) return;
       const entry = message?.flags?.[MODULE_ID]?.oracleMemory;
       if (!entry || typeof entry !== "object") return;
-
-      // A copy, with its own ring (rules/foundry-api.md): recordOracleResult
-      // pushed onto the cached ring, so a refused write left the GM's cache
-      // holding a result the world did not (issue #326 W51).
-      const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
-      const campaignState = {
-        ...cached,
-        recentOracles: Array.isArray(cached.recentOracles) ? [...cached.recentOracles] : [],
-      };
-      const stored = recordOracleResult(campaignState, entry);
-      if (!stored) return;
-      game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
-        console.warn(`${MODULE_ID} | oracle-memory: persist failed:`, err?.message ?? err));
+      _oracleMemoryWrites = _oracleMemoryWrites.then(() => captureOracleResult(entry));
     } catch (err) {
       console.warn(`${MODULE_ID} | oracle-memory capture failed:`, err?.message ?? err);
     }
   });
+}
+
+/** One oracle result onto the ring, read when its turn in the queue comes. Never rejects. */
+async function captureOracleResult(entry) {
+  try {
+    // A copy, with its own ring (rules/foundry-api.md): recordOracleResult
+    // pushed onto the cached ring, so a refused write left the GM's cache
+    // holding a result the world did not (issue #326 W51).
+    const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const campaignState = {
+      ...cached,
+      recentOracles: Array.isArray(cached.recentOracles) ? [...cached.recentOracles] : [],
+    };
+    const stored = recordOracleResult(campaignState, entry);
+    if (!stored) return;
+    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | oracle-memory: persist failed:`, err?.message ?? err);
+  }
 }
 
 /**

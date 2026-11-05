@@ -444,7 +444,9 @@ passes it to the narration too. Raw oracle
 *results* additionally carry a structured `oracleMemory` flag; the canonical
 GM's capture hook (`registerOracleMemoryCaptureHook`, `src/index.js`) ledgers
 them into `campaignState.recentOracles` (`src/oracles/oracleMemory.js`,
-cap 8) for section [3b] (the retired assembler's RECENT ORACLES section
+cap 8) — one capture at a time, each reading the ring as the last left it,
+so two results inside one write round trip are both kept (issue #331 X44) —
+for section [3b] (the retired assembler's RECENT ORACLES section
 went with the module, 2026-07 — issue #271).
 
 **Scene lifecycle** (`src/factContinuity/sceneLifecycle.js`): scenes start on
