@@ -23,7 +23,7 @@
  */
 
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor, setVowLinkedConnection } from "../character/actorBridge.js";
+import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor, setVowLinkedConnection, isVowCopy } from "../character/actorBridge.js";
 import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter, promoteNewEntityLedgerSubjects }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
@@ -600,9 +600,10 @@ export async function applyRewardPickFromRelay(payload = {}, _ctx = {}) {
     // left no reward on the vow — the fulfilment granted none — while the
     // card said "Reward set" and stayed claimed (issue #329 X07). The claim is
     // released so the pick can be made again, and the presser told. A vow no
-    // character holds (its Item deleted, or its vowId flag never landed) can
-    // hold no pick: the card is closed and the presser told why — "Choose it
-    // again" asked for a retry that could never land (issue #336 Y27).
+    // character holds (its Item deleted — one whose vowId flag never landed
+    // is found by its Item id, VOW-ID-NEVER-LANDED) can hold no pick: the
+    // card is closed and the presser told why — "Choose it again" asked for a
+    // retry that could never land (issue #336 Y27).
     const saved = await setSharedVowReward(f.vowId, { status: "promised", ...reward });
     if (!saved.ok && saved.reason === "no-copy") {
       await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: "no-vow" })
@@ -648,13 +649,13 @@ async function postVowWriteRefusedNotice(ctx, text, { title = "Not saved" } = {}
   }).catch(err => console.warn(`${MODULE_ID} | swearVow: the not-saved notice failed:`, err?.message ?? err));
 }
 
-/** Every copy's reward status for a vow, by its vowId (copies on every PC). */
+/** Every copy's reward status for a vow, by its vowId (copies on every PC — actorBridge isVowCopy). */
 function vowRewardStatuses(vowId) {
   const out = [];
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
-      if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId) {
+      if (isVowCopy(item, vowId)) {
         const status = item.flags[MODULE_ID].reward?.status;
         if (typeof status === "string") out.push(status);
       }

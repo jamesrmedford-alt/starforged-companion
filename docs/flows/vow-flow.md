@@ -39,7 +39,11 @@ Terminology up front, because it drives every gap below:
   Tracks journal flag. Only `addProgressTrack` creates one, and the panel
   can't (see gaps) — effectively dormant.
 - **Matching:** creation, shared-sync, reward-set, and connection-link key
-  on the **`vowId` flag**; fulfilment completion and payoff resolve through
+  on the **`vowId` flag** — reward-set, connection-link and the reward's
+  granted-or-lost check also take the Item whose own id is the `vowId`
+  (`actorBridge.isVowCopy`): a sheet-made vow's cards name it by its Item id,
+  and the createItem hook's stamp of that id as the flag can fail
+  (known-issues VOW-ID-NEVER-LANDED); fulfilment completion and payoff resolve through
   `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
   then collects every copy by `vowId`. (The old exact-name-only payoff
   matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The
@@ -96,9 +100,10 @@ granted reward, so the next linked win or the fulfilment granted a second
 the presser and the GMs are whispered why (issue #329 X07):
 `setSharedVowReward` reports `{ ok, reason }` — `refused` releases the claim
 for another pick ("could not be saved … choose it again"); `no-copy`, a vow
-no character holds any more (its Item deleted, or its `vowId` never landed),
-closes the card (`rewardChosen: "no-vow"`) — "choose it again" asked for a
-retry that could never land (issue #336 Y27).
+no character holds any more (its Item deleted; a sheet-made vow whose `vowId`
+flag never landed is still found by its Item id — known-issues
+VOW-ID-NEVER-LANDED), closes the card (`rewardChosen: "no-vow"`) — "choose
+it again" asked for a retry that could never land (issue #336 Y27).
 
 **Player-authored vows.** `registerPlayerVowHook` (createItem hook, GM-side)
 catches sheet-made vows (no `vowId` yet), stamps `vowId = item.id`, and posts

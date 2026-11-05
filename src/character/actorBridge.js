@@ -674,8 +674,24 @@ export async function completeVowItem(actor, vowItemId) {
 
 
 /**
+ * True when `item` is a copy of the vow `vowId`: a progress Item carrying it
+ * as its module `vowId` flag — or whose own id it is. A sheet-made vow's cards
+ * name it by its Item id, and the createItem hook's stamp of that id as the
+ * flag can fail, so matching the flag alone said "no character holds this
+ * vow" while it was on the sheet (known-issues VOW-ID-NEVER-LANDED).
+ *
+ * @param {Item} item
+ * @param {string} vowId
+ * @returns {boolean}
+ */
+export function isVowCopy(item, vowId) {
+  return !!vowId && item?.type === "progress"
+    && (item.flags?.[MODULE_ID]?.vowId === vowId || item.id === vowId);
+}
+
+/**
  * Set the promised concrete reward (#241 Phase 2) on every copy of a shared vow,
- * found by its vowId flag across all player characters. GM-only (Item flag
+ * found by its vowId (isVowCopy) across all player characters. GM-only (Item flag
  * writes). No-op when the vow or reward is missing.
  *
  * @param {string} vowId
@@ -694,7 +710,7 @@ export async function setSharedVowReward(vowId, reward) {
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
-      if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
+      if (isVowCopy(item, vowId) && item.setFlag) {
         copies += 1;
         await item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward }).catch(err => {
           refused = true;
@@ -708,7 +724,7 @@ export async function setSharedVowReward(vowId, reward) {
 }
 
 /**
- * Set the linked connection on a vow Item (found by its vowId flag across all
+ * Set the linked connection on a vow Item (found by its vowId, isVowCopy, across all
  * player characters), so fulfilling/advancing it deepens that bond (#248
  * B-link). GM-only (Item flag write). No-op when the vow or name is missing.
  *
@@ -729,7 +745,7 @@ export async function setVowLinkedConnection(vowId, connectionName) {
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
-      if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
+      if (isVowCopy(item, vowId) && item.setFlag) {
         copies += 1;
         await item.setFlag(MODULE_ID, "linkedConnectionName", connectionName).catch(err => {
           refused = true;
