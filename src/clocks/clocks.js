@@ -568,8 +568,10 @@ async function advanceClock(clock) {
         `<strong>Clock did not advance</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>NO</strong> (d100=${r.roll}).</p>`,
       );
     }
-    const updated = await fillOneSegment(clock);
-    if (!updated) return;
+    const filled = await fillOneSegment(clock);
+    if (!filled) return;
+    if (filled.wasFull) return postAlreadyTriggered(filled.clock);
+    const updated = filled.clock;
     await postCard(
       `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>YES</strong> (d100=${r.roll}). Filled <strong>${updated.filled}/${updated.segments}</strong>.${triggeredSuffix(updated)}</p>`,
     );
@@ -577,8 +579,10 @@ async function advanceClock(clock) {
     return;
   }
 
-  const updated = await fillOneSegment(clock);
-  if (!updated) return;
+  const filled = await fillOneSegment(clock);
+  if (!filled) return;
+  if (filled.wasFull) return postAlreadyTriggered(filled.clock);
+  const updated = filled.clock;
   await postCard(
     `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — filled <strong>${updated.filled}/${updated.segments}</strong>.${triggeredSuffix(updated)}</p>`,
   );
@@ -595,22 +599,37 @@ async function advanceClock(clock) {
  */
 async function fillClock(clock) {
   if (isFull(clock)) return postAlreadyTriggered(clock);
-  const updated = await fillOneSegment(clock);
-  if (!updated) return;
+  const filled = await fillOneSegment(clock);
+  if (!filled) return;
+  if (filled.wasFull) return postAlreadyTriggered(filled.clock);
+  const updated = filled.clock;
   await postCard(
     `<strong>Clock filled</strong><p>${escapeHtml(clock.name)} — <strong>${updated.filled}/${updated.segments}</strong>.${triggeredSuffix(updated)}</p>`,
   );
   if (isFull(updated)) fireClockVignette(vignetteData(updated));
 }
 
-/** Fill one segment and return the persisted clock (null if it vanished). */
+/**
+ * Fill one segment. Whether the clock is already full is decided inside the
+ * clock write queue, on the clock as that write reads it: a press's own read
+ * is the cached clock, which two presses within one round trip both read as
+ * not yet full — the second then posted a second "TRIGGERED." card and fired
+ * a second trigger vignette (issue #337 Y37). A clock found full is not
+ * written. The clock returned is the one this write stored — a read after
+ * the queue could already hold a later press's fill.
+ *
+ * @returns {Promise<{ clock: object, wasFull: boolean } | null>} null if the clock vanished
+ */
 async function fillOneSegment(clock) {
-  await mutateClock(clock._id, c => { c.filled = Math.min((c.filled ?? 0) + 1, c.segments); });
-  const updated = (readState().clocks ?? []).find(c => c._id === clock._id) ?? null;
-  if (!updated) {
+  const res = await mutateClock(clock._id, c => {
+    if (isFull(c)) return false;
+    c.filled = Math.min((c.filled ?? 0) + 1, c.segments);
+  });
+  if (!res) {
     console.warn(`${MODULE_ID} | clock "${clock.name}" disappeared while advancing — nothing posted.`);
+    return null;
   }
-  return updated;
+  return { clock: res.after, wasFull: isFull(res.before) };
 }
 
 function isFull(clock) {
@@ -713,14 +732,26 @@ async function addClock(clock) {
   });
 }
 
+/**
+ * Change one clock, in the clock write queue. `fn` changes the clock it is
+ * given — the clock as this queued write reads it — or returns `false` to
+ * leave it as it is, and nothing is written.
+ *
+ * @param {string} id
+ * @param {(clock: object) => (void|false)} fn
+ * @returns {Promise<{ before: object, after: object } | null>} the clock as
+ *   the queued read found it and as stored; null when no clock has that id
+ */
 async function mutateClock(id, fn) {
   return serialiseClockWrite(async () => {
     const state = foundry.utils.deepClone(readState());
     const clock = (state.clocks ?? []).find(c => c._id === id);
-    if (!clock) return;
-    fn(clock);
+    if (!clock) return null;
+    const before = foundry.utils.deepClone(clock);
+    if (fn(clock) === false) return { before, after: before };
     clock.updatedAt = new Date().toISOString();
     await writeState(state);
+    return { before, after: clock };
   });
 }
 
