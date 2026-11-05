@@ -37,7 +37,11 @@ const MAX_ENTRIES_PER_SESSION = 200;
  * @param {number|null} [entry.sessionNumber]
  * @returns {Promise<void>}
  */
-export async function logPacingDecision(entry) {
+export function logPacingDecision(entry) {
+  return queueTelemetryWrite(() => writePacingDecision(entry));
+}
+
+async function writePacingDecision(entry) {
   if (!globalThis.game?.user?.isGM) return;            // world-scoped writes only
   if (!globalThis.JournalEntry) return;                 // not in a Foundry context
 
@@ -101,7 +105,11 @@ export async function logPacingDecision(entry) {
  * @param {boolean} [entry.dispatched]  — true when ≥1 high-confidence routed
  * @returns {Promise<void>}
  */
-export async function logConsistencyDecision(entry) {
+export function logConsistencyDecision(entry) {
+  return queueTelemetryWrite(() => writeConsistencyDecision(entry));
+}
+
+async function writeConsistencyDecision(entry) {
   if (!globalThis.game?.user?.isGM) return;
   if (!globalThis.JournalEntry) return;
 
@@ -143,8 +151,22 @@ export async function logConsistencyDecision(entry) {
   }
 }
 
-/** Usage-page writes, one at a time — two narrator calls finishing together would otherwise drop an entry. */
-let _usageWrites = Promise.resolve();
+/**
+ * Telemetry writes, one at a time — all three writers' (the pacing, the
+ * consistency check and the narrator usage pages). Two narrator calls
+ * finishing together dropped a usage entry (each page is read, appended and
+ * written back); two lines typed together each found no "Pacing Telemetry"
+ * journal and created one, splitting the records across two journals of one
+ * name (issue #331 X39). Each write runs after the one before, whatever it
+ * did.
+ */
+let _telemetryWrites = Promise.resolve();
+
+function queueTelemetryWrite(write) {
+  const run = _telemetryWrites.then(write);
+  _telemetryWrites = run.catch(() => {});
+  return run;
+}
 
 /**
  * Append one narrator call's token usage and elapsed time to the "Narrator
@@ -162,8 +184,7 @@ let _usageWrites = Promise.resolve();
  * @returns {Promise<void>}
  */
 export function logNarratorUsage(entry) {
-  _usageWrites = _usageWrites.then(() => writeNarratorUsage(entry));
-  return _usageWrites;
+  return queueTelemetryWrite(() => writeNarratorUsage(entry));
 }
 
 async function writeNarratorUsage(entry) {
