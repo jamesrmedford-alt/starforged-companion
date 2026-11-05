@@ -25,7 +25,9 @@
  * card's or won-fight card's "🏁 Attempt to Fulfill" ("fulfilVow.attempt",
  * known-issues FULFIL-BUTTON-LOCAL-DISABLE), and a combat move card's "⚔
  * Attempt to Finish the Fight" ("tda.attempt") and an expedition card's "🗺
- * Finish the Expedition" ("expedition.finish" — issue #338 D1). The
+ * Finish the Expedition" ("expedition.finish" — issue #338 D1), and a paced
+ * card's "Roll <move>" ("paced.roll") and a "Which fight?" pick
+ * ("whichFight.pick" — known-issues PACED-ROLL-OPEN-PRESS). The
  * handlers below run on the canonical GM, check
  * and stamp the card's resolved flag behind an in-flight guard (the
  * milestone-picker pattern, src/moves/milestonePicker.js), and take every
@@ -709,6 +711,8 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
 // "⚔ Attempt to Finish the Fight" — gmRelay "tda.attempt"
 // "🗺 Finish the Expedition"      — gmRelay "expedition.finish"
 // "⚔ Swear it (roll)"             — gmRelay "vow.swearRoll" (session/swearVow.js)
+// A paced card's "Roll <move>"    — gmRelay "paced.roll"
+// A "Which fight?" pick           — gmRelay "whichFight.pick" (PACED-ROLL-OPEN-PRESS)
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -735,9 +739,13 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
  * @param {string} spec.label — the console's name for the button
  * @param {string} spec.claim — the card flag a press claims
  * @param {(f: Object) => boolean} spec.isCard — the card offers this follow-up
- * @param {(f: Object, actor: Actor|null) => ({ content: string, flags: Object }|null)} spec.build —
- *   the forced move's text and module flags; null posts nothing
+ * @param {(f: Object, actor: Actor|null) => ({ content: string, flags: Object, stamp?: * }|null)} spec.build —
+ *   the forced move's text and module flags, and what the claim records
+ *   (`stamp`, default true — a pick records its choice); null posts nothing
  * @param {(f: Object) => string|null} [spec.roller] — the card's roller
+ * @param {(f: Object) => boolean} [spec.offers] — a pick: the press names one
+ *   of the card's own choices (the payload is client-asserted); false refuses
+ *   it, `not-on-card`
  * @returns {Promise<{ posted: boolean, reason?: string }>}
  */
 export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
@@ -757,6 +765,10 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
   if (f[claim] || _inFlight.has(key)) {
     console.debug(`${MODULE_ID} | ${label}: card ${messageId} already pressed — ignoring the press.`);
     return { posted: false, reason: "already-pressed" };
+  }
+  if (spec.offers && !spec.offers(f)) {
+    console.warn(`${MODULE_ID} | ${label}: the press names nothing card ${messageId} offers — refused.`);
+    return { posted: false, reason: "not-on-card" };
   }
 
   const rolled  = spec.roller ? spec.roller(f) : f.actorId;
@@ -780,7 +792,7 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
   _inFlight.add(key);
   try {
     try {
-      await message.update({ [`flags.${MODULE_ID}.${claim}`]: true });
+      await message.update({ [`flags.${MODULE_ID}.${claim}`]: move.stamp ?? true });
     } catch (err) {
       console.warn(`${MODULE_ID} | ${label}: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
@@ -862,6 +874,68 @@ export function applyFinishExpeditionAttempt(payload = {}, ctx = {}) {
           ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
           ...(trackId ? { forcedMoveTargetId: trackId } : {}),
         },
+      };
+    },
+  });
+}
+
+/**
+ * gmRelay handler for "paced.roll" — a paced narrative card's "Roll <move>",
+ * the narrating PC's move (known-issues PACED-ROLL-OPEN-PRESS;
+ * applyCardRollerFollowup). The card's own line is posted again with the
+ * move its hint invited, past the pacing classifier, spoken as the PC who
+ * narrated it (issue #325 W09); a card that names none rolls for the
+ * presser's own PC. It posted from the presser's client with no check of who
+ * pressed: a crewmate rolled another player's move, and a player's press —
+ * which may not stamp the GM's card — left it armed for another client.
+ * Claim `rolled`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyPacedRoll(payload = {}, ctx = {}) {
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "paced roll", claim: "rolled",
+    isCard: (f) => f.pacedNarrative === true
+      && typeof f.suggestedMove === "string" && !!f.suggestedMove
+      && typeof f.playerText === "string" && !!f.playerText,
+    build: (f) => ({ content: f.playerText, flags: { forcedMoveId: f.suggestedMove } }),
+  });
+}
+
+/**
+ * gmRelay handler for "whichFight.pick" — a "Which fight?" (or "Which
+ * expedition?") card's pick, the card's roller's move again naming the
+ * picked track (index.js postWhichFightCard; known-issues
+ * WHICH-FIGHT-LOCAL-DISABLE; applyCardRollerFollowup). The pick must be one
+ * of the card's own `fights` — the payload is client-asserted — and rides
+ * the move by id and name. It posted from the presser's client with no
+ * check of who pressed and a local disable only, so a crewmate rolled the
+ * roller's move and another client picked again. Claim `whichFightPicked`:
+ * the picked track's id.
+ *
+ * @param {{ messageId?: string, trackId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyWhichFightPick(payload = {}, ctx = {}) {
+  const trackId = typeof payload.trackId === "string" && payload.trackId ? payload.trackId : null;
+  const pickOf  = (f) => (Array.isArray(f.fights) ? f.fights : []).find(t => trackId && t?.id === trackId) ?? null;
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "which fight", claim: "whichFightPicked",
+    isCard: (f) => f.whichFightCard === true,
+    offers: (f) => !!pickOf(f),
+    build: (f) => {
+      const fight = pickOf(f);
+      return {
+        content: f.narration || `Take decisive action to seize the objective — ${fight.label ?? "the fight"}.`,
+        flags: {
+          forcedMoveId: typeof f.moveId === "string" && f.moveId ? f.moveId : "take_decisive_action",
+          forcedMoveTargetId: fight.id,
+          ...(fight.label ? { forcedMoveTarget: fight.label } : {}),
+        },
+        stamp: fight.id,
       };
     },
   });

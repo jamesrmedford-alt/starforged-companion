@@ -8939,8 +8939,12 @@ function registerCombatCardButtonTests(quench) {
       });
 
       describe("Which fight? card (a Take Decisive Action that names no fight)", function () {
-        it("a pick posts the move with that fight's id, spoken as the original roller", async function () {
+        // The pick relays to the canonical GM, which claims the card it finds in
+        // game.messages (`whichFightPicked`) and posts the move once, as the
+        // roller (known-issues PACED-ROLL-OPEN-PRESS) — so the card is a real message here.
+        it("a pick posts the move with that fight's id, spoken as the original roller, once per card", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireWhichFightButtons } = await import(`${MODULE_PATH}/index.js`);
           const roller = (game.actors?.contents ?? []).find(a => a.type === "character" && !a.flags?.[MODULE]?.entityType) ?? null;
 
@@ -8948,11 +8952,16 @@ function registerCombatCardButtonTests(quench) {
           root.innerHTML = `<div class="sf-milestone-suggest-row">`
             + `<button type="button" data-action="sf-which-fight" data-track-id="quench-fight-boarders">Boarders</button>`
             + `<button type="button" data-action="sf-which-fight" data-track-id="quench-fight-turret">Turret</button></div>`;
-          const msg = { id: "quench-which-fight", flags: { [MODULE]: {
-            whichFightCard: true, moveId: "take_decisive_action", narration: "I take decisive action.",
-            actorId: roller?.id ?? null,
-            fights: [{ id: "quench-fight-boarders", label: "Boarders" }, { id: "quench-fight-turret", label: "Turret" }],
-          } } };
+          const card = await ChatMessage.create({
+            content: `<div class="sf-ptp-card">${root.innerHTML}</div>`,
+            flags: { [MODULE]: {
+              whichFightCard: true, moveId: "take_decisive_action", narration: "I take decisive action.",
+              actorId: roller?.id ?? null,
+              fights: [{ id: "quench-fight-boarders", label: "Boarders" }, { id: "quench-fight-turret", label: "Turret" }],
+            } },
+          });
+          track(card?.id);
+          const msg = game.messages.get(card.id) ?? card;
 
           wireWhichFightButtons(msg, root);
           const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
@@ -8968,6 +8977,8 @@ function registerCombatCardButtonTests(quench) {
           for (const b of root.querySelectorAll('[data-action="sf-which-fight"]')) {
             assert.isTrue(b.disabled, "one pick per card: every button disables");
           }
+          assert.equal(game.messages.get(msg.id)?.flags?.[MODULE]?.whichFightPicked, "quench-fight-turret",
+            "the card is claimed with the pick");
         });
       });
 

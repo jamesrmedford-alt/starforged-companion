@@ -4391,8 +4391,10 @@ async function postTrackGoneCard(interpretation) {
  * Expedition which expedition (`trackType` "expedition"): unnamed among
  * several they marked a phantom track (issue #321 U16). Posted in place of
  * the move; nothing is rolled or written. Each open track gets a button
- * (wireWhichFightButtons) that posts the move again with that track's id,
- * credited to the original roller.
+ * (wireWhichFightButtons) whose pick the canonical GM applies once
+ * ("whichFight.pick" → cardActions.applyWhichFightPick): the move is posted
+ * again with that track's id, as the original roller, whose player or a GM
+ * may pick.
  *
  * @param {{ moveId: string, moveName?: string, narration?: string,
  *   actorId?: string|null, fights: Array<{ id: string, label?: string,
@@ -4413,9 +4415,9 @@ async function postWhichFightCard({ moveId, moveName, narration, actorId = null,
     content: `<div class="sf-ptp-card"><strong>${escapeChatHtml(moveName ?? "Take Decisive Action")} — which ${noun}?</strong>`
       + `<p>More than one ${noun} is open and nothing named this one. Choose ${choose} — nothing has been rolled yet.</p>`
       + `<div class="sf-milestone-suggest-row">${buttons}</div></div>`,
-    // fights: the open fights' ids and names when asked — a pick forwards its
-    // fight as forcedMoveTargetId / forcedMoveTarget. actorId: the roller, the
-    // pick's speaker, so the move stays theirs whoever clicks.
+    // fights: the open fights' ids and names when asked — a pick must be one
+    // of them, and forwards its fight as forcedMoveTargetId / forcedMoveTarget.
+    // actorId: the roller — the pick's speaker, whose player or a GM may pick.
     flags: { [MODULE_ID]: {
       whichFightCard: true, moveId, narration: narration ?? null, actorId,
       fights: fights.map(t => ({ id: t.id, label: t.label ?? null })),
@@ -8353,18 +8355,19 @@ function wireRollerFollowup(message, root, dataAction, kind, claim) {
 }
 
 /**
- * Wire a "which fight?" card's buttons (postWhichFightCard). A pick posts the
- * move again — the forced-move bridge every roll button uses — with that
- * fight's id and name, spoken as the original roller so the move stays
- * theirs whoever clicks. One pick per card: every button disables on click,
- * and the pick is stamped on the card where this client may update it (the
- * GM, its author) so re-renders and other clients show it; a player's click
- * disables locally, as the pacing card's Roll does. The pick is held, not
- * dropped, while another move holds the lock or before a session begins
- * (`deferWhileBusy` — issue #325 W02 / #329 X14): its card reads picked, so a
- * drop lost the move (issue #335 Y08).
+ * Wire a "which fight?" card's buttons (postWhichFightCard). A pick relays to
+ * the canonical GM ("whichFight.pick" → cardActions.applyWhichFightPick),
+ * which checks it against the card's own fights, claims the card
+ * (`whichFightPicked`, the picked fight's id) and posts the move again once,
+ * with that fight's id and name, as the original roller — held, not dropped,
+ * while another move holds the lock or before a session begins (issue #335
+ * Y08). Only the roller's player or a GM may pick: the pick posted from the
+ * presser's client with a local disable only, so a crewmate rolled the
+ * roller's move and another client — or a player's re-render, who could not
+ * stamp the GM's card — picked again (known-issues WHICH-FIGHT-LOCAL-DISABLE,
+ * PACED-ROLL-OPEN-PRESS). A pick that is not delivered re-arms the buttons.
  *
- * Exported so tests and Quench can drive it with a synthetic message + root.
+ * Exported so tests and Quench can drive it with a message + root.
  */
 export function wireWhichFightButtons(message, root) {
   const f = message?.flags?.[MODULE_ID];
@@ -8387,30 +8390,13 @@ export function wireWhichFightButtons(message, root) {
     btn.addEventListener("click", async (event) => {
       event.preventDefault();
       event.stopPropagation();
-      const fight = (f.fights ?? []).find(t => t.id === btn.dataset.trackId);
-      if (!fight) return;
       for (const b of fresh) b.disabled = true;
-      try {
-        try {
-          await message.update({ [`flags.${MODULE_ID}.whichFightPicked`]: fight.id });
-        } catch (err) {
-          // A player may not update the GM's card: the local disable stands.
-          console.debug?.(`${MODULE_ID} | which-fight stamp skipped (non-owner):`, err?.message ?? err);
-        }
-        await ChatMessage.create({
-          content: f.narration || `Take decisive action to seize the objective — ${fight.label ?? "the fight"}.`,
-          ...(f.actorId ? { speaker: { actor: f.actorId } } : {}),
-          flags:   { [MODULE_ID]: {
-            bypassPacing: true, forcedMoveId: f.moveId ?? "take_decisive_action",
-            forcedMoveTargetId: fight.id,
-            ...(fight.label ? { forcedMoveTarget: fight.label } : {}),
-            deferWhileBusy: true,
-          } },
-        });
-      } catch (err) {
-        console.error(`${MODULE_ID} | which-fight pick failed:`, err);
-        for (const b of fresh) b.disabled = false;
-      }
+      await relayCardAction({
+        kind:       "whichFight.pick",
+        payload:    { messageId: message?.id ?? null, trackId: btn.dataset.trackId || null, actorId: clickerActorId() },
+        isResolved: () => !!liveCardFlags(message)?.whichFightPicked,
+        restore:    () => { for (const b of fresh) b.disabled = false; },
+      });
     });
   }
 }
@@ -8748,60 +8734,28 @@ onChatMessageRender((message, root) => wireConnectionPickerButtons(message, root
 /**
  * Wire the "Roll <move>" button on NWMA cards.
  * The button appears beneath the italicized move hint on paced-narrative
- * cards whose classifier decision was NARRATIVE_WITH_MOVE_AVAILABLE. On
- * click we re-post the original player input as a fresh chat message with
- * `bypassPacing: true` so the classifier is skipped and the move pipeline
- * runs immediately.
+ * cards whose classifier decision was NARRATIVE_WITH_MOVE_AVAILABLE. A click
+ * relays to the canonical GM ("paced.roll" → cardActions.applyPacedRoll),
+ * which claims the card (`rolled`) and posts the player's line again once,
+ * with `bypassPacing` and the suggested move, as the PC who narrated it
+ * (issue #325 W09) — held, not dropped, while another move holds the lock or
+ * before a session begins (issue #335 Y08). Only that PC's player or a GM may
+ * press it: it posted from the presser's client, so a crewmate rolled
+ * another player's move, and a player's press — which may not stamp the
+ * GM's card — left the button armed on every other client (known-issues
+ * PACED-ROLL-OPEN-PRESS). A click that is not delivered re-arms it.
  */
 onChatMessageRender((message, root) => {
   const f = message.flags?.[MODULE_ID];
   if (!f?.pacedNarrative || !f?.suggestedMove || !f?.playerText) return;
-  const btn = root.querySelector('[data-action="sf-paced-roll"]');
-  if (!btn) return;
-
-  // Disable any previously-clicked button after re-render so the same NWMA
-  // card never fires the move twice.
-  if (f.rolled) {
+  if (liveCardFlags(message)?.rolled) {
+    const btn = root?.querySelector?.('[data-action="sf-paced-roll"]');
+    if (!btn) return;
     btn.disabled = true;
     btn.textContent = "Rolled";
     return;
   }
-
-  btn.addEventListener("click", async (ev) => {
-    ev.preventDefault();
-    ev.stopPropagation();
-    btn.disabled = true;
-    try {
-      // Mark the source card as rolled so re-renders don't re-arm the button.
-      // Best-effort: only the GM can mutate other users' messages.
-      try {
-        await message.update({ [`flags.${MODULE_ID}.rolled`]: true });
-      } catch (err) {
-        // Player clients fall back to a local-only disable above.
-        console.debug?.(`${MODULE_ID} | rolled-flag update skipped (non-owner):`, err?.message ?? err);
-      }
-      // As the narrating PC the card recorded: the pipeline credits the
-      // message's speaker, and with none it resolved the clicker — the GM
-      // pressing Roll on Pat's card rolled Kira's action with the GM's first
-      // PC's stats (issue #325 W09).
-      const narrator = typeof f.actorId === "string" && f.actorId ? game.actors?.get(f.actorId) : null;
-      // Held, not dropped, while another move holds the lock or before a
-      // session begins (issue #325 W02 / #329 X14): the card reads "Rolled",
-      // so a drop lost the roll (issue #335 Y08).
-      await ChatMessage.create({
-        content: f.playerText,
-        ...(narrator ? { speaker: { actor: narrator.id, alias: narrator.name } } : {}),
-        flags:   { [MODULE_ID]: {
-          bypassPacing:   true,
-          forcedMoveId:   f.suggestedMove,
-          deferWhileBusy: true,
-        } },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | NWMA roll button failed:`, err);
-      btn.disabled = false;
-    }
-  });
+  wireRollerFollowup(message, root, "sf-paced-roll", "paced.roll", "rolled");
 });
 
 /**

@@ -66,7 +66,9 @@ passage" drawing.
   or the move names a destination none of the open ones matches; naming none
   while two or more are open, the pipeline posts a **Which expedition?** card
   before rolling (`postWhichFightCard` with `trackType: "expedition"`, whose
-  pick posts the move again with that track's id), and a track named by id
+  pick relays `whichFight.pick` — one of the card's tracks, the roller's
+  player or a GM, claimed once on the card — and posts the move again with
+  that track's id as the roller; known-issues PACED-ROLL-OPEN-PRESS), and a track named by id
   that is over marks nothing (`reason: "ambiguous" | "gone"`) — an unnamed
   Undertake used to begin a phantom "Expedition" that took the progress
   (issue #321 U16). The progress card shows boxes filled and carries a

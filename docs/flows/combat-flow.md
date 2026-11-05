@@ -255,9 +255,15 @@ that names no fight while two or more are open — typed narration, or such a
 card — is not rolled: the pipeline posts a **Which fight?** card instead
 (`postWhichFightCard`, flagged `whichFightCard` with the open fights' ids and
 names, the narration and the roller's `actorId`), and a pick
-(`wireWhichFightButtons`) posts the move again with that fight's id, spoken
-as the original roller. One pick per card: every button disables, and the
-GM's pick is stamped `whichFightPicked`. The pick's post carries
+(`wireWhichFightButtons`) relays `whichFight.pick`
+(`cardActions.applyWhichFightPick`, D1's `applyCardRollerFollowup` shape):
+the canonical GM checks the pick is one of the card's `fights`, refuses a
+presser who is neither the roller's player nor a GM, claims the card once
+(`whichFightPicked`, the picked fight's id) and posts the move again with
+that fight's id, spoken as the original roller. The pick posted from the
+presser's client with a local disable only, so a crewmate rolled the
+roller's move and another client picked again (known-issues
+PACED-ROLL-OPEN-PRESS, WHICH-FIGHT-LOCAL-DISABLE). The pick's post carries
 `deferWhileBusy`, so one that meets the move lock — or comes before a
 session begins — is held on the canonical GM and rolled when it can be,
 not dropped under its stamped card (issue #335 Y08). Since issue #321 U16 a Strike or

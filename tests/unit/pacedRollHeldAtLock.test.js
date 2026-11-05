@@ -165,13 +165,14 @@ describe("issue #335 Y08 — a stamped one-shot button's move is held at the mov
     expect(rolled[0].content, "scored from the picked fight (Corsairs, 24 ticks)").toMatch(/progress \(24 ticks\)/);
   }, 30_000);
 
-  it("Kira's own press on her paced card (no stamp: not the card's author) is held too", async () => {
+  it("Kira's own press on her paced card (relayed, the card claimed on the GM — PACED-ROLL-OPEN-PRESS) is held too", async () => {
     const release = await renMovesAndIsNarrated();
     const pacedId = await postPacedCard();
 
     control.dice = STRONG_ACTION;
     table.client("pl-1").click(pacedId, '[data-action="sf-paced-roll"]');
     await table.settle();
+    expect(table.world.message(pacedId).flags[MODULE_ID].rolled, "the card is stamped as rolled").toBe(true);
     expect(moveCardsOf("pc-kira")).toHaveLength(0);
 
     await release();
