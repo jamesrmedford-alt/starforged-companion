@@ -8486,3 +8486,43 @@ Hooks.on("createJournalEntryPage", async (page) => {
 
   ui?.notifications?.info("Starforged Companion: World Truths recorded.");
 });
+
+/**
+ * updateJournalEntryPage — an edit of the campaign's saved "Setting Truths"
+ * page is parsed into `campaignState.worldTruths`, as its save was (issue #337
+ * Y39). The dialog has no edit mode — each Save makes a new journal — so a
+ * wording is tweaked on the page; only the page's creation was read, so the
+ * narrator's WORLD TRUTHS block and the vow scene's Iron truth kept the
+ * pre-edit text until the next world load while `!lore` read the page live
+ * (rules/reachability.md §5). The linked journal only: a superseded save is
+ * not the campaign's truths (the newest save wins). The module's own World
+ * Truths journal (the Playtest Quickstart's) is skipped by its flags: its
+ * page's flag holds the truths and the page text is a printout of them that
+ * this parser cannot read back (its sub-table line is an italic paragraph
+ * before the quest starter) — the World Truths dialog revises them.
+ */
+Hooks.on("updateJournalEntryPage", async (page, changed) => {
+  if (!isCanonicalGM()) return;   // single emitter for the campaignState write
+  if (!foundry.utils.hasProperty(changed ?? {}, "text.content")) return;   // a text edit, not a rename
+
+  const entry = page?.parent;
+  if (!entry) return;
+  if (page.type !== "text") return;
+  if (page.flags?.[MODULE_ID]) return;
+  if (entry.flags?.[MODULE_ID]) return;
+
+  const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
+  if (!systemTitle || entry.name !== systemTitle) return;
+  if (game.settings.get(MODULE_ID, "campaignState")?.worldTruthsJournalId !== entry.id) return;
+
+  // A page edited down to no truth (or "The Story So Far" `!lore` adds beside
+  // it) keeps the stored truths, as the dialog's empty save does.
+  const content = page.text?.content ?? "";
+  if (!holdsTruths(content)) return;
+
+  try {
+    await recordSystemTruths(entry.id, content);
+  } catch (err) {
+    console.error(`${MODULE_ID} | updateJournalEntryPage: failed to persist the edited truths:`, err);
+  }
+});

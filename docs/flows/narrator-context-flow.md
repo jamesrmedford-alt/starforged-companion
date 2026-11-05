@@ -214,7 +214,9 @@ oracle results** (`campaignState.recentOracles`, read from the store — raw `!o
 session, "the dice established these"; skipped for meta modes) · [4] world
 truths (`campaignState.worldTruths` — the Quickstart's rolled truths or the
 World Truths dialog's newest save, parsed from its "Setting Truths" page as
-it is linked, so the block, the vow scene's Iron truth and `!lore` read one
+it is linked, and again on each edit of that page (issue #337 Y39 — the
+Quickstart's own journal page is a printout of its flag, not re-read), so
+the block, the vow scene's Iron truth and `!lore` read one
 save: issue #322 V34; each truth's rolled sub-table detail after its title —
 who the war was against — as the journal prints it, issue #321 U66) · [4a] campaign truths digest · [4b] campaign premise
 (`campaignState.incitingIncident` — durable canon, every call) · [4c] LAST
