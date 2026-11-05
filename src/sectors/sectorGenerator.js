@@ -271,6 +271,21 @@ export function generatePlanet(_settlementLocationType) {
   return { type, name };
 }
 
+// Planetary class → its Sample Names table (planets.js SAMPLE_NAMES_*).
+const PLANET_SAMPLE_NAMES = Object.freeze({
+  "Desert World":    PLANETS.SAMPLE_NAMES_DESERT,
+  "Furnace World":   PLANETS.SAMPLE_NAMES_FURNACE,
+  "Grave World":     PLANETS.SAMPLE_NAMES_GRAVE,
+  "Ice World":       PLANETS.SAMPLE_NAMES_ICE,
+  "Jovian World":    PLANETS.SAMPLE_NAMES_JOVIAN,
+  "Jungle World":    PLANETS.SAMPLE_NAMES_JUNGLE,
+  "Ocean World":     PLANETS.SAMPLE_NAMES_OCEAN,
+  "Rocky World":     PLANETS.SAMPLE_NAMES_ROCKY,
+  "Shattered World": PLANETS.SAMPLE_NAMES_SHATTERED,
+  "Tainted World":   PLANETS.SAMPLE_NAMES_TAINTED,
+  "Vital World":     PLANETS.SAMPLE_NAMES_VITAL,
+});
+
 /**
  * Generate a local connection NPC.
  *
@@ -990,13 +1005,19 @@ function locationTypeToMarker(locationType) {
   }
 }
 
-function generatePlanetName(_planetType) {
-  // Derive a short name from the planet type + a generated word
-  const prefixes = ["Aethon", "Vorn", "Drekkis", "Caul", "Mireth", "Solian", "Thraxis", "Ulven"];
-  const suffixes = ["Prime", "Major", "Secundus", "IV", "Alpha", "Drift", "Deep", "End"];
-  const prefix   = prefixes[Math.floor(Math.random() * prefixes.length)];
-  const suffix   = suffixes[Math.floor(Math.random() * suffixes.length)];
-  return `${prefix} ${suffix}`;
+/**
+ * A planet's name, rolled on its class's Sample Names table — the rulebook's
+ * step 5. It came from an invented 8 × 8 prefix / suffix list whatever the
+ * class ("Mireth Secundus" for a Jovian world), shown on the map, the
+ * settlement cards and in the narrator's context (issue #331 X48). The
+ * Creator's rename stays the way to give a planet a name of the table's own.
+ *
+ * @param {string} planetType — a Planetary Class result ("Jovian World")
+ * @returns {string}
+ */
+function generatePlanetName(planetType) {
+  const table = PLANET_SAMPLE_NAMES[planetType] ?? PLANETS.SAMPLE_NAMES_ROCKY;
+  return rollTableResult(table);
 }
 
 function autoLayoutX(index, _total) {
