@@ -59,7 +59,7 @@ afterEach(() => {
 });
 
 describe('X36 — Campaign Start phase 4 begins the session as Begin a Session does', () => {
-  it('a refused session-start write leaves the GM\'s cache saying the session is active while the world says it is not', async () => {
+  it('a refused session-start write leaves the GM\'s cache as the world has it: no session active', async () => {
     game.settings.set = async (mod, key, val) => {
       if (key === 'campaignState' && val?.sessionActive === true) throw new Error('test: the server refused the write');
       return realSet(mod, key, val);
