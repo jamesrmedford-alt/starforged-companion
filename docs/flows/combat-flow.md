@@ -115,8 +115,12 @@ one-click **Face Danger / Compel / Secure an Advantage** buttons
 choosing an exit rolls it (2026-07 soft-spot cleanup — it used to be
 advisory text only). A pick relays `wayOut.pick` to the canonical GM
 (`cardActions.applyWayOutPick`), which claims the card once (`wayOutTaken`)
-and posts the move as the clicker's PC — disabled only in the clicker's DOM,
-a re-render rolled the off-ramp again (issue #325 W11).
+— disabled only in the clicker's DOM, a re-render rolled the off-ramp again
+(issue #325 W11) — and posts the move as the card's roller: the way-out card
+carries the threshold card's `actorId`, and that PC's player or a GM may
+press it (`cardRollerPc`; the clicker's PC only on a card that names none).
+It spoke as the clicker's PC, so a GM's press rolled the first PC's Face
+Danger for a fight another PC had entered (issue #335 Y11).
 
 Combat tracks carry **no promised reward** of their own — `proposeRewards` runs
 only for vows; a fight's payoff rides the *linked vow's* promised reward (see
@@ -257,7 +261,11 @@ card's `trackId` / `trackLabel`, so Battle ends that fight while another is
 open — without them, two open fights left it ending neither. The press relays
 `combatTrack.battle` (`cardActions.applyCombatTrackBattle`): the canonical GM
 claims the card once (`battleClaimed`; `"fight-over"` when its fight already
-ended, posting nothing) and posts the Battle as the clicker's PC; and the
+ended, posting nothing) and posts the Battle as the card's roller — the
+threshold card's, stamped on the combat-track card
+`createCombatTrackFromThreshold` posts; their player or a GM may press it,
+and the clicker's PC stands in only on a card that names none (issue #335
+Y11: a GM's press rolled the first PC's Battle); and the
 pipeline does not roll a Battle naming a finished fight by id — the "not
 rolled" card, as Take Decisive Action. The button was disabled only in the
 clicker's DOM, so a re-render or another client rolled Battle again on a

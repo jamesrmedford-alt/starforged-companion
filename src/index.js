@@ -4901,7 +4901,9 @@ export async function createCombatTrackFromThreshold({ label, rank, vowName, obj
     },
   );
   if (result?.track) {
-    await postCombatTrackCard(result).catch(err =>
+    // The threshold's roller rides onto the card: its ⚔ Battle instead is
+    // their move (issue #335 Y11).
+    await postCombatTrackCard(result, { actorId }).catch(err =>
       console.warn(`${MODULE_ID} | combat track card failed:`, err?.message ?? err));
     await enterCombatTracker(result.track.id, getPlayerActors()).catch(err =>
       console.warn(`${MODULE_ID} | combat tracker open failed:`, err?.message ?? err));
@@ -4961,10 +4963,12 @@ function registerCombatThresholdHook() {
   });
 }
 
-// Wire the way-out card's off-ramp buttons: each posts the matching forced
+// Wire the way-out card's off-ramp buttons: each rolls the matching forced
 // move (Face Danger / Compel / Secure an Advantage) so choosing an exit rolls
-// it instead of leaving the player to retype the move. Any client may post —
-// the canonical GM's pipeline picks the message up.
+// it instead of leaving the player to retype the move. The pick relays to the
+// canonical GM, which posts it as the card's roller — the threshold card's,
+// whose player or a GM may press it; the clicker's PC on a card with none
+// (issue #335 Y11).
 function registerWayOutHook() {
   if (registerWayOutHook._installed) return;
   registerWayOutHook._installed = true;
@@ -6166,7 +6170,7 @@ function liveCardFlags(message) {
   return (live ?? message)?.flags?.[MODULE_ID] ?? null;
 }
 
-async function postCombatTrackCard({ track, created }) {
+async function postCombatTrackCard({ track, created }, { actorId = null } = {}) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   const rank  = track?.rank ? ` (${track.rank})` : "";
   const body  = created
@@ -6197,8 +6201,10 @@ async function postCombatTrackCard({ track, created }) {
         + battleHint
         + `</div>`,
       // trackId / trackLabel: Battle forwards them as forcedMoveTargetId /
-      // forcedMoveTarget, so it ends this fight while another is open.
-      flags:   { [MODULE_ID]: { combatTrackCard: true, created, trackId: track?.id ?? null, trackLabel: track?.label ?? null } },
+      // forcedMoveTarget, so it ends this fight while another is open; actorId
+      // is whose Battle it is (cardActions.applyCombatTrackBattle).
+      flags:   { [MODULE_ID]: { combatTrackCard: true, created, trackId: track?.id ?? null, trackLabel: track?.label ?? null,
+        actorId: typeof actorId === "string" && actorId ? actorId : null } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postCombatTrackCard: chat post failed:`, err?.message ?? err);
@@ -7970,7 +7976,9 @@ export function wireCombatTrackCardButtons(message, root) {
   // is closed when the move resolves.
   // Relayed to the canonical GM, which claims the card once (`battleClaimed`)
   // and posts the forced Battle — the card's own track by id and name — as
-  // the clicker's PC (cardActions.applyCombatTrackBattle). It was posted
+  // the card's roller, the threshold card's (their player or a GM may press;
+  // the clicker's PC on a card with none — issue #335 Y11;
+  // cardActions.applyCombatTrackBattle). It was posted
   // from the clicker's client and disabled only there: a re-render, or
   // another client, rolled Battle again on a finished fight (issue #325 W11).
   const battleBtn = root?.querySelector?.('[data-action="sf-battle"]');

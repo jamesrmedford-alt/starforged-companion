@@ -1020,6 +1020,33 @@ function relayedClickerPc(payload, ctx, label) {
 }
 
 /**
+ * The PC a relayed press on a fight's follow-up acts as: the card's roller —
+ * its `actorId`, the threshold card's, carried onto the way-out card and the
+ * combat-track card made from it — whose player or a GM may press it, as the
+ * relayed 🏁 does; on a card that names no roller, the clicker's PC
+ * (relayedClickerPc). The clicker's PC was used whoever rolled: a GM's press
+ * of Kira's off-ramp or Battle rolled the campaign's first PC — their stat,
+ * their momentum, a Pay the Price on them (issue #335 Y11; issue #329 X05's
+ * rule, "a card's forced follow-up is the card's roller's move").
+ *
+ * @returns {{ actor: Actor|null, refused?: string }}
+ */
+function cardRollerPc(f, payload, ctx, label) {
+  const rollerId = typeof f?.actorId === "string" && f.actorId ? f.actorId : null;
+  if (!rollerId) return relayedClickerPc(payload, ctx, label);
+  const actor = globalThis.game?.actors?.get?.(rollerId) ?? null;
+  if (!isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | ${label}: ${rollerId} is not a player character — refused.`);
+    return { actor: null, refused: "not-a-pc" };
+  }
+  if (!requesterOwnsActor(actor, ctx)) {
+    console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not roll ${actor.name}'s move — only their player or a GM may — refused.`);
+    return { actor: null, refused: "not-owner" };
+  }
+  return { actor };
+}
+
+/**
  * gmRelay handler for "combatTrack.battle" — runs on the canonical GM (issue
  * #325 W11). The Enter the Fray combat-track card offers "⚔ Battle instead":
  * one roll resolves the whole fight. Its button posted the forced Battle from
@@ -1030,7 +1057,9 @@ function relayedClickerPc(payload, ctx, label) {
  * One Battle per card, claimed on the GM-authored card (`battleClaimed`)
  * before the post, behind the in-flight guard; a post that fails releases the
  * claim. A fight already over closes the button instead (`battleClaimed:
- * "fight-over"`) and posts nothing. The move speaks as the clicker's PC.
+ * "fight-over"`) and posts nothing. The move speaks as the card's roller —
+ * the threshold card's, whose player or a GM may press it — and as the
+ * clicker's PC only on a card that names none (cardRollerPc, issue #335 Y11).
  *
  * @param {{ messageId?: string, actorId?: string|null }} payload
  * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
@@ -1053,7 +1082,7 @@ export async function applyCombatTrackBattle(payload = {}, ctx = {}) {
     console.debug(`${MODULE_ID} | battle: card ${messageId} already taken — ignoring the press.`);
     return { posted: false, reason: "already-claimed" };
   }
-  const { actor, refused } = relayedClickerPc(payload, ctx, "battle");
+  const { actor, refused } = cardRollerPc(f, payload, ctx, "battle");
   if (refused) return { posted: false, reason: refused };
 
   _inFlight.add(key);
@@ -1164,8 +1193,10 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
 
     if (choice === "wayOut") {
       const { buildWayOutHtml } = await import("./combatThreshold.js");
+      // The off-ramp is the threshold's roller's move (issue #335 Y11).
+      const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
       try {
-        await ChatMessage.create({ content: buildWayOutHtml(), flags: { [MODULE_ID]: { wayOutCard: true } } });
+        await ChatMessage.create({ content: buildWayOutHtml(), flags: { [MODULE_ID]: { wayOutCard: true, actorId } } });
       } catch (err) {
         console.warn(`${MODULE_ID} | fight threshold: the way-out card could not be posted — the claim is released:`, err?.message ?? err);
         await release();
@@ -1208,7 +1239,9 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
  * client, disabled only there, so a re-render rolled it again. One off-ramp
  * per card: the card is claimed (`wayOutTaken`: the move) before the post; a
  * post that fails releases it. The move is one the card offers
- * (combatThreshold.js WAY_OUT_MOVES) and speaks as the clicker's PC.
+ * (combatThreshold.js WAY_OUT_MOVES) and speaks as the card's roller — the
+ * threshold card's, whose player or a GM may press it — and as the clicker's
+ * PC only on a card that names none (cardRollerPc, issue #335 Y11).
  *
  * @param {{ messageId?: string, moveId?: string, actorId?: string|null }} payload
  * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
@@ -1237,7 +1270,7 @@ export async function applyWayOutPick(payload = {}, ctx = {}) {
     console.warn(`${MODULE_ID} | way out: "${payload.moveId ?? "?"}" is not an off-ramp the card offers — refused.`);
     return { posted: false, reason: "not-on-card" };
   }
-  const { actor, refused } = relayedClickerPc(payload, ctx, "way out");
+  const { actor, refused } = cardRollerPc(f, payload, ctx, "way out");
   if (refused) return { posted: false, reason: refused };
 
   _inFlight.add(key);
