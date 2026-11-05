@@ -548,6 +548,25 @@ export function readCompanionHealth(actor, itemId = null) {
 }
 
 /**
+ * A vehicle asset's integrity — its own condition track, the one its card
+ * names Integrity (a support vehicle's: Hoverbike, Rover, Skiff …) — or null
+ * when `itemId` names no such asset on `actor`. The Hoverbike's "add
+ * +integrity" is that number (VALUE-ADD-INTEGRITY), as Glowcat's "add +its
+ * health" is its companion's (readCompanionHealth).
+ *
+ * @param {Actor|null} actor
+ * @param {string} itemId
+ * @returns {number|null}
+ */
+export function readAssetIntegrity(actor, itemId) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const asset = (Array.isArray(items) ? items : []).find(i => i?.type === 'asset' && i.id === itemId);
+  const track = asset?.system?.track;
+  if (!track || track.enabled === false || String(track.name ?? '').trim().toLowerCase() !== 'integrity') return null;
+  return Number(track.value ?? 0);
+}
+
+/**
  * Change a companion's health — its asset track — by `delta`, kept within
  * the track's min..max. Companion health went to applyMeterChanges, which
  * has no such meter and dropped it (issue #309 N03).

@@ -23,7 +23,9 @@
  * Adds extraction is regex-based ("add +1", "+2", etc.). An add naming a
  * value the module holds is resolved to its number: "add +heart" from the
  * roller's sheet, "add +its health" from the companion asset's own track
- * (issue #336 Y22 — the confirm dialog has no adds input, issue #322 V02).
+ * (issue #336 Y22 — the confirm dialog has no adds input, issue #322 V02),
+ * "add +integrity" from the vehicle asset's (the Hoverbike —
+ * VALUE-ADD-INTEGRITY).
  * When no add is found — or it names a value the module does not hold
  * ("+cargo", "add that amount") — the ability still surfaces with zero adds
  * and its text is shown.
@@ -39,7 +41,7 @@
 import { apiPost } from "../api-proxy.js";
 import { moveRollKind } from "../schemas.js";
 import { listShips, isLoneShipCandidate } from "../entities/ship.js";
-import { readCharacterSnapshot, readCompanionHealth } from "../character/actorBridge.js";
+import { readCharacterSnapshot, readCompanionHealth, readAssetIntegrity } from "../character/actorBridge.js";
 
 const MODULE_ID    = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -347,19 +349,23 @@ export async function scanForApplicableAbilities({
 
 /**
  * The values an ability's add may name that the module holds (issue #336
- * Y22): the roller's stats (Bonded's "add +heart") and, for a companion on
- * the character, that asset's own health (Glowcat's "add +its health" — its
- * condition track, readCompanionHealth). A command vehicle's module has no
- * health of its own here.
+ * Y22): the roller's stats (Bonded's "add +heart") and, for an asset on the
+ * character, that asset's own condition track — a companion's health
+ * (Glowcat's "add +its health", readCompanionHealth) or a vehicle's integrity
+ * (the Hoverbike's "add +integrity", readAssetIntegrity —
+ * VALUE-ADD-INTEGRITY). A command vehicle's module has neither of its own
+ * here.
  *
  * @param {Object} ab — a collectEnabledAbilities entry
  * @param {Actor|null} characterActor — the roller
- * @returns {{ stats: Object|null, ownHealth: number|null }}
+ * @returns {{ stats: Object|null, ownHealth: number|null, ownIntegrity: number|null }}
  */
 function heldValuesFor(ab, characterActor) {
+  const own = ab.source === "character" && ab.assetId;
   return {
-    stats:     readCharacterSnapshot(characterActor)?.stats ?? null,
-    ownHealth: ab.source === "character" && ab.assetId ? readCompanionHealth(characterActor, ab.assetId) : null,
+    stats:        readCharacterSnapshot(characterActor)?.stats ?? null,
+    ownHealth:    own ? readCompanionHealth(characterActor, ab.assetId) : null,
+    ownIntegrity: own ? readAssetIntegrity(characterActor, ab.assetId) : null,
   };
 }
 
@@ -519,8 +525,9 @@ export function extractStatReplacement(text, moveName = null) {
  * An add may name a value the module holds instead of a number (issue #336
  * Y22): "add +heart" is the roller's heart (Bonded's Set a Course home), "add
  * +its health" the ability's own companion's health (Glowcat, Sprite,
- * Symbiote) — resolved from `values` (the scanner passes the roller's
- * snapshot stats and the asset's track, heldValuesFor). Unresolved — no
+ * Symbiote), "add +integrity" its own vehicle's integrity (the Hoverbike —
+ * VALUE-ADD-INTEGRITY) — resolved from `values` (the scanner passes the
+ * roller's snapshot stats and the asset's track, heldValuesFor). Unresolved — no
  * value given, or one the module does not hold ("+cargo", "add that
  * amount") — it adds nothing and the text stays on the dialog. "Add +wits
  * instead of +integrity" (Tech) swaps a stat on a reroll; it is no add. A
@@ -535,8 +542,8 @@ export function extractStatReplacement(text, moveName = null) {
  *
  * @param {string} text — the ability's text (HTML stripped, links kept)
  * @param {string|null} [moveName] — the move being made ("Clash")
- * @param {{ stats?: Object|null, ownHealth?: number|null }} [values] — what a
- *   value add resolves to: the roller's stats, the asset's own health
+ * @param {{ stats?: Object|null, ownHealth?: number|null, ownIntegrity?: number|null }} [values] — what a
+ *   value add resolves to: the roller's stats, the asset's own health or integrity
  * @returns {number}
  */
 export function extractAdds(text, moveName = null, values = {}) {
@@ -544,12 +551,12 @@ export function extractAdds(text, moveName = null, values = {}) {
 }
 
 /**
- * extractAdds' add and what it names ("heart", "its health"; null for a
- * number) — the scanner's offer and the confirm dialog's label.
+ * extractAdds' add and what it names ("heart", "its health", "integrity";
+ * null for a number) — the scanner's offer and the confirm dialog's label.
  *
  * @param {string} text
  * @param {string|null} moveName
- * @param {{ stats?: Object|null, ownHealth?: number|null }} [values]
+ * @param {{ stats?: Object|null, ownHealth?: number|null, ownIntegrity?: number|null }} [values]
  * @returns {{ add: number, from: string|null }}
  */
 function addFor(text, moveName = null, values = {}) {
@@ -601,15 +608,16 @@ function clausesOf(sentence) {
 /**
  * The first add in one clause that is not for a later roll ("… on your next
  * Strike"): "add +N" (1–5), or a value the module holds — "add +<stat>", "add
- * +its health" — resolved from `values` (an unresolved one is passed over, as
- * before it was never read). `from` names the value; null for a number.
+ * +its health", "add +integrity" — resolved from `values` (an unresolved one
+ * is passed over, as before it was never read). `from` names the value; null
+ * for a number.
  *
  * @param {string} clause
- * @param {{ stats?: Object|null, ownHealth?: number|null }} [values]
+ * @param {{ stats?: Object|null, ownHealth?: number|null, ownIntegrity?: number|null }} [values]
  * @returns {{ add: number, from: string|null }}
  */
 function firstAddIn(clause, values = {}) {
-  const pattern = /(?:\badds?\s+\+?(\d+)|\+(\d+)\s+add|\badds?\s+\+(its\s+health|edge|heart|iron|shadow|wits)\b)/gi;
+  const pattern = /(?:\badds?\s+\+?(\d+)|\+(\d+)\s+add|\badds?\s+\+(its\s+health|integrity|edge|heart|iron|shadow|wits)\b)/gi;
   let m;
   while ((m = pattern.exec(clause)) !== null) {
     const rest = clause.slice(m.index + m[0].length).split(/[,;]/)[0];
@@ -617,7 +625,9 @@ function firstAddIn(clause, values = {}) {
     if (m[3]) {
       if (/^\s*(?:instead|in\s+place)\b/i.test(rest)) continue;   // a stat swapped on a reroll, not an add
       const from = m[3].toLowerCase().replace(/\s+/g, " ");
-      const n = Number(from === "its health" ? values?.ownHealth : values?.stats?.[from]);
+      const n = Number(from === "its health" ? values?.ownHealth
+        : from === "integrity" ? values?.ownIntegrity
+        : values?.stats?.[from]);
       if (Number.isFinite(n) && n > 0) return { add: n, from };
       continue;
     }
