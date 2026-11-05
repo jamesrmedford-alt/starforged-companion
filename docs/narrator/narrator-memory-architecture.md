@@ -205,7 +205,10 @@ a sidecar writes, and the frame, carries the narration's `narrationId` (its
 card carries the same id). The X-Card retracts what the narration it answers
 wrote (`retractNarrations`): its truths `retractedBy: "xcard"` — rendered
 nowhere, not even under CORRECTED, never migrated, still blocking a
-re-assertion — its state values removed (each restoring the value it
+re-assertion; a truth the table had already struck is relabelled the
+X-Card's and its kept `sessionRetractions` entry dropped, so neither
+CORRECTED nor the summary's leave-out list names it and `!truth set` cannot
+lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — its state values removed (each restoring the value it
 superseded: a state entry keeps a bounded `previous` chain, issue #326 W41)
 and its frame cleared, in the same
 write as the pause; the ids are kept on `xCardedNarrationIds`, so

@@ -149,7 +149,11 @@ and at most two minutes older; an earlier X-Card's
 card, its "X-Card cleared" card or a card an earlier X-Card removed bounds
 the beat, so a repeat play removes nothing more (fallback, burn-superseded
 and whispered cards are never chosen). It retracts what their sidecars wrote
-(`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"`, state
+(`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"` — a truth
+the table had struck is relabelled so, and the strike a scene end kept for
+the session (`sessionRetractions`, with its truth's `narrationId`) dropped:
+named under CORRECTED it handed the narrator the removed content, and
+`!truth set` could lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — state
 values removed — each gives way to the value it superseded, kept on the entry
 as a bounded `previous` chain, so an earlier kept narration's value stands
 again (issue #326 W41) — a frame they wrote cleared), appends their `narrationId`s to
@@ -571,7 +575,9 @@ ring, and the closing scene's truths keep the closing session's number.
   re-assertions of retracted facts; GM `!truth set` bypasses (GM authority) —
   and lifts the strike it re-establishes, linking it as a Replace does, so
   the fact is not binding and CORRECTED at once; a player's set over a GM's
-  strike is refused (issue #326 W60). A truth already retracted — struck,
+  strike is refused (issue #326 W60); the lore the lifted strike retracted
+  is restored after the persist, only for a lift the store kept — a strike
+  the X-Card took over is never lifted (XCARD-AFTER-STRIKE-STILL-NAMED). A truth already retracted — struck,
   replaced, or the X-Card's — is struck or replaced no further
   (`!truth strike` says "already retracted"), and no correction made on a
   copy older than the X-Card relabels its retraction or files a replacement

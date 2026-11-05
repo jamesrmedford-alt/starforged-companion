@@ -477,7 +477,11 @@ function isNamedStrike(t) {
 /**
  * At scene end, keep the scene's bare strikes (a Replace's replacement
  * stands, so it is not kept) on `campaignState.sessionRetractions` for the
- * rest of the session. Mutates campaignState; endScene persists it.
+ * rest of the session. Each keeps the `narrationId` of the narration that
+ * asserted it: an X-Card played on that narration later drops it
+ * (ledgers.js retractNarrations — XCARD-AFTER-STRIKE-STILL-NAMED: naming it
+ * would hand the narrator the content the table removed). Mutates
+ * campaignState; endScene persists it.
  *
  * @param {Object} campaignState
  */
@@ -496,8 +500,9 @@ export function rememberSessionRetractions(campaignState) {
     if (facts.some(f => sameStrike(f, strike))) continue;
     facts.push({
       ...strike,
-      sceneId: t.sceneId ?? null,
-      at:      t.retractedAt ?? Date.now(),
+      sceneId:     t.sceneId ?? null,
+      at:          t.retractedAt ?? Date.now(),
+      narrationId: typeof t.narrationId === 'string' && t.narrationId ? t.narrationId : null,
     });
   }
   campaignState.sessionRetractions = { sessionId, facts: facts.slice(-SESSION_RETRACTION_CAP) };

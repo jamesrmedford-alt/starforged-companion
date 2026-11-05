@@ -277,9 +277,21 @@ function stateEntryWithout(entry, ids) {
  * superseded, when it kept one (`previous`), is restored — and a scene frame
  * they wrote is cleared.
  *
- * Replaces `sceneTruths`, `sceneState` and `sceneFrame` on `campaignState`
- * with new objects and never changes the ones it was given, so the caller
- * may pass a shallow copy of the stored (cached) value. Pure, no I/O.
+ * The X-Card also takes over the table's strike of a truth they recorded
+ * (XCARD-AFTER-STRIKE-STILL-NAMED): a bare strike — the GM's or a player's,
+ * no replacement — is relabelled `retractedBy: "xcard"` (its `retractedAt`
+ * kept), and the strike a scene end kept for the session
+ * (`sessionRetractions`, with its truth's `narrationId`) is dropped. Left as
+ * the table's, the CORRECTED block and the summary's leave-out list named the
+ * removed content for the rest of the session (U07), and `!truth set` could
+ * lift it (an X-Card's retraction is never lifted — issue #331 X31). A
+ * superseded narration's (`by` SUPERSEDED_RETRACTED_BY) leaves the table's
+ * strike as it is: the correction stands over the re-narration.
+ *
+ * Replaces `sceneTruths`, `sceneState`, `sceneFrame` and (for the X-Card)
+ * `sessionRetractions` on `campaignState` with new objects and never changes
+ * the ones it was given, so the caller may pass a shallow copy of the stored
+ * (cached) value. Pure, no I/O.
  *
  * `by`: the truths' `retractedBy` — the X-Card's by default; a Burn Momentum
  * or Improve Result that superseded the narrations passes
@@ -289,21 +301,29 @@ function stateEntryWithout(entry, ids) {
  * @param {Object}   campaignState — the copy to update
  * @param {string[]} narrationIds  — the removed narrations (their cards' `narrationId`)
  * @param {{ by?: string }} [opts]
- * @returns {Object[]} the truths it retracted (the new entries)
+ * @returns {Object[]} the truths it retracted (the new entries; a strike it
+ *   relabelled was retracted, and its copies reached, by the strike)
  */
 export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETRACTED_BY } = {}) {
   const ids = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === 'string' && id));
   if (!campaignState || !ids.size) return [];
   const now = Date.now();
   const retracted = [];
+  const xCard = by === XCARD_RETRACTED_BY;
 
   if (Array.isArray(campaignState.sceneTruths)) {
     campaignState.sceneTruths = campaignState.sceneTruths.map((t) => {
-      if (!t || t.retracted || !ids.has(t.narrationId)) return t;
+      if (!t || !ids.has(t.narrationId)) return t;
+      if (t.retracted) return (xCard && isBareTableStrike(t)) ? { ...t, retractedBy: XCARD_RETRACTED_BY } : t;
       const next = { ...t, retracted: true, retractedBy: by, retractedAt: now };
       retracted.push(next);
       return next;
     });
+  }
+
+  const sessionStrikes = campaignState.sessionRetractions;
+  if (xCard && Array.isArray(sessionStrikes?.facts) && sessionStrikes.facts.some(f => ids.has(f?.narrationId))) {
+    campaignState.sessionRetractions = { ...sessionStrikes, facts: sessionStrikes.facts.filter(f => !ids.has(f?.narrationId)) };
   }
 
   const bySubject = campaignState.sceneState?.bySubject;
@@ -324,6 +344,18 @@ export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETR
     campaignState.sceneFrame = null;
   }
   return retracted;
+}
+
+/**
+ * A retracted truth the table struck with no replacement — not the X-Card's,
+ * not a superseded narration's, not a Replace's original (findBareStrike's
+ * test, for a truth known to be retracted).
+ *
+ * @param {Object} t
+ * @returns {boolean}
+ */
+function isBareTableStrike(t) {
+  return !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY && t.retractedBy !== SUPERSEDED_RETRACTED_BY;
 }
 
 /**
@@ -661,7 +693,7 @@ export function findBareStrike(truths, subjectRef, fact) {
   const key = subjectKey(subjectRef);
   const lower = fact.toLowerCase();
   return (Array.isArray(truths) ? truths : []).find(t =>
-    t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY && t.retractedBy !== SUPERSEDED_RETRACTED_BY
+    t?.retracted && isBareTableStrike(t)
     && subjectKey(t.subject) === key
     && String(t.fact ?? '').trim().toLowerCase() === lower) ?? null;
 }
