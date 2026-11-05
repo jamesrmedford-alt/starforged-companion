@@ -287,6 +287,63 @@ export async function registerEntityId(campaignState, listKey, id, { label = lis
   return !campaignState[listKey].includes(id);
 }
 
+/**
+ * Adopt the Actor an earlier creation of this entity made, when the world
+ * refused its registration (issue #337 Y34): an Actor of an Actor-hosted type
+ * carrying the module's record (`entityType` and the type's flag), with this
+ * name and sector, that no id list names — neither the stored campaignState's
+ * nor the caller's copy. It is registered as a new entity would be, and its
+ * record returned; the creator then makes no second card. A retried draft
+ * Confirm made a second "Vex" — the get-or-create of rules/reachability.md §7,
+ * as migrateJournalConnectionsToActors reuses a card by its record id. null
+ * when there is none (or no name to match).
+ *
+ * @param {string} typeKey — an Actor-hosted type: connection, ship, settlement, planet, location
+ * @param {string} listKey — its campaignState id list, e.g. "connectionIds"
+ * @param {string} name
+ * @param {Object} campaignState — the caller's copy
+ * @param {{ sectorId?: string|null, persist?: boolean, label?: string }} [opts]
+ * @returns {Promise<Object|null>} the adopted record; rejects when its registration is refused
+ */
+export async function adoptUnlistedEntityActor(typeKey, listKey, name, campaignState, { sectorId = null, persist = true, label = typeKey } = {}) {
+  if (HOST_COLLECTION[typeKey] !== 'actor' || !campaignState || typeof campaignState !== 'object') return null;
+  const target = String(name ?? '').trim().toLowerCase();
+  if (!target) return null;
+  const stored = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState') ?? {};
+  const listed = new Set([
+    ...(Array.isArray(stored?.[listKey]) ? stored[listKey] : []),
+    ...(Array.isArray(campaignState[listKey]) ? campaignState[listKey] : []),
+  ]);
+  for (const { document, data } of iterEntityDocuments(typeKey)) {
+    if (!document?.id || listed.has(document.id)) continue;
+    if (document.flags?.[MODULE_ID]?.entityType !== typeKey) continue;
+    if (String(document.name ?? '').trim().toLowerCase() !== target) continue;
+    if ((data?.sectorId || null) !== (sectorId || null)) continue;
+    if (await registerEntityId(campaignState, listKey, document.id, { label, persist })) {
+      campaignState[listKey].push(document.id);
+    }
+    console.log(`${MODULE_ID} | ${label}: adopted the unregistered card "${document.name}" (${document.id})`);
+    return data;
+  }
+  return null;
+}
+
+/**
+ * Tell the GM a new entity's registration was refused (issue #337 Y34): the
+ * Actor exists — the Entities panel shows it — but no list names it, so the
+ * narrator and every list-driven reader skip it until the next world load
+ * registers it (migrator.registerUnlistedEntityActors). It was a console
+ * warning only.
+ *
+ * @param {string} kind — e.g. "starship"
+ * @param {string} [name]
+ */
+export function warnEntityNotRegistered(kind, name) {
+  const named = name ? ` "${name}"` : '';
+  globalThis.ui?.notifications?.warn?.(
+    `The ${kind}${named} was not registered — the world did not save it. Loading the world again registers it.`);
+}
+
 export async function registerEntityIdInStore(listKey, id, label = listKey) {
   // Always written: the caller's copy is often the setting's cached object,
   // which already holds the id the creator pushed onto it — a "registered

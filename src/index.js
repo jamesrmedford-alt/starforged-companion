@@ -7557,7 +7557,7 @@ Hooks.once("ready", () => {
     // These migrations write world documents: the canonical GM runs them —
     // two GMs whose clients reconnected together each ran them (issue #326
     // W54). The help journal, macros and World Journal gate themselves.
-    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames, moveRecordNotesToSheets }) => {
+    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames, moveRecordNotesToSheets, registerUnlistedEntityActors }) => {
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
@@ -7619,6 +7619,17 @@ Hooks.once("ready", () => {
         }
       } catch (err) {
         console.warn(`${MODULE_ID} | record notes move failed:`, err?.message ?? err);
+      }
+      try {
+        // Issue #337 Y34 — an entity Actor whose registration the world
+        // refused (a sidebar ship, a draft-confirmed NPC card) is listed.
+        // After the connection migration, whose swap it must not duplicate.
+        const unlisted = await registerUnlistedEntityActors();
+        if (unlisted.listed) {
+          console.log(`${MODULE_ID} | entity registration: listed ${unlisted.listed} unregistered entity Actor(s)`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | entity registration repair failed:`, err?.message ?? err);
       }
     }).catch(err => console.warn(`${MODULE_ID} | sector-folder flatten dynamic import failed:`, err));
   }

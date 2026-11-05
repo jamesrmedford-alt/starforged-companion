@@ -35,7 +35,12 @@ in `connectionIds` on the caller's copy and on the latest stored campaignState
 (`registerEntityIdInStore`) — never by writing the caller's copy whole, which
 reverted a relayed X-Card when the caller was the move pipeline (issue #300
 F14). Sector creation passes `persist: false` and registers everything in its
-final `storeSector` write.
+final `storeSector` write. A creation whose registration the world refused
+leaves its card unlisted; the next creation of that name (and sector) adopts
+it instead of making a second card (`registry.adoptUnlistedEntityActor` —
+every Actor-hosted creator does), and the canonical GM's world load lists any
+flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
+— issue #337 Y34: a retried draft Confirm made a second "Vex").
 
 - **`make_a_connection` move** — the resolver carries text-only outcomes; the
   actual creation rides the post-narration discovery pass (canonical GM, hits

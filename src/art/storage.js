@@ -63,7 +63,16 @@ export async function storeArtAsset(asset, campaignState) {
   // The store first, the caller's copy once the world took it: the copy is
   // often the cached setting, and a refused write left the GM's index
   // naming an asset the world never registered (issue #331 X35).
-  await registerArtAssetInStore(asset._id, entryName);
+  // A refused index write is not the asset's loss: its journal entry holds
+  // it, where loadArtAsset finds it by its flags. The caller goes on to link
+  // the portrait to its entity — the refusal aborted that, so the entity kept
+  // no portraitId and its next Finalise paid for another (issue #337 Y34).
+  try {
+    await registerArtAssetInStore(asset._id, entryName);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | art/storage: portrait ${asset._id} kept unindexed — it is found by its journal entry:`, err?.message ?? err);
+    return asset;
+  }
   if (!campaignState.artAssetIds) campaignState.artAssetIds = {};
   campaignState.artAssetIds[asset._id] = entryName;
   return asset;

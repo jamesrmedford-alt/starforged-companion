@@ -39,6 +39,8 @@ import {
   writeEntityFlag,
   registerEntityId,
   withSheetNotes,
+  adoptUnlistedEntityActor,
+  warnEntityNotRegistered,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
@@ -114,6 +116,11 @@ export const ShipSchema = {
 
 
 export async function createShip(data, campaignState) {
+  // The ship an earlier creation of this name made, whose registration the
+  // world refused, is adopted — listed now — never a second one (issue #337 Y34).
+  const adopted = await adoptUnlistedEntityActor(FLAG_KEY, "shipIds", data?.name, campaignState, { label: "ship" });
+  if (adopted) return adopted;
+
   const now = new Date().toISOString();
   const id  = generateId();
 
@@ -294,6 +301,7 @@ export async function syncCommandVehicleFlag(actor, campaignState) {
     // The store first, the caller's copy once the world took it (issue #331 X35).
     const listed = await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" }).catch(err => {
       console.warn(`${MODULE_ID} | syncCommandVehicleFlag: shipIds persist failed:`, err);
+      warnEntityNotRegistered("starship", actor.name);   // the next load lists it (issue #337 Y34)
       return false;
     });
     if (listed) campaignState.shipIds.push(actor.id);
@@ -537,6 +545,10 @@ export async function registerStarshipActorLight(actor, campaignState) {
   // The store first, the caller's copy once the world took it (issue #331 X35).
   const listed = await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" }).catch(err => {
     console.warn(`${MODULE_ID} | registerStarshipActorLight: shipIds persist failed:`, err);
+    // Told, not only logged: the Entities panel shows the ship, but no list
+    // names it — getCommandVehicle, SHIP POSITION and Withstand Damage skip
+    // it until the next load lists it (issue #337 Y34).
+    warnEntityNotRegistered("starship", actor.name);
     return false;
   });
   if (listed) campaignState.shipIds.push(actor.id);
@@ -661,6 +673,7 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
   // The store first, the caller's copy once the world took it (issue #331 X35).
   const listed = await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" }).catch(err => {
     console.warn(`${MODULE_ID} | seedStarshipActor: shipIds persist failed:`, err);
+    warnEntityNotRegistered("starship", actor.name);   // the next load lists it (issue #337 Y34)
     return false;
   });
   if (listed) campaignState.shipIds.push(actor.id);

@@ -26,7 +26,7 @@
 
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
-import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes } from "./registry.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes, adoptUnlistedEntityActor } from "./registry.js";
 import { readSheetPronouns } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { thinkingOffFor } from "../narration/thinking.js";
@@ -66,6 +66,12 @@ export const STARFORGED_CHARACTER_SHEET = "ironsworn.StarforgedCharacterSheet";
  * @returns {Promise<Object>} — The created connection record
  */
 export async function createConnection(data, campaignState, { persist = true } = {}) {
+  // The card an earlier creation of this name made, whose registration the
+  // world refused, is adopted — listed now — never a second one (issue #337 Y34).
+  const adopted = await adoptUnlistedEntityActor(FLAG_KEY, "connectionIds", data?.name, campaignState,
+    { sectorId: data?.sectorId ?? null, persist, label: "connection" });
+  if (adopted) return adopted;
+
   const now = new Date().toISOString();
   const id  = generateId();
 
