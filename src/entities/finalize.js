@@ -110,6 +110,12 @@ export function buildEntityFlavorPrompt(typeKey, record, tone = "wry") {
   return { system, user };
 }
 
+/** Whether an Actor's Notes tab holds any text (an embedded portrait alone is none). */
+function notesHaveText(actor) {
+  const notes = actor?.system?.notes;
+  return typeof notes === "string" && !!notes.replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+}
+
 /**
  * Run the oracle/module/art seed for a ship or connection Actor as its Finalise
  * action, under the generic path's completion contract: a finalized record is
@@ -130,6 +136,22 @@ async function finalizeViaSeed(typeKey, hostId, campaignState, force) {
   try {
     if (typeKey === "ship") {
       const { seedStarshipActor } = await import("./ship.js");
+      // A ship whose Notes already hold its introduction — the Auto-Seed's,
+      // or the GM's own — is stamped by its first Finalise, nothing else: the
+      // connection contract (issue #311 P07, `seeded`). Re-seeding it wrote a
+      // fresh introduction over the whole Notes, an envisioned section and
+      // the GM's edits included, and asked the narrator again (issue #331
+      // X34). A ship with empty Notes is seeded, its rolled type kept;
+      // ↻ Regenerate (`force`) stays the re-write path.
+      if (!force && notesHaveText(actor)) {
+        try {
+          await actor.update({ [`flags.${MODULE_ID}.ship.finalizedAt`]: finalizedAt });
+        } catch (err) {
+          console.warn(`${MODULE_ID} | finalizeEntity(ship): finalise stamp failed:`, err?.message ?? err);
+          return { ok: false, reason: "seed-failed" };
+        }
+        return { ok: true, reason: "finalized", record: { ...(actor.flags?.[MODULE_ID]?.ship ?? existing ?? {}), finalizedAt }, artTriggered: false };
+      }
       const ship = await seedStarshipActor(actor, campaignState ?? {}, { finalizedAt });
       return ship
         ? { ok: true, reason: force ? "regenerated" : "finalized", record: ship, artTriggered: true }
