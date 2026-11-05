@@ -8792,10 +8792,9 @@ onChatMessageRender((message, root) => {
         content: f.playerText,
         ...(narrator ? { speaker: { actor: narrator.id, alias: narrator.name } } : {}),
         flags:   { [MODULE_ID]: {
-          bypassPacing:        true,
-          fromPacedSuggestion: true,
-          forcedMoveId:        f.suggestedMove,
-          deferWhileBusy:      true,
+          bypassPacing:   true,
+          forcedMoveId:   f.suggestedMove,
+          deferWhileBusy: true,
         } },
       });
     } catch (err) {

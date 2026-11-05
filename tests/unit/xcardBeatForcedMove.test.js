@@ -57,7 +57,7 @@ describe('the X-Card removes the narration it answers, not the beat before the p
     // The Roll button re-posts the player's line (src/index.js, NWMA handler).
     await ChatMessage.create({
       content: 'I creep along the outer hull toward the breach.',
-      flags: { [MODULE_ID]: { bypassPacing: true, fromPacedSuggestion: true, forcedMoveId: 'face_danger' } },
+      flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: 'face_danger' } },
     });
     await moveCard();
     await moveNarration();

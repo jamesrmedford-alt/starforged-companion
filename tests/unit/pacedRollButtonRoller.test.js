@@ -94,6 +94,18 @@ describe('the paced Roll button credits the narrating PC', () => {
     expect(rolledFor()).toEqual(['pc-pat']);
   }, 30_000);
 
+  it('its forced move carries only flags the pipeline reads (known-issues PACED-SUGGESTION-FLAG-DEAD)', async () => {
+    const id = await pacedCardForPat();
+
+    table.client('gm-1').click(id, '[data-action="sf-paced-roll"]');
+    await table.settle(); await table.drain();
+
+    const [post] = table.cards(f => f.forcedMoveId === 'face_danger');
+    expect(post.flags[MODULE_ID]).toMatchObject({ bypassPacing: true, forcedMoveId: 'face_danger', deferWhileBusy: true });
+    // Written on every paced Roll, read nowhere (rules/reachability.md §1).
+    expect(post.flags[MODULE_ID]).not.toHaveProperty('fromPacedSuggestion');
+  }, 30_000);
+
   it("another player pressing it rolls Kira's move too, and the card records her", async () => {
     const id = await pacedCardForPat();
     expect(table.world.message(id).flags[MODULE_ID].actorId).toBe('pc-pat');

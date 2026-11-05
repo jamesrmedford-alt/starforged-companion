@@ -175,7 +175,7 @@ describe('isPlayerNarration()', () => {
   it('returns true for messages with bypassPacing flag (NWMA Roll button re-post)', () => {
     const msg = makeMessage({
       content: 'I press her on what she heard.',
-      flags:   { [MODULE_ID]: { bypassPacing: true, fromPacedSuggestion: true } },
+      flags:   { [MODULE_ID]: { bypassPacing: true } },
     });
     expect(isPlayerNarration(msg)).toBe(true);
   });
