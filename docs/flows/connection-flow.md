@@ -58,8 +58,11 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
   narration's PC). The auto-created record carries the narration's id
   (`createdFromNarrationId`): an X-Card on that narration deletes the NPC
   card, its bond Items and its `connectionIds` entry while the record holds
-  nothing beyond its creation and no bond Item a mark
-  (`retractNarrationConnections` → actorBridge `deleteUnmarkedBondItems`);
+  nothing beyond its creation, its sheet nothing the table wrote (Notes text
+  outside the seed's marked introduction and the portrait block, or a
+  Characteristics line the seed did not write — `sheetWrittenByTable`) and no
+  bond Item a mark (`retractNarrationConnections` → actorBridge
+  `deleteUnmarkedBondItems`);
   one the table has used stays and the GMs are whispered once, naming it
   (issue #338 D6(ii)). A pending row this path confirms is not stamped — the
   NPC came from an earlier narration's draft.

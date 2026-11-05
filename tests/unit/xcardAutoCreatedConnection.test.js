@@ -166,6 +166,47 @@ describe('issue #338 D6(ii) — the connection a removed Make a Connection narra
     expect(notice[0].content).not.toMatch(/\b(she|her|he|him|his)\b/i);
   });
 
+  // The Notes tab is the card's notes (issue #329 X12) and a seed marks every
+  // element it writes there (issue #338 D4): anything else on the sheet is the
+  // table's, and a card carrying it is used.
+  const setSheet = (actor, fields) => { actor.system = { ...(actor.system ?? {}), ...fields }; };
+
+  it('with the GM\'s own paragraph on its Notes tab since, it stays and the GMs are told', async () => {
+    await makeAConnection();
+    setSheet(vexActors()[0], { notes: '<p>Owes Kira her life from the Bleakhold job.</p>' });
+    syncChat();
+    const before = ChatMessage._created.length;
+
+    expect(await suppressScene({}, { local: true })).toBe(true);
+    expect(connectionsNamed('Vex')).toHaveLength(1);
+    expect(kiraBonds()).toHaveLength(1);
+    expect(gmsToldAbout('Vex', before)).toBe(true);
+  });
+
+  it('with a Characteristics line the seed did not write, it stays', async () => {
+    await makeAConnection();
+    setSheet(vexActors()[0], { biography: 'Pronouns: she/her\nKeeps a knife in her boot.' });
+    syncChat();
+
+    expect(await suppressScene({}, { local: true })).toBe(true);
+    expect(connectionsNamed('Vex')).toHaveLength(1);
+  });
+
+  it('control: a sheet holding only the seed\'s marked introduction, its portrait and its own Characteristics lines is not a use', async () => {
+    await makeAConnection();
+    setSheet(vexActors()[0], {
+      notes: '<div class="sf-ship-portrait"><img src="worlds/w/art/vex.webp" alt="Vex"></div>'
+        + '<p class="sf-seed-intro">Vex meets your eye only once, then goes back to counting cargo seals.</p>'
+        + '<ul class="sf-seed-intro"><li>she/her &middot; smuggler</li></ul>',
+      biography: 'Pronouns: she/her\nRole: smuggler',
+    });
+    syncChat();
+
+    expect(await suppressScene({}, { local: true })).toBe(true);
+    expect(vexActors()).toEqual([]);
+    expect(kiraBonds()).toEqual([]);
+  });
+
   it('with a history entry since, it stays and the GMs are told', async () => {
     await makeAConnection();
     await addHistoryEntry(vexActors()[0].id, 'Smuggled the crew past the blockade', SESSION);

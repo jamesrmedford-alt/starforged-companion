@@ -29,6 +29,7 @@ import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folde
 import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes, adoptUnlistedEntityActor, iterEntityDocuments } from "./registry.js";
 import { readSheetPronouns } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
+import { PORTRAIT_BLOCK_RE } from "../art/notesPortrait.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID  = "starforged-companion";
@@ -365,7 +366,7 @@ export async function retractNarrationConnections(narrationIds) {
     if (!removed.has(data?.createdFromNarrationId)) continue;
     const name = String(data.name || document.name || "").trim() || "A connection";
     try {
-      if (connectionUsed(data)) { out.kept.push({ id: document.id, name }); continue; }
+      if (connectionUsed(data) || sheetWrittenByTable(document, data)) { out.kept.push({ id: document.id, name }); continue; }
       // Dynamic import avoids an actorBridge cycle.
       const { deleteUnmarkedBondItems } = await import("../character/actorBridge.js");
       const bonds = await deleteUnmarkedBondItems({ connectionId: data._id ?? null });
@@ -402,6 +403,33 @@ function connectionUsed(record) {
     || record.canonicalLocked === true
     || !!record.secondRole
     || !!record.renamedBy;
+}
+
+/**
+ * True when the table has written on the NPC card's sheet since it was made:
+ * text on its Notes tab beyond the seed's marked introduction and the
+ * portrait block, or a Characteristics line the seed did not write. The Notes
+ * tab is the card's notes (issue #329 X12) and a seed marks every element it
+ * writes there (issue #338 D4, `sf-seed-intro`), so whatever else the tab
+ * holds — a GM's paragraph, a ⤴ promoted detail from a narration the X-Card
+ * kept — is the table's, as is a Characteristics line that is not one of the
+ * seed's (withSeedCharacteristics' test). The X-Card must not delete a card
+ * carrying it (issue #338 D6(ii): "a safety tool should not delete a document
+ * the table has used"). An auto-created card starts with both fields empty.
+ *
+ * @param {ClientDocument} document — the NPC card
+ * @param {Object} record — its connection record
+ * @returns {boolean}
+ */
+function sheetWrittenByTable(document, record) {
+  const notes = String(document?.system?.notes ?? "").replace(PORTRAIT_BLOCK_RE, "");
+  const rest  = writeSeedIntro(notes, "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  if (rest) return true;
+  const values = {
+    pronouns: record?.pronouns, firstLook: record?.firstLook, description: record?.description,
+    disposition: record?.disposition, role: record?.role, goal: record?.goal,
+  };
+  return !!withSeedCharacteristics(document?.system?.biography, "", [values]).trim();
 }
 
 /**
