@@ -1,12 +1,13 @@
-Defect: TDA-BUTTON-NO-TARGET — a which-fight card's buttons ignore the GM's pick stamp, so another client's click rolls a second Take Decisive Action
-Tests: tests/unit/progressTrackSelection.test.js
+Defect: TDA-BUTTON-NO-TARGET — a which-fight card's pick ignores the pick stamp, both where every client disables the buttons and where the canonical GM claims the card, so another client's pick rolls a second Take Decisive Action (regenerated for the relayed pick, PACED-ROLL-OPEN-PRESS)
+Tests: tests/unit/progressTrackSelection.test.js tests/unit/pacedRollWhichFightRelay.test.js
 Catches: one pick per card
+Catches: another client's pick rolls nothing more
 
 diff --git a/src/index.js b/src/index.js
-index b88a89a..ba9fa8d 100644
+index ba399b0..b8d0521 100644
 --- a/src/index.js
 +++ b/src/index.js
-@@ -5978,11 +5978,6 @@ export function wireWhichFightButtons(message, root) {
+@@ -8492,11 +8492,6 @@ export function wireWhichFightButtons(message, root) {
    const buttons = [...(root?.querySelectorAll?.('[data-action="sf-which-fight"]') ?? [])];
    if (!buttons.length) return;
  
@@ -18,3 +19,16 @@ index b88a89a..ba9fa8d 100644
  
    const fresh = buttons.map(btn => {
      const clone = btn.cloneNode(true);
+diff --git a/src/moves/cardActions.js b/src/moves/cardActions.js
+index 6b05854..93010a1 100644
+--- a/src/moves/cardActions.js
++++ b/src/moves/cardActions.js
+@@ -772,7 +772,7 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
+     return { posted: false, reason: "not-its-card" };
+   }
+   const key = `${messageId}:${claim}`;
+-  if (f[claim] || _inFlight.has(key)) {
++  if ((f[claim] && label !== "which fight") || _inFlight.has(key)) {   // DEFECT: the which-fight pick ignores its claim
+     console.debug(`${MODULE_ID} | ${label}: card ${messageId} already pressed — ignoring the press.`);
+     return { posted: false, reason: "already-pressed" };
+   }

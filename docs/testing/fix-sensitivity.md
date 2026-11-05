@@ -1,4 +1,4 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337 and #338
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337 and #338 (with the tenth audit's open items)
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
@@ -15,7 +15,10 @@ decisions on 2026-11-04, and for issue #331 — and the three found while
 fixing it — on 2026-11-05 (the X48 patch applied to `6405a27`), and for
 issues #335–#338 — the tenth audit's forty-nine findings, its ten decisions
 and the two found while integrating them — on 2026-11-05 (the two patches
-applied to `c10156f`). To reproduce:
+applied to `c10156f`), and for the tenth audit's open items — fixed at the
+maintainer's request the same day — on 2026-11-05 (the three regenerated
+issue #306 R04 patches applied to `fcf612e`, the two regenerated
+TDA-BUTTON-NO-TARGET patches to `3f734cd`). To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -184,6 +187,21 @@ node scripts/fix-sensitivity.mjs \
   19082e9 d7452c1 52ac092 2602ac7 520ec10 bf556f7 \
   --inject scripts/defects/d4-seed-rewrites-whole-notes.patch \
   --inject scripts/defects/y05-followup-wait-dynamic-import.patch \
+  --md details.md
+
+# the tenth audit's open items, in commit order (two refactors change no test
+# file and are skipped; the docs-only and test-only commits are not listed —
+# the five patches the open items regenerated are injected)
+node scripts/fix-sensitivity.mjs \
+  25332db 4c81024 cb07845 ca93dbe 9f76515 1bd8ee2 4f88d78 b6305d7 33ed93a \
+  9b13fa3 0bd99d1 e32ff63 a01aef1 de328bf 28a26d4 3ec79db 4e5735e f8766ba \
+  c5601c8 77e05b7 76410e0 7376b4f a217725 5d20896 3c9c3a8 879b0f5 3224742 \
+  121c038 7493eee 4707df2 230f280 fcf612e \
+  --inject scripts/defects/r04-forge-unclaimed.patch \
+  --inject scripts/defects/r04-ledger-unread.patch \
+  --inject scripts/defects/r04-xp-before-write.patch \
+  --inject scripts/defects/tda-which-fight-twice.patch \
+  --inject scripts/defects/tda-which-fight-unspoken.patch \
   --md details.md
 ```
 
@@ -864,6 +882,67 @@ on the behaviour.
 | Y48 FACTION-FLOW-PANEL-EDIT-CLAIM | a29eebd | hand | 1 — `factionFlowStanceEdit.test.js`, `docs/flows/faction-flow.md` restored from its parent |
 | Y49 PLAYKIT-PUNCH-LIST-STALE | 28a3d82 | hand | 6 — `playkitPunchListStale.test.js` (6), the coverage doc restored from its parent |
 
+### The tenth audit's open items
+
+Every fix commit is **sensitive** (exit 0). The two refactors —
+`confirmDraft`'s redundant imports and FINISH-SCENE-CLOCKID-DEAD's dead read —
+change no test file and no behaviour, so the script skips them; the existing
+tests are their check. The docs-only and test-only commits are not listed:
+the Foundry reference, `finalize.js`'s header and AUDIO-FORGE-ORIGIN-SHARED's
+documentation change no behaviour; DEFECT-PATCHES-STALE's three regenerated
+R04 patches are themselves injected here and each is caught (`r04-forge-
+unclaimed`: 1, `r04-ledger-unread`: 2, `r04-xp-before-write`: 4 —
+`nativePayoffOnce.test.js` and `payoffFailure.test.js`). A run over every
+patch in `scripts/defects/` then found the two TDA-BUTTON-NO-TARGET patches
+stale after PACED-ROLL-OPEN-PRESS moved the "Which fight?" pick to the
+canonical GM — `tda-which-fight-unspoken` no longer applied and
+`tda-which-fight-twice` was no longer caught — so both were regenerated for
+the relayed pick and are injected here too: the pick posted unspoken (4 —
+`progressTrackSelection.test.js` and `pacedRollWhichFightRelay.test.js`),
+and the pick stamp ignored both by every client's buttons and by the GM's
+claim (2 — one pick per card, in each file; the harness's disabled button
+swallows a click, so a second pick reaches the GM's claim only once the
+buttons ignore the stamp too). The run over all
+twenty-six patches then exits 0. `nonGmClientPaths.test.js`'s cleanup was
+shown by hand (without it, the relay case the key leaked into fails).
+XCARD-AFTER-STRIKE-STILL-NAMED's race case passes under the whole revert
+and fails when only its `chatCommands.js` change is reverted.
+
+| Item | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| SHIP-SEED-MISSION-REGION | 25332db | revert | 3 — `shipSeedMissionRegion.test.js` (3) |
+| JOURNAL-ORPHAN-ON-REFUSAL | 4c81024 | revert | 4 — `journalOrphanOnRefusal.test.js` (4) |
+| BOND-ITEM-AFTER-RELIST | cb07845 | revert | 1 — `bondItemAfterRelist.test.js` |
+| NOTES-CARD-ENTITY-UNDECODED | ca93dbe | revert | 3 — `notesCardEntityDecoded.test.js` (3) |
+| LORE-READS-QUICKSTART-PRINTOUT | 9f76515 | revert | 2 — `loreReadsTruthsFlag.test.js` (2) |
+| confirmDraft's redundant imports | 1bd8ee2 | — | no test file — a refactor with no behaviour change; the existing tests are the check |
+| TRACK-ADD-REFUSED-LOSES-NAME | 4f88d78 | revert | 2 — `trackAddRefusedKeepsName.test.js` (2) |
+| PACED-SUGGESTION-FLAG-DEAD | b6305d7 | revert | 1 — `pacedRollButtonRoller.test.js` |
+| PACED-ROLL-OPEN-PRESS | 33ed93a | revert; inject `tda-which-fight-unspoken.patch`, `tda-which-fight-twice.patch` (regenerated) | 11 — `pacedRollButtonRoller.test.js`, `pacedRollHeldAtLock.test.js` (4), `pacedRollWhichFightRelay.test.js` (6). By injection: the pick spoken as the roller (4); the pick stamp read by the buttons and the GM's claim (2) |
+| RELAY-REFUSED-PRESS-UNTOLD | 9b13fa3 | revert | 22 — `relayRefusedPressTold.test.js` (22) |
+| SWEAR-ROLL-VOW-GONE | 0bd99d1 | revert | 3 — `swearRollVowGone.test.js` (3) |
+| VOW-ID-NEVER-LANDED | e32ff63 | revert | 4 — `vowIdNeverLanded.test.js` (4) |
+| REPAIR-TRADE-WHILE-UNPREPARED | a01aef1 | revert | 5 — `repair.test.js`, `repairTradeWhileUnprepared.test.js` (4) |
+| FINISH-SCENE-CLOCKID-DEAD | de328bf | — | no test file — a refactor with no behaviour change; the existing tests are the check |
+| SCENE-CHALLENGE-MOVE-NAME | 28a26d4 | revert | 7 — `noRollMoves.test.js`, `sceneChallengeMoveName.test.js` (6) |
+| PACING-ROLL-NO-SCENE-CHALLENGE | 3ec79db | revert | 6 — `pacingRollSceneChallenge.test.js` (6) |
+| VALUE-ADD-INTEGRITY | 4e5735e | revert | 5 — `valueAddIntegrity.test.js` (5) |
+| W16-CHOOSE-BELOW | f8766ba | revert | 1 — `sacrificeRedirectCardWording.test.js` |
+| READDEBILITIES-CUSTOM-COMMENT | c5601c8 | revert | 5 — `customImpactMomentum.test.js` (5) |
+| XCARD-AFTER-STRIKE-STILL-NAMED | 77e05b7 | revert | 4 — `xcardAfterStrikeStillNamed.test.js` (4) |
+| MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED | 76410e0 | revert | 4 — `makeConnectionPendingConfirmXCard.test.js` (4) |
+| XCARD-CONNECTION-PORTRAIT-ORPHAN | 7376b4f | revert | 3 — `xcardConnectionPortraitOrphan.test.js` (3); 1 more fail only on a missing export |
+| XCARD-LATE-CAPTURE | a217725 | revert | 7 — `xcardLateCapture.test.js` (7) |
+| SHIP-POSITION-FLAG-MERGE | 5d20896 | revert | 8 — `shipPositionFlagMerge.test.js` (7), `xcardShipPosition.test.js` |
+| LOCK-RESURRECTED-BY-COGM-STALE-WRITE | 3c9c3a8 | revert | 6 — `moveLockStoreOwned.test.js` (4), `readyResetLiveLock.test.js` (2) |
+| PTP-PCLESS-NARRATED-AS-FIRST-PC | 879b0f5 | revert | 1 — `ptpPclessPlayerNotice.test.js` |
+| TRIGGER-VIGNETTE-LATE-POST | 3224742 | revert | 6 — `triggerVignetteLatePost.test.js` (6) |
+| ERROR-TEXT-BLAMES-KEY | 121c038 | revert | 2 — `refusedChoiceCardPost.test.js` (2) |
+| fix: End a Session's card says what happ | 7493eee | revert | 2 — `relayedSessionWriteRefused.test.js` (2) |
+| HOVERBIKE-WEAK-AS-MISS-UNAPPLIED | 4707df2 | revert | 4 — `weakHitAsMissCost.test.js` (4) |
+| SCENE-VARIANT-ABILITIES-UNKEYED | 230f280 | revert | 5 — `sceneVariantAbilities.test.js` (5) |
+| PACED-VARIANT-NO-TARGET | fcf612e | revert | 3 — `pacedVariantTarget.test.js` (3) |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
@@ -1058,6 +1137,16 @@ price did not trigger, a refused rewind and an empty ledger leaving every
 vignette alone (D8); the stat swap and the text-only adds (Y22); the
 redirect's follow-on case, shown at D3's second commit; and the allies still
 marked by `markUnprepared` (D3).
+
+For the tenth audit's open items the script lists fifty-seven new tests that
+pass both ways: fifty are named `control:`, and the other seven keep a rule
+the fix must not break — the markup escapes still decode, an escaped entity
+stays text (NOTES-CARD-ENTITY-UNDECODED); a GM's press and pick rolling as
+the card's roller, a pick naming none of the card's fights, and a refused post
+releasing the claim — guards of the new relay that the open press never
+reached (PACED-ROLL-OPEN-PRESS); XCARD-AFTER-STRIKE-STILL-NAMED's race case
+(above); and a connection kept for its Notes paragraph
+(MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED, D6 (ii)'s sheet rule).
 
 ## Details
 
@@ -8827,3 +8916,634 @@ Test files: `tests/unit/oracleFollowup.test.js`.
 | --- | --- |
 | tests/unit/oracleFollowup.test.js › requestOracleNarration on the keyed canonical GM itself the narration runs locally through the relay queue | AssertionError: expected "spy" to be called 1 times, but got 0 times |
 | tests/unit/oracleFollowup.test.js › requestOracleNarration a keyed non-canonical GM relays to the keyed canonical GM instead of narrating | AssertionError: expected "spy" to not be called at all, but actually been called 1 times |
+
+### 25332db — fix: a seeded or confirmed ship's Multipurpose type rolls its mission on the active sector's region's table (SHIP-SEED-MISSION-REGION)
+
+Test files: `tests/unit/shipSeedMissionRegion.test.js`. Source restored: 2 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/shipSeedMissionRegion.test.js › the ship seed (Auto-Seed, Finalise, Regenerate) in an Expanse sector a Multipurpose type rolls the Expanse mission, as the seed's own mission does | AssertionError: expected 'Multipurpose: Hold prisoners' to be 'Multipurpose: Evacuate a location' // Object.is equality |
+| (new) tests/unit/shipSeedMissionRegion.test.js › the ship seed (Auto-Seed, Finalise, Regenerate) in an Outlands sector, the Outlands mission | AssertionError: expected 'Multipurpose: Hold prisoners' to be 'Multipurpose: Explore a region' // Object.is equality |
+| (new) tests/unit/shipSeedMissionRegion.test.js › the draft Confirm of a detected ship in an Expanse sector the confirmed ship's Multipurpose type carries an Expanse mission | AssertionError: expected 'Multipurpose: Hold prisoners' to be 'Multipurpose: Evacuate a location' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/shipSeedMissionRegion.test.js › the ship seed (Auto-Seed, Finalise, Regenerate) control: in a Terminus sector, or with no sector active, the Terminus mission
+- New test passing with and without the fix (a control?): tests/unit/shipSeedMissionRegion.test.js › the draft Confirm of a detected ship control: with no sector active, the Terminus mission
+
+### 4c81024 — fix: a faction or creature Confirm the world refused, pressed again, uses the journal the first press made (JOURNAL-ORPHAN-ON-REFUSAL)
+
+Test files: `tests/unit/journalOrphanOnRefusal.test.js`. Source restored: 5 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/journalOrphanOnRefusal.test.js › a faction or creature Confirm whose registration the world refused, then confirmed again a faction: the retry adopts the journal the first Confirm made — one Iron Syndicate, listed, seeded | AssertionError: expected [ …(2) ] to have a length of 1 but got 2 |
+| (new) tests/unit/journalOrphanOnRefusal.test.js › a faction or creature Confirm whose registration the world refused, then confirmed again a creature: the retry adopts the journal the first Confirm made | AssertionError: expected [ …(2) ] to have a length of 1 but got 2 |
+| (new) tests/unit/journalOrphanOnRefusal.test.js › a faction or creature Confirm whose registration the world refused, then confirmed again a faction is adopted by its identity key (issue #336 Y31): an unlisted "The Iron Syndicate" is the Iron Syndicate's | AssertionError: expected 'Nhsf8xtsXT6Af3Lq' to be 'rec-iron' // Object.is equality |
+| (new) tests/unit/journalOrphanOnRefusal.test.js › the canonical GM's world load lists the faction and creature journals a refused write left unregistered an unlisted faction and creature are listed; a copy of a listed record is not | AssertionError: expected [ 'fac-listed' ] to deeply equal [ 'fac-listed', 'fac-orphan' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/journalOrphanOnRefusal.test.js › a faction or creature Confirm whose registration the world refused, then confirmed again control: with the write accepted one Confirm makes one listed journal
+- New test passing with and without the fix (a control?): tests/unit/journalOrphanOnRefusal.test.js › a faction or creature Confirm whose registration the world refused, then confirmed again control: a listed journal, or one of another name or type, is never adopted
+
+### cb07845 — fix: confirming an NPC the world load already listed after a refused Confirm puts their bond on the PC's sheet (BOND-ITEM-AFTER-RELIST)
+
+Test files: `tests/unit/bondItemAfterRelist.test.js`. Source restored: 1 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/bondItemAfterRelist.test.js › a refused Confirm whose card the world load listed before the GM pressed Confirm again the second Confirm puts the bond Item on the narration's PC — one Vex, one bond | AssertionError: expected [] to have a length of 1 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/bondItemAfterRelist.test.js › a refused Confirm whose card the world load listed before the GM pressed Confirm again control: a Confirm whose card write was lost (U25's case) — the second Confirm makes no second bond Item
+
+### ca93dbe — fix: an NPC's or ship's Notes reach the narrator with "·" and other HTML entities decoded (NOTES-CARD-ENTITY-UNDECODED)
+
+Test files: `tests/unit/notesCardEntityDecoded.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/notesCardEntityDecoded.test.js › the seed's fact line on an NPC's entity card reads "she/her · Wary · …" — the seed's &middot; decoded, as the narrator is handed it | AssertionError: expected '  Notes: She watches the dock with a …' to contain 'she/her · Wary · Smuggler · Pay off a…' |
+| (new) tests/unit/notesCardEntityDecoded.test.js › notesAsCardText decodes entities the named ones a seed or the editor writes: a ship's fact line, typography, a no-break space | AssertionError: expected 'Hauler &middot; Heavy armor &middot; …' to be 'Hauler · Heavy armor · Transport cargo' // Object.is equality |
+| (new) tests/unit/notesCardEntityDecoded.test.js › notesAsCardText decodes entities numeric ones, decimal and hex | AssertionError: expected 'Wary &#183; Smuggler &#x2014; it\'s \…' to be 'Wary · Smuggler — it\'s \'hers\'' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/notesCardEntityDecoded.test.js › notesAsCardText decodes entities once: an escaped entity is text, and the markup-escapes still decode
+- New test passing with and without the fix (a control?): tests/unit/notesCardEntityDecoded.test.js › notesAsCardText decodes entities control: an unknown name or an impossible code point is left as written
+
+### 9f76515 — fix: !lore summarises the Playtest Quickstart's truths as the narrator holds them, not an edited printout (LORE-READS-QUICKSTART-PRINTOUT)
+
+Test files: `tests/unit/loreReadsTruthsFlag.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/loreReadsTruthsFlag.test.js › !lore and the Playtest Quickstart's World Truths journal an edit of the printout does not reach the recap: it summarises the truths the narrator holds | AssertionError: expected 'Summarise these world truths:\n\nCata…' not to contain 'burned our home' |
+| (new) tests/unit/loreReadsTruthsFlag.test.js › !lore and the Playtest Quickstart's World Truths journal a printout emptied by hand still gives the recap the flag's truths | AssertionError: expected 'Summarise these world truths:\n\nWORL…' to contain 'The war consumed our home.' |
+
+- New test passing with and without the fix (a control?): tests/unit/loreReadsTruthsFlag.test.js › !lore and the Playtest Quickstart's World Truths journal control: a World Truths dialog save is read from its page — the GM's edit of it is the campaign's (Y39)
+
+### 1bd8ee2 — refactor: confirmDraft's faction paths use the static faction.js import
+
+Skipped: the commit changes no test file.
+
+### 4f88d78 — fix: a Progress Tracks add that was not made keeps the typed name, type and rank (TRACK-ADD-REFUSED-LOSES-NAME)
+
+Test files: `tests/unit/trackAddRefusedKeepsName.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/trackAddRefusedKeepsName.test.js › a refused Progress Tracks add keeps what was typed (TRACK-ADD-REFUSED-LOSES-NAME) the GM's own add the world refuses: the name, type and rank are back after the re-render | AssertionError: expected { label: '', type: 'expedition', …(1) } to deeply equal { …(3) } |
+| (new) tests/unit/trackAddRefusedKeepsName.test.js › a refused Progress Tracks add keeps what was typed (TRACK-ADD-REFUSED-LOSES-NAME) a player's add with no GM connected: told so, and the name is back to add again | AssertionError: expected { label: '', type: 'combat', …(1) } to deeply equal { label: 'The Ravager Nest', …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/trackAddRefusedKeepsName.test.js › a refused Progress Tracks add keeps what was typed (TRACK-ADD-REFUSED-LOSES-NAME) control: a name typed while the refused add was in flight is not overwritten
+- New test passing with and without the fix (a control?): tests/unit/trackAddRefusedKeepsName.test.js › a refused Progress Tracks add keeps what was typed (TRACK-ADD-REFUSED-LOSES-NAME) control: an add that lands clears the name and keeps the type and rank (issue #337 Y45)
+- New test passing with and without the fix (a control?): tests/unit/trackAddRefusedKeepsName.test.js › a refused Progress Tracks add keeps what was typed (TRACK-ADD-REFUSED-LOSES-NAME) control: a player's add relayed to a connected GM clears the name — it was sent
+
+### b6305d7 — refactor: the paced Roll's forced move no longer carries a flag nothing reads (PACED-SUGGESTION-FLAG-DEAD)
+
+Test files: `tests/unit/isPlayerNarration.test.js`, `tests/unit/pacedRollButtonRoller.test.js`, `tests/unit/xcardBeatForcedMove.test.js`. Source restored: 1 file(s).
+
+- With the fix: 37 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 36 still pass (0 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/pacedRollButtonRoller.test.js › the paced Roll button credits the narrating PC its forced move carries only flags the pipeline reads (known-issues PACED-SUGGESTION-FLAG-DEAD) | AssertionError: expected { bypassPacing: true, …(3) } to not have property "fromPacedSuggestion" |
+
+### 33ed93a — fix: a crewmate can no longer press another player's paced Roll or "Which fight?" pick, and each is made once (PACED-ROLL-OPEN-PRESS)
+
+Test files: `tests/unit/pacedRollButtonRoller.test.js`, `tests/unit/pacedRollHeldAtLock.test.js`, `tests/unit/pacedRollWhichFightRelay.test.js`. Source restored: 5 file(s).
+
+- With the fix: 20 passed, 0 failed.
+- Without it: 11 failed (8 new; 0 only for a missing export); 9 still pass (4 new).
+- Verdict: **sensitive** — 11 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/pacedRollButtonRoller.test.js › the paced Roll button credits the narrating PC the card records her, and another player's press rolls nothing — the move is Kira's | AssertionError: expected [ 'pc-pat' ] to deeply equal [] |
+| (new) tests/unit/pacedRollHeldAtLock.test.js › issue #335 Y08 — a stamped one-shot button's move is held at the move lock Kira's own press on her paced card (relayed, the card claimed on the GM — PACED-ROLL-OPEN-PRESS) is held too | AssertionError: the card is stamped as rolled: expected undefined to be true // Object.is equality |
+| tests/unit/pacedRollHeldAtLock.test.js › issue #335 Y08 — a stamped one-shot button's move is held at the move lock before a session begins the paced Roll is held, and rolled once Begin a Session starts one (X14) | Error: multiClient: drain() timed out with 1 pending handler(s) |
+| tests/unit/pacedRollHeldAtLock.test.js › issue #335 Y08 — a stamped one-shot button's move is held at the move lock control: with no move in flight the paced Roll rolls Kira's Face Danger as Kira | Error: multiClient: drain() timed out with 1 pending handler(s) |
+| tests/unit/pacedRollHeldAtLock.test.js › issue #335 Y08 — a stamped one-shot button's move is held at the move lock control: a ⚑ Mark Progress press during the narration is held and runs once the lock frees (W02) | Error: multiClient: drain() timed out with 1 pending handler(s) |
+| (new) tests/unit/pacedRollWhichFightRelay.test.js › the paced card's Roll is the narrator's to press (PACED-ROLL-OPEN-PRESS) Ren's player's press on Kira's paced card is refused: nothing rolled, the card left unclaimed | AssertionError: expected [ { …(8) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/pacedRollWhichFightRelay.test.js › the paced card's Roll is the narrator's to press (PACED-ROLL-OPEN-PRESS) Kira's player rolls it once, as Kira — the card is claimed, and the GM's later press rolls nothing more | AssertionError: claimed on the GM-authored card: expected undefined to be true // Object.is equality |
+| (new) tests/unit/pacedRollWhichFightRelay.test.js › the paced card's Roll is the narrator's to press (PACED-ROLL-OPEN-PRESS) once claimed, every client renders the button "Rolled" and disabled | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/pacedRollWhichFightRelay.test.js › the paced card's Roll is the narrator's to press (PACED-ROLL-OPEN-PRESS) a card that names no narrator (before issue #325 W09) rolls for the presser's own PC | AssertionError: expected [ undefined ] to deeply equal [ 'pc-ren' ] |
+| (new) tests/unit/pacedRollWhichFightRelay.test.js › the "Which fight?" pick is the roller's to make, once (WHICH-FIGHT-LOCAL-DISABLE) Ren's player's pick on Kira's card is refused: nothing rolled, the card left unclaimed | AssertionError: expected [ { …(8) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/pacedRollWhichFightRelay.test.js › the "Which fight?" pick is the roller's to make, once (WHICH-FIGHT-LOCAL-DISABLE) Kira's player's pick rolls that fight once, as Kira; another client's pick rolls nothing more | AssertionError: the card records the pick: expected undefined to be 'fight-2' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/pacedRollWhichFightRelay.test.js › the paced card's Roll is the narrator's to press (PACED-ROLL-OPEN-PRESS) a GM may press it, and it rolls as Kira (issue #325 W09)
+- New test passing with and without the fix (a control?): tests/unit/pacedRollWhichFightRelay.test.js › the "Which fight?" pick is the roller's to make, once (WHICH-FIGHT-LOCAL-DISABLE) a GM may pick for Kira
+- New test passing with and without the fix (a control?): tests/unit/pacedRollWhichFightRelay.test.js › the "Which fight?" pick is the roller's to make, once (WHICH-FIGHT-LOCAL-DISABLE) a pick that names none of the card's fights is refused
+- New test passing with and without the fix (a control?): tests/unit/pacedRollWhichFightRelay.test.js › the "Which fight?" pick is the roller's to make, once (WHICH-FIGHT-LOCAL-DISABLE) a post the world refuses releases the claim, and the pick can be made again
+
+### 9b13fa3 — fix: a press on another player's card button says whose button it is, instead of nothing (RELAY-REFUSED-PRESS-UNTOLD)
+
+Test files: `tests/unit/relayRefusedPressTold.test.js`. Source restored: 7 file(s).
+
+- With the fix: 25 passed, 0 failed.
+- Without it: 22 failed (22 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 22 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is tda.attempt — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is expedition.finish — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is vow.swearRoll — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is paced.roll — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is whichFight.pick — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is fulfilVow.attempt — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is milestone.suggestion — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is fulfilVow.pick — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is legacy.pick — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is waypoint.oracle — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is combatTrack.battle — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is wayOut.pick — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is vow.recommit — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is bond.recommit — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is milestone.pick — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is suffer.pick — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is move.burnMomentum — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is move.improveResult — one whisper to the presser and the GMs, naming Kira; nothing else posted | AssertionError: the presser is told: expected undefined to be truthy |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is two refused presses are two notices — one each | AssertionError: expected [] to have a length of 2 but got +0 |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is a card that names no character of theirs is a GM's: the presser is told so | TypeError: Cannot read properties of undefined (reading 'content') |
+| (new) tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is a card whose character is gone: the presser is told it is gone (no-actor, not-a-pc) | AssertionError: expected [] to have a length of 2 but got +0 |
+| (new) tests/unit/relayRefusedPressTold.test.js › on a booted table, the relayed refusal reaches the presser Ren's player's ⚔ Attempt to Finish the Fight on Kira's card: refused, and whispered to them and the GM — not to Kira's player | AssertionError: expected [] to have a length of 1 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is control: Kira's player's press lands and nobody is told anything
+- New test passing with and without the fix (a control?): tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is control: a GM's press on a suffer card whose character is gone retires the card, which says so — no second notice
+- New test passing with and without the fix (a control?): tests/unit/relayRefusedPressTold.test.js › Ren's player presses a button on Kira's card: the GM refuses it and tells them whose it is control: a press refused for another reason (already pressed) is not told as whose
+
+### 0bd99d1 — fix: ⚔ Swear it on a vow deleted from the sheet swears nothing and says so (SWEAR-ROLL-VOW-GONE)
+
+Test files: `tests/unit/swearRollVowGone.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/swearRollVowGone.test.js › ⚔ Swear it (roll) on a vow nobody holds any more (SWEAR-ROLL-VOW-GONE) its vow Item deleted: nothing is sworn, the card is closed, and Kira's player and the GMs are told why | AssertionError: no swear posted — no momentum, no oath scene: expected [ { …(8) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/swearRollVowGone.test.js › ⚔ Swear it (roll) on a vow nobody holds any more (SWEAR-ROLL-VOW-GONE) once closed, the button renders disabled everywhere and a later press swears nothing | AssertionError: expected [ { …(8) } ] to have a length of +0 but got 1 |
+| (new) tests/unit/swearRollVowGone.test.js › ⚔ Swear it (roll) on a vow nobody holds any more (SWEAR-ROLL-VOW-GONE) a card the 🤝 Link already closed (`vowGone`) is refused too, and says so | AssertionError: expected [ { …(8) } ] to have a length of +0 but got 1 |
+
+- New test passing with and without the fix (a control?): tests/unit/swearRollVowGone.test.js › ⚔ Swear it (roll) on a vow nobody holds any more (SWEAR-ROLL-VOW-GONE) control: with the vow on her sheet, Kira's press swears it once, as Kira
+
+### e32ff63 — fix: a reward pick or Link on a sheet-made vow whose id stamp never landed lands on the vow (VOW-ID-NEVER-LANDED)
+
+Test files: `tests/unit/vowIdNeverLanded.test.js`. Source restored: 2 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/vowIdNeverLanded.test.js › a sheet-made vow whose vowId flag never landed (VOW-ID-NEVER-LANDED) the writers find it by its Item id: the reward and the link land on it | AssertionError: expected { ok: false, reason: 'no-copy' } to deeply equal { ok: true } |
+| (new) tests/unit/vowIdNeverLanded.test.js › a sheet-made vow whose vowId flag never landed (VOW-ID-NEVER-LANDED) a reward pick sets the reward — not "no character holds this vow" and a closed card | AssertionError: expected { applied: false, reason: 'no-copy' } to deeply equal { applied: true } |
+| (new) tests/unit/vowIdNeverLanded.test.js › a sheet-made vow whose vowId flag never landed (VOW-ID-NEVER-LANDED) a 🤝 Link links it — the card is not closed as a vow nobody holds | AssertionError: expected { applied: false, reason: 'no-copy' } to deeply equal { applied: true } |
+| (new) tests/unit/vowIdNeverLanded.test.js › a sheet-made vow whose vowId flag never landed (VOW-ID-NEVER-LANDED) a reward already granted on it is never promised again (vowRewardStatuses reads it by its id) | AssertionError: expected { applied: false, reason: 'no-copy' } to deeply equal { applied: false, reason: 'granted' } |
+
+- New test passing with and without the fix (a control?): tests/unit/vowIdNeverLanded.test.js › a sheet-made vow whose vowId flag never landed (VOW-ID-NEVER-LANDED) control: a vow deleted from the sheet is still "no copy"
+- New test passing with and without the fix (a control?): tests/unit/vowIdNeverLanded.test.js › a sheet-made vow whose vowId flag never landed (VOW-ID-NEVER-LANDED) control: a shared vow's copies are still found by their flag, each copy once
+
+### a01aef1 — fix: while you are unprepared, Repair's supply-for-points trade is unavailable and says why (REPAIR-TRADE-WHILE-UNPREPARED)
+
+Test files: `tests/unit/repair.test.js`, `tests/unit/repairTradeWhileUnprepared.test.js`. Source restored: 2 file(s).
+
+- With the fix: 41 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 36 still pass (3 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/repair.test.js › applyRepairSpends the trade's last supply marks unprepared (issue #315 S04) already unprepared: the trade is refused — the supply, the impact and the ship stay, and no new mark is claimed | AssertionError: expected +0 to be 1 // Object.is equality |
+| (new) tests/unit/repairTradeWhileUnprepared.test.js › the GM's handler refuses a trade from an unprepared PC unprepared at 3 supply, trading 2: nothing is spent, nothing is repaired, and the card says why | AssertionError: expected 1 to be 3 // Object.is equality |
+| (new) tests/unit/repairTradeWhileUnprepared.test.js › the GM's handler refuses a trade from an unprepared PC unprepared at 0 supply: the reason given is the impact, not the empty supply | AssertionError: expected '&lt;div class="sf-repair-card">&lt;strong>R…' to match /is &lt;strong>unprepared&lt;\/strong>/strong> |
+| (new) tests/unit/repairTradeWhileUnprepared.test.js › the !repair dialog greys the trade while the repairing PC is unprepared the trade field is disabled and the dialog says why | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/repairTradeWhileUnprepared.test.js › the !repair dialog greys the trade while the repairing PC is unprepared an Apply that trades anyway is refused on the typist's client: nothing is relayed, the supply stays | AssertionError: expected [] to deep equally contain ObjectContaining{…} |
+
+- New test passing with and without the fix (a control?): tests/unit/repairTradeWhileUnprepared.test.js › the GM's handler refuses a trade from an unprepared PC control: a PC who is not unprepared pays the trade, and the repair lands
+- New test passing with and without the fix (a control?): tests/unit/repairTradeWhileUnprepared.test.js › the GM's handler refuses a trade from an unprepared PC control: an unprepared PC's repair with no trade lands
+- New test passing with and without the fix (a control?): tests/unit/repairTradeWhileUnprepared.test.js › the !repair dialog greys the trade while the repairing PC is unprepared control: a prepared PC's dialog offers the trade, and the trade is paid
+
+### de328bf — refactor: Finish the Scene retires its clock through the track's completion alone (FINISH-SCENE-CLOCKID-DEAD)
+
+Skipped: the commit changes no test file.
+
+### 28a26d4 — fix: a move is named the same on its card, its Pay the Price and the confirm dialog — "Face Danger (Scene Challenge)" (SCENE-CHALLENGE-MOVE-NAME)
+
+Test files: `tests/unit/noRollMoves.test.js`, `tests/unit/sceneChallengeMoveName.test.js`. Source restored: 6 file(s).
+
+- With the fix: 10 passed, 0 failed.
+- Without it: 7 failed (6 new; 0 only for a missing export); 3 still pass (1 new).
+- Verdict: **sensitive** — 7 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| tests/unit/noRollMoves.test.js › T05 — Make a Discovery from a waypoint match rolls nothing and offers no burn the follow-up card has no dice, no outcome and no Burn Momentum; momentum stays 9; the legacy is marked | AssertionError: expected '&lt;div class="sf-move-result ">\n      …' to match /Make a Discovery/ |
+| (new) tests/unit/sceneChallengeMoveName.test.js › a scene-challenge move has one display name — the confirm dialog's (SCENE-CHALLENGE-MOVE-NAME) the move card and the Pay the Price card name the typed variant as the dialog does | AssertionError: expected 'Face Danger Scene Challenge' to be 'Face Danger (Scene Challenge)' // Object.is equality |
+| (new) tests/unit/sceneChallengeMoveName.test.js › a scene-challenge move has one display name — the confirm dialog's (SCENE-CHALLENGE-MOVE-NAME) a forced variant (a card's Roll) is named as the dialog does | AssertionError: expected 'Face Danger Scene Challenge' to be 'Face Danger (Scene Challenge)' // Object.is equality |
+| (new) tests/unit/sceneChallengeMoveName.test.js › a scene-challenge move has one display name — the confirm dialog's (SCENE-CHALLENGE-MOVE-NAME) a burned variant's re-narration names it as the dialog does | AssertionError: expected '## MOVE OUTCOME\n\n[MOVE: Face Danger…' to contain '[MOVE: Face Danger (Scene Challenge)' |
+| (new) tests/unit/sceneChallengeMoveName.test.js › a scene-challenge move has one display name — the confirm dialog's (SCENE-CHALLENGE-MOVE-NAME) a variant with no challenge open is the ordinary move, named as the dialog names it | AssertionError: expected 'Secure An Advantage' to be 'Secure an Advantage' // Object.is equality |
+| (new) tests/unit/sceneChallengeMoveName.test.js › a scene-challenge move has one display name — the confirm dialog's (SCENE-CHALLENGE-MOVE-NAME) the paced card's Roll button names the move as the dialog does | AssertionError: expected '&lt;div class="sf-narration-card sf-narr…' to contain 'Roll Secure an Advantage&lt;/button>' |
+| (new) tests/unit/sceneChallengeMoveName.test.js › a scene-challenge move has one display name — the confirm dialog's (SCENE-CHALLENGE-MOVE-NAME) the session recap names the move as the dialog does | AssertionError: expected '&lt;div class="sf-recap-session-card">\n…' to contain '• Face Danger (Scene Challenge) → Miss' |
+
+- New test passing with and without the fix (a control?): tests/unit/sceneChallengeMoveName.test.js › a scene-challenge move has one display name — the confirm dialog's (SCENE-CHALLENGE-MOVE-NAME) control: the confirm dialog's title for each variant
+
+### 3ec79db — fix: a paced Roll during a scene challenge offers its scene-challenge move (PACING-ROLL-NO-SCENE-CHALLENGE)
+
+Test files: `tests/unit/pacingRollSceneChallenge.test.js`. Source restored: 4 file(s).
+
+- With the fix: 9 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/pacingRollSceneChallenge.test.js › the classifier knows an open scene challenge, as it knows a fight its catalog lists the two scene-challenge moves, for an open challenge only | AssertionError: expected 'You are the pacing pre-classifier for…' to match /- face_danger_scene_challenge: / |
+| (new) tests/unit/pacingRollSceneChallenge.test.js › the classifier knows an open scene challenge, as it knows a fight an open challenge is named in the CURRENT SCENE | AssertionError: expected '## PACING DIALS (effective values)\nc…' to match /SCENE CHALLENGE: OPEN — "The Negotiat…/ |
+| (new) tests/unit/pacingRollSceneChallenge.test.js › the classifier knows an open scene challenge, as it knows a fight the hint naming the move a variant varies keeps the variant | AssertionError: expected 'face_danger' to be 'face_danger_scene_challenge' // Object.is equality |
+| (new) tests/unit/pacingRollSceneChallenge.test.js › a paced Roll during a scene challenge rolls its scene-challenge move the classifier is told the challenge, and the paced card keeps the variant though its hint says Face Danger | AssertionError: expected '## PACING DIALS (effective values)\nc…' to match /SCENE CHALLENGE: OPEN — "The Negotiat…/ |
+| (new) tests/unit/pacingRollSceneChallenge.test.js › a paced Roll during a scene challenge rolls its scene-challenge move its Roll is the scene-challenge move, scored against the challenge | AssertionError: expected { narratorCard: true, …(13) } to match object { …(2) } |
+| (new) tests/unit/pacingRollSceneChallenge.test.js › a paced Roll during a scene challenge rolls its scene-challenge move with no challenge open the classifier is told none, and a variant it names anyway is the ordinary move | AssertionError: expected 'face_danger_scene_challenge' to be 'face_danger' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/pacingRollSceneChallenge.test.js › the classifier knows an open scene challenge, as it knows a fight control: with none open, the CURRENT SCENE says nothing of one
+- New test passing with and without the fix (a control?): tests/unit/pacingRollSceneChallenge.test.js › a paced Roll during a scene challenge rolls its scene-challenge move control: the challenge finished between the card and the press — the Roll is the ordinary move
+- New test passing with and without the fix (a control?): tests/unit/pacingRollSceneChallenge.test.js › a paced Roll during a scene challenge rolls its scene-challenge move control: an ordinary nomination during the challenge stays the ordinary move (never re-keyed)
+
+### 4e5735e — fix: the Hoverbike's "add +integrity" adds the bike's integrity on the confirm dialog (VALUE-ADD-INTEGRITY)
+
+Test files: `tests/unit/valueAddIntegrity.test.js`. Source restored: 2 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/valueAddIntegrity.test.js › the Hoverbike's 'add +integrity' is the bike's integrity (VALUE-ADD-INTEGRITY) offered as its number, from the asset's own track (3) | AssertionError: expected { key: 'a1:0', …(16) } to match object { assetName: 'Hoverbike', …(3) } |
+| (new) tests/unit/valueAddIntegrity.test.js › the Hoverbike's 'add +integrity' is the bike's integrity (VALUE-ADD-INTEGRITY) a damaged bike adds what it has left; a wrecked one adds nothing | AssertionError: expected +0 to be 1 // Object.is equality |
+| (new) tests/unit/valueAddIntegrity.test.js › the Hoverbike's 'add +integrity' is the bike's integrity (VALUE-ADD-INTEGRITY) for the move it was found for — any risky maneuver (the ability names no move) | AssertionError: expected +0 to be 3 // Object.is equality |
+| (new) tests/unit/valueAddIntegrity.test.js › the Hoverbike's 'add +integrity' is the bike's integrity (VALUE-ADD-INTEGRITY) extractAdds reads '+integrity' from the values it is given — none given, no add | AssertionError: expected +0 to be 2 // Object.is equality |
+| (new) tests/unit/valueAddIntegrity.test.js › the confirm dialog shows the bike's number and says what it is a '+3 (integrity)' row whose add the roll takes | AssertionError: expected '0' to be '3' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/valueAddIntegrity.test.js › the Hoverbike's 'add +integrity' is the bike's integrity (VALUE-ADD-INTEGRITY) control: an asset with no Integrity track holds no integrity to add
+- New test passing with and without the fix (a control?): tests/unit/valueAddIntegrity.test.js › the Hoverbike's 'add +integrity' is the bike's integrity (VALUE-ADD-INTEGRITY) control: Tech's 'add +wits instead of +integrity' swaps a stat on a reroll — no add (Y22)
+
+### f8766ba — fix: the Sacrifice Resources card no longer points below at a choice card posted above it (W16-CHOOSE-BELOW)
+
+Test files: `tests/unit/sacrificeRedirectCardWording.test.js`. Source restored: 1 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sacrificeRedirectCardWording.test.js › the Sacrifice Resources card says where its redirect's picker is the picker posts first; the card after it names no direction — 'choose it on its card' | AssertionError: expected '&lt;div class="sf-card sf-card--suffer">…' not to match /below/ |
+
+- New test passing with and without the fix (a control?): tests/unit/sacrificeRedirectCardWording.test.js › the Sacrifice Resources card says where its redirect's picker is control: a picker the world refused — the card says to apply one on the sheet
+
+### c5601c8 — fix: the momentum bounds count the sheet's two custom impacts, as the system does (READDEBILITIES-CUSTOM-COMMENT)
+
+Test files: `tests/unit/customImpactMomentum.test.js`. Source restored: 2 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/customImpactMomentum.test.js › a marked custom impact counts toward the momentum bounds, as the vendor counts it custom1 marked: max 9, reset +1 — one impact | AssertionError: expected { value: 2, min: -6, max: 10, …(2) } to match object { max: 9, reset: 1, impactCount: 1 } |
+| (new) tests/unit/customImpactMomentum.test.js › a marked custom impact counts toward the momentum bounds, as the vendor counts it both custom impacts and wounded: max 7, reset 0 — three impacts | AssertionError: expected { value: 2, min: -6, max: 9, …(2) } to match object { max: 7, reset: +0, impactCount: 3 } |
+| (new) tests/unit/customImpactMomentum.test.js › a marked custom impact counts toward the momentum bounds, as the vendor counts it the snapshot's bounds follow, and the bridge's fallback agrees with the vendor's getters | AssertionError: expected [ 9, 1 ] to deeply equal [ 8, +0 ] |
+| (new) tests/unit/customImpactMomentum.test.js › a marked custom impact counts toward the momentum bounds, as the vendor counts it a momentum gain is clamped to the custom-impact-reduced maximum | AssertionError: expected 10 to be 9 // Object.is equality |
+| (new) tests/unit/customImpactMomentum.test.js › a marked custom impact counts toward the momentum bounds, as the vendor counts it marking a custom impact on the sheet clamps momentum to the new maximum | AssertionError: expected 10 to be 9 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/customImpactMomentum.test.js › a marked custom impact counts toward the momentum bounds, as the vendor counts it control: a custom impact's name alone marks nothing
+- New test passing with and without the fix (a control?): tests/unit/customImpactMomentum.test.js › a marked custom impact counts toward the momentum bounds, as the vendor counts it control: readDebilities — the narrator's Impacts line — lists the named impacts only
+
+### 77e05b7 — fix: the X-Card takes over a strike of the narration it removes — never named again, never lifted (XCARD-AFTER-STRIKE-STILL-NAMED)
+
+Test files: `tests/unit/xcardAfterStrikeStillNamed.test.js`. Source restored: 5 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/xcardAfterStrikeStillNamed.test.js › XCARD-AFTER-STRIKE-STILL-NAMED — the X-Card takes over a strike of the narration it removes the X-Card on the struck narration relabels its strike the X-Card's — named nowhere, still blocking a re-assertion | AssertionError: expected { id: 'tr-acf2e00c', …(16) } to match object { retracted: true, …(3) } |
+| (new) tests/unit/xcardAfterStrikeStillNamed.test.js › XCARD-AFTER-STRIKE-STILL-NAMED — the X-Card takes over a strike of the narration it removes control: a strike of a kept narration stays the GM's and stays named | AssertionError: expected { id: 'tr-0d0530bb', …(16) } to match object { retracted: true, …(1) } |
+| (new) tests/unit/xcardAfterStrikeStillNamed.test.js › XCARD-AFTER-STRIKE-STILL-NAMED — the X-Card takes over a strike of the narration it removes `!truth set` after the X-Card cannot lift it: the strike stays the X-Card's and its lore stays out of canon | AssertionError: expected { id: 'tr-e1577ef3', …(16) } to match object { retracted: true, …(2) } |
+| (new) tests/unit/xcardAfterStrikeStillNamed.test.js › XCARD-AFTER-STRIKE-STILL-NAMED — the X-Card takes over a strike of the narration it removes after the scene ended, the X-Card drops the strike the session kept (sessionRetractions) | AssertionError: expected [ undefined, undefined ] to deeply equal [ 'nar-0', 'nar-1' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardAfterStrikeStillNamed.test.js › XCARD-AFTER-STRIKE-STILL-NAMED — the X-Card takes over a strike of the narration it removes control: a GM strike is named under CORRECTED and in the summary's leave-out list
+- New test passing with and without the fix (a control?): tests/unit/xcardAfterStrikeStillNamed.test.js › XCARD-AFTER-STRIKE-STILL-NAMED — the X-Card takes over a strike of the narration it removes control: a superseded narration (Burn Momentum / Improve Result) leaves a GM strike of its truth the GM's
+- New test passing with and without the fix (a control?): tests/unit/xcardAfterStrikeStillNamed.test.js › XCARD-AFTER-STRIKE-STILL-NAMED — the X-Card takes over a strike of the narration it removes a `!truth set` the X-Card overtakes leaves the ledger and the lore agreeing — the lore is canon only if the lift stood
+
+### 76410e0 — fix: the X-Card on a Make a Connection that confirmed a waiting draft removes the unused connection and puts the draft back (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED)
+
+Test files: `tests/unit/makeConnectionPendingConfirmXCard.test.js`. Source restored: 4 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/makeConnectionPendingConfirmXCard.test.js › MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED — a Make a Connection that confirms an earlier pending draft the confirmed connection carries the narration that made it | AssertionError: expected undefined to be 'nar-mac' // Object.is equality |
+| (new) tests/unit/makeConnectionPendingConfirmXCard.test.js › MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED — a Make a Connection that confirms an earlier pending draft the X-Card on the Make a Connection narration removes the unused connection and puts the row back to pending | AssertionError: the NPC card: expected [ { id: 'NttPkr1EXdbypv3c', …(14) } ] to deeply equal [] |
+| (new) tests/unit/makeConnectionPendingConfirmXCard.test.js › MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED — a Make a Connection that confirms an earlier pending draft a later Confirm of the reopened row makes her again, with her earlier facts | TypeError: Cannot read properties of null (reading 'click') |
+| (new) tests/unit/makeConnectionPendingConfirmXCard.test.js › MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED — a Make a Connection that confirms an earlier pending draft used since — a tick on her bond — she stays, the row stays confirmed, and the GMs are told | AssertionError: expected [] to have a length of 1 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/makeConnectionPendingConfirmXCard.test.js › MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED — a Make a Connection that confirms an earlier pending draft control: the hit confirms the pending Vex as the roller's connection, and her earlier facts move onto her card
+- New test passing with and without the fix (a control?): tests/unit/makeConnectionPendingConfirmXCard.test.js › MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED — a Make a Connection that confirms an earlier pending draft with a paragraph the GM wrote on her Notes tab since, she stays (sheetWrittenByTable)
+
+### 7376b4f — fix: the X-Card's removal of an unused connection deletes her portrait too (XCARD-CONNECTION-PORTRAIT-ORPHAN)
+
+Test files: `tests/unit/xcardConnectionPortraitOrphan.test.js`. Source restored: 3 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 4 failed (4 new; 1 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/xcardConnectionPortraitOrphan.test.js › XCARD-CONNECTION-PORTRAIT-ORPHAN — the X-Card deletes the portrait with the connection the X-Card that deletes the unused Vex deletes her portrait's journal entry and its index entry | AssertionError: the Art: journal entry: expected [ { id: 'je-elg3i95d', …(8) } ] to deeply equal [] |
+| (new) tests/unit/xcardConnectionPortraitOrphan.test.js › XCARD-CONNECTION-PORTRAIT-ORPHAN — the X-Card deletes the portrait with the connection a superseded portrait of hers (a regeneration) goes too; another entity's stays | AssertionError: expected [ '2S1kgyrBvgO08iwg', …(2) ] to deeply equal [ 'art-ship' ] |
+| (new) tests/unit/xcardConnectionPortraitOrphan.test.js › XCARD-CONNECTION-PORTRAIT-ORPHAN — the X-Card deletes the portrait with the connection a refused index write is logged, not thrown — the card and its entry are gone, the cached index untouched | AssertionError: expected [ { id: 'je-wietnrtm', …(8) } ] to deeply equal [] |
+| (new) (API) tests/unit/xcardConnectionPortraitOrphan.test.js › XCARD-CONNECTION-PORTRAIT-ORPHAN — the X-Card deletes the portrait with the connection only the canonical GM deletes: a second GM's call deletes nothing | TypeError: deleteEntityArtAssets is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardConnectionPortraitOrphan.test.js › XCARD-CONNECTION-PORTRAIT-ORPHAN — the X-Card deletes the portrait with the connection control: Vex's creation stores her portrait — an Art entry, indexed and linked
+- New test passing with and without the fix (a control?): tests/unit/xcardConnectionPortraitOrphan.test.js › XCARD-CONNECTION-PORTRAIT-ORPHAN — the X-Card deletes the portrait with the connection control: a Vex the table has used stays, and so does her portrait
+
+### a217725 — fix: a narration's capture still running when the X-Card is played records nothing more from it (XCARD-LATE-CAPTURE)
+
+Test files: `tests/unit/xcardLateCapture.test.js`. Source restored: 6 file(s).
+
+- With the fix: 11 passed, 0 failed.
+- Without it: 7 failed (7 new; 0 only for a missing export); 4 still pass (4 new).
+- Verdict: **sensitive** — 7 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — a capture still running when the X-Card is played writes nothing the X-Card played before the 2 s timers fire: no Claude call, nothing written | AssertionError: expected { detection: 1, tier: 1 } to deeply equal { detection: +0, tier: +0 } |
+| (new) tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — a capture still running when the X-Card is played writes nothing the X-Card played while the detection call is out: its reply writes nothing | AssertionError: ESTABLISHED LORE: expected [ 'The branding rite' ] to not include 'The branding rite' |
+| (new) tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — a capture still running when the X-Card is played writes nothing the X-Card played while the tier call is out: no detail lands on the NPC's card | AssertionError: expected [ Array(1) ] to deeply equal [] |
+| (new) tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — a capture still running when the X-Card is played writes nothing a Make a Connection hit: the X-Card during its detection call leaves no connection and no draft card | AssertionError: ESTABLISHED LORE: expected [ 'The branding rite' ] to not include 'The branding rite' |
+| (new) tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — a capture still running when the X-Card is played writes nothing the X-Card played between two of the capture's writes: the first is undone, the rest are never written | AssertionError: a Session Log beat: expected [ 'Choir hymns' ] to deeply equal [] |
+| (new) tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — an X-Card during a Make a Connection's portrait call auto-created: no NPC card, no bond, no portrait left behind | AssertionError: a bond on the roller: expected [ { id: 'G4lI4tKvWvZ9pALT', …(7) } ] to deeply equal [] |
+| (new) tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — an X-Card during a Make a Connection's portrait call confirmed from an earlier narration's pending row: no NPC, no bond, no portrait, and the row stays pending | AssertionError: an Art Cache entry: expected [ { …(7) } ] to deeply equal [] |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — a capture still running when the X-Card is played writes nothing control: with no X-Card, the paced capture records lore, a beat, a faction page, a draft card and a tier detail
+- New test passing with and without the fix (a control?): tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — a capture still running when the X-Card is played writes nothing control: the timers fire as before for a narration the X-Card did not remove
+- New test passing with and without the fix (a control?): tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — a capture still running when the X-Card is played writes nothing control: an X-Card on a later narration leaves an earlier narration's capture alone
+- New test passing with and without the fix (a control?): tests/unit/xcardLateCapture.test.js › XCARD-LATE-CAPTURE — an X-Card during a Make a Connection's portrait call control: with no X-Card the hit makes Calloway with his portrait and a bond on the roller
+
+### 5d20896 — fix: an X-Card on a narration that moved the ship no longer undoes the GM's later move (SHIP-POSITION-FLAG-MERGE)
+
+Test files: `tests/unit/shipPositionFlagMerge.test.js`, `tests/unit/xcardShipPosition.test.js`. Source restored: 3 file(s).
+
+- With the fix: 14 passed, 0 failed.
+- Without it: 8 failed (7 new; 0 only for a missing export); 6 still pass (2 new).
+- Verdict: **sensitive** — 8 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/shipPositionFlagMerge.test.js › SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidecar move recorded every position record names no narration and no earlier position | AssertionError: expected { sectorId: null, …(6) } to match object { narrationId: null, previous: null } |
+| (new) tests/unit/shipPositionFlagMerge.test.js › SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidecar move recorded after `!at Bleakhold`, the X-Card on the earlier narration leaves the ship where the GM put it | AssertionError: expected { …(9) } to match object { …(3) } |
+| (new) tests/unit/shipPositionFlagMerge.test.js › SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidecar move recorded after a Set a Course arrival, the X-Card on the earlier narration leaves the ship where the GM put it | AssertionError: expected { …(9) } to match object { …(3) } |
+| (new) tests/unit/shipPositionFlagMerge.test.js › SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidecar move recorded after an expedition arrival / the Entities panel, the X-Card on the earlier narration leaves the ship where the GM put it | AssertionError: expected { …(9) } to match object { …(3) } |
+| (new) tests/unit/shipPositionFlagMerge.test.js › SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidecar move recorded after a token move on the sector map, the X-Card leaves the token's position | AssertionError: expected { nearestSettlementId: null, …(8) } to match object { freeText: 'deep space', …(3) } |
+| (new) tests/unit/shipPositionFlagMerge.test.js › SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidecar move recorded the X-Card's restore writes no narration either: the record it puts back is not the removed one's | AssertionError: the restored position, merged over the removed one: expected { …(9) } to match object { narrationId: null, previous: null } |
+| (new) tests/unit/shipPositionFlagMerge.test.js › SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidecar move recorded a ship's first position record carries no narration either | AssertionError: expected { sectorId: null, …(6) } to match object { …(3) } |
+| tests/unit/xcardShipPosition.test.js › the X-Card undoes the ship move its narration made a ship the removed narration moved from nowhere recorded is left with no position, not the removed one | AssertionError: expected undefined to be null |
+
+- New test passing with and without the fix (a control?): tests/unit/shipPositionFlagMerge.test.js › SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidecar move recorded control: the merging stub keeps a key the new record leaves out (Foundry's setFlag)
+- New test passing with and without the fix (a control?): tests/unit/shipPositionFlagMerge.test.js › SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidecar move recorded control: restoreShipPositionAfterXCard leaves a position no removed narration wrote
+
+### 3c9c3a8 — fix: a co-GM's write made just before a move released its lock no longer holds the lock again (LOCK-RESURRECTED-BY-COGM-STALE-WRITE)
+
+Test files: `tests/unit/moveLockStoreOwned.test.js`, `tests/unit/readyResetLiveLock.test.js`. Source restored: 4 file(s).
+
+- With the fix: 11 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 5 still pass (0 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/moveLockStoreOwned.test.js › the !roll force's spend writes onto the store keeps the store's lock — and what landed since — not the working copy's | AssertionError: expected 'gm-1' to be 'gm-2' // Object.is equality |
+| (new) tests/unit/moveLockStoreOwned.test.js › the !roll force's spend writes onto the store a lock released since stays released | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/moveLockStoreOwned.test.js › !migrate-entities writes the lock the store holds, not its snapshot a move that released its lock during the migration keeps it released | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/moveLockStoreOwned.test.js › !migrate-entities writes the lock the store holds, not its snapshot a move that claimed the lock during the migration keeps its claim | AssertionError: expected false to be true // Object.is equality |
+| (new) tests/unit/readyResetLiveLock.test.js › LOCK-RESURRECTED-BY-COGM-STALE-WRITE — a released claim a stale write carries back fact continuity on: gm-1's relayed ledger write, built before gm-2's release reached her, does not hold the lock again | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/readyResetLiveLock.test.js › LOCK-RESURRECTED-BY-COGM-STALE-WRITE — a released claim a stale write carries back a later move's claim the stale write overwrote is put back, and released by its own move | AssertionError: expected 'daCneVD0qkxvxH6G' to be 'htKQU32KaB8P4wQe' // Object.is equality |
+
+### 879b0f5 — fix: a Pay the Price nobody could pay is no longer narrated as another player's character's (PTP-PCLESS-NARRATED-AS-FIRST-PC)
+
+Test files: `tests/unit/ptpPclessPlayerNotice.test.js`. Source restored: 2 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 4 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/ptpPclessPlayerNotice.test.js › PTP-PCLESS-NARRATED-AS-FIRST-PC — a price nobody pays is not narrated the PC-less player's refused price gets no narration, and the narrator is not told it was established | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+
+- New test passing with and without the fix (a control?): tests/unit/ptpPclessPlayerNotice.test.js › PTP-PCLESS-NARRATED-AS-FIRST-PC — a price nobody pays is not narrated control: a price its payer pays is narrated, and remembered
+
+### 3224742 — fix: a clock rewound while its trigger vignette is being written no longer gets the vignette (TRIGGER-VIGNETTE-LATE-POST)
+
+Test files: `tests/unit/triggerVignetteLatePost.test.js`. Source restored: 5 file(s).
+
+- With the fix: 9 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/triggerVignetteLatePost.test.js › Pay the Price: a burn rewinds the clock while its trigger vignette is being written posts no vignette, and nothing of its narration reaches the ledgers | AssertionError: expected [ [ 'starforged-companion', …(2) ] ] to deeply equal [] |
+| (new) tests/unit/triggerVignetteLatePost.test.js › Pay the Price: a burn rewinds the clock while its trigger vignette is being written an earlier trigger's vignette of the same clock (before a reset) is not struck in its place | AssertionError: expected true to be undefined |
+| (new) tests/unit/triggerVignetteLatePost.test.js › Pay the Price: a burn rewinds the clock while its trigger vignette is being written a vow's countdown clock rewound by the burn: no vignette either | AssertionError: expected [ { …(11) } ] to deeply equal [] |
+| (new) tests/unit/triggerVignetteLatePost.test.js › !clock fill onto the last segment, rewound while its vignette is written posts no vignette, and nothing of its narration reaches the ledgers | AssertionError: expected [ { …(11) } ] to deeply equal [] |
+| (new) tests/unit/triggerVignetteLatePost.test.js › !clock fill onto the last segment, rewound while its vignette is written a co-GM's vignette relays nothing of a rewound trigger to the canonical GM | AssertionError: expected [ { …(11) } ] to deeply equal [] |
+| (new) tests/unit/triggerVignetteLatePost.test.js › Begin a Session's campaign clock, rewound while its trigger vignette is written posts no vignette, and nothing of its narration reaches the ledgers | AssertionError: expected [ { …(11) } ] to deeply equal [] |
+
+- New test passing with and without the fix (a control?): tests/unit/triggerVignetteLatePost.test.js › Pay the Price: a burn rewinds the clock while its trigger vignette is being written control: a trigger that stands posts its vignette, naming its clock, its truth live
+- New test passing with and without the fix (a control?): tests/unit/triggerVignetteLatePost.test.js › !clock fill onto the last segment, rewound while its vignette is written control: left full, the vignette posts
+- New test passing with and without the fix (a control?): tests/unit/triggerVignetteLatePost.test.js › Begin a Session's campaign clock, rewound while its trigger vignette is written control: left full, the TRIGGERED vignette posts
+
+### 121c038 — fix: a move's choice card the world refuses goes to the GMs with a Retry instead of vanishing (ERROR-TEXT-BLAMES-KEY)
+
+Test files: `tests/unit/refusedChoiceCardPost.test.js`. Source restored: 3 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/refusedChoiceCardPost.test.js › ERROR-TEXT-BLAMES-KEY — the world refuses the move's suffer-choice card the record is saved; the GM is told by cause, and the GMs' card posts the choice card on Retry | AssertionError: expected [] to deep equally contain StringMatching{…} |
+| (new) tests/unit/refusedChoiceCardPost.test.js › ERROR-TEXT-BLAMES-KEY — the world refuses the move's suffer-choice card a Retry after the move's result was upgraded posts no card for the superseded outcome, and says why | AssertionError: expected [] to have a length of 1 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/refusedChoiceCardPost.test.js › ERROR-TEXT-BLAMES-KEY — the world refuses the move's suffer-choice card control: with the card accepted Kira's choice card posts and no GM card follows
+
+### 7493eee — fix: End a Session's card says what happened when the world refuses it, and promises no momentum (the GM's End-on-an-ended-session wording)
+
+Test files: `tests/unit/relayedSessionWriteRefused.test.js`. Source restored: 1 file(s).
+
+- With the fix: 11 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 9 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/relayedSessionWriteRefused.test.js › issue #335 Y06 — a player's session write the world refused on the GM the GM's own End on a session already ended, the focus correction refused: the card says what happened — nothing was ended, the focus was not recorded | AssertionError: expected '&lt;div class="sf-session-card">&lt;strong>…' to match /This session has already ended/ |
+| (new) tests/unit/relayedSessionWriteRefused.test.js › issue #335 Y06 — a player's session write the world refused on the GM the GM's own End under the refusal promises no momentum — none was given | AssertionError: expected '&lt;div class="sf-session-card">&lt;strong>…' not to match /\+1 momentum/ |
+
+### 4707df2 — fix: taking the Hoverbike's +integrity counts a weak hit as a miss, as its ability says (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED)
+
+Test files: `tests/unit/weakHitAsMissCost.test.js`. Source restored: 4 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/weakHitAsMissCost.test.js › taking the Hoverbike's +integrity counts a weak hit as a miss (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED) the confirm dialog shows the add's cost on its row | AssertionError: expected '\n        \n        Hoverbike\n      …' to match /a weak hit counts as a miss/ |
+| (new) tests/unit/weakHitAsMissCost.test.js › taking the Hoverbike's +integrity counts a weak hit as a miss (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED) taken, a weak hit resolves as a miss, the card says why, and the price is paid | AssertionError: expected { narratorCard: true, …(13) } to match object { moveId: 'face_danger', …(1) } |
+| (new) tests/unit/weakHitAsMissCost.test.js › taking the Hoverbike's +integrity counts a weak hit as a miss (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED) a burn that would land on a weak hit is not offered | AssertionError: expected { narratorCard: true, …(13) } to match object { outcome: 'miss' } |
+| (new) tests/unit/weakHitAsMissCost.test.js › taking the Hoverbike's +integrity counts a weak hit as a miss (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED) a burn to a strong hit is, and a card pressed after the momentum fell does not burn to a weak hit | AssertionError: expected { narratorCard: true, …(13) } to match object { outcome: 'miss' } |
+
+- New test passing with and without the fix (a control?): tests/unit/weakHitAsMissCost.test.js › taking the Hoverbike's +integrity counts a weak hit as a miss (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED) control: a strong hit with the add stays a strong hit
+- New test passing with and without the fix (a control?): tests/unit/weakHitAsMissCost.test.js › taking the Hoverbike's +integrity counts a weak hit as a miss (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED) control: unchecked, the add is not taken and a weak hit stays a weak hit
+- New test passing with and without the fix (a control?): tests/unit/weakHitAsMissCost.test.js › taking the Hoverbike's +integrity counts a weak hit as a miss (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED) control: an add with no such cost (the Shuttle's +1) leaves a weak hit a weak hit
+
+### 230f280 — fix: Face Danger and Secure an Advantage within a scene challenge take your assets' abilities for those moves (SCENE-VARIANT-ABILITIES-UNKEYED)
+
+Test files: `tests/unit/sceneVariantAbilities.test.js`. Source restored: 4 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/sceneVariantAbilities.test.js › a scene-challenge variant is matched as the ordinary move it varies the Shuttle's Face Danger +1 is offered on Face Danger (Scene Challenge), as on Face Danger | AssertionError: expected [] to deeply equal [ [ 'Shuttle', 1, 'structured' ] ] |
+| (new) tests/unit/sceneVariantAbilities.test.js › a scene-challenge variant is matched as the ordinary move it varies the Glowcat's Secure an Advantage +its health is offered on its scene-challenge variant | AssertionError: expected [] to deeply equal [ [ 3, 'its health' ] ] |
+| (new) tests/unit/sceneVariantAbilities.test.js › a scene-challenge variant is matched as the ordinary move it varies a stat substitution keyed to Face Danger is the variant's too | AssertionError: expected null to be 'shadow' // Object.is equality |
+| (new) tests/unit/sceneVariantAbilities.test.js › a scene-challenge variant is matched as the ordinary move it varies the rider extraction is told the ordinary move | AssertionError: expected 'Move: Face Danger (Scene Challenge)\n…' to match /^Move: Face Danger\n/ |
+| (new) tests/unit/sceneVariantAbilities.test.js › a scene-challenge roll takes its asset's add (on a table) the Shuttle's +1 is on the confirm dialog, and the challenge's Face Danger rolls with it | AssertionError: expected '' to match /Shuttle[\s\S]*\+1/ |
+
+- New test passing with and without the fix (a control?): tests/unit/sceneVariantAbilities.test.js › a scene-challenge variant is matched as the ordinary move it varies control: an ability keyed to another move is not matched; the ordinary move is itself
+
+### fcf612e — fix: with two scene challenges open, a narration's Roll scores the one it is about (PACED-VARIANT-NO-TARGET)
+
+Test files: `tests/unit/pacedVariantTarget.test.js`. Source restored: 4 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/pacedVariantTarget.test.js › the classifier is asked which open challenge a scene-challenge move is part of its output names the challenge | AssertionError: expected 'You are the pacing pre-classifier for…' to match /"sceneChallenge":/ |
+| (new) tests/unit/pacedVariantTarget.test.js › a paced Roll's scene-challenge move scores the challenge the classifier named two open: the card keeps the named challenge, and its Roll marks that one alone | AssertionError: expected { narratorCard: true, …(11) } to match object { …(2) } |
+| (new) tests/unit/pacedVariantTarget.test.js › a paced Roll's scene-challenge move scores the challenge the classifier named one open: the card keeps the sole challenge's id | AssertionError: expected undefined to be 'yFfSLXijWDEeXOWN' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/pacedVariantTarget.test.js › a paced Roll's scene-challenge move scores the challenge the classifier named control: a challenge named that is not open is no target — two open, the Roll asks which
+- New test passing with and without the fix (a control?): tests/unit/pacedVariantTarget.test.js › a paced Roll's scene-challenge move scores the challenge the classifier named control: a hint that makes the button another move carries no challenge
+
+### `scripts/defects/r04-forge-unclaimed.patch` — issue #306 R04 sibling — payForgedBondNative forges without claiming the bond, so two native Forge a Bond rolls arriving together both pay the bonds legacy
+
+Test files: `tests/unit/nativePayoffOnce.test.js`.
+
+- On HEAD: 6 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 5 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/nativePayoffOnce.test.js › a native Forge a Bond pays once (issue #306 R04, the same race on `bonded`) two forgings of one bond that overlap pay the bonds legacy once | AssertionError: expected 4 to be 2 // Object.is equality |
+
+### `scripts/defects/r04-ledger-unread.patch` — issue #306 R04 — a payoff Retry ignores the vow's ledger, so a step recorded as landed is applied again
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 19 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 17 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a Retry skips a step the vow's ledger says landed meanwhile | AssertionError: expected 4 to be 2 // Object.is equality |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused paid flag applies nothing and tells the GMs; a duplicate then pays once, and the Retry nothing more | AssertionError: expected { quests: 6, deepen: 16, …(2) } to deeply equal { quests: 4, deepen: 8, …(2) } |
+
+### `scripts/defects/r04-xp-before-write.patch` — issue #306 R04 — writeLegacyTicks awards a filled box's XP before its write, so a refused legacy write still pays the XP
+
+Test files: `tests/unit/payoffFailure.test.js`.
+
+- On HEAD: 19 passed, 0 failed.
+- With the defect: 4 failed (0 only for a missing export); 15 still pass.
+- Verdict: **sensitive** — 4 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused legacy write: no XP, a GM card with the legacy as it stands; Retry pays the ticks and XP once | AssertionError: expected [ { …(7) } ] to have a length of +0 but got 1 |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a refused paid flag applies nothing and tells the GMs; a duplicate then pays once, and the Retry nothing more | AssertionError: expected { quests: 4, deepen: 8, …(2) } to deeply equal { quests: 4, deepen: 8, …(2) } |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) after a refused paid flag, the Retry pays once and a later duplicate pays nothing | AssertionError: expected { quests: 4, deepen: 8, …(2) } to deeply equal { quests: 4, deepen: 8, …(2) } |
+| tests/unit/payoffFailure.test.js › a vow fulfilled on the sheet: a step that does not land goes to the GMs (issue #306 R04) a PC's refused box XP goes to the GMs; Retry gives that PC's XP alone, once | AssertionError: expected { kira: +0, ren: +0 } to deeply equal { kira: +0, ren: 2 } |
+
+### `scripts/defects/tda-which-fight-twice.patch` — TDA-BUTTON-NO-TARGET — a which-fight card's pick ignores the pick stamp, both where every client disables the buttons and where the canonical GM claims the card, so another client's pick rolls a second Take Decisive Action (regenerated for the relayed pick, PACED-ROLL-OPEN-PRESS)
+
+Test files: `tests/unit/progressTrackSelection.test.js`, `tests/unit/pacedRollWhichFightRelay.test.js`.
+
+- On HEAD: 26 passed, 0 failed.
+- With the defect: 2 failed (0 only for a missing export); 24 still pass.
+- Verdict: **sensitive** — 2 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/pacedRollWhichFightRelay.test.js › the "Which fight?" pick is the roller's to make, once (WHICH-FIGHT-LOCAL-DISABLE) Kira's player's pick rolls that fight once, as Kira; another client's pick rolls nothing more | AssertionError: expected [ { …(8) }, { …(8) } ] to have a length of 1 but got 2 |
+| tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) one pick per card: a second click, on another client, rolls nothing more | AssertionError: expected [ 'take_decisive_action', …(1) ] to deeply equal [ 'take_decisive_action' ] |
+
+### `scripts/defects/tda-which-fight-unspoken.patch` — TDA-BUTTON-NO-TARGET — a which-fight pick posts the move with no speaker, so the GM's pick is credited to whoever clicked, not the player who made the move (regenerated for the relayed pick, PACED-ROLL-OPEN-PRESS)
+
+Test files: `tests/unit/progressTrackSelection.test.js`, `tests/unit/pacedRollWhichFightRelay.test.js`.
+
+- On HEAD: 26 passed, 0 failed.
+- With the defect: 4 failed (0 only for a missing export); 22 still pass.
+- Verdict: **sensitive** — 4 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/pacedRollWhichFightRelay.test.js › the "Which fight?" pick is the roller's to make, once (WHICH-FIGHT-LOCAL-DISABLE) Kira's player's pick rolls that fight once, as Kira; another client's pick rolls nothing more | AssertionError: expected undefined to be 'pc-kira' // Object.is equality |
+| tests/unit/pacedRollWhichFightRelay.test.js › the "Which fight?" pick is the roller's to make, once (WHICH-FIGHT-LOCAL-DISABLE) a GM may pick for Kira | AssertionError: expected [ undefined ] to deeply equal [ 'pc-kira' ] |
+| tests/unit/progressTrackSelection.test.js › a Take Decisive Action that names no fight asks which (TDA-BUTTON-NO-TARGET) two fights open: nothing is rolled — the card lists them, and a pick rolls that fight for the roller | AssertionError: expected undefined to be 'pc-pat' // Object.is equality |
+| tests/unit/progressTrackSelection.test.js › a move that marks one track, naming none of several, asks which (issue #321 U16) two fights open: an unnamed Strike is not rolled — the pick strikes that fight, for the roller, and no phantom fight is made | AssertionError: expected undefined to be 'pc-pat' // Object.is equality |
