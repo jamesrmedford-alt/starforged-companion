@@ -7404,7 +7404,9 @@ Hooks.once("ready", () => {
       await reconcileSystemTruths().catch(err =>
         console.warn(`${MODULE_ID} | ready: reconciling the World Truths failed:`, err));
 
-      // Notify GM if no World Truths have been established yet
+      // Notify the GMs if no World Truths have been established yet — posted
+      // once (this canonical-GM block) and whispered to every GM: it went to
+      // this client's GM alone, so a second GM never saw it (issue #331 X54).
       if (!game.settings.get(MODULE_ID, "campaignState")?.worldTruthsSet) {
         ChatMessage.create({
           content: `<div class="sf-card sf-card--setup">
@@ -7413,7 +7415,7 @@ Hooks.once("ready", () => {
             <button data-action="openTruthsDialog">Set World Truths ▸</button>
           </div>`,
           flags:   { [MODULE_ID]: { setupCard: true } },
-          whisper: [game.user.id],
+          whisper: gmUserIds(),
         }).catch(err =>
           console.warn(`${MODULE_ID} | truths setup card failed:`, err)
         );
@@ -7646,7 +7648,7 @@ for (const hookName of PTT_RENDER_HOOKS) {
 
 /**
  * Wire the "Set World Truths" button on setup notification cards.
- * The card is whispered to the GM on ready when no truths are established.
+ * The card is whispered to every GM on ready when no truths are established.
  */
 onChatMessageRender((message, root) => {
   if (!message.flags?.[MODULE_ID]?.setupCard) return;
