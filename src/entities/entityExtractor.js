@@ -38,7 +38,7 @@ import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
 import { getFaction,    createFaction, findFactionByName } from "./faction.js";
-import { getShip,       createShip }       from "./ship.js";
+import { getShip,       createShip, resolveActiveRegion } from "./ship.js";
 import { getPlanet,     createPlanet }     from "./planet.js";
 import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
@@ -866,17 +866,25 @@ function rollFreshConnectionSeed() {
   };
 }
 
-function rollFreshShipSeed() {
+/**
+ * A detected ship's identity rolls. A type whose row names a mission
+ * ("Multipurpose", or Fleet → "Starship Mission") rolls the active sector's
+ * region's mission table, as the ship seed does — it rolled the Terminus one
+ * in every region (issue #338 D5's rule; known-issues SHIP-SEED-MISSION-REGION).
+ *
+ * @param {Object} campaignState
+ */
+function rollFreshShipSeed(campaignState) {
   return {
-    type:      safeOracleRoll("starship_type"),
+    type:      safeOracleRoll("starship_type", { region: resolveActiveRegion(campaignState) }),
     firstLook: safeOracleRoll("starship_first_look"),
     name:      safeOracleRoll("starship_name"),
   };
 }
 
-function safeOracleRoll(tableId) {
+function safeOracleRoll(tableId, options = {}) {
   try {
-    const r = rollOracle(tableId);
+    const r = rollOracle(tableId, options);
     return r?.result && r.result !== "—" ? r.result : "";
   } catch {
     return "";
@@ -1848,7 +1856,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     } else if (draft.type === "ship") {
       const seedData = buildShipSeedData(
         { name: draft.name, description: draft.description ?? "" },
-        rollFreshShipSeed(),
+        rollFreshShipSeed(campaignState),
       );
       record = await creator({
         name:                      seedData.name,

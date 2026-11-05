@@ -565,7 +565,11 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
   const region = resolveActiveRegion(campaignState);
   const missionTable = `starship_mission_${region}`;
 
-  const rolledType      = safeRoll(rollOracle, "starship_type");
+  // A type whose row names a mission ("Multipurpose", or Fleet → "Starship
+  // Mission") rolls this region's mission table, as the seed's own mission
+  // does — it rolled the Terminus one in every region (issue #338 D5's rule;
+  // known-issues SHIP-SEED-MISSION-REGION).
+  const rolledType      = safeRoll(rollOracle, "starship_type", { region });
   const rolledFirstLook = safeRoll(rollOracle, "starship_first_look");
   const rolledMission   = safeRoll(rollOracle, missionTable);
 
@@ -763,16 +767,25 @@ export async function installModulesForRolledIdentity(actor, rolls, opts = {}) {
   }
 }
 
-function safeRoll(rollOracle, tableId) {
+function safeRoll(rollOracle, tableId, options = {}) {
   try {
-    const r = rollOracle(tableId);
+    const r = rollOracle(tableId, options);
     return r?.result && r.result !== "—" ? r.result : "";
   } catch {
     return "";
   }
 }
 
-function resolveActiveRegion(campaignState) {
+/**
+ * The active sector's region, as a ship's seed rolls its tables:
+ * "terminus" | "outlands" | "expanse" — the Terminus with no sector or region.
+ * The ship seed and a detected ship's draft Confirm (entityExtractor's
+ * rollFreshShipSeed) both roll by it, so a ship's type and mission agree.
+ *
+ * @param {Object} campaignState
+ * @returns {string}
+ */
+export function resolveActiveRegion(campaignState) {
   const sectors = campaignState?.sectors ?? [];
   const active  = sectors.find(s => s?.id === campaignState?.activeSectorId);
   const region  = active?.region ?? "";
