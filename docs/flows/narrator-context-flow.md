@@ -108,8 +108,9 @@ showed the earlier turns but sent the narrator none of them (issue #321 U42).
 It writes nothing during a conversation. A reflection the player publishes is canon:
 its card carries the flag family (ring, rolling summary), and the canonical
 GM runs the tier pass for the entities it names
-(`registerPublishedReflectionHook`). No ledger facts — the private narrator
-emits no sidecar. The X-Card
+(`registerPublishedReflectionHook`), stamped with the `narrationId` the card
+carries, so an X-Card on the reflection drops those details (issue #335
+Y03). No ledger facts — the private narrator emits no sidecar. The X-Card
 (`xCardActive`, set by the `xcard.activate` relay — a write that fails is
 reported on a card, not assumed, issue #302) is checked by every
 narrator X-Card gate — move, paced, `@scene`, oracle follow-up, session and
@@ -167,7 +168,8 @@ naming the removed destination (issue #325 W07). So is what the narration's
 **capture** recorded (issue #329 X01): every capture entry point
 (`runPostNarrationPasses`, `schedulePacedDetection` /
 `schedulePacedTierUpdate`, `scheduleNarrationCapture` /
-`runNarrationTierUpdate`, the inciting capture) hands the narration's id to
+`runNarrationTierUpdate` — the published reflection's hook included, with
+the id its card carries since issue #335 Y03 — the inciting capture) hands the narration's id to
 `routeWorldJournalResults`, the tier pass, `routeEntityDrafts` (its faction
 auto-surface) and `applyEntityRenames` (issue #335 Y02), which stamp it on
 each Lore / Threat / Faction / Location entry (an entry it rewrote keeps the

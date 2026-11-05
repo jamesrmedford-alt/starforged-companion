@@ -1723,14 +1723,17 @@ export function registerRollingSummaryRefreshHook() {
  * ring and the rolling summary like any narration; here, on the canonical GM,
  * the recorded entities it names get its developments on their cards — the
  * tier pass vow scenes and vignettes run. It records no ledger facts: the
- * private narrator writes no sidecar.
+ * private narrator writes no sidecar. The capture takes the card's
+ * `narrationId`, so an X-Card on the reflection drops what it recorded
+ * (issue #335 Y03 — issue #329 X01's rule, at its last capture caller).
  */
 export function registerPublishedReflectionHook() {
   Hooks.on('createChatMessage', (message) => {
     if (!isCanonicalGM()) return;
     const f = message?.flags?.[MODULE_ID];
     if (!f?.publishedReflection || !f.narrationText) return;
-    scheduleNarrationCapture(f.narrationText, game.settings.get(MODULE_ID, 'campaignState'));
+    scheduleNarrationCapture(f.narrationText, game.settings.get(MODULE_ID, 'campaignState'),
+      { narrationId: typeof f.narrationId === 'string' ? f.narrationId : null });
   });
 }
 

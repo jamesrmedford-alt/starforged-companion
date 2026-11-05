@@ -117,11 +117,12 @@ should remember* must carry all three flags:
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
 | clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix |
 | oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
-| published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`). No sidecar, so no ledger facts |
+| published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`), which stamps the card's `narrationId` on the details it records (issue #335 Y03). No sidecar, so no ledger facts |
 
-Every narration card above (the published reflection is not a narration)
-also carries its narration's `narrationId` — the id its sidecar stamps on the
-ledger entries it writes (§3; issue #321 U07).
+Every card above also carries its narration's `narrationId` — the id its
+sidecar stamps on the ledger entries it writes (§3; issue #321 U07) and its
+capture on what it records (issue #329 X01); a published reflection, which
+has no sidecar, carries one for its capture (issue #335 Y03).
 The move narration's "narration unavailable" card (`postFallbackCard`) keeps
 the family so the session recap counts the move, and is marked
 `narrationFallback`, which every memory read leaves out (issue #321 U35 — it

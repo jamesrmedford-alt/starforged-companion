@@ -21,8 +21,9 @@ layers. This file is the never-break list.
    — it was fed back as story and counted as the session's first narration. A
    card the X-Card removed is flagged `xCarded` and left out the same way
    (U07), and each narration's card carries its `narrationId`, which its
-   sidecar stamps on what it writes (U07; a fallback card or a published
-   reflection carries none). When adding a new card type or co-marking an existing one,
+   sidecar stamps on what it writes (U07; a fallback card carries none) —
+   a published reflection's too, which its capture stamps (issue #335 Y03).
+   When adding a new card type or co-marking an existing one,
    audit every `narratorCard` consumer (ring, rolling summary, session
    recap, correction hook, audio hook, burn-supersede, the X-Card's card
    pick and redirect hook) in the same commit — the consumer list lives in

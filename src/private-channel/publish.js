@@ -12,10 +12,13 @@
  * narrator remembers it — the recent-narration ring and the rolling summary —
  * and the canonical GM runs the tier pass for the recorded entities it names
  * (registerPublishedReflectionHook). Only the published text: the player's own
- * private lines stay private.
+ * private lines stay private. The card carries a `narrationId`, which that
+ * capture stamps on what it records, so an X-Card on the reflection undoes it
+ * (issue #335 Y03).
  */
 
 import { getActiveCharacter, isXCardActive } from "../narration/narrator.js";
+import { newNarrationId } from "../factContinuity/ledgers.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 
 const MODULE_ID = "starforged-companion";
@@ -84,6 +87,10 @@ export async function publishToMainChat({ userId, content }) {
         narratorCard:        true,
         narrationText:       text,
         sessionId,
+        // Its id, as every narration card's: the canonical GM's capture
+        // (registerPublishedReflectionHook) stamps it on the details it
+        // records, so an X-Card on the reflection drops them (issue #335 Y03).
+        narrationId:         newNarrationId(),
       },
     },
   });
