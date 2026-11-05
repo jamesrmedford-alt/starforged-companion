@@ -643,7 +643,19 @@ export function registerSharedVowSyncHook() {
             // edited meanwhile (issue #306 R03's rule for the supply).
             if (sync.next) { sync.next = { ...target, ...sync.next }; break; }
             const update = syncUpdateFor(copy, target);
-            if (update) await copy.update(update, { [MODULE_ID]: { [VOW_MIRROR_OPTION]: true } });
+            if (!update) continue;
+            // Each copy's write stands alone, as the supply sync's does (issue
+            // #331 X52): a refused copy is warned and named to the GM, and the
+            // pass goes on to the other copies and to a change queued
+            // meanwhile — it threw out of the pass, skipping the copies after
+            // it and stranding that change until the vow's next edit.
+            try {
+              await copy.update(update, { [MODULE_ID]: { [VOW_MIRROR_OPTION]: true } });
+            } catch (err) {
+              const owner = copy.parent?.name ?? "a crewmate";
+              console.warn(`${MODULE_ID} | swearVow: shared-vow sync — ${owner}'s copy of "${copy.name}" was not updated:`, err?.message ?? err);
+              globalThis.ui?.notifications?.warn?.(`Shared vow: ${owner}'s copy of "${copy.name}" could not be updated — set it on their sheet.`);
+            }
           }
         }
       } finally {

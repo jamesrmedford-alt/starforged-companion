@@ -121,7 +121,19 @@ export function registerLegacySheetSyncHook() {
           const pass = _sync.next;
           _sync.next = null;
           for (const { track, progress } of pass) {
-            await setSharedProgress(track, progress);
+            // Each track stands alone (issue #331 X52's rule): a refused save
+            // of the shared track is warned and named to the GM, and the pass
+            // goes on to the other tracks and to an edit queued meanwhile — it
+            // threw out of the pass, skipping both.
+            try {
+              await setSharedProgress(track, progress);
+            } catch (err) {
+              console.warn(`${MODULE_ID} | legacy sheet sync: the shared ${track} legacy was not saved:`, err?.message ?? err);
+              globalThis.ui?.notifications?.warn?.(`Shared legacy: the crew's ${track} legacy could not be saved — mark it again.`);
+            }
+            // The sheets follow the shared track as stored: the edit, or —
+            // refused — the value the world kept, so no sheet stays ahead of
+            // the canonical track (rules/reachability.md §5).
             const { failed } = await mirrorLegacyToSheets(track);
             if (failed.length) console.warn(`${MODULE_ID} | legacy mirror: ${failed.length} sheet(s) not updated for ${track}.`);
           }

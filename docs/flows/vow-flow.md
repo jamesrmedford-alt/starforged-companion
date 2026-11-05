@@ -166,7 +166,10 @@ All real progress lands on **item ticks** (`system.current`) via
   writes (`sharedVowMirror`) so they do not cascade, and gives way to a newer
   change mid-pass — an in-flight guard used to drop a change made during a
   pass, and the pass's all-fields write reverted it (issue #322 V32, the
-  shared supply's F05 / R03 race).
+  shared supply's F05 / R03 race). Each copy's write stands alone: a refused
+  one is warned and named to the GM, and the pass goes on to the other copies
+  and to a queued change — it threw out of the pass (known-issues
+  SUPPLY-SYNC-TWINS, the shape issue #331 X52 fixed for the supply).
 - **Vow deadline clocks**: `advanceVowClocks` bumps `clockTicks` on Pay the
   Price ("⏳ The clock turns" card) via `advanceClocksOnPayThePrice`
   (`src/clocks/payThePriceClocks.js`) — called directly by the pipeline on
