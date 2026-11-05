@@ -155,7 +155,9 @@ export async function postSiteDiscoveryCard(result) {
 
   const content =
     `<div class="starforged-companion-card">` +
-    `<h3>◈ Site Discovered — ${site.name}</h3>` +
+    // The name is the location Actor's — GM-edited free text — escaped as the
+    // first-look line beside it is (issue #331 X45).
+    `<h3>◈ Site Discovered — ${escapeSiteHtml(site.name)}</h3>` +
     `<p>A passage opens through to a ${kind} in the sector's outer reaches. ` +
     `It is now charted on the sector map — undertake an expedition there, or ` +
     `Explore a Waypoint to move through its zones.</p>` +
@@ -255,5 +257,5 @@ async function persistSiteFlag(getState, setState, sector, site, key, label) {
 
 function escapeSiteHtml(s) {
   return String(s ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
