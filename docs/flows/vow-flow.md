@@ -124,7 +124,10 @@ All real progress lands on **item ticks** (`system.current`) via
   relays `milestone.pick` to the canonical GM → `applyMilestonePick`, which
   checks the pick is one of the card's choices and that the requester owns
   that PC (or is a GM), marks the vow, and stamps the card `resolved`
-  (idempotent, in-flight guarded). A click with no GM connected, a refusal,
+  (idempotent, in-flight guarded). A vow fulfilled since the picker posted
+  is refused (`vow-completed`, a short card; the picker stays open for its
+  other vows), and `markVowProgress` never marks a fulfilled vow (issue
+  #331 X20). A click with no GM connected, a refusal,
   or a card still unresolved after `RELAY_RECOVERY_MS` (15 s) re-arms the
   buttons (`relayCardAction`, `src/moves/cardActions.js`). The move card's
   "⚑ Mark Progress on Vow" suggestion button leads to a forced

@@ -100,6 +100,21 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
   try {
     const vow = actor ? readVows(actor).find(v => v.id === vowId) : null;
 
+    // The vow was fulfilled since the picker was posted (a sheet roll, a
+    // crewmate's fulfilment): a milestone never marks a fulfilled vow, as
+    // the "Which vow?" pick and planReachMilestone refuse one (issue #331
+    // X20). The picker stays open for its other vows — resolved only once
+    // every vow it offers is fulfilled or gone.
+    if (vow?.completed) {
+      console.warn(`${MODULE_ID} | milestone pick: "${vow.name}" is fulfilled — nothing marked.`);
+      await postVowFulfilledCard(vow);
+      if (!offered.some(c => openVowOnCard(c))) {
+        await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
+          .catch(err => console.warn(`${MODULE_ID} | milestone picker resolve update failed:`, err?.message ?? err));
+      }
+      return { marked: false, reason: "vow-completed" };
+    }
+
     let result;
     if (actor && vow) {
       // A won fight's ×N milestone rides the choice (issue #326 W43); a plain
@@ -118,6 +133,25 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
     return result;
   } finally {
     _inFlight.delete(messageId);
+  }
+}
+
+/** Whether a picker choice still names an open vow on its PC. */
+function openVowOnCard(choice) {
+  const actor = choice?.actorId ? (globalThis.game?.actors?.get?.(choice.actorId) ?? null) : null;
+  return !!actor && readVows(actor).some(v => v.id === choice.vowId && !v.completed);
+}
+
+/** The short card a pick on a fulfilled vow gets: nothing was marked. */
+async function postVowFulfilledCard(vow) {
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>`
+        + `<p><strong>${escapeHtml(vow?.name || "That vow")}</strong> is already fulfilled — no milestone was marked. Pick an open vow.</p></div>`,
+      flags:   { [MODULE_ID]: { milestoneVowFulfilledCard: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | milestone pick: the fulfilled-vow card failed:`, err?.message ?? err);
   }
 }
 
