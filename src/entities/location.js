@@ -24,7 +24,7 @@ import {
   getEntityDocument,
   readEntityFlag,
   writeEntityFlag,
-  registerEntityIdInStore,
+  registerEntityId,
 } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
@@ -106,10 +106,9 @@ export async function createLocation(data, campaignState, { persist = true } = {
     },
   });
 
-  if (!campaignState.locationIds) campaignState.locationIds = [];
-  if (!campaignState.locationIds.includes(actor.id)) {
+  // The store first, the caller's copy once the world took it (issue #331 X35).
+  if (await registerEntityId(campaignState, "locationIds", actor.id, { label: "location", persist })) {
     campaignState.locationIds.push(actor.id);
-    if (persist) await registerEntityIdInStore("locationIds", actor.id, "location");
   }
 
   return location;

@@ -37,7 +37,7 @@ import {
   getEntityDocument,
   readEntityFlag,
   writeEntityFlag,
-  registerEntityIdInStore,
+  registerEntityId,
   withSheetNotes,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
@@ -162,10 +162,9 @@ export async function createShip(data, campaignState) {
     },
   });
 
-  if (!campaignState.shipIds) campaignState.shipIds = [];
-  if (!campaignState.shipIds.includes(actor.id)) {
+  // The store first, the caller's copy once the world took it (issue #331 X35).
+  if (await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" })) {
     campaignState.shipIds.push(actor.id);
-    await registerEntityIdInStore("shipIds", actor.id, "ship");
   }
 
   return ship;
@@ -297,14 +296,12 @@ export async function syncCommandVehicleFlag(actor, campaignState) {
       [`flags.${MODULE_ID}.entityType`]: "ship",
       [`flags.${MODULE_ID}.entityId`]:   id,
     });
-    if (campaignState) {
-      if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
-      if (!campaignState.shipIds.includes(actor.id)) {
-        campaignState.shipIds.push(actor.id);
-        await registerEntityIdInStore("shipIds", actor.id, "ship").catch(err =>
-          console.warn(`${MODULE_ID} | syncCommandVehicleFlag: shipIds persist failed:`, err));
-      }
-    }
+    // The store first, the caller's copy once the world took it (issue #331 X35).
+    const listed = await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" }).catch(err => {
+      console.warn(`${MODULE_ID} | syncCommandVehicleFlag: shipIds persist failed:`, err);
+      return false;
+    });
+    if (listed) campaignState.shipIds.push(actor.id);
     return ship;
   }
 
@@ -542,14 +539,12 @@ export async function registerStarshipActorLight(actor, campaignState) {
     return null;
   }
 
-  if (campaignState) {
-    if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
-    if (!campaignState.shipIds.includes(actor.id)) {
-      campaignState.shipIds.push(actor.id);
-      await registerEntityIdInStore("shipIds", actor.id, "ship").catch(err =>
-        console.warn(`${MODULE_ID} | registerStarshipActorLight: shipIds persist failed:`, err));
-    }
-  }
+  // The store first, the caller's copy once the world took it (issue #331 X35).
+  const listed = await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" }).catch(err => {
+    console.warn(`${MODULE_ID} | registerStarshipActorLight: shipIds persist failed:`, err);
+    return false;
+  });
+  if (listed) campaignState.shipIds.push(actor.id);
 
   return ship;
 }
@@ -666,14 +661,12 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
 
   // Register on campaignState.shipIds if not already tracked (e.g. sidebar
   // creation didn't go through createShip()).
-  if (campaignState) {
-    if (!Array.isArray(campaignState.shipIds)) campaignState.shipIds = [];
-    if (!campaignState.shipIds.includes(actor.id)) {
-      campaignState.shipIds.push(actor.id);
-      await registerEntityIdInStore("shipIds", actor.id, "ship").catch(err =>
-        console.warn(`${MODULE_ID} | seedStarshipActor: shipIds persist failed:`, err));
-    }
-  }
+  // The store first, the caller's copy once the world took it (issue #331 X35).
+  const listed = await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" }).catch(err => {
+    console.warn(`${MODULE_ID} | seedStarshipActor: shipIds persist failed:`, err);
+    return false;
+  });
+  if (listed) campaignState.shipIds.push(actor.id);
 
   // Silent portrait — gated on OpenRouter key. Failures stay silent.
   if (portraitSource && hasOpenRouterKey()) {

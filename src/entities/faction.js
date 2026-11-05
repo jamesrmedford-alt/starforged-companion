@@ -16,7 +16,7 @@
  */
 
 import { getOrCreateEntitiesFolder } from "./folder.js";
-import { registerEntityIdInStore, rerenderEntityPageBody } from "./registry.js";
+import { registerEntityId, rerenderEntityPageBody } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "faction";
@@ -95,10 +95,9 @@ export async function createFaction(data, campaignState) {
     flags: { [MODULE_ID]: { [FLAG_KEY]: faction } },
   }]);
 
-  if (!campaignState.factionIds) campaignState.factionIds = [];
-  if (!campaignState.factionIds.includes(entry.id)) {
+  // The store first, the caller's copy once the world took it (issue #331 X35).
+  if (await registerEntityId(campaignState, "factionIds", entry.id, { label: "faction" })) {
     campaignState.factionIds.push(entry.id);
-    await registerEntityIdInStore("factionIds", entry.id, "faction");
   }
 
   return faction;

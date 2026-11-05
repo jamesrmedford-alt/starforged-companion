@@ -28,7 +28,7 @@ import {
   getEntityDocument,
   readEntityFlag,
   writeEntityFlag,
-  registerEntityIdInStore,
+  registerEntityId,
 } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
@@ -148,10 +148,9 @@ export async function createSettlement(data, campaignState, { persist = true } =
     },
   });
 
-  if (!campaignState.settlementIds) campaignState.settlementIds = [];
-  if (!campaignState.settlementIds.includes(actor.id)) {
+  // The store first, the caller's copy once the world took it (issue #331 X35).
+  if (await registerEntityId(campaignState, "settlementIds", actor.id, { label: "settlement", persist })) {
     campaignState.settlementIds.push(actor.id);
-    if (persist) await registerEntityIdInStore("settlementIds", actor.id, "settlement");
   }
 
   return settlement;

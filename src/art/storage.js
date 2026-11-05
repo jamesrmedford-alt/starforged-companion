@@ -60,10 +60,12 @@ export async function storeArtAsset(asset, campaignState) {
   // pipeline's Make a Connection auto-create, sector creation), and the whole
   // write reverted every write relayed meanwhile — an X-Card included
   // (issue #300 F14).
+  // The store first, the caller's copy once the world took it: the copy is
+  // often the cached setting, and a refused write left the GM's index
+  // naming an asset the world never registered (issue #331 X35).
+  await registerArtAssetInStore(asset._id, entryName);
   if (!campaignState.artAssetIds) campaignState.artAssetIds = {};
   campaignState.artAssetIds[asset._id] = entryName;
-
-  await registerArtAssetInStore(asset._id, entryName);
   return asset;
 }
 
