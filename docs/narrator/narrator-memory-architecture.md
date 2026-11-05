@@ -205,7 +205,9 @@ write as the pause; the ids are kept on `xCardedNarrationIds`, so
 `mergeSceneLedgers` retracts them again from a stale writer's copy and a late
 relayed sidecar of that narration is dropped. What the narration's capture
 (the detection and tier passes) recorded carries the same id — World Journal
-entries (with the versions they replaced), Session Log beats, tier details,
+entries (with the versions they replaced; a faction the draft routing
+surfaces, issue #335 Y02), Session Log beats, tier details, a placeholder
+figure's rename (the X-Card puts the placeholder name back),
 and the state transitions it applied to existing entries (a faction's stance
 on its record included) — and the X-Card's finish undoes it by id
 (`retractNarrationCapture`, issue #329 X01; XCARD-CAPTURE-TRANSITIONS). So

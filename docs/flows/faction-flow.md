@@ -17,8 +17,13 @@ identified issues") — §3 is the resolved ledger, §4 the dispositions.
 allied | unknown` (`FACTION_ATTITUDES`). Written by
 `recordFactionIntelligence` — from the detection pass (new narrator-named
 factions are WJ-surfaced immediately, gated on `entityExistsForName`) and
-from `attitudeShift` state transitions. Read by `getFactionLandscape` (up to
-3, most recently updated) and `!journal faction` commands.
+from `attitudeShift` state transitions. Every detection write — the
+auto-surface in `routeEntityDrafts` included, since issue #335 Y02 — carries
+the narration's `narrationId`, so an X-Card on that narration deletes a page
+it made and restores one it rewrote (`undoNarrationEntries`, issue #329 X01);
+the auto-surface was unstamped and the removed faction stayed in [4e]. Read
+by `getFactionLandscape` (up to 3, most recently updated) and `!journal
+faction` commands.
 
 **Faction entity records** (`src/entities/faction.js`): journal-entry-backed
 records with the full Starforged shape — type/subtype, influence,

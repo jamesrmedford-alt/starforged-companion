@@ -256,15 +256,17 @@ const TIER_ENTITY_TYPES = ['connection', 'ship', 'settlement', 'faction', 'plane
  * was played carries the same id (issue #335 Y01): its migrated tier details
  * and archived lore go the same way, and a LAST KNOWN value it set gives way
  * to the newest one before it no removed narration set (lastKnownWithout).
+ * A placeholder figure the capture renamed to the removed prose's name gets
+ * its name back (revertNarrationRenames, issue #335 Y02).
  * Runs on the canonical GM after the pause is written (suppressScene's
  * finish). Fail-open: never throws.
  *
  * @param {string[]} narrationIds — the X-carded narrations
- * @returns {Promise<{ entries: Object, tierDetails: number, lastKnown: number }>}
+ * @returns {Promise<{ entries: Object, tierDetails: number, lastKnown: number, renames: number }>}
  */
 export async function retractNarrationCapture(narrationIds) {
   const removed = new Set((narrationIds ?? []).filter(id => typeof id === 'string' && id));
-  const out = { entries: { restored: 0, retracted: 0, deleted: 0, beats: 0 }, tierDetails: 0, lastKnown: 0 };
+  const out = { entries: { restored: 0, retracted: 0, deleted: 0, beats: 0 }, tierDetails: 0, lastKnown: 0, renames: 0 };
   if (!removed.size) return out;
   try {
     out.entries = await undoNarrationEntries([...removed]);
@@ -293,7 +295,42 @@ export async function retractNarrationCapture(narrationIds) {
       }
     }
   }
+  out.renames = await revertNarrationRenames(removed);
   return out;
+}
+
+/**
+ * Put back the placeholder name a removed narration's capture renamed a
+ * connection from (applyEntityRenames' `renamedBy` stamp — issue #335 Y02):
+ * "Unknown Suited Figure" revealed as "Vex" by the removed prose is the
+ * figure again. Where the card no longer carries the name the narration gave
+ * it (a GM renamed it since), the name stands. Through updateConnection,
+ * which renames the NPC card's Actor too. Fail-open per card.
+ *
+ * @param {Set<string>} removed
+ * @returns {Promise<number>} cards renamed back
+ */
+async function revertNarrationRenames(removed) {
+  let docs = [];
+  try { docs = [...iterEntityDocuments('connection')]; } catch { docs = []; }
+  const stamped = docs.filter(({ data }) => typeof data?.renamedBy?.narrationId === 'string'
+    && removed.has(data.renamedBy.narrationId) && data.renamedBy.from && data.name === data.renamedBy.to);
+  if (!stamped.length) return 0;
+  let reverted = 0;
+  try {
+    const { updateConnection } = await import('../entities/connection.js');
+    for (const { document, data } of stamped) {
+      try {
+        await updateConnection(document.id, { name: data.renamedBy.from, renamedBy: null });
+        reverted += 1;
+      } catch (err) {
+        console.warn(`${MODULE_ID} | X-Card: renaming ${document?.id} back to "${data.renamedBy.from}" failed:`, err?.message ?? err);
+      }
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: undoing the capture's renames failed:`, err?.message ?? err);
+  }
+  return reverted;
 }
 
 /**

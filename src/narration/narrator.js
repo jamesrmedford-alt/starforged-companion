@@ -955,10 +955,13 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       resolution.outcome,
       campaignState,
     );
-    await routeWorldJournalResults(detection.worldJournal, campaignState, { narrationId: options.narrationId ?? null });
+    const narrationId = options.narrationId ?? null;
+    await routeWorldJournalResults(detection.worldJournal, campaignState, { narrationId });
     // Renames before drafts: a placeholder figure revealed to have a proper
     // name is renamed in place, not duplicated into a new connection card.
-    await applyEntityRenames(detection.renames, campaignState);
+    // Both carry the narration's id, so an X-Card on it undoes what they
+    // record (issue #335 Y02 — the X01 rule, at the last two writers).
+    await applyEntityRenames(detection.renames, campaignState, { narrationId });
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: options.autoCreateConnection === true,
       connectionSeed:       options.connectionSeed ?? null,
@@ -967,6 +970,7 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       // What names a Make a Connection's NPC — a pending draft's included
       // (issue #325 W23).
       namingText:           `${resolution?.playerNarration ?? ''}\n${narrationText ?? ''}`,
+      narrationId,
     });
   } catch (err) {
     console.error(`${MODULE_ID} | runDiscoveryDetection failed:`, err);
@@ -2687,15 +2691,18 @@ export async function runPacedDetection(narrationText, campaignState, options = 
     const worldJournal = options.skipLore
       ? { ...detection.worldJournal, lore: [] }
       : detection.worldJournal;
-    await routeWorldJournalResults(worldJournal, campaignState, { narrationId: options.narrationId ?? null });
+    const narrationId = options.narrationId ?? null;
+    await routeWorldJournalResults(worldJournal, campaignState, { narrationId });
     // Renames before drafts: a placeholder figure revealed to have a proper
     // name is renamed in place, not duplicated into a new connection card.
-    await applyEntityRenames(detection.renames, campaignState);
+    // Both carry the narration's id, for the X-Card (issue #335 Y02).
+    await applyEntityRenames(detection.renames, campaignState, { narrationId });
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: false,
       sessionId:            campaignState?.currentSessionId ?? '',
       source:               options.source ?? 'paced_narrative',
       actorId:              options.actorId ?? null,
+      narrationId,
     });
   } catch (err) {
     console.error(`${MODULE_ID} | runPacedDetection failed:`, err);

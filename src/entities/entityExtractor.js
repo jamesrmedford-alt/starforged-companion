@@ -528,9 +528,14 @@ function detectionFromParsed(parsed, campaignState) {
  * @param {string|null} [options.actorId] — the PC the narration was for (the
  *   roller): an auto-created connection's bond Item goes to them, and the
  *   draft card carries it so Confirm does too (issue #321 U23).
+ * @param {string|null} [options.narrationId] — the narration whose capture
+ *   this is: stamped on the faction it surfaces to the World Journal, so an
+ *   X-Card on the narration deletes that page (issue #335 Y02; issue #329
+ *   X01 — a capture writer takes the id from its caller).
  * @returns {Promise<{ created: Array, queued: Array }>}
  */
 export async function routeEntityDrafts(entities, campaignState, options = {}) {
+  const narrationId = typeof options.narrationId === "string" && options.narrationId ? options.narrationId : null;
   const created = [];
   const queued  = [];
   const pendingNormalized = new Set(
@@ -594,7 +599,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
         && !getFactionEntry(entity.name)) {
       await recordFactionIntelligence(
         entity.name,
-        { summary: entity.description ?? "", isNew: true },
+        { summary: entity.description ?? "", isNew: true, narrationId },
         campaignState,
       ).catch(err =>
         console.warn(`${MODULE_ID} | routeEntityDrafts: faction WJ surface failed:`, err?.message ?? err));
@@ -634,9 +639,15 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
  * genuinely-named entity is ignored, so two distinct characters are never
  * auto-merged on a model hiccup. Fail-open per rename; never throws.
  *
+ * A rename a narration's capture made carries that narration's id on the
+ * card (`renamedBy: { narrationId, from, to }`), so an X-Card on the
+ * narration puts the placeholder name back (retractNarrationCapture — issue
+ * #335 Y02): the name was the removed prose's.
+ *
  * @param {Array<{from:string,to:string}>} renames
  * @param {Object} campaignState
- * @param {Object} [deps]                  — injection seam for tests
+ * @param {Object} [deps]                  — the narration's id, and the injection seam for tests
+ * @param {string|null} [deps.narrationId] — the narration whose capture revealed the names
  * @param {boolean}  [deps.isGM]
  * @param {Function} [deps.getConn]        (id) => record
  * @param {Function} [deps.updateConn]     (id, updates) => Promise
@@ -652,6 +663,7 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
   const getConn      = deps.getConn      ?? getConnection;
   const updateConn   = deps.updateConn   ?? updateConnection;
   const entityExists = deps.entityExists ?? entityExistsAnyType;
+  const narrationId  = typeof deps.narrationId === "string" && deps.narrationId ? deps.narrationId : null;
   const applied      = [];
 
   for (const { from, to } of renames) {
@@ -667,7 +679,10 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     if (!target) continue;
 
     try {
-      await updateConn(target.id, { name: to });
+      await updateConn(target.id, {
+        name: to,
+        ...(narrationId ? { renamedBy: { narrationId, from: target.rec.name, to } } : {}),
+      });
       applied.push({ from: target.rec.name, to, id: target.id });
     } catch (err) {
       console.warn(`${MODULE_ID} | applyEntityRenames: ${from} → ${to} failed:`, err?.message ?? err);

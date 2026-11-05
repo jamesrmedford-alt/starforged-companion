@@ -168,10 +168,13 @@ naming the removed destination (issue #325 W07). So is what the narration's
 (`runPostNarrationPasses`, `schedulePacedDetection` /
 `schedulePacedTierUpdate`, `scheduleNarrationCapture` /
 `runNarrationTierUpdate`, the inciting capture) hands the narration's id to
-`routeWorldJournalResults` and the tier pass, which stamp it on each Lore /
-Threat / Faction / Location entry (an entry it rewrote keeps the versions
-before as `previous`, newest first, up to three), Session Log beat and tier
-detail; the X-Card's finish (`retractNarrationCapture`, `retractions.js` →
+`routeWorldJournalResults`, the tier pass, `routeEntityDrafts` (its faction
+auto-surface) and `applyEntityRenames` (issue #335 Y02), which stamp it on
+each Lore / Threat / Faction / Location entry (an entry it rewrote keeps the
+versions before as `previous`, newest first, up to three), Session Log beat,
+tier detail and placeholder rename (`renamedBy` on the card — the X-Card puts
+the placeholder name back unless the card was renamed since); the X-Card's
+finish (`retractNarrationCapture`, `retractions.js` →
 `undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
 threat, faction or place page, takes the beats off the Session Log page and
