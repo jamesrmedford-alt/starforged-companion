@@ -562,7 +562,7 @@ export async function promoteLoreToConfirmed(title, _campaignState, { narrationI
  * @param {Function} matches — (loreEntry) => boolean
  * @returns {Promise<number>} entries retracted
  */
-export async function retractSessionLore(sessionId, matches) {
+export async function retractSessionLore(sessionId, matches, { truthId = null } = {}) {
   if (!sessionId || typeof matches !== "function") return 0;
   const journal = findJournal(JOURNAL_NAMES.lore);
   let count = 0;
@@ -577,6 +577,45 @@ export async function retractSessionLore(sessionId, matches) {
       retracted:   true,
       retractedAt: now,
       updatedAt:   now,
+      // The strike that retracted it, and whether it stood confirmed: a
+      // `!truth set` that lifts that strike restores it (restoreStruckLore,
+      // issue #331 X31). Always written — Foundry merges flags key by key.
+      retractedByTruth:   typeof truthId === "string" && truthId ? truthId : null,
+      confirmedBeforeStrike: entry.confirmed === true,
+    });
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * Restore the lore entries a strike retracted — retractSessionLore's inverse,
+ * for a strike the GM lifted by setting the fact again (`!truth set`, issue
+ * #326 W60). W60 lifted the strike in the ledger only: the archived truth and
+ * its lore copies stayed retracted, so when the re-set truth was archived at
+ * scene end onto the same page it kept `retracted: true` — the fact the GM
+ * ruled canon reached no store the narrator reads (issue #331 X31). Only the
+ * entries that strike retracted are restored (`retractedByTruth`), each with
+ * the confirmation it had — never a page an X-Card retracted.
+ *
+ * @param {string} truthId — the lifted strike's truth id
+ * @returns {Promise<number>} entries restored
+ */
+export async function restoreStruckLore(truthId) {
+  if (typeof truthId !== "string" || !truthId) return 0;
+  const journal = findJournal(JOURNAL_NAMES.lore);
+  let count = 0;
+  for (const page of journal?.pages?.contents ?? []) {
+    const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
+    if (!entry?.retracted || entry.retractedByTruth !== truthId) continue;
+    await writeEntryPage(page, FLAG_KEYS.lore, {
+      ...entry,
+      confirmed:          entry.confirmedBeforeStrike === true,
+      retracted:          false,
+      retractedAt:        null,
+      retractedByTruth:   null,
+      confirmedBeforeStrike: null,
+      updatedAt:          new Date().toISOString(),
     });
     count += 1;
   }
@@ -857,8 +896,10 @@ export async function undoNarrationEntries(narrationIds) {
           out.restored += 1;
         } else if (category === "lore") {
           const now = new Date().toISOString();
+          // The X-Card's retraction, not a strike's: a lifted strike never
+          // restores it (restoreStruckLore — issue #331 X31).
           await writeEntryPage(page, flagKey, {
-            ...entry, confirmed: false, retracted: true, retractedAt: now, updatedAt: now,
+            ...entry, confirmed: false, retracted: true, retractedAt: now, updatedAt: now, retractedByTruth: null,
           });
           out.retracted += 1;
         } else {

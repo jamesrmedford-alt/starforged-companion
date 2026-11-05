@@ -124,7 +124,8 @@ export async function propagateRetraction(truth, campaignState) {
   if (sessionId) {
     try {
       const label = subjectLabel(truth.subject);
-      out.lore = await retractSessionLore(sessionId, (entry) => loreStatesStrike(entry, truth.subject, label, fact));
+      out.lore = await retractSessionLore(sessionId, (entry) => loreStatesStrike(entry, truth.subject, label, fact),
+        { truthId: typeof truth.id === "string" ? truth.id : null });
     } catch (err) {
       console.warn(`${MODULE_ID} | retraction: lore propagation failed:`, err?.message ?? err);
     }

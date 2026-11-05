@@ -40,6 +40,7 @@ import {
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { propagateRetraction, markSummaryForRegen } from "./retractions.js";
+import { restoreStruckLore } from "../world/worldJournal.js";
 import { persistSceneLedgerFields, startScene } from "./sceneLifecycle.js";
 
 const MODULE_ID = "starforged-companion";
@@ -232,6 +233,13 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
       const struck  = findBareStrike(campaignState.sceneTruths, subject, String(parsed.fact ?? "").trim());
       const truth   = setTruth(subject, parsed.fact, campaignState, permCtx);
       if (truth) changed = "sceneTruths";
+      // The set lifts the strike (W60) — and the lore copies the strike
+      // retracted come back with it, so the fact the GM ruled canon is
+      // archived as canon (issue #331 X31).
+      if (truth && struck?.id) {
+        await restoreStruckLore(struck.id).catch(err =>
+          console.warn(`${MODULE_ID} | !truth set: restoring the struck lore failed:`, err?.message ?? err));
+      }
       // The id `!truth strike` takes is shown (issue #326 W67).
       resultLine = truth
         ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em> <code>${escapeHtml(String(truth.id).slice(0, 8))}</code>.${struck ? " The strike on it is lifted." : ""}`
