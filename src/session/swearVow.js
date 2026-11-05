@@ -23,11 +23,11 @@
  */
 
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor, setVowLinkedConnection } from "../character/actorBridge.js";
+import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor, setVowLinkedConnection, isVowCopy } from "../character/actorBridge.js";
 import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter, promoteNewEntityLedgerSubjects }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
-import { relayCardAction } from "../moves/cardActions.js";
+import { relayCardAction, applyCardRollerFollowup } from "../moves/cardActions.js";
 import { progressPerMilestoneLine, legacyRewardLine, proposeRewards, buildRewardChoiceHtml }
   from "../moves/rewards.js";
 import { rankName } from "../schemas.js";
@@ -146,7 +146,7 @@ export function buildSwearMovePost(message) {
  * Never throws — failures surface as notifications + console warnings.
  *
  * @param {ChatMessage} message
- * @returns {Promise<null>}
+ * @returns {Promise<ChatMessage|null>} the forced post, or null when none was made
  */
 export async function executeSwearVow(message) {
   const post = buildSwearMovePost(message);
@@ -155,7 +155,7 @@ export async function executeSwearVow(message) {
     return null;
   }
   try {
-    await globalThis.ChatMessage?.create?.(post);
+    return (await globalThis.ChatMessage?.create?.(post)) ?? null;
   } catch (err) {
     console.warn(`${MODULE_ID} | swearVow: forced swear-move post failed:`, err?.message ?? err);
     globalThis.ui?.notifications?.error(
@@ -380,14 +380,65 @@ export function registerSwearVowHandler() {
     fresh.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      fresh.disabled = true;   // stays disabled — the roll is firing; re-enable only if the post itself fails
+      // Stays disabled — the roll is firing; re-enabled if the post itself
+      // fails, or if the session gate drops it (rearmSwearOnGateRefusal). The
+      // wait is set before the post: on the canonical GM the gate's notice
+      // can come back before the post's own create resolves.
+      fresh.disabled = true;
+      const cardId = message?.id ?? null;
+      if (cardId) awaitSessionGate(cardId, () => { fresh.disabled = false; });
       executeSwearVow(message)
+        .then(posted => {
+          if (posted) return;
+          if (cardId) _swearAwaitingGate.delete(cardId);
+          fresh.disabled = false;
+        })
         .catch(err => {
           console.error(`${MODULE_ID} | swearVow: execute failed:`, err);
           fresh.disabled = false;
         });
     });
   });
+  Hooks.on("createChatMessage", rearmSwearOnGateRefusal);
+}
+
+// Inciting cards whose ⚔ this client pressed → re-arm that press's button.
+// The card is not claimed: before Begin a Session the gate drops the forced
+// post and whispers "press the button again" (issue #329 X14), and the
+// disabled button could not be pressed again here until a reload (issue #337
+// Y36). Bounded: the oldest is forgotten (a press that rolled is never
+// refused, and its card is rewritten sworn).
+const _swearAwaitingGate = new Map();
+const SWEAR_AWAITING_GATE_MAX = 20;
+
+function awaitSessionGate(cardId, rearm) {
+  _swearAwaitingGate.delete(cardId);
+  _swearAwaitingGate.set(cardId, rearm);
+  while (_swearAwaitingGate.size > SWEAR_AWAITING_GATE_MAX) {
+    _swearAwaitingGate.delete(_swearAwaitingGate.keys().next().value);
+  }
+}
+
+/**
+ * createChatMessage: the session gate's notice naming the forced ⚔ post it
+ * dropped (`gatedMessageId`) re-arms the button that made it — only on the
+ * post's author's client: the button disabled itself there alone.
+ *
+ * @param {ChatMessage} notice
+ */
+function rearmSwearOnGateRefusal(notice) {
+  const f = notice?.flags?.[MODULE_ID];
+  const postId = f?.sessionGateNotice ? f.gatedMessageId : null;
+  if (!postId || !_swearAwaitingGate.size) return;
+  const post = globalThis.game?.messages?.get?.(postId) ?? null;
+  const cardId = post?.flags?.[MODULE_ID]?.incitingSwearMessageId ?? null;
+  if (!cardId || !_swearAwaitingGate.has(cardId)) return;
+  const postAuthorId = post.author?.id ?? post._source?.author ?? null;
+  if (postAuthorId !== game.user?.id) return;
+  const rearm = _swearAwaitingGate.get(cardId);
+  _swearAwaitingGate.delete(cardId);
+  console.debug?.(`${MODULE_ID} | swearVow: no session had begun — the ⚔ press was not rolled; its button is live again.`);
+  rearm();
 }
 
 // Quotes too: the card's attributes take these strings — a connection named
@@ -548,8 +599,19 @@ export async function applyRewardPickFromRelay(payload = {}, _ctx = {}) {
     // The vow must hold the reward before the card says so: a refused write
     // left no reward on the vow — the fulfilment granted none — while the
     // card said "Reward set" and stayed claimed (issue #329 X07). The claim is
-    // released so the pick can be made again, and the presser told.
-    if (!(await setSharedVowReward(f.vowId, { status: "promised", ...reward }))) {
+    // released so the pick can be made again, and the presser told. A vow no
+    // character holds (its Item deleted — one whose vowId flag never landed
+    // is found by its Item id, VOW-ID-NEVER-LANDED) can hold no pick: the
+    // card is closed and the presser told why — "Choose it again" asked for a
+    // retry that could never land (issue #336 Y27).
+    const saved = await setSharedVowReward(f.vowId, { status: "promised", ...reward });
+    if (!saved.ok && saved.reason === "no-copy") {
+      await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: "no-vow" })
+        .catch(err => console.warn(`${MODULE_ID} | swearVow: closing reward card ${messageId} failed:`, err?.message ?? err));
+      await postVowWriteRefusedNotice(_ctx, "No character holds this vow any more — nothing to promise; the card is closed.");
+      return { applied: false, reason: "no-copy" };
+    }
+    if (!saved.ok) {
       await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: null })
         .catch(err => console.warn(`${MODULE_ID} | swearVow: releasing reward card ${messageId} failed:`, err?.message ?? err));
       await postVowWriteRefusedNotice(_ctx, "The reward could not be saved on the vow — nothing was promised. Choose it again.");
@@ -574,24 +636,26 @@ const _rewardPicksInFlight = new Set();
  *
  * @param {{ requesterId?: string|null }} ctx — the relay context
  * @param {string} text
+ * @param {{ title?: string }} [opts] — the heading ("Not saved"; a refused
+ *   swear's "Not sworn")
  */
-async function postVowWriteRefusedNotice(ctx, text) {
+async function postVowWriteRefusedNotice(ctx, text, { title = "Not saved" } = {}) {
   const gmIds = Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM).map(u => u.id);
   const whisper = [...new Set([ctx?.requesterId ?? globalThis.game?.user?.id ?? null, ...gmIds].filter(Boolean))];
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Not saved</strong><p>${escapeHtml(text)}</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p></div>`,
     whisper,
     flags: { [MODULE_ID]: { vowWriteRefusedNotice: true } },
   }).catch(err => console.warn(`${MODULE_ID} | swearVow: the not-saved notice failed:`, err?.message ?? err));
 }
 
-/** Every copy's reward status for a vow, by its vowId (copies on every PC). */
+/** Every copy's reward status for a vow, by its vowId (copies on every PC — actorBridge isVowCopy). */
 function vowRewardStatuses(vowId) {
   const out = [];
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
-      if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId) {
+      if (isVowCopy(item, vowId)) {
         const status = item.flags[MODULE_ID].reward?.status;
         if (typeof status === "string") out.push(status);
       }
@@ -808,12 +872,14 @@ export function registerPlayerVowHook() {
 }
 
 /**
- * Wire the ⚔ Swear it (roll) button on the player-vow setup card: posts a forced
- * Swear an Iron Vow move for the vow (the pipeline rolls +heart → momentum /
- * complication; the vow already exists), spoken as the vow's holder — the
- * card's `actorId`, or the PC holding its `vowId` on an older card — so a GM's
- * or a crewmate's press swears it for them, not the clicker's or the first PC
- * (issue #329 X05). Register once.
+ * Wire the ⚔ Swear it (roll) button on the player-vow setup card. A click
+ * relays to the canonical GM ("vow.swearRoll" → applyPlayerVowSwearFromRelay),
+ * which claims the card once (`swearRolled`) and posts the forced Swear an
+ * Iron Vow for the vow (the pipeline rolls +heart → momentum / complication;
+ * the vow already exists), spoken as the vow's holder (issue #329 X05). Only
+ * the holder's player or a GM may press it (issue #338 D1). A card already
+ * pressed renders the button disabled; a click that is not delivered re-arms
+ * it. Register once.
  */
 export function registerPlayerVowSwearHook() {
   if (registerPlayerVowSwearHook._installed) return;
@@ -823,21 +889,71 @@ export function registerPlayerVowSwearHook() {
     if (!f?.playerVowCard) return;
     const btn = root.querySelector('[data-action="sf-player-vow-swear"]');
     if (!btn) return;
+    // Sworn, or closed because no character holds the vow (SWEAR-ROLL-VOW-GONE).
+    const taken = () => !!(liveFlags(message)?.swearRolled || liveFlags(message)?.vowGone);
+    if (taken()) {
+      btn.disabled = true;
+      return;
+    }
     const fresh = btn.cloneNode(true);
     btn.replaceWith(fresh);
     fresh.addEventListener("click", async (e) => {
       e.preventDefault(); e.stopPropagation();
-      fresh.disabled = true;   // stays disabled — the roll is firing; re-enable only on a post failure
-      const post = buildSwearMovePostForName(f.vowName, liveFlags(message)?.linkedConnection ?? null,
-        (typeof f.actorId === "string" && f.actorId) ? f.actorId : vowHolderActorId(f.vowId));
-      if (!post) { fresh.disabled = false; return; }
-      try {
-        await globalThis.ChatMessage?.create?.(post);
-      } catch (err) {
-        console.warn(`${MODULE_ID} | playerVow: swear post failed:`, err?.message ?? err);
-        fresh.disabled = false;
-      }
+      fresh.disabled = true;
+      await relayCardAction({
+        kind:       "vow.swearRoll",
+        payload:    { messageId: message?.id ?? null },
+        isResolved: taken,
+        restore:    () => { fresh.disabled = false; },
+      });
     });
+  });
+}
+
+/**
+ * gmRelay handler for "vow.swearRoll" — runs on the canonical GM (issue #338
+ * D1). The player-vow card's ⚔ Swear it (roll) posted the forced swear from
+ * the presser's client, spoken as the vow's holder with no check of who
+ * pressed: a crewmate swore another player's vow — their momentum, their
+ * oath scene — and each client's press rolled it again. The
+ * fulfilVow.attempt shape (cardActions.applyCardRollerFollowup): the holder
+ * — the card's `actorId`, or the PC holding its `vowId` on an older card —
+ * or a GM may press it, once per card (claim `swearRolled`); the swear speaks
+ * as the holder and carries the vow's 🤝 link (`linkedConnection`). A card
+ * that names neither its holder nor its vow is a GM's to press.
+ *
+ * A vow no character holds any more — its Item deleted — is sworn by nobody:
+ * the swear still rolled, its momentum and an oath scene for a vow that no
+ * longer existed (known-issues SWEAR-ROLL-VOW-GONE). Refused, the card is
+ * closed (`vowGone`, as its 🤝 Link and reward pick close it — issue #336
+ * Y27) and the presser and the GMs are told why.
+ *
+ * @param {{ messageId?: string }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyPlayerVowSwearFromRelay(payload = {}, ctx = {}) {
+  const messageId = typeof payload?.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  if (f.playerVowCard === true && !f.swearRolled && (f.vowGone || (f.vowId && !vowHolderActorId(f.vowId)))) {
+    console.warn(`${MODULE_ID} | swear it: no character holds the vow on card ${messageId} — nothing sworn.`);
+    if (!f.vowGone) {
+      await message.update({ [`flags.${MODULE_ID}.vowGone`]: true })
+        .catch(err => console.warn(`${MODULE_ID} | swear it: closing card ${messageId} failed:`, err?.message ?? err));
+    }
+    await postVowWriteRefusedNotice(ctx, "No character holds this vow any more — nothing to swear; the card is closed.",
+      { title: "Not sworn" });
+    return { posted: false, reason: "no-copy" };
+  }
+  return applyCardRollerFollowup({ messageId }, ctx, {
+    label: "swear it", claim: "swearRolled",
+    isCard: (f) => f.playerVowCard === true,
+    roller: (f) => (typeof f.actorId === "string" && f.actorId) ? f.actorId : vowHolderActorId(f.vowId),
+    build:  (f, actor) => {
+      const post = buildSwearMovePostForName(f.vowName, f.linkedConnection ?? null, actor?.id ?? null);
+      return post ? { content: post.content, flags: post.flags[MODULE_ID] } : null;
+    },
   });
 }
 
@@ -856,7 +972,9 @@ export function registerPlayerVowLinkHook() {
     if (!f?.playerVowCard) return;
     const btn = root.querySelector('[data-action="sf-player-vow-link"]');
     if (!btn) return;
-    if (liveFlags(message)?.linkedConnection) {
+    // Linked, or closed because no character holds the vow (issue #336 Y27).
+    const taken = () => !!(liveFlags(message)?.linkedConnection || liveFlags(message)?.vowGone);
+    if (taken()) {
       btn.disabled = true;
       return;
     }
@@ -870,7 +988,7 @@ export function registerPlayerVowLinkHook() {
       await relayCardAction({
         kind:       "vow.link",
         payload:    { messageId: message?.id ?? null, connectionName },
-        isResolved: () => !!liveFlags(message)?.linkedConnection,
+        isResolved: taken,
         restore:    () => { fresh.disabled = false; },
       });
     });
@@ -895,6 +1013,7 @@ export async function applyPlayerVowLinkFromRelay(payload = {}, _ctx = {}) {
   const f = message.flags?.[MODULE_ID] ?? {};
   if (!f.playerVowCard || !f.vowId) return { applied: false, reason: "not-a-vow-card" };
   if (f.linkedConnection) return { applied: false, reason: "already-linked" };
+  if (f.vowGone) return { applied: false, reason: "no-copy" };
   const wanted = typeof payload.connectionName === "string" ? payload.connectionName.trim() : "";
   let connectionName = null;
   try {
@@ -912,8 +1031,18 @@ export async function applyPlayerVowLinkFromRelay(payload = {}, _ctx = {}) {
     return { applied: false, reason: "claim-refused" };
   }
   // The vow must hold the link before the card says so (issue #329 X07): a
-  // refused write is released for another press, and the presser told.
-  if (!(await setVowLinkedConnection(f.vowId, connectionName))) {
+  // refused write is released for another press, and the presser told. A vow
+  // no character holds can take no link: the Link is closed (`vowGone`, the
+  // claim on a name the vow does not carry released) and the presser told
+  // why (issue #336 Y27).
+  const linked = await setVowLinkedConnection(f.vowId, connectionName);
+  if (!linked.ok && linked.reason === "no-copy") {
+    await message.update({ [`flags.${MODULE_ID}.linkedConnection`]: null, [`flags.${MODULE_ID}.vowGone`]: true })
+      .catch(err => console.warn(`${MODULE_ID} | playerVow: closing card ${messageId} failed:`, err?.message ?? err));
+    await postVowWriteRefusedNotice(_ctx, "No character holds this vow any more — nothing to link; the card is closed.");
+    return { applied: false, reason: "no-copy" };
+  }
+  if (!linked.ok) {
     await message.update({ [`flags.${MODULE_ID}.linkedConnection`]: null })
       .catch(err => console.warn(`${MODULE_ID} | playerVow: releasing card ${messageId} failed:`, err?.message ?? err));
     await postVowWriteRefusedNotice(_ctx, `The link to ${connectionName} could not be saved on the vow — it is not linked. Link it again.`);

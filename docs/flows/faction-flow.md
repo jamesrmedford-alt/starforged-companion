@@ -17,24 +17,53 @@ identified issues") — §3 is the resolved ledger, §4 the dispositions.
 allied | unknown` (`FACTION_ATTITUDES`). Written by
 `recordFactionIntelligence` — from the detection pass (new narrator-named
 factions are WJ-surfaced immediately, gated on `entityExistsForName`) and
-from `attitudeShift` state transitions. Read by `getFactionLandscape` (up to
-3, most recently updated) and `!journal faction` commands.
+from `attitudeShift` state transitions. Every detection write — the
+auto-surface in `routeEntityDrafts` included, since issue #335 Y02 — carries
+the narration's `narrationId`, so an X-Card on that narration deletes a page
+it made and restores one it rewrote (`undoNarrationEntries`, issue #329 X01);
+the auto-surface was unstamped and the removed faction stayed in [4e]. Read
+by `getFactionLandscape` (up to 3, most recently updated) and `!journal
+faction` commands.
+
+**Identity by name** (issue #336 Y31): one faction is one page and one
+stance whatever article, case or spacing names it. Every faction lookup by
+name keys on `factionNameKey` (`faction.js` — lowercased, whitespace
+collapsed, a leading "the" / "a" / "an" dropped): the record
+(`findFactionByName`, an exact match first), the Factions page
+(`recordFactionIntelligence` updates the page matching by key under its own
+name, and a new page takes the matching record's name; `getFactionEntry`),
+the entity gates (`entityExistsForName`'s faction branch,
+`entityExistsAnyType`) and the landscape's dedup (`mergeFactionLandscape`).
+The detection prompt names factions with the article ("the Compact"), so a
+shift for "The Iron Syndicate" used to make a second page and never reach
+the "Iron Syndicate" record — one faction, two stances in [4e]. The other
+World Journal categories keep exact titles.
 
 **Faction entity records** (`src/entities/faction.js`): journal-entry-backed
 records with the full Starforged shape — type/subtype, influence,
 dominion/leadership, `projects[]`, `rumors[]`, quirk, and
 `relationship ∈ antagonistic | apathetic | distrustful | does_business |
-open_alliance | temporary_alliance | warring | unknown`. Created by the
-sector generator (pre-populated) and by draft-card confirmation, which since
+open_alliance | temporary_alliance | warring | unknown`. Created only by
+draft-card confirmation (the Sector Creator rolls a faction's name onto the
+sector — `sector.faction` — and makes no record), which since
 2026-07 reconciles any WJ intelligence and rolls the faction oracles
 (`seedFactionRecord`), then mirrors the faction into the World Journal with
 no attitude — the entry keeps the one the narration established (a new
 entry starts `unknown`) — backlinked by the record's host JournalEntry id
 (`findFactionByName(…).id`, as the reconcile writes it). The mirror passed
 `attitude: "unknown"` and the record's `_id`, resetting a hostile faction to
-unknown and re-pointing the backlink (issue #321 U28). Read by the relevance resolver → ENTITIES IN SCENE cards
+unknown and re-pointing the backlink (issue #321 U28). A creation whose
+registration the world refused leaves its journal unlisted; the next creation
+of that faction — matched by `factionNameKey` — adopts it instead of making a
+second (`registry.adoptUnlistedEntityJournal`, a creature's creator likewise),
+and the canonical GM's world load lists a faction or creature journal its list
+misses (`migrator.registerUnlistedEntityActors` — known-issues
+JOURNAL-ORPHAN-ON-REFUSAL: a retried Confirm made a second journal, the first
+left unlisted and never seeded). Read by the relevance resolver → ENTITIES IN SCENE cards
 (`formatEntityCard` has a faction field table including `relationship`) and
-the entity panel (which can edit `relationship` manually).
+the entity panel (which shows `relationship` as a label and edits no record
+field — the GM's manual stance correction is `!journal faction "Name"
+<attitude> — summary`).
 
 **The half-store:** `sector.faction` — a bare control-faction name string on
 the active sector, rendered in the ACTIVE SECTOR block. Static, name-only.
@@ -89,5 +118,9 @@ X33); the new-faction WJ loop
 correctly skips names that already have entity records; matched faction
 entity cards render the full record including stance and latest project;
 the generative tier accrues narrative development for matched factions;
-`!journal faction` gives the GM a manual attitude-correction path; and the
-entity panel can edit the record's stance directly.
+and `!journal faction "Name" <attitude> — summary` (hostile / neutral /
+allied; `unknown` leaves the stance alone) is the GM's manual stance
+correction — `recordFactionIntelligence` writes the World Journal attitude
+and maps it onto the record's `relationship` (`applyAttitudeToFactionRecord`).
+The entity panel shows the stance but edits no record field: its only edits
+are lock / pin / promote / remove (`ENTITY_EDIT_OPS`).

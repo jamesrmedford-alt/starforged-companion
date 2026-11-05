@@ -284,8 +284,13 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   const tension = advanced.filter(c => c.type === "tension" && c._id).map(c => ({ _id: c._id, name: c.name ?? null }));
   const entries = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId)
     .map(c => ({ actorId: c.actorId, itemId: c.itemId, name: c.name ?? null }));
+  // The clocks the price triggered whose rewind lands: out of their
+  // triggered state, so the trigger their vignette narrates did not happen
+  // (issue #338 D8).
+  const untriggered = [];
   if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension }, failures)) {
     for (const c of tension) reverted.push(`${c.name} clock rewound`);
+    untriggered.push(...advanced.filter(c => c.type === "tension" && c._id && c.triggered));
   }
   if (entries.length) {
     // The rewinds that landed are reported; the refused ones are on the step
@@ -294,7 +299,12 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     const ok = await applyUpgradeStep({ effect: "vowClocks", entries }, failures);
     const owed = new Set(ok ? [] : (failures[at]?.entries ?? entries).map(e => e.itemId));
     for (const v of entries) if (!owed.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
+    // A shared vow's clock is rewound once every copy of it is.
+    const vows = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId);
+    untriggered.push(...vows.filter(c => c.triggered
+      && !vows.some(o => owed.has(o.itemId) && (o.vowId ?? o.itemId) === (c.vowId ?? c.itemId))));
   }
+  await supersedeTriggerVignettes(untriggered, kind);
 
   // 2. Refund the route's PC-meter losses — each receipt is what landed (the
   // move that ran, a meter's before and after), never the table's annotation
@@ -324,6 +334,131 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     flags:   { [MODULE_ID]: { clockCard: true, [card.flag]: true } },
   }).catch(err => console.warn(`${MODULE_ID} | ${kind}: reversal card failed:`, err));
   return reverted;
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// What the superseded outcome narrated (issue #338 D8)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Take what superseded narrations wrote out of the scene ledgers, by their
+ * narration ids — the X-Card's by-id retraction (ledgers.js
+ * retractNarrations), its truths retracted as superseded
+ * (SUPERSEDED_RETRACTED_BY: rendered nowhere, never migrated, never named
+ * under CORRECTED, and no bar to a later narration stating the same fact),
+ * the state values they set giving way to the ones they superseded, a frame
+ * they wrote cleared. An upgrade's two: the move narration it supersedes
+ * (burnMomentum.js supersedeOriginalNarration) and the trigger vignette of a
+ * clock it rewinds (supersedeTriggerVignettes) — both stayed binding beside
+ * the re-narration (issue #338 D8). A world write: on the canonical GM, onto
+ * a copy of the stored campaignState merged onto the latest store
+ * (persistSceneLedgerFields); and on the caller's working copy too
+ * (`campaignState`), which the re-narration applies its sidecar to — its
+ * ledgers predate this. Never throws.
+ *
+ * @param {string[]} narrationIds
+ * @param {{ campaignState?: Object|null, label?: string }} [opts]
+ * @returns {Promise<boolean>} whether the store was written
+ */
+export async function retractSupersededNarrations(narrationIds, { campaignState = null, label = "upgrade" } = {}) {
+  const ids = [...new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === "string" && id))];
+  if (!ids.length) return false;
+  try {
+    const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
+    if (!isCanonicalGM()) return false;
+    const { retractNarrations, SUPERSEDED_RETRACTED_BY } = await import("../factContinuity/ledgers.js");
+    const { persistSceneLedgerFields } = await import("../factContinuity/sceneLifecycle.js");
+    if (campaignState && typeof campaignState === "object") retractNarrations(campaignState, ids, { by: SUPERSEDED_RETRACTED_BY });
+    const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState");
+    if (!stored || typeof stored !== "object" || !ledgersHold(stored, new Set(ids))) return false;
+    // A copy: retractNarrations replaces the ledger objects on it and never
+    // changes the stored ones (rules/foundry-api.md — the cached setting).
+    const copy = { ...stored };
+    retractNarrations(copy, ids, { by: SUPERSEDED_RETRACTED_BY });
+    return await persistSceneLedgerFields(copy, ["sceneTruths", "sceneState", "sceneFrame"], `${label}: superseded narration`);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${label}: the superseded narration's ledger entries could not be retracted:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/** Whether the scene ledgers hold anything the given narrations wrote and that still stands. */
+function ledgersHold(cs, ids) {
+  const theirs = (e) => !!e && typeof e === "object" && ids.has(e.narrationId);
+  if ((Array.isArray(cs.sceneTruths) ? cs.sceneTruths : []).some(t => theirs(t) && !t.retracted)) return true;
+  if (theirs(cs.sceneFrame)) return true;
+  for (const list of Object.values(cs.sceneState?.bySubject ?? {})) {
+    for (const entry of Array.isArray(list) ? list : []) {
+      for (let cur = entry; cur && typeof cur === "object"; cur = cur.previous ?? null) if (theirs(cur)) return true;
+    }
+  }
+  return false;
+}
+
+const VIGNETTE_SUPERSEDED_NOTES = {
+  burn:    "Superseded — momentum was burned and the clock rewound: this has not happened.",
+  improve: "Superseded — the result was improved and the clock rewound: this has not happened.",
+};
+
+/** A clock vignette card's prose struck through, with a note saying why (idempotent). */
+function supersededVignetteContent(content, kind) {
+  const html = String(content ?? "");
+  if (html.includes("sf-narration-superseded")) return html;
+  const note = `<div class="sf-narration-superseded-note" style="opacity:0.7;font-style:italic;">${VIGNETTE_SUPERSEDED_NOTES[kind] ?? VIGNETTE_SUPERSEDED_NOTES.burn}</div>`;
+  const struck = html.replace(/<em>([\s\S]*?)<\/em>/,
+    (_full, inner) => `<em class="sf-narration-superseded" style="opacity:0.55;text-decoration:line-through;"><s>${inner}</s></em>`);
+  return /<\/div>\s*$/.test(struck) ? struck.replace(/<\/div>\s*$/, `${note}</div>`) : struck + note;
+}
+
+/**
+ * A clock the reversal rewinds out of its triggered state: the trigger its
+ * vignette narrated did not happen. The vignette — the newest live trigger
+ * vignette of this session naming the clock (`clockId`, payThePriceClocks.js
+ * vignetteClockId; an older one, from before the clock was reset, happened)
+ * — is superseded as the move narration is: struck, and flagged
+ * `burnSuperseded` so the recent-narration ring, the rolling summary and the
+ * session recap leave it out; and what its sidecar wrote is retracted by its
+ * narration id (retractSupersededNarrations). It stood as live fiction with
+ * binding truths, and the clock's next trigger fired a second vignette for
+ * the same clock (issue #338 D8). Canonical GM. Never throws.
+ *
+ * @param {Array<Object>} clocks — advanced-clock entries whose trigger the reversal undid
+ * @param {"burn"|"improve"} kind
+ */
+async function supersedeTriggerVignettes(clocks, kind) {
+  if (!clocks?.length) return;
+  try {
+    const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
+    if (!isCanonicalGM()) return;
+    const { vignetteClockId, triggerVignetteInFlight } = await import("../clocks/payThePriceClocks.js");
+    const clockIds = new Set(clocks.map(vignetteClockId).filter(Boolean));
+    if (!clockIds.size) return;
+    const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
+    const newestFirst = [...allMessages()].reverse();
+    const narrationIds = [];
+    for (const clockId of clockIds) {
+      // Its vignette is still being written: it is narrated only while the
+      // clock is full, so it drops itself — and the newest card of the clock
+      // is an earlier trigger's, which happened (TRIGGER-VIGNETTE-LATE-POST).
+      if (triggerVignetteInFlight(clockId)) continue;
+      const card = newestFirst.find(m => {
+        const f = m?.flags?.[MODULE_ID];
+        return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId
+          && (f.sessionId ?? null) === sessionId && f.burnSuperseded !== true && f.xCarded !== true;
+      });
+      if (!card) continue;
+      await card.update({
+        [`flags.${MODULE_ID}.burnSuperseded`]: true,
+        content: supersededVignetteContent(card.content, kind),
+      }).catch(err => console.warn(`${MODULE_ID} | ${kind}: the rewound clock's vignette ${card.id} could not be struck:`, err?.message ?? err));
+      const narrationId = card.flags?.[MODULE_ID]?.narrationId;
+      if (typeof narrationId === "string" && narrationId) narrationIds.push(narrationId);
+    }
+    await retractSupersededNarrations(narrationIds, { label: `${kind}: a rewound clock's vignette` });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${kind}: superseding a rewound clock's vignette failed:`, err?.message ?? err);
+  }
 }
 
 
@@ -377,6 +512,29 @@ export function consequenceChosen(resolutionId) {
 export function upgradeKindFor(resolutionId) {
   const f = moveCardFor(resolutionId)?.flags?.[MODULE_ID];
   return f?.burn?.consumed ? "burn" : f?.improve?.consumed ? "improve" : null;
+}
+
+/**
+ * Whether a resolution's move card still offers Burn Momentum or Improve
+ * Result: offered, neither used, not closed by a chosen consequence
+ * (`choiceMade`, consequenceChosen) or by its roller's later move
+ * (`laterMove`, laterMoveFollows — issue #326 D4). null while the move card
+ * is not posted: the pipeline pays a miss's Pay the Price before it posts
+ * the card. A follow-up that is the roller's next move — the resist roll a
+ * price's harm owes — says to take them first while this holds (issue #330
+ * D2's hint; issue #336 Y18).
+ *
+ * @param {string|null} resolutionId
+ * @returns {boolean|null}
+ */
+export function upgradeOpenFor(resolutionId) {
+  const card = moveCardFor(resolutionId);
+  const f    = card?.flags?.[MODULE_ID];
+  if (!f) return null;
+  if (f.burn?.consumed || f.improve?.consumed) return false;
+  const open = (state, offered) => !!(state?.[offered] && !state.choiceMade && !state.laterMove);
+  if (!open(f.burn, "canBurn") && !open(f.improve, "canImprove")) return false;
+  return !consequenceChosen(resolutionId) && !laterMoveFollows(card);
 }
 
 /**
@@ -487,14 +645,61 @@ export async function retireChoiceCard(message, kind) {
  * Retire every pending (unchosen) choice card of a resolution's own outcome —
  * after an upgrade's claim (reconcileChoices), or once a waypoint match's
  * alternative is taken (cardActions.js applyWaypointOraclePick, issue #316
- * T06).
+ * T06). `keepPriceCards`: an upgrade that keeps the price the original
+ * already rolled keeps the cards that price posted (`priceCard`) — see
+ * keepPriceCard.
  *
  * @param {string|null} resolutionId
  * @param {"burn"|"improve"|"discovery"|"chaos"} kind
+ * @param {{ keepPriceCards?: boolean }} [opts]
+ * @returns {Promise<number>} the price's cards kept
  */
-export async function retireOutcomeChoiceCards(resolutionId, kind) {
+export async function retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCards = false } = {}) {
+  let kept = 0;
   for (const card of outcomeChoiceCards(resolutionId)) {
-    if (!chosen(card.flags[MODULE_ID])) await retireChoiceCard(card, kind);
+    const f = card.flags[MODULE_ID];
+    if (chosen(f)) continue;
+    if (keepPriceCards && f.priceCard === true) {
+      if (await keepPriceCard(card)) kept += 1;
+      continue;
+    }
+    await retireChoiceCard(card, kind);
+  }
+  return kept;
+}
+
+/**
+ * Keep a card the move's kept Pay the Price posted — the resist roll its harm
+ * owes, a redirected loss's picker: the upgraded result pays that price too
+ * (issue #313), so the card is the upgraded outcome's now (`upgraded` — a
+ * pick on it is not refused as the superseded outcome's, and it closes
+ * nothing), and a "burn or improve first" hint it carried goes — the upgrade
+ * is spent. The burn used to retire it with the superseded outcome's cards,
+ * and the roll the kept harm owes was never made (issue #335 Y09). Best
+ * effort: a refused update leaves the card as it was.
+ *
+ * @param {ChatMessage} card
+ * @returns {Promise<boolean>} whether the card was kept
+ */
+async function keepPriceCard(card) {
+  const f = card.flags[MODULE_ID];
+  const update = { [`flags.${MODULE_ID}.upgraded`]: true };
+  if (f.sufferPrompt?.hint) {
+    update[`flags.${MODULE_ID}.sufferPrompt.hint`] = null;
+    try {
+      const { renderSufferCard } = await import("./sufferCard.js");
+      const actor = f.actorId ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
+      update.content = renderSufferCard({ ...f.sufferPrompt, hint: null }, actor, f.pickedIndices ?? [], undefined, f.notApplied ?? [], f.pickedSuffers ?? []);
+    } catch (err) {
+      console.debug(`${MODULE_ID} | kept price card ${card.id}: its hint stays —`, err?.message ?? err);
+    }
+  }
+  try {
+    await card.update(update);
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the kept price's card ${card.id} could not be kept for the upgraded result:`, err?.message ?? err);
+    return false;
   }
 }
 
@@ -502,7 +707,10 @@ export async function retireOutcomeChoiceCards(resolutionId, kind) {
  * After an upgrade's claim: retire the superseded outcome's pending choice
  * cards, then post the upgraded outcome's own choice, once — for the move's
  * vehicle, companion and fight (`targets`, as persistResolution gives its
- * card). A card that cannot be posted goes onto `failures`.
+ * card). A card that cannot be posted goes onto `failures`. `priceStands`:
+ * the upgraded outcome pays the price the original already rolled (a burn
+ * from a miss to a weak hit of Battle or Clash, issue #313) — its cards are
+ * kept, not retired (issue #335 Y09).
  *
  * @param {Object} args
  * @param {string|null} args.resolutionId
@@ -512,14 +720,18 @@ export async function retireOutcomeChoiceCards(resolutionId, kind) {
  * @param {string|null} args.moveId
  * @param {Object} [args.targets]
  * @param {Array<Object>} args.failures
+ * @param {boolean} [args.priceStands]
+ * @returns {Promise<{ kept: number }>} the kept price's cards still owed
  */
-export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt, moveId, targets = {}, failures }) {
-  await retireOutcomeChoiceCards(resolutionId, kind);
-  if (!sufferPrompt || !actor) return;
-  await applyUpgradeStep({
-    effect: "choiceCard", pcId: actor.id, sufferPrompt, moveId: moveId ?? null, resolutionId: resolutionId ?? null,
-    executorOpts: { isMiss: false, isMissWithMatch: false, ...(targets ?? {}) },
-  }, failures);
+export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt, moveId, targets = {}, failures, priceStands = false }) {
+  const kept = await retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCards: priceStands });
+  if (sufferPrompt && actor) {
+    await applyUpgradeStep({
+      effect: "choiceCard", pcId: actor.id, sufferPrompt, moveId: moveId ?? null, resolutionId: resolutionId ?? null,
+      executorOpts: { isMiss: false, isMissWithMatch: false, ...(targets ?? {}) },
+    }, failures);
+  }
+  return { kept };
 }
 
 
@@ -596,15 +808,18 @@ export async function renarrateUpgrade({ resolution, campaignState, speakerActor
 /**
  * The line an upgraded move card carries for the outcome's other effects:
  * what was applied beyond the meters, what was not, and a Pay the Price kept
- * because the upgraded outcome pays it too.
+ * because the upgraded outcome pays it too — with the roll or choice its
+ * card still asks for, when it kept one (`priceCardsKept`, issue #335 Y09).
  *
- * @param {{ applied?: string[], notApplied?: string[], priceStands?: boolean }} [effects]
+ * @param {{ applied?: string[], notApplied?: string[], priceStands?: boolean, priceCardsKept?: number }} [effects]
  * @returns {string} HTML; "" when there is nothing to say
  */
-export function effectsNoteHtml({ applied = [], notApplied = [], priceStands = false } = {}) {
+export function effectsNoteHtml({ applied = [], notApplied = [], priceStands = false, priceCardsKept = 0 } = {}) {
   const parts = [];
   if (applied.length)    parts.push(`Also applied: ${applied.map(escapeHtml).join("; ")}.`);
   if (notApplied.length) parts.push(`Not applied: ${notApplied.map(escapeHtml).join("; ")}.`);
-  if (priceStands)       parts.push("The Pay the Price already rolled stands — this result pays it too.");
+  if (priceStands)       parts.push(priceCardsKept > 0
+    ? "The Pay the Price already rolled stands — this result pays it too, and the roll or choice its card asks for is still owed."
+    : "The Pay the Price already rolled stands — this result pays it too.");
   return parts.length ? `<div class="sf-move-effect sf-upgrade-effects">${parts.join(" ")}</div>` : "";
 }

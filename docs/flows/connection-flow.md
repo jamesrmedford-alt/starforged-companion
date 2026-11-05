@@ -35,7 +35,12 @@ in `connectionIds` on the caller's copy and on the latest stored campaignState
 (`registerEntityIdInStore`) — never by writing the caller's copy whole, which
 reverted a relayed X-Card when the caller was the move pipeline (issue #300
 F14). Sector creation passes `persist: false` and registers everything in its
-final `storeSector` write.
+final `storeSector` write. A creation whose registration the world refused
+leaves its card unlisted; the next creation of that name (and sector) adopts
+it instead of making a second card (`registry.adoptUnlistedEntityActor` —
+every Actor-hosted creator does), and the canonical GM's world load lists any
+flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
+— issue #337 Y34: a retried draft Confirm made a second "Vex").
 
 - **`make_a_connection` move** — the resolver carries text-only outcomes; the
   actual creation rides the post-narration discovery pass (canonical GM, hits
@@ -50,7 +55,29 @@ final `storeSector` write.
   is confirmed as the roller's connection (`confirmNamedPendingConnection` →
   `confirmDraft` with the roller's `actorId`; issue #325 W23 — the card said
   "Connection made" and nothing was made, and a later Confirm bonded the old
-  narration's PC).
+  narration's PC). The auto-created record carries the narration's id
+  (`createdFromNarrationId`): an X-Card on that narration deletes the NPC
+  card, its bond Items, its `connectionIds` entry and its portraits (the
+  "Art:" journal entries and their `artAssetIds` index entries —
+  `art/storage.deleteEntityArtAssets`, canonical GM, the index written on a
+  copy; XCARD-CONNECTION-PORTRAIT-ORPHAN) while the record holds
+  nothing beyond its creation, its sheet nothing the table wrote (Notes text
+  outside the seed's marked introduction and the portrait block, or a
+  Characteristics line the seed did not write — `sheetWrittenByTable`) and no
+  bond Item a mark (`retractNarrationConnections` → actorBridge
+  `deleteUnmarkedBondItems`);
+  one the table has used stays and the GMs are whispered once, naming it
+  (issue #338 D6(ii)). A pending row this path confirms is stamped the same
+  way, with the row it confirmed (`confirmDraft`'s `narrationId` →
+  `createdFromNarrationId` + `createdFromDraft`): deleted by the X-Card, the
+  row goes back to pending (`entityExtractor.reopenConfirmedDraftRow`;
+  withdrawn instead when the X-Card removed the row's own narration too) —
+  the NPC came from the earlier narration's draft, which the X-Card kept
+  (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). Either delete hands the
+  scene-ledger facts promoted to the card back to its name
+  (`ledgers.demoteEntitySubject`, in the same write as the `connectionIds`
+  removal): keyed to an id no card answers, a kept narration's facts about the
+  NPC fell out of every prompt's scope and out of the scene-end migration.
 - **Entity-extraction drafts** — connections detected in any other narration
   queue on the GM-whispered "New Entities Detected" card; Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
@@ -61,11 +88,18 @@ final `storeSector` write.
   own row's status, one write at a time per card, on the live card
   (`setDraftStatus`) — a whole-card copy written back reverted a row resolved
   meanwhile — and Confirm creates nothing when an entity of that name and
-  type already exists (`entityExistsForName`; issue #321 U25).
+  type already exists (`entityExistsForName`; issue #321 U25), save the bond:
+  a connection row's Confirm puts the bond Item on the card's PC when it has
+  none (`registerConnectionOnActiveCharacter`, idempotent) — a card the world
+  load listed after a refused Confirm (§1, Y34) never reached the sheet
+  (known-issues BOND-ITEM-AFTER-RELIST).
   Placeholder-name reveals rename in place rather than duplicating; a reveal
   whose `from` names no recorded placeholder connection drafts the newly
   named NPC (`findPlaceholderConnection` — it used to be dropped, issue #321
-  U27).
+  U27). A rename carries its narration's id (`renamedBy`), and an X-Card on
+  that narration puts the placeholder name back unless the card was renamed
+  since; the card's still-pending rows are withdrawn (`xCarded`) — issue
+  #335 Y02, #338 D6(i).
 - **Sector creation** — the canonical local connection, `canonicalLocked`,
   bond Item mirrored to every PC.
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates
@@ -86,7 +120,14 @@ second goal beside it and a first look over the narrated one (issue #325 W31).
 The seed writes only the fields it seeds, each by path, onto the record as it
 is when the write lands — it wrote the record it read before its Notes' Claude
 call whole, reverting a canonical lock (or any record write) that landed
-during the call (issue #326 W69).
+during the call (issue #326 W69). On the sheet it writes only its own part:
+its introduction in the Notes tab, each element marked `sf-seed-intro`
+(`entities/seedIntro.js`), and its labelled lines in Characteristics — the
+rest of both stays (the GM's paragraphs and lines, a ⤴ promoted detail, the
+portrait block), and a tab with no marked introduction gets one at its top
+(issue #338 D4; issue #335 Y12 — ↻ Regenerate flavour, which re-runs the seed,
+erased a promoted detail from every surface, and a Finalise on an unseeded
+card replaced what the GM had typed).
 
 `registerConnectionOnActiveCharacter(record, { actorId, actors })` puts the
 bond Item on each of `actors` (the inciting vow's crew), else on `actorId`
@@ -171,12 +212,14 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   which checks the pick is one of the card's choices (its buttons' data
   attributes for an older card) and that the clicker's PC is one the
   requester owns — a player with no PC of their own is refused, only a GM
-  may press as nobody (`relayedClickerPc`, issue #331 X19) — posts the forced Develop Your Relationship / Forge a Bond
-  move **once** — speaking as the clicker's PC, so the pipeline credits the
-  roller although the GM authors the message, and naming the picked
-  connection as `forcedMoveTargetId` (its host Actor id) and
-  `forcedMoveTarget` (its name) — and stamps the card `resolved` (in-flight
-  guarded; a failed post leaves it open). The forced move carries
+  may press as nobody (`relayedClickerPc`, issue #331 X19) — claims the card
+  (`resolved`, in-flight guarded) and posts the forced Develop Your
+  Relationship / Forge a Bond move **once** — speaking as the clicker's PC,
+  so the pipeline credits the roller although the GM authors the message,
+  and naming the picked connection as `forcedMoveTargetId` (its host Actor
+  id) and `forcedMoveTarget` (its name). A refused claim posts nothing and a
+  failed post releases the claim: it posted first, and a stamp the world
+  refused left the picker live for a second Develop (issue #336 Y24). The forced move carries
   `deferWhileBusy`: met by the move lock, it is held on the canonical GM and
   rolled when the lock frees (issue #325 W02 — it was dropped, the card
   already claimed). A forced move skips the

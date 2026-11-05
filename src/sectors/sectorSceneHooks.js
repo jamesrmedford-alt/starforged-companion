@@ -224,15 +224,32 @@ function readSnapRadius() {
  * Returns null when no match. Pure read.
  */
 export function nearestSettlementNote(scene, x, y, radiusPx) {
+  return nearestNoteWhere(scene, x, y, radiusPx, isSettlementPin);
+}
+
+/** A settlement pin's flags: a settlement reference, not its planet or star. */
+function isSettlementPin(flags) {
+  return !!flags?.settlementId && !flags.planetNote && !flags.stellarNote;
+}
+
+/**
+ * A charted site's pin: revealed (its label is the site's name) and linked to
+ * the site's location Actor. An undiscovered pin reads "Unexplored Site" — its
+ * name is not yet the table's, so it names no place (issue #335 Y14).
+ */
+function isChartedSitePin(flags) {
+  return !!flags?.siteNote && flags.discovered === true && !!flags.actorId;
+}
+
+/** The Note closest to (x, y) within radiusPx whose flags pass `accepts`, or null. */
+function nearestNoteWhere(scene, x, y, radiusPx, accepts) {
   const notes = scene?.notes?.contents ?? scene?.notes ?? [];
   if (!Array.isArray(notes) || !notes.length) return null;
 
   let best = null;
   let bestDist = Infinity;
   for (const n of notes) {
-    const flags = n?.flags?.[MODULE_ID];
-    if (!flags?.settlementId) continue;
-    if (flags?.planetNote || flags?.stellarNote) continue;     // settlement Notes only
+    if (!accepts(n?.flags?.[MODULE_ID])) continue;
     const nx = Number(n.x ?? 0);
     const ny = Number(n.y ?? 0);
     const dist = Math.hypot(nx - x, ny - y);
@@ -304,7 +321,8 @@ async function dispatchSetACourseFromTokenDrag(scene, settlementNote, tokenDoc) 
  * Matches on either id space: position records written from a token
  * (finding #5) carry the settlement's Actor document id (`flags.actorId`),
  * while older records / wizard map data use the generator's settlement id
- * (`flags.settlementId`).
+ * (`flags.settlementId`). A site's pin carries its location Actor's id as
+ * `flags.actorId`, so a recorded location's id finds that pin (issue #335 Y14).
  */
 export function findSettlementNoteById(scene, settlementId) {
   if (!settlementId) return null;
@@ -332,8 +350,12 @@ function readNearRadiusCells() {
 
 /**
  * Build a §20 position record from a token's coordinates on a sector
- * Scene: the nearest settlement pin within the near radius when one
- * exists, else deep space in the scene's sector. Pure read.
+ * Scene: the nearest settlement pin — or charted site pin, recorded as its
+ * location (`nearestLocationId`, the id an arrival there records — issue #326
+ * W65) — within the near radius when one exists, else deep space in the
+ * scene's sector. A site's pin was never an anchor, so a ship parked on a
+ * charted derelict was "deep space" (issue #335 Y14); an undiscovered one
+ * still is, its name not yet the table's. Pure read.
  *
  * Its provenance is `token_placement` — the token's own place on the map,
  * where it was placed or moved off a pin, with no move made — which the
@@ -351,8 +373,10 @@ function readNearRadiusCells() {
 export function computeTokenPositionRecord(scene, x, y) {
   const gridSize = scene?.grid?.size ?? scene?.gridSize ?? 100;
   const radiusPx = readNearRadiusCells() * gridSize;
-  const pin      = nearestSettlementNote(scene, Number(x ?? 0), Number(y ?? 0), radiusPx);
+  const pin      = nearestNoteWhere(scene, Number(x ?? 0), Number(y ?? 0), radiusPx,
+    flags => isSettlementPin(flags) || isChartedSitePin(flags));
   const pinFlags = pin?.flags?.[MODULE_ID] ?? null;
+  const site     = isChartedSitePin(pinFlags);
 
   return {
     sectorId:            scene?.flags?.[MODULE_ID]?.sectorId ?? null,
@@ -360,10 +384,18 @@ export function computeTokenPositionRecord(scene, x, y) {
     // Prefer the settlement's Actor document id — the id space the name
     // lookups and updateShip share. Legacy pins without actorId fall back
     // to the generator id; the pin label keeps the line readable either way.
-    nearestSettlementId: pinFlags?.actorId ?? pinFlags?.settlementId ?? null,
+    nearestSettlementId: site ? null : (pinFlags?.actorId ?? pinFlags?.settlementId ?? null),
+    // Always written: setFlag merges key by key, so a record without the key
+    // would keep an earlier arrival's location.
+    nearestLocationId:   site ? pinFlags.actorId : null,
     freeText:            pin ? String(pin.text ?? "") : "deep space",
     updatedAt:           new Date().toISOString(),
     updatedBy:           "token_placement",
+    // No narration moved it, and nothing to go back to: written so the
+    // merge clears a narrator move's (shipPosition.js emptyPosition —
+    // SHIP-POSITION-FLAG-MERGE).
+    narrationId:         null,
+    previous:            null,
   };
 }
 
@@ -386,14 +418,16 @@ async function writeTokenDerivedPosition(scene, x, y) {
     if (
       existing
       && existing.nearestSettlementId === position.nearestSettlementId
+      && (existing.nearestLocationId ?? null) === position.nearestLocationId
       && (existing.freeText ?? "") === position.freeText
       && existing.sectorId === position.sectorId
     ) return existing;   // no informational change — don't churn the record
 
     await updateShip(cvActorId, { position });
+    const anchorId = position.nearestSettlementId ?? position.nearestLocationId;
     console.log(
       `${MODULE_ID} | ship position recorded from sector-scene token: ` +
-      `${position.nearestSettlementId ? `near ${position.freeText || position.nearestSettlementId}` : position.freeText}`,
+      `${anchorId ? `near ${position.freeText || anchorId}` : position.freeText}`,
     );
     return position;
   } catch (err) {
@@ -492,9 +526,18 @@ export function handleCommandVehicleTokenReposition(tokenDoc, changes, options, 
  * moves the Token itself (`moveCommandVehicleTokenToDestination`); callers
  * skip this sync for `source: "scene_token"`.
  *
- * Free-text positions (no resolved settlement id) deliberately do NOT
- * move the Token — there is no pin to anchor to, and parking it at an
- * arbitrary point would be a different lie. See the ship-positioning
+ * A recorded location (`nearestLocationId` — an arrival at a site: Finish
+ * an Expedition, `!at`, the Entities panel, the narrator) moves the Token
+ * onto the pin that links that location Actor, a site's pin; the settlement
+ * id alone was read, so the Token stayed on the settlement the ship had left
+ * (issue #335 Y14). The record already names the place, and the pin shows
+ * only its own label, so a site still unexplored at that moment is followed
+ * too: the Finish an Expedition that charts a site records its arrival
+ * before the reveal flips the pin.
+ *
+ * Free-text positions (no resolved settlement or location id) deliberately
+ * do NOT move the Token — there is no pin to anchor to, and parking it at
+ * an arbitrary point would be a different lie. See the ship-positioning
  * notes in docs/narrator/narrator-memory-architecture.md §8.5.
  *
  * Never throws; all failure paths log at debug and return null.
@@ -505,7 +548,8 @@ export function handleCommandVehicleTokenReposition(tokenDoc, changes, options, 
  */
 export async function syncCommandVehicleTokenToPosition(position, campaignState) {
   try {
-    if (!position?.nearestSettlementId) return null;
+    const anchorId = position?.nearestSettlementId || position?.nearestLocationId || null;
+    if (!anchorId) return null;
     if (!game.user?.isGM) return null;
 
     try {
@@ -533,7 +577,7 @@ export async function syncCommandVehicleTokenToPosition(position, campaignState)
       : null;
     if (!token) return null;
 
-    const note = findSettlementNoteById(scene, position.nearestSettlementId);
+    const note = findSettlementNoteById(scene, anchorId);
     if (!note) return null;
 
     const destX = Number(note.x ?? 0);

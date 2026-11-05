@@ -18,7 +18,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../../src/index.js', () => ({
-  markLinkedVowMilestone: vi.fn(async () => ({ ok: true })),
+  markFightVowMilestoneOnce: vi.fn(async () => ({ ok: true })),
   deepenLinkedConnection: vi.fn(async () => ({ ok: true })),
   deepenVowConnectionOnce: vi.fn(async () => ({ ok: true })),
   postPayoffFailureCard:  vi.fn(async () => {}),
@@ -38,7 +38,7 @@ import {
   parseCardButtons,
   relayCardAction,
 } from '../../src/moves/cardActions.js';
-import { markLinkedVowMilestone, deepenLinkedConnection, deepenVowConnectionOnce, postPayoffFailureCard, retryPayoffSteps, performRecommit } from '../../src/index.js';
+import { markFightVowMilestoneOnce, deepenLinkedConnection, deepenVowConnectionOnce, postPayoffFailureCard, retryPayoffSteps, performRecommit } from '../../src/index.js';
 import { GM_RELAY_SOCKET, _resetGmRelayForTests } from '../../src/multiplayer/gmRelay.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -77,7 +77,7 @@ beforeEach(() => {
   ChatMessage._reset();
   game.socket._reset();
   _resetGmRelayForTests();
-  markLinkedVowMilestone.mockClear();
+  markFightVowMilestoneOnce.mockClear();
   deepenLinkedConnection.mockClear();
   deepenVowConnectionOnce.mockClear();
   postPayoffFailureCard.mockClear();
@@ -234,7 +234,11 @@ describe('won-fight card actions', () => {
   it('Mark milestone applies the card\'s own values once, credited to the card\'s roller', async () => {
     const res = await applyFightVowMarkMilestone({ messageId: 'fight-1', vowName: 'forged', marks: 99 }, P1_CTX);
     expect(res).toEqual({ applied: true });
-    expect(markLinkedVowMilestone).toHaveBeenCalledWith('Find the Archive', 2, 'pc-b');
+    // The card's id rides along: the mark is recorded per card on the vow's
+    // payoff ledger (issue #336 Y24).
+    expect(markFightVowMilestoneOnce).toHaveBeenCalledWith({
+      cardId: 'fight-1', vowName: 'Find the Archive', vowId: null, actorId: 'pc-b', marks: 2,
+    });
     expect(fight.flags[MODULE_ID].resolvedActions.markMilestone).toBe(true);
   });
 
@@ -242,7 +246,7 @@ describe('won-fight card actions', () => {
     await applyFightVowMarkMilestone({ messageId: 'fight-1' }, P1_CTX);
     const again = await applyFightVowMarkMilestone({ messageId: 'fight-1' }, GM_CTX);
     expect(again).toEqual({ applied: false, reason: 'already-resolved' });
-    expect(markLinkedVowMilestone).toHaveBeenCalledTimes(1);
+    expect(markFightVowMilestoneOnce).toHaveBeenCalledTimes(1);
   });
 
   it('two near-simultaneous Mark milestone clicks mark once', async () => {
@@ -250,7 +254,7 @@ describe('won-fight card actions', () => {
       applyFightVowMarkMilestone({ messageId: 'fight-1' }, P1_CTX),
       applyFightVowMarkMilestone({ messageId: 'fight-1' }, GM_CTX),
     ]);
-    expect(markLinkedVowMilestone).toHaveBeenCalledTimes(1);
+    expect(markFightVowMilestoneOnce).toHaveBeenCalledTimes(1);
   });
 
   it('Deepen bond deepens the card\'s connection by the vow rank\'s marks, once — independent of Mark milestone', async () => {
@@ -276,11 +280,11 @@ describe('won-fight card actions', () => {
 
   it('ignores a message that is not a won-fight card', async () => {
     expect((await applyFightVowMarkMilestone({ messageId: 'pick-1' }, GM_CTX)).reason).toBe('not-a-fight-card');
-    expect(markLinkedVowMilestone).not.toHaveBeenCalled();
+    expect(markFightVowMilestoneOnce).not.toHaveBeenCalled();
   });
 
   it('a mark that does not land stays unapplied — the press is the retry — and the GMs are told (issue #306 R04)', async () => {
-    markLinkedVowMilestone.mockResolvedValueOnce({ ok: false, reason: 'refused', error: 'offline' });
+    markFightVowMilestoneOnce.mockResolvedValueOnce({ ok: false, reason: 'refused', error: 'offline' });
     const res = await applyFightVowMarkMilestone({ messageId: 'fight-1' }, P1_CTX);
     expect(res).toEqual({ applied: false, reason: 'refused' });
     expect(fight.flags[MODULE_ID].resolvedActions).toBeUndefined();
@@ -290,7 +294,7 @@ describe('won-fight card actions', () => {
     }));
 
     expect(await applyFightVowMarkMilestone({ messageId: 'fight-1' }, P1_CTX)).toEqual({ applied: true });
-    expect(markLinkedVowMilestone).toHaveBeenCalledTimes(2);
+    expect(markFightVowMilestoneOnce).toHaveBeenCalledTimes(2);
   });
 
   it('a deepen that does not land (the connection gone) stays unapplied and is reported', async () => {

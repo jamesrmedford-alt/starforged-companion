@@ -23,7 +23,11 @@
  * "⚑ Mark Progress on Vow" ("milestone.suggestion") and an expedition's
  * "🔁 Recommit" ("expedition.recommit", both issue #321 U20), and a move
  * card's or won-fight card's "🏁 Attempt to Fulfill" ("fulfilVow.attempt",
- * known-issues FULFIL-BUTTON-LOCAL-DISABLE). The
+ * known-issues FULFIL-BUTTON-LOCAL-DISABLE), and a combat move card's "⚔
+ * Attempt to Finish the Fight" ("tda.attempt") and an expedition card's "🗺
+ * Finish the Expedition" ("expedition.finish" — issue #338 D1), and a paced
+ * card's "Roll <move>" ("paced.roll") and a "Which fight?" pick
+ * ("whichFight.pick" — known-issues PACED-ROLL-OPEN-PRESS). The
  * handlers below run on the canonical GM, check
  * and stamp the card's resolved flag behind an in-flight guard (the
  * milestone-picker pattern, src/moves/milestonePicker.js), and take every
@@ -34,7 +38,7 @@
  * button.
  */
 
-import { requestGmAction } from "../multiplayer/gmRelay.js";
+import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank } from "./milestone.js";
@@ -137,12 +141,13 @@ const PICK_MOVES = Object.freeze({
 /**
  * gmRelay handler for "connection.pick" — runs on the canonical GM.
  *
- * Validates the pick against the card's own choices, posts the forced
- * Develop Your Relationship / Forge a Bond move ONCE — with
- * `speaker.actor` = the clicker's PC, so the pipeline's resolveSpeakerActorId
- * credits the roller even though the GM authors the message, and the picked
- * connection as `forcedMoveTargetId` (host id) + `forcedMoveTarget` (name) —
- * then stamps the picker `resolved`. Idempotent per card.
+ * Validates the pick against the card's own choices, claims the picker
+ * (`resolved`), then posts the forced Develop Your Relationship / Forge a
+ * Bond move ONCE — with `speaker.actor` = the clicker's PC, so the pipeline's
+ * resolveSpeakerActorId credits the roller even though the GM authors the
+ * message, and the picked connection as `forcedMoveTargetId` (host id) +
+ * `forcedMoveTarget` (name). Idempotent per card: a refused claim posts
+ * nothing, and a post that fails releases the claim (issue #336 Y24).
  *
  * @param {{ messageId?: string, hostId?: string|null, connectionName?: string|null,
  *           actorId?: string|null }} payload
@@ -201,6 +206,16 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
       ...(choice.name   ? { forcedMoveTarget:   choice.name }   : {}),
       ...(choice.hostId ? { forcedMoveTargetId: choice.hostId } : {}),
     };
+    // Claimed before the post (issue #336 Y24; decisions #309 "claims before
+    // effects"): the move was posted first and the stamp's refusal swallowed,
+    // so the picker stayed live and the next press rolled Develop / Forge
+    // again. A refused claim posts nothing — the press is the retry.
+    try {
+      await message.update({ [`flags.${MODULE_ID}.resolved`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | connection pick: picker card ${messageId} could not be claimed — no move posted:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
     try {
       await ChatMessage.create({
         content: move.content(label),
@@ -208,12 +223,11 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
         flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...target } },
       });
     } catch (err) {
-      // Leave the card unresolved so the pick can be retried.
-      console.warn(`${MODULE_ID} | connection pick: forced-move post failed:`, err?.message ?? err);
+      console.warn(`${MODULE_ID} | connection pick: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.resolved`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | connection pick: releasing the claim failed:`, e?.message ?? e));
       return { posted: false, reason: "post-failed" };
     }
-    await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
-      .catch(err => console.warn(`${MODULE_ID} | connection picker resolve update failed:`, err?.message ?? err));
     return { posted: true };
   } finally {
     _inFlight.delete(key);
@@ -299,10 +313,12 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | waypoint oracle: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | waypoint oracle: user ${ctx?.requesterId ?? "?"} may not take ${actor?.name ?? "this card"}'s reward — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -393,10 +409,12 @@ export async function applyFulfilVowPick(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | which vow: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | which vow: user ${ctx?.requesterId ?? "?"} may not pick for ${actor?.name ?? "this card"} — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -482,10 +500,12 @@ export async function applyLegacyTrackPick(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | which legacy track: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | which legacy track: user ${ctx?.requesterId ?? "?"} may not pick for ${actor?.name ?? "this card"} — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -565,10 +585,12 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | milestone suggestion: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | milestone suggestion: user ${ctx?.requesterId ?? "?"} may not mark ${actor?.name ?? "this card"}'s vow — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -648,10 +670,12 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | attempt to fulfil: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { posted: false, reason: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | attempt to fulfil: user ${ctx?.requesterId ?? "?"} may not roll ${actor?.name ?? "this card"}'s vow — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { posted: false, reason: "not-owner" };
   }
 
@@ -690,6 +714,248 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
   } finally {
     _inFlight.delete(key);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A card's forced follow-up, the roller's to press (issue #338 D1):
+// "⚔ Attempt to Finish the Fight" — gmRelay "tda.attempt"
+// "🗺 Finish the Expedition"      — gmRelay "expedition.finish"
+// "⚔ Swear it (roll)"             — gmRelay "vow.swearRoll" (session/swearVow.js)
+// A paced card's "Roll <move>"    — gmRelay "paced.roll"
+// A "Which fight?" pick           — gmRelay "whichFight.pick" (PACED-ROLL-OPEN-PRESS)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The fulfilVow.attempt shape for a card button that rolls the card's
+ * roller's move (issue #338 D1). These buttons posted the forced move from
+ * the presser's client, spoken as the card's roller with no check of who
+ * pressed (issue #329 X05 fixed whose move it is, not who may make it):
+ * another player rolled Kira's Take Decisive Action — her position, her
+ * momentum, a Pay the Price on her on a miss — finished her expedition or
+ * swore her vow, and each client's press, or a re-render, rolled again.
+ *
+ * The roller is the card's (`spec.roller`, by default its `actorId`): their
+ * player or a GM may press it, and the move speaks as that PC. A card that
+ * names no roller rolls for the clicker's own PC (the payload's `actorId`,
+ * which the requester must own); with none relayed, it is a GM's to press.
+ * One press per card: the GM-authored card is claimed (`spec.claim`) before
+ * the post, behind the in-flight guard, and a post that fails releases the
+ * claim. The forced move is held while the move lock or the session gate
+ * stands (`deferWhileBusy`, issue #325 W02 / #329 X14).
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} ctx
+ * @param {Object} spec
+ * @param {string} spec.label — the console's name for the button
+ * @param {string} spec.claim — the card flag a press claims
+ * @param {(f: Object) => boolean} spec.isCard — the card offers this follow-up
+ * @param {(f: Object, actor: Actor|null) => ({ content: string, flags: Object, stamp?: * }|null)} spec.build —
+ *   the forced move's text and module flags, and what the claim records
+ *   (`stamp`, default true — a pick records its choice); null posts nothing
+ * @param {(f: Object) => string|null} [spec.roller] — the card's roller
+ * @param {(f: Object) => boolean} [spec.offers] — a pick: the press names one
+ *   of the card's own choices (the payload is client-asserted); false refuses
+ *   it, `not-on-card`
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
+  const { label, claim, isCard, build } = spec;
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | ${label}: card ${messageId ?? "?"} not found — nothing rolled.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!isCard(f)) {
+    console.warn(`${MODULE_ID} | ${label}: message ${messageId} offers no such follow-up — ignored.`);
+    return { posted: false, reason: "not-its-card" };
+  }
+  const key = `${messageId}:${claim}`;
+  if (f[claim] || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | ${label}: card ${messageId} already pressed — ignoring the press.`);
+    return { posted: false, reason: "already-pressed" };
+  }
+  if (spec.offers && !spec.offers(f)) {
+    console.warn(`${MODULE_ID} | ${label}: the press names nothing card ${messageId} offers — refused.`);
+    return { posted: false, reason: "not-on-card" };
+  }
+
+  const rolled  = spec.roller ? spec.roller(f) : f.actorId;
+  const cardActorId = typeof rolled === "string" && rolled ? rolled : null;
+  const actorId = cardActorId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
+  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | ${label}: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
+    return { posted: false, reason: "not-a-pc" };
+  }
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not roll ${actor?.name ?? "this card"}'s move — only their player or a GM may — refused.`);
+    refusePress(ctx, "not-owner", actor);
+    return { posted: false, reason: "not-owner" };
+  }
+  const move = build(f, actor);
+  if (!move) {
+    console.warn(`${MODULE_ID} | ${label}: card ${messageId} names nothing to roll — ignored.`);
+    return { posted: false, reason: "nothing-to-roll" };
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.${claim}`]: move.stamp ?? true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ${label}: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    try {
+      await ChatMessage.create({
+        content: move.content,
+        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ${label}: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.${claim}`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | ${label}: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "post-failed" };
+    }
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+/**
+ * gmRelay handler for "tda.attempt" — a combat move card's (Strike / Clash /
+ * Gain Ground / React Under Fire) "⚔ Attempt to Finish the Fight", the card's
+ * roller's Take Decisive Action (issue #338 D1; applyCardRollerFollowup).
+ * The card's fight rides by id and name, so with two fights open the roll
+ * scores this one (TDA-BUTTON-NO-TARGET); a card that names none posts no
+ * target and the pipeline resolves the sole open fight, or asks which.
+ * Claim `decisiveActionAttempted`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyTakeDecisiveActionAttempt(payload = {}, ctx = {}) {
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "attempt to finish the fight", claim: "decisiveActionAttempted",
+    isCard: (f) => f.combatMoveCard === true,
+    build: (f) => {
+      const trackId    = typeof f.combatTrackId === "string" && f.combatTrackId ? f.combatTrackId : null;
+      const trackLabel = typeof f.combatTrackLabel === "string" && f.combatTrackLabel ? f.combatTrackLabel : null;
+      return {
+        content: trackLabel
+          ? `Take decisive action to seize the objective — ${trackLabel}.`
+          : "Take decisive action to seize the objective.",
+        flags: {
+          forcedMoveId: "take_decisive_action",
+          ...(trackId ? { forcedMoveTargetId: trackId } : {}),
+          ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+        },
+      };
+    },
+  });
+}
+
+/**
+ * gmRelay handler for "expedition.finish" — an expedition progress card's
+ * "🗺 Finish the Expedition", the card's roller's Finish an Expedition (issue
+ * #338 D1; applyCardRollerFollowup). The card's own track rides by id and
+ * label, so the right expedition finishes with several open
+ * (EXPEDITION-FINISH-TARGET, issue #306 R06). Claim `expeditionFinishAttempted`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyFinishExpeditionAttempt(payload = {}, ctx = {}) {
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "finish the expedition", claim: "expeditionFinishAttempted",
+    isCard: (f) => f.expeditionProgressCard === true,
+    build: (f) => {
+      const trackLabel = typeof f.trackLabel === "string" && f.trackLabel ? f.trackLabel : null;
+      const trackId    = typeof f.trackId === "string" && f.trackId ? f.trackId : null;
+      return {
+        content: trackLabel ? `Finish the expedition — ${trackLabel}.` : "Finish the expedition.",
+        flags: {
+          forcedMoveId: "finish_an_expedition",
+          ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+          ...(trackId ? { forcedMoveTargetId: trackId } : {}),
+        },
+      };
+    },
+  });
+}
+
+/**
+ * gmRelay handler for "paced.roll" — a paced narrative card's "Roll <move>",
+ * the narrating PC's move (known-issues PACED-ROLL-OPEN-PRESS;
+ * applyCardRollerFollowup). The card's own line is posted again with the
+ * move its hint invited, past the pacing classifier, spoken as the PC who
+ * narrated it (issue #325 W09); a card that names none rolls for the
+ * presser's own PC. It posted from the presser's client with no check of who
+ * pressed: a crewmate rolled another player's move, and a player's press —
+ * which may not stamp the GM's card — left it armed for another client.
+ * Claim `rolled`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyPacedRoll(payload = {}, ctx = {}) {
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "paced roll", claim: "rolled",
+    isCard: (f) => f.pacedNarrative === true
+      && typeof f.suggestedMove === "string" && !!f.suggestedMove
+      && typeof f.playerText === "string" && !!f.playerText,
+    build: (f) => ({ content: f.playerText, flags: {
+      forcedMoveId: f.suggestedMove,
+      // A scene-challenge Roll's challenge, as the Finish an Expedition
+      // button forwards its track (PACED-VARIANT-NO-TARGET).
+      ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
+    } }),
+  });
+}
+
+/**
+ * gmRelay handler for "whichFight.pick" — a "Which fight?" (or "Which
+ * expedition?") card's pick, the card's roller's move again naming the
+ * picked track (index.js postWhichFightCard; known-issues
+ * WHICH-FIGHT-LOCAL-DISABLE; applyCardRollerFollowup). The pick must be one
+ * of the card's own `fights` — the payload is client-asserted — and rides
+ * the move by id and name. It posted from the presser's client with no
+ * check of who pressed and a local disable only, so a crewmate rolled the
+ * roller's move and another client picked again. Claim `whichFightPicked`:
+ * the picked track's id.
+ *
+ * @param {{ messageId?: string, trackId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyWhichFightPick(payload = {}, ctx = {}) {
+  const trackId = typeof payload.trackId === "string" && payload.trackId ? payload.trackId : null;
+  const pickOf  = (f) => (Array.isArray(f.fights) ? f.fights : []).find(t => trackId && t?.id === trackId) ?? null;
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "which fight", claim: "whichFightPicked",
+    isCard: (f) => f.whichFightCard === true,
+    offers: (f) => !!pickOf(f),
+    build: (f) => {
+      const fight = pickOf(f);
+      return {
+        content: f.narration || `Take decisive action to seize the objective — ${fight.label ?? "the fight"}.`,
+        flags: {
+          forcedMoveId: typeof f.moveId === "string" && f.moveId ? f.moveId : "take_decisive_action",
+          forcedMoveTargetId: fight.id,
+          ...(fight.label ? { forcedMoveTarget: fight.label } : {}),
+        },
+        stamp: fight.id,
+      };
+    },
+  });
 }
 
 /**
@@ -756,7 +1022,8 @@ export async function applyRecommitOffer(payload = {}, _ctx = {}) {
  * before the recommit, behind the in-flight guard, as an expedition's is
  * (applyRecommitOffer). The vow or bond is the roller's: their player or a
  * GM may press it. A write the world refused changed nothing and releases
- * the claim.
+ * the claim; a vow fulfilled or a bond forged since the miss leaves the
+ * offer closed (issue #335 Y10).
  *
  * @param {{ messageId?: string }} payload
  * @param {Object} [ctx]
@@ -795,6 +1062,7 @@ async function applyRollerRecommit(payload, ctx, { flag, label, perform }) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not recommit ${actor?.name ?? "this card"}'s — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { applied: false, reason: "not-owner" };
   }
   const key = `${messageId}:recommit`;
@@ -844,10 +1112,41 @@ function relayedClickerPc(payload, ctx, label) {
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | ${label}: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
     return { actor: null, refused: "not-a-pc" };
   }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not act as ${actor?.name ?? "no PC of their own"} — refused.`);
+    refusePress(ctx, "not-owner", actor);
+    return { actor: null, refused: "not-owner" };
+  }
+  return { actor };
+}
+
+/**
+ * The PC a relayed press on a fight's follow-up acts as: the card's roller —
+ * its `actorId`, the threshold card's, carried onto the way-out card and the
+ * combat-track card made from it — whose player or a GM may press it, as the
+ * relayed 🏁 does; on a card that names no roller, the clicker's PC
+ * (relayedClickerPc). The clicker's PC was used whoever rolled: a GM's press
+ * of Kira's off-ramp or Battle rolled the campaign's first PC — their stat,
+ * their momentum, a Pay the Price on them (issue #335 Y11; issue #329 X05's
+ * rule, "a card's forced follow-up is the card's roller's move").
+ *
+ * @returns {{ actor: Actor|null, refused?: string }}
+ */
+function cardRollerPc(f, payload, ctx, label) {
+  const rollerId = typeof f?.actorId === "string" && f.actorId ? f.actorId : null;
+  if (!rollerId) return relayedClickerPc(payload, ctx, label);
+  const actor = globalThis.game?.actors?.get?.(rollerId) ?? null;
+  if (!isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | ${label}: ${rollerId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
+    return { actor: null, refused: "not-a-pc" };
+  }
+  if (!requesterOwnsActor(actor, ctx)) {
+    console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not roll ${actor.name}'s move — only their player or a GM may — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { actor: null, refused: "not-owner" };
   }
   return { actor };
@@ -864,7 +1163,9 @@ function relayedClickerPc(payload, ctx, label) {
  * One Battle per card, claimed on the GM-authored card (`battleClaimed`)
  * before the post, behind the in-flight guard; a post that fails releases the
  * claim. A fight already over closes the button instead (`battleClaimed:
- * "fight-over"`) and posts nothing. The move speaks as the clicker's PC.
+ * "fight-over"`) and posts nothing. The move speaks as the card's roller —
+ * the threshold card's, whose player or a GM may press it — and as the
+ * clicker's PC only on a card that names none (cardRollerPc, issue #335 Y11).
  *
  * @param {{ messageId?: string, actorId?: string|null }} payload
  * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
@@ -887,7 +1188,7 @@ export async function applyCombatTrackBattle(payload = {}, ctx = {}) {
     console.debug(`${MODULE_ID} | battle: card ${messageId} already taken — ignoring the press.`);
     return { posted: false, reason: "already-claimed" };
   }
-  const { actor, refused } = relayedClickerPc(payload, ctx, "battle");
+  const { actor, refused } = cardRollerPc(f, payload, ctx, "battle");
   if (refused) return { posted: false, reason: refused };
 
   _inFlight.add(key);
@@ -998,8 +1299,10 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
 
     if (choice === "wayOut") {
       const { buildWayOutHtml } = await import("./combatThreshold.js");
+      // The off-ramp is the threshold's roller's move (issue #335 Y11).
+      const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
       try {
-        await ChatMessage.create({ content: buildWayOutHtml(), flags: { [MODULE_ID]: { wayOutCard: true } } });
+        await ChatMessage.create({ content: buildWayOutHtml(), flags: { [MODULE_ID]: { wayOutCard: true, actorId } } });
       } catch (err) {
         console.warn(`${MODULE_ID} | fight threshold: the way-out card could not be posted — the claim is released:`, err?.message ?? err);
         await release();
@@ -1029,8 +1332,6 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
       await release();
       return { applied: false, reason: "not-created" };
     }
-    await message.update({ [`flags.${MODULE_ID}.thresholdTrackId`]: result.track.id })
-      .catch(err => console.debug?.(`${MODULE_ID} | fight threshold: recording the fight on the card failed:`, err?.message ?? err));
     return { applied: true };
   } finally {
     _inFlight.delete(key);
@@ -1044,7 +1345,9 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
  * client, disabled only there, so a re-render rolled it again. One off-ramp
  * per card: the card is claimed (`wayOutTaken`: the move) before the post; a
  * post that fails releases it. The move is one the card offers
- * (combatThreshold.js WAY_OUT_MOVES) and speaks as the clicker's PC.
+ * (combatThreshold.js WAY_OUT_MOVES) and speaks as the card's roller — the
+ * threshold card's, whose player or a GM may press it — and as the clicker's
+ * PC only on a card that names none (cardRollerPc, issue #335 Y11).
  *
  * @param {{ messageId?: string, moveId?: string, actorId?: string|null }} payload
  * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
@@ -1073,7 +1376,7 @@ export async function applyWayOutPick(payload = {}, ctx = {}) {
     console.warn(`${MODULE_ID} | way out: "${payload.moveId ?? "?"}" is not an off-ramp the card offers — refused.`);
     return { posted: false, reason: "not-on-card" };
   }
-  const { actor, refused } = relayedClickerPc(payload, ctx, "way out");
+  const { actor, refused } = cardRollerPc(f, payload, ctx, "way out");
   if (refused) return { posted: false, reason: refused };
 
   _inFlight.add(key);
@@ -1179,8 +1482,15 @@ export async function applyConnectionSuggestion(payload = {}, _ctx = {}) {
  */
 export async function applyFightVowMarkMilestone(payload = {}, ctx = {}) {
   return applyFightVowAction("markMilestone", payload, ctx, async (f) => {
-    const { markLinkedVowMilestone } = await import("../index.js");
-    const res = await markLinkedVowMilestone(f.vowName ?? null, f.marks, typeof f.actorId === "string" ? f.actorId : null);
+    // Once per card on the vow's payoff ledger too (issue #336 Y24): the
+    // stamp follows the mark (R04), and a refused stamp left the button live
+    // for a second mark.
+    const { markFightVowMilestoneOnce } = await import("../index.js");
+    const res = await markFightVowMilestoneOnce({
+      cardId:  payload.messageId,
+      vowName: f.vowName ?? null, vowId: typeof f.vowId === "string" ? f.vowId : null,
+      actorId: typeof f.actorId === "string" ? f.actorId : null, marks: f.marks,
+    });
     // The card's vow is fulfilled: nothing to mark — no failure card, and no
     // other vow marked in its place (issue #325 W29).
     if (res?.reason === "vow-completed") return false;

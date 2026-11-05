@@ -31,9 +31,20 @@ import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
 import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
 import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
 import { rememberSessionRetractions } from './retractions.js';
-import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations } from './ledgers.js';
+import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
+
+/**
+ * How long a scene start waits for the one ahead of it (issue #335 Y05). A
+ * start is a campaignState write or two (and an implicit end's migration):
+ * seconds at most. One whose write never settles is passed, with a warning,
+ * so it cannot hold every later scene start.
+ */
+const SCENE_START_WAIT_MS = 10_000;
+
+/** The last scene start on this client: settles (never rejects) once it is done. */
+let _sceneStartTail = Promise.resolve();
 
 /**
  * Assign a fresh `currentSceneId`. If active-scene ledgers contain entries
@@ -50,6 +61,15 @@ const MODULE_ID = 'starforged-companion';
  * active scene (`!scene start` reads the store first) still ends it and
  * starts a new one.
  *
+ * Scene starts run one at a time on this client (the canonical GM, the scene
+ * lifecycle's single emitter): a start waits for the one in flight — at most
+ * SCENE_START_WAIT_MS — and only then looks for the store's scene, so it
+ * adopts the scene that start opened (issue #335 Y05). Two narrations one
+ * command fires each narrate on their own working copy (issue #329 X09), and
+ * with no scene open both read the store inside the first start's write
+ * round trip: each minted a scene, and the narration on the losing one had
+ * its truths, state and frame dropped as "the scene changed meanwhile".
+ *
  * @param {Object} campaignState
  * @param {Object} [opts]
  * @param {string} [opts.reason] — diagnostic only ("@scene_intercept",
@@ -58,7 +78,31 @@ const MODULE_ID = 'starforged-companion';
  */
 export async function startScene(campaignState, { reason = 'unknown' } = {}) {
   if (!campaignState) return null;
+  const ahead = _sceneStartTail;
+  let release;
+  _sceneStartTail = new Promise(resolve => { release = resolve; });
+  try {
+    await waitForSceneStartAhead(ahead, reason);
+    return await openScene(campaignState, reason);
+  } finally {
+    release();   // the next start goes, whatever this one did
+  }
+}
 
+async function waitForSceneStartAhead(ahead, reason) {
+  let timer = null;
+  const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(true), SCENE_START_WAIT_MS); });
+  try {
+    if (await Promise.race([ahead.then(() => false), timedOut])) {
+      console.warn(`${MODULE_ID} | sceneLifecycle: startScene (${reason}) — the scene start ahead of it is still running after ${SCENE_START_WAIT_MS}ms; starting anyway.`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** startScene's work, one start at a time: adopt the store's active scene, or open one. */
+async function openScene(campaignState, reason) {
   if (!campaignState.currentSceneId && adoptStoredScene(campaignState)) {
     console.debug(`${MODULE_ID} | sceneLifecycle: startScene (${reason}) — scene ${campaignState.currentSceneId} is already active; continuing it.`);
     return campaignState.currentSceneId;
@@ -343,6 +387,10 @@ async function safeMigrateToEntityTier(truth, subject) {
       promoted:   false,
       promotedAt: null,
       createdAt:  truth.createdAt ?? Date.now(),
+      // The narration that asserted the truth: an X-Card played on it after
+      // the scene ended drops the detail (retractNarrationCapture — issue
+      // #335 Y01; the ledger it left is empty by then).
+      ...narrationStampOf(truth),
     };
     return await appendMigratedTruthToTier(subject.entityId, subject.entityType, tierEntry);
   } catch (err) {
@@ -363,6 +411,19 @@ async function safeArchiveSceneTruth(truth, campaignState) {
     console.warn(`${MODULE_ID} | sceneLifecycle: archive scene truth failed:`, err);
     return null;
   }
+}
+
+/**
+ * `{ narrationId }` of a ledger entry a narration's sidecar wrote, else `{}` —
+ * a GM's `!truth set` / `!state set` carries none, and what it migrates is
+ * the GM's.
+ *
+ * @param {Object} entry — a sceneTruths entry or a state value
+ * @returns {{ narrationId?: string }}
+ */
+function narrationStampOf(entry) {
+  const id = entry?.narrationId;
+  return typeof id === 'string' && id ? { narrationId: id } : {};
 }
 
 /** Entity types a scene can happen at — the ones with a place on the map, and the ship. */
@@ -458,6 +519,14 @@ function escapeRegExp(s) {
  * previous value; one this scene did not mention keeps it. Rendered on the
  * entity card as LAST KNOWN. Fail-open per entity.
  *
+ * Each value keeps the narration that set it and the values before it
+ * (`narrationId`, `previous` — newest first: the scene's own superseded
+ * values, then the LAST KNOWN this one replaced), so an X-Card on that
+ * narration after the scene ended puts back the newest one no removed
+ * narration set (retractNarrationCapture — issue #335 Y01; the W41 chain the
+ * state entry carried). Both are always written, null when none: Foundry's
+ * setFlag merges a nested object into the stored one key by key.
+ *
  * @param {Object} campaignState
  * @returns {Promise<number>} entities updated
  */
@@ -478,11 +547,8 @@ async function keepLastKnownWhereabouts(campaignState) {
       if (!resolved) continue;
       const lastKnown = { ...(resolved.data.lastKnown ?? {}) };
       for (const e of kept) {
-        lastKnown[String(e.attribute).trim().toLowerCase()] = {
-          value: String(e.value).trim(),
-          sessionNum,
-          at:    Number(e.updatedAt) || Date.now(),
-        };
+        const attr = String(e.attribute).trim().toLowerCase();
+        lastKnown[attr] = lastKnownValue(e, sessionNum, lastKnown[attr]);
       }
       await writeEntityFlag(resolved.typeKey, resolved.document, {
         ...resolved.data,
@@ -495,6 +561,46 @@ async function keepLastKnownWhereabouts(campaignState) {
     }
   }
   return updated;
+}
+
+/** How many earlier values a LAST KNOWN value keeps (`previous`), for an X-Card on the narration that set it. */
+const LAST_KNOWN_HISTORY = 4;
+
+/**
+ * A LAST KNOWN value from a closing scene's state value: the value, the
+ * narration that set it, and the values it superseded, newest first — the
+ * scene's own (the state entry's `previous` chain) and then the LAST KNOWN
+ * value it replaces with that one's own history — bounded, a repeat dropped.
+ *
+ * @param {Object} entry — the state value ({ value, updatedAt, narrationId?, previous? })
+ * @param {number|null} sessionNum
+ * @param {Object|null|undefined} superseded — the record's current LAST KNOWN value
+ * @returns {{ value: string, sessionNum: number|null, at: number, narrationId: string|null, previous: Object[]|null }}
+ */
+function lastKnownValue(entry, sessionNum, superseded) {
+  const link = (v, num, at) => ({
+    value:       String(v.value).trim(),
+    sessionNum:  num,
+    at,
+    narrationId: narrationStampOf(v).narrationId ?? null,
+  });
+  const older = [];
+  for (let cur = entry.previous; cur && typeof cur === 'object'; cur = cur.previous ?? null) {
+    if (String(cur.value ?? '').trim()) older.push(link(cur, sessionNum, Number(cur.updatedAt) || null));
+  }
+  for (const v of superseded && typeof superseded === 'object'
+    ? [superseded, ...(Array.isArray(superseded.previous) ? superseded.previous : [])] : []) {
+    if (String(v?.value ?? '').trim()) older.push(link(v, v.sessionNum ?? null, v.at ?? null));
+  }
+  const head = link(entry, sessionNum, Number(entry.updatedAt) || Date.now());
+  const seen = new Set([`${head.narrationId}|${head.value}`]);
+  const previous = older.filter((v) => {
+    const k = `${v.narrationId}|${v.value}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).slice(0, LAST_KNOWN_HISTORY);
+  return { ...head, previous: previous.length ? previous : null };
 }
 
 /** campaignState fields the scene lifecycle owns (written by startScene / endScene). */
@@ -594,10 +700,19 @@ export function mergeSceneLedgers(working, latest) {
   const truthKey = (t) => t?.id ?? JSON.stringify(t);
   const mine = new Map(workingTruths.map(t => [truthKey(t), t]));
   const seen = new Set();
+  const refiled = new Set();   // replacements of a truth the X-Card removed
   const merged = storeTruths.map((t) => {
     const k = truthKey(t);
     seen.add(k);
     const w = mine.get(k);
+    // A truth the X-Card retracted stays the X-Card's: a correction made on
+    // a copy read before it landed — a Replace whose awaits it played
+    // during — neither relabels it nor files its replacement, which would be
+    // the removed fact again, live (issue #336 Y30; U07).
+    if (t?.retractedBy === XCARD_RETRACTED_BY) {
+      if (w?.correctedTo && w.correctedTo !== t.correctedTo) refiled.add(w.correctedTo);
+      return t;
+    }
     // A retraction (narrator contradiction or `!truth` correction) is one-way,
     // and so is the link a correction adds to it — a Replace's, or a
     // `!truth set` re-establishing a struck fact (issue #326 W60).
@@ -605,7 +720,7 @@ export function mergeSceneLedgers(working, latest) {
     return (w?.retracted && w.correctedTo && !t?.correctedTo) ? w : t;
   });
   for (const t of workingTruths) {
-    if (!seen.has(truthKey(t))) merged.push(t);
+    if (!seen.has(truthKey(t)) && !refiled.has(t?.id)) merged.push(t);
   }
   working.sceneTruths = merged;
   return true;

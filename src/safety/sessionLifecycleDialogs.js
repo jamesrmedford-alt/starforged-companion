@@ -153,6 +153,33 @@ async function sessionAlreadyBegun(campaignState) {
 let _beginChain = Promise.resolve();
 
 /**
+ * How long Begin's galley vignette waits for its clock vignettes (issue #335
+ * Y05): each is a bounded Claude call, so this only passes one that hangs.
+ */
+const OPENING_VIGNETTE_WAIT_MS = 60_000;
+
+/**
+ * Settle once `promise` has, or after `ms` — whichever is first, with a
+ * warning when the wait ran out. Never rejects.
+ *
+ * @param {Promise} promise
+ * @param {number}  ms
+ * @param {string}  label — for the warning
+ * @returns {Promise<void>}
+ */
+async function settledWithin(promise, ms, label) {
+  let timer = null;
+  const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(true), ms); });
+  try {
+    if (await Promise.race([Promise.resolve(promise).then(() => false, () => false), timedOut])) {
+      console.warn(`${MODULE_ID} | ${label}: still waiting after ${ms}ms — going ahead.`);
+    }
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
  * GM-relay handler for `"session.begin"` (GM_ACTIONS in
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Sub-steps, in
  * order: a new session when the last one is over → session-active flip
@@ -233,6 +260,9 @@ async function beginSessionOnce(payload) {
   // repeats nothing: an advance the world refused is a `clocks` step on the
   // GMs' payoff failure card, whose Retry saves the rolled fills without
   // rolling again (issue #316 T04 — it was caught and logged, and lost).
+  // The clock vignettes' run, settled once they are done: the galley follows
+  // it (issue #335 Y05).
+  let clockVignettes = null;
   try {
     const { advanceCampaignClocksForBeginSession } = await import("../clocks/clocks.js");
     const clockResults = await advanceCampaignClocksForBeginSession();
@@ -263,14 +293,18 @@ async function beginSessionOnce(payload) {
       }
       const advanced = clockResults.filter(r => r.advanced);
       if (advanced.length) {
-        setTimeout(async () => {
+        clockVignettes = new Promise(resolve => setTimeout(async () => {
           try {
             const { narrateClockAdvancement } = await import("../narration/narrator.js");
+            const { clockStillTriggered } = await import("../clocks/payThePriceClocks.js");
             // A working copy — each vignette applies its sidecar on it (issue #329 X09).
             const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
             for (const cd of advanced) {
               const narrationId = newNarrationId();
-              const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId });
+              // A trigger is narrated only while the clock is still full when
+              // the reply comes in (TRIGGER-VIGNETTE-LATE-POST).
+              const text = await narrateClockAdvancement({ clock: cd, campaignState: cs, narrationId,
+                stillTriggered: () => clockStillTriggered(cd) });
               if (text) {
                 // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction
                 // must enter the ring/summary or it is forgotten instantly.
@@ -286,6 +320,8 @@ async function beginSessionOnce(payload) {
                       narrationText:     text,
                       sessionId:         cs.currentSessionId ?? null,
                       narrationId,
+                      // A trigger vignette names its clock (issue #338 D8).
+                      ...(cd.triggered && cd._id ? { clockId: cd._id } : {}),
                     },
                   },
                 });
@@ -293,8 +329,10 @@ async function beginSessionOnce(payload) {
             }
           } catch (err) {
             console.warn(`${MODULE_ID} | session-start clock vignette generation failed:`, err?.message ?? err);
+          } finally {
+            resolve();
           }
-        }, 0);
+        }, 0));
       }
     }
   } catch (err) {
@@ -313,11 +351,19 @@ async function beginSessionOnce(payload) {
     return;
   }
   setTimeout(async () => {
+    // After the clock vignettes, and read once they are done: the galley
+    // continues the scene they opened with their beat in it. Together, each
+    // minted a scene on its own copy and the one on the losing scene lost its
+    // facts (issue #335 Y05). A vignette is a Claude call — the wait is bounded.
+    if (clockVignettes) await settledWithin(clockVignettes, OPENING_VIGNETTE_WAIT_MS, "galley vignette");
     try {
       const { collectGalleyParticipants, buildGalleyVignetteUserMessage, postGalleyVignetteCard }
         = await import("../session/galleyVignette.js");
       const { narrateSessionVignette } = await import("../narration/narrator.js");
-      const cs = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      // A working copy — the narration starts its scene and applies its
+      // sidecar on it, and a refused write must leave this client's cache as
+      // the world has it (issue #335 Y04, the clock vignette's X09 copy).
+      const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
       const participants = collectGalleyParticipants(cs);
       const userMessage  = buildGalleyVignetteUserMessage(participants, cs);
       const narrationId  = newNarrationId();
@@ -419,9 +465,6 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
   const lines = [];
   if (questFocus)      lines.push(`<li><strong>Quest focus:</strong> ${escapeHtml(questFocus)}</li>`);
   if (connectionFocus) lines.push(`<li><strong>Connection focus:</strong> ${escapeHtml(connectionFocus)}</li>`);
-  const focusBlock = lines.length
-    ? `<ul>${lines.join("")}</ul><p>You take <strong>+1 momentum</strong>.</p>`
-    : `<p class="muted"><em>No focus set — no momentum bonus.</em></p>`;
   const endedBefore = sessionAlreadyEnded(game.settings.get(MODULE_ID, "campaignState") ?? {});
 
   // The world writes (foci, session-active flip, scene close, summary, log,
@@ -430,8 +473,32 @@ async function postEndSessionCard({ questFocus, connectionFocus }) {
   // Ended already (issue #309 N08): the GM's note card says what changed — a
   // second card here would promise momentum that is not paid again.
   if (res?.ok !== false && (res?.result?.alreadyEnded === true || (endedBefore && res?.relayed))) return;
-  const notRecorded = res?.ok === false
-    ? `<p class="muted sf-not-recorded"><em>${res.reason === "no-gm"
+  const failed = res?.ok === false;
+  const noGm   = failed && res.reason === "no-gm";
+
+  // A failed End is worded by what happened: no momentum is promised. Ended
+  // already, nothing was ended — only the focus correction did not land, and
+  // this card is the only word on the GM's own End (the handler's note is a
+  // relayed End's). It read "+1 momentum" and "could not be ended".
+  if (failed && endedBefore) {
+    const why = noGm ? "no GM is connected" : "see the console";
+    const text = lines.length
+      ? `This session has already ended, so nothing was ended. The focus for next session was not recorded, and no momentum was given — ${why}. Try End a Session again${noGm ? " once a GM has joined" : ""}.`
+      : `This session has already ended, so nothing was ended — ${why}.`;
+    await ChatMessage.create({
+      content: `<div class="sf-session-card"><strong>End a Session</strong><p class="muted sf-not-recorded"><em>${escapeHtml(text)}</em></p></div>`,
+      flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
+    });
+    return;
+  }
+
+  const focusBlock = !lines.length
+    ? `<p class="muted"><em>No focus set — no momentum bonus.</em></p>`
+    : failed
+      ? `<ul>${lines.join("")}</ul>`
+      : `<ul>${lines.join("")}</ul><p>You take <strong>+1 momentum</strong>.</p>`;
+  const notRecorded = failed
+    ? `<p class="muted sf-not-recorded"><em>${noGm
         ? "No GM is connected — the session was not ended, and no focus or momentum was recorded. Try again once a GM has joined."
         : "The session could not be ended — see the console."}</em></p>`
     : "";
@@ -483,18 +550,23 @@ let _endChain = Promise.resolve();
  * next session, and posts a note: the momentum is paid for the first focus
  * the session's ending notes, never again.
  *
+ * A refused write throws. On a relayed End the player's card has already
+ * posted ("+1 momentum") and the relay has no ack, so the handler first posts
+ * a note where that card is (issue #335 Y06, X13's shape); the local path's
+ * card says so itself (requestGmActionSafely → "could not be ended").
+ *
  * @param {{ questFocus?: string, connectionFocus?: string }} payload
- * @param {Object} [_ctx]
+ * @param {{ local?: boolean }} [ctx]
  * @returns {Promise<{ alreadyEnded: boolean }>} alreadyEnded: the session had
  *   ended — only the focus was corrected (postEndSessionCard posts no card)
  */
-export function applyEndSession(payload = {}, _ctx = {}) {
-  const run = _endChain.then(() => endSessionOnce(payload));
+export function applyEndSession(payload = {}, ctx = {}) {
+  const run = _endChain.then(() => endSessionOnce(payload, ctx));
   _endChain = run.catch(() => {});
   return run;
 }
 
-async function endSessionOnce(payload) {
+async function endSessionOnce(payload, ctx = {}) {
   const questFocus      = cleanFocus(payload.questFocus);
   const connectionFocus = cleanFocus(payload.connectionFocus);
 
@@ -506,7 +578,7 @@ async function endSessionOnce(payload) {
   // write must leave it as it was — marked ended on this client alone, every
   // retry would be taken for a second End.
   const state = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-  if (sessionAlreadyEnded(state)) return correctEndedSession(state, { questFocus, connectionFocus });
+  if (sessionAlreadyEnded(state)) return correctEndedSession(state, { questFocus, connectionFocus }, ctx);
   if (questFocus)      state.questFocus      = questFocus;
   if (connectionFocus) state.connectionFocus = connectionFocus;
   try {
@@ -529,7 +601,14 @@ async function endSessionOnce(payload) {
   // `pendingMove` lock). A write failure still throws (the card says so),
   // before anything else of the End has run.
   const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
-  await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(state, END_SESSION_FIELDS, "end session"));
+  try {
+    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(state, END_SESSION_FIELDS, "end session"));
+  } catch (err) {
+    if (ctx?.local === false) {
+      await postSessionNotEndedCard("The session was not ended — the world did not save it. No focus or momentum was recorded. Try End a Session again.");
+    }
+    throw err;
+  }
   Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
 
   // NARR-SESSION-SCENE (narrator-context audit 2026-07): End Session used
@@ -585,7 +664,9 @@ async function endSessionOnce(payload) {
       const { selectEndSessionNPC, buildEndSessionVignetteUserMessage, postEndSessionVignetteCard }
         = await import("../session/endSessionVignette.js");
       const { narrateSessionVignette } = await import("../narration/narrator.js");
-      const cs  = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      // A working copy, as the galley's (issue #335 Y04): its scene opens on
+      // the copy, never on the cache after End closed the real one.
+      const cs  = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
       const npc = selectEndSessionNPC(cs);
       const userMessage = buildEndSessionVignetteUserMessage(npc, cs);
       const narrationId = newNarrationId();
@@ -618,17 +699,27 @@ async function endSessionOnce(payload) {
  *
  * @param {Object} state — a copy of the stored campaignState
  * @param {{ questFocus: string, connectionFocus: string }} foci — cleaned
+ * @param {{ local?: boolean }} [ctx] — the relay context (endSessionOnce's)
  * @returns {Promise<{ alreadyEnded: true }>}
  */
-async function correctEndedSession(state, { questFocus, connectionFocus }) {
+async function correctEndedSession(state, { questFocus, connectionFocus }, ctx = {}) {
   const given = !!(questFocus || connectionFocus);
   const bonus = given && !hasFocus(state);
   if (given) {
     if (questFocus)      state.questFocus      = questFocus;
     if (connectionFocus) state.connectionFocus = connectionFocus;
     const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
-    await game.settings.set(MODULE_ID, "campaignState",
-      mergeOwnedFields(state, ["questFocus", "connectionFocus"], "end session (focus correction)"));
+    try {
+      await game.settings.set(MODULE_ID, "campaignState",
+        mergeOwnedFields(state, ["questFocus", "connectionFocus"], "end session (focus correction)"));
+    } catch (err) {
+      // A relayed correction posts no card on the player's client — this note
+      // was going to be the only word (issue #335 Y06).
+      if (ctx?.local === false) {
+        await postSessionNotEndedCard("This session has already ended. The focus for next session was not updated — the world did not save it, and no momentum was recorded. Try End a Session again.");
+      }
+      throw err;
+    }
   }
   if (bonus) await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — the first focus noted" });
   console.debug?.(`${MODULE_ID} | End a Session: session ${state.currentSessionId} has already ended — ${given ? "focus updated" : "nothing changed"}${bonus ? ", first focus: +1 momentum" : ""}.`);
@@ -653,6 +744,20 @@ async function correctEndedSession(state, { questFocus, connectionFocus }) {
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   }).catch(err => console.warn(`${MODULE_ID} | End a Session: note card failed:`, err?.message ?? err));
   return { alreadyEnded: true };
+}
+
+/**
+ * A relayed End a Session's write was refused: posted where the player's End
+ * card is, so its promise ("+1 momentum") is not the last word — the relay has
+ * no ack (issue #335 Y06; Begin's postSessionNotStartedCard, issue #329 X13).
+ *
+ * @param {string} text — what was not recorded (plain text)
+ */
+async function postSessionNotEndedCard(text) {
+  await ChatMessage.create({
+    content: `<div class="sf-session-card"><strong>End a Session</strong><p>${escapeHtml(text)}</p></div>`,
+    flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | End a Session: the not-ended card failed:`, err?.message ?? err));
 }
 
 

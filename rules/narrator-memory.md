@@ -20,9 +20,15 @@ layers. This file is the never-break list.
    read leaves it out by its `narrationFallback` flag (`sessionNarratorCards`)
    — it was fed back as story and counted as the session's first narration. A
    card the X-Card removed is flagged `xCarded` and left out the same way
-   (U07), and each narration's card carries its `narrationId`, which its
-   sidecar stamps on what it writes (U07; a fallback card or a published
-   reflection carries none). When adding a new card type or co-marking an existing one,
+   (U07), as is one a Burn Momentum / Improve Result superseded —
+   `burnSuperseded`: the move narration, and the trigger vignette of a clock
+   its reversal rewinds, which names its clock (`clockId`, issue #338 D8; a
+   trigger rewound while its vignette is still being written is never
+   narrated — `stillTriggered`, TRIGGER-VIGNETTE-LATE-POST) —
+   and each narration's card carries its `narrationId`, which its
+   sidecar stamps on what it writes (U07; a fallback card carries none) —
+   a published reflection's too, which its capture stamps (issue #335 Y03).
+   When adding a new card type or co-marking an existing one,
    audit every `narratorCard` consumer (ring, rolling summary, session
    recap, correction hook, audio hook, burn-supersede, the X-Card's card
    pick and redirect hook) in the same commit — the consumer list lives in
@@ -78,7 +84,10 @@ layers. This file is the never-break list.
    `previousSessionSummary` (LAST SESSION) — the one prose surface that
    crosses sessions besides the campaign recap. A scene is never minted over
    a live one: a caller whose snapshot holds no scene while the store has one
-   adopts it (`startScene` → `adoptStoredScene`, issue #321 U06f), and every
+   adopts it (`startScene` → `adoptStoredScene`, issue #321 U06f), scene
+   starts run one at a time on the canonical GM — a start waits for the one
+   in flight before it looks, so two narrations on their own copies share one
+   scene (issue #335 Y05) — and every
    sidecar-applying narration — oracle follow-ups, session and clock
    vignettes and vow scenes included — starts a scene when none is active
    (`ensureSceneStarted`, canonical GM, issue #321 U34).
@@ -89,7 +98,10 @@ layers. This file is the never-break list.
    — so the two never render together; a player's set over a GM's strike is
    refused, issue #326 W60; the lift also restores the lore that strike
    retracted, `restoreStruckLore` by the lore entry's `retractedByTruth`, so
-   the re-set fact is archived as canon — issue #331 X31). Do not "simplify" either half away — the render
+   the re-set fact is archived as canon — issue #331 X31 — save an entry
+   another standing retraction still states: it stays out of canon, handed to
+   that strike when it is one the GM can lift, `loreRetractionHolder` — issue
+   #336 Y32). Do not "simplify" either half away — the render
    defense and the write defense cover different failure paths (model
    ignores instructions vs. model re-emits the fact). Since issue #286 (B6)
    a Strike also reaches the stores that copied the fact
@@ -104,14 +116,34 @@ layers. This file is the never-break list.
    truth it retracts (issue #321 U07). An X-Card retraction
    (`retractedBy: "xcard"`) blocks re-assertion like a strike but is never
    named under CORRECTED or in the leave-out list: naming it would hand the
-   narrator the content the table removed. Anything a narration writes
+   narrator the content the table removed — so it takes over the table's
+   strike of a truth its narration wrote, relabelled `"xcard"`, with the
+   strike's kept `sessionRetractions` entry dropped by its `narrationId`, and
+   a `!truth set` can lift neither (XCARD-AFTER-STRIKE-STILL-NAMED). A superseded narration's
+   (`retractedBy: "superseded"` — what a Burn Momentum / Improve Result
+   replaced, retracted by its `narrationId`, issue #338 D8) is never named
+   either, and blocks nothing: the re-narration may state the fact again. Anything a narration writes
    outside the ledgers carries its `narrationId` so the X-Card can undo it
-   too — the command vehicle's position does (issue #325 W07), and so does
+   too — the command vehicle's position does (issue #325 W07; every other
+   position writer writes `narrationId: null`, as `setFlag` merges —
+   SHIP-POSITION-FLAG-MERGE), and so does
    everything its capture records: World Journal entries (with the versions
-   they replaced), Session Log beats and tier details (issue #329 X01 — a new
-   capture writer takes the id from its caller), and the state transitions
+   they replaced — a faction the draft routing surfaces too, issue #335 Y02),
+   Session Log beats, tier details (a promoted one's line in the notes too,
+   issue #338 D7), a placeholder's rename, the draft card
+   it queues — its pending rows are withdrawn, issue #338 D6(i) — and a
+   connection it auto-creates or confirms from a pending draft row, deleted
+   while unused (the row back to pending), else named to the GMs (D6(ii);
+   MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) (issue #329 X01 — a new capture writer takes the id from its
+   caller, and checks the stored `xCardedNarrationIds` right before it
+   writes — `isNarrationXCarded`, after any Claude call — so a capture still
+   running when the card is played writes nothing more: XCARD-LATE-CAPTURE),
+   and the state transitions
    it applies to existing entries, a faction's record stance included
-   (XCARD-CAPTURE-TRANSITIONS); a narration
+   (XCARD-CAPTURE-TRANSITIONS); so does what a scene end migrates from its
+   ledger entries — the tier detail, the archived Lore page and the LAST
+   KNOWN value with the values it superseded — since the card may be played
+   after the scene ended (issue #335 Y01); a narration
    is built from the ledgers as they stand in the store, never a pre-dialog
    snapshot (W05), and a summary the X-Card emptied is stamped newer than any
    working copy's (W06).

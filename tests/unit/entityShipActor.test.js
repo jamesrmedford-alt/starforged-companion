@@ -477,7 +477,7 @@ describe("seedStarshipActor", () => {
     await seedStarshipActor(actor, { activeSectorId: null, sectors: [] });
 
     const notes = actor.system.notes;
-    expect(notes).toContain("<ul>");
+    expect(notes).toMatch(/<ul\b/);                // the bullet fallback (each element marked as the seed's, issue #338 D4)
     expect(notes).toContain("Heavy Freighter");
     expect(notes).toContain("Patched hull");
     expect(notes).toContain("Mission");
@@ -501,7 +501,7 @@ describe("seedStarshipActor", () => {
     const notes = actor.system.notes;
     expect(notes).toContain("Your habitat-hulk hangs motionless against the dark."); // Sonnet prose
     expect(notes).toContain("Heavy Freighter");  // compact fact line preserves the rolls
-    expect(notes).not.toContain("<ul>");          // prose path, not the bullet fallback
+    expect(notes).not.toMatch(/<ul\b/);          // prose path, not the bullet fallback
   });
 
   it("picks the active sector's region for the mission table", async () => {

@@ -210,7 +210,9 @@ describe("the GM's answer to a cache ask (issue #326 W79)", () => {
     for (const h of game.socket._handlers.get(AUDIO_SOCKET_NAME) ?? []) await h({ kind: "audio.cache.found", hash, path: null });
     await new Promise(r => setTimeout(r, 20));
     expect(play.getAttribute("data-state")).toBe("loading");   // still waiting for the GM's synthesis
-    for (const h of game.socket._handlers.get(AUDIO_SOCKET_NAME) ?? []) await h({ kind: "audio.synth.done", hash, path: cachedPath.replace(/[^/]+\.mp3$/, `${hash}.mp3`) });
+    // The GM's done names the clip's own cache slot (issue #337 Y42: only a
+    // path the GM's cache could name is played).
+    for (const h of game.socket._handlers.get(AUDIO_SOCKET_NAME) ?? []) await h({ kind: "audio.synth.done", hash, path: `worlds/test-world/audio/${hash.slice(0, 2)}/${hash}.mp3` });
     await vi.waitFor(() => expect(play.getAttribute("data-state")).toBe("playing"));
   });
 });

@@ -11,6 +11,327 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Tenth bug audit (issue #335, part 1 of 4) — all fourteen fixed in the v1.7.36 cycle
+
+Found by the tenth bug audit (2026-11-05) of `8fb7bfa`, with a probe per
+finding (`tests/probes/` on branch `claude/compassionate-knuth-vrg7se`; the
+report is `docs/testing/bug-audit-10-2026-11-05.md` there): the three X-Card
+safety findings (Y01–Y03 — Y01 the audit's one high-severity row) and the
+eleven medium ones (Y04–Y14). The maintainer asked for issues #335–#338 to be
+addressed on 2026-11-05. Each fix carries its own regression tests,
+converted from the probes, which fail with the fix taken out
+(`docs/testing/fix-sensitivity.md`); every probe file of the four issues is
+converted (the probe branch keeps the originals). Run against the
+integrated branch, the original probes pass 166 of their 184 tests; the 18
+others assert what a decision changed (D6's untouched connection, D4's
+hand-made ship, D3's retired `unpreparedAtZeroSupply`, Y27's wording ×2,
+Y11's roller-less card), read a record after the X-Card removed it (Y02 ×2,
+Y03), model a step the fix changed (Y05's write hold, Y06's last card, Y16's
+error log, Y34's load passes, Y39's hook arguments, Y40's remedy, D8's card
+without a clock id, Y44's deleted write) or lack a harness method (D6's
+`game.messages.get`); each converted test asserts the decided behaviour.
+None has been checked in a live Foundry world yet. The ones to try: `!scene end` (or End a Session), then
+the X-Card on the narration still on screen, and the NPC's card, ESTABLISHED
+LORE and LAST KNOWN (Y01); the X-Card on a narration that named a new faction
+(Y02) and on a published Private Channel reflection (Y03); Begin a Session
+with an advancing campaign clock and the galley vignette on (Y05); a
+player's End a Session while the world refuses the write (Y06 — the fault
+matrix's refused write); a second GM loading the world while a move is
+narrated (Y07); a paced card's Roll pressed during another player's move
+(Y08); burn a Battle miss to a weak hit whose price harmed a character at 1
+health (Y09); a GM pressing 🚪 Find another way on a crewmate's threshold
+card (Y11); ↻ Regenerate flavour on an NPC with a ⤴ promoted detail, and ✦
+Finalise on an unseeded NPC card with Notes typed in (Y12); correct an NPC's
+pronouns on the sheet, then read the narrator's card (Y13); drag the ship
+token onto a charted derelict's pin, and `!at` that derelict (Y14). Choices
+for the maintainer to confirm: Y14's sync also follows a record naming a site
+not yet charted (the charting Finish an Expedition records its arrival before
+its reveal), and a drop on a site pin is still not a Set a Course; Y05's 10 s
+/ 60 s bounds; Y07's live-lock case is the two-GM path the harness models
+with leave / join; Y12's first Regenerate on a card seeded before this
+version keeps the old (unmarked) introduction below the new one.
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| Y01 XCARD-AFTER-SCENE-END-KEEPS-MIGRATED-FACTS | SAFETY | an X-Card after !scene end / End a Session left the migrated tier detail, archived Lore page and LAST KNOWN (all unstamped) on every later prompt → the migration carries the truth's narrationId and LAST KNOWN keeps narrationId + the values it superseded; retractNarrationCapture undoes all three |
+| Y02 XCARD-FACTION-SURFACE-UNSTAMPED | SAFETY | routeEntityDrafts got no narrationId, so the faction auto-surface page (and a placeholder rename) survived the X-Card and FACTION LANDSCAPE handed the faction back → both detection passes pass the id; the surface page is stamped (deleted by the X-Card) and a rename carries renamedBy (reverted unless renamed since) |
+| Y03 XCARD-REFLECTION-CAPTURE-UNSTAMPED | SAFETY | a published reflection's card and its tier pass carried no narrationId, so its detail survived the X-Card on it → publishToMainChat stamps newNarrationId() and the hook hands it to the capture |
+| Y04 NARRATION-CACHED-STORE-SIBLINGS | LOSE-STATE | galley/closing vignettes, !incite / Session panel / Campaign Start phase 5 and the native progress-roll hook handed the narrator the cached campaignState; a refused write left the GM alone holding the minted scene and sidecar facts → each narrates on a deepClone working copy (X09 shape) |
+| Y05 CONCURRENT-SCENE-MINT | LOSE-PLOT (RACE) | two narrations one command fires (Begin's clock+galley vignettes, !ptp's trigger vignette+follow-up) each minted a scene inside the first start's round trip; the loser's facts dropped → startScene serialised per client (bounded wait, then adopt); galley after clock vignettes, follow-up after trigger vignette (bounded) |
+| Y06 RELAYED-SESSION-WRITE-REFUSED-SILENT | GM-GATE / UX (LOSE-STATE) | a player's End a Session / Set a Flag / Take a Break posted its card before the canonical GM's write, which the world refused with only a console line on the GM → on a relayed request the refused write posts the GM's note where the card is (X13's shape; a private flag's note whispered, without its text) and still throws |
+| Y07 READY-RESET-RELEASES-LIVE-LOCK | RACE / LOSE-STATE | a second GM's world load reset a connected GM's live move lock as stale → the ready reset clears only a lock no other connected user holds (W25's rule), only while the store still holds that claim, and writes nothing when the load changed nothing |
+| Y08 PACED-ROLL-DROPPED-AT-LOCK | LOSE-STATE (UX) | The paced Roll and the "Which fight?" pick stamped their card and posted without deferWhileBusy, so a press during another move (or before a session) was dropped → both posts carry deferWhileBusy: held by the lock and the session gate, rolled when they can be |
+| Y09 PRICE-STANDS-RETIRES-OWED-ROLL | RULES | A burn to a weak hit that keeps the Pay the Price retired the price's resist card and redirect picker with the superseded outcome's cards → price cards are stamped priceCard and kept as the upgraded outcome's; the move card says their roll or choice is still owed |
+| Y10 VOW-RECOMMIT-ON-FULFILLED-VOW | WRONG-DETAIL (LOSE-STATE) | an armed vow recommit pressed after the vow was fulfilled lowered its track and raised its rank on every copy → refused as vow-completed with a short card, the offer closed; completed copies are never written |
+| Y11 WAY-OUT-BATTLE-AS-FIRST-PC | ATTRIBUTION (WRONG-TARGET) | a GM's way-out pick or Battle on a crewmate's threshold rolled the first PC → the threshold's roller rides onto both cards; the roller's player or a GM presses, as that roller |
+| Y12 REGENERATE-ERASES-PROMOTED-CANON | LOSE-STATE | ↻ Regenerate rewrote an NPC's/ship's Notes tab whole (portrait alone kept), erasing a ⤴ promoted canon detail from the tab, panel and narrator card → seeds replace only their own marked introduction, the rest kept (D4 A) |
+| Y13 NPC-PRONOUNS-SHEET-EDIT-IGNORED | WRONG-DETAIL (mirror drift) | every NPC surface read the record's pronouns, which a sheet correction never reached; Finalise wrote the record's/rolled set over the sheet's → the sheet's Pronouns field is the card's pronouns (getter overlay, panel reads through it, seed prefers it, portrait prompt lead follows it) |
+| Y14 SITE-PINS-NOT-POSITION-ANCHORS | WRONG-DETAIL | A charted site's pin anchored neither way: a token on it recorded "deep space", and an arrival there (nearestLocationId) never moved the token — the sync and the X-Card restore read settlements only → a charted site pin records nearestLocationId ("near"); the sync and the restore follow nearestLocationId to its pin; an undiscovered pin names no place |
+
+### Tenth bug audit (issue #336, part 2 of 4) — all nineteen fixed in the v1.7.36 cycle
+
+Found by the same audit (the report and probes as above): the low findings
+Y15–Y33 — moves, pipeline, upgrades and rules; cards and payoffs; narration,
+fact continuity and the World Journal. None has been checked in a live
+Foundry world yet. The ones to try: Combat Bot on a Clash (Y15); a pressed
+🏁 before Begin a Session, from the player's client (Y17); the 🛡 resist card
+on a weak hit that still offers a burn (Y18); a rider's supply cost while the
+crew is unprepared (Y19); a reward pick on a vow deleted from the sheet
+(Y27); `!recap session` after an NPC-voiced narration with audio on (Y29);
+Replace… in Correct Active Scene Facts while a player plays the X-Card (Y30);
+a faction named "the Iron Syndicate" and "Iron Syndicate" (Y31). Choices for
+the maintainer to confirm: Y10 stamps no `resolutionId` on a recommit offer
+(its move is a progress roll — nothing can burn or improve it); Y16's GMs'
+card reads "Move not fully saved"; Y20's GM press retires a gone-PC card;
+Y23 skips an NPC card's sheet roll entirely (not narrated); Y33's remedy
+names ✦ Envision again (which rolls a new incident).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| Y15 COMBAT-BOT-CLASH-ADD | RULES / WRONG-DETAIL | One ";"-joined sentence's add was read for both moves it names: Combat Bot's Strike +1 offered pre-checked on Clash → extractAdds splits a sentence into clauses at ";" and before a mid-sentence "if you <Move>"; an add belongs to the clause whose link names the move, a clause naming none continuing the one before |
+| Y16 REFUSED-METER-WRITE-LOSES-RECORD | LOSE-STATE | A refused meter write threw before the move's record — the arrival / legacy mark / site lost under "check your API key" → the meter writes are caught, the record still written, the refused meters a Retry step on the GMs' persist card; the notice names the cause |
+| Y17 SESSION-GATE-HELD-PRESSER-UNTOLD | UX | a relayed, claimed button's forced move held by the session gate whispered only its author (the GM) → the notice also whispers the speaking PC's players, and the held move's line says "Held — no session has begun" until the drain hands it back |
+| Y18 RESIST-CARD-CLOSES-BURN-UNHINTED | UX | The resist card — the roller's next move, which closes the move's burn — carried no D2 hint → the card and the executor's line carry it while the move still offers an upgrade (upgradeOpenFor; the pipeline's upgradeOffered before the move card posts) |
+| Y19 RIDER-SUPPLY-LOSS-WHILE-UNPREPARED | RULES | An asset rider's "-1 supply" while unprepared wrote 0 → 0 and was summarised as applied → not written: the W16 picker, bound to the move, and the rider reported not applied with a line; a Retry that finds the PC unprepared posts the picker and settles the step |
+| Y20 SUFFER-PICK-GONE-PC-FIRST-PC | ATTRIBUTION | A pick on a suffer card whose PC was deleted applied, unchecked, to the world's first PC → a player is refused (no-actor); a GM's press applies nothing and the card says its character is gone; the first-PC fallback is gone |
+| Y21 SUFFER-MISS-TABLE-SEEDED-UNROLLED | RULES / WRONG-DETAIL | Every Endure Harm / Stress / Withstand Damage miss seeded the narration with a mortal-wound / desolation / vehicle-damage roll whatever the meter held → no seed; the at-0 choice card's roll is the one, its card carrying it (oracleMemory) into RECENT ORACLE RESULTS |
+| Y22 NON-NUMERIC-ABILITY-ADDS-LOST | RULES / WRONG-DETAIL | "add +heart" / "add +its health" read as no add — surfaced unchecked, the bonus lost → the scan resolves "+<stat>" from the roller's snapshot and "+its health" from the companion asset's track, offering the number (labelled) on the confirm dialog; a value from a general clause counts only when the ability names the move nowhere; "+cargo" / "that amount" stay text |
+| Y23 NATIVE-PAYOFF-NPC-CARD-SPEAKER | WRONG-TARGET (ATTRIBUTION) | a vow rolled on an NPC card's sheet paid the crew's sole open vow, offered a recommit for the NPC and was narrated as the GM's first PC → both native-roll hooks act only on a player character's roll |
+| Y24 CLAIM-AFTER-EFFECT-REFUSED-STAMP | DUPLICATE (RACE) | a refused stamp after the effect left the connection and milestone pickers and the won-fight ⚑ live for a second effect → the pickers claim first (released on a failed effect); the won-fight mark is recorded per card on the vow's payoff ledger |
+| Y25 VOW-RECOMMIT-SOLE-OPEN-FALLBACK | WRONG-TARGET | a recommit rewrote the sole open journal vow, or from a journal vow's miss the crew's one open Item vow → Item by id or the roller's exact name only (ownOnly), twin by id or byNameOnly; a journal-only vow recommits from its own ticks |
+| Y26 RECOMMIT-EPIC-RANK-TEXT | WRONG-DETAIL (cosmetic) | the Recommitted card said an epic rank "rises to epic" → says it stays epic |
+| Y27 REWARD-PICK-VOW-GONE-NOTICE | UX | a reward pick or Link for a vow nobody holds said "choose / link it again" → the writers report refused vs no-copy; a vow nobody holds closes the card and says why |
+| Y28 CARD-NAME-UNESCAPED | WRONG-DETAIL (HTML sink) | The !at card, the !sector list / switch cards and the Companion Takes a Hit / Withstand Damage bodies printed a document's name raw → escaped (escapeChatHtml / the executor's escapeHtml) |
+| Y29 SESSION-RECAP-NPC-MARKUP | WRONG-DETAIL | !recap session quoted narrationText with escaped <npc> markup → stripMarkup before the sentence split |
+| Y30 REPLACE-AFTER-XCARD-REFILES-REMOVED-FACT | SAFETY (RACE) | a Replace saved after the X-Card relabelled its retraction 'gm' and filed the removed fact live; the merge preferred the correctedTo copy → strike/replace refuse an already-retracted entry ("already retracted"); the merge keeps an X-carded store truth and drops a stale correction's replacement |
+| Y31 FACTION-PAGE-IDENTITY-BY-EXACT-NAME | WRONG-DETAIL (DUPLICATE) | "The Iron Syndicate" vs the "Iron Syndicate" record made a second page and missed the canonical stance → one faction identity key (case, spacing, leading article) for the record, the Factions page, the entity gates and the landscape dedup |
+| Y32 LIFT-RESTORES-LORE-ANOTHER-STRIKE-STILL-RETRACTS | WRONG-DETAIL (LOSE-PLOT) | a lift restored a lore entry another standing strike still stated (the entry remembered one strike) → restoreStruckLore consults loreRetractionHolder (other strikes — entry handed on — X-Card retractions, earlier scenes' strikes) |
+| Y33 INCITING-PREMISE-REFUSED-SILENT | UX | a refused premise write was a console line only → a whispered "Premise not saved" card to the asker and the GMs naming the remedy |
+
+### Tenth bug audit (issue #337, part 3 of 4) — all sixteen fixed in the v1.7.36 cycle
+
+Found by the same audit: the low findings Y34–Y49 — entities; sessions and
+clocks; sectors, oracles and truths; multiplayer, audio and logs; panels,
+help and developer docs. None has been checked in a live Foundry world yet.
+The ones to try: a refused draft Confirm, then Confirm again (Y34); the
+inciting ⚔ pressed before Begin, then again after (Y36); + twice quickly on a
+clock one segment from full (Y37); edit the saved Setting Truths page, then
+an `@scene` (Y39); a player's Private Channel with no GM connected (Y41); type
+a track or clock name while a player's move updates the panel, and edit a
+Chronicle entry while a narration posts (Y45). Choices for the maintainer to
+confirm: Y40 tells the GM to reload (confirmed since: v13 fires no
+client setting's onChange for an unchanged value — the Foundry reference); Y42 accepts the world's exact audio slot and,
+on The Forge, any Assets Library URL ending in the clip's file (the origin
+is shared — see AUDIO-FORGE-ORIGIN-SHARED below); Y45's add forms keep their
+selects after Add.
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| Y34 REFUSED-REGISTRATION-ORPHAN | LOSE-STATE / DUPLICATE | a refused id-list registration left an unlisted Actor: a retried Confirm made a second card, a sidebar ship's refusal was a console warn and no load pass listed it, a refused art index left the portrait unlinked (billed again) → creators adopt the unlisted Actor of their type/name/sector, the GM is told, the canonical GM's load lists flagged unlisted Actors, a refused art index leaves the portrait linked |
+| Y35 PROMOTE-RACE-DROPS-CAPTURE | RACE | the sheet-notes Promote wrote the record built before its Notes await, dropping a tier detail the capture appended meanwhile → re-read the record after the Notes write |
+| Y36 INCITING-SWEAR-DISABLED-AFTER-GATE | UX / LOSE-STATE | the inciting ⚔ pressed before Begin was dropped by the gate ("press the button again") while the press disabled its button for good → the gate's notice names the dropped post and the presser's client re-arms its button |
+| Y37 CLOCK-FULL-CHECK-OUTSIDE-QUEUE | DUPLICATE | Two presses on a clock one segment from full each read it as not full before the W53 queue: two TRIGGERED cards and vignettes → the full check runs inside the queued write (mutateClock reports before/after; a full clock is not written); the second press posts "already triggered" |
+| Y38 LORE-REPAIR-CACHED-MUTATION | LOSE-STATE | !lore set the repaired worldTruthsJournalId on the cached setting before the refusable write → set after writeTruthsLink resolves |
+| Y39 TRUTHS-PAGE-EDIT-NOT-REPARSED | LOSE-STATE (mirror drift) | Only the truths page's creation was read; an edit left worldTruths on the pre-edit text until the next load while !lore read the page live → an updateJournalEntryPage hook (canonical GM) re-records a text edit of the linked journal's page (recordSystemTruths); the Quickstart's own journal is not re-read (its flag is the store) |
+| Y40 ADVERTISE-REFUSED-SILENT | UX / GM-GATE | the claudeApiKey onChange swallowed a refused keyed-GM registry write (.catch(() => {})) → warned as the ready path is, and the GM is told to reload to register it |
+| Y41 PRIVATE-TRANSCRIPT-NO-GM-SILENT | LOSE-PLOT / UX | a flush with no journal (no GM to create it, or none answering) kept the turns in memory with only a console line → the player is told once, the window says so while it lasts, and "saved now" when a write lands |
+| Y42 AUDIO-DONE-PATH-UNBOUNDED | SECURITY | A keyless player played any audio.synth.done / audio.cache.found path ending in /<hash>.mp3, so a forger's URL replaced the narration → only a path the GM's cache could name is played (cache.isCachePathFor: the world's own slot, or a Forge Assets URL); anything else is no answer and the waiter waits on |
+| Y43 PTP-PCLESS-REFUSED-SILENT | UX / GM-GATE | a PC-less player's !ptp route was refused on the GM with a console line only, under a card naming the route → refused on the typist's client before the card: the footer says "not applied" and the player and the GMs are whispered why |
+| Y44 THRESHOLD-TRACK-ID-DEAD | PRODUCED-BUT-DEAD | Enter the Fray wrote thresholdTrackId on the threshold card and nothing read it → the write is deleted (X50 precedent) |
+| Y45 PANEL-RERENDER-WIPES-INPUT | UX | A hook re-render of the Progress Tracks / Clocks panels wiped a half-typed add form, and the Chronicle lost an in-place edit (no blur fires on removal) → replaceKeepingInput carries the form values, the focused entry's changed text, and focus |
+| Y46 README-COMMANDS-DRIFT | DOC-DRIFT | README lacked eleven routed commands and sub-commands, the clock rows' (GM), and !bond's syntax → rows added; a test compares README with the routes and gates |
+| Y47 HELP-FIRST-SESSION-ABOUT-GM-ONLY | DOC-DRIFT | The First Session walkthrough called Companion Settings → About "GM only" → every player enters their own keys there and the OpenRouter key is the GM's; helpRoleClaims checks every page |
+| Y48 FACTION-FLOW-PANEL-EDIT-CLAIM | DOC-DRIFT | faction-flow.md said the Entities panel edits a faction's stance → it names !journal faction as the manual stance correction |
+| Y49 PLAYKIT-PUNCH-LIST-STALE | DOC-DRIFT | The play-kit coverage doc listed as open what the tree had fixed (3.1.1–3.1.3, 3.2, 3.3.1/4/6, 3.4, 3.5), restated in Part 2 → each marked "— FIXED (where)" (3.1.3 as the vendor's rule), 2.2 / 2.4 / 3.5 rows updated, 3.6 recap and maintenance footer bumped; a unit test reads the doc |
+
+### Tenth bug audit (issue #338, part 4 of 4) — the ten decisions built in the v1.7.36 cycle
+
+The ten rows that needed the maintainer (D1–D10), each with a probe that
+asserted the recommended option. The maintainer took the recommended option
+on every row on 2026-11-05 (decisions.md, "Issue #338 decisions"); D6's and
+D9's probes were rewritten to the option taken. Each change carries its own
+regression tests, which fail with the change taken out. None has been
+checked in a live Foundry world yet. The ones to try: a crewmate pressing
+another player's ⚔ Attempt to Finish the Fight (D1 — refused; each button
+works once per card); a Face Danger and a Secure an Advantage while a scene
+challenge is open (D2); a Sacrifice Resources at supply 1 while unprepared,
+and a crewmate's Resupply (D3); ✦ Finalise on a hand-made ship with Notes
+(D4); `!oracle fleet` in an Expanse sector (D5); the X-Card on a Make a
+Connection narration, before and after the table uses the connection (D6);
+burn a miss whose Pay the Price triggered a clock (D8); push-to-talk with a
+half-typed line (D9).
+
+| ID | Decision | What changed |
+|---|---|---|
+| D1 UNRELAYED-FOLLOWUP-NONOWNER | A | a crewmate could press ⚔ Finish the Fight / 🗺 Finish the Expedition / ⚔ Swear it on another player's card and roll that player's move, once per client → relayed (tda.attempt, expedition.finish, vow.swearRoll): the roller's player or a GM, claimed once, posted as the roller |
+| D2 SCENE-CHALLENGE-VARIANT-MOVES | A | Within a scene challenge the ordinary Face Danger / Secure an Advantage marked no progress and filled a segment only via Pay the Price, never two → two interpreter-typable moves scored against the open challenge (applyOutcomeEffects → scoreSceneChallenge), the price's advance skipping that clock, upgrades from the clock receipt; Begin the Scene named as missing (the panel's Add) |
+| D3 SACRIFICE-WHILE-UNPREPARED-ABOVE-ZERO | A + the crew-wide clear | A PC unprepared above 0 supply paid a loss of resources from the supply (redirect and greyed option keyed on 0) → keyed on the impact (sufferExecutor.isUnprepared): picker at any supply, Sacrifice Resources greyed; unpreparedAtZeroSupply retired; Resupply's clear is the crew's (clearUnprepared — fixes UNPREPARED-CLEAR-ONE-PC) |
+| D4 SEED-REWRITES-HAND-NOTES | A | Finalise on an unseeded NPC card replaced the GM's Notes/Characteristics; a hand-made ship with Notes was only stamped, leaving Regenerate (which replaced them) the only way to its identity → marked `sf-seed-intro` introduction, the rest kept, prepended on an unmarked tab; Characteristics keep non-seed lines; X34 narrowed to a ship with a rolled identity |
+| D5 MISSION-REF-REGION-BLIND | A | Fleet's "Starship Mission" and Starship Type's "Multipurpose" refs named the Terminus mission table in every region → !oracle passes the active sector's region and a regional ref rolls that region's table (Terminus with none) |
+| D6(i) XCARD-DRAFT-ROWS | A | an X-carded narration's draft rows stayed pending (Confirm minted the NPC from the removed beat; the name blocked re-detection) → the card carries its narrationId and the X-Card marks its pending rows xCarded (re-rendered, not dismissed) |
+| D6(ii) XCARD-AUTO-CREATED-CONNECTION | A, narrowed | an auto-created connection outlived the X-Card on its Make a Connection narration (roster, ENTITIES IN SCENE, live bond) → stamped createdFromNarrationId; the X-Card deletes it with its bond Items while unused, else whispers the GMs once naming it |
+| D7 XCARD-PROMOTED-DETAIL-STAYS-IN-NOTES | A | the X-Card dropped a promoted tier entry but its copy on the Notes tab stayed → the entry keeps { narrationId, promotedText } and the X-Card strips that paragraph (Notes tab, else the record's notes) |
+| D8 BURN-REWINDS-FIRED-CLOCK-KEEPS-ITS-VIGNETTE | A | A burn/improve that rewound a fired clock left its trigger vignette live with binding truths, and the superseded narration's ledger entries stood → trigger vignettes carry clockId; the reversal strikes the clock's newest trigger vignette (burnSuperseded) and both narrations' entries are retracted by narrationId (retractedBy "superseded") |
+| D9 PTT-OVERWRITES-DRAFT | B | Push-to-talk into a chat box holding a draft adds the transcript after it and does not submit; an empty box still auto-submits |
+| D10 AUDIO-CACHE-PREFILL-KEYED-GM | A | A canonical GM with an ElevenLabs key files no relayed clip (it makes its own); the relay still serves a keyed player at a keyless GM's table |
+
+Found while fixing — fixed in the same cycle:
+
+- ~~**XCARD-CONNECTION-SHEET-USE**~~ (SAFETY) — fixed (`0900b88`). D6(ii)'s
+  delete path judged a connection "used" by its record alone, so a GM's
+  paragraph on the NPC card's Notes tab (the card's notes since X12) or a
+  line in its Characteristics was deleted with the card → with D4's marked
+  introduction, Notes text outside the seed's block and the portrait, or a
+  Characteristics line the seed did not write, counts as a use
+  (`sheetWrittenByTable`).
+- ~~**ORACLE-FOLLOWUP-WAIT-IMPORT**~~ (test, timing) — fixed (`2bfc9d3`). Y05's
+  wait for a trigger vignette was reached through a dynamic `import()`, a
+  module load no promise queue sees, so on the integrated branch two
+  `oracleFollowup.test.js` cases saw the narration late → imported
+  statically.
+- ~~**UNPREPARED-CLEAR-ONE-PC**~~ (WRONG-DETAIL, from the issue #315 cycle) —
+  fixed (issue #338 D3, the maintainer's call on the rule): Resupply's "clear
+  unprepared" cleared the roller alone, so an ally stayed unprepared above 0
+  → `clearUnprepared` clears the roller and every ally sharing the supply
+  (`supplyAllies`), and a card names them.
+
+Found while fixing — fixed in the same cycle. The maintainer asked for the
+open items to be fixed (2026-11-05); each fix carries regression tests that
+fail with it taken out (`docs/testing/fix-sensitivity.md`), and four more
+found while fixing them are fixed too (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED,
+SCENE-VARIANT-ABILITIES-UNKEYED, PACED-VARIANT-NO-TARGET,
+FACTION-SECTOR-GEN-CLAIM). None has been
+checked in a live Foundry world. The ones to try: play the X-Card just after
+a narration that names a new NPC and a faction (XCARD-LATE-CAPTURE); two GMs,
+the second joining while a move is narrated, then the next move
+(LOCK-RESURRECTED-BY-COGM-STALE-WRITE); a crewmate pressing another
+player's paced Roll (PACED-ROLL-OPEN-PRESS, RELAY-REFUSED-PRESS-UNTOLD); the
+Hoverbike's afterburner on a Face Danger (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED);
+a narration's Roll during a scene challenge (PACING-ROLL-NO-SCENE-CHALLENGE).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| XCARD-AFTER-STRIKE-STILL-NAMED | SAFETY | a GM strike of an X-carded narration's truth kept retractedBy "gm" (named under CORRECTED and in the leave-out list, liftable by !truth set) → the X-Card relabels the bare strike "xcard" and drops its sessionRetractions entry (kept with narrationId); !truth set restores struck lore only after a persisted lift |
+| MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED | SAFETY | a Make a Connection confirming an earlier pending draft was unstamped, so the X-Card kept the NPC and the row stayed confirmed → stamped with the narration and the row; the X-Card deletes it while unused, reopens the row, and returns promoted ledger facts to the name |
+| XCARD-CONNECTION-PORTRAIT-ORPHAN | LOSE-STATE | D6(ii)'s delete left the portrait's Art: entry and artAssetIds entry → deleted with the card (canonical GM, index written on a copy, refusal logged) |
+| XCARD-LATE-CAPTURE | SAFETY | a capture still running when the X-Card was played wrote lore, beats, a faction page, a stamped draft card, a connection and tier details after the undo had run → every capture write checks the stored xCardedNarrationIds first (isNarrationXCarded); passes check on entry (no Claude call); a portrait of a vanished entity is not stored |
+| SHIP-POSITION-FLAG-MERGE | LOSE-STATE | setFlag merges, so a sidecar move's narrationId/previous survived later !at/course/expedition/token moves and an X-Card reverted the GM's move → every position record writes narrationId/previous (null unless a narration set them) |
+| LOCK-RESURRECTED-BY-COGM-STALE-WRITE | RACE | A co-GM's ledger persist, built before the old GM's release reached her, landed after it and carried the lock back → the lock fields are the lock's own paths' (the !roll spend and !migrate-entities take them from the store); the claimant remembers released claims and puts the lock back — free, or its later move's claim |
+| PTP-PCLESS-NARRATED-AS-FIRST-PC | WRONG-DETAIL | A PC-less player's refused !ptp was narrated with no speaker (the first PC) and remembered as established → a price nobody pays carries no oracleNarration/oracleMemory and asks for no follow-up |
+| TRIGGER-VIGNETTE-LATE-POST | RACE | A trigger vignette posted after its Claude call landed live for a clock rewound meanwhile; the burn found no card, or struck an earlier trigger's → narrated only while the clock is still full when its reply comes in (stillTriggered, all three sites, before the sidecar applies); the burn strikes nothing for a clock whose vignette is in flight |
+| ERROR-TEXT-BLAMES-KEY (remainder) | LOSE-STATE | A refused suffer-choice card post inside persistResolution was swallowed — cost unpaid, nobody told → a choiceCard step: record still written, the GM told by cause, the GMs' Retry posts it (refused once the move is upgraded) |
+| END-ON-ENDED-SESSION-WORDING | UX | The GM's own End on an ended session with the focus correction refused read "+1 momentum … could not be ended" → "already ended, so nothing was ended; the focus was not recorded"; a failed End promises no momentum |
+| PACED-ROLL-OPEN-PRESS | ATTRIBUTION | paced Roll / "Which fight?" pick posted from the presser's client with no ownership check and a local disable only → relayed paced.roll / whichFight.pick on applyCardRollerFollowup: claimed once on the GM, owner or GM only, posted as the roller with deferWhileBusy, pick checked against f.fights (closes WHICH-FIGHT-LOCAL-DISABLE) |
+| PACED-SUGGESTION-FLAG-DEAD | PRODUCED-BUT-DEAD | the paced Roll wrote fromPacedSuggestion, read nowhere → write and fixture copies deleted |
+| RELAY-REFUSED-PRESS-UNTOLD | UX | a press refused as not-owner / no-actor / not-a-pc was logged on the GM's console only → handlers call gmRelay.refusePress; runGmAction whispers the presser + GMs whose button it is, once |
+| SWEAR-ROLL-VOW-GONE | WRONG-DETAIL | ⚔ Swear it rolled (momentum, oath scene) for a deleted vow → refused when no PC holds the vow or the card is vowGone; card closed, presser + GMs told |
+| VOW-ID-NEVER-LANDED | UX | the reward/link writers and vowRewardStatuses matched the vowId flag only → actorBridge.isVowCopy also matches item.id === vowId |
+| SHIP-SEED-MISSION-REGION | RULES | seedStarshipActor / rollFreshShipSeed rolled starship_type with no region — a Multipurpose / Fleet→Starship Mission type got a Terminus mission beside a regional one → both pass { region } (ship.resolveActiveRegion; D5's rule) |
+| JOURNAL-ORPHAN-ON-REFUSAL | DUPLICATE | createFaction / createCreature made their journal before a refused registration, and a retried Confirm made a second → registry.adoptUnlistedEntityJournal (a faction by factionNameKey) in both creators; registerUnlistedEntityActors lists faction / creature journals at load |
+| BOND-ITEM-AFTER-RELIST | LOSE-STATE | the load-time pass (Y34) listed a refused Confirm's card, so the next Confirm took U25's exists path and made no bond Item → that path calls the idempotent registerConnectionOnActiveCharacter on the Confirm's PC |
+| NOTES-CARD-ENTITY-UNDECODED | WRONG-DETAIL | notesAsCardText decoded six entities, so the seeds' &middot; fact line reached ENTITIES IN SCENE and the panel raw → one-pass decode of the named entities seeds and the editor write, plus numeric ones |
+| LORE-READS-QUICKSTART-PRINTOUT | WRONG-DETAIL | !lore read the Quickstart journal's printout live, so an edit reached the recap but not the narrator's truths (Y39) → it reads the journal's worldTruths flag, printed in full; dialog saves still read from their page |
+| REPAIR-TRADE-WHILE-UNPREPARED | RULES | Repair's trade paid from the supply while the PC was unprepared above 0 → greyed on the dialog, refused on Apply and by the GM (isUnprepared); nothing repaired, "Repair again without the trade" |
+| PACING-ROLL-NO-SCENE-CHALLENGE | RULES | classifier knew no open challenge, its catalog lacked D2's variants, and the hint replaced a variant → told the open challenges, both variants listed, a variant with none open is the ordinary move, a hint naming the twin keeps the variant |
+| FINISH-SCENE-CLOCKID-DEAD | PRODUCED-BUT-DEAD | read tensionClockId off a list that drops it, so its retire never ran → removed; completeProgressTrack's retire is the one |
+| SCENE-CHALLENGE-MOVE-NAME | UX | cards, narrator tag, paced Roll and recap title-cased the id → one display name (i18n.moveDisplayName) |
+| VALUE-ADD-INTEGRITY | RULES | Hoverbike's "add +integrity" stayed text → read from the asset's Integrity track; only that ability's offers change |
+| HOVERBIKE-WEAK-AS-MISS-UNAPPLIED | RULES | VALUE-ADD-INTEGRITY offered the Hoverbike's +integrity pre-checked with its "count a weak hit as a miss" unapplied — a free add (found while fixing it) → the add is marked `weakHitAsMiss`, the dialog shows the cost, `resolveMove` turns a weak hit into a miss when it is taken, and a burn that would land on a weak hit is no improvement |
+| SCENE-VARIANT-ABILITIES-UNKEYED | RULES | since D2, an ability linked to Face Danger / Secure an Advantage did not match the scene-challenge variants, so they lost their asset adds and stat swaps (found while fixing VALUE-ADD-INTEGRITY) → `sceneChallenge.assetMatchMove` maps a variant to its twin at every matcher (structured matches, adds, stat substitutions, the Haiku pass, the rider prompt); the sweep's variant rows equal their twins' |
+| PACED-VARIANT-NO-TARGET | UX | with two challenges open a paced Roll's variant named none, so its card asked "which scene challenge?" (found while fixing PACING-ROLL-NO-SCENE-CHALLENGE) → the classifier names the challenge, the card keeps its id, the Roll relay forwards it as the move's target |
+| W16-CHOOSE-BELOW | UX | said "(choose below)" while its picker posts first, above it → "(choose it on its card)", order kept |
+| READDEBILITIES-CUSTOM-COMMENT | DOC-DRIFT | comment denied the vendor's custom1/custom2 impacts; the fallback ignored them → corrected; they count |
+| TRACK-ADD-REFUSED-LOSES-NAME | UX | the panel cleared the typed name before its add; an add the world refused or no GM took lost it → still cleared at the press (a second press adds nothing twice); name, type and rank restored on the live form when the add was not made, unless a new name was typed meanwhile |
+| DEFECT-PATCHES-STALE | tooling | three #306 R04 defect patches no longer applied to src/index.js → regenerated for the same defects (xp-before-write as the mark paid before its write, since W52); the full run then found the two TDA-BUTTON-NO-TARGET which-fight patches stale after PACED-ROLL-OPEN-PRESS relayed the pick (one no longer applied, one no longer caught) → regenerated for the relayed pick (the stamp ignored by both the buttons and the GM's claim; the post unspoken); --inject over all 26 patches exits 0 |
+| FACTION-SECTOR-GEN-CLAIM | DOC-DRIFT | the faction flow map and the faction record's `seeded` comment said the Sector Creator makes faction records (found while fixing JOURNAL-ORPHAN-ON-REFUSAL); it makes none — the sector keeps the faction's name — and the draft Confirm is `createFaction`'s one production caller → both corrected |
+
+The smaller notes are done too: `nonGmClientPaths.test.js` clears the
+ElevenLabs key after each case; `finalize.js`'s header names the five types
+Finalise covers; `confirmDraft` uses the static faction import; and the
+Foundry reference covers `keepId`, removable notifications and a client
+setting's `onChange` on an unchanged value — which confirms Y40's "reload"
+remedy (re-saving the same key runs no `onChange`).
+
+Still open — found while fixing them (each proposed for the maintainer):
+
+- **AUDIO-FORGE-ORIGIN-SHARED** (SECURITY, residual of Y42) — documented, not
+  tightened: the module never builds a Forge URL (`cache.js` returns the
+  upload's or the listing's own path), so the Assets Library layout is
+  unestablished without a live Forge world, and requiring
+  `/worlds/<world>/audio/<xx>/<hash>.mp3` would still pass another account's
+  file at that path. The check and the help's Audio Narration page say so; a
+  forged "no clip" (`path: null`) stays a nuisance.
+- **AUDIO-FORGE-ANY-WORLD** (SECURITY, low). `isCachePathFor` accepts an
+  Assets Library URL in every world, a self-hosted one included, where the
+  GM's cache can never produce one. Proposed: accept the Forge branch only in
+  a world running on The Forge, once a live check confirms how to detect it.
+- **XCARD-LATE-REVIEW** (SAFETY, low). The background consistency check
+  still posts the GM-only ◈ Narrative Review card, and logs telemetry, for a
+  narration the X-Card removed — quoting the removed prose. Proposed:
+  `isNarrationXCarded` after its Haiku call returns.
+- **XCARD-STRIKE-ENDSCENE-RACE** (SAFETY, low; an instance of
+  END-SESSION-STALE-ENDSCENE). `endScene` builds `sessionRetractions` from
+  its copy taken before its awaits, so an X-Card during them on a narration
+  whose truth the GM struck gets the strike written back, named under
+  CORRECTED again. Proposed: drop entries whose `narrationId` is in the live
+  `xCardedNarrationIds` before its final persist.
+- **LOCK-LOST-BY-COGM-STALE-WRITE** (RACE, two-GM; the reverse of
+  LOCK-RESURRECTED-BY-COGM-STALE-WRITE). A co-GM's write built before a claim
+  reached her lands after it, carrying `pendingMove: false` or an older claim
+  over the live one, so a second pipeline can start. Proposed: the claimant
+  restores its live claim when no handover released it (a release marker), or
+  the lock moves to its own setting.
+- **LOCK-RESURRECTED-DEPARTED-CLAIMANT** (RACE, two-GM, residual). A stale
+  write that brings back a claim the W25 handover or the ready reset released
+  has no claimant left to undo it; the lock holds until the next GM load.
+  Proposed: the canonical GM releases, on any campaignState update, a lock
+  whose claimant is not connected.
+- **TRIGGER-VIGNETTE-POST-WINDOW** (RACE, sub-second, residual of
+  TRIGGER-VIGNETTE-LATE-POST). A rewind during the vignette card's own create
+  round trip lets the card post live; the burn skips it. Proposed: re-check
+  the clock after posting and supersede the card.
+- **RIDERS-IGNORE-UNCHECKED** (RULES). Consequence riders are extracted from
+  every ability the scan finds and applied after the roll whatever stayed
+  checked on the confirm dialog, so an unchecked ability's rider still fires
+  (the Hoverbike's "+2 momentum on a strong hit" without its add taken).
+  Proposed: filter `interpretation.extractedRiders` by `appliedAbilityKeys`
+  in `applyMoveConsequenceRiders`.
+- **PTP-PCLESS-CLOCKS-ADVANCE** (RULES, the maintainer's call). A refused
+  `!ptp` still relays `payThePrice.advanceClocks`, which can fire trigger
+  vignettes. Proposed: skip the advance when there is no payer.
+- **PTP-ANY-ROUTE-PICKER-REFUSED-SILENT** (LOSE-STATE, low).
+  `dispatchPayThePriceSufferRoute`'s "any" route ignores a refused
+  `postSufferChoiceCard`, so the price is lost silently (ERROR-TEXT-BLAMES-KEY's
+  remainder, at the `!ptp` site). Proposed: the same `choiceCard` step.
+- **SCENE-CHALLENGE-ADD-ORPHAN-CLOCK** (LOSE-STATE / DUPLICATE, low).
+  `addProgressTrack` creates a scene challenge's tension clock before the
+  track write; a refused track write leaves the clock with no track, and each
+  retry adds another. Proposed: create the clock once the track lands, or
+  remove it when the write rejects.
+- **KEYS-NOT-CLEARABLE** (UX, low). The About tab renders the key fields
+  empty and Save Keys writes only a non-empty one, so no module UI clears a
+  stored Claude, OpenRouter or ElevenLabs key (Y40's "cleared key" branch is
+  reachable only from the console). Proposed: a Clear control per key.
+- **RECOMMIT-GONE-ROLLER-WORDING** (UX, low). `applyRollerRecommit` has no
+  gone-roller (`not-a-pc`) check, so a player pressing a recommit whose
+  character was deleted is told "names no character of yours"; a GM's press
+  does nothing. Proposed: refuse `not-a-pc` there, as its siblings do.
+- **ART-INDEX-RESURRECTED** (low). `persistResolution` merges `artAssetIds`
+  as a union, so a move in flight can write back an index entry
+  XCARD-CONNECTION-PORTRAIT-ORPHAN dropped — harmless (`loadArtAsset` finds
+  nothing). Proposed: drop entries whose journal is gone at the merge.
+- **REGENERATE-PORTRAIT-ORPHAN** (low). `regeneratePortrait` lacks the
+  host-gone check `generatePortrait` now has. Proposed: the same check before
+  `storeArtAsset`.
+- **CHARACTER-STATE-ENTITY-UNDECODED** (WRONG-DETAIL, cosmetic; a sibling of
+  NOTES-CARD-ENTITY-UNDECODED). actorBridge's private `stripHtml` (CHARACTER
+  STATE from a PC's notes, biography, asset text and items) decodes no
+  entities, `narratorPrompt.stripHtml` decodes `&amp;` first, and
+  `truths/generator.htmlText` keeps a third table. Proposed: one shared
+  one-pass decoder.
+- **PACED-CARD-OLD-MOVE-NAME** (known, below): `applyPacedRoll`'s `build` is
+  now the one place its proposed `toMoveId` guard would go.
+
 ### Ninth bug audit (issue #331, part 2 of 3) — all fifty-two fixed in the v1.7.36 cycle, and the three found while fixing
 
 Found by the ninth bug audit (2026-11-04) of `8715172`, with a probe per
@@ -639,7 +960,9 @@ Open — found while fixing, not fixed:
 - **XCARD-CHRONICLE** (SAFETY). An X-carded narration's Chronicle entry stays
   (`scheduleChronicleEntry`), and the Chronicle feeds the campaign recap, so
   the removed beat can return at the next session start.
-- **XCARD-LATE-CAPTURE** (SAFETY). The detection and tier passes run about
+- ~~**XCARD-LATE-CAPTURE**~~ (SAFETY) — fixed (the tenth audit's open items,
+  2026-11-05: every capture write checks the stored `xCardedNarrationIds`
+  first). The detection and tier passes run about
   2 s after a narration; an X-Card played inside that window does not stop
   them writing lore and tier details from the removed prose (the X-Card
   undoes only what was written before it — `propagateRetraction`, and since
@@ -685,10 +1008,12 @@ Open — found while fixing, not fixed:
   open, Enter the Fray uses `selectCombatTrack`'s sole-open fallback and never
   posts its threshold card; an Undertake naming a new destination marks the
   one open expedition.
-- **WHICH-FIGHT-LOCAL-DISABLE**, ~~**FULFIL-BUTTON-LOCAL-DISABLE**~~
-  (DUPLICATE). The "Which fight?" pick (now also for Strike, Clash and
-  Undertake) is still disabled only locally; a second client or a re-render
-  rolls again. The fix is U02's relay-and-claim — which the 🏁 Attempt to
+- ~~**WHICH-FIGHT-LOCAL-DISABLE**~~, ~~**FULFIL-BUTTON-LOCAL-DISABLE**~~
+  (DUPLICATE) — both fixed; the which-fight pick by PACED-ROLL-OPEN-PRESS (the
+  tenth audit's open items, 2026-11-05: relayed `whichFight.pick`, claimed
+  once, the roller's player or a GM). The "Which fight?" pick (now also for Strike, Clash and
+  Undertake) was disabled only locally; a second client or a re-render
+  rolled again. The fix is U02's relay-and-claim — which the 🏁 Attempt to
   Fulfill buttons now have (`fulfilVow.attempt`, fixed in the issue #329
   cycle).
 - **PACED-CARD-OLD-MOVE-NAME** (WRONG-DETAIL, low). Paced cards posted before
@@ -823,13 +1148,11 @@ PCs, and a Sacrifice Resources that takes the shared supply to 0 (S07).
 
 Open — found while fixing, not fixed (outside the audited paths):
 
-- **UNPREPARED-CLEAR-ONE-PC** (WRONG-DETAIL, mirror of S07). The crew now
-  marks unprepared together, but Resupply's "clear unprepared" clears the
-  roller's impact alone, so an ally stays unprepared at a supply above 0
-  until their own recovery move or a sheet edit. The rules say the allies
-  mark it together; they don't say who clears it. Proposed (needs the
-  maintainer's call on the rule): Resupply's clear goes through the same
-  crew (`supplyAllies`).
+- ~~**UNPREPARED-CLEAR-ONE-PC**~~ (WRONG-DETAIL, mirror of S07) — fixed (issue
+  #338 D3, the maintainer's call on the rule, 2026-11-05). Resupply's "clear
+  unprepared" cleared the roller's impact alone, so an ally stayed unprepared
+  at a supply above 0 → `clearUnprepared` clears the roller and every ally
+  sharing the supply (`supplyAllies`), and a card names them.
 - **SUFFER-RETRY-WHOLE-AFTER-METER** (DUPLICATE, latent). A suffer pick's
   executor writes the meter, then the impact (`sacrificeResources`'
   unprepared, `endureHarm`'s wounded, `endureStress`' shaken); a refused
@@ -1044,7 +1367,10 @@ Open — pinned or described, not fixed (each needs a decision first):
   "Narration unavailable — check your API key and proxy", and any pipeline
   exception, a refused campaignState write included, shows "Move
   interpretation failed. Check your API key…". Only a 401 is about the key.
-  Proposed: word the card and the notice by cause.
+  Proposed: word the card and the notice by cause. (Since the tenth audit: a refused meter
+  write — Y16 — and a refused choice card inside `persistResolution` —
+  ERROR-TEXT-BLAMES-KEY's remainder, which in fact was swallowed silently — are
+  each told by cause; the narration fallback card is still as described.)
 
 ### Bug audit follow-up (issue #301) — all four fixed in the v1.7.36 cycle
 

@@ -15,12 +15,15 @@ since issue #321, `fulfilVow.pick` and `milestone.suggestion` — and
 their card and post the forced move once for the pipeline — flagged
 `deferWhileBusy`, so one that meets the move lock is held on the canonical
 GM and rolled when the lock frees, never dropped with its card claimed:
-issue #325 W02), and since issue #325 W11 the swear cards' reward pick
+issue #325 W02; since issue #338 D1 also a new vow's ⚔ Swear it (roll),
+`vow.swearRoll`), and since issue #325 W11 the swear cards' reward pick
 and link (`vow.reward`, `vow.link` — `src/session/swearVow.js`
 `applyRewardPickFromRelay` / `applyPlayerVowLinkFromRelay`, each claiming its
 card once; they were the ad-hoc `vow.setReward` / `vow.linkConnection`
 socket relays). Only the vendor sheet writes a vow from the owner's own
-client.
+client. A press refused for whose the card is (another player's character,
+or one gone) whispers the presser and the GMs whose button it is
+(`gmRelay.refusePress`, known-issues RELAY-REFUSED-PRESS-UNTOLD).
 Effects credit the **roller**: the pipeline's `rollerActor` is the speaker
 resolved from the message, first PC only as a fallback — a GM's, or at a
 one-PC table; a PC-less player at a table of several rolls nothing (issue
@@ -36,7 +39,11 @@ Terminology up front, because it drives every gap below:
   Tracks journal flag. Only `addProgressTrack` creates one, and the panel
   can't (see gaps) — effectively dormant.
 - **Matching:** creation, shared-sync, reward-set, and connection-link key
-  on the **`vowId` flag**; fulfilment completion and payoff resolve through
+  on the **`vowId` flag** — reward-set, connection-link and the reward's
+  granted-or-lost check also take the Item whose own id is the `vowId`
+  (`actorBridge.isVowCopy`): a sheet-made vow's cards name it by its Item id,
+  and the createItem hook's stamp of that id as the flag can fail
+  (known-issues VOW-ID-NEVER-LANDED); fulfilment completion and payoff resolve through
   `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
   then collects every copy by `vowId`. (The old exact-name-only payoff
   matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The
@@ -89,21 +96,34 @@ on every copy (`setSharedVowReward`), on the canonical GM (`vow.reward`): the
 card is claimed once (`rewardChosen`), and a vow whose reward was already
 granted or lost is never promised again — an old card's pick re-promised a
 granted reward, so the next linked win or the fulfilment granted a second
-(issue #325 W11). A write that does not land — refused, or no copy of the vow
-to hold it — posts no "🎁 Reward set": the claim is released for another pick
-and the presser and the GMs are whispered (issue #329 X07).
+(issue #325 W11). A write that does not land posts no "🎁 Reward set", and
+the presser and the GMs are whispered why (issue #329 X07):
+`setSharedVowReward` reports `{ ok, reason }` — `refused` releases the claim
+for another pick ("could not be saved … choose it again"); `no-copy`, a vow
+no character holds any more (its Item deleted; a sheet-made vow whose `vowId`
+flag never landed is still found by its Item id — known-issues
+VOW-ID-NEVER-LANDED), closes the card (`rewardChosen: "no-vow"`) — "choose
+it again" asked for a retry that could never land (issue #336 Y27).
 
 **Player-authored vows.** `registerPlayerVowHook` (createItem hook, GM-side)
 catches sheet-made vows (no `vowId` yet), stamps `vowId = item.id`, and posts
 the "🆕 New vow recorded" card: stakes line, **⚔ Swear it (roll)** (forced
 `swear_an_iron_vow` without the inciting id — narrates + momentum, creates
 nothing twice; spoken as the vow's holder, the card's `actorId` or the PC
-holding its `vowId`, whoever presses it — issue #329 X05), a **connection
+holding its `vowId` — issue #329 X05; relayed `vow.swearRoll`:
+`applyPlayerVowSwearFromRelay` on the canonical GM claims the card once,
+`swearRolled`, and only the holder's player or a GM may press it — it
+posted from the presser's client, so a crewmate swore another player's vow,
+their momentum and oath scene, issue #338 D1; a vow no character holds any
+more is not sworn: the card closes, `vowGone`, and the presser and the GMs
+are told — it rolled the momentum and oath scene for a deleted vow,
+known-issues SWEAR-ROLL-VOW-GONE), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the
 vow did not take releases the claim and whispers the presser, with no
-"🤝 Linked" card — issue #329 X07), and the same reward offer.
+"🤝 Linked" card — issue #329 X07 — and a vow no character holds closes the
+Link instead, `vowGone`, saying why — issue #336 Y27), and the same reward offer.
 
 **The swear roll itself.** `swear_an_iron_vow` outcomes: strong +2 momentum,
 weak +1, miss none (`src/moves/resolver.js`) — the vow is sworn regardless;
@@ -123,8 +143,10 @@ All real progress lands on **item ticks** (`system.current`) via
   issue #326 W43; a plain Reach a Milestone's picker marks once). Any user's click
   relays `milestone.pick` to the canonical GM → `applyMilestonePick`, which
   checks the pick is one of the card's choices and that the requester owns
-  that PC (or is a GM), marks the vow, and stamps the card `resolved`
-  (idempotent, in-flight guarded). A vow fulfilled since the picker posted
+  that PC (or is a GM), claims the card (`resolved`) and then marks the vow
+  (idempotent, in-flight guarded): a refused claim marks nothing and a
+  refused mark releases the claim — it marked first, and a stamp the world
+  refused left the picker live for a second mark (issue #336 Y24). A vow fulfilled since the picker posted
   is refused (`vow-completed`, a short card; the picker stays open for its
   other vows), and `markVowProgress` never marks a fulfilled vow (issue
   #331 X20). A click with no GM connected, a refusal,
@@ -154,7 +176,10 @@ All real progress lands on **item ticks** (`system.current`) via
   fight's rank, ticks-per-mark by the vow's rank. Marked on the vow's
   **holder** — the card's roller (`actorId`) when they hold the vow, else
   whichever PC does (`resolveVowHolderActor`) — once per card (relayed
-  `fightVow.markMilestone`). The card's rank and 🤝 Deepen connection come
+  `fightVow.markMilestone`; the mark is recorded per card on the vow's
+  payoff ledger, `fulfilPayoff["milestone:<card id>"]` — `markFightVowMilestoneOnce`
+  — so a re-press after a stamp the world refused marks nothing, issue #336
+  Y24). The card's rank and 🤝 Deepen connection come
   from the same roller-first resolution (`postFightVowMilestoneCard`), not
   the first PC holding a vow of that name.
 - **Shared-vow lockstep**: `registerSharedVowSyncHook` copies changed fields
@@ -177,7 +202,9 @@ All real progress lands on **item ticks** (`system.current`) via
   so the clocks advance once, on the GM — and its suffer routes relay
   `payThePrice.suffer` (`applyPayThePriceSufferFromRelay`, the typist's PC as
   the roller), so the allies a Sacrifice Resources marks unprepared are
-  written where that is allowed (issue #325 W10). A shared vow's copies are one clock
+  written where that is allowed (issue #325 W10). A player with no PC of
+  their own at a table of several relays no route: the card says the price
+  was not applied and the typist is whispered why (issue #337 Y43). A shared vow's copies are one clock
   (issue #321 U55): one `lockstep` map rides every PC's call of an advance,
   so the first copy advances and each later copy is set to the value it
   reached (advancing each copy raced the sync hook, which had already moved
@@ -257,10 +284,20 @@ Recommit to the Vow** relays `vow.recommit` to the canonical GM
 (`cardActions.applyVowRecommitOffer`), which checks the presser is the
 roller's player or a GM and claims the card (`recommitted`) before
 `performVowRecommit` rolls the challenge dice once (`planRecommit`) and
-writes every open copy of the roller's vow (`resolveVowItemCopies`; the
-roller's first — refused, nothing changed and the claim released) and its
-journal twin: the lowest die's boxes cleared and the rank stepped once, as
-the Item holds it (a vendor number or a name — `setVowItemTrack`). A miss
+writes every open copy of the roller's vow (`resolveVowItemCopies` with
+`ownOnly`: the Item the miss scored, else the roller's exact-name vow —
+never another by a looser name or the sole open one; the roller's first —
+refused, nothing changed and the claim released) and its journal twin (by
+its id or the vow's name only — `selectVowTrack`'s `byNameOnly`, W44's rule;
+the sole open journal vow, or the crew's one open Item vow, was rewritten
+beside a vow that had no twin — issue #336 Y25; with no Item, the journal
+vow recommits from its own ticks): the lowest die's boxes cleared and the rank stepped once, as
+the Item holds it (a vendor number or a name — `setVowItemTrack`). A vow
+fulfilled since the miss (a later roll, a crewmate's fulfilment, the sheet)
+is refused with a short card and the offer stays closed — a fulfilled vow's
+track never moves, and the press lowered it and raised its rank on every
+copy (issue #335 Y10); a completed copy is never written. The miss is a
+progress roll, never burned or improved, so no upgrade retires the offer. A miss
 rolled on the sheet gets the same offer, for the roller's vow Item of the
 roll's name (`registerNativeFulfilConsequenceHook` → `offerSheetMissRecommit`,
 issue #331 X62 — the hook acted on hits only, so the player recommitted by
@@ -276,7 +313,13 @@ unavailable" at a table whose GM holds the key (issue #321 U11). The canonical
 GM applies consequences
 (`registerNativeFulfilConsequenceHook` → `shouldPayFulfilledVow` → full
 `payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
-also pays quests legacy — from the roller's vow's rank). Idempotency:
+also pays quests legacy — from the roller's vow's rank). Both hooks act only
+on a player character's roll (`rolledByPlayerCharacter`; a debug line
+otherwise): an NPC or connection card carries the full sheet (FOLDER-002),
+and a GM's roll of an NPC's own vow there paid the crew's sole open vow
+(stamped `fulfilPaid`, so its real fulfilment paid nothing), offered a
+recommit for the NPC card and was narrated as the GM's first PC fulfilling a
+vow (issue #336 Y23). Idempotency:
 the `fulfilPaid` flag, checked and stamped on every copy, pays once per vow
 across both paths — the pipeline's own Quests legacy write checks it too, for
 a vow fulfilled on the sheet (which leaves the Item open) and then through the

@@ -19,6 +19,10 @@
 // OpenRouter field is the GM's. (b) `!sector list` sat under "Location &
 // Sector Commands (GM only)" though anyone may run it — the heading is
 // dropped, and the section's GM-only rows say so in the row.
+//
+// Issue #337 Y47 — X59(a)'s claim survived on the First Session page's
+// "Add your API keys" step; it is reworded as Quick Start's, and every page
+// is now checked for it.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -98,6 +102,32 @@ describe('the help says who may press 🛡 and type !sector list (issue #331 X59
     expect(open).not.toMatch(GM_ONLY);
     expect(open).toMatch(/every player/);
     expect(steps.find(s => /OpenRouter API Key/.test(s))).toMatch(GM_ONLY);
+  });
+
+  // Issue #337 Y47 — X59(a)'s claim at a second page: the First Session
+  // walkthrough's "Add your API keys" step read "Open Companion Settings →
+  // About (GM only)", so a player following it to enter the key their
+  // Private Channel or audio needs read that the tab was not theirs.
+  it("First Session's 'Add your API keys' step says every player enters their own keys, and that the OpenRouter key is the GM's", () => {
+    const steps = [...page('First Session').matchAll(/<li>([\s\S]*?)<\/li>/g)].map(m => plain(m[1]));
+    const step = steps.find(s => /Add your API keys/.test(s));
+    expect(step).toBeDefined();
+    expect(step).toMatch(/Open Companion Settings → About/);
+    expect(step).not.toMatch(GM_ONLY);
+    expect(step).toMatch(/every player enters their own keys/);
+    expect(step).toMatch(/Claude API key/);
+    expect(step).toMatch(/ElevenLabs API key/);
+    expect(step).toMatch(/OpenRouter API key[^.]*is the GM's/);
+  });
+
+  it('no help page calls the Companion Settings → About tab GM-only', () => {
+    const aboutGmOnly = /Companion Settings → About\s*\([^)]*\b(?:GM(?:-| )only|GMs only)\b/i;
+    const pages = PAGES.filter(p => p.name !== 'Changelog');   // the Changelog quotes history
+    expect(pages.length).toBeGreaterThan(10);
+    for (const p of pages) expect(plain(p.text.content), p.name).not.toMatch(aboutGmOnly);
+    // control: the shape the two pages had — "(toolbar 🛡 button, GM only)" and "(GM only)".
+    expect('Open Companion Settings → About (toolbar 🛡 button, GM only)').toMatch(aboutGmOnly);
+    expect('Open Companion Settings → About (GM only). Enter').toMatch(aboutGmOnly);
   });
 
   it('`!sector list` is under no "(GM only)" heading and says anyone may run it; the section\'s GM-only rows say so', () => {

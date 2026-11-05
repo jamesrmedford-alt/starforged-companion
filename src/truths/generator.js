@@ -613,19 +613,33 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
     entry = candidates.find(j => holdsTruths(j.pages?.contents?.[0]?.text?.content ?? "")) ?? candidates[0] ?? null;
 
     if (entry && entry.id !== campaignState.worldTruthsJournalId) {
-      campaignState.worldTruthsJournalId = entry.id;
       // Linked with the truths it holds, so the narrator reads the truths this
       // recap summarises (issue #322 V34) — owned fields onto the latest store,
-      // not this call's whole copy.
+      // not this call's whole copy. On the caller's object only once the
+      // world has it, as storeWorldTruths / recordSystemTruths do: the caller
+      // hands over the cached setting, and a refused repair left this GM's
+      // cache linking a journal the world did not — the next `!lore` never
+      // repaired it, and the GM's next whole-object write carried the id into
+      // the world without its truths (issue #337 Y38).
+      const entryId = entry.id;
       if (game.user?.isGM) {
-        await writeTruthsLink(entry.id, truthsFromJournal(entry)).catch(err =>
-          console.warn(`${MODULE_ID} | lore: failed to repair worldTruthsJournalId:`, err)
+        await writeTruthsLink(entryId, truthsFromJournal(entry)).then(
+          () => { campaignState.worldTruthsJournalId = entryId; },
+          err => console.warn(`${MODULE_ID} | lore: failed to repair worldTruthsJournalId:`, err),
         );
       }
     }
   }
 
-  if (entry) {
+  if (entry && isModuleTruthsJournal(entry)) {
+    // The module's own (Playtest Quickstart) journal: its page's flag holds the
+    // truths and the page's text is a printout of them, never read back (issue
+    // #337 Y39). The flag is summarised, printed as the page prints it — the
+    // printout was read live, so a GM's edit of it reached the recap but not
+    // the narrator's truths (known-issues LORE-READS-QUICKSTART-PRINTOUT).
+    const truths = truthsFromJournal(entry);
+    if (truths && Object.keys(truths).length) truthsContent = htmlText(formatTruthsAsHtml(truths));
+  } else if (entry) {
     const page = entry.pages?.contents?.[0];
     const html = page?.text?.content ?? "";
     if (html.trim()) {

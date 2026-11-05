@@ -117,7 +117,8 @@ describe('the X-Card undoes the ship move its narration made', () => {
     await suppressScene({}, { local: true });
 
     expect(shipPosition().nearestSettlementId).toBeNull();
-    expect(shipPosition().narrationId).toBeUndefined();
+    // Written as null, not left out: setFlag merges (SHIP-POSITION-FLAG-MERGE).
+    expect(shipPosition().narrationId).toBeNull();
   });
 
   it('control: an X-Card on a later narration leaves the ship where an earlier one moved it', async () => {

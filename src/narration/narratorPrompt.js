@@ -723,29 +723,48 @@ const ENTITY_TYPE_LABELS = {
 // ("<signal lost>") is kept as text (the issue #322 V18 class).
 const NOTES_HTML_TAG_RE = /<\/?(?:p|div|span|br|hr|h[1-6]|img|ul|ol|li|strong|em|b|i|u|s|a|blockquote|section|article|table|thead|tbody|tr|td|th|figure|figcaption|code|pre|sup|sub|small|mark)\b[^>]*>/gi;
 
+// The named entities a Notes tab holds: the markup escapes, the seeds' fact
+// line (`&middot;` — connection.js, ship.js, `!ship envision`) and the
+// typography a rich-text editor writes.
+const NOTES_NAMED_ENTITIES = Object.freeze({
+  nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
+  middot: '·', bull: '•',
+  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
+  ndash: '–', mdash: '—', hellip: '…',
+});
+
+/**
+ * Decode HTML entities — the named ones above and numeric ones (`&#183;`,
+ * `&#x2014;`) — in one pass, so an escaped entity ("&amp;middot;") stays
+ * text. An unknown name or an impossible code point is left as written.
+ */
+function decodeNotesEntities(text) {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
+    if (code[0] !== '#') return NOTES_NAMED_ENTITIES[code.toLowerCase()] ?? whole;
+    const n = /^#x/i.test(code) ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
+    return Number.isInteger(n) && n > 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : whole;
+  });
+}
+
 /**
  * An entity record's Notes as card text. A ship's and an NPC's Notes tab is
  * HTML — the embedded portrait block (`<div class="sf-ship-portrait"><img
  * src=…>`), the `<hr><h4>✦ Envisioned details — …</h4>` sections — and the
  * record keeps a copy, which the card printed verbatim (issue #326 W39; the
  * CHARACTER block strips its notes). The portrait block and images are
- * dropped, the other markup becomes spaces, entities are decoded.
+ * dropped, the other markup becomes spaces, entities are decoded — the seed's
+ * fact line reached ENTITIES IN SCENE as "she/her &middot; Wary &middot; …"
+ * (known-issues NOTES-CARD-ENTITY-UNDECODED).
  *
  * @param {unknown} notes
  * @returns {string} '' when nothing is left
  */
 export function notesAsCardText(notes) {
   if (notes === undefined || notes === null) return '';
-  return String(notes)
+  return decodeNotesEntities(String(notes)
     .replace(new RegExp(PORTRAIT_BLOCK_RE.source, 'g'), ' ')
     .replace(/<img\b[^>]*>/gi, ' ')
-    .replace(NOTES_HTML_TAG_RE, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
-    .replace(/&amp;/g, '&')
+    .replace(NOTES_HTML_TAG_RE, ' '))
     .replace(/\s+/g, ' ')
     .trim();
 }

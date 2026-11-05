@@ -37,14 +37,15 @@ import { getConnection, createConnection, updateConnection, roleTitleFromName } 
 import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
-import { getFaction,    createFaction }    from "./faction.js";
-import { getShip,       createShip }       from "./ship.js";
+import { getFaction,    createFaction, findFactionByName, applyAttitudeToFactionRecord, seedFactionRecord } from "./faction.js";
+import { getShip,       createShip, resolveActiveRegion } from "./ship.js";
 import { getPlanet,     createPlanet }     from "./planet.js";
 import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
 import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
 import { HONORIFIC_PREFIXES, wholeWordPattern } from "../context/relevanceResolver.js";
+import { isNarrationXCarded }              from "../context/safety.js";
 
 import {
   recordLoreDiscovery,
@@ -528,9 +529,19 @@ function detectionFromParsed(parsed, campaignState) {
  * @param {string|null} [options.actorId] — the PC the narration was for (the
  *   roller): an auto-created connection's bond Item goes to them, and the
  *   draft card carries it so Confirm does too (issue #321 U23).
+ * @param {string|null} [options.narrationId] — the narration whose capture
+ *   this is: stamped on the faction it surfaces to the World Journal, so an
+ *   X-Card on the narration deletes that page (issue #335 Y02; issue #329
+ *   X01 — a capture writer takes the id from its caller), on the draft card
+ *   (issue #338 D6(i)) and on the connection it auto-creates
+ *   (`createdFromNarrationId`, D6(ii)).
  * @returns {Promise<{ created: Array, queued: Array }>}
  */
 export async function routeEntityDrafts(entities, campaignState, options = {}) {
+  const narrationId = typeof options.narrationId === "string" && options.narrationId ? options.narrationId : null;
+  // Nothing for a narration the X-Card removed — checked before each write
+  // (XCARD-LATE-CAPTURE): no connection, faction page or draft card from it.
+  const removed = () => isNarrationXCarded(narrationId);
   const created = [];
   const queued  = [];
   const pendingNormalized = new Set(
@@ -538,6 +549,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   );
 
   for (const entity of entities ?? []) {
+    if (removed()) return { created, queued: [] };
     if (!entity?.name || !entity?.type) continue;
     if (!ENTITY_GETTERS[entity.type]) continue;
     // Cross-type dedup. A name that already exists anywhere in
@@ -563,10 +575,19 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           pronouns:                  seedData.pronouns,
           portraitSourceDescription: seedData.portraitSource,
           firstAppearance:           options.sessionId ?? "",
+          // The narration that made them: an X-Card on it takes the card
+          // away again while nobody has used it (retractNarrationConnections
+          // — issue #338 D6(ii)).
+          ...(narrationId ? { createdFromNarrationId: narrationId } : {}),
         }, campaignState);
+        // An X-Card landing while the card is made deletes it (the stamp
+        // above); nothing more is added to it — no bond, portrait or facts.
+        if (removed()) return { created, queued: [] };
         await postCreationEnrichment("connection", record, campaignState);
+        if (removed()) return { created, queued: [] };
         await registerConnectionOnActiveCharacter(record, { actorId: options.actorId ?? null }).catch(err =>
           console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
+        if (removed()) return { created, queued: [] };
         // The narration that introduced them recorded their identity anchor
         // under their name, before the card existed.
         await promoteNewEntityLedgerSubjects(entity.name, "connection", record, campaignState);
@@ -594,7 +615,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
         && !getFactionEntry(entity.name)) {
       await recordFactionIntelligence(
         entity.name,
-        { summary: entity.description ?? "", isNew: true },
+        { summary: entity.description ?? "", isNew: true, narrationId },
         campaignState,
       ).catch(err =>
         console.warn(`${MODULE_ID} | routeEntityDrafts: faction WJ surface failed:`, err?.message ?? err));
@@ -604,9 +625,10 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   // Make a Connection: the NPC its narration names may sit in a pending draft
-  // row the detection left out — confirm it as the roller's (issue #325 W23).
-  if (options.autoCreateConnection && !created.length && options.namingText) {
-    const confirmed = await confirmNamedPendingConnection(options.namingText, options.actorId ?? null)
+  // row the detection left out — confirm it as the roller's (issue #325 W23),
+  // stamped with the narration like an auto-created one.
+  if (options.autoCreateConnection && !created.length && options.namingText && !removed()) {
+    const confirmed = await confirmNamedPendingConnection(options.namingText, options.actorId ?? null, narrationId)
       .catch(err => {
         console.warn(`${MODULE_ID} | routeEntityDrafts: confirming the pending connection failed:`, err?.message ?? err);
         return null;
@@ -614,8 +636,9 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     if (confirmed) created.push(confirmed);
   }
 
+  if (removed()) return { created, queued: [] };
   if (queued.length) {
-    await postDraftEntityCard(queued, campaignState, { source: options.source, actorId: options.actorId });
+    await postDraftEntityCard(queued, campaignState, { source: options.source, actorId: options.actorId, narrationId });
   }
 
   return { created, queued };
@@ -634,9 +657,15 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
  * genuinely-named entity is ignored, so two distinct characters are never
  * auto-merged on a model hiccup. Fail-open per rename; never throws.
  *
+ * A rename a narration's capture made carries that narration's id on the
+ * card (`renamedBy: { narrationId, from, to }`), so an X-Card on the
+ * narration puts the placeholder name back (retractNarrationCapture — issue
+ * #335 Y02): the name was the removed prose's.
+ *
  * @param {Array<{from:string,to:string}>} renames
  * @param {Object} campaignState
- * @param {Object} [deps]                  — injection seam for tests
+ * @param {Object} [deps]                  — the narration's id, and the injection seam for tests
+ * @param {string|null} [deps.narrationId] — the narration whose capture revealed the names
  * @param {boolean}  [deps.isGM]
  * @param {Function} [deps.getConn]        (id) => record
  * @param {Function} [deps.updateConn]     (id, updates) => Promise
@@ -652,9 +681,12 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
   const getConn      = deps.getConn      ?? getConnection;
   const updateConn   = deps.updateConn   ?? updateConnection;
   const entityExists = deps.entityExists ?? entityExistsAnyType;
+  const narrationId  = typeof deps.narrationId === "string" && deps.narrationId ? deps.narrationId : null;
   const applied      = [];
 
   for (const { from, to } of renames) {
+    // Nothing for a narration the X-Card removed (XCARD-LATE-CAPTURE).
+    if (isNarrationXCarded(narrationId)) break;
     const fromNorm = normalizeEntityName(from);
     const toNorm   = normalizeEntityName(to);
     if (!fromNorm || !toNorm || fromNorm === toNorm) continue;
@@ -667,7 +699,10 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     if (!target) continue;
 
     try {
-      await updateConn(target.id, { name: to });
+      await updateConn(target.id, {
+        name: to,
+        ...(narrationId ? { renamedBy: { narrationId, from: target.rec.name, to } } : {}),
+      });
       applied.push({ from: target.rec.name, to, id: target.id });
     } catch (err) {
       console.warn(`${MODULE_ID} | applyEntityRenames: ${from} → ${to} failed:`, err?.message ?? err);
@@ -681,7 +716,8 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     await promote(to, "connection", target.rec, campaignState);
   }
 
-  if (applied.length) {
+  // The notice names the removed prose's names too.
+  if (applied.length && !isNarrationXCarded(narrationId)) {
     const postNotice = deps.postNotice ?? postRenameNoticeCard;
     try {
       await postNotice(applied);
@@ -845,17 +881,25 @@ function rollFreshConnectionSeed() {
   };
 }
 
-function rollFreshShipSeed() {
+/**
+ * A detected ship's identity rolls. A type whose row names a mission
+ * ("Multipurpose", or Fleet → "Starship Mission") rolls the active sector's
+ * region's mission table, as the ship seed does — it rolled the Terminus one
+ * in every region (issue #338 D5's rule; known-issues SHIP-SEED-MISSION-REGION).
+ *
+ * @param {Object} campaignState
+ */
+function rollFreshShipSeed(campaignState) {
   return {
-    type:      safeOracleRoll("starship_type"),
+    type:      safeOracleRoll("starship_type", { region: resolveActiveRegion(campaignState) }),
     firstLook: safeOracleRoll("starship_first_look"),
     name:      safeOracleRoll("starship_name"),
   };
 }
 
-function safeOracleRoll(tableId) {
+function safeOracleRoll(tableId, options = {}) {
   try {
-    const r = rollOracle(tableId);
+    const r = rollOracle(tableId, options);
     return r?.result && r.result !== "—" ? r.result : "";
   } catch {
     return "";
@@ -1038,7 +1082,10 @@ function lowerSalience(a, b) {
  * a lore, threat, faction or place entry, a Session Log beat and a tier
  * detail alike, so an X-Card on that narration undoes them (issue #329 X01;
  * rules/narrator-memory.md 6b) — and the entry a state transition changes
- * (XCARD-CAPTURE-TRANSITIONS).
+ * (XCARD-CAPTURE-TRANSITIONS). Nothing is written once an X-Card has
+ * removed that narration — each write checks the store first
+ * (XCARD-LATE-CAPTURE): the X-Card's undo has run, so a later write would
+ * stand.
  *
  * @param {Object} wj — parsed worldJournal section
  * @param {Object} campaignState
@@ -1049,6 +1096,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   if (!wj) return;
   // Only a real id is stamped: a write without one owns the entry it touches.
   const fromNarration = typeof narrationId === "string" && narrationId ? { narrationId } : {};
+  const removed = () => isNarrationXCarded(narrationId);
 
   // Below-threshold lore/threat items are transient scene beats: route them to
   // the running session log (D7 / F18) instead of spawning a WJ entry each.
@@ -1061,6 +1109,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   const entityLoreThreshold = lowerSalience(loreThreshold, TIER_SALIENCE_FLOOR);
   for (const lore of wj.lore ?? []) {
     if (!lore?.title) continue;
+    if (removed()) return;
     // Entity-specific lore (Task D): if the detector flagged this as a fact
     // about a specific known entity, migrate it to that entity's generative
     // tier instead of the WJ lore journal. Keeps per-entity detail on the
@@ -1100,6 +1149,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   const threatThreshold = getSalienceThreshold("threats");
   for (const threat of wj.threats ?? []) {
     if (!threat?.name) continue;
+    if (removed()) return;
     if (!passesSalience(threat.salience, threatThreshold)) {
       await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "", ...fromNarration });
       continue;
@@ -1109,12 +1159,14 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
 
   for (const faction of wj.factionUpdates ?? []) {
     if (!faction?.name) continue;
+    if (removed()) return;
     if (entityExistsForName(faction.name, "faction", campaignState)) continue;
     await recordFactionIntelligence(faction.name, { ...faction, ...fromNarration }, campaignState);
   }
 
   for (const location of wj.locationUpdates ?? []) {
     if (!location?.name) continue;
+    if (removed()) return;
     if (entityExistsForName(location.name, "location", campaignState)) continue;
     await recordLocation(location.name, { ...location, ...fromNarration }, campaignState);
   }
@@ -1122,6 +1174,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   // A transition changes an entry the capture did not make — stamped all the
   // same, so the X-Card undoes it (XCARD-CAPTURE-TRANSITIONS).
   for (const transition of wj.stateTransitions ?? []) {
+    if (removed()) return;
     await applyStateTransition(transition, campaignState, fromNarration);
   }
 }
@@ -1161,6 +1214,9 @@ export async function applyStateTransition(transition, campaignState, { narratio
  */
 export function entityExistsForName(name, type, campaignState) {
   if (!name || !type) return false;
+  // A faction is one faction whatever article, case or spacing names it
+  // (factionNameKey, issue #336 Y31) — besides the title-stripped match below.
+  if (type === "faction" && findFactionByName(name, campaignState)) return true;
   const idsField = ENTITY_ID_FIELDS[type];
   const getter   = ENTITY_GETTERS[type];
   if (!idsField || !getter) return false;
@@ -1175,6 +1231,31 @@ export function entityExistsForName(name, type, campaignState) {
     if (rec?.name && normalizeEntityName(rec.name) === target) return true;
   }
   return false;
+}
+
+/**
+ * The listed connection record a name names, by entityExistsForName's rule
+ * (normalizeEntityName — a title aside), a record of exactly that name
+ * first. null when none.
+ *
+ * @param {string} name
+ * @param {Object} campaignState
+ * @returns {Object|null}
+ */
+function listedConnectionNamed(name, campaignState) {
+  const exact  = String(name ?? "").trim().toLowerCase();
+  const target = normalizeEntityName(name);
+  if (!target) return null;
+  let same = null;
+  for (const id of campaignState?.connectionIds ?? []) {
+    let rec = null;
+    try { rec = getConnection(id); }
+    catch { continue; }
+    if (!rec?.name) continue;
+    if (rec.name.trim().toLowerCase() === exact) return rec;
+    if (!same && normalizeEntityName(rec.name) === target) same = rec;
+  }
+  return same;
 }
 
 /**
@@ -1213,7 +1294,9 @@ export function entityExistsAnyType(name, campaignState) {
   if (sectorNameMatches(target, campaignState)) return true;
 
   // 3. Our own bookkeeping ID lists (connection/settlement/faction/ship/
-  //    planet/location/creature). This was the only check before F14.
+  //    planet/location/creature). This was the only check before F14. A
+  //    faction matches with or without its article too (issue #336 Y31).
+  if (findFactionByName(name, campaignState)) return true;
   for (const [type, idsField] of Object.entries(ENTITY_ID_FIELDS)) {
     const getter = ENTITY_GETTERS[type];
     if (!getter) continue;
@@ -1342,11 +1425,16 @@ const TIER_SALIENCE_FLOOR = "notable";
  * @param {Function} [options.callTierAPI]  — async (prompt) => raw JSON text
  * @param {string}   [options.narrationId]  — the narration read; stamped on each detail, for the X-Card (issue #329 X01)
  * @returns {Promise<Array>}                — list of applied { journalId, detail }
+ *
+ * Nothing for a narration the X-Card removed: checked before the Claude call
+ * (a timer that fires after the X-Card pays for nothing) and before each
+ * detail's write (XCARD-LATE-CAPTURE).
  */
 export async function appendGenerativeTierUpdates(
   narrationText, entityRefs, sessionId, sessionNum, options = {},
 ) {
   if (!Array.isArray(entityRefs) || !entityRefs.length) return [];
+  if (isNarrationXCarded(options.narrationId)) return [];
 
   const records = entityRefs
     .map(ref => {
@@ -1375,6 +1463,7 @@ export async function appendGenerativeTierUpdates(
   const applied = [];
 
   for (const update of parsed.updates ?? []) {
+    if (isNarrationXCarded(options.narrationId)) break;
     if (!update?.entityId || !update?.detail) continue;
     // Salience gate (fail-open) — keep consequential developments, drop trivia.
     if (!passesSalience(update.salience, TIER_SALIENCE_FLOOR)) continue;
@@ -1613,6 +1702,9 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   // The PC the narration was for: a confirmed connection's bond Item goes to
   // them (confirmDraft), not the first PC (issue #321 U23).
   const actorId = typeof options.actorId === "string" && options.actorId ? options.actorId : null;
+  // The narration whose capture queued these rows: an X-Card on it withdraws
+  // the ones still pending (withdrawNarrationDrafts — issue #338 D6(i)).
+  const narrationId = typeof options.narrationId === "string" && options.narrationId ? options.narrationId : null;
 
   try {
     return await ChatMessage.create({
@@ -1624,6 +1716,7 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
           drafts,
           source,
           ...(actorId ? { actorId } : {}),
+          ...(narrationId ? { narrationId } : {}),
         },
       },
     });
@@ -1650,6 +1743,8 @@ function renderDraftCardHtml(drafts) {
       actions = `<span class="sf-draft-status sf-draft-status-confirmed">✓ Confirmed</span>`;
     } else if (status === "dismissed") {
       actions = `<span class="sf-draft-status sf-draft-status-dismissed">✕ Dismissed</span>`;
+    } else if (status === DRAFT_XCARDED) {
+      actions = `<span class="sf-draft-status sf-draft-status-xcarded">Withdrawn — X-Card</span>`;
     } else {
       actions =
         `<button class="sf-draft-btn sf-draft-confirm" ` +
@@ -1658,7 +1753,7 @@ function renderDraftCardHtml(drafts) {
         `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
     }
 
-    const rowClass = `sf-draft-row sf-draft-row-${status}`;
+    const rowClass = `sf-draft-row sf-draft-row-${String(status).toLowerCase()}`;
     return (
       `<li class="${rowClass}">` +
       `<div class="sf-draft-row-info">` +
@@ -1762,7 +1857,10 @@ async function handleDraftConfirm(message, draftIndex) {
  *
  * @param {ChatMessage} message — the draft card
  * @param {number} draftIndex
- * @param {{ actorId?: string|null }} [opts]
+ * @param {{ actorId?: string|null, narrationId?: string|null }} [opts] —
+ *   `narrationId`: the Make a Connection narration confirming the row,
+ *   stamped on the connection with the row (`createdFromNarrationId`,
+ *   `createdFromDraft`)
  * @returns {Promise<Object|null>}
  */
 async function confirmDraft(message, draftIndex, opts = {}) {
@@ -1781,8 +1879,19 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
 
   // Already created — by a Confirm whose card write was lost, or another GM's:
-  // mark the row, create nothing twice (issue #321 U25).
+  // mark the row, create nothing twice (issue #321 U25). A connection's bond
+  // still goes on the PC this Confirm bonds (idempotent per PC and
+  // connection): a refused Confirm's card, listed by the world load before
+  // this press (issue #337 Y34), never reached it (known-issues
+  // BOND-ITEM-AFTER-RELIST).
   if (entityExistsForName(draft.name, draft.type, campaignState)) {
+    const existing = draft.type === "connection" ? listedConnectionNamed(draft.name, campaignState) : null;
+    if (existing) {
+      await registerConnectionOnActiveCharacter(existing, {
+        actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
+      }).catch(err =>
+        console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
+    }
     await setDraftStatus(message, draftIndex, "confirmed");
     return null;
   }
@@ -1808,7 +1917,15 @@ async function confirmDraft(message, draftIndex, opts = {}) {
         goal:                      seedData.goal,
         pronouns:                  seedData.pronouns,
         portraitSourceDescription: seedData.portraitSource,
+        // A Make a Connection's narration made it (confirmNamedPendingConnection).
+        ...(opts.narrationId ? {
+          createdFromNarrationId: opts.narrationId,
+          createdFromDraft:       { messageId: message?.id ?? null, index: draftIndex },
+        } : {}),
       }, campaignState);
+      // An X-Card on that narration meanwhile takes the stamped card back:
+      // no bond for it (XCARD-LATE-CAPTURE).
+      if (isNarrationXCarded(opts.narrationId)) return null;
       await registerConnectionOnActiveCharacter(record, {
         actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
       }).catch(err =>
@@ -1816,7 +1933,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     } else if (draft.type === "ship") {
       const seedData = buildShipSeedData(
         { name: draft.name, description: draft.description ?? "" },
-        rollFreshShipSeed(),
+        rollFreshShipSeed(campaignState),
       );
       record = await creator({
         name:                      seedData.name,
@@ -1842,8 +1959,6 @@ async function confirmDraft(message, draftIndex, opts = {}) {
         portraitSourceDescription: draft.description ?? "",
       }, campaignState);
       try {
-        const { findFactionByName, applyAttitudeToFactionRecord, seedFactionRecord } =
-          await import("./faction.js");
         const hit = findFactionByName(draft.name, campaignState);
         if (hit) {
           await seedFactionRecord(hit.id);
@@ -1887,7 +2002,6 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     // and record._id re-pointed the backlink (issue #321 U28).
     if (draft.type === "faction") {
       try {
-        const { findFactionByName } = await import("./faction.js");
         await recordFactionIntelligence(draft.name, {
           summary:  draft.description ?? "",
           entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
@@ -1906,6 +2020,8 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     await promoteNewEntityLedgerSubjects(draft.name, draft.type, record, campaignState);
   }
 
+  // The X-Card's finish reopened the row with the card it deleted.
+  if (isNarrationXCarded(opts.narrationId)) return null;
   await setDraftStatus(message, draftIndex, "confirmed");
   return record;
 }
@@ -1917,13 +2033,17 @@ async function confirmDraft(message, draftIndex, opts = {}) {
  * card said "Connection made" and nothing was made — and a later Confirm gave
  * the bond to the PC of the old narration. The pending connection row the
  * move's narration names (whole words, the full name) is confirmed now, with
- * the bond on the roller.
+ * the bond on the roller — stamped with the move's narration and the row, so
+ * an X-Card on that narration removes the connection while unused and puts
+ * the row back to pending (connection.retractNarrationConnections;
+ * MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED).
  *
  * @param {string} text — the player's narration and the narrator's
  * @param {string|null} actorId — the roller
+ * @param {string|null} [narrationId] — the Make a Connection's narration
  * @returns {Promise<{ entity: Object, record: Object }|null>}
  */
-async function confirmNamedPendingConnection(text, actorId) {
+async function confirmNamedPendingConnection(text, actorId, narrationId = null) {
   const hay = String(text ?? "");
   if (!hay.trim()) return null;
   const messages = [...(globalThis.game?.messages?.contents ?? [])].reverse();   // the newest card first
@@ -1934,7 +2054,7 @@ async function confirmNamedPendingConnection(text, actorId) {
       if (draft?.type !== "connection" || (draft.status && draft.status !== "pending")) continue;
       const name = typeof draft.name === "string" ? draft.name.trim() : "";
       if (!name || !wholeWordPattern(name).test(hay)) continue;
-      const record = await confirmDraft(message, draft.index, { actorId });
+      const record = await confirmDraft(message, draft.index, { actorId, narrationId });
       return record ? { entity: draft, record } : null;
     }
   }
@@ -1975,6 +2095,24 @@ async function handleDraftDismiss(message, draftIndex) {
 const _draftCardWrites = new Map();
 
 async function setDraftStatus(message, draftIndex, status) {
+  await changeDraftRows(message, (drafts) => {
+    const at = drafts.findIndex(d => d.index === draftIndex);
+    if (at < 0) return null;
+    drafts[at] = { ...drafts[at], status };
+    return drafts;
+  });
+}
+
+/**
+ * Change a draft card's rows on its live copy, one write at a time per card
+ * (the queue above): `change` gets a copy of the live rows and returns the
+ * rows to write, or null to write nothing. Resolves to `change`'s result.
+ *
+ * @param {ChatMessage} message
+ * @param {(drafts: Object[]) => Object[]|null} change
+ * @returns {Promise<Object[]|null>}
+ */
+async function changeDraftRows(message, change) {
   const id = message?.id;
   const prev = _draftCardWrites.get(id);
   let release;
@@ -1984,14 +2122,83 @@ async function setDraftStatus(message, draftIndex, status) {
     if (prev) await prev;
     const live = globalThis.game?.messages?.get?.(id) ?? message;
     const drafts = Array.isArray(live?.flags?.[MODULE_ID]?.drafts) ? [...live.flags[MODULE_ID].drafts] : [];
-    const at = drafts.findIndex(d => d.index === draftIndex);
-    if (at < 0) return;
-    drafts[at] = { ...drafts[at], status };
-    await updateDraftCard(live, drafts);
+    const next = change(drafts);
+    if (next) await updateDraftCard(live, next);
+    return next;
   } finally {
     release();
     if (_draftCardWrites.get(id) === done) _draftCardWrites.delete(id);
   }
+}
+
+/** A draft row the X-Card withdrew: not pending, not dismissed (withdrawNarrationDrafts). */
+const DRAFT_XCARDED = "xCarded";
+
+/**
+ * Withdraw the draft rows X-carded narrations queued (issue #338 D6(i) — U07
+ * full exclusion): each ◈ New Entities card stamped with one of their ids
+ * (postDraftEntityCard's `narrationId`) has its still-pending rows marked
+ * `xCarded` and re-rendered, so Confirm can no longer mint an NPC from the
+ * removed prose and the names stop suppressing re-detection and riding the
+ * detection prompt's PENDING DRAFTS (collectPendingDraftNames reads pending
+ * rows only). The names are not added to `dismissedEntities`: a later,
+ * genuine mention proposes them again. A row the GM already confirmed or
+ * dismissed stands. Runs on the canonical GM in the X-Card's finish
+ * (retractNarrationCapture). Fail-open per card.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<number>} rows withdrawn
+ */
+export async function withdrawNarrationDrafts(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  if (!removed.size) return 0;
+  let withdrawn = 0;
+  for (const message of [...(globalThis.game?.messages?.contents ?? [])]) {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.draftEntityCard || !removed.has(f.narrationId)) continue;
+    try {
+      let rows = 0;
+      await changeDraftRows(message, (drafts) => {
+        const next = drafts.map((d) => {
+          if (d?.status && d.status !== "pending") return d;
+          rows += 1;
+          return { ...d, status: DRAFT_XCARDED };
+        });
+        return rows ? next : null;
+      });
+      withdrawn += rows;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: withdrawing the draft rows on card ${message?.id} failed:`, err?.message ?? err);
+    }
+  }
+  return withdrawn;
+}
+
+/**
+ * Reopen the draft row a Make a Connection confirmed, once the X-Card has
+ * removed that connection (connection.retractNarrationConnections —
+ * MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED): the NPC was the earlier
+ * narration's, which the X-Card kept, so the row is pending again — Confirm
+ * and Dismiss back on the card. A row whose own narration an X-Card removed
+ * is withdrawn instead (`xCarded`, issue #338 D6(i)). A row no longer
+ * confirmed is left as it is. Canonical GM (the X-Card's finish).
+ *
+ * @param {{ messageId?: string|null, index?: number }} link — the connection's `createdFromDraft`
+ * @returns {Promise<string|null>} the row's new status, or null when nothing changed
+ */
+export async function reopenConfirmedDraftRow(link) {
+  const message = globalThis.game?.messages?.get?.(link?.messageId);
+  const f = message?.flags?.[MODULE_ID];
+  if (!f?.draftEntityCard) return null;
+  const removed = globalThis.game?.settings?.get(MODULE_ID, "campaignState")?.xCardedNarrationIds ?? [];
+  const status = f.narrationId && removed.includes(f.narrationId) ? DRAFT_XCARDED : "pending";
+  const rows = await changeDraftRows(message, (drafts) => {
+    const at = drafts.findIndex(d => d?.index === link.index);
+    if (at < 0 || drafts[at].status !== "confirmed") return null;
+    drafts[at] = { ...drafts[at], status };
+    return drafts;
+  });
+  return rows ? status : null;
 }
 
 async function updateDraftCard(message, drafts) {

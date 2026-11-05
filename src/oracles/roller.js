@@ -327,9 +327,14 @@ export function unregisterOracleTable(tableId) {
  * dieSizeForTable) or d100 for every built-in; it is reported as `die` so
  * cards can print "d6 = 4" rather than claiming a d100.
  *
+ * A cross-reference to a table kept per region (the Starship Mission
+ * category) rolls `options.region`'s table — `!oracle` passes the active
+ * sector's — or the ref's own, Terminus, without one (see `refForRegion`).
+ *
  * @param {string} tableId   — key from ORACLE_TABLES
  * @param {Object} [options]
  * @param {number} [options.roll]   — override the roll (for testing)
+ * @param {string|null} [options.region] — "terminus" | "outlands" | "expanse"
  * @returns {{ tableId, tableName, die, roll, result, sufferRoutes: Array<Object> }}
  */
 export function rollOracle(tableId, options = {}) {
@@ -345,7 +350,7 @@ export function rollOracle(tableId, options = {}) {
     return { tableId, tableName: entry.name, die, roll, result: "—", sufferRoutes: [] };
   }
 
-  const resolved = resolveDirective(result, entry.table, 0, die);
+  const resolved = resolveDirective(result, entry.table, 0, die, { region: options.region ?? null });
   return {
     tableId,
     tableName:    entry.name,
@@ -386,7 +391,8 @@ function directiveRollCount(text) {
  *     `"Ultra-scale: Titanic (hill-sized)"`, `"Stellar Object: Red star"`,
  *     `"Fleet: Raider horde"` (issue #330 D13; Ultra-scale alone was
  *     followed, U68, and every other ref was left a heading for a caller that
- *     never followed it).
+ *     never followed it). A ref to a table kept per region is the region's
+ *     (`refForRegion`, `ctx.region` — issue #338 D5).
  *   - `result === "Roll twice"`      → roll twice on `parentTable`, join `" / "`.
  *   - `result === "Roll three times"` → roll three times, join `" / "`.
  *   - `result === "Roll again …"`    → roll twice on `parentTable`, join `" / "`.
@@ -409,15 +415,48 @@ function directiveRollCount(text) {
  * @param {Array<{min:number,max:number,result:string,ref?:string}>} parentTable
  * @param {number} [depth]
  * @param {number} [parentDie] — die the parent table rolls with (custom tables)
+ * @param {{ region?: string|null }} [ctx] — carried down the whole chain
  * @returns {{ text: string, leaves: Array<Object> }}
  */
 const MAX_DIRECTIVE_DEPTH = 4;
 
-function resolveDirective(entry, parentTable, depth = 0, parentDie = 100) {
+/**
+ * Refs that name one table of a category kept per region, by its region-less
+ * id stem. The vendored Fleet 91–100 "Starship Mission" links the Starship
+ * Mission category — a table each for the Terminus, Outlands and Expanse,
+ * which differ (issue #321 U63: roll 3 is "Blockade a location" in the
+ * Terminus, "Break a blockade" in the Expanse) — and Starship Type's
+ * "Multipurpose" rolls on it too (issue #330 D13). Both refs name the
+ * Terminus table, so a mission in an Outlands or Expanse sector was rolled
+ * on the Terminus one (issue #338 D5).
+ */
+const REGIONAL_REFS = Object.freeze({
+  starship_mission_terminus: "starship_mission",
+});
+
+/**
+ * The table a ref names in `region`: a regional ref's `<stem>_<region>`
+ * table when one is registered — the Sector Creator picks its Settlement
+ * Population table by region the same way — else the ref itself (no sector,
+ * or a region no table is kept for: the Terminus table the data names).
+ *
+ * @param {string} ref
+ * @param {string|null} [region]
+ * @returns {string}
+ */
+function refForRegion(ref, region) {
+  const stem = REGIONAL_REFS[ref];
+  const key  = typeof region === "string" ? region.trim().toLowerCase() : "";
+  if (!stem || !key) return ref;
+  const id = `${stem}_${key}`;
+  return Object.prototype.hasOwnProperty.call(ORACLE_TABLES, id) ? id : ref;
+}
+
+function resolveDirective(entry, parentTable, depth = 0, parentDie = 100, ctx = {}) {
   if (depth >= MAX_DIRECTIVE_DEPTH) return { text: entry.result, leaves: [] };
 
   if (entry.ref === "action_theme") {
-    return joinResolved(" ", rollAndResolve(CORE.ACTION, depth + 1), rollAndResolve(CORE.THEME, depth + 1));
+    return joinResolved(" ", rollAndResolve(CORE.ACTION, depth + 1, 100, ctx), rollAndResolve(CORE.THEME, depth + 1, 100, ctx));
   }
 
   // DESCRIPTOR-FOCUS-UNCHAINED fix (2026-07, found by the table-integrity
@@ -425,19 +464,20 @@ function resolveDirective(entry, parentTable, depth = 0, parentDie = 100) {
   // the action_theme chain was ever implemented — those rolls returned the
   // literal placeholder "Descriptor + Focus" to the player.
   if (entry.ref === "descriptor_focus") {
-    return joinResolved(" ", rollAndResolve(CORE.DESCRIPTOR, depth + 1), rollAndResolve(CORE.FOCUS, depth + 1));
+    return joinResolved(" ", rollAndResolve(CORE.DESCRIPTOR, depth + 1, 100, ctx), rollAndResolve(CORE.FOCUS, depth + 1, 100, ctx));
   }
 
-  if (entry.ref && Object.prototype.hasOwnProperty.call(ORACLE_TABLES, entry.ref)) {
-    const target = ORACLE_TABLES[entry.ref];
-    const sub    = rollAndResolve(target.table, depth + 1, target.die ?? 100);
+  const refId = entry.ref ? refForRegion(entry.ref, ctx.region) : null;
+  if (refId && Object.prototype.hasOwnProperty.call(ORACLE_TABLES, refId)) {
+    const target = ORACLE_TABLES[refId];
+    const sub    = rollAndResolve(target.table, depth + 1, target.die ?? 100, ctx);
     return { text: `${entry.result}: ${sub.text}`, leaves: sub.leaves };
   }
 
   const times = directiveRollCount(entry.result);
   if (times) {
-    let joined = rollAndResolve(parentTable, depth + 1, parentDie);
-    for (let i = 1; i < times; i++) joined = joinResolved(" / ", joined, rollAndResolve(parentTable, depth + 1, parentDie));
+    let joined = rollAndResolve(parentTable, depth + 1, parentDie, ctx);
+    for (let i = 1; i < times; i++) joined = joinResolved(" / ", joined, rollAndResolve(parentTable, depth + 1, parentDie, ctx));
     const heading = /^(.*\S)\s*\(roll twice\)\s*$/i.exec(entry.result)?.[1];
     return heading ? { text: `${heading}: ${joined.text}`, leaves: joined.leaves } : joined;
   }
@@ -450,11 +490,11 @@ function joinResolved(joiner, a, b) {
   return { text: `${a.text}${joiner}${b.text}`, leaves: [...a.leaves, ...b.leaves] };
 }
 
-function rollAndResolve(table, depth, die = 100) {
+function rollAndResolve(table, depth, die = 100, ctx = {}) {
   const roll = rollDie(die);
   const entry = findResult(table, roll);
   if (!entry) return { text: "—", leaves: [] };
-  return resolveDirective(entry, table, depth, die);
+  return resolveDirective(entry, table, depth, die, ctx);
 }
 
 /**

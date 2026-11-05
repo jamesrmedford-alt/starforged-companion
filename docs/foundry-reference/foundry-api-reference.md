@@ -3,7 +3,7 @@
 
 **Source:** https://foundryvtt.wiki/en/development/api (verified v13)  
 **Official docs:** https://foundryvtt.com/api/v13/  
-**Last updated:** April 2025 — added Scene, NoteDocument, DrawingDocument, FilePicker, CSS Layers  
+**Last updated:** November 2026 — added ChatMessage `keepId`, Notifications, and a client setting's `onChange` on an unchanged value, from the Foundry 13.351 source (each section names its source and what is not verified); April 2025 — added Scene, NoteDocument, DrawingDocument, FilePicker, CSS Layers  
 
 This document exists because Claude Code's network access does not include
 foundryvtt.com. Update this file when the Foundry version changes or when
@@ -20,12 +20,13 @@ new API surface is needed.
 5. [Flags](#flags)
 6. [Sockets](#sockets)
 7. [DialogV2](#dialogv2)
-8. [v12 → v13 Breaking Changes](#breaking-changes)
-9. [Scene](#scene)
-10. [NoteDocument (Journal Pins)](#notedocument-journal-pins)
-11. [DrawingDocument (Canvas Drawings)](#drawingdocument-canvas-drawings)
-12. [FilePicker.upload](#filepickerupload)
-13. [CSS Layers (v13)](#css-layers-v13)
+8. [Notifications (ui.notifications)](#notifications-uinotifications)
+9. [v12 → v13 Breaking Changes](#breaking-changes)
+10. [Scene](#scene)
+11. [NoteDocument (Journal Pins)](#notedocument-journal-pins)
+12. [DrawingDocument (Canvas Drawings)](#drawingdocument-canvas-drawings)
+13. [FilePicker.upload](#filepickerupload)
+14. [CSS Layers (v13)](#css-layers-v13)
 
 ---
 
@@ -299,6 +300,41 @@ if (message.type === "whisper") { /* ... */ }
 // Do not check for "other" — removed in v13
 ```
 
+#### Creating with a chosen `_id` — `ChatMessage.create(data, { keepId: true })`
+
+```js
+// Document.create(data = {}, operation = {}) → Document.createDocuments([data], operation)
+// operation: Partial<Omit<DatabaseCreateOperation, "data">>
+const id = foundry.utils.randomID();               // 16 letters/digits
+const message = await ChatMessage.create({ _id: id, content: "<p>…</p>" }, { keepId: true });
+// message.id === id. Without keepId, an _id in the data is replaced by a new one.
+```
+
+- `keepId` is a `DatabaseCreateOperation` property (default `false`): it keeps
+  the `_id` values in the data instead of generating new ones; its sibling
+  `keepEmbeddedIds` (default `true`) keeps embedded documents' ids
+  (`common/abstract/_types.mjs`).
+- `Document.create(data, operation)` takes the operation as
+  `Partial<Omit<DatabaseCreateOperation, "data">>` and hands it to
+  `createDocuments` (`common/abstract/document.mjs`); a code search finds no
+  `static async create` in `client/documents/chat-message.mjs`. Core
+  uses the same call itself: `Scene.implementation.create(sceneData, {keepId:
+  true})` (`client/nue/nue-manager.mjs`); adventure and compendium imports pass
+  `keepId: true` to `createDocuments`.
+- The id must pass `isValidId` — `/^[a-zA-Z0-9]{16}$/`
+  (`common/data/validators.mjs`); `foundry.utils.randomID()` makes one.
+- **Not verified:** what the server does with an `_id` the world already holds
+  (presumably it refuses the create — the server side was not read), so do not
+  use a chosen id as a cross-client "create once" lock without a live check;
+  and no ChatMessage has been created this way in a live world by this module.
+
+Source: the Foundry **13.351** source's `common/abstract/_types.mjs`,
+`common/abstract/document.mjs`, `common/data/validators.mjs` and
+`client/nue/nue-manager.mjs` (the same paths in any v13 install), read
+2026-11-05 — not the official API pages (https://foundryvtt.com/api/v13/),
+which the build container cannot reach. Confirm there, or in a live world,
+before relying on a detail.
+
 ### Actor
 
 ```js
@@ -410,7 +446,7 @@ game.settings.register("starforged-companion", "myKey", {
   type:    String,               // String, Number, Boolean, Object, Array
   default: "",
   choices: { "a": "Option A" }, // optional — makes it a select
-  onChange: (value) => { },     // optional — fires when value changes
+  onChange: (value, options) => { }, // optional — fires when the value changes (see below)
 });
 
 // Read
@@ -426,6 +462,44 @@ if (game.user.isGM) {
   await game.settings.set("starforged-companion", "campaignState", state);
 }
 ```
+
+### `onChange` and an unchanged value — client scope
+
+Setting a client-scoped setting to the value it already holds runs **nothing**:
+no `onChange`, no `clientSettingChanged` hook, no write to client storage. In
+v13.351, `game.settings.set` on a `scope: "client"` setting runs
+`ClientSettings#setClient` (`client/helpers/client-settings.mjs`): when the
+key is already in client storage, it rebuilds the stored Setting, applies the
+new value to it, and returns at once if that leaves no difference; otherwise
+it writes client storage, calls `onChange(value, options)` and fires the
+`clientSettingChanged` hook.
+
+- A changed value: written, then `onChange(value, options)` — the cleaned,
+  initialised value, not the raw one passed to `set` (issue #12371, 13.339) —
+  then `Hooks.callAll("clientSettingChanged", key, value, options)`, a hook
+  for settings a package does not own (issue #11948, 13.334).
+- The first `set` in a browser that never stored the key (`setting.id in
+  storage` is false) writes and fires `onChange` even when the value equals the
+  registered default.
+- So a re-save of the same value is no retry: saving the same Claude key again
+  re-runs nothing, which is why a refused keyed-GM registration tells the GM to
+  reload (issue #337 Y40 — the `ready` hook advertises the key again).
+- History: in v10 a client setting's `onChange` fired on every `set`, changed
+  or not; issue #9051 ("Ensure that client setting's `onChange` handler is
+  only called when a diff is present") closed it in Version 11 — API
+  Development 2.
+- **Not verified:** world scope. `#setWorld` calls
+  `current.update({value: json}, options)` on a stored setting; whether an
+  update with no diff reaches `onChange` was not traced (issue #9051's v10
+  report saw a world setting's `onChange` fire only on a change, and once when
+  the setting was first created with its default).
+
+Sources: the 13.351 source's `client/helpers/client-settings.mjs`, read
+2026-11-05 (not the official API pages — see the ChatMessage section's note);
+Foundry's issue tracker:
+https://github.com/foundryvtt/foundryvtt/issues/9051,
+https://github.com/foundryvtt/foundryvtt/issues/11948,
+https://github.com/foundryvtt/foundryvtt/issues/12371.
 
 ---
 
@@ -451,9 +525,14 @@ if (foundry.utils.hasProperty(changes, "flags.starforged-companion")) {
   // the flag changed
 }
 
-// Gotcha: setting an object flag replaces the entire object
-// To update a nested property, read → modify → write the whole object
-const existing = doc.getFlag("starforged-companion", "tracks") ?? [];
+// Gotcha: setFlag is an update, and an update MERGES a plain object into
+// the stored one key by key — a key the new object leaves out keeps its old
+// value (issue #321 U40; SHIP-POSITION-FLAG-MERGE: a ship position written
+// without `narrationId` kept a narrator move's). An array is replaced whole.
+// So a record meant to replace the stored one writes EVERY key (null for
+// "none"), or the caller unsets the flag first.
+// To update an array, read → copy → modify → write the whole array:
+const existing = [...(doc.getFlag("starforged-companion", "tracks") ?? [])];
 existing.push(newTrack);
 await doc.setFlag("starforged-companion", "tracks", existing);
 ```
@@ -565,6 +644,47 @@ without pressing a button.") unless `rejectClose: false` is passed — its
 default is `true`, unlike `confirm()` / `prompt()`, which default it to false.
 Pass `rejectClose: false` to read a close as `null`, or catch the rejection
 (issue #331 X43: Take a Break's × escaped as an unhandled rejection).
+
+---
+
+## Notifications (`ui.notifications`)
+
+A notice can stay up until it is dismissed, and the code that raised it can
+take it down: every call returns the notification, whose numeric `id`
+`remove` / `has` accept.
+
+```js
+// notify(message, type = "info", options = {}) → Notification
+// info / warn / error / success(message, options) → Readonly<Notification>
+const notice = ui.notifications.warn("Starforged Companion: not saved yet.", { permanent: true });
+
+// …later, once the condition clears:
+ui.notifications.remove(notice);   // the Notification, or its numeric id
+```
+
+- `NotificationOptions` (13.351): `permanent` (default `false`) keeps the
+  notice on screen until it is dismissed, `progress` (default `false`) shows a
+  progress bar,
+  `[localize=false]`, `[console=true]` (also log it), `[escape=true]` (escape
+  the `format` values), `[clean=true]` (clean the message as untrusted input),
+  and `format` (values for a localized format string). Without `permanent`,
+  a notice is not kept up until dismissed.
+- `remove(notification)` and `has(notification)` take the Notification or its
+  id, and **throw** for anything without an `id > 0` (the error asks for a
+  Notification or a numeric id) — so keep the
+  returned object, and guard a call made on a stub or a `ui` not yet ready.
+  `remove` also takes a notice still queued out of the queue.
+- `update(notification, update)` updates an active or queued notification,
+  by object or id; an id it does not find is ignored.
+- **Not verified:** how the user dismisses a permanent notice on screen (the
+  option's "until dismissed"), how long an ordinary notice stays, what `has`
+  returns, what `remove` does with a notice already gone, and `update`'s
+  fields — the source was read no further than the points above. This
+  module raises permanent notices (a sector-art failure, sector art on with no
+  OpenRouter key, a refused microphone) but takes none down with `remove`.
+
+Source: the 13.351 source's `client/applications/ui/notifications.mjs`, read
+2026-11-05 (not the official API pages — see the ChatMessage section's note).
 
 ---
 

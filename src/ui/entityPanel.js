@@ -28,6 +28,7 @@ import {
   iterEntityDocuments,
   resolveEntityById,
   hasSheetNotes,
+  withSheetNotes,
 } from '../entities/registry.js';
 import { notesAsCardText } from '../narration/narratorPrompt.js';
 
@@ -119,7 +120,10 @@ async function loadAllEntities() {
   for (const typeKey of Object.keys(ENTITY_TYPES)) {
     result[typeKey] = [];
 
-    for (const { document, data } of iterEntityDocuments(typeKey)) {
+    for (const { document, data: stored } of iterEntityDocuments(typeKey)) {
+      // The record as the getters give it: an NPC card's pronouns and an NPC's
+      // or ship's notes from its sheet (issue #335 Y13, issue #329 X12).
+      const data = withSheetNotes(typeKey, document, stored);
       const art = data.portraitId
         ? await loadArtAsset(data.portraitId, campaignState).catch(() => null)
         : null;
@@ -153,7 +157,9 @@ async function findEntity(id) {
   for (const typeKey of Object.keys(ENTITY_TYPES)) {
     const document = getEntityDocument(typeKey, id);
     if (!document) continue;
-    const data = readEntityFlag(typeKey, document);
+    // As the getters give it — the portrait prompt reads an NPC card's
+    // pronouns from its sheet (issue #335 Y13).
+    const data = withSheetNotes(typeKey, document, readEntityFlag(typeKey, document));
     if (!data) continue;
 
     const art = data.portraitId
@@ -1280,7 +1286,9 @@ const ENTITY_EDIT_OPS = new Set(['lock', 'pin', 'promote', 'remove']);
  * clicker to confirm first. The payload is checked against what the panel
  * can produce: an entity the registry resolves, and for Pin / Promote /
  * Remove a narrator-added detail the panel still shows (not promoted). Each
- * edit reads the record and writes it with no await in between.
+ * edit reads the record and writes it with no await in between — a Promote
+ * that first appends to an NPC card's or ship's Notes tab reads the record
+ * again after that write (issue #337 Y35).
  *
  * @param {{ op: "lock"|"pin"|"promote"|"remove", entityId?: string, detail?: string }} payload
  * @param {Object} [_ctx]  gmRelay context — no edit is restricted to a role
@@ -1312,14 +1320,24 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
   if (op === 'pin') {
     next = { ...data, generativeTier: tier.map((e, i) => (i === idx ? { ...e, pinned: !e.pinned } : e)) };
   } else if (op === 'promote') {
-    const promoted = tier.map((e, i) => (i === idx ? { ...e, promoted: true, promotedAt: now } : e));
+    // The entry keeps the text the Promote put in the notes beside the
+    // narration id it carries: an X-Card on that narration takes the line
+    // out of the notes too (retractNarrationCapture — issue #338 D7).
+    const mark     = (e) => ({ ...e, promoted: true, promotedAt: now, promotedText: detail });
+    const promoted = tier.map((e, i) => (i === idx ? mark(e) : e));
     if (hasSheetNotes(typeKey) && document?.system) {
       // An NPC card's or ship's notes are its sheet's Notes tab: the detail is
       // appended there, where the narrator reads it — the record's own
       // `notes` was a second store nothing showed (issue #329 X12).
       const sheetNotes = String(document.system.notes ?? '');
       await document.update({ 'system.notes': `${sheetNotes}<p>${escapeHtml(detail)}</p>` });
-      next = { ...data, generativeTier: promoted };
+      // The record as it is after that await: a detail the narrator's capture
+      // appended meanwhile is kept — the write was built from the record read
+      // before it, and dropped it (issue #337 Y35).
+      const fresh     = readEntityFlag(typeKey, document) ?? data;
+      const freshTier = Array.isArray(fresh.generativeTier) ? fresh.generativeTier : [];
+      const at        = freshTier.findIndex(shown);
+      next = { ...fresh, generativeTier: freshTier.map((e, i) => (i === at ? mark(e) : e)) };
     } else {
       next = {
         ...data,

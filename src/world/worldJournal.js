@@ -20,6 +20,7 @@
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { factionNameKey } from "../entities/faction.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -54,8 +55,10 @@ const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
 // the versions before as `previous` (newest first) — so an X-Card on the
 // narration puts the earlier version back, or takes an entry the narration
 // made out of play (undoNarrationEntries; rules/narrator-memory.md 6b). A
-// later write that carries no narration id (a GM's `!journal`, a scene-end
-// archive) owns the entry from then on: it clears both.
+// scene-end archive carries the id of the narration that asserted the truth
+// (issue #335 Y01). A later write that carries no narration id (a GM's
+// `!journal`, the archive of a GM's `!truth set`) owns the entry from then
+// on: it clears both.
 //
 // Both are always written, null when cleared: Foundry's setFlag merges the
 // object into the stored flag key by key (see recordLoreDiscovery), so a key
@@ -280,6 +283,11 @@ export async function archiveSceneTruth(truth, campaignState, options = {}) {
     sessionId:        truth.sessionId ?? null,
     sessionNumber:    truth.sessionNum ?? null,
     moveId:           truth.moveId    ?? null,
+    // The narration that asserted the truth (a GM's `!truth set` carries
+    // none): an X-Card played on it after the scene ended retracts a page
+    // this made and restores one it rewrote (undoNarrationEntries — issue
+    // #335 Y01).
+    narrationId:      typeof truth.narrationId === 'string' && truth.narrationId ? truth.narrationId : null,
   }, campaignState);
 }
 
@@ -339,6 +347,12 @@ export async function recordThreat(name, entry, campaignState) {
  * duplicate names the existing entry is updated. Each call appends an entry
  * to the encounters array.
  *
+ * One faction is one page whatever article, case or spacing names it
+ * (factionNameKey — issue #336 Y31): a mention matching a page by key
+ * updates that page under its own name, and a new page takes the matching
+ * record's name, so "The Iron Syndicate" never starts a second page beside
+ * "Iron Syndicate".
+ *
  * @param {string} name
  * @param {Object} entry — { attitude, summary, knownGoal, entityId, ... }
  * @param {Object} campaignState
@@ -354,7 +368,8 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.factions);
   if (!journal) return null;
 
-  const existing  = findPageByName(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions];
+  const existingPage = findFactionPage(journal, cleanName);
+  const existing  = existingPage?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions];
   const now       = new Date().toISOString();
   const sessionId = entry?.sessionId ?? campaignState?.currentSessionId ?? "";
   const attitude  = entry?.attitude ?? existing?.attitude ?? "unknown";
@@ -376,11 +391,14 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
   // The record's stance this write changed — for the X-Card, which puts it
   // back when the narration is removed (XCARD-CAPTURE-TRANSITIONS).
   let recordStance = null;
+  // The record's own name, for a page this write starts (issue #336 Y31).
+  let recordName = null;
   try {
     const { findFactionByName, applyAttitudeToFactionRecord } = await import("../entities/faction.js");
     const hit = findFactionByName(cleanName, campaignState);
     if (hit) {
       linkedEntityId = linkedEntityId ?? hit.id;
+      recordName = String(hit.faction?.name ?? "").trim() || null;
       if (attitude !== "unknown") {
         const before  = hit.faction?.relationship ?? null;
         const changed = await applyAttitudeToFactionRecord(cleanName, attitude, campaignState);
@@ -391,9 +409,11 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
     console.warn(`${MODULE_ID} | worldJournal: faction record sync failed:`, err?.message ?? err);
   }
   const stamp = narrationStamp(entry?.narrationId, existing);
+  // The faction's one page keeps its name; a new one takes the record's.
+  const pageName = existingPage?.name ?? recordName ?? cleanName;
 
   const data = {
-    factionName:  cleanName,
+    factionName:  pageName,
     entityId:     linkedEntityId,
     knownGoal:    entry?.knownGoal ?? existing?.knownGoal ?? "",
     attitude,
@@ -406,7 +426,7 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
     recordStance: stamp.narrationId ? recordStance : null,
   };
 
-  const page = await upsertPage(journal, cleanName, FLAG_KEYS.factions, data);
+  const page = await upsertPage(journal, pageName, FLAG_KEYS.factions, data);
   return page ? { ...data, pageId: page.id, journalId: journal.id } : null;
 }
 
@@ -598,16 +618,31 @@ export async function retractSessionLore(sessionId, matches, { truthId = null } 
  * entries that strike retracted are restored (`retractedByTruth`), each with
  * the confirmation it had — never a page an X-Card retracted.
  *
+ * An entry another standing retraction still states is not restored (issue
+ * #336 Y32 — a second strike passed over the entry the first had retracted,
+ * so the lift put it back in ESTABLISHED LORE beside that strike under
+ * CORRECTED): `heldBy(entry)` (retractions.js `loreRetractionHolder`) names
+ * what holds it — another strike's truth id, to which the entry is handed so
+ * lifting that one restores it, or `true` (one never lifted here).
+ *
  * @param {string} truthId — the lifted strike's truth id
+ * @param {{ heldBy?: (entry: Object) => (string|true|null) }} [opts]
  * @returns {Promise<number>} entries restored
  */
-export async function restoreStruckLore(truthId) {
+export async function restoreStruckLore(truthId, { heldBy = null } = {}) {
   if (typeof truthId !== "string" || !truthId) return 0;
   const journal = findJournal(JOURNAL_NAMES.lore);
   let count = 0;
   for (const page of journal?.pages?.contents ?? []) {
     const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
     if (!entry?.retracted || entry.retractedByTruth !== truthId) continue;
+    const holder = typeof heldBy === "function" ? heldBy(entry) : null;
+    if (holder) {
+      if (typeof holder === "string" && holder !== truthId) {
+        await writeEntryPage(page, FLAG_KEYS.lore, { ...entry, retractedByTruth: holder, updatedAt: new Date().toISOString() });
+      }
+      continue;
+    }
     await writeEntryPage(page, FLAG_KEYS.lore, {
       ...entry,
       confirmed:          entry.confirmedBeforeStrike === true,
@@ -1136,15 +1171,18 @@ export function getFactionLandscape(_campaignState) {
 }
 
 /**
- * A single WJ faction entry by name (case-insensitive page match), or null.
+ * A single WJ faction entry by name — the page so named, else the one whose
+ * name has the same identity key (article, case and spacing aside —
+ * factionNameKey, issue #336 Y31) — or null.
  * Used by the draft-confirm path to reconcile pre-record intelligence onto
- * a freshly created faction entity record (FACTION-DUAL-STORE, 2026-07).
+ * a freshly created faction entity record (FACTION-DUAL-STORE, 2026-07), and
+ * by the draft routing's one-surface check (issue #331 X33).
  */
 export function getFactionEntry(name) {
   const cleanName = String(name ?? "").trim();
   if (!cleanName) return null;
   const journal = findJournal(JOURNAL_NAMES.factions);
-  return findPageByName(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
+  return findFactionPage(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1309,6 +1347,23 @@ async function getOrCreateJournal(name) {
 
 function findPageByName(journal, pageName) {
   return journal?.pages?.contents?.find(p => p.name === pageName) ?? null;
+}
+
+/**
+ * The Factions page for a faction name: the page so named, else the one
+ * whose name has the same identity key (factionNameKey — issue #336 Y31).
+ * Factions only: the other categories keep exact titles (a lore title or a
+ * threat name is what `!journal` types back).
+ *
+ * @param {JournalEntry|null} journal — the Factions journal
+ * @param {string} name
+ * @returns {JournalEntryPage|null}
+ */
+function findFactionPage(journal, name) {
+  const exact = findPageByName(journal, name);
+  if (exact) return exact;
+  const key = factionNameKey(name);
+  return key ? (journal?.pages?.contents?.find(p => factionNameKey(p.name) === key) ?? null) : null;
 }
 
 /** The stored lore entry titled `title` (trimmed, as recordLoreDiscovery files it), or null. */

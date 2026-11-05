@@ -12,13 +12,16 @@
  *
  * Multi-client cache writes: each client generates locally on demand
  * and emits a socket message to the canonical GM, which then writes
- * the MP3 to `worlds/${worldId}/audio/`. After the first generation,
- * subsequent clients hit the cache. See AUDIO_SOCKET_NAME below.
+ * the MP3 to `worlds/${worldId}/audio/` — when it holds no ElevenLabs
+ * key itself; a keyed GM makes and caches its own clips (issue #338 D10).
+ * After the first generation, subsequent clients hit the cache. See
+ * AUDIO_SOCKET_NAME below.
  */
 
 import { splitSegments, stripMarkup, SEGMENT_VOICE } from "./segments.js";
 import {
   cacheKey,
+  isCachePathFor,
   lookup         as cacheLookup,
   lookupDetailed as cacheLookupDetailed,
   write          as cacheWrite,
@@ -358,9 +361,9 @@ async function writeToCache(hash, bytes) {
 
 /**
  * A keyed client that is not the canonical GM: relay the synthesised bytes to
- * the canonical GM, which writes them to the cache (fire-and-forget), and
- * resolve to the blob URL of the in-memory bytes so playback can begin without
- * waiting for the GM-side write.
+ * the canonical GM, which writes them to the cache when it holds no key of its
+ * own (fire-and-forget; handleCacheWrite), and resolve to the blob URL of the
+ * in-memory bytes so playback can begin without waiting for the GM-side write.
  */
 async function commitToCache(hash, bytes) {
   try {
@@ -433,9 +436,17 @@ export function registerAudioSocket() {
 // narrator card in chat under the world's voices, and never over a clip that
 // is cached or that this client is making. Unchecked, a forged write under a
 // real narration's hash replaced the audio every client plays for that card,
-// and any hash was filed.
+// and any hash was filed. A GM that holds an ElevenLabs key files none: it
+// makes its own clips, and the relay serves a keyed player at a keyless GM's
+// table (D11's reason) — at a keyed GM's table it only let any user pre-fill
+// the audio of a card nobody had played yet with bytes of their own, served
+// to every later Play (issue #338 D10).
 async function handleCacheWrite(payload) {
   if (!isCanonicalGM()) return;
+  if (hasElevenLabsKey()) {
+    console.debug(`${MODULE_ID} | audio cache relay: this GM holds an ElevenLabs key and makes its own clips — the relayed clip is not filed.`);
+    return;
+  }
   const hash = typeof payload.hash === "string" ? payload.hash : "";
   if (!hash || typeof payload.b64 !== "string") return;
   try {
@@ -547,14 +558,43 @@ async function handleCacheAsk(payload) {
   game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.cache.found", hash, path: path ?? null });
 }
 
-// Requester side: resolve the asks waiting on this hash — only a path that
-// names this clip's file is played; anything else is no path.
+// Requester side: resolve the asks waiting on this hash with the GM's answer
+// (relayedClipPath) — a forged one is no answer: they keep waiting.
 function resolvePendingCacheAsk(hash, path) {
   const set = _pendingCacheAsk.get(hash);
   if (!set) return;
+  const src = relayedClipPath(hash, path);
+  if (src === undefined) return;
   _pendingCacheAsk.delete(hash);
-  const src = typeof path === "string" && path.endsWith(`/${hash}.mp3`) ? path : null;
   for (const resolve of set) resolve(src);
+}
+
+/**
+ * What a GM's `audio.synth.done` / `audio.cache.found` answers for a clip: its
+ * path when it is one the GM's cache could name (cache.js isCachePathFor —
+ * `worlds/<world>/audio/<xx>/<hash>.mp3`, or a Forge Assets Library URL),
+ * null for the GM's "no clip", and undefined for anything else. A relayed
+ * value is bounded to what the sender could honestly send (rules/
+ * reachability.md §8, the W81 / D11 / X51 rule): the socket does not say who
+ * sent it, and any path ending in `/<hash>.mp3` was played — another user's
+ * emit naming their own file replaced the narration a keyless player waited
+ * for, and the GM's real answer then found no waiter (issue #337 Y42). Two
+ * forgeries still pass (known-issues AUDIO-FORGE-ORIGIN-SHARED): a file
+ * another Forge account keeps in The Forge's Assets Library under the clip's
+ * name, in any world (see isCachePathFor); and a forged "no clip"
+ * (`path: null`), which has the GM's honest answer's form and cannot be told
+ * from it — it ends the wait early with "not ready": a nuisance, not a
+ * substitution.
+ *
+ * @param {string} hash
+ * @param {*} path
+ * @returns {string|null|undefined}
+ */
+function relayedClipPath(hash, path) {
+  if (path == null) return null;
+  if (isCachePathFor(hash, path)) return path;
+  console.warn(`${MODULE_ID} | audio: an answer for clip ${String(hash).slice(0, 8)}… names no file of the GM's audio cache — ignored.`);
+  return undefined;
 }
 
 // Keyed Player who may not browse: ask the canonical GM for a clip's cached
@@ -572,13 +612,15 @@ async function askGmForCachedPath(hash) {
   return answer;
 }
 
-// Requester side: resolve everyone waiting on this hash with the cached path —
-// only a path that names this clip's file is played; anything else is no path.
+// Requester side: resolve everyone waiting on this hash with the GM's answer
+// (relayedClipPath) — a forged one is no answer: they keep waiting for the
+// GM's, or time out to "not ready".
 function resolvePendingSynth(hash, path) {
   const set = _pendingSynth.get(hash);
   if (!set) return;
+  const src = relayedClipPath(hash, path);
+  if (src === undefined) return;
   _pendingSynth.delete(hash);
-  const src = typeof path === "string" && path.endsWith(`/${hash}.mp3`) ? path : null;
   for (const resolve of set) resolve(src);
 }
 

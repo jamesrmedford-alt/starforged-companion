@@ -39,9 +39,11 @@ import {
   writeEntityFlag,
   registerEntityId,
   withSheetNotes,
+  adoptUnlistedEntityActor,
+  warnEntityNotRegistered,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
-import { keepNotesPortrait } from "../art/notesPortrait.js";
+import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID = "starforged-companion";
@@ -114,6 +116,11 @@ export const ShipSchema = {
 
 
 export async function createShip(data, campaignState) {
+  // The ship an earlier creation of this name made, whose registration the
+  // world refused, is adopted — listed now — never a second one (issue #337 Y34).
+  const adopted = await adoptUnlistedEntityActor(FLAG_KEY, "shipIds", data?.name, campaignState, { label: "ship" });
+  if (adopted) return adopted;
+
   const now = new Date().toISOString();
   const id  = generateId();
 
@@ -294,6 +301,7 @@ export async function syncCommandVehicleFlag(actor, campaignState) {
     // The store first, the caller's copy once the world took it (issue #331 X35).
     const listed = await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" }).catch(err => {
       console.warn(`${MODULE_ID} | syncCommandVehicleFlag: shipIds persist failed:`, err);
+      warnEntityNotRegistered("starship", actor.name);   // the next load lists it (issue #337 Y34)
       return false;
     });
     if (listed) campaignState.shipIds.push(actor.id);
@@ -537,6 +545,10 @@ export async function registerStarshipActorLight(actor, campaignState) {
   // The store first, the caller's copy once the world took it (issue #331 X35).
   const listed = await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" }).catch(err => {
     console.warn(`${MODULE_ID} | registerStarshipActorLight: shipIds persist failed:`, err);
+    // Told, not only logged: the Entities panel shows the ship, but no list
+    // names it — getCommandVehicle, SHIP POSITION and Withstand Damage skip
+    // it until the next load lists it (issue #337 Y34).
+    warnEntityNotRegistered("starship", actor.name);
     return false;
   });
   if (listed) campaignState.shipIds.push(actor.id);
@@ -553,7 +565,11 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
   const region = resolveActiveRegion(campaignState);
   const missionTable = `starship_mission_${region}`;
 
-  const rolledType      = safeRoll(rollOracle, "starship_type");
+  // A type whose row names a mission ("Multipurpose", or Fleet → "Starship
+  // Mission") rolls this region's mission table, as the seed's own mission
+  // does — it rolled the Terminus one in every region (issue #338 D5's rule;
+  // known-issues SHIP-SEED-MISSION-REGION).
+  const rolledType      = safeRoll(rollOracle, "starship_type", { region });
   const rolledFirstLook = safeRoll(rollOracle, "starship_first_look");
   const rolledMission   = safeRoll(rollOracle, missionTable);
 
@@ -626,9 +642,11 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     // document between the first and last setFlag and see only some of
     // the fields populated. Foundry V13 auto-creates intermediate paths
     // in dot-notation flag writes, so this single update form is safe.
-    // The portrait embedded at the top of the old Notes stays (issue #322
-    // V30): a regenerated flavour keeps the ship's existing portrait, which
-    // generatePortrait does not attach again.
+    // The Notes tab keeps everything but the seed's own marked introduction
+    // (issue #338 D4): the GM's paragraphs, an `!ship envision` / `!ship
+    // history` section, a ⤴ promoted detail (issue #335 Y12) and the portrait
+    // block (issue #322 V30) — a regenerated flavour keeps the existing
+    // portrait, which generatePortrait does not attach again.
     // The record as it is now: the seeded fields over it; the schema's
     // defaults, the id and the creation stamp only where it has none; the
     // name as the Actor holds it now; and the command-vehicle flag only when
@@ -642,7 +660,7 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
     const fieldPaths = Object.fromEntries(Object.entries(fields)
       .map(([key, value]) => [`flags.${MODULE_ID}.ship.${key}`, value]));
     await actor.update({
-      "system.notes":                      keepNotesPortrait(actor.system?.notes, notesHtml),
+      "system.notes":                      writeSeedIntro(actor.system?.notes, markSeedIntro(notesHtml)),
       ...fieldPaths,
       [`flags.${MODULE_ID}.entityType`]:   actor.flags?.[MODULE_ID]?.entityType ?? "ship",
       [`flags.${MODULE_ID}.entityId`]:     actor.flags?.[MODULE_ID]?.entityId   ?? id,
@@ -659,6 +677,7 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
   // The store first, the caller's copy once the world took it (issue #331 X35).
   const listed = await registerEntityId(campaignState, "shipIds", actor.id, { label: "ship" }).catch(err => {
     console.warn(`${MODULE_ID} | seedStarshipActor: shipIds persist failed:`, err);
+    warnEntityNotRegistered("starship", actor.name);   // the next load lists it (issue #337 Y34)
     return false;
   });
   if (listed) campaignState.shipIds.push(actor.id);
@@ -748,16 +767,25 @@ export async function installModulesForRolledIdentity(actor, rolls, opts = {}) {
   }
 }
 
-function safeRoll(rollOracle, tableId) {
+function safeRoll(rollOracle, tableId, options = {}) {
   try {
-    const r = rollOracle(tableId);
+    const r = rollOracle(tableId, options);
     return r?.result && r.result !== "—" ? r.result : "";
   } catch {
     return "";
   }
 }
 
-function resolveActiveRegion(campaignState) {
+/**
+ * The active sector's region, as a ship's seed rolls its tables:
+ * "terminus" | "outlands" | "expanse" — the Terminus with no sector or region.
+ * The ship seed and a detected ship's draft Confirm (entityExtractor's
+ * rollFreshShipSeed) both roll by it, so a ship's type and mission agree.
+ *
+ * @param {Object} campaignState
+ * @returns {string}
+ */
+export function resolveActiveRegion(campaignState) {
   const sectors = campaignState?.sectors ?? [];
   const active  = sectors.find(s => s?.id === campaignState?.activeSectorId);
   const region  = active?.region ?? "";

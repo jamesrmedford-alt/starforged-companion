@@ -72,7 +72,8 @@ import {
   readMomentumState,
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { requestGmAction }     from "../multiplayer/gmRelay.js";
+import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
+import { moveDisplayName }     from "../system/i18n.js";
 import {
   revertPayThePrice,
   claimUpgradeCard,
@@ -84,6 +85,7 @@ import {
   applyUpgradedOutcomeEffects,
   renarrateUpgrade,
   effectsNoteHtml,
+  retractSupersededNarrations,
 } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -246,7 +248,11 @@ export function buildBurnState(resolution, actor, ptpReversals = null, targets =
   const burnable           = burnableMomentum(momentum, 0, priceMomentumTaken(ptpReversals, actor.id));
   const markedImpactCount  = momentum.impactCount;
 
-  if (!canBurnMomentum(burnable, resolution.outcome, resolution.challengeDice, false)) {
+  // A taken add that counts a weak hit as a miss (the Hoverbike's afterburner)
+  // makes a burn landing on a weak hit no improvement
+  // (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
+  const weakHitAsMiss = !!resolution.weakHitAsMiss;
+  if (!canBurnMomentum(burnable, resolution.outcome, resolution.challengeDice, false, { weakHitAsMiss })) {
     return null;
   }
 
@@ -270,6 +276,7 @@ export function buildBurnState(resolution, actor, ptpReversals = null, targets =
     ptpReversals:       ptpReversals ?? null,     // PtP clock + suffer deltas to undo on burn
     targets:            targets ?? null,          // for the upgraded outcome's choice card and effects
     move:               move ?? null,             // the move's target and ranks, for its effects
+    ...(weakHitAsMiss ? { weakHitAsMiss: resolution.weakHitAsMiss } : {}),   // the press re-checks with it
   };
 }
 
@@ -494,12 +501,15 @@ export async function applyBurnFromRelay(payload = {}, ctx = {}) {
   const actor = resolveActor(burn.actorId);
   if (actor && !requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | burnMomentum: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — burn refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { applied: false, reason: "not-owner" };
   }
 
   if (!claimResultUpgrade(messageId)) return { applied: false, reason: "already-consumed" };
   try {
-    return await handleBurnClick(message, _deps);
+    const res = await handleBurnClick(message, _deps);
+    if (res?.reason === "no-actor") refusePress(ctx, "no-actor");
+    return res;
   } finally {
     releaseResultUpgrade(messageId);
   }
@@ -534,7 +544,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
     burn.outcomeMomentum ?? Number(burn.originalConsequences?.momentumChange ?? 0),
     priceMomentumTaken(burn.ptpReversals, actor.id),
   );
-  if (!canBurnMomentum(burnable, burn.originalOutcome, burn.challengeDice, false)) {
+  if (!canBurnMomentum(burnable, burn.originalOutcome, burn.challengeDice, false, { weakHitAsMiss: !!burn.weakHitAsMiss })) {
     console.warn(`${MODULE_ID} | burnMomentum: momentum ${burnable} would not improve ${burn.originalOutcome}; ignoring`);
     return { applied: false, reason: "no-improvement" };
   }
@@ -570,11 +580,13 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   }
 
   // The original outcome's pending choice is retired and the burned outcome's
-  // offered once (issue #311 P03).
-  await reconcileChoices({
+  // offered once (issue #311 P03). A price that stands keeps the cards it
+  // posted — the resist roll its harm owes, a redirected loss's picker
+  // (issue #335 Y09).
+  const { kept: priceCardsKept = 0 } = await reconcileChoices({
     resolutionId: burn.resolutionId, kind: "burn", actor, moveId: burn.moveId,
-    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: burn.targets ?? {}, failures,
-  }).catch(err => console.warn(`${MODULE_ID} | burnMomentum: choice reconciliation failed:`, err));
+    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: burn.targets ?? {}, failures, priceStands,
+  }).catch(err => { console.warn(`${MODULE_ID} | burnMomentum: choice reconciliation failed:`, err); return {}; }) ?? {};
 
   // The burned outcome's other effects — the fight's progress and position,
   // the expedition's progress, a legacy mark, the companion's health, an
@@ -586,7 +598,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   const upgraded = buildBurnedResolution({ burn, burnResult, burnedMomentum: burnable, newConsequences, campaignState });
   const effects  = await applyUpgradedOutcomeEffects({ applyEffects, resolution: upgraded, state: burn, actor, campaignState, kind: "burn" });
 
-  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands })) })
+  await message.update({ content: buildBurnedCardContent(message.content, burnResult, newConsequences, effectsNoteHtml({ ...effects, priceStands, priceCardsKept })) })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 
@@ -594,7 +606,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // so the prose describing the pre-burn result is now stale. Strike it through
   // and label it rather than delete it, so the history is preserved. The new
   // (upgraded) narration is posted below.
-  await supersedeOriginalNarration(burn).catch(err =>
+  await supersedeOriginalNarration(burn, { campaignState }).catch(err =>
     console.warn(`${MODULE_ID} | burnMomentum: superseding original narration failed:`, err));
 
   // Re-narrate on the upgraded outcome and log it. Best-effort — if the
@@ -634,7 +646,7 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
   const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          burn.moveId,
-    moveName:        toDisplayName(burn.moveId),
+    moveName:        moveDisplayName(burn.moveId),
     statUsed:        null,
     statValue:       0,
     adds:            0,
@@ -674,10 +686,16 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
  * the narration the same way, with its own note (`kind: "improve"` — the
  * fixed burn note told the table momentum was burned, issue #326 W57).
  *
+ * What its sidecar wrote is retracted by its `narrationId` — its truths, state
+ * and frame stayed binding beside the re-narration's (issue #338 D8) — in the
+ * store and on the upgrade's working copy (`campaignState`), which the
+ * re-narration applies its sidecar to (resultUpgrade.js
+ * retractSupersededNarrations).
+ *
  * @param {Object} burn  the burn (or improve) flag blob (carries resolutionId)
- * @param {{ kind?: "burn"|"improve" }} [opts]
+ * @param {{ kind?: "burn"|"improve", campaignState?: Object|null }} [opts]
  */
-export async function supersedeOriginalNarration(burn, { kind = "burn" } = {}) {
+export async function supersedeOriginalNarration(burn, { kind = "burn", campaignState = null } = {}) {
   const resolutionId = burn?.resolutionId;
   if (!resolutionId) return;
   const messages = globalThis.game?.messages?.contents ?? [];
@@ -692,6 +710,7 @@ export async function supersedeOriginalNarration(burn, { kind = "burn" } = {}) {
     [`flags.${MODULE_ID}.burnSuperseded`]: true,
     content: buildSupersededNarrationContent(card.content, kind),
   });
+  await retractSupersededNarrations([card.flags?.[MODULE_ID]?.narrationId], { campaignState, label: kind });
 }
 
 /** The note on a superseded narration, by what upgraded the outcome. */
@@ -775,11 +794,4 @@ function resolveActor(actorId) {
     if (a) return a;
   }
   return getActor(actorId) ?? getPlayerActors()[0] ?? null;
-}
-
-function toDisplayName(moveId) {
-  return String(moveId ?? "")
-    .split("_")
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
 }

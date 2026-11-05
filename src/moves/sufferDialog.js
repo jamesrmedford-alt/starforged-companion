@@ -10,14 +10,14 @@
  *
  * The pure logic for "selection → executor call sequence" is exported
  * separately (`resolveSufferSelection`) so unit tests can pin it; the option
- * filters (`isOptionAvailable`, `unpreparedAtZeroSupply`) decide what the
- * card offers, and `isRetryableSufferCall` bounds what a payoff failure
- * card's Retry re-applies.
+ * filter (`isOptionAvailable`) decides what the card offers, and
+ * `isRetryableSufferCall` bounds what a payoff failure card's Retry
+ * re-applies.
  *
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, isUnprepared } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -345,6 +345,14 @@ async function runSufferCall(call, actor, opts) {
       if (call.debility === "wounded" && opts.patientCompanionItemId) {
         return { kind: "clear-impact", debility: call.debility, skipped: true };
       }
+      // Resupply's clear is the crew's: every PC sharing the supply, as they
+      // were marked together (known-issues UNPREPARED-CLEAR-ONE-PC, issue #338 D3).
+      if (call.debility === "unprepared") {
+        const clears = await clearUnprepared(actor);
+        const crew = crewClearedNote(clears);
+        if (crew) await postDeferredCard("Unprepared cleared for the crew", `${crew}.`);
+        return { kind: "clear-impact", debility: call.debility, ...clears };
+      }
       const patient = call.debility === "wounded" ? await healPatientActor(opts) : null;
       await setDebility(patient ?? actor, call.debility, false);
       return { kind: "clear-impact", debility: call.debility, ...(patient ? { actorId: patient.id } : {}) };
@@ -373,7 +381,7 @@ async function runSufferCall(call, actor, opts) {
       return { kind: "resist", moveId: call.moveId };
     }
     case "roll-table": {
-      const rolled = await rollImpactTable(call.table, opts);
+      const rolled = await rollImpactTable(call.table, { ...opts, actorName: actor?.name ?? null });
       return rolled
         ? { kind: "roll-table", table: call.table, ...rolled }
         : { kind: "roll-table", table: call.table, skipped: true, ok: false, reason: "no-table" };
@@ -487,20 +495,6 @@ function optionSuffers(opt) {
   if (!opt || typeof opt !== "object") return [];
   if (Array.isArray(opt.chain)) return opt.chain.flatMap(optionSuffers);
   return typeof opt.suffer === "string" ? [opt.suffer] : [];
-}
-
-/**
- * True when the PC is unprepared with no supply left: a further loss of
- * resources goes to another suffer move (issue #325 W16).
- *
- * @param {Actor|null} actor
- * @returns {boolean}
- */
-export function unpreparedAtZeroSupply(actor) {
-  if (!actor?.system?.debility?.unprepared) return false;
-  const supply = actor.system?.supply;
-  const value = Number(typeof supply === "object" ? supply?.value : supply);
-  return !(value > 0);
 }
 
 /**
@@ -633,8 +627,9 @@ export function isOptionAvailable(opt, ctx = {}) {
   // A loss of resources while unprepared is applied to a different suffer
   // move (Sacrifice Resources: "When you suffer a loss of resources while
   // unprepared … apply the cost to a different suffer move"): at 0 supply it
-  // cost nothing and settled the choice (issue #325 W16).
-  if (optionSuffers(opt).includes("sacrifice_resources") && unpreparedAtZeroSupply(ctx.actor)) return false;
+  // cost nothing and settled the choice (issue #325 W16), and above 0 it was
+  // paid from the supply — keyed on the impact, at any supply (issue #338 D3).
+  if (optionSuffers(opt).includes("sacrifice_resources") && isUnprepared(ctx.actor)) return false;
   if (!opt?.requires) return true;
   const req = String(opt.requires);
   const actor = ctx.actor;

@@ -154,10 +154,26 @@ describe('a keyless player without File Browser permission (issue #321 U60)', ()
   });
 
   it('a done signal naming some other file is not played', async () => {
+    // Since issue #337 Y42 such a done is no answer at all: the player keeps
+    // waiting for the GM's (here replaced in flight, so it never comes) and
+    // times out to "not ready" — it used to be told so at once.
     expectConsoleError(/audio toggle failed: Narrator audio isn't ready yet/);
     tamper = (payload) => ({ ...payload, path: 'https://elsewhere.example/track.mp3' });
-    const play = await playCard('msg-tampered');
-    expect(play.getAttribute('data-state')).toBe('error');
-    expect(foundry.audio.Sound._instances).toHaveLength(0);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const message = { id: 'msg-tampered', flags: { [MODULE_ID]: { narratorCard: true, narrationText: PROSE } } };
+      game.messages.contents.push(message);
+      const root = parseHTML(`<div class="sf-narration-prose">${PROSE}</div><button data-action="audioPlayToggle" hidden></button>`);
+      await onNarratorCardRendered(message, root);
+      const play = root.querySelector('[data-action="audioPlayToggle"]');
+      play.click();
+      await vi.waitFor(() => expect(doneSent).toHaveLength(1));    // the GM answered; its done was replaced
+      expect(play.getAttribute('data-state')).toBe('loading');
+      await vi.advanceTimersByTimeAsync(30_100);
+      await vi.waitFor(() => expect(play.getAttribute('data-state')).toBe('error'));
+      expect(foundry.audio.Sound._instances).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

@@ -29,6 +29,7 @@ import {
   readEntityFlag,
   writeEntityFlag,
   registerEntityId,
+  adoptUnlistedEntityActor,
 } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
@@ -115,6 +116,13 @@ export const SettlementSchema = {
  *   storeSector instead of N+1 sequential writes that race against each other.
  */
 export async function createSettlement(data, campaignState, { persist = true } = {}) {
+  // The settlement an earlier creation of this name made in this sector,
+  // whose registration the world refused, is adopted, never a second one
+  // (issue #337 Y34).
+  const adopted = await adoptUnlistedEntityActor(FLAG_KEY, "settlementIds", data?.name, campaignState,
+    { sectorId: data?.sectorId ?? campaignState?.activeSectorId ?? null, persist, label: "settlement" });
+  if (adopted) return adopted;
+
   const now = new Date().toISOString();
   const id  = generateId();
 

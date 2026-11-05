@@ -47,7 +47,10 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   same setting and user list, so they agree on the runner.
 - **Oracle follow-ups** (after `!oracle yes`, `!oracle <tableId>` and
   `!pay-the-price`; a move's routed Pay the Price has none — its price seeds
-  the move's own narration, issue #325 W03) go through
+  the move's own narration, issue #325 W03 — nor does a routed `!ptp` price
+  nobody pays, a PC-less player's at a table of several: its card says it was
+  not applied and carries no `oracleNarration` or `oracleMemory`,
+  PTP-PCLESS-NARRATED-AS-FIRST-PC) go through
   `requestOracleNarration` (`src/oracles/oracleFollowup.js`) with the same
   rule: a keyed GM is connected → `requestGmAction("oracle.narrate")` runs it
   on the keyed canonical GM; else a keyed author narrates locally; else it is
@@ -108,8 +111,9 @@ showed the earlier turns but sent the narrator none of them (issue #321 U42).
 It writes nothing during a conversation. A reflection the player publishes is canon:
 its card carries the flag family (ring, rolling summary), and the canonical
 GM runs the tier pass for the entities it names
-(`registerPublishedReflectionHook`). No ledger facts — the private narrator
-emits no sidecar. The X-Card
+(`registerPublishedReflectionHook`), stamped with the `narrationId` the card
+carries, so an X-Card on the reflection drops those details (issue #335
+Y03). No ledger facts — the private narrator emits no sidecar. The X-Card
 (`xCardActive`, set by the `xcard.activate` relay — a write that fails is
 reported on a card, not assumed, issue #302) is checked by every
 narrator X-Card gate — move, paced, `@scene`, oracle follow-up, session and
@@ -148,7 +152,11 @@ and at most two minutes older; an earlier X-Card's
 card, its "X-Card cleared" card or a card an earlier X-Card removed bounds
 the beat, so a repeat play removes nothing more (fallback, burn-superseded
 and whispered cards are never chosen). It retracts what their sidecars wrote
-(`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"`, state
+(`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"` — a truth
+the table had struck is relabelled so, and the strike a scene end kept for
+the session (`sessionRetractions`, with its truth's `narrationId`) dropped:
+named under CORRECTED it handed the narrator the removed content, and
+`!truth set` could lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — state
 values removed — each gives way to the value it superseded, kept on the entry
 as a bounded `previous` chain, so an earlier kept narration's value stands
 again (issue #326 W41) — a frame they wrote cleared), appends their `narrationId`s to
@@ -163,20 +171,65 @@ narration's `narrationId` and the position before it (`previous`, up to
 three deep), and the X-Card's finish (`restoreShipPositionAfterXCard`) puts
 back the latest position no removed narration wrote — an empty one when
 there is none — and moves the sector token with it; SHIP POSITION kept
-naming the removed destination (issue #325 W07). So is what the narration's
+naming the removed destination (issue #325 W07). Every other position
+writer — `!at`, Set a Course, an expedition's arrival, the Entities panel, a
+token move, the restore itself — writes `narrationId: null, previous: null`
+(`emptyPosition`, `computeTokenPositionRecord`): the record goes through
+`setFlag`, which merges key by key, so a narrator move's id and chain
+survived a later GM move and the X-Card then put the ship back over it
+(SHIP-POSITION-FLAG-MERGE). So is what the narration's
 **capture** recorded (issue #329 X01): every capture entry point
 (`runPostNarrationPasses`, `schedulePacedDetection` /
 `schedulePacedTierUpdate`, `scheduleNarrationCapture` /
-`runNarrationTierUpdate`, the inciting capture) hands the narration's id to
-`routeWorldJournalResults` and the tier pass, which stamp it on each Lore /
-Threat / Faction / Location entry (an entry it rewrote keeps the versions
-before as `previous`, newest first, up to three), Session Log beat and tier
-detail; the X-Card's finish (`retractNarrationCapture`, `retractions.js` →
+`runNarrationTierUpdate` — the published reflection's hook included, with
+the id its card carries since issue #335 Y03 — the inciting capture) hands the narration's id to
+`routeWorldJournalResults`, the tier pass, `routeEntityDrafts` (its faction
+auto-surface) and `applyEntityRenames` (issue #335 Y02), which stamp it on
+each Lore / Threat / Faction / Location entry (an entry it rewrote keeps the
+versions before as `previous`, newest first, up to three), Session Log beat,
+tier detail and placeholder rename (`renamedBy` on the card — the X-Card puts
+the placeholder name back unless the card was renamed since), and on the
+◈ New Entities card it queues (its rows still pending are withdrawn —
+`xCarded`, no Confirm / Dismiss, out of PENDING DRAFTS and the
+re-detection skip, not added to `dismissedEntities`: issue #338 D6(i),
+`withdrawNarrationDrafts`), and on a connection a Make a Connection hit's
+capture auto-creates (`createdFromNarrationId` — after the capture undo the
+X-Card's finish deletes it with its bond Items and its portrait (the "Art:"
+journal entry and its index entry — XCARD-CONNECTION-PORTRAIT-ORPHAN) while nobody has used it,
+else keeps it and whispers the GMs once, naming it: D6(ii),
+`retractNarrationConnections` — so, stamped with the row it confirmed, does a
+connection the hit confirmed from an earlier narration's pending draft row,
+whose row then goes back to pending, and the ledger facts promoted to a
+deleted card go back to its name: MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED); the X-Card's
+finish (`retractNarrationCapture`, `retractions.js` →
 `undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
 threat, faction or place page, takes the beats off the Session Log page and
-drops the tier details — most of these restate no sidecar truth, so
-`propagateRetraction` never reached them. A state transition the capture
+drops the tier details — a detail the GM had promoted takes the line its ⤴
+Promote appended with it (the entry keeps `promotedText` beside its
+`narrationId`): off the sheet's Notes tab for an NPC card or a ship, else out
+of the record's notes (issue #338 D7) — most of these restate no sidecar truth, so
+`propagateRetraction` never reached them. A capture still running when the
+card is played writes nothing more (XCARD-LATE-CAPTURE — the undo reaches only
+what was written before it): every capture write checks the STORED
+`xCardedNarrationIds` first (`safety.js` `isNarrationXCarded`, never a
+caller's copy) — the detection passes (`runDiscoveryDetection`,
+`runPacedDetection`) and the tier pass (`appendGenerativeTierUpdates`) on
+entry, so a timer that fires after the card makes no Claude call, and again
+when their reply returns; the routers before each write
+(`routeWorldJournalResults`, `applyEntityRenames` and its notice,
+`routeEntityDrafts` — its draft card, faction surface and pending confirm —
+and the tier details); a Make a Connection's card between the steps that
+make it (its bond, its portrait, its promoted facts, a pending row's
+"confirmed" — `confirmDraft`), the inciting capture's own Lore entry; and a
+portrait whose entity is gone when the image returns is not stored
+(`generatePortrait`). The card may be played after the
+scene ended, when the ledger is empty (the pick is session-scoped): what the
+scene end migrated carries the truth's id too (issue #335 Y01) — the tier
+detail, the archived Lore page (a page it rewrote is restored) and the LAST
+KNOWN value, which falls back to the newest value in its `previous` chain no
+removed narration set (a kept narration of the scene, then the earlier
+scene's). A state transition the capture
 applies to an entry it did not make — a threat resolved or escalated
 (`updateThreatSeverity`), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
@@ -200,6 +253,26 @@ narrator to take the story elsewhere without naming the removed beat;
 card posts with the X-Card lifted — not a fallback, a published reflection or
 an X-carded card.
 
+**A Burn Momentum or Improve Result** supersedes what narrated the outcome it
+replaced (issue #338 D8): the move's narration card is flagged
+`burnSuperseded` and struck (`supersedeOriginalNarration`), and so is the
+trigger vignette of a clock its reversal rewinds out of its triggered state —
+the clock's newest live trigger vignette of the session, found by the
+`clockId` every trigger vignette carries (`resultUpgrade.js`
+`supersedeTriggerVignettes`); `sessionNarratorCards` leaves both out of the
+ring, the rolling summary's source and the recap. Their ledger entries are
+retracted by `narrationId` through the X-Card's `retractNarrations`, with
+`{ by: "superseded" }` (`retractSupersededNarrations` — the store and the
+upgrade's working copy): rendered nowhere, never named under CORRECTED, and,
+unlike an X-Card's, no bar to the re-narration — or the clock's next
+trigger — stating the same fact. A trigger vignette still being written when
+the reversal lands has no card to strike: it is narrated only while its clock
+is still full when its reply comes in (`narrateClockAdvancement`'s
+`stillTriggered`, `payThePriceClocks.js` `clockStillTriggered`, all three
+post sites), so it posts nothing and its sidecar is never applied — and the
+reversal strikes no earlier trigger's card of that clock in its place
+(`triggerVignetteInFlight`; TRIGGER-VIGNETTE-LATE-POST).
+
 **System prompt section map** (`buildNarratorSystemPrompt`,
 `src/narration/narratorPrompt.js`): [0] role/style per mode · [0b]
 campaign recap (a session's first narration in any prose mode, from
@@ -210,11 +283,17 @@ a GM resumes has posted — issue #321 U07, above) · [2] permission-class latit
 Battle Stations · [3] oracle seeds (move-provided only; a routed Pay the
 Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03) · **[3b] recent
 oracle results** (`campaignState.recentOracles`, read from the store — raw `!oracle` (incl.
-`!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, last 5 this
-session, "the dice established these"; skipped for meta modes) · [4] world
+`!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, and the at-0
+choice card's mortal-wound / desolation roll — the table's one roll, no move
+seeds it (issue #336 Y21) — last 5 this session, "the dice established
+these"; skipped for meta modes) · [4] world
 truths (`campaignState.worldTruths` — the Quickstart's rolled truths or the
 World Truths dialog's newest save, parsed from its "Setting Truths" page as
-it is linked, so the block, the vow scene's Iron truth and `!lore` read one
+it is linked, and again on each edit of that page (issue #337 Y39 — the
+Quickstart's own journal page is a printout of its flag, not re-read, and
+`!lore` summarises the flag, not the printout: known-issues
+LORE-READS-QUICKSTART-PRINTOUT), so the block, the vow scene's Iron truth
+and `!lore` read one
 save: issue #322 V34; each truth's rolled sub-table detail after its title —
 who the war was against — as the journal prints it, issue #321 U66) · [4a] campaign truths digest · [4b] campaign premise
 (`campaignState.incitingIncident` — durable canon, every call) · [4c] LAST
@@ -434,7 +513,9 @@ and persist only the ledger field they changed through
 `persistSceneLedgerFields`, a Strike's or Replace's regen mark on the stored
 rolling summary riding the same write (`opts.onto` → `markSummaryForRegen`,
 U06b/e); the inciting premise is written with its scene ledgers the same way
-(`onto` sets `incitingIncident`, U06d); a site reveal or clear saves its
+(`onto` sets `incitingIncident`, U06d) — one the world refused is told on a
+whispered "Premise not saved" card to its asker and the GMs, since nothing
+else would carry [4b] (issue #336 Y33); a site reveal or clear saves its
 flag onto the state as it is then (`persistSiteFlag`, U06c).
 
 **The flag family covers every fiction card** (2026-07): move narration,
@@ -445,7 +526,10 @@ carries its narration's `narrationId` (issue #321 U07); a caller that posts
 the card itself — the galley and End a Session vignettes, the three
 clock-vignette sites, the inciting card — makes the id (`newNarrationId`) and
 passes it to the narration too. Raw oracle
-*results* additionally carry a structured `oracleMemory` flag; the canonical
+*results* — and the at-0 choice card's mortal-wound / desolation roll
+(`rollImpactTable`, issue #336 Y21) — additionally carry a structured
+`oracleMemory` flag (not a `!ptp` price nobody pays — the dice established
+nothing a character took, PTP-PCLESS-NARRATED-AS-FIRST-PC); the canonical
 GM's capture hook (`registerOracleMemoryCaptureHook`, `src/index.js`) ledgers
 them into `campaignState.recentOracles` (`src/oracles/oracleMemory.js`,
 cap 8) — one capture at a time, each reading the ring as the last left it,
@@ -466,7 +550,16 @@ caller whose snapshot holds no scene while the store has one adopts it
 (`startScene` → `adoptStoredScene`: the scene's id, truths, state, frame and
 spotlight cloned in, nothing written) instead of minting a second scene over
 its ledgers (issue #321 U06f); `!scene start`, holding the active scene,
-still ends it and starts another. `@scene` **continues** the scene in progress (issue #286 A4): it
+still ends it and starts another. Scene starts run one at a time on the
+canonical GM: a start waits for the one in flight (at most 10 s) and only
+then looks for the store's scene, so two narrations one command fires — each
+on its own working copy — share one scene; they each minted one inside the
+first start's write round trip, and the narration on the losing scene lost
+its facts (issue #335 Y05). Begin's galley vignette also runs after its clock
+vignettes, and `!pay-the-price`'s oracle follow-up after its trigger vignette
+(`triggerVignettesSettled`), each reading its copy once the one ahead is done
+(bounded, 60 s), so the second continues the first's scene with its beat in
+it. `@scene` **continues** the scene in progress (issue #286 A4): it
 used to call `startScene`, which ended the scene it was asked about and wrote
 the answer without the frame, truths, state or CORRECTED list.
 `ensureSceneStarted` starts a scene on the **canonical GM only** — a scene
@@ -484,7 +577,11 @@ frame names no place); text truths and place-less scene truths → WJ Lore
 (titled with where the truth was asserted, else the frame's location, not
 the scene id).
 It keeps each recorded character's location / vessel / condition on their
-record as `lastKnown` (C1, rendered as LAST KNOWN on the card), keeps the
+record as `lastKnown` (C1, rendered as LAST KNOWN on the card) — each value
+with the `narrationId` that set it and the values it superseded (`previous`,
+newest first, up to four; issue #335 Y01) — and every migrated tier detail and
+archived Lore page carries its truth's `narrationId`, for an X-Card played
+after the scene ended (above). It keeps the
 scene's strikes for the session (B6), then discards state and clears the
 frame. Before that final write it re-reads the store and, while the store is
 still this scene, migrates the truths and keeps the whereabouts that a
@@ -512,7 +609,13 @@ ring, and the closing scene's truths keep the closing session's number.
   re-assertions of retracted facts; GM `!truth set` bypasses (GM authority) —
   and lifts the strike it re-establishes, linking it as a Replace does, so
   the fact is not binding and CORRECTED at once; a player's set over a GM's
-  strike is refused (issue #326 W60).
+  strike is refused (issue #326 W60); the lore the lifted strike retracted
+  is restored after the persist, only for a lift the store kept — a strike
+  the X-Card took over is never lifted (XCARD-AFTER-STRIKE-STILL-NAMED). A truth already retracted — struck,
+  replaced, or the X-Card's — is struck or replaced no further
+  (`!truth strike` says "already retracted"), and no correction made on a
+  copy older than the X-Card relabels its retraction or files a replacement
+  (issue #336 Y30).
 - **A Strike reaches every copy** (issue #286 B6): `!truth strike` and the
   correction dialog's Strike / Replace — and, since issue #321 U07, the
   X-Card for each truth it retracts — call `propagateRetraction` — the
@@ -526,7 +629,11 @@ ring, and the closing scene's truths keep the closing session's number.
   whole words) (out of [4f] and
   the pending queue; the detection pass cannot re-confirm it — `!journal lore
   "<title>" confirmed` restores it with its text, category and provenance,
-  issue #321 U40), and the
+  issue #321 U40; a `!truth set` that lifts the strike restores it —
+  `restoreStruckLore`, issue #331 X31 — unless another standing retraction
+  of the session still states it: another strike, to which it is handed so
+  lifting that one restores it, an X-Card retraction or an earlier scene's
+  kept strike, issue #336 Y32), and the
   rolling summary regenerates on the next refresh with a "RETRACTED BY THE
   TABLE — leave these out" list. `endScene` keeps the scene's bare strikes on
   `campaignState.sessionRetractions`, so CORRECTED and that list hold for the

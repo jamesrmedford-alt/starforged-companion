@@ -76,6 +76,8 @@ const MOVE_KEYS = {
   undertake_an_expedition: { key: "IRONSWORN.MoveTitle.UndertakeAnExpedition", en: "Undertake an Expedition" },
   explore_a_waypoint:      { key: "IRONSWORN.MoveTitle.ExploreAWaypoint",      en: "Explore a Waypoint"      },
   finish_an_expedition:    { key: "IRONSWORN.MoveTitle.FinishAnExpedition",    en: "Finish an Expedition"    },
+  face_danger_scene_challenge:         { key: "IRONSWORN.MoveTitle.FaceDangerSceneChallenge",        en: "Face Danger (Scene Challenge)"         },
+  secure_an_advantage_scene_challenge: { key: "IRONSWORN.MoveTitle.SecureAnAdvantageSceneChallenge", en: "Secure an Advantage (Scene Challenge)" },
   finish_the_scene:        { key: "IRONSWORN.MoveTitle.FinishTheScene",        en: "Finish the Scene"        },
   set_a_course:            { key: "IRONSWORN.MoveTitle.SetACourse",            en: "Set a Course"            },
   make_a_discovery:        { key: "IRONSWORN.MoveTitle.MakeADiscovery",        en: "Make a Discovery"        },
@@ -161,6 +163,24 @@ export function localizeDebility(slug) { return localize(DEBILITY_KEYS, slug, "d
 
 /** @param {string} slug — face_danger, pay_the_price, ... */
 export function localizeMove(slug) { return localize(MOVE_KEYS, slug, "move"); }
+
+/**
+ * A move's display name — the one the confirm dialog, the move and Pay the
+ * Price cards, the narrator's move tag, the paced card's Roll button and the
+ * session recap all show: its title (localizeMove), else, for an id with no
+ * title here (the session moves), the id title-cased. The cards title-cased
+ * every id while the dialog showed the title, so "Face Danger Scene
+ * Challenge" stood beside "Face Danger (Scene Challenge)" and "Secure An
+ * Advantage" beside "Secure an Advantage" (SCENE-CHALLENGE-MOVE-NAME).
+ *
+ * @param {string} moveId — a MOVES key ("face_danger_scene_challenge")
+ * @returns {string} "" for no id
+ */
+export function moveDisplayName(moveId) {
+  const id = String(moveId ?? "");
+  if (Object.prototype.hasOwnProperty.call(MOVE_KEYS, id)) return localizeMove(id);
+  return id.split("_").filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
+}
 
 /** Test-only — clears the per-slug warn-once guard. */
 export function _resetI18nWarnGuard() { _warnedSlugs.clear(); }

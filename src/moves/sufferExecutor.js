@@ -38,8 +38,10 @@
  *        - Withstand Damage at 0     → roll VEHICLE_DAMAGE d100; if
  *          this is the command vehicle, surface an Overcome
  *          Destruction prompt (Q2 — prompt, don't auto-fire).
- *        - Sacrifice Resources at 0  → mark unprepared; further losses
- *          recurse into the dialog as a redirect-to-another-suffer.
+ *        - Sacrifice Resources at 0  → mark unprepared (the crew sharing
+ *          the supply with the PC); a loss while unprepared, at any
+ *          supply, goes to a picker of the other suffer moves (issue #325
+ *          W16; issue #338 D3).
  *        - Lose Momentum at min (-6) → recurse into the dialog with
  *          the "redirect or clear progress" two-branch prompt (Q3).
  *        - Companion Takes a Hit at 0 + miss + match → companion
@@ -278,35 +280,73 @@ const RESIST_ROLLS = {
   stress: { moveId: "endure_stress", meter: "spirit", label: "🛡 Resist the stress — roll Endure Stress (+spirit or +heart)" },
 };
 
+// The resist roll is the roller's next move, and it closes the open Burn
+// Momentum / Improve Result of the move whose price it is (issue #326 D4):
+// while that move still offers one, the card and the executor's line say to
+// take it first, as the move card's own follow-ups do (issue #330 D2's hint;
+// issue #336 Y18).
+const RESIST_UPGRADE_FIRST = "Burn momentum or improve the result first — resisting is your next move, and closes them.";
+
 /**
  * The resist card's prompt: one pick, which rolls Endure Harm ("harm") or
  * Endure Stress ("stress") as the PC (sufferDialog's `resist` option) —
  * "Then, if your health is 0 … roll +health or +iron" (issue #330 D3).
+ * `upgradeFirst`: the move whose price it is still offers a burn or an
+ * improvement — the card says to take it first (`hint`).
  *
  * @param {"harm"|"stress"} which
+ * @param {{ upgradeFirst?: boolean }} [opts]
  * @returns {Object|null}
  */
-export function resistRollPrompt(which) {
+export function resistRollPrompt(which, { upgradeFirst = false } = {}) {
   const r = RESIST_ROLLS[which];
   if (!r) return null;
-  return { kind: "enumerated", resist: r.meter, options: [{ label: r.label, resist: r.moveId }] };
+  return {
+    kind: "enumerated", resist: r.meter, options: [{ label: r.label, resist: r.moveId }],
+    ...(upgradeFirst ? { hint: RESIST_UPGRADE_FIRST } : {}),
+  };
+}
+
+/**
+ * Whether the move whose price owes the resist roll still offers a burn or
+ * an improvement: its move card's (resultUpgrade.js upgradeOpenFor), and
+ * before that card is posted — the pipeline pays a miss's price first — the
+ * pipeline's word (`opts.upgradeOffered`). Never for a price bound to no
+ * move (`!pay-the-price`). Never throws.
+ *
+ * @param {Object} opts — the executor's opts (`resolutionId`, `upgradeOffered`)
+ * @returns {Promise<boolean>}
+ */
+async function upgradeFirstOwed(opts = {}) {
+  const resolutionId = typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null;
+  if (!resolutionId) return false;
+  try {
+    const { upgradeOpenFor } = await import("./resultUpgrade.js");
+    return upgradeOpenFor(resolutionId) ?? opts.upgradeOffered === true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferExecutor: could not tell whether the move still offers an upgrade:`, err?.message ?? err);
+    return false;
+  }
 }
 
 /**
  * Post the resist card for `actor` at 0 health / spirit: a choice card, so
  * it is claimed once and pressed by the PC's player or a GM, and a Burn
  * Momentum or Improve Result of the move whose price it is retires it, as
- * the at-0 choice card is (`resolutionId`). Never throws.
+ * the at-0 choice card is (`resolutionId`). `upgradeFirst`: the card says to
+ * burn or improve first (upgradeFirstOwed). Never throws.
  *
  * @returns {Promise<boolean>} whether the card posted
  */
-async function postResistRoll(actor, which, opts = {}) {
+async function postResistRoll(actor, which, opts = {}, upgradeFirst = false) {
   try {
     const { postSufferChoiceCard } = await import("./sufferCard.js");
     const posted = await postSufferChoiceCard({
-      sufferPrompt: resistRollPrompt(which),
+      sufferPrompt: resistRollPrompt(which, { upgradeFirst }),
       actor,
-      executorOpts: {},
+      // A move's Pay the Price owes it: the card is the price's, kept when an
+      // upgrade keeps the price (issue #335 Y09).
+      executorOpts: opts.priceCard === true ? { priceCard: true } : {},
       moveId: RESIST_ROLLS[which].moveId,
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });
@@ -317,10 +357,11 @@ async function postResistRoll(actor, which, opts = {}) {
   }
 }
 
-/** The executor card's line for the resist roll owed at 0. */
-function resistLine(which) {
+/** The executor card's line for the resist roll owed at 0 (`upgradeFirst` as for the card). */
+function resistLine(which, upgradeFirst = false) {
   const r = RESIST_ROLLS[which];
-  return ` — at 0 ${r.meter} you must resist: roll ${r.moveId === "endure_harm" ? "Endure Harm" : "Endure Stress"} on the card below`;
+  const first = upgradeFirst ? ` (${RESIST_UPGRADE_FIRST.charAt(0).toLowerCase()}${RESIST_UPGRADE_FIRST.slice(1, -1)})` : "";
+  return ` — at 0 ${r.meter} you must resist: roll ${r.moveId === "endure_harm" ? "Endure Harm" : "Endure Stress"} on the card below${first}`;
 }
 
 /**
@@ -353,20 +394,29 @@ function atZeroChoiceLine(which) {
 
 /**
  * Roll an at-0 table — the choice card's "Roll on the … table" (issue #329
- * X03) — and post its result.
+ * X03) — and post its result. The one roll of the table: no oracle seed
+ * pre-rolls it (issue #336 Y21), and the card carries it into the narrator's
+ * memory as an oracle result (`oracleMemory`, ledgered by the canonical GM's
+ * capture hook into RECENT ORACLE RESULTS), so the narration that follows
+ * depicts the row this roll gave — the issue #321 U03 rule.
  *
  * @param {string} tableId — "mortal_wound" | "desolation"
- * @param {Object} [opts] — `fixedRoll` for deterministic tests
+ * @param {Object} [opts] — `fixedRoll` for deterministic tests; `actorName`,
+ *   whose roll it is (the memory's question)
  * @returns {Promise<{ roll: number, result: string|null }|null>} null for an unknown table
  */
 export async function rollImpactTable(tableId, opts = {}) {
   const t = IMPACT_TABLES[tableId];
   if (!t) return null;
   const rolled = rollD100Table(t.table, opts);
+  const who = typeof opts.actorName === "string" && opts.actorName.trim() ? opts.actorName.trim() : "";
   await postSufferCard({
     title: t.title,
     body:  `d100 ${rolled.roll}: <em>${rolled.result}</em>`,
-    flags: { suffer: "impact_table", table: tableId, ...rolled },
+    flags: {
+      suffer: "impact_table", table: tableId, ...rolled,
+      ...(rolled.result ? { oracleMemory: { name: t.title, question: who, answer: rolled.result } } : {}),
+    },
   });
   return rolled;
 }
@@ -410,11 +460,12 @@ export async function endureHarm(actor, amount, opts = {}) {
   // summary card.
   const impactChoice = atZero && !!opts.resistMiss;
   const resistOwed   = atZero && !opts.resistMiss;
+  const upgradeFirst = resistOwed && await upgradeFirstOwed(opts);
 
   if (!opts.skipCard) {
     let body = `Health: ${before} → ${after}${overflowLine(momentumLoss)}`;
     if (impactChoice) body += atZeroChoiceLine("harm");
-    if (resistOwed)   body += resistLine("harm");
+    if (resistOwed)   body += resistLine("harm", upgradeFirst);
     await postSufferCard({
       title: `Endure Harm (-${amount})`,
       body,
@@ -422,7 +473,7 @@ export async function endureHarm(actor, amount, opts = {}) {
     });
   }
   if (impactChoice) await postAtZeroChoice(actor, "harm", opts);
-  if (resistOwed)   await postResistRoll(actor, "harm", opts);
+  if (resistOwed)   await postResistRoll(actor, "harm", opts, upgradeFirst);
 
   return { before, after, atZero, woundedMarked, mortalWound, impactChoice, resistOwed, momentumLoss };
 }
@@ -450,11 +501,12 @@ export async function endureStress(actor, amount, opts = {}) {
   const desolation = null;
   const impactChoice = atZero && !!opts.resistMiss;
   const resistOwed   = atZero && !opts.resistMiss;
+  const upgradeFirst = resistOwed && await upgradeFirstOwed(opts);
 
   if (!opts.skipCard) {
     let body = `Spirit: ${before} → ${after}${overflowLine(momentumLoss)}`;
     if (impactChoice) body += atZeroChoiceLine("stress");
-    if (resistOwed)   body += resistLine("stress");
+    if (resistOwed)   body += resistLine("stress", upgradeFirst);
     await postSufferCard({
       title: `Endure Stress (-${amount})`,
       body,
@@ -462,7 +514,7 @@ export async function endureStress(actor, amount, opts = {}) {
     });
   }
   if (impactChoice) await postAtZeroChoice(actor, "stress", opts);
-  if (resistOwed)   await postResistRoll(actor, "stress", opts);
+  if (resistOwed)   await postResistRoll(actor, "stress", opts, upgradeFirst);
 
   return { before, after, atZero, shakenMarked, desolation, impactChoice, resistOwed, momentumLoss };
 }
@@ -478,7 +530,8 @@ export async function endureStress(actor, amount, opts = {}) {
  * an asset rider's supply cost (consequenceRiders.js, issue #331 X16) all
  * come here (no move's own consequence costs supply). Issue #315 S04 (the
  * trade marked no one) and S07 (only the PC who paid was marked).
- * Raising supply clears nothing: the impact is cleared by a recovery move.
+ * Raising supply clears nothing: a recovery move clears the impact — for the
+ * crew, as it is marked (clearUnprepared).
  *
  * @param {Actor} actor  whose supply is now 0
  * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesNotMarked: string[] }>}
@@ -507,6 +560,56 @@ export async function markUnprepared(actor) {
 }
 
 /**
+ * A recovery move has cleared `actor`'s unprepared — Resupply's "clear
+ * unprepared": clear it on every ally sharing the supply too. The crew marks
+ * the impact together (markUnprepared, issue #315 S07), so the recovery that
+ * clears it clears it for them all: it cleared the roller's alone, and each
+ * ally stayed unprepared at a supply above 0 until their own Resupply or a
+ * sheet edit (known-issues UNPREPARED-CLEAR-ONE-PC; issue #338 D3). The
+ * impact's one clearer, as markUnprepared is its one marker. The roller's write is not caught — refused, the pick reports it
+ * (runSufferResolution); an ally's refused write is warned and named, never
+ * thrown: the roller's clear has landed.
+ *
+ * @param {Actor} actor  the PC whose recovery cleared it
+ * @returns {Promise<{ alliesCleared: string[], alliesNotCleared: string[] }>}
+ *   the allies by name — cleared now, or whose write the world refused
+ */
+export async function clearUnprepared(actor) {
+  const clears = { alliesCleared: [], alliesNotCleared: [] };
+  if (!actor) return clears;
+  await setDebility(actor, "unprepared", false);
+  for (const ally of supplyAllies(actor)) {
+    if (!ally.system?.debility?.unprepared) continue;
+    try {
+      await setDebility(ally, "unprepared", false);
+      clears.alliesCleared.push(ally.name ?? ally.id);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | sufferExecutor: clearing ${ally.name ?? ally.id}'s unprepared failed:`, err?.message ?? err);
+      clears.alliesNotCleared.push(ally.name ?? ally.id);
+    }
+  }
+  return clears;
+}
+
+/**
+ * The allies' part of clearUnprepared's clears, for a card line ("" when no
+ * ally was unprepared): who, sharing the supply, is prepared again with the
+ * roller, and whose clear the world refused.
+ *
+ * @param {{ alliesCleared?: string[], alliesNotCleared?: string[] }} clears
+ * @returns {string} HTML
+ */
+export function crewClearedNote({ alliesCleared = [], alliesNotCleared = [] } = {}) {
+  const names = (list) => list.map(escapeHtml).join(", ");
+  return [
+    alliesCleared.length
+      ? `${names(alliesCleared)}, sharing the supply, ${alliesCleared.length === 1 ? "is" : "are"} no longer <strong>unprepared</strong> either`
+      : "",
+    alliesNotCleared.length ? `${names(alliesNotCleared)} could not be cleared of unprepared — clear it on the sheet` : "",
+  ].filter(Boolean).join("; ");
+}
+
+/**
  * The allies' part of markUnprepared's marks, for a card line ("" when the
  * crew is one PC): who, sharing the supply, was marked with the roller, and
  * whose mark the world refused.
@@ -529,21 +632,41 @@ function escapeHtml(s) {
 }
 
 /**
+ * True when `actor` is unprepared — a loss of resources then goes to a
+ * different suffer move: "When you suffer a loss of resources while
+ * unprepared, envision how this causes you hardship and apply the cost to a
+ * different suffer move" (vendored Sacrifice Resources). Keyed on the impact,
+ * not the meter (issue #338 D3): issue #325 W16 redirected the loss at 0
+ * supply alone, so a PC unprepared above 0 — Outcast's "+1 supply" at 0
+ * clears nothing — paid it from the supply. Read by this executor's guard,
+ * the choice card's greyed Sacrifice Resources (sufferDialog
+ * isOptionAvailable, sufferCard) and an asset rider's supply cost
+ * (consequenceRiders.js).
+ *
+ * @param {Actor|null} actor
+ * @returns {boolean}
+ */
+export function isUnprepared(actor) {
+  return !!actor?.system?.debility?.unprepared;
+}
+
+/**
  * Sacrifice Resources executor.
- * At 0 supply → mark unprepared; further losses prompt a redirect via the
- * dialog (handled in Phase D — executor surfaces atZero so the dialog
- * can recurse).
+ * At 0 supply → mark unprepared, with the crew (markUnprepared). A loss
+ * while unprepared, at any supply, is not taken from the supply: it posts a
+ * picker of the other suffer moves (`redirected`).
  */
 export async function sacrificeResources(actor, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
     return { before: 0, after: 0, atZero: false, skipped: true };
   }
   const before = readMeter(actor, "supply");
-  // Already unprepared with nothing left: "When you suffer a loss of
-  // resources while unprepared … apply the cost to a different suffer move."
-  // The loss went 0 → 0 and the cost was settled for nothing (issue #325
-  // W16): a picker of the other suffer moves takes it instead.
-  if (before <= 0 && actor.system?.debility?.unprepared) {
+  // Unprepared: "When you suffer a loss of resources while unprepared …
+  // apply the cost to a different suffer move." At 0 the loss went 0 → 0 and
+  // the cost was settled for nothing (issue #325 W16); above 0 it was paid
+  // from the supply (issue #338 D3). A picker of the other suffer moves takes
+  // it instead.
+  if (isUnprepared(actor)) {
     const { postSufferChoiceCard } = await import("./sufferCard.js");
     // The move's context (miss, the vehicle / companion it was made against),
     // without this call's own arguments.
@@ -559,14 +682,17 @@ export async function sacrificeResources(actor, amount, opts = {}) {
       executorOpts,
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });
+    const atZero = before <= 0;
+    // The picker is posted first — this card says whether it was — so it sits
+    // above this card: "choose below" pointed at nothing (W16-CHOOSE-BELOW).
     if (!opts.skipCard) {
       await postSufferCard({
         title: `Sacrifice Resources (-${amount})`,
-        body: `Supply: 0 — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? " (choose below)" : " — choose one and apply it on the sheet"}.`,
-        flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero: true, unpreparedMarked: false, redirected: true },
+        body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? " (choose it on its card)" : " — choose one and apply it on the sheet"}.`,
+        flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero, unpreparedMarked: false, redirected: true },
       });
     }
-    return { before, after: before, atZero: true, unpreparedMarked: false, redirected: true };
+    return { before, after: before, atZero, unpreparedMarked: false, redirected: true };
   }
   await applyMeterChanges(actor, { supply: -amount });
   const after = readMeter(actor, "supply");
@@ -640,7 +766,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
   const destroyed = atZero && opts.isMissWithMatch === true;
 
   if (!opts.skipCard) {
-    let body = `${item.name}: ${before} → ${after}`;
+    let body = `${escapeHtml(item.name)}: ${before} → ${after}`;   // the player names the asset (issue #336 Y28)
     if (destroyed) {
       body += `<br/><strong>Companion destroyed.</strong> Open the character sheet → Assets and discard this companion.`;
     } else if (atZero) {
@@ -700,7 +826,7 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   }
 
   if (!opts.skipCard) {
-    let body = `${item.name}: ${before} → ${after}`;
+    let body = `${escapeHtml(item.name)}: ${before} → ${after}`;   // the player names the asset (issue #336 Y28)
     if (vehicleDamage) {
       body += `<br/>Vehicle Damage (d100 ${vehicleDamage.roll}): <em>${vehicleDamage.result}</em>`;
       if (opts.isCommandVehicle && /catastrophic|destruction/i.test(vehicleDamage.result)) {

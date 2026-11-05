@@ -19,6 +19,7 @@ import { getPlayerActors, readVows, markVowProgress } from "../character/actorBr
 import { milestoneTicks } from "./milestone.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
 import { parseCardButtons } from "./cardActions.js";
+import { refusePress } from "../multiplayer/gmRelay.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -51,10 +52,13 @@ export async function postReachMilestoneCard(vow, ticks) {
 /**
  * gmRelay handler for "milestone.pick" — runs on the canonical GM.
  *
- * Marks the picked vow by its rank's milestone ticks (times the choice's
- * `marks` — a won fight's ×N, issue #326 W43), posts the result card,
- * and stamps the picker card `resolved` so it can never fire twice. Idempotent:
- * a card that is already resolved (or currently being resolved) is a no-op.
+ * Claims the picker card (`resolved`) so it can never fire twice, then marks
+ * the picked vow by its rank's milestone ticks (times the choice's `marks` —
+ * a won fight's ×N, issue #326 W43) and posts the result card. Idempotent: a
+ * card that is already resolved (or currently being resolved) is a no-op; a
+ * refused claim marks nothing, and a refused mark releases the claim (issue
+ * #336 Y24 — the stamp came after the mark, and its refusal left the picker
+ * live for a second mark).
  *
  * The payload is client-supplied (gmRelay.js "Trust model"), so the pick must
  * match one of the card's own buttons — the (vowId, actorId) pair the picker
@@ -93,6 +97,7 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
     ?? null;
   if (actor && !requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | milestone pick: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { marked: false, reason: "not-owner" };
   }
 
@@ -115,22 +120,34 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
       return { marked: false, reason: "vow-completed" };
     }
 
-    let result;
-    if (actor && vow) {
-      // A won fight's ×N milestone rides the choice (issue #326 W43); a plain
-      // Reach a Milestone's picker marks once.
-      const ticks = milestoneTicks(vow.rank) * choice.marks;
-      await markVowProgress(actor, vow.id, ticks);
-      await postReachMilestoneCard(vow, ticks);
-      result = { marked: true, ticks };
-    } else {
-      console.warn(`${MODULE_ID} | milestone pick: vow ${vowId ?? "?"} not found on actor ${actor?.id ?? actorId ?? "?"} — nothing marked.`);
-      result = { marked: false, reason: "no-vow" };
+    // Claimed before the mark (issue #336 Y24; decisions #309 "claims before
+    // effects"): the vow was marked first and the stamp's refusal swallowed,
+    // so the picker stayed live and the next press marked the vow again. A
+    // refused claim marks nothing — the press is the retry; a mark the world
+    // refused releases the claim.
+    try {
+      await message.update({ [`flags.${MODULE_ID}.resolved`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | milestone pick: picker card ${messageId} could not be claimed — nothing marked:`, err?.message ?? err);
+      return { marked: false, reason: "claim-refused" };
     }
-
-    await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
-      .catch(err => console.warn(`${MODULE_ID} | milestone picker resolve update failed:`, err?.message ?? err));
-    return result;
+    if (!actor || !vow) {
+      console.warn(`${MODULE_ID} | milestone pick: vow ${vowId ?? "?"} not found on actor ${actor?.id ?? actorId ?? "?"} — nothing marked.`);
+      return { marked: false, reason: "no-vow" };
+    }
+    // A won fight's ×N milestone rides the choice (issue #326 W43); a plain
+    // Reach a Milestone's picker marks once.
+    const ticks = milestoneTicks(vow.rank) * choice.marks;
+    try {
+      await markVowProgress(actor, vow.id, ticks);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | milestone pick: the mark on "${vow.name}" was refused — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.resolved`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | milestone pick: releasing the claim failed:`, e?.message ?? e));
+      return { marked: false, reason: "write-refused" };
+    }
+    await postReachMilestoneCard(vow, ticks);
+    return { marked: true, ticks };
   } finally {
     _inFlight.delete(messageId);
   }

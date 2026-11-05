@@ -18,14 +18,18 @@ const MOMENTUM_MIN = -6;
 // Per foundry-ironsworn source (#impactCount getter) and the Starforged play kit
 // (p.1 "MAX MOMENTUM: STARTS AT +10 / REDUCE BY 1 FOR EACH IMPACT"), every marked
 // impact reduces momentumMax by 1 and shifts momentumReset toward 0.
-// First 10 are the Starforged play-kit list; last 3 are Ironsworn-classic extras
-// the vendor system also tracks.
+// First 10 are the Starforged play-kit list; the next 3 are Ironsworn-classic
+// extras the vendor system also tracks; the last 2 are the sheet's custom
+// impacts (the vendor's `custom1` / `custom2` ImpactFields, named by
+// `custom1name` / `custom2name`), which its #impactCount counts like any other
+// (READDEBILITIES-CUSTOM-COMMENT).
 const IMPACT_KEYS = [
   'wounded', 'shaken', 'unprepared',                  // misfortunes
   'permanentlyharmed', 'traumatized',                 // lasting effects
   'doomed', 'tormented', 'indebted',                  // burdens
   'battered', 'cursed',                               // current vehicle
   'corrupted', 'encumbered', 'maimed',                // vendor extras (Ironsworn classic)
+  'custom1', 'custom2',                               // the sheet's custom impacts
 ];
 
 // In-memory cache of character snapshots, invalidated by the updateActor hook.
@@ -81,6 +85,21 @@ export function getActor(actorId) {
 }
 
 /**
+ * The Pronouns field on a `character` Actor's sheet (`system.pronouns`),
+ * trimmed — '' when it is empty. A PC's ride its snapshot
+ * (readCharacterSnapshot); an NPC card's are read here by the entity registry,
+ * whose getter takes them over the connection record's, and by the seed
+ * (issue #335 Y13).
+ *
+ * @param {Actor|null} actor
+ * @returns {string}
+ */
+export function readSheetPronouns(actor) {
+  const value = actor?.system?.pronouns;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
  * Read a character's current stat and meter values as a flat snapshot.
  * Safe to pass to interpreter and assembler — no Foundry document references.
  * @param {Actor} actor
@@ -94,7 +113,7 @@ export function readCharacterSnapshot(actor) {
 
   const sys  = actor.system ?? {};
   const debs = readDebilities(actor);
-  const impactCount = countImpacts(debs);
+  const impactCount = countImpacts(sys.debility);
   const { max: momentumMax, reset: momentumReset } = momentumBounds(sys, impactCount);
 
   const snapshot = {
@@ -286,8 +305,12 @@ export function readConnections(actor) {
 export function readDebilities(actor) {
   const d = actor?.system?.debility ?? {};
   // 10 canonical Starforged play-kit impacts + 3 Ironsworn-classic extras
-  // the vendor system also tracks. Anything outside this list is ignored —
-  // the previous `custom1` / `custom2` fields were not in the vendor schema.
+  // the vendor system also tracks — the impacts named by their key (the
+  // narrator's "Impacts:" line lists these keys). The vendor schema's two
+  // custom impacts (`custom1` / `custom2`, named on the sheet by `custom1name`
+  // / `custom2name`) are not listed here, but they count toward the momentum
+  // bounds as the vendor's #impactCount counts them (countImpacts reads the
+  // sheet's debility — READDEBILITIES-CUSTOM-COMMENT).
   return {
     wounded:           !!d.wounded,
     shaken:            !!d.shaken,
@@ -314,7 +337,7 @@ export function readDebilities(actor) {
  */
 export function readMomentumState(actor) {
   const sys = actor?.system ?? {};
-  const impactCount = countImpacts(readDebilities(actor));
+  const impactCount = countImpacts(sys.debility);
   return {
     value: meterValue(sys.momentum),
     min:   MOMENTUM_MIN,
@@ -349,7 +372,7 @@ export async function applyMeterChanges(actor, meterChanges) {
 
   const sys   = actor.system ?? {};
   const debs  = readDebilities(actor);
-  const impactCount = countImpacts(debs);
+  const impactCount = countImpacts(sys.debility);
   const { max: momentumMax } = momentumBounds(sys, impactCount);
 
   const healthMax  = debs.wounded ? 4 : 5;
@@ -533,6 +556,25 @@ export function readCompanionHealth(actor, itemId = null) {
 }
 
 /**
+ * A vehicle asset's integrity — its own condition track, the one its card
+ * names Integrity (a support vehicle's: Hoverbike, Rover, Skiff …) — or null
+ * when `itemId` names no such asset on `actor`. The Hoverbike's "add
+ * +integrity" is that number (VALUE-ADD-INTEGRITY), as Glowcat's "add +its
+ * health" is its companion's (readCompanionHealth).
+ *
+ * @param {Actor|null} actor
+ * @param {string} itemId
+ * @returns {number|null}
+ */
+export function readAssetIntegrity(actor, itemId) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  const asset = (Array.isArray(items) ? items : []).find(i => i?.type === 'asset' && i.id === itemId);
+  const track = asset?.system?.track;
+  if (!track || track.enabled === false || String(track.name ?? '').trim().toLowerCase() !== 'integrity') return null;
+  return Number(track.value ?? 0);
+}
+
+/**
  * Change a companion's health — its asset track — by `delta`, kept within
  * the track's min..max. Companion health went to applyMeterChanges, which
  * has no such meter and dropped it (issue #309 N03).
@@ -659,65 +701,88 @@ export async function completeVowItem(actor, vowItemId) {
 
 
 /**
+ * True when `item` is a copy of the vow `vowId`: a progress Item carrying it
+ * as its module `vowId` flag — or whose own id it is. A sheet-made vow's cards
+ * name it by its Item id, and the createItem hook's stamp of that id as the
+ * flag can fail, so matching the flag alone said "no character holds this
+ * vow" while it was on the sheet (known-issues VOW-ID-NEVER-LANDED).
+ *
+ * @param {Item} item
+ * @param {string} vowId
+ * @returns {boolean}
+ */
+export function isVowCopy(item, vowId) {
+  return !!vowId && item?.type === "progress"
+    && (item.flags?.[MODULE_ID]?.vowId === vowId || item.id === vowId);
+}
+
+/**
  * Set the promised concrete reward (#241 Phase 2) on every copy of a shared vow,
- * found by its vowId flag across all player characters. GM-only (Item flag
+ * found by its vowId (isVowCopy) across all player characters. GM-only (Item flag
  * writes). No-op when the vow or reward is missing.
  *
  * @param {string} vowId
  * @param {{ description: string, form: string, status?: string }} reward
- * @returns {Promise<boolean>} false when a copy's write was refused (each is
- *   still attempted) — a reward's status is its grant's claim, so a payoff
- *   must know when it did not land (issue #306 R04) — or when no copy of the
- *   vow was found to hold it (issue #329 X07)
+ * @returns {Promise<{ ok: boolean, reason?: "refused"|"no-copy" }>} `ok` once
+ *   every copy holds it. "refused": a copy's write was refused (each is still
+ *   attempted) — a reward's status is its grant's claim, so a payoff must know
+ *   when it did not land (issue #306 R04). "no-copy": no copy of the vow was
+ *   found to hold it (issue #329 X07) — told apart, so a pick is never asked
+ *   to retry what can never land (issue #336 Y27). Nothing to set is `ok`.
  */
 export async function setSharedVowReward(vowId, reward) {
-  if (!vowId || !reward?.description) return true;
-  let landed = true;
+  if (!vowId || !reward?.description) return { ok: true };
+  let refused = false;
   let copies = 0;
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
-      if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
+      if (isVowCopy(item, vowId) && item.setFlag) {
         copies += 1;
         await item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward }).catch(err => {
-          landed = false;
+          refused = true;
           console.warn(`${MODULE_ID} | setSharedVowReward failed:`, err?.message ?? err);
         });
       }
     }
   }
-  return landed && copies > 0;
+  if (refused) return { ok: false, reason: "refused" };
+  return copies > 0 ? { ok: true } : { ok: false, reason: "no-copy" };
 }
 
 /**
- * Set the linked connection on a vow Item (found by its vowId flag across all
+ * Set the linked connection on a vow Item (found by its vowId, isVowCopy, across all
  * player characters), so fulfilling/advancing it deepens that bond (#248
  * B-link). GM-only (Item flag write). No-op when the vow or name is missing.
  *
  * @param {string} vowId
  * @param {string} connectionName
- * @returns {Promise<boolean>} whether the link landed: false when a copy's
- *   write was refused (each is still attempted) or no copy of the vow was
- *   found (issue #329 X07 — a refusal was a console warning, and the card said
- *   "Linked")
+ * @returns {Promise<{ ok: boolean, reason?: "refused"|"no-copy"|"no-name" }>}
+ *   whether the link landed (issue #329 X07 — a refusal was a console
+ *   warning, and the card said "Linked"). "refused": a copy's write was
+ *   refused (each is still attempted). "no-copy": no copy of the vow was
+ *   found — told apart from a refusal, which a press can retry (issue #336
+ *   Y27). "no-name": no connection named.
  */
 export async function setVowLinkedConnection(vowId, connectionName) {
-  if (!vowId || !connectionName) return false;
-  let landed = true;
+  if (!vowId) return { ok: false, reason: "no-copy" };
+  if (!connectionName) return { ok: false, reason: "no-name" };
+  let refused = false;
   let copies = 0;
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
-      if (item?.type === "progress" && item.flags?.[MODULE_ID]?.vowId === vowId && item.setFlag) {
+      if (isVowCopy(item, vowId) && item.setFlag) {
         copies += 1;
         await item.setFlag(MODULE_ID, "linkedConnectionName", connectionName).catch(err => {
-          landed = false;
+          refused = true;
           console.warn(`${MODULE_ID} | setVowLinkedConnection failed:`, err?.message ?? err);
         });
       }
     }
   }
-  return landed && copies > 0;
+  if (refused) return { ok: false, reason: "refused" };
+  return copies > 0 ? { ok: true } : { ok: false, reason: "no-copy" };
 }
 
 /**
@@ -863,6 +928,32 @@ export async function setBondItemLost(keys = {}, lost = true) {
     updated++;
   }
   return updated;
+}
+
+/**
+ * Delete the bond Items keyed to one connection, across every PC — unless the
+ * table has marked one (a tick, a forged bond, a loss), which is a use of the
+ * connection: then none is deleted and `marked` is true. Only Items keyed by
+ * `connectionId` are matched (bondItemsFor without a name), never an unkeyed
+ * same-named one. The X-Card's removal of a connection its removed narration
+ * created (connection.retractNarrationConnections — issue #338 D6(ii)).
+ *
+ * @param {{ connectionId: string }} keys
+ * @returns {Promise<{ marked: boolean, deleted: number }>}
+ */
+export async function deleteUnmarkedBondItems({ connectionId } = {}) {
+  if (!connectionId) return { marked: false, deleted: 0 };
+  const items = bondItemsFor({ connectionId });
+  const marked = items.some(({ item }) => Number(item.system?.current ?? 0) > 0
+    || item.system?.completed === true || item.flags?.[MODULE_ID]?.lost === true);
+  if (marked) return { marked: true, deleted: 0 };
+  let deleted = 0;
+  for (const { actor, item } of items) {
+    await item.delete();
+    invalidateActorCache(actor.id);
+    deleted++;
+  }
+  return { marked: false, deleted };
 }
 
 /**
@@ -1099,8 +1190,7 @@ export async function recalculateMomentumBounds(actor) {
   if (!actor) return;
 
   const sys       = actor.system ?? {};
-  const debs      = readDebilities(actor);
-  const impactCount = countImpacts(debs);
+  const impactCount = countImpacts(sys.debility);
   const { max: maxMom } = momentumBounds(sys, impactCount);
   const current   = meterValue(sys.momentum);
   const clamped   = clamp(current, MOMENTUM_MIN, maxMom);
@@ -1121,8 +1211,11 @@ function meterValue(meter) {
   return meter.value ?? 0;
 }
 
-function countImpacts(debs) {
-  return IMPACT_KEYS.filter(k => debs[k]).length;
+// The marked impacts on a sheet's debility (`actor.system.debility`), the
+// custom two included — what the vendor's #impactCount counts. readDebilities'
+// map leaves the custom impacts out, so it is not what this counts.
+function countImpacts(debility) {
+  return IMPACT_KEYS.filter(k => !!debility?.[k]).length;
 }
 
 // The vendor's momentum limits (MomentumField: MAX, MIN, RESET_MIN) and base

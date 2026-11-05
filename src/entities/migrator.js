@@ -26,7 +26,7 @@ import { createPlanet }     from "./planet.js";
 import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
 import { STARFORGED_CHARACTER_SHEET } from "./connection.js";
-import { getEntityDocument, readEntityFlag, writeEntityFlag, iterEntityDocuments, hasSheetNotes } from "./registry.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag, iterEntityDocuments, hasSheetNotes, unionIdList } from "./registry.js";
 import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder, getOrCreateSectorNpcActorFolder, getOrCreateActorFolder, folderParentId } from "./folder.js";
 import {
   rewriteSectorOverviewSettlements,
@@ -151,7 +151,17 @@ async function runMigration() {
   const anyMigrated = TYPES.some(t => summary[t.key].migrated > 0);
   if (anyMigrated) {
     try {
-      await globalThis.game.settings.set(MODULE_ID, "campaignState", campaignState);
+      // The move lock as the store holds it now, never as this snapshot held
+      // it across the awaits above: a move that claimed or released the lock
+      // meanwhile keeps it — the lock's own paths alone write it
+      // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
+      const latest = globalThis.game.settings.get(MODULE_ID, "campaignState") ?? {};
+      await globalThis.game.settings.set(MODULE_ID, "campaignState", {
+        ...campaignState,
+        pendingMove:      latest.pendingMove ?? false,
+        pendingMoveBy:    latest.pendingMoveBy ?? null,
+        pendingMoveClaim: latest.pendingMoveClaim ?? null,
+      });
     } catch (err) {
       console.error(`${MODULE_ID} | migrator: persistCampaignState failed:`, err);
       summary.notes.push(`Failed to persist campaignState: ${err.message}`);
@@ -800,6 +810,78 @@ export async function syncEntityRecordNames(campaignState) {
       }
     }
   }
+  return summary;
+}
+
+// The entity types the load-time registration repair lists: the Actor-hosted
+// ones, and the two a JournalEntry hosts (a faction, a creature — known-issues
+// JOURNAL-ORPHAN-ON-REFUSAL), each with its campaignState id list.
+const UNLISTED_ENTITY_TYPES = [
+  ...ACTOR_HOSTED_NAME_SYNC,
+  { typeKey: "faction",  campaignField: "factionIds"  },
+  { typeKey: "creature", campaignField: "creatureIds" },
+];
+
+/**
+ * Ready-time repair (issue #337 Y34): an entity whose registration the world
+ * refused — an NPC card, a ship, a settlement, a planet or a location Actor,
+ * or a faction's or creature's JournalEntry (known-issues
+ * JOURNAL-ORPHAN-ON-REFUSAL), carrying the module's record (`entityType` and
+ * its flag) that its campaignState id list does not name — is listed. The
+ * Entities panel shows such an Actor (it walks every flagged Actor) while
+ * every list-driven reader skips it: a sidebar ship never reached
+ * getCommandVehicle, SHIP POSITION or Withstand Damage, a faction never
+ * reached the FACTION LANDSCAPE, and no other load pass lists a document
+ * that already carries a record. Left alone: a copy of a listed record (the
+ * sidebar's Duplicate, or a card whose journal the connection migration has
+ * yet to swap — the same record id), and the leftovers of a sector creation
+ * whose sector the campaign never stored (known-issues SECTOR-CREATE-PARTIAL
+ * — a retry of that creation adopts them). GM-only; one write, onto the
+ * latest store; idempotent.
+ *
+ * @returns {Promise<{ listed: number }>}
+ */
+export async function registerUnlistedEntityActors() {
+  const summary = { listed: 0 };
+  if (globalThis.game?.user && !globalThis.game.user.isGM) return summary;
+
+  const state     = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+  const sectorIds = new Set((Array.isArray(state.sectors) ? state.sectors : []).map(s => s?.id).filter(Boolean));
+  const additions = {};
+  for (const { typeKey, campaignField } of UNLISTED_ENTITY_TYPES) {
+    const listed = new Set(Array.isArray(state[campaignField]) ? state[campaignField] : []);
+    // The record ids the list already names — on an Actor, or on a legacy journal page.
+    const known = new Set();
+    for (const id of listed) {
+      const actor = globalThis.game?.actors?.get?.(id) ?? null;
+      const flags = actor ? actor.flags : globalThis.game?.journal?.get?.(id)?.pages?.contents?.[0]?.flags;
+      const rid   = flags?.[MODULE_ID]?.[typeKey]?._id;
+      if (rid) known.add(rid);
+    }
+    for (const { document, data } of iterEntityDocuments(typeKey)) {
+      if (!document?.id || listed.has(document.id)) continue;
+      if (document.flags?.[MODULE_ID]?.entityType !== typeKey) continue;
+      if (data?.sectorId && !sectorIds.has(data.sectorId)) continue;
+      if (data?._id && known.has(data._id)) continue;
+      if (data?._id) known.add(data._id);
+      (additions[campaignField] ??= []).push(document.id);
+    }
+  }
+  const fields = Object.keys(additions);
+  if (!fields.length) return summary;
+
+  // Onto the store as it is now, the id lists alone — no await between the
+  // read and the write.
+  const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+  const next   = { ...latest };
+  for (const field of fields) next[field] = unionIdList(latest[field], additions[field]);
+  try {
+    await globalThis.game.settings.set(MODULE_ID, "campaignState", next);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | registerUnlistedEntityActors: listing the unregistered entities failed — the next load tries again:`, err);
+    return summary;
+  }
+  summary.listed = fields.reduce((n, field) => n + additions[field].length, 0);
   return summary;
 }
 

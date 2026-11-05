@@ -1,6 +1,7 @@
 /**
  * The paced card's Roll button rolls the narrating player's move, whoever
- * presses it (issue #325 W09).
+ * presses it (issue #325 W09) — their player or a GM (known-issues
+ * PACED-ROLL-OPEN-PRESS).
  *
  * At a two-player table Pat (PC Kira) types "I vault the railing and sprint
  * for the airlock." The pacing classifier answers NARRATIVE_WITH_MOVE_AVAILABLE
@@ -94,13 +95,27 @@ describe('the paced Roll button credits the narrating PC', () => {
     expect(rolledFor()).toEqual(['pc-pat']);
   }, 30_000);
 
-  it("another player pressing it rolls Kira's move too, and the card records her", async () => {
+  it('its forced move carries only flags the pipeline reads (known-issues PACED-SUGGESTION-FLAG-DEAD)', async () => {
+    const id = await pacedCardForPat();
+
+    table.client('gm-1').click(id, '[data-action="sf-paced-roll"]');
+    await table.settle(); await table.drain();
+
+    const [post] = table.cards(f => f.forcedMoveId === 'face_danger');
+    expect(post.flags[MODULE_ID]).toMatchObject({ bypassPacing: true, forcedMoveId: 'face_danger', deferWhileBusy: true });
+    // Written on every paced Roll, read nowhere (rules/reachability.md §1).
+    expect(post.flags[MODULE_ID]).not.toHaveProperty('fromPacedSuggestion');
+  }, 30_000);
+
+  // Known-issues PACED-ROLL-OPEN-PRESS: another player's press rolled Kira's
+  // move for her; it is now refused (tests/unit/pacedRollWhichFightRelay.test.js).
+  it("the card records her, and another player's press rolls nothing — the move is Kira's", async () => {
     const id = await pacedCardForPat();
     expect(table.world.message(id).flags[MODULE_ID].actorId).toBe('pc-pat');
 
     table.client('pl-2').click(id, '[data-action="sf-paced-roll"]');
     await table.settle(); await table.drain();
 
-    expect(rolledFor()).toEqual(['pc-pat']);
+    expect(rolledFor()).toEqual([]);
   }, 30_000);
 });

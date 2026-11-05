@@ -79,7 +79,8 @@ const TYPE_STYLE = {
  * @returns {{ prompt: string, size: string }}
  */
 export function buildPrompt(entityType, sourceDescription, entity = {}) {
-  const extracted = extractVisualElements(sourceDescription, entityType);
+  const source    = entityType === "connection" ? withCurrentGenderLead(sourceDescription, entity) : sourceDescription;
+  const extracted = extractVisualElements(source, entityType);
   const sanitised = sanitiseForPolicy(extracted, entityType);
   const typeStyle  = TYPE_STYLE[entityType] ?? TYPE_STYLE.connection;
 
@@ -95,6 +96,23 @@ export function buildPrompt(entityType, sourceDescription, entity = {}) {
     : "1024x1024";
 
   return { prompt, size };
+}
+
+/**
+ * A connection's portrait source with its leading gender descriptor taken
+ * from the pronouns the card holds now. The seed leads the source with the
+ * descriptor of the set it established ("a woman. Scarred. …"); an NPC card's
+ * pronouns are its sheet's (issue #335 Y13), so a correction made there
+ * replaces that lead instead of being contradicted by it.
+ *
+ * @param {string} source
+ * @param {Object} [entity]
+ * @returns {string}
+ */
+function withCurrentGenderLead(source, entity = {}) {
+  const text = String(source ?? "");
+  if (!entity?.pronouns) return text;
+  return text.replace(/^\s*a (?:woman|man|person)\b/i, pronounsToPortraitDescriptor(entity.pronouns));
 }
 
 /**

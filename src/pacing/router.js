@@ -25,6 +25,7 @@
  */
 
 import { classifyInput, PACING_DECISION, PACING_CATEGORIES } from "./classifier.js";
+import { SCENE_CHALLENGE_VARIANTS, selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
 import { narratePacedInput } from "../narration/narrator.js";
 import { logPacingDecision } from "./telemetry.js";
 
@@ -182,9 +183,11 @@ export async function routePacedInput({
 
   const recentMoveDensity = getRecentMoveDensity(pacingConfig.densityWindow);
   const combatActive      = await detectCombatActive();
+  const openChallenges    = await detectOpenSceneChallenges();
+  const sceneChallenges   = openChallenges.map(t => String(t.label ?? ""));
 
   const result = await classifyInput({
-    playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey, combatActive,
+    playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey, combatActive, sceneChallenges,
   });
 
   // Backstop: during an active fight the classifier must not hedge. If it
@@ -234,7 +237,15 @@ export async function routePacedInput({
     ? result.suggestedMove
     : null;
 
-  await narratePacedInput(playerText, campaignState, { suggestedMove, speakerActorId })
+  // The challenge a scene-challenge nomination is part of — the one the
+  // classifier named, else the sole open one — by id, for the paced card's
+  // Roll to carry as its target: with two open it named none, and its scoring
+  // asked "which scene challenge?" (PACED-VARIANT-NO-TARGET).
+  const suggestedTargetId = SCENE_CHALLENGE_VARIANTS[suggestedMove]
+    ? (selectSceneChallengeTrack(openChallenges, result.sceneChallenge ?? null)?.id ?? null)
+    : null;
+
+  await narratePacedInput(playerText, campaignState, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}) })
     .catch(err => console.error(`${MODULE_ID} | narratePacedInput failed:`, err));
 
   return {
@@ -270,13 +281,34 @@ async function detectCombatActive() {
 }
 
 /**
- * Spend a `!roll` force: clear `pacing.forceNextAsMove` on the store (a copy
- * of `campaignState` with the flag off) and on `campaignState` once the write
- * lands. The move pipeline calls it once a forced line holds the move lock
- * (issue #331 X37). GM only; a refused clear leaves the flag for the next
- * line. Never throws.
+ * The open scene challenges, for the classifier as the fight is
+ * (detectCombatActive) — by name — and for the paced card's Roll target — by
+ * id: within one, Face Danger and Secure an Advantage are its own moves (issue
+ * #338 D2), and a paced "Roll Face Danger" during a challenge forced the
+ * ordinary move — the classifier knew of no challenge
+ * (PACING-ROLL-NO-SCENE-CHALLENGE). Fails open to none.
  *
- * @param {Object} campaignState
+ * @returns {Promise<Array<{ id: string, label: string, type: string, completed: boolean }>>}
+ */
+async function detectOpenSceneChallenges() {
+  try {
+    const { listProgressTracks } = await import("../ui/progressTracks.js");
+    const tracks = await listProgressTracks();
+    return (Array.isArray(tracks) ? tracks : [])
+      .filter(t => t.type === "scene_challenge" && !t.completed);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Spend a `!roll` force: clear `pacing.forceNextAsMove` on the store (a copy
+ * of the latest stored campaignState with the flag off) and on `campaignState`
+ * once the write lands. The move pipeline calls it once a forced line holds
+ * the move lock (issue #331 X37). GM only; a refused clear leaves the flag for
+ * the next line. Never throws.
+ *
+ * @param {Object} campaignState — the pipeline's working copy
  * @returns {Promise<void>}
  */
 export async function consumeForceMove(campaignState) {
@@ -289,10 +321,16 @@ export async function consumeForceMove(campaignState) {
     return;
   }
   // A copy (rules/foundry-api.md): a refused clear leaves the flag set
-  // everywhere, for the next pass to clear (issue #326 W51).
+  // everywhere, for the next pass to clear (issue #326 W51). Onto the store
+  // as it is now, not the working copy (rules/reachability.md §9): that holds
+  // the move lock as the pipeline claimed it, and the lock's fields are the
+  // lock's own paths' to write — a whole working copy carries a lock back
+  // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
   const pacing = { ...campaignState.pacing, forceNextAsMove: false };
   try {
-    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", { ...campaignState, pacing });
+    const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState;
+    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState",
+      { ...latest, pacing: { ...(latest.pacing ?? campaignState.pacing), forceNextAsMove: false } });
     campaignState.pacing = pacing;
   } catch (err) {
     console.warn(`${MODULE_ID} | pacing: failed to clear forceNextAsMove:`, err);

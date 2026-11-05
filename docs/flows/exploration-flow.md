@@ -50,7 +50,15 @@ passage" drawing.
   arrival needs both — by Ship Positioning and Auto-Move Ship on Set a Course:
   with either off the drag is a plain token move (with positioning on, a
   position note, no roll), where it used to roll Set a Course and leave the
-  ship in place (issue #321 U54).
+  ship in place (issue #321 U54). A drop on a **site** pin is never a Set a
+  Course — sites are reached by expedition — but a charted site's pin is a
+  position anchor both ways (issue #335 Y14): the token parked on or near it
+  records the site's location Actor (`nearestLocationId`, read "near" it),
+  and an arrival recorded at a site moves the token onto its pin (§2). An
+  undiscovered pin names no place from the token side ("deep space"); the
+  sync follows a record that already names its site, since the Finish an
+  Expedition that charts a site records its arrival before the reveal flips
+  the pin.
 - **`undertake_an_expedition`** (perilous/unknown): strong/weak hit →
   `applyExpeditionProgress` resolve-or-creates the expedition track (label =
   destination, rank = interpreter's `expeditionRank`, default dangerous) and
@@ -58,14 +66,20 @@ passage" drawing.
   or the move names a destination none of the open ones matches; naming none
   while two or more are open, the pipeline posts a **Which expedition?** card
   before rolling (`postWhichFightCard` with `trackType: "expedition"`, whose
-  pick posts the move again with that track's id), and a track named by id
+  pick relays `whichFight.pick` — one of the card's tracks, the roller's
+  player or a GM, claimed once on the card — and posts the move again with
+  that track's id as the roller; known-issues PACED-ROLL-OPEN-PRESS), and a track named by id
   that is over marks nothing (`reason: "ambiguous" | "gone"`) — an unnamed
   Undertake used to begin a phantom "Expedition" that took the progress
   (issue #321 U16). The progress card shows boxes filled and carries a
   **"🗺 Finish the Expedition"** button — its forced move names the track by
   id and speaks as the PC who marked the progress (the card's `actorId`,
-  issue #329 X05). Deliberately **not** an arrival move — no position write
-  mid-journey.
+  issue #329 X05). The press relays `expedition.finish`
+  (`cardActions.applyFinishExpeditionAttempt`): the canonical GM claims the
+  card once (`expeditionFinishAttempted`), and only that PC's player or a GM
+  may press it — it posted from the presser's client, so a crewmate finished
+  another player's expedition (issue #338 D1). Deliberately **not** an
+  arrival move — no position write mid-journey.
 - **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
   ship record, `currentLocationId`, the feedback card), and an Undertake an
   Expedition miss upgraded marks the expedition as a rolled hit would — the
@@ -121,9 +135,15 @@ passage" drawing.
   so those sources read as stationary ("docked at" / "in orbit of";
   SHIP-TRANSIT-LINE fix — `set_a_course` used to say "in transit to" a place
   the ship had reached); a token's own place on the map (placed, auto-placed
-  or moved off a pin, source `token_placement`) reads "near" its nearest pin
-  (issue #321 U53 — it was `scene_token`, "docked at"); with no position it explicitly instructs the
-  narrator not to invent one.
+  or moved off a pin, source `token_placement`) reads "near" its nearest pin,
+  a settlement's or a charted site's (issue #321 U53 — it was `scene_token`,
+  "docked at"; the site's since issue #335 Y14); with no position it explicitly instructs the
+  narrator not to invent one. The token follows a recorded position onto
+  the pin that anchors it — a settlement's, or a site's for a recorded
+  location (`syncCommandVehicleTokenToPosition` reads `nearestLocationId`
+  too: a Finish an Expedition, `!at`, Entities-panel, narrator or
+  X-Card-restore arrival at a derelict left the token on the settlement it
+  had left — Y14); a free-text position leaves it where it is.
   Active expeditions appear only in the generic Progress Tracks context
   section (up to 4 active tracks) — no dedicated journey block.
 
@@ -143,7 +163,9 @@ track and pays `legacyRewardTicks(rank)` (weak hit one rank down) onto the
 arrival's current location and the site reveal ride on the pipeline's working
 copy into `persistResolution`'s write; when the world refuses it, each is a
 step on the GMs' payoff failure card (`source: "persist"`) whose Retry applies
-it alone (issue #331 X18). `finish_an_expedition`
+it alone (issue #331 X18). A refused meter write before it (the roller's
+momentum) no longer stops that write: the arrival is saved and the meters
+are the card's steps instead (issue #336 Y16). `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
 ("docked at …"); the Set a Course feedback card ("Course held cleanly (+1
 momentum)") is Set a Course's alone (issue #326 W46). Miss leaves the track open and posts the recommit offer

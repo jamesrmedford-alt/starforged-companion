@@ -34,6 +34,7 @@ import {
 import { isCanonicalGM } from '../../src/multiplayer/gmGate.js';
 import {
   runCombinedDetectionPass, routeWorldJournalResults, appendGenerativeTierUpdates,
+  routeEntityDrafts, applyEntityRenames,
 } from '../../src/entities/entityExtractor.js';
 
 const STATE = { currentSessionId: 'sess-1', sessionNumber: 3 };
@@ -81,5 +82,18 @@ describe('issue #329 X01 — the capture is handed the narration id', () => {
     await runPostNarrationPasses('You find Vex.', { moveId: 'make_a_connection', outcome: 'strong_hit' }, relevance, STATE,
       { actorId: 'pc-1', narrationId: 'nar-connect' });
     expect(routeWorldJournalResults).toHaveBeenCalledWith(WJ, STATE, { narrationId: 'nar-connect' });
+  });
+
+  // Issue #335 Y02 — the drafts (their faction surface) and the renames take it too.
+  it('both detection passes hand the id to the renames and the drafts they route', async () => {
+    await runPacedDetection('The rig hums.', STATE, { narrationId: 'nar-oracle' });
+    expect(applyEntityRenames).toHaveBeenCalledWith([], STATE, { narrationId: 'nar-oracle' });
+    expect(vi.mocked(routeEntityDrafts).mock.calls[0][2]).toMatchObject({ narrationId: 'nar-oracle' });
+
+    const relevance = { resolvedClass: 'discovery', entityIds: [], entityTypes: [] };
+    await runPostNarrationPasses('You find Vex.', { moveId: 'make_a_connection', outcome: 'strong_hit' }, relevance, STATE,
+      { actorId: 'pc-1', narrationId: 'nar-connect' });
+    expect(applyEntityRenames).toHaveBeenLastCalledWith([], STATE, { narrationId: 'nar-connect' });
+    expect(vi.mocked(routeEntityDrafts).mock.calls[1][2]).toMatchObject({ narrationId: 'nar-connect', autoCreateConnection: true });
   });
 });

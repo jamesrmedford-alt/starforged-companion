@@ -43,6 +43,8 @@
 import { mapConsequences, OUTCOME_RANK, buildLoremasterContext } from "./resolver.js";
 import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
+import { refusePress }                   from "../multiplayer/gmRelay.js";
+import { moveDisplayName }               from "../system/i18n.js";
 import {
   revertPayThePrice,
   claimUpgradeCard,
@@ -284,6 +286,7 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
   const actor = getActor(improve.actorId);
   if (actor && !requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | improveResult: user ${ctx?.requesterId ?? "?"} does not own ${actor.name} — improvement refused.`);
+    refusePress(ctx, "not-owner", actor);
     return { applied: false, reason: "not-owner" };
   }
 
@@ -292,7 +295,9 @@ export async function applyImproveFromRelay(payload = {}, ctx = {}) {
     return { applied: false, reason: "already-consumed" };
   }
   try {
-    return await handleImproveClick(message, _deps);
+    const res = await handleImproveClick(message, _deps);
+    if (res?.reason === "no-actor") refusePress(ctx, "no-actor");
+    return res;
   } finally {
     releaseResultUpgrade(messageId);
   }
@@ -343,11 +348,12 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   }
 
   // The original outcome's pending choice is retired and the strong hit's
-  // offered once (issue #311 P03).
-  await reconcileChoices({
+  // offered once (issue #311 P03); a price that stands keeps its cards, as
+  // the burn's does (issue #335 Y09).
+  const { kept: priceCardsKept = 0 } = await reconcileChoices({
     resolutionId: improve.resolutionId, kind: "improve", actor, moveId: improve.moveId,
-    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: improve.targets ?? {}, failures,
-  }).catch(err => console.warn(`${MODULE_ID} | improveResult: choice reconciliation failed:`, err));
+    sufferPrompt: newConsequences.sufferPrompt ?? null, targets: improve.targets ?? {}, failures, priceStands,
+  }).catch(err => { console.warn(`${MODULE_ID} | improveResult: choice reconciliation failed:`, err); return {}; }) ?? {};
 
   // The strong hit's other effects, for what it adds over the recorded
   // original, through the pipeline's own applier (UPGRADE-PIPELINE-EFFECTS).
@@ -360,12 +366,12 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   // Pay the cost: advance the ability's own clock (Fugitive's 4-segment clock).
   const clockNote = await advanceAbilityClock(actor, improve);
 
-  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands })) })
+  await message.update({ content: buildImprovedCardContent(message.content, clockNote, effectsNoteHtml({ ...effects, priceStands, priceCardsKept })) })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: card content update failed:`, err));
   await reportUpgradeFailures(actor, failures);
 
   // The pre-improvement prose is now stale — strike it through, keep history.
-  await supersedeOriginalNarration(improve, { kind: "improve" }).catch(err =>
+  await supersedeOriginalNarration(improve, { kind: "improve", campaignState }).catch(err =>
     console.warn(`${MODULE_ID} | improveResult: superseding original narration failed:`, err));
 
   // The improving PC is the card's actor, not the first PC (credit the roller).
@@ -441,7 +447,7 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
   const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          improve.moveId,
-    moveName:        toDisplayName(improve.moveId),
+    moveName:        moveDisplayName(improve.moveId),
     statUsed:        null,
     statValue:       0,
     adds:            0,
@@ -466,12 +472,4 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
     ...resolution, rollKind: "action", improvedBy: improve.assetName || null,
   });
   return resolution;
-}
-
-function toDisplayName(moveId) {
-  return String(moveId ?? "")
-    .split("_")
-    .filter(Boolean)
-    .map(w => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
 }

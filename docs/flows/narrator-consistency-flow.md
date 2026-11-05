@@ -97,7 +97,12 @@ longer special-cases them).
   ledger field it changed onto the latest store (`persistSceneLedgerFields`),
   a Strike's or Replace's regen mark on the stored rolling summary riding the
   same write (`onto` → `markSummaryForRegen`); a cancelled prompt or a row
-  that no longer matches writes nothing. Each click used to write the
+  that no longer matches writes nothing — a truth retracted meanwhile
+  included: `strikeTruth` / `replaceTruth` refuse an entry already retracted,
+  and `mergeSceneLedgers` keeps a store truth the X-Card retracted over a
+  correction made on a copy read before it, filing no replacement (a Replace
+  saved after the X-Card used to re-file the removed fact under the GM's
+  wording — issue #336 Y30). Each click used to write the
   snapshot read when the dialog opened, reverting an X-Card, the next
   narration's truths or a released move lock (issue #321 U06e). The row
   buttons attach on the dialog's `render` event (`dlg.addEventListener`), the

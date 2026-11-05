@@ -110,7 +110,9 @@ describe('issue #329 X07 — a reward pick whose vow write is refused', () => {
     const card = makeCard('reward-3', { rewardChoiceCard: true, vowId: 'v-gone', rewardOptions: OPTIONS });
     game.messages = { get: (id) => (id === card.id ? card : null) };
     const res = await applyRewardPickFromRelay({ messageId: card.id, idx: 1 }, GM_CTX);
-    expect(res).toEqual({ applied: false, reason: 'write-refused' });
+    // Told apart from a refused write since issue #336 Y27: the card closes
+    // (rewardPickVowGoneNotice.test.js).
+    expect(res).toEqual({ applied: false, reason: 'no-copy' });
     expect(cards(f => f.rewardSetCard)).toHaveLength(0);
   });
 

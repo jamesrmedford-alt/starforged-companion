@@ -18,6 +18,7 @@
 import { rollOracle } from "../oracles/roller.js";
 import { stripMarkup } from "../audio/segments.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
+import { isNarrationXCarded } from "../context/safety.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -415,11 +416,15 @@ export async function postIncitingIncidentCard(args) {
  * Orchestrate the full flow: roll the spark, ask the narrator to compose the
  * inciting incident (grounded in campaign context), and post the card. Falls
  * back to a spark-only card when the narrator returns nothing. Never throws.
+ * A premise the world refused is told to `authorId` and the GMs (issue #336
+ * Y33).
  *
  * @param {Object} campaignState
+ * @param {{ authorId?: string|null }} [opts] — who asked (a `!incite` line's
+ *   author; defaults to this client's user)
  * @returns {Promise<{ spark: {action,theme}, text: string|null }>}
  */
-export async function runIncitingIncident(campaignState) {
+export async function runIncitingIncident(campaignState, { authorId = null } = {}) {
   const spark = rollIncitingSpark();
 
   let text = null;
@@ -446,6 +451,7 @@ export async function runIncitingIncident(campaignState) {
   // this object whole, which reverted everything relayed during the Claude
   // call: a player's Private Lines, a safety flag, an X-Card (issue #321
   // U06d). GM-gated.
+  let premiseNotSaved = false;
   if (text && campaignState && globalThis.game?.user?.isGM) {
     try {
       const meta = splitIncitingMeta(text);
@@ -460,21 +466,25 @@ export async function runIncitingIncident(campaignState) {
         establishedAt:   new Date().toISOString(),
       };
       const { persistSceneLedgerFields } = await import("../factContinuity/sceneLifecycle.js");
-      await persistSceneLedgerFields(campaignState, ["sceneTruths", "sceneState", "sceneFrame"], "inciting premise", {
+      const written = await persistSceneLedgerFields(campaignState, ["sceneTruths", "sceneState", "sceneFrame"], "inciting premise", {
         onto: (target) => { target.incitingIncident = premise; },
       });
-      // On the caller's object only once the world has it: the callers hand
-      // over the cached campaignState, and setting the premise there first
-      // left a refused write's premise as campaign canon in every prompt on
-      // this GM alone (issue #331 X38). The persist reports no refusal of
-      // its own, so the store says whether it landed.
+      // On the caller's object only once the world has it: handed the cached
+      // campaignState (as every caller did until issue #335 Y04 — they pass a
+      // working copy now), setting the premise there first left a refused
+      // write's premise as campaign canon in every prompt on this GM alone
+      // (issue #331 X38). The store says whether it landed: the persist's
+      // `false` is a refused write — or a scene changed meanwhile, the
+      // premise written all the same.
       if (globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.incitingIncident?.establishedAt === premise.establishedAt) {
         campaignState.incitingIncident = premise;
       } else {
-        console.warn(`${MODULE_ID} | runIncitingIncident: the world did not save the premise — it is not campaign canon.`);
+        console.warn(`${MODULE_ID} | runIncitingIncident: the world did not save the premise${written === false ? " (its write was refused)" : ""} — it is not campaign canon.`);
+        premiseNotSaved = true;
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | runIncitingIncident: premise persist failed:`, err?.message ?? err);
+      premiseNotSaved = true;
     }
   } else if (text && campaignState) {
     // A player's client (RUN_ON.CLAUDE runs !incite on the author when no
@@ -490,6 +500,10 @@ export async function runIncitingIncident(campaignState) {
     sessionId: campaignState?.currentSessionId ?? null,
     narrationId,
   });
+  // The card stands, but nothing carries its premise into later narration:
+  // the asker and the GMs are told, with the remedy (issue #336 Y33 — a
+  // console line was all, the X13 / X10 standard is a card).
+  if (premiseNotSaved) await postPremiseNotSavedNotice(authorId);
 
   // Capture entities the opening fiction invented (e.g. a new faction) into the
   // World Journal / Entities review. The inciting path does NOT go through the
@@ -517,7 +531,8 @@ export async function runIncitingIncident(campaignState) {
       // undoes what this capture records (issue #329 X01).
       await narrator.runPacedDetection(prose, campaignState ?? {}, { skipLore: true, narrationId });
       await narrator.runNarrationTierUpdate(prose, campaignState ?? {}, { narrationId });
-      if (situation) {
+      // Not for an inciting card the X-Card removed meanwhile (XCARD-LATE-CAPTURE).
+      if (situation && !isNarrationXCarded(narrationId)) {
         const { recordLoreDiscovery } = await import("../world/worldJournal.js");
         await recordLoreDiscovery("Inciting Incident", {
           text:             situation,
@@ -537,4 +552,31 @@ export async function runIncitingIncident(campaignState) {
   }
 
   return { spark, text };
+}
+
+/**
+ * Tell whoever asked for the inciting incident — and the GMs — that the world
+ * did not save its premise (issue #336 Y33): the card stands, but no later
+ * narration carries the CAMPAIGN PREMISE block (since issue #331 X38 not even
+ * this GM's), and nobody knew to run it again. Whispered, as the session
+ * gate's notice is; never a narrator card. Never throws.
+ *
+ * @param {string|null} authorId — the asker (defaults to this client's user)
+ * @returns {Promise<void>}
+ */
+async function postPremiseNotSavedNotice(authorId) {
+  const gmIds = Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM).map(u => u.id);
+  const whisper = [...new Set([authorId ?? globalThis.game?.user?.id ?? null, ...gmIds].filter(Boolean))];
+  try {
+    await globalThis.ChatMessage?.create?.({
+      content:
+        `<div class="sf-ptp-card"><strong>Premise not saved</strong>` +
+        `<p>The world did not save this inciting incident as the campaign's premise, so later narration will not carry it. ` +
+        `Run ✦ Envision Inciting Incident again (the Session panel, or <code>!incite</code>) for an opening the world keeps.</p></div>`,
+      whisper,
+      flags: { [MODULE_ID]: { incitingPremiseNotSaved: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | runIncitingIncident: the premise-not-saved notice failed:`, err?.message ?? err);
+  }
 }

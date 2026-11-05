@@ -15,7 +15,7 @@
  *   - promoteTextSubject   Rewrite text-subject ledger entries to entity-subject.
  *   - subjectKey           Stable key for indexing state-ledger entries.
  *   - subjectFromStateKey  The subject a state-ledger key stands for.
- *   - retractNarrations    Retract what X-carded narrations' sidecars wrote.
+ *   - retractNarrations    Retract what X-carded (or superseded) narrations' sidecars wrote.
  */
 
 import { resolveEntityName } from '../context/relevanceResolver.js';
@@ -188,6 +188,16 @@ function assertedLocation(campaignState, frame = null) {
 export const XCARD_RETRACTED_BY = 'xcard';
 
 /**
+ * `retractedBy` of a truth a superseded narration wrote — Burn Momentum or
+ * Improve Result replaced the outcome it narrated, or rewound the clock whose
+ * trigger it narrated (retractNarrations `{ by }`, issue #338 D8). Like the
+ * X-Card's, it renders nowhere and is never named under CORRECTED; unlike
+ * it, it is no bar to a later narration stating the same fact — the
+ * re-narration of the upgraded outcome, or the clock's next trigger.
+ */
+export const SUPERSEDED_RETRACTED_BY = 'superseded';
+
+/**
  * Two state attributes name the same fact when they match case-blind and
  * trimmed: "Location" superseded nothing of "location", so CURRENT STATE
  * showed two contradictory lines for one fact (issue #326 W61 — subjects
@@ -267,27 +277,53 @@ function stateEntryWithout(entry, ids) {
  * superseded, when it kept one (`previous`), is restored — and a scene frame
  * they wrote is cleared.
  *
- * Replaces `sceneTruths`, `sceneState` and `sceneFrame` on `campaignState`
- * with new objects and never changes the ones it was given, so the caller
- * may pass a shallow copy of the stored (cached) value. Pure, no I/O.
+ * The X-Card also takes over the table's strike of a truth they recorded
+ * (XCARD-AFTER-STRIKE-STILL-NAMED): a bare strike — the GM's or a player's,
+ * no replacement — is relabelled `retractedBy: "xcard"` (its `retractedAt`
+ * kept), and the strike a scene end kept for the session
+ * (`sessionRetractions`, with its truth's `narrationId`) is dropped. Left as
+ * the table's, the CORRECTED block and the summary's leave-out list named the
+ * removed content for the rest of the session (U07), and `!truth set` could
+ * lift it (an X-Card's retraction is never lifted — issue #331 X31). A
+ * superseded narration's (`by` SUPERSEDED_RETRACTED_BY) leaves the table's
+ * strike as it is: the correction stands over the re-narration.
+ *
+ * Replaces `sceneTruths`, `sceneState`, `sceneFrame` and (for the X-Card)
+ * `sessionRetractions` on `campaignState` with new objects and never changes
+ * the ones it was given, so the caller may pass a shallow copy of the stored
+ * (cached) value. Pure, no I/O.
+ *
+ * `by`: the truths' `retractedBy` — the X-Card's by default; a Burn Momentum
+ * or Improve Result that superseded the narrations passes
+ * SUPERSEDED_RETRACTED_BY (issue #338 D8), which a later narration may
+ * state again.
  *
  * @param {Object}   campaignState — the copy to update
  * @param {string[]} narrationIds  — the removed narrations (their cards' `narrationId`)
- * @returns {Object[]} the truths it retracted (the new entries)
+ * @param {{ by?: string }} [opts]
+ * @returns {Object[]} the truths it retracted (the new entries; a strike it
+ *   relabelled was retracted, and its copies reached, by the strike)
  */
-export function retractNarrations(campaignState, narrationIds) {
+export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETRACTED_BY } = {}) {
   const ids = new Set((Array.isArray(narrationIds) ? narrationIds : []).filter(id => typeof id === 'string' && id));
   if (!campaignState || !ids.size) return [];
   const now = Date.now();
   const retracted = [];
+  const xCard = by === XCARD_RETRACTED_BY;
 
   if (Array.isArray(campaignState.sceneTruths)) {
     campaignState.sceneTruths = campaignState.sceneTruths.map((t) => {
-      if (!t || t.retracted || !ids.has(t.narrationId)) return t;
-      const next = { ...t, retracted: true, retractedBy: XCARD_RETRACTED_BY, retractedAt: now };
+      if (!t || !ids.has(t.narrationId)) return t;
+      if (t.retracted) return (xCard && isBareTableStrike(t)) ? { ...t, retractedBy: XCARD_RETRACTED_BY } : t;
+      const next = { ...t, retracted: true, retractedBy: by, retractedAt: now };
       retracted.push(next);
       return next;
     });
+  }
+
+  const sessionStrikes = campaignState.sessionRetractions;
+  if (xCard && Array.isArray(sessionStrikes?.facts) && sessionStrikes.facts.some(f => ids.has(f?.narrationId))) {
+    campaignState.sessionRetractions = { ...sessionStrikes, facts: sessionStrikes.facts.filter(f => !ids.has(f?.narrationId)) };
   }
 
   const bySubject = campaignState.sceneState?.bySubject;
@@ -308,6 +344,18 @@ export function retractNarrations(campaignState, narrationIds) {
     campaignState.sceneFrame = null;
   }
   return retracted;
+}
+
+/**
+ * A retracted truth the table struck with no replacement — not the X-Card's,
+ * not a superseded narration's, not a Replace's original (findBareStrike's
+ * test, for a truth known to be retracted).
+ *
+ * @param {Object} t
+ * @returns {boolean}
+ */
+function isBareTableStrike(t) {
+  return !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY && t.retractedBy !== SUPERSEDED_RETRACTED_BY;
 }
 
 /**
@@ -439,6 +487,55 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
 }
 
 /**
+ * promoteTextSubject's inverse, for an entity whose card is gone: every
+ * ledger entry about it goes back to a text subject under its name. The
+ * X-Card's removal of a connection its narration created deletes the card
+ * (connection.retractNarrationConnections, issue #338 D6(ii)), and the facts
+ * a kept narration had recorded about the name — promoted to the card when
+ * it was made — stood keyed to an id no card answers: out of every prompt
+ * (an entity subject is in scope only when matched) and lost at scene end
+ * (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). A later card of that name
+ * promotes them again.
+ *
+ * Replaces `sceneTruths` and `sceneState` on `campaignState` with new objects
+ * and never changes the ones it was given, so the caller may pass a shallow
+ * copy of the stored (cached) value. Pure, no I/O.
+ *
+ * @param {string} entityId — the gone card's host id
+ * @param {string} name     — its name
+ * @param {Object} campaignState — the copy to update
+ * @returns {number} truths rewritten, plus one for a state subject moved
+ */
+export function demoteEntitySubject(entityId, name, campaignState) {
+  const text = typeof name === 'string' ? name.trim() : '';
+  if (!entityId || !text || !campaignState) return 0;
+  const isGone = (s) => s?.kind === 'entity' && s.entityId === entityId;
+  let rewritten = 0;
+  if (Array.isArray(campaignState.sceneTruths) && campaignState.sceneTruths.some(t => isGone(t?.subject))) {
+    campaignState.sceneTruths = campaignState.sceneTruths.map((t) => {
+      if (!isGone(t?.subject)) return t;
+      rewritten += 1;
+      return { ...t, subject: { kind: 'text', text } };
+    });
+  }
+  const bySubject = campaignState.sceneState?.bySubject;
+  const oldKey = subjectKey({ kind: 'entity', entityId });
+  if (bySubject && typeof bySubject === 'object' && Array.isArray(bySubject[oldKey])) {
+    const newKey = subjectKey({ kind: 'text', text });
+    const merged = [...(Array.isArray(bySubject[newKey]) ? bySubject[newKey] : [])];
+    for (const e of bySubject[oldKey]) {
+      const idx = merged.findIndex(m => sameStateAttribute(m?.attribute, e?.attribute));
+      if (idx >= 0) merged[idx] = e; else merged.push(e);
+    }
+    const next = { ...bySubject, [newKey]: merged };
+    delete next[oldKey];
+    campaignState.sceneState = { ...campaignState.sceneState, bySubject: next };
+    rewritten += 1;
+  }
+  return rewritten;
+}
+
+/**
  * State attributes that say where a character is and what shape they are in —
  * the stateChanges the sidecar instruction REQUIRES. The ledger block keeps
  * them longest under its token cap (A6), and scene end keeps a recorded
@@ -500,8 +597,12 @@ export function subjectFromStateKey(key) {
  * Mark a truth retracted in place. Does not remove the entry — strike-through
  * is recorded for audit (scope §4.1).
  *
- * Returns the matched entry on success, null when no entry has the given ID
- * or the actor lacks permission. Permission is enforced via canCorrectTruth.
+ * Returns the matched entry on success, null when no entry has the given ID,
+ * the entry is already retracted, or the actor lacks permission. Permission
+ * is enforced via canCorrectTruth. An entry already retracted — a strike, a
+ * Replace's original, the X-Card's — is left as it is: relabelling the
+ * X-Card's retraction a GM's made it a strike `!truth set` could lift (issue
+ * #336 Y30; U07: an X-Card retraction is never lifted).
  *
  * @param {string} truthId — full id or 6-char prefix
  * @param {Object} campaignState
@@ -514,7 +615,7 @@ export function strikeTruth(truthId, campaignState, ctx = {}) {
   if (!campaignState || !truthId) return null;
   ensureLedgerShape(campaignState);
   const entry = findTruthByIdOrPrefix(campaignState.sceneTruths, truthId);
-  if (!entry) return null;
+  if (!entry || entry.retracted) return null;
   if (!canCorrectTruth(entry, ctx)) return null;
   entry.retracted   = true;
   entry.retractedBy = ctx.actor ?? 'gm';
@@ -525,7 +626,10 @@ export function strikeTruth(truthId, campaignState, ctx = {}) {
 /**
  * Replace a truth (strike the old, append a new one with `correctedTo`
  * link). Returns { struck, replacement } on success, null on permission /
- * lookup failure.
+ * lookup failure — or when the entry is already retracted: a Replace saved
+ * after the X-Card removed its fact (the prompt was open meanwhile)
+ * overwrote the X-Card's mark and filed the removed fact again, live, under
+ * the GM's wording (issue #336 Y30; U07).
  *
  * @param {string} truthId
  * @param {Object} replacement — { subject, fact, sessionId, sceneId, moveId }
@@ -537,7 +641,7 @@ export function replaceTruth(truthId, replacement, campaignState, ctx = {}) {
   if (!campaignState || !truthId || !replacement) return null;
   ensureLedgerShape(campaignState);
   const entry = findTruthByIdOrPrefix(campaignState.sceneTruths, truthId);
-  if (!entry) return null;
+  if (!entry || entry.retracted) return null;
   if (!canCorrectTruth(entry, ctx)) return null;
 
   const newId = newTruthId();
@@ -624,7 +728,8 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
 
 /**
  * The active scene's bare strike of this subject + fact — retracted by the
- * table (not the X-Card, not a Replace's struck original), compared
+ * table (not the X-Card, not a superseded narration's — issue #338 D8 — not a
+ * Replace's struck original), compared
  * case-blind — or null. setTruth lifts it; the `!truth set` card names a
  * player's set refused over a GM's strike.
  *
@@ -637,7 +742,7 @@ export function findBareStrike(truths, subjectRef, fact) {
   const key = subjectKey(subjectRef);
   const lower = fact.toLowerCase();
   return (Array.isArray(truths) ? truths : []).find(t =>
-    t?.retracted && !t.correctedTo && t.retractedBy !== XCARD_RETRACTED_BY
+    t?.retracted && isBareTableStrike(t)
     && subjectKey(t.subject) === key
     && String(t.fact ?? '').trim().toLowerCase() === lower) ?? null;
 }
@@ -705,8 +810,10 @@ export function canCorrectTruth(truth, ctx = {}) {
 /**
  * Find an existing truth equivalent to (subject, fact) — same subjectKey and
  * the same fact text after normalisation. Includes retracted entries so a
- * struck fact blocks narrator re-assertion (see applySidecar). Exported for
- * unit testing.
+ * struck fact blocks narrator re-assertion (see applySidecar) — but not one
+ * a superseded narration wrote (SUPERSEDED_RETRACTED_BY, issue #338 D8): the
+ * narration of the upgraded outcome may state it again. Exported for unit
+ * testing.
  *
  * @param {Array} truths
  * @param {Object} subject — resolved subject ({kind, ...})
@@ -719,7 +826,8 @@ export function findEquivalentTruth(truths, subject, fact) {
   const norm = normaliseFactText(fact);
   if (!norm) return null;
   return truths.find(t =>
-    t && subjectKey(t.subject) === key && normaliseFactText(t.fact) === norm,
+    t && t.retractedBy !== SUPERSEDED_RETRACTED_BY
+    && subjectKey(t.subject) === key && normaliseFactText(t.fact) === norm,
   ) ?? null;
 }
 
@@ -737,9 +845,10 @@ function normaliseFactText(fact) {
 
 /**
  * Locate a truth by full ID or 6+ char prefix. Returns the entry or null
- * if no match / ambiguous match.
+ * if no match / ambiguous match. `!truth strike` uses it to say a truth it
+ * could not strike is already retracted (issue #336 Y30).
  */
-function findTruthByIdOrPrefix(truths, needle) {
+export function findTruthByIdOrPrefix(truths, needle) {
   if (!Array.isArray(truths)) return null;
   const exact = truths.find(t => t?.id === needle);
   if (exact) return exact;

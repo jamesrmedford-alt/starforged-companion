@@ -37,9 +37,10 @@ import {
   subjectKey,
   findBareStrike,
   canCorrectTruth,
+  findTruthByIdOrPrefix,
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
-import { propagateRetraction, markSummaryForRegen } from "./retractions.js";
+import { propagateRetraction, markSummaryForRegen, loreRetractionHolder } from "./retractions.js";
 import { restoreStruckLore } from "../world/worldJournal.js";
 import { persistSceneLedgerFields, startScene } from "./sceneLifecycle.js";
 
@@ -203,6 +204,7 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
   let resultLine = "";
   let changed = null;        // the ledger field this command changed
   let struckTruth = false;
+  let lift = null;           // a `!truth set` lifting a strike: { strikeId, truthId }
   try {
     // A truth or state set with no scene open starts one first, as a
     // narration does (ensureSceneStarted — the issue #321 U34 rule for the
@@ -225,21 +227,23 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
         // the fact (issue #286 B6).
         await propagateRetraction(struck, campaignState);
       }
+      // A truth already retracted — struck, replaced or removed by the X-Card
+      // — is left as it is (issue #336 Y30), and the card says so; its fact
+      // is not named (it may be one the table removed).
+      const already = struck ? null : findTruthByIdOrPrefix(campaignState.sceneTruths, parsed.rest);
       resultLine = struck
         ? `Truth <code>${struck.id.slice(0, 8)}</code> struck.`
-        : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
+        : already?.retracted
+          ? `Truth <code>${escapeHtml(String(already.id).slice(0, 8))}</code> is already retracted — nothing changed.`
+          : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
     } else if (parsed.domain === "truth") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const struck  = findBareStrike(campaignState.sceneTruths, subject, String(parsed.fact ?? "").trim());
       const truth   = setTruth(subject, parsed.fact, campaignState, permCtx);
       if (truth) changed = "sceneTruths";
-      // The set lifts the strike (W60) — and the lore copies the strike
-      // retracted come back with it, so the fact the GM ruled canon is
-      // archived as canon (issue #331 X31).
-      if (truth && struck?.id) {
-        await restoreStruckLore(struck.id).catch(err =>
-          console.warn(`${MODULE_ID} | !truth set: restoring the struck lore failed:`, err?.message ?? err));
-      }
+      // The set lifts the strike (W60); the lore it retracted comes back
+      // once the lift is in the store (below).
+      if (truth && struck?.id) lift = { strikeId: struck.id, truthId: truth.id };
       // The id `!truth strike` takes is shown (issue #326 W67).
       resultLine = truth
         ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em> <code>${escapeHtml(String(truth.id).slice(0, 8))}</code>.${struck ? " The strike on it is lifted." : ""}`
@@ -272,6 +276,23 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
       await persistSceneLedgerFields(campaignState, [changed], "!truth/!state", {
         onto: struckTruth ? markSummaryForRegen : null,
       });
+    }
+
+    // A lift brings back the lore copies the strike retracted, so the fact
+    // the GM ruled canon is archived as canon (issue #331 X31) — save one
+    // another standing retraction still states (issue #336 Y32). Only a lift
+    // the store kept: an X-Card played on the strike's narration first takes
+    // the strike over, and the merge keeps it the X-Card's
+    // (XCARD-AFTER-STRIKE-STILL-NAMED) — an X-Card's retraction is never
+    // lifted, nor its lore restored. Restored before the persist, the lore
+    // came back while the ledger kept the X-Card's retraction.
+    if (lift) {
+      const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const strikeNow = (latest.sceneTruths ?? []).find(t => t?.id === lift.strikeId);
+      if (strikeNow?.correctedTo === lift.truthId) {
+        await restoreStruckLore(lift.strikeId, { heldBy: loreRetractionHolder(latest) }).catch(err =>
+          console.warn(`${MODULE_ID} | !truth set: restoring the struck lore failed:`, err?.message ?? err));
+      }
     }
   } catch (err) {
     console.error(`${MODULE_ID} | !truth/!state command failed:`, err);

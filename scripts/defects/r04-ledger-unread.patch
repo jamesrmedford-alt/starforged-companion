@@ -3,14 +3,14 @@ Tests: tests/unit/payoffFailure.test.js
 Catches: a Retry skips a step
 
 diff --git a/src/index.js b/src/index.js
-index b88a89a..f07610e 100644
+index 7b71090..43f3e8c 100644
 --- a/src/index.js
 +++ b/src/index.js
-@@ -4235,7 +4235,6 @@ export async function retryPayoffSteps(card) {
-   const failures = [];
-   for (const s of Array.isArray(card?.steps) ? card.steps : []) {
+@@ -6155,7 +6155,6 @@ export async function retryPayoffSteps(card) {
      const ledgerStep = s?.step === "rewardGrant" ? "reward" : s?.step;
--    if (fulfil && payoffStepLanded(copies, ledgerStep)) continue;
+     // A PC's box XP is on no ledger: only this card's Retry gives it.
+     const onLedger = fulfil && s?.step !== "xp";
+-    if (onLedger && payoffStepLanded(copies, ledgerStep)) continue;
      const res = await runPayoffStep(s, card, copies);
      if (res?.ok) {
-       if (fulfil && !res.skipped) await recordPayoffStep(copies, ledgerStep);
+       if (onLedger && !res.skipped) await recordPayoffStep(copies, ledgerStep);

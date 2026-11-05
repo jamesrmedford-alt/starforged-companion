@@ -19,7 +19,10 @@ Two cross-cutting facts to hold onto:
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
-  a no-GM warning and a re-armed button when the click is not delivered).
+  a no-GM warning and a re-armed button when the click is not delivered; a
+  press refused for whose the card is — not the presser's character, or one
+  gone — whispers the presser and the GMs whose button it is, `refusePress`,
+  known-issues RELAY-REFUSED-PRESS-UNTOLD).
   Burn and Improve open only once the pipeline has persisted the original
   outcome and stamped the card `originalApplied` (until then the button is
   disabled and the GM handler refuses — issue #300 F02); each swaps that
@@ -30,7 +33,10 @@ Two cross-cutting facts to hold onto:
   (issue #322 V04) — within the bounds from `actorBridge.readMomentumState`,
   and spends the other, so one
   card is upgraded at most once. The pipeline gives each resolution an `_id`
-  so the upgrade can strike the original narration card. Each upgrade claims
+  so the upgrade can strike the original narration card — and retract its
+  ledger entries by its `narrationId`; a clock the reversal rewinds out of
+  its trigger has its trigger vignette struck and retracted the same way
+  (issue #338 D8). Each upgrade claims
   the card (`consumed`) before any effect; then (`src/moves/resultUpgrade.js`)
   it reverts the miss's Pay the Price from what each route landed — a "Roll
   twice" lands each leaf's route (issue #314 Q03), and harm past a meter is a
@@ -46,6 +52,11 @@ Two cross-cutting facts to hold onto:
   `laterMoveFollows`, issue #326 D4). A follow-up taken from the same card
   (⚑, 🏁, 🤝, 🔗) is that next move, so a card offering an upgrade says to
   take it first, beside those buttons and in their titles (issue #330 D2).
+  So is the resist roll a price's harm or stress owes at 0 (issue #330 D3):
+  its 🛡 card and the executor's line say the same while the move still
+  offers an upgrade — the move card's (`resultUpgrade.upgradeOpenFor`), or,
+  the price paid before that card posts, the pipeline's `upgradeOffered`
+  (issue #336 Y18).
   The upgraded outcome's other
   effects run through the pipeline's own applier (`applyOutcomeEffects`,
   `src/index.js` — the branches below are its body), for what the upgrade
@@ -57,7 +68,10 @@ Two cross-cutting facts to hold onto:
   from a lost miss pays the won fight's milestone and reward
   (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
-  UPGRADE-PIPELINE-EFFECTS). The
+  UPGRADE-PIPELINE-EFFECTS) — and the cards it posted, stamped `priceCard`
+  (the resist roll its harm owes, a redirected loss's picker): kept as the
+  upgraded outcome's, not retired with the superseded outcome's (issue #335
+  Y09). The
   threshold card's buttons relay `combat.threshold` to the canonical GM (its
   older ad-hoc `combat.enterFray` socket is retired — issue #329 X06).
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the
@@ -97,8 +111,8 @@ only, so a re-render or another client posted a second way-out card, or began
 a won fight again. An effect that does not land releases the claim.
 **Enter the Fray** takes the presser's rank, vow (one the card's picker
 offers) and objective, with the card's own label, carried position and
-roller, and creates the track (its id recorded on the card,
-`thresholdTrackId`). `createCombatTrackFromThreshold` → `applyCombatProgress`
+roller, and creates the track (the card keeps only its `thresholdTaken`
+claim). `createCombatTrackFromThreshold` → `applyCombatProgress`
 (`beginsFight: true` — a new foe is a new fight however many are open, issue
 #321 U16) → `addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
 `linkedVowName`, and gets its `combatState` set from the carried position via
@@ -115,8 +129,12 @@ one-click **Face Danger / Compel / Secure an Advantage** buttons
 choosing an exit rolls it (2026-07 soft-spot cleanup — it used to be
 advisory text only). A pick relays `wayOut.pick` to the canonical GM
 (`cardActions.applyWayOutPick`), which claims the card once (`wayOutTaken`)
-and posts the move as the clicker's PC — disabled only in the clicker's DOM,
-a re-render rolled the off-ramp again (issue #325 W11).
+— disabled only in the clicker's DOM, a re-render rolled the off-ramp again
+(issue #325 W11) — and posts the move as the card's roller: the way-out card
+carries the threshold card's `actorId`, and that PC's player or a GM may
+press it (`cardRollerPc`; the clicker's PC only on a card that names none).
+It spoke as the clicker's PC, so a GM's press rolled the first PC's Face
+Danger for a fight another PC had entered (issue #335 Y11).
 
 Combat tracks carry **no promised reward** of their own — `proposeRewards` runs
 only for vows; a fight's payoff rides the *linked vow's* promised reward (see
@@ -220,22 +238,38 @@ with two fights open no downgrade applied). Entry points: the
 "⚔ Attempt to Finish the Fight" button on Strike / Clash / Gain Ground / React
 Under Fire cards, typed narration, and the Progress Tracks panel's Roll button
 (§5). The button names the move's own fight: `postMoveResult` stamps the
-pipeline's `moveFight` as `combatTrackId` / `combatTrackLabel`, and
-`wireTakeDecisiveActionButton` forwards them as `forcedMoveTargetId` /
+pipeline's `moveFight` as `combatTrackId` / `combatTrackLabel`, and the
+button's forced move carries them as `forcedMoveTargetId` /
 `forcedMoveTarget`, so with two fights open the roll scores that fight — it
 posted no target, scored nothing and was a certain miss
 (TDA-BUTTON-NO-TARGET). A card whose fight nothing named (or one posted
 before the stamp) posts no target and resolves the sole open fight. The
-forced post speaks as the card's roller (its `actorId`,
-`cardRollerSpeaker`), whoever presses it: a GM's press rolled as the
-campaign's first PC — their position, their +1 momentum (issue #329 X05). A TDA
+press relays `tda.attempt` (`wireTakeDecisiveActionButton` →
+`cardActions.applyTakeDecisiveActionAttempt`, the `fulfilVow.attempt`
+shape): the canonical GM claims the card once (`decisiveActionAttempted`)
+and posts the move as the card's roller (its `actorId`) — a GM's press
+rolled as the campaign's first PC, their position and +1 momentum (issue
+#329 X05) — and only the roller's player or a GM may press it: it posted
+from the presser's client, so a crewmate rolled another player's Take
+Decisive Action, a Pay the Price on them on a miss, and each client's press
+rolled again (issue #338 D1). An older card that names no roller rolls for
+the presser's own PC. A TDA
 that names no fight while two or more are open — typed narration, or such a
 card — is not rolled: the pipeline posts a **Which fight?** card instead
 (`postWhichFightCard`, flagged `whichFightCard` with the open fights' ids and
 names, the narration and the roller's `actorId`), and a pick
-(`wireWhichFightButtons`) posts the move again with that fight's id, spoken
-as the original roller. One pick per card: every button disables, and the
-GM's pick is stamped `whichFightPicked`. Since issue #321 U16 a Strike or
+(`wireWhichFightButtons`) relays `whichFight.pick`
+(`cardActions.applyWhichFightPick`, D1's `applyCardRollerFollowup` shape):
+the canonical GM checks the pick is one of the card's `fights`, refuses a
+presser who is neither the roller's player nor a GM, claims the card once
+(`whichFightPicked`, the picked fight's id) and posts the move again with
+that fight's id, spoken as the original roller. The pick posted from the
+presser's client with a local disable only, so a crewmate rolled the
+roller's move and another client picked again (known-issues
+PACED-ROLL-OPEN-PRESS, WHICH-FIGHT-LOCAL-DISABLE). The pick's post carries
+`deferWhileBusy`, so one that meets the move lock — or comes before a
+session begins — is held on the canonical GM and rolled when it can be,
+not dropped under its stamped card (issue #335 Y08). Since issue #321 U16 a Strike or
 Clash that matches no open fight while two or more are open gets the same
 card (and an Undertake an Expedition naming no destination among several
 open expeditions a "Which expedition?" one — `trackType: "expedition"`, see
@@ -250,7 +284,11 @@ card's `trackId` / `trackLabel`, so Battle ends that fight while another is
 open — without them, two open fights left it ending neither. The press relays
 `combatTrack.battle` (`cardActions.applyCombatTrackBattle`): the canonical GM
 claims the card once (`battleClaimed`; `"fight-over"` when its fight already
-ended, posting nothing) and posts the Battle as the clicker's PC; and the
+ended, posting nothing) and posts the Battle as the card's roller — the
+threshold card's, stamped on the combat-track card
+`createCombatTrackFromThreshold` posts; their player or a GM may press it,
+and the clicker's PC stands in only on a card that names none (issue #335
+Y11: a GM's press rolled the first PC's Battle); and the
 pipeline does not roll a Battle naming a finished fight by id — the "not
 rolled" card, as Take Decisive Action. The button was disabled only in the
 clicker's DOM, so a re-render or another client rolled Battle again on a
@@ -318,8 +356,11 @@ Mark milestone and Deepen your bond are one-shot GM writes:
 `applyFightVowDeepenBond` on the canonical GM. The handler takes every value
 from the GM-authored card (never the payload), skips an action already in
 flight or stamped, and stamps `flags.resolvedActions.<action>` once applied —
-only when the step reports it landed (`markLinkedVowMilestone` /
-`deepenLinkedConnection` return `{ ok }`): a refused mark, no open vow to
+only when the step reports it landed (`markFightVowMilestoneOnce` /
+`deepenVowConnectionOnce` return `{ ok }`; each records its step on the
+vow's payoff ledger — the mark per card, `milestone:<card id>`, the deepen
+once per vow — so a re-press after a stamp the world refused marks or
+deepens nothing, issue #336 Y24 / #326 D1): a refused mark, no open vow to
 mark, or a connection no longer open leaves the action unstamped and
 whispers the GMs a report without a Retry (source `fightButton`) — the
 re-armed button is the retry (issue #306 R04; the stamp used to land
@@ -359,12 +400,49 @@ card (`trackGoneCard`) instead (issue #306 R06).
 A `scene_challenge` row rolls Finish the Scene (issue #326 D6): scored from
 the challenge's own track (`PROGRESS_TICK_SOURCES.finish_the_scene` →
 `sceneChallenge.selectSceneChallengeTrack`), it finishes the scene on every
-outcome — the pipeline's `finishScene` consequence retires the tension clock,
-then completes the track (`finishSceneChallenge`), before a weak hit's or
-miss's Pay the Price is routed, so the ended scene's clock does not tick.
+outcome — the pipeline's `finishScene` consequence completes the track
+(`finishSceneChallenge` → `completeProgressTrack`, which retires the tension
+clock before the track write), before a weak hit's or miss's Pay the Price
+is routed, so the ended scene's clock does not tick.
 Pre-session (the pipeline's session gate would ignore the bridge) it keeps
 the bespoke instant display roll (`type: 'progressRoll'` card — display-only
 by design).
+Within an open challenge, Face Danger and Secure an Advantage are its own
+moves (issue #338 D2): `face_danger_scene_challenge` /
+`secure_an_advantage_scene_challenge`, which the interpreter types when its
+context lists an open `scene_challenge` (never a re-key of the ordinary move
+— a fight mid-challenge is a fight; a variant with no challenge open is
+resolved as the ordinary move, `sceneChallenge.moveOutsideSceneChallenge`).
+The pacing classifier nominates them for a paced card's Roll too, told of the
+open challenge as of a fight (`router.detectOpenSceneChallenges` → its
+SCENE CHALLENGE line; a variant it names with none open is the ordinary
+move), and the card's hint naming the move a variant varies keeps the
+variant (`narrator.reconcileSuggestedMove` — PACING-ROLL-NO-SCENE-CHALLENGE).
+The classifier names the challenge the move is part of; the router keeps it,
+or the sole open one, on the card by id (`suggestedMoveTargetId`), and the
+Roll (`cardActions.applyPacedRoll`) forwards it as `forcedMoveTargetId` — with
+two challenges open it named none and the scoring asked which
+(PACED-VARIANT-NO-TARGET).
+An asset ability linked to Face Danger / Secure an Advantage applies to its
+variant: the ability scanner and the rider extraction match a variant as its
+ordinary move (`sceneChallenge.assetMatchMove` — SCENE-VARIANT-ABILITIES-UNKEYED).
+Their consequences carry `sceneProgress` (marks) and `sceneSegments` (clock
+fills), and `applyOutcomeEffects` scores them against the challenge
+(`sceneChallenge.scoreSceneChallenge` → `markProgressById` on the track,
+`clocks.adjustClockSegments` on its `tensionClockId`), posting the
+"⬡ Scene challenge" card — what was marked and filled, and that the scene
+is due to finish once the track or clock is full. Face Danger's strong hit
+marks progress (twice on a match), its weak hit marks progress and fills a
+segment; Secure an Advantage keeps its +2 momentum / +1 next move (with a
+match, progress too) and its weak hit's choice; a miss on either fills a
+segment (two on a match) and routes Pay the Price, whose clock advance skips
+that clock (`advanceClocksOnPayThePrice({ skipClockIds })`) — one fill, not
+two. The move card's targets carry the challenge and a receipt of what its
+clock fill was (`targets.sceneChallenge`: `trackId`, `clockId`,
+`clockBefore`, `clockFilled`, `clockSegments`), so a Burn Momentum or
+Improve Result scores the same challenge, marks what its outcome adds and
+leaves the clock as the upgraded outcome would have (a miss's segment
+burned to a strong hit is taken back, never more than it filled).
 
 The panel's edits — add, +, −, ✓, ✕ and the position toggle — are written by
 the canonical GM for every user (gmRelay `progressTrack.edit` →

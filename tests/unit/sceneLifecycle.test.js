@@ -392,7 +392,10 @@ describe('endScene — the scene\'s place and its characters\' whereabouts (issu
     await endScene(cs, { reason: 'test' });
     const lastKnown = global.game.actors.get('act-kael').flags[MODULE_ID].connection.lastKnown;
     expect(lastKnown).toEqual({
-      location:  { value: 'the cargo office', sessionNum: 4, at: expect.any(Number) },
+      // The value it superseded rides on it, for an X-Card on the narration
+      // that set it (issue #335 Y01) — none set this one (no narration id).
+      location:  { value: 'the cargo office', sessionNum: 4, at: expect.any(Number), narrationId: null,
+        previous: [{ value: 'Ironway', sessionNum: 1, at: 1, narrationId: null }] },
       condition: { value: 'healthy', sessionNum: 1, at: 1 },   // not mentioned this scene — kept
     });
     expect(cs.sceneState.bySubject).toEqual({});

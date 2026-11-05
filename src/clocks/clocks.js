@@ -27,7 +27,9 @@
 
 import { rollYesNo } from "../oracles/roller.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
+import { clockStillTriggered } from "./payThePriceClocks.js";
 import { stripMarkup } from "../audio/segments.js";
+import { replaceKeepingInput } from "../ui/keepTypedInput.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -123,8 +125,8 @@ function getPanelClass() {
     }
 
     _replaceHTML(result, content) {
-      content.innerHTML = "";
-      content.append(result);
+      // The add form keeps what was typed across a hook's re-render (issue #337 Y45).
+      replaceKeepingInput(content, result, { fields: ".add-clock-fields [name]" });
     }
 
     static async #onAddClock(_event, target) {
@@ -141,7 +143,10 @@ function getPanelClass() {
       }
       try { await createClock({ name, segments: segs, type, advanceOdds: odds }); }
       catch (err) { ui.notifications?.error(`Clock creation failed: ${err.message}`); return; }
-      root.querySelector('[name="newClockName"]').value = "";
+      // The live field: the write's own re-render (the campaignState hook) may
+      // already have replaced the form, carrying the typed name (issue #337 Y45).
+      const nameField = this.element?.querySelector?.('[name="newClockName"]');
+      if (nameField) nameField.value = "";
       this.render();
     }
 
@@ -197,8 +202,8 @@ export function clocksFingerprint(clocks) {
  * it shows changed. It re-rendered only after its own buttons, so a clock a
  * Pay the Price, Begin a Session, `!clock` or another GM advanced stayed stale
  * on screen (issue #322 V12). Every client runs it for its own panel; it
- * writes nothing. Any other campaignState write leaves the panel alone (a
- * re-render would clear a clock name being typed).
+ * writes nothing. Any other campaignState write leaves the panel alone (no
+ * needless re-render; one keeps a clock name being typed — issue #337 Y45).
  *
  * @param {{ key?: string }} setting — the Setting document
  */
@@ -323,14 +328,21 @@ export async function removeClock(clockId) {
  * left alone (they advance at Begin a Session). The caller GM-gates the call
  * (world-scoped write).
  *
+ * A clock in `skipIds` is left alone: a scene challenge's clock that the
+ * miss whose price this is filled itself (Face Danger / Secure an Advantage
+ * within a scene challenge — "fill a clock segment and Pay the Price", one
+ * fill, not two; issue #338 D2).
+ *
+ * @param {{ skipIds?: string[] }} [opts]
  * @returns {Promise<Array<{name:string, filled:number, segments:number, triggered:boolean}>>}
  *   one entry per clock advanced; empty when there are no active tension clocks.
  */
-export async function advanceTensionClocksForPayThePrice() {
+export async function advanceTensionClocksForPayThePrice({ skipIds = [] } = {}) {
+  const skip = new Set(Array.isArray(skipIds) ? skipIds : []);
   return serialiseClockWrite(async () => {
     const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
     const eligible = (state.clocks ?? []).filter(
-      c => c.active !== false && c.type === "tension" && (c.filled ?? 0) < c.segments,
+      c => c.active !== false && c.type === "tension" && (c.filled ?? 0) < c.segments && !skip.has(c._id),
     );
     if (!eligible.length) return [];
     const now = new Date().toISOString();
@@ -342,6 +354,36 @@ export async function advanceTensionClocksForPayThePrice() {
     }
     await writeState(state);
     return advanced;
+  });
+}
+
+/**
+ * Fill (`delta` > 0) or rewind (`delta` < 0) one clock by whole segments,
+ * within 0..its segments — a scene challenge's tension clock, by the
+ * scene-challenge moves (issue #338 D2: a weak hit or a miss fills it; an
+ * upgrade of the move takes back what the superseded outcome filled). A
+ * retired clock — its challenge is over — is left alone. Written on a copy.
+ *
+ * @param {string} clockId
+ * @param {number} delta
+ * @returns {Promise<{ _id: string, name: string, before: number, filled: number, segments: number,
+ *   triggered: boolean, changed: number }|null>} the clock as it now stands and the segments it
+ *   changed by; null when there is no active clock by that id
+ */
+export async function adjustClockSegments(clockId, delta) {
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+    if (!clock || clock.active === false) return null;
+    const before = clock.filled ?? 0;
+    const filled = Math.max(0, Math.min(clock.segments, before + Math.trunc(Number(delta) || 0)));
+    if (filled !== before) {
+      clock.filled    = filled;
+      clock.updatedAt = new Date().toISOString();
+      await writeState(state);
+    }
+    return { _id: clock._id, name: clock.name, before, filled, segments: clock.segments,
+      triggered: filled >= clock.segments, changed: filled - before };
   });
 }
 
@@ -568,8 +610,10 @@ async function advanceClock(clock) {
         `<strong>Clock did not advance</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>NO</strong> (d100=${r.roll}).</p>`,
       );
     }
-    const updated = await fillOneSegment(clock);
-    if (!updated) return;
+    const filled = await fillOneSegment(clock);
+    if (!filled) return;
+    if (filled.wasFull) return postAlreadyTriggered(filled.clock);
+    const updated = filled.clock;
     await postCard(
       `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — Ask the Oracle (${clock.advanceOdds}): <strong>YES</strong> (d100=${r.roll}). Filled <strong>${updated.filled}/${updated.segments}</strong>.${triggeredSuffix(updated)}</p>`,
     );
@@ -577,8 +621,10 @@ async function advanceClock(clock) {
     return;
   }
 
-  const updated = await fillOneSegment(clock);
-  if (!updated) return;
+  const filled = await fillOneSegment(clock);
+  if (!filled) return;
+  if (filled.wasFull) return postAlreadyTriggered(filled.clock);
+  const updated = filled.clock;
   await postCard(
     `<strong>Clock advanced</strong><p>${escapeHtml(clock.name)} — filled <strong>${updated.filled}/${updated.segments}</strong>.${triggeredSuffix(updated)}</p>`,
   );
@@ -595,22 +641,37 @@ async function advanceClock(clock) {
  */
 async function fillClock(clock) {
   if (isFull(clock)) return postAlreadyTriggered(clock);
-  const updated = await fillOneSegment(clock);
-  if (!updated) return;
+  const filled = await fillOneSegment(clock);
+  if (!filled) return;
+  if (filled.wasFull) return postAlreadyTriggered(filled.clock);
+  const updated = filled.clock;
   await postCard(
     `<strong>Clock filled</strong><p>${escapeHtml(clock.name)} — <strong>${updated.filled}/${updated.segments}</strong>.${triggeredSuffix(updated)}</p>`,
   );
   if (isFull(updated)) fireClockVignette(vignetteData(updated));
 }
 
-/** Fill one segment and return the persisted clock (null if it vanished). */
+/**
+ * Fill one segment. Whether the clock is already full is decided inside the
+ * clock write queue, on the clock as that write reads it: a press's own read
+ * is the cached clock, which two presses within one round trip both read as
+ * not yet full — the second then posted a second "TRIGGERED." card and fired
+ * a second trigger vignette (issue #337 Y37). A clock found full is not
+ * written. The clock returned is the one this write stored — a read after
+ * the queue could already hold a later press's fill.
+ *
+ * @returns {Promise<{ clock: object, wasFull: boolean } | null>} null if the clock vanished
+ */
 async function fillOneSegment(clock) {
-  await mutateClock(clock._id, c => { c.filled = Math.min((c.filled ?? 0) + 1, c.segments); });
-  const updated = (readState().clocks ?? []).find(c => c._id === clock._id) ?? null;
-  if (!updated) {
+  const res = await mutateClock(clock._id, c => {
+    if (isFull(c)) return false;
+    c.filled = Math.min((c.filled ?? 0) + 1, c.segments);
+  });
+  if (!res) {
     console.warn(`${MODULE_ID} | clock "${clock.name}" disappeared while advancing — nothing posted.`);
+    return null;
   }
-  return updated;
+  return { clock: res.after, wasFull: isFull(res.before) };
 }
 
 function isFull(clock) {
@@ -622,7 +683,7 @@ function triggeredSuffix(clock) {
 }
 
 function vignetteData(clock) {
-  return { name: clock.name, type: clock.type, filled: clock.filled, segments: clock.segments, triggered: isFull(clock) };
+  return { _id: clock._id, name: clock.name, type: clock.type, filled: clock.filled, segments: clock.segments, triggered: isFull(clock) };
 }
 
 function postAlreadyTriggered(clock) {
@@ -713,14 +774,26 @@ async function addClock(clock) {
   });
 }
 
+/**
+ * Change one clock, in the clock write queue. `fn` changes the clock it is
+ * given — the clock as this queued write reads it — or returns `false` to
+ * leave it as it is, and nothing is written.
+ *
+ * @param {string} id
+ * @param {(clock: object) => (void|false)} fn
+ * @returns {Promise<{ before: object, after: object } | null>} the clock as
+ *   the queued read found it and as stored; null when no clock has that id
+ */
 async function mutateClock(id, fn) {
   return serialiseClockWrite(async () => {
     const state = foundry.utils.deepClone(readState());
     const clock = (state.clocks ?? []).find(c => c._id === id);
-    if (!clock) return;
-    fn(clock);
+    if (!clock) return null;
+    const before = foundry.utils.deepClone(clock);
+    if (fn(clock) === false) return { before, after: before };
     clock.updatedAt = new Date().toISOString();
     await writeState(state);
+    return { before, after: clock };
   });
 }
 
@@ -782,7 +855,10 @@ function fireClockVignette(clockData) {
       // A working copy — the vignette applies its sidecar on it (issue #329 X09).
       const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
       const narrationId = newNarrationId();
-      const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs, narrationId });
+      // A trigger is narrated only while the clock is still full when the
+      // reply comes in — a fill taken back meanwhile (TRIGGER-VIGNETTE-LATE-POST).
+      const text = await narrateClockAdvancement({ clock: clockData, campaignState: cs, narrationId,
+        stillTriggered: () => clockStillTriggered(clockData) });
       if (text) {
         // Flag family (NARR-RING-CLOCKVIG, narrator-context audit 2026-07):
         // vignette prose must enter the recent-narration ring and rolling
@@ -797,6 +873,8 @@ function fireClockVignette(clockData) {
           narrationText:     text,
           sessionId:         cs.currentSessionId ?? null,
           narrationId,
+          // A trigger vignette names its clock (issue #338 D8).
+          ...(clockData.triggered && clockData._id ? { clockId: clockData._id } : {}),
         });
       }
     } catch (err) {

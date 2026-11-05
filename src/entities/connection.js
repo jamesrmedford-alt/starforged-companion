@@ -26,8 +26,11 @@
 
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
-import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes } from "./registry.js";
-import { keepNotesPortrait } from "../art/notesPortrait.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes, adoptUnlistedEntityActor, iterEntityDocuments } from "./registry.js";
+import { readSheetPronouns } from "../character/actorBridge.js";
+import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
+import { PORTRAIT_BLOCK_RE } from "../art/notesPortrait.js";
+import { deleteEntityArtAssets } from "../art/storage.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID  = "starforged-companion";
@@ -65,6 +68,12 @@ export const STARFORGED_CHARACTER_SHEET = "ironsworn.StarforgedCharacterSheet";
  * @returns {Promise<Object>} — The created connection record
  */
 export async function createConnection(data, campaignState, { persist = true } = {}) {
+  // The card an earlier creation of this name made, whose registration the
+  // world refused, is adopted — listed now — never a second one (issue #337 Y34).
+  const adopted = await adoptUnlistedEntityActor(FLAG_KEY, "connectionIds", data?.name, campaignState,
+    { sectorId: data?.sectorId ?? null, persist, label: "connection" });
+  if (adopted) return adopted;
+
   const now = new Date().toISOString();
   const id  = generateId();
 
@@ -329,6 +338,143 @@ export async function loseConnection(journalEntryId, reason = "", sessionId = ""
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// THE X-CARD — a connection the removed narration created
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The connections X-carded narrations created (issue #338 D6(ii) — U07 full
+ * exclusion; X01 already deletes a threat, faction or place page the capture
+ * made): a Make a Connection hit's capture auto-creates the NPC its narration
+ * names, stamped `createdFromNarrationId` (entityExtractor.routeEntityDrafts).
+ * One that holds nothing beyond its creation (connectionUsed — read after the
+ * X-Card's finish has undone the narration's own details and LAST KNOWN) and
+ * whose bond Items hold no mark is deleted: its NPC card, its bond Items, its
+ * `connectionIds` entry and its portraits (art/storage.js
+ * deleteEntityArtAssets — XCARD-CONNECTION-PORTRAIT-ORPHAN: the "Art:" journal
+ * entry and its index entry were left behind). One the table has used stays — a safety tool does
+ * not delete what the table has built on — and is returned, for the GMs'
+ * notice (safety.js). Canonical GM (the X-Card's finish). Fail-open per
+ * connection.
+ *
+ * A Make a Connection that confirmed an earlier narration's pending draft row
+ * (issue #325 W23) is stamped too, with the row (`createdFromDraft`): deleted,
+ * the row goes back to pending — the NPC was that earlier narration's, which
+ * the X-Card kept (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). Either way the
+ * ledger facts promoted to the deleted card go back to its name.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<{ deleted: string[], kept: Array<{ id: string, name: string }> }>}
+ */
+export async function retractNarrationConnections(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  const out = { deleted: [], kept: [] };
+  if (!removed.size) return out;
+  let docs = [];
+  try { docs = [...iterEntityDocuments(FLAG_KEY)]; } catch { docs = []; }
+  for (const { document, data } of docs) {
+    if (!removed.has(data?.createdFromNarrationId)) continue;
+    const name = String(data.name || document.name || "").trim() || "A connection";
+    try {
+      if (connectionUsed(data) || sheetWrittenByTable(document, data)) { out.kept.push({ id: document.id, name }); continue; }
+      // Dynamic import avoids an actorBridge cycle.
+      const { deleteUnmarkedBondItems } = await import("../character/actorBridge.js");
+      const bonds = await deleteUnmarkedBondItems({ connectionId: data._id ?? null });
+      if (bonds.marked) { out.kept.push({ id: document.id, name }); continue; }
+      await document.delete();
+      await unregisterDeletedConnection(document.id, String(data.name || document.name || ""));
+      await deleteEntityArtAssets(FLAG_KEY, data._id ?? null, { portraitId: data.portraitId ?? null });
+      if (data.createdFromDraft) {
+        const { reopenConfirmedDraftRow } = await import("./entityExtractor.js");
+        await reopenConfirmedDraftRow(data.createdFromDraft);
+      }
+      out.deleted.push(name);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: removing the connection ${name} the removed narration created failed:`, err?.message ?? err);
+    }
+  }
+  return out;
+}
+
+/**
+ * True when a connection record holds anything beyond its creation: a history
+ * entry, a narrator-added detail, a last-known whereabouts, a bond, a
+ * relationship tick, a loss (`!sever`), the GM's canonical lock, a second
+ * role, or a later narration's rename. Read after the X-Card has undone what
+ * the removed narration recorded, so what is left came from elsewhere.
+ *
+ * @param {Object} record
+ * @returns {boolean}
+ */
+function connectionUsed(record) {
+  const listed  = (v) => Array.isArray(v) && v.length > 0;
+  const hasText = (v) => !!String(v?.value ?? "").trim();
+  return listed(record.history)
+    || listed(record.generativeTier)
+    || Object.values(record.lastKnown ?? {}).some(hasText)
+    || record.bonded === true
+    || Number(record.relationshipTicks) > 0
+    || record.active === false
+    || record.canonicalLocked === true
+    || !!record.secondRole
+    || !!record.renamedBy;
+}
+
+/**
+ * True when the table has written on the NPC card's sheet since it was made:
+ * text on its Notes tab beyond the seed's marked introduction and the
+ * portrait block, or a Characteristics line the seed did not write. The Notes
+ * tab is the card's notes (issue #329 X12) and a seed marks every element it
+ * writes there (issue #338 D4, `sf-seed-intro`), so whatever else the tab
+ * holds — a GM's paragraph, a ⤴ promoted detail from a narration the X-Card
+ * kept — is the table's, as is a Characteristics line that is not one of the
+ * seed's (withSeedCharacteristics' test). The X-Card must not delete a card
+ * carrying it (issue #338 D6(ii): "a safety tool should not delete a document
+ * the table has used"). An auto-created card starts with both fields empty.
+ *
+ * @param {ClientDocument} document — the NPC card
+ * @param {Object} record — its connection record
+ * @returns {boolean}
+ */
+function sheetWrittenByTable(document, record) {
+  const notes = String(document?.system?.notes ?? "").replace(PORTRAIT_BLOCK_RE, "");
+  const rest  = writeSeedIntro(notes, "").replace(/<[^>]*>/g, "").replace(/&nbsp;/g, " ").trim();
+  if (rest) return true;
+  const values = {
+    pronouns: record?.pronouns, firstLook: record?.firstLook, description: record?.description,
+    disposition: record?.disposition, role: record?.role, goal: record?.goal,
+  };
+  return !!withSeedCharacteristics(document?.system?.biography, "", [values]).trim();
+}
+
+/**
+ * Take a deleted NPC card's id out of the latest stored `connectionIds`, and
+ * hand the scene-ledger facts keyed to it back to its name (ledgers.js
+ * demoteEntitySubject — a kept narration's facts about the NPC, promoted to
+ * the card when it was made). One write of a copy; no await between the read
+ * and the write — the registerEntityIdInStore pattern. A refused write leaves
+ * an id no Actor answers, which every reader skips.
+ *
+ * @param {string} actorId
+ * @param {string} name — the card's name
+ * @returns {Promise<void>}
+ */
+async function unregisterDeletedConnection(actorId, name) {
+  const { demoteEntitySubject } = await import("../factContinuity/ledgers.js");
+  const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const target = { ...latest };
+  const listed = Array.isArray(latest.connectionIds) && latest.connectionIds.includes(actorId);
+  if (listed) target.connectionIds = latest.connectionIds.filter(id => id !== actorId);
+  const demoted = demoteEntitySubject(actorId, name, target) > 0;
+  if (!listed && !demoted) return;
+  try {
+    await game.settings.set(MODULE_ID, "campaignState", target);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: unlisting the deleted connection ${actorId} failed:`, err?.message ?? err);
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CONTEXT INJECTION FLAGS
 // ─────────────────────────────────────────────────────────────────────────────
 // The per-scene context-injection flags (allyFlag, sceneRelevant) and their
@@ -446,8 +592,11 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
   const description = typeof existing.description === "string" ? existing.description.trim() : "";
   const firstLook   = firstLookEx || (description ? "" : safeRoll(rollOracle, "character_first_look"));
   const disposition = existing.disposition || safeRoll(rollOracle, "character_disposition");
-  // Establish pronouns once (finding E) — preserved if already set.
-  const pronouns    = existing.pronouns || pickConnectionPronouns();
+  // Establish pronouns once (finding E) — preserved if already set: the
+  // sheet's Pronouns field first — the card's pronouns, which the GM may have
+  // filled before Finalise (issue #335 Y13) — then the record's (the
+  // narration's), then a roll.
+  const pronouns    = readSheetPronouns(actor) || existing.pronouns || pickConnectionPronouns();
 
   // Lead the portrait prompt with the gender descriptor so generated art
   // matches the established pronouns rather than guessing from role/look.
@@ -472,13 +621,19 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
   };
 
   // Characteristics is a plain <textarea> on the Starforged sheet — plain text
-  // only (finding B). Notes is a rich-text field — HTML there is fine.
-  const characteristics = buildConnectionCharacteristics({ role, goal, firstLook, description, disposition, pronouns });
-  // The portrait embedded at the top of the old Notes stays: a regenerated
-  // flavour keeps its existing portrait, which is not attached again (issue
-  // #322 V30).
-  const notesHtml       = keepNotesPortrait(actor.system?.notes,
+  // only (finding B). Notes is a rich-text field — HTML there is fine. Each
+  // keeps what the seed did not write (issue #338 D4): Characteristics every
+  // line but the seed's own, and the Notes tab — read as it is when the write
+  // lands — everything but its marked introduction: the GM's paragraphs, a
+  // ⤴ promoted detail (issue #335 Y12) and the portrait block (issue #322 V30).
+  const introHtml = markSeedIntro(
     await composeConnectionNotesHtml({ name: actor.name, role, goal, firstLook, description, disposition, pronouns }));
+  const characteristics = withSeedCharacteristics(actor.system?.biography,
+    buildConnectionCharacteristics({ role, goal, firstLook, description, disposition, pronouns }),
+    [{ pronouns: existing.pronouns, firstLook: firstLookEx, description, disposition: existing.disposition,
+       role: existing.role, goal: existing.goal },
+     { pronouns, firstLook, description, disposition, role, goal }]);
+  const notesHtml = writeSeedIntro(actor.system?.notes, introHtml);
 
   const fieldPaths = Object.fromEntries(Object.entries(seededFields)
     .map(([key, value]) => [`flags.${MODULE_ID}.${FLAG_KEY}.${key}`, value]));
@@ -596,13 +751,49 @@ export function pronounsToPortraitDescriptor(pronouns) {
  */
 function buildConnectionCharacteristics({ role, goal, firstLook, description = "", disposition, pronouns }) {
   const lines = [];
-  if (pronouns)    lines.push(`Pronouns: ${pronouns}`);
-  if (firstLook)   lines.push(`First look: ${firstLook}`);
-  else if (description) lines.push(`Description: ${description}`);   // the narrated look (issue #325 W31)
-  if (disposition) lines.push(`Initial disposition: ${disposition}`);
-  if (role)        lines.push(`Role: ${role}`);
-  if (goal)        lines.push(`Goal: ${goal}`);
+  const line = (label, value) => lines.push(`${label}: ${oneLine(value)}`);
+  if (pronouns)    line("Pronouns", pronouns);
+  if (firstLook)   line("First look", firstLook);
+  else if (description) line("Description", description);   // the narrated look (issue #325 W31)
+  if (disposition) line("Initial disposition", disposition);
+  if (role)        line("Role", role);
+  if (goal)        line("Goal", goal);
   return lines.join("\n");
+}
+
+// The Characteristics lines the seed writes: label → the record field each shows.
+const SEED_CHARACTERISTIC_FIELDS = Object.freeze({
+  "Pronouns": "pronouns", "First look": "firstLook", "Description": "description",
+  "Initial disposition": "disposition", "Role": "role", "Goal": "goal",
+});
+
+const oneLine = (value) => String(value ?? "").replace(/\s+/g, " ").trim();
+
+/**
+ * The Characteristics field with the seed's lines in it (issue #338 D4). The
+ * field is a plain textarea, so the seed's own lines are known by what they
+ * say: a line in the seed's form ("Role: …") reading the value the record held
+ * (what the last seed wrote) or the value this seed writes. Those are replaced
+ * by `seedText`; every other line — what the GM typed, a seed line they
+ * changed — stays, below it.
+ *
+ * @param {string} previous — the field as it is now
+ * @param {string} seedText — the seed's lines (buildConnectionCharacteristics)
+ * @param {Object[]} valueSets — the record's fields before the seed, and as it writes them
+ * @returns {string}
+ */
+function withSeedCharacteristics(previous, seedText, valueSets) {
+  const isSeedLine = (text) => {
+    const m = /^([^:]+):(.*)$/.exec(text.trim());
+    const field = m ? SEED_CHARACTERISTIC_FIELDS[m[1].trim()] : null;
+    if (!field) return false;
+    const value = oneLine(m[2]);
+    return valueSets.some(set => set?.[field] && oneLine(set[field]) === value);
+  };
+  const kept = String(previous ?? "").split(/\r?\n/).filter(text => !isSeedLine(text));
+  while (kept.length && !kept[0].trim()) kept.shift();
+  while (kept.length && !kept[kept.length - 1].trim()) kept.pop();
+  return [seedText, kept.join("\n")].filter(Boolean).join("\n\n");
 }
 
 /**

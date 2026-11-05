@@ -6,6 +6,346 @@ rejected.
 
 ---
 
+## The tenth audit's open items: a capture checks the X-Card before each write, the move lock is its own paths', a card button is its roller's, a taken add carries its cost (2026-11)
+
+**Decision:** (the items recorded as open while fixing issues #335–#338; the
+maintainer asked for them to be fixed on 2026-11-05. Each code in brackets.)
+- **A capture writes nothing for a narration the X-Card removed**
+  [XCARD-LATE-CAPTURE]: every capture write checks the stored
+  `xCardedNarrationIds` right before it (`isNarrationXCarded`), and each pass
+  checks on entry (no Claude call) and when its reply returns. *Rejected:* one
+  guard at each pass's write phase — an X-Card during the routing left the
+  later writes standing; an undo after the pass — it cannot reopen a row a
+  late Confirm marked confirmed again.
+- **The X-Card takes over the table's strike of what its narration wrote**
+  [XCARD-AFTER-STRIKE-STILL-NAMED]: relabelled `xcard` and its kept session
+  entry dropped, so it is never named and never lifted; a superseded
+  narration's truth (D8) keeps the table's strike. `!truth set` restores X31's
+  lore only after a persisted lift.
+- **A pending row a Make a Connection confirms is that narration's
+  connection** [MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED]: the X-Card removes
+  it while unused (D6 (ii)'s rules) and the row goes back to pending — the NPC
+  came from the earlier, kept narration; a deleted card's promoted ledger
+  facts go back to its name, and its portrait leaves with it
+  [XCARD-CONNECTION-PORTRAIT-ORPHAN].
+- **Ship position records are written whole** [SHIP-POSITION-FLAG-MERGE]:
+  `narrationId` and `previous` null unless a narration set them, because
+  `setFlag` merges key by key.
+- **The move lock is its own paths' to write** [LOCK-RESURRECTED-BY-COGM-STALE-WRITE]:
+  every other writer takes it from the store, and — since a store can lag the
+  world by one delivery — the claimant puts back a released claim a write
+  carries back (or its later move's claim). *Rejected:* store-ownership alone
+  (it cannot see a co-GM's lagging cache); moving the lock to its own setting
+  (every reader, about thirty tests and a load migration).
+- **A trigger vignette is narrated only while its clock is still full when its
+  reply comes in** [TRIGGER-VIGNETTE-LATE-POST], checked before its sidecar
+  applies. *Rejected:* retracting at post time — the persist is in flight, a
+  co-GM's relay cannot be retracted locally, and a ship move or an audit is no
+  ledger entry.
+- **A price nobody pays is not part of the story**
+  [PTP-PCLESS-NARRATED-AS-FIRST-PC]: no follow-up narration, no oracle memory.
+  *Rejected:* narrating it with no character.
+- **A refused choice card is a step of the move's record**
+  [ERROR-TEXT-BLAMES-KEY's remainder], like Y16's meters: the GM told by cause,
+  the GMs' Retry posts it (refused once the move is upgraded).
+- **A paced Roll and a "Which fight?" pick are their roller's to press**
+  [PACED-ROLL-OPEN-PRESS; closes WHICH-FIGHT-LOCAL-DISABLE] — D1's shape
+  (`paced.roll`, `whichFight.pick`), the pick checked against the card's
+  fights. **A press refused for whose the card is is told, once, by the relay
+  dispatch** [RELAY-REFUSED-PRESS-UNTOLD] (`refusePress`; the presser and the
+  GMs). *Rejected:* a whisper in each handler (helper-in-helper would post
+  twice).
+- **A vow nobody holds refuses ⚔ Swear it as it refuses a reward or a link**
+  [SWEAR-ROLL-VOW-GONE]; **a vow's copy is its `vowId` flag or its own Item
+  id** [VOW-ID-NEVER-LANDED].
+- **A journal-hosted creation is get-or-create after a refused registration
+  too** [JOURNAL-ORPHAN-ON-REFUSAL] — Y34's rule for factions (by
+  `factionNameKey`) and creatures. **A Confirm of a connection that already
+  exists still bonds the card's PC** [BOND-ITEM-AFTER-RELIST]. **`!lore` reads
+  the Quickstart journal's flag** [LORE-READS-QUICKSTART-PRINTOUT] — Y39's
+  rule: nothing reads the printout back.
+- **Repair's supply trade needs a prepared payer** [REPAIR-TRADE-WHILE-UNPREPARED]
+  — the trade is Sacrifice Resources (D3's rule). *Rejected:* sending its cost
+  to another suffer move — the trade exchanges supply.
+- **The classifier knows an open scene challenge as it knows a fight**
+  [PACING-ROLL-NO-SCENE-CHALLENGE], and a paced scene-challenge Roll names its
+  challenge by id [PACED-VARIANT-NO-TARGET]. **A scene-challenge variant is its
+  ordinary move for asset matching** [SCENE-VARIANT-ABILITIES-UNKEYED], through
+  one mapping. **A move's display name is its title, everywhere**
+  [SCENE-CHALLENGE-MOVE-NAME].
+- **A taken add's cost belongs to the roll** [VALUE-ADD-INTEGRITY,
+  HOVERBIKE-WEAK-AS-MISS-UNAPPLIED]: the Hoverbike's "add +integrity" is the
+  bike's own Integrity track, and taking it counts a weak hit as a miss, as the
+  bad-spot downgrade is applied. *Rejected:* leaving the add unchecked —
+  checking it would still be free.
+- **The momentum bounds count every impact the vendor counts**
+  [READDEBILITIES-CUSTOM-COMMENT] (`custom1` / `custom2`), while CHARACTER
+  STATE names only the thirteen.
+- **A refused panel add gives its form back** [TRACK-ADD-REFUSED-LOSES-NAME].
+- **A clip URL's layout is not guessed** [AUDIO-FORGE-ORIGIN-SHARED]: the Forge
+  branch stays "an Assets Library URL ending in the clip's file" until a live
+  Forge world shows the layout. **Y40's "reload" remedy stands** — v13 runs no
+  client setting's `onChange` for an unchanged value (Foundry issue #9051).
+
+**Reason:** each item's regression test fails with its fix taken out
+(`docs/testing/fix-sensitivity.md`).
+
+---
+
+## Issues #335–#337 audit: what outlives a scene keeps its narration's id, a refused write is said where it was asked, the sheet holds an NPC's own facts, a queued write decides on what it reads (2026-11)
+
+**Decision:** (issues #335, #336 and #337, parts 1–3 of the tenth audit —
+Y01–Y49. The maintainer asked for the issues to be addressed on 2026-11-05.
+Each finding's ID in brackets.)
+- **What a scene end keeps from a narration carries the narration's id**
+  [Y01]: the tier detail it migrates, the archived Lore page and LAST KNOWN
+  (with the values it superseded), so an X-Card played after the scene ended
+  still undoes them (U07, X01). A faction the capture surfaced, a placeholder
+  it renamed (`renamedBy` — reverted unless renamed since) [Y02] and a
+  published reflection's capture [Y03] are stamped too: every capture writer
+  takes the id from its caller (X01's rule), the published reflection no
+  longer excepted.
+- **An X-Card retraction is never corrected over** [Y30]: Strike and Replace
+  refuse an already-retracted entry, and the merge keeps the X-Card's mark
+  over a stale copy's correction. **A lifted strike restores only lore no
+  other standing retraction states** [Y32]; held by another strike, the
+  entry is handed to it. *Rejected:* a `retractedByTruths` list — it changes
+  X31's stored shape and needs a read path for single-id worlds.
+- **A narration works on a copy at every entry handler** [Y04] — X09
+  extended to the session vignettes, the inciting incident's three callers
+  and the native sheet-roll hook. *Rejected:* cloning inside
+  `runIncitingIncident`, which would break X38's "the caller's object takes
+  the premise once it lands".
+- **Scene starts run one at a time on the GM** [Y05]: a start waits (≤10 s)
+  for the one in flight, then adopts its scene; Begin's galley vignette
+  follows its clock vignettes and `!ptp`'s follow-up its trigger vignette
+  (≤60 s). *Rejected:* adopting a `_pendingSceneId` — the second narration
+  would continue a scene the store did not yet hold.
+- **No silent no-op on a player's action, relayed or not** [Y06, Y17, Y33,
+  Y40, Y41, Y43] — X13 / X14 at the paths they did not reach: a relayed End a
+  Session, Set a Flag or Take a Break the world refused posts the GM's note
+  where the player's card is; the session gate's notice for a held button
+  move reaches the roller's players and the held move's line says so; a
+  premise not saved, a Claude key not registered, a Private Channel
+  conversation not being saved and a price nobody can pay are each said to
+  whoever asked (the last refused where it is rolled, so the card is honest).
+- **The ready reset releases only a lock whose claimant is gone** [Y07] —
+  held by nobody named, by this client's earlier page, or by a user who is
+  not connected: W25's "the claimant's departure is the event that matters"
+  at load. *Rejected:* releasing unconditionally at ready.
+- **A forced move from a card is held, not dropped** [Y08] — the paced Roll
+  and the "Which fight?" pick join W02 / X14's `deferWhileBusy`. **An
+  unclaimed button the session gate drops is re-armed, not held** [Y36]: the
+  inciting card is not claimed, and a held post per press would roll the
+  swear once per press at Begin. *Rejected:* `deferWhileBusy` on the ⚔ post.
+- **A price that stands keeps its cards** [Y09]: a burn to a weak hit that
+  still pays the price keeps the price's resist card and redirect picker
+  (`priceCard`); X15 holds for a price the upgrade undoes.
+- **A recommit refuses a vow fulfilled since, and writes only the vow its
+  miss scored** [Y10, Y25] (X20's rule; no sole-open rung — reachability §6,
+  W44). It needs no upgrade sweep: its move is a progress roll, never burned
+  or improved. *Rejected:* stamping the offer's `resolutionId` for
+  `retireOutcomeChoiceCards` — nothing could reach it. An epic rank "stays
+  epic" [Y26].
+- **The threshold card's follow-ups are its roller's** [Y11]: the way-out and
+  combat-track cards carry its `actorId`, and their off-ramps and Battle
+  follow D1's rule; the threshold choice stays the crew's (X06).
+- **One refused write does not stop the move's record** [Y16] — X52's rule
+  onto X18's card: the refused meters are a Retry step on the GMs' persist
+  card, and the notice names the cause. *Rejected:* tagging the rejection so
+  the pipeline reports everything — it still loses a record the world would
+  have taken.
+- **The resist card carries #330 D2's hint** [Y18] while its move can still
+  be upgraded. *Rejected:* exempting the forced resist roll from closing the
+  upgrades (D2's rejected option A).
+- **A suffer card applies to its own character or to nobody** [Y20]: a
+  player's press on a card whose PC is gone is refused; a GM's press retires
+  it, saying so.
+- **The native sheet-roll hooks act only on a player character's roll**
+  [Y23] — an NPC card's sheet roll pays, recommits and narrates nothing
+  (CLAUDE.md: never `type === 'character'` alone).
+- **A won-fight button that keeps its effect first records it on the vow's
+  payoff ledger** [Y24] (`milestone:<card id>`), so a refused stamp never lets
+  a re-press apply it twice; the pickers claim before their effect (#309).
+- **A writer that finds no copy says so, apart from a refusal** [Y27]: a
+  reward or link for a vow nobody holds closes its card and says why.
+- **Every card sink escapes a document's name, and strips the narrator's
+  markup** [Y28, Y29] (V18 / X45 / X27).
+- **A faction's name identity is its key** [Y31]: every faction lookup by
+  name matches on `factionNameKey` (case, spacing, a leading article), an
+  exact name first; the other World Journal categories keep exact titles.
+  *Rejected:* `resolveEntityName`'s ladder over the journal titles — looser
+  than an exact key needs.
+- **An NPC card's pronouns are its sheet's Pronouns field** [Y13] once it
+  holds a value — X12's reason applied to pronouns: the getters overlay it,
+  the seed prefers it and writes it through. *Rejected:* mirroring the sheet
+  into the record from the rename hooks — a second write path for a mirror
+  the getter makes unnecessary.
+- **A creation is get-or-create after a refused registration** [Y34]:
+  creators adopt the unlisted Actor of their type, name and sector, the GM is
+  told, and the canonical GM's load lists flagged entity Actors their list
+  misses (not copies, not a never-stored sector's leftovers). *Rejected:*
+  deleting the Actor on refusal — it may be seeded and its portrait billed,
+  and the delete can be refused too.
+- **A promote re-reads the record after its await** [Y35].
+- **A charted site's pin anchors the ship's position both ways** [Y14]: the
+  token on it records the site ("near"), and a record naming a location
+  moves the token onto its pin — a site still unexplored too, because the
+  Finish an Expedition that charts it records its arrival before its reveal;
+  an undiscovered pin names no place from the token side. A drop on a site
+  pin is not a Set a Course (sites are reached by expedition). *Rejected:* a
+  charted-only sync.
+- **A queued write decides on what it reads** [Y37]: whether a clock is
+  already full is judged inside `serialiseClockWrite`; a full clock is not
+  written.
+- **An edit of the campaign's saved Setting Truths page counts as a save**
+  [Y39]; the Playtest Quickstart's World Truths page is a printout of its
+  flag and is not read back. *Rejected:* re-parsing the printout (lossy),
+  and a read-only page with the reconcile re-run on `!lore`.
+- **The bound covers what comes back from the GM** [Y42]: a clip path in
+  `audio.synth.done` / `audio.cache.found` plays only when the GM's cache
+  could name it (the W81 / D11 / X51 rule). *Not taken:* the audit's looser
+  `[0-9a-f]{2}` folder — the slot is the hash's own.
+- **A field nothing reads is retired** [Y44] (`thresholdTrackId`).
+- **A panel's re-render keeps what the user is typing** [Y45]
+  (`replaceKeepingInput`). *Rejected:* skipping the re-render while a field
+  has focus — the panel would go stale.
+- **README and the help are checked against the code** [Y46, Y47]:
+  `readmeCommandsCoverage` compares README with the routes and their gates;
+  `helpRoleClaims` reads every page.
+- **An ability adds its clause for the move** [Y15, sharpening W12 / X04]: a
+  sentence splits at ";" and before a mid-sentence "if you <Move>", and an
+  add belongs to the clause whose move link names the move (a clause naming
+  none continues the one before) — Combat Bot's Strike +1 is no Clash add.
+- **An add that names a value the module holds is that value** [Y22]: "+<stat>"
+  from the roller's snapshot, "+its health" from the companion asset's track,
+  offered on the confirm dialog as its number; a value from a general clause
+  counts only when the ability names the move nowhere. "+cargo" / "add that
+  amount" stay text. The manual adds input (issue #322 V02) stays rejected.
+- **An at-0 table is rolled once, on its choice card, and the narrator is
+  told that roll** [Y21]: no seed pre-rolls the mortal-wound, desolation or
+  vehicle-damage table on a miss; the card's roll reaches RECENT ORACLE
+  RESULTS through its `oracleMemory` (U03's rule for a roll made after the
+  narration).
+- **A rider's supply loss while unprepared is another suffer move's** [Y19]:
+  the W16 picker, bound to the move, and the rider reported not applied (D3's
+  rule: at any supply).
+- **The play-kit coverage doc's punch list is re-audited** [Y49]: each item
+  says FIXED with where, and 3.1.3 is the vendor's own impact rule.
+
+**Reason:** the tenth audit's findings, each with a probe that failed before
+its fix (Y48 traced by hand); the tests that replace them fail with the fix
+taken out (`docs/testing/fix-sensitivity.md`).
+
+---
+
+## Issue #338 decisions: D1–D10 (2026-11)
+
+**Decision:** (issue #338, part 4 of the tenth audit — the ten rows that
+needed the maintainer. The maintainer asked for the issue to be addressed on
+2026-11-05 and took the recommended option on every row: D1, D2, D4, D5,
+D6 (i), D7, D8 and D10 option A; D3 option A with the crew-wide clear; D6
+(ii) option A narrowed; D9 option B. Each row's ID in brackets.)
+- **A card's forced follow-up is its roller's player's or a GM's to press**
+  [D1; option A]: ⚔ Attempt to Finish the Fight, 🗺 Finish the Expedition and
+  a new vow's ⚔ Swear it (roll) relay through `GM_ACTIONS` on the
+  `fulfilVow.attempt` shape (`tda.attempt`, `expedition.finish`,
+  `vow.swearRoll`) — claimed once, a non-owner refused, posted as the roller;
+  a card with no roller rolls the presser's own PC. *Rejected:* keeping
+  "whoever presses" and documenting it (option B) — another player could
+  spend a character's momentum or bring a Pay the Price down on them.
+- **Within a scene challenge, Face Danger and Secure an Advantage are its own
+  moves** [D2; option A, in issue #326 D6's shape]: two interpreter-typable
+  ids (`face_danger_scene_challenge`, `secure_an_advantage_scene_challenge`)
+  scored against the open challenge (`scoreSceneChallenge`) by the vendored
+  outcomes — progress on a hit (twice on a strong-hit match), a segment on a
+  weak hit, one or two on a miss with its Pay the Price, which then skips the
+  challenge's clock (one fill); a card says what was marked and filled. A
+  Burn or Improve leaves the clock as its outcome would have, from the
+  original's receipt (`targets.sceneChallenge`); a variant typed with no
+  challenge open is the ordinary move. Begin the Scene stays the Progress
+  Tracks panel's Add (the coverage doc names it). *Rejected:* documenting the
+  gap only (option B); re-keying the ordinary move while a challenge is open
+  — a fight in the middle of a challenge would be misfiled.
+- **A loss of resources while unprepared goes to another suffer move, at any
+  supply; Resupply's clear is the crew's** [D3; option A with the crew-wide
+  clear]. The vendored Sacrifice Resources keys the redirect on the impact
+  ("while unprepared"), which issue #325 W16 had narrowed to 0;
+  `isUnprepared` is now the one predicate (the executor, the card's greyed
+  option, the rider), and `clearUnprepared` clears whoever `markUnprepared`
+  marks (`supplyAllies` — known-issues UNPREPARED-CLEAR-ONE-PC).
+  `unpreparedAtZeroSupply` is retired. *Rejected:* keeping "at 0" and
+  recording it (option B); A alone — one crewmate's Resupply would have
+  redirected every ally's loss until their own.
+- **A seed writes its own marked introduction and keeps the rest of the
+  Notes tab** [D4; option A; closes Y12]. Each element of a seed's
+  introduction carries the class `sf-seed-intro` (the sheet's editor keeps
+  classes; one per element, so the paragraph the GM starts after it is the
+  GM's), and a re-seed replaces only those; an unmarked tab gets one
+  prepended. Characteristics keep every line the seed did not write. X34's
+  stamp-only Finalise now covers only a ship the Auto-Seed populated, so a
+  hand-made ship's Finalise seeds it, keeping its Notes. *Rejected:* option B
+  — the whole rewrite behind a confirm, with X34 extended to connections,
+  which leaves the loss one click away; a wrapper div (Enter after the
+  introduction lands inside it) and an HTML-comment marker (the editor drops
+  comments).
+- **A mission cross-reference rolls the active sector's region's table** [D5;
+  option A]: `!oracle` passes the active sector's region and Fleet's
+  "Starship Mission" / Starship Type's "Multipurpose" rows (#330 D13) roll
+  `starship_mission_<region>` (the Terminus table with no sector), as the
+  Sector Creator picks its tables by region. *Rejected:* keeping the Terminus
+  table and saying so in the help (option B).
+- **The X-Card withdraws the draft rows its narration queued** [D6 (i);
+  option A]: the ◈ New Entities card carries its narration's id, and the
+  X-Card marks its still-pending rows `xCarded` — no Confirm / Dismiss, out of
+  PENDING DRAFTS and the re-detection skip — without adding the names to
+  `dismissedEntities`, so a later genuine mention proposes them again.
+  *Rejected:* leaving them pending for the GM (option B) — Confirm would mint
+  an NPC from removed content.
+- **The X-Card takes back an unused connection its narration created** [D6
+  (ii); option A, narrowed]: a Make a Connection auto-create carries
+  `createdFromNarrationId`. While the record holds nothing beyond its
+  creation, its sheet nothing the table wrote (Notes text outside the seed's
+  marked introduction and the portrait, a Characteristics line the seed did
+  not write) and no bond Item a mark, the X-Card deletes the NPC card, its
+  bond Items and its id-list entry; otherwise it keeps it and whispers the
+  GMs once, naming it without a pronoun. *Rejected:* B alone, always keeping
+  the NPC — the removed prose stays on every roster.
+- **The X-Card takes a promoted detail out of the notes** [D7; option A]: a
+  ⤴ Promote keeps `{ narrationId, promotedText }` on its tier entry, and the
+  X-Card strips that paragraph from the Notes tab (or the record's notes)
+  when it drops the entry. *Rejected:* treating the Promote as the GM's
+  authorship that stands (option B) — it predates the card, and the Notes row
+  is a narrator surface (U07).
+- **A burn or improvement that rewinds a fired clock supersedes its trigger
+  vignette, and the narrations it supersedes leave the scene ledgers** [D8;
+  option A]: trigger vignettes carry their `clockId`; the reversal strikes
+  the clock's newest trigger vignette of the session (`burnSuperseded`), and
+  its narration's and the superseded move narration's entries are retracted
+  by `narrationId` as `retractedBy: "superseded"` — rendered nowhere, never
+  named under CORRECTED, and not blocking a restatement (an X-Card's
+  retraction would block the re-narration's own). The superseded narration's
+  World Journal and tier records stand. *Rejected:* keeping both as fiction
+  that stands (option B).
+- **Push-to-talk into a drafted chat box adds and waits** [D9; option B]: the
+  transcript goes after the draft and the player presses Enter; an empty box
+  auto-submits. *Rejected:* append and submit (option A) — it guesses whether
+  the speech continues or replaces the draft, and a submission is a move roll
+  that cannot be undone.
+- **A keyed canonical GM files no relayed audio clip** [D10; option A]: it
+  makes its own, so `audio.cache.write` is filed only at a keyless GM's
+  table, the case D11 kept the relay for — where the GM still cannot check
+  bytes filed under a real card's key in an empty slot (the accepted
+  limitation). *Rejected:* recording that any user can pre-fill a card's
+  audio (option B).
+
+**Reason:** each row's probe failed at the audited commit (D1–D10 assert the
+recommended option; D6's and D9's were rewritten to the option taken); the
+tests that replace them fail with the change taken out
+(`docs/testing/fix-sensitivity.md`).
+
+---
+
 ## Issue #331 audit: a refusable write changes a copy, a relayed value is what the UI sends, one write's refusal is its own, the help says who may (2026-11)
 
 **Decision:** (issue #331, part 2 of the ninth audit — X15–X61, and X62–X66

@@ -3,17 +3,17 @@ Tests: tests/unit/payoffFailure.test.js
 Catches: a refused legacy write
 
 diff --git a/src/index.js b/src/index.js
-index b88a89a..7a5f8e3 100644
+index 7b71090..9ad91ce 100644
 --- a/src/index.js
 +++ b/src/index.js
-@@ -3306,9 +3306,8 @@ const legacyBoxXp = (track, boxes) => boxes * (track?.cleared ? 1 : 2);
- async function writeLegacyTicks(key, ticks) {
+@@ -4874,8 +4874,9 @@ async function writeLegacyTicks(key, ticks) {
    const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
    const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
--  const newBoxes = addLegacyTicks(cs, key, ticks, { awardXp: false });
-+  addLegacyTicks(cs, key, ticks);
+   const marked = addLegacyTicks(cs, key, ticks, { awardXp: false });
++  const failed = await payLegacyMark(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
    await game.settings.set(MODULE_ID, "campaignState", cs);
--  if (newBoxes > 0) await awardLegacyBoxXP(key, newBoxes, legacyBoxXp(cs.legacyTracks[key], newBoxes));
+-  return payLegacyMark(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
++  return failed;
  }
  
- /** Award legacy-box XP to every player character and post the earned-XP note. */
+ /**

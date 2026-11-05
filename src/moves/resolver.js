@@ -139,14 +139,19 @@ export function calcProgressOutcome(ticks, challengeDice) {
  * @param {string} currentOutcome   — "strong_hit" | "weak_hit" | "miss"
  * @param {[number, number]} challengeDice
  * @param {boolean} isProgressMove
+ * @param {{ weakHitAsMiss?: boolean }} [opts] — the roll took an add that
+ *   counts a weak hit as a miss (resolveMove's `weakHitAsMiss`): a burn
+ *   landing on a weak hit is a miss, no improvement
+ *   (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED)
  * @returns {boolean}
  */
-export function canBurnMomentum(currentMomentum, currentOutcome, challengeDice, isProgressMove) {
+export function canBurnMomentum(currentMomentum, currentOutcome, challengeDice, isProgressMove, { weakHitAsMiss = false } = {}) {
   if (isProgressMove) return false;
   if (currentMomentum <= 0) return false;
   if (currentOutcome === "strong_hit") return false;  // Already optimal
 
-  const { outcome: burnedOutcome } = calcOutcome(currentMomentum, challengeDice);
+  const { outcome: landed } = calcOutcome(currentMomentum, challengeDice);
+  const burnedOutcome = weakHitAsMiss && landed === "weak_hit" ? "miss" : landed;
   // Only valid if it STRICTLY improves. A bare `!==` check would also offer a
   // burn that makes the outcome worse — e.g. action score 7 (weak hit) but
   // current momentum 6 burns down to a miss. Compare outcome rank instead.
@@ -269,6 +274,12 @@ function emptyConsequences() {
     // true → pipeline completes the scene challenge and retires its tension
     // clock (Finish the Scene — every outcome; issue #326 D6).
     finishScene:         false,
+    // A scene-challenge move (Face Danger / Secure an Advantage within a scene
+    // challenge — issue #338 D2): the pipeline marks the open challenge's
+    // track `sceneProgress` times and fills `sceneSegments` of its tension
+    // clock (index.js applyOutcomeEffects → sceneChallenge.scoreSceneChallenge).
+    sceneProgress:       0,
+    sceneSegments:       0,
     // Combat lifecycle (audit 3.24–3.27): pipeline creates/reuses the combat track.
     enterCombat:           false,
     // Pipeline marks progress N times on the active combat track (Strike/Clash).
@@ -679,6 +690,44 @@ const CONSEQUENCE_MAP = {
   },
 
   // ── SCENE CHALLENGE MOVES ───────────────────────────────────────────────────
+  // Face Danger and Secure an Advantage within a scene challenge (Starforged
+  // pp. 239–241; vendored Starforged/Moves/Scene_Challenge — issue #338 D2):
+  // scored against the open challenge, a hit's progress on its track
+  // (`sceneProgress`) and a weak hit's or miss's segments on its 4-segment
+  // tension clock (`sceneSegments`). A miss's Pay the Price leaves that clock
+  // to the move's own segments (index.js skips it in the price's advance).
+
+  face_danger_scene_challenge: (outcome, isMatch) => {
+    switch (outcome) {
+      case "strong_hit": return { ...emptyConsequences(), sceneProgress: isMatch ? 2 : 1,
+        otherEffect: isMatch
+          ? "You are successful. With the match, mark progress twice on the scene challenge."
+          : "You are successful. Mark progress on the scene challenge." };
+      case "weak_hit": return { ...emptyConsequences(), sceneProgress: 1, sceneSegments: 1,
+        otherEffect: "You are successful and mark progress, but also encounter a complication or setback. Envision what occurs and fill a segment of the challenge's clock." };
+      case "miss": return { ...emptyConsequences(), sceneSegments: isMatch ? 2 : 1, routePayThePrice: true,
+        otherEffect: isMatch
+          ? "You fail, or a momentary success is undermined by a dramatic turn of events. With the match, fill two segments of the challenge's clock and Pay the Price."
+          : "You fail, or a momentary success is undermined by a dramatic turn of events. Fill a segment of the challenge's clock and Pay the Price." };
+    }
+  },
+
+  secure_an_advantage_scene_challenge: (outcome, isMatch) => {
+    switch (outcome) {
+      // "Take both" — +2 momentum and +1 on the next move, as the ordinary
+      // move's strong hit; with a match, "take both and mark progress".
+      case "strong_hit": return { ...CONSEQUENCE_MAP.secure_an_advantage("strong_hit", isMatch), sceneProgress: isMatch ? 1 : 0,
+        otherEffect: isMatch
+          ? "You are successful: take both — +2 momentum AND +1 on your next move (not a progress move) — and, with the match, mark progress on the scene challenge."
+          : "You are successful: take both — +2 momentum AND +1 on your next move (added to your next action roll; not a progress move)." };
+      // "Choose one" — the ordinary move's weak-hit choice.
+      case "weak_hit": return CONSEQUENCE_MAP.secure_an_advantage("weak_hit", isMatch);
+      case "miss": return { ...emptyConsequences(), sceneSegments: isMatch ? 2 : 1, routePayThePrice: true,
+        otherEffect: isMatch
+          ? "You fail or your assumptions betray you. With the match, fill two segments of the challenge's clock and Pay the Price."
+          : "You fail or your assumptions betray you. Fill a segment of the challenge's clock and Pay the Price." };
+    }
+  },
 
   finish_the_scene: (outcome, _isMatch) => {
     // Progress move (Starforged p. 241; issue #326 D6). The scene concludes on
@@ -1290,6 +1339,15 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     }
   }
 
+  // An add taken on the confirm dialog whose ability counts a weak hit as a
+  // miss — the Hoverbike's afterburner: "you may add +integrity … If you do,
+  // count a weak hit as a miss" — applied as the bad-spot downgrade above is.
+  // The add was offered as a free bonus (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
+  // Kept on the resolution: a burn that lands on a weak hit is a miss too.
+  const weakHitAsMiss = rollKind === "action" ? weakHitAsMissSource(interpretation) : null;
+  const weakHitCounted = !!weakHitAsMiss && outcome === "weak_hit";
+  if (weakHitCounted) outcome = "miss";
+
   const outcomeLabel   = rollKind === "none" ? "No roll" : buildOutcomeLabel(outcome, isMatch);
   // Aid Your Ally in a fight is Gain Ground's (the caller says whether a
   // fight is open — options.inFight); otherwise Secure an Advantage's.
@@ -1298,6 +1356,9 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     : mapConsequences(moveId, outcome, isMatch);
   if (downgradeApplied) {
     consequences.otherEffect = `In a bad spot — outcome downgraded (${downgradeApplied}). ${consequences.otherEffect ?? ""}`.trim();
+  }
+  if (weakHitCounted) {
+    consequences.otherEffect = `Weak hit counted as a miss — the ${weakHitAsMiss}'s add was taken. ${consequences.otherEffect ?? ""}`.trim();
   }
   const loremasterContext = buildLoremasterContext({
     moveName, statUsed, statValue, adds,
@@ -1346,8 +1407,26 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     consequences,
     oracleSeeds,
     loremasterContext,
+    // The asset whose taken add counts a weak hit as a miss (the burn reads it).
+    ...(weakHitAsMiss ? { weakHitAsMiss } : {}),
     sessionId: campaignState.currentSessionId ?? "",
   };
+}
+
+/**
+ * The asset whose add, taken on the confirm dialog, counts a weak hit as a
+ * miss — an applicable ability the scanner marked `weakHitAsMiss` (the
+ * Hoverbike's afterburner) whose box was checked (`appliedAbilityKeys`) —
+ * else null (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
+ *
+ * @param {Object} interpretation
+ * @returns {string|null} the asset's name
+ */
+function weakHitAsMissSource(interpretation) {
+  const taken = new Set(Array.isArray(interpretation?.appliedAbilityKeys) ? interpretation.appliedAbilityKeys : []);
+  const costly = (Array.isArray(interpretation?.applicableAbilities) ? interpretation.applicableAbilities : [])
+    .find(a => a?.weakHitAsMiss === true && taken.has(a.key));
+  return costly ? (costly.assetName || "asset") : null;
 }
 
 
@@ -1520,29 +1599,14 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
         break;
       }
 
-      case "endure_harm": {
-        if (outcome === "miss") {
-          const wound = safeRoll("mortal_wound");
-          if (wound) results.push(`Mortal wound (if health at 0): ${wound}`);
-        }
-        break;
-      }
-
-      case "endure_stress": {
-        if (outcome === "miss") {
-          const deso = safeRoll("desolation");
-          if (deso) results.push(`Desolation (if spirit at 0): ${deso}`);
-        }
-        break;
-      }
-
-      case "withstand_damage": {
-        if (outcome === "miss") {
-          const dmg = safeRoll("vehicle_damage");
-          if (dmg) results.push(`Vehicle damage (if integrity at 0): ${dmg}`);
-        }
-        break;
-      }
+      // Endure Harm / Endure Stress / Withstand Damage seed no table: the
+      // mortal-wound, desolation and vehicle-damage d100s are due only at 0 on
+      // the resist roll's miss, and then only if the player picks the table —
+      // the at-0 choice card's one roll (sufferExecutor.rollImpactTable, whose
+      // card the narrator is told of: RECENT ORACLE RESULTS). A seed rolled
+      // here on every miss, "(if health at 0)", whatever the meter held, had
+      // the narration depict a wound the table never rolled (issue #336 Y21 —
+      // the issue #321 U03 / #326 W47 shape).
     }
 
     // ── PAY THE PRICE ON MISS — advisory, for a miss whose text says so but

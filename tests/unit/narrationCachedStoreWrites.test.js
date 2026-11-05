@@ -19,8 +19,19 @@
  * (Converted from the ninth audit's probe
  * tests/probes/narration/narrationCachedStoreWrites.probe.js — its `!scene`
  * cases are X10's, in sceneCommandCachedWrite.test.js.)
+ *
+ * Issue #335 Y04 (NARRATION-CACHED-STORE-SIBLINGS) — the siblings X09 did not
+ * reach: ✦ Envision Inciting Incident (`!incite`, the Session panel's GM
+ * press) and a vow rolled on the foundry-ironsworn sheet narrated by the
+ * keyed GM (the native progress-roll hook's narrateResolution) minted a scene
+ * and applied their sidecar on the cached setting. (The session vignettes are
+ * in sessionVignetteCachedWrites.test.js; Campaign Start's phase 5 in
+ * campaignStart.test.js. From the tenth audit's probes
+ * tests/probes/ui/inciteNarratesOnCache.probe.js and
+ * tests/probes/sweep/inciteCachedStoreWrites.probe.js.)
  */
 
+/* global silenceConsoleErrors */
 import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'vitest';
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
@@ -114,6 +125,96 @@ describe('issue #329 X09 — a narration never applies its facts onto the cached
     await table.settle();
     expect(world().currentSceneId).toMatch(/^sc-/);
     expect(world().sceneTruths.map(t => [t.fact, t.sceneId])).toEqual([['Owes the crew a favour', world().currentSceneId]]);
+    expect(gmCache().currentSceneId).toBe(world().currentSceneId);
+  }, 30_000);
+});
+
+// The vendor roll card: JSON HTML-escaped inside a single-quoted attribute (nativeBondRollNarration.test.js).
+function nativeProgressCard({ source, value, dice }) {
+  const roll = { preRollOptions: { progress: { source, value }, actorId: 'pc-1' }, rawChallengeDiceValues: dice };
+  const json = JSON.stringify(roll).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return `<article class='ironsworn-roll' data-ironswornroll='${json}'><h3>Progress Roll: ${source}</h3></article>`;
+}
+
+/** A player rolls their vow's progress on the foundry-ironsworn sheet (a miss: 1 vs 5, 8). */
+async function rollVowOnSheet() {
+  table.addActor({
+    id: 'pc-1', name: 'Vex', type: 'character', ownership: { 'pl-1': 3 },
+    items: { contents: [
+      { id: 'vow-1', type: 'progress', name: 'Find Chen', system: { subtype: 'vow', rank: 'dangerous', current: 0 }, flags: {} },
+    ] },
+  });
+  await table.client('pl-1').run(() => globalThis.ChatMessage.create({
+    content: nativeProgressCard({ source: 'Find Chen', value: 1, dice: [5, 8] }),
+    speaker: { actor: 'pc-1', alias: 'Vex' },
+    rolls: [{ formula: '{d10,d10}', total: 0 }],
+  }));
+  await table.settle();
+}
+
+/** The GM presses ✦ Envision Inciting Incident on their own Session panel (the client's own module copy). */
+async function pressEnvisionOnGm() {
+  await table.client('gm-1').run(async () => {
+    const { SessionPanelApp } = await import('../../src/ui/sessionPanel.js');
+    await SessionPanelApp.DEFAULT_OPTIONS.actions.envisionIncite.call({ render() {} }, {}, {});
+  });
+  await table.settle();
+}
+
+/** The GM's cache holds no scene and none of the narration's facts — as the world, which refused them. */
+function expectCacheAsRefusedWorld() {
+  expect(world().currentSceneId ?? null).toBeNull();
+  expect(world().sceneTruths ?? []).toEqual([]);
+  expect(gmCache().currentSceneId ?? null).toBeNull();
+  expect(gmCache().sceneTruths ?? []).toEqual([]);
+  expect(gmCache().sceneState?.bySubject ?? {}).toEqual({});
+  expect(gmCache().sceneFrame ?? null).toBeNull();
+}
+
+describe('issue #335 Y04 — the inciting incident and a sheet-rolled vow narrate on a working copy', () => {
+  it("!incite on the keyed GM: a refused write leaves no scene and no truth in the GM's cache", async () => {
+    silenceConsoleErrors();
+    refuseGmCampaignStateWrites();
+    await table.client('gm-1').chat('!incite');
+    await table.settle();
+
+    expect(table.claude.calls.find(c => c.model === NARRATION_MODEL)?.client).toBe('gm-1');   // narrated on the keyed GM
+    expect(table.cards(f => f.incitingIncidentCard)).toHaveLength(1);                         // the card still posts
+    expectCacheAsRefusedWorld();
+  }, 30_000);
+
+  it("the Session panel's ✦ Envision Inciting Incident (GM): a refused write leaves the GM's cache as the world", async () => {
+    silenceConsoleErrors();
+    refuseGmCampaignStateWrites();
+    await pressEnvisionOnGm();
+
+    expect(table.claude.calls.some(c => c.model === NARRATION_MODEL && c.client === 'gm-1')).toBe(true);
+    expect(table.cards(f => f.incitingIncidentCard)).toHaveLength(1);
+    expectCacheAsRefusedWorld();
+  }, 30_000);
+
+  it("a sheet-rolled vow narrated by the keyed GM: a refused write leaves no scene and no truth in the GM's cache", async () => {
+    silenceConsoleErrors();
+    refuseGmCampaignStateWrites();
+    await rollVowOnSheet();
+
+    expect(table.cards(f => f.narratorCard && f.moveId === 'fulfill_your_vow')).toHaveLength(1);   // narrated
+    expectCacheAsRefusedWorld();
+  }, 30_000);
+
+  it("control: with the write accepted, !incite's scene and truth land in the world and the GM's cache agrees", async () => {
+    await table.client('gm-1').chat('!incite');
+    await table.settle();
+    expect(world().currentSceneId).toMatch(/^sc-/);
+    expect(world().sceneTruths.map(t => t.fact)).toEqual(['Owes the crew a favour']);
+    expect(gmCache().currentSceneId).toBe(world().currentSceneId);
+    expect(gmCache().sceneTruths.map(t => t.fact)).toEqual(['Owes the crew a favour']);
+  }, 30_000);
+
+  it("control: with the write accepted, the sheet roll's narration mints the scene in the world and the GM's cache agrees", async () => {
+    await rollVowOnSheet();
+    expect(world().currentSceneId).toMatch(/^sc-/);
+    expect(world().sceneTruths.map(t => t.fact)).toEqual(['Owes the crew a favour']);
     expect(gmCache().currentSceneId).toBe(world().currentSceneId);
   }, 30_000);
 });

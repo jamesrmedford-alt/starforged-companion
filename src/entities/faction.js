@@ -16,7 +16,7 @@
  */
 
 import { getOrCreateEntitiesFolder } from "./folder.js";
-import { registerEntityId, rerenderEntityPageBody } from "./registry.js";
+import { registerEntityId, rerenderEntityPageBody, adoptUnlistedEntityJournal } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "faction";
@@ -59,8 +59,9 @@ export const FactionSchema = {
   canonicalLocked: false,
   generativeTier:  [],
 
-  // Oracle seeding ran (draft-confirm path; sector-generator factions arrive
-  // pre-populated and never need it). See seedFactionRecord.
+  // Oracle seeding ran (the draft-confirm path, the only creator of a faction
+  // record — the Sector Creator keeps a faction's name on the sector, not a
+  // record). See seedFactionRecord.
   seeded: false,
 
   createdAt: null,
@@ -69,6 +70,14 @@ export const FactionSchema = {
 
 
 export async function createFaction(data, campaignState) {
+  // The journal an earlier creation of this faction made, whose registration
+  // the world refused, is adopted — listed now — never a second one (known-
+  // issues JOURNAL-ORPHAN-ON-REFUSAL, issue #337 Y34's get-or-create). One
+  // faction whatever article, case or spacing names it (issue #336 Y31).
+  const adopted = await adoptUnlistedEntityJournal(FLAG_KEY, "factionIds", data?.name, campaignState,
+    { label: "faction", nameKey: factionNameKey });
+  if (adopted) return adopted;
+
   const now = new Date().toISOString();
   const id  = generateId();
 
@@ -127,7 +136,29 @@ export const ATTITUDE_TO_RELATIONSHIP = {
 };
 
 /**
- * Find a faction entity record by name (case-insensitive, trimmed).
+ * The identity key of a faction name — lowercased, interior whitespace
+ * collapsed, a leading article dropped: "The Iron Syndicate", "Iron
+ * syndicate" and "iron  Syndicate" are one faction (issue #336 Y31). The
+ * detection prompt itself names factions with the article ("the Compact"),
+ * and the record, the World Journal — Factions page and the entity gates
+ * each matched differently, so a stance shift for "The Iron Syndicate" made a
+ * second page and never reached the "Iron Syndicate" record. Every faction
+ * lookup by name keys on this: the record (findFactionByName), the Factions
+ * page (worldJournal.recordFactionIntelligence / getFactionEntry), the entity
+ * gates (entityExtractor.entityExistsForName / entityExistsAnyType) and the
+ * landscape's dedup (mergeFactionLandscape).
+ *
+ * @param {string} name
+ * @returns {string} "" for an empty name
+ */
+export function factionNameKey(name) {
+  return String(name ?? "").trim().toLowerCase().replace(/\s+/g, " ").replace(/^(the|a|an) (?=\S)/, "");
+}
+
+/**
+ * Find a faction entity record by name: case-blind, a record named exactly
+ * so first, else the one whose name has the same identity key
+ * (factionNameKey — the article and spacing aside).
  * Returns `{ id, faction }` — the journal host id plus the record — or null.
  *
  * @param {string} name
@@ -136,14 +167,16 @@ export const ATTITUDE_TO_RELATIONSHIP = {
  */
 export function findFactionByName(name, campaignState) {
   const wanted = String(name ?? "").trim().toLowerCase();
-  if (!wanted) return null;
+  const key    = factionNameKey(name);
+  if (!wanted || !key) return null;
+  let same = null;
   for (const id of campaignState?.factionIds ?? []) {
     const faction = getFaction(id);
-    if (faction && String(faction.name ?? "").trim().toLowerCase() === wanted) {
-      return { id, faction };
-    }
+    if (!faction) continue;
+    if (String(faction.name ?? "").trim().toLowerCase() === wanted) return { id, faction };
+    if (!same && factionNameKey(faction.name) === key) same = { id, faction };
   }
-  return null;
+  return same;
 }
 
 /**
@@ -247,7 +280,7 @@ export function mergeFactionLandscape(records, wjEntries, cap = 4) {
 
   for (const f of records ?? []) {
     if (!f?.name) continue;
-    const key = f.name.trim().toLowerCase();
+    const key = factionNameKey(f.name);
     if (seen.has(key)) continue;
     seen.add(key);
     const latestProject = f.projects?.[f.projects.length - 1];
@@ -266,7 +299,7 @@ export function mergeFactionLandscape(records, wjEntries, cap = 4) {
   for (const e of wjEntries ?? []) {
     const name = e?.factionName ?? "";
     if (!name) continue;
-    const key = name.trim().toLowerCase();
+    const key = factionNameKey(name);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({

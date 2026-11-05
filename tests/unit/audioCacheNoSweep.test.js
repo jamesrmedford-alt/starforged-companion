@@ -73,7 +73,9 @@ describe("the audio cache has no size-cap sweep", () => {
     const spec = { voiceId: "voice-narrator", modelId: "eleven_flash_v2_5", text: "The hull holds.", speed: 1 };
     send({ kind: "audio.synth.request", hash: await cache.cacheKey(spec), spec });   // the GM synthesises and caches
     await vi.waitFor(() => expect(fp._uploads).toHaveLength(1));
-    // A keyed player's clip of the other card's line.
+    // A keyed player's clip of the other card's line — filed by a GM with no
+    // key of its own (a keyed GM makes its own clips, issue #338 D10).
+    game.settings._store.delete(`${MODULE_ID}.elevenLabsApiKey`);
     const relayed = await cache.cacheKey({ voiceId: "voice-narrator", modelId: "eleven_flash_v2_5", text: "The airlock cycles.", speed: 1 });
     send({ kind: "audio.cache.write", hash: relayed, b64: "AQID" });
     await vi.waitFor(() => expect(fp._uploads).toHaveLength(2));

@@ -1175,30 +1175,30 @@ describe("buildOracleSeeds", () => {
       expect(onStrong).toBeNull();
     });
 
-    it("seeds Mortal Wound on endure_harm miss", () => {
-      rollOracle.mockImplementation((t) => {
-        if (t === "mortal_wound") return { result: "You are reeling" };
-        if (t === "pay_the_price") return { result: "—" };
-        return { result: "—" };
-      });
+    // The mortal-wound / desolation / vehicle-damage d100s are due only at 0
+    // on the resist roll's miss, and only if the player picks the table: the
+    // at-0 choice card rolls it once (sufferExecutor.rollImpactTable). These
+    // pinned a seed rolled on every miss, whatever the meter held (issue #336
+    // Y21 — the narration depicted a wound the table never rolled).
+    it("seeds no Mortal Wound on an endure_harm miss — the at-0 choice card rolls it", () => {
+      rollOracle.mockImplementation((t) => (t === "mortal_wound" ? { result: "You are reeling" } : { result: "—" }));
       const seeds = buildOracleSeeds("endure_harm", "miss", false);
-      expect(seeds.results.some(r => r.includes("Mortal wound"))).toBe(true);
+      expect((seeds?.results ?? []).some(r => /mortal wound/i.test(r))).toBe(false);
+      expect(rollOracle).not.toHaveBeenCalledWith("mortal_wound");
     });
 
-    it("seeds Desolation on endure_stress miss", () => {
-      rollOracle.mockImplementation((t) =>
-        t === "desolation" ? { result: "You give up" } : { result: "—" }
-      );
+    it("seeds no Desolation on an endure_stress miss", () => {
+      rollOracle.mockImplementation((t) => (t === "desolation" ? { result: "You give up" } : { result: "—" }));
       const seeds = buildOracleSeeds("endure_stress", "miss", false);
-      expect(seeds.results.some(r => r.includes("Desolation"))).toBe(true);
+      expect((seeds?.results ?? []).some(r => /desolation/i.test(r))).toBe(false);
+      expect(rollOracle).not.toHaveBeenCalledWith("desolation");
     });
 
-    it("seeds Vehicle Damage on withstand_damage miss", () => {
-      rollOracle.mockImplementation((t) =>
-        t === "vehicle_damage" ? { result: "Rough ride" } : { result: "—" }
-      );
+    it("seeds no Vehicle Damage on a withstand_damage miss", () => {
+      rollOracle.mockImplementation((t) => (t === "vehicle_damage" ? { result: "Rough ride" } : { result: "—" }));
       const seeds = buildOracleSeeds("withstand_damage", "miss", false);
-      expect(seeds.results.some(r => r.includes("Vehicle damage"))).toBe(true);
+      expect((seeds?.results ?? []).some(r => /vehicle damage/i.test(r))).toBe(false);
+      expect(rollOracle).not.toHaveBeenCalledWith("vehicle_damage");
     });
 
     // A match lets the player Make a Discovery / Confront Chaos INSTEAD — the

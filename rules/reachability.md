@@ -208,6 +208,12 @@ the reachability failure on the write side.
   `resolved` / `resolvedActions.<action>` stamp on the card), and its client
   re-arms the button when the click is not delivered (`relayCardAction`). A
   local `disabled` is not a guard — another client, or a re-render, re-arms it.
+- A press the handler refuses for whose the card is — `requesterOwnsActor`
+  fails, or the card's character is gone — is named with
+  `refusePress(ctx, reason, actor)`: the relay has no ack, so the dispatch
+  whispers the presser (and the GMs) whose button it is. A refusal logged on
+  the GM's console only is a silent no-op on the player's action
+  (known-issues RELAY-REFUSED-PRESS-UNTOLD).
 - Never call `requestGmAction` from inside a handler on the canonical GM: the
   nested action queues behind its own caller until the caller's run budget
   (`GM_ACTION_TIMEOUT_MS`, or `GM_CLAUDE_ACTION_TIMEOUT_MS` for a `claude: true`
@@ -247,6 +253,16 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
   instead of replacing them. End a Session held its snapshot across a Claude
   call and wrote it whole — reverting a move and resurrecting its released
   `pendingMove` lock.
+- **A store can lag the world by a delivery.** Re-reading before the write
+  defends against a snapshot held across an await, not against another
+  client's write still in flight: a co-GM's write built from a cache that has
+  not yet seen a release lands after it and carries the old value back. A
+  fact only one client knows is defended by that client — the move lock's
+  claimant remembers the claims it released and puts the lock back when a
+  write carries one back (`restoreLockOverCarriedBackClaim`,
+  LOCK-RESURRECTED-BY-COGM-STALE-WRITE). The lock's three fields are written
+  by its own paths only (claim, release, the W25 handover, the ready reset);
+  every other writer takes them from the store.
 - A safety-critical flag is read **live** at the point of use, not from the
   snapshot (the narrator's `isXCardActive` checks the stored setting too).
 - Writers that must not interleave run through one queue (the `gmRelay`

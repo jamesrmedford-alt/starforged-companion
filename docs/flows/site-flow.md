@@ -104,4 +104,8 @@ GM-gated with a not-found notice; the reveal updates record + pin + state
 in one pass, tolerating per-step failures; and arrival by move sets
 `currentLocationId` for location-type entities (LOCATION-DUAL-STORE fix),
 so a named site becomes the CURRENT LOCATION card with its full record the
-moment the crew actually goes there.
+moment the crew actually goes there. A charted site's pin is a ship-position
+anchor both ways (issue #335 Y14): the command-vehicle token parked on or near
+it records the site as the ship's position (`nearestLocationId`, "near" it —
+never a Set a Course, sites are reached by expedition), and an arrival there
+moves the token onto the pin; an undiscovered pin names no place.

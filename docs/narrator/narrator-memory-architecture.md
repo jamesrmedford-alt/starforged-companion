@@ -115,13 +115,14 @@ should remember* must carry all three flags:
 | inciting incident (`postIncitingIncidentCard`) | Cluster A1 | `narrationText` is prose only (vow line stripped); fallback cards excluded |
 | galley / end-session vignettes | 2026-06-15 | |
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
-| clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix |
+| clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix; a trigger vignette also names its clock (`clockId`, issue #338 D8) |
 | oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
-| published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`). No sidecar, so no ledger facts |
+| published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`), which stamps the card's `narrationId` on the details it records (issue #335 Y03). No sidecar, so no ledger facts |
 
-Every narration card above (the published reflection is not a narration)
-also carries its narration's `narrationId` — the id its sidecar stamps on the
-ledger entries it writes (§3; issue #321 U07).
+Every card above also carries its narration's `narrationId` — the id its
+sidecar stamps on the ledger entries it writes (§3; issue #321 U07) and its
+capture on what it records (issue #329 X01); a published reflection, which
+has no sidecar, carries one for its capture (issue #335 Y03).
 The move narration's "narration unavailable" card (`postFallbackCard`) keeps
 the family so the session recap counts the move, and is marked
 `narrationFallback`, which every memory read leaves out (issue #321 U35 — it
@@ -159,7 +160,15 @@ CLAUDE.md "audit consumers" rule):
   with the X-Card lifted — not a fallback, a published reflection or an
   X-carded card
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
-  `resolutionId`, unaffected
+  `resolutionId`, unaffected; it flags the card `burnSuperseded`, which
+  `sessionNarratorCards` leaves out (ring, summary, recap). Since issue #338
+  D8 a Burn Momentum / Improve Result that rewinds a clock out of its trigger
+  flags that clock's newest live trigger vignette of the session (found by
+  its `clockId`) the same way (`resultUpgrade.js` supersedeTriggerVignettes),
+  and both narrations' ledger entries are retracted by their `narrationId`
+  (§3). A vignette still being written then never posts: it is narrated only
+  while its clock is still full when its reply comes in (`stillTriggered`,
+  TRIGGER-VIGNETTE-LATE-POST), so its sidecar is never applied
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
@@ -198,17 +207,50 @@ a sidecar writes, and the frame, carries the narration's `narrationId` (its
 card carries the same id). The X-Card retracts what the narration it answers
 wrote (`retractNarrations`): its truths `retractedBy: "xcard"` — rendered
 nowhere, not even under CORRECTED, never migrated, still blocking a
-re-assertion — its state values removed (each restoring the value it
+re-assertion; a truth the table had already struck is relabelled the
+X-Card's and its kept `sessionRetractions` entry dropped, so neither
+CORRECTED nor the summary's leave-out list names it and `!truth set` cannot
+lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — its state values removed (each restoring the value it
 superseded: a state entry keeps a bounded `previous` chain, issue #326 W41)
 and its frame cleared, in the same
 write as the pause; the ids are kept on `xCardedNarrationIds`, so
 `mergeSceneLedgers` retracts them again from a stale writer's copy and a late
 relayed sidecar of that narration is dropped. What the narration's capture
 (the detection and tier passes) recorded carries the same id — World Journal
-entries (with the versions they replaced), Session Log beats, tier details,
+entries (with the versions they replaced; a faction the draft routing
+surfaces, issue #335 Y02), Session Log beats, tier details (one the GM had
+promoted takes the line its Promote added to the notes with it, issue #338
+D7), a placeholder figure's rename (the X-Card puts the placeholder name back), the draft card
+it queued (its pending rows are withdrawn, issue #338 D6(i)), a connection a
+Make a Connection hit auto-created (deleted with its bond and its portrait while unused, else
+kept and named to the GMs — D6(ii); one the hit confirmed from an earlier
+narration's pending draft row too, the row going back to pending —
+MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED),
 and the state transitions it applied to existing entries (a faction's stance
 on its record included) — and the X-Card's finish undoes it by id
-(`retractNarrationCapture`, issue #329 X01; XCARD-CAPTURE-TRANSITIONS).
+(`retractNarrationCapture`, issue #329 X01; XCARD-CAPTURE-TRANSITIONS). What
+the capture had not written yet when the card was played it never writes:
+each capture write checks the stored `xCardedNarrationIds` first
+(`isNarrationXCarded`, `safety.js` — the passes on entry and when their Claude
+reply returns, the routers before each write; XCARD-LATE-CAPTURE). So
+does what a scene end migrated from the narration's ledger entries before the
+card was played (issue #335 Y01 — the pick is session-scoped, the ledger is
+empty by then): the tier detail, the archived Lore page and the LAST KNOWN
+value, which keeps the values it superseded and falls back to the newest one
+no removed narration set.
+
+**Narration ids and an upgrade (issue #338 D8).** A Burn Momentum or Improve
+Result retracts the ledger entries of the narrations it supersedes — the move
+narration it replaces, and the trigger vignette of a clock its reversal
+rewinds — by their `narrationId`, through the same `retractNarrations` with
+`{ by: "superseded" }` (`resultUpgrade.js` retractSupersededNarrations, on the
+canonical GM, merged onto the latest store, and on the upgrade's working copy,
+which its re-narration applies its sidecar to). A superseded truth is
+rendered nowhere and never named under CORRECTED, like an X-carded one, but it
+blocks nothing: the re-narration of the upgraded outcome — or the clock's next
+trigger — may state the same fact, and it is recorded live. Only the ledgers:
+what the superseded narration's capture recorded stands, and no id list keeps
+a stale writer from writing its state back (the accepted no-baseline merge).
 
 **Scene start.** A narration whose snapshot holds no scene while the store has
 one continues it (`startScene` → `adoptStoredScene`, issue #321 U06f): the
@@ -218,6 +260,12 @@ Oracle follow-ups, session and clock vignettes and vow scenes start a scene
 when none is active, as move, paced and `@scene` narration do
 (`ensureSceneStarted`, canonical GM — issue #321 U34; their facts landed
 under no scene), and so does a `!truth set` / `!state set` (issue #326 W59).
+Scene starts run one at a time on the GM: a start waits for the one in
+flight, then adopts it — two narrations one command fires, each on its own
+working copy, minted two scenes inside the first start's write round trip,
+and the loser's facts were dropped (issue #335 Y05). Begin's galley vignette
+follows its clock vignettes, and `!pay-the-price`'s oracle follow-up its
+trigger vignette, each reading its copy once the one ahead is done.
 
 **Subject resolution (Cluster A2; fixed by issue #286).** `applyNarratorSidecar`
 passes the full entity roster (`collectAllEntities`,
@@ -450,8 +498,16 @@ regressions, all are known scope cuts:
    `ship/position` emission; and an empty record renders an explicit
    *"SHIP POSITION: not yet established — do NOT assert or invent"* guard
    line instead of nothing (see decisions.md → "Ship position: a sector-map
-   token is authoritative when present"). Remaining refinement: free-text
-   positions still don't move the Token (no pin to anchor to) — the
+   token is authoritative when present"). A charted site's pin anchors the
+   position like a settlement's, both ways — the token parked on it records
+   the site's location (`nearestLocationId`), and a record naming a location
+   moves the token onto its site pin (issue #335 Y14). Every record a writer
+   builds carries every key — `narrationId` and `previous` too, null unless a
+   narration's move set them — because `updateShip` writes through `setFlag`,
+   which merges into the stored record key by key: a narrator move's id
+   outlived a later `!at` or token move, and an X-Card then reverted that
+   move (SHIP-POSITION-FLAG-MERGE). Remaining refinement:
+   free-text positions still don't move the Token (no pin to anchor to) — the
    "position uncertain" Token badge stays the open idea.
 6. **A4 escalation — rolling session summary. ✅ shipped (2026-06-15).** A
    maintained, session-scoped prose "story so far" that *complements* the

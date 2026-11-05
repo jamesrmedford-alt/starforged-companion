@@ -18,6 +18,8 @@
  * See issue #228 (Entity → Actor Migration) §4 for the surface that uses this.
  */
 
+import { readSheetPronouns } from '../character/actorBridge.js';
+
 const MODULE_ID = 'starforged-companion';
 
 /**
@@ -172,8 +174,14 @@ export function hasSheetNotes(typeKey) {
 }
 
 /**
- * An entity record with its notes taken from its sheet's Notes tab, for the
- * types that have one (hasSheetNotes) — the record as stored otherwise.
+ * An entity record with the facts its sheet holds taken from the sheet, for
+ * the types that have one (hasSheetNotes) — the record as stored otherwise:
+ * its notes from the Notes tab, and an NPC card's pronouns from its Pronouns
+ * field when that holds a value. The sheet is what the GM edits and what the
+ * seed writes, for pronouns as for notes (issue #335 Y13: a correction made
+ * there reached no narrator surface); an empty field leaves the record's — the
+ * set the narration established, which a card has before its seed fills the
+ * field.
  *
  * @param {string} typeKey
  * @param {ClientDocument|null} document
@@ -182,8 +190,12 @@ export function hasSheetNotes(typeKey) {
  */
 export function withSheetNotes(typeKey, document, data) {
   if (!data || !SHEET_NOTES_TYPES.has(typeKey)) return data;
+  const sheet = {};
   const notes = document?.system?.notes;
-  return typeof notes === 'string' ? { ...data, notes } : data;
+  if (typeof notes === 'string') sheet.notes = notes;
+  const pronouns = typeKey === 'connection' ? readSheetPronouns(document) : '';
+  if (pronouns) sheet.pronouns = pronouns;
+  return Object.keys(sheet).length ? { ...data, ...sheet } : data;
 }
 
 /**
@@ -273,6 +285,115 @@ export async function registerEntityId(campaignState, listKey, id, { label = lis
   if (campaignState[listKey].includes(id)) return false;
   if (persist) await registerEntityIdInStore(listKey, id, label);
   return !campaignState[listKey].includes(id);
+}
+
+/**
+ * Adopt the Actor an earlier creation of this entity made, when the world
+ * refused its registration (issue #337 Y34): an Actor of an Actor-hosted type
+ * carrying the module's record (`entityType` and the type's flag), with this
+ * name and sector, that no id list names — neither the stored campaignState's
+ * nor the caller's copy. It is registered as a new entity would be, and its
+ * record returned; the creator then makes no second card. A retried draft
+ * Confirm made a second "Vex" — the get-or-create of rules/reachability.md §7,
+ * as migrateJournalConnectionsToActors reuses a card by its record id. null
+ * when there is none (or no name to match).
+ *
+ * @param {string} typeKey — an Actor-hosted type: connection, ship, settlement, planet, location
+ * @param {string} listKey — its campaignState id list, e.g. "connectionIds"
+ * @param {string} name
+ * @param {Object} campaignState — the caller's copy
+ * @param {{ sectorId?: string|null, persist?: boolean, label?: string }} [opts]
+ * @returns {Promise<Object|null>} the adopted record; rejects when its registration is refused
+ */
+export async function adoptUnlistedEntityActor(typeKey, listKey, name, campaignState, { sectorId = null, persist = true, label = typeKey } = {}) {
+  if (HOST_COLLECTION[typeKey] !== 'actor' || !campaignState || typeof campaignState !== 'object') return null;
+  const target = String(name ?? '').trim().toLowerCase();
+  if (!target) return null;
+  const listed = listedEntityIds(listKey, campaignState);
+  for (const { document, data } of iterEntityDocuments(typeKey)) {
+    if (!document?.id || listed.has(document.id)) continue;
+    if (document.flags?.[MODULE_ID]?.entityType !== typeKey) continue;
+    if (String(document.name ?? '').trim().toLowerCase() !== target) continue;
+    if ((data?.sectorId || null) !== (sectorId || null)) continue;
+    if (await registerEntityId(campaignState, listKey, document.id, { label, persist })) {
+      campaignState[listKey].push(document.id);
+    }
+    console.log(`${MODULE_ID} | ${label}: adopted the unregistered card "${document.name}" (${document.id})`);
+    return data;
+  }
+  return null;
+}
+
+/**
+ * The journal-hosted twin of adoptUnlistedEntityActor (known-issues
+ * JOURNAL-ORPHAN-ON-REFUSAL): a faction or creature lives on a JournalEntry
+ * its creator makes before the id-list write (issue #331 X35's order), and a
+ * refused write left an entry no list names — the retried draft Confirm made
+ * a second one. The unlisted entry of `typeKey` (`entityType` on the entry,
+ * the type's flag on its page) whose record bears this name is registered as
+ * a new entity would be, and its record returned; the creator makes no
+ * second. The name matches case-blind, else by `opts.nameKey` — a faction's
+ * identity key (faction.factionNameKey, issue #336 Y31), so "The Iron
+ * Syndicate" is the Iron Syndicate's — an exact name first, as
+ * findFactionByName. null when there is none (or no name to match).
+ *
+ * @param {string} typeKey — a journal-hosted type: faction, creature
+ * @param {string} listKey — its campaignState id list, e.g. "factionIds"
+ * @param {string} name
+ * @param {Object} campaignState — the caller's copy
+ * @param {{ label?: string, nameKey?: (name: string) => string }} [opts]
+ * @returns {Promise<Object|null>} the adopted record; rejects when its registration is refused
+ */
+export async function adoptUnlistedEntityJournal(typeKey, listKey, name, campaignState, { label = typeKey, nameKey = caseBlindName } = {}) {
+  if (HOST_COLLECTION[typeKey] !== 'journal' || !campaignState || typeof campaignState !== 'object') return null;
+  const exact = caseBlindName(name);
+  const key   = nameKey(name);
+  if (!exact || !key) return null;
+  const listed = listedEntityIds(listKey, campaignState);
+  let match = null;
+  for (const { document, data } of iterEntityDocuments(typeKey)) {
+    if (!document?.id || listed.has(document.id)) continue;
+    if (document.flags?.[MODULE_ID]?.entityType !== typeKey) continue;
+    const recordName = data?.name || document.name;
+    if (caseBlindName(recordName) === exact) { match = { document, data }; break; }
+    if (!match && nameKey(recordName) === key) match = { document, data };
+  }
+  if (!match) return null;
+  if (await registerEntityId(campaignState, listKey, match.document.id, { label })) {
+    campaignState[listKey].push(match.document.id);
+  }
+  console.log(`${MODULE_ID} | ${label}: adopted the unregistered journal "${match.document.name}" (${match.document.id})`);
+  return match.data;
+}
+
+/** A name trimmed and lowercased — "" for none. */
+function caseBlindName(name) {
+  return String(name ?? '').trim().toLowerCase();
+}
+
+/** The ids `listKey` names, in the stored campaignState or the caller's copy. */
+function listedEntityIds(listKey, campaignState) {
+  const stored = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState') ?? {};
+  return new Set([
+    ...(Array.isArray(stored?.[listKey]) ? stored[listKey] : []),
+    ...(Array.isArray(campaignState?.[listKey]) ? campaignState[listKey] : []),
+  ]);
+}
+
+/**
+ * Tell the GM a new entity's registration was refused (issue #337 Y34): the
+ * Actor exists — the Entities panel shows it — but no list names it, so the
+ * narrator and every list-driven reader skip it until the next world load
+ * registers it (migrator.registerUnlistedEntityActors). It was a console
+ * warning only.
+ *
+ * @param {string} kind — e.g. "starship"
+ * @param {string} [name]
+ */
+export function warnEntityNotRegistered(kind, name) {
+  const named = name ? ` "${name}"` : '';
+  globalThis.ui?.notifications?.warn?.(
+    `The ${kind}${named} was not registered — the world did not save it. Loading the world again registers it.`);
 }
 
 export async function registerEntityIdInStore(listKey, id, label = listKey) {

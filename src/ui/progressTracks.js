@@ -18,6 +18,7 @@ import { createClock, retireClock, removeClock, clocksFingerprint } from '../clo
 import { requestGmAction } from '../multiplayer/gmRelay.js';
 import { isTrackPosition, combatPositionFor } from '../moves/combat.js';
 import { resolveUserActorId } from '../multiplayer/speaker.js';
+import { replaceKeepingInput } from './keepTypedInput.js';
 
 /**
  * A track's label (or any text) for HTML: a name holding markup — a player can
@@ -562,9 +563,10 @@ export class ProgressTrackApp extends ApplicationV2 {
 
   /** @override */
   _replaceHTML(result, content, _options) {
-    // Replace inner content without destroying the window chrome.
-    content.innerHTML = '';
-    content.append(result);
+    // Replace inner content without destroying the window chrome — keeping
+    // the add form's typed name, type and rank across a hook's re-render
+    // (issue #337 Y45).
+    replaceKeepingInput(content, result, { fields: '.add-track-fields [name]' });
   }
 
   // -----------------------------------------------------------------------
@@ -629,8 +631,13 @@ export class ProgressTrackApp extends ApplicationV2 {
    * canonical GM's own click gets back is shown; a write that throws is
    * reported. (A relayed edit is fire-and-forget: it lands — and every open
    * panel re-renders — when the GM's write reaches the journal.)
+   *
+   * @returns {Promise<boolean>} false when the edit was not made — no GM is
+   *   connected, the canonical GM declined it, or its write threw; true when
+   *   it was made or relayed (a relayed edit's answer never comes back)
    */
   static async #requestEdit(app, edit) {
+    let made = false;
     try {
       const res = await requestGmAction('progressTrack.edit', edit);
       const reason = res?.result?.applied === false ? res.result.reason : null;
@@ -638,11 +645,13 @@ export class ProgressTrackApp extends ApplicationV2 {
       if (reason && reason !== 'clock') {
         ui.notifications?.warn?.(`Starforged Companion: ${EDIT_REFUSAL_TEXT[reason] ?? 'the track was not changed.'}`);
       }
+      made = res?.ok !== false && res?.result?.applied !== false;
     } catch (err) {
       console.error(`${MODULE_ID} | progress track "${edit.op}" failed:`, err);
       ui.notifications?.error?.('Starforged Companion: the progress track change could not be saved — see the console.');
     }
     app.render();
+    return made;
   }
 
   /**
@@ -740,6 +749,10 @@ export class ProgressTrackApp extends ApplicationV2 {
   /**
    * Add a new track from the input fields at the top of the panel. The GM
    * creates it — and a scene challenge's paired clock (addProgressTrack).
+   * The name is cleared at the press, so a second press while the add is in
+   * flight adds nothing twice; an add that was not made gives the form back
+   * what was submitted (known-issues TRACK-ADD-REFUSED-LOSES-NAME — the
+   * typed name was lost).
    */
   static #onAddTrack(_event, _target) {
     const work = (async () => {
@@ -754,13 +767,34 @@ export class ProgressTrackApp extends ApplicationV2 {
         return;
       }
 
+      const submitted = { newLabel: labelInput.value, newType: typeSelect.value, newRank: rankSelect.value };
       labelInput.value = '';
-      await ProgressTrackApp.#requestEdit(this, {
-        op: 'add', label, type: typeSelect.value, rank: rankSelect.value,
+      const made = await ProgressTrackApp.#requestEdit(this, {
+        op: 'add', label, type: submitted.newType, rank: submitted.newRank,
       });
+      if (!made) ProgressTrackApp.#restoreAddForm(this, submitted);
     })();
     this._lastAction = work;
     return work;
+  }
+
+  /**
+   * Put an add that was not made back in the form — on the live form (the
+   * panel's re-render may already have replaced the one pressed; Y45's
+   * replaceKeepingInput carries the values either way), and only while its
+   * name is still empty: a name typed since is another entry, and is kept.
+   *
+   * @param {ProgressTrackApp} app
+   * @param {{ newLabel: string, newType: string, newRank: string }} submitted
+   */
+  static #restoreAddForm(app, submitted) {
+    const panel = app.element?.querySelector?.('.sf-progress-panel');
+    const name  = panel?.querySelector?.('[name="newLabel"]');
+    if (!name || name.value.trim()) return;
+    for (const [field, value] of Object.entries(submitted)) {
+      const el = panel.querySelector(`[name="${field}"]`);
+      if (el) el.value = value;
+    }
   }
 
   // (The old #syncConnectionEntity hook was removed in the 2026-07 soft-spot

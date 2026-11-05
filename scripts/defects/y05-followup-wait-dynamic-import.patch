@@ -1,0 +1,26 @@
+Defect: Y05 follow-up (issue #335) — the oracle follow-up reaches its trigger-vignette wait through a dynamic import, a module load no queued wait sees, so the narration runs after the caller's turn
+Tests: tests/unit/oracleFollowup.test.js
+Catches: on the keyed canonical GM itself the narration runs locally through the relay queue
+
+diff --git a/src/oracles/oracleFollowup.js b/src/oracles/oracleFollowup.js
+index 6ea78c7..b7f7b30 100644
+--- a/src/oracles/oracleFollowup.js
++++ b/src/oracles/oracleFollowup.js
+@@ -29,7 +29,6 @@ import { requestGmAction } from "../multiplayer/gmRelay.js";
+ import { hasKeyedActiveGM, isCanonicalGM } from "../multiplayer/gmGate.js";
+ import { isPlayerCharacterActor } from "../character/actorBridge.js";
+ import { requesterOwnsActor } from "../moves/burnMomentum.js";
+-import { triggerVignettesSettled } from "../clocks/payThePriceClocks.js";
+ 
+ const MODULE_ID = "starforged-companion";
+ 
+@@ -127,8 +126,7 @@ async function runOracleFollowup(args) {
+     // filling a tension clock fires both): the follow-up continues its scene,
+     // read with its beat in it (issue #335 Y05). Bounded; nothing in flight —
+     // every other follow-up, and any off the canonical GM — waits for nothing.
+-    // Imported statically: a module load on this path is real I/O no queued
+-    // wait can see, and the narration ran only after it.
++    const { triggerVignettesSettled } = await import("../clocks/payThePriceClocks.js");   // DEFECT: a module load on the path
+     await triggerVignettesSettled();
+     const { narrateOracleFollowup } = await import("../narration/narrator.js");
+     // A working copy: the narration mints a scene and applies its sidecar on

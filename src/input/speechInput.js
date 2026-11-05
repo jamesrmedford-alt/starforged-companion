@@ -18,7 +18,10 @@
  * Auto-inject:
  *   On recognition end, transcription is written directly into the Foundry
  *   chat textarea and submitted. The chat input remains available as a
- *   fallback — if the transcription is wrong, the player can retype.
+ *   fallback — if the transcription is wrong, the player can retype. When
+ *   the box already holds a draft, the transcription is added after it and
+ *   not submitted: the player reviews the line and presses Enter (issue #338
+ *   D9).
  *
  * Browser support:
  *   Chrome / Edge (Chromium): full support
@@ -284,11 +287,20 @@ function createNoOpController() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Inject the transcribed text into the Foundry chat input and submit it.
+ * Inject the transcribed text into the Foundry chat input — and, into an
+ * empty box, submit it.
  *
- * Auto-inject on recognition end — no review step. The player speaks,
- * the text appears in chat and submits. If it's wrong, they retype.
- * Frictionless experience takes priority over error prevention.
+ * Into an empty box: auto-inject on recognition end, no review step. The
+ * player speaks, the text appears in chat and submits; if it's wrong, they
+ * retype.
+ *
+ * Into a box holding a draft: the transcript is added after the draft and
+ * NOT submitted — the player reviews the line and presses Enter. The box
+ * was overwritten and the transcript alone submitted, so the typed half of
+ * the line was lost and a fragment ran through the move pipeline (a roll
+ * cannot be taken back). A draft is the one sign the player is mid-line,
+ * and whether the speech continues it or replaces it is theirs to say
+ * (issue #338 D9, option B).
  *
  * Foundry's chat textarea is #chat-message. Submission is handled by
  * dispatching an Enter keydown event — the same path as manual typing.
@@ -298,6 +310,15 @@ function injectTranscription(transcript) {
     const chatInput = document.querySelector("#chat-message");
     if (!chatInput) {
       console.warn(`${MODULE_ID} | Chat input not found — cannot inject transcription.`);
+      return;
+    }
+
+    const draft = String(chatInput.value ?? "");
+    if (draft.trim()) {
+      chatInput.value = `${draft.trimEnd()} ${transcript}`;
+      chatInput.dispatchEvent(new Event("input", { bubbles: true }));
+      chatInput.focus?.();
+      console.log(`${MODULE_ID} | Transcription added to the draft in the chat box — not submitted: "${transcript}"`);
       return;
     }
 

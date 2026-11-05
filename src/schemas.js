@@ -133,12 +133,18 @@ export const MOVES = {
   undertake_an_expedition:   { category: "exploration", stat: ["edge","shadow","wits"],                              narratorClass: "hybrid"         },
   explore_a_waypoint:        { category: "exploration", stat: ["wits"],                                              narratorClass: "discovery"      },
   finish_an_expedition:      { category: "exploration", stat: null,  progressMove: true,                             narratorClass: "hybrid"         },
-
-  // SCENE CHALLENGE (Starforged p. 241 — issue #326 D6)
-  finish_the_scene:          { category: "scene_challenge", stat: null, progressMove: true,                          narratorClass: "hybrid"         },
   set_a_course:              { category: "exploration", stat: ["supply"],                                            narratorClass: "embellishment" },
   make_a_discovery:          { category: "exploration", stat: null,                                                  narratorClass: "discovery"      },
   confront_chaos:            { category: "exploration", stat: null,                                                  narratorClass: "discovery"      },
+
+  // SCENE CHALLENGE (Starforged pp. 239–241; vendored Starforged/Moves/Scene_Challenge).
+  // Face Danger / Secure an Advantage made within an open scene challenge are
+  // its own moves, scored against it (issue #338 D2); Finish the Scene ends it
+  // (issue #326 D6). Begin the Scene has no move: the Progress Tracks panel's
+  // Add sets up the challenge and its 4-segment clock.
+  face_danger_scene_challenge:         { category: "scene_challenge", stat: ["edge","heart","iron","shadow","wits"], narratorClass: "hybrid" },
+  secure_an_advantage_scene_challenge: { category: "scene_challenge", stat: ["edge","heart","iron","shadow","wits"], narratorClass: "hybrid" },
+  finish_the_scene:          { category: "scene_challenge", stat: null, progressMove: true,                          narratorClass: "hybrid"         },
 
   // COMBAT
   enter_the_fray:            { category: "combat",      stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "interaction"    },
@@ -481,7 +487,12 @@ export const CampaignStateSchema = {
 
   // Concurrency lock — true while the move interpretation pipeline is running.
   // Prevents two narration messages from kicking off parallel pipelines that
-  // would race on campaignState writes. Cleared on ready if left stuck.
+  // would race on campaignState writes. Cleared on ready if left stuck. These
+  // three fields are written by the lock's own paths only (index.js: the
+  // claim, releasePendingMoveLock, the W25 handover, the ready reset); every
+  // other writer takes them from the store, and a claim a stale co-GM write
+  // carries back is put back by its claimant (index.js
+  // restoreLockOverCarriedBackClaim — LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
   pendingMove: false,
   // The user id of the GM whose pipeline claimed the lock: when that GM
   // disconnects, the next canonical GM releases it (index.js
@@ -588,8 +599,10 @@ export const CampaignStateSchema = {
   // Bare strikes of this session's ended scenes (issue #286 B6), so the
   // CORRECTED block and the rolling-summary prompt keep naming them after
   // their scene closes. Written by endScene (rememberSessionRetractions);
-  // read by sessionRetractedFacts (src/factContinuity/retractions.js).
-  //   { sessionId, facts: [{ label, fact, sceneId, at }] }  (cap 20)
+  // read by sessionRetractedFacts (src/factContinuity/retractions.js); an
+  // X-Card drops the strikes of the narration it removes, by `narrationId`
+  // (ledgers.js retractNarrations).
+  //   { sessionId, facts: [{ label, fact, sceneId, at, narrationId }] }  (cap 20)
   sessionRetractions: { sessionId: null, facts: [] },
 
   // Narrator rotating spotlight (issue #232). Per-scene round-robin pointer

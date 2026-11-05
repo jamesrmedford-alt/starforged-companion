@@ -25,6 +25,7 @@ import {
   readEntityFlag,
   writeEntityFlag,
   registerEntityId,
+  adoptUnlistedEntityActor,
 } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
@@ -69,6 +70,12 @@ export const LocationSchema = {
 
 
 export async function createLocation(data, campaignState, { persist = true } = {}) {
+  // The location an earlier creation of this name made in this sector, whose
+  // registration the world refused, is adopted, never a second one (issue #337 Y34).
+  const adopted = await adoptUnlistedEntityActor(FLAG_KEY, "locationIds", data?.name, campaignState,
+    { sectorId: data?.sectorId ?? campaignState?.activeSectorId ?? null, persist, label: "location" });
+  if (adopted) return adopted;
+
   const now = new Date().toISOString();
   const id  = generateId();
   // The location's class (planetside / orbital / deep space) is the native

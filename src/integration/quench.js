@@ -220,7 +220,9 @@ Hooks.on("quenchReady", (quench) => {
   // them surfaces here. Parametric across all 14 impact counts (0–13)
   // for both momentumMax (rule 1.6) and momentumReset (rule 1.7), plus
   // the canonical-impact-list contract (rule 1.14: 10 Starforged + 3
-  // Ironsworn-classic vendor extras; legacy custom1/custom2 ignored).
+  // Ironsworn-classic vendor extras named by readDebilities; the sheet's
+  // custom1/custom2 impacts are not named there, though they count toward
+  // the bounds).
   registerMomentumImpactMathTests(quench);
   // Momentum math — rules 1.3 / 1.4 / 1.5 (cap, burn reset, negative
   // cancellation). Priority 7 of the rulebook audit. Pure-function
@@ -8800,15 +8802,28 @@ function registerCombatCardButtonTests(quench) {
       }
 
       describe("Take Decisive Action button (combat move result cards)", function () {
-        it("clicking it posts a forced take_decisive_action message", async function () {
+        // The press relays to the canonical GM, which claims the card it finds
+        // in game.messages (`decisiveActionAttempted`) and posts the move once,
+        // as the card's roller (issue #338 D1) — so the card is a real message here.
+        async function postStrikeCard(flags) {
+          const card = await ChatMessage.create({
+            content: `<div class="sf-move-result"><div class="sf-combat-followup">`
+              + `<button type="button" data-action="sf-take-decisive-action">⚔ Attempt to Finish the Fight</button></div></div>`,
+            flags: { [MODULE]: { combatMoveCard: true, ...flags } },
+          });
+          track(card?.id);
+          return game.messages.get(card.id) ?? card;
+        }
+
+        it("clicking it posts a forced take_decisive_action message, once per card", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
+          const msg = await postStrikeCard({});
 
           const root = document.createElement("div");
           root.innerHTML = `<div class="sf-move-result">`
             + `<div class="sf-combat-followup"><button type="button" data-action="sf-take-decisive-action">⚔ Take Decisive Action</button></div></div>`;
-          const msg = { id: "quench-tda-btn", flags: { [MODULE]: { combatMoveCard: true } } };
-
           wireTakeDecisiveActionButton(msg, root);
           const btn = root.querySelector('[data-action="sf-take-decisive-action"]');
           assert.isOk(btn, "the wired button should still be present in the root");
@@ -8822,18 +8837,17 @@ function registerCombatCardButtonTests(quench) {
             "expected a synthetic message with flags[MODULE].forcedMoveId === 'take_decisive_action'");
           assert.isTrue(synthetic.flags[MODULE].bypassPacing,
             "the forced TDA message should bypass the pacing classifier");
+          assert.isOk(game.messages.get(msg.id)?.flags?.[MODULE]?.decisiveActionAttempted, "the card is claimed");
         });
 
         it("a card that names its fight forwards it with the move (TDA-BUTTON-NO-TARGET)", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
+          const msg = await postStrikeCard({ combatTrackId: "quench-fight-turret", combatTrackLabel: "Turret" });
 
           const root = document.createElement("div");
           root.innerHTML = `<div class="sf-combat-followup"><button type="button" data-action="sf-take-decisive-action">⚔ Attempt to Finish the Fight: Turret</button></div>`;
-          const msg = { id: "quench-tda-named", flags: { [MODULE]: {
-            combatMoveCard: true, combatTrackId: "quench-fight-turret", combatTrackLabel: "Turret",
-          } } };
-
           wireTakeDecisiveActionButton(msg, root);
           const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
           root.querySelector('[data-action="sf-take-decisive-action"]')
@@ -8927,8 +8941,12 @@ function registerCombatCardButtonTests(quench) {
       });
 
       describe("Which fight? card (a Take Decisive Action that names no fight)", function () {
-        it("a pick posts the move with that fight's id, spoken as the original roller", async function () {
+        // The pick relays to the canonical GM, which claims the card it finds in
+        // game.messages (`whichFightPicked`) and posts the move once, as the
+        // roller (known-issues PACED-ROLL-OPEN-PRESS) — so the card is a real message here.
+        it("a pick posts the move with that fight's id, spoken as the original roller, once per card", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireWhichFightButtons } = await import(`${MODULE_PATH}/index.js`);
           const roller = (game.actors?.contents ?? []).find(a => a.type === "character" && !a.flags?.[MODULE]?.entityType) ?? null;
 
@@ -8936,11 +8954,16 @@ function registerCombatCardButtonTests(quench) {
           root.innerHTML = `<div class="sf-milestone-suggest-row">`
             + `<button type="button" data-action="sf-which-fight" data-track-id="quench-fight-boarders">Boarders</button>`
             + `<button type="button" data-action="sf-which-fight" data-track-id="quench-fight-turret">Turret</button></div>`;
-          const msg = { id: "quench-which-fight", flags: { [MODULE]: {
-            whichFightCard: true, moveId: "take_decisive_action", narration: "I take decisive action.",
-            actorId: roller?.id ?? null,
-            fights: [{ id: "quench-fight-boarders", label: "Boarders" }, { id: "quench-fight-turret", label: "Turret" }],
-          } } };
+          const card = await ChatMessage.create({
+            content: `<div class="sf-ptp-card">${root.innerHTML}</div>`,
+            flags: { [MODULE]: {
+              whichFightCard: true, moveId: "take_decisive_action", narration: "I take decisive action.",
+              actorId: roller?.id ?? null,
+              fights: [{ id: "quench-fight-boarders", label: "Boarders" }, { id: "quench-fight-turret", label: "Turret" }],
+            } },
+          });
+          track(card?.id);
+          const msg = game.messages.get(card.id) ?? card;
 
           wireWhichFightButtons(msg, root);
           const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
@@ -8956,6 +8979,8 @@ function registerCombatCardButtonTests(quench) {
           for (const b of root.querySelectorAll('[data-action="sf-which-fight"]')) {
             assert.isTrue(b.disabled, "one pick per card: every button disables");
           }
+          assert.equal(game.messages.get(msg.id)?.flags?.[MODULE]?.whichFightPicked, "quench-fight-turret",
+            "the card is claimed with the pick");
         });
       });
 
@@ -9021,6 +9046,39 @@ function registerCombatCardButtonTests(quench) {
               "no forced-move bridge fires while the session gate is closed");
           } finally {
             await game.settings.set(MODULE, "campaignState", { ...(game.settings.get(MODULE, "campaignState") ?? {}), sessionActive: priorActive });
+          }
+        });
+
+        // Issue #338 D2: within an open challenge, Face Danger / Secure an
+        // Advantage are its own moves, scored on the challenge's track and its
+        // clock — here on the live journal and campaign-state stores (the unit
+        // suite pins the pipeline hop and the upgrades).
+        it("a scene-challenge move's weak hit marks the challenge and fills its clock on the live stores", async function () {
+          if (!game.user.isGM) { this.skip(); return; }
+          this.timeout(20000);
+          const pt = await import(`${MODULE_PATH}/ui/progressTracks.js`);
+          const { scoreSceneChallenge } = await import(`${MODULE_PATH}/moves/sceneChallenge.js`);
+          const { adjustClockSegments } = await import(`${MODULE_PATH}/clocks/clocks.js`);
+          const { mapConsequences } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          const label = `Quench Scene Variant ${foundry.utils.randomID(4)}`;
+          const created = await pt.addProgressTrack({ label, type: "scene_challenge", rank: "dangerous" });
+          try {
+            assert.isOk(created.tensionClockId, "the challenge was set up with its 4-segment clock");
+            const weak = mapConsequences("face_danger_scene_challenge", "weak_hit", false);
+            const scored = await scoreSceneChallenge({ moveTarget: label },
+              { marks: weak.sceneProgress, segments: weak.sceneSegments }, {
+                listTracks:   () => pt.listProgressTracks(),
+                getTrack:     (id) => pt.getProgressTrack(id),
+                markProgress: (id, times) => pt.markProgressById(id, times),
+                adjustClock:  (id, delta) => adjustClockSegments(id, delta),
+              });
+            assert.equal(scored.track?.id, created.id, "the move scores the challenge it names");
+            assert.equal((await pt.getProgressTrack(created.id))?.ticks, 8, "one mark on a dangerous challenge is 8 ticks");
+            const clock = (game.settings.get(MODULE, "campaignState")?.clocks ?? []).find(c => c._id === created.tensionClockId);
+            assert.equal(clock?.filled, 1, "the weak hit fills one segment of the challenge's clock");
+          } finally {
+            await pt.applyProgressTrackEditFromRelay({ op: "remove", trackId: created.id }, { requesterIsGM: true })
+              .catch(() => {});
           }
         });
       });
@@ -9370,7 +9428,7 @@ function registerStarshipNarratedNotesTests(quench) {
                   assert.isTrue(ok, "Notes should contain the stubbed Sonnet prose paragraph");
 
                   const fresh = game.actors.get(actor.id);
-                  assert.notInclude(fresh.system.notes, "<ul>",
+                  assert.notMatch(fresh.system.notes, /<ul\b/,
                     "prose path should not emit the oracle bullet list");
                   assert.include(fresh.system.notes, "&middot;",
                     "the compact fact-line separator should be present");
@@ -9400,8 +9458,8 @@ function registerStarshipNarratedNotesTests(quench) {
                 "without a key the bullet-list fallback should populate Notes");
 
               const fresh = game.actors.get(actor.id);
-              assert.include(fresh.system.notes, "<ul>",
-                "fallback path emits the bullet list");
+              assert.match(fresh.system.notes, /<ul\b/,
+                "fallback path emits the bullet list (marked as the seed's own — issue #338 D4)");
             });
           });
         });
@@ -9751,7 +9809,9 @@ function registerCoreResolverMatrixTests(quench) {
 //   1.14 Canonical 13-impact list (10 Starforged play-kit + 3
 //        Ironsworn-classic vendor extras: corrupted/encumbered/maimed).
 //        — Playkit doc §3.1.3 flagged readDebilities reading
-//          custom1/custom2. Those legacy fields are now ignored.
+//          custom1/custom2. It names the 13; the vendor's custom1/custom2
+//          impacts (named by custom1name/custom2name) count toward the
+//          momentum bounds (actorBridge countImpacts) but are not named.
 //
 // Unit tests in tests/unit/actorBridge.test.js cover the formula
 // against a stubbed Foundry Actor. This batch re-pins the same
@@ -9933,7 +9993,7 @@ function registerMomentumImpactMathTests(quench) {
           }
         });
 
-        it("readDebilities ignores legacy custom1 / custom2 fields", async function () {
+        it("readDebilities does not name the sheet's custom1 / custom2 impacts", async function () {
           this.timeout(10000);
           const { readDebilities } = await import(`${MODULE_PATH}/character/actorBridge.js`);
           const actor = await Actor.create({
@@ -9947,9 +10007,9 @@ function registerMomentumImpactMathTests(quench) {
           trackActor(actor.id);
           const debs = readDebilities(actor);
           assert.notProperty(debs, "custom1",
-            "readDebilities must not surface legacy custom1 (playkit §3.1.3)");
+            "readDebilities must not name custom1 — the sheet names it (custom1name)");
           assert.notProperty(debs, "custom2",
-            "readDebilities must not surface legacy custom2 (playkit §3.1.3)");
+            "readDebilities must not name custom2 — the sheet names it (custom2name)");
         });
 
         it("readDebilities returns exactly the canonical key set (no rogue keys)", async function () {

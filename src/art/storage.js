@@ -6,6 +6,7 @@
  * - Store base64 image data as a Foundry journal entry
  * - Retrieve asset records by ID
  * - Manage the asset index in campaign state
+ * - Delete an entity's portraits with the entity (deleteEntityArtAssets)
  * - Provide a data URI for rendering in Foundry UI panels
  *
  * Storage format:
@@ -25,6 +26,8 @@
  *   1792×1024 (ships/planets) ≈ 1.5–3 MB base64. Still fine.
  *   A full campaign with 20 entities ≈ 20–60 MB of journal data. Manageable.
  */
+
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID   = "starforged-companion";
 const FLAG_KEY    = "artAsset";
@@ -63,7 +66,16 @@ export async function storeArtAsset(asset, campaignState) {
   // The store first, the caller's copy once the world took it: the copy is
   // often the cached setting, and a refused write left the GM's index
   // naming an asset the world never registered (issue #331 X35).
-  await registerArtAssetInStore(asset._id, entryName);
+  // A refused index write is not the asset's loss: its journal entry holds
+  // it, where loadArtAsset finds it by its flags. The caller goes on to link
+  // the portrait to its entity — the refusal aborted that, so the entity kept
+  // no portraitId and its next Finalise paid for another (issue #337 Y34).
+  try {
+    await registerArtAssetInStore(asset._id, entryName);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | art/storage: portrait ${asset._id} kept unindexed — it is found by its journal entry:`, err?.message ?? err);
+    return asset;
+  }
   if (!campaignState.artAssetIds) campaignState.artAssetIds = {};
   campaignState.artAssetIds[asset._id] = entryName;
   return asset;
@@ -110,6 +122,72 @@ export async function loadArtAsset(assetId, campaignState = null) {
     return null;
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// DELETE
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Delete an entity's portraits with the entity — every "Art: …" journal entry
+ * holding an asset generated for it (a superseded one too; the asset's own
+ * `entityType` / `entityId`, plus the record's `portraitId`) and their entries
+ * in the art index. The X-Card's removal of a connection its narration
+ * created deleted the NPC card and left its portrait behind, an orphan in the
+ * Art Cache folder that nothing links to (connection.
+ * retractNarrationConnections, issue #338 D6(ii) —
+ * XCARD-CONNECTION-PORTRAIT-ORPHAN). The image file the portrait was uploaded
+ * as stays: the client has no file delete.
+ *
+ * Canonical GM only (single emitter). The index write is a copy of the latest
+ * stored campaignState with no await between its read and write; a refused
+ * write is logged, never thrown, and leaves index entries no journal entry
+ * answers, which loadArtAsset passes over.
+ *
+ * @param {string} entityType — the asset's entityType ("connection", …)
+ * @param {string} entityId   — the entity record's `_id` (the asset's entityId)
+ * @param {{ portraitId?: string|null }} [opts] — the record's linked portrait
+ * @returns {Promise<number>} journal entries deleted
+ */
+export async function deleteEntityArtAssets(entityType, entityId, { portraitId = null } = {}) {
+  if (!entityType || !entityId || !isCanonicalGM()) return 0;
+  const owned = (entry) => {
+    if (entry?.flags?.[MODULE_ID]?.entityType !== "artAsset") return false;
+    const asset = readAssetFromEntry(entry);
+    if (asset?.entityType === entityType && asset?.entityId === entityId) return true;
+    return !!portraitId && (asset?._id === portraitId || entry.flags[MODULE_ID].assetId === portraitId);
+  };
+  const entries = (game.journal?.contents ?? []).filter(owned);
+
+  const gone = new Set();
+  let deleted = 0;
+  for (const entry of entries) {
+    const assetId = entry.flags?.[MODULE_ID]?.assetId ?? readAssetFromEntry(entry)?._id ?? null;
+    try {
+      await entry.delete();
+      deleted += 1;
+      if (assetId) gone.add(assetId);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | art/storage: deleting the portrait entry "${entry?.name}" failed:`, err?.message ?? err);
+    }
+  }
+  // The linked portrait's index entry goes when no entry holds it any more.
+  if (portraitId && !(game.journal?.contents ?? []).some(owned)) gone.add(portraitId);
+
+  const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const index = latest.artAssetIds ?? {};
+  const drop = [...gone].filter(id => Object.prototype.hasOwnProperty.call(index, id));
+  if (drop.length) {
+    const next = { ...index };
+    for (const id of drop) delete next[id];
+    try {
+      await game.settings.set(MODULE_ID, "campaignState", { ...latest, artAssetIds: next });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | art/storage: dropping ${drop.length} deleted portrait(s) from the art index failed — the entries name nothing now:`, err?.message ?? err);
+    }
+  }
+  return deleted;
+}
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // RENDERING

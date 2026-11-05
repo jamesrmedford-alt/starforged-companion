@@ -141,7 +141,9 @@ sidecar's truths, state and frame onto it (`ensureSceneStarted`,
 fields on it. A caller that narrates from the store gives it a working copy —
 `foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState"))` — as
 the oracle follow-up, `@scene`, the clock vignettes and the relayed sidecar do
-(issue #329 X09).
+(issue #329 X09), and the session vignettes, ✦ Envision Inciting Incident
+(`!incite`, the Session panel, Campaign Start) and a sheet roll's narration
+(issue #335 Y04).
 
 **Specific things confirmed to have changed in v13 — always verify:**
 

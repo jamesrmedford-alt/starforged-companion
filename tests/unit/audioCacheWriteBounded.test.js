@@ -11,6 +11,10 @@
  * #326 W81 closed for `audio.synth.request` only). Decided (option A): keep
  * the path, bound it — only a narrator card segment's key, never over an
  * existing clip.
+ *
+ * The GM here holds no ElevenLabs key: the relay serves a keyed player at a
+ * keyless GM's table, and a GM with a key files no relayed clip at all
+ * (issue #338 D10, tests/unit/audioCacheRelayKeyedGm.test.js).
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
@@ -34,7 +38,7 @@ beforeEach(() => {
   FP()._reset();
   _resetAudioCacheStateForTests();
   _resetSynthStateForTests();
-  game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, "sk_gm_key");
+  game.settings._store.delete(`${MODULE_ID}.elevenLabsApiKey`);   // a keyless GM (issue #338 D10)
   game.settings._store.set(`${MODULE_ID}.audio.narratorVoiceId`, WORLD.narratorVoiceId);
   game.settings._store.set(`${MODULE_ID}.audio.npcVoiceId`, WORLD.npcVoiceId);
   game.settings._store.set(`${MODULE_ID}.audio.modelId`, WORLD.modelId);
