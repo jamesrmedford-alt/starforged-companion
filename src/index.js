@@ -4461,19 +4461,39 @@ async function postRecommittedCard(label, dice, plan, what, flags) {
   }).catch(err => console.warn(`${MODULE_ID} | recommit card failed:`, err?.message ?? err));
 }
 
+/** The short card a recommit of a fulfilled vow gets: nothing was recommitted. */
+async function postVowRecommitFulfilledCard(vowName) {
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>🔁 Recommit to the Vow</strong>`
+      + `<p><strong>${escapeChatHtml(vowName ?? "That vow")}</strong> is already fulfilled — nothing was recommitted.</p></div>`,
+    flags: { [MODULE_ID]: { vowRecommitFulfilledCard: true, vowName: vowName ?? null } },
+  }).catch(err => console.warn(`${MODULE_ID} | vow recommit: the fulfilled-vow card failed:`, err?.message ?? err));
+}
+
 /**
  * GM-side: recommit to a vow after a Fulfill Your Vow miss (issue #330 D1) —
  * the offer card's claim (cardActions.applyVowRecommitOffer, gmRelay
  * "vow.recommit") runs it once per card. Rolls the challenge dice once and
- * writes the plan to every copy of the roller's vow (by its vowId — a shared
- * vow is one vow) and to its journal twin, the rank stepped once, never past
- * epic. The roller's copy is written first: refused, nothing changed.
+ * writes the plan to every open copy of the roller's vow (by its vowId — a
+ * shared vow is one vow) and to its journal twin, the rank stepped once,
+ * never past epic. The roller's copy is written first: refused, nothing
+ * changed. A vow fulfilled since the offer posted — a later roll, a
+ * crewmate's fulfilment, the sheet — is refused (`vow-completed`, a short
+ * card): a fulfilled vow's track never moves (issue #331 X20's rule), and the
+ * press lowered it and raised its rank on every copy (issue #335 Y10). Its
+ * move cannot be burned or improved (a progress roll), so nothing else
+ * retires the offer.
  *
  * @param {{ vowName?: string|null, itemId?: string|null, actorId?: string|null }} vow
- * @returns {Promise<{ ok: boolean, reason?: "no-vow"|"write-refused" }>}
+ * @returns {Promise<{ ok: boolean, reason?: "no-vow"|"vow-completed"|"write-refused" }>}
  */
 export async function performVowRecommit({ vowName = null, itemId = null, actorId = null } = {}) {
   const { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId });
+  if (primary?.item?.system?.completed === true) {
+    console.warn(`${MODULE_ID} | vow recommit: "${primary.item.name ?? vowName ?? "?"}" is fulfilled — nothing recommitted.`);
+    await postVowRecommitFulfilledCard(primary.item.name ?? vowName);
+    return { ok: false, reason: "vow-completed" };
+  }
   let twin = null;
   try {
     twin = selectVowTrack((await listProgressTracks()).filter(t => !t.completed), primary?.item?.name ?? vowName);
@@ -4493,6 +4513,7 @@ export async function performVowRecommit({ vowName = null, itemId = null, actorI
     if (!first.ok) return { ok: false, reason: "write-refused" };
     for (const { actor, item } of copies) {
       if (item.id === primary.item.id && actor?.id === primary.actor?.id) continue;
+      if (item.system?.completed === true) continue;   // a fulfilled copy's track never moves
       const res = await setVowItemTrack(actor, item.id, next);
       if (!res.ok) console.warn(`${MODULE_ID} | vow recommit: ${actor?.name ?? "a"} copy was not changed (${res.reason}).`);
     }

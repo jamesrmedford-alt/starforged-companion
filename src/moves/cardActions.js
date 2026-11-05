@@ -756,7 +756,8 @@ export async function applyRecommitOffer(payload = {}, _ctx = {}) {
  * before the recommit, behind the in-flight guard, as an expedition's is
  * (applyRecommitOffer). The vow or bond is the roller's: their player or a
  * GM may press it. A write the world refused changed nothing and releases
- * the claim.
+ * the claim; a vow fulfilled or a bond forged since the miss leaves the
+ * offer closed (issue #335 Y10).
  *
  * @param {{ messageId?: string }} payload
  * @param {Object} [ctx]

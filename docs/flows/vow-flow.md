@@ -262,7 +262,12 @@ roller's player or a GM and claims the card (`recommitted`) before
 writes every open copy of the roller's vow (`resolveVowItemCopies`; the
 roller's first — refused, nothing changed and the claim released) and its
 journal twin: the lowest die's boxes cleared and the rank stepped once, as
-the Item holds it (a vendor number or a name — `setVowItemTrack`). A miss
+the Item holds it (a vendor number or a name — `setVowItemTrack`). A vow
+fulfilled since the miss (a later roll, a crewmate's fulfilment, the sheet)
+is refused with a short card and the offer stays closed — a fulfilled vow's
+track never moves, and the press lowered it and raised its rank on every
+copy (issue #335 Y10); a completed copy is never written. The miss is a
+progress roll, never burned or improved, so no upgrade retires the offer. A miss
 rolled on the sheet gets the same offer, for the roller's vow Item of the
 roll's name (`registerNativeFulfilConsequenceHook` → `offerSheetMissRecommit`,
 issue #331 X62 — the hook acted on hits only, so the player recommitted by
