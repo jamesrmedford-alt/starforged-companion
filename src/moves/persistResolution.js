@@ -59,10 +59,11 @@ const MODULE_ID  = 'starforged-companion';
  *   vehicle (`vehicleActorId`, Withstand Damage's integrity), the
  *   companion (`companionItemId`, Companion Takes a Hit's health) and the
  *   fight (`combatTrackId`, Gain Ground's "mark progress")
- * @returns {Promise<{ actor: Actor|null, campaignState: Object, meterFailures: Array<Object> }>}
- *   `meterFailures`: the meter changes the world refused (see applyMetersOrNote) —
- *   the record was still written. A refused record throws `moveRecordRefused`,
- *   carrying them as its `meterFailures`.
+ * @returns {Promise<{ actor: Actor|null, campaignState: Object, meterFailures: Array<Object>, cardFailures: Array<Object> }>}
+ *   `meterFailures`: the meter changes the world refused (see applyMetersOrNote);
+ *   `cardFailures`: the suffer-choice card the world refused, a `choiceCard`
+ *   step (resolveSufferPrompt) — the record was still written. A refused
+ *   record throws `moveRecordRefused`, carrying both.
  */
 export async function persistResolution(resolution, campaignState, speakerActorId = null, targets = {}) {
   // 2–4: Apply mechanical consequences to the rolling player's Actor.
@@ -85,7 +86,10 @@ export async function persistResolution(resolution, campaignState, speakerActorI
   // or site reveal on the working copy was lost under the pipeline's "check
   // your API key" (issue #336 Y16). It is noted here and goes on the GMs'
   // payoff failure card with a Retry, as the record's own steps do (X18).
+  // So does the suffer-choice card the world refuses (ERROR-TEXT-BLAMES-KEY):
+  // its post's refusal was swallowed, and the cost it carries was never paid.
   const meterFailures = [];
+  const cardFailures  = [];
 
   if (actor) {
     // 2. Meter changes
@@ -110,7 +114,8 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     //    card that resolves the rulebook-mandated player choice into one or
     //    more executor calls on click (see resolveSufferPrompt below).
     if (resolution.consequences.sufferPrompt) {
-      await resolveSufferPrompt(resolution, actor, targets);
+      const unposted = await resolveSufferPrompt(resolution, actor, targets);
+      if (unposted) cardFailures.push(unposted);
     }
   }
 
@@ -137,6 +142,7 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     const refused = new Error(`the world did not save the move's record: ${err?.message ?? err}`);
     refused.moveRecordRefused = true;
     refused.meterFailures = meterFailures;
+    refused.cardFailures = cardFailures;
     refused.cause = err;
     throw refused;
   }
@@ -147,7 +153,7 @@ export async function persistResolution(resolution, campaignState, speakerActorI
   payDeferredLegacyXp(campaignState).catch(err =>
     console.warn(`${MODULE_ID} | legacy XP award failed:`, err?.message ?? err));
 
-  return { actor, campaignState: updated, meterFailures };
+  return { actor, campaignState: updated, meterFailures, cardFailures };
 }
 
 /**
@@ -364,13 +370,19 @@ function mergeLegacyTracks(store, working) {
  * up to one nesting level — deeper recursion is rare in practice and
  * deferred to GM adjudication via the route-card affordance.
  *
+ * A card the world refuses comes back as a `choiceCard` step for the GMs'
+ * payoff failure card, whose Retry posts it (index.js runPayoffStep): its
+ * post's refusal was swallowed — the cost it carries was never paid, and
+ * nobody was told (ERROR-TEXT-BLAMES-KEY, the #336 Y16 rule for the meters).
+ *
  * @param {Object} resolution
  * @param {Actor} actor
  * @param {Object} [targets] — persistResolution's: what the choices change
+ * @returns {Promise<Object|null>} the refused card's step, or null when it posted
  */
 async function resolveSufferPrompt(resolution, actor, targets = {}) {
   const prompt = resolution.consequences.sufferPrompt;
-  if (!prompt) return;
+  if (!prompt) return null;
 
   // Map the triggering move's outcome class onto executor opts so the
   // mortal-wound / desolation / vehicle-damage d100 fires only on
@@ -395,13 +407,19 @@ async function resolveSufferPrompt(resolution, actor, targets = {}) {
   // The card carries its resolution: a Burn Momentum or Improve Result that
   // replaces this outcome retires it and offers the new outcome's choice
   // instead (resultUpgrade.js — issue #311 P03).
-  await postSufferChoiceCard({
+  const card = await postSufferChoiceCard({
     sufferPrompt: prompt,
     actor,
     executorOpts,
     moveId: resolution.moveId,
     resolutionId: resolution._id ?? null,
   });
+  if (card) return null;
+  console.error(`${MODULE_ID} | the world did not save ${actor?.name ?? "the roller"}'s choice card from ${resolution.moveName ?? resolution.moveId ?? "the move"}.`);
+  return {
+    step: 'choiceCard', pcId: actor?.id ?? null, moveId: resolution.moveId ?? null, moveName: resolution.moveName ?? null,
+    sufferPrompt: prompt, executorOpts, resolutionId: resolution._id ?? null, reason: 'refused',
+  };
 }
 
 

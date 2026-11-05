@@ -1851,13 +1851,14 @@ export function registerChatHook() {
         // and its meters stand, so the pipeline goes on — what the record
         // carried is on the GMs' card, with a Retry (issue #331 X18). So are
         // the roller's meters when the world refused them, the record saved
-        // or not (issue #336 Y16).
+        // or not (issue #336 Y16), and the move's suffer-choice card
+        // (ERROR-TEXT-BLAMES-KEY).
         try {
           const persisted = await persistResolution(resolution, campaignState, speakerActorId, moveTargets);
-          if (persisted?.meterFailures?.length) {
+          if (persisted?.meterFailures?.length || persisted?.cardFailures?.length) {
             await reportUnsavedMoveRecord(campaignState, {
               actorId: rollerActor?.id ?? null, moveName: resolution.moveName ?? null,
-              recordSaved: true, meterFailures: persisted.meterFailures,
+              recordSaved: true, meterFailures: persisted.meterFailures ?? [], cardFailures: persisted.cardFailures ?? [],
             });
           }
         } catch (err) {
@@ -1865,7 +1866,7 @@ export function registerChatHook() {
           console.error(`${MODULE_ID} | ${err.message}`);
           await reportUnsavedMoveRecord(campaignState, {
             actorId: rollerActor?.id ?? null, moveName: resolution.moveName ?? null, error: String(err.cause?.message ?? err.cause ?? err.message),
-            meterFailures: err.meterFailures ?? [],
+            meterFailures: err.meterFailures ?? [], cardFailures: err.cardFailures ?? [],
           });
         }
         // The original outcome is on the sheet: open the card's Burn Momentum /
@@ -4899,25 +4900,31 @@ function noteUnsavedOnCopy(campaignState, step) {
  * campaignState write: the working copy's legacy marks, arrival and site
  * reveal never reached the world. The roller's meters — the Actor write
  * before it (issue #336 Y16): written apart, so the record was still saved
- * unless it was refused as well (`recordSaved`). Tell the GM running the
- * pipeline which (not the API key — the move resolved), and put each owed
- * step on the GMs' payoff failure card, whose Retry applies it alone (issue
- * #331 X18; the #306 R04 / #315 S08 / #326 W52 rule).
+ * unless it was refused as well (`recordSaved`). The move's suffer-choice
+ * card likewise (ERROR-TEXT-BLAMES-KEY — its refusal was swallowed, the cost
+ * never paid). Tell the GM running the pipeline which (not the API key — the
+ * move resolved), and put each owed step on the GMs' payoff failure card,
+ * whose Retry applies it alone (issue #331 X18; the #306 R04 / #315 S08 /
+ * #326 W52 rule).
  *
  * @param {Object} campaignState — the pipeline's working copy
  * @param {{ actorId?: string|null, moveName?: string|null, error?: string,
- *   recordSaved?: boolean, meterFailures?: Array<Object> }} ctx — `meterFailures`:
- *   persistResolution's refused meter steps
+ *   recordSaved?: boolean, meterFailures?: Array<Object>, cardFailures?: Array<Object> }} ctx —
+ *   persistResolution's refused meter steps and its refused choice card's step
  */
-async function reportUnsavedMoveRecord(campaignState, { actorId = null, moveName = null, error = "", recordSaved = false, meterFailures = [] } = {}) {
+async function reportUnsavedMoveRecord(campaignState, { actorId = null, moveName = null, error = "", recordSaved = false, meterFailures = [], cardFailures = [] } = {}) {
   const copySteps = recordSaved ? [] : (UNSAVED_ON_COPY.get(campaignState) ?? []).map(step => ({ ...step, reason: "refused", error }));
   UNSAVED_ON_COPY.delete(campaignState);
-  const failures = [...(Array.isArray(meterFailures) ? meterFailures : []), ...copySteps];
+  const meters = Array.isArray(meterFailures) ? meterFailures : [];
+  const cards  = Array.isArray(cardFailures) ? cardFailures : [];
+  const failures = [...meters, ...cards, ...copySteps];
   const move  = moveName ? `${moveName}'s` : "the move's";
-  const whose = `${game.actors?.get?.(actorId)?.name ?? "the roller"}'s meters`;
+  // What of the roller's the world refused beside the record, by cause.
+  const parts = [...(meters.length ? ["meters"] : []), ...(cards.length ? ["choice card"] : [])];
+  const whose = `${game.actors?.get?.(actorId)?.name ?? "the roller"}'s ${parts.join(" or ")}`;
   const what  = recordSaved
-    ? `${whose} from ${moveName ?? "the move"} — the rest of the move was saved. They are on the GMs' card, with a Retry.`
-    : meterFailures.length
+    ? `${whose} from ${moveName ?? "the move"} — the rest of the move was saved. ${meters.length ? "They are" : "It is"} on the GMs' card, with a Retry.`
+    : parts.length
       ? `${move} record, nor ${whose}. What it changed is on the GMs' card, with a Retry.`
       : `${move} record — the roller's meters stand. `
         + (failures.length ? "What it marked is on the GMs' card, with a Retry." : "Nothing else it changed needs a Retry.");
@@ -6054,6 +6061,7 @@ const PAYOFF_REASONS = {
   "not-found": "no connection by that name is open — renamed or deleted?",
   "no-vow":    "no open vow by that name",
   "no-pc":     "no player character to receive it",
+  "superseded": "the move's result was upgraded since, and its new outcome stands",
 };
 
 const PAYOFF_TITLES = {
@@ -6116,6 +6124,8 @@ function payoffStepRecord(f) {
     case "milestone":   return { step: "milestone", marks: f.marks ?? 1 };
     case "xp":          return { step: "xp", pcId: f.pcId ?? null, xp: f.xp ?? 0, track: f.track ?? null, boxes: f.boxes ?? 1 };
     case "suffer":      return { step: "suffer", call: f.call ?? null, opts: f.opts ?? {} };
+    case "choiceCard":  return { step: "choiceCard", pcId: f.pcId ?? null, moveId: f.moveId ?? null, moveName: f.moveName ?? null,
+      sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {}, resolutionId: f.resolutionId ?? null };
     case "upgrade":     return upgradeStepRecord(f);
     case "momentum":    return { step: "momentum", pcId: f.pcId ?? null, amount: f.amount ?? 1, sessionId: f.sessionId ?? null, award: f.award ?? null };
     case "clocks":      return { step: "clocks", sessionId: f.sessionId ?? null,
@@ -6155,6 +6165,12 @@ async function describePayoffFailure(f, { vowName, actorId }) {
         const value = meter ? readCharacterSnapshot(pc)?.meters?.[meter] : undefined;
         const now   = value !== undefined ? ` ${escapeChatHtml(pc?.name ?? "")}'s ${meter} stands at ${value} now.` : "";
         return `${escapeChatHtml(summarizeSufferCalls([f.call]))} for ${escapeChatHtml(pc?.name ?? "the character")} — ${why}.${now}`;
+      }
+      case "choiceCard": {
+        // A move's suffer-choice card the world refused (ERROR-TEXT-BLAMES-KEY).
+        const pc = f.pcId ? (game.actors?.get?.(f.pcId) ?? null) : null;
+        const open = f.reason === "refused" ? " Nothing on it has been chosen yet." : "";
+        return `${escapeChatHtml(pc?.name ?? "The character")}'s choice card from ${escapeChatHtml(f.moveName ?? "the move")} — ${why}.${open}`;
       }
       case "upgrade":
         // A burn's or an improvement's write after its claim (issue #311 P06).
@@ -6282,6 +6298,22 @@ async function runPayoffStep(s, card, copies) {
       if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
       const [res] = await runSufferResolution([s.call], pc, s.opts ?? {});
       return res?.ok === false ? { ...res, ok: false } : { ok: true };
+    }
+    case "choiceCard": {
+      // A move's suffer-choice card the world refused (ERROR-TEXT-BLAMES-KEY):
+      // posted for its own PC — unless the move's result was upgraded since,
+      // when its new outcome's card stands (issue #311 P03).
+      const { upgradeKindFor } = await import("./moves/resultUpgrade.js");
+      const { postSufferChoiceCard } = await import("./moves/sufferCard.js");
+      const pc = s.pcId ? (game.actors?.get?.(s.pcId) ?? null) : null;
+      if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
+      if (!["any", "enumerated"].includes(s.sufferPrompt?.kind)) return { ok: false, reason: "invalid step" };
+      if (s.resolutionId && upgradeKindFor(s.resolutionId)) return { ok: false, reason: "superseded" };
+      const card = await postSufferChoiceCard({
+        sufferPrompt: s.sufferPrompt, actor: pc, executorOpts: s.executorOpts ?? {},
+        moveId: s.moveId ?? null, resolutionId: s.resolutionId ?? null,
+      });
+      return card ? { ok: true } : { ok: false, reason: "refused" };
     }
     case "upgrade":
       // A burn's or an improvement's write refused after its claim (issue #311 P06).
