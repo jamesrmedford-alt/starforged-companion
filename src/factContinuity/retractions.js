@@ -36,7 +36,7 @@
  * apart by subject and fact together.
  */
 
-import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments } from '../entities/registry.js';
+import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments, hasSheetNotes } from '../entities/registry.js';
 import { retractSessionLore, undoNarrationEntries } from '../world/worldJournal.js';
 import { XCARD_RETRACTED_BY } from './ledgers.js';
 
@@ -251,7 +251,9 @@ const TIER_ENTITY_TYPES = ['connection', 'ship', 'settlement', 'faction', 'plane
  * and tier detail it writes; this takes them back by that id: World Journal
  * entries are restored to their version before or taken out of play
  * (undoNarrationEntries), beats leave the Session Log, and tier details
- * leave every entity's card — pinned or not, since the table removed them.
+ * leave every entity's card — pinned or not, since the table removed them;
+ * one the GM had promoted takes the line the Promote added to the notes with
+ * it (issue #338 D7).
  * What a scene end kept from the narration's ledger entries before the card
  * was played carries the same id (issue #335 Y01): its migrated tier details
  * and archived lore go the same way, and a LAST KNOWN value it set gives way
@@ -278,22 +280,45 @@ export async function retractNarrationCapture(narrationIds) {
   for (const typeKey of TIER_ENTITY_TYPES) {
     let docs = [];
     try { docs = [...iterEntityDocuments(typeKey)]; } catch { docs = []; }
-    for (const { document, data } of docs) {
-      const tier = Array.isArray(data?.generativeTier) ? data.generativeTier : [];
-      const keep = tier.filter(e => !(typeof e?.narrationId === 'string' && removed.has(e.narrationId)));
-      const lastKnown = lastKnownWithout(data?.lastKnown, removed);
+    for (const { document } of docs) {
+      // Read right before this record's write: the loop awaits between records.
+      const data = readEntityFlag(typeKey, document);
+      if (!data) continue;
+      const tier = Array.isArray(data.generativeTier) ? data.generativeTier : [];
+      const fromRemoved = (e) => typeof e?.narrationId === 'string' && removed.has(e.narrationId);
+      const keep = tier.filter(e => !fromRemoved(e));
+      const lastKnown = lastKnownWithout(data.lastKnown, removed);
       if (keep.length === tier.length && !lastKnown) continue;
+      // A dropped detail the GM had promoted leaves the notes too (issue
+      // #338 D7): the line the Promote appended (`promotedText`; the detail
+      // itself for one promoted before it was kept) — on the sheet's Notes
+      // tab for an NPC card or a ship (X12), else in the record's notes.
+      const promoted = tier.filter(e => fromRemoved(e) && e?.promoted)
+        .map(e => String(e.promotedText ?? e.detail ?? '').trim()).filter(Boolean);
+      const onSheet = hasSheetNotes(typeKey) && !!document?.system;
+      const notes   = (!onSheet && promoted.length) ? withoutPromotedBlocks(data.notes, promoted) : null;
       try {
         await writeEntityFlag(typeKey, document, {
           ...data,
           ...(keep.length !== tier.length ? { generativeTier: keep } : {}),
           ...(lastKnown ? { lastKnown: lastKnown.next } : {}),
+          ...(notes !== null && notes !== data.notes ? { notes } : {}),
           updatedAt: new Date().toISOString(),
         });
         out.tierDetails += tier.length - keep.length;
         out.lastKnown   += lastKnown?.changed ?? 0;
       } catch (err) {
         console.warn(`${MODULE_ID} | X-Card: dropping the capture's tier details from ${typeKey} ${document?.id} failed:`, err?.message ?? err);
+        continue;
+      }
+      if (onSheet && promoted.length) {
+        try {
+          const html = String(document.system.notes ?? '');
+          const next = withoutPromotedParagraphs(html, promoted);
+          if (next !== html) await document.update({ 'system.notes': next });
+        } catch (err) {
+          console.warn(`${MODULE_ID} | X-Card: taking the promoted detail off ${typeKey} ${document?.id}'s Notes tab failed:`, err?.message ?? err);
+        }
       }
     }
   }
@@ -341,6 +366,53 @@ async function revertNarrationRenames(removed) {
     console.warn(`${MODULE_ID} | X-Card: undoing the capture's renames failed:`, err?.message ?? err);
   }
   return reverted;
+}
+
+/** A notes line as compared: lowercased, whitespace collapsed. */
+const noteLine = (s) => String(s ?? '').replace(/\s+/g, ' ').trim().toLowerCase();
+
+/** The text of an HTML fragment: tags dropped, the entities escapeHtml writes decoded. */
+function htmlText(html) {
+  return String(html ?? '').replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#0?39;/g, "'").replace(/&amp;/g, '&');
+}
+
+/**
+ * A sheet's Notes HTML without the paragraph the Entities panel's Promote
+ * appended for each text (`<p>detail</p>` — issue #338 D7): the last
+ * paragraph whose text is that detail. Anything else on the tab stays.
+ *
+ * @param {string} html
+ * @param {string[]} texts — the promoted details
+ * @returns {string}
+ */
+function withoutPromotedParagraphs(html, texts) {
+  let out = String(html ?? '');
+  for (const text of texts) {
+    const want  = noteLine(text);
+    const found = [...out.matchAll(/<p\b[^>]*>([\s\S]*?)<\/p>/gi)].filter(m => noteLine(htmlText(m[1])) === want).at(-1);
+    if (found) out = out.slice(0, found.index) + out.slice(found.index + found[0].length);
+  }
+  return out;
+}
+
+/**
+ * A record's plain notes without the block the Promote appended for each
+ * text (blocks are joined by a blank line — issue #338 D7): the last block
+ * that is that detail.
+ *
+ * @param {string} notes
+ * @param {string[]} texts
+ * @returns {string}
+ */
+function withoutPromotedBlocks(notes, texts) {
+  const blocks = String(notes ?? '').split(/\n\s*\n/);
+  for (const text of texts) {
+    const at = blocks.map(noteLine).lastIndexOf(noteLine(text));
+    if (at >= 0) blocks.splice(at, 1);
+  }
+  return blocks.join('\n\n');
 }
 
 /**

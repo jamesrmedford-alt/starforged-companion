@@ -188,7 +188,10 @@ finish (`retractNarrationCapture`, `retractions.js` →
 `undoNarrationEntries`, `worldJournal.js`) puts a rewritten entry back,
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
 threat, faction or place page, takes the beats off the Session Log page and
-drops the tier details — most of these restate no sidecar truth, so
+drops the tier details — a detail the GM had promoted takes the line its ⤴
+Promote appended with it (the entry keeps `promotedText` beside its
+`narrationId`): off the sheet's Notes tab for an NPC card or a ship, else out
+of the record's notes (issue #338 D7) — most of these restate no sidecar truth, so
 `propagateRetraction` never reached them. The card may be played after the
 scene ended, when the ledger is empty (the pick is session-scoped): what the
 scene end migrated carries the truth's id too (issue #335 Y01) — the tier

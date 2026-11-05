@@ -207,8 +207,9 @@ write as the pause; the ids are kept on `xCardedNarrationIds`, so
 relayed sidecar of that narration is dropped. What the narration's capture
 (the detection and tier passes) recorded carries the same id — World Journal
 entries (with the versions they replaced; a faction the draft routing
-surfaces, issue #335 Y02), Session Log beats, tier details, a placeholder
-figure's rename (the X-Card puts the placeholder name back), the draft card
+surfaces, issue #335 Y02), Session Log beats, tier details (one the GM had
+promoted takes the line its Promote added to the notes with it, issue #338
+D7), a placeholder figure's rename (the X-Card puts the placeholder name back), the draft card
 it queued (its pending rows are withdrawn, issue #338 D6(i)), a connection a
 Make a Connection hit auto-created (deleted with its bond while unused, else
 kept and named to the GMs — D6(ii)),

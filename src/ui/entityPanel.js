@@ -1320,7 +1320,11 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
   if (op === 'pin') {
     next = { ...data, generativeTier: tier.map((e, i) => (i === idx ? { ...e, pinned: !e.pinned } : e)) };
   } else if (op === 'promote') {
-    const promoted = tier.map((e, i) => (i === idx ? { ...e, promoted: true, promotedAt: now } : e));
+    // The entry keeps the text the Promote put in the notes beside the
+    // narration id it carries: an X-Card on that narration takes the line
+    // out of the notes too (retractNarrationCapture — issue #338 D7).
+    const mark     = (e) => ({ ...e, promoted: true, promotedAt: now, promotedText: detail });
+    const promoted = tier.map((e, i) => (i === idx ? mark(e) : e));
     if (hasSheetNotes(typeKey) && document?.system) {
       // An NPC card's or ship's notes are its sheet's Notes tab: the detail is
       // appended there, where the narrator reads it — the record's own
@@ -1333,7 +1337,7 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
       const fresh     = readEntityFlag(typeKey, document) ?? data;
       const freshTier = Array.isArray(fresh.generativeTier) ? fresh.generativeTier : [];
       const at        = freshTier.findIndex(shown);
-      next = { ...fresh, generativeTier: freshTier.map((e, i) => (i === at ? { ...e, promoted: true, promotedAt: now } : e)) };
+      next = { ...fresh, generativeTier: freshTier.map((e, i) => (i === at ? mark(e) : e)) };
     } else {
       next = {
         ...data,

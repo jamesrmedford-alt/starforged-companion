@@ -116,7 +116,8 @@ layers. This file is the never-break list.
    too — the command vehicle's position does (issue #325 W07), and so does
    everything its capture records: World Journal entries (with the versions
    they replaced — a faction the draft routing surfaces too, issue #335 Y02),
-   Session Log beats, tier details, a placeholder's rename, the draft card
+   Session Log beats, tier details (a promoted one's line in the notes too,
+   issue #338 D7), a placeholder's rename, the draft card
    it queues — its pending rows are withdrawn, issue #338 D6(i) — and a
    connection it auto-creates, deleted while unused, else named to the GMs
    (D6(ii)) (issue #329 X01 — a new capture writer takes the id from its
