@@ -117,7 +117,10 @@ layers. This file is the never-break list.
    they replaced), Session Log beats and tier details (issue #329 X01 — a new
    capture writer takes the id from its caller), and the state transitions
    it applies to existing entries, a faction's record stance included
-   (XCARD-CAPTURE-TRANSITIONS); a narration
+   (XCARD-CAPTURE-TRANSITIONS); so does what a scene end migrates from its
+   ledger entries — the tier detail, the archived Lore page and the LAST
+   KNOWN value with the values it superseded — since the card may be played
+   after the scene ended (issue #335 Y01); a narration
    is built from the ledgers as they stand in the store, never a pre-dialog
    snapshot (W05), and a summary the X-Card emptied is stamped newer than any
    working copy's (W06).

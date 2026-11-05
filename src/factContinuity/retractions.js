@@ -252,15 +252,19 @@ const TIER_ENTITY_TYPES = ['connection', 'ship', 'settlement', 'faction', 'plane
  * entries are restored to their version before or taken out of play
  * (undoNarrationEntries), beats leave the Session Log, and tier details
  * leave every entity's card — pinned or not, since the table removed them.
+ * What a scene end kept from the narration's ledger entries before the card
+ * was played carries the same id (issue #335 Y01): its migrated tier details
+ * and archived lore go the same way, and a LAST KNOWN value it set gives way
+ * to the newest one before it no removed narration set (lastKnownWithout).
  * Runs on the canonical GM after the pause is written (suppressScene's
  * finish). Fail-open: never throws.
  *
  * @param {string[]} narrationIds — the X-carded narrations
- * @returns {Promise<{ entries: Object, tierDetails: number }>}
+ * @returns {Promise<{ entries: Object, tierDetails: number, lastKnown: number }>}
  */
 export async function retractNarrationCapture(narrationIds) {
   const removed = new Set((narrationIds ?? []).filter(id => typeof id === 'string' && id));
-  const out = { entries: { restored: 0, retracted: 0, deleted: 0, beats: 0 }, tierDetails: 0 };
+  const out = { entries: { restored: 0, retracted: 0, deleted: 0, beats: 0 }, tierDetails: 0, lastKnown: 0 };
   if (!removed.size) return out;
   try {
     out.entries = await undoNarrationEntries([...removed]);
@@ -273,16 +277,50 @@ export async function retractNarrationCapture(narrationIds) {
     for (const { document, data } of docs) {
       const tier = Array.isArray(data?.generativeTier) ? data.generativeTier : [];
       const keep = tier.filter(e => !(typeof e?.narrationId === 'string' && removed.has(e.narrationId)));
-      if (keep.length === tier.length) continue;
+      const lastKnown = lastKnownWithout(data?.lastKnown, removed);
+      if (keep.length === tier.length && !lastKnown) continue;
       try {
-        await writeEntityFlag(typeKey, document, { ...data, generativeTier: keep, updatedAt: new Date().toISOString() });
+        await writeEntityFlag(typeKey, document, {
+          ...data,
+          ...(keep.length !== tier.length ? { generativeTier: keep } : {}),
+          ...(lastKnown ? { lastKnown: lastKnown.next } : {}),
+          updatedAt: new Date().toISOString(),
+        });
         out.tierDetails += tier.length - keep.length;
+        out.lastKnown   += lastKnown?.changed ?? 0;
       } catch (err) {
         console.warn(`${MODULE_ID} | X-Card: dropping the capture's tier details from ${typeKey} ${document?.id} failed:`, err?.message ?? err);
       }
     }
   }
   return out;
+}
+
+/**
+ * A record's LAST KNOWN without the values removed narrations set (issue #335
+ * Y01): each such attribute falls back to the newest value in its `previous`
+ * chain no removed narration set, the removed ones gone from the chain too —
+ * or to none (null: a key left out of a merged flag write keeps its stored
+ * value). null when no value was theirs.
+ *
+ * @param {Object|undefined} lastKnown — `{ [attribute]: { value, sessionNum, at, narrationId, previous } }`
+ * @param {Set<string>} removed
+ * @returns {{ next: Object, changed: number }|null}
+ */
+function lastKnownWithout(lastKnown, removed) {
+  if (!lastKnown || typeof lastKnown !== 'object') return null;
+  const fromRemoved = (v) => typeof v?.narrationId === 'string' && removed.has(v.narrationId);
+  const next = { ...lastKnown };
+  let changed = 0;
+  for (const [attr, value] of Object.entries(lastKnown)) {
+    if (!value || typeof value !== 'object') continue;
+    const chain = [value, ...(Array.isArray(value.previous) ? value.previous : [])];
+    if (!chain.some(fromRemoved)) continue;
+    const [head, ...older] = chain.filter(v => v && typeof v === 'object' && !fromRemoved(v));
+    next[attr] = head ? { ...head, narrationId: head.narrationId ?? null, previous: older.length ? older : null } : null;
+    changed += 1;
+  }
+  return changed ? { next, changed } : null;
 }
 
 /** A ledger subject as the CORRECTED block and the summary prompt name it. */

@@ -176,7 +176,13 @@ detail; the X-Card's finish (`retractNarrationCapture`, `retractions.js` →
 retracts a new lore entry (out of ESTABLISHED LORE and the pending queue), deletes a new
 threat, faction or place page, takes the beats off the Session Log page and
 drops the tier details — most of these restate no sidecar truth, so
-`propagateRetraction` never reached them. A state transition the capture
+`propagateRetraction` never reached them. The card may be played after the
+scene ended, when the ledger is empty (the pick is session-scoped): what the
+scene end migrated carries the truth's id too (issue #335 Y01) — the tier
+detail, the archived Lore page (a page it rewrote is restored) and the LAST
+KNOWN value, which falls back to the newest value in its `previous` chain no
+removed narration set (a kept narration of the scene, then the earlier
+scene's). A state transition the capture
 applies to an entry it did not make — a threat resolved or escalated
 (`updateThreatSeverity`), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
@@ -497,7 +503,11 @@ frame names no place); text truths and place-less scene truths → WJ Lore
 (titled with where the truth was asserted, else the frame's location, not
 the scene id).
 It keeps each recorded character's location / vessel / condition on their
-record as `lastKnown` (C1, rendered as LAST KNOWN on the card), keeps the
+record as `lastKnown` (C1, rendered as LAST KNOWN on the card) — each value
+with the `narrationId` that set it and the values it superseded (`previous`,
+newest first, up to four; issue #335 Y01) — and every migrated tier detail and
+archived Lore page carries its truth's `narrationId`, for an X-Card played
+after the scene ended (above). It keeps the
 scene's strikes for the session (B6), then discards state and clears the
 frame. Before that final write it re-reads the store and, while the store is
 still this scene, migrates the truths and keeps the whereabouts that a

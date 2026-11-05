@@ -208,7 +208,12 @@ relayed sidecar of that narration is dropped. What the narration's capture
 entries (with the versions they replaced), Session Log beats, tier details,
 and the state transitions it applied to existing entries (a faction's stance
 on its record included) — and the X-Card's finish undoes it by id
-(`retractNarrationCapture`, issue #329 X01; XCARD-CAPTURE-TRANSITIONS).
+(`retractNarrationCapture`, issue #329 X01; XCARD-CAPTURE-TRANSITIONS). So
+does what a scene end migrated from the narration's ledger entries before the
+card was played (issue #335 Y01 — the pick is session-scoped, the ledger is
+empty by then): the tier detail, the archived Lore page and the LAST KNOWN
+value, which keeps the values it superseded and falls back to the newest one
+no removed narration set.
 
 **Scene start.** A narration whose snapshot holds no scene while the store has
 one continues it (`startScene` → `adoptStoredScene`, issue #321 U06f): the

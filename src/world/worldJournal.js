@@ -54,8 +54,10 @@ const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
 // the versions before as `previous` (newest first) — so an X-Card on the
 // narration puts the earlier version back, or takes an entry the narration
 // made out of play (undoNarrationEntries; rules/narrator-memory.md 6b). A
-// later write that carries no narration id (a GM's `!journal`, a scene-end
-// archive) owns the entry from then on: it clears both.
+// scene-end archive carries the id of the narration that asserted the truth
+// (issue #335 Y01). A later write that carries no narration id (a GM's
+// `!journal`, the archive of a GM's `!truth set`) owns the entry from then
+// on: it clears both.
 //
 // Both are always written, null when cleared: Foundry's setFlag merges the
 // object into the stored flag key by key (see recordLoreDiscovery), so a key
@@ -280,6 +282,11 @@ export async function archiveSceneTruth(truth, campaignState, options = {}) {
     sessionId:        truth.sessionId ?? null,
     sessionNumber:    truth.sessionNum ?? null,
     moveId:           truth.moveId    ?? null,
+    // The narration that asserted the truth (a GM's `!truth set` carries
+    // none): an X-Card played on it after the scene ended retracts a page
+    // this made and restores one it rewrote (undoNarrationEntries — issue
+    // #335 Y01).
+    narrationId:      typeof truth.narrationId === 'string' && truth.narrationId ? truth.narrationId : null,
   }, campaignState);
 }
 

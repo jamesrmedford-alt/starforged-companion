@@ -387,6 +387,10 @@ async function safeMigrateToEntityTier(truth, subject) {
       promoted:   false,
       promotedAt: null,
       createdAt:  truth.createdAt ?? Date.now(),
+      // The narration that asserted the truth: an X-Card played on it after
+      // the scene ended drops the detail (retractNarrationCapture — issue
+      // #335 Y01; the ledger it left is empty by then).
+      ...narrationStampOf(truth),
     };
     return await appendMigratedTruthToTier(subject.entityId, subject.entityType, tierEntry);
   } catch (err) {
@@ -407,6 +411,19 @@ async function safeArchiveSceneTruth(truth, campaignState) {
     console.warn(`${MODULE_ID} | sceneLifecycle: archive scene truth failed:`, err);
     return null;
   }
+}
+
+/**
+ * `{ narrationId }` of a ledger entry a narration's sidecar wrote, else `{}` —
+ * a GM's `!truth set` / `!state set` carries none, and what it migrates is
+ * the GM's.
+ *
+ * @param {Object} entry — a sceneTruths entry or a state value
+ * @returns {{ narrationId?: string }}
+ */
+function narrationStampOf(entry) {
+  const id = entry?.narrationId;
+  return typeof id === 'string' && id ? { narrationId: id } : {};
 }
 
 /** Entity types a scene can happen at — the ones with a place on the map, and the ship. */
@@ -502,6 +519,14 @@ function escapeRegExp(s) {
  * previous value; one this scene did not mention keeps it. Rendered on the
  * entity card as LAST KNOWN. Fail-open per entity.
  *
+ * Each value keeps the narration that set it and the values before it
+ * (`narrationId`, `previous` — newest first: the scene's own superseded
+ * values, then the LAST KNOWN this one replaced), so an X-Card on that
+ * narration after the scene ended puts back the newest one no removed
+ * narration set (retractNarrationCapture — issue #335 Y01; the W41 chain the
+ * state entry carried). Both are always written, null when none: Foundry's
+ * setFlag merges a nested object into the stored one key by key.
+ *
  * @param {Object} campaignState
  * @returns {Promise<number>} entities updated
  */
@@ -522,11 +547,8 @@ async function keepLastKnownWhereabouts(campaignState) {
       if (!resolved) continue;
       const lastKnown = { ...(resolved.data.lastKnown ?? {}) };
       for (const e of kept) {
-        lastKnown[String(e.attribute).trim().toLowerCase()] = {
-          value: String(e.value).trim(),
-          sessionNum,
-          at:    Number(e.updatedAt) || Date.now(),
-        };
+        const attr = String(e.attribute).trim().toLowerCase();
+        lastKnown[attr] = lastKnownValue(e, sessionNum, lastKnown[attr]);
       }
       await writeEntityFlag(resolved.typeKey, resolved.document, {
         ...resolved.data,
@@ -539,6 +561,46 @@ async function keepLastKnownWhereabouts(campaignState) {
     }
   }
   return updated;
+}
+
+/** How many earlier values a LAST KNOWN value keeps (`previous`), for an X-Card on the narration that set it. */
+const LAST_KNOWN_HISTORY = 4;
+
+/**
+ * A LAST KNOWN value from a closing scene's state value: the value, the
+ * narration that set it, and the values it superseded, newest first — the
+ * scene's own (the state entry's `previous` chain) and then the LAST KNOWN
+ * value it replaces with that one's own history — bounded, a repeat dropped.
+ *
+ * @param {Object} entry — the state value ({ value, updatedAt, narrationId?, previous? })
+ * @param {number|null} sessionNum
+ * @param {Object|null|undefined} superseded — the record's current LAST KNOWN value
+ * @returns {{ value: string, sessionNum: number|null, at: number, narrationId: string|null, previous: Object[]|null }}
+ */
+function lastKnownValue(entry, sessionNum, superseded) {
+  const link = (v, num, at) => ({
+    value:       String(v.value).trim(),
+    sessionNum:  num,
+    at,
+    narrationId: narrationStampOf(v).narrationId ?? null,
+  });
+  const older = [];
+  for (let cur = entry.previous; cur && typeof cur === 'object'; cur = cur.previous ?? null) {
+    if (String(cur.value ?? '').trim()) older.push(link(cur, sessionNum, Number(cur.updatedAt) || null));
+  }
+  for (const v of superseded && typeof superseded === 'object'
+    ? [superseded, ...(Array.isArray(superseded.previous) ? superseded.previous : [])] : []) {
+    if (String(v?.value ?? '').trim()) older.push(link(v, v.sessionNum ?? null, v.at ?? null));
+  }
+  const head = link(entry, sessionNum, Number(entry.updatedAt) || Date.now());
+  const seen = new Set([`${head.narrationId}|${head.value}`]);
+  const previous = older.filter((v) => {
+    const k = `${v.narrationId}|${v.value}`;
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  }).slice(0, LAST_KNOWN_HISTORY);
+  return { ...head, previous: previous.length ? previous : null };
 }
 
 /** campaignState fields the scene lifecycle owns (written by startScene / endScene). */
