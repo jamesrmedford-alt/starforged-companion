@@ -92,7 +92,10 @@ layers. This file is the never-break list.
    — so the two never render together; a player's set over a GM's strike is
    refused, issue #326 W60; the lift also restores the lore that strike
    retracted, `restoreStruckLore` by the lore entry's `retractedByTruth`, so
-   the re-set fact is archived as canon — issue #331 X31). Do not "simplify" either half away — the render
+   the re-set fact is archived as canon — issue #331 X31 — save an entry
+   another standing retraction still states: it stays out of canon, handed to
+   that strike when it is one the GM can lift, `loreRetractionHolder` — issue
+   #336 Y32). Do not "simplify" either half away — the render
    defense and the write defense cover different failure paths (model
    ignores instructions vs. model re-emits the fact). Since issue #286 (B6)
    a Strike also reaches the stores that copied the fact

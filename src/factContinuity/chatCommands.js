@@ -40,7 +40,7 @@ import {
   findTruthByIdOrPrefix,
 } from "./ledgers.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
-import { propagateRetraction, markSummaryForRegen } from "./retractions.js";
+import { propagateRetraction, markSummaryForRegen, loreRetractionHolder } from "./retractions.js";
 import { restoreStruckLore } from "../world/worldJournal.js";
 import { persistSceneLedgerFields, startScene } from "./sceneLifecycle.js";
 
@@ -242,9 +242,10 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
       if (truth) changed = "sceneTruths";
       // The set lifts the strike (W60) — and the lore copies the strike
       // retracted come back with it, so the fact the GM ruled canon is
-      // archived as canon (issue #331 X31).
+      // archived as canon (issue #331 X31) — save one another standing
+      // retraction still states (issue #336 Y32).
       if (truth && struck?.id) {
-        await restoreStruckLore(struck.id).catch(err =>
+        await restoreStruckLore(struck.id, { heldBy: loreRetractionHolder(campaignState) }).catch(err =>
           console.warn(`${MODULE_ID} | !truth set: restoring the struck lore failed:`, err?.message ?? err));
       }
       // The id `!truth strike` takes is shown (issue #326 W67).

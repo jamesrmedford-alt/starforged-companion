@@ -163,6 +163,49 @@ function loreStatesStrike(entry, subject, label, fact) {
 }
 
 /**
+ * What still retracts a lore entry once a strike is lifted — for that lift's
+ * restore (worldJournal `restoreStruckLore`, issue #336 Y32). A lore entry
+ * remembers one strike (`retractedByTruth`, issue #331 X31): a second strike
+ * stating it passed over it (already retracted), so lifting the first put it
+ * back in ESTABLISHED LORE while the second stood under CORRECTED "do NOT
+ * re-assert" — the conflict W60 exists to prevent. Checked against the
+ * session's other standing retractions, matched as propagateRetraction
+ * matched the strike (loreStatesStrike):
+ *   - the active scene's other bare strikes → that truth's id, so the entry
+ *     is handed to it and lifting it restores the entry;
+ *   - the active scene's X-Card retractions (never lifted, U07), and the
+ *     earlier scenes' strikes (`sessionRetractions`, kept without an id) →
+ *     `true`: the entry stays out of canon.
+ * The lifted strike itself is linked (`correctedTo`) on the lift's copy, so it
+ * is not one of them.
+ *
+ * @param {Object} campaignState — the lift's working copy, after the lift
+ * @returns {(entry: Object) => (string|true|null)} null when nothing holds it
+ */
+export function loreRetractionHolder(campaignState) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+  const active = (campaignState?.sceneTruths ?? []).filter(t =>
+    (isNamedStrike(t) || (t?.retracted && t.retractedBy === XCARD_RETRACTED_BY)) && String(t.fact ?? '').trim());
+  const earlier = (sessionId && campaignState?.sessionRetractions?.sessionId === sessionId)
+    ? (campaignState.sessionRetractions.facts ?? []) : [];
+  return (entry) => {
+    for (const t of active) {
+      if (!loreStatesStrike(entry, t.subject, subjectLabel(t.subject), String(t.fact).trim())) continue;
+      return (t.retractedBy !== XCARD_RETRACTED_BY && typeof t.id === 'string' && t.id) ? t.id : true;
+    }
+    for (const f of earlier) {
+      const label = String(f?.label ?? '').trim();
+      const fact  = String(f?.fact ?? '').trim();
+      if (!label || !fact) continue;
+      // A kept strike is its label and fact: "scene" for a scene truth, else a name.
+      const subject = label.toLowerCase() === 'scene' ? { kind: 'scene' } : { kind: 'text', text: label };
+      if (loreStatesStrike(entry, subject, label, fact)) return true;
+    }
+    return null;
+  };
+}
+
+/**
  * Mark this session's rolling summary for a regen: the next refresh runs
  * regardless of the debounce (`coveredCount` 0). propagateRetraction marks
  * its caller's copy; a correction that persists onto the latest store marks

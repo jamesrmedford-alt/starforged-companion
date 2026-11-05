@@ -598,16 +598,31 @@ export async function retractSessionLore(sessionId, matches, { truthId = null } 
  * entries that strike retracted are restored (`retractedByTruth`), each with
  * the confirmation it had — never a page an X-Card retracted.
  *
+ * An entry another standing retraction still states is not restored (issue
+ * #336 Y32 — a second strike passed over the entry the first had retracted,
+ * so the lift put it back in ESTABLISHED LORE beside that strike under
+ * CORRECTED): `heldBy(entry)` (retractions.js `loreRetractionHolder`) names
+ * what holds it — another strike's truth id, to which the entry is handed so
+ * lifting that one restores it, or `true` (one never lifted here).
+ *
  * @param {string} truthId — the lifted strike's truth id
+ * @param {{ heldBy?: (entry: Object) => (string|true|null) }} [opts]
  * @returns {Promise<number>} entries restored
  */
-export async function restoreStruckLore(truthId) {
+export async function restoreStruckLore(truthId, { heldBy = null } = {}) {
   if (typeof truthId !== "string" || !truthId) return 0;
   const journal = findJournal(JOURNAL_NAMES.lore);
   let count = 0;
   for (const page of journal?.pages?.contents ?? []) {
     const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
     if (!entry?.retracted || entry.retractedByTruth !== truthId) continue;
+    const holder = typeof heldBy === "function" ? heldBy(entry) : null;
+    if (holder) {
+      if (typeof holder === "string" && holder !== truthId) {
+        await writeEntryPage(page, FLAG_KEYS.lore, { ...entry, retractedByTruth: holder, updatedAt: new Date().toISOString() });
+      }
+      continue;
+    }
     await writeEntryPage(page, FLAG_KEYS.lore, {
       ...entry,
       confirmed:          entry.confirmedBeforeStrike === true,

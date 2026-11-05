@@ -541,7 +541,11 @@ ring, and the closing scene's truths keep the closing session's number.
   whole words) (out of [4f] and
   the pending queue; the detection pass cannot re-confirm it — `!journal lore
   "<title>" confirmed` restores it with its text, category and provenance,
-  issue #321 U40), and the
+  issue #321 U40; a `!truth set` that lifts the strike restores it —
+  `restoreStruckLore`, issue #331 X31 — unless another standing retraction
+  of the session still states it: another strike, to which it is handed so
+  lifting that one restores it, an X-Card retraction or an earlier scene's
+  kept strike, issue #336 Y32), and the
   rolling summary regenerates on the next refresh with a "RETRACTED BY THE
   TABLE — leave these out" list. `endScene` keeps the scene's bare strikes on
   `campaignState.sessionRetractions`, so CORRECTED and that list hold for the
