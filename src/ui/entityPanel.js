@@ -486,7 +486,7 @@ export class EntityPanelApp extends ApplicationV2 {
         : '';
       portraitHtml = `
         <div class="portrait-wrap">
-          <img class="entity-portrait" src="${entity.art.dataUri}" alt="${entity.name} portrait">
+          <img class="entity-portrait" src="${escapeHtml(entity.art.dataUri)}" alt="${escapeHtml(entity.name)} portrait">
           ${lockBadge}
           <div class="portrait-actions">${regenBtn}</div>
         </div>`;
