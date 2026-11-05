@@ -18,6 +18,12 @@
  * on the player-vow card), and the 🏁 buttons forward the roller's vow by
  * its Item id. decisions.md → "Multiplayer attribution".
  *
+ * Since issue #338 D1 the ⚔ / 🗺 / ⚔ Swear it buttons relay to the canonical
+ * GM as the 🏁 ones do ("tda.attempt", "expedition.finish", "vow.swearRoll"),
+ * so a GM's press here is handled on this (the GM's) client, and a crewmate
+ * may no longer press another player's follow-up (the last swear case;
+ * unrelayedFollowupNonOwner.test.js has the multi-client table).
+ *
  * (Converted from the ninth audit's probe
  * tests/probes/cards/cardRepostAsClicker.probe.js.)
  */
@@ -29,7 +35,7 @@ import {
   wireFinishExpeditionButton,
 } from '../../src/index.js';
 import { applyMilestoneSuggestion } from '../../src/moves/cardActions.js';
-import { registerPlayerVowSwearHook } from '../../src/session/swearVow.js';
+import { registerPlayerVowSwearHook, applyPlayerVowSwearFromRelay } from '../../src/session/swearVow.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -80,6 +86,8 @@ function makeRoot(buttons) {
   return root;
 }
 const click = async (btn) => { await btn.listeners.click({ preventDefault() {}, stopPropagation() {} }); };
+// The relayed buttons' GM handler finds the card in game.messages.
+const onTheTable = (card) => { game.messages = { get: (id) => (id === card.id ? card : null) }; return card; };
 const btnFor = (root, action) => root.buttons.find(b => b.action === action);
 const lastPost = () => ChatMessage._created.at(-1);
 
@@ -119,7 +127,7 @@ beforeEach(() => {
 
 describe('issue #329 X05 — a forced-move button pressed by someone else speaks as the card\'s PC', () => {
   it('"⚔ Attempt to Finish the Fight" on Bex\'s Strike card rolls Take Decisive Action as Bex', async () => {
-    const card = makeCard('strike-1', { moveResolution: true, combatMoveCard: true, actorId: 'pc-b', combatTrackId: 'fight-1', combatTrackLabel: 'Raiders' });
+    const card = onTheTable(makeCard('strike-1', { moveResolution: true, combatMoveCard: true, actorId: 'pc-b', combatTrackId: 'fight-1', combatTrackLabel: 'Raiders' }));
     const root = makeRoot([{ action: 'sf-take-decisive-action' }]);
     wireTakeDecisiveActionButton(card, root);
     await click(btnFor(root, 'sf-take-decisive-action'));
@@ -161,7 +169,7 @@ describe('issue #329 X05 — a forced-move button pressed by someone else speaks
   });
 
   it('"🗺 Finish the Expedition" on the card for Bex\'s expedition progress finishes it as Bex', async () => {
-    const card = makeCard('exp-1', { expeditionProgressCard: true, trackLabel: 'The Drift', trackId: 'exp-track-1', actorId: 'pc-b' });
+    const card = onTheTable(makeCard('exp-1', { expeditionProgressCard: true, trackLabel: 'The Drift', trackId: 'exp-track-1', actorId: 'pc-b' }));
     const root = makeRoot([{ action: 'sf-finish-expedition' }]);
     wireFinishExpeditionButton(card, root);
     await click(btnFor(root, 'sf-finish-expedition'));
@@ -171,17 +179,18 @@ describe('issue #329 X05 — a forced-move button pressed by someone else speaks
     expect(post.speaker?.actor ?? null).toBe('pc-b');
   });
 
-  it('a card that names no roller (an older card) posts as its author, as before', async () => {
-    const card = makeCard('strike-old', { moveResolution: true, combatMoveCard: true, combatTrackId: 'fight-1' });
+  it('a card that names no roller (an older card) rolls for the presser\'s own PC — a GM\'s, the first PC, as the pipeline credited before', async () => {
+    const card = onTheTable(makeCard('strike-old', { moveResolution: true, combatMoveCard: true, combatTrackId: 'fight-1' }));
     const root = makeRoot([{ action: 'sf-take-decisive-action' }]);
     wireTakeDecisiveActionButton(card, root);
     await click(btnFor(root, 'sf-take-decisive-action'));
-    expect(lastPost().speaker).toBeUndefined();
+    expect(lastPost().flags[MODULE_ID].forcedMoveId).toBe('take_decisive_action');
+    expect(lastPost().speaker?.actor ?? null).toBe('pc-a');
   });
 
   it('"⚔ Swear it (roll)" on the card for Bex\'s sheet-made vow swears it as Bex', async () => {
     registerPlayerVowSwearHook();
-    const card = makeCard('player-vow-1', { playerVowCard: true, vowName: 'Break the Covenant', vowId: 'v-b' });
+    const card = onTheTable(makeCard('player-vow-1', { playerVowCard: true, vowName: 'Break the Covenant', vowId: 'v-b' }));
     const root = makeRoot([{ action: 'sf-player-vow-swear' }]);
     Hooks.call('renderChatMessageHTML', card, [root]);
     await click(btnFor(root, 'sf-player-vow-swear'));
@@ -192,13 +201,14 @@ describe('issue #329 X05 — a forced-move button pressed by someone else speaks
     expect(post.speaker?.actor ?? null).toBe('pc-b');
   });
 
-  it('"⚔ Swear it (roll)" on a card that names the vow\'s holder speaks as them', async () => {
-    registerPlayerVowSwearHook();
-    const card = makeCard('player-vow-2', { playerVowCard: true, vowName: 'Find the archive', vowId: 'v-a', actorId: 'pc-a' });
-    const root = makeRoot([{ action: 'sf-player-vow-swear' }]);
-    setUsers([GM, P1], 'pl-1');   // a crewmate presses it
-    Hooks.call('renderChatMessageHTML', card, [root]);
-    await click(btnFor(root, 'sf-player-vow-swear'));
+  it('"⚔ Swear it (roll)" on a card that names the vow\'s holder is theirs or a GM\'s to press, and speaks as them (issue #338 D1)', async () => {
+    const card = onTheTable(makeCard('player-vow-2', { playerVowCard: true, vowName: 'Find the archive', vowId: 'v-a', actorId: 'pc-a' }));
+    // A crewmate (Pat, Bex's player) pressing Ash's card swore Ash's vow; refused now.
+    const crewmate = await applyPlayerVowSwearFromRelay({ messageId: card.id }, { requesterId: 'pl-1', requester: P1, requesterIsGM: false });
+    expect(crewmate).toEqual({ posted: false, reason: 'not-owner' });
+    expect(ChatMessage._created).toHaveLength(0);
+    const gm = await applyPlayerVowSwearFromRelay({ messageId: card.id }, { requesterId: 'gm-1', requester: GM, requesterIsGM: true });
+    expect(gm).toEqual({ posted: true });
     expect(lastPost().speaker?.actor ?? null).toBe('pc-a');
   });
 

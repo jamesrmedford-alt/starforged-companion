@@ -8800,15 +8800,28 @@ function registerCombatCardButtonTests(quench) {
       }
 
       describe("Take Decisive Action button (combat move result cards)", function () {
-        it("clicking it posts a forced take_decisive_action message", async function () {
+        // The press relays to the canonical GM, which claims the card it finds
+        // in game.messages (`decisiveActionAttempted`) and posts the move once,
+        // as the card's roller (issue #338 D1) — so the card is a real message here.
+        async function postStrikeCard(flags) {
+          const card = await ChatMessage.create({
+            content: `<div class="sf-move-result"><div class="sf-combat-followup">`
+              + `<button type="button" data-action="sf-take-decisive-action">⚔ Attempt to Finish the Fight</button></div></div>`,
+            flags: { [MODULE]: { combatMoveCard: true, ...flags } },
+          });
+          track(card?.id);
+          return game.messages.get(card.id) ?? card;
+        }
+
+        it("clicking it posts a forced take_decisive_action message, once per card", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
+          const msg = await postStrikeCard({});
 
           const root = document.createElement("div");
           root.innerHTML = `<div class="sf-move-result">`
             + `<div class="sf-combat-followup"><button type="button" data-action="sf-take-decisive-action">⚔ Take Decisive Action</button></div></div>`;
-          const msg = { id: "quench-tda-btn", flags: { [MODULE]: { combatMoveCard: true } } };
-
           wireTakeDecisiveActionButton(msg, root);
           const btn = root.querySelector('[data-action="sf-take-decisive-action"]');
           assert.isOk(btn, "the wired button should still be present in the root");
@@ -8822,18 +8835,17 @@ function registerCombatCardButtonTests(quench) {
             "expected a synthetic message with flags[MODULE].forcedMoveId === 'take_decisive_action'");
           assert.isTrue(synthetic.flags[MODULE].bypassPacing,
             "the forced TDA message should bypass the pacing classifier");
+          assert.isOk(game.messages.get(msg.id)?.flags?.[MODULE]?.decisiveActionAttempted, "the card is claimed");
         });
 
         it("a card that names its fight forwards it with the move (TDA-BUTTON-NO-TARGET)", async function () {
           this.timeout(15000);
+          if (!game.user.isGM) { this.skip(); return; }
           const { wireTakeDecisiveActionButton } = await import(`${MODULE_PATH}/index.js`);
+          const msg = await postStrikeCard({ combatTrackId: "quench-fight-turret", combatTrackLabel: "Turret" });
 
           const root = document.createElement("div");
           root.innerHTML = `<div class="sf-combat-followup"><button type="button" data-action="sf-take-decisive-action">⚔ Attempt to Finish the Fight: Turret</button></div>`;
-          const msg = { id: "quench-tda-named", flags: { [MODULE]: {
-            combatMoveCard: true, combatTrackId: "quench-fight-turret", combatTrackLabel: "Turret",
-          } } };
-
           wireTakeDecisiveActionButton(msg, root);
           const beforeIds = new Set((game.messages?.contents ?? []).map(m => m.id));
           root.querySelector('[data-action="sf-take-decisive-action"]')

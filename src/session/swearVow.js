@@ -27,7 +27,7 @@ import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCh
 import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter, promoteNewEntityLedgerSubjects }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
-import { relayCardAction } from "../moves/cardActions.js";
+import { relayCardAction, applyCardRollerFollowup } from "../moves/cardActions.js";
 import { progressPerMilestoneLine, legacyRewardLine, proposeRewards, buildRewardChoiceHtml }
   from "../moves/rewards.js";
 import { rankName } from "../schemas.js";
@@ -859,12 +859,14 @@ export function registerPlayerVowHook() {
 }
 
 /**
- * Wire the ⚔ Swear it (roll) button on the player-vow setup card: posts a forced
- * Swear an Iron Vow move for the vow (the pipeline rolls +heart → momentum /
- * complication; the vow already exists), spoken as the vow's holder — the
- * card's `actorId`, or the PC holding its `vowId` on an older card — so a GM's
- * or a crewmate's press swears it for them, not the clicker's or the first PC
- * (issue #329 X05). Register once.
+ * Wire the ⚔ Swear it (roll) button on the player-vow setup card. A click
+ * relays to the canonical GM ("vow.swearRoll" → applyPlayerVowSwearFromRelay),
+ * which claims the card once (`swearRolled`) and posts the forced Swear an
+ * Iron Vow for the vow (the pipeline rolls +heart → momentum / complication;
+ * the vow already exists), spoken as the vow's holder (issue #329 X05). Only
+ * the holder's player or a GM may press it (issue #338 D1). A card already
+ * pressed renders the button disabled; a click that is not delivered re-arms
+ * it. Register once.
  */
 export function registerPlayerVowSwearHook() {
   if (registerPlayerVowSwearHook._installed) return;
@@ -874,21 +876,50 @@ export function registerPlayerVowSwearHook() {
     if (!f?.playerVowCard) return;
     const btn = root.querySelector('[data-action="sf-player-vow-swear"]');
     if (!btn) return;
+    if (liveFlags(message)?.swearRolled) {
+      btn.disabled = true;
+      return;
+    }
     const fresh = btn.cloneNode(true);
     btn.replaceWith(fresh);
     fresh.addEventListener("click", async (e) => {
       e.preventDefault(); e.stopPropagation();
-      fresh.disabled = true;   // stays disabled — the roll is firing; re-enable only on a post failure
-      const post = buildSwearMovePostForName(f.vowName, liveFlags(message)?.linkedConnection ?? null,
-        (typeof f.actorId === "string" && f.actorId) ? f.actorId : vowHolderActorId(f.vowId));
-      if (!post) { fresh.disabled = false; return; }
-      try {
-        await globalThis.ChatMessage?.create?.(post);
-      } catch (err) {
-        console.warn(`${MODULE_ID} | playerVow: swear post failed:`, err?.message ?? err);
-        fresh.disabled = false;
-      }
+      fresh.disabled = true;
+      await relayCardAction({
+        kind:       "vow.swearRoll",
+        payload:    { messageId: message?.id ?? null },
+        isResolved: () => !!liveFlags(message)?.swearRolled,
+        restore:    () => { fresh.disabled = false; },
+      });
     });
+  });
+}
+
+/**
+ * gmRelay handler for "vow.swearRoll" — runs on the canonical GM (issue #338
+ * D1). The player-vow card's ⚔ Swear it (roll) posted the forced swear from
+ * the presser's client, spoken as the vow's holder with no check of who
+ * pressed: a crewmate swore another player's vow — their momentum, their
+ * oath scene — and each client's press rolled it again. The
+ * fulfilVow.attempt shape (cardActions.applyCardRollerFollowup): the holder
+ * — the card's `actorId`, or the PC holding its `vowId` on an older card —
+ * or a GM may press it, once per card (claim `swearRolled`); the swear speaks
+ * as the holder and carries the vow's 🤝 link (`linkedConnection`). A card
+ * whose vow nobody holds is a GM's to press.
+ *
+ * @param {{ messageId?: string }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyPlayerVowSwearFromRelay(payload = {}, ctx = {}) {
+  return applyCardRollerFollowup({ messageId: payload?.messageId }, ctx, {
+    label: "swear it", claim: "swearRolled",
+    isCard: (f) => f.playerVowCard === true,
+    roller: (f) => (typeof f.actorId === "string" && f.actorId) ? f.actorId : vowHolderActorId(f.vowId),
+    build:  (f, actor) => {
+      const post = buildSwearMovePostForName(f.vowName, f.linkedConnection ?? null, actor?.id ?? null);
+      return post ? { content: post.content, flags: post.flags[MODULE_ID] } : null;
+    },
   });
 }
 

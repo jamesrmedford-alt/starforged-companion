@@ -23,7 +23,9 @@
  * "⚑ Mark Progress on Vow" ("milestone.suggestion") and an expedition's
  * "🔁 Recommit" ("expedition.recommit", both issue #321 U20), and a move
  * card's or won-fight card's "🏁 Attempt to Fulfill" ("fulfilVow.attempt",
- * known-issues FULFIL-BUTTON-LOCAL-DISABLE). The
+ * known-issues FULFIL-BUTTON-LOCAL-DISABLE), and a combat move card's "⚔
+ * Attempt to Finish the Fight" ("tda.attempt") and an expedition card's "🗺
+ * Finish the Expedition" ("expedition.finish" — issue #338 D1). The
  * handlers below run on the canonical GM, check
  * and stamp the card's resolved flag behind an in-flight guard (the
  * milestone-picker pattern, src/moves/milestonePicker.js), and take every
@@ -690,6 +692,169 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
   } finally {
     _inFlight.delete(key);
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A card's forced follow-up, the roller's to press (issue #338 D1):
+// "⚔ Attempt to Finish the Fight" — gmRelay "tda.attempt"
+// "🗺 Finish the Expedition"      — gmRelay "expedition.finish"
+// "⚔ Swear it (roll)"             — gmRelay "vow.swearRoll" (session/swearVow.js)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The fulfilVow.attempt shape for a card button that rolls the card's
+ * roller's move (issue #338 D1). These buttons posted the forced move from
+ * the presser's client, spoken as the card's roller with no check of who
+ * pressed (issue #329 X05 fixed whose move it is, not who may make it):
+ * another player rolled Kira's Take Decisive Action — her position, her
+ * momentum, a Pay the Price on her on a miss — finished her expedition or
+ * swore her vow, and each client's press, or a re-render, rolled again.
+ *
+ * The roller is the card's (`spec.roller`, by default its `actorId`): their
+ * player or a GM may press it, and the move speaks as that PC. A card that
+ * names no roller rolls for the clicker's own PC (the payload's `actorId`,
+ * which the requester must own); with none relayed, it is a GM's to press.
+ * One press per card: the GM-authored card is claimed (`spec.claim`) before
+ * the post, behind the in-flight guard, and a post that fails releases the
+ * claim. The forced move is held while the move lock or the session gate
+ * stands (`deferWhileBusy`, issue #325 W02 / #329 X14).
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} ctx
+ * @param {Object} spec
+ * @param {string} spec.label — the console's name for the button
+ * @param {string} spec.claim — the card flag a press claims
+ * @param {(f: Object) => boolean} spec.isCard — the card offers this follow-up
+ * @param {(f: Object, actor: Actor|null) => ({ content: string, flags: Object }|null)} spec.build —
+ *   the forced move's text and module flags; null posts nothing
+ * @param {(f: Object) => string|null} [spec.roller] — the card's roller
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
+  const { label, claim, isCard, build } = spec;
+  const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  if (!message) {
+    console.warn(`${MODULE_ID} | ${label}: card ${messageId ?? "?"} not found — nothing rolled.`);
+    return { posted: false, reason: "no-message" };
+  }
+  const f = message.flags?.[MODULE_ID] ?? {};
+  if (!isCard(f)) {
+    console.warn(`${MODULE_ID} | ${label}: message ${messageId} offers no such follow-up — ignored.`);
+    return { posted: false, reason: "not-its-card" };
+  }
+  const key = `${messageId}:${claim}`;
+  if (f[claim] || _inFlight.has(key)) {
+    console.debug(`${MODULE_ID} | ${label}: card ${messageId} already pressed — ignoring the press.`);
+    return { posted: false, reason: "already-pressed" };
+  }
+
+  const rolled  = spec.roller ? spec.roller(f) : f.actorId;
+  const cardActorId = typeof rolled === "string" && rolled ? rolled : null;
+  const actorId = cardActorId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
+  const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | ${label}: ${actorId} is not a player character — refused.`);
+    return { posted: false, reason: "not-a-pc" };
+  }
+  if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not roll ${actor?.name ?? "this card"}'s move — only their player or a GM may — refused.`);
+    return { posted: false, reason: "not-owner" };
+  }
+  const move = build(f, actor);
+  if (!move) {
+    console.warn(`${MODULE_ID} | ${label}: card ${messageId} names nothing to roll — ignored.`);
+    return { posted: false, reason: "nothing-to-roll" };
+  }
+
+  _inFlight.add(key);
+  try {
+    try {
+      await message.update({ [`flags.${MODULE_ID}.${claim}`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ${label}: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
+    try {
+      await ChatMessage.create({
+        content: move.content,
+        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true } },
+      });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ${label}: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.${claim}`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | ${label}: releasing the claim failed:`, e?.message ?? e));
+      return { posted: false, reason: "post-failed" };
+    }
+    return { posted: true };
+  } finally {
+    _inFlight.delete(key);
+  }
+}
+
+/**
+ * gmRelay handler for "tda.attempt" — a combat move card's (Strike / Clash /
+ * Gain Ground / React Under Fire) "⚔ Attempt to Finish the Fight", the card's
+ * roller's Take Decisive Action (issue #338 D1; applyCardRollerFollowup).
+ * The card's fight rides by id and name, so with two fights open the roll
+ * scores this one (TDA-BUTTON-NO-TARGET); a card that names none posts no
+ * target and the pipeline resolves the sole open fight, or asks which.
+ * Claim `decisiveActionAttempted`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyTakeDecisiveActionAttempt(payload = {}, ctx = {}) {
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "attempt to finish the fight", claim: "decisiveActionAttempted",
+    isCard: (f) => f.combatMoveCard === true,
+    build: (f) => {
+      const trackId    = typeof f.combatTrackId === "string" && f.combatTrackId ? f.combatTrackId : null;
+      const trackLabel = typeof f.combatTrackLabel === "string" && f.combatTrackLabel ? f.combatTrackLabel : null;
+      return {
+        content: trackLabel
+          ? `Take decisive action to seize the objective — ${trackLabel}.`
+          : "Take decisive action to seize the objective.",
+        flags: {
+          forcedMoveId: "take_decisive_action",
+          ...(trackId ? { forcedMoveTargetId: trackId } : {}),
+          ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+        },
+      };
+    },
+  });
+}
+
+/**
+ * gmRelay handler for "expedition.finish" — an expedition progress card's
+ * "🗺 Finish the Expedition", the card's roller's Finish an Expedition (issue
+ * #338 D1; applyCardRollerFollowup). The card's own track rides by id and
+ * label, so the right expedition finishes with several open
+ * (EXPEDITION-FINISH-TARGET, issue #306 R06). Claim `expeditionFinishAttempted`.
+ *
+ * @param {{ messageId?: string, actorId?: string|null }} payload
+ * @param {Object} [ctx]
+ * @returns {Promise<{ posted: boolean, reason?: string }>}
+ */
+export function applyFinishExpeditionAttempt(payload = {}, ctx = {}) {
+  return applyCardRollerFollowup(payload, ctx, {
+    label: "finish the expedition", claim: "expeditionFinishAttempted",
+    isCard: (f) => f.expeditionProgressCard === true,
+    build: (f) => {
+      const trackLabel = typeof f.trackLabel === "string" && f.trackLabel ? f.trackLabel : null;
+      const trackId    = typeof f.trackId === "string" && f.trackId ? f.trackId : null;
+      return {
+        content: trackLabel ? `Finish the expedition — ${trackLabel}.` : "Finish the expedition.",
+        flags: {
+          forcedMoveId: "finish_an_expedition",
+          ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+          ...(trackId ? { forcedMoveTargetId: trackId } : {}),
+        },
+      };
+    },
+  });
 }
 
 /**

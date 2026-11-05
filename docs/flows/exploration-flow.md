@@ -72,8 +72,12 @@ passage" drawing.
   (issue #321 U16). The progress card shows boxes filled and carries a
   **"🗺 Finish the Expedition"** button — its forced move names the track by
   id and speaks as the PC who marked the progress (the card's `actorId`,
-  issue #329 X05). Deliberately **not** an arrival move — no position write
-  mid-journey.
+  issue #329 X05). The press relays `expedition.finish`
+  (`cardActions.applyFinishExpeditionAttempt`): the canonical GM claims the
+  card once (`expeditionFinishAttempted`), and only that PC's player or a GM
+  may press it — it posted from the presser's client, so a crewmate finished
+  another player's expedition (issue #338 D1). Deliberately **not** an
+  arrival move — no position write mid-journey.
 - **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
   ship record, `currentLocationId`, the feedback card), and an Undertake an
   Expedition miss upgraded marks the expedition as a rolled hit would — the

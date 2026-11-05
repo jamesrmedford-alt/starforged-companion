@@ -15,7 +15,8 @@ since issue #321, `fulfilVow.pick` and `milestone.suggestion` — and
 their card and post the forced move once for the pipeline — flagged
 `deferWhileBusy`, so one that meets the move lock is held on the canonical
 GM and rolled when the lock frees, never dropped with its card claimed:
-issue #325 W02), and since issue #325 W11 the swear cards' reward pick
+issue #325 W02; since issue #338 D1 also a new vow's ⚔ Swear it (roll),
+`vow.swearRoll`), and since issue #325 W11 the swear cards' reward pick
 and link (`vow.reward`, `vow.link` — `src/session/swearVow.js`
 `applyRewardPickFromRelay` / `applyPlayerVowLinkFromRelay`, each claiming its
 card once; they were the ad-hoc `vow.setReward` / `vow.linkConnection`
@@ -98,7 +99,11 @@ catches sheet-made vows (no `vowId` yet), stamps `vowId = item.id`, and posts
 the "🆕 New vow recorded" card: stakes line, **⚔ Swear it (roll)** (forced
 `swear_an_iron_vow` without the inciting id — narrates + momentum, creates
 nothing twice; spoken as the vow's holder, the card's `actorId` or the PC
-holding its `vowId`, whoever presses it — issue #329 X05), a **connection
+holding its `vowId` — issue #329 X05; relayed `vow.swearRoll`:
+`applyPlayerVowSwearFromRelay` on the canonical GM claims the card once,
+`swearRolled`, and only the holder's player or a GM may press it — it
+posted from the presser's client, so a crewmate swore another player's vow,
+their momentum and oath scene, issue #338 D1), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the

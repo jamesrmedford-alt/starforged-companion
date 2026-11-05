@@ -220,15 +220,22 @@ with two fights open no downgrade applied). Entry points: the
 "⚔ Attempt to Finish the Fight" button on Strike / Clash / Gain Ground / React
 Under Fire cards, typed narration, and the Progress Tracks panel's Roll button
 (§5). The button names the move's own fight: `postMoveResult` stamps the
-pipeline's `moveFight` as `combatTrackId` / `combatTrackLabel`, and
-`wireTakeDecisiveActionButton` forwards them as `forcedMoveTargetId` /
+pipeline's `moveFight` as `combatTrackId` / `combatTrackLabel`, and the
+button's forced move carries them as `forcedMoveTargetId` /
 `forcedMoveTarget`, so with two fights open the roll scores that fight — it
 posted no target, scored nothing and was a certain miss
 (TDA-BUTTON-NO-TARGET). A card whose fight nothing named (or one posted
 before the stamp) posts no target and resolves the sole open fight. The
-forced post speaks as the card's roller (its `actorId`,
-`cardRollerSpeaker`), whoever presses it: a GM's press rolled as the
-campaign's first PC — their position, their +1 momentum (issue #329 X05). A TDA
+press relays `tda.attempt` (`wireTakeDecisiveActionButton` →
+`cardActions.applyTakeDecisiveActionAttempt`, the `fulfilVow.attempt`
+shape): the canonical GM claims the card once (`decisiveActionAttempted`)
+and posts the move as the card's roller (its `actorId`) — a GM's press
+rolled as the campaign's first PC, their position and +1 momentum (issue
+#329 X05) — and only the roller's player or a GM may press it: it posted
+from the presser's client, so a crewmate rolled another player's Take
+Decisive Action, a Pay the Price on them on a miss, and each client's press
+rolled again (issue #338 D1). An older card that names no roller rolls for
+the presser's own PC. A TDA
 that names no fight while two or more are open — typed narration, or such a
 card — is not rolled: the pipeline posts a **Which fight?** card instead
 (`postWhichFightCard`, flagged `whichFightCard` with the open fights' ids and

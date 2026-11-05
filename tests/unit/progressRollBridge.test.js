@@ -91,8 +91,13 @@ describe('the row\'s id rides the roll', () => {
   it('an expedition card\'s Finish button forwards the card\'s track id', async () => {
     const pending = [];
     setListenerResultSink(p => pending.push(p));
+    const savedMessages = game.messages;
     try {
-      const message = { flags: { [MODULE_ID]: { expeditionProgressCard: true, trackLabel: 'The Vault', trackId: 'ex-2' } } };
+      // The press relays to the canonical GM — this client — which claims the
+      // card it finds in game.messages before posting (issue #338 D1).
+      const message = { id: 'exp-card-2', flags: { [MODULE_ID]: { expeditionProgressCard: true, trackLabel: 'The Vault', trackId: 'ex-2' } },
+        update: vi.fn(async () => {}) };
+      game.messages = { get: (id) => (id === message.id ? message : null) };
       const root = parseHTML('<button type="button" data-action="sf-finish-expedition">Finish</button>');
       wireFinishExpeditionButton(message, root);
       root.querySelector('[data-action="sf-finish-expedition"]').click();
@@ -102,6 +107,7 @@ describe('the row\'s id rides the roll', () => {
       });
     } finally {
       setListenerResultSink(null);
+      game.messages = savedMessages;
     }
   });
 });

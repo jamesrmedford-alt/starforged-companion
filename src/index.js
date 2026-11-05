@@ -6166,24 +6166,6 @@ function liveCardFlags(message) {
   return (live ?? message)?.flags?.[MODULE_ID] ?? null;
 }
 
-/**
- * The speaker a card's forced follow-up posts as: the card's roller (its
- * `actorId`), whoever presses the button. The pipeline credits a message's
- * speaker — with none, its author, and a GM's press fell to the campaign's
- * first PC: 🏁 scored and paid that PC's vow, ⚔ rolled Take Decisive Action
- * with their position and momentum (issue #329 X05; decisions.md →
- * "Multiplayer attribution"). Nothing when the card names no roller (an older
- * card): the author's, as before. (The 🏁 buttons relay to the GM, which
- * speaks as the roller itself — cardActions.applyAttemptFulfilVow.)
- *
- * @param {ChatMessage} message — the card
- * @returns {{ speaker?: { actor: string } }}
- */
-function cardRollerSpeaker(message) {
-  const actorId = message?.flags?.[MODULE_ID]?.actorId;
-  return typeof actorId === "string" && actorId ? { speaker: { actor: actorId } } : {};
-}
-
 async function postCombatTrackCard({ track, created }) {
   const label = escapeChatHtml(track?.label ?? "Combat");
   const rank  = track?.rank ? ` (${track.rank})` : "";
@@ -8095,53 +8077,52 @@ onChatMessageRender((message, root) => {
 });
 
 /**
- * Wire the "Take Decisive Action" button on combat move result cards
- * (Strike / Clash / Gain Ground / React Under Fire). One click re-posts a
- * forced take_decisive_action move so the player can cash in the combat
- * progress track without retyping — same forced-move bridge as the NWMA
- * "Roll <move>" button. The confirm dialog still appears, so the action is
- * never fired silently.
+ * Wire the "⚔ Attempt to Finish the Fight" button on combat move result cards
+ * (Strike / Clash / Gain Ground / React Under Fire): the progress roll
+ * without retyping. A click relays to the canonical GM ("tda.attempt" →
+ * cardActions.applyTakeDecisiveActionAttempt), which claims the GM-authored
+ * card (`decisiveActionAttempted`) and posts the forced Take Decisive Action
+ * once, as the card's roller, with the card's fight by id and name
+ * (TDA-BUTTON-NO-TARGET). Only the roller's player or a GM may press it: it
+ * posted from the presser's client as the roller, so a crewmate rolled
+ * another player's Take Decisive Action — their position, their momentum, a
+ * Pay the Price on them (issue #338 D1). A card already pressed renders the
+ * button disabled; a click that is not delivered re-arms it. The confirm
+ * dialog still appears, so the action is never fired silently.
  *
- * Exported so Quench can drive it with a synthetic message + root (same
- * pattern as the audio card handlers).
+ * Exported so Quench can drive it with a message + root.
  */
 export function wireTakeDecisiveActionButton(message, root) {
   if (!message?.flags?.[MODULE_ID]?.combatMoveCard) return;
-  const btn = root?.querySelector?.('[data-action="sf-take-decisive-action"]');
+  wireRollerFollowup(message, root, "sf-take-decisive-action", "tda.attempt", "decisiveActionAttempted");
+}
+onChatMessageRender((message, root) => wireTakeDecisiveActionButton(message, root));
+
+// A card's forced follow-up that the card's roller makes (issue #338 D1): one
+// press per card, relayed to the canonical GM, which claims `claim` and posts
+// the move as the roller (cardActions.applyCardRollerFollowup). The clicker's
+// PC rides along for a card that names no roller.
+function wireRollerFollowup(message, root, dataAction, kind, claim) {
+  const btn = root?.querySelector?.(`[data-action="${dataAction}"]`);
   if (!btn) return;
+  if (liveCardFlags(message)?.[claim]) {
+    btn.disabled = true;
+    return;
+  }
   const fresh = btn.cloneNode(true);
   btn.replaceWith(fresh);
   fresh.addEventListener("click", async (event) => {
     event.preventDefault();
     event.stopPropagation();
     fresh.disabled = true;
-    try {
-      // The card's own fight rides the roll by id (and name), so with two
-      // fights open the roll scores this one — not nothing, a certain miss
-      // (TDA-BUTTON-NO-TARGET). A fight finished or deleted meanwhile rolls
-      // nothing and says so (issue #306 R06). Cards without the stamp (older
-      // ones, or a move whose fight nothing named) post no target: the
-      // pipeline then resolves the sole open fight, or asks which fight.
-      const trackId    = message.flags[MODULE_ID].combatTrackId ?? null;
-      const trackLabel = message.flags[MODULE_ID].combatTrackLabel ?? null;
-      await ChatMessage.create({
-        content: trackLabel
-          ? `Take decisive action to seize the objective — ${trackLabel}.`
-          : "Take decisive action to seize the objective.",
-        ...cardRollerSpeaker(message),
-        flags:   { [MODULE_ID]: {
-          bypassPacing: true, forcedMoveId: "take_decisive_action",
-          ...(trackId ? { forcedMoveTargetId: trackId } : {}),
-          ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
-        } },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | Take Decisive Action button failed:`, err);
-      fresh.disabled = false;
-    }
+    await relayCardAction({
+      kind,
+      payload:    { messageId: message?.id ?? null, actorId: clickerActorId() },
+      isResolved: () => !!liveCardFlags(message)?.[claim],
+      restore:    () => { fresh.disabled = false; },
+    });
   });
 }
-onChatMessageRender((message, root) => wireTakeDecisiveActionButton(message, root));
 
 /**
  * Wire a "which fight?" card's buttons (postWhichFightCard). A pick posts the
@@ -8408,43 +8389,20 @@ function wireFulfilAttempt(message, root, dataAction) {
 
 /**
  * Wire the "🗺 Finish the Expedition" button on expedition progress cards.
- * Clicking posts a forced finish_an_expedition move so the interpreter,
- * narrator, and pipeline handle the progress roll, narration, track closure,
- * and discoveries legacy reward automatically.
+ * A click relays to the canonical GM ("expedition.finish" →
+ * cardActions.applyFinishExpeditionAttempt), which claims the GM-authored
+ * card (`expeditionFinishAttempted`) and posts the forced
+ * finish_an_expedition once, as the card's roller — the pipeline handles the
+ * progress roll, narration, track closure and discoveries legacy. The card's
+ * own track rides by label and id, so THIS expedition finishes with several
+ * open (EXPEDITION-FINISH-TARGET; issue #306 R06). Only the roller's player
+ * or a GM may press it (issue #338 D1).
  *
- * Exported so Quench can drive it with a synthetic message + root.
+ * Exported so Quench can drive it with a message + root.
  */
 export function wireFinishExpeditionButton(message, root) {
   if (!message?.flags?.[MODULE_ID]?.expeditionProgressCard) return;
-  const btn = root?.querySelector?.('[data-action="sf-finish-expedition"]');
-  if (!btn) return;
-  const fresh = btn.cloneNode(true);
-  btn.replaceWith(fresh);
-  fresh.addEventListener("click", async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    fresh.disabled = true;
-    try {
-      // Carry the card's own expedition label as the move target so the
-      // finish roll scores and completes THIS track even when several
-      // expeditions are open (EXPEDITION-FINISH-TARGET fix). Older cards
-      // without the flag fall back to the sole-open-track ladder.
-      const trackLabel = message.flags[MODULE_ID].trackLabel ?? null;
-      const trackId    = message.flags[MODULE_ID].trackId ?? null;
-      await ChatMessage.create({
-        content: trackLabel ? `Finish the expedition — ${trackLabel}.` : "Finish the expedition.",
-        ...cardRollerSpeaker(message),
-        flags:   { [MODULE_ID]: {
-          bypassPacing: true, forcedMoveId: "finish_an_expedition",
-          ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
-          ...(trackId ? { forcedMoveTargetId: trackId } : {}),
-        } },
-      });
-    } catch (err) {
-      console.error(`${MODULE_ID} | Finish the Expedition button failed:`, err);
-      fresh.disabled = false;
-    }
-  });
+  wireRollerFollowup(message, root, "sf-finish-expedition", "expedition.finish", "expeditionFinishAttempted");
 }
 onChatMessageRender((message, root) => wireFinishExpeditionButton(message, root));
 
