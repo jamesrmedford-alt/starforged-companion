@@ -1805,7 +1805,10 @@ export async function postCampaignRecap(campaignState, options = {}) {
 
   if (!options.silent) {
     const isGM = game.user?.isGM ?? false;
-    const paragraphs = text.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join('');
+    // The model's text (and any GM-edited chronicle entry it quotes) is
+    // prose, escaped as the narrator card's own sink is: "<signal lost>"
+    // vanished as an unknown tag and live markup rendered (issue #331 X24).
+    const paragraphs = text.split(/\n\n+/).map(p => `<p>${escapeHtml(stripMarkup(p.trim()))}</p>`).join('');
     await ChatMessage.create({
       content: `
         <div class="sf-recap-campaign-card">
