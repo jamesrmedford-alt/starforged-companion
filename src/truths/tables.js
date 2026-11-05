@@ -80,7 +80,7 @@ export const TRUTH_TABLES = {
       {
         min: 34, max: 67,
         title: "A ragtag fleet of ships carried our ancestors to the Forge via experimental FTL drives.",
-        description: "But the technology that powered the ships is said to be the source of the Sundering, a fracturing of reality that plagues us here today. The experimental drives used by the Exodus fleet are forbidden, but the damage is done. The Sundering spreads across our reality like cracks on the surface of an icy pond. Those fissures unleash even more perilous realities upon our own.",
+        description: "But the technology that powered the ships is said to be the source of the Sundering, a fracturing of reality that plagues us here today. The experimental drives used by the Exodus fleet are forbidden, but the damage is done. The Sundering spreads across our reality like cracks on the surface of an icy pond. Those fissures unleash even more perilous realities upon our own. Did we flee one cataclysm, only to inadvertently create another?",
         questStarter: "A malfunctioning drive sent one of the refugee ships through space and time. Centuries later, they have finally arrived. For them, only weeks have passed. Why are these people mistrusted? Do you aid or oppose them?",
       },
       {
@@ -132,13 +132,13 @@ export const TRUTH_TABLES = {
       {
         min: 34, max: 67,
         title: "Iron vows are sworn upon totems crafted from the enigmatic metal we call black iron.",
-        description: "Black iron was first forged by a long-dead civilization. Some say it is a living metal, attuned to the hidden depths of the universe. Remnants of this prized resource are found within ancient sites throughout the Forge. It is resistant to damage and corrosion, but can be molded using superheated plasma at specialized facilities.",
+        description: "Black iron was first forged by a long-dead civilization. Some say it is a living metal, attuned to the hidden depths of the universe. Remnants of this prized resource are found within ancient sites throughout the Forge. It is resistant to damage and corrosion, but can be molded using superheated plasma at specialized facilities. The Ironsworn carry weapons, armor, or tokens crafted from black iron, and swear vows upon it.",
         questStarter: "A black iron token of special significance has been stolen. What power or authority is bound to this object? Who has taken it?",
       },
       {
         min: 68, max: 100,
         title: "The Ironsworn bind their honor to iron blades.",
-        description: "Aboard a starship, where stray gunfire can destroy fragile equipment or pierce hulls, the brutal practicality of a sword makes for a useful weapon. When the Ironsworn swear a vow upon a sword, they bind their commitment to the metal. If they forsake a vow, that iron must be abandoned. To be Ironsworn without a blade is to be disgraced.",
+        description: "Aboard a starship, where stray gunfire can destroy fragile equipment or pierce hulls, the brutal practicality of a sword makes for a useful weapon. A few also favor the silent efficiency of a blade for infiltration or espionage. Most importantly, when the Ironsworn swear a vow upon a sword, they bind their commitment to the metal. If they forsake a vow, that iron must be abandoned. To be Ironsworn without a blade is to be disgraced.",
         questStarter: "You vow to forge a new sword from the iron of an important object or artifact. What is it, and why is it meaningful to you? Who protects it?",
       },
     ],
@@ -350,7 +350,7 @@ export const TRUTH_TABLES = {
       {
         min: 68, max: 100,
         title: "Life in the Forge was seeded and engineered by the Essentia, ancient entities who enact their inscrutable will.",
-        description: "The Essentia are the architects of life within the Forge. These omniscient beings are rarely encountered, and have powers and purpose beyond our comprehension. Some worship them. Others resist or rebel against them. But trying to defy the will of the Essentia is like standing at the shore of an ocean to thwart the tide.",
+        description: "The Essentia are the architects of life within the Forge. These omniscient beings are rarely encountered, and have powers and purpose beyond our comprehension. Some worship them. Others resist or rebel against them. But trying to defy the will of the Essentia is like standing at the shore of an ocean to thwart the tide. They are inevitable.",
         questStarter: "An eccentric xenologist believes the genomes of life within the Forge don't just show commonalities—they are in fact a coded message from the Essentia. But there are still significant gaps, and the truth may only be revealed with additional samples. What is your stake in this project?",
       },
     ],
@@ -402,7 +402,7 @@ export const TRUTH_TABLES = {
       {
         min: 68, max: 100,
         title: "The strange energies of the Forge give unnatural life to the dead. The Soulbinders stand against them.",
-        description: "The woken dead are a plague within the Forge. Some of these beings are benevolent or seek absolution, but most are hollowed and corrupted by death. They are driven by hate and a hunger for the warmth of life forever lost to them. The Soulbinders are dedicated to putting them to rest.",
+        description: "The woken dead are a plague within the Forge. Some of these beings are benevolent or seek absolution, but most are hollowed and corrupted by death. They are driven by hate and a hunger for the warmth of life that is forever lost to them. The Soulbinders are dedicated to putting them to rest—whatever the cost.",
         questStarter: "Rumors persist of a fleet of ghost ships, bound for settled domains. Who is said to lead this corrupted armada? Why do they seek revenge against the living?",
       },
     ],

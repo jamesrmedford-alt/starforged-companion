@@ -31,6 +31,7 @@
 import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
+import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -275,7 +276,8 @@ async function beginSessionOnce(payload) {
                 // must enter the ring/summary or it is forgotten instantly.
                 // narrationId: what an X-Card on it retracts (issue #321 U07).
                 await ChatMessage.create({
-                  content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${escapeHtml(text)}</em></div>`,
+                  // NPC dialogue markup stripped, as on every fiction card (issue #331 X27).
+                  content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${escapeHtml(stripMarkup(text))}</em></div>`,
                   flags:   {
                     [MODULE_ID]: {
                       clockCard:         true,
@@ -517,6 +519,19 @@ async function endSessionOnce(payload) {
   // one (rollSessionIfDue, issue #286 C4).
   state.sessionEndedId = state.currentSessionId ?? null;
 
+  // The gate closes first: only the fields End a Session owns, merged onto
+  // the latest stored campaignState, before the scene close and the
+  // summary's Claude call. Written after them, the store said the session
+  // was active for those seconds, and a line typed meanwhile was rolled and
+  // narrated into the session being ended — after its scene closed and its
+  // summary was finalised (issue #331 X41). Written whole, `state` reverted a
+  // move persisted meanwhile (its legacy ticks, entity ids, its released
+  // `pendingMove` lock). A write failure still throws (the card says so),
+  // before anything else of the End has run.
+  const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
+  await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(state, END_SESSION_FIELDS, "end session"));
+  Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
+
   // NARR-SESSION-SCENE (narrator-context audit 2026-07): End Session used
   // to flip the gate only — the active scene survived into the next
   // session, whose empty ring + empty summary then mixed with stale scene
@@ -540,17 +555,9 @@ async function endSessionOnce(payload) {
     console.warn(`${MODULE_ID} | rolling session summary finalise failed:`, err?.message ?? err);
   }
 
-  // Write back only the fields End a Session owns, merged onto the latest
-  // stored campaignState. `state` was read before endScene and the summary's
-  // Claude call, and writing it whole reverted a move persisted meanwhile —
-  // its session-log entry, legacy ticks and entity ids, and even its released
-  // `pendingMove` lock (every later move then refused until a reload). The
-  // scene fields were persisted by endScene, the summary by
-  // getRollingSessionSummary. A write failure still throws (the card says so).
-  const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
-  const ended = mergeOwnedFields(state, END_SESSION_FIELDS, "end session");
-  await game.settings.set(MODULE_ID, "campaignState", ended);
-  Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
+  // The session as the store holds it now: the scene fields endScene
+  // persisted, the summary getRollingSessionSummary did, End's own fields.
+  const ended = game.settings.get(MODULE_ID, "campaignState") ?? state;
 
   // Write the session log on End (F18). writeSessionLog was implemented but
   // never called from production, so the Session Log journal stayed blank.

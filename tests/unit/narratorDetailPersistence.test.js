@@ -195,10 +195,11 @@ describe('a recorded NPC: what the narrator records about them is kept', () => {
     ));
     await table.settle();
     expect(applied).toHaveLength(1);
+    // The expanded diff, as Foundry hands updateActor its change.
     expect(seenByPlayer).toEqual([{
-      [`flags.${MODULE_ID}.connection`]: expect.objectContaining({
+      flags: { [MODULE_ID]: { connection: expect.objectContaining({
         generativeTier: [expect.objectContaining({ detail: 'Sold the crew\'s route to the Syndicate.' })],
-      }),
+      }) } },
     }]);
     expect(tier(kael).map(e => e.detail)).toEqual(['Sold the crew\'s route to the Syndicate.']);
 

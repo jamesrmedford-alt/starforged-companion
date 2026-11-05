@@ -102,7 +102,17 @@ export function registerSharedSupplyHook() {
           if (supplyOf(source) !== target) writes.unshift({ actor: source, value: target });
           for (const u of writes) {
             if (_sync.next) break;                              // a newer change: its pass writes everyone
-            await u.actor.update({ "system.supply.value": u.value }, { [MODULE_ID]: { [MIRROR_OPTION]: true } });
+            // Each PC's write stands alone, as the legacy mirror's does: a
+            // refused write is named and the pass goes on. It threw out of the
+            // loop, so every PC after it kept the old value and a change
+            // queued meanwhile was never run (issue #331 X52).
+            try {
+              await u.actor.update({ "system.supply.value": u.value }, { [MODULE_ID]: { [MIRROR_OPTION]: true } });
+            } catch (err) {
+              const name = u.actor?.name ?? u.actor?.id;
+              console.warn(`${MODULE_ID} | shared-supply sync: ${name}'s supply was not set to ${u.value}:`, err?.message ?? err);
+              globalThis.ui?.notifications?.warn?.(`Shared supply: ${name}'s supply could not be set to ${u.value} — set it on their sheet.`);
+            }
           }
         }
       } finally {

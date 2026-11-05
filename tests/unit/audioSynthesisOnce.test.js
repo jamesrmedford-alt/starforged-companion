@@ -28,7 +28,7 @@ const MODULE_ID = 'starforged-companion';
 const PROSE = 'The hull groans and holds.';
 const SPEC = { voiceId: 'voice-narrator', modelId: 'eleven_flash_v2_5', text: PROSE, speed: 1 };
 
-let savedHTMLElement, release;
+let savedHTMLElement, release, savedMessages;
 const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setTimeout(r, 0)); };
 
 /** A keyless player's client asks the canonical GM for a clip (its socket message). */
@@ -67,12 +67,16 @@ beforeEach(() => {
     'audio.npcVoiceId':      'voice-npc',
     'elevenLabsApiKey':      'sk_gm_key',          // the canonical GM holds the key
   })) game.settings._store.set(`${MODULE_ID}.${key}`, value);
+  // The GM synthesises only a narrator card's line in chat (issue #331 X51).
+  savedMessages = game.messages;
+  game.messages = { contents: [{ id: 'msg-in-chat', flags: { [MODULE_ID]: { narratorCard: true, narrationText: PROSE } } }] };
   game.socket._reset();
   registerAudioSocket();
 });
 
 afterEach(async () => {
   await stopActivePlayback();
+  game.messages = savedMessages;
   game.socket._reset();
   setListenerResultSink(null);
   globalThis.HTMLElement = savedHTMLElement;

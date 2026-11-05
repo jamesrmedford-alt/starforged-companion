@@ -17,6 +17,7 @@ import {
   getActiveThreats,
   promoteLoreToConfirmed,
   updateThreatSeverity,
+  writeEntryPage,
 } from './worldJournal.js';
 import { openCorrectionDialog } from '../factContinuity/correctionDialog.js';
 
@@ -419,7 +420,8 @@ async function clearNarratorAssertion(title) {
     narratorAsserted: false,
     updatedAt:        new Date().toISOString(),
   };
-  await page.setFlag(MODULE_ID, FLAG_KEYS.lore, updated);
+  // The flag and the page body players read, together (issue #331 X30).
+  await writeEntryPage(page, FLAG_KEYS.lore, updated);
   return updated;
 }
 

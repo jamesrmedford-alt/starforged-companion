@@ -1,0 +1,17 @@
+Defect: X48 (issue #331) — a planet is named from one list whatever its class, not its class's Sample Names
+Tests: tests/unit/planetSampleNames.test.js
+Catches: each rolled planet is named from SAMPLE_NAMES_<CLASS>
+
+diff --git a/src/sectors/sectorGenerator.js b/src/sectors/sectorGenerator.js
+index d6da463..2b3efb6 100644
+--- a/src/sectors/sectorGenerator.js
++++ b/src/sectors/sectorGenerator.js
+@@ -1016,7 +1016,7 @@ function locationTypeToMarker(locationType) {
+  * @returns {string}
+  */
+ function generatePlanetName(planetType) {
+-  const table = PLANET_SAMPLE_NAMES[planetType] ?? PLANETS.SAMPLE_NAMES_ROCKY;
++  const table = PLANETS.SAMPLE_NAMES_ROCKY;
+   return rollTableResult(table);
+ }
+ 

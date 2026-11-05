@@ -223,6 +223,11 @@ export async function openTakeABreakDialog() {
       { action: "stop",    label: "Stop for now" },
       { action: "cancel",  label: "Cancel" },
     ],
+    // Closed with × or Escape: resolve null — the Cancel path below. wait()
+    // rejects a dismissed dialog by default ("Dialog was dismissed without
+    // pressing a button"), and the rejection escaped to `!break`'s route and
+    // the Session panel unhandled (issue #331 X43).
+    rejectClose: false,
   });
 
   if (choice === "cancel" || !choice) return;

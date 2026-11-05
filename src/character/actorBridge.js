@@ -578,6 +578,12 @@ export async function markVowProgress(actor, vowItemId, ticks) {
     console.warn(`actorBridge | markVowProgress: vow item ${vowItemId} not found on actor ${actor.id}`);
     return;
   }
+  // A fulfilled vow is never marked: its track (and the shared copies the
+  // sync hook mirrors) would move after the fulfilment (issue #331 X20).
+  if (item.system?.completed) {
+    console.warn(`actorBridge | markVowProgress: vow "${item.name ?? vowItemId}" is fulfilled — not marked.`);
+    return;
+  }
 
   // foundry-ironsworn's ProgressModel is a strict TypeDataModel whose progress
   // field is `system.current` (a ProgressTicksField, 0–40) — there is NO

@@ -555,9 +555,16 @@ const result = await DialogV2.wait({
     { action: "yes", label: "Yes", default: true },
     { action: "no",  label: "No" },
   ],
+  rejectClose: false,   // wait() defaults it to TRUE
 });
 // result = "yes" | "no" | null (if closed)
 ```
+
+`wait()` **rejects** a dialog closed without a button ("Dialog was dismissed
+without pressing a button.") unless `rejectClose: false` is passed — its
+default is `true`, unlike `confirm()` / `prompt()`, which default it to false.
+Pass `rejectClose: false` to read a close as `null`, or catch the rejection
+(issue #331 X43: Take a Break's × escaped as an unhandled rejection).
 
 ---
 

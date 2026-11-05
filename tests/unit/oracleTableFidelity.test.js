@@ -96,6 +96,14 @@ const MAP = {
   decisive_action_cost: "Moves/Take_Decisive_Action", mortal_wound: "Moves/Endure_Harm",
   desolation: "Moves/Endure_Stress", vehicle_damage: "Moves/Withstand_Damage",
 };
+// Each planetary class's Sample Names (issue #331 X48): a d20 in the
+// rulebook, kept on the d100 here at five numbers a name — compared at that
+// scale (SCALE).
+const SCALE = {};
+for (const c of ["desert", "furnace", "grave", "ice", "jovian", "jungle", "ocean", "rocky", "shattered", "tainted", "vital"]) {
+  MAP[`planet_name_${c}`]   = `oracle_rollable:starforged/planet/${c}/name`;
+  SCALE[`planet_name_${c}`] = 5;
+}
 for (const t of ["chaotic", "haunted", "infested", "inhabited", "mechanical", "ruined", "sacred"]) {
   const T = t[0].toUpperCase() + t.slice(1);
   MAP[`theme_${t}`]             = `Location_Themes/${T}/Feature`;
@@ -138,11 +146,13 @@ describe.skipIf(!HAVE_VENDOR)("registered oracle tables match the rulebook (Data
 
       const problems = [];
       const sorted = [...theirs].sort((a, b) => a.range[0] - b.range[0]);
+      const k = SCALE[id] ?? 1;
       for (let roll = 1; roll <= 100; roll++) {
         const o = ours.find(r => roll >= r.min && roll <= r.max);
-        const t = sorted.find(r => roll >= r.range[0] && roll <= r.range[1]);
+        const v = Math.ceil(roll / k);
+        const t = sorted.find(r => v >= r.range[0] && v <= r.range[1]);
         const oRange = o ? `${o.min}-${o.max}` : "none";
-        const tRange = t ? `${t.range[0]}-${t.range[1]}` : "none";
+        const tRange = t ? `${(t.range[0] - 1) * k + 1}-${t.range[1] * k}` : "none";
         const textOk = TEXT_ABRIDGED.has(id) || (o && t && sameText(norm(o.result), norm(t.text)));
         if (oRange !== tRange || !textOk) {
           problems.push(`roll ${roll}: module ${oRange} "${o?.result}" — rulebook ${tRange} "${norm(t?.text)}"`);

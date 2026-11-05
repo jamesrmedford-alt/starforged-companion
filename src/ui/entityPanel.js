@@ -231,6 +231,8 @@ export class EntityPanelApp extends ApplicationV2 {
 
   async _prepareContext(_options) {
     const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    // What this render shows, for onSettingChanged to compare against.
+    this._stateShown = shownStateFingerprint(campaignState);
     const isCurrentLocation = (id) =>
       !!campaignState.currentLocationId && campaignState.currentLocationId === id;
 
@@ -484,7 +486,7 @@ export class EntityPanelApp extends ApplicationV2 {
         : '';
       portraitHtml = `
         <div class="portrait-wrap">
-          <img class="entity-portrait" src="${entity.art.dataUri}" alt="${entity.name} portrait">
+          <img class="entity-portrait" src="${escapeHtml(entity.art.dataUri)}" alt="${escapeHtml(entity.name)} portrait">
           ${lockBadge}
           <div class="portrait-actions">${regenBtn}</div>
         </div>`;
@@ -1141,7 +1143,35 @@ export class EntityPanelApp extends ApplicationV2 {
       if (wasSelected) instance.#selectedId = null;
       if (wasSelected || isEntityActor(actor)) instance.render();
     });
+
+    Hooks.on('updateSetting', EntityPanelApp.onSettingChanged);
+    Hooks.on('createSetting', EntityPanelApp.onSettingChanged);
   }
+
+  /**
+   * campaignState setting hook: the panel shows two of its fields — the
+   * current location (a place's "Set as current location" toggle, read live
+   * at the press) and the dismissed names (the Dismissed tab). An `!at` or a
+   * draft card's Dismiss elsewhere left an open panel stale, and a press on
+   * the stale toggle cleared the place it meant to set (issue #331 X56). An
+   * open panel re-renders when what it showed changed. Local to this client.
+   *
+   * @param {{ key?: string }} setting — the Setting document
+   */
+  static onSettingChanged(setting) {
+    if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+    const instance = EntityPanelApp.#instance;
+    if (!instance?.rendered) return;
+    let campaignState;
+    try { campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {}; } catch { return; }
+    if (shownStateFingerprint(campaignState) === instance._stateShown) return;
+    instance.render();
+  }
+}
+
+/** The campaignState fields the panel shows, as one comparable string. */
+function shownStateFingerprint(campaignState) {
+  return JSON.stringify([campaignState?.currentLocationId ?? null, campaignState?.dismissedEntities ?? []]);
 }
 
 /**

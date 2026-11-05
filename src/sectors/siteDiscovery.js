@@ -104,6 +104,31 @@ export async function revealSectorSite(label, opts = {}) {
 }
 
 /**
+ * Save a site's discovered flag on the latest stored campaignState — a move's
+ * site reveal whose record the world refused, applied again from the GMs'
+ * payoff failure card (issue #331 X18). The reveal's scene pin and location
+ * status were applied at the reveal; only the flag rode on the move's record.
+ *
+ * @param {{ sectorId?: string|null, siteId?: string|null }} ref
+ * @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
+ */
+export async function saveSiteDiscovered({ sectorId = null, siteId = null } = {}) {
+  if (!sectorId || !siteId) return { ok: false, reason: "invalid step" };
+  const getState = () => game.settings.get(MODULE_ID, "campaignState");
+  const sector = (getState()?.sectors ?? []).find(s => s?.id === sectorId) ?? null;
+  const site   = sector?.mapData?.discoveries?.find?.(d => d?.id === siteId) ?? null;
+  if (!site) return { ok: false, reason: "site-gone" };
+  if (site.discovered) return { ok: true };
+  try {
+    await persistSiteFlag(getState, s => game.settings.set(MODULE_ID, "campaignState", s), sector, site, "discovered", "saveSiteDiscovered");
+    return { ok: true };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | saveSiteDiscovered: the world refused the write:`, err?.message ?? err);
+    return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+  }
+}
+
+/**
  * Post a GM/table-visible card announcing a newly discovered site.
  *
  * @param {{sector:Object, site:Object}} result — revealSectorSite() return
@@ -130,7 +155,9 @@ export async function postSiteDiscoveryCard(result) {
 
   const content =
     `<div class="starforged-companion-card">` +
-    `<h3>◈ Site Discovered — ${site.name}</h3>` +
+    // The name is the location Actor's — GM-edited free text — escaped as the
+    // first-look line beside it is (issue #331 X45).
+    `<h3>◈ Site Discovered — ${escapeSiteHtml(site.name)}</h3>` +
     `<p>A passage opens through to a ${kind} in the sector's outer reaches. ` +
     `It is now charted on the sector map — undertake an expedition there, or ` +
     `Explore a Waypoint to move through its zones.</p>` +
@@ -230,5 +257,5 @@ async function persistSiteFlag(getState, setState, sector, site, key, label) {
 
 function escapeSiteHtml(s) {
   return String(s ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }

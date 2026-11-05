@@ -15,6 +15,9 @@
  * Source: docs/foundry-reference/foundry-api-reference.md §Combat and Combatant
  */
 
+import { isPlayerCharacterActor } from '../character/actorBridge.js';
+import { requestGmAction } from '../multiplayer/gmRelay.js';
+
 const MODULE_ID  = 'starforged-companion';
 const SETTING_KEY = 'combatTrackerEnabled';
 
@@ -224,6 +227,30 @@ async function setBadgePosition(combat, combatant, actorPos) {
   }
 }
 
+/**
+ * A player's click on their own character's position badge: the canonical GM
+ * cycles that character's position on the fight and mirrors it to the sheet
+ * and the badge (ui/progressTracks.js applyProgressTrackEditFromRelay, op
+ * `position` — the Progress Tracks panel's toggle). The GM checks the
+ * requester owns the character. Never throws; a refusal is said.
+ *
+ * @param {Combat} combat
+ * @param {Combatant} combatant — the player's own character's
+ * @returns {Promise<void>}
+ */
+async function requestOwnPosition(combat, combatant) {
+  const trackId = combat?.getFlag?.(MODULE_ID, 'trackId') ?? null;
+  try {
+    const res = await requestGmAction('progressTrack.edit', { op: 'position', trackId, actorId: combatant.actor?.id ?? null });
+    if (res?.result?.applied === false) {
+      ui.notifications?.warn?.('Starforged Companion: the combat position was not changed — the fight is over or gone.');
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | combatTracker: the position request failed:`, err?.message ?? err);
+    ui.notifications?.warn?.('Starforged Companion: the combat position could not be saved — try again.');
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // HOOKS
 // ─────────────────────────────────────────────────────────────────────────────
@@ -268,15 +295,28 @@ export function registerCombatTrackerHooks() {
       const badges = document.createElement('div');
       badges.className = 'sf-combat-badges';
 
+      // Who may press the badges (issue #331 X22 — they were built on every
+      // client, and a player's click hit a bare isGM return: nothing written,
+      // relayed or said). A GM writes here; a player's own character's
+      // position is asked of the canonical GM through the Progress Tracks
+      // panel's relay (progressTrack.edit op position, issue #321 U05 / U19);
+      // every other badge is shown, not pressed, and its title says whose it is.
+      const isGM   = game.user?.isGM === true;
+      const ownPc  = !isGM && isPlayerCharacterActor(combatant.actor) && combatant.actor?.isOwner === true;
+      const whose  = combatant.actor?.name ?? combatant.name ?? 'this combatant';
+
       // Position badge — cycles through inControl → inABadSpot → none on click
       const posBadge = document.createElement('button');
       posBadge.type      = 'button';
       posBadge.className = `sf-combat-badge sf-pos-badge sf-pos-${position}`;
-      posBadge.title     = 'Click to toggle combat position';
+      posBadge.title     = (isGM || ownPc) ? 'Click to toggle combat position' : `Combat position — ${whose}'s player or a GM can change it`;
+      posBadge.disabled  = !(isGM || ownPc);
       posBadge.textContent = POSITION_LABELS[position] ?? '—';
       posBadge.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (!game.user.isGM) return;
+        if (ownPc) return requestOwnPosition(combat, combatant);
+        // A disabled badge swallows the click; this guards a stale listener.
+        if (!isGM) return console.debug(`${MODULE_ID} | combatTracker: ${whose}'s position is not this user's to change.`);
         const next = POSITION_CYCLE[position] ?? 'inControl';
         return setBadgePosition(combat, combatant, next).catch(err => {
           console.warn(`${MODULE_ID} | combatTracker: the position change was not saved:`, err?.message ?? err);
@@ -291,11 +331,15 @@ export function registerCombatTrackerHooks() {
       rangeBadge.className = `sf-combat-badge sf-range-badge sf-range-${range}`;
       // Advisory only — Starforged has no range mechanic; the badge is a
       // fictional-positioning aid (see decisions.md "Range badges are advisory").
-      rangeBadge.title     = 'Click to toggle range (close / far) — fictional positioning aid, no roll modifier';
+      // A GM's to set: a player sees it, not a button that does nothing.
+      rangeBadge.title     = isGM
+        ? 'Click to toggle range (close / far) — fictional positioning aid, no roll modifier'
+        : 'Range (close / far), set by the GM — fictional positioning aid, no roll modifier';
+      rangeBadge.disabled  = !isGM;
       rangeBadge.textContent = RANGE_LABELS[range] ?? range;
       rangeBadge.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (!game.user.isGM) return;
+        if (!isGM) return console.debug(`${MODULE_ID} | combatTracker: the range badge is the GM's to set.`);
         const next = RANGE_CYCLE[range] ?? 'close';
         combatant.setFlag(MODULE_ID, 'range', next);
       });

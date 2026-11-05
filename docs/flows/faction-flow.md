@@ -82,7 +82,10 @@ the active sector, rendered in the ACTIVE SECTOR block. Static, name-only.
 ## 5. What held up under audit
 
 New narrator-named factions get an immediate durable WJ home (auto-surface,
-2026-06) instead of dying in an unconfirmed draft; the new-faction WJ loop
+2026-06) instead of dying in an unconfirmed draft — once: the auto-surface
+skips a faction this pass's `factionUpdates` (routed first) or an earlier
+pass already put on the journal, so one mention is one encounter (issue #331
+X33); the new-faction WJ loop
 correctly skips names that already have entity records; matched faction
 entity cards render the full record including stance and latest project;
 the generative tier accrues narrative development for matched factions;

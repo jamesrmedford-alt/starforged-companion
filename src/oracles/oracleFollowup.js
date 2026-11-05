@@ -27,6 +27,8 @@
 
 import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { hasKeyedActiveGM, isCanonicalGM } from "../multiplayer/gmGate.js";
+import { isPlayerCharacterActor } from "../character/actorBridge.js";
+import { requesterOwnsActor } from "../moves/burnMomentum.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -37,14 +39,17 @@ const MODULE_ID = "starforged-companion";
  * landed and its chat-render hook has fired before the narrator call starts —
  * chat order is `<raw card> → <narration card>`.
  *
+ * The GM is sent the raw card's id alone: it narrates what that card carries
+ * (`oracleNarration`), never text a relay brings (issue #331 X49).
+ *
  * @param {{ kind: string, oracleName: string, question?: string,
- *           rolledLine: string, speakerActorId?: string|null }} args
- *   plain data only — it may cross the socket to the GM.
+ *           rolledLine: string, speakerActorId?: string|null, messageId?: string|null }} args
+ *   — `messageId`: the raw card this client just posted
  */
 export function requestOracleNarration(args) {
   if (hasKeyedActiveGM()) {
     setTimeout(() => {
-      requestGmAction("oracle.narrate", { ...args }).catch(err =>
+      requestGmAction("oracle.narrate", { messageId: args?.messageId ?? null }).catch(err =>
         console.warn(`${MODULE_ID} | oracle follow-up: relay to the GM failed:`, err?.message ?? err));
     }, 0);
     return;
@@ -64,15 +69,55 @@ export function requestOracleNarration(args) {
   console.debug(`${MODULE_ID} | oracle follow-up: no Claude key on this client and no keyed GM connected — narration skipped.`);
 }
 
+// Raw cards this GM has narrated — one narration a card.
+const _narrated = new Set();
+
 /**
- * gmRelay handler for "oracle.narrate" — runs on the canonical GM.
+ * gmRelay handler for "oracle.narrate" — runs on the canonical GM, on its
+ * Claude key, applying the narration's side-data to the shared story. The
+ * relay names the raw oracle card, and what is narrated is that card's own
+ * `oracleNarration` — never a payload's oracle name, question or result:
+ * a hand-crafted relay billed arbitrary text to the GM's key and planted its
+ * narration and ledger facts in the story (issue #331 X49; the trust model,
+ * decisions.md W81). The card must be a raw oracle card (`!oracle`, `!oracle
+ * <table>`, `!pay-the-price`) posted by the requester — or the requester a
+ * GM — and it is narrated once. The speaker it names must be a PC its author
+ * owns; otherwise the narration names none.
  *
- * @param {Object} payload  the args passed to requestOracleNarration
- * @param {Object} [_ctx]
- * @returns {Promise<string|null>} the narration text, or null when skipped
+ * @param {{ messageId?: string }} payload
+ * @param {{ requesterId?: string|null, requester?: User|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<string|null>} the narration text, or null when refused or skipped
  */
-export async function narrateOracleFollowupOnGm(payload = {}, _ctx = {}) {
-  return runOracleFollowup(payload);
+export async function narrateOracleFollowupOnGm(payload = {}, ctx = {}) {
+  const messageId = typeof payload?.messageId === "string" && payload.messageId ? payload.messageId : null;
+  const card = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  const f    = card?.flags?.[MODULE_ID] ?? {};
+  const spec = f.oracleNarration;
+  if (!card || !(f.oracleCommandCard || f.payThePriceCard) || !spec || typeof spec !== "object") {
+    console.warn(`${MODULE_ID} | oracle follow-up: ${messageId ?? "no card"} is not a raw oracle card — not narrated.`);
+    return null;
+  }
+  const authorId = card.author?.id ?? card.user?.id ?? null;
+  if (!ctx?.requesterIsGM && authorId !== (ctx?.requesterId ?? null)) {
+    console.warn(`${MODULE_ID} | oracle follow-up: user ${ctx?.requesterId ?? "?"} did not post card ${messageId} — not narrated.`);
+    return null;
+  }
+  if (_narrated.has(messageId)) {
+    console.debug(`${MODULE_ID} | oracle follow-up: card ${messageId} is already narrated.`);
+    return null;
+  }
+  _narrated.add(messageId);
+  const speaker = typeof spec.speakerActorId === "string" ? (globalThis.game?.actors?.get?.(spec.speakerActorId) ?? null) : null;
+  const author  = authorId ? (globalThis.game?.users?.get?.(authorId) ?? null) : null;
+  const speakerOk = !!speaker && isPlayerCharacterActor(speaker)
+    && (author?.isGM === true || requesterOwnsActor(speaker, { requesterId: authorId, requester: author, requesterIsGM: author?.isGM === true }));
+  return runOracleFollowup({
+    kind:           typeof spec.kind === "string" ? spec.kind : "oracle_table",
+    oracleName:     String(spec.oracleName ?? ""),
+    question:       String(spec.question ?? ""),
+    rolledLine:     String(spec.rolledLine ?? ""),
+    speakerActorId: speakerOk ? speaker.id : null,
+  });
 }
 
 async function runOracleFollowup(args) {

@@ -1366,7 +1366,6 @@ function formatPreviousSessionBlock(summary) {
  *   4b. Campaign premise                    (inciting incident as canon; never dropped)
  *   5. Current location card                (when set)
  *   6. Matched entity cards                 (relevance resolver results)
- *   7. Active connections summary
  *   8. Character block
  *
  * @param {Object} campaignState      — CampaignStateSchema
@@ -1628,9 +1627,10 @@ export function buildNarratorSystemPrompt(
   }, { matchedEntityIds, entityNamesById });
   if (ledgerBlock) parts.push(ledgerBlock);
 
-  // [7] Active connections summary (legacy — connection names/roles only)
-  const connections = buildConnectionsSummary(campaignState);
-  if (connections) parts.push(connections);
+  // [7] — retired: a legacy "N active connection(s)" count of every id in
+  // `connectionIds`, a lost connection's included, while the ACTIVE SECTOR
+  // roster lists it apart as lost (issue #331 X29). The roster and CHARACTER
+  // STATE name the connections; a bare count told the narrator nothing else.
 
   // [8] Character
   if (character) parts.push(buildCharacterBlock(character));
@@ -2237,16 +2237,6 @@ function buildIncitingIncidentBlock(campaignState) {
   }
 
   return lines.join('\n');
-}
-
-function buildConnectionsSummary(campaignState) {
-  // In a live Foundry session, connections are journal entries loaded async by
-  // the assembler. The system prompt uses a lightweight summary built from the
-  // connectionIds count; the full assembled packet reaches the user message via
-  // the move outcome context. This keeps buildNarratorSystemPrompt pure/sync.
-  const ids = campaignState?.connectionIds ?? [];
-  if (!ids.length) return '';
-  return `## ACTIVE CONNECTIONS\n\n${ids.length} active connection(s) this campaign.`;
 }
 
 function buildCharacterBlock(character) {

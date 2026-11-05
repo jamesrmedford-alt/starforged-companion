@@ -12,7 +12,9 @@
  *   3. Finalize connections — seeds every connection NPC created during sector
  *      generation (portrait, narrator description, oracle identity). Skipped
  *      gracefully when no connections were generated.
- *   4. Begin Session — flips the session-active gate ON, posts the Begin
+ *   4. Begin Session — closes out a session that is over and mints the next
+ *      (rollSessionIfDue, as Begin a Session does — issue #331 X36), flips
+ *      the session-active gate ON and stamps it begun, posts the Begin
  *      Session card, and fires the sessionStateChanged hook. No spotlight-
  *      vignette prompt; campaign-start sessions open clean.
  *   5. Inciting Incident — rolls an Action + Theme spark, asks the narrator to
@@ -32,7 +34,8 @@
  */
 
 import { runPlaytestQuickstart }                                  from "./quickstart.js";
-import { beginSession }                                           from "./lifecycle.js";
+import { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS }    from "./lifecycle.js";
+import { mergeOwnedFields }                                       from "../factContinuity/sceneLifecycle.js";
 import { finalizeEntity }                                         from "../entities/finalize.js";
 import { envisionShip, renderEnvisionHtml, appendNotesSection }  from "../entities/shipEnvision.js";
 import { isLoneShipCandidate }                                    from "../entities/ship.js";
@@ -40,6 +43,12 @@ import { runIncitingIncident }                                    from "./inciti
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
+
+// What phase 4's Begin owns: the gate and its start stamp, and a session the
+// mint check started (issue #331 X36).
+const CAMPAIGN_START_BEGIN_FIELDS = Object.freeze([
+  "sessionActive", "sessionActiveStartedAt", "sessionStartedId", ...SESSION_MINT_FIELDS,
+]);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ORCHESTRATOR
@@ -144,14 +153,22 @@ export async function runCampaignStart(opts = {}) {
   // ── Phase 4: Begin Session ────────────────────────────────────────────────
   // On a copy: get() returns the cached value, and a refused write must leave
   // it as the world has it (rules/foundry-api.md).
-  campaignState = { ...readCampaignState() };
+  campaignState = foundry.utils.deepClone(readCampaignState());
   try {
+    // A session that is over — End a Session closed it, or it went idle — is
+    // closed out and the next one minted first, as Begin a Session does
+    // (applyBeginSession): this Begin reopened the ended session, its number
+    // and id handed to a new night's play (issue #331 X36). The mint can await
+    // the closing session's summary call, so only the session's own fields
+    // are merged onto the latest store.
+    await rollSessionIfDue(campaignState);
     const wasActive = campaignState.sessionActive === true;
     beginSession(campaignState);
     // The session is begun: it counts toward the session number, and a later
     // Begin a Session in it repeats no start effects (issue #330 D12; #300 F11).
     campaignState.sessionStartedId = campaignState.currentSessionId ?? null;
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await game.settings.set(MODULE_ID, "campaignState",
+      mergeOwnedFields(campaignState, CAMPAIGN_START_BEGIN_FIELDS, "campaign start begin"));
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     await ChatMessage.create({
       content:

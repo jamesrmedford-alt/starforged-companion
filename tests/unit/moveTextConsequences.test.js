@@ -15,7 +15,7 @@
  *     destroyed" on the match alone; the rule makes it conditional on 0 health.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { mapConsequences, resolveMove, aidYourAllyConsequences } from '../../src/moves/resolver.js';
 
 describe('Compel', () => {
@@ -62,8 +62,18 @@ describe('Aid Your Ally', () => {
 
   it('resolveMove resolves it as Gain Ground only while a fight is open', () => {
     const interp = { moveId: 'aid_your_ally', moveName: 'Aid Your Ally', statUsed: 'edge', statValue: 9, adds: 0, playerNarration: 'x' };
-    expect(resolveMove(interp, {}, { inFight: true }).consequences.allyCombatPosition).toBe('in_control');
-    expect(resolveMove(interp, {}, {}).consequences.allyCombatPosition).toBeUndefined();
+    // Scripted dice — a hit (challenge dice of 2 against a capped 10). With real
+    // dice, both challenge dice at 10 (1 run in 100) was a miss, which carries
+    // no ally position, and the test failed (known-issues TEST-AID-ALLY-ROLL-FLAKE).
+    const rng = vi.spyOn(Math, 'random').mockReturnValue(0.1);
+    try {
+      const inFight = resolveMove(interp, {}, { inFight: true });
+      expect(inFight.outcome).toBe('strong_hit');
+      expect(inFight.consequences.allyCombatPosition).toBe('in_control');
+      expect(resolveMove(interp, {}, {}).consequences.allyCombatPosition).toBeUndefined();
+    } finally {
+      rng.mockRestore();
+    }
   });
 });
 

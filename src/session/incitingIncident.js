@@ -459,11 +459,20 @@ export async function runIncitingIncident(campaignState) {
         sessionId:       campaignState?.currentSessionId ?? null,
         establishedAt:   new Date().toISOString(),
       };
-      campaignState.incitingIncident = premise;
       const { persistSceneLedgerFields } = await import("../factContinuity/sceneLifecycle.js");
       await persistSceneLedgerFields(campaignState, ["sceneTruths", "sceneState", "sceneFrame"], "inciting premise", {
         onto: (target) => { target.incitingIncident = premise; },
       });
+      // On the caller's object only once the world has it: the callers hand
+      // over the cached campaignState, and setting the premise there first
+      // left a refused write's premise as campaign canon in every prompt on
+      // this GM alone (issue #331 X38). The persist reports no refusal of
+      // its own, so the store says whether it landed.
+      if (globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.incitingIncident?.establishedAt === premise.establishedAt) {
+        campaignState.incitingIncident = premise;
+      } else {
+        console.warn(`${MODULE_ID} | runIncitingIncident: the world did not save the premise — it is not campaign canon.`);
+      }
     } catch (err) {
       console.warn(`${MODULE_ID} | runIncitingIncident: premise persist failed:`, err?.message ?? err);
     }

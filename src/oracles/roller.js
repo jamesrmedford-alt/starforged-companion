@@ -66,6 +66,19 @@ export const ORACLE_TABLES = {
 
   // Planets
   planet_type:              { name: "Planet Type",    table: PLANETS.PLANET_TYPE,       category: "planets" },
+  // Each class's Sample Names (the Sector Creator names a planet from its
+  // class's list — issue #331 X48).
+  planet_name_desert:       { name: "Planet Name (Desert World)",    table: PLANETS.SAMPLE_NAMES_DESERT,    category: "planets" },
+  planet_name_furnace:      { name: "Planet Name (Furnace World)",   table: PLANETS.SAMPLE_NAMES_FURNACE,   category: "planets" },
+  planet_name_grave:        { name: "Planet Name (Grave World)",     table: PLANETS.SAMPLE_NAMES_GRAVE,     category: "planets" },
+  planet_name_ice:          { name: "Planet Name (Ice World)",       table: PLANETS.SAMPLE_NAMES_ICE,       category: "planets" },
+  planet_name_jovian:       { name: "Planet Name (Jovian World)",    table: PLANETS.SAMPLE_NAMES_JOVIAN,    category: "planets" },
+  planet_name_jungle:       { name: "Planet Name (Jungle World)",    table: PLANETS.SAMPLE_NAMES_JUNGLE,    category: "planets" },
+  planet_name_ocean:        { name: "Planet Name (Ocean World)",     table: PLANETS.SAMPLE_NAMES_OCEAN,     category: "planets" },
+  planet_name_rocky:        { name: "Planet Name (Rocky World)",     table: PLANETS.SAMPLE_NAMES_ROCKY,     category: "planets" },
+  planet_name_shattered:    { name: "Planet Name (Shattered World)", table: PLANETS.SAMPLE_NAMES_SHATTERED, category: "planets" },
+  planet_name_tainted:      { name: "Planet Name (Tainted World)",   table: PLANETS.SAMPLE_NAMES_TAINTED,   category: "planets" },
+  planet_name_vital:        { name: "Planet Name (Vital World)",     table: PLANETS.SAMPLE_NAMES_VITAL,     category: "planets" },
   planetside_peril_bearing: { name: "Planetside Peril (Lifebearing)",  table: PLANETS.PLANETSIDE_PERIL_LIFEBEARING,  category: "planets" },
   planetside_peril_less:    { name: "Planetside Peril (Lifeless)",     table: PLANETS.PLANETSIDE_PERIL_LIFELESS,     category: "planets" },
   planetside_opportunity_bearing: { name: "Planetside Opportunity (Lifebearing)", table: PLANETS.PLANETSIDE_OPPORTUNITY_LIFEBEARING, category: "planets" },

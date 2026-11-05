@@ -105,6 +105,24 @@ describe('documents fan out to every client', () => {
     for (const c of table.clients) expect(c.message(card.id).flags[MODULE_ID].burn.consumed, c.id).toBe(true);
   });
 
+  it('an Actor update reaches every client\'s updateActor hook as the expanded diff, as Foundry passes it', async () => {
+    // known-issues HARNESS-UPDATEACTOR-FLAT: the hook was handed the update as
+    // written (flat keys), so a hook reading change.system.… never fired here.
+    const actor = table.addActor({ id: 'a-diff', name: 'Kira', ownership: { 'pl-1': 3 }, system: { supply: { value: 3 } } });
+    const seen = [];
+    const off = table.listen('updateActor', (client, doc, change) => { if (doc.id === 'a-diff') seen.push([client.id, change]); });
+    await table.client('pl-1').run(() => actor.update({ 'system.supply.value': 2 }));
+    await table.client('gm-1').run(() => actor.setFlag(MODULE_ID, 'mark', true));
+    await table.settle();
+    off();
+    const changes = (id) => seen.filter(([c]) => c === id).map(([, change]) => change);
+    for (const id of ['gm-1', 'gm-2', 'pl-1', 'pl-2']) {
+      // The writer's own hook fires at once, the others' on delivery: order varies by client.
+      expect(changes(id), id).toHaveLength(2);
+      expect(changes(id), id).toEqual(expect.arrayContaining([{ system: { supply: { value: 2 } } }, { flags: { [MODULE_ID]: { mark: true } } }]));
+    }
+  });
+
   it('a player may not post a message as someone else', async () => {
     const p1 = table.client('pl-1');
     await expect(p1.run(() => ChatMessage.create({ content: 'x', author: 'gm-1' })))

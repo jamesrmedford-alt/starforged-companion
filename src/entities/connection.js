@@ -26,7 +26,7 @@
 
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
-import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityIdInStore, withSheetNotes } from "./registry.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes } from "./registry.js";
 import { keepNotesPortrait } from "../art/notesPortrait.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
@@ -102,10 +102,9 @@ export async function createConnection(data, campaignState, { persist = true } =
   });
 
   // Register in campaign state (now the Actor id, not a JournalEntry id).
-  if (!campaignState.connectionIds) campaignState.connectionIds = [];
-  if (actor?.id && !campaignState.connectionIds.includes(actor.id)) {
+  // The store first, the caller's copy once the world took it (issue #331 X35).
+  if (await registerEntityId(campaignState, "connectionIds", actor?.id, { label: "connection", persist })) {
     campaignState.connectionIds.push(actor.id);
-    if (persist) await registerEntityIdInStore("connectionIds", actor.id, "connection");
   }
 
   console.log(`${MODULE_ID} | Created connection: ${connection.name ?? "unnamed"} (${id})`);

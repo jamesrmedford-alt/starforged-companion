@@ -1498,14 +1498,18 @@ export async function getCampaignRecap(campaignState, options = {}) {
       maxTokens: maxTokensWithSidecar(16000),
     });
 
-    if (text?.trim() && game.user?.isGM) {
-      const updated = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
-      updated.campaignRecapCache = {
+    // Written on a copy of the latest store: `get` hands back the cached
+    // value, and a refused write left the GM's cache holding a recap the
+    // world lacked — served as current on this client alone (issue #331
+    // X25). One emitter: the canonical GM.
+    if (text?.trim() && isCanonicalGM()) {
+      const cs = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? campaignState) };
+      cs.campaignRecapCache = {
         text:            text,
         generatedAt:     new Date().toISOString(),
         ...key,          // the chronicle it was made from
       };
-      await game.settings.set(MODULE_ID, 'campaignState', updated);
+      await game.settings.set(MODULE_ID, 'campaignState', cs);
     }
 
     return text ?? '';
@@ -1805,7 +1809,10 @@ export async function postCampaignRecap(campaignState, options = {}) {
 
   if (!options.silent) {
     const isGM = game.user?.isGM ?? false;
-    const paragraphs = text.split(/\n\n+/).map(p => `<p>${p.trim()}</p>`).join('');
+    // The model's text (and any GM-edited chronicle entry it quotes) is
+    // prose, escaped as the narrator card's own sink is: "<signal lost>"
+    // vanished as an unknown tag and live markup rendered (issue #331 X24).
+    const paragraphs = text.split(/\n\n+/).map(p => `<p>${escapeHtml(stripMarkup(p.trim()))}</p>`).join('');
     await ChatMessage.create({
       content: `
         <div class="sf-recap-campaign-card">
@@ -2040,10 +2047,12 @@ export async function narrateOracleFollowup({
     campaignState, settings, character, '', extras,
   );
 
-  const sentenceTarget = settings.narrationLength ?? 3;
+  // One sentence count: the oracle_followup role's "2-3 sentences". The
+  // Length setting governs move and paced narration only (issue #326 W40); it
+  // was read into this user message while the role said 2-3 (issue #331 X28).
   const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards());
   const userMessage    = buildOracleUserMessage({
-    oracleName, question, rolledLine, recentContext, sentenceTarget,
+    oracleName, question, rolledLine, recentContext,
   });
 
   try {
@@ -2089,7 +2098,7 @@ export async function narrateOracleFollowup({
 }
 
 function buildOracleUserMessage({
-  oracleName, question, rolledLine, recentContext, sentenceTarget,
+  oracleName, question, rolledLine, recentContext,
 }) {
   // recentContext is a pre-joined STRING (getRecentNarrationContext), matching
   // the scene/paced builders. Use it directly — calling .join here threw
@@ -2105,7 +2114,7 @@ function buildOracleUserMessage({
     q +
     `Mechanical result: ${rolledLine}\n` +
     `${recent}\n\n` +
-    `Render this result as ${sentenceTarget} sentence(s) of in-fiction prose anchored to ` +
+    `Render this result as 2-3 sentences of in-fiction prose anchored to ` +
     `the current scene. Do not repeat the dice number or the literal table text — transform ` +
     `it into narrative.`
   );
@@ -3883,11 +3892,13 @@ function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState, 
 
     const record = { lastActorId: selection.nextActorId, sceneId };
     campaignState.spotlight = record;
-    if (globalThis.game?.user?.isGM) {
+    // Persisted onto a copy of the latest store, by the canonical GM: set on
+    // the cached value first, a refused write left this GM's pointer a step
+    // ahead of the world's (issue #331 X26).
+    if (isCanonicalGM()) {
       try {
         const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
-        stored.spotlight = record;
-        game.settings.set(MODULE_ID, 'campaignState', stored).catch(err =>
+        game.settings.set(MODULE_ID, 'campaignState', { ...stored, spotlight: record }).catch(err =>
           console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err));
       } catch (err) {
         console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err);

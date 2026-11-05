@@ -139,7 +139,11 @@ its `trackId` too, so the right expedition finishes even with several open,
 same-named ones included. A track deleted or finished before the roll resolves
 rolls nothing (a "not rolled" card). Strong hit → `finishExpedition` completes the
 track and pays `legacyRewardTicks(rank)` (weak hit one rank down) onto the
-**discoveries** legacy; the finish card reports both. `finish_an_expedition`
+**discoveries** legacy; the finish card reports both. The legacy ticks, the
+arrival's current location and the site reveal ride on the pipeline's working
+copy into `persistResolution`'s write; when the world refuses it, each is a
+step on the GMs' payoff failure card (`source: "persist"`) whose Retry applies
+it alone (issue #331 X18). `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
 ("docked at …"); the Set a Course feedback card ("Course held cleanly (+1
 momentum)") is Set a Course's alone (issue #326 W46). Miss leaves the track open and posts the recommit offer

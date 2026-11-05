@@ -170,7 +170,8 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   `relayCardAction` → `applyConnectionPick`, `src/moves/cardActions.js`),
   which checks the pick is one of the card's choices (its buttons' data
   attributes for an older card) and that the clicker's PC is one the
-  requester owns, posts the forced Develop Your Relationship / Forge a Bond
+  requester owns — a player with no PC of their own is refused, only a GM
+  may press as nobody (`relayedClickerPc`, issue #331 X19) — posts the forced Develop Your Relationship / Forge a Bond
   move **once** — speaking as the clicker's PC, so the pipeline credits the
   roller although the GM authors the message, and naming the picked
   connection as `forcedMoveTargetId` (its host Actor id) and
@@ -211,7 +212,10 @@ relays `bond.recommit` (`cardActions.applyBondRecommitOffer`, the roller's
 player or a GM, claimed once), and `performBondRecommit` clears the lowest
 die's boxes from `relationshipTicks`, steps the record's rank once, writes
 both through to the bond Items (`setBondItemTicks` / `setBondItemRank`) and
-adds a history entry. Both hooks classify the
+adds a history entry. A miss rolled on the sheet gets the same offer, for the
+connection `findSheetBondConnection` resolves — none for a bond made by hand
+or a connection already bonded (`offerSheetMissRecommit`, issue #331 X62: the
+consequence hook acted on hits only). Both hooks classify the
 sheet roll through one subtype lookup (`nativeProgressSubtypeLookup`,
 `src/index.js`), which takes the vendor's `bond` subtype as a connection — the
 narration hook accepted only `connection`, so a forge rolled on the sheet's
@@ -263,10 +267,10 @@ rank through `rankName` — issue #321 U62), and a severed one apart, under
 "Connections lost" (`readConnections`' `lost` — issue #330 D10). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
 bond's Item as history. `background` and `secrets` have no production writer, so neither
-renders. The legacy
-"ACTIVE CONNECTIONS" assembler section still reads `game.journal.get(id)` and
-finds nothing for actor-hosted connections (kept for backwards
-compatibility); `buildConnectionsSummary` emits only a count.
+renders. The legacy count-only "ACTIVE CONNECTIONS" block
+(`buildConnectionsSummary`, "N active connection(s)" from `connectionIds`)
+is retired: it counted a lost connection as active beside the roster that
+lists it apart (issue #331 X29).
 
 ## Verified defects (all FIXED in the v1.7.30 cycle — resolved ledger in `known-issues.md`)
 

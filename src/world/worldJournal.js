@@ -497,7 +497,7 @@ export async function updateThreatSeverity(name, severity, campaignState, { narr
     updatedAt:   new Date().toISOString(),
     ...narrationStamp(narrationId, existing),
   };
-  await page.setFlag(MODULE_ID, FLAG_KEYS.threats, updated);
+  await writeEntryPage(page, FLAG_KEYS.threats, updated);
   return updated;
 }
 
@@ -547,7 +547,7 @@ export async function promoteLoreToConfirmed(title, _campaignState, { narrationI
     updatedAt:  new Date().toISOString(),
     ...narrationStamp(narrationId, existing),
   };
-  await page.setFlag(MODULE_ID, FLAG_KEYS.lore, updated);
+  await writeEntryPage(page, FLAG_KEYS.lore, updated);
   return updated;
 }
 
@@ -562,7 +562,7 @@ export async function promoteLoreToConfirmed(title, _campaignState, { narrationI
  * @param {Function} matches — (loreEntry) => boolean
  * @returns {Promise<number>} entries retracted
  */
-export async function retractSessionLore(sessionId, matches) {
+export async function retractSessionLore(sessionId, matches, { truthId = null } = {}) {
   if (!sessionId || typeof matches !== "function") return 0;
   const journal = findJournal(JOURNAL_NAMES.lore);
   let count = 0;
@@ -571,12 +571,51 @@ export async function retractSessionLore(sessionId, matches) {
     if (!entry || entry.retracted || entry.sessionId !== sessionId) continue;
     if (!matches(entry)) continue;
     const now = new Date().toISOString();
-    await page.setFlag(MODULE_ID, FLAG_KEYS.lore, {
+    await writeEntryPage(page, FLAG_KEYS.lore, {
       ...entry,
       confirmed:   false,
       retracted:   true,
       retractedAt: now,
       updatedAt:   now,
+      // The strike that retracted it, and whether it stood confirmed: a
+      // `!truth set` that lifts that strike restores it (restoreStruckLore,
+      // issue #331 X31). Always written — Foundry merges flags key by key.
+      retractedByTruth:   typeof truthId === "string" && truthId ? truthId : null,
+      confirmedBeforeStrike: entry.confirmed === true,
+    });
+    count += 1;
+  }
+  return count;
+}
+
+/**
+ * Restore the lore entries a strike retracted — retractSessionLore's inverse,
+ * for a strike the GM lifted by setting the fact again (`!truth set`, issue
+ * #326 W60). W60 lifted the strike in the ledger only: the archived truth and
+ * its lore copies stayed retracted, so when the re-set truth was archived at
+ * scene end onto the same page it kept `retracted: true` — the fact the GM
+ * ruled canon reached no store the narrator reads (issue #331 X31). Only the
+ * entries that strike retracted are restored (`retractedByTruth`), each with
+ * the confirmation it had — never a page an X-Card retracted.
+ *
+ * @param {string} truthId — the lifted strike's truth id
+ * @returns {Promise<number>} entries restored
+ */
+export async function restoreStruckLore(truthId) {
+  if (typeof truthId !== "string" || !truthId) return 0;
+  const journal = findJournal(JOURNAL_NAMES.lore);
+  let count = 0;
+  for (const page of journal?.pages?.contents ?? []) {
+    const entry = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
+    if (!entry?.retracted || entry.retractedByTruth !== truthId) continue;
+    await writeEntryPage(page, FLAG_KEYS.lore, {
+      ...entry,
+      confirmed:          entry.confirmedBeforeStrike === true,
+      retracted:          false,
+      retractedAt:        null,
+      retractedByTruth:   null,
+      confirmedBeforeStrike: null,
+      updatedAt:          new Date().toISOString(),
     });
     count += 1;
   }
@@ -857,8 +896,10 @@ export async function undoNarrationEntries(narrationIds) {
           out.restored += 1;
         } else if (category === "lore") {
           const now = new Date().toISOString();
+          // The X-Card's retraction, not a strike's: a lifted strike never
+          // restores it (restoreStruckLore — issue #331 X31).
           await writeEntryPage(page, flagKey, {
-            ...entry, confirmed: false, retracted: true, retractedAt: now, updatedAt: now,
+            ...entry, confirmed: false, retracted: true, retractedAt: now, updatedAt: now, retractedByTruth: null,
           });
           out.retracted += 1;
         } else {
@@ -903,10 +944,29 @@ async function revertFactionStances(versions) {
   }
 }
 
-/** Replace a World Journal page's entry and re-render its body from it. */
-async function writeEntryPage(page, flagKey, data) {
+/**
+ * Replace a World Journal page's entry and re-render its body from it. The
+ * flag is the record; the body — what players read in Foundry's journal
+ * viewer — is its rendered mirror, re-rendered on every write (decisions.md,
+ * issue #322 V31). Every writer of an existing page comes here or through
+ * upsertPage: a threat's severity, a lore confirm, a strike's retraction and
+ * the panel's Dismiss wrote the flag alone, so the journal kept saying
+ * "Severity: active", "Pending confirmation." or "Confirmed." (issue #331
+ * X30). The flag write rejects when refused; a refused body write is warned
+ * (the record stands), as upsertPage's.
+ *
+ * @param {JournalEntryPage} page
+ * @param {string} flagKey — one of FLAG_KEYS.*
+ * @param {Object} data — the entry
+ * @returns {Promise<void>}
+ */
+export async function writeEntryPage(page, flagKey, data) {
   await page.setFlag(MODULE_ID, flagKey, data);
-  await page.update({ text: { format: 1, content: renderPageBody(flagKey, data) } });
+  try {
+    await page.update({ text: { format: 1, content: renderPageBody(flagKey, data) } });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | worldJournal: page body update for "${page?.name}" failed:`, err?.message ?? err);
+  }
 }
 
 /**
@@ -1304,8 +1364,12 @@ function renderPageBody(flagKey, data) {
   switch (flagKey) {
     case FLAG_KEYS.lore: {
       const body = data.text || data.fact || "";
+      // A struck fact reads as struck, whatever its other fields: a struck
+      // entry the narrator re-recorded holds `confirmed: true, retracted:
+      // true`, and its page said "Confirmed." (issue #331 X30).
       return (body ? p(body) : "") +
-        (data.confirmed ? "<p><em>Confirmed.</em></p>"
+        (data.retracted ? "<p><em>Retracted by the table.</em></p>"
+         : data.confirmed ? "<p><em>Confirmed.</em></p>"
          : data.narratorAsserted ? "<p><em>Pending confirmation.</em></p>" : "");
     }
     case FLAG_KEYS.threats:

@@ -124,7 +124,10 @@ All real progress lands on **item ticks** (`system.current`) via
   relays `milestone.pick` to the canonical GM → `applyMilestonePick`, which
   checks the pick is one of the card's choices and that the requester owns
   that PC (or is a GM), marks the vow, and stamps the card `resolved`
-  (idempotent, in-flight guarded). A click with no GM connected, a refusal,
+  (idempotent, in-flight guarded). A vow fulfilled since the picker posted
+  is refused (`vow-completed`, a short card; the picker stays open for its
+  other vows), and `markVowProgress` never marks a fulfilled vow (issue
+  #331 X20). A click with no GM connected, a refusal,
   or a card still unresolved after `RELAY_RECOVERY_MS` (15 s) re-arms the
   buttons (`relayCardAction`, `src/moves/cardActions.js`). The move card's
   "⚑ Mark Progress on Vow" suggestion button leads to a forced
@@ -163,7 +166,10 @@ All real progress lands on **item ticks** (`system.current`) via
   writes (`sharedVowMirror`) so they do not cascade, and gives way to a newer
   change mid-pass — an in-flight guard used to drop a change made during a
   pass, and the pass's all-fields write reverted it (issue #322 V32, the
-  shared supply's F05 / R03 race).
+  shared supply's F05 / R03 race). Each copy's write stands alone: a refused
+  one is warned and named to the GM, and the pass goes on to the other copies
+  and to a queued change — it threw out of the pass (known-issues
+  SUPPLY-SYNC-TWINS, the shape issue #331 X52 fixed for the supply).
 - **Vow deadline clocks**: `advanceVowClocks` bumps `clockTicks` on Pay the
   Price ("⏳ The clock turns" card) via `advanceClocksOnPayThePrice`
   (`src/clocks/payThePriceClocks.js`) — called directly by the pipeline on
@@ -254,7 +260,11 @@ roller's player or a GM and claims the card (`recommitted`) before
 writes every open copy of the roller's vow (`resolveVowItemCopies`; the
 roller's first — refused, nothing changed and the claim released) and its
 journal twin: the lowest die's boxes cleared and the rank stepped once, as
-the Item holds it (a vendor number or a name — `setVowItemTrack`).
+the Item holds it (a vendor number or a name — `setVowItemTrack`). A miss
+rolled on the sheet gets the same offer, for the roller's vow Item of the
+roll's name (`registerNativeFulfilConsequenceHook` → `offerSheetMissRecommit`,
+issue #331 X62 — the hook acted on hits only, so the player recommitted by
+hand on every copy).
 
 **Native-sheet path**: the vendor progress-roll card is narrated where a Claude
 key lives (`registerNativeProgressRollHook` → `nativeRollNarratesHere`, the

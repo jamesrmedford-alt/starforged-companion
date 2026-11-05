@@ -169,10 +169,13 @@ export async function routePacedInput({
     return { runMove: true, decision: PACING_DECISION.MOVE, suggestedMove: null, category: "exploration", confidence: 1, reasoning: "pacing disabled" };
   }
 
-  // Recovery override — `!roll` sets forceNextAsMove on campaignState.
+  // Recovery override — `!roll` sets forceNextAsMove on campaignState. Not
+  // spent here: the line can still be refused after routing (the move lock,
+  // a player with no character), and a refused line spent the `!roll` — the
+  // retyped line went back through the classifier (issue #331 X37). The
+  // pipeline spends it once the line holds the move lock (consumeForceMove).
   if (pacingConfig.forceMove) {
-    await clearForceMove(campaignState);
-    return { runMove: true, decision: PACING_DECISION.MOVE, suggestedMove: null, category: "exploration", confidence: 1, reasoning: "!roll override" };
+    return { runMove: true, decision: PACING_DECISION.MOVE, suggestedMove: null, category: "exploration", confidence: 1, reasoning: "!roll override", forced: true };
   }
 
   const sceneTag = campaignState?.currentSessionId ?? "global";
@@ -266,7 +269,17 @@ async function detectCombatActive() {
   }
 }
 
-async function clearForceMove(campaignState) {
+/**
+ * Spend a `!roll` force: clear `pacing.forceNextAsMove` on the store (a copy
+ * of `campaignState` with the flag off) and on `campaignState` once the write
+ * lands. The move pipeline calls it once a forced line holds the move lock
+ * (issue #331 X37). GM only; a refused clear leaves the flag for the next
+ * line. Never throws.
+ *
+ * @param {Object} campaignState
+ * @returns {Promise<void>}
+ */
+export async function consumeForceMove(campaignState) {
   if (!campaignState?.pacing) return;
   if (!campaignState.pacing.forceNextAsMove) return;
   if (!globalThis.game?.user?.isGM) {

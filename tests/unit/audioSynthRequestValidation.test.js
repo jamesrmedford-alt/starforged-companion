@@ -30,9 +30,17 @@ const SPEC = { voiceId: "voice-narrator", modelId: "eleven_flash_v2_5", speed: 1
 const REAL_TEXT = "The hull groans and holds.";
 
 let savedEmit;
+let savedMessages;
 const emitted = [];
+// The world's voices, and the narrator card in chat whose line an honest
+// request asks for — the GM serves only those (issue #331 X51).
+const WORLD_AUDIO = { "audio.narratorVoiceId": "voice-narrator", "audio.npcVoiceId": "voice-npc",
+  "audio.modelId": "eleven_flash_v2_5", "audio.speed": 1.0 };
 
 beforeEach(() => {
+  for (const [k, v] of Object.entries(WORLD_AUDIO)) game.settings._store.set(`${MODULE_ID}.${k}`, v);
+  savedMessages = game.messages;
+  game.messages = { contents: [{ id: "card-1", flags: { [MODULE_ID]: { narratorCard: true, narrationText: REAL_TEXT } } }] };
   FP()._reset();
   _resetAudioCacheStateForTests();
   _resetSynthStateForTests();
@@ -49,6 +57,8 @@ afterEach(() => {
   game.socket.emit = savedEmit;
   game.socket._reset();
   game.settings._store.delete(`${MODULE_ID}.elevenLabsApiKey`);
+  for (const k of Object.keys(WORLD_AUDIO)) game.settings._store.delete(`${MODULE_ID}.${k}`);
+  game.messages = savedMessages;
 });
 
 /** Deliver a payload to the GM's socket handlers, as another client's emit would. */

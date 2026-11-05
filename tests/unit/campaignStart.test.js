@@ -106,9 +106,11 @@ describe("runCampaignStart — gate and confirm", () => {
 
 describe("runCampaignStart — the session it begins (issue #330 D12)", () => {
   it("stamps the session begun, so it keeps its number and the next session is the one after", async () => {
+    // A live session: minted and stamped at load, as a world's is (Campaign
+    // Start's Begin closes out a session that is over first — issue #331 X36).
     await game.settings.set(MODULE_ID, "campaignState", {
       shipIds: ["ship-1"], connectionIds: ["npc-1"], sessionActive: false,
-      currentSessionId: "s1", sessionNumber: 1,
+      currentSessionId: "s1", sessionNumber: 1, lastSessionTimestamp: new Date().toISOString(),
     });
     await runCampaignStart({ skipConfirm: true });
     expect(state()).toMatchObject({ sessionActive: true, sessionStartedId: "s1" });
@@ -255,7 +257,8 @@ describe("runCampaignStart — failures are reported, never abort", () => {
   });
 
   it("an already-active session is reported as such", async () => {
-    await game.settings.set(MODULE_ID, "campaignState", { shipIds: ["ship-1"], connectionIds: [], sessionActive: true });
+    await game.settings.set(MODULE_ID, "campaignState", { shipIds: ["ship-1"], connectionIds: [], sessionActive: true,
+      currentSessionId: "s1", lastSessionTimestamp: new Date().toISOString() });
     const result = await runCampaignStart();
     expect(phase(result, "Begin Session")).toMatchObject({ ok: true, detail: "session was already active" });
   });

@@ -244,7 +244,8 @@ C5) · [6.5] active-scene ledger
 (SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
 condition last — frame/truths/corrections/ship are
-never dropped) · [7] legacy connections summary (count only) · [8]
+never dropped) · ([7], a legacy count of `connectionIds` that counted a
+lost connection as active, is retired — issue #331 X29) · [8]
 CHARACTER STATE (vows and bonds with progress and their rank by name — issue
 #321 U62 — granted rewards — C5) · [8b]
 party roster · [8c] spotlight nudge · [9] sidecar
@@ -290,8 +291,12 @@ over (`registerSessionActivityHook`). The next world load (`initSessionId`,
 ready hook) or Begin a Session, whichever comes first, runs `rollSessionIfDue`:
 an unended session's summary is brought up to date
 (`finalizeSessionSummary`), its scene closes under its own id, then
-`mintSession` keeps that summary as `previousSessionSummary`, mints the next
-id and closes the session-active gate (`sessionActive` / `sessionActiveStartedAt`
+`mintSession` keeps that summary as `previousSessionSummary` — a session
+nobody began (no Begin stamped it, its gate shut, End a Session did not close
+it) hands its number on (issue #330 D12; one End a Session closed counts as
+begun, issue #331 X64) and adds its summary to the one before it, which stays
+LAST SESSION under its own number (it replaced it — issue #331 X65) — mints
+the next id and closes the session-active gate (`sessionActive` / `sessionActiveStartedAt`
 joined `SESSION_MINT_FIELDS`): the new session is begun by Begin a Session —
 a session nobody ended handed its open gate to the next, so Begin did nothing
 (issue #321 U12). Begin a Session's start effects (Spotlight momentum, campaign clocks, the
@@ -443,7 +448,9 @@ passes it to the narration too. Raw oracle
 *results* additionally carry a structured `oracleMemory` flag; the canonical
 GM's capture hook (`registerOracleMemoryCaptureHook`, `src/index.js`) ledgers
 them into `campaignState.recentOracles` (`src/oracles/oracleMemory.js`,
-cap 8) for section [3b] (the retired assembler's RECENT ORACLES section
+cap 8) — one capture at a time, each reading the ring as the last left it,
+so two results inside one write round trip are both kept (issue #331 X44) —
+for section [3b] (the retired assembler's RECENT ORACLES section
 went with the module, 2026-07 — issue #271).
 
 **Scene lifecycle** (`src/factContinuity/sceneLifecycle.js`): scenes start on

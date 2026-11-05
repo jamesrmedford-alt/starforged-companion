@@ -243,6 +243,38 @@ export function resolveEntityById(id) {
  * @param {string} [label]   the caller, for the error log
  * @returns {Promise<void>}  rejects when the setting write fails
  */
+/**
+ * Register a new entity's host id in a campaignState id list: on the latest
+ * stored campaignState first (registerEntityIdInStore), then — once the world
+ * has taken it — on the caller's copy, so a caller's own later persist keeps
+ * it (persistResolution's id-list union). The caller's copy is often the
+ * setting's cached object (a draft card's Confirm, the createActor hooks):
+ * the id used to be pushed onto it before the write, and a refused write left
+ * the GM's cache listing an entity the world never registered — shown in the
+ * Entities panel and the roster, "existing" to the next Confirm of the name,
+ * an unlisted orphan after a reload (issue #331 X35). `persist: false` — a
+ * caller that saves its copy itself — writes nothing. An id the caller's copy
+ * already lists is left as it is.
+ *
+ * The push itself is the caller's (`campaignState.<list>.push(id)` when this
+ * resolves true): each list keeps a writer the source scan sees
+ * (tests/unit/campaignStateFields.test.js).
+ *
+ * @param {Object|null} campaignState — the caller's copy (its list made an array)
+ * @param {string} listKey — e.g. "connectionIds"
+ * @param {string} id — the host document id
+ * @param {{ label?: string, persist?: boolean }} [opts]
+ * @returns {Promise<boolean>} true: push the id onto the copy's list now;
+ *   rejects when the store write is refused (push nothing then)
+ */
+export async function registerEntityId(campaignState, listKey, id, { label = listKey, persist = true } = {}) {
+  if (!id || !campaignState || typeof campaignState !== 'object') return false;
+  if (!Array.isArray(campaignState[listKey])) campaignState[listKey] = [];
+  if (campaignState[listKey].includes(id)) return false;
+  if (persist) await registerEntityIdInStore(listKey, id, label);
+  return !campaignState[listKey].includes(id);
+}
+
 export async function registerEntityIdInStore(listKey, id, label = listKey) {
   // Always written: the caller's copy is often the setting's cached object,
   // which already holds the id the creator pushed onto it — a "registered

@@ -174,10 +174,13 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
 /**
  * Start a new session: keep the closing session's rolling summary as
  * `previousSessionSummary` (an older one stays when the closing session has
- * none), then mint the id, bump `sessionNumber` and stamp
+ * none; a closing session nobody began adds its summary to the older one,
+ * which keeps its number — issue #331 X65), then mint the id, bump
+ * `sessionNumber` and stamp
  * `lastSessionTimestamp`. `sessionNumber` counts the sessions a table began:
  * a closing session nobody began (no Begin stamped it `sessionStartedId`,
- * and its gate is shut) — a world opened only to prepare — hands its number on
+ * its gate is shut, and End a Session did not close it — issue #331 X64) — a
+ * world opened only to prepare — hands its number on
  * to the next instead of burning one, so the table's session after session 3
  * is "Session #4" however often the world was opened between them (issue
  * #330 D12). The id changes either way. The new session has not been begun, so its
@@ -194,20 +197,39 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
 export function mintSession(campaignState, now = Date.now()) {
   const closing = campaignState.currentSessionId;
   const summary = campaignState.sessionSummary;
-  // Begun: Begin a Session (or the Campaign Start's) stamped it, or its gate
-  // is open — only a Begin opens it, and a world from before the stamp has
-  // its open gate to show for it.
+  // Begun: Begin a Session (or the Campaign Start's) stamped it, its gate is
+  // open — only a Begin opens it, and a world from before the stamp has its
+  // open gate to show for it — or End a Session closed it. A session ended
+  // before the stamp existed (issue #300 F11), or begun by a Campaign Start
+  // before it stamped, read as unbegun: the next session took its number,
+  // and the count stayed one behind (issue #331 X64).
   const closingUnbegun = !!closing && campaignState.sessionStartedId !== closing
-    && campaignState.sessionActive !== true;
+    && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
   if (closing && summary?.sessionId === closing && typeof summary.text === "string" && summary.text.trim()) {
-    campaignState.previousSessionSummary = {
-      sessionId:     closing,
-      // An unbegun session's number passes to the next one, so its summary
-      // carries none — LAST SESSION, not "Session 4" while session 4 runs.
-      sessionNumber: closingUnbegun ? null : (campaignState.sessionNumber ?? null),
-      text:          summary.text.trim(),
-      updatedAt:     summary.updatedAt ?? null,
-    };
+    const text     = summary.text.trim();
+    const prev     = campaignState.previousSessionSummary;
+    const prevText = typeof prev?.text === "string" ? prev.text.trim() : "";
+    if (closingUnbegun && prevText) {
+      // What was narrated in a session nobody began — a world opened to
+      // prepare (`@scene`, `!oracle`) — is added to the summary of the
+      // session before it, which stays LAST SESSION under its own number. It
+      // replaced that summary, so the narrator lost what the table last
+      // played (issue #331 X65).
+      campaignState.previousSessionSummary = {
+        ...prev,
+        text:      `${prevText}\n\nNarrated between sessions, while no session was begun: ${text}`,
+        updatedAt: summary.updatedAt ?? prev.updatedAt ?? null,
+      };
+    } else {
+      campaignState.previousSessionSummary = {
+        sessionId:     closing,
+        // An unbegun session's number passes to the next one, so its summary
+        // carries none — LAST SESSION, not "Session 4" while session 4 runs.
+        sessionNumber: closingUnbegun ? null : (campaignState.sessionNumber ?? null),
+        text,
+        updatedAt:     summary.updatedAt ?? null,
+      };
+    }
   }
   campaignState.currentSessionId       = newSessionId();
   campaignState.sessionNumber          = closingUnbegun && campaignState.sessionNumber > 0

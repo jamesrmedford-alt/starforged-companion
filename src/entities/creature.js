@@ -18,7 +18,7 @@
  */
 
 import { getOrCreateEntitiesFolder } from "./folder.js";
-import { registerEntityIdInStore } from "./registry.js";
+import { registerEntityId } from "./registry.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "creature";
@@ -86,10 +86,9 @@ export async function createCreature(data, campaignState) {
     flags: { [MODULE_ID]: { [FLAG_KEY]: creature } },
   }]);
 
-  if (!campaignState.creatureIds) campaignState.creatureIds = [];
-  if (!campaignState.creatureIds.includes(entry.id)) {
+  // The store first, the caller's copy once the world took it (issue #331 X35).
+  if (await registerEntityId(campaignState, "creatureIds", entry.id, { label: "creature" })) {
     campaignState.creatureIds.push(entry.id);
-    await registerEntityIdInStore("creatureIds", entry.id, "creature");
   }
 
   return creature;

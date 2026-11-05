@@ -37,7 +37,7 @@ const KEY = `${MODULE_ID}.elevenLabsApiKey`;
 const PROSE = 'The hull groans and holds.';
 const GM = { isGM: true, id: 'test-user-gm' };
 
-let savedHTMLElement, savedEmit, savedBrowse, restoreUser;
+let savedHTMLElement, savedEmit, savedBrowse, restoreUser, savedMessages;
 let browseAllowed = false;                    // a Trusted Player may browse
 let tamper = null;                            // rewrite the GM's done payload in flight
 const doneSent = [];
@@ -76,6 +76,10 @@ beforeEach(() => {
   })) game.settings._store.set(`${MODULE_ID}.${key}`, value);
   game.settings._store.delete(KEY);           // the player's client holds no key
   restoreUser = asPlayer();
+  // Chat as every client holds it: the GM synthesises only a narrator card's
+  // line in the world's voices (issue #331 X51), so playCard posts its card.
+  savedMessages = game.messages;
+  game.messages = { contents: [] };
 
   game.socket._reset();
   savedEmit = game.socket.emit;
@@ -107,6 +111,7 @@ afterEach(async () => {
   foundry.applications.apps.FilePicker.implementation.browse = savedBrowse;
   game.socket.emit = savedEmit;
   game.socket._reset();
+  game.messages = savedMessages;
   restoreUser();
   setListenerResultSink(null);
   globalThis.HTMLElement = savedHTMLElement;
@@ -114,6 +119,7 @@ afterEach(async () => {
 
 async function playCard(id, text = PROSE) {
   const message = { id, flags: { [MODULE_ID]: { narratorCard: true, narrationText: text } } };
+  game.messages.contents.push(message);
   const root = parseHTML(`<div class="sf-narration-prose">${text}</div><button data-action="audioPlayToggle" hidden></button>`);
   await onNarratorCardRendered(message, root);
   const play = root.querySelector('[data-action="audioPlayToggle"]');

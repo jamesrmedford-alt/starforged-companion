@@ -62,14 +62,18 @@ describe("the audio cache has no size-cap sweep", () => {
     const send = (payload) => { for (const h of game.socket._handlers.get(AUDIO_SOCKET_NAME) ?? []) h(payload); };
     const browse = vi.spyOn(fp, "browse");
 
+    // Two narrator cards' lines: the GM synthesises (issue #331 X51) and files
+    // a relayed clip of (issue #330 D11) only a narrator card's line in chat.
+    game.settings._store.set(`${MODULE_ID}.audio.narratorVoiceId`, "voice-narrator");
+    const savedMessages = game.messages;
+    game.messages = { contents: [
+      { id: "card-0", flags: { [MODULE_ID]: { narratorCard: true, narrationText: "The hull holds." } } },
+      { id: "card-1", flags: { [MODULE_ID]: { narratorCard: true, narrationText: "The airlock cycles." } } },
+    ] };
     const spec = { voiceId: "voice-narrator", modelId: "eleven_flash_v2_5", text: "The hull holds.", speed: 1 };
     send({ kind: "audio.synth.request", hash: await cache.cacheKey(spec), spec });   // the GM synthesises and caches
     await vi.waitFor(() => expect(fp._uploads).toHaveLength(1));
-    // A keyed player's clip of a narrator card's line — the only relayed write
-    // the GM files (issue #330 D11).
-    game.settings._store.set(`${MODULE_ID}.audio.narratorVoiceId`, "voice-narrator");
-    const savedMessages = game.messages;
-    game.messages = { contents: [{ id: "card-1", flags: { [MODULE_ID]: { narratorCard: true, narrationText: "The airlock cycles." } } }] };
+    // A keyed player's clip of the other card's line.
     const relayed = await cache.cacheKey({ voiceId: "voice-narrator", modelId: "eleven_flash_v2_5", text: "The airlock cycles.", speed: 1 });
     send({ kind: "audio.cache.write", hash: relayed, b64: "AQID" });
     await vi.waitFor(() => expect(fp._uploads).toHaveLength(2));

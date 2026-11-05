@@ -297,7 +297,9 @@ describe('a move cut short', () => {
 
 describe('a world write is refused', () => {
   it("the move's record is refused: the lock is still released and the GM is told; the next move runs", async () => {
-    expectConsoleError(/Move interpretation failed/);
+    // Told as what it is — the world refused the record — never as a key
+    // problem (issue #331 X18).
+    expectConsoleError(/did not save the move's record/);
     traceTable(table);
     scriptClaude(table, { fallback: () => REPLY });
     const refused = failWrites(table, persistWrite('gm-1'));
@@ -310,7 +312,8 @@ describe('a world write is refused', () => {
     expect(persisted()).toBe(false);                // the record never landed …
     expect(momentumOf('pc-pat')).toBe(3);           // … the PC's sheet was written first, and stands
     expect(world().pendingMove).toBe(false);
-    expect(notices('gm-1')).toContainEqual(expect.stringMatching(/^error: /));
+    expect(notices('gm-1')).toContainEqual(expect.stringMatching(/^error: .*did not save .*record — the roller's meters stand/));
+    expect(notices('gm-1').some(n => /API key/.test(n))).toBe(false);
     await expectNextMoveNarrates();
   });
 });
