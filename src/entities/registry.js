@@ -18,6 +18,8 @@
  * See issue #228 (Entity → Actor Migration) §4 for the surface that uses this.
  */
 
+import { readSheetPronouns } from '../character/actorBridge.js';
+
 const MODULE_ID = 'starforged-companion';
 
 /**
@@ -172,8 +174,14 @@ export function hasSheetNotes(typeKey) {
 }
 
 /**
- * An entity record with its notes taken from its sheet's Notes tab, for the
- * types that have one (hasSheetNotes) — the record as stored otherwise.
+ * An entity record with the facts its sheet holds taken from the sheet, for
+ * the types that have one (hasSheetNotes) — the record as stored otherwise:
+ * its notes from the Notes tab, and an NPC card's pronouns from its Pronouns
+ * field when that holds a value. The sheet is what the GM edits and what the
+ * seed writes, for pronouns as for notes (issue #335 Y13: a correction made
+ * there reached no narrator surface); an empty field leaves the record's — the
+ * set the narration established, which a card has before its seed fills the
+ * field.
  *
  * @param {string} typeKey
  * @param {ClientDocument|null} document
@@ -182,8 +190,12 @@ export function hasSheetNotes(typeKey) {
  */
 export function withSheetNotes(typeKey, document, data) {
   if (!data || !SHEET_NOTES_TYPES.has(typeKey)) return data;
+  const sheet = {};
   const notes = document?.system?.notes;
-  return typeof notes === 'string' ? { ...data, notes } : data;
+  if (typeof notes === 'string') sheet.notes = notes;
+  const pronouns = typeKey === 'connection' ? readSheetPronouns(document) : '';
+  if (pronouns) sheet.pronouns = pronouns;
+  return Object.keys(sheet).length ? { ...data, ...sheet } : data;
 }
 
 /**

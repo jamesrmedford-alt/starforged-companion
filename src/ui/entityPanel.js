@@ -28,6 +28,7 @@ import {
   iterEntityDocuments,
   resolveEntityById,
   hasSheetNotes,
+  withSheetNotes,
 } from '../entities/registry.js';
 import { notesAsCardText } from '../narration/narratorPrompt.js';
 
@@ -119,7 +120,10 @@ async function loadAllEntities() {
   for (const typeKey of Object.keys(ENTITY_TYPES)) {
     result[typeKey] = [];
 
-    for (const { document, data } of iterEntityDocuments(typeKey)) {
+    for (const { document, data: stored } of iterEntityDocuments(typeKey)) {
+      // The record as the getters give it: an NPC card's pronouns and an NPC's
+      // or ship's notes from its sheet (issue #335 Y13, issue #329 X12).
+      const data = withSheetNotes(typeKey, document, stored);
       const art = data.portraitId
         ? await loadArtAsset(data.portraitId, campaignState).catch(() => null)
         : null;
@@ -153,7 +157,9 @@ async function findEntity(id) {
   for (const typeKey of Object.keys(ENTITY_TYPES)) {
     const document = getEntityDocument(typeKey, id);
     if (!document) continue;
-    const data = readEntityFlag(typeKey, document);
+    // As the getters give it — the portrait prompt reads an NPC card's
+    // pronouns from its sheet (issue #335 Y13).
+    const data = withSheetNotes(typeKey, document, readEntityFlag(typeKey, document));
     if (!data) continue;
 
     const art = data.portraitId

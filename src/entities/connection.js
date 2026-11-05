@@ -27,6 +27,7 @@
 import { ConnectionSchema, RANKS, RANK_TICKS } from "../schemas.js";
 import { getOrCreateActorFolder, getOrCreateSectorNpcActorFolder } from "./folder.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag, registerEntityId, withSheetNotes } from "./registry.js";
+import { readSheetPronouns } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
@@ -446,8 +447,11 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
   const description = typeof existing.description === "string" ? existing.description.trim() : "";
   const firstLook   = firstLookEx || (description ? "" : safeRoll(rollOracle, "character_first_look"));
   const disposition = existing.disposition || safeRoll(rollOracle, "character_disposition");
-  // Establish pronouns once (finding E) — preserved if already set.
-  const pronouns    = existing.pronouns || pickConnectionPronouns();
+  // Establish pronouns once (finding E) — preserved if already set: the
+  // sheet's Pronouns field first — the card's pronouns, which the GM may have
+  // filled before Finalise (issue #335 Y13) — then the record's (the
+  // narration's), then a roll.
+  const pronouns    = readSheetPronouns(actor) || existing.pronouns || pickConnectionPronouns();
 
   // Lead the portrait prompt with the gender descriptor so generated art
   // matches the established pronouns rather than guessing from role/look.

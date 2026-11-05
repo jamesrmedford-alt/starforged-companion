@@ -24,11 +24,18 @@ character schema. `readCharacterSnapshot` (`src/character/actorBridge.js`)
 reads all of it — pronouns and callsign included — into the snapshot.
 
 **NPCs** (connection records + `character`-type NPC cards, FOLDER-002):
-`record.pronouns` established once at seed time (v1.7.10/11 finding E —
-rolled from she/her · he/him · they/them, mirrored to `system.pronouns`,
-and used to anchor the portrait prompt, the seeded Notes prose, the entity
-card, and the audio voice). Role / goal / firstLook / disposition ride the
-same record.
+pronouns established once (v1.7.10/11 finding E — the narration's set from
+the detection pass, else rolled from she/her · he/him · they/them at seed
+time) and written to the record's `pronouns` and the sheet's
+`system.pronouns`; they anchor the portrait prompt, the seeded Notes prose,
+the entity card, and the audio voice. The sheet's Pronouns field is the
+card's pronouns once it holds a value — the GM corrects them there — and the
+record's set stands in for an empty field (a card the seed has not filled
+yet): the getters (`getConnection` / `listConnections` →
+`registry.withSheetNotes`, `actorBridge.readSheetPronouns`) overlay it, the
+Entities panel reads its records through them, and the seed prefers it over
+the record's set or a roll (issue #335 Y13). Role / goal / firstLook /
+disposition ride the record.
 
 ## 2. Injection surfaces — who carries what
 
@@ -36,10 +43,10 @@ same record.
 |---|---|---|---|
 | CHARACTER block [8] (`buildCharacterBlock`) | ✅ full snapshot since 2026-07 (`getActiveCharacter` passes everything the sheet holds: pronouns, callsign, biography, stats, impacts, assets, vows) | n/a | the starving narrowing was CHAR-PC-BLOCK-STARVED; a composition test now locks the live path. Assets carry their enabled ability text only since the v1.7.34 cycle: `readAssets` read a nonexistent `text` field, so they rendered as bare names (ASSET-ABILITY-TEXT, below). Since issue #286 (C5) vows and bonds carry their progress (and a vow its countdown clock), and the rewards `recordGrantedReward` keeps on the sheet (`grantedRewards`) are listed. The snapshot cache is dropped when one of the actor's Items changes (`createItem` / `updateItem` / `deleteItem`), so progress marked on the native sheet reaches the next narration, and on every `updateActor` of the actor whoever owns it — the hook skipped a PC no player owns, so in solo play or for a GM-run PC a sheet edit (a raised stat, health, impacts, pronouns) reached neither the next roll nor the narrator (issue #321 U01). Vows and bonds carry their rank by name (`rankName`, issue #321 U62) |
 | PARTY roster [8b] (`buildPartyBlock`) | ✅ per-member pronouns + callsigns since 2026-07, with a binding-pronouns rule | n/a | legacy names-only shape still renders |
-| ENTITIES IN SCENE [6] (`formatEntityCard`) | n/a | ✅ `Pronouns:` row when the record has them | an NPC's or a ship's notes — its sheet's Notes tab, the one store (`getConnection` / `getShip` read it, issue #329 X12; the record's own `notes` for the types with no tab), HTML with the embedded portrait block — are rendered as text: `notesAsCardText` drops the portrait block, images and markup (issue #326 W39) |
+| ENTITIES IN SCENE [6] (`formatEntityCard`) | n/a | ✅ `Pronouns:` row — the card's pronouns (its sheet's, else the record's — `getConnection`, issue #335 Y13) | an NPC's or a ship's notes — its sheet's Notes tab, the one store (`getConnection` / `getShip` read it, issue #329 X12; the record's own `notes` for the types with no tab), HTML with the embedded portrait block — are rendered as text: `notesAsCardText` drops the portrait block, images and markup (issue #326 W39) |
 | NPC-profile guidance (interaction class + tier pass) | n/a | ✅ "keep pronouns, never reassign" | prompt-level defense exists |
 | Galley / end-session vignette user messages | ✅ `[she/her]` per participant | ✅ end-session NPC leads with pronouns | the finding-R fix — these are the only paths that pass full snapshots |
-| Audio NPC voice | n/a | ✅ `pronounsToVoiceKey` from the record | mixed/unset → default voice |
+| Audio NPC voice | n/a | ✅ `pronounsToVoiceKey` from the card (`getConnection` — the sheet's pronouns, issue #335 Y13) | mixed/unset → default voice |
 | Perspective instruction (`PERSPECTIVE_DESCRIPTIONS`) | ✅ binding since 2026-07 | — | third person: use recorded pronouns exactly, never infer from a name; second person: recorded pronouns govern NPC dialogue about the PC |
 | Chronicle / campaign recap | prose-anchored | prose-anchored | scribe re-summarises narrator prose; recap told "third person for multiplayer" with no pronoun data beyond entry text |
 
@@ -52,6 +59,18 @@ same record.
 | CHAR-PERSPECTIVE-NO-PRONOUN-RULE | INVENT-RISK | "Refer to characters by name" was the whole third-person instruction → both perspectives now make recorded pronouns binding; third person forbids inferring gender from names (write around it or use they/them) |
 | CHAR-NPC-PRONOUN-ROLL-BLIND | WRONG-DETAIL | Confirming a narrator-introduced NPC rolled pronouns randomly against the fiction → the detection pass captures the pronouns the prose used (sanitised by `normalisePronounSet`), they ride the draft card / auto-create / seed into `createConnection`, the inciting `Vow target:` line carries a `(she/her)`-style parenthetical parsed by `splitVowTarget`, and `seedConnectionActor`'s finding-E roll is now **fallback-only** (fires only when nothing established a set). `ConnectionSchema.pronouns` documents the field |
 | CHAR-SIDECAR-NO-PRONOUN-ANCHOR | LOSE-PLOT | The required identity anchor omitted pronouns → the anchor rule and its example now include the pronouns the prose used, so an unconfirmed NPC's gender lives in the truth ledger (and gives the detection pass text to read) instead of only in the ring |
+
+**Later defect — NPC-PRONOUNS-SHEET-EDIT-IGNORED** (WRONG-DETAIL, issue #335
+Y13): every NPC surface — the entity card, the ACTIVE SECTOR roster, the
+end-session vignette's hint, the audio voice, the portrait prompt, the
+consistency check's RECORDED IDENTITIES — read the record's `pronouns`, which
+the GM's correction on the sheet never reached (the check then flagged the
+narrator for using them), and ✦ Finalise on an unseeded card wrote the
+record's set or a roll over the sheet's → the sheet's Pronouns field is the
+card's pronouns (the getters overlay it; the panel reads through them; the
+seed prefers it), and a connection's portrait prompt leads with the
+descriptor of the pronouns held now, not the one the seed baked into its
+portrait source.
 
 **Later defect — ASSET-ABILITY-TEXT** (LOSE-PLOT, fixed in the v1.7.34
 cycle): `readAssets` read ability text from `abilities[].text`, but the vendor
@@ -83,7 +102,8 @@ asserts the ability text reaches the prompt.
 Entity cards render a `Pronouns:` row for any record that has them; the
 interaction-class NPC guidance explicitly forbids reassigning pronouns;
 connection seeding anchors one pronoun set across portrait / notes / card /
-audio voice (finding E) and preserves an already-set value; the galley and
+audio voice (finding E) and preserves an already-set value (the sheet's first —
+issue #335 Y13); the galley and
 end-session vignette user messages lead with pronouns for every participant
 (finding R); the audio voice map keys off the record with a safe default;
 the chronicle scribe stays anchored to source prose; and speaker resolution

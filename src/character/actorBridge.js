@@ -81,6 +81,21 @@ export function getActor(actorId) {
 }
 
 /**
+ * The Pronouns field on a `character` Actor's sheet (`system.pronouns`),
+ * trimmed — '' when it is empty. A PC's ride its snapshot
+ * (readCharacterSnapshot); an NPC card's are read here by the entity registry,
+ * whose getter takes them over the connection record's, and by the seed
+ * (issue #335 Y13).
+ *
+ * @param {Actor|null} actor
+ * @returns {string}
+ */
+export function readSheetPronouns(actor) {
+  const value = actor?.system?.pronouns;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+/**
  * Read a character's current stat and meter values as a flat snapshot.
  * Safe to pass to interpreter and assembler — no Foundry document references.
  * @param {Actor} actor
