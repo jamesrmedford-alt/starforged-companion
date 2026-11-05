@@ -18,14 +18,18 @@ const MOMENTUM_MIN = -6;
 // Per foundry-ironsworn source (#impactCount getter) and the Starforged play kit
 // (p.1 "MAX MOMENTUM: STARTS AT +10 / REDUCE BY 1 FOR EACH IMPACT"), every marked
 // impact reduces momentumMax by 1 and shifts momentumReset toward 0.
-// First 10 are the Starforged play-kit list; last 3 are Ironsworn-classic extras
-// the vendor system also tracks.
+// First 10 are the Starforged play-kit list; the next 3 are Ironsworn-classic
+// extras the vendor system also tracks; the last 2 are the sheet's custom
+// impacts (the vendor's `custom1` / `custom2` ImpactFields, named by
+// `custom1name` / `custom2name`), which its #impactCount counts like any other
+// (READDEBILITIES-CUSTOM-COMMENT).
 const IMPACT_KEYS = [
   'wounded', 'shaken', 'unprepared',                  // misfortunes
   'permanentlyharmed', 'traumatized',                 // lasting effects
   'doomed', 'tormented', 'indebted',                  // burdens
   'battered', 'cursed',                               // current vehicle
   'corrupted', 'encumbered', 'maimed',                // vendor extras (Ironsworn classic)
+  'custom1', 'custom2',                               // the sheet's custom impacts
 ];
 
 // In-memory cache of character snapshots, invalidated by the updateActor hook.
@@ -109,7 +113,7 @@ export function readCharacterSnapshot(actor) {
 
   const sys  = actor.system ?? {};
   const debs = readDebilities(actor);
-  const impactCount = countImpacts(debs);
+  const impactCount = countImpacts(sys.debility);
   const { max: momentumMax, reset: momentumReset } = momentumBounds(sys, impactCount);
 
   const snapshot = {
@@ -301,8 +305,12 @@ export function readConnections(actor) {
 export function readDebilities(actor) {
   const d = actor?.system?.debility ?? {};
   // 10 canonical Starforged play-kit impacts + 3 Ironsworn-classic extras
-  // the vendor system also tracks. Anything outside this list is ignored —
-  // the previous `custom1` / `custom2` fields were not in the vendor schema.
+  // the vendor system also tracks — the impacts named by their key (the
+  // narrator's "Impacts:" line lists these keys). The vendor schema's two
+  // custom impacts (`custom1` / `custom2`, named on the sheet by `custom1name`
+  // / `custom2name`) are not listed here, but they count toward the momentum
+  // bounds as the vendor's #impactCount counts them (countImpacts reads the
+  // sheet's debility — READDEBILITIES-CUSTOM-COMMENT).
   return {
     wounded:           !!d.wounded,
     shaken:            !!d.shaken,
@@ -329,7 +337,7 @@ export function readDebilities(actor) {
  */
 export function readMomentumState(actor) {
   const sys = actor?.system ?? {};
-  const impactCount = countImpacts(readDebilities(actor));
+  const impactCount = countImpacts(sys.debility);
   return {
     value: meterValue(sys.momentum),
     min:   MOMENTUM_MIN,
@@ -364,7 +372,7 @@ export async function applyMeterChanges(actor, meterChanges) {
 
   const sys   = actor.system ?? {};
   const debs  = readDebilities(actor);
-  const impactCount = countImpacts(debs);
+  const impactCount = countImpacts(sys.debility);
   const { max: momentumMax } = momentumBounds(sys, impactCount);
 
   const healthMax  = debs.wounded ? 4 : 5;
@@ -1182,8 +1190,7 @@ export async function recalculateMomentumBounds(actor) {
   if (!actor) return;
 
   const sys       = actor.system ?? {};
-  const debs      = readDebilities(actor);
-  const impactCount = countImpacts(debs);
+  const impactCount = countImpacts(sys.debility);
   const { max: maxMom } = momentumBounds(sys, impactCount);
   const current   = meterValue(sys.momentum);
   const clamped   = clamp(current, MOMENTUM_MIN, maxMom);
@@ -1204,8 +1211,11 @@ function meterValue(meter) {
   return meter.value ?? 0;
 }
 
-function countImpacts(debs) {
-  return IMPACT_KEYS.filter(k => debs[k]).length;
+// The marked impacts on a sheet's debility (`actor.system.debility`), the
+// custom two included — what the vendor's #impactCount counts. readDebilities'
+// map leaves the custom impacts out, so it is not what this counts.
+function countImpacts(debility) {
+  return IMPACT_KEYS.filter(k => !!debility?.[k]).length;
 }
 
 // The vendor's momentum limits (MomentumField: MAX, MIN, RESET_MIN) and base

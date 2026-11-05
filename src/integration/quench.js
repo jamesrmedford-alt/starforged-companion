@@ -220,7 +220,9 @@ Hooks.on("quenchReady", (quench) => {
   // them surfaces here. Parametric across all 14 impact counts (0–13)
   // for both momentumMax (rule 1.6) and momentumReset (rule 1.7), plus
   // the canonical-impact-list contract (rule 1.14: 10 Starforged + 3
-  // Ironsworn-classic vendor extras; legacy custom1/custom2 ignored).
+  // Ironsworn-classic vendor extras named by readDebilities; the sheet's
+  // custom1/custom2 impacts are not named there, though they count toward
+  // the bounds).
   registerMomentumImpactMathTests(quench);
   // Momentum math — rules 1.3 / 1.4 / 1.5 (cap, burn reset, negative
   // cancellation). Priority 7 of the rulebook audit. Pure-function
@@ -9807,7 +9809,9 @@ function registerCoreResolverMatrixTests(quench) {
 //   1.14 Canonical 13-impact list (10 Starforged play-kit + 3
 //        Ironsworn-classic vendor extras: corrupted/encumbered/maimed).
 //        — Playkit doc §3.1.3 flagged readDebilities reading
-//          custom1/custom2. Those legacy fields are now ignored.
+//          custom1/custom2. It names the 13; the vendor's custom1/custom2
+//          impacts (named by custom1name/custom2name) count toward the
+//          momentum bounds (actorBridge countImpacts) but are not named.
 //
 // Unit tests in tests/unit/actorBridge.test.js cover the formula
 // against a stubbed Foundry Actor. This batch re-pins the same
@@ -9989,7 +9993,7 @@ function registerMomentumImpactMathTests(quench) {
           }
         });
 
-        it("readDebilities ignores legacy custom1 / custom2 fields", async function () {
+        it("readDebilities does not name the sheet's custom1 / custom2 impacts", async function () {
           this.timeout(10000);
           const { readDebilities } = await import(`${MODULE_PATH}/character/actorBridge.js`);
           const actor = await Actor.create({
@@ -10003,9 +10007,9 @@ function registerMomentumImpactMathTests(quench) {
           trackActor(actor.id);
           const debs = readDebilities(actor);
           assert.notProperty(debs, "custom1",
-            "readDebilities must not surface legacy custom1 (playkit §3.1.3)");
+            "readDebilities must not name custom1 — the sheet names it (custom1name)");
           assert.notProperty(debs, "custom2",
-            "readDebilities must not surface legacy custom2 (playkit §3.1.3)");
+            "readDebilities must not name custom2 — the sheet names it (custom2name)");
         });
 
         it("readDebilities returns exactly the canonical key set (no rogue keys)", async function () {
