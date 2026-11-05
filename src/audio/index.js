@@ -504,6 +504,15 @@ async function handleSynthRequest(payload) {
       console.warn(`${MODULE_ID} | audio synthesis request refused: hash ${hash.slice(0, 8)}… is not its spec's clip key.`);
       return;
     }
+    // And the spec is one the UI could ask for: a segment of a narrator card
+    // in chat, in one of the world's voices at the world's model and speed.
+    // A forged request with an honestly computed hash was synthesised on the
+    // GM's key with any voice (a premium or cloned one), any model (eleven_v3
+    // at twice Flash's price), any speed and any text (issue #331 X51).
+    if (!(await isNarratorCardClipKey(hash))) {
+      console.warn(`${MODULE_ID} | audio synthesis request refused: ${hash.slice(0, 8)}… is no narrator card's line in the world's voices.`);
+      return;
+    }
   }
   const signalDone = (path) => game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.done", hash, path: path ?? null });
   let path = null;

@@ -206,6 +206,7 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
   // SPEC's clip key (the mocked cacheKey's): the GM refuses a request whose
   // hash is not its spec's key (issue #326 W81).
   const HASH = 'deadbeefdeadbeef';
+  let savedMessages;
 
   function getHandler() {
     registerAudioSocket();
@@ -227,8 +228,18 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
     vi.mocked(mockWrite).mockResolvedValue('/worlds/test/audio/x.mp3');
     vi.mocked(mockSynthesise).mockResolvedValue(new Uint8Array([1, 2, 3]));
     game.settings._store.set(`${MODULE_ID}.elevenLabsApiKey`, 'sk_gm_key');
+    // The requested line is a narrator card's in chat, in the world's voices —
+    // the only clip the GM synthesises (issue #331 X51; the mocked cacheKey
+    // keys it to HASH).
+    savedMessages = game.messages;
+    game.messages = { contents: [{ id: 'card-1', flags: { [MODULE_ID]: { narratorCard: true, narrationText: 'Hello.' } } }] };
+    game.settings._store.set(`${MODULE_ID}.audio.narratorVoiceId`, 'v1');
   });
-  afterEach(() => { game.socket._reset(); });
+  afterEach(() => {
+    game.socket._reset();
+    game.messages = savedMessages;
+    game.settings._store.delete(`${MODULE_ID}.audio.narratorVoiceId`);
+  });
 
   // Issue #321 U60: the done signal names the cached file — a default Player
   // may not browse the cache directory to find it.
