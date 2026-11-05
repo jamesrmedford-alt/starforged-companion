@@ -18,6 +18,7 @@ import { createClock, retireClock, removeClock, clocksFingerprint } from '../clo
 import { requestGmAction } from '../multiplayer/gmRelay.js';
 import { isTrackPosition, combatPositionFor } from '../moves/combat.js';
 import { resolveUserActorId } from '../multiplayer/speaker.js';
+import { replaceKeepingInput } from './keepTypedInput.js';
 
 /**
  * A track's label (or any text) for HTML: a name holding markup — a player can
@@ -562,9 +563,10 @@ export class ProgressTrackApp extends ApplicationV2 {
 
   /** @override */
   _replaceHTML(result, content, _options) {
-    // Replace inner content without destroying the window chrome.
-    content.innerHTML = '';
-    content.append(result);
+    // Replace inner content without destroying the window chrome — keeping
+    // the add form's typed name, type and rank across a hook's re-render
+    // (issue #337 Y45).
+    replaceKeepingInput(content, result, { fields: '.add-track-fields [name]' });
   }
 
   // -----------------------------------------------------------------------

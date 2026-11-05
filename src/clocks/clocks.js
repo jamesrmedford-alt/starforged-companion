@@ -28,6 +28,7 @@
 import { rollYesNo } from "../oracles/roller.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
 import { stripMarkup } from "../audio/segments.js";
+import { replaceKeepingInput } from "../ui/keepTypedInput.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -123,8 +124,8 @@ function getPanelClass() {
     }
 
     _replaceHTML(result, content) {
-      content.innerHTML = "";
-      content.append(result);
+      // The add form keeps what was typed across a hook's re-render (issue #337 Y45).
+      replaceKeepingInput(content, result, { fields: ".add-clock-fields [name]" });
     }
 
     static async #onAddClock(_event, target) {
@@ -141,7 +142,10 @@ function getPanelClass() {
       }
       try { await createClock({ name, segments: segs, type, advanceOdds: odds }); }
       catch (err) { ui.notifications?.error(`Clock creation failed: ${err.message}`); return; }
-      root.querySelector('[name="newClockName"]').value = "";
+      // The live field: the write's own re-render (the campaignState hook) may
+      // already have replaced the form, carrying the typed name (issue #337 Y45).
+      const nameField = this.element?.querySelector?.('[name="newClockName"]');
+      if (nameField) nameField.value = "";
       this.render();
     }
 
@@ -197,8 +201,8 @@ export function clocksFingerprint(clocks) {
  * it shows changed. It re-rendered only after its own buttons, so a clock a
  * Pay the Price, Begin a Session, `!clock` or another GM advanced stayed stale
  * on screen (issue #322 V12). Every client runs it for its own panel; it
- * writes nothing. Any other campaignState write leaves the panel alone (a
- * re-render would clear a clock name being typed).
+ * writes nothing. Any other campaignState write leaves the panel alone (no
+ * needless re-render; one keeps a clock name being typed — issue #337 Y45).
  *
  * @param {{ key?: string }} setting — the Setting document
  */

@@ -25,6 +25,7 @@ import {
 
 import { getActor } from './actorBridge.js';
 import { resolveUserActorId } from '../multiplayer/speaker.js';
+import { replaceKeepingInput } from '../ui/keepTypedInput.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -97,8 +98,13 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
   }
 
   _replaceHTML(result, content, _options) {
-    content.innerHTML = '';
-    content.append(result);
+    // An entry being edited in place keeps its text and focus: an automatic
+    // entry after a narration re-renders the panel, and a browser fires no
+    // blur — the save — on the element it removes (issue #337 Y45).
+    replaceKeepingInput(content, result, {
+      edits:   '.sf-chronicle-text[contenteditable]',
+      editKey: (el) => el.closest('[data-entry-id]')?.dataset?.entryId ?? null,
+    });
     // Wire non-click events that cannot use data-action
     content.querySelectorAll('.sf-chronicle-text[contenteditable]').forEach(el => {
       el.addEventListener('blur', e => this.#onTextBlur(e));
