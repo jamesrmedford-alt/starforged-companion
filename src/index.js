@@ -1902,6 +1902,28 @@ async function releaseLockOfDisconnectedGM(user, connected) {
   }).catch(err => console.warn(`${MODULE_ID} | move-lock card failed:`, err?.message ?? err));
 }
 
+/**
+ * The move lock a world load finds on the canonical GM: stale — returned as
+ * `{ claim }` for the ready reset to clear — unless another user who is
+ * connected holds it. Then that GM's pipeline is mid-move and the lock stands
+ * (issue #335 Y07: a co-GM's load released it mid-narration). The handover's
+ * rule above: the claimant's departure is the event that matters (W25). A
+ * lock that names no claimant (from before W25), or that this client's own
+ * earlier page held, is stale.
+ *
+ * @param {Object} state — campaignState with `pendingMove` set
+ * @returns {{ claim: string|null }|null}
+ */
+function staleMoveLockAtReady(state) {
+  const holder = state?.pendingMoveBy ?? null;
+  const user = holder && holder !== game.user?.id ? game.users?.get?.(holder) : null;
+  if (user?.active) {
+    console.log(`${MODULE_ID} | The move lock is held by ${user.name ?? holder}, who is connected and resolving a move — not reset on ready.`);
+    return null;
+  }
+  return { claim: state?.pendingMoveClaim ?? null };
+}
+
 // ── Forced moves held while another move is resolved (issue #325 W02) ───────
 
 // Message ids, oldest first, of forced moves a claimed card button posted
@@ -2611,7 +2633,10 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * move — whose lock the returning pipeline used to clear mid-narration,
  * letting a third pipeline run beside it (issue #329 X08). A lock from before
  * claims carried a token is released as before. The handover and the ready
- * reset release without a token, unconditionally.
+ * reset release without a token, and only a lock whose claimant is gone: the
+ * handover the departed GM's (or one naming nobody), the ready reset one no
+ * other connected user holds — and only while the store still holds the lock
+ * it found (issue #335 Y07; staleMoveLockAtReady).
  *
  * @param {string|null} [claim] — the releasing pipeline's `pendingMoveClaim`
  * @returns {Promise<boolean>} whether the lock is free now, or no longer this
@@ -7453,7 +7478,15 @@ Hooks.once("ready", () => {
     const prevState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
 
     // Reset a stale pendingMove lock — left set if Foundry was closed mid-move.
-    if (prevState.pendingMove) {
+    // Only a lock nobody connected can still be resolving: held by nobody
+    // named, by this client's own earlier page, or by a user who is not
+    // active — the W25 handover's rule (releaseLockOfDisconnectedGM). A
+    // co-GM who is connected holds a live lock: this GM's load mid-narration
+    // released it, and the next line ran a second pipeline beside that one
+    // (issue #335 Y07). Its own release (claim token, X08), or the handover
+    // when it leaves, frees it.
+    const staleLock = prevState.pendingMove ? staleMoveLockAtReady(prevState) : null;
+    if (staleLock) {
       prevState.pendingMove = false;
       prevState.pendingMoveBy = null;
       prevState.pendingMoveClaim = null;
@@ -7469,11 +7502,24 @@ Hooks.once("ready", () => {
     // session's mixed memory; a session nobody ended first gets its rolling
     // summary brought up to date (rollSessionIfDue). Both await, so only the
     // fields this writes are merged onto the store — endScene persists the
-    // scene fields itself.
-    initSessionId(prevState).then(updated =>
-      game.settings.set(MODULE_ID, "campaignState",
-        mergeOwnedFields(updated, ["pendingMove", "pendingMoveBy", "pendingMoveClaim", ...SESSION_MINT_FIELDS], "session start")),
-    ).then(async () => {
+    // scene fields itself. The lock fields are written only to clear the stale
+    // lock found above, and only while the store still holds it — a live lock
+    // left alone, or a move claimed during these awaits, keeps its own. With
+    // nothing to write (no stale lock, no new session) nothing is written: the
+    // merge starts from this client's cache, which can lag a co-GM's latest
+    // write — the live lock's own release among them — and would carry the old
+    // value back over it (issue #335 Y07).
+    initSessionId(prevState).then(updated => {
+      const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const clearLock = !!staleLock && !!latest.pendingMove && (latest.pendingMoveClaim ?? null) === staleLock.claim;
+      const minted = (updated?.currentSessionId ?? null) !== priorSessionId;
+      if (!clearLock && !minted) return undefined;
+      const fields = [
+        ...(clearLock ? ["pendingMove", "pendingMoveBy", "pendingMoveClaim"] : []),
+        ...(minted ? SESSION_MINT_FIELDS : []),
+      ];
+      return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"));
+    }).then(async () => {
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: post campaign recap when a new session is detected
       if (wasNewSession && getAutoRecapEnabled()) {

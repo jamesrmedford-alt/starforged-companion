@@ -15,7 +15,8 @@
  * a third pipeline beside it. Now each claim stamps a token
  * (`pendingMoveClaim`) and a pipeline releases the lock only while the store
  * still holds its own claim; the W25 handover and the ready reset still clear
- * it unconditionally.
+ * it without a token — each only a lock whose claimant is gone (the ready
+ * reset since issue #335 Y07: readyResetLiveLock.test.js).
  *
  * (Foundry) the blip semantics — `userConnected(user, false)` then
  * `(user, true)` without a reload — are modelled with table.leave / join.
