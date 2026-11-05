@@ -136,9 +136,9 @@ export function generateSector(region, _overrides = {}) {
 
   return {
     id,
+    // The name alone: the record carried its rolled prefix and suffix too,
+    // which nothing read (issue #331 X66). Stored sectors keep theirs.
     name:        sectorName.full,
-    namePrefix:  sectorName.prefix,
-    nameSuffix:  sectorName.suffix,
     region,
     regionLabel: cfg.label,
     trouble,
