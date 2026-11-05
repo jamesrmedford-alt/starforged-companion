@@ -474,9 +474,10 @@ export async function endureStress(actor, amount, opts = {}) {
  * and your allies share the same supply value, you mark unprepared
  * together". The crew's supply is one value (multiplayer/sharedSupply.js
  * mirrors the number to them); this is the one writer of the impact that
- * goes with it — the executor below, Repair's supply trade (repair.js) and a
- * move's own supply loss (persistResolution.js) all come here. Issue #315
- * S04 (the trade marked no one) and S07 (only the PC who paid was marked).
+ * goes with it — the executor below, Repair's supply trade (repair.js) and
+ * an asset rider's supply cost (consequenceRiders.js, issue #331 X16) all
+ * come here (no move's own consequence costs supply). Issue #315 S04 (the
+ * trade marked no one) and S07 (only the PC who paid was marked).
  * Raising supply clears nothing: the impact is cleared by a recovery move.
  *
  * @param {Actor} actor  whose supply is now 0

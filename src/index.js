@@ -6824,8 +6824,11 @@ async function reportRiderOutcomes(outcomes, characterActor) {
   const missed  = outcomes.filter(o => !o.ok);
   if (!applied.length && !missed.length) return;
   const list = (rows) => `<ul>${rows.map(o => `<li>${riderLine(o)}${o.ok ? "" : ` — ${escapeChatHtml(RIDER_NOT_APPLIED[o.reason] ?? o.reason ?? "it failed")}`}</li>`).join("")}</ul>`;
+  // A supply loss that exhausted the crew's supply marked unprepared (issue
+  // #331 X16): the line is the write's, shared by its riders — said once.
+  const notes = [...new Set(applied.map(o => o.note).filter(Boolean))].map(n => `<p>${n}.</p>`).join("");
   const body = applied.length
-    ? `<strong>✦ Asset effects applied</strong>${list(applied)}${missed.length ? `<p>Not applied:</p>${list(missed)}` : ""}`
+    ? `<strong>✦ Asset effects applied</strong>${list(applied)}${notes}${missed.length ? `<p>Not applied:</p>${list(missed)}` : ""}`
     : `<strong>✦ Asset effects not applied</strong>${list(missed)}`;
   await ChatMessage.create({
     content: `<div class="sf-rider-summary">${body}</div>`,

@@ -23,7 +23,8 @@
  * progress writes are world-scoped — the caller GM-gates application.
  */
 
-import { applyMeterChanges } from "../character/actorBridge.js";
+import { applyMeterChanges, readCharacterSnapshot, invalidateActorCache } from "../character/actorBridge.js";
+import { markUnprepared, crewUnpreparedNote } from "./sufferExecutor.js";
 
 const MODULE_ID    = "starforged-companion";
 const HAIKU_MODEL  = "claude-haiku-4-5-20251001";
@@ -164,8 +165,10 @@ export function sumMeterDeltas(riders) {
  * @param {Object} ctx
  * @param {Actor} ctx.characterActor
  * @param {string|null} [ctx.shipActorId] — the ship whose integrity changes
- * @returns {Promise<Array<{ rider: Object, ok: boolean, reason?: string, error?: string }>>}
- *   one per meter rider, in order: `reason` is why it was not applied
+ * @returns {Promise<Array<{ rider: Object, ok: boolean, reason?: string, error?: string, note?: string }>>}
+ *   one per meter rider, in order: `reason` is why it was not applied;
+ *   `note` (HTML, on the character's riders) is the unprepared mark a supply
+ *   loss to 0 made
  */
 export async function applyMeterRiders(riders, { characterActor, shipActorId } = {}) {
   const meterRiders = (riders ?? []).filter(r => METER_RESOURCES.has(r.resource));
@@ -178,16 +181,51 @@ export async function applyMeterRiders(riders, { characterActor, shipActorId } =
   return meterRiders.map(rider => ({ rider, ...(onShip(rider) ? shipResult : characterResult) }));
 }
 
-/** The character's summed meter deltas, as one write. */
+/**
+ * The character's summed meter deltas, as one write. A supply loss that
+ * leaves the supply exhausted is a loss of resources like any other: "If your
+ * supply is exhausted (reduced to 0), mark unprepared" — on the PC and every
+ * ally sharing the supply, through the zero-supply impact's one writer
+ * (sufferExecutor.markUnprepared, issue #315 S04 / S07; issue #331 X16).
+ * `note` is the summary card's line for it.
+ */
 async function writeCharacterMeters(actor, deltas) {
   if (!actor) return { ok: false, reason: "no-pc" };
   try {
     await applyMeterChanges(actor, deltas);
-    return { ok: true };
   } catch (err) {
     console.warn(`${MODULE_ID} | consequenceRiders: meter write on ${actor.name ?? actor.id} failed:`, err?.message ?? err);
     return { ok: false, reason: "refused", error: String(err?.message ?? err) };
   }
+  const note = deltas?.supply < 0 ? await unpreparedAtZeroSupply(actor) : null;
+  return note ? { ok: true, note } : { ok: true };
+}
+
+/**
+ * After a rider's supply loss: mark unprepared when the supply is now 0, and
+ * say so (null when the supply is left above 0). Never throws — the loss has
+ * landed either way, as Repair's supply trade has.
+ *
+ * @param {Actor} actor
+ * @returns {Promise<string|null>} HTML
+ */
+async function unpreparedAtZeroSupply(actor) {
+  invalidateActorCache(actor.id);
+  if ((readCharacterSnapshot(actor)?.meters?.supply ?? 0) > 0) return null;
+  const name = escapeHtml(actor.name ?? "The character");
+  try {
+    const marks = await markUnprepared(actor);
+    const crew  = crewUnpreparedNote(marks);
+    const own   = marks.unpreparedMarked ? `Out of supply — ${name} is marked <strong>unprepared</strong>` : "";
+    return [own, crew].filter(Boolean).join("; ") || null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | consequenceRiders: marking ${actor.name ?? actor.id} unprepared failed:`, err?.message ?? err);
+    return `Out of supply, but ${name} could not be marked unprepared — mark it on the sheet`;
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 }
 
 /**

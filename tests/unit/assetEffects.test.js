@@ -536,3 +536,35 @@ describe("S08 — an asset effect is applied only once its write lands", () => {
     expect(failCards()).toHaveLength(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// X16 (issue #331) — a supply effect that exhausts the crew's supply marks the
+// roller and the allies sharing it unprepared, and the summary says so.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("X16 — a supply effect that takes the supply to 0 marks the crew unprepared", () => {
+  it("-1 supply at 1: Kira and Ren (sharing the supply) are marked, on the summary card", async () => {
+    pc.system.supply.value = 1;
+    const ren = table.addActor({ id: "pc-b", name: "Ren", ownership: { "pl-2": 3 }, system: { supply: { value: 1 } } });
+    riders({ resource: "supply", amount: -1, label: "-1 supply" });
+
+    await finishMove();
+
+    expect(pc.system.supply.value).toBe(0);
+    // (Ren's supply is the shared-supply sync's mirror, pinned in sharedSupply.test.js.)
+    expect(pc.system.debility.unprepared).toBe(true);
+    expect(ren.system.debility.unprepared).toBe(true);
+    expect(summary()).toMatch(/Asset effects applied[\s\S]*-1 supply[\s\S]*Out of supply — Kira is marked <strong>unprepared<\/strong>; Ren, sharing the supply, is marked <strong>unprepared<\/strong> too/);
+  });
+
+  it("control: -1 supply at 3 marks nobody and adds no line", async () => {
+    pc.system.supply.value = 3;
+    riders({ resource: "supply", amount: -1, label: "-1 supply" });
+
+    await finishMove();
+
+    expect(pc.system.supply.value).toBe(2);
+    expect(pc.system.debility.unprepared).toBe(false);
+    expect(summary()).not.toMatch(/unprepared/);
+  });
+});
