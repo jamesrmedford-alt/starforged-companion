@@ -65,6 +65,8 @@ const LOCAL_ONLY = {
   'src/ui/entityPanel.js createActor inline#1': 're-renders this client\'s Entity Panel',
   'src/ui/entityPanel.js updateActor inline#1': 're-renders this client\'s Entity Panel',
   'src/ui/entityPanel.js deleteActor inline#1': 're-renders this client\'s Entity Panel',
+  'src/ui/entityPanel.js updateSetting EntityPanelApp.onSettingChanged': 're-renders this client\'s Entity Panel when the current location or dismissed names it shows changed',
+  'src/ui/entityPanel.js createSetting EntityPanelApp.onSettingChanged': 'same, first write of the setting',
   'src/ui/progressTracks.js updateJournalEntry inline#1': 're-renders this client\'s Progress Tracks panel',
   'src/ui/progressTracks.js updateSetting ProgressTrackApp.onSettingChanged': 're-renders this client\'s Progress Tracks panel when the clocks it shows changed',
   'src/ui/progressTracks.js createSetting ProgressTrackApp.onSettingChanged': 'same, first write of the setting',
