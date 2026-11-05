@@ -257,7 +257,11 @@ roller's player or a GM and claims the card (`recommitted`) before
 writes every open copy of the roller's vow (`resolveVowItemCopies`; the
 roller's first — refused, nothing changed and the claim released) and its
 journal twin: the lowest die's boxes cleared and the rank stepped once, as
-the Item holds it (a vendor number or a name — `setVowItemTrack`).
+the Item holds it (a vendor number or a name — `setVowItemTrack`). A miss
+rolled on the sheet gets the same offer, for the roller's vow Item of the
+roll's name (`registerNativeFulfilConsequenceHook` → `offerSheetMissRecommit`,
+issue #331 X62 — the hook acted on hits only, so the player recommitted by
+hand on every copy).
 
 **Native-sheet path**: the vendor progress-roll card is narrated where a Claude
 key lives (`registerNativeProgressRollHook` → `nativeRollNarratesHere`, the

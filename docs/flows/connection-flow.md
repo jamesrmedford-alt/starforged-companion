@@ -212,7 +212,10 @@ relays `bond.recommit` (`cardActions.applyBondRecommitOffer`, the roller's
 player or a GM, claimed once), and `performBondRecommit` clears the lowest
 die's boxes from `relationshipTicks`, steps the record's rank once, writes
 both through to the bond Items (`setBondItemTicks` / `setBondItemRank`) and
-adds a history entry. Both hooks classify the
+adds a history entry. A miss rolled on the sheet gets the same offer, for the
+connection `findSheetBondConnection` resolves — none for a bond made by hand
+or a connection already bonded (`offerSheetMissRecommit`, issue #331 X62: the
+consequence hook acted on hits only). Both hooks classify the
 sheet roll through one subtype lookup (`nativeProgressSubtypeLookup`,
 `src/index.js`), which takes the vendor's `bond` subtype as a connection — the
 narration hook accepted only `connection`, so a forge rolled on the sheet's

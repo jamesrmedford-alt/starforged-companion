@@ -5330,25 +5330,60 @@ function registerNativeFulfilConsequenceHook() {
       const parsed = parseIronswornProgressRoll(message?.content ?? "");
       if (!parsed) return;
       const moveId = classifyProgressRoll(parsed, nativeProgressSubtypeLookup(message, "native-fulfil"));
+      // The sheet roll's speaker is the PC who rolled.
+      const actorId = typeof message?.speaker?.actor === "string" ? message.speaker.actor : null;
       if (shouldPayFulfilledVow({ moveId, outcome: parsed.outcome })) {
-        // The sheet roll's speaker is the PC who rolled — their copy gets the reward.
-        payFulfilledVowNative(parsed.source, parsed.outcome, {
-          actorId: typeof message?.speaker?.actor === "string" ? message.speaker.actor : null,
-        }).catch(err =>
+        // Their copy gets the reward.
+        payFulfilledVowNative(parsed.source, parsed.outcome, { actorId }).catch(err =>
           console.warn(`${MODULE_ID} | native-fulfil consequence failed:`, err?.message ?? err));
       } else if (shouldForgeBond({ moveId, outcome: parsed.outcome })) {
         // BOND-NATIVE-FORGE fix — a Forge a Bond rolled on the vendor sheet
         // used to narrate only; the record kept bonded:false and no legacy.
         // The roller's bond Item names the connection (issue #330 D5).
-        payForgedBondNative(parsed.source, {
-          actorId: typeof message?.speaker?.actor === "string" ? message.speaker.actor : null,
-        }).catch(err =>
+        payForgedBondNative(parsed.source, { actorId }).catch(err =>
           console.warn(`${MODULE_ID} | native-forge consequence failed:`, err?.message ?? err));
+      } else if (parsed.outcome === "miss" && (moveId === "fulfill_your_vow" || moveId === "forge_a_bond")) {
+        // A sheet roll's miss gets the recommit the pipeline offers (issue
+        // #330 D1). The hook acted on hits only, so the player recommitted by
+        // hand: the boxes cleared and the rank raised on every copy of the
+        // vow, or on the connection's record and its bond Items (issue #331
+        // X62).
+        offerSheetMissRecommit(moveId, parsed.source, actorId).catch(err =>
+          console.warn(`${MODULE_ID} | native recommit offer failed:`, err?.message ?? err));
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | native-fulfil consequence hook threw:`, err?.message ?? err);
     }
   });
+}
+
+/**
+ * The 🔁 Recommit offer for a Fulfill Your Vow or Forge a Bond missed on the
+ * sheet (issue #331 X62) — the card the pipeline posts on its own miss (issue
+ * #330 D1). A vow: the roller's vow Item of the roll's name (its copies, by
+ * their vowId, are recommitted together). A bond: the connection
+ * `findSheetBondConnection` resolves — a bond made by hand on the sheet
+ * resolves to none, and a connection already bonded has no bond to recommit
+ * to, so neither gets an offer.
+ *
+ * @param {"fulfill_your_vow"|"forge_a_bond"} moveId
+ * @param {string|null} source — the roll card's source: the progress Item's name
+ * @param {string|null} actorId — the roller
+ */
+async function offerSheetMissRecommit(moveId, source, actorId) {
+  const name = String(source ?? "").trim();
+  if (!name) return;
+  if (moveId === "fulfill_your_vow") {
+    const actor = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+    const item  = actor?.items?.find?.(i => i?.type === "progress"
+      && /vow/i.test(String(i?.system?.subtype ?? ""))
+      && String(i?.name ?? "").trim().toLowerCase() === name.toLowerCase()) ?? null;
+    await postVowRecommitOfferCard({ vowName: item?.name ?? name, itemId: item?.id ?? null, actorId });
+    return;
+  }
+  const target = await findSheetBondConnection(name, actorId);
+  if (target?.__hostId && !target.bonded) await postBondRecommitOfferCard(target, actorId);
+  else console.debug(`${MODULE_ID} | bond recommit offer skipped — "${name}" is no un-bonded connection the module tracks.`);
 }
 
 /**
