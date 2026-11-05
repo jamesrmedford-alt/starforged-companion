@@ -109,7 +109,10 @@ holding its `vowId` — issue #329 X05; relayed `vow.swearRoll`:
 `applyPlayerVowSwearFromRelay` on the canonical GM claims the card once,
 `swearRolled`, and only the holder's player or a GM may press it — it
 posted from the presser's client, so a crewmate swore another player's vow,
-their momentum and oath scene, issue #338 D1), a **connection
+their momentum and oath scene, issue #338 D1; a vow no character holds any
+more is not sworn: the card closes, `vowGone`, and the presser and the GMs
+are told — it rolled the momentum and oath scene for a deleted vow,
+known-issues SWEAR-ROLL-VOW-GONE), a **connection
 picker** when connections exist
 (`setVowLinkedConnection`, relayed `vow.link`: the canonical GM checks the
 connection exists and claims the card once, `linkedConnection`; a link the

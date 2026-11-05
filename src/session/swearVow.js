@@ -635,12 +635,14 @@ const _rewardPicksInFlight = new Set();
  *
  * @param {{ requesterId?: string|null }} ctx — the relay context
  * @param {string} text
+ * @param {{ title?: string }} [opts] — the heading ("Not saved"; a refused
+ *   swear's "Not sworn")
  */
-async function postVowWriteRefusedNotice(ctx, text) {
+async function postVowWriteRefusedNotice(ctx, text, { title = "Not saved" } = {}) {
   const gmIds = Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM).map(u => u.id);
   const whisper = [...new Set([ctx?.requesterId ?? globalThis.game?.user?.id ?? null, ...gmIds].filter(Boolean))];
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Not saved</strong><p>${escapeHtml(text)}</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>${escapeHtml(title)}</strong><p>${escapeHtml(text)}</p></div>`,
     whisper,
     flags: { [MODULE_ID]: { vowWriteRefusedNotice: true } },
   }).catch(err => console.warn(`${MODULE_ID} | swearVow: the not-saved notice failed:`, err?.message ?? err));
@@ -886,7 +888,9 @@ export function registerPlayerVowSwearHook() {
     if (!f?.playerVowCard) return;
     const btn = root.querySelector('[data-action="sf-player-vow-swear"]');
     if (!btn) return;
-    if (liveFlags(message)?.swearRolled) {
+    // Sworn, or closed because no character holds the vow (SWEAR-ROLL-VOW-GONE).
+    const taken = () => !!(liveFlags(message)?.swearRolled || liveFlags(message)?.vowGone);
+    if (taken()) {
       btn.disabled = true;
       return;
     }
@@ -898,7 +902,7 @@ export function registerPlayerVowSwearHook() {
       await relayCardAction({
         kind:       "vow.swearRoll",
         payload:    { messageId: message?.id ?? null },
-        isResolved: () => !!liveFlags(message)?.swearRolled,
+        isResolved: taken,
         restore:    () => { fresh.disabled = false; },
       });
     });
@@ -915,14 +919,33 @@ export function registerPlayerVowSwearHook() {
  * — the card's `actorId`, or the PC holding its `vowId` on an older card —
  * or a GM may press it, once per card (claim `swearRolled`); the swear speaks
  * as the holder and carries the vow's 🤝 link (`linkedConnection`). A card
- * whose vow nobody holds is a GM's to press.
+ * that names neither its holder nor its vow is a GM's to press.
+ *
+ * A vow no character holds any more — its Item deleted — is sworn by nobody:
+ * the swear still rolled, its momentum and an oath scene for a vow that no
+ * longer existed (known-issues SWEAR-ROLL-VOW-GONE). Refused, the card is
+ * closed (`vowGone`, as its 🤝 Link and reward pick close it — issue #336
+ * Y27) and the presser and the GMs are told why.
  *
  * @param {{ messageId?: string }} payload
  * @param {Object} [ctx]
  * @returns {Promise<{ posted: boolean, reason?: string }>}
  */
-export function applyPlayerVowSwearFromRelay(payload = {}, ctx = {}) {
-  return applyCardRollerFollowup({ messageId: payload?.messageId }, ctx, {
+export async function applyPlayerVowSwearFromRelay(payload = {}, ctx = {}) {
+  const messageId = typeof payload?.messageId === "string" ? payload.messageId : null;
+  const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  if (f.playerVowCard === true && !f.swearRolled && (f.vowGone || (f.vowId && !vowHolderActorId(f.vowId)))) {
+    console.warn(`${MODULE_ID} | swear it: no character holds the vow on card ${messageId} — nothing sworn.`);
+    if (!f.vowGone) {
+      await message.update({ [`flags.${MODULE_ID}.vowGone`]: true })
+        .catch(err => console.warn(`${MODULE_ID} | swear it: closing card ${messageId} failed:`, err?.message ?? err));
+    }
+    await postVowWriteRefusedNotice(ctx, "No character holds this vow any more — nothing to swear; the card is closed.",
+      { title: "Not sworn" });
+    return { posted: false, reason: "no-copy" };
+  }
+  return applyCardRollerFollowup({ messageId }, ctx, {
     label: "swear it", claim: "swearRolled",
     isCard: (f) => f.playerVowCard === true,
     roller: (f) => (typeof f.actorId === "string" && f.actorId) ? f.actorId : vowHolderActorId(f.vowId),
