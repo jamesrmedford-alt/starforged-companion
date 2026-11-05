@@ -6697,7 +6697,10 @@ async function handleAtCommand(message) {
   await maybeUpdateShipPositionFromName(arg, campaignState, "at_command");
 
   await ChatMessage.create({
-    content: `<p>Current location set to <strong>${match.entity.name}</strong> (${match.type}).</p>`,
+    // The name is the Actor's — model text a GM confirmed, or typed on the
+    // sheet — so it is escaped, as every sibling card escapes its names
+    // (issue #336 Y28).
+    content: `<p>Current location set to <strong>${escapeChatHtml(match.entity.name)}</strong> (${escapeChatHtml(match.type)}).</p>`,
     flags:   { [MODULE_ID]: { atCommandCard: true } },
   });
 }
@@ -6800,7 +6803,7 @@ async function handleSectorCommand(message) {
       return;
     }
     const lines = sectors.map(s =>
-      `<li>${s.name} (${s.regionLabel})${campaignState.activeSectorId === s.id ? " <em>[active]</em>" : ""}</li>`
+      `<li>${escapeChatHtml(s.name)} (${escapeChatHtml(s.regionLabel)})${campaignState.activeSectorId === s.id ? " <em>[active]</em>" : ""}</li>`
     ).join("");
     await ChatMessage.create({
       content: `<p><strong>Sectors:</strong></p><ul>${lines}</ul>`,
@@ -6826,7 +6829,7 @@ async function handleSectorCommand(message) {
   campaignState.activeSectorId = match.id;
   await game.settings.set(MODULE_ID, "campaignState", campaignState);
   await ChatMessage.create({
-    content: `<p>Active sector switched to <strong>${match.name}</strong>.</p>`,
+    content: `<p>Active sector switched to <strong>${escapeChatHtml(match.name)}</strong>.</p>`,
     flags: { [MODULE_ID]: { sectorSwitch: true } },
   });
 }

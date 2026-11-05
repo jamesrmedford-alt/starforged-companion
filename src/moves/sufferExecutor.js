@@ -640,7 +640,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
   const destroyed = atZero && opts.isMissWithMatch === true;
 
   if (!opts.skipCard) {
-    let body = `${item.name}: ${before} → ${after}`;
+    let body = `${escapeHtml(item.name)}: ${before} → ${after}`;   // the player names the asset (issue #336 Y28)
     if (destroyed) {
       body += `<br/><strong>Companion destroyed.</strong> Open the character sheet → Assets and discard this companion.`;
     } else if (atZero) {
@@ -700,7 +700,7 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   }
 
   if (!opts.skipCard) {
-    let body = `${item.name}: ${before} → ${after}`;
+    let body = `${escapeHtml(item.name)}: ${before} → ${after}`;   // the player names the asset (issue #336 Y28)
     if (vehicleDamage) {
       body += `<br/>Vehicle Damage (d100 ${vehicleDamage.roll}): <em>${vehicleDamage.result}</em>`;
       if (opts.isCommandVehicle && /catastrophic|destruction/i.test(vehicleDamage.result)) {
