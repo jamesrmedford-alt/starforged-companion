@@ -196,12 +196,14 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   which checks the pick is one of the card's choices (its buttons' data
   attributes for an older card) and that the clicker's PC is one the
   requester owns — a player with no PC of their own is refused, only a GM
-  may press as nobody (`relayedClickerPc`, issue #331 X19) — posts the forced Develop Your Relationship / Forge a Bond
-  move **once** — speaking as the clicker's PC, so the pipeline credits the
-  roller although the GM authors the message, and naming the picked
-  connection as `forcedMoveTargetId` (its host Actor id) and
-  `forcedMoveTarget` (its name) — and stamps the card `resolved` (in-flight
-  guarded; a failed post leaves it open). The forced move carries
+  may press as nobody (`relayedClickerPc`, issue #331 X19) — claims the card
+  (`resolved`, in-flight guarded) and posts the forced Develop Your
+  Relationship / Forge a Bond move **once** — speaking as the clicker's PC,
+  so the pipeline credits the roller although the GM authors the message,
+  and naming the picked connection as `forcedMoveTargetId` (its host Actor
+  id) and `forcedMoveTarget` (its name). A refused claim posts nothing and a
+  failed post releases the claim: it posted first, and a stamp the world
+  refused left the picker live for a second Develop (issue #336 Y24). The forced move carries
   `deferWhileBusy`: met by the move lock, it is held on the canonical GM and
   rolled when the lock frees (issue #325 W02 — it was dropped, the card
   already claimed). A forced move skips the

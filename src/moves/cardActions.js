@@ -139,12 +139,13 @@ const PICK_MOVES = Object.freeze({
 /**
  * gmRelay handler for "connection.pick" — runs on the canonical GM.
  *
- * Validates the pick against the card's own choices, posts the forced
- * Develop Your Relationship / Forge a Bond move ONCE — with
- * `speaker.actor` = the clicker's PC, so the pipeline's resolveSpeakerActorId
- * credits the roller even though the GM authors the message, and the picked
- * connection as `forcedMoveTargetId` (host id) + `forcedMoveTarget` (name) —
- * then stamps the picker `resolved`. Idempotent per card.
+ * Validates the pick against the card's own choices, claims the picker
+ * (`resolved`), then posts the forced Develop Your Relationship / Forge a
+ * Bond move ONCE — with `speaker.actor` = the clicker's PC, so the pipeline's
+ * resolveSpeakerActorId credits the roller even though the GM authors the
+ * message, and the picked connection as `forcedMoveTargetId` (host id) +
+ * `forcedMoveTarget` (name). Idempotent per card: a refused claim posts
+ * nothing, and a post that fails releases the claim (issue #336 Y24).
  *
  * @param {{ messageId?: string, hostId?: string|null, connectionName?: string|null,
  *           actorId?: string|null }} payload
@@ -203,6 +204,16 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
       ...(choice.name   ? { forcedMoveTarget:   choice.name }   : {}),
       ...(choice.hostId ? { forcedMoveTargetId: choice.hostId } : {}),
     };
+    // Claimed before the post (issue #336 Y24; decisions #309 "claims before
+    // effects"): the move was posted first and the stamp's refusal swallowed,
+    // so the picker stayed live and the next press rolled Develop / Forge
+    // again. A refused claim posts nothing — the press is the retry.
+    try {
+      await message.update({ [`flags.${MODULE_ID}.resolved`]: true });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | connection pick: picker card ${messageId} could not be claimed — no move posted:`, err?.message ?? err);
+      return { posted: false, reason: "claim-refused" };
+    }
     try {
       await ChatMessage.create({
         content: move.content(label),
@@ -210,12 +221,11 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
         flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...target } },
       });
     } catch (err) {
-      // Leave the card unresolved so the pick can be retried.
-      console.warn(`${MODULE_ID} | connection pick: forced-move post failed:`, err?.message ?? err);
+      console.warn(`${MODULE_ID} | connection pick: forced-move post failed — the claim is released:`, err?.message ?? err);
+      await message.update({ [`flags.${MODULE_ID}.resolved`]: false })
+        .catch(e => console.warn(`${MODULE_ID} | connection pick: releasing the claim failed:`, e?.message ?? e));
       return { posted: false, reason: "post-failed" };
     }
-    await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
-      .catch(err => console.warn(`${MODULE_ID} | connection picker resolve update failed:`, err?.message ?? err));
     return { posted: true };
   } finally {
     _inFlight.delete(key);
@@ -1376,8 +1386,15 @@ export async function applyConnectionSuggestion(payload = {}, _ctx = {}) {
  */
 export async function applyFightVowMarkMilestone(payload = {}, ctx = {}) {
   return applyFightVowAction("markMilestone", payload, ctx, async (f) => {
-    const { markLinkedVowMilestone } = await import("../index.js");
-    const res = await markLinkedVowMilestone(f.vowName ?? null, f.marks, typeof f.actorId === "string" ? f.actorId : null);
+    // Once per card on the vow's payoff ledger too (issue #336 Y24): the
+    // stamp follows the mark (R04), and a refused stamp left the button live
+    // for a second mark.
+    const { markFightVowMilestoneOnce } = await import("../index.js");
+    const res = await markFightVowMilestoneOnce({
+      cardId:  payload.messageId,
+      vowName: f.vowName ?? null, vowId: typeof f.vowId === "string" ? f.vowId : null,
+      actorId: typeof f.actorId === "string" ? f.actorId : null, marks: f.marks,
+    });
     // The card's vow is fulfilled: nothing to mark — no failure card, and no
     // other vow marked in its place (issue #325 W29).
     if (res?.reason === "vow-completed") return false;

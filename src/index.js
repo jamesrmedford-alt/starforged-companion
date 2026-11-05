@@ -5064,14 +5064,14 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
 // GM-side: mark the linked vow `marks` times (scaled by the fight's rank), on
 // the PC that actually holds the vow — the card's roller when they hold it,
 // else whichever PC does (resolveVowHolderActor). Shared-vow copies on the
-// other PCs follow via the updateItem sync hook. Exported for the won-fight
-// card's relay handler (src/moves/cardActions.js applyFightVowMarkMilestone),
-// which stamps the card applied only on { ok: true }: a refused mark, or no
-// open vow to mark, used to be swallowed here and the card stamped anyway
-// (issue #306 R04).
+// other PCs follow via the updateItem sync hook. Run by
+// markFightVowMilestoneOnce for the won-fight card's relay handler
+// (src/moves/cardActions.js applyFightVowMarkMilestone), which stamps the
+// card applied only on { ok: true }: a refused mark, or no open vow to mark,
+// used to be swallowed here and the card stamped anyway (issue #306 R04).
 //
 // @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
-export async function markLinkedVowMilestone(vowName, marks, actorId = null) {
+async function markLinkedVowMilestone(vowName, marks, actorId = null) {
   try {
     // The card's vow is already fulfilled: nothing to mark, and no other vow
     // marked in its place (issue #325 W29).
@@ -5167,6 +5167,33 @@ export async function deepenVowConnectionOnce({ vowName = null, vowId = null, ac
   }
   const res = await deepenLinkedConnection(connectionName, marks);
   if (res?.ok) await recordPayoffStep(copies, "deepen");
+  return res;
+}
+
+/**
+ * The won-fight card's ⚑ Mark milestone, once per card (issue #336 Y24). The
+ * card keeps its effect first and stamps after (issue #306 R04: a mark that
+ * did not land leaves the button live — the press is its retry), so a stamp
+ * the world refused after the mark landed left the button live too, and the
+ * next press — the GM's, a crewmate's, the re-armed button — marked the vow
+ * again. The mark is recorded on the vow's payoff ledger by the card that
+ * made it (`fulfilPayoff["milestone:<card id>"]`, every copy), as 🤝 Deepen
+ * records its deepen: a press that finds it marks nothing, and its stamp is
+ * written again. Each won fight's card keeps its own entry — a vow takes a
+ * milestone per fight.
+ *
+ * @param {{ cardId?: string|null, vowName?: string|null, vowId?: string|null,
+ *   actorId?: string|null, marks?: number }} card
+ * @returns {Promise<{ ok: boolean, skipped?: boolean, reason?: string, error?: string }>}
+ */
+export async function markFightVowMilestoneOnce({ cardId = null, vowName = null, vowId = null, actorId = null, marks = 1 } = {}) {
+  const step = cardId ? `milestone:${cardId}` : null;
+  if (step && payoffStepLanded(payoffVowCopies({ vowId, vowName, actorId }), step)) {
+    console.debug(`${MODULE_ID} | fight-vow milestone: card ${cardId} already marked "${vowName ?? "?"}" — nothing marked again.`);
+    return { ok: true, skipped: true, reason: "already-marked" };
+  }
+  const res = await markLinkedVowMilestone(vowName, marks, actorId);
+  if (res?.ok && step) await recordPayoffStep(payoffVowCopies({ vowId, vowName, actorId }), step);
   return res;
 }
 

@@ -333,8 +333,11 @@ Mark milestone and Deepen your bond are one-shot GM writes:
 `applyFightVowDeepenBond` on the canonical GM. The handler takes every value
 from the GM-authored card (never the payload), skips an action already in
 flight or stamped, and stamps `flags.resolvedActions.<action>` once applied —
-only when the step reports it landed (`markLinkedVowMilestone` /
-`deepenLinkedConnection` return `{ ok }`): a refused mark, no open vow to
+only when the step reports it landed (`markFightVowMilestoneOnce` /
+`deepenVowConnectionOnce` return `{ ok }`; each records its step on the
+vow's payoff ledger — the mark per card, `milestone:<card id>`, the deepen
+once per vow — so a re-press after a stamp the world refused marks or
+deepens nothing, issue #336 Y24 / #326 D1): a refused mark, no open vow to
 mark, or a connection no longer open leaves the action unstamped and
 whispers the GMs a report without a Retry (source `fightButton`) — the
 re-armed button is the retry (issue #306 R04; the stamp used to land

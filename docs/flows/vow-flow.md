@@ -128,8 +128,10 @@ All real progress lands on **item ticks** (`system.current`) via
   issue #326 W43; a plain Reach a Milestone's picker marks once). Any user's click
   relays `milestone.pick` to the canonical GM → `applyMilestonePick`, which
   checks the pick is one of the card's choices and that the requester owns
-  that PC (or is a GM), marks the vow, and stamps the card `resolved`
-  (idempotent, in-flight guarded). A vow fulfilled since the picker posted
+  that PC (or is a GM), claims the card (`resolved`) and then marks the vow
+  (idempotent, in-flight guarded): a refused claim marks nothing and a
+  refused mark releases the claim — it marked first, and a stamp the world
+  refused left the picker live for a second mark (issue #336 Y24). A vow fulfilled since the picker posted
   is refused (`vow-completed`, a short card; the picker stays open for its
   other vows), and `markVowProgress` never marks a fulfilled vow (issue
   #331 X20). A click with no GM connected, a refusal,
@@ -159,7 +161,10 @@ All real progress lands on **item ticks** (`system.current`) via
   fight's rank, ticks-per-mark by the vow's rank. Marked on the vow's
   **holder** — the card's roller (`actorId`) when they hold the vow, else
   whichever PC does (`resolveVowHolderActor`) — once per card (relayed
-  `fightVow.markMilestone`). The card's rank and 🤝 Deepen connection come
+  `fightVow.markMilestone`; the mark is recorded per card on the vow's
+  payoff ledger, `fulfilPayoff["milestone:<card id>"]` — `markFightVowMilestoneOnce`
+  — so a re-press after a stamp the world refused marks nothing, issue #336
+  Y24). The card's rank and 🤝 Deepen connection come
   from the same roller-first resolution (`postFightVowMilestoneCard`), not
   the first PC holding a vow of that name.
 - **Shared-vow lockstep**: `registerSharedVowSyncHook` copies changed fields
