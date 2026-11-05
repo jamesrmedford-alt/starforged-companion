@@ -373,7 +373,7 @@ async function runSufferCall(call, actor, opts) {
       return { kind: "resist", moveId: call.moveId };
     }
     case "roll-table": {
-      const rolled = await rollImpactTable(call.table, opts);
+      const rolled = await rollImpactTable(call.table, { ...opts, actorName: actor?.name ?? null });
       return rolled
         ? { kind: "roll-table", table: call.table, ...rolled }
         : { kind: "roll-table", table: call.table, skipped: true, ok: false, reason: "no-table" };

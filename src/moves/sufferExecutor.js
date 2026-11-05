@@ -392,20 +392,29 @@ function atZeroChoiceLine(which) {
 
 /**
  * Roll an at-0 table — the choice card's "Roll on the … table" (issue #329
- * X03) — and post its result.
+ * X03) — and post its result. The one roll of the table: no oracle seed
+ * pre-rolls it (issue #336 Y21), and the card carries it into the narrator's
+ * memory as an oracle result (`oracleMemory`, ledgered by the canonical GM's
+ * capture hook into RECENT ORACLE RESULTS), so the narration that follows
+ * depicts the row this roll gave — the issue #321 U03 rule.
  *
  * @param {string} tableId — "mortal_wound" | "desolation"
- * @param {Object} [opts] — `fixedRoll` for deterministic tests
+ * @param {Object} [opts] — `fixedRoll` for deterministic tests; `actorName`,
+ *   whose roll it is (the memory's question)
  * @returns {Promise<{ roll: number, result: string|null }|null>} null for an unknown table
  */
 export async function rollImpactTable(tableId, opts = {}) {
   const t = IMPACT_TABLES[tableId];
   if (!t) return null;
   const rolled = rollD100Table(t.table, opts);
+  const who = typeof opts.actorName === "string" && opts.actorName.trim() ? opts.actorName.trim() : "";
   await postSufferCard({
     title: t.title,
     body:  `d100 ${rolled.roll}: <em>${rolled.result}</em>`,
-    flags: { suffer: "impact_table", table: tableId, ...rolled },
+    flags: {
+      suffer: "impact_table", table: tableId, ...rolled,
+      ...(rolled.result ? { oracleMemory: { name: t.title, question: who, answer: rolled.result } } : {}),
+    },
   });
   return rolled;
 }

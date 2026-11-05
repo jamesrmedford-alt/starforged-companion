@@ -246,8 +246,10 @@ a GM resumes has posted — issue #321 U07, above) · [2] permission-class latit
 Battle Stations · [3] oracle seeds (move-provided only; a routed Pay the
 Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03) · **[3b] recent
 oracle results** (`campaignState.recentOracles`, read from the store — raw `!oracle` (incl.
-`!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, last 5 this
-session, "the dice established these"; skipped for meta modes) · [4] world
+`!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, and the at-0
+choice card's mortal-wound / desolation roll — the table's one roll, no move
+seeds it (issue #336 Y21) — last 5 this session, "the dice established
+these"; skipped for meta modes) · [4] world
 truths (`campaignState.worldTruths` — the Quickstart's rolled truths or the
 World Truths dialog's newest save, parsed from its "Setting Truths" page as
 it is linked, and again on each edit of that page (issue #337 Y39 — the
@@ -485,7 +487,9 @@ carries its narration's `narrationId` (issue #321 U07); a caller that posts
 the card itself — the galley and End a Session vignettes, the three
 clock-vignette sites, the inciting card — makes the id (`newNarrationId`) and
 passes it to the narration too. Raw oracle
-*results* additionally carry a structured `oracleMemory` flag; the canonical
+*results* — and the at-0 choice card's mortal-wound / desolation roll
+(`rollImpactTable`, issue #336 Y21) — additionally carry a structured
+`oracleMemory` flag; the canonical
 GM's capture hook (`registerOracleMemoryCaptureHook`, `src/index.js`) ledgers
 them into `campaignState.recentOracles` (`src/oracles/oracleMemory.js`,
 cap 8) — one capture at a time, each reading the ring as the last left it,

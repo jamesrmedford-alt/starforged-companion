@@ -1520,29 +1520,14 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
         break;
       }
 
-      case "endure_harm": {
-        if (outcome === "miss") {
-          const wound = safeRoll("mortal_wound");
-          if (wound) results.push(`Mortal wound (if health at 0): ${wound}`);
-        }
-        break;
-      }
-
-      case "endure_stress": {
-        if (outcome === "miss") {
-          const deso = safeRoll("desolation");
-          if (deso) results.push(`Desolation (if spirit at 0): ${deso}`);
-        }
-        break;
-      }
-
-      case "withstand_damage": {
-        if (outcome === "miss") {
-          const dmg = safeRoll("vehicle_damage");
-          if (dmg) results.push(`Vehicle damage (if integrity at 0): ${dmg}`);
-        }
-        break;
-      }
+      // Endure Harm / Endure Stress / Withstand Damage seed no table: the
+      // mortal-wound, desolation and vehicle-damage d100s are due only at 0 on
+      // the resist roll's miss, and then only if the player picks the table —
+      // the at-0 choice card's one roll (sufferExecutor.rollImpactTable, whose
+      // card the narrator is told of: RECENT ORACLE RESULTS). A seed rolled
+      // here on every miss, "(if health at 0)", whatever the meter held, had
+      // the narration depict a wound the table never rolled (issue #336 Y21 —
+      // the issue #321 U03 / #326 W47 shape).
     }
 
     // ── PAY THE PRICE ON MISS — advisory, for a miss whose text says so but
