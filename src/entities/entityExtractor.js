@@ -37,7 +37,7 @@ import { getConnection, createConnection, updateConnection, roleTitleFromName } 
 import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
-import { getFaction,    createFaction, findFactionByName } from "./faction.js";
+import { getFaction,    createFaction, findFactionByName, applyAttitudeToFactionRecord, seedFactionRecord } from "./faction.js";
 import { getShip,       createShip, resolveActiveRegion } from "./ship.js";
 import { getPlanet,     createPlanet }     from "./planet.js";
 import { getLocation,   createLocation }   from "./location.js";
@@ -1918,8 +1918,6 @@ async function confirmDraft(message, draftIndex, opts = {}) {
         portraitSourceDescription: draft.description ?? "",
       }, campaignState);
       try {
-        const { findFactionByName, applyAttitudeToFactionRecord, seedFactionRecord } =
-          await import("./faction.js");
         const hit = findFactionByName(draft.name, campaignState);
         if (hit) {
           await seedFactionRecord(hit.id);
@@ -1963,7 +1961,6 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     // and record._id re-pointed the backlink (issue #321 U28).
     if (draft.type === "faction") {
       try {
-        const { findFactionByName } = await import("./faction.js");
         await recordFactionIntelligence(draft.name, {
           summary:  draft.description ?? "",
           entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
