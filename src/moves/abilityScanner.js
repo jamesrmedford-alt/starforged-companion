@@ -466,11 +466,16 @@ export function extractStatReplacement(text, moveName = null) {
  * Gunner's "When you Clash with it, add +1. When you Enter the Fray … add +1"
  * gave a Clash +2; Diplomat's "add +1 … reroll all dice, and add +2" gave +3;
  * Stealth Tech's "add +1 on your next Strike" landed on this Strike. Now:
- *   1. the first add in a sentence that names the move (its
+ *   1. the first add in a clause that names the move (its
  *      `@Compendium[…]{Move}` link), else
- *   2. the first add in a sentence that names no move — a general trigger
+ *   2. the first add in a clause that names no move — a general trigger
  *      ("When you make a move to defuse …") — or, with no move given, the
  *      first add at all.
+ * A clause is a sentence, or its part between semicolons or before a
+ * mid-sentence "if you <Move>" (clausesOf): Combat Bot's "When you Strike
+ * aided by the bot, add +1; if you Clash, take +1 momentum on a hit" is the
+ * Strike's +1 and the Clash's momentum — read as one sentence, the Clash was
+ * offered the Strike's +1 (issue #336 Y15).
  * An add "on your next …" is for a later roll and never counted here. When
  * the move being made is the ability's own trigger, neither is an add in an
  * outcome's sentence: Scavenger's "When you Secure an Advantage to cobble
@@ -490,10 +495,13 @@ export function extractStatReplacement(text, moveName = null) {
 export function extractAdds(text, moveName = null) {
   const target = normaliseName(moveName);
   const ownTrigger = !!target && namedMoves(text).includes(target);
-  const clauses = String(text ?? "").split(/(?<=[.!?])\s+/).map(sentence => ({
-    moves: namedMoves(sentence),
-    add:   ownTrigger && OUTCOME_SENTENCE.test(sentence) ? 0 : firstAddIn(sentence),
-  })).filter(c => c.add > 0);
+  const clauses = String(text ?? "").split(/(?<=[.!?])\s+/).flatMap(sentence => {
+    const outcome = ownTrigger && OUTCOME_SENTENCE.test(sentence);
+    return clausesOf(sentence).map(clause => ({
+      moves: clause.moves,
+      add:   outcome ? 0 : firstAddIn(clause.text),
+    }));
+  }).filter(c => c.add > 0);
   if (target) {
     const own = clauses.find(c => c.moves.includes(target));
     if (own) return own.add;
@@ -505,7 +513,29 @@ export function extractAdds(text, moveName = null) {
 /** A sentence about the trigger roll's outcome — "On a hit, …", "On a strong hit with a match, …": its adds are for later rolls. */
 const OUTCOME_SENTENCE = /^\s*on\s+a\s+(?:strong\s+|weak\s+)?(?:hit|miss)\b/i;
 
-/** The first "add +N" (1–5) in one sentence that is not for a later roll ("… on your next Strike"); 0 for none. */
+/**
+ * One sentence's clauses, each with the moves it names: the sentence splits at
+ * ";" and before a mid-sentence "if you <Move>" — a second trigger in the same
+ * sentence (issue #336 Y15). A clause naming no move continues the one before
+ * it: Explorer's "… Soak it all in: Hearten; add +1, and take +1 momentum on a
+ * hit" is Hearten's add.
+ *
+ * @param {string} sentence
+ * @returns {Array<{ text: string, moves: string[] }>}
+ */
+function clausesOf(sentence) {
+  const out = [];
+  let moves = [];
+  for (const text of String(sentence ?? "").split(/;\s*|\s+(?=if\s+you\s+@Compendium\[)/i)) {
+    if (!text.trim()) continue;
+    const own = namedMoves(text);
+    if (own.length) moves = own;
+    out.push({ text, moves });
+  }
+  return out;
+}
+
+/** The first "add +N" (1–5) in one clause that is not for a later roll ("… on your next Strike"); 0 for none. */
 function firstAddIn(sentence) {
   const pattern = /(?:\badds?\s+\+?(\d+)|\+(\d+)\s+add)/gi;
   let m;
