@@ -24,7 +24,7 @@
  */
 
 import { applyMeterChanges, readCharacterSnapshot, invalidateActorCache } from "../character/actorBridge.js";
-import { markUnprepared, crewUnpreparedNote } from "./sufferExecutor.js";
+import { markUnprepared, crewUnpreparedNote, isUnprepared } from "./sufferExecutor.js";
 
 const MODULE_ID    = "starforged-companion";
 const HAIKU_MODEL  = "claude-haiku-4-5-20251001";
@@ -165,20 +165,31 @@ export function sumMeterDeltas(riders) {
  * @param {Object} ctx
  * @param {Actor} ctx.characterActor
  * @param {string|null} [ctx.shipActorId] — the ship whose integrity changes
+ * @param {string|null} [ctx.resolutionId] — the move the riders follow: a
+ *   supply loss redirected to another suffer move posts its picker bound to
+ *   it, so an upgrade of the move retires the picker
  * @returns {Promise<Array<{ rider: Object, ok: boolean, reason?: string, error?: string, note?: string }>>}
- *   one per meter rider, in order: `reason` is why it was not applied;
+ *   one per meter rider, in order: `reason` is why it was not applied —
+ *   `"redirected"` for a supply loss while unprepared, which another suffer
+ *   move pays (`"redirect-unposted"` when its picker could not be posted);
  *   `note` (HTML, on the character's riders) is the unprepared mark a supply
- *   loss to 0 made
+ *   loss to 0 made, or what became of a redirected loss
  */
-export async function applyMeterRiders(riders, { characterActor, shipActorId } = {}) {
+export async function applyMeterRiders(riders, { characterActor, shipActorId, resolutionId = null } = {}) {
   const meterRiders = (riders ?? []).filter(r => METER_RESOURCES.has(r.resource));
   if (!meterRiders.length) return [];
 
   const { character, integrity } = sumMeterDeltas(meterRiders);
   const onShip = (r) => r.resource === "integrity";
-  const characterResult = meterRiders.some(r => !onShip(r)) ? await writeCharacterMeters(characterActor, character) : null;
+  const characterResult = meterRiders.some(r => !onShip(r)) ? await writeCharacterMeters(characterActor, character, { resolutionId }) : null;
   const shipResult      = meterRiders.some(onShip) ? await writeShipIntegrity(shipActorId, integrity) : null;
-  return meterRiders.map(rider => ({ rider, ...(onShip(rider) ? shipResult : characterResult) }));
+  // A redirected supply loss is its riders' own outcome; the rest of the
+  // character's riders rode the write.
+  const { supplyRedirect = null, ...written } = characterResult ?? {};
+  const outcomeOf = (rider) => (onShip(rider) ? shipResult
+    : rider.resource === "supply" && supplyRedirect ? supplyRedirect
+    : written);
+  return meterRiders.map(rider => ({ rider, ...outcomeOf(rider) }));
 }
 
 /**
@@ -188,17 +199,58 @@ export async function applyMeterRiders(riders, { characterActor, shipActorId } =
  * ally sharing the supply, through the zero-supply impact's one writer
  * (sufferExecutor.markUnprepared, issue #315 S04 / S07; issue #331 X16).
  * `note` is the summary card's line for it.
+ *
+ * A supply loss while the PC is unprepared is not the supply's: "When you
+ * suffer a loss of resources while unprepared … apply the cost to a different
+ * suffer move" (vendored Sacrifice Resources; at any supply — issue #338 D3).
+ * It posts the picker Sacrifice Resources' executor posts for its own loss
+ * (issue #325 W16), and is reported `supplyRedirect` — never applied: the
+ * clamp wrote 0 → 0 and the summary listed the cost as settled (issue #336
+ * Y19). The other deltas are written as ever.
  */
-async function writeCharacterMeters(actor, deltas) {
+async function writeCharacterMeters(actor, deltas, { resolutionId = null } = {}) {
   if (!actor) return { ok: false, reason: "no-pc" };
+  const lost = deltas?.supply < 0 && isUnprepared(actor) ? -deltas.supply : 0;
+  const supplyRedirect = lost ? await redirectSupplyLoss(actor, lost, resolutionId) : null;
+  const write = lost ? { ...deltas, supply: 0 } : deltas;
   try {
-    await applyMeterChanges(actor, deltas);
+    await applyMeterChanges(actor, write);
   } catch (err) {
     console.warn(`${MODULE_ID} | consequenceRiders: meter write on ${actor.name ?? actor.id} failed:`, err?.message ?? err);
-    return { ok: false, reason: "refused", error: String(err?.message ?? err) };
+    return { ok: false, reason: "refused", error: String(err?.message ?? err), ...(supplyRedirect ? { supplyRedirect } : {}) };
   }
-  const note = deltas?.supply < 0 ? await unpreparedAtZeroSupply(actor) : null;
+  if (supplyRedirect) return { ok: true, supplyRedirect };
+  const note = write?.supply < 0 ? await markIfExhausted(actor) : null;
   return note ? { ok: true, note } : { ok: true };
+}
+
+/**
+ * A rider's supply loss while unprepared, to a different suffer move: the
+ * "make a suffer move (-N)" picker without Sacrifice Resources — the W16
+ * picker — bound to the move the riders follow. Never throws.
+ *
+ * @param {Actor} actor
+ * @param {number} amount — the loss
+ * @param {string|null} resolutionId
+ * @returns {Promise<{ ok: false, reason: "redirected"|"redirect-unposted", note: string }>}
+ */
+async function redirectSupplyLoss(actor, amount, resolutionId) {
+  const name = escapeHtml(actor.name ?? "The character");
+  let posted = null;
+  try {
+    const { postSufferChoiceCard } = await import("./sufferCard.js");
+    posted = await postSufferChoiceCard({
+      sufferPrompt: { kind: "any", amount, count: 1, exclude: ["sacrifice_resources"] },
+      actor,
+      executorOpts: {},
+      resolutionId: typeof resolutionId === "string" && resolutionId ? resolutionId : null,
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | consequenceRiders: the redirected supply loss's picker could not be posted:`, err?.message ?? err);
+  }
+  return posted
+    ? { ok: false, reason: "redirected", note: `${name} is <strong>unprepared</strong> — the -${amount} supply goes to another suffer move (choose it on its card)` }
+    : { ok: false, reason: "redirect-unposted", note: `${name} is <strong>unprepared</strong> — the -${amount} supply goes to another suffer move: make one on the sheet` };
 }
 
 /**
@@ -209,7 +261,7 @@ async function writeCharacterMeters(actor, deltas) {
  * @param {Actor} actor
  * @returns {Promise<string|null>} HTML
  */
-async function unpreparedAtZeroSupply(actor) {
+async function markIfExhausted(actor) {
   invalidateActorCache(actor.id);
   if ((readCharacterSnapshot(actor)?.meters?.supply ?? 0) > 0) return null;
   const name = escapeHtml(actor.name ?? "The character");

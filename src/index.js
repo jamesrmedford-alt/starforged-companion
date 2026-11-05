@@ -7208,8 +7208,10 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
   const outcomes = [];
   const withShip = (results) => results.map(o => (o.rider.resource === "integrity" ? { ...o, shipActorId } : o));
 
-  // Automatic meter riders — apply immediately.
-  outcomes.push(...withShip(await applyMeterRiders(automatic, { characterActor, shipActorId })));
+  // Automatic meter riders — apply immediately. A supply loss while unprepared
+  // goes to a picker bound to this move (issue #336 Y19).
+  const resolutionId = resolution._id ?? null;
+  outcomes.push(...withShip(await applyMeterRiders(automatic, { characterActor, shipActorId, resolutionId })));
 
   // Progress riders: a mark that is the outcome's own — not "you may", not one
   // of a "choose one" — marks the sole track when there is exactly one; the
@@ -7235,7 +7237,7 @@ async function applyMoveConsequenceRiders(resolution, interpretation, campaignSt
   if (promptList.length) {
     const { apply, progress } = await promptRiders(promptList, tracks);
     outcomes.push(...withShip(await applyMeterRiders(apply.filter(r => r.resource !== "progress"),
-      { characterActor, shipActorId })));
+      { characterActor, shipActorId, resolutionId })));
     for (const { rider, trackId } of progress ?? []) {
       outcomes.push(await applyProgressRider(rider, tracks.find(t => t.id === trackId) ?? { id: trackId }));
     }
@@ -7299,7 +7301,11 @@ async function reportRiderOutcomes(outcomes, characterActor) {
   const applied = outcomes.filter(o => o.ok);
   const missed  = outcomes.filter(o => !o.ok);
   if (!applied.length && !missed.length) return;
-  const list = (rows) => `<ul>${rows.map(o => `<li>${riderLine(o)}${o.ok ? "" : ` — ${escapeChatHtml(RIDER_NOT_APPLIED[o.reason] ?? o.reason ?? "it failed")}`}</li>`).join("")}</ul>`;
+  // An effect not applied says why: its own line when it has one (HTML from
+  // escaped names — a supply loss redirected while unprepared, issue #336
+  // Y19), else the reason's.
+  const why  = (o) => o.note ?? escapeChatHtml(RIDER_NOT_APPLIED[o.reason] ?? o.reason ?? "it failed");
+  const list = (rows) => `<ul>${rows.map(o => `<li>${riderLine(o)}${o.ok ? "" : ` — ${why(o)}`}</li>`).join("")}</ul>`;
   // A supply loss that exhausted the crew's supply marked unprepared (issue
   // #331 X16): the line is the write's, shared by its riders — said once.
   const notes = [...new Set(applied.map(o => o.note).filter(Boolean))].map(n => `<p>${n}.</p>`).join("");
@@ -7365,6 +7371,10 @@ async function retryRiderStep(s, actorId) {
   const pc = rider.resource === "integrity" ? null : (actorId ? (game.actors?.get?.(actorId) ?? null) : null);
   if (rider.resource !== "integrity" && !isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
   const [{ ok, reason, error }] = await applyMeterRiders([rider], { characterActor: pc, shipActorId: s.shipActorId ?? null });
+  // A supply loss the PC, unprepared by now, owes to another suffer move: its
+  // picker is posted — the step is settled, and a second Retry would post
+  // another (issue #336 Y19).
+  if (reason === "redirected") return { ok: true };
   return { ok, reason, error };
 }
 
