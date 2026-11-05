@@ -106,7 +106,7 @@
 
 import { AsyncLocalStorage } from "node:async_hooks";
 import { parseHTML, StubElement, setListenerResultSink } from "./cardDom.js";
-import { applyUpdate, getProperty, nextDocumentId } from "./documentStubs.js";
+import { applyUpdate, expandUpdate, getProperty, nextDocumentId } from "./documentStubs.js";
 import {
   assertCanModifyMessage,
   assertCanSetSetting,
@@ -1584,10 +1584,15 @@ class SimTable {
     Object.defineProperty(actor, "isOwner", { get: () => userOwnsDocument(currentClient()?.user ?? null, actor), configurable: true });
     // The update's options reach every client's hook, as Foundry's do — a
     // module marks its own writes with one (sharedSupply's mirror writes).
+    // The change is the expanded diff, as Foundry passes it: an update made
+    // with flat keys ({ "system.supply.value": 0 }) reaches the hook as
+    // { system: { supply: { value: 0 } } }, so a hook that reads the expanded
+    // form fires here as it does in a world (known-issues
+    // HARNESS-UPDATEACTOR-FLAT — the shared supply sync never fired here).
     const broadcast = (changes, options = {}) => {
       const caller = currentClient();
       if (!caller) return;
-      const fire = (client) => client.hooks.call("updateActor", [actor, jsonClone(changes), jsonClone(options), caller.id], false);
+      const fire = (client) => client.hooks.call("updateActor", [actor, expandUpdate(jsonClone(changes)), jsonClone(options), caller.id], false);
       caller.run(() => fire(caller));
       for (const other of table.connectedClients) {
         if (other !== caller) table._deliverLater(other, () => fire(other), `${other.id} updateActor`);

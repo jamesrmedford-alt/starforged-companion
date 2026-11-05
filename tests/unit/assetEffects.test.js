@@ -551,7 +551,7 @@ describe("X16 — a supply effect that takes the supply to 0 marks the crew unpr
     await finishMove();
 
     expect(pc.system.supply.value).toBe(0);
-    // (Ren's supply is the shared-supply sync's mirror, pinned in sharedSupply.test.js.)
+    expect(ren.system.supply.value).toBe(0);              // the crew's one supply track, mirrored by the shared-supply sync
     expect(pc.system.debility.unprepared).toBe(true);
     expect(ren.system.debility.unprepared).toBe(true);
     expect(summary()).toMatch(/Asset effects applied[\s\S]*-1 supply[\s\S]*Out of supply — Kira is marked <strong>unprepared<\/strong>; Ren, sharing the supply, is marked <strong>unprepared<\/strong> too/);

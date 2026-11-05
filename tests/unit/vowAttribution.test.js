@@ -104,7 +104,14 @@ async function bexPlays(moveId, text) {
 const supplied = (pc) => pc._updateHistory.some(u => 'system.supply.value' in u);
 
 it('Fulfill Your Vow completes and pays the roller\'s vow — not the first PC\'s same-named one', async () => {
+  // The order of the supply writes: the crew shares one supply track, so the
+  // reward paid on the roller's sheet is mirrored to the others' after it.
+  const supplyWrites = [];
+  const off = table.onEvent(e => {
+    if (e.type === 'write' && e.outcome === 'applied' && e.kind === 'actor.update' && e.changes?.includes('system.supply.value')) supplyWrites.push(e.id);
+  });
   const resolution = await bexPlays('fulfill_your_vow', 'At last, I keep the oath I swore at the start.');
+  off();
   expect(resolution.outcome).toBe('strong_hit');
 
   expect({ completed: vowBex.system.completed, paid: vowBex.flags[MODULE_ID].fulfilPaid ?? false })
@@ -112,7 +119,8 @@ it('Fulfill Your Vow completes and pays the roller\'s vow — not the first PC\'
   expect({ completed: vowAsh.system.completed, paid: vowAsh.flags[MODULE_ID].fulfilPaid ?? false })
     .toEqual({ completed: false, paid: false });
   expect(supplied(bex)).toBe(true);
-  expect(supplied(ash)).toBe(false);
+  expect(supplyWrites[0]).toBe('pc-bex');                               // the reward is paid on the roller's sheet
+  expect(ash.system.supply.value).toBe(bex.system.supply.value);        // and reaches Ash as the crew's shared track
   expect(vowAsh.flags[MODULE_ID].reward.status).toBe('promised');
 });
 
