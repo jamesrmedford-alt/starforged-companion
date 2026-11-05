@@ -516,12 +516,35 @@ const LEGACY_TRACK_LABELS = { quests: "Quests", bonds: "Bonds", discoveries: "Di
  * @param {string|null} target
  * @returns {"quests"|"bonds"|"discoveries"|null}
  */
-function legacyTrackNamed(target) {
+export function legacyTrackNamed(target) {
   const t = String(target ?? "").toLowerCase();
   if (/\bquest/.test(t)) return "quests";
   if (/\b(bond|connection)/.test(t)) return "bonds";
   if (/\bdiscover/.test(t)) return "discoveries";
   return null;
+}
+
+/** The progress a legacy track is rolled at: a cleared one "as if at 10 progress" (Earn Experience — issue #330 D6). */
+function legacyScoreTicks(legacy) {
+  return legacy?.cleared ? 40 : Math.max(0, Math.min(40, Number(legacy?.ticks ?? 0) || 0));
+}
+
+/**
+ * The three legacy tracks Continue a Legacy rolls — each with the label a
+ * roll names it by and the progress it is rolled at. The "which legacy
+ * track?" card's choices, when a Continue a Legacy names none (issue #331
+ * X63).
+ *
+ * @param {Object} [legacyTracks] — campaignState.legacyTracks
+ * @returns {Array<{ track: "quests"|"bonds"|"discoveries", label: string, ticks: number, cleared: boolean }>}
+ */
+export function legacyTrackScores(legacyTracks = {}) {
+  return Object.entries(LEGACY_TRACK_LABELS).map(([track, label]) => ({
+    track,
+    label:   `${label} legacy`,
+    ticks:   legacyScoreTicks(legacyTracks?.[track]),
+    cleared: !!legacyTracks?.[track]?.cleared,
+  }));
 }
 
 /**
@@ -620,8 +643,7 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
     const track = moveId === "overcome_destruction" ? "bonds" : legacyTrackNamed(target);
     if (track) {
       const legacy = ((await deps.readLegacyTracks?.()) ?? {})[track] ?? null;
-      const ticks  = legacy?.cleared ? 40 : Math.max(0, Math.min(40, Number(legacy?.ticks ?? 0) || 0));
-      resolved = { ticks, label: `${LEGACY_TRACK_LABELS[track]} legacy`, trackId: track, combatState: null };
+      resolved = { ticks: legacyScoreTicks(legacy), label: `${LEGACY_TRACK_LABELS[track]} legacy`, trackId: track, combatState: null };
     }
   } else if (source === "connection") {
     // A picker's host id first; Forge a Bond never scores a bonded connection

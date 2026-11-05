@@ -180,6 +180,8 @@ export const GM_ACTIONS = Object.freeze({
   // U20 a move card's "⚑ Mark Progress on Vow", and an expedition's "🔁 Recommit"
   // (the legacy "expedition.recommit" socket relay, folded in — RELAY-LEGACY-KINDS)
   "fulfilVow.pick":            { load: () => import("../moves/cardActions.js"),                      fn: "applyFulfilVowPick" },
+  // Issue #331 X63 — "Which legacy track?" (a Continue a Legacy that named none), each track claimed once
+  "legacy.pick":               { load: () => import("../moves/cardActions.js"),                      fn: "applyLegacyTrackPick" },
   "milestone.suggestion":      { load: () => import("../moves/cardActions.js"),                      fn: "applyMilestoneSuggestion" },
   // Known-issues FULFIL-BUTTON-LOCAL-DISABLE — a move card's and a won-fight card's
   // "🏁 Attempt to Fulfill", claimed once on the card

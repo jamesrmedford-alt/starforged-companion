@@ -45,7 +45,7 @@ import {
   scanForApplicableAbilities,
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
-import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient, resolveAidedAlly, enrichBondAdds } from "./moves/statEnrichment.js";
+import { enrichInterpretationStatValue, enrichProgressTicks, enrichBondedDevelop, enrichForcedMoveStat, resolveHealPatient, resolveAidedAlly, enrichBondAdds, legacyTrackNamed, legacyTrackScores } from "./moves/statEnrichment.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
 import { markLegacyTrack, legacyProgress, deferLegacyXp, payDeferredLegacyXp } from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
@@ -1064,6 +1064,18 @@ export function registerChatHook() {
             console.warn(`${MODULE_ID} | which-vow card failed:`, err?.message ?? err));
           return;
         }
+      }
+
+      // Continue a Legacy rolls each legacy track by name. Naming none, it
+      // scored 0 — "progress (0 ticks)", a certain miss — and nothing on the
+      // card said no track was found (issue #331 X63). Ask which track
+      // instead of rolling: the card offers all three, each rolled once.
+      if (interpretation.moveId === "continue_a_legacy" && !legacyTrackNamed(interpretation.moveTarget)) {
+        const stored = game.settings.get(MODULE_ID, "campaignState") ?? campaignState;
+        await postWhichLegacyCard({
+          narration, actorId: rollerActor?.id ?? null, tracks: legacyTrackScores(stored?.legacyTracks ?? {}),
+        }).catch(err => console.warn(`${MODULE_ID} | which-legacy card failed:`, err?.message ?? err));
+        return;
       }
 
       // Scan the character's assets + the command vehicle's modules for
@@ -4196,6 +4208,36 @@ async function postWhichVowCard({ narration, actorId = null, vows }) {
     flags: { [MODULE_ID]: {
       whichVowCard: true, narration: narration ?? null, actorId,
       choices: vows.map(v => ({ itemId: v.id, name: v.name ?? null })),
+    } },
+  });
+}
+
+/**
+ * Continue a Legacy naming no legacy track: ask which, instead of rolling a
+ * score of nothing (issue #331 X63). Posted in place of the move; nothing is
+ * rolled or written. The move rolls each legacy track, so every track keeps
+ * its button: a pick relays to the canonical GM ("legacy.pick" →
+ * cardActions.applyLegacyTrackPick), which claims that track on the card
+ * (`legacyRolled.<track>`) and posts the move once for it, as the roller.
+ *
+ * @param {{ narration?: string, actorId?: string|null,
+ *   tracks: Array<{ track: string, label: string, ticks: number, cleared?: boolean }> }} opts
+ */
+async function postWhichLegacyCard({ narration, actorId = null, tracks }) {
+  const buttons = tracks.map(t => {
+    const boxes = Math.floor(Number(t.ticks ?? 0) / 4);
+    return `<button type="button" class="sf-followup-btn" data-action="sf-which-legacy" data-track="${escapeChatHtml(t.track)}" `
+      + `title="Roll this legacy track's progress">⚑ ${escapeChatHtml(t.label)} — ${boxes}/10 boxes${t.cleared ? " (cleared)" : ""}</button>`;
+  }).join("");
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Continue a Legacy — which legacy track?</strong>`
+      + `<p>Continue a Legacy rolls each legacy track, and this roll named none. Choose a track to roll — each can be rolled once from this card; nothing has been rolled yet.</p>`
+      + `<div class="sf-milestone-suggest-row">${buttons}</div></div>`,
+    // tracks: the offered tracks — a pick must be one of them and forwards
+    // its label as forcedMoveTarget. actorId: the roller, the pick's speaker.
+    flags: { [MODULE_ID]: {
+      whichLegacyCard: true, narration: narration ?? null, actorId,
+      tracks: tracks.map(t => ({ track: t.track, label: t.label })),
     } },
   });
 }
@@ -7975,6 +8017,41 @@ export function wireWhichVowButtons(message, root) {
   }
 }
 onChatMessageRender((message, root) => wireWhichVowButtons(message, root));
+
+/**
+ * Wire a "which legacy track?" card's buttons (postWhichLegacyCard, issue
+ * #331 X63). Each track's pick relays to the canonical GM ("legacy.pick" →
+ * cardActions.applyLegacyTrackPick), which claims that track on the card
+ * (`legacyRolled.<track>`) and posts the move once for it, as the roller; a
+ * re-render or another client finds the claim. The other tracks stay
+ * pickable — Continue a Legacy rolls each. A click that is not delivered
+ * re-arms its button.
+ */
+function wireWhichLegacyButtons(message, root) {
+  if (!message?.flags?.[MODULE_ID]?.whichLegacyCard) return;
+  const rolled = liveCardFlags(message)?.legacyRolled ?? {};
+  for (const btn of [...(root?.querySelectorAll?.('[data-action="sf-which-legacy"]') ?? [])]) {
+    const track = btn.dataset.track;
+    if (rolled[track]) {
+      btn.disabled = true;
+      continue;
+    }
+    const fresh = btn.cloneNode(true);
+    btn.replaceWith(fresh);
+    fresh.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      fresh.disabled = true;
+      await relayCardAction({
+        kind:       "legacy.pick",
+        payload:    { messageId: message?.id ?? null, track },
+        isResolved: () => !!liveCardFlags(message)?.legacyRolled?.[track],
+        restore:    () => { fresh.disabled = false; },
+      });
+    });
+  }
+}
+onChatMessageRender((message, root) => wireWhichLegacyButtons(message, root));
 
 /**
  * Wire the "⚑ Mark Progress on Vow" suggestion button on a move-result card.
