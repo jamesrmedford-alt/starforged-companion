@@ -139,14 +139,19 @@ export function calcProgressOutcome(ticks, challengeDice) {
  * @param {string} currentOutcome   — "strong_hit" | "weak_hit" | "miss"
  * @param {[number, number]} challengeDice
  * @param {boolean} isProgressMove
+ * @param {{ weakHitAsMiss?: boolean }} [opts] — the roll took an add that
+ *   counts a weak hit as a miss (resolveMove's `weakHitAsMiss`): a burn
+ *   landing on a weak hit is a miss, no improvement
+ *   (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED)
  * @returns {boolean}
  */
-export function canBurnMomentum(currentMomentum, currentOutcome, challengeDice, isProgressMove) {
+export function canBurnMomentum(currentMomentum, currentOutcome, challengeDice, isProgressMove, { weakHitAsMiss = false } = {}) {
   if (isProgressMove) return false;
   if (currentMomentum <= 0) return false;
   if (currentOutcome === "strong_hit") return false;  // Already optimal
 
-  const { outcome: burnedOutcome } = calcOutcome(currentMomentum, challengeDice);
+  const { outcome: landed } = calcOutcome(currentMomentum, challengeDice);
+  const burnedOutcome = weakHitAsMiss && landed === "weak_hit" ? "miss" : landed;
   // Only valid if it STRICTLY improves. A bare `!==` check would also offer a
   // burn that makes the outcome worse — e.g. action score 7 (weak hit) but
   // current momentum 6 burns down to a miss. Compare outcome rank instead.
@@ -1334,6 +1339,15 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     }
   }
 
+  // An add taken on the confirm dialog whose ability counts a weak hit as a
+  // miss — the Hoverbike's afterburner: "you may add +integrity … If you do,
+  // count a weak hit as a miss" — applied as the bad-spot downgrade above is.
+  // The add was offered as a free bonus (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
+  // Kept on the resolution: a burn that lands on a weak hit is a miss too.
+  const weakHitAsMiss = rollKind === "action" ? weakHitAsMissSource(interpretation) : null;
+  const weakHitCounted = !!weakHitAsMiss && outcome === "weak_hit";
+  if (weakHitCounted) outcome = "miss";
+
   const outcomeLabel   = rollKind === "none" ? "No roll" : buildOutcomeLabel(outcome, isMatch);
   // Aid Your Ally in a fight is Gain Ground's (the caller says whether a
   // fight is open — options.inFight); otherwise Secure an Advantage's.
@@ -1342,6 +1356,9 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     : mapConsequences(moveId, outcome, isMatch);
   if (downgradeApplied) {
     consequences.otherEffect = `In a bad spot — outcome downgraded (${downgradeApplied}). ${consequences.otherEffect ?? ""}`.trim();
+  }
+  if (weakHitCounted) {
+    consequences.otherEffect = `Weak hit counted as a miss — the ${weakHitAsMiss}'s add was taken. ${consequences.otherEffect ?? ""}`.trim();
   }
   const loremasterContext = buildLoremasterContext({
     moveName, statUsed, statValue, adds,
@@ -1390,8 +1407,26 @@ export function resolveMove(interpretation, campaignState, options = {}) {
     consequences,
     oracleSeeds,
     loremasterContext,
+    // The asset whose taken add counts a weak hit as a miss (the burn reads it).
+    ...(weakHitAsMiss ? { weakHitAsMiss } : {}),
     sessionId: campaignState.currentSessionId ?? "",
   };
+}
+
+/**
+ * The asset whose add, taken on the confirm dialog, counts a weak hit as a
+ * miss — an applicable ability the scanner marked `weakHitAsMiss` (the
+ * Hoverbike's afterburner) whose box was checked (`appliedAbilityKeys`) —
+ * else null (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
+ *
+ * @param {Object} interpretation
+ * @returns {string|null} the asset's name
+ */
+function weakHitAsMissSource(interpretation) {
+  const taken = new Set(Array.isArray(interpretation?.appliedAbilityKeys) ? interpretation.appliedAbilityKeys : []);
+  const costly = (Array.isArray(interpretation?.applicableAbilities) ? interpretation.applicableAbilities : [])
+    .find(a => a?.weakHitAsMiss === true && taken.has(a.key));
+  return costly ? (costly.assetName || "asset") : null;
 }
 
 

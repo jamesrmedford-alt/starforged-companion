@@ -2315,6 +2315,12 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
     const addsLabel = adds > 0
       ? `<span class="sf-ability-adds"${from ? ` title="Adds +${escapeAttr(from)}"` : ''}>+${adds}${from ? ` (${escapeAttr(from)})` : ''}</span>`
       : '';
+    // An add that costs a weak hit when taken (the Hoverbike's afterburner:
+    // "If you do, count a weak hit as a miss") says so beside it; checked, the
+    // roll's weak hit is a miss (resolveMove — HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
+    const costLabel = adds > 0 && a.weakHitAsMiss
+      ? `<span class="sf-ability-cost" title="Taking this add counts a weak hit as a miss">— a weak hit counts as a miss</span>`
+      : '';
     const statLabel = stat ? `<span class="sf-ability-stat-sub" title="May substitute the listed stat">↻ +${escapeAttr(stat)}</span>` : '';
     const tag       = a.source === 'command_vehicle' ? 'Vehicle' : (a.category || 'Asset');
     const summary   = a.summary ? `<div class="sf-ability-summary">${escapeAttr(a.summary)}</div>` : '';
@@ -2329,6 +2335,7 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
         <span class="sf-ability-name">${escapeAttr(a.assetName)}${a.abilityName ? ` — ${escapeAttr(a.abilityName)}` : ''}</span>
         <span class="sf-ability-tag">[${escapeAttr(tag)}]</span>
         ${addsLabel}
+        ${costLabel}
         ${statLabel}
         <span class="sf-ability-detection" title="${sourceTag}">${sourceTag}</span>
         ${summary}

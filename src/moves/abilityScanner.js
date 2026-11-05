@@ -378,7 +378,8 @@ function annotate(detection, moveName = null, moveId = null, characterActor = nu
   return (ab) => {
     const values = heldValuesFor(ab, characterActor);
     const add    = extractAdds(ab.text, moveName, values);
-    const from   = add > 0 ? addFor(ab.text, moveName, values).from : null;
+    const found  = add > 0 ? addFor(ab.text, moveName, values) : null;
+    const from   = found?.from ?? null;
     return {
       key:             ab.key,
       assetName:       ab.assetName,
@@ -391,6 +392,11 @@ function annotate(detection, moveName = null, moveId = null, characterActor = nu
       // What the add is, when the text names a value the sheet holds — "heart",
       // "its health" — for the confirm dialog's label (issue #336 Y22).
       addsFrom:        from,
+      // Taking the add counts a weak hit as a miss (the Hoverbike's
+      // afterburner): the confirm dialog shows it beside the add, and the
+      // roll applies it when the ability is checked (resolveMove —
+      // HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
+      weakHitAsMiss:   !!found?.weakHitAsMiss,
       // The Haiku path already populated statReplacement on its return shape;
       // the structured path lands here with no such field, so derive it from
       // the ability text via the regex fallback.
@@ -562,14 +568,16 @@ export function extractAdds(text, moveName = null, values = {}) {
 function addFor(text, moveName = null, values = {}) {
   const target = normaliseName(moveName);
   const ownTrigger = !!target && namedMoves(text).includes(target);
-  const clauses = String(text ?? "").split(/(?<=[.!?])\s+/).flatMap(sentence => {
+  const sentences = String(text ?? "").split(/(?<=[.!?])\s+/);
+  const clauses = sentences.flatMap((sentence, at) => {
     const outcome = ownTrigger && OUTCOME_SENTENCE.test(sentence);
     return clausesOf(sentence).map(clause => ({
       moves: clause.moves,
+      at,
       ...(outcome ? NO_ADD : firstAddIn(clause.text, values)),
     }));
   }).filter(c => c.add > 0);
-  const offer = (c) => (c ? { add: c.add, from: c.from } : NO_ADD);
+  const offer = (c) => (c ? { add: c.add, from: c.from, weakHitAsMiss: takingCostsWeakHit(sentences, c.at) } : NO_ADD);
   if (target) {
     const own = clauses.find(c => c.moves.includes(target));
     if (own) return offer(own);
@@ -579,6 +587,25 @@ function addFor(text, moveName = null, values = {}) {
 }
 
 const NO_ADD = Object.freeze({ add: 0, from: null });
+
+const WEAK_HIT_AS_MISS = /\bcount\s+a\s+weak\s+hit\s+as\s+a\s+miss\b/i;
+
+/**
+ * True when taking the add in sentence `at` counts a weak hit as a miss: that
+ * sentence says so, or the next, opening "If you do". The Hoverbike's
+ * afterburner — "you may add +integrity and take +2 momentum on a strong hit.
+ * If you do, count a weak hit as a miss." — was offered as a free add
+ * (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
+ *
+ * @param {string[]} sentences
+ * @param {number} at
+ * @returns {boolean}
+ */
+function takingCostsWeakHit(sentences, at) {
+  if (WEAK_HIT_AS_MISS.test(sentences[at] ?? "")) return true;
+  const next = sentences[at + 1] ?? "";
+  return /^\s*if\s+you\s+do\b/i.test(next) && WEAK_HIT_AS_MISS.test(next);
+}
 
 /** A sentence about the trigger roll's outcome — "On a hit, …", "On a strong hit with a match, …": its adds are for later rolls. */
 const OUTCOME_SENTENCE = /^\s*on\s+a\s+(?:strong\s+|weak\s+)?(?:hit|miss)\b/i;

@@ -248,7 +248,11 @@ export function buildBurnState(resolution, actor, ptpReversals = null, targets =
   const burnable           = burnableMomentum(momentum, 0, priceMomentumTaken(ptpReversals, actor.id));
   const markedImpactCount  = momentum.impactCount;
 
-  if (!canBurnMomentum(burnable, resolution.outcome, resolution.challengeDice, false)) {
+  // A taken add that counts a weak hit as a miss (the Hoverbike's afterburner)
+  // makes a burn landing on a weak hit no improvement
+  // (HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
+  const weakHitAsMiss = !!resolution.weakHitAsMiss;
+  if (!canBurnMomentum(burnable, resolution.outcome, resolution.challengeDice, false, { weakHitAsMiss })) {
     return null;
   }
 
@@ -272,6 +276,7 @@ export function buildBurnState(resolution, actor, ptpReversals = null, targets =
     ptpReversals:       ptpReversals ?? null,     // PtP clock + suffer deltas to undo on burn
     targets:            targets ?? null,          // for the upgraded outcome's choice card and effects
     move:               move ?? null,             // the move's target and ranks, for its effects
+    ...(weakHitAsMiss ? { weakHitAsMiss: resolution.weakHitAsMiss } : {}),   // the press re-checks with it
   };
 }
 
@@ -539,7 +544,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
     burn.outcomeMomentum ?? Number(burn.originalConsequences?.momentumChange ?? 0),
     priceMomentumTaken(burn.ptpReversals, actor.id),
   );
-  if (!canBurnMomentum(burnable, burn.originalOutcome, burn.challengeDice, false)) {
+  if (!canBurnMomentum(burnable, burn.originalOutcome, burn.challengeDice, false, { weakHitAsMiss: !!burn.weakHitAsMiss })) {
     console.warn(`${MODULE_ID} | burnMomentum: momentum ${burnable} would not improve ${burn.originalOutcome}; ignoring`);
     return { applied: false, reason: "no-improvement" };
   }
