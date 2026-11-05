@@ -141,12 +141,14 @@ configuration.
 | `\message` | Bypass the interpreter — posts as plain chat |
 | `@scene question` | Ask the narrator for scene detail without triggering a move |
 | `!x` | X-Card — immediately suppress the current scene |
+| `!x clear` | Clear the X-Card and resume narration — the same as the card's Resume narration button (GM) |
 
 ### Session
 
 | Command | Effect |
 |---------|--------|
 | `!begin-session` | Begin the session (opens with a galley vignette; enables the pipeline) |
+| `!incite` | Envision an Inciting Incident — an Action + Theme spark the narrator turns into your campaign's opening event and a suggested starting vow (the card's ⚔ Swear this vow creates it); also the Session panel's ✦ Envision Inciting Incident |
 | `!end-session` | End the session (closes with an NPC vignette; disables the pipeline) |
 | `!flag` | Set a Flag |
 | `!fate` | Change Your Fate |
@@ -158,8 +160,10 @@ configuration.
 |---------|--------|
 | `!roll` | Force the next message through the move pipeline (GM) |
 | `!oracle yes [odds] [question]` | Ask the Oracle (yes/no) + narrator follow-up. Odds: `small`, `unlikely`, `50_50`, `likely`, `almost_certain` |
+| `!oracle <table-id> [question]` | Roll any oracle table by its id — built-in (e.g. `!oracle action`, `!oracle theme`) or one of your custom tables — + narrator follow-up |
 | `!pay-the-price` / `!ptp [question]` | Roll the Pay the Price table + narrator follow-up |
-| `!bond <rank>` | Bonded Develop Your Relationship (rank: troublesome…epic) |
+| `!bond [rank] [name]` | Bonded Develop Your Relationship (rank: troublesome…epic); name a bonded connection to use their own rank — with one bonded connection, a bare `!bond` targets them |
+| `!sever <name>` | Mark a connection lost — the record is kept as history, and each character's bond with them is marked lost (GM) |
 | `!repair` | Open the Repair point-spend dialog |
 | `!sfc encounter <name>` | Spawn a canonical foundry-ironsworn encounter |
 | `!oracle-add [id]` | Register a custom oracle table (GM) |
@@ -171,6 +175,8 @@ configuration.
 | `!sector new` | Open the Sector Creator wizard (GM) |
 | `!sector list` | List all created sectors |
 | `!sector <name>` | Switch the active sector (GM) |
+| `!reveal-site <name>` | Discover an unexplored precursor vault or derelict, charting it on the sector map; with no name, the sole unexplored site (GM) |
+| `!clear-site <name>` | Mark a discovered vault or derelict fully explored; with no name, the sole discovered site (GM) |
 | `!at <name>` / `!at` | Set / clear the current location for narrator context (GM) |
 | `!truths` | Open the World Truths dialog (GM) |
 | `!lore` | Post a narrator-generated World Truths recap card (GM) |
@@ -194,6 +200,7 @@ configuration.
 | Command | Effect |
 |---------|--------|
 | `!scene start` / `!scene end` | Start / end a fact-continuity scene (GM) |
+| `!truth list` | List the active scene's truths, to you, each with the ID prefix `!truth strike` takes |
 | `!truth strike <id>` / `!truth set <subject> <fact>` | Correct a scene truth |
 | `!state strike <subject> <attr>` / `!state set <subject> <attr>=<value>` | Correct scene state |
 
@@ -201,9 +208,18 @@ configuration.
 
 | Command | Effect |
 |---------|--------|
-| `!clock new <name> <segments> [campaign\|tension] [odds]` | Create a clock |
-| `!clock advance\|fill\|reset\|remove <name>` | Advance, fill, reset, or remove a clock |
+| `!clock new <name> <segments> [campaign\|tension] [odds]` | Create a clock (GM) |
+| `!clock advance\|fill\|reset\|remove <name>` | Advance, fill, reset, or remove a clock (GM) |
 | `!clock list` | List all clocks |
+
+### Starships
+
+| Command | Effect |
+|---------|--------|
+| `!stations` | Post the Battle Stations! play aid — the 11 shipboard-combat crew roles for running a starship fight |
+| `!shipmap` / `!shipmap rebuild` | Build (or rebuild) your command vehicle's deck-plan map — its stations, the galley and its installed modules, all pinned (GM) |
+| `!ship envision [name] [facet]` | Roll supplementary ship oracles (captain, crew, agenda, contact) and post a narrator paragraph weaving them in, appended to the ship's Notes |
+| `!ship history [name] [beats]` | Roll Action + Theme backstory beats and a Story Clue; the narrator writes the ship's history, appended to its Notes |
 
 ---
 
