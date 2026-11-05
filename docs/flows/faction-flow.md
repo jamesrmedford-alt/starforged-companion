@@ -34,7 +34,9 @@ entry starts `unknown`) — backlinked by the record's host JournalEntry id
 `attitude: "unknown"` and the record's `_id`, resetting a hostile faction to
 unknown and re-pointing the backlink (issue #321 U28). Read by the relevance resolver → ENTITIES IN SCENE cards
 (`formatEntityCard` has a faction field table including `relationship`) and
-the entity panel (which can edit `relationship` manually).
+the entity panel (which shows `relationship` as a label and edits no record
+field — the GM's manual stance correction is `!journal faction "Name"
+<attitude> — summary`).
 
 **The half-store:** `sector.faction` — a bare control-faction name string on
 the active sector, rendered in the ACTIVE SECTOR block. Static, name-only.
@@ -89,5 +91,9 @@ X33); the new-faction WJ loop
 correctly skips names that already have entity records; matched faction
 entity cards render the full record including stance and latest project;
 the generative tier accrues narrative development for matched factions;
-`!journal faction` gives the GM a manual attitude-correction path; and the
-entity panel can edit the record's stance directly.
+and `!journal faction "Name" <attitude> — summary` (hostile / neutral /
+allied; `unknown` leaves the stance alone) is the GM's manual stance
+correction — `recordFactionIntelligence` writes the World Journal attitude
+and maps it onto the record's `relationship` (`applyAttitudeToFactionRecord`).
+The entity panel shows the stance but edits no record field: its only edits
+are lock / pin / promote / remove (`ENTITY_EDIT_OPS`).
