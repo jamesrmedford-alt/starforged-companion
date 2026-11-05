@@ -354,6 +354,8 @@ function getMoveCategory(moveId) {
     begin_a_session: "session", end_a_session: "session",
     // Adventure
     face_danger: "adventure", secure_an_advantage: "adventure",
+    // Scene challenge: the variants are adventure moves made within it (issue #338 D2)
+    face_danger_scene_challenge: "adventure", secure_an_advantage_scene_challenge: "adventure",
     gather_information: "adventure", compel: "adventure",
     aid_your_ally: "adventure", check_your_gear: "adventure",
     // Quest

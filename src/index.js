@@ -124,6 +124,7 @@ import {
   registerCombatTrackerSettings,
 } from "./moves/combatTracker.js";
 import { selectConnection, connectionsNamedByFragment, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
+import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "./moves/sceneChallenge.js";
 import { handleBondCommand } from "./moves/bondCommand.js";
 import { postReachMilestoneCard } from "./moves/milestonePicker.js";
 import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank, selectFulfilVow, namesCompletedVow } from "./moves/milestone.js";
@@ -998,6 +999,19 @@ export function registerChatHook() {
         });
       }
 
+      // A scene-challenge move (Face Danger / Secure an Advantage within a
+      // scene challenge — issue #338 D2) with no challenge open is the
+      // ordinary move it varies: its progress and segments would land on
+      // nothing, and its strong hit takes no momentum.
+      if (SCENE_CHALLENGE_VARIANTS[interpretation.moveId]) {
+        const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []));
+        if (ordinary !== interpretation.moveId) {
+          console.debug(`${MODULE_ID} | ${interpretation.moveId}: no scene challenge is open — resolved as ${ordinary}.`);
+          interpretation.moveId   = ordinary;
+          interpretation.moveName = ordinary.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+        }
+      }
+
       if (interpretation.mischiefApplied) {
         // The aside plays on the gap between what the player SAID and the move
         // the Trickster chose — the narration, not the model's rationale
@@ -1305,7 +1319,7 @@ export function registerChatHook() {
       // the one applier Burn Momentum and Improve Result also run, for what
       // their upgraded outcome adds over this one (UPGRADE-PIPELINE-EFFECTS).
       // The fight the move was about comes back for its cards.
-      const { moveFight } = await applyOutcomeEffects({
+      const { moveFight, sceneChallenge } = await applyOutcomeEffects({
         resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse,
       });
 
@@ -1705,7 +1719,10 @@ export function registerChatHook() {
         // live momentum is the momentum buildBurnState below adds it back to.
         const upgradeOffered = !!(buildBurnState(resolution, rollerActor)?.canBurn
           || buildImproveState(resolution, interpretation.applicableAbilities, rollerActor)?.canImprove);
-        const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered }).catch(err => {
+        // A scene-challenge move's miss filled its challenge's clock itself:
+        // "fill a clock segment and Pay the Price" is one fill (issue #338 D2).
+        const skipClockIds = sceneChallenge?.clockId ? [sceneChallenge.clockId] : [];
+        const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered, skipClockIds }).catch(err => {
           console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
           return null;
         });
@@ -1764,6 +1781,10 @@ export function registerChatHook() {
         // are theirs (issue #325 W17).
         ...(interpretation.allyActorId && resolution.consequences?.beneficiary === "ally"
           ? { allyActorId: interpretation.allyActorId } : {}),
+        // A scene-challenge move's challenge and what it filled of its clock:
+        // an upgrade scores that challenge and takes back no more than this
+        // filled (issue #338 D2).
+        ...(sceneChallenge ? { sceneChallenge } : {}),
       };
       // What an upgrade of this result needs to apply the upgraded outcome's
       // other effects as this pipeline applied the original's — the move's
@@ -2199,7 +2220,7 @@ async function applyOutcomeEffects({
 }) {
   const applied    = [];
   const notApplied = [];
-  const out = { moveFight: null, applied, notApplied };
+  const out = { moveFight: null, sceneChallenge: null, applied, notApplied };
   if (!game.user?.isGM) return out;
 
   const next       = resolution.consequences ?? {};
@@ -2410,6 +2431,60 @@ async function applyOutcomeEffects({
     } catch (err) {
       console.warn(`${MODULE_ID} | next-move bonus failed:`, err?.message ?? err);
       notApplied.push(`+${nextBonus} on the next move`);
+    }
+  }
+
+  // Scene-challenge moves (issue #338 D2) — Face Danger / Secure an Advantage
+  // within a scene challenge mark its track and fill its tension clock
+  // (sceneChallenge.scoreSceneChallenge), and a card says what they did. An
+  // upgrade applies what its outcome adds: the marks beyond the original's,
+  // and the clock as the upgraded outcome would have left it — a miss's
+  // segment burned to a strong hit is taken back, never more than the
+  // original filled (its receipt, `targets.sceneChallenge`) — on the
+  // challenge the original's card named; finished or gone by then, nothing.
+  const sceneMarks = Math.max(0, Number(next.sceneProgress ?? 0) - Number(orig.sceneProgress ?? 0));
+  const sceneSegs  = Math.max(0, Number(next.sceneSegments ?? 0));
+  const receipt    = upgrade ? (targets?.sceneChallenge ?? null) : null;
+  if (sceneMarks > 0 || sceneSegs > 0 || Number(receipt?.clockFilled ?? 0) > 0) {
+    try {
+      const { scoreSceneChallenge } = await import("./moves/sceneChallenge.js");
+      const { adjustClockSegments } = await import("./clocks/clocks.js");
+      const scored = await scoreSceneChallenge(
+        { moveTarget, moveTargetId: interpretation?.moveTargetId ?? null, trackId: receipt?.trackId ?? null },
+        { marks: sceneMarks, segments: sceneSegs, receipt },
+        {
+          listTracks:   () => listProgressTracks(),
+          getTrack:     (id) => getProgressTrack(id),
+          markProgress: (id, times) => markProgressById(id, times),
+          adjustClock:  (id, delta) => adjustClockSegments(id, delta),
+        },
+      );
+      if (scored.track) {
+        const label = scored.track.label ?? "the scene challenge";
+        out.sceneChallenge = {
+          trackId:       scored.track.id,
+          clockId:       scored.track.tensionClockId ?? null,
+          clockBefore:   scored.clock?.before ?? null,
+          clockFilled:   Math.max(0, scored.clock?.changed ?? 0),
+          clockSegments: scored.clock?.segments ?? null,
+        };
+        if (scored.marked) applied.push(`progress marked ${scored.marked === 1 ? "once" : `${scored.marked} times`} on ${label}`);
+        const changed = scored.clock?.changed ?? 0;
+        if (changed) applied.push(`${label}'s clock ${changed > 0 ? "filled" : "rewound"} ${Math.abs(changed)} segment${Math.abs(changed) === 1 ? "" : "s"}`);
+        if (scored.marked || changed) {
+          await postSceneChallengeCard(scored).catch(err =>
+            console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err));
+        }
+      } else {
+        const why = { none: "no scene challenge is open", ambiguous: "which scene challenge? — mark it in the Progress Tracks panel", gone: "its scene challenge is over" }[scored.reason] ?? scored.reason;
+        console.warn(`${MODULE_ID} | ${resolution.moveId}: ${why} — progress and clock not changed.`);
+        notApplied.push(`the scene challenge's progress and clock — ${why}`);
+        await postSceneChallengeCard({ track: null, reason: why }).catch(err =>
+          console.warn(`${MODULE_ID} | scene challenge card failed:`, err?.message ?? err));
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | scene challenge scoring failed:`, err?.message ?? err);
+      notApplied.push("the scene challenge's progress and clock");
     }
   }
 
@@ -4879,6 +4954,44 @@ async function postNoCharacterNotice(message, { price = false } = {}) {
   });
 }
 
+/**
+ * Feedback for a scene-challenge move (issue #338 D2): the progress it marked
+ * on the challenge and what its clock did — or why nothing changed. A full
+ * track or clock says the scene is due to finish ("When the scene challenge
+ * tension clock or progress track is filled … Finish the Scene").
+ *
+ * @param {{ track: Object|null, marked?: number, clock?: Object|null, reason?: string }} scored
+ */
+async function postSceneChallengeCard({ track, marked = 0, clock = null, reason = null }) {
+  let body;
+  if (!track) {
+    body = `<p>Nothing was marked: ${escapeChatHtml(reason ?? "no scene challenge matched")}.</p>`;
+  } else {
+    const label = escapeChatHtml(track.label ?? "Scene challenge");
+    const boxes = Math.floor(Number(track.ticks ?? 0) / 4);
+    const parts = [];
+    if (marked) parts.push(`progress marked ${marked === 1 ? "once" : "twice"} (${boxes}/10 boxes)`);
+    const changed = clock?.changed ?? 0;
+    if (changed) {
+      const n = Math.abs(changed);
+      parts.push(`its danger clock ${changed > 0 ? "fills" : "is rewound"} ${n === 1 ? "a segment" : `${n} segments`} (${clock.filled}/${clock.segments})`);
+    }
+    const full = [];
+    if (Number(track.ticks ?? 0) >= 40) full.push("its progress track is full");
+    if (clock && clock.filled >= clock.segments) full.push("its danger clock is full");
+    body = `<p><strong>${label}</strong> — ${parts.join("; ")}.</p>`
+      + (full.length ? `<p>${full.join(" and ").replace(/^./, c => c.toUpperCase())}: the scene is due to end — <strong>Finish the Scene</strong> (its ⬡ Progress Roll in the Progress Tracks panel).</p>` : "");
+  }
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>⬡ Scene challenge</strong>${body}</div>`,
+      flags:   { [MODULE_ID]: { sceneChallengeCard: true, trackId: track?.id ?? null } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | postSceneChallengeCard: chat post failed:`, err?.message ?? err);
+  }
+}
+
 /** Feedback for Finish the Scene — the challenge finished, its clock retired (issue #326 D6). */
 async function postSceneFinishCard(track) {
   const label = escapeChatHtml(track?.label ?? "Scene challenge");
@@ -6509,12 +6622,14 @@ async function postDecisiveActionCostCard(actorId = null) {
  * @param {string|null} [resolutionId] — the move's resolution: a choice the
  *   price leaves the player (Endure Harm / Stress at 0 — issue #329 X03) is
  *   bound to it, so an upgrade of the move retires it
- * @param {{ upgradeOffered?: boolean }} [opts] — the move's card will offer
- *   Burn Momentum or Improve Result: a resist roll the price owes says to
- *   take it first (issue #336 Y18)
+ * @param {{ upgradeOffered?: boolean, skipClockIds?: string[] }} [opts] —
+ *   `upgradeOffered`: the move's card will offer Burn Momentum or Improve
+ *   Result, so a resist roll the price owes says to take it first (issue #336
+ *   Y18); `skipClockIds`: tension clocks the price leaves alone — a scene
+ *   challenge's clock the move's miss filled itself (issue #338 D2)
  * @returns {Promise<{ reversals: Object, price: string }|null>}
  */
-async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false } = {}) {
+async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [] } = {}) {
   const { rollOracle } = await import("./oracles/roller.js");
   let result;
   try {
@@ -6551,7 +6666,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
   const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`, { resolutionId, upgradeOffered });
   const sufferMeterDeltas = landed.flatMap(ptpMeterReceipts);
 
-  const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
+  const clocksAdvanced = await advanceClocksOnPayThePrice({ skipClockIds }).catch(err => {
     console.warn(`${MODULE_ID} | ${paidFor || "move"} PtP clock advance failed:`, err?.message ?? err);
     return [];
   });

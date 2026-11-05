@@ -133,12 +133,18 @@ export const MOVES = {
   undertake_an_expedition:   { category: "exploration", stat: ["edge","shadow","wits"],                              narratorClass: "hybrid"         },
   explore_a_waypoint:        { category: "exploration", stat: ["wits"],                                              narratorClass: "discovery"      },
   finish_an_expedition:      { category: "exploration", stat: null,  progressMove: true,                             narratorClass: "hybrid"         },
-
-  // SCENE CHALLENGE (Starforged p. 241 — issue #326 D6)
-  finish_the_scene:          { category: "scene_challenge", stat: null, progressMove: true,                          narratorClass: "hybrid"         },
   set_a_course:              { category: "exploration", stat: ["supply"],                                            narratorClass: "embellishment" },
   make_a_discovery:          { category: "exploration", stat: null,                                                  narratorClass: "discovery"      },
   confront_chaos:            { category: "exploration", stat: null,                                                  narratorClass: "discovery"      },
+
+  // SCENE CHALLENGE (Starforged pp. 239–241; vendored Starforged/Moves/Scene_Challenge).
+  // Face Danger / Secure an Advantage made within an open scene challenge are
+  // its own moves, scored against it (issue #338 D2); Finish the Scene ends it
+  // (issue #326 D6). Begin the Scene has no move: the Progress Tracks panel's
+  // Add sets up the challenge and its 4-segment clock.
+  face_danger_scene_challenge:         { category: "scene_challenge", stat: ["edge","heart","iron","shadow","wits"], narratorClass: "hybrid" },
+  secure_an_advantage_scene_challenge: { category: "scene_challenge", stat: ["edge","heart","iron","shadow","wits"], narratorClass: "hybrid" },
+  finish_the_scene:          { category: "scene_challenge", stat: null, progressMove: true,                          narratorClass: "hybrid"         },
 
   // COMBAT
   enter_the_fray:            { category: "combat",      stat: ["edge","heart","iron","shadow","wits"],               narratorClass: "interaction"    },

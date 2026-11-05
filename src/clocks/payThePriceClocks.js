@@ -43,8 +43,14 @@ let _triggerVignettes = Promise.resolve();
  * vignette (issue #321 U55 — three PCs gave three lines, three Claude calls and
  * three TRIGGERED cards). The returned list keeps every copy, for the Burn
  * Momentum reversal to rewind each.
+ *
+ * `skipClockIds`: tension clocks this price leaves alone — the scene
+ * challenge's clock a scene-challenge move's miss filled itself (issue #338
+ * D2; advanceTensionClocksForPayThePrice).
+ *
+ * @param {{ skipClockIds?: string[] }} [opts]
  */
-export async function advanceClocksOnPayThePrice() {
+export async function advanceClocksOnPayThePrice({ skipClockIds = [] } = {}) {
   if (!game.user?.isGM) {
     console.debug(`${MODULE_ID} | Pay the Price: clock advance is GM-only — not advanced from this player client.`);
     return [];
@@ -53,7 +59,7 @@ export async function advanceClocksOnPayThePrice() {
 
   try {
     const { advanceTensionClocksForPayThePrice } = await import("./clocks.js");
-    for (const c of await advanceTensionClocksForPayThePrice()) {
+    for (const c of await advanceTensionClocksForPayThePrice({ skipIds: skipClockIds })) {
       advanced.push({ _id: c._id, name: c.name, type: "tension", filled: c.filled, segments: c.segments, triggered: c.triggered });
     }
   } catch (err) {

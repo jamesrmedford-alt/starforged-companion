@@ -327,14 +327,21 @@ export async function removeClock(clockId) {
  * left alone (they advance at Begin a Session). The caller GM-gates the call
  * (world-scoped write).
  *
+ * A clock in `skipIds` is left alone: a scene challenge's clock that the
+ * miss whose price this is filled itself (Face Danger / Secure an Advantage
+ * within a scene challenge — "fill a clock segment and Pay the Price", one
+ * fill, not two; issue #338 D2).
+ *
+ * @param {{ skipIds?: string[] }} [opts]
  * @returns {Promise<Array<{name:string, filled:number, segments:number, triggered:boolean}>>}
  *   one entry per clock advanced; empty when there are no active tension clocks.
  */
-export async function advanceTensionClocksForPayThePrice() {
+export async function advanceTensionClocksForPayThePrice({ skipIds = [] } = {}) {
+  const skip = new Set(Array.isArray(skipIds) ? skipIds : []);
   return serialiseClockWrite(async () => {
     const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
     const eligible = (state.clocks ?? []).filter(
-      c => c.active !== false && c.type === "tension" && (c.filled ?? 0) < c.segments,
+      c => c.active !== false && c.type === "tension" && (c.filled ?? 0) < c.segments && !skip.has(c._id),
     );
     if (!eligible.length) return [];
     const now = new Date().toISOString();
@@ -346,6 +353,36 @@ export async function advanceTensionClocksForPayThePrice() {
     }
     await writeState(state);
     return advanced;
+  });
+}
+
+/**
+ * Fill (`delta` > 0) or rewind (`delta` < 0) one clock by whole segments,
+ * within 0..its segments — a scene challenge's tension clock, by the
+ * scene-challenge moves (issue #338 D2: a weak hit or a miss fills it; an
+ * upgrade of the move takes back what the superseded outcome filled). A
+ * retired clock — its challenge is over — is left alone. Written on a copy.
+ *
+ * @param {string} clockId
+ * @param {number} delta
+ * @returns {Promise<{ _id: string, name: string, before: number, filled: number, segments: number,
+ *   triggered: boolean, changed: number }|null>} the clock as it now stands and the segments it
+ *   changed by; null when there is no active clock by that id
+ */
+export async function adjustClockSegments(clockId, delta) {
+  return serialiseClockWrite(async () => {
+    const state = foundry.utils.deepClone(readState());
+    const clock = (state.clocks ?? []).find(c => c._id === clockId) ?? null;
+    if (!clock || clock.active === false) return null;
+    const before = clock.filled ?? 0;
+    const filled = Math.max(0, Math.min(clock.segments, before + Math.trunc(Number(delta) || 0)));
+    if (filled !== before) {
+      clock.filled    = filled;
+      clock.updatedAt = new Date().toISOString();
+      await writeState(state);
+    }
+    return { _id: clock._id, name: clock.name, before, filled, segments: clock.segments,
+      triggered: filled >= clock.segments, changed: filled - before };
   });
 }
 

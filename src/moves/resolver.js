@@ -269,6 +269,12 @@ function emptyConsequences() {
     // true → pipeline completes the scene challenge and retires its tension
     // clock (Finish the Scene — every outcome; issue #326 D6).
     finishScene:         false,
+    // A scene-challenge move (Face Danger / Secure an Advantage within a scene
+    // challenge — issue #338 D2): the pipeline marks the open challenge's
+    // track `sceneProgress` times and fills `sceneSegments` of its tension
+    // clock (index.js applyOutcomeEffects → sceneChallenge.scoreSceneChallenge).
+    sceneProgress:       0,
+    sceneSegments:       0,
     // Combat lifecycle (audit 3.24–3.27): pipeline creates/reuses the combat track.
     enterCombat:           false,
     // Pipeline marks progress N times on the active combat track (Strike/Clash).
@@ -679,6 +685,44 @@ const CONSEQUENCE_MAP = {
   },
 
   // ── SCENE CHALLENGE MOVES ───────────────────────────────────────────────────
+  // Face Danger and Secure an Advantage within a scene challenge (Starforged
+  // pp. 239–241; vendored Starforged/Moves/Scene_Challenge — issue #338 D2):
+  // scored against the open challenge, a hit's progress on its track
+  // (`sceneProgress`) and a weak hit's or miss's segments on its 4-segment
+  // tension clock (`sceneSegments`). A miss's Pay the Price leaves that clock
+  // to the move's own segments (index.js skips it in the price's advance).
+
+  face_danger_scene_challenge: (outcome, isMatch) => {
+    switch (outcome) {
+      case "strong_hit": return { ...emptyConsequences(), sceneProgress: isMatch ? 2 : 1,
+        otherEffect: isMatch
+          ? "You are successful. With the match, mark progress twice on the scene challenge."
+          : "You are successful. Mark progress on the scene challenge." };
+      case "weak_hit": return { ...emptyConsequences(), sceneProgress: 1, sceneSegments: 1,
+        otherEffect: "You are successful and mark progress, but also encounter a complication or setback. Envision what occurs and fill a segment of the challenge's clock." };
+      case "miss": return { ...emptyConsequences(), sceneSegments: isMatch ? 2 : 1, routePayThePrice: true,
+        otherEffect: isMatch
+          ? "You fail, or a momentary success is undermined by a dramatic turn of events. With the match, fill two segments of the challenge's clock and Pay the Price."
+          : "You fail, or a momentary success is undermined by a dramatic turn of events. Fill a segment of the challenge's clock and Pay the Price." };
+    }
+  },
+
+  secure_an_advantage_scene_challenge: (outcome, isMatch) => {
+    switch (outcome) {
+      // "Take both" — +2 momentum and +1 on the next move, as the ordinary
+      // move's strong hit; with a match, "take both and mark progress".
+      case "strong_hit": return { ...CONSEQUENCE_MAP.secure_an_advantage("strong_hit", isMatch), sceneProgress: isMatch ? 1 : 0,
+        otherEffect: isMatch
+          ? "You are successful: take both — +2 momentum AND +1 on your next move (not a progress move) — and, with the match, mark progress on the scene challenge."
+          : "You are successful: take both — +2 momentum AND +1 on your next move (added to your next action roll; not a progress move)." };
+      // "Choose one" — the ordinary move's weak-hit choice.
+      case "weak_hit": return CONSEQUENCE_MAP.secure_an_advantage("weak_hit", isMatch);
+      case "miss": return { ...emptyConsequences(), sceneSegments: isMatch ? 2 : 1, routePayThePrice: true,
+        otherEffect: isMatch
+          ? "You fail or your assumptions betray you. With the match, fill two segments of the challenge's clock and Pay the Price."
+          : "You fail or your assumptions betray you. Fill a segment of the challenge's clock and Pay the Price." };
+    }
+  },
 
   finish_the_scene: (outcome, _isMatch) => {
     // Progress move (Starforged p. 241; issue #326 D6). The scene concludes on

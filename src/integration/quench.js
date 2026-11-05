@@ -9035,6 +9035,39 @@ function registerCombatCardButtonTests(quench) {
             await game.settings.set(MODULE, "campaignState", { ...(game.settings.get(MODULE, "campaignState") ?? {}), sessionActive: priorActive });
           }
         });
+
+        // Issue #338 D2: within an open challenge, Face Danger / Secure an
+        // Advantage are its own moves, scored on the challenge's track and its
+        // clock — here on the live journal and campaign-state stores (the unit
+        // suite pins the pipeline hop and the upgrades).
+        it("a scene-challenge move's weak hit marks the challenge and fills its clock on the live stores", async function () {
+          if (!game.user.isGM) { this.skip(); return; }
+          this.timeout(20000);
+          const pt = await import(`${MODULE_PATH}/ui/progressTracks.js`);
+          const { scoreSceneChallenge } = await import(`${MODULE_PATH}/moves/sceneChallenge.js`);
+          const { adjustClockSegments } = await import(`${MODULE_PATH}/clocks/clocks.js`);
+          const { mapConsequences } = await import(`${MODULE_PATH}/moves/resolver.js`);
+          const label = `Quench Scene Variant ${foundry.utils.randomID(4)}`;
+          const created = await pt.addProgressTrack({ label, type: "scene_challenge", rank: "dangerous" });
+          try {
+            assert.isOk(created.tensionClockId, "the challenge was set up with its 4-segment clock");
+            const weak = mapConsequences("face_danger_scene_challenge", "weak_hit", false);
+            const scored = await scoreSceneChallenge({ moveTarget: label },
+              { marks: weak.sceneProgress, segments: weak.sceneSegments }, {
+                listTracks:   () => pt.listProgressTracks(),
+                getTrack:     (id) => pt.getProgressTrack(id),
+                markProgress: (id, times) => pt.markProgressById(id, times),
+                adjustClock:  (id, delta) => adjustClockSegments(id, delta),
+              });
+            assert.equal(scored.track?.id, created.id, "the move scores the challenge it names");
+            assert.equal((await pt.getProgressTrack(created.id))?.ticks, 8, "one mark on a dangerous challenge is 8 ticks");
+            const clock = (game.settings.get(MODULE, "campaignState")?.clocks ?? []).find(c => c._id === created.tensionClockId);
+            assert.equal(clock?.filled, 1, "the weak hit fills one segment of the challenge's clock");
+          } finally {
+            await pt.applyProgressTrackEditFromRelay({ op: "remove", trackId: created.id }, { requesterIsGM: true })
+              .catch(() => {});
+          }
+        });
       });
     },
     { displayName: "STARFORGED: Combat Card Buttons", timeout: 60000 },

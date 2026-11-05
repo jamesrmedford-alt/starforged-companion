@@ -397,6 +397,29 @@ miss's Pay the Price is routed, so the ended scene's clock does not tick.
 Pre-session (the pipeline's session gate would ignore the bridge) it keeps
 the bespoke instant display roll (`type: 'progressRoll'` card — display-only
 by design).
+Within an open challenge, Face Danger and Secure an Advantage are its own
+moves (issue #338 D2): `face_danger_scene_challenge` /
+`secure_an_advantage_scene_challenge`, which the interpreter types when its
+context lists an open `scene_challenge` (never a re-key of the ordinary move
+— a fight mid-challenge is a fight; a variant with no challenge open is
+resolved as the ordinary move, `sceneChallenge.moveOutsideSceneChallenge`).
+Their consequences carry `sceneProgress` (marks) and `sceneSegments` (clock
+fills), and `applyOutcomeEffects` scores them against the challenge
+(`sceneChallenge.scoreSceneChallenge` → `markProgressById` on the track,
+`clocks.adjustClockSegments` on its `tensionClockId`), posting the
+"⬡ Scene challenge" card — what was marked and filled, and that the scene
+is due to finish once the track or clock is full. Face Danger's strong hit
+marks progress (twice on a match), its weak hit marks progress and fills a
+segment; Secure an Advantage keeps its +2 momentum / +1 next move (with a
+match, progress too) and its weak hit's choice; a miss on either fills a
+segment (two on a match) and routes Pay the Price, whose clock advance skips
+that clock (`advanceClocksOnPayThePrice({ skipClockIds })`) — one fill, not
+two. The move card's targets carry the challenge and a receipt of what its
+clock fill was (`targets.sceneChallenge`: `trackId`, `clockId`,
+`clockBefore`, `clockFilled`, `clockSegments`), so a Burn Momentum or
+Improve Result scores the same challenge, marks what its outcome adds and
+leaves the clock as the upgraded outcome would have (a miss's segment
+burned to a strong hit is taken back, never more than it filled).
 
 The panel's edits — add, +, −, ✓, ✕ and the position toggle — are written by
 the canonical GM for every user (gmRelay `progressTrack.edit` →
