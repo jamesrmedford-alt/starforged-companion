@@ -33,6 +33,7 @@
  */
 
 import { apiPost } from "../api-proxy.js";
+import { moveRollKind } from "../schemas.js";
 import { listShips, isLoneShipCandidate } from "../entities/ship.js";
 
 const MODULE_ID    = "starforged-companion";
@@ -230,7 +231,7 @@ export async function haikuFallback(abilities, moveId, moveName, narration, apiK
         summary:         summary ?? "",
         // Prefer the LLM's read when present; fall back to regex on the
         // ability text so structured-match abilities also get a clean signal.
-        statReplacement: statReplacement ?? extractStatReplacement(ab.text),
+        statReplacement: statReplacement ?? extractStatReplacement(ab.text, moveName),
       };
     })
     .filter(Boolean);
@@ -332,14 +333,19 @@ export async function scanForApplicableAbilities({
 
   const structured = structuredMatches(all, moveName);
   if (structured.length > 0) {
-    return structured.map(annotate("structured", moveName));
+    return structured.map(annotate("structured", moveName, moveId));
   }
 
   const llm = await haikuFallback(all, moveId, moveName, narration, apiKey);
-  return llm.map(annotate("haiku", moveName));
+  return llm.map(annotate("haiku", moveName, moveId));
 }
 
-function annotate(detection, moveName = null) {
+function annotate(detection, moveName = null, moveId = null) {
+  // A stat substitution replaces an action roll's stat: a progress move, a
+  // no-roll move or a suffer move with none listed has no stat to replace
+  // (Outcast's "When you Sacrifice Resources …, roll +wits" is its own roll —
+  // issue #331 X23).
+  const rollsAStat = !moveId || moveRollKind(moveId) === "action";
   return (ab) => ({
     key:             ab.key,
     assetName:       ab.assetName,
@@ -352,7 +358,7 @@ function annotate(detection, moveName = null) {
     // The Haiku path already populated statReplacement on its return shape;
     // the structured path lands here with no such field, so derive it from
     // the ability text via the regex fallback.
-    statReplacement: ab.statReplacement ?? extractStatReplacement(ab.text),
+    statReplacement: rollsAStat ? (ab.statReplacement ?? extractStatReplacement(ab.text, moveName)) : null,
     // Post-roll outcome improvement (v1.7.11 finding G) + the per-ability
     // clock that is its cost. Pass these through so the post-roll affordance
     // (improveResult.js) can offer the upgrade and advance the right clock.
@@ -393,42 +399,60 @@ export function extractResultImprovement(text) {
 }
 
 /**
- * Best-effort stat-substitution extraction. Looks for patterns that signal
- * the ability lets the player roll a different stat than the move's
- * listed one (e.g. Empath: "you may roll +heart in place of the listed
- * stat"). Returns one of the five canonical stat keys
- * (edge / heart / iron / shadow / wits) or null when nothing matches.
+ * The stat an ability lets the player roll for THIS move instead of the
+ * move's listed one, or null. "A typed move rolls a stat it lists": the book
+ * lets a player roll another stat only when the ability says so for the move
+ * being made — Stealth Tech's "When you are poised to Strike from hiding, you
+ * may roll +shadow", Vanguard's "When you Endure Stress, you may roll +wits",
+ * Scavenger's "When you Check Your Gear, roll +wits or +supply".
  *
- * Patterns recognised:
- *   - "roll +<stat>"                  → Empath's classic phrasing
- *   - "roll +<stat> instead"
- *   - "roll +<stat> in place of"
- *   - "may roll +<stat>"
- *   - "use +<stat> in place of"
- *   - "use <stat> instead"
+ * Read per sentence (issue #331 X23 — any "roll +<stat>" in the ability was a
+ * substitution for whatever move matched it: Archer's "To replenish your ammo
+ * by crafting projectiles, roll +wits" put a +wits radio on Strike, and Engine
+ * Upgrade's "(+edge) … take +2 momentum instead of +1" — "(+edge)" is the
+ * condition — offered +edge on Undertake an Expedition):
+ *   - the sentence that names the move being made (its `@Compendium[…]{Move}`
+ *     link): "roll +<stat>" in it is that move's roll;
+ *   - a later sentence that names no move belongs to it, but only an explicit
+ *     cue counts there — "may roll +<stat>", "roll +<stat> instead / in place
+ *     of", "use +<stat> instead / in place of";
+ *   - a sentence naming another move belongs to that move.
+ * An ability that names no move at all (a general trigger matched by the
+ * fallback pass) takes an explicit cue only: a bare "roll +heart" there is the
+ * ability's own roll with its own outcomes (Empath, Shade, Sniper), not this
+ * move's. A cost mention ("Lose Momentum (-1)") names no move (namedMoves).
+ * Numeric +N adds are extractAdds'.
  *
- * Numeric +N adds are reported by extractAdds — those are roll modifiers,
- * not stat replacements.
+ * @param {string} text — the ability's text (HTML stripped, links kept)
+ * @param {string|null} [moveName] — the move being made ("Strike")
+ * @returns {"edge"|"heart"|"iron"|"shadow"|"wits"|null}
  */
-export function extractStatReplacement(text) {
-  const s = String(text ?? "").toLowerCase();
-  if (!s) return null;
-  const statRe = SUBSTITUTABLE_STATS.join("|");
-  // Cue + "+stat" form — the leading + is what distinguishes a substitute
-  // from a casual mention ("heart of the matter"). Strict order of cues
-  // matters: longer cues first so "in place of" beats "place".
-  const cued = new RegExp(
-    `(?:roll|use|may\\s+roll|may\\s+use)\\s+\\+?(${statRe})\\b(?:\\s+(?:instead|in\\s+place\\s+of))?`,
-    "i",
-  );
-  const cuedMatch = s.match(cued);
-  if (cuedMatch) return cuedMatch[1];
-  // "in place of the listed stat" / "instead of" with a stat earlier in
-  // the sentence — looser fallback. Only accepts the +<stat> form so we
-  // don't pick up the casual mentions.
-  const looseRe = new RegExp(`\\+(${statRe})\\b[^.]*(?:instead|in\\s+place\\s+of)`, "i");
-  const loose = s.match(looseRe);
-  if (loose) return loose[1];
+export function extractStatReplacement(text, moveName = null) {
+  const s = String(text ?? "");
+  if (!s.trim()) return null;
+  const stat     = `(${SUBSTITUTABLE_STATS.join("|")})\\b`;
+  const explicit = new RegExp(`\\bmay\\s+(?:roll|use)\\s+\\+${stat}|\\b(?:roll|use)\\s+\\+${stat}\\s+(?:instead|in\\s+place\\s+of)`, "i");
+  const bare     = new RegExp(`\\broll\\s+\\+${stat}`, "i");
+  const cued     = (sentence, re) => { const m = sentence.match(re); return m ? (m[1] ?? m[2]).toLowerCase() : null; };
+
+  const target    = normaliseName(moveName);
+  const sentences = s.split(/(?<=[.!?])\s+/);
+  // With no move named anywhere, the ability's own sentences are the move's.
+  let own = !sentences.some(sentence => namedMoves(sentence).length);
+  for (const sentence of sentences) {
+    const moves = namedMoves(sentence);
+    if (moves.length) {
+      own = !!target && moves.includes(target);
+      if (own) {
+        const hit = cued(sentence, explicit) ?? cued(sentence, bare);
+        if (hit) return hit;
+      }
+      continue;
+    }
+    if (!own) continue;
+    const hit = cued(sentence, explicit);
+    if (hit) return hit;
+  }
   return null;
 }
 

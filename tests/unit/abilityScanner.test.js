@@ -183,9 +183,13 @@ describe('extractAdds', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('extractStatReplacement', () => {
-  it('returns the substituted stat for "roll +<stat>" phrasing', () => {
+  it('returns the substituted stat for "may roll +<stat>" phrasing', () => {
     expect(extractStatReplacement('When you act, you may roll +heart.')).toBe('heart');
-    expect(extractStatReplacement('Roll +shadow when sneaking.')).toBe('shadow');
+  });
+
+  it('a bare "roll +<stat>" in an ability naming no move is its own roll, not a substitution (issue #331 X23)', () => {
+    // Empath / Shade / Sniper: "When you <do the asset's thing>, roll +X. On a strong hit …"
+    expect(extractStatReplacement('Roll +shadow when sneaking.')).toBeNull();
   });
 
   it('handles "roll +<stat> in place of the listed stat" (Empath)', () => {
