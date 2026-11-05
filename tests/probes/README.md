@@ -5,6 +5,11 @@ Probe tests from the tenth bug audit of `8fb7bfa` (the report is
 `docs/testing/bug-audit-10-2026-11-05-area-notes.md`): 49 findings Y01–Y49
 and 10 decisions D1–D10.
 
+Filed as GitHub issues [#335](https://github.com/jamesrmedford-alt/starforged-companion/issues/335) (Y01–Y14),
+[#336](https://github.com/jamesrmedford-alt/starforged-companion/issues/336) (Y15–Y33),
+[#337](https://github.com/jamesrmedford-alt/starforged-companion/issues/337) (Y34–Y49) and
+[#338](https://github.com/jamesrmedford-alt/starforged-companion/issues/338) (D1–D10, the excluded rows and the refuter pass).
+
 Each probe asserts the **correct** behaviour, so it fails while its finding is
 open and passes once the finding is fixed. Tests named `control: …` pass today
 by design. The files are named `*.probe.js` so `npm test` never collects them.
