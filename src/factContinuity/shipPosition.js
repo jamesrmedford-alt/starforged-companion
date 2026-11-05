@@ -37,6 +37,15 @@ const SOURCE_VALUES = new Set([
  * and no free text was supplied — callers can decide whether to skip
  * writing or persist the cleared state.
  *
+ * Every key is written, `narrationId` and `previous` included: the record
+ * reaches the ship through `updateShip` → `setFlag`, which merges key by key
+ * (the issue #321 U40 shape), so a key left out keeps the old record's value.
+ * A narrator-sidecar move's `narrationId` and `previous` (issue #325 W07)
+ * survived a later `!at`, Set a Course, expedition or token move, and an
+ * X-Card on that narration then reverted the GM's move
+ * (restoreShipPositionAfterXCard — SHIP-POSITION-FLAG-MERGE). Only a
+ * narration's move sets them.
+ *
  * @returns {Object}
  */
 export function emptyPosition() {
@@ -48,6 +57,8 @@ export function emptyPosition() {
     freeText:            "",
     updatedAt:           null,
     updatedBy:           null,
+    narrationId:         null,
+    previous:            null,
   };
 }
 

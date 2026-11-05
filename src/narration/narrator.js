@@ -4317,7 +4317,12 @@ export async function restoreShipPositionAfterXCard(narrationIds, campaignState 
     if (!position?.narrationId || !removed.has(position.narrationId)) return false;
     while (position?.narrationId && removed.has(position.narrationId)) position = position.previous ?? null;
     const { emptyPosition } = await import('../factContinuity/shipPosition.js');
-    const restored = position ? { ...position } : { ...emptyPosition(), updatedAt: new Date().toISOString(), updatedBy: 'manual' };
+    // Every key written — `narrationId` / `previous` too, null when the
+    // position put back has none: setFlag merges, so a key left out kept the
+    // removed narration's (SHIP-POSITION-FLAG-MERGE).
+    const restored = position
+      ? { ...emptyPosition(), ...position }
+      : { ...emptyPosition(), updatedAt: new Date().toISOString(), updatedBy: 'manual' };
     await updateShip(cvActorId, { position: restored });
     // The token follows whatever pin the restored position names — a
     // settlement's or a site's (a recorded location — issue #335 Y14); the

@@ -391,6 +391,11 @@ export function computeTokenPositionRecord(scene, x, y) {
     freeText:            pin ? String(pin.text ?? "") : "deep space",
     updatedAt:           new Date().toISOString(),
     updatedBy:           "token_placement",
+    // No narration moved it, and nothing to go back to: written so the
+    // merge clears a narrator move's (shipPosition.js emptyPosition —
+    // SHIP-POSITION-FLAG-MERGE).
+    narrationId:         null,
+    previous:            null,
   };
 }
 

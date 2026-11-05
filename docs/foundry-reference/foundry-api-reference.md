@@ -525,9 +525,14 @@ if (foundry.utils.hasProperty(changes, "flags.starforged-companion")) {
   // the flag changed
 }
 
-// Gotcha: setting an object flag replaces the entire object
-// To update a nested property, read → modify → write the whole object
-const existing = doc.getFlag("starforged-companion", "tracks") ?? [];
+// Gotcha: setFlag is an update, and an update MERGES a plain object into
+// the stored one key by key — a key the new object leaves out keeps its old
+// value (issue #321 U40; SHIP-POSITION-FLAG-MERGE: a ship position written
+// without `narrationId` kept a narrator move's). An array is replaced whole.
+// So a record meant to replace the stored one writes EVERY key (null for
+// "none"), or the caller unsets the flag first.
+// To update an array, read → copy → modify → write the whole array:
+const existing = [...(doc.getFlag("starforged-companion", "tracks") ?? [])];
 existing.push(newTrack);
 await doc.setFlag("starforged-companion", "tracks", existing);
 ```

@@ -499,7 +499,12 @@ regressions, all are known scope cuts:
    token is authoritative when present"). A charted site's pin anchors the
    position like a settlement's, both ways — the token parked on it records
    the site's location (`nearestLocationId`), and a record naming a location
-   moves the token onto its site pin (issue #335 Y14). Remaining refinement:
+   moves the token onto its site pin (issue #335 Y14). Every record a writer
+   builds carries every key — `narrationId` and `previous` too, null unless a
+   narration's move set them — because `updateShip` writes through `setFlag`,
+   which merges into the stored record key by key: a narrator move's id
+   outlived a later `!at` or token move, and an X-Card then reverted that
+   move (SHIP-POSITION-FLAG-MERGE). Remaining refinement:
    free-text positions still don't move the Token (no pin to anchor to) — the
    "position uncertain" Token badge stays the open idea.
 6. **A4 escalation — rolling session summary. ✅ shipped (2026-06-15).** A

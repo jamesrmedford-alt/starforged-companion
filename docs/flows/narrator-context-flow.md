@@ -168,7 +168,13 @@ narration's `narrationId` and the position before it (`previous`, up to
 three deep), and the X-Card's finish (`restoreShipPositionAfterXCard`) puts
 back the latest position no removed narration wrote — an empty one when
 there is none — and moves the sector token with it; SHIP POSITION kept
-naming the removed destination (issue #325 W07). So is what the narration's
+naming the removed destination (issue #325 W07). Every other position
+writer — `!at`, Set a Course, an expedition's arrival, the Entities panel, a
+token move, the restore itself — writes `narrationId: null, previous: null`
+(`emptyPosition`, `computeTokenPositionRecord`): the record goes through
+`setFlag`, which merges key by key, so a narrator move's id and chain
+survived a later GM move and the X-Card then put the ship back over it
+(SHIP-POSITION-FLAG-MERGE). So is what the narration's
 **capture** recorded (issue #329 X01): every capture entry point
 (`runPostNarrationPasses`, `schedulePacedDetection` /
 `schedulePacedTierUpdate`, `scheduleNarrationCapture` /

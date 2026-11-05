@@ -122,7 +122,9 @@ layers. This file is the never-break list.
    replaced, retracted by its `narrationId`, issue #338 D8) is never named
    either, and blocks nothing: the re-narration may state the fact again. Anything a narration writes
    outside the ledgers carries its `narrationId` so the X-Card can undo it
-   too — the command vehicle's position does (issue #325 W07), and so does
+   too — the command vehicle's position does (issue #325 W07; every other
+   position writer writes `narrationId: null`, as `setFlag` merges —
+   SHIP-POSITION-FLAG-MERGE), and so does
    everything its capture records: World Journal entries (with the versions
    they replaced — a faction the draft routing surfaces too, issue #335 Y02),
    Session Log beats, tier details (a promoted one's line in the notes too,
