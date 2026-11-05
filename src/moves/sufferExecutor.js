@@ -683,10 +683,12 @@ export async function sacrificeResources(actor, amount, opts = {}) {
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });
     const atZero = before <= 0;
+    // The picker is posted first — this card says whether it was — so it sits
+    // above this card: "choose below" pointed at nothing (W16-CHOOSE-BELOW).
     if (!opts.skipCard) {
       await postSufferCard({
         title: `Sacrifice Resources (-${amount})`,
-        body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? " (choose below)" : " — choose one and apply it on the sheet"}.`,
+        body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? " (choose it on its card)" : " — choose one and apply it on the sheet"}.`,
         flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero, unpreparedMarked: false, redirected: true },
       });
     }
