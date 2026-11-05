@@ -523,18 +523,23 @@ let _endChain = Promise.resolve();
  * next session, and posts a note: the momentum is paid for the first focus
  * the session's ending notes, never again.
  *
+ * A refused write throws. On a relayed End the player's card has already
+ * posted ("+1 momentum") and the relay has no ack, so the handler first posts
+ * a note where that card is (issue #335 Y06, X13's shape); the local path's
+ * card says so itself (requestGmActionSafely → "could not be ended").
+ *
  * @param {{ questFocus?: string, connectionFocus?: string }} payload
- * @param {Object} [_ctx]
+ * @param {{ local?: boolean }} [ctx]
  * @returns {Promise<{ alreadyEnded: boolean }>} alreadyEnded: the session had
  *   ended — only the focus was corrected (postEndSessionCard posts no card)
  */
-export function applyEndSession(payload = {}, _ctx = {}) {
-  const run = _endChain.then(() => endSessionOnce(payload));
+export function applyEndSession(payload = {}, ctx = {}) {
+  const run = _endChain.then(() => endSessionOnce(payload, ctx));
   _endChain = run.catch(() => {});
   return run;
 }
 
-async function endSessionOnce(payload) {
+async function endSessionOnce(payload, ctx = {}) {
   const questFocus      = cleanFocus(payload.questFocus);
   const connectionFocus = cleanFocus(payload.connectionFocus);
 
@@ -546,7 +551,7 @@ async function endSessionOnce(payload) {
   // write must leave it as it was — marked ended on this client alone, every
   // retry would be taken for a second End.
   const state = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-  if (sessionAlreadyEnded(state)) return correctEndedSession(state, { questFocus, connectionFocus });
+  if (sessionAlreadyEnded(state)) return correctEndedSession(state, { questFocus, connectionFocus }, ctx);
   if (questFocus)      state.questFocus      = questFocus;
   if (connectionFocus) state.connectionFocus = connectionFocus;
   try {
@@ -569,7 +574,14 @@ async function endSessionOnce(payload) {
   // `pendingMove` lock). A write failure still throws (the card says so),
   // before anything else of the End has run.
   const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
-  await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(state, END_SESSION_FIELDS, "end session"));
+  try {
+    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(state, END_SESSION_FIELDS, "end session"));
+  } catch (err) {
+    if (ctx?.local === false) {
+      await postSessionNotEndedCard("The session was not ended — the world did not save it. No focus or momentum was recorded. Try End a Session again.");
+    }
+    throw err;
+  }
   Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
 
   // NARR-SESSION-SCENE (narrator-context audit 2026-07): End Session used
@@ -660,17 +672,27 @@ async function endSessionOnce(payload) {
  *
  * @param {Object} state — a copy of the stored campaignState
  * @param {{ questFocus: string, connectionFocus: string }} foci — cleaned
+ * @param {{ local?: boolean }} [ctx] — the relay context (endSessionOnce's)
  * @returns {Promise<{ alreadyEnded: true }>}
  */
-async function correctEndedSession(state, { questFocus, connectionFocus }) {
+async function correctEndedSession(state, { questFocus, connectionFocus }, ctx = {}) {
   const given = !!(questFocus || connectionFocus);
   const bonus = given && !hasFocus(state);
   if (given) {
     if (questFocus)      state.questFocus      = questFocus;
     if (connectionFocus) state.connectionFocus = connectionFocus;
     const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
-    await game.settings.set(MODULE_ID, "campaignState",
-      mergeOwnedFields(state, ["questFocus", "connectionFocus"], "end session (focus correction)"));
+    try {
+      await game.settings.set(MODULE_ID, "campaignState",
+        mergeOwnedFields(state, ["questFocus", "connectionFocus"], "end session (focus correction)"));
+    } catch (err) {
+      // A relayed correction posts no card on the player's client — this note
+      // was going to be the only word (issue #335 Y06).
+      if (ctx?.local === false) {
+        await postSessionNotEndedCard("This session has already ended. The focus for next session was not updated — the world did not save it, and no momentum was recorded. Try End a Session again.");
+      }
+      throw err;
+    }
   }
   if (bonus) await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — the first focus noted" });
   console.debug?.(`${MODULE_ID} | End a Session: session ${state.currentSessionId} has already ended — ${given ? "focus updated" : "nothing changed"}${bonus ? ", first focus: +1 momentum" : ""}.`);
@@ -695,6 +717,20 @@ async function correctEndedSession(state, { questFocus, connectionFocus }) {
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   }).catch(err => console.warn(`${MODULE_ID} | End a Session: note card failed:`, err?.message ?? err));
   return { alreadyEnded: true };
+}
+
+/**
+ * A relayed End a Session's write was refused: posted where the player's End
+ * card is, so its promise ("+1 momentum") is not the last word — the relay has
+ * no ack (issue #335 Y06; Begin's postSessionNotStartedCard, issue #329 X13).
+ *
+ * @param {string} text — what was not recorded (plain text)
+ */
+async function postSessionNotEndedCard(text) {
+  await ChatMessage.create({
+    content: `<div class="sf-session-card"><strong>End a Session</strong><p>${escapeHtml(text)}</p></div>`,
+    flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | End a Session: the not-ended card failed:`, err?.message ?? err));
 }
 
 

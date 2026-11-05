@@ -95,8 +95,12 @@ async function persistFlag({ text, visibility }) {
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Appends the flag to
  * `campaignState.safetyFlags`; Begin a Session lists them for review.
  *
+ * A refused write throws; on a relayed flag the player's "Flag set" card has
+ * already posted and the relay has no ack, so a note says so first, where that
+ * card is (issue #335 Y06). The local path's card carries its own footnote.
+ *
  * @param {{ text?: string, visibility?: string }} payload
- * @param {{ requester?: { name?: string } }} [ctx]
+ * @param {{ requesterId?: string|null, requester?: { name?: string }, local?: boolean }} [ctx]
  * @returns {Promise<boolean>} true when the flag was recorded
  */
 export async function applySafetyFlag(payload = {}, ctx = {}) {
@@ -117,7 +121,18 @@ export async function applySafetyFlag(payload = {}, ctx = {}) {
     createdBy:  ctx?.requester?.name ?? "unknown",
     createdAt:  new Date().toISOString(),
   }];
-  await game.settings.set(MODULE_ID, "campaignState", state);
+  try {
+    await game.settings.set(MODULE_ID, "campaignState", state);
+  } catch (err) {
+    // The note never repeats the flag's text: a private flag's card went to the GMs alone.
+    if (ctx?.local === false) {
+      await postRelayedNotRecordedCard("Set a Flag", "The flag was not saved — the world did not record it. Set the flag again.", {
+        flag:    "safetyFlagCard",
+        whisper: visibility === "private" ? requesterAndGmIds(ctx) : null,
+      });
+    }
+    throw err;
+  }
   return true;
 }
 
@@ -249,13 +264,15 @@ export async function openTakeABreakDialog() {
 /**
  * GM-relay handler for `"session.takeBreak"` (GM_ACTIONS in
  * src/multiplayer/gmRelay.js) — runs on the canonical GM. Records the
- * single-use "+1 on the next move" grant on campaignState.
+ * single-use "+1 on the next move" grant on campaignState. A refused write
+ * throws; on a relayed break the player's card ("Take +1 on the next move")
+ * has already posted, so a note says so first (issue #335 Y06).
  *
  * @param {Object} [_payload]
- * @param {Object} [_ctx]
+ * @param {{ local?: boolean }} [ctx]
  * @returns {Promise<void>}
  */
-export async function applyTakeBreak(_payload = {}, _ctx = {}) {
+export async function applyTakeBreak(_payload = {}, ctx = {}) {
   // Written on a copy: the card says a refused +1 "was not recorded", and the
   // cached state the move pipeline reads must agree — it used to keep the +1
   // (issue #321 U58).
@@ -263,7 +280,16 @@ export async function applyTakeBreak(_payload = {}, _ctx = {}) {
   // Consumed by the move pipeline on the next action roll
   // (src/moves/nextMoveAdd.js takeNextMoveAdd).
   state.nextMoveAdd = { value: 1, source: "take_a_break", setAt: new Date().toISOString() };
-  await game.settings.set(MODULE_ID, "campaignState", state);
+  try {
+    await game.settings.set(MODULE_ID, "campaignState", state);
+  } catch (err) {
+    if (ctx?.local === false) {
+      await postRelayedNotRecordedCard("Take a Break", "The +1 on the next move was not recorded — the world did not save it. Take a Break again to claim it.", {
+        flag: "takeBreakCard",
+      });
+    }
+    throw err;
+  }
 }
 
 
@@ -285,6 +311,32 @@ function notRecordedNote(res, what) {
     ? "no GM is connected. Try again once a GM has joined."
     : "the request failed — see the console.";
   return `<p class="muted sf-not-recorded"><em>${escapeHtml(what)} — ${escapeHtml(why)}</em></p>`;
+}
+
+/**
+ * The GM's word on a relayed write the world refused (issue #335 Y06): the
+ * player's card already posted on their client and the relay has no ack, so
+ * notRecordedNote never sees the refusal — this note goes where that card is
+ * (issue #329 X13's shape: public, or whispered as the card was).
+ *
+ * @param {string} title — the card's heading ("Set a Flag")
+ * @param {string} text — what was not recorded (plain text)
+ * @param {{ flag: string, whisper?: string[]|null }} opts — the card's own
+ *   module flag (keeps the note out of its command's predicate), and the
+ *   whisper list when the card was whispered
+ */
+async function postRelayedNotRecordedCard(title, text, { flag, whisper = null }) {
+  await ChatMessage.create({
+    content: `<div class="sf-safety-card"><strong>${escapeHtml(title)}</strong><p class="sf-not-recorded">${escapeHtml(text)}</p></div>`,
+    flags:   { [MODULE_ID]: { [flag]: true } },
+    whisper: whisper ?? undefined,
+  }).catch(err => console.warn(`${MODULE_ID} | ${title}: the not-recorded note failed:`, err?.message ?? err));
+}
+
+/** The relay's requester and every GM — who a private flag's note goes to. */
+function requesterAndGmIds(ctx) {
+  const gms = game.users?.filter?.(u => u.isGM)?.map(u => u.id) ?? [];
+  return [...new Set([ctx?.requesterId, ...gms].filter(Boolean))];
 }
 
 /**
