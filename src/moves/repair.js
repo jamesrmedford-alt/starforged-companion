@@ -27,7 +27,9 @@
  * both stores (clearBattered); integrity lives on the ship flag record
  * (repairIntegrity clamps to integrityMax); the supply trade debits
  * the repairing player's PC — Sacrifice Resources, so its last supply
- * marks unprepared (sufferExecutor.js markUnprepared). Companion health,
+ * marks unprepared (sufferExecutor.js markUnprepared), and an unprepared PC
+ * has no supply to trade (a loss of resources while unprepared goes to
+ * another suffer move — sufferExecutor.js isUnprepared). Companion health,
  * "broken module" and "other device" rows record the spend on the chat card
  * only (no schema yet).
  *
@@ -43,7 +45,7 @@ import { getCommandVehicleActorId, getShip, clearBattered, repairIntegrity, isSh
 import { requestGmAction }         from "../multiplayer/gmRelay.js";
 import { resolveSpeakerActorId }   from "../multiplayer/speaker.js";
 import { requesterOwnsActor }      from "./burnMomentum.js";
-import { markUnprepared, crewUnpreparedNote } from "./sufferExecutor.js";
+import { markUnprepared, crewUnpreparedNote, isUnprepared } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -120,6 +122,15 @@ export function resolveRepairActorId(message = null) {
 export async function openRepairDialog(message = null) {
   const { DialogV2 } = foundry.applications.api;
 
+  // The trade is Sacrifice Resources: an unprepared PC has no supply to give
+  // for points ("when you suffer a loss of resources while unprepared, …
+  // apply the cost to a different suffer move"), so the field is greyed and
+  // says why (REPAIR-TRADE-WHILE-UNPREPARED; the impact is the key — issue
+  // #338 D3). Apply and the GM re-check it.
+  const repairerId = resolveRepairActorId(message);
+  const repairer   = repairerId ? getActor(repairerId) : null;
+  const noTrade    = repairer && isUnprepared(repairer) ? unpreparedTradeReason(repairer.name) : null;
+
   const content = `
     <form class="sf-repair-form">
       <p class="hint">Allocate Repair points per play kit p. 7. Points are
@@ -144,8 +155,9 @@ export async function openRepairDialog(message = null) {
         </label>
         <label>
           <span>Extra points from Sacrifice Resources (−1 supply each, max 3)</span>
-          <input type="number" name="extra" min="0" max="3" step="1" value="0">
+          <input type="number" name="extra" min="0" max="3" step="1" value="0"${noTrade ? " disabled" : ""}>
         </label>
+        ${noTrade ? `<p class="hint">Unavailable: ${escapeHtml(noTrade)}.</p>` : ""}
       </fieldset>
 
       <fieldset>
@@ -188,8 +200,14 @@ export async function openRepairDialog(message = null) {
 
         const actorId = alloc.extra > 0 ? resolveRepairActorId(message) : null;
         // Traded points need the supply to pay for them (the GM re-checks):
-        // say so here rather than relay a repair that cannot be paid.
-        const supply = actorId ? currentSupply(getActor(actorId)) : null;
+        // say so here rather than relay a repair that cannot be paid — and an
+        // unprepared PC has none to trade, whatever the meter reads.
+        const payer = actorId ? getActor(actorId) : null;
+        if (payer && isUnprepared(payer)) {
+          ui.notifications?.warn(`Repair: ${unpreparedTradeReason(payer.name)}. Apply without the trade.`);
+          return;
+        }
+        const supply = payer ? currentSupply(payer) : null;
         if (supply !== null && supply < alloc.extra) {
           ui.notifications?.warn(`Repair: only ${supply} supply to trade — the ${alloc.extra} extra points need ${alloc.extra}.`);
           return;
@@ -270,12 +288,13 @@ export async function applyRepairSpends(payload = {}, ctx = {}) {
   //    resolved on their own client), never the GM's game.user.character.
   //    The traded points exist only once their supply is paid, so the payment
   //    settles before any repair lands: a missing payer, another player's PC,
-  //    too little supply or a failed debit repairs nothing (issue #300 F04 —
-  //    the full allocation used to apply with a warning on the card).
+  //    an unprepared payer, too little supply or a failed debit repairs
+  //    nothing (issue #300 F04 — the full allocation used to apply with a
+  //    warning on the card).
   if (extra > 0) {
     const payment = await paySupplyTrade(payload.actorId, extra, ctx);
     if (!payment.paid) {
-      await postRepairCard(alloc, [payment.line, "No repairs were applied — Repair again with a trade the supply covers."]);
+      await postRepairCard(alloc, [payment.line, payment.retry ?? "No repairs were applied — Repair again with a trade the supply covers."]);
       return;
     }
     actions.push(payment.line);
@@ -331,12 +350,28 @@ function currentSupply(actor) {
 }
 
 /**
+ * Why an unprepared PC cannot trade: the trade is Sacrifice Resources, and
+ * "when you suffer a loss of resources while unprepared, … apply the cost to
+ * a different suffer move" — there is no supply to give for points.
+ *
+ * @param {string} name — the PC's name (plain text)
+ * @returns {string} plain text
+ */
+function unpreparedTradeReason(name) {
+  return `${name} is unprepared — a loss of resources goes to another suffer move, so there is no supply to trade for points`;
+}
+
+/**
  * Pay `extra` supply from the repairing PC, in full or not at all. Permission
  * is the REQUESTER's (ctx), not this GM client's: a player may only spend
- * their own PC's supply.
+ * their own PC's supply. An unprepared PC pays nothing: a loss of resources
+ * while unprepared goes to another suffer move, at any supply (issue #338 D3's
+ * rule — REPAIR-TRADE-WHILE-UNPREPARED).
  *
- * @returns {Promise<{ paid: boolean, line: string }>} whether the whole trade
- *   was paid, and the card line describing what happened
+ * @returns {Promise<{ paid: boolean, line: string, retry?: string }>} whether
+ *   the whole trade was paid, the card line describing what happened, and —
+ *   when it was not paid and a retry with less supply would not help — what
+ *   to do instead
  */
 async function paySupplyTrade(actorId, extra, ctx) {
   const pts   = `${extra} repair point${extra === 1 ? "" : "s"}`;
@@ -349,6 +384,13 @@ async function paySupplyTrade(actorId, extra, ctx) {
   if (!requesterOwnsActor(actor, ctx)) {
     console.warn(`${MODULE_ID} | repair: requester ${ctx?.requesterId ?? "unknown"} does not own ${actor.name}; supply not debited.`);
     return { paid: false, line: `<em>${name}'s supply was not debited (not your character).</em>` };
+  }
+  if (isUnprepared(actor)) {
+    return {
+      paid:  false,
+      line:  `<strong>${name}</strong> is <strong>unprepared</strong> — a loss of resources goes to another suffer move, so no supply can be traded for points; nothing was spent.`,
+      retry: "No repairs were applied — Repair again without the trade.",
+    };
   }
   const before = currentSupply(actor);
   if (before < extra) {

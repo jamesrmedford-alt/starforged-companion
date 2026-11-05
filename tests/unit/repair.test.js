@@ -279,15 +279,19 @@ describe("applyRepairSpends", () => {
       expect(lastCard()).not.toMatch(/unprepared/);
     });
 
-    it("already unprepared: it stays marked, and the card does not claim a new mark", async () => {
+    // An unprepared PC has no supply to trade — a loss of resources while
+    // unprepared goes to another suffer move (REPAIR-TRADE-WHILE-UNPREPARED;
+    // repairTradeWhileUnprepared.test.js). It used to pay 1 → 0 here.
+    it("already unprepared: the trade is refused — the supply, the impact and the ship stay, and no new mark is claimed", async () => {
       installShip({ integrity: 1 });
       const pc = installPc("pc-k", { supply: 1, ownership: { "pl-1": 3 } });
       pc.system.debility.unprepared = true;
 
       await applyRepairSpends(trade("pc-k"), PLAYER_CTX);
 
-      expect(pc.system.supply.value).toBe(0);
+      expect(pc.system.supply.value).toBe(1);
       expect(pc.system.debility.unprepared).toBe(true);
+      expect(getShip("ship-1").integrity).toBe(1);
       expect(lastCard()).not.toMatch(/marked <strong>unprepared/);
     });
 
