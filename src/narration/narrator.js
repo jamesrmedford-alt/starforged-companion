@@ -17,6 +17,7 @@ import {
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
+import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
@@ -950,6 +951,11 @@ export function runPostNarrationPasses(
 }
 
 async function runDiscoveryDetection(narrationText, resolution, campaignState, options) {
+  const narrationId = options.narrationId ?? null;
+  // Nothing is captured for a narration the X-Card removed — checked when the
+  // pass starts (its timer has fired: no Claude call) and when its reply
+  // returns; each router checks again before every write (XCARD-LATE-CAPTURE).
+  if (isNarrationXCarded(narrationId)) return;
   try {
     const detection = await runCombinedDetectionPass(
       narrationText,
@@ -957,7 +963,7 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       resolution.outcome,
       campaignState,
     );
-    const narrationId = options.narrationId ?? null;
+    if (isNarrationXCarded(narrationId)) return;
     await routeWorldJournalResults(detection.worldJournal, campaignState, { narrationId });
     // Renames before drafts: a placeholder figure revealed to have a proper
     // name is renamed in place, not duplicated into a new connection card.
@@ -2680,6 +2686,9 @@ export function schedulePacedTierUpdate(narrationText, matchedEntityIds, matched
  * @returns {Promise<void>}
  */
 export async function runPacedDetection(narrationText, campaignState, options = {}) {
+  // An X-carded narration's capture writes nothing (XCARD-LATE-CAPTURE): see
+  // runDiscoveryDetection.
+  if (isNarrationXCarded(options.narrationId)) return;
   try {
     const detection = await runCombinedDetectionPass(
       narrationText,
@@ -2687,6 +2696,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
       PACED_NARRATIVE_OUTCOME,
       campaignState,
     );
+    if (isNarrationXCarded(options.narrationId)) return;
     // The inciting incident records its own cohesive lore entry (the "Situation"
     // line), so it asks us to skip the per-item lore spray that would otherwise
     // scatter the opening fiction across several loosely-worded WJ-Lore pages.

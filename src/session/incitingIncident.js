@@ -18,6 +18,7 @@
 import { rollOracle } from "../oracles/roller.js";
 import { stripMarkup } from "../audio/segments.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
+import { isNarrationXCarded } from "../context/safety.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -530,7 +531,8 @@ export async function runIncitingIncident(campaignState, { authorId = null } = {
       // undoes what this capture records (issue #329 X01).
       await narrator.runPacedDetection(prose, campaignState ?? {}, { skipLore: true, narrationId });
       await narrator.runNarrationTierUpdate(prose, campaignState ?? {}, { narrationId });
-      if (situation) {
+      // Not for an inciting card the X-Card removed meanwhile (XCARD-LATE-CAPTURE).
+      if (situation && !isNarrationXCarded(narrationId)) {
         const { recordLoreDiscovery } = await import("../world/worldJournal.js");
         await recordLoreDiscovery("Inciting Incident", {
           text:             situation,

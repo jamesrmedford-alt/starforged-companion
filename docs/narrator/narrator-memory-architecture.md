@@ -226,7 +226,11 @@ narration's pending draft row too, the row going back to pending —
 MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED),
 and the state transitions it applied to existing entries (a faction's stance
 on its record included) — and the X-Card's finish undoes it by id
-(`retractNarrationCapture`, issue #329 X01; XCARD-CAPTURE-TRANSITIONS). So
+(`retractNarrationCapture`, issue #329 X01; XCARD-CAPTURE-TRANSITIONS). What
+the capture had not written yet when the card was played it never writes:
+each capture write checks the stored `xCardedNarrationIds` first
+(`isNarrationXCarded`, `safety.js` — the passes on entry and when their Claude
+reply returns, the routers before each write; XCARD-LATE-CAPTURE). So
 does what a scene end migrated from the narration's ledger entries before the
 card was played (issue #335 Y01 — the pick is session-scoped, the ledger is
 empty by then): the tier detail, the archived Lore page and the LAST KNOWN

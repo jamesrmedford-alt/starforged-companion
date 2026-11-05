@@ -45,6 +45,7 @@ import { getCreature,   createCreature }   from "./creature.js";
 import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
 import { HONORIFIC_PREFIXES, wholeWordPattern } from "../context/relevanceResolver.js";
+import { isNarrationXCarded }              from "../context/safety.js";
 
 import {
   recordLoreDiscovery,
@@ -538,6 +539,9 @@ function detectionFromParsed(parsed, campaignState) {
  */
 export async function routeEntityDrafts(entities, campaignState, options = {}) {
   const narrationId = typeof options.narrationId === "string" && options.narrationId ? options.narrationId : null;
+  // Nothing for a narration the X-Card removed — checked before each write
+  // (XCARD-LATE-CAPTURE): no connection, faction page or draft card from it.
+  const removed = () => isNarrationXCarded(narrationId);
   const created = [];
   const queued  = [];
   const pendingNormalized = new Set(
@@ -545,6 +549,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   );
 
   for (const entity of entities ?? []) {
+    if (removed()) return { created, queued: [] };
     if (!entity?.name || !entity?.type) continue;
     if (!ENTITY_GETTERS[entity.type]) continue;
     // Cross-type dedup. A name that already exists anywhere in
@@ -575,9 +580,14 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
           // — issue #338 D6(ii)).
           ...(narrationId ? { createdFromNarrationId: narrationId } : {}),
         }, campaignState);
+        // An X-Card landing while the card is made deletes it (the stamp
+        // above); nothing more is added to it — no bond, portrait or facts.
+        if (removed()) return { created, queued: [] };
         await postCreationEnrichment("connection", record, campaignState);
+        if (removed()) return { created, queued: [] };
         await registerConnectionOnActiveCharacter(record, { actorId: options.actorId ?? null }).catch(err =>
           console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
+        if (removed()) return { created, queued: [] };
         // The narration that introduced them recorded their identity anchor
         // under their name, before the card existed.
         await promoteNewEntityLedgerSubjects(entity.name, "connection", record, campaignState);
@@ -617,7 +627,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   // Make a Connection: the NPC its narration names may sit in a pending draft
   // row the detection left out — confirm it as the roller's (issue #325 W23),
   // stamped with the narration like an auto-created one.
-  if (options.autoCreateConnection && !created.length && options.namingText) {
+  if (options.autoCreateConnection && !created.length && options.namingText && !removed()) {
     const confirmed = await confirmNamedPendingConnection(options.namingText, options.actorId ?? null, narrationId)
       .catch(err => {
         console.warn(`${MODULE_ID} | routeEntityDrafts: confirming the pending connection failed:`, err?.message ?? err);
@@ -626,6 +636,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     if (confirmed) created.push(confirmed);
   }
 
+  if (removed()) return { created, queued: [] };
   if (queued.length) {
     await postDraftEntityCard(queued, campaignState, { source: options.source, actorId: options.actorId, narrationId });
   }
@@ -674,6 +685,8 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
   const applied      = [];
 
   for (const { from, to } of renames) {
+    // Nothing for a narration the X-Card removed (XCARD-LATE-CAPTURE).
+    if (isNarrationXCarded(narrationId)) break;
     const fromNorm = normalizeEntityName(from);
     const toNorm   = normalizeEntityName(to);
     if (!fromNorm || !toNorm || fromNorm === toNorm) continue;
@@ -703,7 +716,8 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     await promote(to, "connection", target.rec, campaignState);
   }
 
-  if (applied.length) {
+  // The notice names the removed prose's names too.
+  if (applied.length && !isNarrationXCarded(narrationId)) {
     const postNotice = deps.postNotice ?? postRenameNoticeCard;
     try {
       await postNotice(applied);
@@ -1068,7 +1082,10 @@ function lowerSalience(a, b) {
  * a lore, threat, faction or place entry, a Session Log beat and a tier
  * detail alike, so an X-Card on that narration undoes them (issue #329 X01;
  * rules/narrator-memory.md 6b) — and the entry a state transition changes
- * (XCARD-CAPTURE-TRANSITIONS).
+ * (XCARD-CAPTURE-TRANSITIONS). Nothing is written once an X-Card has
+ * removed that narration — each write checks the store first
+ * (XCARD-LATE-CAPTURE): the X-Card's undo has run, so a later write would
+ * stand.
  *
  * @param {Object} wj — parsed worldJournal section
  * @param {Object} campaignState
@@ -1079,6 +1096,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   if (!wj) return;
   // Only a real id is stamped: a write without one owns the entry it touches.
   const fromNarration = typeof narrationId === "string" && narrationId ? { narrationId } : {};
+  const removed = () => isNarrationXCarded(narrationId);
 
   // Below-threshold lore/threat items are transient scene beats: route them to
   // the running session log (D7 / F18) instead of spawning a WJ entry each.
@@ -1091,6 +1109,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   const entityLoreThreshold = lowerSalience(loreThreshold, TIER_SALIENCE_FLOOR);
   for (const lore of wj.lore ?? []) {
     if (!lore?.title) continue;
+    if (removed()) return;
     // Entity-specific lore (Task D): if the detector flagged this as a fact
     // about a specific known entity, migrate it to that entity's generative
     // tier instead of the WJ lore journal. Keeps per-entity detail on the
@@ -1130,6 +1149,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   const threatThreshold = getSalienceThreshold("threats");
   for (const threat of wj.threats ?? []) {
     if (!threat?.name) continue;
+    if (removed()) return;
     if (!passesSalience(threat.salience, threatThreshold)) {
       await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "", ...fromNarration });
       continue;
@@ -1139,12 +1159,14 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
 
   for (const faction of wj.factionUpdates ?? []) {
     if (!faction?.name) continue;
+    if (removed()) return;
     if (entityExistsForName(faction.name, "faction", campaignState)) continue;
     await recordFactionIntelligence(faction.name, { ...faction, ...fromNarration }, campaignState);
   }
 
   for (const location of wj.locationUpdates ?? []) {
     if (!location?.name) continue;
+    if (removed()) return;
     if (entityExistsForName(location.name, "location", campaignState)) continue;
     await recordLocation(location.name, { ...location, ...fromNarration }, campaignState);
   }
@@ -1152,6 +1174,7 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
   // A transition changes an entry the capture did not make — stamped all the
   // same, so the X-Card undoes it (XCARD-CAPTURE-TRANSITIONS).
   for (const transition of wj.stateTransitions ?? []) {
+    if (removed()) return;
     await applyStateTransition(transition, campaignState, fromNarration);
   }
 }
@@ -1402,11 +1425,16 @@ const TIER_SALIENCE_FLOOR = "notable";
  * @param {Function} [options.callTierAPI]  — async (prompt) => raw JSON text
  * @param {string}   [options.narrationId]  — the narration read; stamped on each detail, for the X-Card (issue #329 X01)
  * @returns {Promise<Array>}                — list of applied { journalId, detail }
+ *
+ * Nothing for a narration the X-Card removed: checked before the Claude call
+ * (a timer that fires after the X-Card pays for nothing) and before each
+ * detail's write (XCARD-LATE-CAPTURE).
  */
 export async function appendGenerativeTierUpdates(
   narrationText, entityRefs, sessionId, sessionNum, options = {},
 ) {
   if (!Array.isArray(entityRefs) || !entityRefs.length) return [];
+  if (isNarrationXCarded(options.narrationId)) return [];
 
   const records = entityRefs
     .map(ref => {
@@ -1435,6 +1463,7 @@ export async function appendGenerativeTierUpdates(
   const applied = [];
 
   for (const update of parsed.updates ?? []) {
+    if (isNarrationXCarded(options.narrationId)) break;
     if (!update?.entityId || !update?.detail) continue;
     // Salience gate (fail-open) — keep consequential developments, drop trivia.
     if (!passesSalience(update.salience, TIER_SALIENCE_FLOOR)) continue;
@@ -1894,6 +1923,9 @@ async function confirmDraft(message, draftIndex, opts = {}) {
           createdFromDraft:       { messageId: message?.id ?? null, index: draftIndex },
         } : {}),
       }, campaignState);
+      // An X-Card on that narration meanwhile takes the stamped card back:
+      // no bond for it (XCARD-LATE-CAPTURE).
+      if (isNarrationXCarded(opts.narrationId)) return null;
       await registerConnectionOnActiveCharacter(record, {
         actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
       }).catch(err =>
@@ -1988,6 +2020,8 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     await promoteNewEntityLedgerSubjects(draft.name, draft.type, record, campaignState);
   }
 
+  // The X-Card's finish reopened the row with the card it deleted.
+  if (isNarrationXCarded(opts.narrationId)) return null;
   await setDraftStatus(message, draftIndex, "confirmed");
   return record;
 }

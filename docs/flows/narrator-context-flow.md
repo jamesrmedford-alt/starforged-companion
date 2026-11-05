@@ -200,7 +200,21 @@ drops the tier details — a detail the GM had promoted takes the line its ⤴
 Promote appended with it (the entry keeps `promotedText` beside its
 `narrationId`): off the sheet's Notes tab for an NPC card or a ship, else out
 of the record's notes (issue #338 D7) — most of these restate no sidecar truth, so
-`propagateRetraction` never reached them. The card may be played after the
+`propagateRetraction` never reached them. A capture still running when the
+card is played writes nothing more (XCARD-LATE-CAPTURE — the undo reaches only
+what was written before it): every capture write checks the STORED
+`xCardedNarrationIds` first (`safety.js` `isNarrationXCarded`, never a
+caller's copy) — the detection passes (`runDiscoveryDetection`,
+`runPacedDetection`) and the tier pass (`appendGenerativeTierUpdates`) on
+entry, so a timer that fires after the card makes no Claude call, and again
+when their reply returns; the routers before each write
+(`routeWorldJournalResults`, `applyEntityRenames` and its notice,
+`routeEntityDrafts` — its draft card, faction surface and pending confirm —
+and the tier details); a Make a Connection's card between the steps that
+make it (its bond, its portrait, its promoted facts, a pending row's
+"confirmed" — `confirmDraft`), the inciting capture's own Lore entry; and a
+portrait whose entity is gone when the image returns is not stored
+(`generatePortrait`). The card may be played after the
 scene ended, when the ledger is empty (the pick is session-scoped): what the
 scene end migrated carries the truth's id too (issue #335 Y01) — the tier
 detail, the archived Lore page (a page it rewrote is restored) and the LAST

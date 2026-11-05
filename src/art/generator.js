@@ -89,6 +89,14 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
   const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt);
 
   if (!asset) return null;
+  // The entity may be gone when the image comes back — a connection the
+  // X-Card took back with the narration that made it, while the call was out
+  // (issue #338 D6(ii); XCARD-LATE-CAPTURE): stored, the portrait would be an
+  // Art Cache entry nothing links to.
+  if (!getEntityDocument(entityType, journalEntryId)) {
+    console.debug(`${MODULE_ID} | Art: ${entityType} ${journalEntryId} was deleted before its portrait came back — not stored.`);
+    return null;
+  }
 
   await storeArtAsset(asset, campaignState);
   await linkPortraitToEntity(journalEntryId, entityType, asset._id);

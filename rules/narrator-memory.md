@@ -131,7 +131,10 @@ layers. This file is the never-break list.
    connection it auto-creates or confirms from a pending draft row, deleted
    while unused (the row back to pending), else named to the GMs (D6(ii);
    MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED) (issue #329 X01 — a new capture writer takes the id from its
-   caller), and the state transitions
+   caller, and checks the stored `xCardedNarrationIds` right before it
+   writes — `isNarrationXCarded`, after any Claude call — so a capture still
+   running when the card is played writes nothing more: XCARD-LATE-CAPTURE),
+   and the state transitions
    it applies to existing entries, a faction's record stance included
    (XCARD-CAPTURE-TRANSITIONS); so does what a scene end migrates from its
    ledger entries — the tier detail, the archived Lore page and the LAST

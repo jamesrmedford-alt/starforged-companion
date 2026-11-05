@@ -9,7 +9,8 @@
  * - X-Card: suppressScene() (the canonical-GM "xcard.activate" relay
  *   handler), playXCard() / postXCardCard() (play + card, any client),
  *   resumeNarrationAfterXCard() / clearXCard() and the card's GM-only
- *   resume button binder bindXCardCard()
+ *   resume button binder bindXCardCard(); isNarrationXCarded() — the live
+ *   check every capture write makes (XCARD-LATE-CAPTURE)
  *
  * The safety section is always the first element in every narrator system
  * prompt (buildNarratorSystemPrompt renders it ahead of all creative
@@ -184,6 +185,30 @@ export async function suppressScene(_payload, ctx) {
 }
 
 const NO_REMOVAL = Object.freeze({ cards: [], retracted: [] });
+
+/**
+ * True when an X-Card removed this narration: its id is on the STORED
+ * campaignState's `xCardedNarrationIds`, which the pause's own write sets
+ * (applyXCardToNarratorMemory). Read live, never from a caller's copy — a
+ * narration's capture (the detection and tier passes, ~2 s after it posts,
+ * then a Claude call) holds a copy from before the X-Card, and every capture
+ * write checks this right before it writes, so nothing is recorded for the
+ * removed narration once the X-Card's finish has undone what came before
+ * (XCARD-LATE-CAPTURE). False for no id, or when the store cannot be read.
+ *
+ * @param {string|null|undefined} narrationId
+ * @returns {boolean}
+ */
+export function isNarrationXCarded(narrationId) {
+  if (typeof narrationId !== "string" || !narrationId) return false;
+  try {
+    const removed = game.settings.get(MODULE_ID, "campaignState")?.xCardedNarrationIds;
+    return Array.isArray(removed) && removed.includes(narrationId);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | X-Card: the removed narrations could not be read:`, err?.message ?? err);
+    return false;
+  }
+}
 
 /**
  * Take the narration this X-Card answers out of narrator memory on `cs`, the
