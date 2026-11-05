@@ -2163,7 +2163,8 @@
 }
 
 .sf-draft-row-confirmed,
-.sf-draft-row-dismissed {
+.sf-draft-row-dismissed,
+.sf-draft-row-xcarded {
   opacity: 0.7;
 }
 
@@ -2218,6 +2219,10 @@
 
 .sf-draft-status-dismissed {
   color: #8a3a3a;
+}
+
+.sf-draft-status-xcarded {
+  color: var(--color-text-dark-secondary, #555);
 }
 
 .sf-draft-entity-hint {

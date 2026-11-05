@@ -207,7 +207,8 @@ relayed sidecar of that narration is dropped. What the narration's capture
 (the detection and tier passes) recorded carries the same id — World Journal
 entries (with the versions they replaced; a faction the draft routing
 surfaces, issue #335 Y02), Session Log beats, tier details, a placeholder
-figure's rename (the X-Card puts the placeholder name back),
+figure's rename (the X-Card puts the placeholder name back), the draft card
+it queued (its pending rows are withdrawn, issue #338 D6(i)),
 and the state transitions it applied to existing entries (a faction's stance
 on its record included) — and the X-Card's finish undoes it by id
 (`retractNarrationCapture`, issue #329 X01; XCARD-CAPTURE-TRANSITIONS). So

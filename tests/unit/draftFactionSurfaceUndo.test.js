@@ -26,7 +26,10 @@ const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
 const SESSION = 'sess-7';
 const stored   = () => game.settings.get(MODULE_ID, 'campaignState');
-const syncChat = () => { global.game.messages = { contents: ChatMessage._created.slice() }; };
+const syncChat = () => {
+  const contents = ChatMessage._created.slice();
+  global.game.messages = { contents, get: (id) => contents.find(m => m.id === id) ?? null };
+};
 
 const GM = { id: 'gm-1', isGM: true, active: true };
 const PL = { id: 'pl-1', isGM: false, active: true };
@@ -140,6 +143,8 @@ describe('issue #335 Y02 — the faction a removed narration\'s capture surfaced
     // The removed narration's faction is gone from FACTION LANDSCAPE and the journal.
     expect(landscape()).not.toContain('The Velvet Knife');
     expect(journals.get(JOURNAL_NAMES.factions)?.pages.contents.map(p => p.name) ?? []).toEqual([]);
+    // Its draft row is withdrawn too (issue #338 D6(i)).
+    expect(draftCard()?.flags?.[MODULE_ID]?.drafts?.[0]?.status).toBe('xCarded');
   });
 
   it("control: a faction the same capture routes through factionUpdates is stamped and leaves with the X-Card", async () => {

@@ -620,7 +620,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   if (queued.length) {
-    await postDraftEntityCard(queued, campaignState, { source: options.source, actorId: options.actorId });
+    await postDraftEntityCard(queued, campaignState, { source: options.source, actorId: options.actorId, narrationId });
   }
 
   return { created, queued };
@@ -1628,6 +1628,9 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   // The PC the narration was for: a confirmed connection's bond Item goes to
   // them (confirmDraft), not the first PC (issue #321 U23).
   const actorId = typeof options.actorId === "string" && options.actorId ? options.actorId : null;
+  // The narration whose capture queued these rows: an X-Card on it withdraws
+  // the ones still pending (withdrawNarrationDrafts — issue #338 D6(i)).
+  const narrationId = typeof options.narrationId === "string" && options.narrationId ? options.narrationId : null;
 
   try {
     return await ChatMessage.create({
@@ -1639,6 +1642,7 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
           drafts,
           source,
           ...(actorId ? { actorId } : {}),
+          ...(narrationId ? { narrationId } : {}),
         },
       },
     });
@@ -1665,6 +1669,8 @@ function renderDraftCardHtml(drafts) {
       actions = `<span class="sf-draft-status sf-draft-status-confirmed">✓ Confirmed</span>`;
     } else if (status === "dismissed") {
       actions = `<span class="sf-draft-status sf-draft-status-dismissed">✕ Dismissed</span>`;
+    } else if (status === DRAFT_XCARDED) {
+      actions = `<span class="sf-draft-status sf-draft-status-xcarded">Withdrawn — X-Card</span>`;
     } else {
       actions =
         `<button class="sf-draft-btn sf-draft-confirm" ` +
@@ -1673,7 +1679,7 @@ function renderDraftCardHtml(drafts) {
         `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
     }
 
-    const rowClass = `sf-draft-row sf-draft-row-${status}`;
+    const rowClass = `sf-draft-row sf-draft-row-${String(status).toLowerCase()}`;
     return (
       `<li class="${rowClass}">` +
       `<div class="sf-draft-row-info">` +
@@ -1990,6 +1996,24 @@ async function handleDraftDismiss(message, draftIndex) {
 const _draftCardWrites = new Map();
 
 async function setDraftStatus(message, draftIndex, status) {
+  await changeDraftRows(message, (drafts) => {
+    const at = drafts.findIndex(d => d.index === draftIndex);
+    if (at < 0) return null;
+    drafts[at] = { ...drafts[at], status };
+    return drafts;
+  });
+}
+
+/**
+ * Change a draft card's rows on its live copy, one write at a time per card
+ * (the queue above): `change` gets a copy of the live rows and returns the
+ * rows to write, or null to write nothing. Resolves to `change`'s result.
+ *
+ * @param {ChatMessage} message
+ * @param {(drafts: Object[]) => Object[]|null} change
+ * @returns {Promise<Object[]|null>}
+ */
+async function changeDraftRows(message, change) {
   const id = message?.id;
   const prev = _draftCardWrites.get(id);
   let release;
@@ -1999,14 +2023,56 @@ async function setDraftStatus(message, draftIndex, status) {
     if (prev) await prev;
     const live = globalThis.game?.messages?.get?.(id) ?? message;
     const drafts = Array.isArray(live?.flags?.[MODULE_ID]?.drafts) ? [...live.flags[MODULE_ID].drafts] : [];
-    const at = drafts.findIndex(d => d.index === draftIndex);
-    if (at < 0) return;
-    drafts[at] = { ...drafts[at], status };
-    await updateDraftCard(live, drafts);
+    const next = change(drafts);
+    if (next) await updateDraftCard(live, next);
+    return next;
   } finally {
     release();
     if (_draftCardWrites.get(id) === done) _draftCardWrites.delete(id);
   }
+}
+
+/** A draft row the X-Card withdrew: not pending, not dismissed (withdrawNarrationDrafts). */
+const DRAFT_XCARDED = "xCarded";
+
+/**
+ * Withdraw the draft rows X-carded narrations queued (issue #338 D6(i) — U07
+ * full exclusion): each ◈ New Entities card stamped with one of their ids
+ * (postDraftEntityCard's `narrationId`) has its still-pending rows marked
+ * `xCarded` and re-rendered, so Confirm can no longer mint an NPC from the
+ * removed prose and the names stop suppressing re-detection and riding the
+ * detection prompt's PENDING DRAFTS (collectPendingDraftNames reads pending
+ * rows only). The names are not added to `dismissedEntities`: a later,
+ * genuine mention proposes them again. A row the GM already confirmed or
+ * dismissed stands. Runs on the canonical GM in the X-Card's finish
+ * (retractNarrationCapture). Fail-open per card.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<number>} rows withdrawn
+ */
+export async function withdrawNarrationDrafts(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  if (!removed.size) return 0;
+  let withdrawn = 0;
+  for (const message of [...(globalThis.game?.messages?.contents ?? [])]) {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.draftEntityCard || !removed.has(f.narrationId)) continue;
+    try {
+      let rows = 0;
+      await changeDraftRows(message, (drafts) => {
+        const next = drafts.map((d) => {
+          if (d?.status && d.status !== "pending") return d;
+          rows += 1;
+          return { ...d, status: DRAFT_XCARDED };
+        });
+        return rows ? next : null;
+      });
+      withdrawn += rows;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: withdrawing the draft rows on card ${message?.id} failed:`, err?.message ?? err);
+    }
+  }
+  return withdrawn;
 }
 
 async function updateDraftCard(message, drafts) {

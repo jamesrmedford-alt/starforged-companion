@@ -257,16 +257,18 @@ const TIER_ENTITY_TYPES = ['connection', 'ship', 'settlement', 'faction', 'plane
  * and archived lore go the same way, and a LAST KNOWN value it set gives way
  * to the newest one before it no removed narration set (lastKnownWithout).
  * A placeholder figure the capture renamed to the removed prose's name gets
- * its name back (revertNarrationRenames, issue #335 Y02).
+ * its name back (revertNarrationRenames, issue #335 Y02), and the draft rows
+ * it queued for the GM's review are withdrawn (withdrawNarrationDrafts,
+ * issue #338 D6(i)).
  * Runs on the canonical GM after the pause is written (suppressScene's
  * finish). Fail-open: never throws.
  *
  * @param {string[]} narrationIds — the X-carded narrations
- * @returns {Promise<{ entries: Object, tierDetails: number, lastKnown: number, renames: number }>}
+ * @returns {Promise<{ entries: Object, tierDetails: number, lastKnown: number, renames: number, drafts: number }>}
  */
 export async function retractNarrationCapture(narrationIds) {
   const removed = new Set((narrationIds ?? []).filter(id => typeof id === 'string' && id));
-  const out = { entries: { restored: 0, retracted: 0, deleted: 0, beats: 0 }, tierDetails: 0, lastKnown: 0, renames: 0 };
+  const out = { entries: { restored: 0, retracted: 0, deleted: 0, beats: 0 }, tierDetails: 0, lastKnown: 0, renames: 0, drafts: 0 };
   if (!removed.size) return out;
   try {
     out.entries = await undoNarrationEntries([...removed]);
@@ -296,6 +298,14 @@ export async function retractNarrationCapture(narrationIds) {
     }
   }
   out.renames = await revertNarrationRenames(removed);
+  // The rows it queued on the GM's ◈ New Entities card are withdrawn, so a
+  // Confirm cannot mint an NPC from the removed prose (issue #338 D6(i)).
+  try {
+    const { withdrawNarrationDrafts } = await import('../entities/entityExtractor.js');
+    out.drafts = await withdrawNarrationDrafts([...removed]);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: withdrawing the capture's draft rows failed:`, err?.message ?? err);
+  }
   return out;
 }
 
