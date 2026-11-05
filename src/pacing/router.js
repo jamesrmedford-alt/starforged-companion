@@ -182,9 +182,10 @@ export async function routePacedInput({
 
   const recentMoveDensity = getRecentMoveDensity(pacingConfig.densityWindow);
   const combatActive      = await detectCombatActive();
+  const sceneChallenges   = await detectOpenSceneChallenges();
 
   const result = await classifyInput({
-    playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey, combatActive,
+    playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey, combatActive, sceneChallenges,
   });
 
   // Backstop: during an active fight the classifier must not hedge. If it
@@ -266,6 +267,27 @@ async function detectCombatActive() {
     return Array.isArray(tracks) && tracks.some(t => t.type === "combat" && !t.completed);
   } catch {
     return false;
+  }
+}
+
+/**
+ * The open scene challenges' names, for the classifier as the fight is
+ * (detectCombatActive): within one, Face Danger and Secure an Advantage are
+ * its own moves (issue #338 D2), and a paced "Roll Face Danger" during a
+ * challenge forced the ordinary move — the classifier knew of no challenge
+ * (PACING-ROLL-NO-SCENE-CHALLENGE). Fails open to none.
+ *
+ * @returns {Promise<string[]>}
+ */
+async function detectOpenSceneChallenges() {
+  try {
+    const { listProgressTracks } = await import("../ui/progressTracks.js");
+    const tracks = await listProgressTracks();
+    return (Array.isArray(tracks) ? tracks : [])
+      .filter(t => t.type === "scene_challenge" && !t.completed)
+      .map(t => String(t.label ?? ""));
+  } catch {
+    return [];
   }
 }
 

@@ -59,6 +59,7 @@ import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
 import { readCharacterSnapshot, getPlayerActors } from '../character/actorBridge.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
+import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -2926,6 +2927,12 @@ function opensSentence(text, index) {
  * nomination was guarded, so the card offered a Compel against a PC (issue
  * #325 W36).
  *
+ * A scene-challenge nomination (issue #338 D2) is named in prose by the move
+ * it varies — "…would be a Face Danger": a hint naming Face Danger or Secure
+ * an Advantage is that move within the challenge the classifier was told of,
+ * so the button keeps the variant. The ordinary move replaced it, and the
+ * Roll left the challenge unscored (PACING-ROLL-NO-SCENE-CHALLENGE).
+ *
  * @param {string} narrationText
  * @param {string|null} classifierMove
  * @param {{ playerText: string, speakerName?: string|null, pcActors?: Array }} [guard]
@@ -2936,6 +2943,10 @@ export function reconcileSuggestedMove(narrationText, classifierMove, guard = nu
   let hinted = extractMoveFromNarrationHint(narrationText);
   if (hinted && guard) {
     hinted = suppressPcDirectedSocialMove(hinted, guard.playerText, guard.speakerName ?? null, guard.pcActors);
+  }
+  if (hinted && SCENE_CHALLENGE_VARIANTS[classifierMove]) {
+    const variant = Object.keys(SCENE_CHALLENGE_VARIANTS).find(v => SCENE_CHALLENGE_VARIANTS[v] === hinted);
+    if (variant) return variant;
   }
   return hinted ?? classifierMove;
 }

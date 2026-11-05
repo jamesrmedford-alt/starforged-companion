@@ -15,6 +15,7 @@
 import { apiPost } from "../api-proxy.js";
 import { getConnection } from "../entities/connection.js";
 import { toMoveId } from "../schemas.js";
+import { SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 const MODEL         = "claude-haiku-4-5-20251001";
@@ -133,6 +134,15 @@ ACTIVE", a fight is underway and this rule OVERRIDES every category dial:
   - Never answer NARRATIVE_WITH_MOVE_AVAILABLE during active combat — if a move
     is available, the answer is MOVE.
 
+SCENE CHALLENGE IS OPEN — when the CURRENT SCENE below reports "SCENE
+CHALLENGE: OPEN", the scene is an extended challenge against a threat or a
+time limit (a negotiation, a chase, a heist). A Face Danger or Secure an
+Advantage made as part of it is its scene-challenge move: nominate
+face_danger_scene_challenge or secure_an_advantage_scene_challenge, not
+face_danger / secure_an_advantage. A fight is still combat (enter_the_fray …)
+even mid-challenge, and any other move is itself. With no scene challenge
+open, never nominate them.
+
 MOVEMENT WITH STAKES — if the input expresses movement or travel intent
 (setting out, picking a route, closing on a destination) AND there is an
 established hazard or explicit time pressure — in the input itself OR the
@@ -195,6 +205,10 @@ EXPLORATION
 - explore_a_waypoint: examine a notable location during an expedition
 - set_a_course: follow a known route
 
+SCENE CHALLENGE (only while the CURRENT SCENE reports an open scene challenge)
+- face_danger_scene_challenge: face_danger as part of the scene challenge
+- secure_an_advantage_scene_challenge: secure_an_advantage as part of the scene challenge
+
 COMBAT
 - enter_the_fray: combat begins
 - gain_ground: in control, pressing an advantage
@@ -233,11 +247,14 @@ FATE
  * @param {Object|null} args.character
  * @param {{count: number, window: number}} args.recentMoveDensity
  * @param {{dials: Object, sceneOverride?: {modifier:number,label:string}|null}} args.pacingConfig
+ * @param {boolean} [args.combatActive] — a fight is open (the COMBAT IS ACTIVE rule)
+ * @param {string[]} [args.sceneChallenges] — the open scene challenges' names
+ *   (the SCENE CHALLENGE IS OPEN rule — issue #338 D2's variant moves)
  * @returns {{systemPrompt: string, userMessage: string, effective: Object}}
  */
 export function buildClassifierContext({
   playerText, campaignState, character, recentMoveDensity, pacingConfig,
-  combatActive = false,
+  combatActive = false, sceneChallenges = [],
 }) {
   const effective = {};
   for (const cat of PACING_CATEGORIES) {
@@ -260,6 +277,15 @@ export function buildClassifierContext({
   const combatLine     = combatActive
     ? "COMBAT STATUS: ACTIVE — a fight is underway. Apply the COMBAT IS ACTIVE rule: any input describing a character action is a MOVE; the player's words are a suggested outcome, not an established fact."
     : null;
+  // The open scene challenge, as the fight is given above: within it Face
+  // Danger and Secure an Advantage are its own moves (issue #338 D2), and a
+  // paced Roll offered the ordinary one (PACING-ROLL-NO-SCENE-CHALLENGE).
+  const challenges     = (Array.isArray(sceneChallenges) ? sceneChallenges : [])
+    .slice(0, 8)
+    .map(name => String(name ?? "").replace(/["\r\n]+/g, " ").trim() || "(unnamed)");
+  const challengeLine  = challenges.length
+    ? `SCENE CHALLENGE: OPEN — ${challenges.map(n => `"${n}"`).join(", ")}. Apply the SCENE CHALLENGE IS OPEN rule: a Face Danger or Secure an Advantage made as part of it is its scene-challenge move.`
+    : null;
 
   const parts = [
     "## PACING DIALS (effective values)",
@@ -280,6 +306,7 @@ export function buildClassifierContext({
     "",
     "## CURRENT SCENE",
     ...(combatLine ? [combatLine] : []),
+    ...(challengeLine ? [challengeLine] : []),
     sceneLine || "(no scene context available)",
     "",
     "## PLAYER INPUT",
@@ -312,6 +339,8 @@ export function buildClassifierContext({
  * @param {{dials:Object, sceneOverride?: Object|null}} args.pacingConfig
  * @param {string} args.apiKey
  * @param {string} [args.model]
+ * @param {boolean} [args.combatActive]
+ * @param {string[]} [args.sceneChallenges] — the open scene challenges' names
  * @returns {Promise<{
  *   decision: string,
  *   suggestedMove: string|null,
@@ -324,13 +353,13 @@ export function buildClassifierContext({
  */
 export async function classifyInput({
   playerText, campaignState, character, recentMoveDensity, pacingConfig,
-  apiKey, model, combatActive = false,
+  apiKey, model, combatActive = false, sceneChallenges = [],
 }) {
   if (!apiKey)             return fallbackDecision("missing api key");
   if (!playerText?.trim()) return fallbackDecision("empty input");
 
   const { systemPrompt, userMessage } = buildClassifierContext({
-    playerText, campaignState, character, recentMoveDensity, pacingConfig, combatActive,
+    playerText, campaignState, character, recentMoveDensity, pacingConfig, combatActive, sceneChallenges,
   });
 
   try {
@@ -340,7 +369,13 @@ export async function classifyInput({
       userMessage,
       model: model ?? campaignState?.api?.model ?? MODEL,
     });
-    return parseDecision(text);
+    const result = parseDecision(text);
+    // A scene-challenge move named with no challenge open is the ordinary
+    // move it varies — the pipeline makes it so (moveOutsideSceneChallenge),
+    // and the Roll button must not offer a move that will not be made.
+    const ordinary = SCENE_CHALLENGE_VARIANTS[result.suggestedMove];
+    if (ordinary && !(Array.isArray(sceneChallenges) && sceneChallenges.length)) result.suggestedMove = ordinary;
+    return result;
   } catch (err) {
     console.warn(`starforged-companion | pacing classifier: API call failed; defaulting to MOVE:`, err);
     return fallbackDecision(err?.message ?? "api error");
