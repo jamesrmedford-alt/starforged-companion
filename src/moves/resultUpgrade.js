@@ -380,6 +380,29 @@ export function upgradeKindFor(resolutionId) {
 }
 
 /**
+ * Whether a resolution's move card still offers Burn Momentum or Improve
+ * Result: offered, neither used, not closed by a chosen consequence
+ * (`choiceMade`, consequenceChosen) or by its roller's later move
+ * (`laterMove`, laterMoveFollows — issue #326 D4). null while the move card
+ * is not posted: the pipeline pays a miss's Pay the Price before it posts
+ * the card. A follow-up that is the roller's next move — the resist roll a
+ * price's harm owes — says to take them first while this holds (issue #330
+ * D2's hint; issue #336 Y18).
+ *
+ * @param {string|null} resolutionId
+ * @returns {boolean|null}
+ */
+export function upgradeOpenFor(resolutionId) {
+  const card = moveCardFor(resolutionId);
+  const f    = card?.flags?.[MODULE_ID];
+  if (!f) return null;
+  if (f.burn?.consumed || f.improve?.consumed) return false;
+  const open = (state, offered) => !!(state?.[offered] && !state.choiceMade && !state.laterMove);
+  if (!open(f.burn, "canBurn") && !open(f.improve, "canImprove")) return false;
+  return !consequenceChosen(resolutionId) && !laterMoveFollows(card);
+}
+
+/**
  * The move card's open affordances are closed once its consequence is chosen:
  * Burn / Improve stamped (`choiceMade`) so the buttons say so — consequenceChosen
  * is the check the GM handlers make — and, on an Explore a Waypoint match, the

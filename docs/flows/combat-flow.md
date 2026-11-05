@@ -46,6 +46,11 @@ Two cross-cutting facts to hold onto:
   `laterMoveFollows`, issue #326 D4). A follow-up taken from the same card
   (⚑, 🏁, 🤝, 🔗) is that next move, so a card offering an upgrade says to
   take it first, beside those buttons and in their titles (issue #330 D2).
+  So is the resist roll a price's harm or stress owes at 0 (issue #330 D3):
+  its 🛡 card and the executor's line say the same while the move still
+  offers an upgrade — the move card's (`resultUpgrade.upgradeOpenFor`), or,
+  the price paid before that card posts, the pipeline's `upgradeOffered`
+  (issue #336 Y18).
   The upgraded outcome's other
   effects run through the pipeline's own applier (`applyOutcomeEffects`,
   `src/index.js` — the branches below are its body), for what the upgrade

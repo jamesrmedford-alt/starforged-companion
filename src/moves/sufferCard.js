@@ -188,10 +188,15 @@ export function renderSufferCard(prompt, actor, pickedIndices = [], ctx = option
   const notes = notApplied.length
     ? `<p class="sf-card-hint">${escapeHtml(`Not applied: ${notApplied.join("; ")}`)}</p>`
     : "";
+  // A prompt's own hint — the resist card's "burn or improve first" while the
+  // move whose price it is still offers one (issue #336 Y18).
+  const hint = typeof prompt.hint === "string" && prompt.hint
+    ? `<p class="sf-card-hint">${escapeHtml(prompt.hint)}</p>`
+    : "";
   return `<div class="sf-card sf-suffer-choice-card">` +
     `<div class="sf-card-header">◈ Resolve consequence</div>` +
     `<div class="sf-card-body"><p>${escapeHtml(header)}</p>` +
-    `<div class="sf-suffer-card-buttons">${buttons}</div>${notes}</div></div>`;
+    `<div class="sf-suffer-card-buttons">${buttons}</div>${hint}${notes}</div></div>`;
 }
 
 function renderResolvedCard(summary) {

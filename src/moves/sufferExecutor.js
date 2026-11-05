@@ -278,33 +278,69 @@ const RESIST_ROLLS = {
   stress: { moveId: "endure_stress", meter: "spirit", label: "🛡 Resist the stress — roll Endure Stress (+spirit or +heart)" },
 };
 
+// The resist roll is the roller's next move, and it closes the open Burn
+// Momentum / Improve Result of the move whose price it is (issue #326 D4):
+// while that move still offers one, the card and the executor's line say to
+// take it first, as the move card's own follow-ups do (issue #330 D2's hint;
+// issue #336 Y18).
+const RESIST_UPGRADE_FIRST = "Burn momentum or improve the result first — resisting is your next move, and closes them.";
+
 /**
  * The resist card's prompt: one pick, which rolls Endure Harm ("harm") or
  * Endure Stress ("stress") as the PC (sufferDialog's `resist` option) —
  * "Then, if your health is 0 … roll +health or +iron" (issue #330 D3).
+ * `upgradeFirst`: the move whose price it is still offers a burn or an
+ * improvement — the card says to take it first (`hint`).
  *
  * @param {"harm"|"stress"} which
+ * @param {{ upgradeFirst?: boolean }} [opts]
  * @returns {Object|null}
  */
-export function resistRollPrompt(which) {
+export function resistRollPrompt(which, { upgradeFirst = false } = {}) {
   const r = RESIST_ROLLS[which];
   if (!r) return null;
-  return { kind: "enumerated", resist: r.meter, options: [{ label: r.label, resist: r.moveId }] };
+  return {
+    kind: "enumerated", resist: r.meter, options: [{ label: r.label, resist: r.moveId }],
+    ...(upgradeFirst ? { hint: RESIST_UPGRADE_FIRST } : {}),
+  };
+}
+
+/**
+ * Whether the move whose price owes the resist roll still offers a burn or
+ * an improvement: its move card's (resultUpgrade.js upgradeOpenFor), and
+ * before that card is posted — the pipeline pays a miss's price first — the
+ * pipeline's word (`opts.upgradeOffered`). Never for a price bound to no
+ * move (`!pay-the-price`). Never throws.
+ *
+ * @param {Object} opts — the executor's opts (`resolutionId`, `upgradeOffered`)
+ * @returns {Promise<boolean>}
+ */
+async function upgradeFirstOwed(opts = {}) {
+  const resolutionId = typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null;
+  if (!resolutionId) return false;
+  try {
+    const { upgradeOpenFor } = await import("./resultUpgrade.js");
+    return upgradeOpenFor(resolutionId) ?? opts.upgradeOffered === true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferExecutor: could not tell whether the move still offers an upgrade:`, err?.message ?? err);
+    return false;
+  }
 }
 
 /**
  * Post the resist card for `actor` at 0 health / spirit: a choice card, so
  * it is claimed once and pressed by the PC's player or a GM, and a Burn
  * Momentum or Improve Result of the move whose price it is retires it, as
- * the at-0 choice card is (`resolutionId`). Never throws.
+ * the at-0 choice card is (`resolutionId`). `upgradeFirst`: the card says to
+ * burn or improve first (upgradeFirstOwed). Never throws.
  *
  * @returns {Promise<boolean>} whether the card posted
  */
-async function postResistRoll(actor, which, opts = {}) {
+async function postResistRoll(actor, which, opts = {}, upgradeFirst = false) {
   try {
     const { postSufferChoiceCard } = await import("./sufferCard.js");
     const posted = await postSufferChoiceCard({
-      sufferPrompt: resistRollPrompt(which),
+      sufferPrompt: resistRollPrompt(which, { upgradeFirst }),
       actor,
       executorOpts: {},
       moveId: RESIST_ROLLS[which].moveId,
@@ -317,10 +353,11 @@ async function postResistRoll(actor, which, opts = {}) {
   }
 }
 
-/** The executor card's line for the resist roll owed at 0. */
-function resistLine(which) {
+/** The executor card's line for the resist roll owed at 0 (`upgradeFirst` as for the card). */
+function resistLine(which, upgradeFirst = false) {
   const r = RESIST_ROLLS[which];
-  return ` — at 0 ${r.meter} you must resist: roll ${r.moveId === "endure_harm" ? "Endure Harm" : "Endure Stress"} on the card below`;
+  const first = upgradeFirst ? ` (${RESIST_UPGRADE_FIRST.charAt(0).toLowerCase()}${RESIST_UPGRADE_FIRST.slice(1, -1)})` : "";
+  return ` — at 0 ${r.meter} you must resist: roll ${r.moveId === "endure_harm" ? "Endure Harm" : "Endure Stress"} on the card below${first}`;
 }
 
 /**
@@ -410,11 +447,12 @@ export async function endureHarm(actor, amount, opts = {}) {
   // summary card.
   const impactChoice = atZero && !!opts.resistMiss;
   const resistOwed   = atZero && !opts.resistMiss;
+  const upgradeFirst = resistOwed && await upgradeFirstOwed(opts);
 
   if (!opts.skipCard) {
     let body = `Health: ${before} → ${after}${overflowLine(momentumLoss)}`;
     if (impactChoice) body += atZeroChoiceLine("harm");
-    if (resistOwed)   body += resistLine("harm");
+    if (resistOwed)   body += resistLine("harm", upgradeFirst);
     await postSufferCard({
       title: `Endure Harm (-${amount})`,
       body,
@@ -422,7 +460,7 @@ export async function endureHarm(actor, amount, opts = {}) {
     });
   }
   if (impactChoice) await postAtZeroChoice(actor, "harm", opts);
-  if (resistOwed)   await postResistRoll(actor, "harm", opts);
+  if (resistOwed)   await postResistRoll(actor, "harm", opts, upgradeFirst);
 
   return { before, after, atZero, woundedMarked, mortalWound, impactChoice, resistOwed, momentumLoss };
 }
@@ -450,11 +488,12 @@ export async function endureStress(actor, amount, opts = {}) {
   const desolation = null;
   const impactChoice = atZero && !!opts.resistMiss;
   const resistOwed   = atZero && !opts.resistMiss;
+  const upgradeFirst = resistOwed && await upgradeFirstOwed(opts);
 
   if (!opts.skipCard) {
     let body = `Spirit: ${before} → ${after}${overflowLine(momentumLoss)}`;
     if (impactChoice) body += atZeroChoiceLine("stress");
-    if (resistOwed)   body += resistLine("stress");
+    if (resistOwed)   body += resistLine("stress", upgradeFirst);
     await postSufferCard({
       title: `Endure Stress (-${amount})`,
       body,
@@ -462,7 +501,7 @@ export async function endureStress(actor, amount, opts = {}) {
     });
   }
   if (impactChoice) await postAtZeroChoice(actor, "stress", opts);
-  if (resistOwed)   await postResistRoll(actor, "stress", opts);
+  if (resistOwed)   await postResistRoll(actor, "stress", opts, upgradeFirst);
 
   return { before, after, atZero, shakenMarked, desolation, impactChoice, resistOwed, momentumLoss };
 }

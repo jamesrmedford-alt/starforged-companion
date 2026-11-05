@@ -1698,7 +1698,14 @@ export function registerChatHook() {
       // them when the player burns momentum to upgrade the outcome.
       let ptpReversals = null;
       if (resolution.consequences?.routePayThePrice && game.user.isGM) {
-        const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null).catch(err => {
+        // Whether the move card will offer Burn Momentum or Improve Result:
+        // the price is paid before that card posts, and a resist roll its
+        // harm owes — the roller's next move, which closes them — says to
+        // take them first (issue #336 Y18). Read before the price lands, the
+        // live momentum is the momentum buildBurnState below adds it back to.
+        const upgradeOffered = !!(buildBurnState(resolution, rollerActor)?.canBurn
+          || buildImproveState(resolution, interpretation.applicableAbilities, rollerActor)?.canImprove);
+        const ptp = await postMovePayThePriceCard(rollerActor?.id ?? null, resolution.moveName ?? null, resolution._id ?? null, { upgradeOffered }).catch(err => {
           console.warn(`${MODULE_ID} | ${resolution.moveName ?? "move"} PtP card failed:`, err?.message ?? err);
           return null;
         });
@@ -6502,9 +6509,12 @@ async function postDecisiveActionCostCard(actorId = null) {
  * @param {string|null} [resolutionId] — the move's resolution: a choice the
  *   price leaves the player (Endure Harm / Stress at 0 — issue #329 X03) is
  *   bound to it, so an upgrade of the move retires it
+ * @param {{ upgradeOffered?: boolean }} [opts] — the move's card will offer
+ *   Burn Momentum or Improve Result: a resist roll the price owes says to
+ *   take it first (issue #336 Y18)
  * @returns {Promise<{ reversals: Object, price: string }|null>}
  */
-async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null) {
+async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false } = {}) {
   const { rollOracle } = await import("./oracles/roller.js");
   let result;
   try {
@@ -6538,7 +6548,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
   // Dispatch the suffer executors first (before clock advance) so meter changes
   // land before the burn button is visible. The receipts are what landed — each
   // route's — so the upgrade reversal undoes only that.
-  const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`, { resolutionId });
+  const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`, { resolutionId, upgradeOffered });
   const sufferMeterDeltas = landed.flatMap(ptpMeterReceipts);
 
   const clocksAdvanced = await advanceClocksOnPayThePrice().catch(err => {
@@ -6697,10 +6707,10 @@ export async function applyPayThePriceSufferFromRelay(payload = {}, ctx = {}) {
   return { applied: true, landed };
 }
 
-async function dispatchPayThePriceSufferRoutes(routes, actorId, where, { resolutionId = null } = {}) {
+async function dispatchPayThePriceSufferRoutes(routes, actorId, where, { resolutionId = null, upgradeOffered = false } = {}) {
   const landed = [];
   for (const route of routes ?? []) {
-    const res = await dispatchPayThePriceSufferRoute(route, actorId, { resolutionId }).catch(err => {
+    const res = await dispatchPayThePriceSufferRoute(route, actorId, { resolutionId, upgradeOffered }).catch(err => {
       console.warn(`${MODULE_ID} | ${where}: suffer dispatch (${route?.move}) failed:`, err?.message ?? err);
       return null;
     });
@@ -6723,14 +6733,15 @@ async function dispatchPayThePriceSufferRoutes(routes, actorId, where, { resolut
  *
  * @param {{ move: string, amount: number, soloFallback?: string }} route
  * @param {string|null} [actorId]
- * @param {{ resolutionId?: string|null }} [opts] — the move that paid the
- *   price: the at-0 choice an Endure Harm / Stress leaves is bound to it
- *   (issue #329 X03)
+ * @param {{ resolutionId?: string|null, upgradeOffered?: boolean }} [opts] —
+ *   the move that paid the price: the at-0 choice an Endure Harm / Stress
+ *   leaves is bound to it (issue #329 X03); `upgradeOffered`, its card will
+ *   offer a burn or an improvement (issue #336 Y18)
  * @returns {Promise<Object|undefined>} the executor's result with the move it
  *   ran (`move` — the fallback, when taken) and the PC (`actorId`); nothing
  *   for an "any" route, which posts a picker
  */
-async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutionId = null } = {}) {
+async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutionId = null, upgradeOffered = false } = {}) {
   const { executeSuffer } = await import("./moves/sufferExecutor.js");
 
   const actor = (actorId ? game.actors?.get?.(actorId) : null) ?? getPlayerActors()[0] ?? null;
@@ -6770,6 +6781,7 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
     itemId,
     isMiss: true,  // Pay the Price always implies a miss context.
     resolutionId,
+    ...(upgradeOffered ? { upgradeOffered: true } : {}),
   });
   return { ...landed, move, actorId: actor.id };
 }
