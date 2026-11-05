@@ -798,7 +798,10 @@ export function registerChatHook() {
     }
     if (!sessionActive) {
       const held = message.flags?.[MODULE_ID]?.deferWhileBusy === true;
-      if (held) deferForcedMove(message, { untilSession: true });
+      if (held) {
+        deferForcedMove(message, { untilSession: true });
+        markHeldUntilSession(message, true);
+      }
       await postSessionGateNotice(message, { held }).catch(err =>
         console.warn(`${MODULE_ID} | the no-session notice failed:`, err?.message ?? err));
       return;
@@ -1966,7 +1969,10 @@ const _sessionGateTold = new Set();
  * (issue #329 X14 — the line sat in chat, and a card button's forced move
  * vanished, with no word and not even a console line): whispered to the
  * author and the GMs. A typed line's author is told once until a message
- * passes the gate again; a button's forced move is told every time.
+ * passes the gate again; a button's forced move is told every time. A
+ * button's forced move is the card's roller's, and a relayed press posts it
+ * on the GM — its author — so the roller's players are told too: the one who
+ * pressed, or whose card a GM pressed (issue #335 Y17).
  *
  * @param {ChatMessage} message
  * @param {{ held?: boolean }} [opts] — the forced move is held until a session begins
@@ -1975,6 +1981,7 @@ const _sessionGateTold = new Set();
 async function postSessionGateNotice(message, { held = false } = {}) {
   const forced   = !!message?.flags?.[MODULE_ID]?.forcedMoveId;
   const authorId = messageAuthorId(message);
+  const rollerPlayerIds = forced ? speakerOwnerIds(message) : [];
   if (!forced) {
     if (authorId && _sessionGateTold.has(authorId)) {
       console.debug(`${MODULE_ID} | session gate: no session has begun — line not narrated (its author was told).`);
@@ -1990,10 +1997,61 @@ async function postSessionGateNotice(message, { held = false } = {}) {
       : `This move was not rolled: no session has begun. Press ${how}, then press the button again.`;
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>No session has begun</strong><p>${body}</p></div>`,
-    whisper: [...new Set([authorId, ...gmUserIds()].filter(Boolean))],
+    whisper: [...new Set([authorId, ...rollerPlayerIds, ...gmUserIds()].filter(Boolean))],
     flags:   { [MODULE_ID]: { sessionGateNotice: true } },
   });
 }
+
+/**
+ * The players of a forced move's roller: the non-GM users who own the
+ * message's speaking PC (the GMs are whispered anyway).
+ *
+ * @param {ChatMessage} message
+ * @returns {string[]}
+ */
+function speakerOwnerIds(message) {
+  const actorId = message?.speaker?.actor ?? null;
+  const actor   = actorId ? (game.actors?.get?.(actorId) ?? null) : null;
+  if (!actor) return [];
+  return Array.from(game.users ?? []).filter(u => u && !u.isGM && userOwnsActor(actor, u)).map(u => u.id);
+}
+
+/**
+ * Stamp a forced move held until a session begins — or clear it once it is
+ * handed back to the pipeline. Its line in chat (posted as the roller) then
+ * says so for the whole table, beside the claimed card's "taken" button
+ * (issue #335 Y17; renderHeldUntilSessionNote). On the canonical GM, which
+ * posted the relayed move; fire-and-forget.
+ *
+ * @param {ChatMessage} message — the held forced move
+ * @param {boolean} held
+ */
+function markHeldUntilSession(message, held) {
+  if (!message?.update || !!liveCardFlags(message)?.heldUntilSession === held) return;
+  message.update({ [`flags.${MODULE_ID}.heldUntilSession`]: held }).catch(err =>
+    console.warn(`${MODULE_ID} | marking a held move ${held ? "held" : "released"} failed:`, err?.message ?? err));
+}
+
+/**
+ * A forced move held until a session begins shows it on its line — on every
+ * client, while no session is active (a hold lost to a reload says nothing
+ * once one has begun: FORCED-MOVE-HOLD-RELOAD).
+ *
+ * @param {ChatMessage} message
+ * @param {HTMLElement} root
+ */
+function renderHeldUntilSessionNote(message, root) {
+  if (!liveCardFlags(message)?.heldUntilSession) return;
+  let active = true;
+  try { active = isSessionActive(game.settings.get(MODULE_ID, "campaignState")); }
+  catch (err) { console.debug?.(`${MODULE_ID} | held-move note: session state unread:`, err?.message ?? err); }
+  if (active) return;
+  const at = root?.querySelector?.(".message-content") ?? root;
+  if (!at?.insertAdjacentHTML || at.querySelector?.(".sf-held-until-session")) return;
+  at.insertAdjacentHTML("beforeend",
+    `<p class="sf-held-until-session"><em>⏸ Held — no session has begun. This move will be rolled once Begin a Session starts one.</em></p>`);
+}
+onChatMessageRender((message, root) => renderHeldUntilSessionNote(message, root));
 
 /**
  * On a campaignState write that leaves the move lock free, hand the oldest
@@ -2019,6 +2077,7 @@ function drainDeferredForcedMoves(setting, runPipeline) {
   }
   if (!message) return;
   const id = message.id;
+  markHeldUntilSession(message, false);
   // A move that stops before claiming the lock writes nothing: ask again
   // once it settles, so the queue cannot stall behind it.
   Promise.resolve(runPipeline(message))
