@@ -3389,13 +3389,14 @@ export function isIncitingIncidentCommand(message) {
  * tier update and narrator side-data all land — else on the author's client
  * (its own key), where those GM-only writes are skipped and debug-logged.
  */
-async function handleIncitingIncidentCommand(_message) {
+async function handleIncitingIncidentCommand(message) {
   try {
     const { runIncitingIncident } = await import("./session/incitingIncident.js");
     // A working copy: the narration mints its scene and applies its sidecar
     // on it (issue #335 Y04 — the cached setting kept what a refused write lost).
     const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
-    await runIncitingIncident(campaignState);
+    // A premise the world refuses is told to the line's author too (issue #336 Y33).
+    await runIncitingIncident(campaignState, { authorId: messageAuthorId(message) });
   } catch (err) {
     console.warn(`${MODULE_ID} | inciting incident command failed:`, err?.message ?? err);
   }

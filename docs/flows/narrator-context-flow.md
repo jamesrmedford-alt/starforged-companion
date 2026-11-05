@@ -436,7 +436,9 @@ and persist only the ledger field they changed through
 `persistSceneLedgerFields`, a Strike's or Replace's regen mark on the stored
 rolling summary riding the same write (`opts.onto` → `markSummaryForRegen`,
 U06b/e); the inciting premise is written with its scene ledgers the same way
-(`onto` sets `incitingIncident`, U06d); a site reveal or clear saves its
+(`onto` sets `incitingIncident`, U06d) — one the world refused is told on a
+whispered "Premise not saved" card to its asker and the GMs, since nothing
+else would carry [4b] (issue #336 Y33); a site reveal or clear saves its
 flag onto the state as it is then (`persistSiteFlag`, U06c).
 
 **The flag family covers every fiction card** (2026-07): move narration,
