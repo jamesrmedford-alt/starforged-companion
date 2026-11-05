@@ -116,7 +116,18 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     game.settings.get(MODULE_ID, 'campaignState'),
   );
   updated.updatedAt = new Date().toISOString();
-  await game.settings.set(MODULE_ID, 'campaignState', updated);
+  try {
+    await game.settings.set(MODULE_ID, 'campaignState', updated);
+  } catch (err) {
+    // The roller's meters (written above) stand; what the working copy alone
+    // holds — a legacy mark, an arrival, a site reveal — never reached the
+    // world. Tagged so the pipeline tells the GMs what, with a Retry, rather
+    // than blaming the API key (issue #331 X18).
+    const refused = new Error(`the world did not save the move's record: ${err?.message ?? err}`);
+    refused.moveRecordRefused = true;
+    refused.cause = err;
+    throw refused;
+  }
 
   // The legacy ticks the pipeline marked on its working copy are saved: their
   // box XP is paid now, never before (issue #326 W52 — a refused persist had

@@ -1433,7 +1433,11 @@ export function registerChatHook() {
                 getState: () => campaignState,
                 setState: (next) => { campaignState.sectors = next.sectors; },
               });
-              if (revealed) await postSiteDiscoveryCard(revealed);
+              if (revealed) {
+                noteUnsavedOnCopy(campaignState, { step: "site", sectorId: revealed.sector?.id ?? null,
+                  siteId: revealed.site?.id ?? null, name: revealed.site?.name ?? null });
+                await postSiteDiscoveryCard(revealed);
+              }
             } catch (err) {
               console.warn(`${MODULE_ID} | site reveal on finish-expedition failed:`, err?.message ?? err);
             }
@@ -1770,7 +1774,18 @@ export function registerChatHook() {
       if (game.user.isGM) {
         // What the move was made against rides onto its suffer-choice card,
         // so a choice changes that vehicle, companion or fight (issue #309).
-        await persistResolution(resolution, campaignState, speakerActorId, moveTargets);
+        // A refused record is not a failed interpretation: the move resolved
+        // and its meters stand, so the pipeline goes on — what the record
+        // carried is on the GMs' card, with a Retry (issue #331 X18).
+        try {
+          await persistResolution(resolution, campaignState, speakerActorId, moveTargets);
+        } catch (err) {
+          if (!err?.moveRecordRefused) throw err;
+          console.error(`${MODULE_ID} | ${err.message}`);
+          await reportUnsavedMoveRecord(campaignState, {
+            actorId: rollerActor?.id ?? null, moveName: resolution.moveName ?? null, error: String(err.cause?.message ?? err.cause ?? err.message),
+          });
+        }
         // The original outcome is on the sheet: open the card's Burn Momentum /
         // Improve Result buttons. They stay disabled (and their GM handlers
         // refuse) until this stamp — a burn clicked during the narration above
@@ -2108,6 +2123,9 @@ async function applyOutcomeEffects({
       // location is saved here, beside the ship record just written.
       if (upgrade) {
         await persistCampaignStateFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+      } else {
+        noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
+          name: arrivedAt.entity?.name ?? moveTarget ?? null });
       }
     } else if (moveTarget) {
       console.debug(`${MODULE_ID} | arrival: "${moveTarget}" is not a tracked location — currentLocation unchanged.`);
@@ -4404,6 +4422,7 @@ export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {
   const before = legacyProgress(campaignState.legacyTracks[key]);
   const marked = markLegacyTrack(campaignState.legacyTracks[key], ticks);
   campaignState.legacyTracks[key] = marked.track;
+  noteUnsavedOnCopy(campaignState, { step: "legacy", track: key, ticks });
   if (awardXp && legacyProgress(marked.track) > before) {
     // Once the copy is saved, every PC's sheet shows the mark — and the XP a
     // filled box earns (issue #326 D3). A PC whose sheet write is refused is
@@ -4414,6 +4433,41 @@ export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {
     });
   }
   return { boxes: marked.boxes, xp: marked.xp, cleared: marked.cleared };
+}
+
+// What a working copy holds that only the write saving it puts in the world —
+// the move pipeline's legacy marks, an arrival, a site reveal — as payoff
+// steps, by the copy (issue #331 X18). Read when persistResolution's write is
+// refused: the GMs' card lists them, and its Retry applies each alone.
+const UNSAVED_ON_COPY = new WeakMap();
+
+function noteUnsavedOnCopy(campaignState, step) {
+  if (!campaignState || typeof campaignState !== "object" || !step) return;
+  const steps = UNSAVED_ON_COPY.get(campaignState) ?? [];
+  steps.push(step);
+  UNSAVED_ON_COPY.set(campaignState, steps);
+}
+
+/**
+ * The move's record — persistResolution's one campaignState write — was
+ * refused: the roller's meters (written before it) stand, and the working
+ * copy's legacy marks, arrival and site reveal never reached the world. Tell
+ * the GM running the pipeline why (not the API key — the move resolved), and
+ * put each owed step on the GMs' payoff failure card, whose Retry applies it
+ * alone (issue #331 X18; the #306 R04 / #315 S08 / #326 W52 rule).
+ *
+ * @param {Object} campaignState — the pipeline's working copy
+ * @param {{ actorId?: string|null, moveName?: string|null, error?: string }} ctx
+ */
+async function reportUnsavedMoveRecord(campaignState, { actorId = null, moveName = null, error = "" } = {}) {
+  const failures = (UNSAVED_ON_COPY.get(campaignState) ?? []).map(step => ({ ...step, reason: "refused", error }));
+  UNSAVED_ON_COPY.delete(campaignState);
+  const move = moveName ? `${moveName}'s` : "The move's";
+  ui.notifications?.error?.(`Starforged Companion: the world did not save ${move} record — the roller's meters stand. `
+    + (failures.length ? "What it marked is on the GMs' card, with a Retry." : "Nothing else it changed needs a Retry."));
+  if (!failures.length) return;
+  await postPayoffFailureCard({ source: "persist", actorId, failures }).catch(err =>
+    console.warn(`${MODULE_ID} | the move record's failure card failed:`, err?.message ?? err));
 }
 
 /**
@@ -5420,6 +5474,7 @@ const SUFFER_METERS = { lose_momentum: "momentum", endure_harm: "health", endure
 
 const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
+  "site-gone": "the site is no longer on the sector map",
   "unclaimed": "the vow could not be marked paid, so nothing was applied",
   "not-found": "no connection by that name is open — renamed or deleted?",
   "no-vow":    "no open vow by that name",
@@ -5437,6 +5492,7 @@ const PAYOFF_TITLES = {
   session:     ()  => `Session momentum not given`,
   sessionClocks: () => `Session-start clock advance not saved`,
   rider:       (c) => `Asset effects not applied — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
+  persist:     (c) => `Move not saved — ${game.actors?.get?.(c.actorId)?.name ?? "your character"}`,
 };
 
 /**
@@ -5449,7 +5505,7 @@ const PAYOFF_TITLES = {
  * which is itself the retry: its action stays unapplied) posts the report
  * without one. Exported for that button's GM-side handler.
  *
- * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"sessionClocks"|"rider", vowName?: string|null,
+ * @param {{ source: "fulfil"|"fight"|"forge"|"fightButton"|"legacyXp"|"suffer"|"upgrade"|"session"|"sessionClocks"|"rider"|"persist", vowName?: string|null,
  *   vowId?: string|null, actorId?: string|null, outcome?: string|null,
  *   connectionName?: string|null, failures: Array<Object>, retryable?: boolean }} card
  */
@@ -5490,6 +5546,8 @@ function payoffStepRecord(f) {
     case "clocks":      return { step: "clocks", sessionId: f.sessionId ?? null,
       clocks: (Array.isArray(f.clocks) ? f.clocks : []).map(c => ({ _id: c?._id ?? null, name: c?.name ?? null, filled: c?.filled ?? 0, segments: c?.segments ?? null })) };
     case "rider":       return { step: "rider", rider: f.rider ?? null, track: f.track ?? null, shipActorId: f.shipActorId ?? null };
+    case "arrival":     return { step: "arrival", locationId: f.locationId ?? null, locationType: f.locationType ?? null, name: f.name ?? null };
+    case "site":        return { step: "site", sectorId: f.sectorId ?? null, siteId: f.siteId ?? null, name: f.name ?? null };
     default:            return { step: f?.step ?? "reward" };
   }
 }
@@ -5532,6 +5590,19 @@ async function describePayoffFailure(f, { vowName, actorId }) {
       case "rider":
         // An asset effect after a move (issue #315 S08).
         return describeRiderStep(f, why, actorId);
+      case "arrival": {
+        // A move's arrival whose record the world refused (issue #331 X18).
+        const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        const here   = stored.currentLocationId ? (currentLocationForEntityId(stored.currentLocationId)?.entity?.name ?? "another place") : "nowhere";
+        return `The crew's current location: ${escapeChatHtml(f.name ?? "the destination")} — ${why}. It is ${escapeChatHtml(here)} now.`;
+      }
+      case "site": {
+        // A move's site reveal whose record the world refused (issue #331 X18).
+        const sector = (game.settings.get(MODULE_ID, "campaignState")?.sectors ?? []).find(x => x?.id === f.sectorId);
+        const site   = sector?.mapData?.discoveries?.find?.(d => d?.id === f.siteId);
+        const now    = !site ? " It is no longer on the map." : site.discovered ? " It is charted now." : " It is still uncharted on the map.";
+        return `The site ${escapeChatHtml(f.name ?? "it reached")} charted as discovered — ${why}.${now}`;
+      }
       case "clocks": {
         // A session-start campaign clock advance the world refused (issue #316 T04).
         const live = game.settings.get(MODULE_ID, "campaignState")?.clocks ?? [];
@@ -5639,6 +5710,25 @@ async function runPayoffStep(s, card, copies) {
     case "rider":
       // An asset effect the world refused after a move (issue #315 S08).
       return retryRiderStep(s, card?.actorId ?? null);
+    case "arrival": {
+      // A move's arrival whose record the world refused (issue #331 X18):
+      // the place it reached, written onto the latest store.
+      const located = currentLocationForEntityId(typeof s.locationId === "string" ? s.locationId : null);
+      if (!located || located.type !== s.locationType) return { ok: false, reason: "invalid step" };
+      try {
+        const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        await game.settings.set(MODULE_ID, "campaignState", { ...stored, currentLocationId: located.id, currentLocationType: located.type });
+        return { ok: true };
+      } catch (err) {
+        console.warn(`${MODULE_ID} | payoff retry: the arrival was refused again:`, err?.message ?? err);
+        return { ok: false, reason: "refused", error: errText(err) };
+      }
+    }
+    case "site": {
+      // A move's site reveal whose record the world refused (issue #331 X18).
+      const { saveSiteDiscovered } = await import("./sectors/siteDiscovery.js");
+      return saveSiteDiscovered({ sectorId: s.sectorId ?? null, siteId: s.siteId ?? null });
+    }
     case "clocks": {
       // A session-start clock advance the world refused: the rolled fills are
       // saved, never rolled again, and a clock already there is left (issue #316 T04).
