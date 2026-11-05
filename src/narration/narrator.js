@@ -58,6 +58,7 @@ import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
 import { readCharacterSnapshot, getPlayerActors } from '../character/actorBridge.js';
 import { MOVES, toMoveId } from '../schemas.js';
+import { moveDisplayName } from '../system/i18n.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -1411,9 +1412,7 @@ export async function postSessionRecap(campaignState, sessionId = null, { sessio
 
   for (const msg of messages) {
     const f = msg.flags[MODULE_ID];
-    const moveName = f.moveId
-      ? f.moveId.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
-      : null;
+    const moveName = f.moveId ? moveDisplayName(f.moveId) : null;
     const outcome  = f.outcome ?? null;
     // A narration the X-Card removed (issue #321 U07) and a fallback card
     // ("narration unavailable") count their move; no line of theirs is quoted.
@@ -2775,7 +2774,7 @@ export async function runNarrationTierUpdate(narrationText, campaignState, { nar
 async function postPacedNarrativeCard(narrationText, playerText, sessionId, suggestedMove, playerName = null, narrationId = null, matchedEntityIds = [], actorId = null) {
   const suggestionClass = suggestedMove ? ' sf-narration-card--with-suggestion' : '';
   const buttonRow = suggestedMove
-    ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(formatMoveLabel(suggestedMove))}</button></div>`
+    ? `<div class="sf-paced-actions"><button type="button" class="sf-paced-roll-btn" data-action="sf-paced-roll">Roll ${escapeChatHtml(moveDisplayName(suggestedMove))}</button></div>`
     : '';
   return ChatMessage.create({
     content: `
@@ -2826,6 +2825,9 @@ function escapeChatHtml(s) {
     .replace(/"/g, '&quot;');
 }
 
+// The hint matchers' phrase for a move id — its words, as prose names it
+// ("face danger scene challenge"). Not a display name: a card shows
+// moveDisplayName (i18n.js), the confirm dialog's title (SCENE-CHALLENGE-MOVE-NAME).
 function formatMoveLabel(moveId) {
   return String(moveId ?? '')
     .replace(/[_-]+/g, ' ')

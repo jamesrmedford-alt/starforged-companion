@@ -89,7 +89,7 @@ describe("T05 — Make a Discovery from a waypoint match rolls nothing and offer
 
     expect(rolled.last).toMatchObject({ moveId: "make_a_discovery", rollKind: "none", actionDie: 0, challengeDice: [], outcome: null });
     const card = moveCards().at(-1);
-    expect(card.content).toMatch(/Make A Discovery/);
+    expect(card.content).toMatch(/Make a Discovery/);   // the move's title, as the confirm dialog shows it (SCENE-CHALLENGE-MOVE-NAME)
     expect(card.content).toMatch(/no action roll/);
     expect(card.content).not.toMatch(/\+null|Action:|Challenge:|Miss|sf-burn-momentum|sf-improve-result/);
     expect(card.flags[MODULE_ID].burn).toBeUndefined();

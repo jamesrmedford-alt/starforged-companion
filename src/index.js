@@ -125,6 +125,7 @@ import {
 } from "./moves/combatTracker.js";
 import { selectConnection, connectionsNamedByFragment, planDevelopRelationship, buildConnectionSuggestion, shouldForgeBond } from "./moves/developRelationship.js";
 import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "./moves/sceneChallenge.js";
+import { moveDisplayName } from "./system/i18n.js";
 import { handleBondCommand } from "./moves/bondCommand.js";
 import { postReachMilestoneCard } from "./moves/milestonePicker.js";
 import { planReachMilestone, buildMilestoneSuggestion, marksForSourceRank, selectFulfilVow, namesCompletedVow } from "./moves/milestone.js";
@@ -1008,7 +1009,7 @@ export function registerChatHook() {
         if (ordinary !== interpretation.moveId) {
           console.debug(`${MODULE_ID} | ${interpretation.moveId}: no scene challenge is open — resolved as ${ordinary}.`);
           interpretation.moveId   = ordinary;
-          interpretation.moveName = ordinary.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+          interpretation.moveName = moveDisplayName(ordinary);
         }
       }
 
@@ -3865,7 +3866,7 @@ async function handleJournalCommand(message) {
 function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget = null, moveTargetId = null) {
   const moveData = MOVES[moveId];
   const statUsed = moveData?.stat?.[0] ?? null;
-  const moveName = moveId.split("_").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+  const moveName = moveDisplayName(moveId);
   return {
     playerNarration:  narration,
     inputMethod:      "chat",

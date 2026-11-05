@@ -44,6 +44,7 @@ import { mapConsequences, OUTCOME_RANK, buildLoremasterContext } from "./resolve
 import { getActor }                     from "../character/actorBridge.js";
 import { onChatMessageRender }           from "../system/chatHooks.js";
 import { refusePress }                   from "../multiplayer/gmRelay.js";
+import { moveDisplayName }               from "../system/i18n.js";
 import {
   revertPayThePrice,
   claimUpgradeCard,
@@ -446,7 +447,7 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
   const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          improve.moveId,
-    moveName:        toDisplayName(improve.moveId),
+    moveName:        moveDisplayName(improve.moveId),
     statUsed:        null,
     statValue:       0,
     adds:            0,
@@ -471,12 +472,4 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
     ...resolution, rollKind: "action", improvedBy: improve.assetName || null,
   });
   return resolution;
-}
-
-function toDisplayName(moveId) {
-  return String(moveId ?? "")
-    .split("_")
-    .filter(Boolean)
-    .map(w => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
 }

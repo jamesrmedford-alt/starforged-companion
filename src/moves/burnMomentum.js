@@ -73,6 +73,7 @@ import {
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
+import { moveDisplayName }     from "../system/i18n.js";
 import {
   revertPayThePrice,
   claimUpgradeCard,
@@ -640,7 +641,7 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
   const resolution = {
     _id:             foundry.utils.randomID(),
     moveId:          burn.moveId,
-    moveName:        toDisplayName(burn.moveId),
+    moveName:        moveDisplayName(burn.moveId),
     statUsed:        null,
     statValue:       0,
     adds:            0,
@@ -788,11 +789,4 @@ function resolveActor(actorId) {
     if (a) return a;
   }
   return getActor(actorId) ?? getPlayerActors()[0] ?? null;
-}
-
-function toDisplayName(moveId) {
-  return String(moveId ?? "")
-    .split("_")
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
 }

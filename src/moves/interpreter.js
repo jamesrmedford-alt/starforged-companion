@@ -19,6 +19,7 @@ import { buildMischiefFraming } from "./mischief.js";
 import { apiPost } from "../api-proxy.js";
 import { getCanonicalMove } from "../system/ironswornPacks.js";
 import { getPlayerActors, readVows } from "../character/actorBridge.js";
+import { moveDisplayName } from "../system/i18n.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -437,7 +438,7 @@ function buildExpectedMoveDirective(moveId) {
   if (!move) return "";
   const stats = Array.isArray(move.stat) && move.stat.length ? move.stat : null;
   return [
-    `MOVE ALREADY CHOSEN: the player chose ${toDisplayName(moveId)}. Return moveId "${moveId}" — do not choose a different move.`,
+    `MOVE ALREADY CHOSEN: the player chose ${moveDisplayName(moveId)}. Return moveId "${moveId}" — do not choose a different move.`,
     stats ? `Choose statUsed from ${stats.join(", ")}: the one that fits how the narration approaches the move.` : null,
   ].filter(Boolean).join(" ");
 }
@@ -565,7 +566,7 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
 
   const baseRationale = parsed.rationale ?? parsed.interpretationRationale ?? "";
   const rationale = positionRemapped
-    ? `${baseRationale}${baseRationale ? " " : ""}(Adjusted to ${toDisplayName(parsed.moveId)} — you are ${combatPosition === "bad_spot" ? "in a bad spot" : "in control"}.)`
+    ? `${baseRationale}${baseRationale ? " " : ""}(Adjusted to ${moveDisplayName(parsed.moveId)} — you are ${combatPosition === "bad_spot" ? "in a bad spot" : "in control"}.)`
     : baseRationale;
 
   return {
@@ -573,7 +574,7 @@ function parseInterpretation(rawText, originalNarration, mischiefLevel, combatPo
     inputMethod:            "chat",
     mischiefLevel,
     moveId:                 parsed.moveId,
-    moveName:               toDisplayName(parsed.moveId),
+    moveName:               moveDisplayName(parsed.moveId),
     statUsed:               parsed.statUsed,
     // The numbers are the module's, never the model's (issue #322 V08): the
     // stat value and a progress score come from the sheet and the live tracks
@@ -614,7 +615,7 @@ function fallbackInterpretation(narration, mischiefLevel, expectedMoveId = null)
     inputMethod:             "chat",
     mischiefLevel,
     moveId:                  expected ?? "face_danger",
-    moveName:                expected ? toDisplayName(expected) : "Face Danger",
+    moveName:                expected ? moveDisplayName(expected) : "Face Danger",
     statUsed:                expected ? (MOVES[expected].stat?.[0] ?? null) : "wits",
     statValue:               0,
     adds:                    0,
@@ -629,15 +630,4 @@ function fallbackInterpretation(narration, mischiefLevel, expectedMoveId = null)
     confidence:              "low",
     playerConfirmed:         false,
   };
-}
-
-/**
- * Convert a move ID to its display name.
- * e.g. "face_danger" → "Face Danger"
- */
-function toDisplayName(moveId) {
-  return moveId
-    .split("_")
-    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
 }
