@@ -97,8 +97,8 @@ only, so a re-render or another client posted a second way-out card, or began
 a won fight again. An effect that does not land releases the claim.
 **Enter the Fray** takes the presser's rank, vow (one the card's picker
 offers) and objective, with the card's own label, carried position and
-roller, and creates the track (its id recorded on the card,
-`thresholdTrackId`). `createCombatTrackFromThreshold` → `applyCombatProgress`
+roller, and creates the track (the card keeps only its `thresholdTaken`
+claim). `createCombatTrackFromThreshold` → `applyCombatProgress`
 (`beginsFight: true` — a new foe is a new fight however many are open, issue
 #321 U16) → `addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
 `linkedVowName`, and gets its `combatState` set from the carried position via

@@ -1029,8 +1029,6 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
       await release();
       return { applied: false, reason: "not-created" };
     }
-    await message.update({ [`flags.${MODULE_ID}.thresholdTrackId`]: result.track.id })
-      .catch(err => console.debug?.(`${MODULE_ID} | fight threshold: recording the fight on the card failed:`, err?.message ?? err));
     return { applied: true };
   } finally {
     _inFlight.delete(key);
