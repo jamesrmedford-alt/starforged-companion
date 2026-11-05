@@ -246,7 +246,10 @@ card — is not rolled: the pipeline posts a **Which fight?** card instead
 names, the narration and the roller's `actorId`), and a pick
 (`wireWhichFightButtons`) posts the move again with that fight's id, spoken
 as the original roller. One pick per card: every button disables, and the
-GM's pick is stamped `whichFightPicked`. Since issue #321 U16 a Strike or
+GM's pick is stamped `whichFightPicked`. The pick's post carries
+`deferWhileBusy`, so one that meets the move lock — or comes before a
+session begins — is held on the canonical GM and rolled when it can be,
+not dropped under its stamped card (issue #335 Y08). Since issue #321 U16 a Strike or
 Clash that matches no open fight while two or more are open gets the same
 card (and an Undertake an Expedition naming no destination among several
 open expeditions a "Which expedition?" one — `trackType: "expedition"`, see

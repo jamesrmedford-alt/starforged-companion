@@ -8194,7 +8194,10 @@ function wireRollerFollowup(message, root, dataAction, kind, claim) {
  * theirs whoever clicks. One pick per card: every button disables on click,
  * and the pick is stamped on the card where this client may update it (the
  * GM, its author) so re-renders and other clients show it; a player's click
- * disables locally, as the pacing card's Roll does.
+ * disables locally, as the pacing card's Roll does. The pick is held, not
+ * dropped, while another move holds the lock or before a session begins
+ * (`deferWhileBusy` — issue #325 W02 / #329 X14): its card reads picked, so a
+ * drop lost the move (issue #335 Y08).
  *
  * Exported so tests and Quench can drive it with a synthetic message + root.
  */
@@ -8236,6 +8239,7 @@ export function wireWhichFightButtons(message, root) {
             bypassPacing: true, forcedMoveId: f.moveId ?? "take_decisive_action",
             forcedMoveTargetId: fight.id,
             ...(fight.label ? { forcedMoveTarget: fight.label } : {}),
+            deferWhileBusy: true,
           } },
         });
       } catch (err) {
@@ -8616,6 +8620,9 @@ onChatMessageRender((message, root) => {
       // pressing Roll on Pat's card rolled Kira's action with the GM's first
       // PC's stats (issue #325 W09).
       const narrator = typeof f.actorId === "string" && f.actorId ? game.actors?.get(f.actorId) : null;
+      // Held, not dropped, while another move holds the lock or before a
+      // session begins (issue #325 W02 / #329 X14): the card reads "Rolled",
+      // so a drop lost the roll (issue #335 Y08).
       await ChatMessage.create({
         content: f.playerText,
         ...(narrator ? { speaker: { actor: narrator.id, alias: narrator.name } } : {}),
@@ -8623,6 +8630,7 @@ onChatMessageRender((message, root) => {
           bypassPacing:        true,
           fromPacedSuggestion: true,
           forcedMoveId:        f.suggestedMove,
+          deferWhileBusy:      true,
         } },
       });
     } catch (err) {
