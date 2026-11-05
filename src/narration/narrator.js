@@ -1413,7 +1413,9 @@ export async function postSessionRecap(campaignState, sessionId = null, { sessio
     const outcome  = f.outcome ?? null;
     // A narration the X-Card removed (issue #321 U07) and a fallback card
     // ("narration unavailable") count their move; no line of theirs is quoted.
-    const text     = (f.xCarded || f.narrationFallback) ? '' : (f.narrationText ?? '');
+    // The NPC voice markup the audio keeps in `narrationText` is stripped, as
+    // on every fiction card (issue #336 Y29 — the recap showed `&lt;npc&gt;`).
+    const text     = stripMarkup((f.xCarded || f.narrationFallback) ? '' : (f.narrationText ?? ''));
     const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? '';
 
     if (moveName) totalMoves++;
