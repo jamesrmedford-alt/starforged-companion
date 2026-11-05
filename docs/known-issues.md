@@ -11,6 +11,107 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Ninth bug audit (issue #331, part 2 of 3) — all fifty-two fixed in the v1.7.36 cycle
+
+Found by the ninth bug audit (2026-11-04) of `8715172`, with a probe per
+finding (`tests/probes/` on branch `claude/focused-mayer-4v90oo`; the report
+is `docs/testing/bug-audit-9-2026-11-04.md` there): the forty-seven
+lower-severity findings X15–X61, and the five found while building #330
+(X62–X66, traced by hand, no probes). Each fix carries its own regression
+tests — converted from the probe, or written for the traced ones — which
+fail with the fix taken out (`docs/testing/fix-sensitivity.md`). Every #331
+probe file is converted and removed; the probes of parts 1 and 3 that remain
+on the audit branch are #329's and #330's. None of these fixes has been
+checked in a live Foundry world yet. The ones to try: a player clicking
+their own and another character's position badge on the combat tracker
+(X22); End a Session while a player types (X41); the Entities panel open on
+a settlement while the GM types `!at` with its name (X56); close Take a Break with ×
+(X43); a Fulfill Your Vow and a Forge a Bond missed on the sheet, then 🔁
+Recommit (X62); "I continue the legacy" naming no track, then each track's
+button (X63); and open the world, ask an `@scene` without beginning a
+session, then open it again the next day and read the narrator's LAST
+SESSION (X65). Two choices are the maintainer's to confirm: X65 appends the
+prep summary to LAST SESSION (the issue offered dropping it too), and X58
+leaves the Pacing and World Journal rows unmarked, their section headings
+already reading "(GM only)" (decisions.md, "Issue #331 audit").
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| X15 REDIRECT-PICKER-SURVIVES-UPGRADE | WRONG-DETAIL | A miss's "waste resources" price, redirected at 0 supply to a "make a suffer move" picker, was posted with no resolutionId, so a burn or improve to a strong hit left it live → the picker is bound to the move's resolution; the upgrade retires it |
+| X16 RIDER-SUPPLY-ZERO-NO-UNPREPARED | WRONG-DETAIL | An asset rider's supply cost to 0 marked nobody unprepared → the rider calls `markUnprepared` (the roller and the crew sharing the supply); the summary says so |
+| X17 BATTLE-GONE-EATS-NEXT-MOVE-ADDS | LOSE-STATE | A forced Battle on a finished fight took Take a Break's +1 and the roller's next-move +1, then rolled nothing → the "not rolled" guards run before the adds are taken |
+| X18 REFUSED-PERSIST-LOSES-LEGACY-MARK | LOSE-STATE | A refused move-record write lost its legacy ticks, arrival and site reveal under "check your API key" → `moveRecordRefused`: the GMs' payoff failure card (source `persist`) retries each step |
+| X19 CONNECTION-PICK-PCLESS-PLAYER | ATTRIBUTION | A PC-less player's connection pick rolled as the GM's first PC → `relayedClickerPc`: refused |
+| X20 MILESTONE-PICK-COMPLETED-VOW | WRONG-DETAIL | A milestone picker answered after its vow was fulfilled marked it → refused (`vow-completed`), the picker kept open for its other vows; `markVowProgress` never marks a fulfilled vow |
+| X21 PLAYER-VOW-LINK-QUOTED-NAME | WRONG-DETAIL | A quoted nickname closed the link picker's `value` attribute → `escapeHtml` escapes `"` |
+| X22 TRACKER-BADGE-PLAYER-SILENT | GM-GATE (UX) | A player's tracker badge click was a silent no-op → their own PC's position relays (`progressTrack.edit` op `position`); other badges render disabled, naming who may change them |
+| X23 ASSET-STAT-SUB-FROM-OTHER-ROLL | RULES | Any "roll +stat" in an ability read as a substitution for the move made (Archer +wits on Strike) → read per sentence, for the move the sentence names |
+| X24 CAMPAIGN-RECAP-CARD-UNESCAPED | WRONG-DETAIL | The recap card put model text in raw → `escapeHtml(stripMarkup(p))` |
+| X25 RECAP-CACHE-CACHED-MUTATE | LOSE-STATE | The recap cache was set on the cached campaignState → written on a copy, canonical GM only |
+| X26 SPOTLIGHT-PERSIST-CACHED | LOSE-STATE | The spotlight pointer likewise → on a copy, canonical GM only |
+| X27 CLOCK-VIGNETTE-NPC-MARKUP | WRONG-DETAIL | Clock vignette cards showed `<npc>` tags → `stripMarkup` at the three sites |
+| X28 ORACLE-FOLLOWUP-LENGTH-CONFLICT | WRONG-DETAIL | The oracle follow-up asked for two sentence counts → its own 2-3 only |
+| X29 ACTIVE-CONNECTIONS-COUNTS-LOST | WRONG-DETAIL | "N active connection(s)" counted severed ones → the count-only block is retired |
+| X30 WJ-PAGE-BODY-STALE | WRONG-DETAIL | Severity, confirm, strike and Dismiss wrote the page flag only → `writeEntryPage` everywhere; a retracted entry renders "Retracted by the table." |
+| X31 ARCHIVED-TRUTH-STAYS-RETRACTED | LOSE-PLOT | `!truth set` after a strike lifted the strike in the ledger only → the strike records the entries it retracted; the lift restores them |
+| X32 SHIP-SEED-STALE-RECORD-WRITE | LOSE-STATE | The ship seed wrote `flags.ship` whole from a pre-await snapshot → by flag path, onto the record as it stands |
+| X33 FACTION-DETECT-TWO-ENCOUNTERS | DUPLICATE | One mention recorded two encounters → the auto-surface skips a faction the journal has |
+| X34 SHIP-FINALISE-RESEEDS-AUTOSEEDED | LOSE-STATE | Finalise re-seeded an auto-seeded ship, replacing its Notes → stamps only, when the Notes hold text |
+| X35 ENTITY-CREATE-ID-CACHED-MUTATE | LOSE-STATE | Creators pushed the new id onto the cached campaignState before the write → `registerEntityId` writes first; creators push after |
+| X36 CAMPAIGN-START-CACHED-BEGIN | LOSE-STATE | Campaign Start's Begin skipped the mint check and reopened an ended session → it mints as Begin a Session does, merging its own fields |
+| X37 ROLL-FORCE-CONSUMED-BY-REFUSED-LINE | LOSE-STATE | `!roll` was spent by a line the lock refused → the pipeline spends it once the line holds the lock |
+| X38 INCITING-PREMISE-CACHED-MUTATE | LOSE-STATE | The premise was set on the cached campaignState before its write → only on the write's target; `persistSceneLedgerFields` always writes a copy |
+| X39 TELEMETRY-JOURNAL-DUPLICATED | DUPLICATE | Two writes made two telemetry journals → one queue for every telemetry write |
+| X40 READY-MINT-CACHED-MUTATE | LOSE-STATE | The load-time mint ran on the cached campaignState → on a deep copy |
+| X41 END-SESSION-GATE-OPEN-WINDOW | RACE | End a Session shut the gate after the scene close and the summary call → its own fields are written first |
+| X42 TELEMETRY-FLAG-CACHED-MUTATE | LOSE-STATE | Telemetry appended onto the page's own `getFlag` array → appends on a copy |
+| X43 TAKE-BREAK-X-CLOSE-REJECTS | UX | `DialogV2.wait` rejected on × → `rejectClose: false`; the API reference corrected |
+| X44 ORACLE-MEMORY-LOST-UPDATE | RACE | Two captures together lost one result → one queue |
+| X45 SITE-DISCOVERED-CARD-UNESCAPED | WRONG-DETAIL | The heading took the site's name raw → escaped |
+| X46 SITE-PIN-RENAME-STALE | WRONG-DETAIL | A discovered site's pin kept its old name after a rename → the rename hook renames it |
+| X47 TRUTH-DESCRIPTIONS-ABRIDGED | RULES | Five option descriptions dropped a sentence → the vendored text |
+| X48 PLANET-NAME-NOT-THE-BOOKS | RULES | Planets were named from an invented list → their class's Sample Names (`planet_name_<class>`, d100 bands of five) |
+| X49 ORACLE-NARRATE-UNCHECKED | SECURITY | The GM narrated relayed oracle strings unchecked → the relay names its card; the GM narrates what the card carries, once, for its author |
+| X50 SHIPMAP-SCENEID-DEAD-WRITE | PRODUCED-BUT-DEAD | `ship.shipMapSceneId` was written and never read → the write and the schema field are retired |
+| X51 AUDIO-SYNTH-SPEC-UNBOUNDED | SECURITY | A synthesis request's spec was any voice, model, speed or text → only a narrator card's line in the world's voices (`isNarratorCardClipKey`) |
+| X52 SUPPLY-SYNC-REFUSED-WRITE-ABORTS-PASS | LOSE-STATE | One refused sibling write aborted the supply sync and stranded a queued change → each write stands alone; the GM is told whose |
+| X53 ERRORLOG-RELAY-RAW-HTML | SECURITY | A relayed error-log entry was appended raw → only one entry as `formatEntry` writes it; anything else refused |
+| X54 SETUP-CARD-CANONICAL-ONLY | GM-GATE (UX) | The Campaign Setup card went to the canonical GM alone → `gmUserIds()` |
+| X55 VOW-SYNC-HELPER-DEAD | PRODUCED-BUT-DEAD | `computeSharedVowSyncUpdates` had no production caller → deleted; its tests drive the live hook |
+| X56 ENTITY-PANEL-STALE-ON-STATE | UX | The panel ignored the campaignState hook → re-renders when the current location or dismissed names it showed change |
+| X57 ENTITY-PORTRAIT-ALT-UNESCAPED | SAFETY | The portrait's `alt` took the raw name → escaped (and its `src`) |
+| X58 HELP-GM-ONLY-UNMARKED | DOC-DRIFT | Five GM-only commands' rows did not say so → `!at` and `!sector new` say "GM only" (their heading was X59's); the Pacing and World Journal rows sit under "(GM only)" headings; a sweep test checks every handler's GM-only notice against the help |
+| X59 HELP-ROLE-CLAIMS-DRIFT | DOC-DRIFT | Quick Start called 🛡 GM only; `!sector list` sat under a "(GM only)" heading → corrected; the OpenRouter step says GM only |
+| X60 CONFIG-SETTING-UNDOCUMENTED | DOC-DRIFT | Two `config: true` settings had no Settings Reference row → rows; a sweep test |
+| X61 DEV-DOC-DRIFT | DOC-DRIFT | Ten modules had no file-structure row; `Dialog.confirm()` read "not yet fixed" → rows (and `sufferDialog.js`'s, found by the test); fixed |
+| X62 RECOMMIT-SHEET-MISS | UX | A sheet miss of Fulfill Your Vow / Forge a Bond got no 🔁 Recommit → the native hook posts the pipeline's offer |
+| X63 LEGACY-ROLL-UNNAMED | UX | A Continue a Legacy naming no track scored 0 → a "which legacy track?" card, each track rolled once (`legacy.pick`) |
+| X64 SESSION-NUMBER-PRE-STAMP | WRONG-DETAIL | A session ended before the stamp read as unbegun → End a Session's close counts as begun |
+| X65 UNBEGUN-SUMMARY-REPLACES-LAST | LOSE-PLOT | A prep session's summary replaced LAST SESSION → appended to it |
+| X66 SECTOR-NAME-PARTS-DEAD | PRODUCED-BUT-DEAD | `namePrefix` / `nameSuffix` were written and never read → retired |
+
+Open — found while fixing, not fixed:
+
+- **SUPPLY-SYNC-TWINS** (LOSE-STATE, latent) — X52's shape at two more
+  syncs. The shared-vow lockstep (`swearVow.js` `registerSharedVowSyncHook`)
+  writes each copy with no per-write guard: a refused copy write throws out
+  of its pass, skipping the copies after it and stranding a queued change
+  until the vow's next edit. The legacy sheet sync
+  (`sharedLegacies.js` `registerLegacySheetSyncHook`) does the same when
+  `setSharedProgress`'s campaignState write is refused (its per-sheet mirror
+  is already guarded). Proposed: X52's per-write try/catch, the pass going on.
+- **TEST-AID-ALLY-ROLL-FLAKE** (test) — `moveTextConsequences.test.js`'s
+  "resolveMove resolves it as Gain Ground only while a fight is open" rolls
+  real dice: at +9 (capped at 10), both challenge dice at 10 — 1 run in 100
+  — is a miss, which carries no `allyCombatPosition`, and the test fails.
+  Seen once in this cycle. Proposed: script the dice, as its neighbours do.
+- **HARNESS-UPDATEACTOR-FLAT** (test harness) — `tests/helpers/multiClient.js`
+  fires `updateActor` with the update as it was passed (flat keys:
+  `{ "system.supply.value": 0 }`); Foundry passes the expanded diff. A hook
+  that reads the expanded form (`sharedSupply`'s `change.system.supply.value`)
+  never fires on a booted table. Proposed: expand the change before the
+  broadcast, as `expandUpdate` does.
+
 ### Ninth bug audit (issue #330, part 3 of 3) — the fifteen decisions built in the v1.7.36 cycle
 
 Found by the ninth bug audit (2026-11-04) of `8715172`: the fifteen rows that
@@ -57,20 +158,19 @@ sheet shows as a forged bond).
 | D14 SECTOR-NAMESAKE-FOLDERS | B | A new sector's name is rolled again while a stored sector has it (numbered after fifty taken pairs) |
 | D15 SESSION-PANEL-ENVISION-GM-ONLY | A | The Session panel's ✦ Envision Inciting Incident is a player's too: their press posts their `!incite` |
 
-Found while building them — open:
+Found while building them — fixed by issue #331 (the section above):
 
-- **RECOMMIT-SHEET-MISS** (UX) — a Fulfill Your Vow or Forge a Bond rolled
-  on the Starforged sheet that misses gets no 🔁 Recommit: the native
-  consequence hook pays hits only, so the offer (D1) comes from the move
-  pipeline alone. Recommit by hand on the sheet, or type the move.
-- **LEGACY-ROLL-UNNAMED** (UX) — a Continue a Legacy whose narration names
-  no legacy track scores 0 with a console warning only; the card shows
-  "Progress: 0" as if it were the track's (D6). Name the track — "my
-  quests legacy" — when you roll it.
-- **SESSION-NUMBER-PRE-STAMP** (edge) — a world whose last session was ended
-  before issue #300 F11 (no `sessionStartedId`, the gate shut) reads that
-  session as unbegun once, so the next one keeps its number (D12). Any
-  Begin a Session since then stamps it.
+- ~~**RECOMMIT-SHEET-MISS**~~ (UX) — fixed (issue #331 X62). A Fulfill Your
+  Vow or Forge a Bond rolled on the Starforged sheet that missed got no 🔁
+  Recommit: the native consequence hook paid hits only → it posts the
+  pipeline's offer on a sheet miss.
+- ~~**LEGACY-ROLL-UNNAMED**~~ (UX) — fixed (issue #331 X63). A Continue a
+  Legacy whose narration named no legacy track scored 0 with a console
+  warning only → a "which legacy track?" card, each track rolled once.
+- ~~**SESSION-NUMBER-PRE-STAMP**~~ (edge) — fixed (issue #331 X64). A
+  session ended before issue #300 F11 (no `sessionStartedId`, the gate shut)
+  read as unbegun once, so the next one kept its number (D12) → a session
+  End a Session closed counts as begun.
 
 ### Ninth bug audit (issue #329, part 1 of 3) — all fourteen fixed in the v1.7.36 cycle, and four of the five found while fixing
 
@@ -78,8 +178,8 @@ Found by the ninth bug audit (2026-11-04) of `8715172`, with a probe per
 finding (`tests/probes/` on branch `claude/focused-mayer-4v90oo`; the full
 report is `docs/testing/bug-audit-9-2026-11-04.md` there): the two X-Card
 safety findings (X01–X02) and twelve medium ones (X03–X14). Parts 2 and 3
-(issues #331 — X15–X61 — and #330 — the decisions D1–D15): #330 is built
-(the section above); #331 is open. Each fix
+(issues #331 — X15–X61 — and #330 — the decisions D1–D15): both are built
+(the sections above). Each fix
 carries its own regression tests, converted from the audit's probes, which
 fail with the fix taken out (`docs/testing/fix-sensitivity.md`). None has been
 checked in a live Foundry world yet. The ones to try: play the X-Card on a

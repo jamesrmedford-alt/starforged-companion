@@ -6,6 +6,48 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **A Continue a Legacy that names no legacy track asks which** (issue #331 X63). It scored 0 — a certain miss — and said nothing. A card now offers your Quests, Bonds and Discoveries legacies with their scores; each can be rolled once from it, since the move rolls every track.
+- Added: **A vow or bond missed on the sheet offers 🔁 Recommit** (issue #331 X62). A Fulfill Your Vow or Forge a Bond rolled on the character sheet that missed had no recommit button — only a roll typed in chat offered one. A bond you added by hand on the Connections tab still gets none.
+- Fixed: **Preparing between sessions no longer replaces LAST SESSION** (issue #331 X65). Narrating while no session was begun (an `@scene` or an oracle while preparing) replaced the narrator's summary of the session the table last played. It is now added to that summary instead.
+- Fixed: **A session ended at the table keeps its number** (issue #331 X64). A session from before this version — or one begun by ✦ Campaign Start before it — could share its number with the next, and the count stayed one behind.
+- Fixed: **Pay the Price's “make a suffer move” picker leaves with the miss** (issue #331 X15). With no supply and unprepared, a miss's “waste resources” price posts a picker. Burning momentum or improving the miss to a hit left it live, and a later tap still charged you.
+- Fixed: **An asset effect that spends your last supply marks the crew unprepared** (issue #331 X16). The supply went to 0, and neither you nor the crew that shares it was marked unprepared.
+- Fixed: **A Battle that is not rolled keeps your +1s** (issue #331 X17). A Battle on a fight that had already ended used up Take a Break's +1 and your “+1 on your next move”, then rolled nothing.
+- Fixed: **When the world does not save a move's record, the GMs get a Retry** (issue #331 X18). A refused save of a move's legacy ticks, arrival or site reveal said “Move interpretation failed. Check your API key”, and the marks were lost. The GMs are now told, and their failure card's Retry applies each one.
+- Fixed: **A player with no character cannot pick a connection for someone else's** (issue #331 X19). Their press on the “Which connection?” picker rolled Develop Your Relationship or Forge a Bond as another player's character.
+- Fixed: **A milestone pick never marks a vow already fulfilled** (issue #331 X20). A “which vow advances?” picker answered after one of its vows was fulfilled marked that vow. It now says the vow is fulfilled, and stays open for the others.
+- Fixed: **A connection with a quoted nickname can be linked to a vow made on the sheet** (issue #331 X21). Mara “Doc” Reyes could never be picked.
+- Fixed: **A player's combat tracker badges do something, or say whose they are** (issue #331 X22). A player's click did nothing. Your own character's position badge now asks the GM to change it; a badge you may not change is shown disabled, naming who may.
+- Fixed: **An asset offers to roll another stat only for the move it names** (issue #331 X23). Archer offered +wits on Strike and Clash (from its ammo-crafting roll), and Engine Upgrade +edge on Undertake an Expedition.
+- Fixed: **The campaign recap card shows its text as written** (issue #331 X24). A phrase in angle brackets vanished, and markup in the recap rendered.
+- Fixed: **A clock's vignette card shows the dialogue without the narrator's tags** (issue #331 X27). With audio narration on, players read `<npc>` tags on every clock advance, fill and trigger.
+- Fixed: **The oracle follow-up asks for its own two or three sentences** (issue #331 X28). With Length (sentences) set, its request carried two different counts.
+- Fixed: **The narrator is never told a severed connection is active** (issue #331 X29). After `!sever` it was still counted among your active connections.
+- Fixed: **A World Journal page's text follows its entry** (issue #331 X30). A threat resolved, lore confirmed or a fact struck changed the panel, but not the journal page players read.
+- Fixed: **A fact the GM sets again after striking it stays canon** (issue #331 X31). After `!truth strike` and then `!truth set`, the fact dropped out of the narrator's lore once its scene ended.
+- Fixed: **A ship's details keep a move, a repair or a rename made while they were written** (issue #331 X32). Auto-Seed and ✦ Finalise reverted a position, an integrity change or a name that landed meanwhile.
+- Fixed: **A faction named once is one encounter on its World Journal page** (issue #331 X33). Every new faction began with its first encounter recorded twice.
+- Fixed: **✦ Finalise on an auto-seeded ship keeps its Notes** (issue #331 X34). It wrote new Notes over them, losing a `!ship envision` section and your edits.
+- Fixed: **✦ Campaign Start begins a new session after an ended one** (issue #331 X36). Run after End a Session, it reopened the session that had ended.
+- Fixed: **`!roll` is spent only by the line that rolls** (issue #331 X37). A line refused because another move was being resolved used it up.
+- Fixed: **Telemetry goes to one journal** (issue #331 X39). Two lines typed together in a new world made two “Pacing Telemetry” journals.
+- Fixed: **End a Session closes the session first** (issue #331 X41). A line typed a moment after the press was rolled and narrated into the session being ended.
+- Fixed: **Closing Take a Break with × cancels it** (issue #331 X43). It logged an error.
+- Fixed: **Two oracle results rolled together are both remembered** (issue #331 X44). One was lost from the narrator's recent oracle results, so a narration could contradict it.
+- Fixed: **The ◈ Site Discovered card shows the site's name as text** (issue #331 X45). Markup in a site's name rendered in the heading.
+- Fixed: **A discovered site's map pin follows a rename** (issue #331 X46). Renamed after its discovery, the site kept its old name on the sector map.
+- Fixed: **Five World Truth options read as the rulebook writes them** (issue #331 X47). Options of Iron, Exodus, Lifeforms and Horrors had lost a sentence.
+- Changed: **A generated planet is named from its class's Sample Names** (issue #331 X48). Planets got invented names (“Vorn IV”) whatever their class; a Jovian world is now named like “Aether” or “Arrokoth”, as the rulebook's step 5 does. The names can be rolled with `!oracle` too.
+- Fixed: **The GM narrates only an oracle result a card shows** (issue #331 X49). A crafted request could have the GM's Claude key narrate any text into the shared story.
+- Fixed: **The GM's ElevenLabs key voices only a narrator card's lines** (issue #331 X51). A crafted request could bill it for any voice, model, speed or text.
+- Fixed: **A supply change one character's sheet would not take no longer stops the crew's** (issue #331 X52). The characters after it kept the old value, and a change made meanwhile was lost. The GM is told whose supply to set.
+- Fixed: **A player's error-log entries are saved as text** (issue #331 X53). A crafted entry could put live markup in the Error Log every GM opens.
+- Fixed: **The Campaign Setup card reaches every GM** (issue #331 X54). A second GM never saw it.
+- Fixed: **An open Entities panel follows `!at` and Dismiss made elsewhere** (issue #331 X56). It stayed as it was, and its “Set as current location” could then clear the place just set.
+- Fixed: **An entity's portrait keeps its whole name as its description** (issue #331 X57). A name with a quote in it broke the image.
+- Fixed: **The help says who may do what** (issue #331 X58, X59). Quick Start called the 🛡 Companion Settings button GM only — every player enters their own keys there. `!sector list` is anyone's; `!at` and `!sector new` say they are the GM's.
+- Fixed: **The Settings Reference lists Combat Tracker Integration and Auto-apply asset consequence riders** (issue #331 X60). Both appear in Configure Settings and had no row.
+- Fixed: **When the world refuses a save, the GM's screen shows what the world has** (issue #331 X25, X26, X35, X38, X40, X42). A refused save of the campaign recap, the spotlight's turn, a new entity's listing, the inciting incident's premise, a session started as the world loaded, or a telemetry record left it on the GM's screen alone.
 - Added: **A Fulfill Your Vow or Forge a Bond miss offers 🔁 Recommit** (issue #330 D1). The miss's recommit — roll both challenge dice, clear boxes equal to the lowest, raise the rank by one — was advice the GM applied by hand. The miss card now offers it as a button, once per card, for that character's player or a GM: on every character's copy of the vow, or on the connection's relationship track and your sheet's bond.
 - Changed: **A move card says to burn momentum or improve the result before a follow-up** (issue #330 D2). Taking ⚑ Mark Progress on Vow (or 🏁, 🤝 or 🔗) first is your next move, and your next move closes the card's 🔥 Burn Momentum and Improve Result. The card now says so beside those buttons.
 - Changed: **Harm or stress that takes you to 0 asks you to resist** (issue #330 D3). At 0 health the rules make the Endure Harm roll mandatory, and put “mark wounded or permanently harmed, or roll on the table” on that roll's miss. A Pay the Price harm (or any other) at 0 offered that choice — or marked wounded — with no roll made. It now posts a card that rolls Endure Harm for your character (Endure Stress at 0 spirit), and that roll's miss offers the choice.

@@ -6,6 +6,90 @@ rejected.
 
 ---
 
+## Issue #331 audit: a refusable write changes a copy, a relayed value is what the UI sends, one write's refusal is its own, the help says who may (2026-11)
+
+**Decision:** (issue #331, part 2 of the ninth audit — X15–X61, and X62–X66
+found while building #330. The maintainer asked for the issue to be
+addressed on 2026-11-05. Each finding's ID in brackets.)
+- **A refusable write changes a copy, and only the canonical GM makes it**
+  [X25, X26, X35, X38, X40, X42]: the campaign recap cache, the spotlight
+  pointer, a new entity's id, the inciting premise, the load-time mint and a
+  telemetry page's entries are written onto a copy of the stored value
+  (`game.settings.get` and `getFlag` return the cached object by reference,
+  rules/foundry-api.md) and land on the caller's object only once the world
+  has them.
+- **A relayed value is bounded to what the UI sends** [X49, X51, X53]
+  (rules/reachability.md §8, the W81 rule): an oracle narration relay names
+  its posted card, and the GM narrates what that card carries; a synthesis
+  request is served only for a narrator card's line in the world's voices; a
+  relayed error-log entry is filed only as `formatEntry` writes one.
+  *Rejected (X53):* re-escaping a non-conforming entry — no honest client
+  sends one, and a refusal keeps the log to what the UI wrote.
+- **One write's refusal is its own** [X52]: the crew-shared supply sync goes
+  on to the other PCs and to a queued change, and the GM is told whose
+  supply to set. Its twins in the shared-vow and legacy-sheet syncs are
+  open (known-issues SUPPLY-SYNC-TWINS).
+- **A card bound to a move leaves with the move's result** [X15]; **a roll
+  that is not made takes nothing** [X17, X37]; **a refused move record goes
+  to the GMs' failure card with a Retry** [X18].
+- **A player's click on a combat tracker badge relays their own PC's
+  position, and every other badge says whose it is** [X22] — the Progress
+  Tracks panel's toggle, through the GM. *Rejected:* relaying the range
+  badge — it is advisory and the GM's to set ("Range badges are advisory").
+- **An asset substitutes a stat only where its text says so for the move
+  being made** [X23], read per sentence.
+- **The count-only "active connections" block is retired** [X29] — the
+  audit's second option (its refuter's): the roster and CHARACTER STATE name
+  every connection, a lost one apart. *Rejected:* counting active records in
+  the prompt builder, which would read actors.
+- **A strike remembers the lore it retracted, and lifting it restores
+  exactly that** [X31] — the refuter's preferred fix; an X-Card's retraction
+  is never undone by it.
+- **Finalise on a ship whose Notes hold text only stamps it** [X34].
+  *Rejected:* the audit's `starshipHasSeedDetail` predicate — it also
+  matches a ship with a rolled type and empty Notes, whose first Finalise
+  must still write its introduction (issue #311 P07).
+- **A planet is named from its class's Sample Names** [X48]: the eleven
+  d20 tables are kept on the d100 at five numbers a name, so every oracle
+  table keeps the d100 domain the integrity test holds.
+- **The help marks a GM-only command in its row or its section's heading**
+  [X58, X59]. The Pacing and World Journal rows are left as they are: their
+  headings read "(GM only)" and every command in them is the GM's, as the
+  Recap, Lore, Debug and Migration sections are marked. The Location &
+  Sector heading lost its "(GM only)" — `!sector list` is anyone's — so its
+  GM-only rows say so in the row. *Rejected:* marking every row of an
+  all-GM section, the audit's suggestion — its probe read rows alone.
+- **A sheet roll's miss offers what the pipeline's does** [X62]: the
+  recommit (issue #330 D1), for the roller's vow Item or the connection the
+  roller's bond Item names (issue #330 D5's lookup — a bond made by hand
+  gets none).
+- **A Continue a Legacy that names no track asks which** [X63] — the
+  issue's first option. The move rolls every legacy track, so the card keeps
+  a button per track, each claimed once on the GM (`legacy.pick`,
+  `legacyRolled.<track>`). *Rejected:* a card that names no track and rolls
+  nothing (the second option) — the player would type the move again for
+  each track.
+- **A session End a Session closed counts as begun** [X64], so a session
+  ended before the stamp keeps its number. A typed `!end-session` on a
+  session nobody began counts it too, as every session did before D12.
+- **A session nobody began adds its summary to LAST SESSION, never
+  replaces it** [X65]. The issue left it to the maintainer: keep the begun
+  session's summary, then append the prep summary or drop it. Appended —
+  D12's record carries the unbegun session's summary, and the same
+  narration would be in the summary had the table begun play within four
+  hours of the prep; it reads "Narrated between sessions, while no session
+  was begun: …". *Not taken:* dropping it — one branch of `mintSession`, if
+  the maintainer prefers.
+- **A field nothing reads is retired, not kept** [X50, X55, X66]:
+  `shipMapSceneId`, `computeSharedVowSyncUpdates`, a sector's `namePrefix` /
+  `nameSuffix` (rules/reachability.md §1, §2).
+
+**Reason:** the ninth audit's findings, each with a probe that failed before
+its fix (X62–X66 traced by hand); the tests that replace them fail with the
+fix taken out (`docs/testing/fix-sensitivity.md`).
+
+---
+
 ## Issue #330 decisions: D1–D15 (2026-11)
 
 **Decision:** (issue #330, part 3 of the ninth audit — the fifteen rows that
