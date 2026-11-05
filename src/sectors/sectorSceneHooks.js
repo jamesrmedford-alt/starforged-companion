@@ -80,10 +80,13 @@ export function registerSectorSceneHooks() {
 /**
  * updateActor — a settlement Actor renamed (its sheet, the Entities panel, the
  * rename sync) renames its pins on every sector Scene. The label was written
- * once at scene creation, so the map kept the old name. Settlement pins only:
- * a planet pin links the same Actor but is labelled with the planet, and a
- * site pin's label is "Unexplored Site" until it is revealed. Notes are
- * shared documents, so one client writes — the canonical GM.
+ * once at scene creation, so the map kept the old name. Settlement pins, and
+ * a discovered site's pin — labelled with the site's name at its reveal, so a
+ * rename after it left the map on the generated name while the narrator's
+ * Charted sites and the cards used the new one (issue #331 X46). A planet pin
+ * links the same Actor but is labelled with the planet, and an undiscovered
+ * site's pin reads "Unexplored Site" until it is revealed. Notes are shared
+ * documents, so one client writes — the canonical GM.
  *
  * @param {Actor} actor   the updated Actor (post-update)
  * @param {Object} changes the update diff
@@ -101,8 +104,10 @@ export function handleSettlementPinRename(actor, changes) {
     const notes = scene.notes?.contents ?? scene.notes ?? [];
     for (const note of Array.isArray(notes) ? notes : []) {
       const flags = note?.flags?.[MODULE_ID];
-      if (!flags?.settlementId || flags.actorId !== actor.id) continue;
-      if (flags.planetNote || flags.stellarNote || flags.siteNote) continue;
+      if (!flags || flags.actorId !== actor.id) continue;
+      const settlementPin = !!flags.settlementId && !flags.planetNote && !flags.stellarNote && !flags.siteNote;
+      const revealedSite  = !!flags.siteNote && flags.discovered === true;
+      if (!settlementPin && !revealedSite) continue;
       if (note.text === name) continue;
       writes.push(Promise.resolve(note.update?.({ text: name })).catch(err =>
         console.warn(`${MODULE_ID} | settlement pin rename failed for ${note.id}:`, err?.message ?? err)));
