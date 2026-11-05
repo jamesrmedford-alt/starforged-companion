@@ -548,10 +548,15 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     // without this call's own arguments.
     const executorOpts = Object.fromEntries(Object.entries(opts ?? {})
       .filter(([key]) => !["skipCard", "amount", "itemId", "fixedRoll"].includes(key)));
+    // The redirected loss is the price of the move that paid it: the picker
+    // is bound to that move's resolution, so a Burn Momentum or Improve
+    // Result that undoes the price retires it and refuses a late pick, as it
+    // does the move's own choice cards (issue #331 X15, issue #311 P03).
     const redirect = await postSufferChoiceCard({
       sufferPrompt: { kind: "any", amount, count: 1, exclude: ["sacrifice_resources"] },
       actor,
       executorOpts,
+      resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });
     if (!opts.skipCard) {
       await postSufferCard({
