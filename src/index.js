@@ -1163,6 +1163,37 @@ export function registerChatHook() {
         return null;
       });
 
+      // The "not rolled" guards come before any +1 is taken: a move that is
+      // not rolled pays no add, and both decisions put the +1 on the next
+      // action roll MADE — a claim that adds nothing leaves it pending (issue
+      // #331 X17: a forced Battle on a fight that had ended ate Take a
+      // Break's +1 and the roller's own, then rolled nothing).
+      //
+      // A roll started from a track (a Progress Tracks row, an expedition
+      // card, a "Which vow?" pick) names it by id. When that track was
+      // deleted or finished meanwhile, nothing is rolled — and it says so: a
+      // same-named sibling is a different fight, and a score of 0 would be a
+      // certain miss with its consequences (issue #306 R06, #321 U02).
+      if (interpretation.moveTargetId
+          && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow")
+          && !tickInfo.trackId) {
+        await postTrackGoneCard(interpretation).catch(err =>
+          console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
+        return;
+      }
+      // Battle is an action roll, so the guard above (progress moves) let a
+      // Battle naming a finished fight by id roll in full — its +2 momentum
+      // or a Pay the Price for a fight that was over (issue #325 W11).
+      if (interpretation.moveId === "battle" && interpretation.moveTargetId) {
+        const fights = await listProgressTracks().catch(() => []);
+        const fight  = fights.find(t => t.id === interpretation.moveTargetId);
+        if (!fight || fight.completed) {
+          await postTrackGoneCard(interpretation).catch(err =>
+            console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
+          return;
+        }
+      }
+
       // Take a Break → "Move on": a single-use +1 on the next action roll (not
       // a progress move). Consumed from the working copy (so persistResolution's
       // clone can't resurrect it) and from the stored campaignState. Taken
@@ -1195,31 +1226,6 @@ export function registerChatHook() {
         return 0;
       });
       if (bondAdd > 0) interpretation.adds = (interpretation.adds ?? 0) + bondAdd;
-
-      // A roll started from a track (a Progress Tracks row, an expedition
-      // card, a "Which vow?" pick) names it by id. When that track was
-      // deleted or finished meanwhile, nothing is rolled — and it says so: a
-      // same-named sibling is a different fight, and a score of 0 would be a
-      // certain miss with its consequences (issue #306 R06, #321 U02).
-      if (interpretation.moveTargetId
-          && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow")
-          && !tickInfo.trackId) {
-        await postTrackGoneCard(interpretation).catch(err =>
-          console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
-        return;
-      }
-      // Battle is an action roll, so the guard above (progress moves) let a
-      // Battle naming a finished fight by id roll in full — its +2 momentum
-      // or a Pay the Price for a fight that was over (issue #325 W11).
-      if (interpretation.moveId === "battle" && interpretation.moveTargetId) {
-        const fights = await listProgressTracks().catch(() => []);
-        const fight  = fights.find(t => t.id === interpretation.moveTargetId);
-        if (!fight || fight.completed) {
-          await postTrackGoneCard(interpretation).catch(err =>
-            console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
-          return;
-        }
-      }
 
       // Take Decisive Action — the resolver applies the bad-spot downgrade
       // (play kit p. 5). Prefer the scored fight's position for the roller —

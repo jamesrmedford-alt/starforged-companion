@@ -252,6 +252,9 @@ pipeline does not roll a Battle naming a finished fight by id — the "not
 rolled" card, as Take Decisive Action. The button was disabled only in the
 clicker's DOM, so a re-render or another client rolled Battle again on a
 finished fight, its +2 momentum or a second Pay the Price (issue #325 W11).
+The "not rolled" guards run before the pipeline takes Take a Break's +1 or
+the roller's next-move bonus, so a Battle that is not rolled leaves both
+pending for the next action roll made (issue #331 X17).
 
 **Face Defeat** closes the track as a loss (no payoff) and routes Pay the Price.
 
