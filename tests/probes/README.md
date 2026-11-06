@@ -6,6 +6,8 @@ Probe tests from the eleventh bug audit of `8a4ae3b` (the report is
 `docs/testing/bug-audit-11-2026-11-06-refuter-pass.md`): 74 findings Z01–Z74
 and 8 decisions D1–D8.
 
+Filed as GitHub issue [#342](https://github.com/jamesrmedford-alt/starforged-companion/issues/342).
+
 Each probe asserts the **correct** behaviour, so it fails while its finding is
 open and passes once the finding is fixed. Tests named `control: …` pass today
 by design. The files are named `*.probe.js` so `npm test` never collects them.
