@@ -120,8 +120,9 @@ passage" drawing.
   no Burn / Improve; T05) whose `legacyMark` marks the discoveries legacy,
   which clears at its tenth box (T02).
 - **Location tracking**: `!at <name>` writes BOTH
-  `campaignState.currentLocationId/Type` and the ship position (bare `!at`
-  clears both), and since the LOCATION-DUAL-STORE fix the arrival block does
+  `campaignState.currentLocationId/Type` and the ship position (a bare `!at`
+  clears the current location only; the ship stays where it is — issue #342
+  Z74), and since the LOCATION-DUAL-STORE fix the arrival block does
   too — a tracked destination reached by move updates `currentLocationId`
   via the same resolver (a token-drop arrival by the pin's Actor id first,
   `currentLocationForEntityId` — issue #321 U52). The Entities panel's "Set as
