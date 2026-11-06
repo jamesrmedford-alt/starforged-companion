@@ -45,7 +45,10 @@ Two reveal paths, both funnelling through `revealSectorSite`
 (`src/sectors/siteDiscovery.js`, dependency-injected, GM-gated by callers):
 
 1. **Finishing an expedition** whose track was stamped with a `siteId` FK at
-   creation (`requireLabelMatch` — no guessing) or whose label names the site
+   creation (`selectExpeditionSite`, the finish's own ladder below —
+   `requireLabelMatch`, no guessing, over the site's location-Actor name, so
+   a site the GM renamed is linked by its new name: known-issues
+   EXPEDITION-STAMP-SITE-NAME) or whose label names the site
    (`selectSectorSite` with `requireLabelMatch`: exact → whole-word substring →
    type-keyword-when-unique → the pin's own "Unexplored Site", which names the
    active sector's one unexplored site — never the sole-undiscovered guess, so

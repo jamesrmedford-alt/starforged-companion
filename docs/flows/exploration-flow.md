@@ -256,9 +256,14 @@ summary lives in the `known-issues.md` table and the code.
   creation stamps `siteId` when the destination confidently names an
   undiscovered site, or is the pin's own "Unexplored Site" and the active
   sector has exactly one unexplored site (issue #342 D7)
-  (`selectSectorSite` with `requireLabelMatch`; never
-  the sole-undiscovered guess), and `revealSectorSite` reveals the linked
-  site first.
+  (`selectExpeditionSite` — the finish's own ladder, `selectSectorSite` with
+  `requireLabelMatch` over each site's name as the table knows it, its
+  location Actor's; never the sole-undiscovered guess), and
+  `revealSectorSite` reveals the linked site first. The stamp read only the
+  records' generated names, so a site the GM had renamed was linked to
+  nothing — or, its new name holding a type keyword ("The Ghost Spire", a
+  vault), to the sector's one unexplored derelict, which the finish then
+  charted and docked at (known-issues EXPEDITION-STAMP-SITE-NAME).
 - ~~Advisory-only branches~~ — **addressed**: the finish-miss card offers
   **🔁 Recommit** (rolls the challenge dice, clears the lowest die's boxes,
   raises the rank — `planRecommit`; once per card since issue #321 U20, §3),

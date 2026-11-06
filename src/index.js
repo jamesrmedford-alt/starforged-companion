@@ -96,7 +96,6 @@ import {
   getProgressTrack,
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack } from "./moves/expedition.js";
-import { selectSectorSite } from "./sectors/precursorSites.js";
 import { shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
@@ -1626,13 +1625,16 @@ async function applyOutcomeEffects({
         // sector's one unexplored site (issue #342 D7). Finishing then
         // reveals THIS site instead of re-guessing by name — the audit's
         // "expedition→site linkage is name-fuzzy" gap — and reveals no site
-        // for an expedition that names none.
+        // for an expedition that names none. The finish's own ladder
+        // (selectExpeditionSite): a site is named by its location Actor, as
+        // the GM may have renamed it — over the records' generated names
+        // alone, the vault renamed "The Ghost Spire" matched nothing and the
+        // "ghost" keyword linked the derelict, which the finish then charted
+        // (known-issues EXPEDITION-STAMP-SITE-NAME).
         if (result.created) {
           try {
-            const linked = selectSectorSite(campaignState.sectors, result.track.label, {
-              requireLabelMatch: true,
-              activeSectorId:    campaignState.activeSectorId ?? null,
-            });
+            const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
+            const linked = selectExpeditionSite(campaignState, result.track.label);
             if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
           } catch (err) {
             console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
