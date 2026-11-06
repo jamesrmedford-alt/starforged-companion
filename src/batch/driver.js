@@ -368,7 +368,7 @@ export async function openRoundIfDue(reason = "due") {
       if (roundIsOpen(latest) && (latest.sessionId === sessionId || isResolving(latest))) return latest;
       return createRound({
         id: randomId(), number: nextRoundNumber(latest, sessionId), sessionId,
-        sceneId: cs.currentSceneId ?? null, now: nowIso(), participants: currentParticipants(),
+        now: nowIso(), participants: currentParticipants(),
       });
     });
   } catch (err) {
@@ -766,7 +766,7 @@ async function startResolution({ sendNow }) {
   let begun = false;
   try {
     try {
-      await queueRoundWrite(r => beginResolution(r, { resolverId: game.user.id, resolverClaim: lock.claim, now: nowIso(), sendNow }));
+      await queueRoundWrite(r => beginResolution(r, { resolverId: game.user.id, now: nowIso(), sendNow }));
     } finally {
       // Begun, or refused: either way this Send now is spent (a busy lock above keeps it).
       _sendNowRequested = false;
@@ -948,11 +948,15 @@ async function rollEntry(round, entry) {
   await queueRoundWrite(r => markRecorded(markRolled(r, { userId, rolled: rolledInfo }), { userId, recordedAt: nowIso() }));
 }
 
-/** What the round keeps of a rolled move (markRolled): its card, outcome and narration input. */
+/**
+ * What the round keeps of a rolled move (markRolled): its card, outcome and
+ * narration input. (The match rides the narration input: a copy beside it was
+ * read by nothing — issue #342 Z37.)
+ */
 function rolledInfoFrom({ resolution, relevance, moveResultMessage }) {
   return {
     resolutionId: resolution?._id ?? null, cardId: moveResultMessage?.id ?? null,
-    moveId: resolution?.moveId ?? null, outcome: resolution?.outcome ?? null, isMatch: resolution?.isMatch === true,
+    moveId: resolution?.moveId ?? null, outcome: resolution?.outcome ?? null,
     narrationInput: narrationInputFrom(resolution, relevance),
   };
 }

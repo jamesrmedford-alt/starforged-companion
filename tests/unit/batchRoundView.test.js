@@ -59,14 +59,14 @@ describe('a player\'s own entry', () => {
   });
 
   it('locks once the round resolves', () => {
-    const resolving = fixActing(beginResolution(round(), { resolverId: 'gm-1', resolverClaim: 'c', now: NOW }));
+    const resolving = fixActing(beginResolution(round(), { resolverId: 'gm-1', now: NOW }));
     const own = view(resolving, 'pl-1').own;
     expect(own).toMatchObject({ canEdit: false, canSubmit: false, canConfirm: false, canWithdraw: false });
     expect(view(resolving, 'pl-1').banners.map(b => b.text)).toContain(ROUND_NOTICES.resolving);
   });
 
   it('shows Deciding upgrade with the Burn / Improve / Keep offer while the round waits for it', () => {
-    let r = fixActing(beginResolution(round(), { resolverId: 'gm-1', resolverClaim: 'c', now: NOW }));
+    let r = fixActing(beginResolution(round(), { resolverId: 'gm-1', now: NOW }));
     r = markRecorded(markRolled(r, { userId: 'pl-1', rolled: { cardId: 'card-1', moveId: 'face_danger', outcome: 'weak_hit' } }), { userId: 'pl-1', recordedAt: NOW });
     r = beginUpgrades(r, { offers: { 'pl-1': { burn: { momentum: 9, previewOutcome: 'strong_hit' }, improve: null, cardId: 'card-1' } } });
     const own = view(r, 'pl-1').own;

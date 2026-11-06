@@ -219,7 +219,7 @@ describe('the upgrade decision', () => {
     roundWith(r => {
       let x = R.confirmEntry(R.recordReading(R.submitEntry(r, { userId: ME(), text: 'x', submissionId: 'u', now: NOW }),
         { userId: ME(), submissionId: 'u', reading: { ...READING, targetChoices: null } }), { userId: ME(), submissionId: 'u', choices: {}, now: NOW });
-      x = R.fixActing(R.beginResolution(x, { resolverId: 'gm', resolverClaim: 'c', now: NOW }));
+      x = R.fixActing(R.beginResolution(x, { resolverId: 'gm', now: NOW }));
       x = R.markRecorded(R.markRolled(x, { userId: ME(), rolled: { cardId: 'card-9', moveId: 'strike', outcome: 'weak_hit' } }), { userId: ME(), recordedAt: NOW });
       return R.beginUpgrades(x, { offers: { [ME()]: { burn: { momentum: 9, previewOutcome: 'strong_hit' }, improve: { previewOutcome: 'strong_hit', label: 'Fugitive' }, cardId: 'card-9' } } });
     });

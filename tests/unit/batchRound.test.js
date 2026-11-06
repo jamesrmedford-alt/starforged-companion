@@ -31,7 +31,7 @@ const pcs = [
   { id: 'pc-ren',  name: 'Ren',  ownerIds: ['pl-2'] },
 ];
 const participants = () => participantsFrom({ users, pcs });
-const open = () => createRound({ id: 'r1', number: 1, sessionId: 's1', sceneId: 'sc', now: NOW, participants: participants() });
+const open = () => createRound({ id: 'r1', number: 1, sessionId: 's1', now: NOW, participants: participants() });
 
 const MOVE_READING = {
   kind: READING_KIND.MOVE, moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'edge',
@@ -124,7 +124,7 @@ describe('transitions', () => {
   it('a confirm with a stale submissionId is refused; a submit while rolling is refused', () => {
     const r = readied(open(), 'pl-1');
     refusedWith(() => confirmEntry(r, { userId: 'pl-1', submissionId: 'old', choices: {}, now: NOW }), 'stale');
-    const rolling = beginResolution(r, { resolverId: 'gm-1', resolverClaim: 'c', now: NOW });
+    const rolling = beginResolution(r, { resolverId: 'gm-1', now: NOW });
     refusedWith(() => submitEntry(rolling, { userId: 'pl-2', text: 'late', submissionId: 'x', now: NOW }), 'resolving');
   });
 
@@ -270,7 +270,7 @@ describe('when a round resolves', () => {
   it('nobody acting resolves it with no one in it; nobody connected leaves it waiting', () => {
     const r = passEntry(passEntry(open(), { userId: 'pl-1' }), { userId: 'pl-2' });
     expect(readyToResolve(r, { connectedUserIds: ['pl-1', 'pl-2'] })).toBe(true);
-    expect(actingOrder(fixActing(beginResolution(r, { resolverId: 'gm', resolverClaim: 'c', now: NOW })))).toEqual([]);
+    expect(actingOrder(fixActing(beginResolution(r, { resolverId: 'gm', now: NOW })))).toEqual([]);
     expect(readyToResolve(open(), { connectedUserIds: [] })).toBe(false);
   });
 
@@ -278,14 +278,14 @@ describe('when a round resolves', () => {
     let r = readied(open(), 'pl-1');                                           // read, not confirmed
     r = submitEntry(r, { userId: 'pl-2', text: 'still reading', submissionId: 'q', now: NOW });   // in flight
     expect(readingsInFlight(r)).toEqual(['pl-2']);
-    r = beginResolution(r, { resolverId: 'gm-1', resolverClaim: 'c', now: NOW, sendNow: true });
+    r = beginResolution(r, { resolverId: 'gm-1', now: NOW, sendNow: true });
     // The reading in flight lands before the acting entries are fixed.
     r = recordReading(r, { userId: 'pl-2', submissionId: 'q', reading: NARRATIVE_READING });
     r = fixActing(r);
     expect(r.acting).toEqual(['pl-1', 'pl-2']);
     // Once fixed, a late reading does not land.
     const late = submitEntry(open(), { userId: 'pl-1', text: 'x', submissionId: 'z', now: NOW });
-    const fixed = fixActing(beginResolution(late, { resolverId: 'g', resolverClaim: 'c', now: NOW, sendNow: true }));
+    const fixed = fixActing(beginResolution(late, { resolverId: 'g', now: NOW, sendNow: true }));
     expect(recordReading(fixed, { userId: 'pl-1', submissionId: 'z', reading: MOVE_READING })).toBe(fixed);
   });
 
@@ -294,12 +294,12 @@ describe('when a round resolves', () => {
     r = readingFailed(r, { userId: 'pl-1', submissionId: 'z', error: 'boom' });
     expect(readingsInFlight(r)).toEqual([]);
     expect(r.entries['pl-1'].error).toBe('boom');
-    expect(fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW, sendNow: true })).acting).toEqual([]);
+    expect(fixActing(beginResolution(r, { resolverId: 'g', now: NOW, sendNow: true })).acting).toEqual([]);
   });
 
   it('a round already resolving cannot begin again', () => {
-    const r = beginResolution(open(), { resolverId: 'g', resolverClaim: 'c', now: NOW });
-    refusedWith(() => beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW }), 'resolving');
+    const r = beginResolution(open(), { resolverId: 'g', now: NOW });
+    refusedWith(() => beginResolution(r, { resolverId: 'g', now: NOW }), 'resolving');
   });
 });
 
@@ -339,7 +339,7 @@ describe('the round\'s life', () => {
   it('rolling → upgrading for the offered rollers → narrating → closed', () => {
     let r = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
     r = confirmEntry(readied(r, 'pl-2'), { userId: 'pl-2', submissionId: 's-pl-2', choices: {}, now: NOW });
-    r = fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW }));
+    r = fixActing(beginResolution(r, { resolverId: 'g', now: NOW }));
     r = markRolled(r, { userId: 'pl-1', rolled: { resolutionId: 'res-1', cardId: 'card-1', outcome: 'weak_hit' } });
     r = markRecorded(r, { userId: 'pl-1', recordedAt: NOW });
     expect(allSettled(r)).toBe(false);
@@ -359,7 +359,7 @@ describe('the round\'s life', () => {
 
   it('nothing offered goes straight to narrating; Keep for the undecided, or for those who left', () => {
     let r = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
-    r = markRecorded(fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW })), { userId: 'pl-1', recordedAt: NOW });
+    r = markRecorded(fixActing(beginResolution(r, { resolverId: 'g', now: NOW })), { userId: 'pl-1', recordedAt: NOW });
     expect(beginUpgrades(r, { offers: {} }).phase).toBe(ROUND_PHASE.NARRATING);
     const up = beginUpgrades(r, { offers: { 'pl-1': { burn: {}, improve: null, cardId: 'c' } } });
     expect(keepUndecidedUpgrades(up, { now: NOW, userIds: ['pl-2'] }).entries['pl-1'].upgrade.decided).toBeNull();
@@ -368,7 +368,7 @@ describe('the round\'s life', () => {
 
   it('a refused entry is settled, with the narration input of an action with no roll', () => {
     let r = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
-    r = markRefused(fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW })),
+    r = markRefused(fixActing(beginResolution(r, { resolverId: 'g', now: NOW })),
       { userId: 'pl-1', reason: 'The fight ended.', narrationInput: { kind: 'refused' }, recordedAt: NOW });
     expect(r.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.REFUSED, rolled: { refused: 'The fight ended.' } });
     expect(allSettled(r)).toBe(true);
@@ -377,7 +377,7 @@ describe('the round\'s life', () => {
   it('recovery: recorded entries are never rolled again; one rolled without a record is apart; the rest roll', () => {
     let r = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
     r = confirmEntry(readied(r, 'pl-2'), { userId: 'pl-2', submissionId: 's-pl-2', choices: {}, now: NOW });
-    r = fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW }));
+    r = fixActing(beginResolution(r, { resolverId: 'g', now: NOW }));
     r = markRecorded(markRolled(r, { userId: 'pl-1', rolled: { cardId: 'c1' } }), { userId: 'pl-1', recordedAt: NOW });
     expect(recoveryPlan(r)).toEqual({ recorded: ['pl-1'], unrecorded: [], toRoll: ['pl-2'] });
     r = markRolled(r, { userId: 'pl-2', rolled: { cardId: 'c2' } });
@@ -389,7 +389,7 @@ describe('the round\'s life', () => {
     const before = JSON.stringify(r);
     submitEntry(r, { userId: 'pl-1', text: 'x', submissionId: 'a', now: NOW });
     passEntry(r, { userId: 'pl-2' });
-    beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW });
+    beginResolution(r, { resolverId: 'g', now: NOW });
     expect(JSON.stringify(r)).toBe(before);
   });
 });

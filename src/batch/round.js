@@ -205,24 +205,24 @@ export function nextRoundNumber(previous, sessionId) {
 }
 
 /**
- * A new round, collecting, with an entry waiting for each participant.
+ * A new round, collecting, with an entry waiting for each participant. (No
+ * scene id: the narration uses the scene current when it runs, and nothing
+ * read the one a round opened in — issue #342 Z37.)
  *
- * @param {{ id: string, number: number, sessionId: string|null, sceneId?: string|null,
+ * @param {{ id: string, number: number, sessionId: string|null,
  *   now: string, participants: Array<Object> }} args
  * @returns {Object}
  */
-export function createRound({ id, number, sessionId, sceneId = null, now, participants = [] }) {
+export function createRound({ id, number, sessionId, now, participants = [] }) {
   const entries = {};
   for (const p of participants) if (p?.userId) entries[p.userId] = newEntry(p);
   return {
     id,
     number,
     sessionId: sessionId ?? null,
-    sceneId,
     phase:         ROUND_PHASE.COLLECTING,
     openedAt:      now,
     resolverId:    null,
-    resolverClaim: null,
     sendNow:       false,
     modeOffAfter:  false,
     order:         [],
@@ -633,18 +633,20 @@ export function readingsInFlight(round) {
 }
 
 /**
- * Collecting → rolling. The resolver's claim names the GM resolving it, so
- * another client's recovery leaves it alone while that GM is connected.
+ * Collecting → rolling. `resolverId` names the GM resolving it, so another
+ * client's recovery leaves it alone while that GM is connected (driver.js
+ * recoverRound). The move lock's claim stays with the lock (campaignState
+ * `pendingMoveClaim`): the round kept a copy nothing read (issue #342 Z37).
  *
  * @param {Object} round
- * @param {{ resolverId: string, resolverClaim: string, now: string, sendNow?: boolean }} args
+ * @param {{ resolverId: string, now: string, sendNow?: boolean }} args
  * @returns {Object}
  */
-export function beginResolution(round, { resolverId, resolverClaim, now, sendNow = false }) {
+export function beginResolution(round, { resolverId, now, sendNow = false }) {
   if (!roundIsOpen(round)) refuse("no-round", "There is no round open.");
   if (round.phase !== ROUND_PHASE.COLLECTING) refuse("resolving", "This round is already being resolved.");
   return {
-    ...round, phase: ROUND_PHASE.ROLLING, resolverId, resolverClaim,
+    ...round, phase: ROUND_PHASE.ROLLING, resolverId,
     resolvingAt: now, sendNow: !!sendNow || !!round.sendNow, acting: null,
   };
 }
@@ -689,7 +691,7 @@ function requireActing(round, userId) {
  * An acting entry's move was rolled: its result card is up (the record follows).
  *
  * @param {Object} round
- * @param {{ userId: string, rolled: Object }} args — { resolutionId, cardId, outcome, isMatch, moveId, narrationInput }
+ * @param {{ userId: string, rolled: Object }} args — { resolutionId, cardId, outcome, moveId, narrationInput }
  * @returns {Object}
  */
 export function markRolled(round, { userId, rolled }) {

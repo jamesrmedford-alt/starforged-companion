@@ -35,7 +35,7 @@ const now = () => new Date().toISOString();
 
 function seededRound() {
   const r = createRound({
-    id: 'round-a', number: 3, sessionId: 'bd-s1', sceneId: 'sc-1', now: now(),
+    id: 'round-a', number: 3, sessionId: 'bd-s1', now: now(),
     participants: [{ userId: 'pl-1', userName: 'Pat', isGM: false, actorId: 'pc-kira', actorName: 'Kira' }],
   });
   return submitEntry(r, { userId: 'pl-1', text: TEXT, submissionId: 'sub-1', now: now() });
