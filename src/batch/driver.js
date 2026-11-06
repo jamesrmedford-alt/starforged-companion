@@ -1060,14 +1060,30 @@ async function narrateTheRound() {
   try {
     round = await queueRoundWrite(r => claimNarration(r, { narrationClaim: lock.claim, now: nowIso(), takeOver: !!r?.narrationClaim }));
     await closeCardUpgrades(round, null);
-    await narrateRound({ round, campaignState: workingCopy() }).catch(err =>
-      console.error(`${MODULE_ID} | Batch Mode: the round's narration failed:`, err));
+    await narrateRound({ round, campaignState: workingCopy() }).catch((err) => {
+      console.error(`${MODULE_ID} | Batch Mode: the round's narration failed:`, err);
+      tellNarrationUnposted();
+    });
   } finally {
     _narratingRoundId = null;
     await releaseRoundLock(lock.claim);
   }
   await finishRound(getStoredRound() ?? round, "resolved");
   return true;
+}
+
+/**
+ * The round's narration could not be posted — its card and its fallback both
+ * refused: the moves stand, and the GMs are told, as free-flow tells them
+ * (issue #322 V09). It was a console line only (issue #342 Z21). This GM by a
+ * notification — a whisper can be refused as the cards were — the others by
+ * a whisper. Never throws.
+ */
+function tellNarrationUnposted() {
+  globalThis.ui?.notifications?.warn?.("Starforged Companion: the round's narration could not be posted to chat; its moves' results were still applied.");
+  whisper(gmIds().filter(id => id !== game.user?.id), "Batch Mode — the round's narration was not posted",
+    "The round's narration could not be posted to chat. Its moves' results were still applied — their result cards show them.",
+    { batchNarrationUnpostedNotice: true });
 }
 
 /** True once a round's narration — its card, fallback or paused notice — is in chat. */
