@@ -95,24 +95,52 @@ async function play(harness, scenario, recording, tweak = () => undefined) {
 
 const failuresOf = (reports) => Object.values(reports).flatMap(r => r.failures);
 
-describe('the first-session scenario and its recording agree', () => {
+// Every strict scenario: first-session, and batch-round (Batch Mode, issue #340).
+const load = (dir, name) => JSON.parse(fs.readFileSync(path.join(PLAYWRIGHT, dir, `${name}.json`), 'utf8'));
+const SCENARIOS = ['first-session', 'batch-round'].map(name => [name, load('playthroughs', name), load('recordings', name)]);
+
+describe.each(SCENARIOS)('the %s scenario and its recording agree', (_name, scenario, recording) => {
   it('is strict, and every step has a unique id', () => {
-    expect(SCENARIO.strict).toBe(true);
-    expect(validateScenario(SCENARIO)).toEqual([]);
+    expect(scenario.strict).toBe(true);
+    expect(validateScenario(scenario)).toEqual([]);
   });
 
   it('every recorded exchange names a step of the scenario', () => {
-    const ids = new Set(SCENARIO.steps.map(s => s.id));
-    expect(RECORDING.exchanges.filter(x => !ids.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
-    expect(recordingProblem(RECORDING, { strict: true })).toBeNull();
+    const ids = new Set(scenario.steps.map(s => s.id));
+    expect(recording.exchanges.filter(x => !ids.has(x.step)).map(x => `${x.step} ${x.kind}`)).toEqual([]);
+    expect(recordingProblem(recording, { strict: true })).toBeNull();
   });
 
   it('every required call has a recorded reply in its step, and every recording is declared', async () => {
-    const harness = harnessFor({ mode: 'replay', recording: RECORDING, strict: true });
-    const reports = await play(harness, SCENARIO, RECORDING);
+    const harness = harnessFor({ mode: 'replay', recording, strict: true });
+    const reports = await play(harness, scenario, recording);
     expect(failuresOf(reports)).toEqual([]);
     expect(harness.summary().unusedRecordings).toEqual([]);
     expect(harness.requests.every(r => r.source.startsWith('recording #'))).toBe(true);
+  });
+});
+
+describe('the batch-round scenario pins what a round tells the narrator (issue #340)', () => {
+  const [, scenario, recording] = SCENARIOS.find(([name]) => name === 'batch-round');
+  const step = (id) => scenario.steps.find(s => s.id === id);
+
+  it('each round narrates once, with the passes it schedules; each reading is pacing (and interpretation for a move)', () => {
+    const kinds = (id) => (step(id).calls ?? []).map(c => c.kind);
+    expect(kinds('mira-acts')).toEqual(['callClassifierAPI>classifyInput', 'callClaudeAPI>interpretMove']);
+    expect(kinds('ren-acts')).toEqual(['callClassifierAPI>classifyInput']);
+    for (const id of ['round-1', 'round-2']) {
+      expect(kinds(id).filter(k => k === 'callNarratorAPI>narrateRound')).toHaveLength(1);
+    }
+    for (const id of ['begin', 'batch-on', 'mira-ready', 'ren-ready-2', 'batch-off']) expect(kinds(id)).toEqual([]);
+  });
+
+  it('a round sent now without the player names their character nowhere in it', () => {
+    const narrate = step('round-2').calls.find(c => c.kind === 'callNarratorAPI>narrateRound');
+    const prompt = { system: '## CHARACTER\n\nName: Ren Adeyemi', user: '## THIS ROUND — 1 character acted at once, in this order\n\n### 1. Ren Adeyemi — no roll\nRen Adeyemi: "I lean in the hatchway."' };
+    expect(requestContract(prompt, narrate)).toEqual([]);
+    const leaked = { ...prompt, user: `${prompt.user}\n### 2. Mira Kestrel — no roll` };
+    expect(requestContract(leaked, narrate)).toEqual(expect.arrayContaining([expect.stringMatching(/THIS ROUND should not say "Mira Kestrel"/)]));
+    expect(recording.exchanges.filter(x => x.step === 'round-2' && x.kind === 'callNarratorAPI>narrateRound')).toHaveLength(1);
   });
 });
 

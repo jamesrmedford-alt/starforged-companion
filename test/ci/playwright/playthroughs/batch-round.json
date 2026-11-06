@@ -1,0 +1,107 @@
+{
+  "name": "batch-round",
+  "description": "Batch Mode (issue #340) with a GM who plays a PC of their own and one player. The GM turns the mode on from the toolbar and a Round window opens in both browsers. Round 1: the player's Gather Information and the GM's line with no roll, each read on the canonical GM and confirmed in its author's window; the round resolves on the last confirm, rolls the move for its roller and is narrated once. Round 2: the GM acts and presses Send now before the player does — the round is narrated with the GM's character alone, and the player's is named nowhere in it. Strict (issue #302): each step declares its Claude calls — each reading's pacing and interpretation, and one narration per round with the passes it schedules.",
+  "strict": true,
+  "settings": {
+    "narrationEnabled": true,
+    "narratorSessionSummary": false,
+    "factContinuity.enabled": true,
+    "factContinuity.ledgerInContext": true,
+    "factContinuity.sceneFrame": true,
+    "factContinuity.consistencyCheck": false,
+    "autoSeedStarship": false,
+    "autoSeedConnection": false,
+    "batchMode.enabled": false
+  },
+  "seed": {
+    "pc": { "name": "Mira Kestrel", "pronouns": "she/her", "stats": { "edge": 2, "heart": 1, "iron": 1, "shadow": 2, "wits": 3 } },
+    "gmPc": { "name": "Ren Adeyemi", "pronouns": "he/him", "stats": { "edge": 3, "heart": 2, "iron": 1, "shadow": 1, "wits": 2 } },
+    "sector": { "name": "Cinder Expanse", "region": "terminus", "regionLabel": "Terminus", "trouble": "Pirates raid the lanes" },
+    "ship": { "name": "Kobayashi IV" },
+    "settlements": [
+      { "name": "Hollow Spire", "authority": "None / lawless", "trouble": "Water rationing" }
+    ],
+    "at": "Hollow Spire"
+  },
+  "steps": [
+    { "id": "begin", "do": "beginSession", "as": "player", "galley": false,
+      "calls": [] },
+    { "id": "batch-on", "do": "batchMode", "on": true,
+      "calls": [],
+      "then": [
+        { "check": "round", "number": 1, "phase": "collecting" }
+      ] },
+    { "id": "mira-acts", "do": "roundSubmit", "as": "player",
+      "text": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "reads": "move", "move": "gather_information",
+      "calls": [
+        { "kind": "callClassifierAPI>classifyInput" },
+        { "kind": "callClaudeAPI>interpretMove" }
+      ] },
+    { "id": "ren-acts", "do": "roundSubmit", "as": "gm",
+      "text": "I keep watch on the docking ring while Mira talks.",
+      "reads": "narrative",
+      "calls": [
+        { "kind": "callClassifierAPI>classifyInput" }
+      ] },
+    { "id": "mira-ready", "do": "roundConfirm", "as": "player",
+      "calls": [],
+      "then": [
+        { "check": "round", "number": 1, "phase": "collecting" },
+        { "check": "roundCards", "count": 0 }
+      ] },
+    { "id": "round-1", "do": "roundConfirm", "as": "gm", "resolves": true,
+      "dice": { "challenge": [2, 5], "action": 5 },
+      "acted": ["Mira Kestrel", "Ren Adeyemi"], "outcomes": { "Mira Kestrel": "strong_hit" },
+      "calls": [
+        { "kind": "callNarratorAPI>narrateRound",
+          "section": {
+            "THIS ROUND": ["2 characters acted at once, in this order", "Mira Kestrel — Gather Information (+wits): strong hit", "Ren Adeyemi — no roll"],
+            "CHARACTER": "Name: Mira Kestrel",
+            "PARTY": ["Mira Kestrel", "Ren Adeyemi"]
+          },
+          "lacks": ["SPOTLIGHT"] },
+        { "kind": "callHaiku>defaultCallDetectionAPI" },
+        { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"], "section": { "CONTEXT": "several characters acted at once" } }
+      ],
+      "then": [
+        { "check": "momentum", "of": "Mira Kestrel", "is": 4 },
+        { "check": "momentum", "of": "Ren Adeyemi", "is": 2 },
+        { "check": "roundCards", "count": 1 },
+        { "check": "round", "number": 2, "phase": "collecting" },
+        { "check": "moveLockReleased" },
+        { "check": "noMarkup" }
+      ] },
+    { "id": "ren-acts-2", "do": "roundSubmit", "as": "gm",
+      "text": "I lean in the hatchway and watch the dockmaster's hands.",
+      "reads": "narrative",
+      "calls": [
+        { "kind": "callClassifierAPI>classifyInput" }
+      ] },
+    { "id": "ren-ready-2", "do": "roundConfirm", "as": "gm",
+      "calls": [],
+      "then": [
+        { "check": "round", "number": 2, "phase": "collecting" }
+      ] },
+    { "id": "round-2", "do": "sendNow", "acted": ["Ren Adeyemi"],
+      "calls": [
+        { "kind": "callNarratorAPI>narrateRound",
+          "section": {
+            "THIS ROUND": ["1 character acted at once, in this order", "Ren Adeyemi — no roll"],
+            "CHARACTER": "Name: Ren Adeyemi"
+          },
+          "sectionLacks": { "THIS ROUND": "Mira Kestrel", "CHARACTER": "Mira Kestrel" },
+          "lacks": ["PARTY", "SPOTLIGHT"] },
+        { "kind": "callHaiku>defaultCallDetectionAPI" },
+        { "kind": "callChronicleAPI>writeChronicleEntry", "carries": ["NARRATION"] }
+      ],
+      "then": [
+        { "check": "roundCards", "count": 2 },
+        { "check": "round", "number": 3, "phase": "collecting" },
+        { "check": "momentum", "of": "Mira Kestrel", "is": 4 },
+        { "check": "moveLockReleased" }
+      ] },
+    { "id": "batch-off", "do": "batchMode", "on": false,
+      "calls": [] }
+  ]
+}

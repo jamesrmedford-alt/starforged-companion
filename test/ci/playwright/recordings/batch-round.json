@@ -1,0 +1,147 @@
+{
+  "scenario": "batch-round",
+  "source": "hand-written",
+  "note": "Placeholder replies written to each parser's format so the scenario runs before anyone has recorded it. Each exchange names the scenario step that makes its call (strict replay, issue #302). Record real replies with test/ci/scripts/e2e.sh --record-playthroughs (ANTHROPIC_API_KEY set) and commit the result.",
+  "exchanges": [
+    {
+      "step": "mira-acts",
+      "kind": "callClassifierAPI>classifyInput",
+      "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"decision\": \"MOVE\", \"suggestedMove\": \"gather_information\", \"category\": \"investigation\", \"confidence\": 0.86, \"reasoning\": \"Questioning a witness for specific information is Gather Information.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "mira-acts",
+      "kind": "callClaudeAPI>interpretMove",
+      "user": "I ask the dockmaster, Vance Oduya, who saw the courier leave the Hollow Spire.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"moveId\": \"gather_information\", \"moveName\": \"Gather Information\", \"statUsed\": \"wits\", \"statValue\": 0, \"adds\": 0, \"isProgressMove\": false, \"progressTicks\": 0, \"moveTarget\": null, \"expeditionRank\": null, \"combatRank\": null, \"rationale\": \"Mira is questioning the dockmaster for specific information about the courier.\", \"mischiefApplied\": false, \"confidence\": \"high\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "ren-acts",
+      "kind": "callClassifierAPI>classifyInput",
+      "user": "I keep watch on the docking ring while Mira talks.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"decision\": \"NARRATIVE\", \"suggestedMove\": null, \"category\": \"exploration\", \"confidence\": 0.8, \"reasoning\": \"Keeping watch with no threat in play needs no roll.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "round-1",
+      "kind": "callNarratorAPI>narrateRound",
+      "user": "THIS ROUND 2 characters acted at once Mira Kestrel Gather Information strong hit dockmaster Vance Oduya courier Ren Adeyemi no roll keep watch docking ring",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Vance Oduya doesn't look up from the departure ledger when Mira leans into the dock office. He runs one oil-black finger down the column of berths as if she'd asked him about the weather.\n\n<npc>\"Courier left two days back,\"</npc> he says. <npc>\"Unregistered skiff out of berth nine. Paid the departure tax in Ascendancy scrip.\"</npc> He turns the ledger so she can read it: no name, a berth number, a stamp neither of them recognises.\n\nOut on the docking ring Ren keeps his back to the bulkhead, counting the dockhands who have stopped working to watch the office door — three of them, and one is already walking away.\n\n```json\n{\"newTruths\": [{\"subject\": \"Vance Oduya\", \"fact\": \"Vance Oduya is the Hollow Spire's dockmaster and keeps the departure ledger.\"}, {\"subject\": \"scene\", \"fact\": \"The courier left the Hollow Spire two days ago on an unregistered skiff from berth nine.\"}], \"stateChanges\": [], \"sceneFrame\": {\"location\": \"Hollow Spire dock office\", \"present\": [\"Vance Oduya\"], \"situation\": \"Questioning the dockmaster about the courier\"}}\n```"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "round-1",
+      "kind": "callHaiku>defaultCallDetectionAPI",
+      "user": "Vance Oduya departure ledger dock office berth nine unregistered skiff Ascendancy scrip Ren docking ring dockhands",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"entities\": [], \"renames\": [], \"worldJournal\": {\"lore\": [], \"threats\": [], \"factionUpdates\": [], \"locationUpdates\": [], \"stateTransitions\": []}}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "round-1",
+      "kind": "callChronicleAPI>writeChronicleEntry",
+      "user": "## CONTEXT Context: one round in which several characters acted at once ## NARRATION Vance Oduya departure ledger berth nine",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"type\": \"discovery\", \"salience\": \"notable\", \"text\": \"Vance Oduya told Mira the courier fled two days ago on an unregistered skiff from berth nine, while Ren watched the dockhands watching them.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "ren-acts-2",
+      "kind": "callClassifierAPI>classifyInput",
+      "user": "I lean in the hatchway and watch the dockmaster's hands.",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"decision\": \"NARRATIVE\", \"suggestedMove\": null, \"category\": \"social\", \"confidence\": 0.78, \"reasoning\": \"Watching someone closely with nothing at stake is narration.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "round-2",
+      "kind": "callNarratorAPI>narrateRound",
+      "user": "THIS ROUND 1 character acted at once Ren Adeyemi no roll lean in the hatchway watch the dockmaster's hands",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "Ren leans into the hatchway, arms folded, and watches Vance's hands instead of his face. The dockmaster's fingers keep straying to the ledger's spine, squaring it against the counter's edge, tapping the place where berth nine is written. When he notices Ren noticing, he folds his hands and leaves them very still.\n\n```json\n{\"newTruths\": [{\"subject\": \"Vance Oduya\", \"fact\": \"Vance Oduya fidgets with the departure ledger when berth nine comes up.\"}], \"stateChanges\": [], \"sceneFrame\": {\"location\": \"Hollow Spire dock office\", \"present\": [\"Vance Oduya\"], \"situation\": \"Watching the dockmaster\"}}\n```"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "round-2",
+      "kind": "callHaiku>defaultCallDetectionAPI",
+      "user": "Ren leans hatchway watches Vance's hands ledger spine berth nine",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"entities\": [], \"renames\": [], \"worldJournal\": {\"lore\": [], \"threats\": [], \"factionUpdates\": [], \"locationUpdates\": [], \"stateTransitions\": []}}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "round-2",
+      "kind": "callChronicleAPI>writeChronicleEntry",
+      "user": "## CONTEXT Context: one round in which several characters acted at once ## NARRATION Ren hatchway Vance's hands ledger",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"type\": \"moment\", \"salience\": \"scene\", \"text\": \"Ren watched Vance Oduya's hands stray to the ledger whenever berth nine came up.\"}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    }
+  ]
+}

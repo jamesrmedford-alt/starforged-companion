@@ -27,7 +27,8 @@ paced_narrative, scene_interrogation, oracle_followup, session_vignette
 trigger — its own role and the interaction latitude since issue #322 V23; it
 used the vignette's "calm before / after"), vow_swearing (embellishment
 latitude — it had none, V23), inciting_incident, campaign_recap (meta — no
-sidecar/latitude). The `!ship
+sidecar/latitude), round_resolution (a Batch Mode round, issue #340 — see
+below). The `!ship
 envision/history` and `!lore`/truths generators are separate world-building
 prompts outside the memory surfaces (they write Notes/journal canon but don't
 read the ledger).
@@ -39,6 +40,24 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   the canonical GM — which `isCanonicalGM()` prefers to be a GM that
   advertised a Claude key (world setting `keyedGmUserIds`,
   `src/multiplayer/gmGate.js`).
+- **A Batch Mode round's narration** (`narrateRound`, mode
+  `round_resolution`, issue #340) runs once per round in the round driver
+  (`src/batch/driver.js`) on the canonical GM, under the move lock, after
+  every acting entry is rolled and recorded and its upgrade decided. Context
+  goes through the same seam: the entries' text joined for lexical relevance
+  and lore; each move entry's own relevance (resolved when it rolled — the
+  GM's clarification dialog included) unioned, at the widest class (an entry
+  with no roll counts as interaction); a CHARACTER block per acting PC
+  (`extras.roundCharacters`); PARTY naming only the PCs who act (`actingNames`,
+  marked "acting this round"); no SPOTLIGHT (`round_resolution` is not in
+  `SPOTLIGHT_MODES`). The user message (`buildRoundUserMessage`) is RECENT
+  SCENE, then THIS ROUND — each acting entry in confirm order with its move,
+  stat, outcome, outcome text and price, oracle seeds, the player's sanitised
+  line and a latitude line — and the instruction to act for no one else and
+  remark on no one who didn't act. Who sat the round out is never sent. Its
+  sidecar, X-Card gate, rate-limit retry, `!narrator debug` capture and
+  fallback are every narration's; its one capture pass runs at the widest
+  class (`runRoundNarrationPasses`).
 - **Claude-calling chat commands** — `@scene`, `!recap`, `!ship envision`,
   `!ship history`, `!incite` — route `RUN_ON.CLAUDE` (`CHAT_COMMAND_ROUTES`,
   `src/index.js`; policy in `src/multiplayer/commandRouting.js`): the keyed canonical GM when `hasKeyedActiveGM()`, else the

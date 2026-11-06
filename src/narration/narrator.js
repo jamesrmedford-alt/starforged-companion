@@ -994,39 +994,32 @@ export async function narrateRound({ round, campaignState }) {
   });
   const maxTokens = maxTokensWithSidecar(roundMaxTokens(settings.narrationMaxTokens, entries.length));
 
-  const attempt = async () => {
-    const raw = await callNarratorAPI({
-      label: 'narrateRound', apiKey, systemPrompt, userMessage, model: settings.narrationModel, maxTokens,
-    });
-    if (xCard.interrupted('narrateRound')) {
-      return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
-    }
-    const narration = applyNarratorSidecar(raw, campaignState, {
-      moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
-    });
-    if (!narration?.trim()) return null;
-    const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
-      matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
-    });
-    await runRoundNarrationPasses(narration, entries, relevance, campaignState, { narrationId });
-    scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round' });
-    return { posted: 'card', narrationId, card };
-  };
-
-  try {
-    const done = await attempt();
-    if (done) return done;
-  } catch (err) {
-    if (isRateLimit(err)) {
-      try {
-        await delay(RETRY_DELAY_MS);
-        const done = await attempt();
-        if (done) return done;
-      } catch (retryErr) {
-        console.error(`${MODULE_ID} | narrateRound retry failed:`, retryErr);
+  // One call, and one retry after a rate limit. The call is made here, not in
+  // a helper, so its caller is narrateRound (the playthrough harness files a
+  // call under the two module functions above the proxy).
+  for (let tries = 0; tries < 2; tries += 1) {
+    try {
+      if (tries) await delay(RETRY_DELAY_MS);
+      const raw = await callNarratorAPI({
+        label: 'narrateRound', apiKey, systemPrompt, userMessage, model: settings.narrationModel, maxTokens,
+      });
+      if (xCard.interrupted('narrateRound')) {
+        return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
       }
-    } else {
-      console.error(`${MODULE_ID} | narrateRound failed:`, err);
+      const narration = applyNarratorSidecar(raw, campaignState, {
+        moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
+      });
+      if (!narration?.trim()) break;
+      const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
+        matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
+      });
+      await runRoundNarrationPasses(narration, entries, relevance, campaignState, { narrationId });
+      scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round' });
+      return { posted: 'card', narrationId, card };
+    } catch (err) {
+      if (!tries && isRateLimit(err)) continue;
+      console.error(`${MODULE_ID} | narrateRound ${tries ? 'retry ' : ''}failed:`, err);
+      break;
     }
   }
   return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState) };

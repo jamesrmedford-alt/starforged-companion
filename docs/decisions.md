@@ -6,6 +6,93 @@ rejected.
 
 ---
 
+## Batch Mode: opt-in rounds, read in the player's window, narrated once (2026-11)
+
+**Decision:** ([#340](https://github.com/jamesrmedford-alt/starforged-companion/issues/340);
+the maintainer's answers of 2026-11-05 and 2026-11-06.) A GM can switch the
+table into **Batch Mode** from the Companion toolbar: each round, every
+participant writes one action (or passes) in a Round window
+(`src/ui/roundWindow.js`), and once every connected participant is ready or
+has passed — or a GM presses **Send now** — the canonical GM rolls every move
+for its own roller and the narrator tells the round as one scene, on one card.
+Free-flow play stays the default and is unchanged while the mode is off.
+- **The player confirms the reading in their own window.** On Submit the
+  canonical GM reads the action in the background (`readAction`: pacing, the
+  interpretation, asset abilities, which-track choices); the window shows it
+  with the confirm dialog's own ability form (`renderMoveAbilitiesForm` /
+  `readMoveAbilitiesForm`, shared, not copied). No confirm dialog opens on the
+  GM's screen during a round.
+- **Upgrades are decided before the narration.** A roller offered Burn
+  Momentum or Improve Result chooses Burn / Improve / Keep in the window (the
+  card's own relays: one action, one claim); the round waits for them, Send
+  now counts as Keep, and the one narration tells the final outcomes — a round
+  card is never struck through. The round's result cards' Burn / Improve close
+  (`roundClosed`) when it is narrated.
+- **Players see who is ready, and what they submitted;** the GM sees every
+  reading. Entries stay editable until the round resolves.
+- **Chat is table talk while the mode is on.** A typed line is not narrated;
+  its author is told once per round and the line becomes their window's draft
+  when the box is empty. Commands run as usual; a card button's move becomes
+  its roller's entry.
+- **Opting out is silent** (2026-11-06): a player who passes or doesn't act
+  is not marked, named or told — not in the windows, on the card, in the
+  narration request, or when a GM sends the round.
+- Defaults while scoping (#340 lists them all): a GM toggles it and it stays on
+  (world setting `batchMode.enabled`, default off); rounds open by themselves
+  while a session is active; participants are connected users with a PC of
+  their own, a GM only with an assigned PC; one action per player per round;
+  entries roll and are narrated in confirm order; a forced move whose roller
+  isn't a participant runs as free-flow; the X-Card stops a round resolving;
+  End a Session closes a collecting round and keeps the authors' drafts.
+
+How it is built:
+- **One pipeline, split into stages** (`src/moves/movePipeline.js`: `readMove`
+  / `readAction`, `rollMove`, `recordMove`, `finishMove`), shared by free-flow
+  (`onMessage`) and the round driver — not a second copy. Free-flow narrates
+  then records; a round records before it narrates.
+- **The round is its own world setting** (`batchMode.round`), not a
+  `campaignState` field — the move pipeline's merge would need a policy for it,
+  and it has one writer: the canonical GM, through pure transitions
+  (`src/batch/round.js`) applied to the latest stored value on one write chain
+  (`queueRoundWrite`), on copies.
+- **The move lock is claimed for the rolls and again for the narration**, each
+  released in a `finally` through the lock's own paths; it is free while a
+  roller decides an upgrade (an interactive wait never holds it).
+- **Session handling reads the state as it is** (`onCampaignStateChanged`):
+  a collecting round that belongs to no active session is closed, and a round
+  opens when none is. A remembered "last session" was stale on a GM who became
+  canonical later, and closed a live round.
+- **The driver hears a setting's first write too** (`createSetting` as well as
+  `updateSetting`): the keyed-GM registry's first write is a create, and a
+  keyless GM's submissions were never read once a keyed GM joined.
+- **No spotlight nudge in a round:** `round_resolution` is not in
+  `SPOTLIGHT_MODES`; the narration closes on a beat the whole party can answer.
+
+**Reason:** The request (2026-11-05): "a mode, toggleable from the top level
+ui, that batches up all player moves before sending them to the narrator
+together … a separate window pops up for each player soliciting their input.
+They can opt to send nothing. The GM should have an override button to send
+now, in case someone is afk." A table that wants rounds gets them without
+changing free-flow play, which the spotlight decision below keeps
+unstructured.
+
+**Rejected:**
+- *The confirm dialog on the GM's screen during a round* — the GM would
+  confirm every player's reading; the player knows what they meant.
+- *Narrating first, then offering upgrades* — the round card would be struck
+  through by a burn, as a free-flow card is.
+- *Marking who didn't act* (an "away" status, a skip control, naming them on
+  the card or to the narrator) — opting out needs no comment.
+- *A round timer / automatic send* — Send now is how a GM stops waiting.
+- *Per-player narrations posted together* — one narration per round is the
+  request.
+- *Hiding entries from other players* — decided against; world settings are
+  readable on every client, and the module assumes a trusted table.
+- *The Private Channel's `THREAD` mode* — reserved for a side conversation
+  (#226 §15); Batch Mode is the main table's turn structure.
+
+---
+
 ## The tenth audit's open items: a capture checks the X-Card before each write, the move lock is its own paths', a card button is its roller's, a taken add carries its cost (2026-11)
 
 **Decision:** (the items recorded as open while fixing issues #335–#338; the
@@ -5513,6 +5600,11 @@ players without taking agency away from anyone.
 - *No setting* — a GM whose table dislikes being called on by name needs an off switch;
   added as `narratorSpotlightRotation` (world, default on), surfaced under Narrator
   settings.
+
+*Update (2026-11, issue #340):* this holds for free-flow play. Batch Mode is an
+opt-in round structure a table chooses (off by default) — see "Batch Mode:
+opt-in rounds, read in the player's window, narrated once" — and its
+`round_resolution` narration is not a spotlight mode.
 
 ---
 

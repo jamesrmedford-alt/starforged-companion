@@ -101,6 +101,8 @@ wrote: "…"` (`playerText` + `playerName` on move and paced cards;
 `sceneQuestion` + `playerName` on @scene answers; `ringEntryText`) — so a
 detail only the player stated ("I give him my father's compass") survives.
 Burn / Improve re-narrations store no player line (their input is a marker).
+A Batch Mode round card leads with one such line per acting entry, in order,
+from its `roundEntries` (issue #340).
 Move narration reads the last `MOVE_RING_CARDS` (4, bounded by
 `narratorContextCards`) entries (B1); it used to read none.
 
@@ -117,6 +119,7 @@ should remember* must carry all three flags:
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
 | clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix; a trigger vignette also names its clock (`clockId`, issue #338 D8) |
 | oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
+| Batch Mode round card (`postRoundNarrationCard`) | 2026-11 (#340) | `roundId`, `roundNumber`, `roundEntries: [{ userId, actorId, playerName, playerText, moveId, outcome, isMatch, resolutionId }]` — the players who acted and no one else; its own `moveId` / `outcome` / `resolutionId` stay empty. The round's result cards carry `roundId` too. Its fallback (`postRoundFallbackCard`) keeps the family with `narrationFallback`; the X-Card's paused notice (`narrationPaused`) is not a narrator card |
 | published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`), which stamps the card's `narrationId` on the details it records (issue #335 Y03). No sidecar, so no ledger facts |
 
 Every card above also carries its narration's `narrationId` — the id its
@@ -148,7 +151,9 @@ CLAUDE.md "audit consumers" rule):
   with a `moveId`, and `!recap session N` finds session N by the cards'
   `sessionNumber` (`recapSessionFor`). It filtered the cards itself: a burned
   Strike listed its superseded miss, every card counted as a move, and N was
-  dropped (issue #322 V05)
+  dropped (issue #322 V05). A round card counts each of its `roundEntries`'
+  moves, outcomes and matches ("Round N: Move → Outcome"), its fallback too
+  (issue #340)
 - correction-dialog render hook (`src/index.js`) — no-ops without
   `[data-action="openCorrectionDialog"]` markup
 - audio render hook (`src/index.js`) — no-ops without the hidden play-button
@@ -158,7 +163,10 @@ CLAUDE.md "audit consumers" rule):
   beat), and `registerXCardRedirectHook` (canonical GM) clears
   `xCardRedirect` when the first narrator card with `narrationText` posts
   with the X-Card lifted — not a fallback, a published reflection or an
-  X-carded card
+  X-carded card. A round card is one beat: the walk back from the newest card
+  stops at a card of another round — round submissions are not chat messages,
+  so without that stop it took the previous round's card within the beat's
+  two minutes (issue #340)
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
   `resolutionId`, unaffected; it flags the card `burnSuperseded`, which
   `sessionNarratorCards` leaves out (ring, summary, recap). Since issue #338
@@ -169,6 +177,10 @@ CLAUDE.md "audit consumers" rule):
   (§3). A vignette still being written then never posts: it is narrated only
   while its clock is still full when its reply comes in (`stillTriggered`,
   TRIGGER-VIGNETTE-LATE-POST), so its sidecar is never applied
+- burn supersede never matches a round card: a round's upgrades are decided
+  before it is narrated, and the card's `resolutionId` is empty (issue #340)
+- the Chronicle (`scheduleChronicleEntry`) writes one entry per round, kind
+  `round`, which the writer's prompt knows (issue #340)
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last

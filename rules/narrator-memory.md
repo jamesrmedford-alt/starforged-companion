@@ -14,7 +14,11 @@ layers. This file is the never-break list.
    end-session vignettes, vow-swearing scenes, all three clock-vignette post
    sites, and oracle follow-up narrations — "mood piece" is not an
    exemption. Since issue #286 D1 a reflection a player publishes from the
-   Private Channel carries it too: published text is canon. One exception
+   Private Channel carries it too: published text is canon. So does a Batch
+   Mode round's one card (issue #340): `roundId`, `roundNumber` and
+   `roundEntries` (the players who acted, no one else) beside the family, its
+   own `moveId` / `outcome` / `resolutionId` empty; its fallback card keeps
+   the family with `narrationFallback`. One exception
    (issue #321 U35): the move narration's "narration unavailable" card keeps
    the family so the session recap counts the move, and every narrator-memory
    read leaves it out by its `narrationFallback` flag (`sessionNarratorCards`)

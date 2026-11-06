@@ -76,6 +76,20 @@ Two cross-cutting facts to hold onto:
   Y09). The
   threshold card's buttons relay `combat.threshold` to the canonical GM (its
   older ad-hoc `combat.enterFray` socket is retired — issue #329 X06).
+- **A fight played in Batch Mode rounds** (issue #340) uses the same stages.
+  Each player's action is read in their Round window — a Strike or Clash
+  with two or more fights open gets its **which fight?** pick there instead of
+  the card — and confirmed; the round's entries roll in confirm order on the
+  canonical GM, each credited to its own PC (`rollMove` → `recordMove`), so an
+  Aid Your Ally helps an ally's move only if it was confirmed first. A fight
+  move whose fight an earlier entry of the same round ended (a Take Decisive
+  Action that won it) is not rolled: the roll stage refuses it
+  (`{ refused: "track-gone" }`), its card says why, and the round's narration
+  tells it as an action with no roll. Burn Momentum / Improve Result are
+  decided before the one narration; the won-fight card and its payoff are the
+  same as a typed move's. A card button's fight move pressed during a round —
+  ⚔ Attempt to Finish the Fight, a Which-fight pick — becomes its roller's
+  entry (or waits for the next round while one resolves).
 - **Combat state lives on a journal progress track** (`type: 'combat'` in the
   Starforged Progress Tracks journal flag), not on the Foundry Combat document.
   The Combat document (combat tracker) is a UI mirror, created/deleted

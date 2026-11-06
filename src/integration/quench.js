@@ -301,6 +301,10 @@ Hooks.on("quenchReady", (quench) => {
   // stubbed Anthropic endpoint and its captured request is checked section by
   // section: present when the data the section reads exists, absent when not.
   registerPromptContractTests(quench);
+  // Batch Mode (issue #340) — the toolbar's switch, a round submitted and
+  // confirmed in the Round window, read and narrated through a stubbed
+  // endpoint, one round card; the window in the compact layout.
+  registerBatchModeTests(quench);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4386,6 +4390,27 @@ function registerToolbarTests(quench) {
 
           const gmKeys = companionToolbarTools({ isGM: true, privateChannelEnabled: true }).map(t => t.key);
           assert.include(gmKeys, "sectorCreator", "a GM sees the GM-only tools");
+        });
+
+        it("Batch Mode (issue #340): a GM's switch, pressed while on; Round for a participant only while it is on", async function () {
+          const { companionToolbarTools } = await import(`${MODULE_PATH}/ui/companionToolbarTools.js`);
+          const keys = (ctx) => companionToolbarTools(ctx).map(t => t.key);
+
+          const gmOff = companionToolbarTools({ isGM: true, batchModeEnabled: false });
+          assert.deepInclude(gmOff.find(t => t.key === "sfBatchMode"), { kind: "toggle", pressed: false },
+            "the GM's Batch Mode switch shows off");
+          assert.notInclude(gmOff.map(t => t.key), "sfRound", "no Round tool while the mode is off");
+          const gmOn = companionToolbarTools({ isGM: true, batchModeEnabled: true });
+          assert.isTrue(gmOn.find(t => t.key === "sfBatchMode")?.pressed, "the switch shows pressed while the mode is on");
+          assert.include(gmOn.map(t => t.key), "sfRound", "a GM reopens the Round window while the mode is on");
+
+          assert.notInclude(keys({ isGM: false, batchModeEnabled: false, roundParticipant: true }), "sfRound",
+            "a player has no Round tool while the mode is off");
+          const playerOn = keys({ isGM: false, batchModeEnabled: true, roundParticipant: true });
+          assert.include(playerOn, "sfRound", "a participant gets the Round tool while the mode is on");
+          assert.notInclude(playerOn, "sfBatchMode", "a player never sees the switch");
+          assert.notInclude(keys({ isGM: false, batchModeEnabled: true, roundParticipant: false }), "sfRound",
+            "a player with no character in the round has no Round tool");
         });
       });
 
@@ -11423,8 +11448,120 @@ function registerMoveLockLifecycleTests(quench) {
             "the lock remains free after the rider step, so the next move is not blocked");
         });
       });
+
+      // Issue #340: a Batch Mode round holds the lock for its rolls and again
+      // for its narration, never while a roller decides an upgrade, and a
+      // round left resolving is resumed rather than stuck.
+      describe("a Batch Mode round and the move lock (issue #340)", function () {
+        let world = null;
+        let timeline = [];
+        let hook = null;
+        const round = () => game.settings.get(MODULE, "batchMode.round") ?? null;
+
+        before(async function () {
+          this.timeout(30000);
+          if (!game.user.isGM) { this.skip(); return; }
+          world = await setUpBatchModeWorld("lock");
+          // Each write to the lock or the round, with the other as it stood.
+          hook = Hooks.on("updateSetting", (setting) => {
+            if (setting?.key !== `${MODULE}.campaignState` && setting?.key !== `${MODULE}.batchMode.round`) return;
+            const r = round();
+            timeline.push({
+              what: setting.key.endsWith("campaignState") ? "lock" : "round",
+              lock: lockHeld(), phase: r?.phase ?? null, number: r?.number ?? null, narrationClaim: !!r?.narrationClaim,
+            });
+          });
+          await game.settings.set(MODULE, "batchMode.enabled", true);
+          await waitForBatch(() => round()?.phase === "collecting" && round().entries?.[game.user.id], "a round with the GM's PC in it");
+        });
+        after(async function () {
+          this.timeout(30000);
+          if (hook !== null) Hooks.off("updateSetting", hook);
+          if (world) await world.restore();
+        });
+
+        it("claims the lock for the rolls, releases it, and claims it again for the narration", async function () {
+          this.timeout(60000);
+          if (!world) { this.skip(); return; }
+          const { requestGmAction } = await import(`${MODULE_PATH}/multiplayer/gmRelay.js`);
+          const first = round();
+          timeline = [];
+          await withSilencedNotifications(async () => {
+            await requestGmAction("batch.submit", { roundId: first.id, text: "QUENCH LOCK: I sprint for the hatch.", submissionId: "quench-lock-1" });
+            await waitForBatch(() => round()?.entries?.[game.user.id]?.status === "read", "the reading", 20000);
+            await requestGmAction("batch.confirm", { roundId: first.id, submissionId: "quench-lock-1", choices: {} });
+            const resolving = await waitForBatch(() => round()?.id !== first.id || round()?.phase !== "collecting", "the round to resolve", 3000).catch(() => false);
+            if (!resolving) await requestGmAction("batch.sendNow", { roundId: first.id });
+            await waitForBatch(() => round()?.number === first.number + 1 && round()?.phase === "collecting", "the next round", 40000);
+          });
+          await waitForBatch(() => !lockHeld(), "the lock to release");
+
+          const rolling   = timeline.findIndex(t => t.what === "round" && t.phase === "rolling" && t.number === first.number);
+          const narrating = timeline.findIndex(t => t.what === "round" && t.phase === "narrating" && t.narrationClaim && t.number === first.number);
+          assert.isAtLeast(rolling, 0, "the round reached its rolls");
+          assert.isTrue(timeline[rolling].lock, "the rolls run under the move lock");
+          assert.isAbove(narrating, rolling, "the narration is claimed after the rolls");
+          assert.isTrue(timeline[narrating].lock, "the narration runs under the move lock");
+          const releasedBetween = timeline.slice(rolling + 1, narrating).some(t => t.what === "lock" && !t.lock);
+          assert.isTrue(releasedBetween, "the rolls' claim is released before the narration claims it again");
+          assert.isFalse(timeline.some(t => t.what === "round" && t.number === first.number + 1 && t.lock),
+            "the next round opens with the lock free");
+        });
+
+        it("a round left waiting on an upgrade at reload resumes: the lock is free while it waits, held for the narration, released after", async function () {
+          this.timeout(60000);
+          if (!world) { this.skip(); return; }
+          const R = await import(`${MODULE_PATH}/batch/round.js`);
+          const { recoverRound } = await import(`${MODULE_PATH}/batch/driver.js`);
+          const { narrationInputFrom } = await import(`${MODULE_PATH}/moves/movePipeline.js`);
+          const { requestGmAction } = await import(`${MODULE_PATH}/multiplayer/gmRelay.js`);
+          const me = game.user.id;
+          const now = new Date().toISOString();
+          const open = await waitForBatch(() => (round()?.phase === "collecting" && round().entries?.[me] ? round() : null), "an open round");
+
+          // The round as a reload leaves it: rolled and recorded, its roller
+          // offered a burn and not yet decided.
+          const input = narrationInputFrom({
+            _id: `quench-lock-${foundry.utils.randomID()}`, moveId: "face_danger", moveName: "Face Danger",
+            statUsed: "edge", outcome: "weak_hit", outcomeLabel: "Weak Hit", isMatch: false,
+            loremasterContext: "[MOVE: Face Danger +edge] [OUTCOME: Weak Hit]",
+          }, { resolvedClass: "embellishment", entityIds: [], entityTypes: [] });
+          let r = R.submitEntry(open, { userId: me, text: "QUENCH LOCK: I edge along the gantry.", submissionId: "quench-lock-2", now });
+          r = R.recordReading(r, { userId: me, submissionId: "quench-lock-2", reading: {
+            kind: "move", moveId: "face_danger", moveName: "Face Danger", statUsed: "edge", rationale: "", mischiefAside: "",
+            abilities: [], statOptions: [], targetChoices: null, interpretation: { moveId: "face_danger", extractedRiders: [] },
+          } });
+          r = R.confirmEntry(r, { userId: me, submissionId: "quench-lock-2", choices: {}, now });
+          r = R.fixActing(R.beginResolution(r, { resolverId: me, resolverClaim: "quench-lock-claim", now }));
+          r = R.markRecorded(R.markRolled(r, { userId: me, rolled: { resolutionId: input.resolutionId, cardId: null, narrationInput: input } }),
+            { userId: me, recordedAt: now });
+          r = R.beginUpgrades(r, { offers: { [me]: { burn: { momentum: 6, previewOutcome: "strong_hit" }, improve: null, cardId: null } } });
+          assert.equal(r.phase, "upgrading", "the fixture waits on an upgrade");
+          await game.settings.set(MODULE, "batchMode.round", r);
+
+          timeline = [];
+          await recoverRound("quench-reload");
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          assert.equal(round()?.phase, "upgrading", "the resumed round waits for the roller's choice");
+          assert.isFalse(lockHeld(), "the move lock is free while a roller decides");
+
+          await withSilencedNotifications(async () => {
+            await requestGmAction("batch.keep", { roundId: r.id });
+            await waitForBatch(() => game.messages.contents.some(m => m.flags?.[MODULE]?.narratorCard && m.flags[MODULE].roundId === r.id),
+              "the resumed round's card", 40000);
+          });
+          await waitForBatch(() => round()?.number === r.number + 1 && round()?.phase === "collecting", "the next round");
+          await waitForBatch(() => !lockHeld(), "the lock to release");
+          assert.isTrue(timeline.some(t => t.what === "round" && t.phase === "narrating" && t.narrationClaim && t.lock),
+            "the narration runs under the move lock");
+          assert.isFalse(timeline.some(t => t.what === "round" && t.phase === "upgrading" && t.lock),
+            "the lock is never held while the round waits on an upgrade");
+          const cards = game.messages.contents.filter(m => m.flags?.[MODULE]?.narratorCard && m.flags[MODULE].roundId === r.id);
+          assert.lengthOf(cards, 1, "the resumed round narrates once");
+        });
+      });
     },
-    { displayName: "STARFORGED: Move Lock Lifecycle" },
+    { displayName: "STARFORGED: Move Lock Lifecycle", timeout: 60000 },
   );
 }
 
@@ -12018,6 +12155,8 @@ function registerPromptContractTests(quench) {
         lastSession: "Last session the crew slipped out of Bleakhold with stolen charts.",
         privateLine: "Spiders",
         chronicle:   "QUENCH CONTRACT: the crew fled Bleakhold with the charts.",
+        sitter:      "Jin Okafor (contract)",
+        roundSeed:   "QUENCH SEED: a cargo drone drifts loose across the bay",
       };
 
       /** Settings each section depends on, pinned for the batch (defaults may change). */
@@ -12215,7 +12354,44 @@ function registerPromptContractTests(quench) {
         });
         assert.isTrue(result?.ok, `the Private Channel turn should succeed (${result?.reason})`);
       } };
-      const PROSE_MODES = [MOVE, PACED, SCENE, ORACLE, GALLEY, CLOSING, CLOCK, VOW, INCITING];
+      /**
+       * A Batch Mode round as the round driver hands it to narrateRound
+       * (issue #340): who acted, in confirm order, and what each one rolled.
+       */
+      function contractRound(entries) {
+        const round = {
+          id: `quench-contract-round-${foundry.utils.randomID()}`, number: 1,
+          sessionId: state()?.currentSessionId ?? null, phase: "narrating", acting: [], entries: {},
+        };
+        entries.forEach(({ actor, text, input }, i) => {
+          const userId = `quench-contract-user-${i + 1}`;
+          round.acting.push(userId);
+          round.entries[userId] = {
+            userId, actorId: actor.id, actorName: actor.name, userName: `Contract player ${i + 1}`,
+            status: "recorded", text, rolled: input ? { narrationInput: input } : null,
+          };
+        });
+        return round;
+      }
+      // The first PC rolled Face Danger; in the seeded world the second acted
+      // with no roll.
+      const ROUND = { name: "round resolution", marker: "## THIS ROUND", speaker: true, run: async () => {
+        const { narrateRound } = await narrator();
+        const { narrationInputFrom } = await import(`${MODULE_PATH}/moves/movePipeline.js`);
+        const entries = [{
+          actor: fx.pcA, text: "I brace the airlock door and check the seals.",
+          input: narrationInputFrom({
+            _id: `quench-contract-${foundry.utils.randomID()}`, moveId: "face_danger", moveName: "Face Danger",
+            statUsed: "wits", outcome: "weak_hit", outcomeLabel: "Weak Hit", isMatch: false,
+            loremasterContext: "[MOVE: Face Danger +wits] [OUTCOME: Weak Hit]",
+            oracleSeeds: fx.roundSeeds ?? null,
+          }, INTERACTION),
+        }];
+        if (fx.pcB) entries.push({ actor: fx.pcB, text: "I keep the corridor covered." });
+        const result = await narrateRound({ round: contractRound(entries), campaignState: state() });
+        assert.equal(result?.posted, "card", "the round's narration should post its card");
+      } };
+      const PROSE_MODES = [MOVE, PACED, SCENE, ORACLE, GALLEY, CLOSING, CLOCK, VOW, INCITING, ROUND];
 
       before(async function () {
         this.timeout(30000);
@@ -12401,6 +12577,40 @@ function registerPromptContractTests(quench) {
           carries(request, `PLAYER NARRATION — spoken by ${N.pcA}`, MOVE.name, ["I brace the airlock door"]);
         });
 
+        it("round resolution: each entry in order with its seeds, a CHARACTER per acting PC, no SPOTLIGHT, no one who sat out (issue #340)", async function () {
+          this.timeout(30000);
+          // A third PC sits the round out: the narrator is never told of them.
+          const sitter = await Actor.create({ name: N.sitter, type: "character", system: { pronouns: "they/them" } });
+          fx.roundSeeds = { context: "face_danger", results: [N.roundSeed], names: [] };
+          try {
+            const request = await capture(ROUND);
+            const round = carries(request, "THIS ROUND", ROUND.name, [
+              "2 characters acted at once, in this order",
+              `### 1. ${N.pcA} — Face Danger (+wits): weak hit`,
+              N.roundSeed,
+              `${N.pcA}: "I brace the airlock door and check the seals."`,
+              "Latitude: deepen what is established.",
+              `### 2. ${N.pcB} — no roll`,
+              `${N.pcB}: "I keep the corridor covered."`,
+            ]);
+            assert.isBelow(round.text.indexOf(`### 1. ${N.pcA}`), round.text.indexOf(`### 2. ${N.pcB}`),
+              "the entries are told in confirm order");
+            const characters = split(request.system).filter(s => s.heading === "CHARACTER");
+            assert.lengthOf(characters, 2, "a CHARACTER block for each acting PC");
+            assert.include(characters[0].text, N.pcA);
+            assert.include(characters[1].text, N.pcB);
+            carries(request, "PARTY", ROUND.name, [N.pcA, N.pcB, "acting this round"]);
+            carries(request, "NARRATOR PERMISSIONS", ROUND.name, ["INTERACTION MODE"]);
+            carries(request, "RESPONSE FORMAT", ROUND.name);
+            lacks(request, "SPOTLIGHT", ROUND.name);
+            assert.include(request.user, "invent no action for anyone else", "the narrator acts for no one who didn't");
+            assert.notInclude(`${request.system}\n${request.user}`, N.sitter, "a PC who sat the round out is named nowhere");
+          } finally {
+            fx.roundSeeds = null;
+            await sitter.delete().catch(() => {});
+          }
+        });
+
         it("paced narration and @scene: the speaker is named", async function () {
           carries(await capture(PACED), `PLAYER NARRATION — spoken by ${N.pcA}`, PACED.name);
           carries(await capture(SCENE), `PLAYER QUESTION — asked by ${N.pcA}`, SCENE.name);
@@ -12529,5 +12739,241 @@ function registerPromptContractTests(quench) {
       });
     },
     { displayName: "STARFORGED: Prompt Contracts", timeout: 60000 },
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BATCH MODE (issue #340) — a round end to end on the live world: the
+// toolbar's switch, the Round window's action box, the reading on the
+// canonical GM, Confirm in the window, the rolls under the move lock, one
+// round card. moveLockLifecycle reuses the world below for the round's lock.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Poll `fn` until it returns something truthy; that value, or a timeout error naming `label`. */
+async function waitForBatch(fn, label, timeoutMs = 10000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const value = await fn();
+    if (value) return value;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`timed out waiting for ${label}`);
+}
+
+/**
+ * The world a live Batch Mode test needs. A Claude stub at the fetch boundary
+ * for the whole test (background passes land on it too): the move interpreter
+ * reads Face Danger +edge, the narrator answers with prose and an empty fact
+ * block, a JSON helper with "{}". The GM keyed with the stub's placeholder
+ * key (the canonical GM reads and narrates); pacing off, so a reading is the
+ * interpretation alone; a PC assigned to the GM — a GM takes part in a round
+ * only with one — at 0 momentum, so no result offers a burn and no round
+ * waits on an upgrade; a session begun; the mode off and no round.
+ *
+ * @param {string} tag — names the PC and the session
+ * @returns {Promise<{ pc: Actor, requests: Array<{system: string, user: string}>, restore: () => Promise<void> }>}
+ */
+async function setUpBatchModeWorld(tag) {
+  const MODULE = MODULE_ID;
+  const pinned = {
+    claudeApiKey:                      "sk-ant-quench-batch-stub",
+    narrationEnabled:                  true,
+    "pacing.enabled":                  false,
+    "factContinuity.consistencyCheck": false,
+    autoSeedStarship:                  false,
+    autoSeedConnection:                false,
+    "batchMode.enabled":               false,
+  };
+  const settingsAtStart = {};
+  for (const [key, value] of Object.entries(pinned)) {
+    settingsAtStart[key] = game.settings.get(MODULE, key);
+    await game.settings.set(MODULE, key, value);
+  }
+  const roundAtStart     = game.settings.get(MODULE, "batchMode.round") ?? null;
+  const stateAtStart     = JSON.parse(JSON.stringify(game.settings.get(MODULE, "campaignState") ?? {}));
+  const characterAtStart = game.user.character?.id ?? null;
+
+  const requests = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url, init) => {
+    const target = typeof url === "string" ? url : url?.url ?? String(url);
+    if (!target.includes("api.anthropic.com")) return realFetch(url, init);
+    const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+    const system = (body.system ?? []).map(b => b?.text ?? "").join("\n\n");
+    const user = (body.messages ?? []).map(m => (typeof m.content === "string"
+      ? m.content : (m.content ?? []).map(c => c?.text ?? "").join(""))).join("\n\n");
+    requests.push({ system, user });
+    let text;
+    if (system.startsWith("You are the move interpreter")) {
+      text = JSON.stringify({ moveId: "face_danger", statUsed: "edge", rationale: "QUENCH: braving the breach.", mischiefApplied: false, confidence: "high" });
+    } else if (system.includes("## RESPONSE FORMAT — MANDATORY SIDECAR")) {
+      text = `QUENCH BATCH: the round turns, turn ${requests.length}.\n\n\`\`\`json\n{"newTruths":[],"stateChanges":[]}\n\`\`\``;
+    } else {
+      text = /json/i.test(system) ? "{}" : "The Batch Mode stub answers.";
+    }
+    return new Response(JSON.stringify({
+      content: [{ type: "text", text }], stop_reason: "end_turn",
+      usage: { input_tokens: 100, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 40 },
+    }), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+
+  const pc = await Actor.create({
+    name: `Quench Batch PC (${tag})`, type: "character",
+    system: { edge: 2, heart: 1, iron: 1, shadow: 1, wits: 2 },
+  });
+  await pc.update({ "system.momentum.value": 0 });
+  await game.user.update({ character: pc.id });
+  await waitForBatch(() => (game.settings.get(MODULE, "keyedGmUserIds") ?? []).includes(game.user.id), "the GM's key to be advertised");
+
+  const cs = JSON.parse(JSON.stringify(stateAtStart));
+  Object.assign(cs, {
+    currentSessionId: `quench-batch-${tag}`, sessionNumber: 1, sessionActive: true,
+    xCardActive: false, pendingMove: false, pendingMoveBy: null, pendingMoveClaim: null,
+  });
+  await game.settings.set(MODULE, "campaignState", cs);
+  await game.settings.set(MODULE, "batchMode.round", null);
+
+  async function restore() {
+    // Let the passes the last narration scheduled land on the stub first.
+    await new Promise(resolve => setTimeout(resolve, 2500));
+    await game.settings.set(MODULE, "batchMode.enabled", false).catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 300));
+    globalThis.fetch = realFetch;
+    await game.user.update({ character: characterAtStart }).catch(() => {});
+    await game.settings.set(MODULE, "batchMode.round", roundAtStart).catch(() => {});
+    await game.settings.set(MODULE, "campaignState", stateAtStart).catch(() => {});
+    for (const [key, value] of Object.entries(settingsAtStart)) {
+      await game.settings.set(MODULE, key, value).catch(() => {});
+    }
+  }
+
+  return { pc, requests, restore };
+}
+
+function registerBatchModeTests(quench) {
+  quench.registerBatch(
+    "starforged-companion.batchMode",
+    (context) => {
+      const { describe, it, assert, before, after } = context;
+      const MODULE = MODULE_ID;
+      const round = () => game.settings.get(MODULE, "batchMode.round") ?? null;
+      const settle = () => new Promise(resolve => setTimeout(resolve, 150));
+      let world = null;
+
+      before(async function () {
+        this.timeout(30000);
+        if (!game.user.isGM) { this.skip(); return; }
+        world = await setUpBatchModeWorld("batch");
+      });
+      after(async function () {
+        this.timeout(30000);
+        if (world) await world.restore();
+      });
+
+      describe("the toolbar's switch", function () {
+        it("turns the mode on: round 1 opens with the GM's PC in it, the GM's Round window opens, the switch shows pressed", async function () {
+          this.timeout(20000);
+          if (!world) { this.skip(); return; }
+          const { CompanionToolbarApp } = await import(`${MODULE_PATH}/ui/companionToolbar.js`);
+          const { RoundWindowApp } = await import(`${MODULE_PATH}/ui/roundWindow.js`);
+          const toolbar = CompanionToolbarApp.open();
+          const button = await waitForBatch(() => toolbar.element?.querySelector('[data-tool="sfBatchMode"]'), "the toolbar's Batch Mode switch");
+          assert.equal(button.getAttribute("aria-pressed"), "false", "the switch shows off");
+
+          button.click();
+          await waitForBatch(() => game.settings.get(MODULE, "batchMode.enabled") === true, "the mode to turn on");
+          const opened = await waitForBatch(() => (round()?.phase === "collecting" && round().entries?.[game.user.id] ? round() : null),
+            "round 1 to open with the GM's PC in it");
+          assert.equal(opened.number, 1, "the session's first round");
+          assert.equal(opened.entries[game.user.id].actorId, world.pc.id, "the GM acts as their assigned PC");
+
+          const app = await waitForBatch(() => (RoundWindowApp.instance?.rendered ? RoundWindowApp.instance : null), "the GM's Round window to open");
+          await waitForBatch(() => app.element?.querySelector("textarea[name='sf-round-text']"), "the action box (a GM with a PC acts too)");
+          assert.isOk(app.element.querySelector('[data-action="sendNow"]'), "the GM's window has Send now");
+          await waitForBatch(() => toolbar.element?.querySelector('[data-tool="sfBatchMode"]')?.getAttribute("aria-pressed") === "true",
+            "the switch to show pressed");
+        });
+      });
+
+      describe("a round: submit, the reading, Confirm in the window, one round card", function () {
+        it("reads the action on the canonical GM, rolls it for its roller and narrates the round once", async function () {
+          this.timeout(60000);
+          if (!world) { this.skip(); return; }
+          const { RoundWindowApp } = await import(`${MODULE_PATH}/ui/roundWindow.js`);
+          const app = RoundWindowApp.instance?.rendered ? RoundWindowApp.instance : await RoundWindowApp.open();
+          const first = await waitForBatch(() => (round()?.phase === "collecting" ? round() : null), "an open round");
+          const TEXT = "QUENCH BATCH: I brace against the hull and haul myself through the breach.";
+          const before = new Set(game.messages.contents.map(m => m.id));
+          const roundCards = () => game.messages.contents.filter(m => m.flags?.[MODULE]?.narratorCard && m.flags[MODULE].roundId === first.id);
+
+          await withSilencedNotifications(async () => {
+            const box = await waitForBatch(() => app.element?.querySelector("textarea[name='sf-round-text']"), "the action box");
+            box.value = TEXT;
+            box.dispatchEvent(new Event("input", { bubbles: true }));
+            app.element.querySelector('[data-action="submit"]').click();
+
+            await waitForBatch(() => round()?.entries?.[game.user.id]?.status === "read", "the reading", 20000);
+            const confirm = await waitForBatch(() => app.element?.querySelector('[data-action="confirm"]'), "the reading in the window");
+            assert.include(app.element.querySelector(".sf-round-reading")?.textContent ?? "", "Face Danger", "the window shows the move it read");
+            confirm.click();
+            await waitForBatch(() => round()?.entries?.[game.user.id]?.status !== "read", "the confirm to land");
+            // The GM is the only participant on a Quench run; a world with
+            // players connected waits for them, so the GM sends it.
+            const resolving = await waitForBatch(() => round()?.id !== first.id || round()?.phase !== "collecting", "the round to resolve", 3000).catch(() => false);
+            if (!resolving) app.element.querySelector('[data-action="sendNow"]')?.click();
+            await waitForBatch(() => roundCards().length, "the round card", 40000);
+          });
+
+          const card = roundCards()[0];
+          const f = card.flags[MODULE];
+          assert.isTrue(!before.has(card.id), "a new card");
+          assert.equal(f.roundNumber, 1);
+          assert.equal(f.sessionId, game.settings.get(MODULE, "campaignState")?.currentSessionId, "the session's card");
+          assert.isString(f.narrationId);
+          assert.include(f.narrationText ?? "", "QUENCH BATCH", "the narration's prose");
+          assert.lengthOf(f.roundEntries ?? [], 1, "the card lists the one player who acted, and no one else");
+          assert.deepInclude(f.roundEntries[0], { userId: game.user.id, actorId: world.pc.id, playerText: TEXT, moveId: "face_danger" });
+          assert.include(["strong_hit", "weak_hit", "miss"], f.roundEntries[0].outcome);
+
+          const result = game.messages.contents.find(m => m.flags?.[MODULE]?.moveResolution && m.flags[MODULE].roundId === first.id);
+          assert.isOk(result, "the move's result card carries the round");
+          assert.equal(result.flags[MODULE].actorId, world.pc.id, "credited to its roller");
+
+          await waitForBatch(() => round()?.number === 2 && round()?.phase === "collecting", "round 2 to open");
+          await waitForBatch(() => game.settings.get(MODULE, "campaignState")?.pendingMove !== true, "the move lock to release");
+          await new Promise(resolve => setTimeout(resolve, 1000));
+          assert.lengthOf(roundCards(), 1, "one round card");
+          const narrations = world.requests.filter(r => r.user.includes("## THIS ROUND"));
+          assert.lengthOf(narrations, 1, "one narration for the round");
+          assert.include(narrations[0].user, TEXT, "the narrator is told what the player wrote");
+        });
+      });
+
+      describe("the window in the compact layout (issue #293)", function () {
+        it("spans a phone's width, and its buttons are tap targets", async function () {
+          this.timeout(15000);
+          if (!world) { this.skip(); return; }
+          const { RoundWindowApp } = await import(`${MODULE_PATH}/ui/roundWindow.js`);
+          const { applyLayout, LAYOUT_SETTING } = await import(`${MODULE_PATH}/ui/layoutMode.js`);
+          const layoutAtStart = game.settings.get(MODULE, LAYOUT_SETTING);
+          try {
+            await game.settings.set(MODULE, LAYOUT_SETTING, "phone");
+            await settle();
+            assert.isTrue(document.body.classList.contains("sf-compact"), "Phone sets sf-compact on <body>");
+            const app = await RoundWindowApp.open();
+            await settle();
+            assert.isTrue(app.element.classList.contains("sf-window"), "the Round window is a module window");
+            assert.approximately(app.element.getBoundingClientRect().width, window.innerWidth, 2,
+              "the Round window spans the screen's width");
+            const submit = await waitForBatch(() => app.element.querySelector('[data-action="submit"]'), "the Submit button");
+            assert.isAtLeast(Math.round(submit.getBoundingClientRect().height), 44, "Submit is a 44 px tap target");
+          } finally {
+            await game.settings.set(MODULE, LAYOUT_SETTING, layoutAtStart ?? "auto");
+            applyLayout();
+          }
+        });
+      });
+    },
+    { displayName: "STARFORGED: Batch Mode", timeout: 60000 },
   );
 }
