@@ -28,7 +28,7 @@
  * #340 Phase 0: no behaviour change).
  */
 
-import { MOVES } from "../schemas.js";
+import { MOVES, rankName } from "../schemas.js";
 import { interpretMove } from "./interpreter.js";
 import { resolveMove, withPayThePriceSeed } from "./resolver.js";
 import { buildMischiefAside } from "./mischief.js";
@@ -48,7 +48,7 @@ import {
   legacyTrackNamed,
   legacyTrackScores,
 } from "./statEnrichment.js";
-import { narrateAndPostVowSwearing } from "../narration/narrator.js";
+import { narrateAndPostVowSwearing, suppressPcDirectedSocialMove } from "../narration/narrator.js";
 import {
   getPlayerActors,
   readVows,
@@ -71,6 +71,8 @@ import { getCurrentSiteKind } from "../entities/location.js";
 import { ClarificationDialog, applyClarificationSelection } from "../world/clarificationDialog.js";
 import { swearSharedVowForAll } from "../session/swearVow.js";
 import { takeNextMoveAdd, clearPersistedNextMoveAdd, consumeNextMoveBonus } from "./nextMoveAdd.js";
+import { decidePacing } from "../pacing/router.js";
+import { READING_KIND } from "../batch/round.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -427,6 +429,189 @@ export async function postTargetChoiceCard(read, { narration, speakerActorId }) 
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Stage 1, for a Batch Mode round — read a submission into a stored reading
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Read a round entry's action on Submit (issue #340): the pacing decision
+ * first — readings ignore `!roll` (the window has "Roll a move instead"),
+ * `!pace` overrides still apply — then, for a move, readMove gathering its
+ * target choice beside the abilities. Runs on the canonical GM, on its key,
+ * outside the GM relay queue (it makes Claude calls).
+ *
+ * The reading is what the player's window shows and confirms, and what
+ * rollMove rolls from when the round resolves — stored on the round, so it is
+ * plain JSON.
+ *
+ * @param {Object} args
+ * @param {string} args.text — the player's action
+ * @param {string} args.speakerActorId — their PC
+ * @param {Object} args.campaignState — a working copy
+ * @param {string|null} args.apiKey
+ * @param {*} args.dial — the Mischief dial
+ * @param {{ move?: boolean, moveId?: string|null, forced?: Object|null }|null} [args.readAs]
+ *   read as a move ("Roll a move instead"), as the move named ("Roll ⟨move⟩"),
+ *   or as a card button's forced move
+ * @returns {Promise<Object>} the reading
+ */
+export async function readAction({ text, speakerActorId, campaignState, apiKey, dial, readAs = null }) {
+  const forced = readAs?.forced?.moveId
+    ? readAs.forced
+    : (readAs?.moveId ? { moveId: readAs.moveId } : null);
+  const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
+  let pacing = null;
+  if (!readAs?.move) {
+    pacing = await decidePacing({
+      playerText: text, campaignState, character: speakerName ? { name: speakerName } : null,
+      apiKey, ignoreForceMove: true,
+    });
+    if (!pacing.runMove) {
+      // The offer is the classifier's alone — no narration exists yet to
+      // reconcile it with — and never a social move against a fellow PC
+      // (finding G, suppressPcDirectedSocialMove).
+      const suggestedMove = suppressPcDirectedSocialMove(pacing.suggestedMove ?? null, text, speakerName);
+      return {
+        kind:              READING_KIND.NARRATIVE,
+        decision:          pacing.decision,
+        suggestedMove:     suggestedMove ?? null,
+        suggestedTargetId: suggestedMove ? (pacing.suggestedTargetId ?? null) : null,
+      };
+    }
+  }
+  const read = await readMove({
+    narration: text, speakerActorId, campaignState, apiKey, dial,
+    forced: forced ? { moveId: forced.moveId, moveTarget: forced.moveTarget ?? null, moveTargetId: forced.moveTargetId ?? null } : null,
+    swearToConnection: forced?.swearToConnection ?? null,
+    gatherChoices: true,
+  });
+  return readingFromMove(read, { forced, decision: pacing?.decision ?? "MOVE" });
+}
+
+/**
+ * A readMove result as a stored reading: what the window shows (the move,
+ * stat, rationale, Mischief aside, abilities, stat substitutions, target
+ * choices) and the interpretation the roll starts from.
+ *
+ * @param {Object} read — readMove's result
+ * @param {{ forced?: Object|null, decision?: string }} [opts]
+ * @returns {Object}
+ */
+function readingFromMove(read, { forced = null, decision = "MOVE" } = {}) {
+  const interpretation = jsonCopy(read.interpretation ?? {});
+  const abilities = Array.isArray(interpretation.applicableAbilities) ? interpretation.applicableAbilities : [];
+  const statOptions = [...new Set(abilities
+    .map(a => (typeof a.statReplacement === "string" ? a.statReplacement : ""))
+    .filter(Boolean))];
+  return {
+    kind:           READING_KIND.MOVE,
+    decision,
+    moveId:         interpretation.moveId ?? null,
+    moveName:       interpretation.moveName ?? (interpretation.moveId ? moveDisplayName(interpretation.moveId) : null),
+    statUsed:       interpretation.statUsed ?? null,
+    rationale:      interpretation.rationale ?? "",
+    mischiefAside:  interpretation._mischiefAside ?? "",
+    abilities,
+    statOptions,
+    targetChoices:  targetOptionsFrom(read.targetChoice),
+    blocked:        read.targetChoice?.kind === "vow-gone" ? "vow-gone" : null,
+    combatPosition: read.combatPosition ?? null,
+    forced: forced ? {
+      tokenDragSetCourse:     forced.tokenDragSetCourse ?? null,
+      incitingSwearMessageId: forced.incitingSwearMessageId ?? null,
+    } : null,
+    interpretation,
+  };
+}
+
+/**
+ * readMove's target choice as the window's pick: which fight or expedition,
+ * which vow, which legacy track — each option by the id the roll names it by.
+ *
+ * @param {Object|null} choice — readMove's `targetChoice`
+ * @returns {{ kind: string, trackType?: string, prompt: string, options: Array<{ id: string, label: string, detail: string }> }|null}
+ */
+function targetOptionsFrom(choice) {
+  const boxes = (ticks) => `${Math.floor(Number(ticks ?? 0) / 4)}/10 boxes`;
+  const rank  = (r) => String(rankName(r)).replace(/^\w/, c => c.toUpperCase());
+  if (choice?.kind === "track") {
+    const expedition = choice.trackType === "expedition";
+    return {
+      kind: "track", trackType: choice.trackType,
+      prompt: expedition ? "Which expedition?" : "Which fight?",
+      options: (choice.tracks ?? []).map(t => ({
+        id: t.id, label: t.label ?? (expedition ? "Expedition" : "Combat"),
+        detail: `${rank(t.rank ?? "dangerous")}, ${boxes(t.ticks)}`,
+      })),
+    };
+  }
+  if (choice?.kind === "vow") {
+    return {
+      kind: "vow", prompt: "Which vow?",
+      options: (choice.vows ?? []).map(v => ({ id: v.id, label: v.name || "Vow", detail: `${rank(v.rank)}, ${boxes(v.ticks)}` })),
+    };
+  }
+  if (choice?.kind === "legacy") {
+    return {
+      kind: "legacy", prompt: "Which legacy track?",
+      options: (choice.tracks ?? []).map(t => ({ id: t.track, label: t.label, detail: `${boxes(t.ticks)}${t.cleared ? " (cleared)" : ""}` })),
+    };
+  }
+  return null;
+}
+
+/**
+ * The choices a reading not yet confirmed is rolled with ("used as read",
+ * when a GM sends the round now): what the confirm dialog pre-checks — the
+ * abilities that add to the roll or swap its stat — the listed stat kept, and
+ * no target.
+ *
+ * @param {Object} reading
+ * @returns {{ abilityIds: string[], statReplacement: null, targetId: null }}
+ */
+export function defaultChoices(reading) {
+  const abilities = Array.isArray(reading?.abilities) ? reading.abilities : [];
+  return {
+    abilityIds: abilities.filter(a => Number(a.adds ?? 0) > 0 || (typeof a.statReplacement === "string" && a.statReplacement)).map(a => a.key),
+    statReplacement: null,
+    targetId: null,
+  };
+}
+
+/**
+ * Stage 2 for a round — the player's confirm in their window, as the confirm
+ * dialog applies it: the checked abilities' adds, a stat substitution a
+ * checked ability offers, and the picked target, on a fresh copy of the
+ * reading's interpretation (src/ui/settingsPanel.js MoveConfirmDialog).
+ *
+ * @param {Object} reading
+ * @param {{ abilityIds?: string[], statReplacement?: string|null, targetId?: string|null }} choices — validated (round.js validateChoices)
+ * @returns {Object} the interpretation rollMove takes
+ */
+export function interpretationForRoll(reading, choices) {
+  const interpretation = jsonCopy(reading?.interpretation ?? {});
+  const offered = new Map((Array.isArray(reading?.abilities) ? reading.abilities : []).map(a => [a.key, a]));
+  const chosen = (choices?.abilityIds ?? []).map(k => offered.get(k)).filter(Boolean);
+  interpretation.appliedAbilityAdds = chosen.reduce((sum, a) => {
+    const n = Number(a.adds ?? 0);
+    return Number.isFinite(n) && n > 0 ? sum + n : sum;
+  }, 0);
+  interpretation.appliedAbilityKeys = chosen.map(a => a.key);
+  const stat = typeof choices?.statReplacement === "string" ? choices.statReplacement : "";
+  interpretation.appliedStatReplacement = stat && chosen.some(a => a.statReplacement === stat) ? stat : null;
+  const option = (reading?.targetChoices?.options ?? []).find(o => o.id === choices?.targetId) ?? null;
+  if (option) {
+    interpretation.moveTarget = option.label;
+    if (reading.targetChoices.kind !== "legacy") interpretation.moveTargetId = option.id;
+  }
+  return interpretation;
+}
+
+/** A JSON-safe deep copy (a reading is stored on a world setting). */
+function jsonCopy(value) {
+  return JSON.parse(JSON.stringify(value ?? null));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Stage 3 — roll the move
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -446,6 +631,7 @@ export async function postTargetChoiceCard(read, { narration, speakerActorId }) 
  * @param {*} [args.combatPosition] — the roller's position as read; undefined reads it now
  * @param {Object|null} [args.tokenDragSetCourse]
  * @param {string|null} [args.incitingSwearMessageId] — an inciting "⚔ Swear this vow" card
+ * @param {Object|null} [args.cardFlags] — more flags for the result card (a round's entry: its round and player)
  * @returns {Promise<{ refused: string }|{ refused: null, resolution: Object, interpretation: Object,
  *   relevance: Object, moveTargets: Object, burnState: Object|null, improveState: Object|null,
  *   moveResultMessage: ChatMessage|null, rollerActor: Actor|null, speakerActorId: string|null }>}
@@ -453,6 +639,7 @@ export async function postTargetChoiceCard(read, { narration, speakerActorId }) 
 export async function rollMove({
   interpretation, campaignState, speakerActorId, narration,
   combatPosition = undefined, tokenDragSetCourse = null, incitingSwearMessageId = null,
+  cardFlags = null,
 }) {
   const {
     postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, postDevelopRelationshipCard, applyReachMilestone,
@@ -1138,6 +1325,7 @@ export async function rollMove({
     connectionState,
     moveFight,
     rollerActor?.id ?? null,
+    cardFlags,
   );
 
   return {
@@ -1145,6 +1333,37 @@ export async function rollMove({
     resolution, interpretation, relevance, moveTargets, burnState, improveState,
     moveResultMessage: moveResultMessage ?? null, rollerActor, speakerActorId,
   };
+}
+
+/**
+ * What a round's narration needs from a rolled entry, kept on the round so a
+ * round resumed after a reload narrates without rolling again (issue #340):
+ * the move, its outcome and match, the outcome text the narrator is given
+ * (with the price it paid — the oracle seeds carry a Pay the Price's), and the
+ * relevance the roll resolved (its class and matched entities).
+ *
+ * @param {Object} resolution
+ * @param {Object|null} [relevance]
+ * @returns {Object}
+ */
+export function narrationInputFrom(resolution, relevance = null) {
+  return jsonCopy({
+    kind:              "move",
+    resolutionId:      resolution?._id ?? null,
+    moveId:            resolution?.moveId ?? null,
+    moveName:          resolution?.moveName ?? (resolution?.moveId ? moveDisplayName(resolution.moveId) : null),
+    statUsed:          resolution?.statUsed ?? null,
+    outcome:           resolution?.outcome ?? null,
+    outcomeLabel:      resolution?.outcomeLabel ?? null,
+    isMatch:           resolution?.isMatch === true,
+    loremasterContext: resolution?.loremasterContext ?? "",
+    oracleSeeds:       resolution?.oracleSeeds ?? null,
+    relevance: relevance ? {
+      resolvedClass: relevance.resolvedClass ?? "embellishment",
+      entityIds:     Array.isArray(relevance.entityIds) ? relevance.entityIds : [],
+      entityTypes:   Array.isArray(relevance.entityTypes) ? relevance.entityTypes : [],
+    } : null,
+  });
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

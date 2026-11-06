@@ -2726,3 +2726,74 @@ body.sf-compact.sf-touch #board {
   margin:      2px 0 4px;
   font-size:   0.85em;
 }
+
+
+/* ============================================================================
+   BATCH MODE — the Round window and the toolbar's switch (issue #340)
+   The window carries `sf-window`, so the compact layout spans a phone's screen
+   and its buttons grow to 44–48 px tap targets (the adaptive layout above).
+   ============================================================================ */
+
+.sf-companion-toolbar__btn.is-pressed {
+  background: var(--sf-accent-bg, #2a2a3a);
+  box-shadow: inset 0 0 0 1px var(--sf-suggestion-colour, #B5985A);
+  color: var(--sf-suggestion-colour, #B5985A);
+}
+
+.sf-round-window .sf-round-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.25rem 0.1rem;
+}
+.sf-round-window .sf-round-header { display: flex; align-items: baseline; gap: 0.5rem; }
+.sf-round-window .sf-round-phase { opacity: 0.7; font-size: 0.9em; }
+.sf-round-window h3 { margin: 0 0 0.3rem; font-size: 1.05em; display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap; }
+.sf-round-window .sf-round-banner {
+  padding: 0.35rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--sf-card-border, #444);
+  background: var(--sf-card-bg, #1a1a1a);
+  color: var(--sf-card-fg, #ddd);
+}
+.sf-round-window .sf-round-banner--warn { border-color: #b5735a; }
+.sf-round-window .sf-round-recent { border: 1px solid var(--sf-card-border, #444); border-radius: 4px; padding: 0.3rem 0.5rem; }
+.sf-round-window .sf-round-recent-toggle { width: 100%; text-align: left; background: none; border: none; font-weight: 600; cursor: pointer; }
+.sf-round-window .sf-round-recent-text { margin-top: 0.3rem; font-style: italic; max-height: 9em; overflow-y: auto; white-space: pre-wrap; }
+.sf-round-window .sf-round-status {
+  font-size: 0.8em;
+  font-weight: 600;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  border: 1px solid var(--sf-card-border, #444);
+}
+.sf-round-window .sf-round-status--ready { border-color: #6a9a5a; color: #9fd08e; }
+.sf-round-window .sf-round-status--passed { opacity: 0.7; }
+.sf-round-window .sf-round-input { width: 100%; resize: vertical; min-height: 3.2em; font-family: inherit; }
+.sf-round-window .sf-round-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; justify-content: flex-end; }
+.sf-round-window .sf-round-actions button { flex: 0 1 auto; }
+.sf-round-window .sf-round-primary { font-weight: 600; }
+.sf-round-window .sf-round-line { margin: 0.2rem 0; white-space: pre-wrap; }
+.sf-round-window blockquote.sf-round-line { border-left: 3px solid var(--sf-card-border, #444); padding-left: 0.5rem; }
+.sf-round-window .sf-round-hint { opacity: 0.8; font-style: italic; margin: 0.2rem 0; }
+.sf-round-window .sf-round-label { display: inline-block; min-width: 5.5em; opacity: 0.75; }
+.sf-round-window .sf-round-reading,
+.sf-round-window .sf-round-offer,
+.sf-round-window .sf-round-upgrade {
+  border: 1px solid var(--sf-card-border, #444);
+  border-radius: 4px;
+  padding: 0.4rem 0.5rem;
+}
+.sf-round-window .sf-round-targets { border: none; padding: 0; margin: 0.3rem 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.sf-round-window .sf-round-target { display: flex; align-items: center; gap: 0.4rem; min-height: 32px; }
+.sf-round-window .sf-round-detail { opacity: 0.7; font-size: 0.9em; }
+.sf-round-window .sf-round-table ul,
+.sf-round-window .sf-round-progress ul,
+.sf-round-window .sf-round-readings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+.sf-round-window .sf-round-move { opacity: 0.75; font-size: 0.9em; }
+.sf-round-window .sf-round-empty { opacity: 0.7; font-style: italic; text-align: center; }
+body.sf-touch .sf-round-window .sf-round-target { min-height: 44px; }
+
+/* The round's narrator card: each acting player's line and roll above the prose. */
+.sf-round-card .sf-round-entries { list-style: none; margin: 0 0 0.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
+.sf-round-card .sf-round-entry-line { font-style: italic; opacity: 0.85; }

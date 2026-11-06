@@ -16,14 +16,26 @@
 /**
  * Build the ordered list of visible toolbar tools for the current client.
  *
+ * Most tools open a panel. The Batch Mode switch (issue #340) is the
+ * toolbar's one toggle: `kind: "toggle"` and `pressed` say so, and the
+ * toolbar renders it pressed (`aria-pressed`; the compact list labels it
+ * "Batch Mode: on"). It is a GM's. While the mode is on, the Round tool
+ * reopens the Round window — for a player with a character in the round,
+ * and for a GM (the controls).
+ *
  * @param {object}  ctx
  * @param {boolean} ctx.isGM                  Whether the current user is a GM.
  * @param {boolean} ctx.privateChannelEnabled Whether the Private Channel feature is on.
- * @returns {Array<{key: string, title: string, icon: string}>} visible tools, in display order.
+ * @param {boolean} [ctx.batchModeEnabled]    Whether Batch Mode is on.
+ * @param {boolean} [ctx.roundParticipant]    Whether this user has a character in the round.
+ * @returns {Array<{key: string, title: string, icon: string, kind?: "toggle", pressed?: boolean}>}
+ *   visible tools, in display order.
  */
-export function companionToolbarTools({ isGM = false, privateChannelEnabled = false } = {}) {
+export function companionToolbarTools({ isGM = false, privateChannelEnabled = false, batchModeEnabled = false, roundParticipant = false } = {}) {
   const all = [
     { key: "sfSession",        title: "Session",             icon: "fas fa-play-circle",  visible: true },
+    { key: "sfBatchMode",      title: "Batch Mode",          icon: "fas fa-layer-group",  visible: !!isGM, kind: "toggle", pressed: !!batchModeEnabled },
+    { key: "sfRound",          title: "Round",               icon: "fas fa-hourglass-half", visible: !!batchModeEnabled && (!!roundParticipant || !!isGM) },
     { key: "progressTracks",   title: "Progress Tracks",     icon: "fas fa-tasks",        visible: true },
     { key: "entityPanel",      title: "Entities",            icon: "fas fa-users",        visible: true },
     { key: "chronicle",        title: "Character Chronicle", icon: "fas fa-book-open",    visible: true },
@@ -35,7 +47,8 @@ export function companionToolbarTools({ isGM = false, privateChannelEnabled = fa
     { key: "worldTruths",      title: "World Truths",        icon: "fas fa-scroll",       visible: !!isGM },
     { key: "customOracles",    title: "Custom Oracles",      icon: "fas fa-table-list",   visible: !!isGM },
   ];
-  return all.filter(t => t.visible).map(({ key, title, icon }) => ({ key, title, icon }));
+  return all.filter(t => t.visible).map(({ key, title, icon, kind, pressed }) =>
+    (kind === "toggle" ? { key, title, icon, kind, pressed: !!pressed } : { key, title, icon }));
 }
 
 /**

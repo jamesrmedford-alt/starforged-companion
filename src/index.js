@@ -216,6 +216,16 @@ import {
   recordMove,
   finishMove,
 } from "./moves/movePipeline.js";
+import {
+  configureBatchDriver,
+  registerBatchModeSettings,
+  registerBatchModeDriver,
+  handleBatchModeLine,
+  isBatchModeEnabled,
+  acceptRoundUpgrade,
+  setBatchFreeFlowRunner,
+} from "./batch/driver.js";
+import { registerRoundWindowHooks } from "./ui/roundWindow.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -759,6 +769,30 @@ configureMovePipeline({
   reportUnsavedMoveRecord, applyMoveConsequenceRiders,
 });
 
+// A Batch Mode round claims and releases the move lock through its own paths
+// (issue #340): the claim for its rolls and records, again for its narration.
+configureBatchDriver({
+  claimMoveLock:   claimPendingMoveLock,
+  releaseMoveLock: releasePendingMoveLock,
+});
+
+/**
+ * The narrator a Burn Momentum / Improve Result re-narrates through. An
+ * upgrade of a Batch Mode round entry not yet narrated hands the round the
+ * upgraded resolution, keyed by the original resolution's id (`upgradeOf`),
+ * instead of narrating — the round narrates once, telling the final outcomes
+ * (issue #340). Every other upgrade is narrated as before.
+ *
+ * @param {Object} resolution — the upgraded outcome's
+ * @param {Object} campaignState — the upgrade's working copy
+ * @param {{ speakerActorId?: string|null, upgradeOf?: string|null, kind?: string }} [options]
+ * @returns {Promise<string|null>}
+ */
+async function narrateUpgradedResolution(resolution, campaignState, options = {}) {
+  if (options.upgradeOf && await acceptRoundUpgrade(options.upgradeOf, resolution, options.kind ?? "burn")) return null;
+  return narrateResolution(resolution, campaignState, { speakerActorId: options.speakerActorId ?? null });
+}
+
 /**
  * Intercept outgoing chat messages and route player narration through
  * the move interpretation pipeline.
@@ -781,13 +815,21 @@ configureMovePipeline({
  * session has begun is held until one does (issue #329 X14).
  */
 export function registerChatHook() {
-  const onMessage = async (message) => {
+  const onMessage = async (message, hookOptions = {}) => {
     // Chat commands (`@scene`, `!…`) — routed before the move pipeline. Every
     // command is consumed on EVERY client (so plain-narration handling below
     // never sees one) but executes only where its run-on policy says.
     if (await dispatchChatCommand(message, CHAT_COMMAND_ROUTES)) return;
 
     if (!isPlayerNarration(message)) return;
+
+    // Batch Mode (issue #340): chat is table talk — a typed line is not
+    // narrated (its author's Round window keeps it as a draft) — and a card
+    // button's move becomes its roller's round entry. A forced move whose
+    // roller has no character in the round runs here as it does today, at
+    // once while the round collects and after it when it resolves (the
+    // driver hands it back, `batchReleased`). Commands ran above, as usual.
+    if (!hookOptions?.batchReleased && isBatchModeEnabled() && await handleBatchModeLine(message)) return;
 
     // Single-emitter gate. The createChatMessage hook fires on every
     // connected client; without this gate, every client ran pacing →
@@ -1059,6 +1101,9 @@ export function registerChatHook() {
     }
   };
   Hooks.on("createChatMessage", onMessage);
+  // A non-participant's forced move a Batch Mode round held while it resolved
+  // runs through this pipeline once the round has closed (issue #340).
+  setBatchFreeFlowRunner((message) => onMessage(message, { batchReleased: true }));
   // A held forced move runs once a campaignState write leaves the lock free
   // — the pipeline's own release, a stale lock cleared at load (issue #325
   // W02).
@@ -1979,6 +2024,35 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Claim the move-concurrency lock for a Batch Mode round (issue #340): its
+ * rolls and records, and again its narration — each released in a `finally`
+ * through releasePendingMoveLock, as the free-flow pipeline releases its own.
+ * Never across the wait for an upgrade decision (decisions.md → "Move-
+ * concurrency lock covers narration + persistence, not post-roll prompts").
+ * Writes a copy of the store as it is now, so a refused claim leaves this
+ * client's cache free. The claim's token rides the lock, and this client
+ * holds it (restoreLockOverCarriedBackClaim puts it back over a stale write).
+ *
+ * @returns {Promise<{ claim: string|null, busy?: boolean, refused?: boolean }>}
+ *   `busy`: another move holds the lock; `refused`: the world refused the write
+ */
+export async function claimPendingMoveLock() {
+  const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  if (latest.pendingMove) return { claim: null, busy: true };
+  const claim = foundry.utils.randomID();
+  try {
+    // A copy (rules/foundry-api.md): a refused claim leaves the cache free.
+    await game.settings.set(MODULE_ID, "campaignState",
+      { ...latest, pendingMove: true, pendingMoveBy: game.user?.id ?? null, pendingMoveClaim: claim });
+  } catch (err) {
+    console.error(`${MODULE_ID} | could not claim the move lock:`, err);
+    return { claim: null, refused: true };
+  }
+  _heldMoveLockClaim = claim;
+  return { claim };
+}
 
 /**
  * Release the move-concurrency lock (`campaignState.pendingMove`).
@@ -6167,6 +6241,12 @@ async function handleSeverCommand(message) {
  * the move pipeline regardless of the classifier's decision. GM-only.
  */
 async function handleRollCommand(_message) {
+  // Batch Mode (issue #340): a round's readings ignore `!roll` — the Round
+  // window's "Roll a move instead" reads an action as a move. Nothing is set.
+  if (isBatchModeEnabled()) {
+    ui.notifications?.info?.("Starforged Companion: Batch Mode is on — use \"Roll a move instead\" in your Round window to roll your action as a move.");
+    return;
+  }
   if (!game.user.isGM) {
     ui.notifications?.warn("!roll is GM-only (writes campaign state).");
     return;
@@ -6721,7 +6801,7 @@ const TDA_OFFER_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_
  *   combatTrackLabel and named on the Finish the Fight button, which forwards
  *   them so the roll it starts scores this fight (TDA-BUTTON-NO-TARGET).
  */
-async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null, rollerActorId = null) {
+async function postMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null, rollerActorId = null, extraFlags = null) {
   // 3D dice (Dice So Nice) for the action + challenge dice, fed the values the
   // resolver already rolled so the animation matches the card. Fire-and-forget
   // and fail-open — never blocks or breaks the result post. A no-roll move
@@ -6745,6 +6825,10 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
         ...(improveState ? { improve: improveState } : {}),
         ...(milestoneState ? { milestoneSuggestion: milestoneState } : {}),
         ...(connectionState ? { connectionSuggestion: connectionState } : {}),
+        // A Batch Mode round's entry: its round and player (issue #340) —
+        // the round finds its cards by them, and a recovery the card of an
+        // entry rolled before a reload.
+        ...(extraFlags && typeof extraFlags === "object" ? extraFlags : {}),
       },
     },
     // No type field — defaults to "base", which is valid in both v12 and v13.
@@ -7005,6 +7089,7 @@ Hooks.once("init", () => {
   registerCombatTrackerSettings();
   registerUISettings();
   registerPrivateChannelSettings();
+  registerBatchModeSettings();
   registerCompanionToolbarSettings();
   registerLayoutSettings();
 });
@@ -7269,6 +7354,10 @@ Hooks.once("ready", () => {
   // only; a debug no-op elsewhere.
   announceGmRelayReady();
   registerChatHook();
+  // Batch Mode (issue #340): the canonical GM's round driver — sessions,
+  // connections, recovery — and every client's Round window.
+  registerBatchModeDriver();
+  registerRoundWindowHooks();
   registerActorHook();
   registerSharedSupplyHook();   // crew-shared supply track (co-op/guided rule)
   // #326 D3: the shared legacy tracks on every PC's sheet — a sheet edit flows
@@ -7328,11 +7417,11 @@ Hooks.once("ready", () => {
   // upgraded outcome's other effects through its applier
   // (UPGRADE-PIPELINE-EFFECTS).
   registerBurnMomentumHook({
-    narrate:      narrateResolution,
+    narrate:      narrateUpgradedResolution,
     applyEffects: applyUpgradedOutcomeEffects,
   });
   registerImproveResultHook({
-    narrate:      narrateResolution,
+    narrate:      narrateUpgradedResolution,
     applyEffects: applyUpgradedOutcomeEffects,
   });
   // Suffer choices are a non-blocking chat card (never a modal dialog inside the

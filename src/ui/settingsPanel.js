@@ -2253,27 +2253,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
     // pipeline can apply them to interpretation.adds. The interpretation
     // object is shared by reference with the caller.
     try {
-      const root = this.element ?? document;
-      const checked = root.querySelectorAll?.('.sf-applicable-ability-cb:checked') ?? [];
-      let total = 0;
-      const applied = [];
-      const offeredStats = new Set();
-      checked.forEach(cb => {
-        const n = Number(cb.dataset.adds ?? 0);
-        if (Number.isFinite(n) && n > 0) total += n;
-        if (cb.dataset.key) applied.push(cb.dataset.key);
-        const stat = cb.dataset.statReplacement;
-        if (stat) offeredStats.add(stat);
-      });
-      // Stat substitution — apply only when the selected radio matches one
-      // of the offered stats and at least one ability advertising that
-      // substitution is currently checked. Otherwise the user has
-      // unchecked the gating ability and the substitution must not fire.
-      let pickedStat = '';
-      const picked = root.querySelector?.('input[name="sf-stat-sub"]:checked');
-      const candidate = String(picked?.value ?? '').trim();
-      if (candidate && offeredStats.has(candidate)) pickedStat = candidate;
-
+      const { total, applied, pickedStat } = readMoveAbilitiesForm(this.element ?? document);
       if (this.#interp) {
         this.#interp.appliedAbilityAdds  = total;
         this.#interp.appliedAbilityKeys  = applied;
@@ -2290,6 +2270,51 @@ export class MoveConfirmDialog extends ApplicationV2 {
     this.#settle(false);
     this.close({ animate: false });
   }
+}
+
+/**
+ * What the confirm form's checked abilities and stat radio chose — the
+ * confirm dialog's accept, and a Batch Mode Round window's Confirm (issue
+ * #340), read the one form the same way: the checked abilities' adds and
+ * keys, and a stat substitution only when the picked radio is one a checked
+ * ability offers (unchecking the gating ability turns it off).
+ *
+ * @param {ParentNode} root — the element holding the form
+ * @returns {{ total: number, applied: string[], pickedStat: string }}
+ */
+export function readMoveAbilitiesForm(root) {
+  const checked = root?.querySelectorAll?.('.sf-applicable-ability-cb:checked') ?? [];
+  let total = 0;
+  const applied = [];
+  const offeredStats = new Set();
+  checked.forEach(cb => {
+    const n = Number(cb.dataset.adds ?? 0);
+    if (Number.isFinite(n) && n > 0) total += n;
+    if (cb.dataset.key) applied.push(cb.dataset.key);
+    const stat = cb.dataset.statReplacement;
+    if (stat) offeredStats.add(stat);
+  });
+  // Stat substitution — apply only when the selected radio matches one
+  // of the offered stats and at least one ability advertising that
+  // substitution is currently checked. Otherwise the user has
+  // unchecked the gating ability and the substitution must not fire.
+  let pickedStat = '';
+  const picked = root?.querySelector?.('input[name="sf-stat-sub"]:checked');
+  const candidate = String(picked?.value ?? '').trim();
+  if (candidate && offeredStats.has(candidate)) pickedStat = candidate;
+  return { total, applied, pickedStat };
+}
+
+/**
+ * The confirm form's "Applicable abilities" block — the confirm dialog's,
+ * and a Batch Mode Round window's (issue #340): one form, not a copy.
+ *
+ * @param {Array<Object>} abilities — the reading's applicable abilities
+ * @param {string} currentStat — the move's listed stat
+ * @returns {string} HTML ('' with no abilities)
+ */
+export function renderMoveAbilitiesForm(abilities, currentStat) {
+  return renderApplicableAbilitiesBlock(abilities, currentStat);
 }
 
 /**

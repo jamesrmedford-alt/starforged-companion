@@ -216,6 +216,19 @@ export const GM_ACTIONS = Object.freeze({
   // Issue #321 U10 — the Private Channel: a default Player cannot create a JournalEntry, so the GM
   // creates the player's transcript journal, with the player as its OWNER
   "privateChannel.createJournal": { load: () => import("../private-channel/transcript.js"),         fn: "applyPrivateJournalCreate" },
+  // Issue #340 — Batch Mode: a round's entry, from its own player's Round window (the
+  // requester is the entry), and the GM controls. Each is a write to the round; its
+  // reading and the round's resolution run outside this queue (src/batch/driver.js),
+  // so no handler here waits on a Claude call. Burn / Improve from the window use
+  // the card's own move.burnMomentum / move.improveResult.
+  "batch.submit":              { load: () => import("../batch/relay.js"),                           fn: "applyBatchSubmit" },
+  "batch.withdraw":            { load: () => import("../batch/relay.js"),                           fn: "applyBatchWithdraw" },
+  "batch.pass":                { load: () => import("../batch/relay.js"),                           fn: "applyBatchPass" },
+  "batch.confirm":             { load: () => import("../batch/relay.js"),                           fn: "applyBatchConfirm" },
+  "batch.reread":              { load: () => import("../batch/relay.js"),                           fn: "applyBatchReread" },
+  "batch.keep":                { load: () => import("../batch/relay.js"),                           fn: "applyBatchKeep" },
+  "batch.sendNow":             { load: () => import("../batch/relay.js"),                           fn: "applyBatchSendNow" },
+  "batch.discard":             { load: () => import("../batch/relay.js"),                           fn: "applyBatchDiscard" },
 });
 
 /**

@@ -67,6 +67,7 @@ import {
   UPGRADE_PENDING_TITLE,
   UPGRADE_CHOSEN_TITLE,
   UPGRADE_LATER_MOVE_TITLE,
+  UPGRADE_ROUND_CLOSED_TITLE,
   UPGRADE_REFUSALS,
 } from "./burnMomentum.js";
 
@@ -199,6 +200,12 @@ export function registerImproveResultHook({ narrate, applyEffects } = {}) {
     if (blocker === "already-upgraded") {
       btn.disabled    = true;
       btn.textContent = "✦ Improve Result — momentum was already burned";
+      return;
+    }
+    if (blocker === "round-closed") {
+      btn.disabled    = true;
+      btn.textContent = "✦ Improve Result — decided before the round was narrated";
+      btn.title       = UPGRADE_ROUND_CLOSED_TITLE;
       return;
     }
     if (blocker === "later-move") {
@@ -375,7 +382,7 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
     console.warn(`${MODULE_ID} | improveResult: superseding original narration failed:`, err));
 
   // The improving PC is the card's actor, not the first PC (credit the roller).
-  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: improve.actorId ?? null, narrate, kind: "improve" })
+  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: improve.actorId ?? null, narrate, kind: "improve", upgradeOf: improve.resolutionId ?? null })
     .catch(err => console.warn(`${MODULE_ID} | improveResult: re-narration failed:`, err));
 
   return { applied: true };
