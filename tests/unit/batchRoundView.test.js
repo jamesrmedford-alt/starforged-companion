@@ -14,7 +14,7 @@ import { describe, it, expect } from 'vitest';
 import { buildRoundView, ROUND_NOTICES } from '../../src/batch/roundView.js';
 import {
   READING_KIND, createRound, submitEntry, recordReading, confirmEntry, passEntry,
-  beginResolution, fixActing, markRolled, markRecorded, beginUpgrades,
+  beginResolution, fixActing, markRolled, markRecorded, beginUpgrades, readingFailed, ENTRY_ERROR,
 } from '../../src/batch/round.js';
 
 const NOW = '2026-11-06T10:00:00.000Z';
@@ -46,6 +46,16 @@ describe('a player\'s own entry', () => {
     expect(own.reading).toMatchObject({ kind: 'move', moveName: 'Face Danger' });
     expect(view(round(), 'pl-1').own).toMatchObject({ statusLabel: 'Ready', canConfirm: false, canEdit: true });
     expect(view(round(), 'pl-3').own).toMatchObject({ statusLabel: 'Passed', canPass: false, canSubmit: true });
+  });
+
+  it('a reading that failed says try again; an entry whose character is gone says so — to its player and the GM (issue #342 Z35)', () => {
+    let r = submitEntry(round(), { userId: 'pl-3', text: 'I cover the rear.', submissionId: 'c', now: NOW });
+    r = readingFailed(r, { userId: 'pl-3', submissionId: 'c', error: 'HTTP 529' });
+    expect(view(r, 'pl-3').own.error).toBe(ROUND_NOTICES.readFailed);
+    r = submitEntry(r, { userId: 'pl-3', text: 'I cover the rear, again.', submissionId: 'd', now: NOW });
+    r = readingFailed(r, { userId: 'pl-3', submissionId: 'd', error: ENTRY_ERROR.CHARACTER_GONE });
+    expect(view(r, 'pl-3').own.error).toBe(ROUND_NOTICES.characterGone);
+    expect(view(r, 'gm-1', true).gm.entries.find(e => e.userId === 'pl-3').error).toBe(ROUND_NOTICES.characterGone);
   });
 
   it('locks once the round resolves', () => {

@@ -17,7 +17,7 @@
  *   - With no session, no keyed GM, or no GM at all, the window says why.
  */
 
-import { ROUND_PHASE, ENTRY_STATUS, READING_KIND, roundIsOpen, isResolving, entryFor, isOwedEntry, undecidedUpgrades } from "./round.js";
+import { ROUND_PHASE, ENTRY_STATUS, ENTRY_ERROR, READING_KIND, roundIsOpen, isResolving, entryFor, isOwedEntry, undecidedUpgrades } from "./round.js";
 
 /** The labels an entry's status shows its own player. */
 const OWN_STATUS_LABELS = Object.freeze({
@@ -40,8 +40,13 @@ export const ROUND_NOTICES = Object.freeze({
   xCard:       "The X-Card is in play — the round can't be resolved until a GM resumes.",
   resolving:   "The round is being resolved…",
   readFailed:  "Couldn't read your action — try again.",
+  characterGone: "Your character is no longer in the game, so this action can't be read or rolled.",
   notReceived: "Your action wasn't received. Send it again.",
 });
+
+/** What an entry's error says: its character gone, or a reading that failed. */
+const entryErrorNotice = (error) => (!error ? null
+  : error === ENTRY_ERROR.CHARACTER_GONE ? ROUND_NOTICES.characterGone : ROUND_NOTICES.readFailed);
 
 const humanise = (slug) => String(slug ?? "")
   .split("_").filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
@@ -123,7 +128,7 @@ function ownView(round, viewer, { collecting, moveLabel, statLabel, notReceived 
     statusLabel,
     text:         entry.text ?? "",
     submissionId: entry.submissionId ?? null,
-    error:        entry.error ? ROUND_NOTICES.readFailed : null,
+    error:        entryErrorNotice(entry.error),
     notReceived:  !!notReceived,
     reading,
     choices:      entry.choices ?? null,
@@ -216,7 +221,7 @@ function gmView(round, { collecting, connected, xCardActive, moveLabel, statLabe
       userName:  e.userName,
       status:    e.status,
       text:      e.text ?? "",
-      error:     e.error ? ROUND_NOTICES.readFailed : null,
+      error:     entryErrorNotice(e.error),
       reading:   e.reading ? readingView(e.reading, { moveLabel, statLabel }) : null,
     }));
   const waitingFor = collecting

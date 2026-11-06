@@ -42,7 +42,7 @@
  */
 
 import { isCanonicalGM, hasKeyedActiveGM } from "../multiplayer/gmGate.js";
-import { getPlayerActors } from "../character/actorBridge.js";
+import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { isSessionActive, sessionNeedsMint, touchSessionActivity } from "../session/lifecycle.js";
 import { messageAuthorId, resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { stripHtml } from "../narration/narratorPrompt.js";
@@ -64,6 +64,7 @@ import { getMischiefDial } from "../ui/settingsPanel.js";
 import {
   ROUND_PHASE,
   ENTRY_STATUS,
+  ENTRY_ERROR,
   READING_KIND,
   RoundRefusal,
   storedRound,
@@ -454,6 +455,11 @@ async function turnedOff() {
 // userId → { submissionId, promise } — the readings running on this client.
 const _readings = new Map();
 
+/** True while a round entry's character is still a player character in the game. */
+function entryCharacterPresent(entry) {
+  return isPlayerCharacterActor(game.actors?.get?.(entry?.actorId) ?? null);
+}
+
 /** The combat moves whose fight a round checks is still open before rolling. */
 const ROUND_FIGHT_MOVES = new Set(["strike", "clash", "gain_ground", "react_under_fire", "take_decisive_action", "battle"]);
 
@@ -472,6 +478,14 @@ export function startReading(userId) {
   const entry = entryFor(getStoredRound(), userId);
   if (!entry || entry.status !== ENTRY_STATUS.SUBMITTED || entry.error) return null;
   const submissionId = entry.submissionId;
+  // Read as its own PC or not at all: with the PC gone, the reading (and its
+  // ability scan) fell back to the first PC — another player's (issue #342 Z35).
+  if (!entryCharacterPresent(entry)) {
+    console.warn(`${MODULE_ID} | Batch Mode: ${entry.actorName}'s character is no longer in the game — the action is not read.`);
+    queueRoundWrite(r => readingFailed(r, { userId, submissionId, error: ENTRY_ERROR.CHARACTER_GONE }))
+      .catch(e => console.warn(`${MODULE_ID} | Batch Mode: the unread action could not be recorded:`, e?.message ?? e));
+    return null;
+  }
   const running = _readings.get(userId);
   if (running?.submissionId === submissionId) return running.promise;
   const apiKey = (() => { try { return game.settings.get(MODULE_ID, "claudeApiKey") || null; } catch { return null; } })();
@@ -870,6 +884,20 @@ async function rollEntry(round, entry) {
     const rolledInfo = here ? rolledInfoFrom(here) : null;
     await queueRoundWrite(r => markRecorded(rolledInfo ? markRolled(r, { userId, rolled: rolledInfo }) : r, {
       userId, recordedAt: nowIso(), narrationInput: rolledInfo?.narrationInput ?? entry.rolled?.narrationInput ?? { kind: "narrative" },
+    }));
+    return;
+  }
+
+  // Its PC was deleted (or is no PC now) since the round opened: not rolled.
+  // rollMove and the record would fall back to the first PC — another
+  // player's stats, momentum and Pay the Price (issue #342 Z35; free-flow's
+  // no-PC rule, issue #326 D8: credit the roller, never the first PC).
+  if (!entryCharacterPresent(entry)) {
+    const reason = "Its character is no longer in the game.";
+    await postRefusedCard(round, entry, reading ?? {}, reason);
+    await queueRoundWrite(r => markRefused(r, {
+      userId, reason, recordedAt: nowIso(),
+      narrationInput: { kind: "refused", moveId: reading?.moveId ?? null, moveName: reading?.moveName ?? null, reason },
     }));
     return;
   }

@@ -44,6 +44,12 @@ export const ENTRY_STATUS = Object.freeze({
   REFUSED:   "refused",
 });
 
+/** An entry's error the window says as such — any other is a reading that failed, to try again. */
+export const ENTRY_ERROR = Object.freeze({
+  // Its character was deleted (or is no PC now) since the round opened: not read, not rolled (issue #342 Z35).
+  CHARACTER_GONE: "character-gone",
+});
+
 /** What a reading found: a move to roll, or a line narrated without a roll. */
 export const READING_KIND = Object.freeze({
   MOVE:      "move",
