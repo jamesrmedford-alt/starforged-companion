@@ -13,6 +13,7 @@ import {
   RECENT_ORACLE_CAP,
   recordOracleResult,
   readRecentOracleResults,
+  dropOracleResultsOf,
 } from '../../src/oracles/oracleMemory.js';
 
 
@@ -102,3 +103,24 @@ describe('readRecentOracleResults', () => {
 });
 
 
+
+
+// Issue #342 Z11: a move's Pay the Price carries its move's resolution id, so
+// a Burn Momentum or Improve Result that reverts the price takes it back out.
+describe('dropOracleResultsOf', () => {
+  it("keeps a price's resolution id and drops that resolution's entries only", () => {
+    const cs = makeCampaignState();
+    recordOracleResult(cs, { name: 'Pay the Price', question: 'Face Danger', answer: 'You are harmed', resolutionId: 'res-1' });
+    recordOracleResult(cs, { name: 'Ask the Oracle (likely)', question: 'Is the hatch sealed?', answer: 'YES' });
+    recordOracleResult(cs, { name: 'Pay the Price', question: 'Strike', answer: 'You are stressed', resolutionId: 'res-2' });
+    expect(cs.recentOracles[0].resolutionId).toBe('res-1');
+
+    const ring = cs.recentOracles;
+    expect(dropOracleResultsOf(cs, 'res-1')).toBe(1);
+    expect(cs.recentOracles.map(e => e.answer)).toEqual(['YES', 'You are stressed']);
+    expect(ring).toHaveLength(3);                       // the old ring is not changed in place
+    expect(dropOracleResultsOf(cs, 'res-1')).toBe(0);   // nothing left to drop
+    expect(dropOracleResultsOf(cs, '')).toBe(0);
+    expect(dropOracleResultsOf({}, 'res-2')).toBe(0);
+  });
+});

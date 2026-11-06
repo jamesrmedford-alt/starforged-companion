@@ -9,11 +9,12 @@
  * (issue #311 P05 — an improvement kept a miss's Pay the Price harm and clock
  * advance, which a burn of the same miss reverted):
  *
- *   - revertPayThePrice — the clocks the miss's Pay the Price advanced, and the
+ *   - revertPayThePrice — the clocks the miss's Pay the Price advanced, the
  *     PC-meter losses its route landed (the receipts index.js ptpMeterReceipts
  *     records — a harm's overflow into momentum is one of its own, issue #314
- *     Q02). Vehicle and companion routes, and impacts an executor marked, are
- *     not reversed (decisions.md → "Burn Momentum reverses Pay-the-Price side
+ *     Q02), and the price's entry in RECENT ORACLE RESULTS (issue #342 Z11).
+ *     Vehicle and companion routes, and impacts an executor marked, are not
+ *     reversed (decisions.md → "Burn Momentum reverses Pay-the-Price side
  *     effects").
  *
  *   - reconcileChoices — the move's choice card. A pending card of the
@@ -47,6 +48,8 @@
  */
 
 import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot } from "../character/actorBridge.js";
+import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -261,22 +264,25 @@ const REVERSAL_CARDS = {
 
 /**
  * Revert the Pay the Price side effects of the superseded miss: rewind each
- * clock it advanced (tension clocks, vow countdown clocks) by one segment and
- * refund the PC-meter losses its route landed. A burn resets momentum, which
- * already undoes a momentum loss, so a burn refunds none; an improvement keeps
- * the momentum the PC has, so it refunds that too. Posts a card listing what
- * was unwound; a write the world refuses goes onto `failures`
- * (applyUpgradeStep).
+ * clock it advanced (tension clocks, vow countdown clocks) by one segment,
+ * refund the PC-meter losses its route landed, and take the price out of
+ * RECENT ORACLE RESULTS (forgetRevertedPrice — issue #342 Z11). A burn resets
+ * momentum, which already undoes a momentum loss, so a burn refunds none; an
+ * improvement keeps the momentum the PC has, so it refunds that too. Posts a
+ * card listing what was unwound; a write the world refuses goes onto
+ * `failures` (applyUpgradeStep).
  *
  * @param {Object|null} ptpReversals — the card's `ptpReversals`:
  *   `{ clocksAdvanced, sufferMeterDeltas }` (a card from before issue #314
  *   carries one `sufferMeterDelta`)
  * @param {Actor|null} actor — the upgrading PC (a receipt's own PC first)
- * @param {{ kind?: "burn"|"improve", failures?: Array<Object> }} [opts]
+ * @param {{ kind?: "burn"|"improve", failures?: Array<Object>, resolutionId?: string|null }} [opts]
+ *   `resolutionId` — the upgraded move's, which its price's oracle memory carries
  * @returns {Promise<string[]>} what was unwound
  */
-export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", failures = [] } = {}) {
+export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", failures = [], resolutionId = null } = {}) {
   if (!ptpReversals) return [];
+  await forgetRevertedPrice(resolutionId, kind);
   const reverted = [];
   const advanced = ptpReversals.clocksAdvanced ?? [];
 
@@ -334,6 +340,41 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     flags:   { [MODULE_ID]: { clockCard: true, [card.flag]: true } },
   }).catch(err => console.warn(`${MODULE_ID} | ${kind}: reversal card failed:`, err));
   return reverted;
+}
+
+
+/**
+ * The reverted price leaves the narrator's memory: its card's `oracleMemory`
+ * (stamped with the move's `resolutionId`, index.js postMovePayThePriceCard)
+ * stood in RECENT ORACLE RESULTS — "the dice established these outcomes …
+ * must not contradict them" — beside the upgraded outcome's re-narration and
+ * every later narration this session, for a price that was never paid (issue
+ * #342 Z11). On the canonical GM, through the campaignState write chain the
+ * capture writes on (so a capture still queued lands first), on a copy of the
+ * stored state. Best-effort, as the capture is: a refusal is logged and the
+ * entry stays. Never throws.
+ *
+ * @param {string|null} resolutionId
+ * @param {"burn"|"improve"} kind
+ * @returns {Promise<boolean>} whether an entry was dropped
+ */
+async function forgetRevertedPrice(resolutionId, kind) {
+  if (typeof resolutionId !== "string" || !resolutionId) return false;
+  try {
+    const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
+    if (!isCanonicalGM()) return false;
+    return await serialiseCampaignStateWrite(async () => {
+      const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState");
+      if (!stored || typeof stored !== "object") return false;
+      const copy = { ...stored };
+      if (!dropOracleResultsOf(copy, resolutionId)) return false;
+      await game.settings.set(MODULE_ID, "campaignState", copy);
+      return true;
+    }, `${kind}: the reverted price's oracle memory`);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${kind}: the reverted price could not be taken out of the recent oracle results:`, err?.message ?? err);
+    return false;
+  }
 }
 
 

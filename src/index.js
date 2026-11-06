@@ -6006,7 +6006,9 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
         [MODULE_ID]: {
           payThePriceCard: true,
           sufferRoutes:    result.sufferRoutes,
-          oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result },
+          // Its move's resolution: a burn or improvement that reverts the
+          // price takes it out of RECENT ORACLE RESULTS (issue #342 Z11).
+          oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result, ...(resolutionId ? { resolutionId } : {}) },
         },
       },
     });

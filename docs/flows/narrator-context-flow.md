@@ -598,7 +598,10 @@ cap 8) — on the GM's campaignState write chain
 the write ahead of it left it, so two results inside one write round trip are
 both kept (issue #331 X44), and so is a result followed at once by a write of
 another kind — the Pay the Price's clock advance, the `!oracle` follow-up's
-scene start, which run on the same chain (issue #342 Z17) — for section [3b]
+scene start, which run on the same chain (issue #342 Z17); a move's own price
+carries the move's `resolutionId`, and a Burn Momentum or Improve Result that
+reverts the price drops it (`dropOracleResultsOf`, issue #342 Z11 — it told
+the strong hit's re-narration the undone price was established) — for section [3b]
 (the retired assembler's RECENT ORACLES section went with the module, 2026-07
 — issue #271).
 

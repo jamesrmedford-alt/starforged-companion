@@ -350,7 +350,7 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   // reaches a strong hit, which pays no price; the check mirrors the burn's.)
   const priceStands = !!improve.ptpReversals && newConsequences.routePayThePrice === true;
   if (improve.ptpReversals && !priceStands) {
-    await revertPayThePrice(improve.ptpReversals, actor, { kind: "improve", failures }).catch(err =>
+    await revertPayThePrice(improve.ptpReversals, actor, { kind: "improve", failures, resolutionId: improve.resolutionId ?? null }).catch(err =>
       console.warn(`${MODULE_ID} | improveResult: PtP reversal failed:`, err));
   }
 

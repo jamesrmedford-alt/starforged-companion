@@ -588,7 +588,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // again would be the same price over.
   const priceStands = !!burn.ptpReversals && newConsequences.routePayThePrice === true;
   if (burn.ptpReversals && !priceStands) {
-    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures }).catch(err =>
+    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures, resolutionId: burn.resolutionId ?? null }).catch(err =>
       console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
   }
 
