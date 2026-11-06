@@ -1437,7 +1437,8 @@ function onCampaignStateChanged(setting) {
  * A world setting was written (every client hears it; the canonical GM acts).
  * The keyed-GM registry: a GM with a Claude key is canonical now, and reads
  * the submissions a keyless GM could not (and resumes a round left
- * resolving). campaignState: onCampaignStateChanged.
+ * resolving). The round: a closed one is followed by the next
+ * (onRoundWritten). campaignState: onCampaignStateChanged.
  *
  * @param {{ key?: string }} setting
  */
@@ -1447,9 +1448,30 @@ function onBatchSettingWrite(setting) {
     recoverRound("keyed-gm").catch(err => console.warn(`${MODULE_ID} | Batch Mode: recovery for a keyed GM:`, err?.message ?? err));
     return;
   }
+  if (setting?.key === `${MODULE_ID}.${BATCH_ROUND_SETTING}`) {
+    onRoundWritten();
+    return;
+  }
   // Every client keeps its X-Card memory; only the canonical GM acts on it.
   if (setting?.key !== `${MODULE_ID}.campaignState`) return;
   onCampaignStateChanged(setting);
+}
+
+/**
+ * The round was written (every client hears it; the canonical GM acts): once
+ * it is closed — whoever closed it — the next one opens. A GM who stopped
+ * being canonical while narrating a round (a lower-id GM entered a Claude
+ * key) closes it but cannot open the next, and the new canonical GM heard
+ * nothing it acted on: the table was left with no round (issue #342 Z22).
+ * Get-or-create, so the closer's own open makes this a repeat; a round that
+ * turns the mode off when it finishes opens nothing.
+ */
+function onRoundWritten() {
+  if (!isCanonicalGM() || !isBatchModeEnabled()) return;
+  const round = getStoredRound();
+  if (!round || roundIsOpen(round) || round.modeOffAfter) return;
+  openRoundIfDue("round-closed").catch(err =>
+    console.warn(`${MODULE_ID} | Batch Mode: the next round after a close:`, err?.message ?? err));
 }
 
 /** A user joined or left (canonical GM). */
