@@ -60,16 +60,8 @@ export const CreatureSchema = {
 
 
 export async function createCreature(data, campaignState) {
-  // The journal an earlier creation of this creature made, whose registration
-  // the world refused, is adopted — listed now — never a second one (known-
-  // issues JOURNAL-ORPHAN-ON-REFUSAL, issue #337 Y34's get-or-create).
-  const adopted = await adoptUnlistedEntityJournal(FLAG_KEY, "creatureIds", data?.name, campaignState, { label: "creature" });
-  if (adopted) return adopted;
-
   const now = new Date().toISOString();
-  const id  = generateId();
-
-  const creature = {
+  const record = (id) => ({
     ...CreatureSchema,
     ...data,
     _id:       id,
@@ -77,7 +69,26 @@ export async function createCreature(data, campaignState) {
     aspect:    data.aspect ?? [],
     createdAt: now,
     updatedAt: now,
-  };
+  });
+  const pageOf = (creature) => ({
+    name:  "Creature Data",
+    type:  "text",
+    text:  { format: 1, content: renderEntityBody(creature) },
+    flags: { [MODULE_ID]: { [FLAG_KEY]: creature } },
+  });
+
+  // The journal an earlier creation of this creature made, whose registration
+  // the world refused, is adopted — listed now — never a second one (known-
+  // issues JOURNAL-ORPHAN-ON-REFUSAL, issue #337 Y34's get-or-create). One
+  // whose page the world refused is completed with this record, under the id
+  // its entry already names (known-issues CREATURE-PAGELESS-JOURNAL, as
+  // createFaction's).
+  const adopted = await adoptUnlistedEntityJournal(FLAG_KEY, "creatureIds", data?.name, campaignState,
+    { label: "creature", page: (entityId) => pageOf(record(entityId || generateId())) });
+  if (adopted) return adopted;
+
+  const id       = generateId();
+  const creature = record(id);
 
   const entry = await JournalEntry.create({
     name:   creature.name || "Unknown Creature",
@@ -85,12 +96,7 @@ export async function createCreature(data, campaignState) {
     flags:  { [MODULE_ID]: { entityType: "creature", entityId: id } },
   });
 
-  await entry.createEmbeddedDocuments("JournalEntryPage", [{
-    name:  "Creature Data",
-    type:  "text",
-    text:  { format: 1, content: renderEntityBody(creature) },
-    flags: { [MODULE_ID]: { [FLAG_KEY]: creature } },
-  }]);
+  await entry.createEmbeddedDocuments("JournalEntryPage", [pageOf(creature)]);
 
   // The store first, the caller's copy once the world took it (issue #331 X35).
   if (await registerEntityId(campaignState, "creatureIds", entry.id, { label: "creature" })) {

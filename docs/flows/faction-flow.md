@@ -67,7 +67,8 @@ that faction completes it, giving it its page (the new record, under the id
 the entry's `entityId` flag names) before registering it
 (`adoptUnlistedEntityJournal`'s `page` — known-issues FACTION-PAGELESS-JOURNAL,
 the Chronicle's issue #342 Z62 shape: the retried Confirm made a second
-journal and the first stayed empty and unlisted for good). That listing lists the record bare, so a
+journal and the first stayed empty and unlisted for good; a creature's
+creator passes its page too — CREATURE-PAGELESS-JOURNAL). That listing lists the record bare, so a
 Confirm that then finds the faction listed (U25's "exists" path) finishes it
 — the seed, the stance reconcile and the backlinked World Journal mirror its
 creation would have run, each a no-op once done
