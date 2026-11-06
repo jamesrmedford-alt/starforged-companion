@@ -86,6 +86,10 @@ export function selectExpeditionSite(state, label, { siteId = null } = {}) {
  *   reveal the "wrong" one). The ladder runs across every sector at once
  *   (selectSectorSite), so neither this id nor an exact name can be preempted
  *   by a guess in an earlier sector (issue #300 F07).
+ * @param {boolean}  [opts.requireLabelMatch] — reveal only a site the link or
+ *   the label names, never the sole-site guess: a Finish an Expedition's
+ *   reveal (an expedition to a settlement charted the sector's last unexplored
+ *   site — issue #342 D7). `!reveal-site` keeps the guess.
  * @param {Function} [opts.getState]  — () => campaignState
  * @param {Function} [opts.setState]  — (state) => Promise — the state with the
  *   flag set, a copy; the move pipeline's seam folds its sectors into the
@@ -104,9 +108,10 @@ export async function revealSectorSite(label, opts = {}) {
 
   const state = getState();
   const found = selectSectorSite(state?.sectors, label, {
-    siteId:         opts.siteId ?? null,
-    activeSectorId: state?.activeSectorId ?? null,
-    siteName:       siteDisplayName,
+    siteId:            opts.siteId ?? null,
+    activeSectorId:    state?.activeSectorId ?? null,
+    siteName:          siteDisplayName,
+    requireLabelMatch: opts.requireLabelMatch === true,
   });
   if (!found) return null;
   const { sector, site: match } = found;

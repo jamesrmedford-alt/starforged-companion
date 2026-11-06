@@ -1595,9 +1595,11 @@ async function applyOutcomeEffects({
         // Link the new expedition to the undiscovered site its destination
         // confidently names (exact/substring/type keyword — never the
         // sole-undiscovered guess), searched across every sector at once
-        // (issue #300 F07). Finishing then reveals THIS site instead of
-        // re-guessing by name — the audit's "expedition→site linkage is
-        // name-fuzzy" gap.
+        // (issue #300 F07); the pin's own "Unexplored Site" names the active
+        // sector's one unexplored site (issue #342 D7). Finishing then
+        // reveals THIS site instead of re-guessing by name — the audit's
+        // "expedition→site linkage is name-fuzzy" gap — and reveals no site
+        // for an expedition that names none.
         if (result.created) {
           try {
             const linked = selectSectorSite(campaignState.sectors, result.track.label, {

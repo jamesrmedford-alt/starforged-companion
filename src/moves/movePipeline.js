@@ -976,8 +976,12 @@ export async function rollMove({
         await postExpeditionFinishCard(fin).catch(err =>
           console.warn(`${MODULE_ID} | expedition finish card failed:`, err?.message ?? err));
 
-        // Reaching the end of an expedition discovers any unexplored sector
-        // site it led to (precursor vault / derelict). The discovered flag
+        // Reaching the end of an expedition discovers the unexplored sector
+        // site it led to (precursor vault / derelict): the one its track
+        // links, or the one its label names — never the sector's sole site
+        // by guess, which charted the frontier derelict at the end of an
+        // expedition to Bleakhold (issue #342 D7; the arrival went to the
+        // same site — selectExpeditionSite, Z14). The discovered flag
         // is folded into the in-memory campaignState so it rides along with
         // the pending persistResolution write below (revealSectorSite sets
         // it on a copy — issue #326 W51); the scene pin + passage and the
@@ -987,6 +991,7 @@ export async function rollMove({
           const revealed = await revealSectorSite(fin.track?.label ?? interpretation.moveTarget, {
             source:   "expedition",
             siteId:   fin.track?.siteId ?? null,
+            requireLabelMatch: true,
             getState: () => campaignState,
             setState: (next) => { campaignState.sectors = next.sectors; },
           });

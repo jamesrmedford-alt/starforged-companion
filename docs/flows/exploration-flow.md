@@ -197,7 +197,11 @@ deleted since gets a short card ("… is finished — nothing was recommitted").
 
 `revealSectorSite` (shared by expedition-finish and `!reveal-site`):
 `selectSectorSite` picks the target — the expedition's `siteId` link first,
-then exact → whole-word substring → type-keyword vault/derelict → sole-undiscovered,
+then exact → whole-word substring → type-keyword vault/derelict → sole-undiscovered
+(the finish passes `requireLabelMatch`: no sole-undiscovered rung, and the
+pin's own "Unexplored Site" names the active sector's one unexplored site, so
+an expedition to a settlement or a trailblaze charts nothing — issue #342 D7;
+`!reveal-site` keeps the guess),
 each rung over every sector before the next (the guesses only when
 unambiguous: an earlier sector's sole site used to preempt a later sector's
 exact match, issue #300 F07), the active sector first on every rung
@@ -242,7 +246,9 @@ summary lives in the `known-issues.md` table and the code.
 
 - ~~Expedition→site linkage was name-fuzzy~~ — **addressed**: expedition
   creation stamps `siteId` when the destination confidently names an
-  undiscovered site (`selectSectorSite` with `requireLabelMatch`; never
+  undiscovered site, or is the pin's own "Unexplored Site" and the active
+  sector has exactly one unexplored site (issue #342 D7)
+  (`selectSectorSite` with `requireLabelMatch`; never
   the sole-undiscovered guess), and `revealSectorSite` reveals the linked
   site first.
 - ~~Advisory-only branches~~ — **addressed**: the finish-miss card offers

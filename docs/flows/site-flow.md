@@ -45,11 +45,16 @@ Two reveal paths, both funnelling through `revealSectorSite`
 (`src/sectors/siteDiscovery.js`, dependency-injected, GM-gated by callers):
 
 1. **Finishing an expedition** whose track was stamped with a `siteId` FK at
-   creation (`requireLabelMatch` — no guessing) or whose label fuzzy-matches
-   (`selectSectorSite`: exact → whole-word substring → type-keyword-when-unique →
-   sole-undiscovered, each rung over every sector before the next — issue
-   #300 F07 — the active sector first on every rung, since generated names
-   repeat across sectors — issue #321 U48; a site is named by its location
+   creation (`requireLabelMatch` — no guessing) or whose label names the site
+   (`selectSectorSite` with `requireLabelMatch`: exact → whole-word substring →
+   type-keyword-when-unique → the pin's own "Unexplored Site", which names the
+   active sector's one unexplored site — never the sole-undiscovered guess, so
+   an expedition to a settlement, or a trailblaze that names no place, charts
+   nothing: the guess charted the sector's last unexplored site at the end of
+   an expedition to Bleakhold — issue #342 D7; each rung over every sector
+   before the next — issue #300 F07 — the active sector first on every rung,
+   since generated names repeat across sectors — issue #321 U48; a site is
+   named by its location
    Actor — `siteDisplayName`, the record's generated name a fallback — so a
    site the GM renamed matches, and the narrator's Charted sites and the
    cards name it, by its new name: issue #326 W75). The link, or an exact name,
@@ -58,7 +63,9 @@ Two reveal paths, both funnelling through `revealSectorSite`
    link to no stored site falls back to the label. The reveal mutates the in-memory campaignState so the
    pending `persistResolution` write carries it (its stale-snapshot merge
    keeps the pipeline's copy of `sectors` — `mergeWithLatestState`).
-2. **`!reveal-site <name>`** — manual, GM-only, with the same ladder.
+2. **`!reveal-site <name>`** — manual, GM-only, with the same ladder and the
+   sole-undiscovered guess as its last rung (with no name, the sole
+   unexplored site).
 
 Revealing flips `discovered`, sets the location Actor `status: "visited"`,
 restyles the scene pin + passage to charted appearance, persists, and posts
@@ -98,8 +105,9 @@ theming, full oracle spreads, name dedup); sites are `canonicalLocked` so
 entity discovery never overwrites them; pins stay unlabelled until
 discovery, and the sector anchor's settlement-only roster means undis-
 covered sites leak nowhere; the expedition→site link is stamped strictly
-(`requireLabelMatch`) and revealed precisely (`siteId` FK with the fuzzy
-ladder as fallback — the 2026-07 soft-spot fixes); `!reveal-site` is
+(`requireLabelMatch`) and revealed precisely (`siteId` FK with the
+label-match ladder as fallback — no sole-site guess at the finish since issue
+#342 D7 — the 2026-07 soft-spot fixes); `!reveal-site` is
 GM-gated with a not-found notice; the reveal updates record + pin + state
 in one pass, tolerating per-step failures; and arrival by move sets
 `currentLocationId` for location-type entities (LOCATION-DUAL-STORE fix),

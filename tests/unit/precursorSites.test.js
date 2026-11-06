@@ -276,6 +276,53 @@ describe("selectSectorSite — requireLabelMatch (expedition→site stamping)", 
 });
 
 
+// Issue #342 D7 (option A): a site the crew has not reached shows only its
+// pin's "Unexplored Site", so that label names the active sector's one
+// unexplored site — the stamp links it, the finish charts it — while a label
+// that names no site never guesses.
+describe("selectSectorSite — the pin's own \"Unexplored Site\" (requireLabelMatch)", () => {
+  const sectors = () => [
+    { id: "s-old", mapData: { discoveries: [{ id: "old-1", name: "Hollow Hulk", type: "derelict", discovered: false }] } },
+    { id: "s-new", mapData: { discoveries: [
+      { id: "new-1", name: "Derelict Starship", type: "derelict", discovered: false },
+      { id: "new-2", name: "Precursor Vault — Spire", type: "vault", discovered: true },
+    ] } },
+  ];
+  const strict = (label, activeSectorId) =>
+    selectSectorSite(sectors(), label, { requireLabelMatch: true, activeSectorId })?.site.id ?? null;
+
+  it("names the active sector's one unexplored site", () => {
+    expect(strict("Unexplored Site", "s-new")).toBe("new-1");
+    expect(strict("the unexplored site", "s-new")).toBe("new-1");
+    expect(strict("Unexplored Site", "s-old")).toBe("old-1");
+  });
+
+  it("names nothing when the active sector has several unexplored sites, or none — never another sector's", () => {
+    const two = [{ id: "s-new", mapData: { discoveries: [
+      { id: "a", name: "Derelict Starship", type: "derelict", discovered: false },
+      { id: "b", name: "Precursor Vault — Spire", type: "vault", discovered: false },
+    ] } }];
+    expect(selectSectorSite(two, "Unexplored Site", { requireLabelMatch: true, activeSectorId: "s-new" })).toBeNull();
+    const charted = [
+      { id: "s-old", mapData: { discoveries: [{ id: "old-1", name: "Hollow Hulk", type: "derelict", discovered: false }] } },
+      { id: "s-new", mapData: { discoveries: [{ id: "new-1", name: "Derelict Starship", type: "derelict", discovered: true }] } },
+    ];
+    expect(selectSectorSite(charted, "Unexplored Site", { requireLabelMatch: true, activeSectorId: "s-new" })).toBeNull();
+    expect(selectSectorSite(charted, "Unexplored Site", { requireLabelMatch: true })).toBeNull();
+  });
+
+  it("a label that names no site still names none (an expedition to a settlement, a trailblaze)", () => {
+    expect(strict("the expedition to Bleakhold", "s-new")).toBeNull();
+    expect(strict("across the Rift", "s-new")).toBeNull();
+  });
+
+  it("control: without requireLabelMatch (`!reveal-site`) the sole-site guess is unchanged", () => {
+    expect(selectSectorSite(sectors(), "across the Rift", { activeSectorId: "s-new" })?.site.id).toBe("new-1");
+    expect(selectSectorSite(sectors(), null, { activeSectorId: "s-new" })?.site.id).toBe("new-1");
+  });
+});
+
+
 // Issue #300 F07: the ladder ran sector by sector, so an earlier sector's sole
 // (or sole-of-type) site was picked before a later sector's exact match — even
 // with the expedition's explicit site id.

@@ -161,9 +161,12 @@ duplicate or silently hit the wrong target.
 - When only a name is available (narrator prose, a chat command), use a
   **bounded ladder** — exact → whole-word substring → type-keyword-when-unique →
   sole-open — and **stop before guessing** when a wrong guess is costly
-  (`requireLabelMatch` on the expedition→site stamp is exactly this: no
-  sole-open fallback when *creating* a link, only when *revealing*). A rename
-  or an ambiguous name must never fan a write to the wrong record.
+  (`requireLabelMatch` on the expedition→site stamp and on the Finish an
+  Expedition's reveal is exactly this: no sole-open fallback when *creating*
+  a link or when a move *charts* a site — an expedition to Bleakhold charted
+  the sector's last unexplored derelict, issue #342 D7; only the GM's
+  `!reveal-site` guesses). A rename or an ambiguous name must never fan a
+  write to the wrong record.
 
 ## 7. World state must survive reload and reconnect
 
