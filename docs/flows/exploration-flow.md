@@ -171,7 +171,16 @@ it alone (issue #331 X18). A refused meter write before it (the roller's
 momentum) no longer stops that write: the arrival is saved and the meters
 are the card's steps instead (issue #336 Y16). `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
-("docked at …"); the Set a Course feedback card ("Course held cleanly (+1
+("docked at …"). It arrives at the site the expedition was for — its track's
+`siteId` link, else the unexplored site its label names
+(`siteDiscovery.selectExpeditionSite`, never the sole-site guess) — by the
+site's location Actor (`maybeUpdateShipPositionFromName`'s `{ entityId }` and
+`currentLocationForEntityId`), so the ship record, its token (onto the site's
+pin, §1) and `currentLocationId` follow the site the same move charts; the
+crew names an unexplored site in their own words (its pin reads "Unexplored
+Site"), so the label alone resolved to no place and all three stayed on the
+settlement they had left (issue #342 Z14). An expedition for no site arrives
+at the place its label names; the Set a Course feedback card ("Course held cleanly (+1
 momentum)") is Set a Course's alone (issue #326 W46). Miss leaves the track open and posts the recommit offer
 (below, "Advisory-only branches"): its **🔁 Recommit** relays
 `expedition.recommit` to the canonical GM (`cardActions.applyRecommitOffer`),

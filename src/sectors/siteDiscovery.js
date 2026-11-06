@@ -42,6 +42,37 @@ export function siteDisplayName(site) {
 }
 
 /**
+ * The site an expedition is for: the discovery its track links (`siteId`),
+ * charted or not, else the unexplored site its label names — exact, whole
+ * words or the type keyword (`requireLabelMatch`: never the sole-site guess,
+ * so an expedition to a settlement is for no site). Finishing the expedition
+ * arrives there, by the site's location Actor: the crew names an unexplored
+ * site in their own words (its pin reads "Unexplored Site"), so the label
+ * alone resolved to no place — SHIP POSITION named a phrase, and the token and
+ * CURRENT LOCATION stayed on the settlement they left (issue #342 Z14). A
+ * read of the given state.
+ *
+ * @param {Object} state — campaignState (its `sectors`, `activeSectorId`)
+ * @param {string|null} label — the expedition's label
+ * @param {{ siteId?: string|null }} [opts] — the track's link
+ * @returns {{ sector: Object, site: Object }|null}
+ */
+export function selectExpeditionSite(state, label, { siteId = null } = {}) {
+  const sectors = Array.isArray(state?.sectors) ? state.sectors : [];
+  if (siteId) {
+    for (const sector of sectors) {
+      const site = (sector?.mapData?.discoveries ?? []).find(d => d?.id === siteId);
+      if (site) return { sector, site };
+    }
+  }
+  return selectSectorSite(sectors, label, {
+    requireLabelMatch: true,
+    activeSectorId:    state?.activeSectorId ?? null,
+    siteName:          siteDisplayName,
+  });
+}
+
+/**
  * Reveal the first undiscovered site (across all stored sectors) matching a
  * destination label. Returns the revealed { sector, site } or null when nothing
  * matched. Persists campaign state only when a site is revealed.

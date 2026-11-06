@@ -95,7 +95,7 @@ import {
   updateTrackFields,
   getProgressTrack,
 } from "./ui/progressTracks.js";
-import { applyExpeditionProgress, legacyRewardTicks, planRecommit } from "./moves/expedition.js";
+import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack } from "./moves/expedition.js";
 import { selectSectorSite } from "./sectors/precursorSites.js";
 import { shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
@@ -1393,6 +1393,33 @@ function currentLocationForEntityId(id) {
 }
 
 /**
+ * The location Actor id of the site a Finish an Expedition arrives at — the
+ * site its track links, else the unexplored one its label names
+ * (siteDiscovery.selectExpeditionSite: never a guess, so an expedition to a
+ * settlement arrives there by name) — or null. The crew names an unexplored
+ * site in their own words, so the arrival by the label alone resolved to no
+ * place and left the ship, its token and CURRENT LOCATION at the settlement
+ * they had left while the same move charted the site (issue #342 Z14).
+ *
+ * @param {{ moveTarget?: string|null, moveTargetId?: string|null }|null} interpretation
+ * @param {Object} campaignState
+ * @returns {Promise<string|null>}
+ */
+async function expeditionSiteActorId(interpretation, campaignState) {
+  try {
+    const label = interpretation?.moveTarget ?? null;
+    const track = selectExpeditionTrack(await listProgressTracks(), label,
+      { trackId: interpretation?.moveTargetId ?? null });
+    const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
+    const found = selectExpeditionSite(campaignState, track?.label ?? label, { siteId: track?.siteId ?? null });
+    return found?.site?.actorId ?? null;
+  } catch (err) {
+    console.debug(`${MODULE_ID} | expedition arrival: the expedition's site could not be read:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
  * Apply an outcome's effects beyond the roller's meters and its choice card —
  * what the pipeline applies from the resolver's consequence flags: an arrival
  * (Set a Course), the expedition's progress, a legacy mark, the companion's
@@ -1476,10 +1503,12 @@ async function applyOutcomeEffects({
     // names its destination by the pin's settlement Actor (forcedMoveTargetId
     // → moveTargetId): arrive at that settlement by its id, not by a name a
     // rename leaves behind or a namesake in another sector matches first
-    // (issue #321 U52). Finish an Expedition's moveTargetId is a track's.
+    // (issue #321 U52). Finish an Expedition's moveTargetId is a track's: it
+    // arrives at the site that expedition was for, by the site's location
+    // Actor (issue #342 Z14), else at the place its label names.
     const destinationId = resolution.moveId === "set_a_course"
       ? (interpretation?.moveTargetId ?? null)
-      : null;
+      : await expeditionSiteActorId(interpretation, campaignState);
     await maybeUpdateShipPositionFromName(
       moveTarget,
       campaignState,
