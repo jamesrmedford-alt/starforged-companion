@@ -60,8 +60,10 @@ const round = () => table.world.getSetting('batchMode.round');
 const world = () => table.world.campaignState();
 
 beforeAll(async () => {
+  // The PC exists before the GM's world load, as in a real world: the ready
+  // recovery reads an entry only for a PC that is there (issue #342 Z35).
   table = await simulateTable({
-    users: [USERS.GM, { ...USERS.P1, active: false }],
+    users: [USERS.GM, { ...USERS.P1, active: false }], boot: false,
     clientSettings: { 'gm-1': { claudeApiKey: 'sk-ant-gina' } },
     world: { settings: {
       chronicleAutoEntry: false, narratorSessionSummary: false, sessionLogAutoWrite: false, autoRecapEnabled: false,
@@ -76,6 +78,7 @@ beforeAll(async () => {
     } },
   });
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] } });
+  await table.client('gm-1').boot();
   await table.settle();
   await table.drain();
 }, 30_000);
@@ -104,7 +107,7 @@ describe('Z24 control — a reload inside a live session', () => {
     await table.teardown();
     control.readings = [];
     live = await simulateTable({
-      users: [USERS.GM, { ...USERS.P1, active: false }],
+      users: [USERS.GM, { ...USERS.P1, active: false }], boot: false,
       clientSettings: { 'gm-1': { claudeApiKey: 'sk-ant-gina' } },
       world: { settings: {
         chronicleAutoEntry: false, narratorSessionSummary: false, sessionLogAutoWrite: false, autoRecapEnabled: false,
@@ -119,6 +122,7 @@ describe('Z24 control — a reload inside a live session', () => {
       } },
     });
     live.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] } });
+    await live.client('gm-1').boot();
     await live.settle();
     await live.drain();
   }, 30_000);
@@ -137,7 +141,7 @@ describe('Z24 — the load that ends an idle session opens no round in it', () =
     await table.teardown();
     control.readings = [];
     idle = await simulateTable({
-      users: [USERS.GM, { ...USERS.P1, active: false }],
+      users: [USERS.GM, { ...USERS.P1, active: false }], boot: false,
       clientSettings: { 'gm-1': { claudeApiKey: 'sk-ant-gina' } },
       world: { settings: {
         chronicleAutoEntry: false, narratorSessionSummary: false, sessionLogAutoWrite: false, autoRecapEnabled: false,
@@ -153,6 +157,7 @@ describe('Z24 — the load that ends an idle session opens no round in it', () =
       } },
     });
     idle.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] } });
+    await idle.client('gm-1').boot();
     await idle.settle();
     await idle.drain();
   }, 30_000);
