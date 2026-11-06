@@ -263,11 +263,14 @@ export async function readMove({
   // A scene-challenge move (Face Danger / Secure an Advantage within a
   // scene challenge — issue #338 D2) with no challenge open is the
   // ordinary move it varies: its progress and segments would land on
-  // nothing, and its strong hit takes no momentum.
+  // nothing, and its strong hit takes no momentum. So is one whose own
+  // challenge — the one it names by id, as a paced card's Roll does — has
+  // ended, whatever else is open (PACED-VARIANT-ROLL-ENDED-CHALLENGE).
   if (SCENE_CHALLENGE_VARIANTS[interpretation.moveId]) {
-    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []));
+    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []),
+      { trackId: interpretation.moveTargetId ?? null });
     if (ordinary !== interpretation.moveId) {
-      console.debug(`${MODULE_ID} | ${interpretation.moveId}: no scene challenge is open — resolved as ${ordinary}.`);
+      console.debug(`${MODULE_ID} | ${interpretation.moveId}: its scene challenge is not open — resolved as ${ordinary}.`);
       interpretation.moveId   = ordinary;
       interpretation.moveName = moveDisplayName(ordinary);
     }
@@ -660,11 +663,14 @@ export async function rollMove({
   // as it is rolled: a Batch Mode entry is rolled after it was read, so an
   // earlier entry's Finish the Scene can have ended the challenge, and the
   // variant would mark nothing and take no momentum on a strong hit (issue
-  // #342 Z39).
+  // #342 Z39). One naming its challenge by id (a paced card's Roll) is the
+  // ordinary move once that one has ended, whatever else is open
+  // (PACED-VARIANT-ROLL-ENDED-CHALLENGE).
   if (SCENE_CHALLENGE_VARIANTS[interpretation.moveId]) {
-    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []));
+    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []),
+      { trackId: interpretation.moveTargetId ?? null });
     if (ordinary !== interpretation.moveId) {
-      console.debug(`${MODULE_ID} | ${interpretation.moveId}: no scene challenge is open as it is rolled — rolled as ${ordinary}.`);
+      console.debug(`${MODULE_ID} | ${interpretation.moveId}: its scene challenge is not open as it is rolled — rolled as ${ordinary}.`);
       interpretation.moveId   = ordinary;
       interpretation.moveName = moveDisplayName(ordinary);
     }

@@ -472,8 +472,14 @@ The classifier names the challenge the move is part of; the router keeps it,
 or the sole open one, on the card by id (`suggestedMoveTargetId`), and the
 Roll (`cardActions.applyPacedRoll`) forwards it as `forcedMoveTargetId` — with
 two challenges open it named none and the scoring asked which
-(PACED-VARIANT-NO-TARGET). A Batch Mode reading keeps it as the no-roll
-reading's `suggestedTargetId`, and the Round window's "Roll ⟨move⟩" carries
+(PACED-VARIANT-NO-TARGET). A Roll pressed after that challenge ended is the
+ordinary move, whatever else is open: `readMove` and `rollMove` hand the
+move's `moveTargetId` to `moveOutsideSceneChallenge` (its `trackId`), so the
+confirm dialog shows, and the dice roll, Face Danger — it was made as the
+variant, and its scoring found the challenge it named over: nothing marked,
+no momentum on a strong hit (PACED-VARIANT-ROLL-ENDED-CHALLENGE). A Batch
+Mode reading keeps it as the no-roll reading's `suggestedTargetId`, and the
+Round window's "Roll ⟨move⟩" carries
 it (`round.rereadEntry` → `readAs.moveTargetId` → `readAction`'s forced
 `moveTargetId`; issue #342 Z38).
 An asset ability linked to Face Danger / Secure an Advantage applies to its
