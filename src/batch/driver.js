@@ -43,7 +43,7 @@
 
 import { isCanonicalGM, hasKeyedActiveGM } from "../multiplayer/gmGate.js";
 import { getPlayerActors } from "../character/actorBridge.js";
-import { isSessionActive, touchSessionActivity } from "../session/lifecycle.js";
+import { isSessionActive, sessionNeedsMint, touchSessionActivity } from "../session/lifecycle.js";
 import { messageAuthorId, resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { stripHtml } from "../narration/narratorPrompt.js";
 import { isXCardActive, narrateRound } from "../narration/narrator.js";
@@ -354,7 +354,7 @@ const isRefusal = (err) => err instanceof RoundRefusal || err?.name === "RoundRe
 export async function openRoundIfDue(reason = "due") {
   if (!isCanonicalGM() || !isBatchModeEnabled()) return null;
   const cs = campaignStateNow();
-  if (!isSessionActive(cs)) return null;
+  if (!isSessionActive(cs) || sessionBeingReplaced(cs)) return null;
   const sessionId = cs.currentSessionId ?? null;
   let opened = null;
   try {
@@ -1353,6 +1353,24 @@ async function runHeldFreeFlowMoves() {
 // Recovery, and the canonical GM's hooks
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The session this load is replacing: the canonical GM's `ready` mints a new
+// one when the stored one is over — End a Session marked it, or four idle
+// hours (session/lifecycle.js sessionNeedsMint) — but the mint lands only
+// after the summary finalise and the scene close. Until it does, the stored
+// session still reads live (its gate open, its id current): the recovery at
+// load read last session's submissions again on the GM's key and advanced
+// its round (issue #342 Z24). Its rounds are over: none reads, resolves or
+// opens until a new session is current.
+let _sessionBeingReplaced = null;
+
+/** True while campaignState still holds the session this load is replacing. */
+function sessionBeingReplaced(cs) {
+  if (_sessionBeingReplaced === null) return false;
+  if ((cs?.currentSessionId ?? "") === _sessionBeingReplaced) return true;
+  _sessionBeingReplaced = null;     // the mint landed (or a newer session is current)
+  return false;
+}
+
 // The recoveries issue #340 names ("Recovery"): the canonical GM's `ready`,
 // and the GM resolving a round leaving. On these a round still resolving from
 // an ended session is closed; on any other (a user joining, a GM entering a
@@ -1377,7 +1395,7 @@ export async function recoverRound(reason = "recovery") {
   const round = getStoredRound();
   const cs = campaignStateNow();
   if (roundIsOpen(round)) {
-    const sessionOver = !isSessionActive(cs) || round.sessionId !== (cs.currentSessionId ?? null);
+    const sessionOver = !isSessionActive(cs) || round.sessionId !== (cs.currentSessionId ?? null) || sessionBeingReplaced(cs);
     if (sessionOver && !isResolving(round)) {
       await closeCollectingRound("session-ended");
     } else if (sessionOver && CLOSES_RESOLVING_ROUND.has(reason)) {
@@ -1514,6 +1532,8 @@ async function onUserConnected(user, connected) {
  */
 export function registerBatchModeDriver() {
   _xCardWas = !!campaignStateNow().xCardActive;
+  // This GM's `ready` mints a new session when the stored one is over (index.js initSessionId).
+  if (isCanonicalGM() && sessionNeedsMint(campaignStateNow())) _sessionBeingReplaced = campaignStateNow().currentSessionId ?? "";
   // A setting's first write is a createSetting, every later one an updateSetting.
   Hooks.on("createSetting", onBatchSettingWrite);
   Hooks.on("updateSetting", onBatchSettingWrite);
