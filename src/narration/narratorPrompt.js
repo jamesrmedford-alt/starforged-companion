@@ -1256,11 +1256,20 @@ const PERSPECTIVE_DESCRIPTIONS = {
  * or third_person for multiplayer (2+ active players). Explicit values pass
  * through unchanged.
  *
+ * A narration that speaks for two or more PCs at once — a Batch Mode round
+ * with several acting (`actingCharacters`) — is third person whoever is
+ * connected: "you" would merge them, beside the PARTY block's "never merge
+ * the player characters into a single 'you'" (issue #342 Z40: a GM playing
+ * Ash beside one player's Kira counted one non-GM user, so the round was
+ * second person over two CHARACTER blocks).
+ *
  * @param {string} setting — "auto" | "second_person" | "third_person"
+ * @param {{ actingCharacters?: number }} [narration] — how many PCs the narration speaks for
  * @returns {"second_person"|"third_person"}
  */
-export function resolveNarrationPerspective(setting) {
+export function resolveNarrationPerspective(setting, { actingCharacters = 0 } = {}) {
   if (setting !== 'auto') return setting;
+  if (actingCharacters > 1) return 'third_person';
   try {
     // Active NON-GM users (decisions.md "Narrator tone and perspective"): the
     // GM counted too, so a GM running one player's character — or a solo GM
@@ -1469,7 +1478,10 @@ export function buildNarratorSystemPrompt(
   const roleDescription = ROLE_DESCRIPTIONS[resolvedMode];
   const isMetaMode      = META_MODES.has(resolvedMode);
 
-  const resolvedPerspective = resolveNarrationPerspective(narrationPerspective);
+  // A round speaks for every acting PC at once (its CHARACTER blocks, issue #342 Z40).
+  const resolvedPerspective = resolveNarrationPerspective(narrationPerspective, {
+    actingCharacters: Array.isArray(extras?.roundCharacters) ? extras.roundCharacters.filter(Boolean).length : 0,
+  });
   const toneDesc        = TONE_DESCRIPTIONS[narrationTone]          ?? TONE_DESCRIPTIONS.wry;
   const perspectiveDesc = PERSPECTIVE_DESCRIPTIONS[resolvedPerspective] ?? PERSPECTIVE_DESCRIPTIONS.second_person;
   // Levity (issue #236) — optional tonal-weight modulation composed on top of

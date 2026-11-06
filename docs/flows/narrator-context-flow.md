@@ -54,7 +54,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   SCENE, then THIS ROUND — each acting entry in confirm order with its move,
   stat, outcome, outcome text and price, oracle seeds, the player's sanitised
   line and a latitude line — and the instruction to act for no one else and
-  remark on no one who didn't act. Who sat the round out is never sent. Its
+  remark on no one who didn't act. Who sat the round out is never sent.
+  Perspective "auto" is third person whenever two or more PCs act, whoever is
+  connected (`resolveNarrationPerspective`'s `actingCharacters`, from the
+  CHARACTER blocks; issue #342 Z40 — a GM's PC beside one player's was
+  second person). Its
   sidecar, X-Card gate, rate-limit retry, `!narrator debug` capture and
   fallback are every narration's; its capture (`runRoundNarrationPasses`) is
   one detection call, at the widest class among the entries it captures — a
