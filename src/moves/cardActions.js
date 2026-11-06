@@ -143,10 +143,11 @@ const PICK_MOVES = Object.freeze({
  *
  * Validates the pick against the card's own choices, claims the picker
  * (`resolved`), then posts the forced Develop Your Relationship / Forge a
- * Bond move ONCE — with `speaker.actor` = the clicker's PC, so the pipeline's
- * resolveSpeakerActorId credits the roller even though the GM authors the
- * message, and the picked connection as `forcedMoveTargetId` (host id) +
- * `forcedMoveTarget` (name). Idempotent per card: a refused claim posts
+ * Bond move ONCE — with `speaker.actor` = the picker's roller (the move
+ * card's, its `actorId`; the clicker's PC on a picker that names none), so
+ * the pipeline's resolveSpeakerActorId credits the roller even though the GM
+ * authors the message, and the picked connection as `forcedMoveTargetId`
+ * (host id) + `forcedMoveTarget` (name). Idempotent per card: a refused claim posts
  * nothing, and a post that fails releases the claim (issue #336 Y24).
  *
  * @param {{ messageId?: string, hostId?: string|null, connectionName?: string|null,
@@ -182,12 +183,15 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
     return { posted: false, reason: "not-on-card" };
   }
 
-  // The clicker's PC — credit the roller. Must be a PC the requester owns; a
-  // GM with no PC relays none (the pipeline resolves their speaker), and a
-  // player with no PC of their own is refused — with no speaker the forced
-  // move was rolled as the GM's first PC, another player's character
-  // developing or forging the bond (issue #331 X19; #326 D8).
-  const { actor, refused } = relayedClickerPc(payload, ctx, "connection pick");
+  // The picker's roller — the move card's, carried by applyConnectionSuggestion:
+  // the forced move is their follow-up, their player's or a GM's to pick
+  // (cardRollerPc; issue #342 Z56 — it spoke as the presser, so a GM's pick
+  // developed the first PC's bond). A picker that names none acts as the
+  // clicker's PC, which must be one the requester owns; a GM with no PC
+  // relays none (the pipeline resolves their speaker), and a player with no
+  // PC of their own is refused — with no speaker the forced move was rolled
+  // as the GM's first PC (issue #331 X19; #326 D8).
+  const { actor, refused } = cardRollerPc(f, payload, ctx, "connection pick");
   if (refused) return { posted: false, reason: refused };
   if (!actor) {
     console.debug(`${MODULE_ID} | connection pick: no clicker PC relayed (a GM's press) — the pipeline resolves the speaker from the message author.`);
@@ -1416,11 +1420,19 @@ export async function applyWayOutPick(payload = {}, ctx = {}) {
  * posted (index.js postConnectionPickerCard — whose pick is claimed once,
  * applyConnectionPick); a picker that could not be posted releases it.
  *
+ * The follow-up is the card's roller's (issue #329 X05, #338 D1), as the
+ * same card's ⚑ is (applyMilestoneSuggestion): with a roller named, only
+ * their player or a GM may press it, and the picker carries them
+ * (`actorId`), so its pick is rolled as them. The picker named no roller, so
+ * the pick spoke as its presser — a GM's press developed the first PC's
+ * bond, and a crewmate took the follow-up as theirs (issue #342 Z56). A card
+ * that names none stays the presser's.
+ *
  * @param {{ messageId?: string, pickAction?: string }} payload
- * @param {Object} [_ctx]
+ * @param {Object} [ctx]
  * @returns {Promise<{ posted: boolean, reason?: string }>}
  */
-export async function applyConnectionSuggestion(payload = {}, _ctx = {}) {
+export async function applyConnectionSuggestion(payload = {}, ctx = {}) {
   const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
   const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
   if (!message) {
@@ -1439,6 +1451,11 @@ export async function applyConnectionSuggestion(payload = {}, _ctx = {}) {
     console.debug(`${MODULE_ID} | connection suggestion: card ${messageId} already taken — ignoring the press.`);
     return { posted: false, reason: "already-claimed" };
   }
+  const rollerId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  if (rollerId) {
+    const { refused } = cardRollerPc(f, payload, ctx, "connection suggestion");
+    if (refused) return { posted: false, reason: refused };
+  }
 
   _inFlight.add(key);
   try {
@@ -1449,7 +1466,7 @@ export async function applyConnectionSuggestion(payload = {}, _ctx = {}) {
       return { posted: false, reason: "claim-refused" };
     }
     const { postConnectionPickerCard } = await import("../index.js");
-    const posted = await postConnectionPickerCard(null, pickAction).catch(err => {
+    const posted = await postConnectionPickerCard(null, pickAction, { actorId: rollerId }).catch(err => {
       console.warn(`${MODULE_ID} | connection suggestion: picker failed:`, err?.message ?? err);
       return null;
     });

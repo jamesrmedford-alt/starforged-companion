@@ -5798,13 +5798,16 @@ async function postMilestonePickerCard(vows, actorId, marks = 1) {
  * Forge shows only unbonded connections; develop shows all active ones.
  * `connections` null reads the active connection records (the GM-side
  * "connection.suggest" handler, issue #325 W11). Returns the posted card, or
- * null when there was nothing to offer or the post failed.
+ * null when there was nothing to offer or the post failed. `actorId` is the
+ * move card's roller: the pick is their follow-up, rolled as them (issue #342
+ * Z56 — the picker named no roller, so the pick spoke as its presser).
  *
  * @param {Array<Object>|null} connections — records with `__hostId`
  * @param {"develop"|"forge"} action
+ * @param {{ actorId?: string|null }} [opts]
  * @returns {Promise<ChatMessage|null>}
  */
-export async function postConnectionPickerCard(connections, action) {
+export async function postConnectionPickerCard(connections, action, { actorId = null } = {}) {
   if (!Array.isArray(connections)) connections = await activeConnectionRecords();
   const eligible = action === "forge"
     ? connections.filter(c => !c.bonded)
@@ -5827,6 +5830,7 @@ export async function postConnectionPickerCard(connections, action) {
       flags: { [MODULE_ID]: {
         connectionPicker: true, pickAction: action, resolved: false,
         choices: eligible.map(c => ({ hostId: c.__hostId ?? "", name: c.name ?? "" })),
+        ...(actorId ? { actorId } : {}),
       } },
     });
   } catch (err) {
@@ -7956,8 +7960,9 @@ onChatMessageRender((message, root) => wireConnectionSuggestionButtons(message, 
  * Wire the per-connection buttons on a connection picker card. Clicking one
  * relays the pick to the canonical GM ("connection.pick" →
  * src/moves/cardActions.js applyConnectionPick), which posts the forced move
- * (develop_your_relationship or forge_a_bond) ONCE — speaking as the clicker's
- * PC so the pipeline credits the roller — and stamps the card resolved. The
+ * (develop_your_relationship or forge_a_bond) ONCE — speaking as the picker's
+ * roller (the move card's; the clicker's PC, relayed here, only on a picker
+ * that names none) so the pipeline credits the roller — and stamps the card resolved. The
  * picker is often authored by someone other than the clicker, so the clicker's
  * own client could not stamp it, and a second click re-rolled the move. A
  * click that is not delivered (no GM connected) re-arms the buttons.

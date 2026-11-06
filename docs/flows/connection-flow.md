@@ -212,23 +212,30 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   first pays.
 - **Suggestion buttons** on connection-category move cards
   (`wireConnectionSuggestionButtons`) relay `connection.suggest` to the
-  canonical GM (`cardActions.applyConnectionSuggestion`), which claims the
-  move card once (`connectionSuggestionTaken`) and posts a **connection
-  picker** card (`postConnectionPickerCard` — `flags.choices` lists the
-  offered connections; forge offers only un-bonded ones). Each press used to
+  canonical GM (`cardActions.applyConnectionSuggestion`), which checks the
+  presser is the move card's roller's player or a GM (`cardRollerPc` on the
+  card's `actorId`, as the same card's ⚑ — a refused press is told whose
+  button it is), claims the move card once (`connectionSuggestionTaken`)
+  and posts a **connection picker** card (`postConnectionPickerCard` —
+  `flags.choices` lists the offered connections; forge offers only un-bonded
+  ones; `flags.actorId` carries the move card's roller). Each press used to
   post a fresh picker from the clicker's client, so two presses developed the
-  relationship twice (issue #325 W11). Any user's pick relays
-  `connection.pick` to the canonical GM (`wireConnectionPickerButtons` →
-  `relayCardAction` → `applyConnectionPick`, `src/moves/cardActions.js`),
-  which checks the pick is one of the card's choices (its buttons' data
-  attributes for an older card) and that the clicker's PC is one the
-  requester owns — a player with no PC of their own is refused, only a GM
-  may press as nobody (`relayedClickerPc`, issue #331 X19) — claims the card
+  relationship twice (issue #325 W11). A pick relays `connection.pick` to
+  the canonical GM (`wireConnectionPickerButtons` → `relayCardAction` →
+  `applyConnectionPick`, `src/moves/cardActions.js`), which checks the pick
+  is one of the card's choices (its buttons' data attributes for an older
+  card) and whose it is (`cardRollerPc`): the picker's roller, whose player
+  or a GM may pick — on a picker that names none, the clicker's PC, one the
+  requester owns (a player with no PC of their own is refused, only a GM may
+  press as nobody — `relayedClickerPc`, issue #331 X19) — claims the card
   (`resolved`, in-flight guarded) and posts the forced Develop Your
-  Relationship / Forge a Bond move **once** — speaking as the clicker's PC,
-  so the pipeline credits the roller although the GM authors the message,
-  and naming the picked connection as `forcedMoveTargetId` (its host Actor
-  id) and `forcedMoveTarget` (its name). A refused claim posts nothing and a
+  Relationship / Forge a Bond move **once** — speaking as that PC, so the
+  pipeline credits the roller although the GM authors the message, and
+  naming the picked connection as `forcedMoveTargetId` (its host Actor id)
+  and `forcedMoveTarget` (its name). The picker named no roller, so the pick
+  spoke as its presser: a GM's press developed the first PC's bond, and a
+  crewmate took the roller's follow-up as theirs (issue #342 Z56). The
+  picker lists every active connection; a crewmate's own develop is typed. A refused claim posts nothing and a
   failed post releases the claim: it posted first, and a stamp the world
   refused left the picker live for a second Develop (issue #336 Y24). The forced move carries
   `deferWhileBusy`: met by the move lock, it is held on the canonical GM and
