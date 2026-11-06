@@ -325,6 +325,14 @@ async function runSufferCall(call, actor, opts) {
       // A vehicle's integrity and a companion's health are no PC meters: the
       // generic write dropped them, and the card reported them applied
       // (issue #309 N02 / N03).
+      // A support vehicle's roll changes its own Integrity track (issue #342
+      // Z53); otherwise the vehicle the move was rolled against, else the
+      // command vehicle.
+      if (call.meterKey === "integrity" && opts.vehicleItemId) {
+        const { applyVehicleAssetIntegrityChange } = await import("../character/actorBridge.js");
+        return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
+          ...(await applyVehicleAssetIntegrityChange(actor, call.delta, { itemId: opts.vehicleItemId })) };
+      }
       if (call.meterKey === "integrity") {
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
           ...(await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta)) };

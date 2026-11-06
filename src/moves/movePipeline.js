@@ -1273,6 +1273,9 @@ export async function rollMove({
     vehicleActorId:  interpretation.vehicleActorId ?? null,
     companionItemId: interpretation.companionItemId ?? null,
     combatTrackId:   moveFight?.id ?? null,
+    // A support vehicle's own roll: its integrity choices change that asset's
+    // track, not the command vehicle's (issue #342 Z53). Absent otherwise.
+    ...(interpretation.vehicleItemId ? { vehicleItemId: interpretation.vehicleItemId } : {}),
     // Heal's patient: its recovery is checked against and applied to them
     // (issue #325 W04). Absent for every other move.
     ...(interpretation.patientActorId ? { patientActorId: interpretation.patientActorId } : {}),

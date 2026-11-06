@@ -20,12 +20,16 @@
  *   - action stats   (edge/heart/iron/shadow/wits) → snapshot.stats[name]
  *   - player meters  (health/spirit/supply/momentum) → snapshot.meters[name]
  *   - vehicle stat   (integrity) → command-vehicle Actor's
- *                                  flags[MODULE_ID].ship.integrity
+ *                                  flags[MODULE_ID].ship.integrity — or,
+ *                                  when the move names one of the roller's
+ *                                  support vehicles, that asset's Integrity
+ *                                  track (vehicleItemId)
  *   - companion_health → the Companion asset's track value
  *                                  (resolveCompanionHealth); the roll's
  *                                  companion and vehicle are recorded on
  *                                  the interpretation for its consequences
- *                                  (companionItemId / vehicleActorId).
+ *                                  (companionItemId / vehicleActorId /
+ *                                  vehicleItemId).
  *
  * Progress moves are scored by the separate enrichProgressTicks() below.
  * The resolver reads a progress move's score from `interpretation.statValue`
@@ -38,7 +42,7 @@
  */
 
 import { MOVES } from "../schemas.js";
-import { readCharacterSnapshot, listCompanionAssets } from "../character/actorBridge.js";
+import { readCharacterSnapshot, listCompanionAssets, listSupportVehicleAssets, readAssetIntegrity } from "../character/actorBridge.js";
 import { getCommandVehicleActor } from "./abilityScanner.js";
 import { selectCombatTrack, combatPositionFor } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
@@ -136,6 +140,20 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
     );
     interpretation.statValue = 0;
     return 0;
+  }
+
+  // A support vehicle the move names — the roller's asset with its own
+  // Integrity track (the Hoverbike, Rover, Skiff …) — is the vehicle the
+  // roll is made for: "+integrity" is that track, and the choices change it
+  // (vehicleItemId), not the command vehicle in orbit (issue #342 Z53).
+  if (statUsed === "integrity") {
+    const bike = selectNamedVehicleAsset(actor, interpretation);
+    if (bike) {
+      interpretation.statValue      = readAssetIntegrity(actor, bike.id) ?? 0;
+      interpretation.vehicleItemId  = bike.id;
+      interpretation.vehicleActorId = null;
+      return interpretation.statValue;
+    }
   }
 
   const value = resolveStatValue(actor, statUsed, campaignState);
@@ -449,6 +467,27 @@ function selectCompanionAsset(actor) {
     if (!chosen || (c.system?.track?.value ?? 0) > (chosen.system?.track?.value ?? 0)) chosen = c;
   }
   return chosen;
+}
+
+/**
+ * The support vehicle an integrity roll is made for: the roller's vehicle
+ * asset (actorBridge listSupportVehicleAssets) the move's target names — or,
+ * when it names nothing, the one the narration names — as whole words
+ * (`namedOnce`). Null otherwise: the roll is the command vehicle's, as an
+ * unnamed or starship target always was. Never a guess: a sole support
+ * vehicle the move does not name is not taken for it (rules/reachability.md
+ * §6).
+ *
+ * @param {Actor|null} actor
+ * @param {Object} interpretation — its `moveTarget` / `playerNarration`
+ * @returns {Item|null}
+ */
+function selectNamedVehicleAsset(actor, interpretation) {
+  const vehicles = listSupportVehicleAssets(actor);
+  if (!vehicles.length) return null;
+  const target = typeof interpretation?.moveTarget === "string" ? interpretation.moveTarget : "";
+  const prose  = typeof interpretation?.playerNarration === "string" ? interpretation.playerNarration : "";
+  return namedOnce(vehicles, target) ?? (!target.trim() ? namedOnce(vehicles, prose) : null);
 }
 
 /**

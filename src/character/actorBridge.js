@@ -575,6 +575,76 @@ export function readAssetIntegrity(actor, itemId) {
 }
 
 /**
+ * The character's support vehicles: `asset` Items with an enabled condition
+ * track named Integrity (readAssetIntegrity's test — the vendor's Hoverbike,
+ * Rover, Skiff, Shuttle, Snub Fighter, Service Pod and Exosuit, all category
+ * "Support Vehicle"). A Command Vehicle asset is not one: the command
+ * vehicle's integrity is its ship record's (entities/ship.js), and that asset
+ * rides on the starship Actor.
+ *
+ * @param {Actor|null} actor
+ * @returns {Item[]}
+ */
+export function listSupportVehicleAssets(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  return (Array.isArray(items) ? items : []).filter(i => i?.type === 'asset'
+    && readAssetIntegrity(actor, i.id) !== null
+    && !/command vehicle/i.test(String(i.system?.category ?? '')));
+}
+
+/**
+ * Is this support vehicle battered? Its card's own Battered condition
+ * (`system.conditions[]`, vendor asset.ts) — the "if your vehicle is not
+ * battered" of Withstand Damage's +1 integrity. Null when `itemId` names no
+ * support vehicle on `actor`.
+ *
+ * @param {Actor|null} actor
+ * @param {string} itemId
+ * @returns {boolean|null}
+ */
+export function readVehicleAssetBattered(actor, itemId) {
+  const asset = listSupportVehicleAssets(actor).find(i => i.id === itemId);
+  if (!asset) return null;
+  return (asset.system?.conditions ?? [])
+    .some(c => String(c?.name ?? '').trim().toLowerCase() === 'battered' && c?.ticked === true);
+}
+
+/**
+ * Change a support vehicle's integrity — its Integrity track — by `delta`,
+ * kept within the track's min..max: Withstand Damage's "+1 integrity" /
+ * "-1 integrity" when the roll was the vehicle's (statEnrichment's
+ * `vehicleItemId`). A rise is refused while the vehicle is battered, as the
+ * ship record's writer refuses one (entities/ship.js changeIntegrity). The
+ * sibling of applyCompanionHealthChange; reports, never throws.
+ *
+ * @param {Actor} actor
+ * @param {number} delta
+ * @param {{ itemId?: string|null }} [opts] — the vehicle asset
+ * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, before?: number, after?: number, reason?: "no-vehicle"|"battered"|"refused", error?: string }>}
+ */
+export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null } = {}) {
+  const asset = itemId ? listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null : null;
+  if (!asset) {
+    console.warn(`actorBridge | vehicle integrity: no support vehicle${itemId ? ` ${itemId}` : ''} on ${actor?.name ?? actor?.id ?? 'no actor'} — ${delta >= 0 ? '+' : ''}${delta} not applied.`);
+    return { ok: false, reason: 'no-vehicle' };
+  }
+  const track  = asset.system?.track ?? {};
+  const before = Number(track.value ?? 0);
+  const at     = { itemId: asset.id, name: asset.name ?? null, before };
+  if (delta > 0 && readVehicleAssetBattered(actor, asset.id)) return { ok: false, reason: 'battered', ...at };
+  const after  = clamp(before + delta, Number(track.min ?? 0), Number(track.max ?? 5));
+  if (after === before) return { ok: true, ...at, after };
+  try {
+    await asset.update({ 'system.track.value': after });
+  } catch (err) {
+    console.warn(`actorBridge | vehicle integrity: ${asset.name ?? asset.id} update failed:`, err?.message ?? err);
+    return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
+  }
+  invalidateActorCache(actor.id);
+  return { ok: true, ...at, after };
+}
+
+/**
  * Change a companion's health — its asset track — by `delta`, kept within
  * the track's min..max. Companion health went to applyMeterChanges, which
  * has no such meter and dropped it (issue #309 N03).
