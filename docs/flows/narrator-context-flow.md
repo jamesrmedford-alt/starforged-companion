@@ -240,7 +240,9 @@ threat, faction or place page, takes the beats off the Session Log page and
 drops the tier details — a detail the GM had promoted takes the line its ⤴
 Promote appended with it (the entry keeps `promotedText` beside its
 `narrationId`): off the sheet's Notes tab for an NPC card or a ship, else out
-of the record's notes (issue #338 D7) — most of these restate no sidecar truth, so
+of the record's notes (issue #338 D7); a Promote never promotes an X-carded
+narration's detail, and one whose Notes write the X-Card overtook takes its
+own line back off the tab (issue #342 Z44) — most of these restate no sidecar truth, so
 `propagateRetraction` never reached them. A capture still running when the
 card is played writes nothing more (XCARD-LATE-CAPTURE — the undo reaches only
 what was written before it): every capture write checks the STORED

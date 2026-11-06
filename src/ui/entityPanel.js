@@ -31,6 +31,8 @@ import {
   withSheetNotes,
 } from '../entities/registry.js';
 import { notesAsCardText } from '../narration/narratorPrompt.js';
+import { isNarrationXCarded } from '../context/safety.js';
+import { withoutPromotedParagraphs } from '../factContinuity/retractions.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1323,6 +1325,11 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
     // The entry keeps the text the Promote put in the notes beside the
     // narration id it carries: an X-Card on that narration takes the line
     // out of the notes too (retractNarrationCapture — issue #338 D7).
+    // A detail of a narration the X-Card removed is not promoted (issue #342
+    // Z44): its capture undo takes it off the card, and nothing would take
+    // its line off the Notes tab the narrator reads.
+    const narrationId = tier[idx]?.narrationId ?? null;
+    if (isNarrationXCarded(narrationId)) return refusedEntityEdit('no-detail', payload);
     const mark     = (e) => ({ ...e, promoted: true, promotedAt: now, promotedText: detail });
     const promoted = tier.map((e, i) => (i === idx ? mark(e) : e));
     if (hasSheetNotes(typeKey) && document?.system) {
@@ -1337,6 +1344,21 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
       const fresh     = readEntityFlag(typeKey, document) ?? data;
       const freshTier = Array.isArray(fresh.generativeTier) ? fresh.generativeTier : [];
       const at        = freshTier.findIndex(shown);
+      // The X-Card played on its narration during that write (it runs
+      // unqueued): its undo dropped the entry while it was not yet promoted,
+      // so it left the line — or will, reaching this record after the line —
+      // and the line goes back off the tab with no promoted entry written
+      // (issue #342 Z44). So does one whose entry is gone otherwise (a Remove
+      // meanwhile): a line no entry carries reaches no X-Card. An X-Card
+      // after this check finds the mark — its undo reads this record only
+      // after its own pause, card and journal writes, sent after the mark —
+      // and takes both (D7).
+      if (at === -1 || isNarrationXCarded(narrationId)) {
+        const html = String(document.system.notes ?? '');
+        const back = withoutPromotedParagraphs(html, [detail]);
+        if (back !== html) await document.update({ 'system.notes': back });
+        return refusedEntityEdit('no-detail', payload);
+      }
       next = { ...fresh, generativeTier: freshTier.map((e, i) => (i === at ? mark(e) : e)) };
     } else {
       next = {

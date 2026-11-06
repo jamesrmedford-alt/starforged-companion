@@ -391,13 +391,15 @@ function htmlText(html) {
 /**
  * A sheet's Notes HTML without the paragraph the Entities panel's Promote
  * appended for each text (`<p>detail</p>` — issue #338 D7): the last
- * paragraph whose text is that detail. Anything else on the tab stays.
+ * paragraph whose text is that detail. Anything else on the tab stays. The
+ * Promote takes its own line back with it when the X-Card removed the
+ * detail's narration during its Notes write (entityPanel.js — issue #342 Z44).
  *
  * @param {string} html
  * @param {string[]} texts — the promoted details
  * @returns {string}
  */
-function withoutPromotedParagraphs(html, texts) {
+export function withoutPromotedParagraphs(html, texts) {
   let out = String(html ?? '');
   for (const text of texts) {
     const want  = noteLine(text);
