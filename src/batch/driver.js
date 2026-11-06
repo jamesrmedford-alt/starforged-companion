@@ -413,8 +413,24 @@ export async function closeCollectingRound(reason) {
 /** The switch changed (every client): the canonical GM opens a round, or closes a collecting one. */
 function onBatchModeSwitched(enabled) {
   if (!isCanonicalGM()) return;
-  const work = enabled ? openRoundIfDue("mode-on") : closeCollectingRound("mode-off");
+  const work = enabled ? openRoundIfDue("mode-on") : turnedOff();
   Promise.resolve(work).catch(err => console.warn(`${MODULE_ID} | Batch Mode switch:`, err?.message ?? err));
+}
+
+/**
+ * The mode is off: a collecting round closes, and the card-button moves held
+ * for the next round — there is none now — run as free-flow, as a forced
+ * move whose roller isn't in a round does. A claimed card's move is held,
+ * never dropped (issue #325 W02): with the mode switched off they were lost,
+ * their buttons still reading taken (issue #342 Z29).
+ */
+async function turnedOff() {
+  await closeCollectingRound("mode-off");
+  if (!_heldForRound.length) return;
+  for (const id of _heldForRound.splice(0)) {
+    if (!_heldForFreeFlow.includes(id)) _heldForFreeFlow.push(id);
+  }
+  runHeldMovesSoon();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
