@@ -26,8 +26,9 @@
  *     while its submission is still the entry's.
  *   - Resolution (advanceRound): the move lock (`pendingMove`) is claimed for
  *     the rolls and records, and again for the narration, each released in a
- *     `finally` through the lock's own paths — never held across the wait for
- *     an upgrade decision. Each acting entry is rolled (rollMove) and recorded
+ *     `finally` through the lock's own paths (a refused release retried once,
+ *     then told) — never held across the wait for an upgrade decision. Each
+ *     acting entry is rolled (rollMove) and recorded
  *     (recordMove) in confirm order; then the upgrades, the one narration
  *     (narrateRound), the close and the next round — and, off the advance
  *     pass, finishMove for each entry (a GM's rider prompt holds no round).
@@ -660,6 +661,51 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
   return { ok: true };
 }
 
+// Claims of this client's whose release the world refused, retry included:
+// the round's next claim takes the lock back from them, where it would wait
+// on itself (issue #342 Z19).
+const _unreleasedClaims = new Set();
+
+/**
+ * Claim the move lock for the round (index.js claimPendingMoveLock) — or take
+ * back this client's own claim whose release the world refused: the store
+ * still holds it, and a round waiting for it to free waited forever. Not an
+ * async function: the claim's answer comes back as soon as the host's does.
+ *
+ * @returns {Promise<{ claim: string|null, busy?: boolean, refused?: boolean }>}
+ */
+function claimRoundLock() {
+  const cs = campaignStateNow();
+  const held = cs.pendingMove ? (cs.pendingMoveClaim ?? null) : null;
+  for (const c of _unreleasedClaims) if (c !== held) _unreleasedClaims.delete(c);
+  if (held && cs.pendingMoveBy === game.user?.id && _unreleasedClaims.has(held)) {
+    _unreleasedClaims.delete(held);
+    return Promise.resolve({ claim: held });
+  }
+  return host().claimMoveLock();
+}
+
+/**
+ * Release the round's claim (index.js releasePendingMoveLock). A release the
+ * world refuses is tried once more, as free-flow's `finally` retries its own
+ * (issue #315 S01); refused again, the GMs are told and the round's next
+ * claim takes it back. The round dropped the refusal: its own narration then
+ * waited on the lock it still held, the table stopped (issue #342 Z19).
+ *
+ * @param {string|null} claim
+ * @returns {Promise<boolean>} whether the lock is free (or no longer this claim's)
+ */
+async function releaseRoundLock(claim) {
+  if (!claim) return true;
+  if (await host().releaseMoveLock(claim)) return true;
+  if (await host().releaseMoveLock(claim)) return true;
+  _unreleasedClaims.add(claim);
+  await tellGms("Batch Mode — the move lock was not released",
+    `The world did not save the move lock's release. The round goes on, but a move outside it may be refused ("A move is already being resolved") until the lock is freed — reloading ${escapeHtml(game.user?.name ?? "the resolving GM")}'s browser frees it.`,
+    { batchLockNotice: true });
+  return false;
+}
+
 /**
  * Collecting → rolling, with the move lock claimed first: a refused claim
  * leaves the round collecting, and the GMs are told; a busy lock (another
@@ -669,7 +715,7 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
  * @returns {Promise<boolean>}
  */
 async function startResolution({ sendNow }) {
-  const lock = await host().claimMoveLock();
+  const lock = await claimRoundLock();
   if (!lock.claim) {
     if (lock.busy) {
       _waitingForLock = true;
@@ -704,7 +750,7 @@ async function startResolution({ sendNow }) {
     }
     throw err;
   } finally {
-    await host().releaseMoveLock(lock.claim);
+    await releaseRoundLock(lock.claim);
   }
 }
 
@@ -720,7 +766,7 @@ async function startResolution({ sendNow }) {
 async function rollRound(claim) {
   let own = null;
   if (!claim) {
-    const lock = await host().claimMoveLock();
+    const lock = await claimRoundLock();
     if (!lock.claim) {
       if (lock.busy) _waitingForLock = true;
       return false;
@@ -754,7 +800,7 @@ async function rollRound(claim) {
     await queueRoundWrite(r => beginUpgrades(r, { offers: upgradeOffers(r) }));
     return true;
   } finally {
-    if (own) await host().releaseMoveLock(own);
+    if (own) await releaseRoundLock(own);
   }
 }
 
@@ -1005,7 +1051,7 @@ async function narrateTheRound() {
     await finishRound(round, "resolved");
     return true;
   }
-  const lock = await host().claimMoveLock();
+  const lock = await claimRoundLock();
   if (!lock.claim) {
     if (lock.busy) _waitingForLock = true;
     return false;
@@ -1018,7 +1064,7 @@ async function narrateTheRound() {
       console.error(`${MODULE_ID} | Batch Mode: the round's narration failed:`, err));
   } finally {
     _narratingRoundId = null;
-    await host().releaseMoveLock(lock.claim);
+    await releaseRoundLock(lock.claim);
   }
   await finishRound(getStoredRound() ?? round, "resolved");
   return true;
