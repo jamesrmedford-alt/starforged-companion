@@ -563,9 +563,15 @@ export async function storeSector(sector, extras, campaignState) {
   // World Journal integration — record the sector trouble as an active
   // threat so the narrator-context assembler surfaces it during play.
   // Non-blocking: a WJ write failure should not abort sector creation.
+  // The threat is named by its trouble AND its sector: recordThreat upserts
+  // by name, and the Sector Trouble table has 20 rows, so a second sector
+  // that rolled the same trouble took over the first's page — ACTIVE THREATS
+  // told the first sector's trouble as the second's, and resolving it for
+  // one resolved both (issue #342 Z65). A retried creation of the same
+  // sector still updates its own page (known-issues SECTOR-CREATE-PARTIAL).
   if (sector?.trouble) {
     try {
-      await recordThreat(sector.trouble, {
+      await recordThreat(sector.name ? `${sector.trouble} — ${sector.name}` : sector.trouble, {
         type:     "environmental",
         severity: "looming",
         summary:  `Trouble in ${sector.name ?? "this sector"}: ${sector.trouble}`,
