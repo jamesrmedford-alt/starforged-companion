@@ -1535,7 +1535,7 @@ async function applyOutcomeEffects({
     const destinationId = resolution.moveId === "set_a_course"
       ? (interpretation?.moveTargetId ?? null)
       : await expeditionSiteActorId(interpretation, campaignState);
-    await maybeUpdateShipPositionFromName(
+    const docked = await maybeUpdateShipPositionFromName(
       moveTarget,
       campaignState,
       tokenDragSetCourse ? "scene_token"
@@ -1549,8 +1549,17 @@ async function applyOutcomeEffects({
     // by move left the narrator options / entity-panel highlight pointing
     // at the last !at (LOCATION-DUAL-STORE fix). Same resolver as !at; a
     // destination that isn't a tracked entity leaves the store untouched.
+    // When the id and the name both miss, the place the ship just docked at:
+    // the position's word scan finds "Bleakhold" in "the expedition to
+    // Bleakhold", the name resolver only a place whose name holds the whole
+    // label — the ship docked there while the current location stayed where
+    // the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT). A record
+    // naming no place (free text) leaves the store untouched.
     const arrivedAt = currentLocationForEntityId(destinationId)
-      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
+      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState)
+      ?? [docked?.nearestLocationId, docked?.nearestSettlementId, docked?.nearestPlanetId]
+        .map(id => currentLocationForEntityId(typeof id === "string" ? id : null)).find(Boolean)
+      ?? null;
     if (arrivedAt) {
       campaignState.currentLocationId   = arrivedAt.id;
       campaignState.currentLocationType = arrivedAt.type;

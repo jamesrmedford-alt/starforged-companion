@@ -125,7 +125,14 @@ passage" drawing.
   Z74), and since the LOCATION-DUAL-STORE fix the arrival block does
   too — a tracked destination reached by move updates `currentLocationId`
   via the same resolver (a token-drop arrival by the pin's Actor id first,
-  `currentLocationForEntityId` — issue #321 U52). The Entities panel's "Set as
+  `currentLocationForEntityId` — issue #321 U52); when neither the id nor
+  the name resolves, the place the position record the arrival just wrote
+  names (`maybeUpdateShipPositionFromName`'s return — its location, else
+  settlement, else planet): the position's word scan finds "Bleakhold" in
+  "the expedition to Bleakhold", the name resolver only a place whose name
+  holds the whole label, so the ship docked there while the current location
+  stayed where the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT).
+  A record that names no place (free text) leaves it. The Entities panel's "Set as
   current location" moves the ship as `!at` does — the shared
   `maybeUpdateShipPositionFromName`, source `at_command`, with the entity's
   id (`{ entityId }`) — so the narrator no longer gets two locations (issue
