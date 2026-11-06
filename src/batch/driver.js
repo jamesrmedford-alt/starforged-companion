@@ -1226,6 +1226,25 @@ function onCampaignStateChanged(setting) {
   }
 }
 
+/**
+ * A world setting was written (every client hears it; the canonical GM acts).
+ * The keyed-GM registry: a GM with a Claude key is canonical now, and reads
+ * the submissions a keyless GM could not (and resumes a round left
+ * resolving). campaignState: onCampaignStateChanged.
+ *
+ * @param {{ key?: string }} setting
+ */
+function onBatchSettingWrite(setting) {
+  if (setting?.key === `${MODULE_ID}.keyedGmUserIds`) {
+    if (!isCanonicalGM() || !isBatchModeEnabled()) return;
+    recoverRound("keyed-gm").catch(err => console.warn(`${MODULE_ID} | Batch Mode: recovery for a keyed GM:`, err?.message ?? err));
+    return;
+  }
+  // Every client keeps its X-Card memory; only the canonical GM acts on it.
+  if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+  onCampaignStateChanged(setting);
+}
+
 /** A user joined or left (canonical GM). */
 async function onUserConnected(user, connected) {
   if (!isBatchModeEnabled()) return;
@@ -1257,11 +1276,9 @@ async function onUserConnected(user, connected) {
  */
 export function registerBatchModeDriver() {
   _xCardWas = !!campaignStateNow().xCardActive;
-  Hooks.on("updateSetting", (setting) => {
-    // Every client keeps its X-Card memory; only the canonical GM acts on it.
-    if (setting?.key !== `${MODULE_ID}.campaignState`) return;
-    onCampaignStateChanged(setting);
-  });
+  // A setting's first write is a createSetting, every later one an updateSetting.
+  Hooks.on("createSetting", onBatchSettingWrite);
+  Hooks.on("updateSetting", onBatchSettingWrite);
   Hooks.on("userConnected", (user, connected) => {
     onUserConnected(user, connected).catch(err =>
       console.warn(`${MODULE_ID} | Batch Mode: a connection change:`, err?.message ?? err));

@@ -386,6 +386,9 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
   /** A typed chat line became the draft (table talk). */
   async draftFromOutside(text) {
     this.#draft = String(text ?? "");
+    // The box is what Submit sends: write through to it, rendered or not.
+    const input = this.element?.querySelector?.("textarea[name='sf-round-text']");
+    if (input) input.value = this.#draft;
     if (this.rendered) await this.render();
   }
 
