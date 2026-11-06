@@ -3,7 +3,7 @@
 
 **Source:** https://foundryvtt.wiki/en/development/api (verified v13)  
 **Official docs:** https://foundryvtt.com/api/v13/  
-**Last updated:** November 2026 — added ChatMessage `keepId`, Notifications, and a client setting's `onChange` on an unchanged value, from the Foundry 13.351 source (each section names its source and what is not verified); April 2025 — added Scene, NoteDocument, DrawingDocument, FilePicker, CSS Layers  
+**Last updated:** November 2026 — added a world setting's `createSetting` / `updateSetting` hooks, from the v13 type declarations; ChatMessage `keepId`, Notifications, and a client setting's `onChange` on an unchanged value, from the Foundry 13.351 source (each section names its source and what is not verified); April 2025 — added Scene, NoteDocument, DrawingDocument, FilePicker, CSS Layers  
 
 This document exists because Claude Code's network access does not include
 foundryvtt.com. Update this file when the Foundry version changes or when
@@ -500,6 +500,54 @@ Foundry's issue tracker:
 https://github.com/foundryvtt/foundryvtt/issues/9051,
 https://github.com/foundryvtt/foundryvtt/issues/11948,
 https://github.com/foundryvtt/foundryvtt/issues/12371.
+
+### A world setting's write — `createSetting` / `updateSetting`
+
+A world-scoped setting (and, in v13, a `scope: "user"` one) is stored as a
+`Setting` world Document — `key` is `"<namespace>.<key>"` (e.g.
+`"starforged-companion.campaignState"`), `value` the JSON string. So a
+`game.settings.set` on it is a document write, and the two document hooks
+report it to every client:
+
+```js
+// First write of the key in this world (no stored Setting yet — reads
+// returned the registered default until now): createSetting.
+Hooks.on("createSetting", (setting, options, userId) => { … });
+// Every later write: updateSetting.
+Hooks.on("updateSetting", (setting, change, options, userId) => { … });
+```
+
+- Both fire **on every connected client** after the server has processed the
+  write (`Hooks.callAll`), the writer's own client included; a refused write
+  (a player's `set` on a world setting) throws and fires neither.
+- Watch **both** when a handler must see the first write too — a world whose
+  setting was never written has no document, so its first `set` is a create.
+  The module's watchers do (`batch/driver.js`, `clocks/clocks.js`,
+  `multiplayer/gmGate.js`, `oracles/customOracles.js`, `ui/entityPanel.js`,
+  `ui/progressTracks.js`, `ui/roundWindow.js`, `ui/sessionPanel.js`); a
+  handler that only reacts to a change of a value that already exists (the
+  move lock's release in `index.js`) can listen to `updateSetting` alone.
+- Filter on `setting.key` and read the value with `game.settings.get(…)`
+  (the parsed, cached value) rather than parsing `setting.value`.
+- Client-scoped settings are not documents: neither hook fires for them —
+  see `clientSettingChanged` above.
+- **Not verified** in a live world: the order of a world setting's
+  `onChange` and these hooks on one client, and whether a `set` to the value
+  already stored reaches the server at all (the module's multi-client harness,
+  `tests/helpers/multiClient.js`, models "unchanged → no update", `onChange`
+  before the hook, the writer's own client first and the others a macrotask
+  later — a model, not Foundry's code).
+
+Sources: the v13 type declarations of the `fvtt-types` package
+(13.346.0-beta.20250812191140, read 2026-11-06): `client/hooks.d.mts`
+(`CreateDocument` / `UpdateDocument`: "fires for all connected clients after
+the creation / update has been processed", called by `Hooks.callAll`, the
+name joined from "create" / "update" and the Document type),
+`client/helpers/client-settings.d.mts` (world, client and user scopes) and
+`client/documents/setting.d.mts` (the Setting document and its key) — not
+Foundry's own source or the official API pages, which the build container
+cannot reach (foundryvtt.com does not resolve here). Confirm there, or in a
+live world, before relying on a detail.
 
 ---
 
