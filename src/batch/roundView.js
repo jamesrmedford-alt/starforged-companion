@@ -209,13 +209,15 @@ function gmView(round, { collecting, connected, xCardActive, moveLabel, statLabe
         .filter(e => connected.has(e.userId) && e.status !== ENTRY_STATUS.READY && e.status !== ENTRY_STATUS.PASSED)
         .map(e => e.actorName)
     : (round.phase === ROUND_PHASE.UPGRADING ? undecidedUpgrades(round).map(id => round.entries[id]?.actorName).filter(Boolean) : []);
-  const sendable = collecting || round.phase === ROUND_PHASE.UPGRADING;
+  // Send now works in every open phase: while the round rolls or narrates it
+  // runs a resolution a refused step stopped again (the GMs are told when one
+  // does — issue #342 Z18).
   return {
     entries,
     waitingFor,
     sendNow: {
-      enabled: sendable && !xCardActive,
-      reason:  xCardActive ? ROUND_NOTICES.xCard : (sendable ? null : ROUND_NOTICES.resolving),
+      enabled: !xCardActive,
+      reason:  xCardActive ? ROUND_NOTICES.xCard : null,
       label:   round.phase === ROUND_PHASE.UPGRADING ? "Send now (keep the rest)" : "Send now",
     },
     discard: { enabled: collecting },

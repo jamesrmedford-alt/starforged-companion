@@ -524,8 +524,26 @@ let _waitingForLock = false;
 // A GM's Send now, waiting for the advance pass to start the resolution.
 let _sendNowRequested = false;
 let _narratingRoundId = null;
-// The rolled stage results of this client's round, by user id (finishMove).
+// The rolled stage results of the round this client rolls, by user id
+// (finishMove), and the users whose record (recordMove) ran here.
 const _rolledHere = new Map();
+const _recordedHere = new Set();
+let _rolledHereRoundId = null;
+
+function forgetRolledHere() {
+  _rolledHere.clear();
+  _recordedHere.clear();
+  _rolledHereRoundId = null;
+}
+
+function noteRolledHere(roundId, userId, rolled) {
+  if (_rolledHereRoundId !== roundId) forgetRolledHere();
+  _rolledHereRoundId = roundId;
+  _rolledHere.set(userId, rolled);
+}
+
+/** This client's own roll of a round's entry, or null (rolled elsewhere, or before a reload). */
+const rolledHere = (roundId, userId) => (_rolledHereRoundId === roundId ? _rolledHere.get(userId) ?? null : null);
 
 /**
  * Move the open round on as far as it can go now — resolve it once every
@@ -550,11 +568,26 @@ export function advanceRound(reason = "advance") {
       } while (_advanceAgain && guard < 50);
     } catch (err) {
       console.error(`${MODULE_ID} | Batch Mode: the round could not go on:`, err);
+      tellRoundStopped();
     } finally {
       _advancing = null;
     }
   })();
   return _advancing;
+}
+
+/**
+ * The advance pass stopped while the round was being resolved — a step the
+ * world did not save: the GMs are told, with the way on (Send now runs the
+ * pass again; a recorded entry is never rolled again, a posted round card
+ * never narrated again). It used to say nothing, and nothing re-entered the
+ * pass short of a reload (issue #342 Z18). Never throws.
+ */
+function tellRoundStopped() {
+  if (!isResolving(getStoredRound())) return;
+  tellGms("Batch Mode — the round stopped",
+    "The round stopped while it was being resolved: the world did not save a step of it. Press Send now in the Round window to try again.",
+    { batchRoundStoppedNotice: true });
 }
 
 /** One step. @returns {Promise<boolean>} whether the round moved (another pass is due) */
@@ -585,9 +618,11 @@ async function advanceOnce() {
  * A GM pressed Send now: resolve the round at once, with whoever acted.
  * Anyone who hasn't submitted is simply not in it; a reading still running
  * is waited for, and a reading not yet confirmed is used as read. During the
- * upgrade step it means Keep for everyone still deciding. The resolution
- * itself runs on the advance pass, never inside the relay handler that asked
- * (its rolls and narration must not hold the GM relay queue).
+ * upgrade step it means Keep for everyone still deciding; while the round
+ * rolls or narrates it runs the advance pass again, for a round a refused
+ * step stopped (issue #342 Z18). The resolution itself runs on the advance
+ * pass, never inside the relay handler that asked (its rolls and narration
+ * must not hold the GM relay queue).
  *
  * With `modeOffAfter` (the toolbar's switch, or its "Send now, then turn off"
  * for a collecting round), Batch Mode turns off once the round is done. A
@@ -610,7 +645,12 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
     advanceRound("send-now");
     return { ok: true };
   }
-  if (round.phase !== ROUND_PHASE.COLLECTING) return { ok: true, reason: "resolving" };
+  if (round.phase !== ROUND_PHASE.COLLECTING) {
+    // Rolling or narrating: the round goes on — a pass a refused step stopped
+    // runs again (a pass already running just goes round once more).
+    advanceRound("send-now");
+    return { ok: true, reason: "resolving" };
+  }
   if (isXCardActive(null)) return { ok: false, reason: "x-card" };
   const unread = readingsInFlight(round);
   const keyed = (() => { try { return !!game.settings.get(MODULE_ID, "claudeApiKey"); } catch { return false; } })();
@@ -738,14 +778,20 @@ async function rollEntry(round, entry) {
   const userId = entry.userId;
   const reading = entry.reading;
 
-  // Rolled before a reload, its record not known: never rolled again.
+  // Rolled already, its record not known to the round: never rolled again. A
+  // roll this client made and recorded (the round's own write of it refused)
+  // takes its record as made; one from before a reload is reported.
   const card = entry.rolled?.cardId ? game.messages?.get?.(entry.rolled.cardId) : roundResultCard(round.id, userId);
   if (entry.status === ENTRY_STATUS.ROLLED || card) {
-    await tellGms("Batch Mode — a move may be incomplete",
-      `${escapeHtml(entry.actorName)}'s move was rolled before the GM resolving the round went away, and its result may not have been recorded. Check its card; the round goes on without rolling it again.`,
-      { batchIncompleteNotice: true });
-    await queueRoundWrite(r => markRecorded(r, {
-      userId, recordedAt: nowIso(), narrationInput: entry.rolled?.narrationInput ?? { kind: "narrative" },
+    const here = rolledHere(round.id, userId);
+    if (!here || !_recordedHere.has(userId)) {
+      await tellGms("Batch Mode — a move may be incomplete",
+        `${escapeHtml(entry.actorName)}'s move was rolled before the round stopped, and its result may not have been recorded. Check its card; the round goes on without rolling it again.`,
+        { batchIncompleteNotice: true });
+    }
+    const rolledInfo = here ? rolledInfoFrom(here) : null;
+    await queueRoundWrite(r => markRecorded(rolledInfo ? markRolled(r, { userId, rolled: rolledInfo }) : r, {
+      userId, recordedAt: nowIso(), narrationInput: rolledInfo?.narrationInput ?? entry.rolled?.narrationInput ?? { kind: "narrative" },
     }));
     return;
   }
@@ -783,15 +829,26 @@ async function rollEntry(round, entry) {
     }));
     return;
   }
-  const { resolution, relevance, moveResultMessage } = rolled;
-  await queueRoundWrite(r => markRolled(r, { userId, rolled: {
-    resolutionId: resolution._id ?? null, cardId: moveResultMessage?.id ?? null,
-    moveId: resolution.moveId, outcome: resolution.outcome, isMatch: resolution.isMatch === true,
-    narrationInput: narrationInputFrom(resolution, relevance),
-  } }));
-  _rolledHere.set(userId, rolled);
+  const rolledInfo = rolledInfoFrom(rolled);
+  noteRolledHere(round.id, userId, rolled);
+  // The round's bookkeeping never gates the move's own record: a refused
+  // "rolled" stamp is carried by the "recorded" one. It used to throw before
+  // recordMove — the move's meters and record lost, the round stuck rolling
+  // (issue #342 Z18).
+  await queueRoundWrite(r => markRolled(r, { userId, rolled: rolledInfo })).catch(err =>
+    console.warn(`${MODULE_ID} | Batch Mode: ${entry.actorName}'s roll was not saved on the round — recording the move all the same:`, err?.message ?? err));
   await recordMove(rolled, campaignState);
-  await queueRoundWrite(r => markRecorded(r, { userId, recordedAt: nowIso() }));
+  _recordedHere.add(userId);
+  await queueRoundWrite(r => markRecorded(markRolled(r, { userId, rolled: rolledInfo }), { userId, recordedAt: nowIso() }));
+}
+
+/** What the round keeps of a rolled move (markRolled): its card, outcome and narration input. */
+function rolledInfoFrom({ resolution, relevance, moveResultMessage }) {
+  return {
+    resolutionId: resolution?._id ?? null, cardId: moveResultMessage?.id ?? null,
+    moveId: resolution?.moveId ?? null, outcome: resolution?.outcome ?? null, isMatch: resolution?.isMatch === true,
+    narrationInput: narrationInputFrom(resolution, relevance),
+  };
 }
 
 /**
@@ -997,7 +1054,7 @@ function roundNarrationPosted(roundId) {
 async function finishRound(round, reason) {
   const closed = await closeRoundHere(round, reason);
   if (!closed) {
-    _rolledHere.clear();
+    forgetRolledHere();
     return false;
   }
   if (closed.modeOffAfter) {
@@ -1007,8 +1064,8 @@ async function finishRound(round, reason) {
     await openRoundIfDue("next-round");
   }
   const cs = workingCopy();
-  const moves = (closed.acting ?? []).map(id => rolledFor(closed.entries[id])).filter(Boolean);
-  _rolledHere.clear();
+  const moves = (closed.acting ?? []).map(id => rolledFor(closed.id, closed.entries[id])).filter(Boolean);
+  forgetRolledHere();
   afterTheRound(async () => {
     for (const rolled of moves) {
       await finishMove(rolled, cs).catch(err => console.warn(`${MODULE_ID} | Batch Mode: consequence riders failed:`, err?.message ?? err));
@@ -1065,11 +1122,11 @@ function runHeldMovesSoon() {
  * and the reading's riders — so a round resumed after a reload still finishes
  * its moves.
  */
-function rolledFor(entry) {
+function rolledFor(roundId, entry) {
   if (entry?.status !== ENTRY_STATUS.RECORDED) return null;
   const input = entry.rolled?.narrationInput;
   if (input?.kind !== "move") return null;
-  const here = _rolledHere.get(entry.userId);
+  const here = rolledHere(roundId, entry.userId);
   const resolution = { ...(here?.resolution ?? {}), _id: entry.rolled.resolutionId ?? here?.resolution?._id ?? null,
     moveId: input.moveId, outcome: input.outcome, isMatch: input.isMatch === true };
   const interpretation = here?.interpretation ?? { extractedRiders: entry.reading?.interpretation?.extractedRiders ?? [] };
