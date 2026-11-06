@@ -273,7 +273,9 @@ export async function seedFactionRecord(journalEntryId) {
  * factions compete for the cap on that time: in creation order a campaign's
  * first four records held it for good, and no newer faction ever reached
  * [4e] (issue #342 Z13). Equal times keep the input order (records, then the
- * World Journal's). Pure — exported for unit testing.
+ * World Journal's). A record whose stance is still `unknown` shows the one
+ * its World Journal attitude maps to (ATTITUDE_TO_RELATIONSHIP). Pure —
+ * exported for unit testing.
  *
  * @param {Array<Object>} records   — faction entity records (listFactions)
  * @param {Array<Object>} wjEntries — WJ faction entries (getFactionLandscape),
@@ -315,6 +317,12 @@ export function mergeFactionLandscape(records, wjEntries, cap = 4) {
     if (hit) {
       // The record's line; the later of the two times.
       if (at.localeCompare(hit.at) > 0) hit.at = at;
+      // A record with no stance yet takes the one its World Journal attitude
+      // maps to — the stance a reconcile gives it. The world load lists a
+      // faction whose Confirm's registration was refused, bare, and its
+      // record hid the stance the narration had given it (issue #342 Z60).
+      const mapped = ATTITUDE_TO_RELATIONSHIP[String(e.attitude ?? "").toLowerCase()];
+      if (!hit.line.stance && mapped) hit.line.stance = mapped.replace(/_/g, " ");
       continue;
     }
     byKey.set(key, {

@@ -60,7 +60,16 @@ second (`registry.adoptUnlistedEntityJournal`, a creature's creator likewise),
 and the canonical GM's world load lists a faction or creature journal its list
 misses (`migrator.registerUnlistedEntityActors` — known-issues
 JOURNAL-ORPHAN-ON-REFUSAL: a retried Confirm made a second journal, the first
-left unlisted and never seeded). Read by the relevance resolver → ENTITIES IN SCENE cards
+left unlisted and never seeded). That listing lists the record bare, so a
+Confirm that then finds the faction listed (U25's "exists" path) finishes it
+— the seed, the stance reconcile and the backlinked World Journal mirror its
+creation would have run, each a no-op once done
+(`entityExtractor.completeListedEntity` → `reconcileConfirmedFaction` /
+`mirrorConfirmedFaction`, the creation's own two steps); and until something
+reconciles a record whose stance is still `unknown`, [4e] shows the stance its
+World Journal attitude maps to (issue #342 Z60 — the bare record hid the
+hostile stance the narration had given it, and the retried Confirm only marked
+the row). Read by the relevance resolver → ENTITIES IN SCENE cards
 (`formatEntityCard` has a faction field table including `relationship`) and
 the entity panel (which shows `relationship` as a label and edits no record
 field — the GM's manual stance correction is `!journal faction "Name"

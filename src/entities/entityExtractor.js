@@ -1234,28 +1234,40 @@ export function entityExistsForName(name, type, campaignState) {
 }
 
 /**
- * The listed connection record a name names, by entityExistsForName's rule
- * (normalizeEntityName — a title aside), a record of exactly that name
- * first. null when none.
+ * The listed record of a type a name names, by entityExistsForName's rule
+ * (normalizeEntityName — a title aside; a faction by findFactionByName
+ * first), a record of exactly that name first. null when none.
  *
+ * @param {string} type — an entity type (connection, faction, ship, …)
  * @param {string} name
  * @param {Object} campaignState
  * @returns {Object|null}
  */
-function listedConnectionNamed(name, campaignState) {
-  const exact  = String(name ?? "").trim().toLowerCase();
-  const target = normalizeEntityName(name);
-  if (!target) return null;
+function listedRecordNamed(type, name, campaignState) {
+  if (type === "faction") {
+    const hit = findFactionByName(name, campaignState);
+    if (hit) return hit.faction;
+  }
+  const idsField = ENTITY_ID_FIELDS[type];
+  const getter   = ENTITY_GETTERS[type];
+  const exact    = String(name ?? "").trim().toLowerCase();
+  const target   = normalizeEntityName(name);
+  if (!idsField || !getter || !target) return null;
   let same = null;
-  for (const id of campaignState?.connectionIds ?? []) {
+  for (const id of campaignState?.[idsField] ?? []) {
     let rec = null;
-    try { rec = getConnection(id); }
+    try { rec = getter(id); }
     catch { continue; }
     if (!rec?.name) continue;
     if (rec.name.trim().toLowerCase() === exact) return rec;
     if (!same && normalizeEntityName(rec.name) === target) same = rec;
   }
   return same;
+}
+
+/** The listed connection record a name names (listedRecordNamed). */
+function listedConnectionNamed(name, campaignState) {
+  return listedRecordNamed("connection", name, campaignState);
 }
 
 /**
@@ -1892,6 +1904,11 @@ async function confirmDraft(message, draftIndex, opts = {}) {
       }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     }
+
+    // The rest of what its creation does, each step a no-op once done: a
+    // refused Confirm whose record the world load listed died before them
+    // (issue #342 Z60).
+    await completeListedEntity(draft, campaignState);
     await setDraftStatus(message, draftIndex, "confirmed");
     return null;
   }
@@ -1952,25 +1969,12 @@ async function confirmDraft(message, draftIndex, opts = {}) {
       // faction oracles — previously factions were created bare (name +
       // description) and frozen there (FACTION-DUAL-STORE /
       // FACTION-RECORD-WRITE-ONCE).
-      const wjEntry = getFactionEntry(draft.name);
       record = await creator({
         name:                      draft.name,
         description:               draft.description ?? "",
         portraitSourceDescription: draft.description ?? "",
       }, campaignState);
-      try {
-        const hit = findFactionByName(draft.name, campaignState);
-        if (hit) {
-          await seedFactionRecord(hit.id);
-          if (wjEntry?.attitude && wjEntry.attitude !== "unknown") {
-            await applyAttitudeToFactionRecord(draft.name, wjEntry.attitude, campaignState);
-          }
-          // Backlink the WJ intelligence entry to the record (also re-syncs).
-          await recordFactionIntelligence(draft.name, { entityId: hit.id }, campaignState);
-        }
-      } catch (err) {
-        console.warn(`${MODULE_ID} | draft confirm: faction reconcile/seed failed:`, err?.message ?? err);
-      }
+      await reconcileConfirmedFaction(draft.name, campaignState);
     } else {
       record = await creator({
         name:                      draft.name,
@@ -1991,25 +1995,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   if (record) {
     await postCreationEnrichment(draft.type, record, campaignState);
 
-    // Mirror a confirmed faction into the World Journal — Factions page so it
-    // lands as established lore. The WJ faction loop (routeWorldJournalResults)
-    // skips any faction that already has an entity record, so without this the
-    // entity and the journal stay disconnected and the Factions page stays
-    // empty (playtest finding).
-    // No attitude: the entry keeps the one the narration established (a new
-    // entry starts "unknown"); the backlink is the host id, as the reconcile
-    // above writes it. Passing attitude "unknown" overwrote a known attitude,
-    // and record._id re-pointed the backlink (issue #321 U28).
-    if (draft.type === "faction") {
-      try {
-        await recordFactionIntelligence(draft.name, {
-          summary:  draft.description ?? "",
-          entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
-        }, campaignState);
-      } catch (err) {
-        console.warn(`${MODULE_ID} | draft confirm: faction World Journal mirror failed:`, err?.message ?? err);
-      }
-    }
+    if (draft.type === "faction") await mirrorConfirmedFaction(draft, campaignState);
 
     // Promote any free-text fact-continuity ledger entries that were
     // captured against this name into entity-scoped entries pointing at
@@ -2024,6 +2010,99 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   if (isNarrationXCarded(opts.narrationId)) return null;
   await setDraftStatus(message, draftIndex, "confirmed");
   return record;
+}
+
+/**
+ * What a confirmed faction's creation makes of its record, each step a no-op
+ * once done (FACTION-RECORD-WRITE-ONCE / FACTION-DUAL-STORE): the Starforged
+ * faction oracles rolled (`seedFactionRecord` — once, by its `seeded` flag),
+ * the stance the narration gave it on the World Journal taken as the record's
+ * canonical one, and that entry backlinked to the record's host id (which
+ * re-syncs the stance) unless it already links it. The creation runs it, and
+ * a Confirm that finds the faction already listed (completeListedEntity).
+ * Never throws.
+ *
+ * @param {string} name
+ * @param {Object} campaignState
+ * @returns {Promise<void>}
+ */
+async function reconcileConfirmedFaction(name, campaignState) {
+  try {
+    const hit = findFactionByName(name, campaignState);
+    if (!hit) return;
+    await seedFactionRecord(hit.id);
+    const wjEntry = getFactionEntry(name);
+    if (wjEntry?.attitude && wjEntry.attitude !== "unknown") {
+      await applyAttitudeToFactionRecord(name, wjEntry.attitude, campaignState);
+    }
+    if (wjEntry?.entityId !== hit.id) {
+      await recordFactionIntelligence(name, { entityId: hit.id }, campaignState);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | draft confirm: faction reconcile/seed failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Mirror a confirmed faction into the World Journal — Factions page so it
+ * lands as established lore. The WJ faction loop (routeWorldJournalResults)
+ * skips any faction that already has an entity record, so without this the
+ * entity and the journal stay disconnected and the Factions page stays empty
+ * (playtest finding). No attitude: the entry keeps the one the narration
+ * established (a new entry starts "unknown"); the backlink is the host id, as
+ * the reconcile writes it. Passing attitude "unknown" overwrote a known
+ * attitude, and record._id re-pointed the backlink (issue #321 U28). Never
+ * throws.
+ *
+ * @param {Object} draft — the confirmed row (`name`, `description`)
+ * @param {Object} campaignState
+ * @returns {Promise<void>}
+ */
+async function mirrorConfirmedFaction(draft, campaignState) {
+  try {
+    await recordFactionIntelligence(draft.name, {
+      summary:  draft.description ?? "",
+      entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
+    }, campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | draft confirm: faction World Journal mirror failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Finish an entity a draft Confirm found already listed (issue #342 Z60). A
+ * Confirm whose registration the world refused leaves its record unlisted,
+ * and the canonical GM's world load lists it
+ * (migrator.registerUnlistedEntityActors) — so the retried Confirm took the
+ * "exists" path, and nothing the refused one died before ever ran: a faction
+ * stayed unseeded, without the stance the narration gave it and unlinked from
+ * its World Journal entry. The creation's later steps run here, each a no-op
+ * once done, so a Confirm whose card write was lost (issue #321 U25) changes
+ * nothing: a faction's seed and stance reconcile (reconcileConfirmedFaction)
+ * and its World Journal mirror while the entry does not link the record yet;
+ * the portrait, for a record with none; the ledger facts recorded under its
+ * name promoted to it. (A connection's bond is the caller's.) Never throws.
+ *
+ * @param {Object} draft — the row (`type`, `name`, `description`)
+ * @param {Object} campaignState
+ * @returns {Promise<void>}
+ */
+async function completeListedEntity(draft, campaignState) {
+  try {
+    const record = listedRecordNamed(draft.type, draft.name, campaignState);
+    if (!record) return;
+    let mirror = false;
+    if (draft.type === "faction") {
+      const hit = findFactionByName(draft.name, campaignState);
+      mirror = !!hit && getFactionEntry(draft.name)?.entityId !== hit.id;
+      await reconcileConfirmedFaction(draft.name, campaignState);
+    }
+    if (!record.portraitId) await postCreationEnrichment(draft.type, record, campaignState);
+    if (mirror) await mirrorConfirmedFaction(draft, campaignState);
+    await promoteNewEntityLedgerSubjects(draft.name, draft.type, record, campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | draft confirm: finishing the listed ${draft.type} "${draft.name}" failed:`, err?.message ?? err);
+  }
 }
 
 /**
