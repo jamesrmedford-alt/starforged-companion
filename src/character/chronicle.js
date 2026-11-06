@@ -311,7 +311,7 @@ async function writeChronicleNow(actorId, mutate, { create = false } = {}) {
     if (created) journals = [created];
   }
   const [journal, ...others] = journals;
-  const page = journal?.pages?.contents?.[0];
+  const page = journal?.pages?.contents?.[0] ?? await completeChroniclePage(journal);
   if (!page) return false;
 
   const next = mutate(readEntries(journals));
@@ -373,14 +373,39 @@ async function createChronicleJournal(actorId) {
     });
 
     if (journal) {
-      await journal.createEmbeddedDocuments('JournalEntryPage', [
-        { name: 'Chronicle', type: 'text', flags: { [MODULE_ID]: { [CHRONICLE_KEY]: [] } } },
-      ]);
+      await journal.createEmbeddedDocuments('JournalEntryPage', [chroniclePageData()]);
     }
 
     return journal ?? null;
   } catch (err) {
     console.error(`${MODULE_ID} | chronicle: failed to create chronicle journal`, err);
+    return null;
+  }
+}
+
+/** A Chronicle journal's one page, as its creation makes it: no entries yet. */
+function chroniclePageData() {
+  return { name: 'Chronicle', type: 'text', flags: { [MODULE_ID]: { [CHRONICLE_KEY]: [] } } };
+}
+
+/**
+ * The page of a Chronicle journal that has none: a creation whose page the
+ * world refused after the journal landed leaves the journal, flagged for its
+ * actor, and every later write found it by that flag, saw no page and saved
+ * nothing — no automatic entry, no panel add, for good (issue #342 Z62). The
+ * next write completes the creation (rules/reachability.md §7), never makes a
+ * second journal. null when there is no journal or the page is refused again.
+ *
+ * @param {JournalEntry|undefined} journal
+ * @returns {Promise<JournalEntryPage|null>}
+ */
+async function completeChroniclePage(journal) {
+  if (!journal) return null;
+  try {
+    const created = await journal.createEmbeddedDocuments('JournalEntryPage', [chroniclePageData()]);
+    return (Array.isArray(created) ? created[0] : created) ?? journal.pages?.contents?.[0] ?? null;
+  } catch (err) {
+    console.error(`${MODULE_ID} | chronicle: failed to add the missing page to "${journal.name}"`, err);
     return null;
   }
 }
