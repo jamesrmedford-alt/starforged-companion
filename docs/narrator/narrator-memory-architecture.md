@@ -185,6 +185,12 @@ CLAUDE.md "audit consumers" rule):
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
   3) — a published reflection shows there too
+- the Batch Mode Round window's "Latest narration" (`src/ui/roundWindow.js`
+  `newestNarration`, issue #340) — the session's newest narrator card that is
+  no fallback, not burn-superseded and not X-carded: by the card's `xCarded`
+  flag and by the stored `xCardedNarrationIds` (`isNarrationXCarded`), which
+  the X-Card's pause write names before the flag lands; its `refresh`
+  compares the narration as well as the view (issue #342 Z32)
 
 **Knob:** `narratorContextCards` (world, 1–50, default 20; Narrator pane).
 @scene keeps its own `sceneContextCards`.

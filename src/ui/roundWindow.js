@@ -45,6 +45,7 @@ import { relayCardButtonClick, RELAY_RECOVERY_MS } from "../moves/burnMomentum.j
 import { renderMoveAbilitiesForm, readMoveAbilitiesForm } from "./settingsPanel.js";
 import { isXCardActive } from "../narration/narrator.js";
 import { sanitizePlayerText } from "../narration/narratorPrompt.js";
+import { isNarrationXCarded } from "../context/safety.js";
 import { isSessionActive } from "../session/lifecycle.js";
 import { moveDisplayName, localizeStat } from "../system/i18n.js";
 
@@ -61,14 +62,20 @@ const RELAY_FAILURES = {
   "no-gm": "No GM is connected, so this wasn't saved. Your action is kept here — try again once a GM has joined.",
 };
 
-/** The newest narration of this session (the window shows it, collapsible). */
+/**
+ * The newest narration of this session (the window shows it, collapsible) —
+ * never one the X-Card removed: its card's `xCarded` flag lands after the
+ * pause's own write, which already names it (`xCardedNarrationIds`,
+ * isNarrationXCarded), and the window re-renders on that write (issue #342
+ * Z32; decisions.md "The X-Card forgets what it answered").
+ */
 function newestNarration() {
   let sessionId = null;
   try { sessionId = game.settings.get(MODULE_ID, "campaignState")?.currentSessionId ?? null; }
   catch { sessionId = null; }
   const cards = (game.messages?.contents ?? []).filter(m => {
     const f = m?.flags?.[MODULE_ID];
-    return f?.narratorCard && !f.narrationFallback && !f.xCarded && !f.burnSuperseded
+    return f?.narratorCard && !f.narrationFallback && !f.xCarded && !isNarrationXCarded(f.narrationId) && !f.burnSuperseded
       && (!sessionId || f.sessionId === sessionId) && typeof f.narrationText === "string" && f.narrationText.trim()
       && !(Array.isArray(m.whisper) && m.whisper.length);
   });
@@ -173,7 +180,7 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     const { view } = context;
     const root = document.createElement("div");
     root.className = "sf-round-body";
-    this.#lastViewJson = JSON.stringify(view);
+    this.#lastViewJson = renderKey(context);
 
     const parts = [];
     parts.push(`<header class="sf-round-header"><strong>${view.number ? `Round ${escapeHtml(String(view.number))}` : "Round"}</strong>`
@@ -402,11 +409,15 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     await this.refresh();
   }
 
-  /** Re-render when what the window shows has changed. */
+  /**
+   * Re-render when what the window shows has changed — the view, and the
+   * latest narration (a card posted, or removed by the X-Card, while the
+   * window is open).
+   */
   async refresh() {
     if (!this.rendered) return;
     const context = await this._prepareContext({});
-    if (JSON.stringify(context.view) === this.#lastViewJson) return;
+    if (renderKey(context) === this.#lastViewJson) return;
     await this.render();
   }
 
@@ -632,6 +643,11 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     this.#recentOpen = !this.#recentOpen;
     await this.render();
   }
+}
+
+/** What a render shows that its view can change: the view model and the latest narration. */
+function renderKey(context) {
+  return JSON.stringify({ view: context?.view ?? null, recent: context?.recent ?? "" });
 }
 
 /**
