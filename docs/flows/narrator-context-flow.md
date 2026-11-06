@@ -398,7 +398,10 @@ calls carries the ring (`getRecentNarrationContext`); since issue #286 (B1)
 move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
 `narratorContextCards`). Each entry leads with the player's line that
 prompted it (`PLAYER — <name> wrote: "…"`, B5): move and paced cards store
-`playerText` + `playerName`, @scene answers `sceneQuestion` + `playerName`.
+`playerText` + `playerName`, @scene answers `sceneQuestion` + `playerName`. A
+paced line from a player with no character of their own at a table of several
+is narrated with no character — no CHARACTER block, no speaker, `playerName`
+null ("Player") — never as the campaign's first PC (issue #342 Z50).
 The rolling summary reads the same entries (`ringEntryText`), so what a
 player wrote reaches it too. Both read the session's cards through
 `sessionNarratorCards`, which leaves out a "narration unavailable" card

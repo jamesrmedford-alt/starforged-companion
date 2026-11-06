@@ -3116,7 +3116,13 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     return null;
   }
 
-  const character    = getActiveCharacter(campaignState, options?.speakerActorId);
+  // The speaker's own character. A player with no PC of their own at a table
+  // of several resolves to none (resolveSpeakerActorId gives the first PC
+  // only to a GM or in solo play — issue #321 U23): the line is still
+  // narrated (#326 D8) but with no character — getActiveCharacter's
+  // first-PC fallback made it Kira's CHARACTER block, Kira speaking, and the
+  // ring's "Kira wrote" (issue #342 Z50).
+  const character    = options?.speakerActorId ? getActiveCharacter(campaignState, options.speakerActorId) : null;
   await ensureSceneStarted(campaignState, 'first_narration_paced');
 
   // Don't suggest a social move against a fellow player character (finding G):
