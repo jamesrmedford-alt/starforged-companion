@@ -289,6 +289,7 @@ export async function forgeBond(journalEntryId, options = {}) {
     updates.secondRole = options.secondRole;
   }
 
+  const connection = getConnection(journalEntryId);
   const updated = await updateConnection(journalEntryId, updates);
 
   await addHistoryEntry(
@@ -296,6 +297,21 @@ export async function forgeBond(journalEntryId, options = {}) {
     `Bond forged.${options.secondRole ? ` Second role: ${options.secondRole}.` : ""}`,
     options.sessionId
   );
+
+  // The bond Items mirror the record (BOND-ITEM-MIRROR): the forge is written
+  // through as the vendor's `completed` — the sheet's forged bond — as ticks,
+  // rank and a loss are, so CHARACTER STATE says the bond is forged (issue
+  // #342 Z57: only the record changed). Best-effort — the record stays the
+  // source of truth. Dynamic import avoids an actorBridge cycle.
+  try {
+    const { setBondItemForged } = await import("../character/actorBridge.js");
+    await setBondItemForged(
+      { connectionId: updated?._id ?? connection?._id ?? journalEntryId, name: updated?.name ?? connection?.name ?? null },
+      true,
+    );
+  } catch (err) {
+    console.warn(`${MODULE_ID} | bond item forge mirror failed:`, err?.message ?? err);
+  }
 
   return updated;
 }

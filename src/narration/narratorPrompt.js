@@ -2462,8 +2462,10 @@ function buildCharacterBlock(character) {
   const connections = Array.isArray(character.connections) ? character.connections : [];
   const held = connections.filter(c => c?.lost !== true);
   const lost = connections.filter(c => c?.lost === true);
+  // A bond Item marked complete is a forged bond (setBondItemForged — the
+  // vendor sheet's own reading), not a fulfilled quest (issue #342 Z57).
   if (held.length) {
-    lines.push(`Connections: ${held.map(c => `${c.name} (${formatTrackDetail(c)})`).join('; ')}`);
+    lines.push(`Connections: ${held.map(c => `${c.name} (${formatTrackDetail(c, 'bonded')})`).join('; ')}`);
   }
   if (lost.length) {
     lines.push(`Connections lost (severed — no longer a bond): ${lost.map(c => c.name).join('; ')}`);
@@ -2480,12 +2482,16 @@ function buildCharacterBlock(character) {
   return lines.join('\n');
 }
 
-/** A vow's or bond's rank, progress boxes, countdown clock and fulfilment, for the CHARACTER block. */
-function formatTrackDetail(track) {
+/**
+ * A vow's or bond's rank, progress boxes, countdown clock and completion, for
+ * the CHARACTER block — `done` names what a completed track is: a vow
+ * "fulfilled", a bond "bonded".
+ */
+function formatTrackDetail(track, done = 'fulfilled') {
   const bits = [track.rank];
   if (Number.isFinite(track.progress)) bits.push(`progress ${track.progress}/10`);
   if (Number(track.clock?.max) > 0)    bits.push(`clock ${Number(track.clock.ticks) || 0}/${track.clock.max}`);
-  if (track.completed === true)        bits.push('fulfilled');
+  if (track.completed === true)        bits.push(done);
   return bits.filter(Boolean).join(', ');
 }
 

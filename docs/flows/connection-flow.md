@@ -20,7 +20,9 @@ mirrors `relationshipTicks` onto the bond Items (`setBondItemTicks`), so the
 two stay in step; `loseConnection` (`!sever`) writes the record's
 `active: false` through as `flags[MODULE].lost` (`setBondItemLost` — issue
 #330 D10; a module flag, not the vendor's `completed`, which the sheet shows
-as a forged bond). The Items are keyed by the record's `_id`
+as a forged bond); and `forgeBond` writes `bonded: true` through as that
+`completed` (`setBondItemForged` — issue #342 Z57: the forge reached the
+record only, so the sheet and CHARACTER STATE never showed the bond). The Items are keyed by the record's `_id`
 (`flags[MODULE].connectionId`, written by every creator) and matched by it
 alone (`actorBridge.bondItemsFor`); the name reaches only an Item with no
 key, and only the PC's one of that name — a same-named sibling's Item is
@@ -258,7 +260,8 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
 `relationshipTicks` via `enrichProgressTicks` (see `decisions.md`). On a
 **hit — strong or weak** (BOND-WEAK-FORGE fix; the weak hit forges too, with
 their request in the fiction) the pipeline branch flips the record
-(`forgeBond`: `bonded`, `allyFlag`, optional second role, history entry),
+(`forgeBond`: `bonded`, `allyFlag`, optional second role, history entry,
+and every PC's bond Item marked forged — `setBondItemForged`),
 marks rank-scaled bonds-legacy ticks (`legacyRewardTicks`), and posts the
 forge card; a sheet-rolled forge pays the same way via the native consequence
 hook (`shouldForgeBond` into `payForgedBondNative`, idempotent —
@@ -324,7 +327,8 @@ renders every turn, lists a lost connection apart from the reuse-first cast,
 the initial one (`formatSectorNpcProfile` — issue #325 W37: it offered a
 severed NPC as friendly cast); CHARACTER STATE shows each bond's
 progress and its rank by name (`readConnections` maps the vendor's numeric
-rank through `rankName` — issue #321 U62), and a severed one apart, under
+rank through `rankName` — issue #321 U62), a forged one as "bonded" (the
+Item's `completed`, issue #342 Z57 — it read "fulfilled", a vow's word), and a severed one apart, under
 "Connections lost" (`readConnections`' `lost` — issue #330 D10). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
 bond's Item as history. `background` and `secrets` have no production writer, so neither

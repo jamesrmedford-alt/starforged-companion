@@ -1015,6 +1015,30 @@ export async function setBondItemLost(keys = {}, lost = true) {
 }
 
 /**
+ * Mirror a forged bond onto each PC's bond Item: the record's `bonded: true`
+ * (Forge a Bond's hit, connection.forgeBond) written through as the vendor's
+ * `system.completed` — what the sheet renders as a forged bond (issue #330
+ * D10) and CHARACTER STATE reads (readConnections → "bonded"). The forge was
+ * the one change of the record's bond state the mirror never saw (issue #342
+ * Z57). Same matching as setBondItemTicks (bondItemsFor).
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys
+ * @param {boolean} [forged=true]
+ * @returns {Promise<number>} how many items were updated
+ */
+export async function setBondItemForged(keys = {}, forged = true) {
+  let updated = 0;
+  for (const { actor, item } of bondItemsFor(keys)) {
+    if ((item.system?.completed === true) === forged) continue;
+    await item.update({ "system.completed": forged }).catch(err =>
+      console.warn(`actorBridge | setBondItemForged failed:`, err?.message ?? err));
+    invalidateActorCache(actor.id);
+    updated++;
+  }
+  return updated;
+}
+
+/**
  * Delete the bond Items keyed to one connection, across every PC — unless the
  * table has marked one (a tick, a forged bond, a loss), which is a use of the
  * connection: then none is deleted and `marked` is true. Only Items keyed by
