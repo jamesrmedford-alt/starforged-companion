@@ -6,6 +6,8 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+## [1.7.36] — 2026-11-05
+
 - Fixed: **When the X-Card is played just after a narration, nothing more is recorded from it** (XCARD-LATE-CAPTURE). The detection that runs a moment after a narration could still record lore, new-character drafts, NPC details, faction entries or a connection from the removed narration after the X-Card.
 - Fixed: **A fact the GM struck is no longer named to the narrator after the X-Card removes the narration it came from** (XCARD-AFTER-STRIKE-STILL-NAMED). Re-setting it with `!truth set` no longer brings back what the strike removed either.
 - Fixed: **The X-Card on a Make a Connection that named an NPC already waiting on a draft card removes that connection** (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). While nobody has used it, it goes, and the draft goes back on the GM's card for review.

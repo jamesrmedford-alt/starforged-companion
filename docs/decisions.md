@@ -6,6 +6,74 @@ rejected.
 
 ---
 
+## Batch Mode: opt-in rounds, read in the player's window, narrated once (2026-11)
+
+**Decision:** Scope [#340](https://github.com/jamesrmedford-alt/starforged-companion/issues/340)
+(PLANNED). An opt-in **Batch Mode**, which a GM turns on from the Companion toolbar,
+gathers every player's action into a round. Each player gets a window asking for
+their character's action, and may pass. The round resolves when everyone is ready, or
+when a GM presses **Send now** because someone is away. Each move is then rolled for
+its roller, and the narrator tells the whole round once. The maintainer's choices
+(2026-11-05):
+- **The reading is confirmed in the player's own window.** The canonical GM reads a
+  submission in the background: pacing, interpretation, asset abilities, any
+  which-track pick. The player confirms it there. No confirm dialog opens on the GM's
+  screen during a round.
+- **Burn Momentum and Improve Result are decided before the round is narrated**, in
+  the roller's window: the rulebook's order. The round waits for those rollers, and
+  Send now counts as Keep. The move lock is free during that wait (an interactive
+  prompt never holds it — "Move-concurrency lock covers narration + persistence, not
+  post-roll prompts", below).
+- **Players see each other's status and submitted text** until the round resolves,
+  so the crew can coordinate.
+- **Chat is table talk while the mode is on.** A typed line isn't narrated; its author
+  is told, and the line becomes an unsent draft in their window. Commands are
+  unchanged.
+
+Defaulted while scoping (the issue lists them all; revisit on request): rounds open
+by themselves while a session is active; participants are connected users with a PC
+of their own, and a GM only with an assigned PC; one action per player per round; a
+disconnected participant counts as away; entries roll and are narrated in confirm
+order; a card button's move joins the round as its roller's entry; under the X-Card a
+round doesn't resolve; the narration is a new mode, `round_resolution`, outside the
+spotlight modes; the round state is its own world setting (`batchMode.round`), not a
+`campaignState` field.
+
+**Relation to "Multiplayer spotlight is implied by narration" (2026-06-26).** That
+decision rejected submit gating as the way multiplayer play works. It still holds
+for free-flow play, which stays the default. Batch Mode is a structure a table
+chooses, off by default. While it is on, the spotlight nudge doesn't apply, because
+every PC is asked each round.
+
+**Reason:** in free-flow play, lines arrive one at a time and the move lock serialises
+them invisibly. A line typed during another player's move is dropped
+(MOVE-BUSY-NOTICE, known-issues), and a quieter player's action can land several
+narrations after the scene moved on. Some tables want everyone to act on the same
+moment. One narration per round also tells the crew's actions as one scene, with one
+narrator call instead of one per line.
+
+**Rejected:**
+- *Batch Mode as the default* — the 2026-06 decision's reasons stand for free-flow
+  play.
+- *The GM confirms each reading at resolution* — the GM would click through every
+  move each round, and the "Which fight?" cards would split the round.
+- *Upgrades after the narration, as follow-ups* — one round card covers several
+  players and can't be partly struck, so narrator memory would hold both outcomes of
+  the upgraded action.
+- *Status only* — hides coordination the co-op game wants. The text is in a world
+  setting anyway, so hiding it would be UI-only.
+- *Typed lines submitted as entries* — table talk would be submitted by accident.
+  *Typed lines narrated at once* — defeats the round.
+- *A `campaignState` field for the round* — the move pipeline's merge
+  (`mergeWithLatestState`) would need a policy for it, and the round has one writer.
+- *Reusing `PrivateChannelApp` (its `THREAD` mode)* — a transcript window for side
+  conversations, not a turn form.
+- *A copy of the move pipeline for rounds* — two pipelines would drift apart
+  (`rules/reachability.md` §2). Phase 0 splits `onMessage` into stages that both paths
+  call (#299's move-pipeline item).
+
+---
+
 ## The tenth audit's open items: a capture checks the X-Card before each write, the move lock is its own paths', a card button is its roller's, a taken add carries its cost (2026-11)
 
 **Decision:** (the items recorded as open while fixing issues #335–#338; the
@@ -5513,6 +5581,12 @@ players without taking agency away from anyone.
 - *No setting* — a GM whose table dislikes being called on by name needs an off switch;
   added as `narratorSpotlightRotation` (world, default on), surfaced under Narrator
   settings.
+
+*(2026-11, issue #340: an opt-in Batch Mode is planned, at the maintainer's request.
+It gathers every player's action into a round and narrates the round once. This
+decision still holds for free-flow play, which stays the default; Batch Mode is off
+until a GM turns it on, and the spotlight nudge doesn't apply to its rounds. See
+"Batch Mode: opt-in rounds, read in the player's window, narrated once".)*
 
 ---
 
