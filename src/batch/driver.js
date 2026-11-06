@@ -56,6 +56,8 @@ import {
   finishMove,
   narrationInputFrom,
 } from "../moves/movePipeline.js";
+import { resultUpgradeBlocker } from "../moves/burnMomentum.js";
+import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
 import {
@@ -934,7 +936,10 @@ async function postRefusedCard(round, entry, reading, reason) {
 /**
  * The Burn Momentum / Improve Result offers the round's result cards make —
  * by roller, with the upgraded outcome — for the rollers who have not
- * decided (a card already burned or improved offers nothing).
+ * decided: only an upgrade its card would still take (upgradeOpen). A card
+ * already burned or improved offers nothing, nor one whose consequence was
+ * chosen on its choice card — the round waited on a Burn the card refused
+ * (issue #342 Z27).
  *
  * @param {Object} round
  * @returns {Object<string, { burn: Object|null, improve: Object|null, cardId: string }>}
@@ -944,13 +949,35 @@ function upgradeOffers(round) {
   for (const userId of round?.acting ?? []) {
     const e = round.entries[userId];
     if (e?.status !== ENTRY_STATUS.RECORDED || !e.rolled?.cardId || e.upgrade?.decided) continue;
-    const f = game.messages?.get?.(e.rolled.cardId)?.flags?.[MODULE_ID];
+    const card = game.messages?.get?.(e.rolled.cardId) ?? null;
+    const f = card?.flags?.[MODULE_ID];
     if (!f || f.burn?.consumed || f.improve?.consumed) continue;
-    const burn = f.burn?.canBurn ? { momentum: f.burn.momentum ?? null, previewOutcome: f.burn.previewOutcome ?? null } : null;
-    const improve = f.improve?.canImprove ? { previewOutcome: f.improve.improveTo ?? "strong_hit", label: f.improve.assetName || null } : null;
+    const burn = upgradeOpen(card, "burn") ? { momentum: f.burn.momentum ?? null, previewOutcome: f.burn.previewOutcome ?? null } : null;
+    const improve = upgradeOpen(card, "improve") ? { previewOutcome: f.improve.improveTo ?? "strong_hit", label: f.improve.assetName || null } : null;
     if (burn || improve) offers[userId] = { burn, improve, cardId: e.rolled.cardId };
   }
   return offers;
+}
+
+/**
+ * Whether a move card's Burn Momentum ("burn") or Improve Result ("improve")
+ * can still be pressed — what its GM handler checks (burnMomentum.js
+ * applyBurnFromRelay, improveResult.js applyImproveFromRelay): offered, not
+ * used, not closed (resultUpgradeBlocker: a chosen consequence, a later move,
+ * the round's own close), no later move of the roller's, no choice made on
+ * the outcome's choice card.
+ *
+ * @param {ChatMessage|null} card
+ * @param {"burn"|"improve"} kind
+ * @returns {boolean}
+ */
+function upgradeOpen(card, kind) {
+  const f = card?.flags?.[MODULE_ID];
+  const state = f?.[kind];
+  if (!(kind === "burn" ? state?.canBurn : state?.canImprove) || state.consumed) return false;
+  if (resultUpgradeBlocker(state, f[kind === "burn" ? "improve" : "burn"])) return false;
+  if (laterMoveFollows(card)) return false;
+  return !consequenceChosen(state.resolutionId ?? f.resolutionId ?? null);
 }
 
 /**
@@ -999,14 +1026,27 @@ async function keepUpgrades(userIds) {
  * connected — gone before the step began, or since. Only a leave during the
  * step was kept, so a roller who confirmed and dropped before it kept the
  * round waiting until a GM pressed Send now (issue #342 Z26). Silent, as a
- * pass is.
+ * pass is. So is an offer its card closed since it was made — the roller
+ * chose the consequence on its choice card, which closes Burn and Improve
+ * (issue #311 P03): that choice is the roller's Keep (Z27). A card being
+ * burned or improved is not one: its upgrade decides the entry itself
+ * (acceptRoundUpgrade).
  *
  * @param {Object} round — upgrading
  */
 async function keepUndecidable(round) {
   const connected = new Set(connectedUserIds());
-  const gone = undecidedUpgrades(round).filter(id => !connected.has(id));
-  if (gone.length) await keepUpgrades(gone);
+  const moot = undecidedUpgrades(round).filter(id => !connected.has(id) || !offerAnswerable(round.entries[id]));
+  if (moot.length) await keepUpgrades(moot);
+}
+
+/** Whether an undecided offer can still be decided on its card: an upgrade still open, or one landing now. */
+function offerAnswerable(entry) {
+  const card = game.messages?.get?.(entry?.upgrade?.cardId ?? entry?.rolled?.cardId) ?? null;
+  const f = card?.flags?.[MODULE_ID];
+  if (!f) return false;
+  if (f.burn?.consumed || f.improve?.consumed) return true;
+  return (!!entry.upgrade.burn && upgradeOpen(card, "burn")) || (!!entry.upgrade.improve && upgradeOpen(card, "improve"));
 }
 
 /**
@@ -1519,6 +1559,28 @@ function onRoundWritten() {
     console.warn(`${MODULE_ID} | Batch Mode: the next round after a close:`, err?.message ?? err));
 }
 
+/**
+ * A chat card changed (every client hears it; the canonical GM acts): while
+ * the round waits on upgrades, a change to an offer's move card or to its
+ * outcome's choice card — the consequence chosen there closes the card's
+ * Burn and Improve — moves the round on (keepUndecidable, on the advance
+ * pass). The round kept waiting on the Burn the card refused (issue #342
+ * Z27).
+ *
+ * @param {ChatMessage} message
+ */
+function onChatCardUpdated(message) {
+  if (!isCanonicalGM()) return;
+  const round = getStoredRound();
+  if (round?.phase !== ROUND_PHASE.UPGRADING) return;
+  const f = message?.flags?.[MODULE_ID];
+  if (!f || !message?.id) return;
+  const concerned = undecidedUpgrades(round).map(id => round.entries[id]).some(e =>
+    e?.upgrade?.cardId === message.id || e?.rolled?.cardId === message.id
+    || (f.sufferCard === true && !!f.resolutionId && f.resolutionId === e?.rolled?.resolutionId));
+  if (concerned) advanceRound("card-changed");
+}
+
 /** A user joined or left (canonical GM). */
 async function onUserConnected(user, connected) {
   if (!isBatchModeEnabled()) return;
@@ -1555,6 +1617,7 @@ export function registerBatchModeDriver() {
   // A setting's first write is a createSetting, every later one an updateSetting.
   Hooks.on("createSetting", onBatchSettingWrite);
   Hooks.on("updateSetting", onBatchSettingWrite);
+  Hooks.on("updateChatMessage", onChatCardUpdated);
   Hooks.on("userConnected", (user, connected) => {
     onUserConnected(user, connected).catch(err =>
       console.warn(`${MODULE_ID} | Batch Mode: a connection change:`, err?.message ?? err));
