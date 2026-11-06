@@ -33,9 +33,11 @@ vi.mock('../../src/audio/cache.js', () => {
 });
 
 // The audio module's GM-side gate is the audio GM — the GM holding the
-// ElevenLabs key, else the canonical GM (issue #342 Z67).
+// ElevenLabs key, else the canonical GM (issue #342 Z67). No keyed GM is
+// connected, so a narrator card counts whoever posted it (issue #342 D8).
 vi.mock('../../src/multiplayer/gmGate.js', () => ({
-  isAudioGM: vi.fn().mockReturnValue(true),
+  isAudioGM:        vi.fn().mockReturnValue(true),
+  hasKeyedActiveGM: vi.fn().mockReturnValue(false),
 }));
 
 vi.mock('../../src/audio/elevenlabs.js', () => ({

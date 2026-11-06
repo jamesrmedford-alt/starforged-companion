@@ -38,7 +38,7 @@ import {
   userGestureReceived,
   stopActivePlayback,
 } from "./playback.js";
-import { isAudioGM } from "../multiplayer/gmGate.js";
+import { isAudioGM, hasKeyedActiveGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 export const AUDIO_SOCKET_NAME = `module.${MODULE_ID}`;
@@ -469,6 +469,44 @@ async function handleCacheWrite(payload) {
   }
 }
 
+// What the narrator can return: Narration Max Tokens (16000 by default), at
+// the four characters a token the module budgets with (narratorPrompt.js
+// estimateTokens).
+const NARRATION_CHARS_PER_TOKEN = 4;
+const DEFAULT_NARRATION_MAX_TOKENS = 16000;
+
+/** Did a GM post this chat message? Read from the user list by the author's id. */
+function messageAuthorIsGM(message) {
+  const author = message?.author;
+  const id = (typeof author === "string" ? author : author?.id) ?? message?._source?.author ?? null;
+  const user = (id && globalThis.game?.users?.get?.(id)) || (author && typeof author === "object" ? author : null);
+  return !!user?.isGM;
+}
+
+/**
+ * Whether a chat message counts as a narrator card for audio: its Play button
+ * and auto-play (onNarratorCardRendered), and the clip key a relayed synthesis
+ * or cache write is checked against (isNarratorCardClipKey). Foundry lets any
+ * user post a message with any module flags, so a player's message carrying
+ * narrator flags and a novel got a Play button on every client and keyed a
+ * synthesis on the GM's ElevenLabs key — X51's bound took its text from any
+ * card (issue #342 D8, option A). With a keyed GM connected
+ * (hasKeyedActiveGM — the only client that narrates then) only a GM-authored
+ * message counts; a player-authored one counts only when no keyed GM is
+ * connected (a `RUN_ON.CLAUDE` command or oracle follow-up narrated on the
+ * author's own key), and no longer than the narrator can return.
+ *
+ * @param {ChatMessage} message
+ * @param {string} text — the narration the card would voice
+ * @returns {boolean}
+ */
+function countsAsNarratorCard(message, text) {
+  if (messageAuthorIsGM(message)) return true;
+  if (hasKeyedActiveGM()) return false;
+  const maxTokens = Number(getSetting("narrationMaxTokens", DEFAULT_NARRATION_MAX_TOKENS)) || DEFAULT_NARRATION_MAX_TOKENS;
+  return String(text ?? "").length <= maxTokens * NARRATION_CHARS_PER_TOKEN;
+}
+
 /**
  * Whether `hash` is the clip key of a segment of a narrator card in chat
  * under the world's voices — a clip a keyed client's Play could have made
@@ -484,6 +522,7 @@ async function isNarratorCardClipKey(hash) {
   for (const message of messages) {
     const f = message?.flags?.[MODULE_ID];
     if (typeof f?.narrationText !== "string" || !f.narrationText.trim() || f.xCarded) continue;
+    if (!countsAsNarratorCard(message, f.narrationText)) continue;
     const npcVoiceId = await resolveNpcVoiceForCard(message, voices);
     for (const p of splitSegments(f.narrationText)) {
       const voiceId = p.voice === SEGMENT_VOICE.NPC ? (npcVoiceId || voices.npcVoiceId) : voices.narratorVoiceId;
@@ -667,6 +706,10 @@ export async function onNarratorCardRendered(message, root) {
   // replace it once at render time.
   const proseEl = root.querySelector(".sf-narration-prose");
   const rawProse = message.flags?.[MODULE_ID]?.narrationText ?? proseEl?.textContent ?? "";
+  // A message a player posted with narrator flags is no narrator card while a
+  // keyed GM is connected: no Play button, no auto-play — a GM's Play of it
+  // was billed on the GM's key with no bound at all (issue #342 D8).
+  if (!countsAsNarratorCard(message, rawProse)) return;
   if (proseEl) {
     const cleaned = stripMarkup(rawProse);
     // textContent — preserves whitespace, no HTML injection.
