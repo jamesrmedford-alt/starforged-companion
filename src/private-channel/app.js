@@ -20,6 +20,7 @@ import {
   parseTurnsHtml,
   loadCurrentSessionTranscript,
   isTranscriptUnsaved,
+  onTranscriptUnsavedChange,
 } from "./transcript.js";
 
 const MODULE_ID = "starforged-companion";
@@ -259,9 +260,27 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     await publishToMainChat({ userId: this.userId, content: lastNarrator.text });
   }
 
+  /**
+   * Re-render this user's open window, if one is open: its "not saved yet"
+   * line follows the conversation's state, which a flush changes outside the
+   * window (issue #342 Z66).
+   *
+   * @param {string} userId
+   */
+  static refresh(userId) {
+    const app = PrivateChannelApp.#instances.get(userId);
+    if (!app) return;
+    Promise.resolve(app.render()).catch(err =>
+      console.warn(`${MODULE_ID} | private channel: could not refresh the window:`, err?.message ?? err));
+  }
+
   /** Test seam — clear tracked instances. */
   static _resetInstances() { PrivateChannelApp.#instances.clear(); }
 
   /** Test seam — is a window open for this user? */
   static _hasInstance(userId) { return PrivateChannelApp.#instances.has(userId); }
 }
+
+// A flush that finds no journal, or a later one that saves, flips the line the
+// open window shows — and renders nothing itself (issue #342 Z66).
+onTranscriptUnsavedChange((userId) => PrivateChannelApp.refresh(userId));

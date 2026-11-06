@@ -411,7 +411,7 @@ async function writePending(userId, entry) {
   }
   if (page) {
     entry.failures = 0;
-    noteTranscriptSaved(entry);
+    noteTranscriptSaved(userId, entry);
   }
   return page;
 }
@@ -427,27 +427,57 @@ export function isTranscriptUnsaved(userId) {
   return !!_buffers.get(userId)?.unsaved;
 }
 
+// Told when a user's conversation starts or stops being kept in memory only.
+// The open Private Channel window's "not saved yet" line is computed when it
+// renders, and the flushes that flip the state (5 s after a reply, or a later
+// one that saves) render nothing of their own: the line came a Send late and
+// stayed beside the "saved now" toast (issue #342 Z66). app.js subscribes.
+const _unsavedListeners = new Set();
+
+/**
+ * Hear each flip of isTranscriptUnsaved, with the user's id.
+ *
+ * @param {(userId: string) => void} listener
+ * @returns {() => void} unsubscribe
+ */
+export function onTranscriptUnsavedChange(listener) {
+  if (typeof listener !== "function") return () => {};
+  _unsavedListeners.add(listener);
+  return () => _unsavedListeners.delete(listener);
+}
+
+function notifyUnsavedChange(userId) {
+  for (const listener of _unsavedListeners) {
+    try { listener(userId); }
+    catch (err) { console.warn(`${MODULE_ID} | privateChannel: an unsaved-state listener failed:`, err?.message ?? err); }
+  }
+}
+
 /**
  * A flush found no journal to write to: a default Player with no GM connected
  * to create it (Foundry refuses JOURNAL_CREATE below Trusted Player), a GM's
  * create not answered in time, or a GM's own create refused. The turns live
  * only in this browser's memory — a reload loses them — and only the console
- * said so (issue #337 Y41). The player is told once, until a write lands.
+ * said so (issue #337 Y41). The player is told once, until a write lands,
+ * and the open window shows it while it lasts.
  *
+ * @param {string} userId
  * @param {Object|undefined} entry — the user's buffer entry
  */
-function noteTranscriptUnsaved(entry) {
+function noteTranscriptUnsaved(userId, entry) {
   if (!entry || entry.unsaved) return;
   entry.unsaved = true;
+  notifyUnsavedChange(userId);
   globalThis.ui?.notifications?.warn?.(game.user?.isGM
     ? "Starforged Companion: your Private Channel conversation is not being saved — its journal could not be created. It is kept in this browser and tried again. Don't reload before it saves."
     : "Starforged Companion: your Private Channel conversation is not being saved — a GM's game creates its journal, and no GM is connected (or answering). It is kept in this browser and saved once one is, at your next message or when you close the window. Don't reload before then.");
 }
 
 /** A write landed after the player was told it could not: said once, and the window's line goes. */
-function noteTranscriptSaved(entry) {
+function noteTranscriptSaved(userId, entry) {
   if (!entry?.unsaved) return;
   entry.unsaved = false;
+  notifyUnsavedChange(userId);
   globalThis.ui?.notifications?.info?.("Starforged Companion: your Private Channel conversation is saved now.");
 }
 
@@ -456,7 +486,7 @@ async function writeBatch(userId, { sessionId, turns }) {
   const journal = await getOrCreatePrivateJournal(userId);
   if (!journal) {
     console.warn(`${MODULE_ID} | privateChannel: no transcript journal to write to — ${turns.length} turn(s) kept for a retry`);
-    noteTranscriptUnsaved(_buffers.get(userId));
+    noteTranscriptUnsaved(userId, _buffers.get(userId));
     return null;
   }
   const page    = await getOrCreateSessionPage(journal, sessionId);
