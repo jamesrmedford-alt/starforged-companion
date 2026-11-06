@@ -729,15 +729,23 @@ export async function retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCa
  * pick on it is not refused as the superseded outcome's, and it closes
  * nothing), and a "burn or improve first" hint it carried goes — the upgrade
  * is spent. The burn used to retire it with the superseded outcome's cards,
- * and the roll the kept harm owes was never made (issue #335 Y09). Best
- * effort: a refused update leaves the card as it was.
+ * and the roll the kept harm owes was never made (issue #335 Y09). The keep
+ * rides its executor opts too (`executorOpts.upgraded`), so a card its pick
+ * posts — the resist roll a redirected loss's Endure Harm owes at 0 — is the
+ * upgraded outcome's as well (sufferCard.js postSufferChoiceCard): posted
+ * after the burn, it was refused as the superseded outcome's and the owed
+ * roll lost (issue #342 Z47). Best effort: a refused update leaves the card
+ * as it was.
  *
  * @param {ChatMessage} card
  * @returns {Promise<boolean>} whether the card was kept
  */
 async function keepPriceCard(card) {
   const f = card.flags[MODULE_ID];
-  const update = { [`flags.${MODULE_ID}.upgraded`]: true };
+  const update = {
+    [`flags.${MODULE_ID}.upgraded`]:              true,
+    [`flags.${MODULE_ID}.executorOpts.upgraded`]: true,
+  };
   if (f.sufferPrompt?.hint) {
     update[`flags.${MODULE_ID}.sufferPrompt.hint`] = null;
     try {

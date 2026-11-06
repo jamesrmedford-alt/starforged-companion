@@ -74,7 +74,8 @@ Two cross-cutting facts to hold onto:
   UPGRADE-PIPELINE-EFFECTS) — and the cards it posted, stamped `priceCard`
   (the resist roll its harm owes, a redirected loss's picker): kept as the
   upgraded outcome's, not retired with the superseded outcome's (issue #335
-  Y09). The
+  Y09), and so is a card a kept card's pick posts after the burn — the resist
+  roll the redirected loss's Endure Harm owes at 0 (issue #342 Z47). The
   threshold card's buttons relay `combat.threshold` to the canonical GM (its
   older ad-hoc `combat.enterFray` socket is retired — issue #329 X06).
 - **A fight played in Batch Mode rounds** (issue #340) uses the same stages.

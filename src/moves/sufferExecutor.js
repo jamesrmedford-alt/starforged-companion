@@ -345,8 +345,13 @@ async function postResistRoll(actor, which, opts = {}, upgradeFirst = false) {
       sufferPrompt: resistRollPrompt(which, { upgradeFirst }),
       actor,
       // A move's Pay the Price owes it: the card is the price's, kept when an
-      // upgrade keeps the price (issue #335 Y09).
-      executorOpts: opts.priceCard === true ? { priceCard: true } : {},
+      // upgrade keeps the price (issue #335 Y09) — and the upgraded outcome's
+      // when a kept price card's pick posts it after the upgrade (issue #342
+      // Z47: it was refused as the superseded outcome's).
+      executorOpts: {
+        ...(opts.priceCard === true ? { priceCard: true } : {}),
+        ...(opts.upgraded === true ? { upgraded: true } : {}),
+      },
       moveId: RESIST_ROLLS[which].moveId,
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });

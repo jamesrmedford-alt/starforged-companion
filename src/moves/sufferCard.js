@@ -323,6 +323,9 @@ function labelForSuffer(id) {
  * dispatchPayThePriceSufferRoute): the resist roll its harm owes, the picker
  * of a loss it redirected — is stamped `priceCard`, so an upgrade that keeps
  * the price keeps it too (resultUpgrade.js reconcileChoices, issue #335 Y09).
+ * A card posted from a kept price card's executor opts (`upgraded` in them —
+ * resultUpgrade.js keepPriceCard) is the upgraded outcome's too (issue #342
+ * Z47).
  *
  * @param {{ sufferPrompt: Object, actor: Actor, executorOpts?: Object, moveId?: string|null,
  *   resolutionId?: string|null, upgraded?: boolean }} args
@@ -340,7 +343,7 @@ export async function postSufferChoiceCard({ sufferPrompt, actor, executorOpts =
           actorId:       actor?.id ?? null,
           moveId,
           resolutionId,
-          ...(upgraded ? { upgraded: true } : {}),
+          ...(upgraded || executorOpts?.upgraded === true ? { upgraded: true } : {}),
           ...(executorOpts?.priceCard === true ? { priceCard: true } : {}),
           pickedIndices: [],
           resolved:      false,
