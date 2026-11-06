@@ -4161,7 +4161,7 @@ function registerEncounterSpawnLiveTests(quench) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SESSION LIFECYCLE — initSessionId, isNewSessionStart, recap
+// SESSION LIFECYCLE — initSessionId, sessionNeedsMint, recap
 // ─────────────────────────────────────────────────────────────────────────────
 
 function registerSessionTests(quench) {
@@ -4215,20 +4215,25 @@ function registerSessionTests(quench) {
         });
       });
 
-      describe("isNewSessionStart — gap threshold", function () {
-        it("returns true when the gap exceeds sessionGapHours", async function () {
-          const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
+      // The world load's mint decides the auto-recap too: the "Session gap
+      // (hours)" setting it used to read is retired (issue #342 D6).
+      describe("sessionNeedsMint — the session boundary the auto-recap follows", function () {
+        it("a session idle for four hours or more is over", async function () {
+          const { sessionNeedsMint } = await import(`/modules/${MODULE_ID}/src/session/lifecycle.js`);
           const state = {
-            lastSessionTimestamp: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+            currentSessionId: "session-old",
+            lastSessionTimestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
           };
-          assert.isTrue(idx.isNewSessionStart(state, 12));
+          assert.isTrue(sessionNeedsMint(state));
         });
-        it("returns false when the gap is under sessionGapHours", async function () {
-          const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
+        it("a session seen within four hours goes on, and an ended one is over", async function () {
+          const { sessionNeedsMint } = await import(`/modules/${MODULE_ID}/src/session/lifecycle.js`);
           const state = {
+            currentSessionId: "session-live",
             lastSessionTimestamp: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
           };
-          assert.isFalse(idx.isNewSessionStart(state, 12));
+          assert.isFalse(sessionNeedsMint(state));
+          assert.isTrue(sessionNeedsMint({ ...state, sessionEndedId: "session-live" }));
         });
       });
 

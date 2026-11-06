@@ -70,7 +70,6 @@ const SETTING = {
   SCENE_CONTEXT_CARDS:      'sceneContextCards',
   // ── Previously On / recap ────────────────────────────────────────────────
   AUTO_RECAP_ENABLED:       'autoRecapEnabled',
-  SESSION_GAP_HOURS:        'sessionGapHours',
   RECAP_GM_ONLY:            'recapGmOnly',
   // ── World Journal ─────────────────────────────────────────────────────────
   WJ_LORE_IN_CONTEXT:          'loreInContext',
@@ -369,22 +368,19 @@ export function registerSettings() {
 
   // ── Previously On / recap ────────────────────────────────────────────────
 
+  // The recap follows the session boundary (End a Session, or four hours with
+  // no chat activity — issue #286 C4): it posts when a world load starts a new
+  // session. The "Session Gap Threshold (hours)" setting that decided it was
+  // retired (issue #342 D6): it set only the recap, not the boundary, so the
+  // recap could post mid-session or stay silent at a new one. A world that
+  // stored a value keeps it, unread — nothing gets an unregistered setting.
   game.settings.register(MODULE_ID, SETTING.AUTO_RECAP_ENABLED, {
     name:    'Auto Recap at Session Start',
-    hint:    'When enabled, a campaign recap is automatically posted to chat when a new session begins (after a gap longer than the threshold).',
+    hint:    'When enabled, a campaign recap is automatically posted to chat when a world load starts a new session (after End a Session, or four hours with no chat activity).',
     scope:   'world',
     config:  false,
     type:    Boolean,
     default: true,
-  });
-
-  game.settings.register(MODULE_ID, SETTING.SESSION_GAP_HOURS, {
-    name:    'Session Gap Threshold (hours)',
-    hint:    'Hours of inactivity that define the start of a new session for auto-recap purposes.',
-    scope:   'world',
-    config:  false,
-    type:    Number,
-    default: 4,
   });
 
   game.settings.register(MODULE_ID, SETTING.RECAP_GM_ONLY, {
@@ -682,7 +678,6 @@ function getVowSwearingScene() {
 
 // ── Previously On / recap ────────────────────────────────────────────────
 function getAutoRecapEnabled() { return game.settings.get(MODULE_ID, SETTING.AUTO_RECAP_ENABLED) ?? true; }
-function getSessionGapHours()  { return game.settings.get(MODULE_ID, SETTING.SESSION_GAP_HOURS)  ?? 4; }
 function getRecapGmOnly()      { return game.settings.get(MODULE_ID, SETTING.RECAP_GM_ONLY)      ?? true; }
 
 // ── Pacing classifier ────────────────────────────────────────────────────
@@ -968,7 +963,6 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationTones:        NARRATION_TONES,
       narrationLevities:     NARRATION_LEVITIES,
       autoRecapEnabled:      getAutoRecapEnabled(),
-      sessionGapHours:       getSessionGapHours(),
       recapGmOnly:           getRecapGmOnly(),
       // Documented in the help's Settings Reference, registered config:false
       // and rendered nowhere until issue #322 V06.
@@ -1437,13 +1431,7 @@ export class SettingsPanelApp extends ApplicationV2 {
             <input type="checkbox" name="autoRecapEnabled" ${ctx.autoRecapEnabled ? 'checked' : ''} ${dis}>
             Auto recap at session start
           </label>
-          <span class="narrator-field-hint">Post a campaign recap to chat automatically when a new session begins.</span>
-        </div>
-        <div class="narrator-field">
-          <label class="narrator-field-label">Session gap (hours)</label>
-          <input class="settings-input narrator-number-input" name="sessionGapHours"
-                 type="number" min="1" max="48" value="${ctx.sessionGapHours}" ${dis}>
-          <span class="narrator-field-hint">Hours of inactivity before a world load is treated as a new session.</span>
+          <span class="narrator-field-hint">Post a campaign recap to chat automatically when a world load starts a new session — after End a Session, or four hours with no chat activity.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">
@@ -1885,8 +1873,6 @@ export class SettingsPanelApp extends ApplicationV2 {
       const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 
       const autoRecapEnabled = el.querySelector('[name="autoRecapEnabled"]')?.checked ?? true;
-      const sessionGapRaw    = el.querySelector('[name="sessionGapHours"]')?.value;
-      const sessionGapHours  = Math.max(1, Math.min(48, Number(sessionGapRaw) || 4));
       const recapGmOnly      = el.querySelector('[name="recapGmOnly"]')?.checked ?? true;
 
       // The rows issue #322 V06 added: documented, but nothing could set them.
@@ -1914,7 +1900,6 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.VOW_SWEARING_SCENE,       vowScene),
         game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
-        game.settings.set(MODULE_ID, SETTING.SESSION_GAP_HOURS,      sessionGapHours),
         game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
         game.settings.set(MODULE_ID, SETTING.NARRATION_MAX_TOKENS,   maxTokens),
         game.settings.set(MODULE_ID, SETTING.SCENE_QUERY_ENABLED,    checked('sceneQueryEnabled', true)),
@@ -2495,4 +2480,4 @@ function registerPrivateLinesGmPull() {
 }
 
 export { getDial as getMischiefDial };
-export { getAutoRecapEnabled, getSessionGapHours, getRecapGmOnly };
+export { getAutoRecapEnabled, getRecapGmOnly };

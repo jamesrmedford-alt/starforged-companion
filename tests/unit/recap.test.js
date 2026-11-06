@@ -1,13 +1,12 @@
 // tests/unit/recap.test.js
 // Coverage for the Previously On / recap feature:
 //   postSessionRecap()           — src/narration/narrator.js
-//   isNewSessionStart()          — src/index.js
 //   getCampaignRecap()           — src/narration/narrator.js (cache behaviour)
 //   buildCampaignRecapUserMessage() — src/narration/narratorPrompt.js
 //   isRecapCommand()             — src/index.js
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { isNewSessionStart, isRecapCommand } from '../../src/index.js';
+import { isRecapCommand } from '../../src/index.js';
 import { postSessionRecap, getCampaignRecap, postNarrationCard, campaignRecapCacheKey } from '../../src/narration/narrator.js';
 import { buildCampaignRecapUserMessage } from '../../src/narration/narratorPrompt.js';
 import {
@@ -20,10 +19,6 @@ const MODULE_ID = 'starforged-companion';
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-function hoursAgo(n) {
-  return new Date(Date.now() - n * 3_600_000).toISOString();
-}
 
 function makeCampaignState(overrides = {}) {
   return {
@@ -57,41 +52,9 @@ function makeNarratorCard(overrides = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// 1. isNewSessionStart()
+// 1. (retired) isNewSessionStart() — the auto-recap follows the session the
+//    world load starts since issue #342 D6: autoRecapFollowsSessionMint.test.js
 // ---------------------------------------------------------------------------
-
-describe('isNewSessionStart()', () => {
-  it('returns false when lastSessionTimestamp is null', () => {
-    const state = makeCampaignState({ lastSessionTimestamp: null });
-    expect(isNewSessionStart(state, 4)).toBe(false);
-  });
-
-  it('returns false when gap is less than the threshold', () => {
-    const state = makeCampaignState({ lastSessionTimestamp: hoursAgo(2) });
-    expect(isNewSessionStart(state, 4)).toBe(false);
-  });
-
-  it('returns true when gap exceeds the threshold', () => {
-    const state = makeCampaignState({ lastSessionTimestamp: hoursAgo(5) });
-    expect(isNewSessionStart(state, 4)).toBe(true);
-  });
-
-  it('returns false when gap equals the threshold exactly', () => {
-    vi.useFakeTimers();
-    const now = Date.now();
-    const state = makeCampaignState({
-      lastSessionTimestamp: new Date(now - 4 * 3_600_000).toISOString(),
-    });
-    expect(isNewSessionStart(state, 4)).toBe(false);
-    vi.useRealTimers();
-  });
-
-  it('respects a custom threshold', () => {
-    const state = makeCampaignState({ lastSessionTimestamp: hoursAgo(3) });
-    expect(isNewSessionStart(state, 2)).toBe(true);
-    expect(isNewSessionStart(state, 4)).toBe(false);
-  });
-});
 
 
 // ---------------------------------------------------------------------------

@@ -135,7 +135,6 @@ import {
   registerSettingsHooks,
   getMischiefDial,
   getAutoRecapEnabled,
-  getSessionGapHours,
   getRecapGmOnly,
   getShipPositioningEnabled,
   getShipAutoMoveOnCourse,
@@ -574,30 +573,6 @@ export async function initSessionId(campaignState) {
     `(#${campaignState.sessionNumber})`
   );
   return campaignState;
-}
-
-
-// ────────────────────────────────────────────���────────────────────────────────
-// SESSION START DETECTION
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Return true when a world load should be treated as the start of a new session
- * for auto-recap purposes — i.e. the lastSessionTimestamp gap exceeds the
- * configured threshold.
- *
- * Exported for unit testing.
- *
- * @param {Object} campaignState
- * @param {number} [gapHours]  — override the setting (for tests)
- * @returns {boolean}
- */
-export function isNewSessionStart(campaignState, gapHours) {
-  const last = campaignState?.lastSessionTimestamp;
-  if (!last) return false;
-  const threshold = gapHours ?? getSessionGapHours();
-  const hoursSince = (Date.now() - new Date(last)) / 3_600_000;
-  return hoursSince > threshold;
 }
 
 
@@ -7155,7 +7130,6 @@ Hooks.once("ready", () => {
       console.log(`${MODULE_ID} | Reset stale pendingMove lock on ready`);
     }
 
-    const wasNewSession = isNewSessionStart(prevState);
     const priorSessionId = prevState.currentSessionId ?? null;
 
     // NARR-SESSION-SCENE (narrator-context audit 2026-07): when the session
@@ -7183,12 +7157,17 @@ Hooks.once("ready", () => {
       return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"));
     }).then(async () => {
       const freshState = game.settings.get(MODULE_ID, "campaignState");
-      // Auto-recap: post campaign recap when a new session is detected
-      if (wasNewSession && getAutoRecapEnabled()) {
+      // Auto-recap: the "Previously On" campaign recap introduces the session
+      // this load started — the boundary is End a Session or four idle hours
+      // (issue #286 C4) — and a world's first session has none before it. A
+      // "Session gap (hours)" setting decided it apart from the boundary, so
+      // it could post mid-session or stay silent at a new one (issue #342 D6).
+      const newSession = (freshState?.currentSessionId ?? null) !== priorSessionId;
+      if (newSession && priorSessionId && getAutoRecapEnabled()) {
         await postCampaignRecap(freshState, { silent: false }).catch(err => {
           console.error(`${MODULE_ID} | Auto-recap failed:`, err);
         });
-      } else if (freshState.currentSessionId !== priorSessionId) {
+      } else if (newSession) {
         // A new session's first narration carries the campaign recap from
         // its cache (buildNarratorExtras) — refresh it now, off that path.
         getCampaignRecap(freshState).catch(err =>
