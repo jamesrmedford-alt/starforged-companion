@@ -224,8 +224,14 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     const active = document.activeElement;
     const typing = active?.name === "sf-round-text" && content.contains(active);
     const caret = typing ? [active.selectionStart, active.selectionEnd] : null;
+    // What the player chose in the reading's form — its abilities, stat swap
+    // and target — survives any re-render of the same reading: another
+    // player's confirm, "pick one first", the narration toggle (issue #342
+    // Z06; decisions.md "A panel's re-render keeps what the user is typing").
+    const picks = readingPicks(content);
     content.innerHTML = "";
     content.append(result);
+    if (picks) restoreReadingPicks(content, picks);
     if (typing) {
       const input = content.querySelector("textarea[name='sf-round-text']");
       if (input) {
@@ -314,7 +320,8 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
         + `</p></div>`;
     }
     const ready = own.status === ENTRY_STATUS.READY;
-    const parts = [`<div class="sf-round-reading">`,
+    // Keyed by its submission, so a re-render carries the picks of this reading only (readingPicks).
+    const parts = [`<div class="sf-round-reading" data-submission-id="${escapeHtml(own.submissionId ?? "")}">`,
       `<div class="sf-round-row"><span class="sf-round-label">Move</span> <strong>${escapeHtml(r.moveName)}</strong></div>`];
     if (r.statName) parts.push(`<div class="sf-round-row"><span class="sf-round-label">Stat</span> ${escapeHtml(r.statName)}</div>`);
     if (r.rationale) parts.push(`<p class="sf-round-rationale">${escapeHtml(r.rationale)}</p>`);
@@ -617,6 +624,48 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     this.#recentOpen = !this.#recentOpen;
     await this.render();
   }
+}
+
+/**
+ * The picks in a rendered reading's form, by its submission: each ability
+ * checkbox's state (by its key), the checked stat-swap and target radios.
+ * Null when the window shows no move reading's form.
+ *
+ * @param {ParentNode} content
+ * @returns {{ submissionId: string, abilities: Map<string, boolean>, stat: string|null, target: string|null,
+ *   hasStat: boolean, hasTarget: boolean }|null}
+ */
+function readingPicks(content) {
+  const form = content?.querySelector?.(".sf-round-reading[data-submission-id]");
+  const submissionId = form?.dataset?.submissionId;
+  if (!submissionId) return null;
+  const abilities = new Map();
+  for (const cb of form.querySelectorAll(".sf-applicable-ability-cb")) {
+    if (cb.dataset?.key) abilities.set(cb.dataset.key, !!cb.checked);
+  }
+  const radio = (name) => {
+    const all = form.querySelectorAll(`input[name="${name}"]`);
+    const on = [...all].find(r => r.checked);
+    return { has: all.length > 0, value: on ? String(on.value ?? "") : null };
+  };
+  const stat = radio("sf-stat-sub");
+  const target = radio("sf-round-target");
+  return { submissionId, abilities, stat: stat.value, target: target.value, hasStat: stat.has, hasTarget: target.has };
+}
+
+/** Put the picks back on the new tree — only on the same reading (its submission id). */
+function restoreReadingPicks(content, picks) {
+  const form = content?.querySelector?.(".sf-round-reading[data-submission-id]");
+  if (!form || form.dataset?.submissionId !== picks.submissionId) return;
+  for (const cb of form.querySelectorAll(".sf-applicable-ability-cb")) {
+    const key = cb.dataset?.key;
+    if (key && picks.abilities.has(key)) cb.checked = picks.abilities.get(key);
+  }
+  const set = (name, value) => {
+    for (const r of form.querySelectorAll(`input[name="${name}"]`)) r.checked = String(r.value ?? "") === value;
+  };
+  if (picks.hasStat && picks.stat !== null) set("sf-stat-sub", picks.stat);
+  if (picks.hasTarget && picks.target !== null) set("sf-round-target", picks.target);
 }
 
 function phaseLabel(phase) {
