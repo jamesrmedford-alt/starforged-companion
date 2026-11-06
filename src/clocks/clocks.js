@@ -482,7 +482,10 @@ export async function advanceCampaignClocksForBeginSession() {
  * entry names a clock and the fill it rolled to; the clock is set to at least
  * that fill, within its segments, so a Retry after a GM advanced it by hand
  * — or a second Retry — never advances it twice. A clock no longer on the list
- * is skipped and named. One write, on a copy; nothing is rolled.
+ * is skipped and named. One write, on a copy; nothing is rolled. A clock the
+ * saved fill triggers gets its trigger vignette once the write lands: the
+ * trigger was owed, not taken back — Begin narrates no trigger it could not
+ * save, and the Retry's fill fired none (issue #342 Z63).
  *
  * @param {Array<{ _id: string, filled: number }>} entries
  * @returns {Promise<{ ok: true, applied: Array<{_id, name, filled}>, missing: string[] }
@@ -490,9 +493,10 @@ export async function advanceCampaignClocksForBeginSession() {
  */
 export async function applyClockAdvances(entries) {
   return serialiseClockWrite(async () => {
-    const state   = foundry.utils.deepClone(readState());
-    const applied = [];
-    const missing = [];
+    const state     = foundry.utils.deepClone(readState());
+    const applied   = [];
+    const missing   = [];
+    const triggered = [];
     for (const e of Array.isArray(entries) ? entries : []) {
       const clock = (state.clocks ?? []).find(c => c._id === e?._id) ?? null;
       if (!clock) { missing.push(String(e?._id ?? "?")); continue; }
@@ -501,6 +505,7 @@ export async function applyClockAdvances(entries) {
       clock.filled    = target;
       clock.updatedAt = new Date().toISOString();
       applied.push({ _id: clock._id, name: clock.name, filled: clock.filled });
+      if (isFull(clock)) triggered.push(vignetteData(clock));
     }
     if (applied.length) {
       try {
@@ -510,6 +515,7 @@ export async function applyClockAdvances(entries) {
         return { ok: false, reason: "refused", error: String(err?.message ?? err) };
       }
     }
+    for (const clockData of triggered) fireClockVignette(clockData);
     return { ok: true, applied, missing };
   });
 }

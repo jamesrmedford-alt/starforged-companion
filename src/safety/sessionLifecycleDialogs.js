@@ -291,7 +291,11 @@ async function beginSessionOnce(payload) {
           console.warn(`${MODULE_ID} | session-start clocks: failure card failed:`, err?.message ?? err);
         }
       }
-      const advanced = clockResults.filter(r => r.advanced);
+      // A trigger the world refused to save is owed, not taken back: the
+      // Retry's fill narrates it when it lands (clocks.applyClockAdvances).
+      // Narrated here it was dropped as rewound — the store is not full —
+      // and the Retry narrated nothing (issue #342 Z63).
+      const advanced = clockResults.filter(r => r.advanced && !(r.triggered && r.saved === false));
       if (advanced.length) {
         clockVignettes = new Promise(resolve => setTimeout(async () => {
           try {

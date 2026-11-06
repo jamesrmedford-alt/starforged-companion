@@ -290,7 +290,11 @@ is still full when its reply comes in (`narrateClockAdvancement`'s
 `stillTriggered`, `payThePriceClocks.js` `clockStillTriggered`, all three
 post sites), so it posts nothing and its sidecar is never applied — and the
 reversal strikes no earlier trigger's card of that clock in its place
-(`triggerVignetteInFlight`; TRIGGER-VIGNETTE-LATE-POST).
+(`triggerVignetteInFlight`; TRIGGER-VIGNETTE-LATE-POST). A trigger the world
+refused to save at Begin a Session is owed, not rewound: Begin narrates none
+for it, and the GMs' Retry narrates it when its fill lands
+(`clocks.applyClockAdvances`, issue #342 Z63 — Begin's vignette was dropped as
+rewound and the Retry's fill narrated nothing).
 
 **System prompt section map** (`buildNarratorSystemPrompt`,
 `src/narration/narratorPrompt.js`): [0] role/style per mode · [0b]
