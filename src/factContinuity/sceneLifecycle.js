@@ -32,6 +32,7 @@ import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
 import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
 import { rememberSessionRetractions } from './retractions.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY } from './ledgers.js';
+import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -637,7 +638,11 @@ export function mergeOwnedFields(campaignState, fields, label) {
 
 /**
  * Persist only `fields` of `campaignState`, merged onto the LATEST stored
- * campaignState (mergeOwnedFields). Failures are logged, never thrown.
+ * campaignState (mergeOwnedFields) — read at this write's turn on the
+ * client's campaignState write chain, once the write ahead of it has landed:
+ * a scene start sent inside the round trip of the oracle capture its own
+ * `!oracle` card fired merged onto a cache without the result, and erased it
+ * (issue #342 Z17). Failures are logged, never thrown.
  *
  * @param {Object}   campaignState — the caller's working copy (source of `fields`)
  * @param {string[]} fields        — top-level keys this write owns
@@ -647,7 +652,10 @@ export function mergeOwnedFields(campaignState, fields, label) {
 export async function persistCampaignStateFields(campaignState, fields, label) {
   try {
     if (typeof game === 'undefined' || !game?.settings?.set) return;
-    await game.settings.set(MODULE_ID, 'campaignState', mergeOwnedFields(campaignState, fields, label));
+    await serialiseCampaignStateWrite(
+      () => game.settings.set(MODULE_ID, 'campaignState', mergeOwnedFields(campaignState, fields, label)),
+      label,
+    );
   } catch (err) {
     // Player clients can't write world settings; tolerate.
     console.warn(`${MODULE_ID} | sceneLifecycle: campaignState persist failed (${label}):`, err);
@@ -753,8 +761,15 @@ export function mergeSceneLedgers(working, latest) {
  * @returns {Promise<boolean>} true when the ledgers were written
  */
 export async function persistSceneLedgerFields(campaignState, fields, label, { onto = null } = {}) {
+  if (typeof game === 'undefined' || !game?.settings?.set) return false;
+  // Read and written at this write's turn on the client's campaignState write
+  // chain, once the write ahead of it has landed (issue #342 Z17).
+  return serialiseCampaignStateWrite(() => writeSceneLedgerFields(campaignState, fields, label, onto), label);
+}
+
+/** persistSceneLedgerFields' read-merge-write, on the write chain. Never rejects. */
+async function writeSceneLedgerFields(campaignState, fields, label, onto) {
   try {
-    if (typeof game === 'undefined' || !game?.settings?.set) return false;
     let latest = null;
     try {
       latest = game.settings.get(MODULE_ID, 'campaignState');

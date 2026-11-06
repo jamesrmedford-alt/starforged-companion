@@ -164,6 +164,7 @@ import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
+import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
 import { requestOracleNarration } from "./oracles/oracleFollowup.js";
@@ -3567,19 +3568,20 @@ async function handlePayThePriceCommand(message) {
  * The commands themselves run on whichever client typed them — possibly a
  * player who cannot write world settings — hence capture-on-GM via the hook.
  */
-// The ring's read-modify-writes, one at a time on this client: two oracle
-// cards inside one write round trip each read the ring before the other's
-// write landed, and the second write dropped the first result (issue #331
-// X44 — the CLOCK-LOST-UPDATE shape; serialiseClockWrite's queue).
-let _oracleMemoryWrites = Promise.resolve();
-
+// The ring's read-modify-writes run on this client's campaignState write
+// chain: two oracle cards inside one write round trip each read the ring
+// before the other's write landed, and the second write dropped the first
+// result (issue #331 X44); and a whole-object write of another kind sent
+// inside the capture's round trip — the Pay the Price's clock advance right
+// after its card, the scene start of the `!oracle`'s own follow-up — carried
+// the ring without it (issue #342 Z17).
 function registerOracleMemoryCaptureHook() {
   Hooks.on("createChatMessage", (message) => {
     try {
       if (!isCanonicalGM()) return;
       const entry = message?.flags?.[MODULE_ID]?.oracleMemory;
       if (!entry || typeof entry !== "object") return;
-      _oracleMemoryWrites = _oracleMemoryWrites.then(() => captureOracleResult(entry));
+      void serialiseCampaignStateWrite(() => captureOracleResult(entry), "oracle memory");
     } catch (err) {
       console.warn(`${MODULE_ID} | oracle-memory capture failed:`, err?.message ?? err);
     }

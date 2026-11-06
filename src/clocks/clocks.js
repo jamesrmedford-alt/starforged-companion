@@ -30,6 +30,7 @@ import { newNarrationId } from "../factContinuity/ledgers.js";
 import { clockStillTriggered } from "./payThePriceClocks.js";
 import { stripMarkup } from "../audio/segments.js";
 import { replaceKeepingInput } from "../ui/keepTypedInput.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -742,28 +743,27 @@ async function writeState(state) {
   await game.settings.set(MODULE_ID, "campaignState", state);
 }
 
-/** The last clock write queued on this client (serialiseClockWrite). */
-let _clockWriteTail = Promise.resolve();
-
 /**
- * Run one clock read-modify-write after the one before it on this client has
- * landed. The clocks are one array in campaignState, written whole, and the
- * cached value changes only when the server answers — so a write that read
- * during another's round trip saved the old list over it: two clock actions
- * (↻ on two clocks, two `!clock` verbs, a Pay the Price advance racing a
- * click) lost one (issue #326 W53, the issue #321 U57 shape the Progress
- * Tracks panel's writeTracks serialises). A write that fails does not hold up
- * the next. `task` must read the state itself and must not call another
- * clock writer: it would wait for itself.
+ * Run one clock read-modify-write after the campaignState write before it on
+ * this client has landed. The clocks are one array in campaignState, written
+ * whole, and the cached value changes only when the server answers — so a
+ * write that read during another's round trip saved the old list over it: two
+ * clock actions (↻ on two clocks, two `!clock` verbs, a Pay the Price advance
+ * racing a click) lost one (issue #326 W53, the issue #321 U57 shape the
+ * Progress Tracks panel's writeTracks serialises). The queue is the one every
+ * fire-and-forget campaignState writer on this client shares
+ * (multiplayer/campaignStateChain.js): a clock queued only behind clocks
+ * erased the oracle result the Pay the Price's own card had just recorded
+ * (issue #342 Z17). A write that fails does not hold up the next. `task` must
+ * read the state itself and must not call another chained writer: it would
+ * wait for itself.
  *
  * @template T
  * @param {() => Promise<T>} task
  * @returns {Promise<T>}
  */
 function serialiseClockWrite(task) {
-  const run = _clockWriteTail.then(task);
-  _clockWriteTail = run.catch(() => {});
-  return run;
+  return serialiseCampaignStateWrite(task, "clock write");
 }
 
 // Every writer here works on a copy of the state: `readState` returns this

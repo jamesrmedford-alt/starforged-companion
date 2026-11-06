@@ -593,10 +593,14 @@ passes it to the narration too. Raw oracle
 nothing a character took, PTP-PCLESS-NARRATED-AS-FIRST-PC); the canonical
 GM's capture hook (`registerOracleMemoryCaptureHook`, `src/index.js`) ledgers
 them into `campaignState.recentOracles` (`src/oracles/oracleMemory.js`,
-cap 8) — one capture at a time, each reading the ring as the last left it,
-so two results inside one write round trip are both kept (issue #331 X44) —
-for section [3b] (the retired assembler's RECENT ORACLES section
-went with the module, 2026-07 — issue #271).
+cap 8) — on the GM's campaignState write chain
+(`src/multiplayer/campaignStateChain.js`), each capture reading the ring as
+the write ahead of it left it, so two results inside one write round trip are
+both kept (issue #331 X44), and so is a result followed at once by a write of
+another kind — the Pay the Price's clock advance, the `!oracle` follow-up's
+scene start, which run on the same chain (issue #342 Z17) — for section [3b]
+(the retired assembler's RECENT ORACLES section went with the module, 2026-07
+— issue #271).
 
 **Scene lifecycle** (`src/factContinuity/sceneLifecycle.js`): scenes start on
 `!scene start`, `ensureSceneStarted` on the first move/@scene/paced

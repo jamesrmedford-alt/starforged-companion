@@ -277,6 +277,16 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
   pipeline, which runs outside it. A safety action must not wait in that
   queue behind a slow handler: the X-Card runs unqueued, which is safe only
   because no handler writes back a snapshot held across an `await`.
+- **Writers of different kinds share one write chain.** Each writer kind
+  serialised against its own kind only — two captures (X44), two clock
+  writes (W53) — so a clock advance sent inside the oracle capture's round
+  trip still erased the result its Pay the Price card had just recorded, and
+  so did the `!oracle` follow-up's scene start (issue #342 Z17). The
+  fire-and-forget campaignState writers on a client run through
+  `serialiseCampaignStateWrite` (`src/multiplayer/campaignStateChain.js`),
+  each reading the store at its turn, once the write ahead of it has landed;
+  a new writer of that kind joins the chain, and a chained task never waits
+  on another one (it would wait for itself).
 - **A writer that fires on every message keeps out of campaignState.** The
   chat-activity stamp wrote `{ ...cached, lastSessionTimestamp }` on the
   canonical GM whenever a message landed on a due stamp — and a relayed
