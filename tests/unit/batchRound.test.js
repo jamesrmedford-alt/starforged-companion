@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ROUND_PHASE, ENTRY_STATUS, READING_KIND, ROUND_TEXT_MAX, RoundRefusal,
   participantsFrom, createRound, addParticipant, closeRound, nextRoundNumber, storedRound,
-  submitEntry, withdrawEntry, passEntry, recordReading, readingFailed, confirmEntry, rereadEntry, offerForcedMove,
+  submitEntry, withdrawEntry, passEntry, recordReading, readingFailed, confirmEntry, rereadEntry, offerForcedMove, takeCardMoves,
   validateChoices, cleanSubmissionText,
   readyToResolve, readingsInFlight, beginResolution, actingOrder, fixActing,
   markRolled, markRecorded, markRefused, allSettled,
@@ -162,6 +162,49 @@ describe('transitions', () => {
     expect(offered.round.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.READ, offer: { text: 'Finish it', forced } });
     const used = rereadEntry(offered.round, { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'u', now: NOW, useOffer: true });
     expect(used.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.SUBMITTED, text: 'Finish it', offer: null, readAs: { move: true, forced } });
+  });
+
+  it('a card move carries its chat message\'s id — as the entry, as an offer, and when the offer is used (issue #342 Z05)', () => {
+    const forced = { moveId: 'take_decisive_action' };
+    const taken = offerForcedMove(open(), { userId: 'pl-1', text: 'Finish it', forced, submissionId: 'f', now: NOW, messageId: 'm-1' });
+    expect(taken.round.entries['pl-1'].readAs).toMatchObject({ messageId: 'm-1' });
+    const offered = offerForcedMove(readied(open(), 'pl-1'), { userId: 'pl-1', text: 'Finish it', forced, submissionId: 'f', now: NOW, messageId: 'm-2' });
+    expect(offered.round.entries['pl-1'].offer).toMatchObject({ messageId: 'm-2' });
+    const used = rereadEntry(offered.round, { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'u', now: NOW, useOffer: true });
+    expect(used.entries['pl-1'].readAs).toMatchObject({ messageId: 'm-2' });
+  });
+
+  it('only Keep mine drops an offer — on a Ready entry too; Withdraw and Pass leave it offered (issue #342 Z05)', () => {
+    const forced = { moveId: 'face_danger' };
+    const offer = (r) => offerForcedMove(r, { userId: 'pl-1', text: 'Dive', forced, submissionId: 'f', now: NOW, messageId: 'm' }).round;
+    const ready = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
+    const kept = confirmEntry(offer(ready), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
+    expect(kept.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.READY, offer: null });
+    expect(confirmEntry(ready, { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW })).toBe(ready);   // nothing to drop
+    expect(withdrawEntry(offer(ready), { userId: 'pl-1' }).entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.WAITING, offer: { text: 'Dive' } });
+    expect(passEntry(offer(ready), { userId: 'pl-1' }).entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.PASSED, offer: { text: 'Dive' } });
+  });
+});
+
+describe('the card moves a round leaves behind (takeCardMoves, issue #342 Z05)', () => {
+  const forced = { moveId: 'face_danger' };
+  it('hands back every undecided offer, and the card-move entries it does not roll; the offers come off', () => {
+    let r = readied(open(), 'pl-1');
+    r = offerForcedMove(r, { userId: 'pl-1', text: 'Dive', forced, submissionId: 'f', now: NOW, messageId: 'm-offer' }).round;
+    r = offerForcedMove(r, { userId: 'pl-2', text: 'Cover', forced, submissionId: 'g', now: NOW, messageId: 'm-entry' }).round;
+    const resolved = takeCardMoves(r, { acting: ['pl-1'] });
+    expect(resolved.held).toEqual([{ userId: 'pl-1', messageId: 'm-offer' }, { userId: 'pl-2', messageId: 'm-entry' }]);
+    expect(resolved.round.entries['pl-1'].offer).toBeNull();
+    expect(r.entries['pl-1'].offer).not.toBeNull();                       // a copy: the input is untouched
+    // An acting card-move entry is rolled, not held.
+    expect(takeCardMoves(r, { acting: ['pl-1', 'pl-2'] }).held).toEqual([{ userId: 'pl-1', messageId: 'm-offer' }]);
+  });
+
+  it('a round closed unresolved hands back every card move; with none, the round itself comes back', () => {
+    const r = offerForcedMove(open(), { userId: 'pl-2', text: 'Cover', forced, submissionId: 'g', now: NOW, messageId: 'm-entry' }).round;
+    expect(takeCardMoves(r).held).toEqual([{ userId: 'pl-2', messageId: 'm-entry' }]);
+    const plain = readied(open(), 'pl-1');
+    expect(takeCardMoves(plain)).toEqual({ round: plain, held: [] });
   });
 });
 

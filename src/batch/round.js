@@ -58,6 +58,8 @@ const MAX_CHOSEN_ABILITIES = 24;
 
 const RESOLVING = new Set([ROUND_PHASE.ROLLING, ROUND_PHASE.UPGRADING, ROUND_PHASE.NARRATING]);
 const SETTLED_ENTRY = new Set([ENTRY_STATUS.RECORDED, ENTRY_STATUS.REFUSED]);
+// An entry holding an action of its own — written, or a card's move — not yet rolled.
+const OWN_ACTION = new Set([ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY]);
 
 /** A transition refused — `reason` is a stable code, `message` what the requester is told. */
 export class RoundRefusal extends Error {
@@ -307,7 +309,8 @@ export function submitEntry(round, { userId, text, submissionId, now, readAs = n
 }
 
 /**
- * A player withdraws their action: back to waiting.
+ * A player withdraws their action: back to waiting. A card's move offered
+ * beside it stays offered — withdrawing (or Edit) is not choosing to drop it.
  *
  * @param {Object} round
  * @param {{ userId: string }} args
@@ -319,12 +322,14 @@ export function withdrawEntry(round, { userId }) {
   if (entry.status === ENTRY_STATUS.WAITING) return round;
   return withEntry(round, userId, {
     status: ENTRY_STATUS.WAITING, submissionId: null, submittedAt: null, readyAt: null,
-    reading: null, choices: null, error: null, readAs: null, offer: null,
+    reading: null, choices: null, error: null, readAs: null,
   }, { order: withoutUser(round.order, userId) });
 }
 
 /**
- * A player passes this round. Silent: nothing names them anywhere.
+ * A player passes this round. Silent: nothing names them anywhere. A card's
+ * move offered beside their action stays offered (it joins the next round
+ * when the round resolves without it — takeCardMoves).
  *
  * @param {Object} round
  * @param {{ userId: string }} args
@@ -336,7 +341,7 @@ export function passEntry(round, { userId }) {
   if (entry.status === ENTRY_STATUS.PASSED) return round;
   return withEntry(round, userId, {
     status: ENTRY_STATUS.PASSED, submissionId: null, readyAt: null, reading: null,
-    choices: null, error: null, readAs: null, offer: null,
+    choices: null, error: null, readAs: null,
   }, { order: withoutUser(round.order, userId) });
 }
 
@@ -378,7 +383,9 @@ function readingMayLand(round, userId, submissionId) {
 /**
  * A player confirms their reading: Ready, with the choices the window made —
  * checked against the reading (validateChoices). The entry joins the end of
- * the confirm order: entries roll, and are narrated, in that order.
+ * the confirm order: entries roll, and are narrated, in that order. It is
+ * also "Keep mine" beside a card's offered move: the offer is dropped — on a
+ * Ready entry that is all it does.
  *
  * @param {Object} round
  * @param {{ userId: string, submissionId: string, choices: Object, now: string }} args
@@ -388,7 +395,7 @@ export function confirmEntry(round, { userId, submissionId, choices, now }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   if (entry.submissionId !== submissionId) refuse("stale", "That reading is out of date — your action was changed since.");
-  if (entry.status === ENTRY_STATUS.READY) return round;
+  if (entry.status === ENTRY_STATUS.READY) return entry.offer ? withEntry(round, userId, { offer: null }) : round;
   if (entry.status !== ENTRY_STATUS.READ || !entry.reading) refuse("unread", "Your action hasn't been read yet.");
   const checked = validateChoices(entry.reading, choices);
   return withEntry(round, userId, {
@@ -416,7 +423,7 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
     return withEntry(round, userId, {
       status: ENTRY_STATUS.SUBMITTED, text: entry.offer.text, submissionId: newSubmissionId, submittedAt: now,
       readyAt: null, reading: null, choices: null, error: null, offer: null,
-      readAs: { move: true, forced: entry.offer.forced ?? null },
+      readAs: { move: true, forced: entry.offer.forced ?? null, messageId: entry.offer.messageId ?? null },
     }, { order: withoutUser(round.order, userId) });
   }
   if (entry.status !== ENTRY_STATUS.READ || entry.reading?.kind !== READING_KIND.NARRATIVE) {
@@ -436,28 +443,58 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
  * Attempt to Finish the Fight, a Which-fight pick, Swear it, a token-drag Set
  * a Course …). It becomes the entry, waiting for the player's confirm — or,
  * when they have already submitted their own action, an offer beside it, and
- * the window asks which to keep.
+ * the window asks which to keep. Its chat message's id rides along
+ * (`messageId`): a card move the round does not take is held for the next
+ * round by it (takeCardMoves) — its card is claimed, so it is never dropped.
  *
  * @param {Object} round
- * @param {{ userId: string, text: string, forced: Object, submissionId: string, now: string }} args
+ * @param {{ userId: string, text: string, forced: Object, submissionId: string, now: string,
+ *   messageId?: string|null }} args
  * @returns {{ round: Object, read: boolean }} `read`: the forced move is the entry now, to be read
  */
-export function offerForcedMove(round, { userId, text, forced, submissionId, now }) {
+export function offerForcedMove(round, { userId, text, forced, submissionId, now, messageId = null }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   const clean = cleanSubmissionText(text) ?? cleanSubmissionText(forced?.moveName ?? forced?.moveId ?? "") ?? "—";
-  const own = entry.status === ENTRY_STATUS.SUBMITTED || entry.status === ENTRY_STATUS.READ || entry.status === ENTRY_STATUS.READY;
+  const own = OWN_ACTION.has(entry.status);
   if (own) {
-    return { round: withEntry(round, userId, { offer: { text: clean, forced, at: now } }), read: false };
+    return { round: withEntry(round, userId, { offer: { text: clean, forced, messageId, at: now } }), read: false };
   }
   return {
     round: withEntry(round, userId, {
       status: ENTRY_STATUS.SUBMITTED, text: clean, submissionId, submittedAt: now,
       readyAt: null, reading: null, choices: null, error: null, offer: null,
-      readAs: { move: true, forced },
+      readAs: { move: true, forced, messageId },
     }, { order: withoutUser(round.order, userId) }),
     read: true,
   };
+}
+
+/**
+ * The card buttons' moves a round leaves behind as it stops collecting: every
+ * offer still undecided — the round resolved, or closed, before its player
+ * chose — and every card move that was an entry the round does not roll (not
+ * in `acting`: its player left before confirming, its reading failed; or
+ * every one when the round closes unresolved). Their cards are claimed, so
+ * each is handed back by its chat message's id for the driver to hold for
+ * the next round (a card's forced move is held, not dropped — issue #337
+ * Y08). The offers come off the entries; an entry keeps its own move's id.
+ *
+ * @param {Object} round
+ * @param {{ acting?: string[] }} [opts] — the entries the round rolls (none for a round closed unresolved)
+ * @returns {{ round: Object, held: Array<{ userId: string, messageId: string }> }}
+ */
+export function takeCardMoves(round, { acting = [] } = {}) {
+  const held = [];
+  let entries = null;
+  for (const e of Object.values(round?.entries ?? {})) {
+    if (e.offer?.messageId) held.push({ userId: e.userId, messageId: e.offer.messageId });
+    if (OWN_ACTION.has(e.status) && e.readAs?.messageId && !acting.includes(e.userId)) {
+      held.push({ userId: e.userId, messageId: e.readAs.messageId });
+    }
+    if (e.offer) (entries ??= { ...round.entries })[e.userId] = { ...e, offer: null };
+  }
+  return { round: entries ? { ...round, entries } : round, held };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

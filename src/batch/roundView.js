@@ -123,7 +123,15 @@ function ownView(round, viewer, { collecting, moveLabel, statLabel, notReceived 
     notReceived:  !!notReceived,
     reading,
     choices:      entry.choices ?? null,
-    offer:        entry.offer ? { text: entry.offer.text, moveName: entry.offer.forced?.moveId ? moveLabel(entry.offer.forced.moveId) : null } : null,
+    // A card's move offered beside the player's own: use it, or keep their own
+    // reading (Keep mine — once there is one to keep). Undecided, it joins
+    // the next round.
+    offer:        entry.offer ? {
+      text:     entry.offer.text,
+      moveName: entry.offer.forced?.moveId ? moveLabel(entry.offer.forced.moveId) : null,
+      canUse:   collecting,
+      canKeep:  collecting && (status === ENTRY_STATUS.READ || status === ENTRY_STATUS.READY) && !!entry.reading,
+    } : null,
     canEdit:      collecting,
     canSubmit:    collecting,
     canPass:      collecting && status !== ENTRY_STATUS.PASSED,

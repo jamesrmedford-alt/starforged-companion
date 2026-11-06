@@ -264,8 +264,13 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
 
     if (own.offer) {
       out.push(`<div class="sf-round-offer"><p>A card offers ${escapeHtml(own.offer.moveName ?? "a move")} for you: <em>${escapeHtml(own.offer.text)}</em></p>`
-        + `<div class="sf-round-actions"><button type="button" data-action="useOffer">Use the card's move</button>`
-        + `<button type="button" data-action="keepMine">Keep mine</button></div></div>`);
+        + (own.offer.canUse || own.offer.canKeep
+          ? `<div class="sf-round-actions">`
+            + (own.offer.canUse ? `<button type="button" data-action="useOffer">Use the card's move</button>` : "")
+            + (own.offer.canKeep ? `<button type="button" data-action="keepMine">Keep mine</button>` : "")
+            + `</div>`
+          : "")
+        + `<p class="sf-round-hint">Not chosen before the round resolves, the card's move joins the next round.</p></div>`);
     }
 
     if (own.status === ENTRY_STATUS.SUBMITTED && !own.error) out.push(`<p class="sf-round-hint">Reading your action…</p>`);
@@ -546,8 +551,19 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     await this.render();
   }
 
-  /** Keep mine: confirm the player's own reading, which drops the card's offer. */
+  /**
+   * Keep mine: confirm the player's own reading, which drops the card's offer.
+   * An entry already Ready keeps the choices it was confirmed with (its form
+   * is not shown) — the confirm only drops the offer.
+   */
   static async #onKeepMine(event, target) {
+    const round = getStoredRound();
+    const entry = entryFor(round, game.user?.id);
+    if (round && entry?.status === ENTRY_STATUS.READY) {
+      await this.#relay("batch.confirm", { roundId: round.id, submissionId: entry.submissionId, choices: entry.choices ?? {} });
+      await this.render();
+      return;
+    }
     return RoundWindowApp.#onConfirm.call(this, event, target);
   }
 
@@ -694,8 +710,10 @@ export function registerRoundWindowHooks() {
         await RoundWindowApp.open();
       }
       if (round?.phase === ROUND_PHASE.CLOSED && ["session-ended", "discarded", "mode-off"].includes(round.closeReason)) {
-        const text = entryFor(round, game.user?.id)?.text ?? "";
-        if (text && [ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY].includes(entryFor(round, game.user?.id)?.status)
+        const mine = entryFor(round, game.user?.id);
+        const text = mine?.text ?? "";
+        // A card's move is held for the next round instead (driver takeCardMoves).
+        if (text && !mine.readAs?.messageId && [ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY].includes(mine.status)
             && !getRoundDraft().trim()) {
           await setRoundDraft(text);
           await RoundWindowApp.instance?.draftFromOutside(text);

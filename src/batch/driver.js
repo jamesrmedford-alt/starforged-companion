@@ -75,6 +75,7 @@ import {
   closeRound,
   nextRoundNumber,
   offerForcedMove,
+  takeCardMoves,
   recordReading,
   readingFailed,
   readyToResolve,
@@ -384,7 +385,8 @@ export async function openRoundIfDue(reason = "due") {
  * Close a collecting round no one will resolve — End a Session, Discard, the
  * mode off. Submitted entries are not rolled; their authors are told, and
  * each window keeps the text as a draft (src/ui/roundWindow.js, on the
- * close it sees).
+ * close it sees). A card button's move — an entry, or an offer beside one —
+ * is held for the next round instead (takeCardMoves): its card is claimed.
  *
  * @param {string} reason — "session-ended" | "discarded" | "mode-off"
  * @returns {Promise<Object|null>} the closed round, or null when none was closed
@@ -392,17 +394,24 @@ export async function openRoundIfDue(reason = "due") {
 export async function closeCollectingRound(reason) {
   if (!isCanonicalGM()) return null;
   let closed = null;
+  let held = [];
   const before = getStoredRound();
   try {
-    closed = await queueRoundWrite((latest) =>
-      (roundIsOpen(latest) && latest.phase === ROUND_PHASE.COLLECTING ? closeRound(latest, { reason, now: nowIso() }) : latest));
+    closed = await queueRoundWrite((latest) => {
+      if (!roundIsOpen(latest) || latest.phase !== ROUND_PHASE.COLLECTING) return latest;
+      const taken = takeCardMoves(latest);
+      held = taken.held;
+      return closeRound(taken.round, { reason, now: nowIso() });
+    });
   } catch (err) {
     console.warn(`${MODULE_ID} | Batch Mode: the round could not be closed (${reason}):`, err?.message ?? err);
     return null;
   }
   if (!closed || closed === before || closed.phase !== ROUND_PHASE.CLOSED) return null;
+  holdCardMoves(held, before);
+  // A card's move held for the next round is not its author's draft.
   const authors = Object.values(before?.entries ?? {})
-    .filter(e => [ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY].includes(e.status))
+    .filter(e => [ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY].includes(e.status) && !e.readAs?.messageId)
     .map(e => e.userId);
   if (authors.length) {
     const why = reason === "session-ended" ? "The session ended before the round was resolved"
@@ -782,10 +791,21 @@ async function rollRound(claim) {
     if (round?.phase !== ROUND_PHASE.ROLLING) return false;
 
     // The readings Send now waits for — this client's, or one a reload lost.
+    // Who acts is fixed then; the card moves the round does not take — an
+    // offer not chosen, a card move not confirmed — are held for the next.
     if (!Array.isArray(round.acting)) {
       for (const id of readingsInFlight(round)) startReading(id);
       await Promise.allSettled([..._readings.values()].map(r => r.promise));
-      round = await queueRoundWrite(r => fixActing(r));
+      const before = round;
+      let held = [];
+      round = await queueRoundWrite((r) => {
+        if (r?.phase !== ROUND_PHASE.ROLLING || Array.isArray(r.acting)) return fixActing(r);
+        const fixed = fixActing(r);
+        const taken = takeCardMoves(fixed, { acting: fixed.acting });
+        held = taken.held;
+        return taken.round;
+      });
+      holdCardMoves(held, before);
     }
     if (!round.acting.length) {
       await finishRound(round, "nobody-acted");
@@ -1346,6 +1366,7 @@ async function joinRound(message, userId) {
     await queueRoundWrite((latest) => {
       const res = offerForcedMove(latest, {
         userId, text: stripHtml(String(message?.content ?? "")), forced, submissionId: randomId(), now: nowIso(),
+        messageId: message?.id ?? null,
       });
       read = res.read;
       return res.round;
@@ -1357,6 +1378,22 @@ async function joinRound(message, userId) {
     return;
   }
   if (read) startReading(userId);
+}
+
+/**
+ * The card moves a round left behind (round.js takeCardMoves) wait for the
+ * next round, as one pressed while a round resolves does — each roller told.
+ *
+ * @param {Array<{ userId: string, messageId: string }>} held
+ * @param {Object|null} round — the round they were taken from (for the roller's name)
+ */
+function holdCardMoves(held, round) {
+  for (const { userId, messageId } of held ?? []) {
+    const message = game.messages?.get?.(messageId) ?? null;
+    if (!message) continue;
+    const entry = round?.entries?.[userId] ?? null;
+    holdForNextRound(message, { userId, actorName: entry?.actorName ?? "" });
+  }
 }
 
 function holdForNextRound(message, participant) {

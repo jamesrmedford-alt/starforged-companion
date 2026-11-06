@@ -152,6 +152,33 @@ describe('a reading to confirm', () => {
   });
 });
 
+describe('a card\'s move offered beside the player\'s own (issue #342 Z05)', () => {
+  const forced = { moveId: 'take_decisive_action' };
+  const offered = (r) => R.offerForcedMove(r, { userId: ME(), text: 'Take decisive action.', forced, submissionId: 'f', now: NOW, messageId: 'm-1' }).round;
+
+  it('a Ready entry: Keep mine relays the confirm with the choices it was confirmed with — no form, no "pick one first"', async () => {
+    const round = roundWith(r => offered(R.confirmEntry(R.recordReading(
+      R.submitEntry(r, { userId: ME(), text: 'I strike at the nearest one.', submissionId: 'sub1', now: NOW }),
+      { userId: ME(), submissionId: 'sub1', reading: READING }), { userId: ME(), submissionId: 'sub1', choices: { abilityIds: ['a1'], targetId: 'f2' }, now: NOW })));
+    const { app, root } = await render();
+    expect(root.querySelector('input[name="sf-round-target"]')).toBeNull();   // a Ready reading shows no form
+    const keep = root.querySelector('[data-action="keepMine"]');
+    expect(keep).toBeTruthy();
+    await RoundWindowApp.DEFAULT_OPTIONS.actions.keepMine.call(app, null, keep);
+    expect(relayed.calls).toEqual([{ kind: 'batch.confirm', payload: {
+      roundId: round.id, submissionId: 'sub1', choices: { abilityIds: ['a1'], statReplacement: null, targetId: 'f2' },
+    } }]);
+  });
+
+  it('an entry with no reading to keep (withdrawn) offers the card\'s move, and says it waits for the next round', async () => {
+    roundWith(r => R.withdrawEntry(offered(R.submitEntry(r, { userId: ME(), text: 'x', submissionId: 'w', now: NOW })), { userId: ME() }));
+    const { root } = await render();
+    expect(root.querySelector('[data-action="useOffer"]')).toBeTruthy();
+    expect(root.querySelector('[data-action="keepMine"]')).toBeNull();
+    expect(root.querySelector('.sf-round-offer').textContent).toMatch(/joins the next round/);
+  });
+});
+
 describe('a reading with no roll', () => {
   it('offers Just narrate, and Roll ⟨move⟩ when the classifier suggested one', async () => {
     roundWith(r => R.recordReading(
