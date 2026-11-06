@@ -289,7 +289,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     character       = null,
     relevance       = null,
     oracleSeeds     = null,
-    actingNames     = null,
+    actingActorIds  = null,
   } = opts;
 
   // The scene's ledgers as they stand in the store (issue #325 W05; rules/
@@ -316,7 +316,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       console.warn(`${MODULE_ID} | narrator: campaignTruths build failed:`, err);
       return '';
     }),
-    party:              buildPartyContext(character?.name ?? null, actingNames),
+    party:              buildPartyContext(character?.name ?? null, actingActorIds),
     audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     // Spotlight rotation (issue #232) — multiplayer turn-implication nudge.
     // Advances the per-scene pointer as a side effect; '' when not applicable.
@@ -910,7 +910,11 @@ export function roundNarrationEntries(round) {
     .map(e => ({
       userId:    e.userId,
       actorId:   e.actorId,
-      actorName: e.actorName || 'Someone',
+      // The PC as it is named now, by its id: the entry's name was copied when
+      // the round opened, and a rename since (a new character's name settled
+      // in the first session) narrated the old one (issue #342 Z36). The
+      // copy names a PC that is gone.
+      actorName: String(game.actors?.get?.(e.actorId)?.name ?? '').trim() || e.actorName || 'Someone',
       userName:  e.userName ?? '',
       text:      e.text ?? '',
       input:     e.rolled?.narrationInput ?? { kind: 'narrative' },
@@ -979,7 +983,7 @@ export async function narrateRound({ round, campaignState }) {
     playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
     character:       null,
     relevance,
-    actingNames:     entries.map(e => e.actorName),
+    actingActorIds:  entries.map(e => e.actorId),
   });
   extras.roundCharacters = characters;
 
@@ -4548,15 +4552,23 @@ function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState, 
  * always agree.
  *
  * @param {string|null} speakingName
+ * @param {string[]|null} [actingActorIds] — a Batch Mode round's acting PCs, by actor id
  * @returns {{ names: string[], speaking: string|null }|null}
  */
-function buildPartyContext(speakingName = null, actingNames = null) {
+function buildPartyContext(speakingName = null, actingActorIds = null) {
   try {
+    const round = Array.isArray(actingActorIds) && actingActorIds.length ? new Set(actingActorIds) : null;
     // CHAR-PARTY-NAMES-ONLY (character-detail audit 2026-07): the roster
     // used to carry bare names, so third-person narration had pronouns for
     // no PC and misgendered non-speaking party members. Carry each member's
     // recorded pronouns + callsign (snapshot reads are cached).
     const members = (getPlayerActors() ?? [])
+      // A Batch Mode round (issue #340) is told only who acted: who sat it
+      // out is never sent, so the roster names the acting PCs alone — by
+      // actor id: matched by the names the round copied when it opened, a
+      // PC renamed since fell out, and with it the whole roster (issue #342
+      // Z36; rules/reachability.md §6).
+      .filter(a => !round || round.has(a?.id))
       .map(a => {
         try { return readCharacterSnapshot(a); } catch { return null; }
       })
@@ -4565,17 +4577,14 @@ function buildPartyContext(speakingName = null, actingNames = null) {
         name:     s.name.trim(),
         pronouns: s.pronouns ?? '',
         callsign: s.callsign ?? '',
-      }))
-      // A Batch Mode round (issue #340) is told only who acted: who sat it
-      // out is never sent, so the roster names the acting PCs alone.
-      .filter(m => !Array.isArray(actingNames) || !actingNames.length || actingNames.includes(m.name));
+      }));
     if (members.length < 2) return null;
     return {
       names:    members.map(m => m.name),   // kept for back-compat consumers
       members,
       speaking: speakingName ?? null,
-      // A Batch Mode round names who acts in it (issue #340).
-      ...(Array.isArray(actingNames) && actingNames.length ? { acting: actingNames } : {}),
+      // A Batch Mode round names who acts in it (issue #340) — as they are named now.
+      ...(round ? { acting: members.map(m => m.name) } : {}),
     };
   } catch (err) {
     console.debug?.(`${MODULE_ID} | narrator: party context build failed:`, err?.message ?? err);

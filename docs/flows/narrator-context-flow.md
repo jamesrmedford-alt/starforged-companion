@@ -48,8 +48,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   and lore; each move entry's own relevance (resolved when it rolled — the
   GM's clarification dialog included) unioned, at the widest class (an entry
   with no roll counts as interaction); a CHARACTER block per acting PC
-  (`extras.roundCharacters`); PARTY naming only the PCs who act (`actingNames`,
-  marked "acting this round"); no SPOTLIGHT (`round_resolution` is not in
+  (`extras.roundCharacters`); PARTY naming only the PCs who act
+  (`actingActorIds` — the roster filtered by actor id, each named as the
+  sheet names it now, marked "acting this round"; the round's own copy of a
+  name, taken when it opened, names only a PC since deleted — issue #342
+  Z36); no SPOTLIGHT (`round_resolution` is not in
   `SPOTLIGHT_MODES`). The user message (`buildRoundUserMessage`) is RECENT
   SCENE, then THIS ROUND — each acting entry in confirm order with its move,
   stat, outcome, outcome text and price, oracle seeds, the player's sanitised
