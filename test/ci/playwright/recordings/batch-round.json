@@ -75,6 +75,20 @@
     },
     {
       "step": "round-1",
+      "kind": "callHaiku>defaultCallTierAPI",
+      "user": "Vance Oduya dockmaster ledger berth nine Ren Adeyemi docking ring keeps watch",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"updates\": []}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "round-1",
       "kind": "callChronicleAPI>writeChronicleEntry",
       "user": "## CONTEXT Context: one round in which several characters acted at once ## NARRATION Vance Oduya departure ledger berth nine",
       "response": {
@@ -124,6 +138,20 @@
           {
             "type": "text",
             "text": "{\"entities\": [], \"renames\": [], \"worldJournal\": {\"lore\": [], \"threats\": [], \"factionUpdates\": [], \"locationUpdates\": [], \"stateTransitions\": []}}"
+          }
+        ],
+        "stop_reason": "end_turn"
+      }
+    },
+    {
+      "step": "round-2",
+      "kind": "callHaiku>defaultCallTierAPI",
+      "user": "Ren Adeyemi hatchway Vance Oduya hands ledger spine berth nine",
+      "response": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"updates\": []}"
           }
         ],
         "stop_reason": "end_turn"
