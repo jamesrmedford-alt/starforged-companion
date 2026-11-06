@@ -454,10 +454,16 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
   }
   const offered = entry.reading?.suggestedMove ?? null;
   if (moveId && moveId !== offered) refuse("bad-move", "That move wasn't offered.");
+  // "Roll ⟨move⟩" rolls the suggestion as the paced card's Roll does: a
+  // scene-challenge move names the challenge the classifier named, by id
+  // (PACED-VARIANT-NO-TARGET; issue #342 Z38) — with two open, unnamed, it
+  // marked neither.
+  const target = entry.reading?.suggestedTargetId;
+  const moveTargetId = moveId && typeof target === "string" && target ? target : null;
   return withEntry(round, userId, {
     status: ENTRY_STATUS.SUBMITTED, submissionId: newSubmissionId, submittedAt: now,
     readyAt: null, reading: null, choices: null, error: null,
-    readAs: { move: true, moveId: moveId ?? null },
+    readAs: { move: true, moveId: moveId ?? null, ...(moveTargetId ? { moveTargetId } : {}) },
   }, { order: withoutUser(round.order, userId) });
 }
 

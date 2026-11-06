@@ -450,15 +450,16 @@ export async function postTargetChoiceCard(read, { narration, speakerActorId }) 
  * @param {Object} args.campaignState — a working copy
  * @param {string|null} args.apiKey
  * @param {*} args.dial — the Mischief dial
- * @param {{ move?: boolean, moveId?: string|null, forced?: Object|null }|null} [args.readAs]
- *   read as a move ("Roll a move instead"), as the move named ("Roll ⟨move⟩"),
- *   or as a card button's forced move
+ * @param {{ move?: boolean, moveId?: string|null, moveTargetId?: string|null, forced?: Object|null }|null} [args.readAs]
+ *   read as a move ("Roll a move instead"), as the move named ("Roll ⟨move⟩"
+ *   — with the challenge the classifier named for it, by id), or as a card
+ *   button's forced move
  * @returns {Promise<Object>} the reading
  */
 export async function readAction({ text, speakerActorId, campaignState, apiKey, dial, readAs = null }) {
   const forced = readAs?.forced?.moveId
     ? readAs.forced
-    : (readAs?.moveId ? { moveId: readAs.moveId } : null);
+    : (readAs?.moveId ? { moveId: readAs.moveId, moveTargetId: readAs.moveTargetId ?? null } : null);
   const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
   let pacing = null;
   if (!readAs?.move) {

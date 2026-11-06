@@ -462,7 +462,10 @@ The classifier names the challenge the move is part of; the router keeps it,
 or the sole open one, on the card by id (`suggestedMoveTargetId`), and the
 Roll (`cardActions.applyPacedRoll`) forwards it as `forcedMoveTargetId` — with
 two challenges open it named none and the scoring asked which
-(PACED-VARIANT-NO-TARGET).
+(PACED-VARIANT-NO-TARGET). A Batch Mode reading keeps it as the no-roll
+reading's `suggestedTargetId`, and the Round window's "Roll ⟨move⟩" carries
+it (`round.rereadEntry` → `readAs.moveTargetId` → `readAction`'s forced
+`moveTargetId`; issue #342 Z38).
 An asset ability linked to Face Danger / Secure an Advantage applies to its
 variant: the ability scanner and the rider extraction match a variant as its
 ordinary move (`sceneChallenge.assetMatchMove` — SCENE-VARIANT-ABILITIES-UNKEYED).

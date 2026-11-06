@@ -152,6 +152,14 @@ describe('transitions', () => {
     refusedWith(() => rereadEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'n', now: NOW }), 'not-narrative');
   });
 
+  it('"Roll ⟨move⟩" carries the challenge the classifier named for it, by id; "Roll a move instead" names none (issue #342 Z38)', () => {
+    const reading = { kind: READING_KIND.NARRATIVE, suggestedMove: 'face_danger_scene_challenge', suggestedTargetId: 'chase' };
+    const named = rereadEntry(readied(open(), 'pl-1', reading), { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'n', now: NOW, moveId: 'face_danger_scene_challenge' });
+    expect(named.entries['pl-1'].readAs).toEqual({ move: true, moveId: 'face_danger_scene_challenge', moveTargetId: 'chase' });
+    const free = rereadEntry(readied(open(), 'pl-1', reading), { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'n', now: NOW });
+    expect(free.entries['pl-1'].readAs).toEqual({ move: true, moveId: null });
+  });
+
   it('a card button\'s move becomes the entry — or, beside an action already submitted, an offer', () => {
     const forced = { moveId: 'take_decisive_action', moveTargetId: 'f1' };
     const taken = offerForcedMove(open(), { userId: 'pl-1', text: 'Finish it', forced, submissionId: 'f', now: NOW });
