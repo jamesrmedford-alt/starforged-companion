@@ -12,9 +12,9 @@ rejected.
 (PLANNED). An opt-in **Batch Mode**, which a GM turns on from the Companion toolbar,
 gathers every player's action into a round. Each player gets a window asking for
 their character's action, and may pass. The round resolves when everyone is ready, or
-when a GM presses **Send now** because someone is away. Each move is then rolled for
-its roller, and the narrator tells the whole round once. The maintainer's choices
-(2026-11-05):
+when a GM presses **Send now** rather than wait. Each move is then rolled for its
+roller, and the narrator tells the whole round once. The maintainer's choices
+(2026-11-05; the silent opt-out 2026-11-06):
 - **The reading is confirmed in the player's own window.** The canonical GM reads a
   submission in the background: pacing, interpretation, asset abilities, any
   which-track pick. The player confirms it there. No confirm dialog opens on the GM's
@@ -24,17 +24,20 @@ its roller, and the narrator tells the whole round once. The maintainer's choice
   Send now counts as Keep. The move lock is free during that wait (an interactive
   prompt never holds it — "Move-concurrency lock covers narration + persistence, not
   post-roll prompts", below).
-- **Players see each other's status and submitted text** until the round resolves,
+- **Players see who is ready, and what they submitted,** until the round resolves,
   so the crew can coordinate.
 - **Chat is table talk while the mode is on.** A typed line isn't narrated; its author
   is told, and the line becomes an unsent draft in their window. Commands are
   unchanged.
+- **Opting out is silent.** A player who passes, or simply doesn't act, is not marked,
+  named or told: not in the other players' windows, on the round card, in the
+  narration, or when a GM sends the round. The round goes ahead with whoever acted.
 
 Defaulted while scoping (the issue lists them all; revisit on request): rounds open
 by themselves while a session is active; participants are connected users with a PC
-of their own, and a GM only with an assigned PC; one action per player per round; a
-disconnected participant counts as away; entries roll and are narrated in confirm
-order; a card button's move joins the round as its roller's entry; under the X-Card a
+of their own, and a GM only with an assigned PC; one action per player per round; the
+round doesn't wait for a participant who has disconnected; entries roll and are
+narrated in confirm order; a card button's move joins the round as its roller's entry; under the X-Card a
 round doesn't resolve; the narration is a new mode, `round_resolution`, outside the
 spotlight modes; the round state is its own world setting (`batchMode.round`), not a
 `campaignState` field.
@@ -62,6 +65,9 @@ narrator call instead of one per line.
   the upgraded action.
 - *Status only* — hides coordination the co-op game wants. The text is in a world
   setting anyway, so hiding it would be UI-only.
+- *Marking players who didn't act* — an "away" status, a GM control to skip a player,
+  naming them on the round card or to the narrator, a notice when nobody acts. The
+  maintainer called it an overreach: opting out needs no comment.
 - *Typed lines submitted as entries* — table talk would be submitted by accident.
   *Typed lines narrated at once* — defeats the round.
 - *A `campaignState` field for the round* — the move pipeline's merge
