@@ -276,7 +276,12 @@ relays `bond.recommit` (`cardActions.applyBondRecommitOffer`, the roller's
 player or a GM, claimed once), and `performBondRecommit` clears the lowest
 die's boxes from `relationshipTicks`, steps the record's rank once, writes
 both through to the bond Items (`setBondItemTicks` / `setBondItemRank`) and
-adds a history entry. A miss rolled on the sheet gets the same offer, for the
+adds a history entry. A connection bonded, severed or deleted since the miss
+gets a short card ("Sable is already bonded — nothing was recommitted"), the
+offer closed, and a record write the world refused is whispered to the
+presser and the GMs to press again, the claim released
+(`cardActions.tellRecommitOutcome`, issue #342 Z58 — both were a console line
+on the GM's). A miss rolled on the sheet gets the same offer, for the
 connection `findSheetBondConnection` resolves — none for a bond made by hand
 or a connection already bonded (`offerSheetMissRecommit`, issue #331 X62: the
 consequence hook acted on hits only). Both hooks classify the

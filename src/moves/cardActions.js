@@ -975,13 +975,14 @@ export function applyWhichFightPick(payload = {}, ctx = {}) {
  * crew's), and the GM-authored card is claimed (`recommitted`) before the
  * recommit, behind the in-flight guard. A track write the world refused
  * changed nothing and releases the claim, so the press can be made again;
- * an expedition already over leaves the offer closed.
+ * an expedition already over leaves the offer closed. Either is said to the
+ * presser (tellRecommitOutcome — issue #342 Z58: the GM's console only).
  *
  * @param {{ messageId?: string }} payload
- * @param {Object} [_ctx]
+ * @param {Object} [ctx]
  * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
-export async function applyRecommitOffer(payload = {}, _ctx = {}) {
+export async function applyRecommitOffer(payload = {}, ctx = {}) {
   const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
   const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
   if (!message) {
@@ -1013,6 +1014,7 @@ export async function applyRecommitOffer(payload = {}, _ctx = {}) {
       await message.update({ [`flags.${MODULE_ID}.recommitted`]: false })
         .catch(e => console.warn(`${MODULE_ID} | recommit: releasing the claim failed:`, e?.message ?? e));
     }
+    await tellRecommitOutcome(ctx, res, { what: "expedition", name: res?.name ?? f.trackLabel ?? null });
     return { applied: res?.ok === true, ...(res?.reason ? { reason: res.reason } : {}) };
   } finally {
     _inFlight.delete(key);
@@ -1025,9 +1027,14 @@ export async function applyRecommitOffer(payload = {}, _ctx = {}) {
  * offers "🔁 Recommit"; the GM-authored card is claimed (`recommitted`)
  * before the recommit, behind the in-flight guard, as an expedition's is
  * (applyRecommitOffer). The vow or bond is the roller's: their player or a
- * GM may press it. A write the world refused changed nothing and releases
- * the claim; a vow fulfilled or a bond forged since the miss leaves the
- * offer closed (issue #335 Y10).
+ * GM may press it — a roller no longer one of the table's player characters
+ * is refused as gone, as the card-roller buttons refuse one (refusePress
+ * "not-a-pc"; known-issues RECOMMIT-GONE-ROLLER-WORDING: a player was told
+ * the card named no character of theirs, and a GM's press did nothing). A
+ * write the world refused changed nothing and releases the claim; a vow
+ * fulfilled or a bond forged since the miss leaves the offer closed (issue
+ * #335 Y10). Each is said to the presser (tellRecommitOutcome — issue #342
+ * Z58: only the fulfilled vow got a card).
  *
  * @param {{ messageId?: string }} payload
  * @param {Object} [ctx]
@@ -1039,6 +1046,7 @@ export function applyVowRecommitOffer(payload = {}, ctx = {}) {
     perform: async (f) => (await import("../index.js")).performVowRecommit({
       vowName: f.vowName ?? null, itemId: f.itemId ?? null, actorId: f.actorId ?? null,
     }),
+    what: "vow", name: (f) => f.vowName ?? null,
   });
 }
 
@@ -1047,10 +1055,11 @@ export function applyBondRecommitOffer(payload = {}, ctx = {}) {
   return applyRollerRecommit(payload, ctx, {
     flag: "bondRecommitOfferCard", label: "bond recommit",
     perform: async (f) => (await import("../index.js")).performBondRecommit({ hostId: f.hostId ?? null }),
+    what: "bond", name: (f) => f.connectionName ?? null,
   });
 }
 
-async function applyRollerRecommit(payload, ctx, { flag, label, perform }) {
+async function applyRollerRecommit(payload, ctx, { flag, label, perform, what, name }) {
   const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
   const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
   if (!message) {
@@ -1064,6 +1073,11 @@ async function applyRollerRecommit(payload, ctx, { flag, label, perform }) {
   }
   const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | ${label}: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
+    return { applied: false, reason: "not-a-pc" };
+  }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not recommit ${actor?.name ?? "this card"}'s — refused.`);
     refusePress(ctx, "not-owner", actor);
@@ -1088,10 +1102,67 @@ async function applyRollerRecommit(payload, ctx, { flag, label, perform }) {
       await message.update({ [`flags.${MODULE_ID}.recommitted`]: false })
         .catch(e => console.warn(`${MODULE_ID} | ${label}: releasing the claim failed:`, e?.message ?? e));
     }
+    await tellRecommitOutcome(ctx, res, { what, name: res?.name ?? name(f) });
     return { applied: res?.ok === true, ...(res?.reason ? { reason: res.reason } : {}) };
   } finally {
     _inFlight.delete(key);
   }
+}
+
+// What a 🔁 Recommit that changed nothing tells the presser, by what it was
+// for: the offer's own title, and why there was nothing to recommit.
+const RECOMMIT_TITLES = { expedition: "🔁 Recommit to the Expedition", vow: "🔁 Recommit to the Vow", bond: "🔁 Recommit to the Bond" };
+const RECOMMIT_NOTHING = {
+  "no-track":      { finished: "is finished", gone: "is no longer a progress track" },
+  "no-vow":        { gone: "is no longer on its character's sheet" },
+  "no-connection": { bonded: "is already bonded", lost: "is no longer a connection", gone: "is no longer a connection" },
+};
+
+/**
+ * Say what a 🔁 Recommit that changed nothing did, to whoever pressed it
+ * (issue #342 Z58 — both cases were a console line on the GM's): a write the
+ * world refused is whispered to the presser and the GMs, as a refused reward
+ * pick or link is (issue #329 X07) — its claim was released, so the press can
+ * be made again; a target gone, finished or bonded since the miss gets the
+ * short card a vow fulfilled since gets (issue #335 Y10), the offer closed.
+ * Every other outcome is already on a card (the "Recommitted" card, Y10's)
+ * or says nothing. Never throws.
+ *
+ * @param {Object} ctx — the relay context
+ * @param {{ ok?: boolean, reason?: string, why?: string }|null} res — perform*'s
+ * @param {{ what: "expedition"|"vow"|"bond", name?: string|null }} about
+ */
+async function tellRecommitOutcome(ctx, res, { what, name = null }) {
+  const title = RECOMMIT_TITLES[what] ?? "🔁 Recommit";
+  const label = `<strong>${escapeHtml(name || `that ${what}`)}</strong>`;
+  let content = null;
+  let whisper = null;
+  if (res?.reason === "write-refused") {
+    content = `<div class="sf-ptp-card"><strong>Not saved</strong><p>The recommit to ${label} could not be saved &mdash; nothing changed. Press ${escapeHtml(title)} again.</p></div>`;
+    const gmIds = Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM).map(u => u.id);
+    whisper = [...new Set([ctx?.requesterId ?? globalThis.game?.user?.id ?? null, ...gmIds].filter(Boolean))];
+  } else if (RECOMMIT_NOTHING[res?.reason]) {
+    const why = RECOMMIT_NOTHING[res.reason][res.why] ?? Object.values(RECOMMIT_NOTHING[res.reason]).at(-1);
+    content = `<div class="sf-ptp-card"><strong>${escapeHtml(title)}</strong><p>${label} ${why} &mdash; nothing was recommitted.</p></div>`;
+  }
+  if (!content) return;
+  try {
+    await globalThis.ChatMessage.create({
+      content,
+      ...(whisper ? { whisper } : {}),
+      flags: { [MODULE_ID]: { recommitOutcomeNotice: true, reason: res.reason } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | recommit: telling the presser failed:`, err?.message ?? err);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

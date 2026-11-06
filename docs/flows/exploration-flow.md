@@ -176,7 +176,10 @@ which claims the GM-authored offer card (`recommitted`) before running
 `performRecommit` — once per card whoever presses (any user may), where every
 press or re-render used to recommit again; a refused track write releases the
 claim (issue #321 U20, which also folded the old raw `expedition.recommit`
-socket relay into `GM_ACTIONS`).
+socket relay into `GM_ACTIONS`). Either outcome is said to the presser
+(`cardActions.tellRecommitOutcome`, issue #342 Z58): a refused write is
+whispered to them and the GMs to press again, and an expedition finished or
+deleted since gets a short card ("… is finished — nothing was recommitted").
 
 ## 4. Site discovery
 

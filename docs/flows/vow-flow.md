@@ -309,7 +309,14 @@ the Item holds it (a vendor number or a name — `setVowItemTrack`). A vow
 fulfilled since the miss (a later roll, a crewmate's fulfilment, the sheet)
 is refused with a short card and the offer stays closed — a fulfilled vow's
 track never moves, and the press lowered it and raised its rank on every
-copy (issue #335 Y10); a completed copy is never written. The miss is a
+copy (issue #335 Y10); a completed copy is never written. A press that
+changes nothing else is said too (`cardActions.tellRecommitOutcome`, issue
+#342 Z58 — a console line on the GM's): a refused write is whispered to the
+presser and the GMs ("could not be saved … press it again", X07's shape —
+the claim released), and a vow deleted since (`no-vow`) gets the short card,
+the offer closed; a roller no longer one of the table's PCs is refused as
+gone, to a player or a GM (`refusePress` "not-a-pc" — known-issues
+RECOMMIT-GONE-ROLLER-WORDING: a GM's press did nothing). The miss is a
 progress roll, never burned or improved, so no upgrade retires the offer. A miss
 rolled on the sheet gets the same offer, for the roller's vow Item of the
 roll's name (`registerNativeFulfilConsequenceHook` → `offerSheetMissRecommit`,

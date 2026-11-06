@@ -3739,8 +3739,10 @@ async function postRecommitOfferCard(track) {
  * "expedition.recommit", issue #321 U20) runs it once per card.
  *
  * @param {string} trackId
- * @returns {Promise<{ ok: boolean, reason?: "no-track"|"write-refused" }>}
- *   "write-refused": the track write failed and nothing changed
+ * @returns {Promise<{ ok: boolean, reason?: "no-track"|"write-refused", why?: "finished"|"gone", name?: string|null }>}
+ *   "write-refused": the track write failed and nothing changed; "no-track":
+ *   the expedition is `finished` or `gone` (the offer's handler says which —
+ *   cardActions.tellRecommitOutcome, issue #342 Z58)
  */
 export async function performRecommit(trackId) {
   let track = null;
@@ -3752,7 +3754,7 @@ export async function performRecommit(trackId) {
   }
   if (!track || track.completed) {
     console.warn(`${MODULE_ID} | recommit: track ${trackId} missing or already completed.`);
-    return { ok: false, reason: "no-track" };
+    return { ok: false, reason: "no-track", why: track ? "finished" : "gone", name: track?.label ?? null };
   }
   const dice = rollChallengeDice();
   const plan = planRecommit(track.ticks, track.rank, dice);
@@ -3912,14 +3914,18 @@ export async function performVowRecommit({ vowName = null, itemId = null, actorI
  * Item (setBondItemTicks / setBondItemRank — BOND-ITEM-MIRROR).
  *
  * @param {{ hostId?: string|null }} bond
- * @returns {Promise<{ ok: boolean, reason?: "no-connection"|"write-refused" }>}
+ * @returns {Promise<{ ok: boolean, reason?: "no-connection"|"write-refused", why?: "gone"|"lost"|"bonded", name?: string|null }>}
+ *   "no-connection": the connection is `gone`, `lost` or `bonded` since the
+ *   miss (the offer's handler says which — cardActions.tellRecommitOutcome,
+ *   issue #342 Z58)
  */
 export async function performBondRecommit({ hostId = null } = {}) {
   const conn   = await import("./entities/connection.js");
   const record = hostId ? conn.getConnection(hostId) : null;
   if (!record || record.active === false || record.bonded) {
     console.warn(`${MODULE_ID} | bond recommit: connection ${hostId ?? "?"} is gone, lost or bonded — nothing recommitted.`);
-    return { ok: false, reason: "no-connection" };
+    return { ok: false, reason: "no-connection",
+      why: !record ? "gone" : record.active === false ? "lost" : "bonded", name: record?.name ?? null };
   }
   const dice = rollChallengeDice();
   const plan = planRecommit(Number(record.relationshipTicks ?? 0), rankName(record.rank), dice);
