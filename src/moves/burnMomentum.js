@@ -570,6 +570,10 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // applied and the button re-arms.
   if (!(await claimUpgradeCard(message, "burn"))) return { applied: false, reason: "claim-refused" };
 
+  // A weak hit that pays the price too (Battle, Clash) keeps the one already
+  // rolled: reverting it and rolling again would be the same price over.
+  const priceStands = !!burn.ptpReversals && newConsequences.routePayThePrice === true;
+
   // Each write after the claim: one the world refuses goes to the GMs, with a
   // Retry (resultUpgrade.js applyUpgradeStep).
   const failures = [];
@@ -578,14 +582,14 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
     currentMomentum:  momentum.value,
     newMomentumReset: momentum.reset,
     newConsequences,
+    // The price that stands is the burned outcome's: its momentum loss lands
+    // after the reset (issue #342 Z51).
+    keptPriceMomentum: priceStands ? priceMomentumTaken(burn.ptpReversals, actor.id) : 0,
   }) }, failures);
 
   // Revert Pay-the-Price side effects that fired before the burn button was
   // visible: clock advances and any suffer-route meter loss (e.g. Endure Harm
-  // -1 from a PtP table roll on the original miss). A weak hit that pays the
-  // price too (Clash) keeps the one already rolled: reverting it and rolling
-  // again would be the same price over.
-  const priceStands = !!burn.ptpReversals && newConsequences.routePayThePrice === true;
+  // -1 from a PtP table roll on the original miss) — unless the price stands.
   if (burn.ptpReversals && !priceStands) {
     await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures, resolutionId: burn.resolutionId ?? null }).catch(err =>
       console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
@@ -636,10 +640,19 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
  * is accepted only once it is recorded): momentum goes to the reset value plus
  * the upgraded outcome's momentum; health / spirit / supply swap the original's
  * change for the upgraded one's.
+ *
+ * A Pay the Price the burned outcome keeps (a Battle or Clash burned to a weak
+ * hit — `priceStands`) is that outcome's effect, applied after the burn:
+ * "You must burn momentum before applying any other effects of the move". The
+ * momentum it took (`keptPriceMomentum` — harm or stress past 0, its
+ * receipt) comes off the reset value; the reset refunded it while the harm
+ * stood, 2 where the rules give 1 (issue #342 Z51). A price the burn undoes
+ * is no part of the burned outcome: its momentum loss is replaced by the
+ * reset, as before. applyMeterChanges clamps the result to the PC's bounds.
  */
-function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newConsequences }) {
+function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newConsequences, keptPriceMomentum = 0 }) {
   const orig = burnState.originalConsequences ?? {};
-  const targetMomentum = newMomentumReset + Number(newConsequences.momentumChange ?? 0);
+  const targetMomentum = newMomentumReset + Number(newConsequences.momentumChange ?? 0) - (Number(keptPriceMomentum) || 0);
   const swap = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
   return {
     momentum: targetMomentum - currentMomentum,

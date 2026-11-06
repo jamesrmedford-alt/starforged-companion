@@ -71,7 +71,9 @@ Two cross-cutting facts to hold onto:
   from a lost miss pays the won fight's milestone and reward
   (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
-  UPGRADE-PIPELINE-EFFECTS) — and the cards it posted, stamped `priceCard`
+  UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
+  coming off the burn's reset, the price being the burned outcome's effect
+  (issue #342 Z51) — and the cards it posted, stamped `priceCard`
   (the resist roll its harm owes, a redirected loss's picker): kept as the
   upgraded outcome's, not retired with the superseded outcome's (issue #335
   Y09), and so is a card a kept card's pick posts after the burn — the resist

@@ -6051,7 +6051,9 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
  * clamped loss never took and skipped the fallback's real one (issue #311 P04).
  * Harm or stress past the meter is taken as momentum (`momentumLoss`, issue
  * #314 Q02): that is a receipt of its own, which an improvement refunds and a
- * burn's reset replaces.
+ * burn's reset replaces — save a price the burned outcome keeps, whose
+ * momentum loss comes off the reset (burnMomentum.js burnMeterChanges, issue
+ * #342 Z51).
  *
  * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
  * @returns {Array<{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number, overflow?: true }>}
