@@ -11,6 +11,236 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Eleventh bug audit (issue #342) — all seventy-four fixed and the eight decisions built in the v1.7.37 cycle
+
+Found by the eleventh bug audit (2026-11-06) of `8a4ae3b` (the merge of
+Batch Mode, PR #341), with a probe per finding (`tests/probes/` on branch
+`claude/jolly-franklin-9ngysm`; the report is
+`docs/testing/bug-audit-11-2026-11-06.md` there, with its area notes and
+refuter pass): 74 findings Z01–Z74 (Z01 the one high-severity, safety row)
+and 8 decision rows D1–D8. The maintainer asked for issue #342 to be
+addressed on 2026-11-06 and took the recommended option on every decision
+row: D1, D2, D3, D5, D7 and D8 option A, D4 option A narrowly, D6 option B
+(decisions.md → "Issue #342 decisions"). One commit per row (Z03 and Z20
+share one); each fix carries its own regression tests, converted from the
+probes, which fail with the fix taken out (`docs/testing/fix-sensitivity.md`).
+Run against the integrated branch, the original probes pass 214 of their
+254 tests. The 40 others assert what a fix changed: 17 check the defect's
+own mechanism in a setup line, or cascade from one in the same file (the write order Z01 and Z17 change, Z64's
+unpaid momentum during the summary call, Z30's two held swears, the old
+rider hold in Z03's), 3 are "draft cleared on Sent" controls (Z31 keeps
+the draft), 13 assert an option not taken or a retired surface (D6's
+`isNewSessionStart`, D2's optional offer, BATCH-D1's option B for D3,
+Z37's "written and read", a told refusal for Z27, Z43's other fix), 5 rest
+on a harness shortcut or read a round after it moved on (Z29's
+`speaker.actor`, PIPE-1's scripted narration restating the refused fact,
+SESS-5's PC made after boot, MP-5 and BATCH-14), and 2 are doc-row controls
+quoting the old text (Z69, Z72); each converted test asserts the fixed or
+decided behaviour.
+
+None has been checked in a live Foundry world yet. The ones to try first:
+a player's X-Card, Set a Flag or Take a Break with the GM's game idle for ten
+minutes and then a chat line (Z01); a refused save on a chat line's
+narration (Z02); Batch Mode with two players — an "Apply asset effects"
+prompt left open, then the next round and Send now (Z03); switching the mode
+off while a player chooses Burn (Z04); a card's move pressed after Confirm
+(Z05) and the 🛡 resist roll at 0 health beside a written action (D2); a
+Round window re-rendered mid-reading (Z06); a round with a Make a Connection
+miss first, and one where two players each meet an NPC (Z08, Z09, D3's
+whose-connection buttons); a GM's PC acting beside one player (Z40); burn a
+miss whose price ran the supply out (D4) and one whose price advanced a clock
+another player's price then filled (Z46); finish an expedition toward a
+derelict, and one to a settlement in a sector with one unexplored site (Z14,
+D7); `!at` a derelict whose name another sector shares (Z15); a co-GM holding
+the only ElevenLabs key (Z67); a player's console-made look-alike narrator
+card with a keyed GM connected (D8). Choices for the maintainer to confirm:
+Z56 makes the move card's 🤝 / 🔗 picker the card's roller's to press (a
+crewmate types their own Develop Relationship); Z05 leaves an offer standing
+through Withdraw / Edit / Pass (only Keep mine drops one) and holds a
+card-move entry the round doesn't roll; D2 puts the written action back as
+the author's draft (not auto-submitted); Z31 keeps a submitted action as the
+author's draft until the round takes it (a table-talk line typed meanwhile no
+longer becomes the draft); Z09's attribution ladder auto-creates no NPC two
+PCs could own (it waits on D3's card); D3's "whose connection" is buttons on
+the row, with No one creating the NPC unbonded; Z43 keeps a promoted tier
+detail through a strike (whether a strike should also take the GM's promoted
+Notes line is open); Z67 adds a world setting, `audioKeyedGmUserIds`, and
+the audio-serving GM rule (`isAudioGM`); D8 drops the Play button from an
+honest card a player's own game narrated once a keyed GM connects, and a
+player card over the cap does not count at all; Z64 pays the momentum before
+the summary call (a narrower window remains while the momentum writes
+themselves land); D6's recap needs the load's own mint (a Begin a Session
+that mints without a reload posts none); Z12 restores the token's own spot
+whenever one is recorded; Z14 arrives at the expedition's site even when its
+label names a place; D7's "Unexplored Site" rule lives in the matching
+ladder, so an unlinked track made before this version still charts the lone
+site; Z53 needs the interpreter to name the support vehicle (prompt guidance,
+model-dependent).
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| Z01 ACTIVITY-STAMP-REVERTS-RELAYED-WRITE | SAFETY | the canonical GM's activity stamp wrote { ...cached campaignState, lastSessionTimestamp } on a due message (a relayed handler's own card) and landed after, undoing, the handler's write → the stamp is its own world setting sessionActivity { sessionId, at }; idleMs / sessionLastSeenAt read the later of it and the mint's lastSessionTimestamp |
+| Z02 PACED-NARRATES-ON-CACHED-STORE | LOSE-STATE | routePacedInput and swearSharedVowForAll handed the narrator the cached campaignState → each narrates on a deepClone (X09 / Y04 shape) |
+| Z03 RIDER-PROMPT-HOLDS-NEXT-ROUND | UX | finishRound awaited each finishMove (rider DialogV2) and the held free-flow moves inside the one advance pass, so every later advanceRound only queued → riders run on their own chain off the pass, one round after another; held moves are drained off the pass, one drain at a time |
+| Z04 MODE-OFF-FORCES-KEEP | RULES | the switch's batch.sendNow+modeOffAfter ran keepUpgrades(null) in the upgrade step → requestSendNow only marks modeOffAfter on a resolving round; Keep-everyone stays a GM's own Send now |
+| Z05 BATCH-CARD-MOVE-OFFER-DROPPED | RULES | an offer beside a Ready entry was outrun by readyToResolve / Send now / an unresolved close, and the claimed card's move was lost; Keep mine was a no-op on Ready → offer and card-move entry carry messageId; takeCardMoves (at fixActing and closeCollectingRound) hands untaken offers and non-acting card-move entries to holdForNextRound; confirmEntry on Ready clears the offer |
+| Z06 ROUND-WINDOW-RERENDER-WIPES-PICKS | LOSE-STATE | _replaceHTML rebuilt the reading form from its defaults → picks carried across a re-render for the same submission (data-submission-id) |
+| Z07 BATCH-FINISH-SCENE-TWICE | RULES | an ended challenge scored 0 → rollMove's track-gone guard covers scene_challenge by id; noteReadTrack notes finish_the_scene's challenge (selectSceneChallengeTrack) so refusalFor refuses it "ended earlier in this round" |
+| Z08 ROUND-CAPTURE-LEAD-CONNECTION-MISS | LOSE-PLOT | runRoundNarrationPasses led the round's one capture with entries[0]; a Make a Connection miss lead returned before any pass (scope §9) → a miss takes no part in the capture (neither lead nor class); only its own auto-create is withheld |
+| Z09 ROUND-CAPTURE-CREDITS-FIRST-ROLLER | ATTRIBUTION | the round's capture auto-created the reply's first connection (any player's NPC) with the first hit's roller, seed and bond → connectionRollers: one auto-create per hit, the figure roundFigureOwner gives that roller (own line → detected description → narration clause), own seed and bond; unplaced figures queued; the pending-row fallback is per roller |
+| Z10 ROUND-TIER-PASS-SKIPS-UNROLLED-ENTRIES | LOSE-PLOT | the round's tier pass ran over rolled moves' relevance only, and only at an interaction widest class → it runs whatever the class (roundTierRefs): an unrolled entry brings the prompt's matched set (paced rule), a rolled interaction move its own relevance (move rule) |
+| Z11 UPGRADE-KEEPS-REVERTED-PRICE-IN-ORACLE-MEMORY | WRONG-DETAIL | a reverted price's oracleMemory stayed in RECENT ORACLE RESULTS → the move price's memory carries resolutionId; revertPayThePrice drops it (dropOracleResultsOf) on the write chain |
+| Z12 XCARD-RESTORE-TOKEN-STAYS-ON-REMOVED-PIN | SAFETY | the restore synced the token only onto a pin, so a deep-space or no-position ship kept its token on the removed destination → a narration's position record carries tokenBefore {sceneId, tokenId, x, y} (null from every other writer — the flag-merge rule) and the restore moves the token back to the oldest removed narration's spot, else syncs as before |
+| Z13 FACTION-LANDSCAPE-OLDEST-FIRST | LOSE-PLOT + DOC-DRIFT | [4e] listed records first in factionIds (creation) order, capped at 4, so no fifth record or WJ-only faction ever reached the narrator; faction-flow.md claimed every stance and a rotating block → mergeFactionLandscape ranks records and every WJ faction by recency (later of record/WJ updatedAt; a record still wins its key; ties keep input order); getFactionLandscape takes { limit } and the narrator passes Infinity (detection keeps 3); flow doc corrected |
+| Z14 EXPEDITION-ARRIVAL-BY-LABEL-NOT-SITE | WRONG-TARGET | the finish arrived by the track's free-text label → it arrives by the expedition's site's location Actor (selectExpeditionSite: track siteId, else the unexplored site the label names, never a guess); no site → by name as before |
+| Z15 ARRIVAL-BY-NAME-OTHER-SECTOR-NAMESAKE | WRONG-TARGET | both name resolvers took the older sector's namesake → active sector first on each rung; !at docks the ship by the resolved id |
+| Z16 TRUTHS-JOURNAL-BY-NAME | LOSE-STATE | the edit hook required the system title; the reconcile preferred the newest journal by title over the linked one → hook by linked id only; the reconcile keeps the linked journal unless a titled save is newer (_stats.createdTime) |
+| Z17 ORACLE-MEMORY-LOST-TO-NEXT-WRITE | LOSE-PLOT | the oracle capture's whole-object write was followed inside its round trip by the PtP clock advance / the !oracle follow-up's scene start, built from the cache without it → one per-client campaignState write chain (multiplayer/campaignStateChain.js serialiseCampaignStateWrite) for the capture, every clock write, persistCampaignStateFields and persistSceneLedgerFields |
+| Z18 ROUND-WRITE-REFUSED-LOSES-RECORD | LOSE-STATE | markRolled threw before recordMove; the pass's catch was console-only; Send now did nothing while rolling → recordMove runs regardless (markRecorded∘markRolled carries the stamp); advanceRound's catch whispers the GMs (batchRoundStoppedNotice); requestSendNow re-enters a rolling/narrating round; a roll recorded on this client isn't reported "may be incomplete" |
+| Z19 ROUND-LOCK-RELEASE-NO-RETRY | RACE | the driver dropped releasePendingMoveLock's false → releaseRoundLock retries once; refused again it tells the GMs (batchLockNotice), and claimRoundLock takes back this client's own unreleased claim instead of waiting on it |
+| Z20 ROUND-CLOSE-REFUSED-RIDERS-TWICE | DUPLICATE | a refused close still ran the riders, then the loop's retry ran finishRound again → closeRoundHere: only the call whose transition closes the round runs the riders and opens the next; a refused close is retried once, then throws |
+| Z21 ROUND-CARD-REFUSED-UNTOLD | UX | narrateTheRound's catch was console.error only → the resolving GM gets V09's notification; other GMs get a whisper (batchNarrationUnpostedNotice) |
+| Z22 HANDOVER-NEXT-ROUND-NOT-OPENED | RACE | the closer was no longer canonical and the driver ignored batchMode.round writes → onBatchSettingWrite: a closed round heard on the canonical GM (mode on, not modeOffAfter) runs openRoundIfDue("round-closed") |
+| Z23 RESOLVING-ROUND-CLOSED-BY-RECOVERY | LOSE-PLOT | recoverRound closed any open round of an ended session on every trigger → a resolving one is closed only on ready / resolver-left (CLOSES_RESOLVING_ROUND); otherwise it finishes first |
+| Z24 BATCH-IDLE-ROUND-RECOVERED-LIVE | RACE | the ready recovery read the idle session as live before its mint landed → _sessionBeingReplaced (set at the canonical GM's ready when sessionNeedsMint) makes recoverRound treat it as over and openRoundIfDue refuse it until currentSessionId changes |
+| Z25 ROUND-CLAIM-INVISIBLE-TO-FREE-FLOW | RACE | claimPendingMoveLock's copy write left this GM's cache free during its round trip → _moveLockClaimInFlight, consulted by onMessage's lock check, claimPendingMoveLock and drainDeferredForcedMoves |
+| Z26 UPGRADE-WAITS-ON-GONE-ROLLER | UX | "roller left = Keep" was only an event during the step → advanceOnce's UPGRADING case keeps (silently) the undecided offers of rollers not connected (keepUndecidable) |
+| Z27 UPGRADE-OFFER-IGNORES-CHOICE | UX | upgradeOffers checked only consumed and nothing revisited an offer → upgradeOffers offers only what the GM handlers accept (upgradeOpen: resultUpgradeBlocker, laterMoveFollows, consequenceChosen); keepUndecidable keeps offers whose card has since closed (not a card being burned or improved); an updateChatMessage hook (canonical GM) advances the round when an offer's move card or choice card changes |
+| Z28 ROUND-UPGRADE-RIDER-PICKER-SUPERSEDED | LOSE-STATE | redirectSupplyLoss bound the picker to the burned original resolution → posts upgraded:true when upgradeKindFor(resolutionId) at post time |
+| Z29 HELD-CARD-MOVE-LOST-ON-MODE-OFF | LOSE-STATE | _heldForRound was never drained when the mode turned off (modeOffAfter or direct) → onBatchModeSwitched(false) moves them onto _heldForFreeFlow and runs them (free-flow's session gate still holds them before Begin) |
+| Z30 BATCH-INCITING-SWORN-PER-PRESSER | DUPLICATE | one held post or entry per press rolled the swear per presser → takeForcedMove / joinHeldMoves drop a press when the card is sworn or its swear is already an entry, offer or held; the swearPressDropped whisper re-arms the presser's ⚔ (swearVow.js) |
+| Z31 UNROLLED-ACTION-TEXT-LOST | LOSE-STATE | the draft was cleared on Sent, leaving the round entry as the only copy → the draft is kept until the round takes the action (its entry acts, or the round card's roundEntries name the line, also checked at load); a closed round's unrolled text and setAside are restored on change and at load; a failed reading's box falls back to entry.text |
+| Z32 ROUND-WINDOW-XCARDED-NARRATION-SHOWN | SAFETY | the window re-rendered on the pause write before the xCarded flag landed → newestNarration also checks isNarrationXCarded; refresh compares the latest narration too |
+| Z33 ROUND-NO-GM-BANNER-FALSE-PROMISE | UX | the banner promised a send nobody makes and never re-rendered on connection → reworded; refresh on userConnected and on the keyed-GM registry's create/updateSetting; a stale no-GM refusal is cleared |
+| Z34 ROUND-SEND-AGAIN-STALE-ROUND | UX | the pending submission kept its dead roundId → dropped once its round is no longer the one collecting; an over-long draft is refused locally |
+| Z35 ROUND-ENTRY-PC-GONE-FIRST-PC | ATTRIBUTION | rollMove / persistResolution fell back to the first PC → rollEntry refuses (card plus markRefused); startReading records ENTRY_ERROR.CHARACTER_GONE and the window says so |
+| Z36 ROUND-NAMES-FROZEN-AT-OPEN | WRONG-DETAIL | names copied at round open, roster filtered by name → roundNarrationEntries names by actor id; buildNarratorExtras / buildPartyContext take actingActorIds (actingNames retired) |
+| Z37 ROUND-FIELDS-WRITE-ONLY | PRODUCED-BUT-DEAD | sceneId and resolverClaim (and rolled.isMatch) were stored and never read → retired; beginResolution's doc corrected; the field check now covers the round |
+| Z38 ROUND-ROLL-INSTEAD-NO-TARGET | RULES | suggestedTargetId was written, never read → rereadEntry carries readAs.moveTargetId; readAction forces it |
+| Z39 BATCH-SCENE-VARIANT-AFTER-FINISH | RULES | the variant rule ran at read time only → rollMove applies moveOutsideSceneChallenge before rolling |
+| Z40 ROUND-SECOND-PERSON-TWO-ACTORS | WRONG-DETAIL | "auto" counted active non-GM users only (W21), so a GM-PC + one-player round was second person over two CHARACTER blocks → resolveNarrationPerspective takes actingCharacters (the round's CHARACTER blocks): 2+ → third person; an explicit setting still wins |
+| Z41 XCARD-AFTER-END-LOSES-LAST-SESSION | LOSE-PLOT | an X-Card on End's closing vignette emptied the finalised summary; rollSessionIfDue finalised only unended sessions → the mint also finalises an ended session whose summary has no text |
+| Z42 SESSION-STRIKE-RENDER-ONLY | WRONG-DETAIL | a kept strike (sessionRetractions) blocked no re-assertion and !truth set couldn't lift it after a scene boundary → kept entries carry truthId/subjectKey/retractedBy/asserter; findSessionStrike blocks applySidecar's re-assertion (by subject key, else name) and setTruth lifts it (dropped on the store via persist onto, lore restored by truthId; a player's set over a GM strike refused) |
+| Z43 STRIKE-LEAVES-PROMOTED-NOTE | SAFETY | dropTierDetails dropped a promoted tier entry and left its Notes paragraph, severing D7's link → a strike keeps a promoted entry as it keeps a pinned one |
+| Z44 XCARD-DURING-PROMOTE-LEAKS-NOTES | SAFETY | the X-Card's undo dropped a not-yet-promoted entry during the Promote's Notes write; the Promote kept its line with no entry → the Promote refuses an X-carded narration's detail and, after its Notes write, takes the line back (withoutPromotedParagraphs, now exported) when the entry is gone or its narration X-carded |
+| Z45 ENTITY-PANEL-SHEET-NOTES-STALE | SAFETY | actorUpdateShowsInPanel ignored system.notes / system.pronouns, so the X-Card's D7 strip (written after the record) stayed on the open panel → re-render on those paths for an entity Actor (local only) |
+| Z46 BURN-REWINDS-CLOCK-ANOTHER-PRICE-FIRED | LOSE-PLOT | D8's supersede keyed on the burned receipt's triggered → revertTensionClocksForBurn (inside its queued write) and revertVowClocksForBurn report clocks taken from full; those vignettes are superseded |
+| Z47 KEPT-PRICE-FOLLOWUP-CARD-SUPERSEDED | RULES | a kept picker's pick posted its resist card without upgraded → keepPriceCard marks executorOpts.upgraded; postSufferChoiceCard stamps upgraded from it; postResistRoll forwards it |
+| Z48 BURN-GONE-ROLLER-BURNS-FIRST-PC | ATTRIBUTION | resolveActor fell back to the first PC; a receipt naming a gone PC refunded the upgrader → the card's PC or nobody (no-actor); a receipt naming a PC refunds that PC or nobody |
+| Z49 PTP-PCLESS-NARRATIVE-PRICE-NARRATED | ATTRIBUTION | noPayer required a suffer route → keyed on the payer alone: no oracleMemory / oracleNarration / follow-up, the no-character notice |
+| Z50 PACED-PCLESS-NARRATED-AS-FIRST-PC | ATTRIBUTION | narratePacedInput's getActiveCharacter fell back to the first PC → no speaker resolved, no character (option A) |
+| Z51 BURN-PRICE-STANDS-MOMENTUM-REFUNDED | RULES | the burn reset refunded a kept price's momentum receipt → priceStands subtracts priceMomentumTaken from the target (burnMeterChanges keptPriceMomentum) |
+| Z52 BREAK-ADD-USED-BEFORE-CLAIMED | DUPLICATE | added from the working copy, then cleared (refusal warned) → consumeNextMoveAdd claims on the store first; takeNextMoveAdd / clearPersistedNextMoveAdd folded into it |
+| Z53 WITHSTAND-DAMAGE-COMMAND-VEHICLE-ONLY | WRONG-TARGET | an integrity roll always read and changed the command vehicle (enrichInterpretationStatValue → getCommandVehicleActor) whatever vehicle was named → the interpreter names a support vehicle as withstand_damage's moveTarget; the roller's named asset is the roll's vehicleItemId, its choices write its Integrity track (actorBridge.applyVehicleAssetIntegrityChange), its Battered condition gates the +1 |
+| Z54 REWARD-CLAIM-SKIPPED-NO-VOWID-FLAG | DUPLICATE | grantLinkedVowReward's claim and Forsake's lost flip keyed setSharedVowReward on item.flags.vowId (undefined when the stamp never landed), so the status never flipped → both key it by the new actorBridge.vowCopyId (the flag, else the Item id); payoffVowCopies matches by isVowCopy |
+| Z55 REWARD-PICK-NO-FLAG-NAMESPACE-THROWS | LOSE-STATE | vowRewardStatuses read item.flags[MODULE_ID].reward unguarded on a namespace-less Item that isVowCopy found by id — a TypeError out of every pick → optional chaining on the namespace |
+| Z56 CONNECTION-SUGGESTION-NOT-ROLLERS | ATTRIBUTION | the picker named no roller, so its pick spoke as the presser → the picker carries the move card's actorId and its pick uses cardRollerPc; the suggestion press is the roller's player's or a GM's, as ⚑ |
+| Z57 FORGED-BOND-ITEM-NOT-MIRRORED | WRONG-DETAIL | forgeBond set bonded on the record only → setBondItemForged writes system.completed through bondItemsFor; CHARACTER STATE names a completed bond "bonded" |
+| Z58 RECOMMIT-REFUSED-UNTOLD | UX | write-refused and nothing-to-do outcomes were GM-console only → cardActions.tellRecommitOutcome: a refused write is whispered to the presser and GMs (press again), a target gone, finished or bonded since gets Y10's short card |
+| Z59 VOWLESS-NAMESAKE-COPIES | WRONG-TARGET | collectVowCopies fell back to every PC's exact-name vow when the primary had no vowId flag → copies are isVowCopy(vowCopyId(primary)) only; a vow with no flag is its own only copy |
+| Z60 RELIST-CONFIRM-SKIPS-CREATION | LOSE-STATE | a refused faction Confirm whose journal the load listed took U25's exists path on retry: no seed, WJ stance/backlink/mirror, ledger promotion; the bare record hid the WJ stance in [4e] from the listing on → exists path runs completeListedEntity (reconcileConfirmedFaction: seed-once + attitude reconcile + backlink unless linked; mirrorConfirmedFaction while unlinked; portrait when none; promoteNewEntityLedgerSubjects), creation path shares the two faction helpers; mergeFactionLandscape shows a record at "unknown" its WJ attitude's mapped stance |
+| Z61 TAINTED-WORLD-GENERIC-ICON | WRONG-DETAIL | iconForPlanetType mapped 10 of 11 classes; Tainted World drew icons/svg/circle.svg though the vendor ships its tokens → Tainted row added |
+| Z62 CHRONICLE-PAGELESS-JOURNAL | LOSE-STATE | a refused page creation after the journal landed left a flagged page-less journal that every later write found and failed on, for good → writeChronicleNow first gives it its page (completeChroniclePage); a page refused again leaves that write unsaved, logged |
+| Z63 BEGIN-CLOCK-TRIGGER-RETRY-UNNARRATED | LOSE-PLOT | a refused Begin clock trigger was narrated against the store, dropped as rewound (stillTriggered), and the Retry's applyClockAdvances fill narrated nothing → Begin narrates no unsaved trigger (owed); applyClockAdvances fires the trigger vignette for each clock its saved fill fills, after the write lands |
+| Z64 END-SESSION-MOMENTUM-AFTER-CLAUDE | LOSE-STATE | the noted-focus momentum was paid after endScene and the forced summary Claude call; a GM leaving mid-call lost it and the N08 correction said "taken" → paid right after the gate write |
+| Z65 SECTOR-TROUBLE-THREAT-SHARED-BY-NAME | WRONG-DETAIL | the threat was named by the trouble text alone → named "<trouble> — <sector>" |
+| Z66 PRIVATE-UNSAVED-LINE-NOT-RENDERED | UX | the line was computed only at render → transcript notifies each flip (onTranscriptUnsavedChange); the open window re-renders (PrivateChannelApp.refresh) |
+| Z67 AUDIO-KEYLESS-SYNTH-ON-KEYLESS-CANONICAL | UX | keyless audio requests were served by the canonical GM only → GMs advertise their ElevenLabs key into audioKeyedGmUserIds (ids only); isAudioGM (lowest-id active GM listed, else canonical) serves requests, asks and relayed clips |
+| Z68 KEYED-GM-REGISTRY-LOST-UPDATE | RACE | concurrent read-modify-writes dropped one GM's id → every GM re-advertises on each write of either key registry (writes only when its own entry is wrong; converges) |
+| Z69 SETTINGS-REFERENCE-BATCH-MODE-MISSING | DOC-DRIFT | Batch Mode's two settings (the switch, the Round window's draft) had their table at the end of the Batch Mode page, which pointed at itself; the Settings Reference named neither → a "Batch Mode (Toolbar → Batch Mode)" section of the Settings Reference; the Batch Mode page points there |
+| Z70 I18N-DEBILITY-KEYS-UNRESOLVED | PRODUCED-BUT-DEAD | all 13 keys were IRONSWORN.<Name> → IRONSWORN.IMPACT.* (IRONSWORN.DEBILITY.* for encumbered/maimed/corrupted), checked against the vendor's en.json |
+| Z71 SCOPE-INDEX-293-STALE | DOC-DRIFT | scope-index.md showed Phone Play (#293) 🔄 IN PROGRESS though the issue was closed completed → ✅ COMPLETE, the remaining phone checks pointed at PHONE-LAYOUT / PHONE-PINCH-MAP |
+| Z72 FILE-STRUCTURE-TOGGLE-MIRROR-STALE | DOC-DRIFT | file-structure.md's progressTracks.js row described the position toggle as W56's bug (game.user.character) and listed track types the panel doesn't show → resolveUserActorId's PC, its own position; PANEL_TRACK_TYPES (fights, expeditions, scene challenges) |
+| Z73 CONNECTION-FLOW-SIDEBAR-PATH | DOC-DRIFT | connection-flow.md §1 listed a "Manual sidebar creation" fifth path → four paths; the createActor hook seeds a card a creator made, and a sidebar-made character is a PC to the module |
+| Z74 FLOW-DOC-BARE-AT-CLEARS-SHIP | DOC-DRIFT | exploration-flow.md said a bare !at clears the ship position → it clears the current location only; the ship stays |
+| D1 UNPREPARED-ENUMERATED-SACRIFICE-GREYED | RULES; option A | isOptionAvailable greyed the option while unprepared → open; the executor's W16 picker redirects the cost (the "any" picker still greys it) |
+| D2 ROUND-DROPS-OWED-RESIST-ROLL | RULES; option A | the owed resist roll became an optional offer that Keep mine / Edit / Withdraw / Pass dropped → the resist post is flagged owedMove; offerForcedMove makes it the entry (written text in entry.setAside, restored as the author's draft; a displaced card move or a second owed roll held); submit / withdraw / pass / reread refused "owed"; the window shows Confirm only |
+| D3 ROUND-DRAFT-BOND-HOLDER | ATTRIBUTION; option A | a round's draft card carried the first entry's PC and Confirm bonded it → the card carries every acting PC (flags.actorIds); a connection row's Confirm is a button per acting PC + No one, the pick checked against actorIds (draftConfirmPick), the bond on the pick or none (draftBondHolder) |
+| D4 BURN-REFUND-LEAVES-CREW-UNPREPARED | RULES; option A, narrowly | the reversal refunded supply but kept the route's marks → the receipt carries unpreparedMarked / alliesMarked (markUnprepared's alliesMarkedIds); cleared once the supply is above 0, an "unprepared" upgrade step with a Retry |
+| D5 FIGHT-CARD-FULFIL-AS-WINNER | ATTRIBUTION; option A | the 🏁 rolled as the card's roller (the winner) whoever held the vow → rolls as resolveVowHolderActor(vowName, actorId), the winner when they hold a copy; the miss's recommit offer follows |
+| D6 SESSION-GAP-SETTING-NOT-THE-BOUNDARY | UX; option B | the gap setting gated only the ready-time recap, apart from C4's boundary → recap posts when the load started a new session after an earlier one; setting key/registration/getter/panel field+hint+save, isNewSessionStart, its tests and help row/wording retired; a stored value stays unread |
+| D7 FINISH-REVEALS-SITE-OF-UNRELATED-EXPEDITION | WRONG-TARGET; option A | the finish's reveal kept the sole-site guess → requireLabelMatch at the finish; under it the pin's own "Unexplored Site" names the active sector's one unexplored site (stamp and finish); !reveal-site keeps the guess |
+| D8 AUDIO-SYNTH-BOUND-ANY-AUTHOR | SECURITY; option A | any author's narrationText counted → countsAsNarratorCard gates the Play button, auto-play, the synthesis bound and the cache write: GM-authored only while hasKeyedActiveGM; otherwise a player's counts if ≤ Narration Max Tokens × 4 characters |
+
+Found while fixing the eleventh audit and left open (each with a proposed fix):
+
+- **CAMPSTATE-CHAIN-PARTIAL** (RACE, low). Z17's per-client campaignState
+  write chain (`multiplayer/campaignStateChain.js`) carries the oracle
+  capture, every clock write and the field-merge persists; still off it:
+  `suppressScene`, the relay handlers' direct writes (Set a Flag, Take a Break,
+  Begin / End a Session), `persistResolution` and the direct
+  `mergeOwnedFields` writers, the next-move claims and grant, the lock claim /
+  release, `clearXCardRedirect` and the spotlight persist. Each can still read
+  the cache inside another write's round trip (an oracle card created while
+  the X-Card's pause is in flight can carry the pause back; deterministically,
+  a Batch Mode round's redirect clear followed by its lock release). Proposed:
+  route those read-and-set writes through `serialiseCampaignStateWrite`.
+- **UPGRADE-RETRY-REWIND-NO-SUPERSEDE** (LOSE-PLOT, low; pre-existing). A GMs'
+  Retry of a refused tension or vow clock rewind doesn't supersede the
+  trigger vignette the rewind takes back. Proposed: use the rewind's
+  `untriggered` report in `retryUpgradeStep`, as Z46's first pass does.
+- **ROUND-LOCK-WAIT-MARKED-LATE** (RACE, low). The round driver marks
+  `_waitingForLock` only after its busy claim's await returns, so a release
+  landing in between is missed (a server round trip in Foundry — practically
+  unreachable). Proposed: after marking the wait, re-check the cache and go
+  round again if the lock is already free.
+- **FREE-FLOW-RELEASE-REFUSED-TWICE** (RACE, low). Free-flow's `finally`
+  drops a second refused release of the move lock: it stays held until a
+  reload, and nobody is told. Proposed: tell the GMs, as Z19's
+  `releaseRoundLock` now does.
+- **FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM** (UX, low). A free-flow move
+  deferred behind the round's in-flight claim (Z25) waits for the next
+  lock-freeing write if that claim is refused (the GMs are told; Send now
+  recovers it). Proposed: drain the deferred queue on a refused claim.
+- **ROUND-CHARACTER-BLOCK-GONE-PC** (WRONG-DETAIL, low). `narrateRound`'s
+  CHARACTER blocks use `getActiveCharacter`, which falls back to another PC
+  for a deleted actor id, so a refused gone-PC entry (Z35) can bring another
+  PC's block into the round prompt. Proposed: skip entries whose actor no
+  longer resolves when building `extras.roundCharacters`.
+- **ROUND-VARIANT-TWO-CHALLENGES** (RULES, low). A round's stale
+  scene-challenge variant whose own challenge ended while another stays open
+  is not converted to the ordinary move (Z39 converts it only with no
+  challenge open). Proposed: note the variant's challenge in `noteReadTrack`
+  and convert in `rollEntry` when it has ended.
+- **XCARD-RETRACTION-SCENE-SCOPED** (SAFETY, low). An X-carded truth blocks
+  re-assertion only within its scene; it is never kept in
+  `sessionRetractions` (by design it is never named), so after `!scene start`
+  only its absence from the ring, the summary and the ledger keeps it out.
+  Proposed: an unnamed session block list that `findSessionStrike`'s write
+  half (Z42) also reads.
+- **FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY** (WRONG-TARGET, low).
+  `postFightVowMilestoneCard` and the fulfil payoff-failure card take `vowId`
+  from the flag alone: for a sheet vow whose stamp never landed they carry
+  null, so 🤝 Deepen's once-only record and a Retry find the vow by name only,
+  and a rename in between allows a second deepen. Proposed: stamp
+  `vowCopyId(item)` (Z54) on both.
+- **ARRIVAL-LOCATION-PHRASE-SPLIT** (WRONG-DETAIL, low; mirror drift). An
+  arrival named in words around a place ("the expedition to Bleakhold") docks
+  the ship there, but `resolveCurrentLocationName` matches only when the
+  place's name contains the label, so `currentLocationId` doesn't move.
+  Proposed: when the id and name lookups both miss, set the current location
+  from the position record the arrival just wrote.
+- **EXPEDITION-STAMP-SITE-NAME** (WRONG-TARGET, low). The Undertake's site
+  link ignores a GM's rename of an undiscovered site, though the finish reads
+  the new name. Proposed: stamp through `selectExpeditionSite` (Z14).
+- **FACTION-PAGELESS-JOURNAL** (LOSE-STATE, low; Z62's faction twin). A
+  refused page creation inside `createFaction` leaves a page-less journal
+  that neither adoption nor the load listing sees. Proposed: adoption
+  completes a flagged page-less faction journal by creating its page.
+- **GENERATE-PORTRAIT-AFTER-REGEN** (DUPLICATE, low; unverified).
+  `art/generator.js`'s `generatePortrait` makes a new portrait whenever the
+  existing one has `regenerationUsed`, bypassing the one-regeneration cap for
+  Finalise and seed callers (Z60's path guards with `!record.portraitId`).
+  Proposed: return the existing asset whenever one exists; only
+  `regeneratePortrait` replaces it.
+- **ROUND-DETECTION-NULL-MOVE** (WRONG-DETAIL, low; pre-existing). A round's
+  detection prompt names one lead move, and an all-unrolled round's reads
+  "Move: null.". Proposed: the paced sentinel for an unrolled round.
+- **FOUNDRY-REF-SETTING-HOOKS** (DOC-DRIFT, low). `docs/foundry-reference/
+  foundry-api-reference.md` has no section on the `createSetting` /
+  `updateSetting` hooks the repo relies on (Z33, Z67, Z68 add handlers).
+  Proposed: a section, confirmed against the v13 API pages or a live world.
+
 ### Tenth bug audit (issue #335, part 1 of 4) — all fourteen fixed in the v1.7.36 cycle
 
 Found by the tenth bug audit (2026-11-05) of `8fb7bfa`, with a probe per
@@ -298,7 +528,9 @@ Still open — found while fixing them (each proposed for the maintainer):
   in `applyMoveConsequenceRiders`.
 - **PTP-PCLESS-CLOCKS-ADVANCE** (RULES, the maintainer's call). A refused
   `!ptp` still relays `payThePrice.advanceClocks`, which can fire trigger
-  vignettes. Proposed: skip the advance when there is no payer.
+  vignettes. Proposed: skip the advance when there is no payer. Since issue
+  #342 Z49 a narrative price with no payer reaches it too (it is no longer
+  narrated, but its clocks still advance).
 - **PTP-ANY-ROUTE-PICKER-REFUSED-SILENT** (LOSE-STATE, low).
   `dispatchPayThePriceSufferRoute`'s "any" route ignores a refused
   `postSufferChoiceCard`, so the price is lost silently (ERROR-TEXT-BLAMES-KEY's
@@ -312,10 +544,12 @@ Still open — found while fixing them (each proposed for the maintainer):
   empty and Save Keys writes only a non-empty one, so no module UI clears a
   stored Claude, OpenRouter or ElevenLabs key (Y40's "cleared key" branch is
   reachable only from the console). Proposed: a Clear control per key.
-- **RECOMMIT-GONE-ROLLER-WORDING** (UX, low). `applyRollerRecommit` has no
-  gone-roller (`not-a-pc`) check, so a player pressing a recommit whose
-  character was deleted is told "names no character of yours"; a GM's press
-  does nothing. Proposed: refuse `not-a-pc` there, as its siblings do.
+- ~~**RECOMMIT-GONE-ROLLER-WORDING**~~ (UX, low) — fixed with issue #342 Z58
+  (2026-11-06): `applyRollerRecommit` refuses a roller who is no longer a PC
+  as "Character gone", to a player or a GM, and a recommit with nothing to do
+  says so to the presser. `applyRollerRecommit` had no gone-roller
+  (`not-a-pc`) check, so a player pressing a recommit whose character was
+  deleted was told "names no character of yours"; a GM's press did nothing.
 - **ART-INDEX-RESURRECTED** (low). `persistResolution` merges `artAssetIds`
   as a union, so a move in flight can write back an index entry
   XCARD-CONNECTION-PORTRAIT-ORPHAN dropped — harmless (`loadArtAsset` finds
@@ -692,7 +926,9 @@ Open — found while fixing, not fixed:
 - **SECTOR-DUPLICATE-NAMES** (WRONG-DETAIL, low). The settlement name table
   can roll one name twice in a sector, and two settlements of one name are
   matched by name in places (the roster, `!at`); seen as an intermittent test
-  failure, now fixed in the test.
+  failure, now fixed in the test. Across sectors (derelict names repeat
+  near-certainly) issue #342 Z15 makes `!at` and every arrival by name take
+  the active sector's namesake; a same-sector clash is still ambiguous.
 
 ### Eighth bug audit (issue #325, part 1 of 2) — all thirty-seven fixed in the v1.7.36 cycle
 
@@ -765,7 +1001,10 @@ Open — found while fixing, not fixed:
   roller.
 - **FORCED-MOVE-HOLD-RELOAD** (LOSE-STATE, low). A forced move held for the
   move lock (W02) waits in the canonical GM's memory: a GM reload while it
-  waits loses it, and its claimed card stays claimed.
+  waits loses it, and its claimed card stays claimed. Sharpened by the
+  eleventh audit (issue #342, seven auditors): Batch Mode keeps two more holds
+  in that memory alone — a card move held for the next round (Z05 holds more
+  of them) and an entry's offer — lost the same way.
 - **END-SCENE-NEXT-SCENE** (RACE, low; pre-existing). `endScene`'s final
   write clears the ledgers and `currentSceneId` whatever the store holds
   then; a scene started on another client during its awaits would be closed
@@ -959,7 +1198,10 @@ Open — found while fixing, not fixed:
 
 - **XCARD-CHRONICLE** (SAFETY). An X-carded narration's Chronicle entry stays
   (`scheduleChronicleEntry`), and the Chronicle feeds the campaign recap, so
-  the removed beat can return at the next session start.
+  the removed beat can return at the next session start. Sharpened by the
+  eleventh audit (issue #342): a Batch Mode round's narration schedules
+  Chronicle entries too (to the first PC — CHRONICLE-FIRST-PC), and the
+  X-Card does not undo them.
 - ~~**XCARD-LATE-CAPTURE**~~ (SAFETY) — fixed (the tenth audit's open items,
   2026-11-05: every capture write checks the stored `xCardedNarrationIds`
   first). The detection and tier passes run about
@@ -989,10 +1231,10 @@ Open — found while fixing, not fixed:
   (writes the caller's whole state) are the U06 shape at sites the issue did
   not list. `handleDraftDismiss` and the ready hook's truths fallback mutate
   the cached state before writing (the U58 shape).
-- **AT-PARTIAL-NAME-SHIP** (WRONG-DETAIL). `!at Bleak` sets the current
-  location to Bleakhold but re-infers the ship position from the typed
-  fragment ("Bleak", free text). Proposed: pass the resolved place's id
-  (`maybeUpdateShipPositionFromName`'s `{ entityId }`).
+- ~~**AT-PARTIAL-NAME-SHIP**~~ (WRONG-DETAIL) — fixed with issue #342 Z15
+  (2026-11-06): `!at` docks the ship by the resolved place's id. `!at Bleak`
+  set the current location to Bleakhold but re-inferred the ship position
+  from the typed fragment ("Bleak", free text).
 - **BOND-COMMAND-FALLBACK**, **DEEPEN-LINK-FALLBACK** (WRONG-DETAIL). `!bond
   Vexx` at a one-bond table rolls with that bond (its "no bonded connection
   matched" warning never fires), and a vow whose linked connection was
@@ -1021,7 +1263,10 @@ Open — found while fixing, not fixed:
   unvalidated. A `toMoveId` guard on the button would cover them.
 - **CLARIFY-ON-GM** (UX). The "Who are you interacting with?" dialog is
   prompted inside the move pipeline, which runs on the canonical GM, so the
-  GM answers it, not the player who moved.
+  GM answers it, not the player who moved. Also asked on the GM during a
+  Batch Mode round's rolls (the eleventh audit's refuted
+  ROUND-ROLL-CLARIFY-DIALOG: issue #340's scope chose it), where the mover's
+  Round window is already open with a reading to confirm.
 - **SCENE-CAPTURE-KEYLESS** (LOSE-PLOT, by design of U36). At a table with no
   keyed GM an `@scene` answer's world detail is not captured (its scene facts
   still relay).
@@ -1031,7 +1276,10 @@ Open — found while fixing, not fixed:
   non-GMs. Needs the key-routing rule or GM-only buttons (a decision).
 - **AUTOSEED-KEYLESS-CANONICAL** (UX, low). With Auto-Seed on at a two-GM
   table where only the non-canonical GM has an OpenRouter key, a new card gets
-  no automatic portrait (the seed runs on the canonical GM).
+  no automatic portrait (the seed runs on the canonical GM). Issue #342 Z67
+  fixed the same shape for the ElevenLabs key (each GM advertises it in
+  `audioKeyedGmUserIds`; `isAudioGM` serves) — the pattern a fix here could
+  follow for the OpenRouter key.
 - **TIER-PASS-TRUNC-SILENT** (LOSE-PLOT, low). The tier pass still drops an
   unreadable reply silently (only a console warning names a cut).
 - **FACTION-CONFIRM-TWO-ENCOUNTERS** (DUPLICATE, low). A faction Confirm
@@ -1356,13 +1604,18 @@ Open — pinned or described, not fixed (each needs a decision first):
   typist's — who sees nothing. A KNOWN ISSUE row in `faultMatrix.test.js`
   pins it and fails once it is fixed. Proposed: whisper the notice to the
   message's author. Free-flow only: in Batch Mode (issue #340) a typed line
-  is table talk kept as its author's draft, and a round drops no action.
+  is table talk kept as its author's draft, and a round drops no action (the
+  eleventh audit found three ways it did — Z18, Z29, Z31 — all fixed in the
+  v1.7.37 cycle).
 - **DRAFT-CONFIRM-TWO-GMS** (DUPLICATE). Two GMs clicking Confirm on the same
   draft at the same moment can still create it twice: the in-flight guard is
   per client. Proposed: relay draft Confirm / Dismiss to the canonical GM
   (`relayCardAction`), as the suffer card now does. Narrowed by issue #321
   U25: Confirm skips creation when an entity of that name and type already
-  exists, so only a truly simultaneous click can still create twice.
+  exists, so only a truly simultaneous click can still create twice. Since
+  issue #342 Z60 the exists path completes a relisted faction (seed, stance,
+  portrait), so a second GM's Confirm during the first one's portrait call
+  can start a second portrait call.
 - **ERROR-TEXT-BLAMES-KEY** (UX). Every narration failure — overloaded, a
   server error, a timeout, a malformed reply — posts the fallback card
   "Narration unavailable — check your API key and proxy", and any pipeline

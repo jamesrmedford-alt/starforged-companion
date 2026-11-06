@@ -6,6 +6,209 @@ rejected.
 
 ---
 
+## Issue #342 decisions: D1–D8 (2026-11)
+
+**Decision:** (issue #342 — the eleventh audit's eight rows that needed the
+maintainer. The maintainer asked for the issue to be addressed on 2026-11-06
+and took the recommended option on every row: D1, D2, D3, D5, D7 and D8
+option A; D4 option A, narrowly; D6 option B. Each row's ID in brackets.)
+- **While unprepared, a choice card's Sacrifice Resources option stays open
+  and sends its cost elsewhere** [D1; option A]: Check Your Gear's weak hit
+  and Heal's costs offer it; picked, the executor posts the existing "make a
+  suffer move (-N)" picker without Sacrifice Resources (issue #325 W16's
+  redirect) — the cost at its own size, to the move the player chooses. The
+  "any" picker still greys Sacrifice Resources (picking another move there is
+  the redirect). Amends issue #338 D3's "the card's greyed option".
+  *Rejected:* keeping it greyed (option B) — being unprepared then cost Check
+  Your Gear's roller a point of momentum the rules never charge ("apply the
+  cost to a different suffer move").
+- **In a round, an owed resist roll is the roller's next move** [D2; option
+  A]: the 🛡 resist post is flagged `owedMove`; `offerForcedMove` makes it the
+  entry even beside one already written — the written text kept in
+  `entry.setAside` and restored as the author's draft for the next round (not
+  auto-submitted), a displaced card move or a second owed roll held for the
+  next round — and submit / withdraw / pass / reread refuse it ("owed"); the
+  window shows Confirm only. *Rejected:* running it outside the round (option
+  B — a second narration) and keeping it droppable with its card re-armed
+  (option C — the rules' "must" would not hold).
+- **A round's New Entities card asks whose connection a new NPC is** [D3;
+  option A]: the card carries every acting PC (`flags.actorIds`); a connection
+  row's Confirm is a button per acting PC plus **No one**, the pick checked
+  against `actorIds` (`draftConfirmPick`), the bond filed on the pick or on
+  nobody (`draftBondHolder`); the "NPC already exists" branch honours the pick.
+  Free-flow cards and a one-PC round's card keep their one Confirm. With Z09,
+  each Make a Connection hit auto-creates the NPC its own roller met, and an
+  NPC two PCs could own waits on this card. *Rejected:* the first entry's PC
+  (option B — a wrong bond one click away in every multi-PC round), no PC
+  (option C — it changes free-flow parity), and the discovery move's roller
+  (the Batch Mode auditor's variant — it still gives the second roller's NPC
+  to the first).
+- **A reversal clears the unprepared its reverted price made** [D4; option A,
+  narrowly]: the price route's receipt carries the marks it made
+  (`unpreparedMarked`, and `alliesMarked` from `markUnprepared`), and
+  `revertPayThePrice` clears exactly those once the refunded supply is above
+  0 — an `unprepared` upgrade step with a GMs' Retry; a mark made before the
+  price stays. A burn reverts the price before its meter write, so its
+  momentum reset is computed without the cleared impact (the reversal card now
+  posts before the burn's momentum write). Amends issue #313's trade-off
+  ("impacts a suffer executor marked are still not reversed") for unprepared
+  alone. *Rejected:* keeping the trade-off and naming the crew on the reversal
+  card (option B) — since #338 D3 a stale mark redirects every supply loss
+  the crew makes.
+- **A victory card's 🏁 is the vow holder's** [D5; option A]: Attempt to
+  Fulfill rolls as `resolveVowHolderActor(vowName, actorId)` — the winner when
+  they hold a copy (every case issue #329 X05's tests pin), else the PC who
+  does — that PC's player or a GM may press it, and the miss's 🔁 recommit
+  offer follows; a vow found nowhere keeps the card's roller (no first-PC
+  fallback). The card's three buttons now agree. *Rejected:* letting the
+  winner fulfil a crewmate's vow from the card (option B) — #338 D1 exists to
+  stop another player rolling a character's move.
+- **"Previously On" introduces the session the load minted; the gap setting
+  is retired** [D6; option B]: the session boundary stays #286 C4's (End a
+  Session, or four idle hours). The ready recap posts when the load started a
+  new session after an earlier one — the store's `currentSessionId` differs
+  from the one before the load, so a refused mint posts none; a world's first
+  session posts none; a Begin a Session that mints without a reload posts no
+  auto-recap. The "Session gap (hours)" setting is retired with its panel
+  field and hint, `isNewSessionStart` and its help row; a stored value is
+  left unread. *Rejected:* making the setting the session boundary (option A
+  — C4 decided the boundary, and the session's memory resets with it).
+- **Finishing an expedition charts only the site it was for** [D7; option A]:
+  the finish's reveal runs with `requireLabelMatch` — the track's `siteId`, or
+  a site its label names (exact, whole words or the type keyword); under that
+  rule the pin's own "Unexplored Site" names the active sector's one
+  unexplored site, at the Undertake's stamp and at the finish alike (so an
+  unlinked track made before this version still charts it). `!reveal-site`
+  with no name keeps the sole-site guess. A target is what was named, or
+  nothing [U14, U16, U48]. *Rejected:* skipping the guess only when the label
+  names a known non-site place (option B — a trailblaze "across the Rift"
+  still charted the site) and keeping it documented (option C — an unchosen,
+  irreversible plot event).
+- **A narrator card is a GM's while a keyed GM is connected** [D8; option A,
+  applied where a narrator card is recognised]: `countsAsNarratorCard` gates
+  the Play button, auto-play, the relayed synthesis's clip-key bound and the
+  cache write. With a keyed GM connected (`hasKeyedActiveGM()`) only a
+  GM-authored message counts; with none, a player-authored one counts while
+  its text is at most the narration's max tokens × 4 characters (one over the
+  cap does not count at all). An honest card a player's own game narrated
+  loses its Play button once a keyed GM connects. *Rejected:* recording it as
+  a trusted-table limitation (option B) — issue #331 X51 was fixed to stop
+  exactly this billing of the GM's key.
+
+---
+
+## Issue #342 audit: a write a relay can race is its own, a round credits each roller and keeps every action, a card's button is its character's (2026-11)
+
+**Decision:** (issue #342, the eleventh audit's 74 findings Z01–Z74, fixed at
+the maintainer's request on 2026-11-06. What the fixes established beyond
+each row; each row's ID in brackets.)
+- **The session's activity stamp is its own setting** [Z01]: `sessionActivity
+  { sessionId, at }`, written by the canonical GM on chat activity at most
+  every 10 minutes; the idle limit reads the later of it and the mint's
+  `lastSessionTimestamp` (`sessionLastSeenAt`), and a stamp counts only for
+  the session it names. The stamp used to write the whole cached
+  campaignState, landing after — and undoing — a relayed X-Card pause, Set a
+  Flag, Take a Break or End a Session. *Rejected:* one write chain for every
+  campaignState writer — the relay handlers' writes are not on it.
+- **Read-and-set campaignState writes share one chain per client** [Z17]:
+  `serialiseCampaignStateWrite` (`src/multiplayer/campaignStateChain.js`)
+  carries the oracle capture, every clock write, `persistCampaignStateFields`
+  and `persistSceneLedgerFields`; a write ahead that never settles is waited
+  on for at most 10 s from its start (`serialiseClockWrite` delegates to it,
+  gaining that bound). The writers still off it are known-issues
+  CAMPSTATE-CHAIN-PARTIAL.
+- **Every narration hand-off gets a working copy** [Z02]: the paced path
+  (cloned before `narratePacedInput`) and the inciting swear (cloned at its
+  read) join issue #331 X09 / #335 Y04's deepClone rule.
+- **A reversal takes back what it reverted from memory too** [Z11, Z46]: a
+  reverted price's RECENT ORACLE RESULTS entry is dropped by its
+  `resolutionId`; a burn supersedes the trigger vignette of every clock its
+  rewind takes out of full — another player's price's included, vow clocks
+  too — not only the burned receipt's own trigger (amends #338 D8's basis).
+- **A round credits each roller, and asks when it cannot tell** [Z08, Z09,
+  Z10, Z35, Z36, Z40, D3]: a Make a Connection miss takes no part in the
+  round's capture; each hit auto-creates the NPC its own roller met
+  (`roundFigureOwner`: their own line, then the detected description, then
+  the narration's clause) or nothing — a figure two PCs could own waits on
+  D3's card; the tier pass covers unrolled entries; an entry whose PC is gone
+  is refused, never rolled as another PC; names and the PARTY roster follow
+  actor ids, not the names copied at open; two or more acting characters are
+  narrated in the third person ("Narrator tone and perspective").
+- **A Batch Mode action is never silently dropped** [Z05, Z29, Z31, Z34, D2]:
+  an untaken offer or an unrolled card-move entry is held for the next round;
+  held moves run as free-flow when the mode turns off; a submitted action
+  stays its author's draft until the round takes it (restored after a failed
+  reading, a round resolved or closed without it, and at load); a stale Send
+  again is dropped, the text left in the box. Amends the Batch Mode decision:
+  Withdraw / Edit / Pass leave an offer standing (only Keep mine drops one),
+  and a table-talk line typed while an entry is submitted no longer becomes
+  the draft.
+- **Turning the mode off is not Send now** [Z04, Z26, Z27]: switching Batch
+  Mode off during the upgrade step only marks the round to turn the mode off
+  once it finishes — it decides nothing for a roller still choosing; Keep for
+  everyone stays a GM's own Send now. A roller who has left, or whose choice
+  card closed the upgrades, is kept silently, and the window offers only an
+  upgrade the card still takes.
+- **A round's bookkeeping never gates a move's record, and a stopped round
+  is said** [Z03, Z18–Z25]: a move records even when the round's own write
+  is refused; a stopped pass is whispered to the GMs and Send now re-enters
+  it; riders run off the advance pass (a GM's open rider prompt holds no
+  later round), only from the close that ends the round; a refused lock
+  release is retried once, then told; the round's in-flight lock claim is
+  visible to free-flow (`_moveLockClaimInFlight`); a closed round heard on a
+  new canonical GM opens the next; a resolving round of an ended session
+  finishes unless its resolver is gone; the session a load is replacing is
+  over at once (no round reads, resolves or opens in it).
+- **A card's suggestion button is its character's** [Z56, D5]: 🤝 Develop
+  Relationship / 🔗 Forge a Bond on a move card speak as the card's roller
+  (`cardRollerPc`) and are their player's or a GM's to press, as ⚑ is; a card
+  with no roller stays the presser's. Extends #329 X05 / #338 D1. A crewmate
+  develops their own connection by typing the move.
+- **A vow's copies are its id's** [Z54, Z55, Z59]: `vowCopyId` (the `vowId`
+  flag, else the Item id) keys a reward's claim and a Forsake's loss;
+  `collectVowCopies` takes `isVowCopy(vowCopyId(primary))` only, so a vow with
+  no flag is its own only copy and two crewmates' namesakes stay two vows.
+- **A bond's forged state is mirrored** [Z57]: the connection record stays
+  canonical; `setBondItemForged` writes `system.completed` onto every PC's
+  bond Item through `bondItemsFor`, and CHARACTER STATE names it "bonded".
+- **An arrival is by the place's id, the active sector's first** [Z12, Z14,
+  Z15]: a charting expedition arrives at its site's location Actor
+  (`selectExpeditionSite` — the track's `siteId`, else the unexplored site its
+  label names, never a guess); every name resolver prefers the active
+  sector's namesake; `!at` docks the ship by the resolved id; a narration's
+  ship-position record keeps the token's spot before it (`tokenBefore`), and
+  the X-Card puts the token back there.
+- **Audio is served where its key lives** [Z67, Z68]: GMs advertise an
+  ElevenLabs key in `audioKeyedGmUserIds` (ids only); `isAudioGM` — the
+  lowest-id active GM listed, else the canonical GM — serves keyless
+  players' requests and relayed clips; every GM re-advertises its own entry
+  on each write of either key registry, so two GMs loading at once converge.
+- **A retired surface leaves whole** [D6, Z37]: a setting or stored field
+  goes with every reader, writer and help row; `batchRoundFields.test.js`
+  requires a production reader for every field a round stores.
+- Smaller: a Finish the Scene on an ended challenge is refused, not rolled at
+  0 [Z07]; a variant rolled after its scene ended is the ordinary move [Z39];
+  "Roll ⟨move⟩" carries the reading's target [Z38]; the Round window keeps its
+  picks across a re-render [Z06], drops an X-carded narration [Z32] and
+  follows a GM's coming and going [Z33]; the inciting swear in a round is the
+  crew's one swear [Z30]; Take a Break's +1 is claimed on the store before it
+  is added [Z52]; a burn's kept price keeps its momentum loss [Z51] and its
+  follow-up resist card is the upgraded outcome's [Z47]; a gone roller's burn
+  burns nobody [Z48]; a PC-less narrative line or price is narrated as no one
+  [Z49, Z50]; a strike made before `!scene start` blocks re-assertion and
+  `!truth set` lifts it [Z42]; a strike keeps a promoted tier detail [Z43]; a
+  Promote racing the X-Card takes its line back [Z44]; the Entities panel
+  follows a sheet's Notes and pronouns [Z45]; the next session's mint
+  finalises an ended session whose summary the X-Card emptied [Z41];
+  FACTION LANDSCAPE ranks by recency [Z13]; a relisted faction's Confirm
+  completes it [Z60]; a refused Begin clock trigger is narrated by its Retry
+  [Z63]; End a Session pays the focus momentum before the summary call
+  [Z64]; a renamed truths journal keeps its id link [Z16]; a sector's trouble
+  threat is named per sector [Z65]; a Withstand Damage names its vehicle
+  [Z53].
+
+---
+
 ## Batch Mode: opt-in rounds, read in the player's window, narrated once (2026-11)
 
 **Decision:** ([#340](https://github.com/jamesrmedford-alt/starforged-companion/issues/340);
@@ -44,6 +247,14 @@ Free-flow play stays the default and is unchanged while the mode is off.
   entries roll and are narrated in confirm order; a forced move whose roller
   isn't a participant runs as free-flow; the X-Card stops a round resolving;
   End a Session closes a collecting round and keeps the authors' drafts.
+- Amended by issue #342 (see "Issue #342 decisions" and "Issue #342 audit"):
+  an owed resist roll is the roller's entry and can only be confirmed (D2); a
+  round's New Entities card asks whose connection a new NPC is (D3); an
+  untaken offer or unrolled card move is held for the next round, and only
+  Keep mine drops an offer (Z05); a submitted action stays its author's draft
+  until the round takes it, so a table-talk line typed meanwhile is not made
+  the draft (Z31); turning the mode off mid-upgrade decides nothing for the
+  rollers (Z04).
 
 How it is built:
 - **One pipeline, split into stages** (`src/moves/movePipeline.js`: `readMove`
@@ -358,9 +569,11 @@ D6 (i), D7, D8 and D10 option A; D3 option A with the crew-wide clear; D6
   supply; Resupply's clear is the crew's** [D3; option A with the crew-wide
   clear]. The vendored Sacrifice Resources keys the redirect on the impact
   ("while unprepared"), which issue #325 W16 had narrowed to 0;
-  `isUnprepared` is now the one predicate (the executor, the card's greyed
-  option, the rider), and `clearUnprepared` clears whoever `markUnprepared`
-  marks (`supplyAllies` — known-issues UNPREPARED-CLEAR-ONE-PC).
+  `isUnprepared` is now the one predicate (the executor, the "any" picker's
+  greyed option, the rider — since issue #342 D1 an enumerated choice card's
+  Sacrifice Resources stays open and its cost is redirected), and
+  `clearUnprepared` clears whoever `markUnprepared` marks (`supplyAllies` —
+  known-issues UNPREPARED-CLEAR-ONE-PC).
   `unpreparedAtZeroSupply` is retired. *Rejected:* keeping "at 0" and
   recording it (option B); A alone — one crewmate's Resupply would have
   redirected every ally's loss until their own.
@@ -412,8 +625,10 @@ D6 (i), D7, D8 and D10 option A; D3 option A with the crew-wide clear; D6
   by `narrationId` as `retractedBy: "superseded"` — rendered nowhere, never
   named under CORRECTED, and not blocking a restatement (an X-Card's
   retraction would block the re-narration's own). The superseded narration's
-  World Journal and tier records stand. *Rejected:* keeping both as fiction
-  that stands (option B).
+  World Journal and tier records stand. Since issue #342 Z46 the supersede
+  covers every clock the rewind takes out of full — one another player's
+  price filled included, vow clocks too — not only the burned receipt's own
+  trigger. *Rejected:* keeping both as fiction that stands (option B).
 - **Push-to-talk into a drafted chat box adds and waits** [D9; option B]: the
   transcript goes after the draft and the player presses Enter; an empty box
   auto-submits. *Rejected:* append and submit (option A) — it guesses whether
@@ -1472,7 +1687,9 @@ one keeps the weak hit's milestone count and reward. The upgraded outcome's
 asset consequence riders (`applyMoveConsequenceRiders`) still run only for
 the rolled outcome. A threshold card posted before cards carried their
 `resolutionId` cannot take an upgraded position (the card reports it not
-written). Impacts a suffer executor marked are still not reversed, as before.
+written). Impacts a suffer executor marked are still not reversed, as before
+— except unprepared: since issue #342 D4 the reversal clears the unprepared
+marks the reverted price itself made, once the refunded supply is above 0.
 
 ## Issue #311 audit: a weak recovery is the strong one plus its cost; an upgrade owns what its outcome set off; completions are stamped (2026-10)
 
@@ -2339,9 +2556,14 @@ sector roster (the relevance and frame-cast rules choose cards, unchanged).
 
 **Decision:** (issue #286 C3, C4)
 - A session is over once End a Session marks it (`sessionEndedId`) or after
-  four hours with no chat message. The canonical GM refreshes
-  `lastSessionTimestamp` on chat activity, at most every 10 minutes, and never
-  for a session that is already over. The next world load or Begin a Session,
+  four hours with no chat message. The canonical GM refreshes the session's
+  activity stamp on chat activity, at most every 10 minutes, and never for a
+  session that is already over — since issue #342 Z01 its own world setting,
+  `sessionActivity { sessionId, at }` (the idle limit reads the later of it
+  and the mint's `lastSessionTimestamp`): written into `campaignState` from
+  the cached copy, it undid a relayed X-Card, flag, break or End landing
+  meanwhile. Since issue #342 D6 the "Previously On" recap posts when a load
+  starts the new session, and the separate Session gap setting is gone. The next world load or Begin a Session,
   whichever comes first, starts the new one (`rollSessionIfDue`,
   `src/session/lifecycle.js`): a session nobody ended first gets its rolling
   summary brought up to date, its scene closes under its own id, then the mint.
@@ -2685,7 +2907,9 @@ and performed by a handler on the canonical GM:
   re-narration, End a Session's summary) it waited up to 60 s while the
   unqueued move pipeline narrated through it (XCARD-QUEUED). That is safe
   because `suppressScene` reads and writes the store with no await between,
-  and no handler writes back a snapshot held across an await (next entry).
+  and no handler writes back a snapshot held across an await (next entry; the
+  session activity stamp did, until issue #342 Z01 gave it a setting of its
+  own).
 - Relays are fire-and-forget (no ack). Once its listener is installed, the
   canonical GM broadcasts `gmRelay.ready` (`announceGmRelayReady`); state a
   player must hand the GM is **pulled** on that signal (`onGmRelayReady` —
@@ -2793,8 +3017,9 @@ never writes the whole snapshot back.
   instead of starting a second (`startScene`, U06f). Each used to write its
   whole read back, reverting an X-Card, a Take a Break, a narration's truths
   or a released move lock that landed meanwhile.
-- Single-field consumers re-read the store: Take a Break's +1 is cleared on
-  the store (`clearPersistedNextMoveAdd`), every narrator X-Card gate reads
+- Single-field consumers re-read the store: Take a Break's +1 is claimed on
+  the store before it is added (`consumeNextMoveAdd`, issue #342 Z52 — it was
+  added from the working copy and cleared after), every narrator X-Card gate reads
   the live setting as well as the caller's snapshot, and the narrator's safety
   block and recent oracle results are read from the store (issue #321 U08 —
   Lines, Veils and oracle answers added while a move waited were missed).
@@ -2933,8 +3158,9 @@ never did — a mirror with no write-through (rules/reachability.md §5).
 the canonical GM (`applyTakeBreak`, relay `session.takeBreak`). The move
 pipeline applies it automatically to the next **action roll** — a move rolled
 with a stat (`isActionRollMove`: not a progress move, has a stat) — adding it
-to the roll's adds and deleting it from the working copy and the store
-(`takeNextMoveAdd` + `clearPersistedNextMoveAdd`, `src/moves/nextMoveAdd.js`).
+to the roll's adds once it is claimed — deleted from the store first, so a
+refused claim adds nothing and the next roll cannot take it again
+(`consumeNextMoveAdd`, `src/moves/nextMoveAdd.js`; issue #342 Z52).
 Progress moves and no-roll moves (Reach a Milestone, session moves …) leave it
 pending. It is table-wide: the next action roll gets it, whoever makes it.
 
@@ -3355,8 +3581,13 @@ record via `ATTITUDE_TO_RELATIONSHIP` (hostile→antagonistic,
 neutral→apathetic, allied→open_alliance; unknown never overwrites) and
 backlinks the record through the WJ entry's `entityId`. Draft-confirm
 reconciles at birth (inherits the WJ attitude, seeds the faction oracles —
-`seedFactionRecord`, idempotent). The narrator's FACTION LANDSCAPE renders
-records first, WJ-only factions after (`mergeFactionLandscape`).
+`seedFactionRecord`, idempotent). The narrator's FACTION LANDSCAPE lists the
+four factions most recently in play — records and World Journal factions
+ranked together by the later of the record's and the entry's `updatedAt`, a
+record winning its shared name, and a record still at "unknown" showing the
+stance its World Journal attitude maps to (`mergeFactionLandscape`; issue
+#342 Z13, Z60 — "records first" let a campaign's first four records hold the
+block for good).
 
 **Rejected:** unifying the two vocabularies (they mean different things —
 coarse intelligence vs played stance); retiring the WJ entry on confirm
@@ -4358,7 +4589,10 @@ existing tradition of spare, consequential prose with occasional dark wit.
 
 **Perspective: auto** — second person ("you") for solo campaigns, third person
 (character names) for multiplayer. Resolved at narration time from the count of
-active non-GM users. Can be overridden to a fixed value per campaign.
+active non-GM users — and, since issue #342 Z40, third person whenever two or
+more characters act in the one narration (a Batch Mode round's CHARACTER
+blocks: a GM's PC acting beside one player's). Can be overridden to a fixed
+value per campaign.
 
 **Why auto rather than a fixed default:** Second person creates intimacy in solo
 play — the narrator is addressing the player directly, which suits the journaling
@@ -4366,7 +4600,7 @@ nature of Ironsworn solo. Third person is more natural for multiplayer where
 multiple characters are present and "you" becomes ambiguous.
 
 **Both are configurable** in the Narrator tab of module settings. The auto
-logic lives in `resolveNarrationPerspective()` in `src/narration/narrator.js`.
+logic lives in `resolveNarrationPerspective()` in `src/narration/narratorPrompt.js`.
 
 ---
 

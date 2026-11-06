@@ -8,6 +8,85 @@ All notable changes to Starforged Companion are documented here.
 
 - Added: **Batch Mode** (issue #340) — an opt-in way to play multiplayer rounds. A GM turns it on with the toolbar's new **Batch Mode** switch (shown pressed while on); while a session is active, rounds open by themselves. Each round, every player with a character writes an action — or passes — in a **Round** window, which opens for everyone taking part (players get a **Round** toolbar button to reopen it). The canonical GM's game reads each action in the background (pacing, the move, its stat, the asset abilities that apply and which fight, expedition, vow or legacy track it scores), and the player confirms or edits the reading in their own window — no confirm dialog opens on the GM's screen. The round resolves when every connected player is ready or has passed, or when a GM presses **Send now**; each move is rolled for its own character in confirm order, Burn Momentum / Improve Result are decided in the window before the narration (Send now counts as Keep), and the narrator tells the round as one scene on one card carrying each player's line and roll. Players see who is ready and what they wrote; a player who passes or doesn't act is never marked or named — not in the windows, on the card, in the narration or when a GM sends the round. Chat is table talk while the mode is on (a typed line becomes the author's draft; commands work as usual; `!roll` points to "Roll a move instead"), and a card button's move becomes its roller's entry. The X-Card stops a round resolving; End a Session closes a collecting round and keeps the authors' text as drafts; a round left resolving when its GM leaves is resumed by the next GM without rolling any move twice. Free-flow play is unchanged while the mode is off.
 - Changed: the move pipeline's stages — reading an action, rolling it, recording it and its asset riders — live in their own module, shared by free-flow play and Batch Mode rounds (issue #340 Phase 0; no change in behaviour).
+- Fixed: **A player's X-Card, Set a Flag, Take a Break or End a Session from the Session panel is no longer undone by the GM's game** (issue #342 Z01). When the GM's game refreshed the session's activity time at the same moment, it could write the old state back over the player's change.
+- Fixed: **A chat line's narration, or the inciting vow's oath scene, that the world refused to save no longer stays on the GM's screen alone** (issue #342 Z02). The GM's game kept its scene and facts and could later write them into the world.
+- Fixed: **In Batch Mode, an unanswered “Apply asset effects” prompt no longer stops the next round resolving** (issue #342 Z03) — Send now included.
+- Fixed: **Turning Batch Mode off while a player is choosing Burn, Improve or Keep no longer makes the choice for them** (issue #342 Z04). The round finishes, then the mode turns off.
+- Fixed: **In Batch Mode, a card's move you pressed after writing your action is no longer lost** (issue #342 Z05). If the round resolves or closes before you choose, it joins the next round.
+- Fixed: **The Round window keeps your ability, stat-swap and target picks when it redraws** (issue #342 Z06), so Confirm sends what you chose.
+- Fixed: **A Finish the Scene on a scene challenge that has already ended is no longer rolled** (issue #342 Z07). A second one in a round, or one pressed from a stale Progress Tracks row, was a certain miss with a price.
+- Fixed: **In Batch Mode, a round whose first action was a failed Make a Connection still records what the rest of the round turned up** (issue #342 Z08) — its lore, threats and new characters.
+- Fixed: **In Batch Mode, each successful Make a Connection creates the NPC its own character met, bonded to that character** (issue #342 Z09) — never the first roller's, and never an NPC another player's action introduced.
+- Fixed: **In Batch Mode, an NPC the round's narration develops gets the new details on their card** (issue #342 Z10), even when nobody rolled or another player's roll was a discovery.
+- Fixed: **After Burn Momentum or Improve Result undoes a miss's Pay the Price, the narrator is no longer told that price happened** (issue #342 Z11).
+- Fixed: **The X-Card puts the ship's token back where it was on the sector map, deep space included** (issue #342 Z12). It stayed on the removed narration's destination.
+- Fixed: **The narrator's picture of the factions follows the ones most recently in play** (issue #342 Z13). Once a campaign had four factions, newer ones — even one just named — never reached it.
+- Fixed: **Finishing an expedition toward a vault or derelict arrives there** (issue #342 Z14) — the ship's position, its map token and the current location move to the site, however the crew named it.
+- Fixed: **`!at` and the narrator's ship moves pick the active sector's place when two sectors share its name** (issue #342 Z15), and `!at` with part of a name docks the ship where it set the current location.
+- Fixed: **Renaming the World Truths journal no longer loses it** (issue #342 Z16). Page edits still reach the narrator, and a load no longer brings back an older save.
+- Fixed: **An oracle answer or Pay the Price result no longer vanishes from what the narrator remembers** (issue #342 Z17). when a clock advances or a new scene starts right after it.
+- Fixed: **In Batch Mode, a move's result is recorded even when the world refuses the round's own bookkeeping** (issue #342 Z18). A round that stops while resolving is reported to the GMs, and Send now resumes it.
+- Fixed: **In Batch Mode, a move-lock release the world refuses is tried again** (issue #342 Z19), so the round no longer stalls holding the lock; refused twice, the GMs are told.
+- Fixed: **An asset effect no longer pays twice when the world refuses a Batch Mode round's close once** (issue #342 Z20).
+- Fixed: **The GMs are told when a round's narration and its fallback card could not be posted** (issue #342 Z21). The moves still stand.
+- Fixed: **With two GMs, the next Batch Mode round opens when the other GM became the main GM while a round was being narrated** (issue #342 Z22).
+- Fixed: **After End a Session, a Batch Mode round still resolving finishes and is narrated** (issue #342 Z23). even if a player reconnects or a GM enters a key meanwhile.
+- Fixed: **Loading a world after a long break no longer re-reads last session's unresolved Batch Mode actions** (issue #342 Z24), and no round opens until a session begins.
+- Fixed: **In Batch Mode, a round and a held card-button move outside it can no longer both start resolving at the same moment** (issue #342 Z25).
+- Fixed: **A Batch Mode round no longer waits on a Burn or Improve decision from a player who disconnected before it resolved** (issue #342 Z26).
+- Fixed: **Choosing a result's cost on its choice card during a Batch Mode round counts as Keep** (issue #342 Z27), and the Round window stops offering a Burn the card has closed.
+- Fixed: **In Batch Mode, an asset's supply cost that goes to another suffer move is no longer cancelled when the roll was upgraded first** (issue #342 Z28).
+- Fixed: **A character's card-button move waiting for the next round is no longer lost when Batch Mode is turned off first** (issue #342 Z29); it is rolled as usual.
+- Fixed: **In Batch Mode, a second ⚔ Swear this vow press on the inciting incident no longer rolls the swear again** (issue #342 Z30). That player is told, and their button works again.
+- Fixed: **An action you submitted in the Round window comes back to your box if its reading fails, or if the round resolves or closes without it** (issue #342 Z31) — even when you weren't connected.
+- Fixed: **The Round window no longer keeps showing a narration the X-Card removed** (issue #342 Z32).
+- Fixed: **With no GM connected, the Round window says to submit once a GM joins** (issue #342 Z33). (nothing sent it automatically), and it updates when a GM connects or leaves.
+- Fixed: **After a round moved on, the Round window no longer loops on “wasn't received” and Send again** (issue #342 Z34); your text waits in the box for the open round.
+- Fixed: **In Batch Mode, the action of a character deleted mid-round is no longer rolled and credited to another player's character** (issue #342 Z35).
+- Fixed: **A character renamed while a round collects is narrated under their new name** (issue #342 Z36), and the round keeps its party roster.
+- Fixed: **With two scene challenges open, the Round window's Roll ⟨move⟩ marks the challenge the narrator suggested** (issue #342 Z38).
+- Fixed: **In a round, a scene-challenge Face Danger or Secure an Advantage rolled after another action ended the scene is rolled as the ordinary move** (issue #342 Z39).
+- Fixed: **A Batch Mode round in which the GM's character acts beside one player's is narrated in the third person, by name** (issue #342 Z40), instead of addressing both as “you”.
+- Fixed: **Playing the X-Card on End a Session's closing scene no longer leaves the next session without a summary of the one just played** (issue #342 Z41).
+- Fixed: **A fact struck earlier in the session stays struck after a new scene starts** (issue #342 Z42) — the narrator can't record it again — and a GM's `!truth set` in the new scene lifts the strike and restores what it removed.
+- Fixed: **Striking a fact whose detail the GM promoted to an NPC's Notes no longer stops a later X-Card from taking that line off the Notes** (issue #342 Z43).
+- Fixed: **An X-Card played while the GM is promoting that narration's detail no longer leaves the removed line on the NPC's Notes** (issue #342 Z44).
+- Fixed: **The open Entities panel updates when an NPC's or ship's Notes, or an NPC's pronouns, change on the sheet** (issue #342 Z45) — including when the X-Card removes a promoted line.
+- Fixed: **Burning momentum on a miss whose price advanced a clock that another player's price then filled no longer leaves that clock's TRIGGERED scene standing** (issue #342 Z46), and the clock can't fire twice.
+- Fixed: **After a burn that kept the Pay the Price, the resist roll that price's card asks for can be rolled** (issue #342 Z47). It was refused as out of date.
+- Fixed: **Burn Momentum on a move card whose character was deleted burns nobody** (issue #342 Z48). It burned another character's momentum and refunded the price onto them.
+- Fixed: **A Pay the Price rolled by a player with no character of their own is no longer narrated or remembered as another character's** (issue #342 Z49), and they are told why.
+- Fixed: **A chat line from a player with no character of their own, at a table of several characters, is no longer narrated as the first character's** (issue #342 Z50).
+- Fixed: **Burning a Battle or Clash miss to a weak hit no longer refunds the momentum its kept Pay the Price took** (issue #342 Z51).
+- Fixed: **Take a Break's +1 is added to only one roll** (issue #342 Z52), even when the world refuses to record that it was used.
+- Fixed: **A Withstand Damage for one of your support vehicles (the Hoverbike, a Rover, a Skiff) rolls that vehicle's integrity, and its choices change that vehicle** (issue #342 Z53) — not your starship in orbit.
+- Fixed: **A reward promised on a vow written on your sheet is granted once** (issue #342 Z54), and forsaking that vow loses it: a won fight and the vow's fulfilment no longer both pay it.
+- Fixed: **Choosing a reward for a vow written on your sheet works even when the world refused the vow's first save** (issue #342 Z55). It failed silently on every try.
+- Fixed: **🤝 Develop Relationship and 🔗 Forge a Bond on a move card are that card's character's move** (issue #342 Z56): a GM's press rolls it for them, not the first character, and another player's press is refused and told whose button it is.
+- Fixed: **A bond forged through the companion shows as forged on every character's sheet** (issue #342 Z57), and the narrator is told the bond is forged.
+- Fixed: **A 🔁 Recommit that could not be saved, or that had nothing left to recommit, says so to whoever pressed it** (issue #342 Z58). (the bond already forged, the expedition finished, the vow gone); a Recommit for a character no longer in the game says the character is gone.
+- Fixed: **Two characters' same-named vows written with no GM connected stay separate** (issue #342 Z59). Fulfilling, recommitting or forsaking one no longer changes the other.
+- Fixed: **A faction confirmed again after a failed Confirm and a reload is set up in full** (issue #342 Z60): its oracles are rolled and it keeps the stance the story gave it.
+- Fixed: **Tainted World planets on the sector map show the system's Tainted planet token** (issue #342 Z61). instead of a plain circle.
+- Fixed: **A character's Chronicle keeps recording entries even if its page failed to be created the first time** (issue #342 Z62).
+- Fixed: **When the world failed to save a campaign clock that triggered at Begin a Session, the GMs' Retry narrates the trigger** (issue #342 Z63). once the fill is saved.
+- Fixed: **End a Session gives the +1 momentum for a noted focus straight away** (issue #342 Z64), so a GM closing Foundry while the session summary is written no longer loses it.
+- Fixed: **Two sectors with the same trouble each keep their own active threat** (issue #342 Z65).
+- Fixed: **The Private Channel window says “not saved yet” as soon as a save fails, and drops it once one lands** (issue #342 Z66).
+- Fixed: **When only a co-GM holds the ElevenLabs key, players' narrator audio is made on that GM's key** (issue #342 Z67). instead of saying “not ready”.
+- Fixed: **Two GMs who open the world at the same moment both count as holding their keys** (issue #342 Z68), so narration and Batch Mode keep working when one leaves.
+- Fixed: **The Settings Reference page lists the Batch Mode switch and its draft** (issue #342 Z69).
+- Fixed: **Impact names on the suffer card follow Foundry's language** (issue #342 Z70), as the system's sheet does.
+- Changed: **While you are unprepared, Check Your Gear's and Heal's Sacrifice Resources option stays open on the choice card** (issue #342 D1), and its cost goes to another suffer move you choose.
+- Changed: **In Batch Mode, the 🛡 resist roll at 0 health or spirit becomes your action for the round** (issue #342 D2). even if you had already written one (yours is kept as your draft for the next round), and it can only be confirmed.
+- Added: **In Batch Mode, the New Entities card for a round asks whose connection a new NPC is** (issue #342 D3) — a button for each character who acted, or No one — instead of giving every new NPC to whoever acted first.
+- Fixed: **Undoing a Pay the Price that ran the supply out, with Burn Momentum or Improve Result, also clears the unprepared it marked** (issue #342 D4). once the supply is back above 0.
+- Changed: **A victory card's 🏁 Attempt to Fulfill rolls as the character whose vow the fight served** (issue #342 D5), and only that character's player or a GM may press it — a crewmate who won the fight no longer rolls your vow as theirs.
+- Changed: **The “Previously On” recap posts when loading the world starts a new session** (issue #342 D6). (after End a Session, or four hours with no chat activity); the separate Session gap (hours) setting is removed.
+- Changed: **Finishing an expedition charts only the site it was for** (issue #342 D7) — named after it, its type, or its pin's “Unexplored Site” while it is the only one in the active sector; an expedition elsewhere no longer charts the sector's last unexplored site. `!reveal-site` still can.
+- Changed: **While a GM with a Claude key is connected, only narrator cards a GM's game posted are voiced** (issue #342 D8); a player's look-alike message gets no Play button and bills no audio.
+- Changed: a Batch Mode round no longer stores the scene it opened in, the resolver's lock claim or a copy of each roll's match, which nothing read (issue #342 Z37; no change in behaviour).
+- Docs: the scope index shows Phone Play on The Forge (#293) as complete, as its issue is; the file map's Progress Tracks row, the connection flow map's creation paths and the exploration flow map's bare `!at` say what the code does (issue #342 Z71–Z74).
 
 ## [1.7.36] — 2026-11-05
 
