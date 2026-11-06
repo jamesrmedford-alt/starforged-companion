@@ -999,6 +999,9 @@ export function registerChatHook() {
       campaignState.pendingMoveClaim = null;
       console.error(`${MODULE_ID} | could not claim the move lock:`, err);
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
+      // A forced move held behind this claim meanwhile waits for a write
+      // that frees the lock; none is coming (FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM).
+      drainDeferredForcedMoves();
       return;
     }
     // This client's pipeline holds the lock now: a stale write that carries
@@ -1117,8 +1120,11 @@ export function registerChatHook() {
   setBatchFreeFlowRunner((message) => onMessage(message, { batchReleased: true }));
   // A held forced move runs once a campaignState write leaves the lock free
   // — the pipeline's own release, a stale lock cleared at load (issue #325
-  // W02).
-  Hooks.on("updateSetting", (setting) => drainDeferredForcedMoves(setting, onMessage));
+  // W02) — or once the claim it was held behind is refused.
+  _heldMovePipeline = onMessage;
+  Hooks.on("updateSetting", (setting) => {
+    if (setting?.key === `${MODULE_ID}.campaignState`) drainDeferredForcedMoves();
+  });
   // A claim this client released, carried back by a write built from a cache
   // that had not seen the release, is put back by its claimant
   // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
@@ -1388,18 +1394,22 @@ function renderHeldUntilSessionNote(message, root) {
 }
 onChatMessageRender((message, root) => renderHeldUntilSessionNote(message, root));
 
+// The free-flow pipeline a held forced move is handed back to (registerChatHook).
+let _heldMovePipeline = null;
+
 /**
  * On a campaignState write that leaves the move lock free, hand the oldest
  * held forced move back to the pipeline — on the canonical GM only. One per
  * write: the move it starts claims the lock, and its release (another write)
- * hands over the next. A held message deleted meanwhile is skipped.
- *
- * @param {{ key?: string }} setting — the updateSetting hook's document
- * @param {(message: ChatMessage) => Promise<void>} runPipeline
+ * hands over the next. A held message deleted meanwhile is skipped. A claim
+ * the world refused writes nothing, so its refusal hands one back too — the
+ * free-flow pipeline's and a Batch Mode round's (claimPendingMoveLock): a
+ * move held behind it waited for some later write to free the lock
+ * (FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM).
  */
-function drainDeferredForcedMoves(setting, runPipeline) {
-  if (setting?.key !== `${MODULE_ID}.campaignState`) return;
-  if (!_deferredForcedMoves.length || !isCanonicalGM()) return;
+function drainDeferredForcedMoves() {
+  const runPipeline = _heldMovePipeline;
+  if (!runPipeline || !_deferredForcedMoves.length || !isCanonicalGM()) return;
   const state = game.settings.get(MODULE_ID, "campaignState");
   // A round's claim still on its way holds the lock too: the move would only
   // be held again — and drained again, at once, forever (issue #342 Z25).
@@ -1421,7 +1431,7 @@ function drainDeferredForcedMoves(setting, runPipeline) {
     .catch(err => console.warn(`${MODULE_ID} | a held forced move failed:`, err?.message ?? err))
     .finally(() => {
       if (!_deferredForcedMoves.includes(id)) _drainedForcedMoves.delete(id);
-      drainDeferredForcedMoves(setting, runPipeline);
+      drainDeferredForcedMoves();
     });
 }
 
@@ -2125,7 +2135,9 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * so this client's free-flow check sees the lock taken meanwhile, as it sees
  * its own in-place claim (issue #342 Z25). The claim's token rides the lock,
  * and this client holds it (restoreLockOverCarriedBackClaim puts it back over
- * a stale write).
+ * a stale write). A refused claim writes nothing, so a forced move held
+ * behind it meanwhile is handed back at once (drainDeferredForcedMoves —
+ * FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM).
  *
  * @returns {Promise<{ claim: string|null, busy?: boolean, refused?: boolean }>}
  *   `busy`: another move holds the lock; `refused`: the world refused the write
@@ -2137,15 +2149,20 @@ export async function claimPendingMoveLock() {
   // In flight until the write lands: this client's free-flow check sees it at
   // once, as it sees its own in-place claim (issue #342 Z25).
   _moveLockClaimInFlight = claim;
+  let refused = false;
   try {
     // A copy (rules/foundry-api.md): a refused claim leaves the cache free.
     await game.settings.set(MODULE_ID, "campaignState",
       { ...latest, pendingMove: true, pendingMoveBy: game.user?.id ?? null, pendingMoveClaim: claim });
   } catch (err) {
     console.error(`${MODULE_ID} | could not claim the move lock:`, err);
-    return { claim: null, refused: true };
+    refused = true;
   } finally {
     if (_moveLockClaimInFlight === claim) _moveLockClaimInFlight = null;
+  }
+  if (refused) {
+    drainDeferredForcedMoves();
+    return { claim: null, refused: true };
   }
   _heldMoveLockClaim = claim;
   return { claim };
