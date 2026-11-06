@@ -1353,11 +1353,20 @@ async function runHeldFreeFlowMoves() {
 // Recovery, and the canonical GM's hooks
 // ─────────────────────────────────────────────────────────────────────────────
 
+// The recoveries issue #340 names ("Recovery"): the canonical GM's `ready`,
+// and the GM resolving a round leaving. On these a round still resolving from
+// an ended session is closed; on any other (a user joining, a GM entering a
+// key) it finishes first, as End a Session lets it — those closed it, its
+// narration and riders never run (issue #342 Z23).
+const CLOSES_RESOLVING_ROUND = new Set(["ready", "resolver-left"]);
+
 /**
  * On the canonical GM's `ready`, when it becomes canonical (the resolving GM
- * left), and when a keyed GM joins: a round from an ended session is closed;
- * one left resolving whose GM is gone is resumed; a collecting one has its
- * lost readings started again and gains the participants who joined. Then a
+ * left), when a user joins and when a keyed GM joins: a collecting round from
+ * an ended session is closed, and a resolving one too on `ready` or when its
+ * GM left (CLOSES_RESOLVING_ROUND) — otherwise it finishes first; one left
+ * resolving whose GM is gone is resumed; a collecting one has its lost
+ * readings started again and gains the participants who joined. Then a
  * round opens when one is due.
  *
  * @param {string} [reason]
@@ -1371,7 +1380,7 @@ export async function recoverRound(reason = "recovery") {
     const sessionOver = !isSessionActive(cs) || round.sessionId !== (cs.currentSessionId ?? null);
     if (sessionOver && !isResolving(round)) {
       await closeCollectingRound("session-ended");
-    } else if (sessionOver) {
+    } else if (sessionOver && CLOSES_RESOLVING_ROUND.has(reason)) {
       await queueRoundWrite(r => (r?.id === round.id ? closeRound(r, { reason: "session-ended", now: nowIso() }) : r))
         .catch(err => console.warn(`${MODULE_ID} | Batch Mode: an ended session's round could not be closed:`, err?.message ?? err));
     } else if (isResolving(round)) {
