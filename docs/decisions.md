@@ -6,6 +6,91 @@ rejected.
 
 ---
 
+## The eleventh audit's open items: every read-and-set campaignState write is on the chain, the X-Card's pause jumps it, what it removed stays blocked, a portrait is bought once (2026-11)
+
+**Decision:** (the fifteen items found while fixing issue #342, and the
+fourteen found while fixing those — fixed at the maintainer's request on
+2026-11-06. Each item's code in brackets; known-issues.md has every row.)
+- **Every read-and-set campaignState write is on the client's write chain**
+  [CAMPSTATE-CHAIN-PARTIAL, CAMPSTATE-CHAIN-REST, ART-INDEX-WRITE-OFF-CHAIN,
+  CACHE-MUTATED-BEFORE-WRITE]: `serialiseCampaignStateWrite` now also carries
+  the move lock's claim (one path, `claimPendingMoveLock`, for free-flow too),
+  release, put-back and ready reset; the X-Card's resume and redirect clear;
+  the relay handlers (Set a Flag, Take a Break, Begin / End a Session,
+  `!bond`, Private Lines); `persistResolution`; `writeOwnedFields`' callers
+  (the world truths, `!lore`, Campaign Start); the next-move claims and grant;
+  the spotlight; the commands (`!at`, `!sector`, `!pace`, `!roll`, custom
+  oracles, site reveal / clear); entity registration and the migrator; the
+  art index; the recap cache; the rolling summary and a draft's Dismiss —
+  each a copy of the store as it is at its turn. `campaignStateChainSweep.test.js`
+  fails on a production campaignState write outside a chain call (its
+  `OFF_CHAIN` allow-list is empty). *Rejected:* field merges per writer alone
+  — a writer off the chain still read inside another's round trip and put
+  its fields back (the X-Card's pause, an oracle answer).
+- **The X-Card's pause jumps the chain** [CAMPSTATE-CHAIN-PARTIAL]:
+  `runCampaignStateWriteNow` writes it at once, and chained writes not yet
+  started wait for it (at most 10 s). A chained write already sent when the
+  pause is played lands first and the pause takes back its change; a lock
+  release it carries back is put back (`restoreLockOverCarriedBackClaim`).
+  *Rejected:* queuing the pause — "the X-Card is the exception": it must not
+  wait behind a stuck write.
+- **What the X-Card removed stays blocked for the session, and is never
+  named** [XCARD-RETRACTION-SCENE-SCOPED, XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED]:
+  a scene end keeps the scene's X-Card retractions on
+  `sessionRetractions.blocked` and every live narration truth it closes on
+  `sessionRetractions.narrated` (each the newest 50); an X-Card on a narration
+  whose scene has ended moves its truths onto `blocked`; `applySidecar`
+  refuses a blocked fact's re-assertion (`findSessionStrike(…, { blocked:
+  true })`), while CORRECTED, the summary's leave-out list and `!truth set`'s
+  lift never read it. A GM's own `!truth set` of the fact is still recorded,
+  and the next session may state it.
+- **A scene end merges at its turn and checks before each migration write**
+  [XCARD-DURING-SCENE-END-RACE, XCARD-DURING-SCENE-END-MIGRATES,
+  STRIKE-DURING-SCENE-END-LOST]: `endScene`'s own chained write
+  (`persistEndedScene`) adds the scene's strikes, X-Card retractions and
+  narration truths onto the store's `sessionRetractions`; every migration
+  write (tier detail, lore archive, LAST KNOWN) first re-reads the store's
+  X-Card and strike state and takes back a copy that landed as one was made —
+  so a slow scene end, End a Session's included, no longer files a removed or
+  struck fact as canon (closes known-issues END-SESSION-STALE-ENDSCENE).
+- **A portrait is bought once** [REGEN-LINK-REFUSED-SECOND-REGEN,
+  PORTRAIT-LATE-FIRST-GENERATION, FIRST-PORTRAIT-LINK-REFUSED]: a
+  regeneration is claimed (`regenerationUsed`) before its image is bought and
+  given back only when the image could not be made; a refused save keeps the
+  earlier portrait, locked. A first generation holds a per-entity slot (a
+  second waits for it and gets its portrait) and keeps a portrait linked
+  meanwhile; a link the world refuses attaches nothing, tells the GM, and the
+  next call links the stored image (`findEntityPortrait`) instead of buying
+  another. Left: two GMs within one image call (PORTRAIT-TWO-GM-FIRST-GENERATION).
+- **An arrival's two stores agree** [ARRIVAL-LOCATION-PHRASE-SPLIT,
+  ARRIVAL-FRAGMENT-SHIP-FREE-TEXT, EXPEDITION-STAMP-SITE-NAME]: the
+  current-location pick (the destination's id, else its name) is made first
+  and the ship docks by its id, as `!at` does; when neither names a place, the
+  current location is the one the ship's new position names. An expedition's
+  site link goes through `selectExpeditionSite`, the finish's own ladder, so a
+  renamed site is the one linked.
+- **A page-less journal is completed, not duplicated** [FACTION-PAGELESS-JOURNAL,
+  CREATURE-PAGELESS-JOURNAL]: adoption gives an unlisted page-less faction or
+  creature journal the creator's page before registration, as Z62's Chronicle
+  is completed by its next write.
+- **A refused move-lock step is said, and frees what waits on it**
+  [FREE-FLOW-RELEASE-REFUSED-TWICE, FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM,
+  ROUND-WAIT-AFTER-REFUSED-CLAIM, ROUND-LOCK-WAIT-MARKED-LATE]: a release
+  refused twice whispers the GMs (Z19's rule, free-flow too); a refused claim
+  drains the held card moves and wakes a waiting round (`noteMoveLockFreed`);
+  a round re-checks the lock after marking its wait (`moveLockFree`, the
+  driver's host).
+- Smaller: a round's CHARACTER blocks are only for PCs that still exist
+  [ROUND-CHARACTER-BLOCK-GONE-PC]; an unrolled round's detection reads as
+  free narration [ROUND-DETECTION-NULL-MOVE]; a scene-challenge variant whose
+  own challenge ended is the ordinary move, in a round and from a paced Roll
+  [ROUND-VARIANT-TWO-CHALLENGES, PACED-VARIANT-ROLL-ENDED-CHALLENGE]; an
+  upgrade step's Retry supersedes the trigger its rewind takes back
+  [UPGRADE-RETRY-REWIND-NO-SUPERSEDE]; a won fight's and a payoff's cards
+  carry `vowCopyId` [FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY].
+
+---
+
 ## Issue #342 decisions: D1–D8 (2026-11)
 
 **Decision:** (issue #342 — the eleventh audit's eight rows that needed the
@@ -109,14 +194,17 @@ each row; each row's ID in brackets.)
   the session it names. The stamp used to write the whole cached
   campaignState, landing after — and undoing — a relayed X-Card pause, Set a
   Flag, Take a Break or End a Session. *Rejected:* one write chain for every
-  campaignState writer — the relay handlers' writes are not on it.
+  campaignState writer — the relay handlers' writes were not on it then (they
+  are since the open items, CAMPSTATE-CHAIN-PARTIAL), and a stamp of its own
+  touches no other writer's fields whatever the chain holds.
 - **Read-and-set campaignState writes share one chain per client** [Z17]:
   `serialiseCampaignStateWrite` (`src/multiplayer/campaignStateChain.js`)
   carries the oracle capture, every clock write, `persistCampaignStateFields`
   and `persistSceneLedgerFields`; a write ahead that never settles is waited
   on for at most 10 s from its start (`serialiseClockWrite` delegates to it,
-  gaining that bound). The writers still off it are known-issues
-  CAMPSTATE-CHAIN-PARTIAL.
+  gaining that bound). Since the open items every read-and-set campaignState
+  write is on it, and a sweep test keeps it so (CAMPSTATE-CHAIN-PARTIAL /
+  -REST, "The eleventh audit's open items").
 - **Every narration hand-off gets a working copy** [Z02]: the paced path
   (cloned before `narratePacedInput`) and the inciting swear (cloned at its
   read) join issue #331 X09 / #335 Y04's deepClone rule.
@@ -2909,7 +2997,9 @@ and performed by a handler on the canonical GM:
   because `suppressScene` reads and writes the store with no await between,
   and no handler writes back a snapshot held across an await (next entry; the
   session activity stamp did, until issue #342 Z01 gave it a setting of its
-  own).
+  own). Since the eleventh audit's open items the pause also jumps the
+  client's campaignState write chain (`runCampaignStateWriteNow`): every other
+  read-and-set write waits behind it, and it waits for none.
 - Relays are fire-and-forget (no ack). Once its listener is installed, the
   canonical GM broadcasts `gmRelay.ready` (`announceGmRelayReady`); state a
   player must hand the GM is **pulled** on that signal (`onGmRelayReady` —
@@ -2970,7 +3060,10 @@ relays with as many failure modes. The post-merge review hardened it
 never writes the whole snapshot back.
 
 - `persistResolution` re-reads the stored campaignState immediately before its
-  write (no await between read and set) and merges (`mergeWithLatestState`):
+  write (no await between read and set) — since the eleventh audit's open
+  items at its turn on the client's write chain, and `writeOwnedFields` is the
+  rejecting twin of `persistCampaignStateFields` for callers that report a
+  refusal — and merges (`mergeWithLatestState`):
   **store-owned** fields always take the store's value (`xCardActive`,
   `xCardPlays`, `safety`, `safetyFlags`, `nextMoveAdd`, `questFocus` / `connectionFocus`, the
   session-active and session-id fields (`sessionStartedId` included),

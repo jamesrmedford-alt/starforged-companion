@@ -87,6 +87,33 @@ All notable changes to Starforged Companion are documented here.
 - Changed: **While a GM with a Claude key is connected, only narrator cards a GM's game posted are voiced** (issue #342 D8); a player's look-alike message gets no Play button and bills no audio.
 - Changed: a Batch Mode round no longer stores the scene it opened in, the resolver's lock claim or a copy of each roll's match, which nothing read (issue #342 Z37; no change in behaviour).
 - Docs: the scope index shows Phone Play on The Forge (#293) as complete, as its issue is; the file map's Progress Tracks row, the connection flow map's creation paths and the exploration flow map's bare `!at` say what the code does (issue #342 Z71–Z74).
+- Fixed: **When the world twice refuses to free the one-move-at-a-time lock after a move, the GMs are told** (FREE-FLOW-RELEASE-REFUSED-TWICE) — until it is freed every move says “A move is already being resolved”; reloading the resolving GM's browser frees it.
+- Fixed: **A card button's move that had to wait for another move to start is no longer left waiting when the world refuses that other move's start** (FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM).
+- Fixed: **An X-Card stays paused, and nothing saved at the same moment is undone** (CAMPSTATE-CHAIN-PARTIAL), when an oracle answer, a Take a Break, a flag, Begin or End a Session, `!lore` or a move is saved alongside it. In Batch Mode, after a GM resumes from the X-Card, the narrator is no longer told to steer away from the removed scene in every later round.
+- Fixed: **Saving or removing a portrait no longer undoes a clock advance or oracle answer saved at the same moment** (ART-INDEX-WRITE-OFF-CHAIN).
+- Fixed: **In Batch Mode, a round that became ready while another player's move was starting no longer sits waiting when the world refuses that move's start** (ROUND-WAIT-AFTER-REFUSED-CLAIM).
+- Fixed: **When the world refuses to save the rolling session summary or a dismissed entity, the GM's game no longer keeps it anyway** (CACHE-MUTATED-BEFORE-WRITE), and either one saved at the same moment as an oracle answer no longer erases the answer.
+- Fixed: **A GM command (`!at`, `!sector`, `!pace`, `!roll`, `!oracle-add`, `!reveal-site` / `!clear-site`), an Entities or settings panel change, a `!bond`, a Private Lines sync, an entity registration or a world-load migration no longer undoes another change saved at the same moment** (CAMPSTATE-CHAIN-REST) — an oracle answer, a clock advance.
+- Fixed: **In Batch Mode, a character deleted after acting in a round is no longer replaced in its narration by another player's character** (ROUND-CHARACTER-BLOCK-GONE-PC).
+- Fixed: **In Batch Mode, a round in which nobody rolled is read for new characters, places and lore the way free narration is** (ROUND-DETECTION-NULL-MOVE).
+- Fixed: **In Batch Mode with two scene challenges open, a Face Danger or Secure an Advantage on a challenge another player's Finish the Scene ended earlier in the round is rolled as the ordinary move** (ROUND-VARIANT-TWO-CHALLENGES). It marked progress on the other challenge.
+- Fixed: **A narration's Roll of a scene-challenge Face Danger or Secure an Advantage, pressed after that challenge ended while another stays open, is rolled as the ordinary move** (PACED-VARIANT-ROLL-ENDED-CHALLENGE). It marked nothing and took no momentum.
+- Fixed: **A GM's Retry of a Burn Momentum's or Improve Result's clock rewind that didn't save strikes the ⚠ TRIGGERED scene the rewind takes back** (UPGRADE-RETRY-REWIND-NO-SUPERSEDE), as the first try does.
+- Fixed: **A fact the X-Card removed can no longer come back into the narrator's record in a later scene of the same session** (XCARD-RETRACTION-SCENE-SCOPED), and it is still never named to the narrator.
+- Fixed: **An X-Card played on a narration from a scene that has already ended keeps what it established out of the narrator's record for the rest of the session** (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
+- Fixed: **An X-Card played while a scene is closing is no longer partly undone by the scene's end** (XCARD-DURING-SCENE-END-RACE).
+- Fixed: **An X-Card played while a scene is closing no longer leaves what it removed on a character's card, in the World Journal's lore, or as their last known whereabouts** (XCARD-DURING-SCENE-END-MIGRATES).
+- Fixed: **A fact struck, or replaced in the correction dialog, while a scene is closing stays struck** (STRIKE-DURING-SCENE-END-LOST) — it is no longer filed as confirmed lore, the narrator is still told not to restate it, and a replacement stands in its place.
+- Fixed: **A won fight's Deepen your bond, and a vow payoff's Retry, still find a vow made on the character sheet after it is renamed** (FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY) — the bond no longer deepens twice.
+- Fixed: **An expedition toward an unexplored site the GM renamed is linked to that site** (EXPEDITION-STAMP-SITE-NAME), so finishing it charts it and docks there — a new name like “The Ghost Spire” no longer links, and charts, a different site.
+- Fixed: **Arriving somewhere named in other words (“the expedition to Bleakhold”) moves the current location there** (ARRIVAL-LOCATION-PHRASE-SPLIT), as well as the ship.
+- Fixed: **Setting a course for part of a place's name (“Bleak” for Bleakhold) docks the ship there and moves its token onto the place's pin** (ARRIVAL-FRAGMENT-SHIP-FREE-TEXT), as well as making it the current location.
+- Fixed: **Confirming a faction again after the world refused to save its journal page completes that journal** (FACTION-PAGELESS-JOURNAL). instead of making a second, empty one.
+- Fixed: **Confirming a creature again after the world refused to save its journal page completes that journal** (CREATURE-PAGELESS-JOURNAL). instead of making a second, empty one.
+- Fixed: **A portrait's one regeneration can no longer be used twice** (REGEN-LINK-REFUSED-SECOND-REGEN) — when the world refuses to save the regenerated portrait, or a second GM presses Regenerate while the first image is being made. A regeneration whose image can't be made is given back.
+- Fixed: **An NPC or ship gets one first portrait** (PORTRAIT-LATE-FIRST-GENERATION) — pressing Generate while its portrait is already being made waits for that one, and a portrait that finishes late no longer replaces one made, or regenerated and locked, in the meantime.
+- Fixed: **A first portrait the world couldn't save is no longer shown on the card as if it were saved** (FIRST-PORTRAIT-LINK-REFUSED) — the GM is told, and pressing Generate later saves that same portrait instead of paying for a new one.
+- Docs: the Foundry reference covers a world setting's `createSetting` / `updateSetting` hooks (FOUNDRY-REF-SETTING-HOOKS).
 
 ## [1.7.36] — 2026-11-05
 

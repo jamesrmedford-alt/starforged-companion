@@ -162,84 +162,102 @@ model-dependent).
 | D7 FINISH-REVEALS-SITE-OF-UNRELATED-EXPEDITION | WRONG-TARGET; option A | the finish's reveal kept the sole-site guess → requireLabelMatch at the finish; under it the pin's own "Unexplored Site" names the active sector's one unexplored site (stamp and finish); !reveal-site keeps the guess |
 | D8 AUDIO-SYNTH-BOUND-ANY-AUTHOR | SECURITY; option A | any author's narrationText counted → countsAsNarratorCard gates the Play button, auto-play, the synthesis bound and the cache write: GM-authored only while hasKeyedActiveGM; otherwise a player's counts if ≤ Narration Max Tokens × 4 characters |
 
-Found while fixing the eleventh audit and left open (each with a proposed fix):
+Found while fixing the eleventh audit: fifteen items, all fixed since at the
+maintainer's request — see the next section.
 
-- **CAMPSTATE-CHAIN-PARTIAL** (RACE, low). Z17's per-client campaignState
-  write chain (`multiplayer/campaignStateChain.js`) carries the oracle
-  capture, every clock write and the field-merge persists; still off it:
-  `suppressScene`, the relay handlers' direct writes (Set a Flag, Take a Break,
-  Begin / End a Session), `persistResolution` and the direct
-  `mergeOwnedFields` writers, the next-move claims and grant, the lock claim /
-  release, `clearXCardRedirect` and the spotlight persist. Each can still read
-  the cache inside another write's round trip (an oracle card created while
-  the X-Card's pause is in flight can carry the pause back; deterministically,
-  a Batch Mode round's redirect clear followed by its lock release). Proposed:
-  route those read-and-set writes through `serialiseCampaignStateWrite`.
-- **UPGRADE-RETRY-REWIND-NO-SUPERSEDE** (LOSE-PLOT, low; pre-existing). A GMs'
-  Retry of a refused tension or vow clock rewind doesn't supersede the
-  trigger vignette the rewind takes back. Proposed: use the rewind's
-  `untriggered` report in `retryUpgradeStep`, as Z46's first pass does.
-- **ROUND-LOCK-WAIT-MARKED-LATE** (RACE, low). The round driver marks
-  `_waitingForLock` only after its busy claim's await returns, so a release
-  landing in between is missed (a server round trip in Foundry — practically
-  unreachable). Proposed: after marking the wait, re-check the cache and go
-  round again if the lock is already free.
-- **FREE-FLOW-RELEASE-REFUSED-TWICE** (RACE, low). Free-flow's `finally`
-  drops a second refused release of the move lock: it stays held until a
-  reload, and nobody is told. Proposed: tell the GMs, as Z19's
-  `releaseRoundLock` now does.
-- **FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM** (UX, low). A free-flow move
-  deferred behind the round's in-flight claim (Z25) waits for the next
-  lock-freeing write if that claim is refused (the GMs are told; Send now
-  recovers it). Proposed: drain the deferred queue on a refused claim.
-- **ROUND-CHARACTER-BLOCK-GONE-PC** (WRONG-DETAIL, low). `narrateRound`'s
-  CHARACTER blocks use `getActiveCharacter`, which falls back to another PC
-  for a deleted actor id, so a refused gone-PC entry (Z35) can bring another
-  PC's block into the round prompt. Proposed: skip entries whose actor no
-  longer resolves when building `extras.roundCharacters`.
-- **ROUND-VARIANT-TWO-CHALLENGES** (RULES, low). A round's stale
-  scene-challenge variant whose own challenge ended while another stays open
-  is not converted to the ordinary move (Z39 converts it only with no
-  challenge open). Proposed: note the variant's challenge in `noteReadTrack`
-  and convert in `rollEntry` when it has ended.
-- **XCARD-RETRACTION-SCENE-SCOPED** (SAFETY, low). An X-carded truth blocks
-  re-assertion only within its scene; it is never kept in
-  `sessionRetractions` (by design it is never named), so after `!scene start`
-  only its absence from the ring, the summary and the ledger keeps it out.
-  Proposed: an unnamed session block list that `findSessionStrike`'s write
-  half (Z42) also reads.
-- **FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY** (WRONG-TARGET, low).
-  `postFightVowMilestoneCard` and the fulfil payoff-failure card take `vowId`
-  from the flag alone: for a sheet vow whose stamp never landed they carry
-  null, so 🤝 Deepen's once-only record and a Retry find the vow by name only,
-  and a rename in between allows a second deepen. Proposed: stamp
-  `vowCopyId(item)` (Z54) on both.
-- **ARRIVAL-LOCATION-PHRASE-SPLIT** (WRONG-DETAIL, low; mirror drift). An
-  arrival named in words around a place ("the expedition to Bleakhold") docks
-  the ship there, but `resolveCurrentLocationName` matches only when the
-  place's name contains the label, so `currentLocationId` doesn't move.
-  Proposed: when the id and name lookups both miss, set the current location
-  from the position record the arrival just wrote.
-- **EXPEDITION-STAMP-SITE-NAME** (WRONG-TARGET, low). The Undertake's site
-  link ignores a GM's rename of an undiscovered site, though the finish reads
-  the new name. Proposed: stamp through `selectExpeditionSite` (Z14).
-- **FACTION-PAGELESS-JOURNAL** (LOSE-STATE, low; Z62's faction twin). A
-  refused page creation inside `createFaction` leaves a page-less journal
-  that neither adoption nor the load listing sees. Proposed: adoption
-  completes a flagged page-less faction journal by creating its page.
-- **GENERATE-PORTRAIT-AFTER-REGEN** (DUPLICATE, low; unverified).
-  `art/generator.js`'s `generatePortrait` makes a new portrait whenever the
-  existing one has `regenerationUsed`, bypassing the one-regeneration cap for
-  Finalise and seed callers (Z60's path guards with `!record.portraitId`).
-  Proposed: return the existing asset whenever one exists; only
-  `regeneratePortrait` replaces it.
-- **ROUND-DETECTION-NULL-MOVE** (WRONG-DETAIL, low; pre-existing). A round's
-  detection prompt names one lead move, and an all-unrolled round's reads
-  "Move: null.". Proposed: the paced sentinel for an unrolled round.
-- **FOUNDRY-REF-SETTING-HOOKS** (DOC-DRIFT, low). `docs/foundry-reference/
-  foundry-api-reference.md` has no section on the `createSetting` /
-  `updateSetting` hooks the repo relies on (Z33, Z67, Z68 add handlers).
-  Proposed: a section, confirmed against the v13 API pages or a live world.
+### The eleventh audit's open items — all fifteen fixed in the v1.7.37 cycle, with the fourteen found while fixing them
+
+The fifteen items found while fixing issue #342 and left open (listed in the
+section above until now) were fixed at the maintainer's request on
+2026-11-06, each in its own commit with a regression test that fails with
+its fix taken out (`docs/testing/fix-sensitivity.md`), and so were the
+fourteen found while fixing those. GENERATE-PORTRAIT-AFTER-REGEN was not
+reachable as filed (a test pins the cap; REGEN-LINK-REFUSED-SECOND-REGEN's
+claim later needed the guard it proposed, and has it); FOUNDRY-REF-SETTING-HOOKS
+is a reference section; END-SESSION-STALE-ENDSCENE (below) is closed by
+XCARD-DURING-SCENE-END-MIGRATES and STRIKE-DURING-SCENE-END-LOST, whose
+checks run before every one of a scene end's migration writes, End a
+Session's included. None has been checked in a live Foundry world yet. The
+ones to try first: the X-Card played while an oracle answer is being saved,
+and while `!scene end` (or End a Session) is closing a scene — what it
+removed must stay off the NPC's card, out of lore and LAST KNOWN, and stay
+blocked in the next scene; a `!truth strike` made while a scene closes; two
+GMs pressing a portrait's ↻ Regenerate together, and Generate pressed while
+a seed's portrait is still being made; a Set a Course to "Bleak"; an
+expedition toward a site the GM renamed. Choices for the maintainer to
+confirm: the X-Card's pause jumps the write chain, so a chained write already
+sent when it is played lands first and the pause takes back that change (an
+oracle answer, a round claim in flight — a carried-back lock release is put
+back); an X-Card block lasts the session (the next session may state the
+fact) and a GM's own `!truth set` of the fact is still recorded;
+FREE-FLOW-RELEASE-REFUSED-TWICE also retries once for a move stopped before
+its early release; the regeneration claim reuses `regenerationUsed` (a
+refused save keeps the earlier portrait, locked, the regeneration spent); a
+second first-portrait Generate waits for the first and gets its portrait;
+ROUND-LOCK-WAIT-MARKED-LATE is practically unreachable in Foundry (shown
+through the driver's host seam) and has no changelog line.
+
+| Code | Class | Defect → fix |
+|---|---|---|
+| FREE-FLOW-RELEASE-REFUSED-TWICE | RACE | free-flow's finally dropped a second refused release, and a move stopped before its early release tried only once: the lock stayed held, nobody told → the finally retries once when the early release never ran; refused twice it whispers the GMs (postMoveLockNotReleasedCard), as Z19's releaseRoundLock does |
+| FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM | UX | a refused claim writes nothing, so a forced move held behind the round's in-flight claim (Z25), or a free-flow claim, waited for the next lock-freeing write → a refused claim drains the held moves (drainDeferredForcedMoves, the pipeline kept in _heldMovePipeline) |
+| ROUND-LOCK-WAIT-MARKED-LATE | RACE | the round marked _waitingForLock after its busy claim's answer, missing a release landing in between → waitForLock() marks it, re-reads the lock through the host's moveLockFree (index.js isMoveLockFreeHere: the store free and no claim of this client's in flight) and goes round again when free |
+| CAMPSTATE-CHAIN-PARTIAL | RACE | read-and-set writers off Z17's chain read the cache inside another write's round trip and put its fields back → on serialiseCampaignStateWrite: the lock's claim (one path, claimPendingMoveLock, free-flow too), release, put-back and ready reset; clearXCardRedirect; clearXCard; Set a Flag; Take a Break; Begin / End a Session; persistResolution; the world truths, !lore and Campaign Start (writeOwnedFields); the next-move claims and grant; the spotlight. The X-Card's pause jumps the chain (runCampaignStateWriteNow): written at once; chained writes not yet started wait ≤10 s for it |
+| ART-INDEX-WRITE-OFF-CHAIN | RACE | registerArtAssetInStore and deleteEntityArtAssets' index writes read the cache off the chain → both on serialiseCampaignStateWrite; storing an asset the index already names writes nothing (decided on the store at the write's turn) |
+| ROUND-WAIT-AFTER-REFUSED-CLAIM | RACE | a round waiting behind a free-flow claim on its way was never woken when that claim was refused (no write) → claimPendingMoveLock's refusal calls the driver's noteMoveLockFreed (resumes a waiting round when moveLockFree()), beside drainDeferredForcedMoves |
+| CACHE-MUTATED-BEFORE-WRITE | LOSE-STATE | the rolling-summary persist (stored.sessionSummary = record) and handleDraftDismiss (campaignState.dismissedEntities = list) set their field on the cached campaignState before a refusable write, off the chain → both write a copy of the latest store on serialiseCampaignStateWrite; refreshRollingSessionSummary hands getRollingSessionSummary a copy |
+| CAMPSTATE-CHAIN-REST | RACE | 27 more read-and-set campaignState writers were off Z17's chain (!at, !sector, !pace, !roll, !bond, Private Lines sync, custom oracles, sites, sector persist, entity registration, the migrator, setSharedProgress, the Entities panel, the recap cache …) → all on serialiseCampaignStateWrite; campaignStateChainSweep.test.js fails on any production campaignState write outside a chain call (or a helper only such a call reaches), unless allow-listed in OFF_CHAIN (empty) |
+| ROUND-CHARACTER-BLOCK-GONE-PC | WRONG-DETAIL | narrateRound built each entry's CHARACTER block with getActiveCharacter, which falls back to the first PC for an actor id that no longer resolves → blocks only for entries whose actor is still a PC (the driver's entryCharacterPresent rule) |
+| ROUND-DETECTION-NULL-MOVE | WRONG-DETAIL | runRoundNarrationPasses' lead fell back to captured[0], so a round with no rolled move sent "Move: null." / "Outcome: null." (or a refused move's id) → no rolled lead → the paced sentinel (PACED_NARRATIVE_MOVE_ID / OUTCOME: "no move was rolled", no Outcome line); refused-only rounds too |
+| ROUND-VARIANT-TWO-CHALLENGES | RULES | Z39 converted a variant only with no challenge open; with another open, a variant whose own challenge ended earlier in the round stayed the variant and scored on the other challenge → noteReadTrack notes the variant's challenge (reading.variantChallengeId); rollEntry converts once it has ended (moveOutsideSceneChallenge(moveId, tracks, { trackId })) |
+| PACED-VARIANT-ROLL-ENDED-CHALLENGE | RULES | readMove's and rollMove's variant rule looked only for any open challenge, so a paced Roll naming its ended challenge by id was rolled as the variant and its scoring found the challenge over → both pass the move's moveTargetId to moveOutsideSceneChallenge ({ trackId }) |
+| UPGRADE-RETRY-REWIND-NO-SUPERSEDE | LOSE-PLOT | retryUpgradeStep ran applyUpgradeStep with no report, so a Retry's landed tension or vow clock rewind superseded no trigger vignette → it passes a report and supersedes what its rewind took out of full (vowClocksUntriggered, shared with revertPayThePrice); a clock step's record keeps the upgrade's kind and each vow copy's vowId |
+| XCARD-RETRACTION-SCENE-SCOPED | SAFETY | an X-Card retraction blocked re-assertion only via its sceneTruths entry, which endScene clears; the takeover of a kept strike dropped its block; loreRetractionHolder stopped counting it → the scene's X-Card retractions are kept on an unnamed sessionRetractions.blocked (cap 50); a kept strike the X-Card takes over moves there; applySidecar reads it (findSessionStrike(…, { blocked: true })); CORRECTED, the summary's leave-out list and the lift never read it |
+| XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED | SAFETY | an X-Card on the newest narration whose scene had ended retracted no ledger truth (migrated; Y01 took back the copies), so nothing blocked their re-assertion → endScene keeps each live narration truth it closes on an unnamed sessionRetractions.narrated (by truth id, cap 50); retractNarrations moves the X-carded narration's into blocked |
+| XCARD-DURING-SCENE-END-RACE | RACE | endScene wrote its copy's sessionRetractions whole after its awaits, losing an X-Card played meanwhile (a taken-over strike named again; X-carded truths kept live) → endScene's own chained write (persistEndedScene) adds the scene's strikes, X-Card retractions and narration truths onto the store's list at its turn, through the store's xCardedNarrationIds |
+| XCARD-DURING-SCENE-END-MIGRATES | SAFETY | endScene migrated from its copy across awaits; an X-Card played meanwhile took back what had landed, then the copy's later writes filed the removed fact as a tier detail, confirmed lore and LAST KNOWN → each migration write checks isNarrationXCarded right before it writes (LAST KNOWN through the X-Card view) and takes back a copy written as the card landed (retractNarrationCapture by narration id) |
+| STRIKE-DURING-SCENE-END-LOST | LOSE-STATE | a !truth strike or Replace landing during endScene's awaits was lost: the copy archived the struck fact as confirmed lore and kept it live → migrateSceneTruth re-reads the stored entry before its write (skip) and after it (takeBackCorrected); endedSceneRetractions overlays the store's retracted entries while the store holds the scene |
+| FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY | WRONG-TARGET | postFightVowMilestoneCard and the fulfil payoff-failure card took vowId from the flag alone (null for a sheet vow whose stamp never landed), so after a rename 🤝 Deepen deepened twice and a Retry found no vow → both stamp vowCopyId(item) |
+| EXPEDITION-STAMP-SITE-NAME | WRONG-TARGET | the Undertake's stamp ran selectSectorSite over the records' generated names, the finish over the location Actor's: a renamed site was linked to nothing, or (a type keyword in its new name) to another site, which the finish then charted → the stamp goes through selectExpeditionSite (Z14) |
+| ARRIVAL-LOCATION-PHRASE-SPLIT | WRONG-DETAIL | the arrival docked the ship by inferShipPosition's word scan but set currentLocationId by resolveCurrentLocationName (whole label inside a name) → when the id and name lookups both miss, the current location is the place the position record just written names |
+| ARRIVAL-FRAGMENT-SHIP-FREE-TEXT | WRONG-DETAIL | the arrival resolved its two stores separately — the current location by prefix ("Bleak" → Bleakhold), the ship as free text "Bleak" → it takes the current-location pick first (destination id, else the name) and docks the ship by its id, as !at does since Z15 |
+| FACTION-PAGELESS-JOURNAL | LOSE-STATE | a refused page creation in createFaction left a page-less faction entry, unseen by adoption and the load listing, so the retry made a second journal → adoptUnlistedEntityJournal takes opts.page(entityId): an unlisted page-less entry of the type, matched by its name, gets the creator's page before registration |
+| CREATURE-PAGELESS-JOURNAL | LOSE-STATE | createCreature had createFaction's shape → it passes its page to adoptUnlistedEntityJournal (the FACTION-PAGELESS-JOURNAL completion) |
+| GENERATE-PORTRAIT-AFTER-REGEN | DUPLICATE | not reachable as filed: regeneratePortrait wrote regenerationUsed and locked together, and generatePortrait refuses a locked portrait first → pinned by portraitRegenerationCap.test.js; the guard the entry proposed (generatePortrait returns the unlocked portrait the record names) came with REGEN-LINK-REFUSED-SECOND-REGEN's claim, which makes it reachable |
+| REGEN-LINK-REFUSED-SECOND-REGEN | DUPLICATE | regeneratePortrait marked nothing until its new portrait was linked, and linkPortraitToEntity swallowed a refused write, so the record stayed on an unmarked portrait (Regenerate offered and billed again); a second GM's press meanwhile bought a second image → linkPortraitToEntity reports whether it landed; the regeneration is claimed (regenerationUsed) before the image is bought, given back only when the image could not be made; a refused store or link keeps the earlier portrait, locked, and tells the GM |
+| PORTRAIT-LATE-FIRST-GENERATION | DUPLICATE | generatePortrait checked its caller's copy of the record before the image call and linked its image unchecked → a per-entity, per-client in-flight slot (claimed before the call, released in a finally) makes a second generation wait for the first; a portrait the record linked meanwhile stands and the late image is not stored |
+| FIRST-PORTRAIT-LINK-REFUSED | DUPLICATE | generatePortrait attached its image to the Actor whatever the record write did and reported it generated; the next Generate / seed / Finalise bought another → the Actor gets the portrait only once the link lands; a refused link tells the GM, and the next first generation links the newest stored, unsuperseded portrait for the entity (storage.findEntityPortrait) instead of buying one |
+| FOUNDRY-REF-SETTING-HOOKS | DOC-DRIFT | foundry-api-reference.md had no section on the createSetting / updateSetting hooks the setting watchers rely on → a Settings subsection (a world setting is a Setting document; first write create, later update, on every client; which watchers listen to both; what is not verified), read from the v13 type declarations (foundryvtt.com does not resolve from the build container) |
+
+Found while fixing those and left open (each with a proposed fix):
+
+- **STATE-CORRECTION-DURING-SCENE-END-LOST** (LOSE-STATE, low). A `!state
+  strike` (or the correction dialog's state Strike) landing during
+  `endScene`'s awaits is lost: `keepLastKnownWhereabouts` writes the copy's
+  whereabouts (only the X-Card view is applied), and the late pass re-keeps
+  only attributes the store still holds, so a struck location stays LAST
+  KNOWN on the card. Proposed: read each subject's entries from the store
+  while it still holds the scene (as `storedSceneTruth` does for truths), and
+  redo a write after which the store's entries changed.
+- **PORTRAIT-TWO-GM-FIRST-GENERATION** (DUPLICATE, low; PORTRAIT-LATE-FIRST-
+  GENERATION's residual). Its in-flight slot is per client, and the re-read
+  helps only once the other GM's link has landed: two GMs generating the same
+  entity's first portrait within one image call both buy, and the later link
+  wins. Proposed: claim on the record (a pending-portrait flag) before the
+  image call, or accept it.
+- **ENTITY-PANEL-PORTRAIT-FAILED-TOAST** (UX, low). When the generator returns
+  null after its own specific warning (a refused save, a spent regeneration),
+  the Entities panel adds its generic "Portrait generation failed … Check
+  console". Proposed: the generator reports a reason the panel reads, or the
+  panel skips its toast when one was given.
+- **ENTITY-ID-PUSHED-ON-CACHE** (LOSE-STATE, low; pre-existing). Entity
+  creators push their new id onto the caller's copy, often the cached
+  setting (why `registerEntityIdInStore` always writes), so a refused
+  registration leaves the GM's cache listing an id the world doesn't have.
+  Proposed: creators register on a copy only.
+- PROMOTE-SUBJECTS-CACHED-MUTATE and MIGRATE-STALE-WRITE (both below) are on
+  the write chain now (CAMPSTATE-CHAIN-REST) but still edit the cached object
+  in place / write the migration's whole snapshot; their proposed fixes stand.
 
 ### Tenth bug audit (issue #335, part 1 of 4) — all fourteen fixed in the v1.7.36 cycle
 
@@ -911,7 +929,10 @@ Open — found while fixing, not fixed:
 - **PROMOTE-SUBJECTS-CACHED-MUTATE** (LOSE-STATE, low; the U58 shape).
   `promoteNewEntityLedgerSubjects` re-keys the ledger subjects on the cached
   `campaignState` it read before writing it, so a refused write leaves the
-  re-key on the GM's copy.
+  re-key on the GM's copy. On the write chain since CAMPSTATE-CHAIN-REST
+  (2026-11-06), still re-keying the cache in place. Proposed: deep-clone
+  `sceneTruths` / `sceneState` from the store at the chain turn, promote the
+  clone, write it.
 - **SWEAR-PLAN-DEAD-BRANCH** (PRODUCED-BUT-DEAD, cosmetic).
   `buildSwearVowPlan` returns a `queueTargetDraft` nothing reads, and its
   `!isGM` branch is unreachable (the plan is built on the canonical GM).
@@ -1221,16 +1242,24 @@ Open — found while fixing, not fixed:
   check just before the X-Card posts its card after the handler ran, and that
   card is not flagged (one `ChatMessage.create` round trip; the #300 F13
   shape).
-- **END-SESSION-STALE-ENDSCENE** (SAFETY). End a Session runs `endScene` on
-  its pre-await snapshot: a truth struck or X-carded during its awaits is
-  migrated to tiers or lore anyway (the U06 class).
+- ~~**END-SESSION-STALE-ENDSCENE**~~ (SAFETY) — fixed with the eleventh
+  audit's open items (2026-11-06): every one of a scene end's migration
+  writes checks the store's X-Card and strike state first and takes back a
+  copy that landed as one was made (XCARD-DURING-SCENE-END-MIGRATES,
+  STRIKE-DURING-SCENE-END-LOST), so End a Session's older snapshot no longer
+  matters. End a Session ran `endScene` on its pre-await snapshot: a truth
+  struck or X-carded during its awaits was migrated to tiers or lore anyway
+  (the U06 class).
 - ~~**CLOSEWORLD-STALE-WRITE**~~ (moot: the `closeWorld` handler is deleted —
   issue #326 D7), **MIGRATE-STALE-WRITE**, **LORE-ID-REPAIR-WHOLE**
   (SAFETY). `!migrate-entities` (`migrator.js` writes its
   whole state after awaits) and `callLoreRecapNarrator`'s journal-id repair
   (writes the caller's whole state) are the U06 shape at sites the issue did
   not list. `handleDraftDismiss` and the ready hook's truths fallback mutate
-  the cached state before writing (the U58 shape).
+  the cached state before writing (the U58 shape). Since the eleventh audit's
+  open items the migrator's writes are on the campaignState write chain
+  (CAMPSTATE-CHAIN-REST) but still write its whole snapshot, and
+  `handleDraftDismiss` writes a copy (CACHE-MUTATED-BEFORE-WRITE).
 - ~~**AT-PARTIAL-NAME-SHIP**~~ (WRONG-DETAIL) — fixed with issue #342 Z15
   (2026-11-06): `!at` docks the ship by the resolved place's id. `!at Bleak`
   set the current location to Bleakhold but re-inferred the ship position
