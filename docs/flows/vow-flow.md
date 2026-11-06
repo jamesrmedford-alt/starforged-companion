@@ -108,7 +108,9 @@ the presser and the GMs are whispered why (issue #329 X07):
 for another pick ("could not be saved … choose it again"); `no-copy`, a vow
 no character holds any more (its Item deleted; a sheet-made vow whose `vowId`
 flag never landed is still found by its Item id — known-issues
-VOW-ID-NEVER-LANDED), closes the card (`rewardChosen: "no-vow"`) — "choose
+VOW-ID-NEVER-LANDED — even one with no module flags at all, both its
+createItem stamps refused: the granted-or-lost check read that scope
+unguarded and threw, so every pick failed unsaid, issue #342 Z55), closes the card (`rewardChosen: "no-vow"`) — "choose
 it again" asked for a retry that could never land (issue #336 Y27).
 
 **Player-authored vows.** `registerPlayerVowHook` (createItem hook, GM-side)

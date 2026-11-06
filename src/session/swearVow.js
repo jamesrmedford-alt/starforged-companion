@@ -649,14 +649,20 @@ async function postVowWriteRefusedNotice(ctx, text, { title = "Not saved" } = {}
   }).catch(err => console.warn(`${MODULE_ID} | swearVow: the not-saved notice failed:`, err?.message ?? err));
 }
 
-/** Every copy's reward status for a vow, by its vowId (copies on every PC — actorBridge isVowCopy). */
+/**
+ * Every copy's reward status for a vow, by its vowId (copies on every PC —
+ * actorBridge isVowCopy). A copy found by its Item id may carry no module
+ * flags at all — a sheet vow both of whose createItem stamps the world
+ * refused — so the read is guarded: it threw, and every reward pick on the
+ * vow failed with nothing said (issue #342 Z55).
+ */
 function vowRewardStatuses(vowId) {
   const out = [];
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
       if (isVowCopy(item, vowId)) {
-        const status = item.flags[MODULE_ID].reward?.status;
+        const status = item.flags?.[MODULE_ID]?.reward?.status;
         if (typeof status === "string") out.push(status);
       }
     }
