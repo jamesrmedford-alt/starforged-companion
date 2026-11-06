@@ -1,4 +1,4 @@
-# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) and #342
+# Regression-test sensitivity — issues #300, #301, #302, #306, #309, #311, #313, #314, #315, #316, #321, #322, #325, #326, #329, #330, #331, #335, #336, #337, #338 (with the tenth audit's open items) and #342 (with its open items)
 
 A regression test is evidence only if it fails while its defect is present
 (issue #302, slice A). This file records that, for every fix from the issue
@@ -19,7 +19,9 @@ applied to `c10156f`), and for the tenth audit's open items — fixed at the
 maintainer's request the same day — on 2026-11-05 (the three regenerated
 issue #306 R04 patches applied to `fcf612e`, the two regenerated
 TDA-BUTTON-NO-TARGET patches to `3f734cd`), and for issue #342 — the eleventh
-audit's seventy-four findings and eight decisions — on 2026-11-06. To reproduce:
+audit's seventy-four findings and eight decisions — on 2026-11-06, and for its
+open items — fixed at the maintainer's request the same day — on 2026-11-06.
+To reproduce:
 
 ```bash
 node scripts/fix-sensitivity.mjs \
@@ -220,6 +222,16 @@ node scripts/fix-sensitivity.mjs \
   026b993 fc9aa65 699755a c6e35ae ed0bff2 d814e1b caf28ba dff3477 6a0c0f2 \
   6c29d68 bef755d 1649ab7 5e1ae18 d17b9b5 d14019b 9b9f660 2c7e1fa 0f24327 \
   b55c3b1 43ab64c 2d5d440 bc3c8bd \
+  --md details.md
+
+# the eleventh audit's open items, in commit order (the Foundry reference's
+# docs-only commit and GENERATE-PORTRAIT-AFTER-REGEN's test-only pin are not
+# listed — it was not a defect)
+node scripts/fix-sensitivity.mjs \
+  3832594 f90ca48 050cb85 b4833ef f8bd0a9 3f81143 bd86b32 dc26f0b d3ca3ee \
+  8563cbc eb82bd0 119e92e 3dac6a6 fdc7eee 40b5d11 150d9ec aef883e f6b9ce5 \
+  06a0c9d 3d46a2e 358e966 82382c0 0964d8c 238c7c7 ca8bcd7 10f260e 310c854 \
+  df7e5e5 06bb669 \
   --md details.md
 ```
 
@@ -1065,6 +1077,53 @@ for the wrong reason — with the Z24 fix taken out, its two cases fail), and
 | Z72 FILE-STRUCTURE-TOGGLE-MIRROR-STALE | b0c85a2 | by hand | 2 — `fileStructureMirrorsTree.test.js` (2), with the file map restored |
 | Z73 CONNECTION-FLOW-SIDEBAR-PATH | d008022 | by hand | 2 — `connectionFlowCreationPaths.test.js` (2), with the flow map restored |
 | Z74 FLOW-DOC-BARE-AT-CLEARS-SHIP | 5b47df3 | by hand | 1 — `explorationFlowBareAt.test.js`, with the flow map restored |
+
+### The eleventh audit's open items
+
+Every fix commit is **sensitive** — all twenty-nine shown by the script's
+revert, 81 assertions failing with the fixes taken out. Three also have tests
+that fail under revert only on a missing export (CAMPSTATE-CHAIN-PARTIAL,
+XCARD-RETRACTION-SCENE-SCOPED, XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED), each also
+shown on the behaviour. GENERATE-PORTRAIT-AFTER-REGEN was not a defect: its
+commit adds a pin test only (it fails with a regeneration stored unlocked).
+FOUNDRY-REF-SETTING-HOOKS is a reference section with no test. 48 new tests
+pass both ways; each is named a control or guards an explicit or no-defect
+case (the sweep's not-vacuous check, a GM's own `!truth set`, a pause that
+waits for nothing …), listed in its commit's details below. Several fixes
+were also checked one half at a time by their authors (each half of the
+portrait and scene-end fixes has its own failing assertion).
+
+| Item | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY | 3832594 | revert | 5 — `fightPayoffCardVowCopyId.test.js` (5) |
+| EXPEDITION-STAMP-SITE-NAME | f90ca48 | revert | 3 — `expeditionStampRenamedSite.test.js` (3) |
+| ARRIVAL-LOCATION-PHRASE-SPLIT | 050cb85 | revert | 3 — `arrivalPhraseCurrentLocation.test.js` (3) |
+| FACTION-PAGELESS-JOURNAL | b4833ef | revert | 3 — `factionPagelessJournal.test.js` (3) |
+| ROUND-CHARACTER-BLOCK-GONE-PC | f8bd0a9 | revert | 1 — `roundCharacterBlockGonePc.test.js` |
+| ROUND-DETECTION-NULL-MOVE | 3f81143 | revert | 2 — `roundDetectionNullMove.test.js` (2) |
+| ROUND-VARIANT-TWO-CHALLENGES | bd86b32 | revert | 2 — `batchSceneVariantTwoChallenges.test.js`, `sceneChallengeVariantMoves.test.js` |
+| UPGRADE-RETRY-REWIND-NO-SUPERSEDE | dc26f0b | revert | 6 — `burnRewindFiredClockVignette.test.js`, `resultUpgrade.test.js` (2), `upgradeRetryRewindSupersedes.test.js` (3) |
+| XCARD-RETRACTION-SCENE-SCOPED | d3ca3ee | revert | 4 — `xcardRetractionOutlivesScene.test.js` (4); 1 more fail only on a missing export |
+| ARRIVAL-FRAGMENT-SHIP-FREE-TEXT | 8563cbc | revert | 3 — `arrivalFragmentDocksShip.test.js` (3) |
+| CREATURE-PAGELESS-JOURNAL | eb82bd0 | revert | 1 — `creaturePagelessJournal.test.js` |
+| REGEN-LINK-REFUSED-SECOND-REGEN | 119e92e | revert | 2 — `portraitRegenerationClaim.test.js` (2) |
+| PORTRAIT-LATE-FIRST-GENERATION | 3dac6a6 | revert | 2 — `portraitLateFirstGeneration.test.js` (2) |
+| FIRST-PORTRAIT-LINK-REFUSED | fdc7eee | revert | 3 — `portraitLinkRefused.test.js` (3) |
+| PACED-VARIANT-ROLL-ENDED-CHALLENGE | 40b5d11 | revert | 2 — `pacedVariantRollEndedChallenge.test.js` (2) |
+| XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED | 150d9ec | revert | 1 — `xcardRetractionOutlivesScene.test.js`; 1 more fail only on a missing export |
+| XCARD-DURING-SCENE-END-RACE | aef883e | revert | 2 — `xcardRetractionOutlivesScene.test.js` (2) |
+| FREE-FLOW-RELEASE-REFUSED-TWICE | f6b9ce5 | revert | 3 — `freeFlowLockReleaseRefusedTwice.test.js` (3) |
+| FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM | 06a0c9d | revert | 2 — `heldMoveAfterRefusedClaim.test.js` (2) |
+| ROUND-LOCK-WAIT-MARKED-LATE | 3d46a2e | revert | 1 — `batchRoundLockWaitMarkedLate.test.js` |
+| CAMPSTATE-CHAIN-PARTIAL | 358e966 | revert | 3 — `campaignStateChain.test.js`, `xcardPauseJumpsWriteChain.test.js` (2); 5 more fail only on a missing export |
+| CAMPSTATE-CHAIN-PARTIAL | 82382c0 | revert | 2 — `batchRoundRedirectClearKept.test.js`, `moveLockClaimAfterOracleCapture.test.js` |
+| CAMPSTATE-CHAIN-PARTIAL | 0964d8c | revert | 9 — `campaignStateWritersOnChain.test.js` (8), `spotlightPersistKeepsOracleAnswer.test.js` |
+| ART-INDEX-WRITE-OFF-CHAIN | 238c7c7 | revert | 3 — `artIndexWritesOnChain.test.js` (3) |
+| XCARD-DURING-SCENE-END-MIGRATES | ca8bcd7 | revert | 2 — `xcardDuringSceneEndMigrates.test.js` (2) |
+| STRIKE-DURING-SCENE-END-LOST | 10f260e | revert | 3 — `strikeDuringSceneEnd.test.js` (3) |
+| ROUND-WAIT-AFTER-REFUSED-CLAIM | 310c854 | revert | 1 — `roundWaitAfterRefusedClaim.test.js` |
+| CACHE-MUTATED-BEFORE-WRITE | df7e5e5 | revert | 4 — `cacheMutatedBeforeWrite.test.js` (4) |
+| CAMPSTATE-CHAIN-REST | 06bb669 | revert | 3 — `campaignStateChainSweep.test.js`, `chainRestWritersKeepOracleAnswer.test.js` (2) |
 
 ## Controls: new tests that pass with and without the fix
 
@@ -11049,3 +11108,487 @@ Test files: `tests/unit/batchDraftKeptAuthorAway.test.js`, `tests/unit/batchRoun
 - New test passing with and without the fix (a control?): tests/unit/batchRoundFields.test.js › every field a round stores is read (issue #342 Z37) readAs.moveTargetId has a reader
 - New test passing with and without the fix (a control?): tests/unit/batchRoundFields.test.js › every field a round stores is read (issue #342 Z37) setAside.text has a reader
 - New test passing with and without the fix (a control?): tests/unit/batchRoundFields.test.js › every field a round stores is read (issue #342 Z37) every field listed as kept for the record is still stored and still unread
+
+### 3832594 — fix: a won fight's Deepen your bond, and a vow payoff's Retry, find a renamed sheet vow — no second deepen (FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY)
+
+Test files: `tests/unit/fightPayoffCardVowCopyId.test.js`. Source restored: 1 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/fightPayoffCardVowCopyId.test.js › the victory card names a sheet vow whose vowId stamp never landed by its Item id the card carries the vow Item's id | AssertionError: expected { fightVowCard: true, …(6) } to match object { vowName: 'Free Sable\'s crew', …(2) } |
+| (new) tests/unit/fightPayoffCardVowCopyId.test.js › the victory card names a sheet vow whose vowId stamp never landed by its Item id the fulfilment, a rename, then 🤝 Deepen: Sable deepens once, and the card says so | AssertionError: a vow deepens its connection once: expected 32 to be 16 // Object.is equality |
+| (new) tests/unit/fightPayoffCardVowCopyId.test.js › the victory card names a sheet vow whose vowId stamp never landed by its Item id a rename, 🤝 Deepen, then the fulfilment: Sable deepens once | AssertionError: a vow deepens its connection once: expected 32 to be 16 // Object.is equality |
+| (new) tests/unit/fightPayoffCardVowCopyId.test.js › the fulfilment's payoff-failure card names a sheet vow whose vowId stamp never landed by its Item id a refused reward claim, a rename, then the GMs' Retry: the reward is granted once | AssertionError: expected { Object (status, earned, ...) } to deeply equal { status: 'granted', earned: 1, …(2) } |
+| (new) tests/unit/fightPayoffCardVowCopyId.test.js › the fulfilment's payoff-failure card names a sheet vow whose vowId stamp never landed by its Item id a refused deepen, 🤝 Deepen on the victory card, a rename, then the GMs' Retry: Sable deepens once | AssertionError: a vow deepens its connection once: expected 32 to be 16 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/fightPayoffCardVowCopyId.test.js › control: a vow whose vowId flag landed the fulfilment, a rename, then 🤝 Deepen: Sable deepens once
+
+### f90ca48 — fix: an expedition to a site the GM renamed is linked to that site, so finishing it charts and docks there (EXPEDITION-STAMP-SITE-NAME)
+
+Test files: `tests/unit/expeditionStampRenamedSite.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/expeditionStampRenamedSite.test.js › the Undertake links the site the crew names by the name the GM gave it an expedition to the renamed vault ("the Ghost Spire") is linked to the vault | AssertionError: expected 'site-d' to be 'site-v' // Object.is equality |
+| (new) tests/unit/expeditionStampRenamedSite.test.js › the Undertake links the site the crew names by the name the GM gave it …so finishing it charts the vault and docks there, and the derelict stays unexplored | AssertionError: expected { vault: false, derelict: true } to deeply equal { vault: true, derelict: false } |
+| (new) tests/unit/expeditionStampRenamedSite.test.js › the Undertake links the site the crew names by the name the GM gave it a renamed derelict the crew names by its new name ("Kessa's Rest") is linked to it | AssertionError: expected undefined to be 'site-d' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/expeditionStampRenamedSite.test.js › the Undertake links the site the crew names by the name the GM gave it control: a site the crew names by its generated name is linked to it
+- New test passing with and without the fix (a control?): tests/unit/expeditionStampRenamedSite.test.js › the Undertake links the site the crew names by the name the GM gave it control: an expedition to a settlement is linked to no site
+
+### 050cb85 — fix: an arrival named in words around a place ("the expedition to Bleakhold") makes that place the current location, where the ship docked (ARRIVAL-LOCATION-PHRASE-SPLIT)
+
+Test files: `tests/unit/arrivalPhraseCurrentLocation.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/arrivalPhraseCurrentLocation.test.js › an arrival named in words around a place: the current location follows the ship "the expedition to Bleakhold" docks at Bleakhold, and the current location is Bleakhold | AssertionError: expected { Object (id, type) } to deeply equal { id: 'actor-bleak', …(1) } |
+| (new) tests/unit/arrivalPhraseCurrentLocation.test.js › an arrival named in words around a place: the current location follows the ship a Set a Course "for the docks of Bleakhold" too | AssertionError: expected { Object (id, type) } to deeply equal { id: 'actor-bleak', …(1) } |
+| (new) tests/unit/arrivalPhraseCurrentLocation.test.js › an arrival named in words around a place: the current location follows the ship a recorded place too: "the long haul out to the Kovash Hulk" makes the derelict the current location | AssertionError: expected { Object (id, type) } to deeply equal { id: 'actor-wreck', type: 'location' } |
+
+- New test passing with and without the fix (a control?): tests/unit/arrivalPhraseCurrentLocation.test.js › an arrival named in words around a place: the current location follows the ship control: an arrival named by the place's own name sets it, as before
+- New test passing with and without the fix (a control?): tests/unit/arrivalPhraseCurrentLocation.test.js › an arrival named in words around a place: the current location follows the ship control: an arrival that names no place leaves the current location where it was
+
+### b4833ef — fix: a faction Confirmed again after the world refused its journal page completes that journal — no second, empty one (FACTION-PAGELESS-JOURNAL)
+
+Test files: `tests/unit/factionPagelessJournal.test.js`. Source restored: 2 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/factionPagelessJournal.test.js › a faction Confirm whose page the world refused, then confirmed again the retry completes the journal the first Confirm made — one Iron Syndicate, with its page, listed, seeded | AssertionError: expected [ 'jrnl000000000003', …(1) ] to deeply equal [ 'jrnl000000000003' ] |
+| (new) tests/unit/factionPagelessJournal.test.js › a faction Confirm whose page the world refused, then confirmed again a page refused again leaves the one journal, still page-less and unlisted, and the row pending — a third Confirm completes it | AssertionError: expected [ …(2) ] to have a length of 1 but got 2 |
+| (new) tests/unit/factionPagelessJournal.test.js › a faction Confirm whose page the world refused, then confirmed again a page-less journal is completed by the faction's identity key (issue #336 Y31): "The Iron Syndicate" is the Iron Syndicate's | AssertionError: expected '3GqRu0lxgjESFGw5' to be 'rec-iron' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/factionPagelessJournal.test.js › a faction Confirm whose page the world refused, then confirmed again control: a listed journal, one of another name, of another type or of no entity type is never completed
+
+### f8bd0a9 — fix: a round's narration describes only the characters who acted, not another PC in place of a deleted one (ROUND-CHARACTER-BLOCK-GONE-PC)
+
+Test files: `tests/unit/roundCharacterBlockGonePc.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/roundCharacterBlockGonePc.test.js › ROUND-CHARACTER-BLOCK-GONE-PC — a gone PC's entry brings no other PC's block Ash is gone and refused: the prompt has Kira's block alone, not Vex's in Ash's place | AssertionError: expected [ 'Vex', 'Kira' ] to deeply equal [ 'Kira' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/roundCharacterBlockGonePc.test.js › ROUND-CHARACTER-BLOCK-GONE-PC — a gone PC's entry brings no other PC's block control: with every acting PC still in the game, each has its own block, in the round's order
+- New test passing with and without the fix (a control?): tests/unit/roundCharacterBlockGonePc.test.js › ROUND-CHARACTER-BLOCK-GONE-PC — a gone PC's entry brings no other PC's block control: the gone PC's action is still narrated, as not rolled, under the name the round copied
+
+### 3f81143 — fix: a Batch Mode round with no rolls is read for new people and places as free narration is (ROUND-DETECTION-NULL-MOVE)
+
+Test files: `tests/unit/roundDetectionNullMove.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/roundDetectionNullMove.test.js › ROUND-DETECTION-NULL-MOVE — the detection prompt of a round with no roll two actions with no roll: the prompt says no move was rolled, as paced narration's does — not "Move: null." | AssertionError: expected 'You are analysing an Ironsworn: Starf…' not to contain 'Move: null.' |
+| (new) tests/unit/roundDetectionNullMove.test.js › ROUND-DETECTION-NULL-MOVE — the detection prompt of a round with no roll a move the roll stage refused beside an action with no roll: nothing was rolled, so neither its id nor an outcome is named | AssertionError: expected 'You are analysing an Ironsworn: Starf…' not to contain 'Move: face_danger.' |
+
+- New test passing with and without the fix (a control?): tests/unit/roundDetectionNullMove.test.js › ROUND-DETECTION-NULL-MOVE — the detection prompt of a round with no roll control: a round with a rolled move names it and its outcome, whatever the confirm order
+
+### bd86b32 — fix: in a round, a scene-challenge Face Danger or Secure an Advantage whose own challenge ended earlier is rolled as the ordinary move, not scored on another open challenge (ROUND-VARIANT-TWO-CHALLENGES)
+
+Test files: `tests/unit/batchSceneVariantTwoChallenges.test.js`, `tests/unit/sceneChallengeVariantMoves.test.js`. Source restored: 2 file(s).
+
+- With the fix: 21 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 19 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/batchSceneVariantTwoChallenges.test.js › a scene-challenge variant whose own challenge ended earlier in the round, another still open after Kira's Finish the Scene ends The Escape, Ren's variant on it is rolled as the ordinary Face Danger — The Storm untouched | AssertionError: expected 8 to be +0 // Object.is equality |
+| (new) tests/unit/sceneChallengeVariantMoves.test.js › scoreSceneChallenge (issue #338 D2) moveOutsideSceneChallenge: given its own challenge, a variant is the ordinary move once that one ended, whatever else is open (ROUND-VARIANT-TWO-CHALLENGES) | AssertionError: expected 'face_danger_scene_challenge' to be 'face_danger' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/batchSceneVariantTwoChallenges.test.js › a scene-challenge variant whose own challenge ended earlier in the round, another still open control: with both challenges open, Ren's variant marks progress on its own, The Escape — not The Storm
+- New test passing with and without the fix (a control?): tests/unit/batchSceneVariantTwoChallenges.test.js › a scene-challenge variant whose own challenge ended earlier in the round, another still open control: a variant on The Storm, still open after The Escape ended, stays the variant and marks The Storm
+
+### dc26f0b — fix: a GM's Retry of a burn's or improvement's refused clock rewind now strikes the trigger scene that rewind takes back (UPGRADE-RETRY-REWIND-NO-SUPERSEDE)
+
+Test files: `tests/unit/burnRewindFiredClockVignette.test.js`, `tests/unit/resultUpgrade.test.js`, `tests/unit/upgradeRetryRewindSupersedes.test.js`. Source restored: 1 file(s).
+
+- With the fix: 40 passed, 0 failed.
+- Without it: 6 failed (4 new; 0 only for a missing export); 34 still pass (1 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/burnRewindFiredClockVignette.test.js › issue #338 D8 — a burn rewinds a clock out of its triggered state the GMs' Retry of that refused rewind supersedes the vignette once it lands — an improvement's says so (UPGRADE-RETRY-REWIND-NO-SUPERSEDE) | AssertionError: expected undefined to be true // Object.is equality |
+| tests/unit/resultUpgrade.test.js › Q05 — a partial vow-clock rewind retries only the Items still owed the second Item's refused rewind alone goes to the GMs; their Retry rewinds it once and leaves the first clock as it is | AssertionError: expected [ { step: 'upgrade', …(2) } ] to deeply equal [ { step: 'upgrade', …(3) } ] |
+| tests/unit/resultUpgrade.test.js › Q05 — a partial vow-clock rewind retries only the Items still owed a second refusal during the Retry goes on a fresh card with that Item alone; its Retry lands | AssertionError: expected [ { step: 'upgrade', …(2) } ] to deeply equal [ { step: 'upgrade', …(3) } ] |
+| (new) tests/unit/upgradeRetryRewindSupersedes.test.js › UPGRADE-RETRY-REWIND-NO-SUPERSEDE — the GMs' Retry of a refused clock rewind a tension clock: the Retry's rewind takes it out of its trigger (4 → 3), and the trigger vignette is superseded | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/upgradeRetryRewindSupersedes.test.js › UPGRADE-RETRY-REWIND-NO-SUPERSEDE — the GMs' Retry of a refused clock rewind the next price fills the rewound clock again: one live trigger vignette, not two | AssertionError: expected [ { …(7) }, { …(7) } ] to have a length of 1 but got 2 |
+| (new) tests/unit/upgradeRetryRewindSupersedes.test.js › UPGRADE-RETRY-REWIND-NO-SUPERSEDE — the GMs' Retry of a refused clock rewind a vow's countdown clock: the Retry's rewind supersedes its vignette, named by the vow | AssertionError: expected undefined to be true // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/upgradeRetryRewindSupersedes.test.js › UPGRADE-RETRY-REWIND-NO-SUPERSEDE — the GMs' Retry of a refused clock rewind control: a Retry whose rewind takes no clock out of full supersedes nothing — an earlier trigger's vignette stands
+
+### d3ca3ee — fix: what the X-Card removed stays out of the narrator's record for the rest of the session, not just its scene (XCARD-RETRACTION-SCENE-SCOPED)
+
+Test files: `tests/unit/xcardRetractionOutlivesScene.test.js`. Source restored: 4 file(s).
+
+- With the fix: 8 passed, 0 failed.
+- Without it: 5 failed (5 new; 1 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-RETRACTION-SCENE-SCOPED — an X-Card retraction blocks a re-assertion for the rest of the session after the scene ends, the narrator re-asserting the removed fact is still refused — and it is named nowhere | AssertionError: expected [ { id: 'tr-b8e884a6', …(16) } ] to deeply equal [] |
+| (new) tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-RETRACTION-SCENE-SCOPED — an X-Card retraction blocks a re-assertion for the rest of the session a strike the scene kept and the X-Card then took over still blocks the re-assertion — still named nowhere | AssertionError: expected [ { id: 'tr-78702a0c', …(16) } ] to deeply equal [] |
+| (new) tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-RETRACTION-SCENE-SCOPED — an X-Card retraction blocks a re-assertion for the rest of the session a lift restores no lore an earlier scene's X-Card retraction states — the X-carded fact stays out of canon | AssertionError: expected { title: 'Vance\'s fate', …(19) } to match object { retracted: true, confirmed: false } |
+| (new) tests/unit/xcardRetractionOutlivesScene.test.js › the session's X-Card blocks (sessionRetractions.blocked) findSessionStrike's write half matches a block; the lift's lookup does not — an X-Card retraction is never lifted | AssertionError: expected null to match object { truthId: 'tr-1' } |
+| (new) (API) tests/unit/xcardRetractionOutlivesScene.test.js › the session's X-Card blocks (sessionRetractions.blocked) withXCardBlocks keeps each subject and fact once, and the newest fifty | TypeError: withXCardBlocks is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-RETRACTION-SCENE-SCOPED — an X-Card retraction blocks a re-assertion for the rest of the session control: within its scene the narrator re-asserting the removed fact is refused
+- New test passing with and without the fix (a control?): tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-RETRACTION-SCENE-SCOPED — an X-Card retraction blocks a re-assertion for the rest of the session a GM's `!truth set` is the GM's own authority: recorded, lifting nothing, and the removed fact named nowhere
+- New test passing with and without the fix (a control?): tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-RETRACTION-SCENE-SCOPED — an X-Card retraction blocks a re-assertion for the rest of the session control: the block is the session's — in the next session the narrator may state the fact
+
+### 8563cbc — fix: a course set for part of a place's name ("Bleak") docks the ship and moves its token there, as it moves the current location (ARRIVAL-FRAGMENT-SHIP-FREE-TEXT)
+
+Test files: `tests/unit/arrivalFragmentDocksShip.test.js`. Source restored: 1 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/arrivalFragmentDocksShip.test.js › an arrival named by a fragment of a place: the ship docks where the current location is a Set a Course to "Bleak" docks the ship at Bleakhold, the current location | AssertionError: expected { sectorId: null, …(9) } to match object { …(3) } |
+| (new) tests/unit/arrivalFragmentDocksShip.test.js › an arrival named by a fragment of a place: the ship docks where the current location is …and the map follows: the token leaves Port Vigil for Bleakhold's pin | AssertionError: expected { x: 200, y: 200 } to deeply equal { x: 900, y: 400 } |
+| (new) tests/unit/arrivalFragmentDocksShip.test.js › an arrival named by a fragment of a place: the ship docks where the current location is a Finish an Expedition to "Bleak" (for no site) docks there too | AssertionError: expected { sectorId: null, …(9) } to match object { …(2) } |
+
+- New test passing with and without the fix (a control?): tests/unit/arrivalFragmentDocksShip.test.js › an arrival named by a fragment of a place: the ship docks where the current location is control: an arrival named in full docks there and makes it the current location, as before
+- New test passing with and without the fix (a control?): tests/unit/arrivalFragmentDocksShip.test.js › an arrival named by a fragment of a place: the ship docks where the current location is control: an arrival named in words around a place docks there by the word scan, as before
+- New test passing with and without the fix (a control?): tests/unit/arrivalFragmentDocksShip.test.js › an arrival named by a fragment of a place: the ship docks where the current location is control: an arrival that names no place leaves the current location, the ship a free-text position
+
+### eb82bd0 — fix: a creature Confirmed again after the world refused its journal page completes that journal — no second, empty one (CREATURE-PAGELESS-JOURNAL)
+
+Test files: `tests/unit/creaturePagelessJournal.test.js`. Source restored: 1 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/creaturePagelessJournal.test.js › a creature Confirm whose page the world refused, then confirmed again the retry completes the journal the first Confirm made — one Glass Wyrm, with its page, listed | AssertionError: expected [ 'jrnl000000000001', …(1) ] to deeply equal [ 'jrnl000000000001' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/creaturePagelessJournal.test.js › a creature Confirm whose page the world refused, then confirmed again control: a page-less journal of another name or of another type is never completed
+
+### 119e92e — fix: a portrait's one regeneration is spent once — a refused save or a second GM's press no longer buys another (REGEN-LINK-REFUSED-SECOND-REGEN)
+
+Test files: `tests/unit/portraitRegenerationClaim.test.js`. Source restored: 2 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 3 still pass (3 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 3 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/portraitRegenerationClaim.test.js › a portrait's one regeneration is claimed before its image is bought a regeneration whose record write the world refused is spent: the earlier portrait stays, locked, and a second Regenerate bills nothing | AssertionError: expected 3 to be 2 // Object.is equality |
+| (new) tests/unit/portraitRegenerationClaim.test.js › a portrait's one regeneration is claimed before its image is bought a second GM's Regenerate pressed while the first GM's image is out bills nothing | AssertionError: expected 3 to be 2 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/portraitRegenerationClaim.test.js › a portrait's one regeneration is claimed before its image is bought while a regeneration's image is out, a seed's generatePortrait bills nothing and keeps the portrait the record names
+- New test passing with and without the fix (a control?): tests/unit/portraitRegenerationClaim.test.js › a portrait's one regeneration is claimed before its image is bought control: a regeneration whose image could not be made gives the regeneration back — the next one lands, locked
+- New test passing with and without the fix (a control?): tests/unit/portraitRegenerationClaim.test.js › a portrait's one regeneration is claimed before its image is bought control: a regeneration that lands supersedes the earlier portrait and is locked
+
+### 3dac6a6 — fix: an NPC or ship gets one first portrait — Generate pressed while one is being made waits for it, and a late portrait never replaces one linked meanwhile (PORTRAIT-LATE-FIRST-GENERATION)
+
+Test files: `tests/unit/portraitLateFirstGeneration.test.js`. Source restored: 2 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/portraitLateFirstGeneration.test.js › an entity is given one first portrait (PORTRAIT-LATE-FIRST-GENERATION) the GM's Generate pressed while the seed's portrait is being made waits for it: one image, one portrait | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/portraitLateFirstGeneration.test.js › an entity is given one first portrait (PORTRAIT-LATE-FIRST-GENERATION) a first portrait that comes back after another GM generated and regenerated one leaves the locked portrait standing | AssertionError: expected 'oS297Pv3up7s4G3l' to be 'mXmGsaGkmhhXXTmY' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/portraitLateFirstGeneration.test.js › an entity is given one first portrait (PORTRAIT-LATE-FIRST-GENERATION) control: one Generate makes one portrait and links it
+- New test passing with and without the fix (a control?): tests/unit/portraitLateFirstGeneration.test.js › an entity is given one first portrait (PORTRAIT-LATE-FIRST-GENERATION) control: once the first generation is done, a portrait whose link names nothing stored is made again
+
+### fdc7eee — fix: a first portrait the world refused to save is not shown on the card, the GM is told, and the next Generate saves it without buying another (FIRST-PORTRAIT-LINK-REFUSED)
+
+Test files: `tests/unit/portraitLinkRefused.test.js`. Source restored: 3 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/portraitLinkRefused.test.js › a first portrait whose record write the world refused (FIRST-PORTRAIT-LINK-REFUSED) is not put on the card, and the GM is told | AssertionError: expected 'worlds/test-world/art/npc-vance-g2VIj…' to be 'icons/svg/mystery-man.svg' // Object.is equality |
+| (new) tests/unit/portraitLinkRefused.test.js › a first portrait whose record write the world refused (FIRST-PORTRAIT-LINK-REFUSED) the next generation saves that portrait — no second image is bought | AssertionError: expected 2 to be 1 // Object.is equality |
+| (new) tests/unit/portraitLinkRefused.test.js › a first portrait whose record write the world refused (FIRST-PORTRAIT-LINK-REFUSED) a link refused again on that retry still buys nothing, and the GM is told again | AssertionError: expected 2 to be 1 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/portraitLinkRefused.test.js › a first portrait whose record write the world refused (FIRST-PORTRAIT-LINK-REFUSED) control: with the link taken, one Generate makes the portrait, links it and puts it on the card
+
+### 40b5d11 — fix: a paced card's Roll of a scene-challenge move whose challenge has since ended is rolled as the ordinary move (PACED-VARIANT-ROLL-ENDED-CHALLENGE)
+
+Test files: `tests/unit/pacedVariantRollEndedChallenge.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/pacedVariantRollEndedChallenge.test.js › a paced Roll of a scene-challenge move whose challenge ended before the press The Chase ended, The Negotiation still open: the Roll is the ordinary Face Danger — +1 momentum, no challenge scored | AssertionError: expected [ 'face_danger_scene_challenge' ] to deeply equal [ 'face_danger' ] |
+| (new) tests/unit/pacedVariantRollEndedChallenge.test.js › a paced Roll of a scene-challenge move whose challenge ended before the press rollMove's own check: a variant naming its ended challenge by id is rolled as the ordinary move | AssertionError: expected 'face_danger_scene_challenge' to be 'face_danger' // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/pacedVariantRollEndedChallenge.test.js › a paced Roll of a scene-challenge move whose challenge ended before the press control: with The Chase still open, the Roll stays the variant and marks it
+- New test passing with and without the fix (a control?): tests/unit/pacedVariantRollEndedChallenge.test.js › a paced Roll of a scene-challenge move whose challenge ended before the press control: The Negotiation ended instead — the Roll named The Chase, so it stays the variant on The Chase
+
+### 150d9ec — fix: an X-Card played on a narration from a scene that has already ended keeps what it said out of the narrator's record for the session (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED)
+
+Test files: `tests/unit/xcardRetractionOutlivesScene.test.js`. Source restored: 4 file(s).
+
+- With the fix: 12 passed, 0 failed.
+- Without it: 2 failed (2 new; 1 only for a missing export); 10 still pass (2 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED — an X-Card on an ended scene's narration blocks its truths too the narration's truth was archived at the scene end: after the X-Card the narrator cannot record it again — named nowhere | AssertionError: expected [ { id: 'tr-c8787cd8', …(16) } ] to deeply equal [] |
+| (new) (API) tests/unit/xcardRetractionOutlivesScene.test.js › the session's X-Card blocks (sessionRetractions.blocked) rememberNarratedTruths keeps each live narration truth a scene end closes, once — not a struck one, an X-carded one or the GM's | TypeError: rememberNarratedTruths is not a function |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED — an X-Card on an ended scene's narration blocks its truths too control: an X-Card on a later narration leaves the earlier scene's truth canon — the narrator may restate it
+- New test passing with and without the fix (a control?): tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED — an X-Card on an ended scene's narration blocks its truths too control: a GM's own `!truth set`, closed with its scene, is no narration's — no X-Card blocks it
+
+### aef883e — fix: an X-Card played while a scene is closing is no longer undone by the scene's end (XCARD-DURING-SCENE-END-RACE)
+
+Test files: `tests/unit/xcardRetractionOutlivesScene.test.js`. Source restored: 1 file(s).
+
+- With the fix: 15 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 13 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-DURING-SCENE-END-RACE — an X-Card played while a scene ends keeps what it wrote an X-Card on the scene's narration while its truths are archived: they stay blocked — named nowhere | AssertionError: expected [ { id: 'tr-26d8c46f', …(16) } ] to deeply equal [] |
+| (new) tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-DURING-SCENE-END-RACE — an X-Card played while a scene ends keeps what it wrote an X-Card taking over a strike an earlier scene kept, while this scene ends: the strike stays the X-Card's — not named again | AssertionError: expected [ 'Vance — Is dead' ] to deeply equal [] |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardRetractionOutlivesScene.test.js › XCARD-DURING-SCENE-END-RACE — an X-Card played while a scene ends keeps what it wrote control: with no X-Card meanwhile, the end keeps the scene's strike named and its live narration truth for a later X-Card
+
+### f6b9ce5 — fix: the GMs are told when the move lock's release is refused twice after a free-flow move (FREE-FLOW-RELEASE-REFUSED-TWICE)
+
+Test files: `tests/unit/freeFlowLockReleaseRefusedTwice.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/freeFlowLockReleaseRefusedTwice.test.js › FREE-FLOW-RELEASE-REFUSED-TWICE — a free-flow move whose lock release is refused twice the early release and the finally's retry both refused: the lock stays held, and the GMs are told — once | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/freeFlowLockReleaseRefusedTwice.test.js › FREE-FLOW-RELEASE-REFUSED-TWICE — a free-flow move whose lock release is refused twice a cancelled confirm (no early release): one refused release is retried — the lock free, nobody told | AssertionError: expected true to be false // Object.is equality |
+| (new) tests/unit/freeFlowLockReleaseRefusedTwice.test.js › FREE-FLOW-RELEASE-REFUSED-TWICE — a free-flow move whose lock release is refused twice a cancelled confirm whose release is refused twice: the GMs are told | AssertionError: expected 1 to be 2 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/freeFlowLockReleaseRefusedTwice.test.js › FREE-FLOW-RELEASE-REFUSED-TWICE — a free-flow move whose lock release is refused twice control: one refused release — the finally retries it, the lock is free and nobody is told
+
+### 06a0c9d — fix: a card's move held while another move claimed the lock is rolled when the world refuses that claim (FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM)
+
+Test files: `tests/unit/heldMoveAfterRefusedClaim.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/heldMoveAfterRefusedClaim.test.js › FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM — a move held behind a claim the world refuses a forced move held behind the round's claim in flight is rolled once the claim is refused | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/heldMoveAfterRefusedClaim.test.js › FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM — a move held behind a claim the world refuses a forced move held behind a free-flow move's claim is rolled once that claim is refused | AssertionError: expected [] to have a length of 1 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/heldMoveAfterRefusedClaim.test.js › FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM — a move held behind a claim the world refuses control: a forced move held behind a claim that lands is rolled after that move releases the lock
+
+### 3d46a2e — fix: a Batch Mode round waiting for the move lock still resolves when the lock frees just as it starts waiting (ROUND-LOCK-WAIT-MARKED-LATE)
+
+Test files: `tests/unit/batchRoundLockWaitMarkedLate.test.js`. Source restored: 1 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/batchRoundLockWaitMarkedLate.test.js › ROUND-LOCK-WAIT-MARKED-LATE — a release landing before the round marks its wait the busy lock is released while the claim's answer comes back: the round still resolves | AssertionError: round 1 collecting: expected [] to have a length of 1 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/batchRoundLockWaitMarkedLate.test.js › ROUND-LOCK-WAIT-MARKED-LATE — a release landing before the round marks its wait control: the release lands after the round marks its wait — the release wakes the round
+
+### 358e966 — fix: an X-Card stays paused when the GM records an oracle answer while the pause is being saved (CAMPSTATE-CHAIN-PARTIAL)
+
+Test files: `tests/unit/campaignStateChain.test.js`, `tests/unit/xcardPauseJumpsWriteChain.test.js`. Source restored: 2 file(s).
+
+- With the fix: 10 passed, 0 failed.
+- Without it: 8 failed (8 new; 5 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) (API) tests/unit/campaignStateChain.test.js › campaignStateChain — the X-Card's pause jumps the chain the pause is written at once, though the chained write ahead has not landed | TypeError: (0 , runCampaignStateWriteNow) is not a function |
+| (new) (API) tests/unit/campaignStateChain.test.js › campaignStateChain — the X-Card's pause jumps the chain a chained write queued before the pause but not yet started reads only once the pause has landed | TypeError: (0 , runCampaignStateWriteNow) is not a function |
+| (new) (API) tests/unit/campaignStateChain.test.js › campaignStateChain — the X-Card's pause jumps the chain a chained write queued after the pause reads only once it has landed | TypeError: (0 , runCampaignStateWriteNow) is not a function |
+| (new) (API) tests/unit/campaignStateChain.test.js › campaignStateChain — the X-Card's pause jumps the chain a refused pause does not hold up the chain; the caller gets its rejection | TypeError: (0 , runCampaignStateWriteNow) is not a function |
+| (new) (API) tests/unit/campaignStateChain.test.js › campaignStateChain — the X-Card's pause jumps the chain a pause that never lands is waited for at most 10 s from its start — then the write behind it goes, warned | TypeError: (0 , runCampaignStateWriteNow) is not a function |
+| (new) tests/unit/campaignStateChain.test.js › campaignStateChain — the X-Card's pause jumps the chain control: chained writes keep their order, each reading once the one ahead has landed | AssertionError: expected [] to deeply equal [ 'A' ] |
+| (new) tests/unit/xcardPauseJumpsWriteChain.test.js › CAMPSTATE-CHAIN-PARTIAL — the X-Card's pause and the chained writes behind it an oracle card captured while a relayed X-Card's pause is on its way does not carry the pause back | AssertionError: expected undefined to be true // Object.is equality |
+| (new) tests/unit/xcardPauseJumpsWriteChain.test.js › CAMPSTATE-CHAIN-PARTIAL — the X-Card's pause and the chained writes behind it the GM's resume, sent while the pause is on its way, lands after it — the pause's count stands | AssertionError: expected undefined to be 1 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardPauseJumpsWriteChain.test.js › CAMPSTATE-CHAIN-PARTIAL — the X-Card's pause and the chained writes behind it the pause does not wait behind a chained write that has not landed — it is sent at once
+- New test passing with and without the fix (a control?): tests/unit/xcardPauseJumpsWriteChain.test.js › CAMPSTATE-CHAIN-PARTIAL — the X-Card's pause and the chained writes behind it control: the oracle card captured once the pause has landed — both stand
+
+### 82382c0 — fix: in Batch Mode the narrator's X-Card redirect is no longer sent again with every round, and a move started while an oracle answer is being saved keeps it (CAMPSTATE-CHAIN-PARTIAL)
+
+Test files: `tests/unit/batchRoundLockWaitMarkedLate.test.js`, `tests/unit/batchRoundRedirectClearKept.test.js`, `tests/unit/moveLockClaimAfterOracleCapture.test.js`. Source restored: 3 file(s).
+
+- With the fix: 6 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 4 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/batchRoundRedirectClearKept.test.js › CAMPSTATE-CHAIN-PARTIAL — a Batch Mode round's redirect clear, then its lock release the redirect is cleared once the first round after the resume has been narrated with it — and the next round is not told again | AssertionError: expected { sessionId: 'sess-1', …(1) } to be null |
+| (new) tests/unit/moveLockClaimAfterOracleCapture.test.js › CAMPSTATE-CHAIN-PARTIAL — a free-flow move claims the lock while an oracle answer is on its way the move's lock claim keeps the answer the capture had just written | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/batchRoundRedirectClearKept.test.js › CAMPSTATE-CHAIN-PARTIAL — a Batch Mode round's redirect clear, then its lock release control: with every write landing at once, the clear stands
+- New test passing with and without the fix (a control?): tests/unit/moveLockClaimAfterOracleCapture.test.js › CAMPSTATE-CHAIN-PARTIAL — a free-flow move claims the lock while an oracle answer is on its way control: the line typed once the answer has landed — both stand
+
+### 0964d8c — fix: a Take a Break, flag, session start or end, !lore or move made while an oracle answer or an X-Card pause is being saved no longer undoes it (CAMPSTATE-CHAIN-PARTIAL)
+
+Test files: `tests/unit/campaignStateWritersOnChain.test.js`, `tests/unit/spotlightPersistKeepsOracleAnswer.test.js`. Source restored: 8 file(s).
+
+- With the fix: 10 passed, 0 failed.
+- Without it: 9 failed (9 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 9 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/campaignStateWritersOnChain.test.js › CAMPSTATE-CHAIN-PARTIAL — a relayed write sent while the GM's oracle capture is on its way Take a Break: the +1 and the oracle answer both stand | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+| (new) tests/unit/campaignStateWritersOnChain.test.js › CAMPSTATE-CHAIN-PARTIAL — a relayed write sent while the GM's oracle capture is on its way Set a Flag: the flag and the oracle answer both stand | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+| (new) tests/unit/campaignStateWritersOnChain.test.js › CAMPSTATE-CHAIN-PARTIAL — a relayed write sent while the GM's oracle capture is on its way End a Session: the session's end and the oracle answer both stand | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+| (new) tests/unit/campaignStateWritersOnChain.test.js › CAMPSTATE-CHAIN-PARTIAL — a relayed write sent while the GM's oracle capture is on its way Begin a Session: the new session and the oracle answer both stand | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+| (new) tests/unit/campaignStateWritersOnChain.test.js › CAMPSTATE-CHAIN-PARTIAL — a move's own writes inside another write's round trip a move that takes Take a Break's +1 while an oracle answer is on its way keeps the answer | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+| (new) tests/unit/campaignStateWritersOnChain.test.js › CAMPSTATE-CHAIN-PARTIAL — a move's own writes inside another write's round trip a move that takes its roller's "+1 on your next move" while an oracle answer is on its way keeps the answer | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+| (new) tests/unit/campaignStateWritersOnChain.test.js › CAMPSTATE-CHAIN-PARTIAL — a move's own writes inside another write's round trip the GM's !lore while an oracle answer is on its way: the lore recap and the answer both stand | AssertionError: expected '' to be truthy |
+| (new) tests/unit/campaignStateWritersOnChain.test.js › CAMPSTATE-CHAIN-PARTIAL — a move's own writes inside another write's round trip a move recorded while a player's X-Card pause is on its way: the pause and the move's record both stand | AssertionError: expected undefined to be '2026-11-06T18:01:34.980Z' // Object.is equality |
+| (new) tests/unit/spotlightPersistKeepsOracleAnswer.test.js › CAMPSTATE-CHAIN-PARTIAL — a paced narration's spotlight persist Kira's line narrated while an oracle answer is on its way: the spotlight's pointer and the answer both stand | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/campaignStateWritersOnChain.test.js › CAMPSTATE-CHAIN-PARTIAL — a relayed write sent while the GM's oracle capture is on its way control: Take a Break once the answer has landed — both stand
+
+### 238c7c7 — fix: saving or removing a portrait no longer undoes a clock advance or oracle answer saved at the same moment (ART-INDEX-WRITE-OFF-CHAIN)
+
+Test files: `tests/unit/artIndexWritesOnChain.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/artIndexWritesOnChain.test.js › ART-INDEX-WRITE-OFF-CHAIN — the art index writes join the campaignState write chain a portrait stored while a clock advance is on its way: the index entry and the advance both stand | AssertionError: expected 2 to be 3 // Object.is equality |
+| (new) tests/unit/artIndexWritesOnChain.test.js › ART-INDEX-WRITE-OFF-CHAIN — the art index writes join the campaignState write chain a portrait deleted with its entity while a clock advance is on its way: the index drop and the advance both stand | AssertionError: expected 2 to be 3 // Object.is equality |
+| (new) tests/unit/artIndexWritesOnChain.test.js › ART-INDEX-WRITE-OFF-CHAIN — the art index writes join the campaignState write chain a portrait the index already names (its lock or regeneration state changing) writes no campaignState | AssertionError: expected [ …(2) ] to have a length of 1 but got 2 |
+
+- New test passing with and without the fix (a control?): tests/unit/artIndexWritesOnChain.test.js › ART-INDEX-WRITE-OFF-CHAIN — the art index writes join the campaignState write chain control: one after the other, both stand
+
+### ca8bcd7 — fix: an X-Card played while a scene is closing keeps the removed beat off character cards, out of the World Journal's lore and out of LAST KNOWN (XCARD-DURING-SCENE-END-MIGRATES)
+
+Test files: `tests/unit/xcardDuringSceneEndMigrates.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/xcardDuringSceneEndMigrates.test.js › XCARD-DURING-SCENE-END-MIGRATES — an X-Card played while the scene end migrates the beat the X-Card lands while Vex's detail is being written: nothing of the beat is left on the card, in ESTABLISHED LORE or in LAST KNOWN | AssertionError: Narrator-added details on Vex's card: expected [ Array(1) ] to deeply equal [] |
+| (new) tests/unit/xcardDuringSceneEndMigrates.test.js › XCARD-DURING-SCENE-END-MIGRATES — an X-Card played while the scene end migrates the beat control: a kept narration's truths still migrate when another narration is X-carded meanwhile | AssertionError: expected [ …(2) ] to not include 'the prisoner: His hand was burned wit…' |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardDuringSceneEndMigrates.test.js › XCARD-DURING-SCENE-END-MIGRATES — an X-Card played while the scene end migrates the beat control: no X-Card — the scene end files the beat on Vex's card, as lore and as LAST KNOWN
+
+### 10f260e — fix: a strike or correction made while a scene is closing now holds — the struck fact is no longer archived as lore and stays named for the session (STRIKE-DURING-SCENE-END-LOST)
+
+Test files: `tests/unit/strikeDuringSceneEnd.test.js`. Source restored: 1 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/strikeDuringSceneEnd.test.js › STRIKE-DURING-SCENE-END-LOST — a correction that lands while the scene ends sticks a strike of a truth not yet migrated: it is the session's strike — named, not archived, not restated | AssertionError: expected [] to deeply equal [ 'Kira — Took the shuttle' ] |
+| (new) tests/unit/strikeDuringSceneEnd.test.js › STRIKE-DURING-SCENE-END-LOST — a correction that lands while the scene ends sticks a strike of the truth whose page is being written: the page is taken back out of canon, and the strike kept | AssertionError: expected [] to deeply equal [ 'Vance — Is dead' ] |
+| (new) tests/unit/strikeDuringSceneEnd.test.js › STRIKE-DURING-SCENE-END-LOST — a correction that lands while the scene ends sticks a Replace while the scene ends: the replacement stands, the original is neither archived nor named | AssertionError: expected [ 'Vance: Is dead', …(2) ] to not include 'Kira: Took the shuttle' |
+
+- New test passing with and without the fix (a control?): tests/unit/strikeDuringSceneEnd.test.js › STRIKE-DURING-SCENE-END-LOST — a correction that lands while the scene ends sticks control: no correction — both truths are archived as lore, and nothing is named
+
+### 310c854 — fix: a Batch Mode round waiting for another move's start goes on when the world refuses that start (ROUND-WAIT-AFTER-REFUSED-CLAIM)
+
+Test files: `tests/unit/roundWaitAfterRefusedClaim.test.js`. Source restored: 2 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/roundWaitAfterRefusedClaim.test.js › ROUND-WAIT-AFTER-REFUSED-CLAIM — a round waiting behind a free-flow claim the world refuses the round resolves once the free-flow claim is refused | AssertionError: round 1 collecting: expected [] to have a length of 1 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/roundWaitAfterRefusedClaim.test.js › ROUND-WAIT-AFTER-REFUSED-CLAIM — a round waiting behind a free-flow claim the world refuses control: the free-flow claim lands — the round waits for that move, then resolves
+
+### df7e5e5 — fix: a rolling session summary or a dismissed draft the world refused to save no longer stays on the GM's screen (CACHE-MUTATED-BEFORE-WRITE)
+
+Test files: `tests/unit/cacheMutatedBeforeWrite.test.js`. Source restored: 2 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/cacheMutatedBeforeWrite.test.js › CACHE-MUTATED-BEFORE-WRITE — the rolling-summary persist a refused write leaves the GM's cache without the summary the world never took | AssertionError: expected { …(4) } to be null |
+| (new) tests/unit/cacheMutatedBeforeWrite.test.js › CACHE-MUTATED-BEFORE-WRITE — the rolling-summary persist written while an oracle answer is on its way: the summary and the answer both stand | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+| (new) tests/unit/cacheMutatedBeforeWrite.test.js › CACHE-MUTATED-BEFORE-WRITE — a draft card's Dismiss a refused write leaves the GM's cache without the dismissed name | AssertionError: expected [ 'Vance Oduya' ] to deeply equal [] |
+| (new) tests/unit/cacheMutatedBeforeWrite.test.js › CACHE-MUTATED-BEFORE-WRITE — a draft card's Dismiss a Dismiss while an oracle answer is on its way: the dismissal and the answer both stand | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/cacheMutatedBeforeWrite.test.js › CACHE-MUTATED-BEFORE-WRITE — the rolling-summary persist control: the summary's write lands — the world and the GM have it
+
+### 06bb669 — fix: a command, panel edit, bond, oracle table or entity registration made while an oracle answer is being saved no longer erases it (CAMPSTATE-CHAIN-REST)
+
+Test files: `tests/unit/campaignStateChainSweep.test.js`, `tests/unit/chainRestWritersKeepOracleAnswer.test.js`. Source restored: 14 file(s).
+
+- With the fix: 8 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 5 still pass (5 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 5 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/campaignStateChainSweep.test.js › CAMPSTATE-CHAIN-REST — every campaignState write runs on the client's write chain no campaignState write in production code is off the chain | AssertionError: expected [ …(27) ] to deeply equal [] |
+| (new) tests/unit/chainRestWritersKeepOracleAnswer.test.js › CAMPSTATE-CHAIN-REST — a GM command's write while an oracle answer is on its way !sector &lt;name>: the switch and the answer both stand | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+| (new) tests/unit/chainRestWritersKeepOracleAnswer.test.js › CAMPSTATE-CHAIN-REST — a GM command's write while an oracle answer is on its way !pace hot: the override and the answer both stand | AssertionError: expected [] to deeply equal [ 'is the hatch sealed' ] |
+
+- New test passing with and without the fix (a control?): tests/unit/campaignStateChainSweep.test.js › CAMPSTATE-CHAIN-REST — every campaignState write runs on the client's write chain finds the writes (the scan is not vacuous)
+- New test passing with and without the fix (a control?): tests/unit/campaignStateChainSweep.test.js › CAMPSTATE-CHAIN-REST — every campaignState write runs on the client's write chain each OFF_CHAIN entry still names a write off the chain (a stale entry hides the next regression)
+- New test passing with and without the fix (a control?): tests/unit/campaignStateChainSweep.test.js › CAMPSTATE-CHAIN-REST — every campaignState write runs on the client's write chain control: a write off the chain is caught — a top-level one, a function's, and a helper called off the chain
+- New test passing with and without the fix (a control?): tests/unit/campaignStateChainSweep.test.js › CAMPSTATE-CHAIN-REST — every campaignState write runs on the client's write chain control: a chained write passes — inside the chain call, or in a helper only a chained task calls
+- New test passing with and without the fix (a control?): tests/unit/chainRestWritersKeepOracleAnswer.test.js › CAMPSTATE-CHAIN-REST — a GM command's write while an oracle answer is on its way control: !sector once the answer has landed — both stand
