@@ -68,7 +68,6 @@ import {
 } from "./resolver.js";
 import {
   getActor,
-  getPlayerActors,
   readMomentumState,
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
@@ -801,10 +800,16 @@ function currentFlags(message) {
   return (live ?? message)?.flags?.[MODULE_ID] ?? null;
 }
 
+/**
+ * The card's own roller — never another PC in their place (credit the
+ * roller). A card whose PC was deleted burned the world's first PC's
+ * momentum and refunded the gone PC's price onto them (issue #342 Z48); it
+ * now burns nothing (`no-actor`), as Improve Result on the same card and a
+ * suffer card whose PC is gone do (issue #336 Y20).
+ *
+ * @param {string|null} actorId
+ * @returns {Actor|null}
+ */
 function resolveActor(actorId) {
-  if (actorId) {
-    const a = game.actors?.get?.(actorId);
-    if (a) return a;
-  }
-  return getActor(actorId) ?? getPlayerActors()[0] ?? null;
+  return getActor(actorId) ?? null;
 }

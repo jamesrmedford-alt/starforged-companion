@@ -329,11 +329,13 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // move that ran, a meter's before and after), never the table's annotation
   // (issue #311 P04). A harm's overflow into momentum is a receipt of its own
   // (issue #314 Q02); a burn's reset replaces momentum, so a burn refunds none.
-  // One write per PC.
+  // One write per PC. A receipt that names its PC refunds that PC or nobody —
+  // one deleted since is not stood in for by the upgrading PC (issue #342
+  // Z48); a receipt from before receipts named one refunds the upgrading PC.
   const byPc = new Map();
   for (const delta of sufferMeterDeltas(ptpReversals)) {
     if (!(delta.amount > 0) || (kind === "burn" && delta.meterKey === "momentum")) continue;
-    const refundTo = (delta.actorId ? game.actors?.get?.(delta.actorId) : null) ?? actor;
+    const refundTo = delta.actorId ? (game.actors?.get?.(delta.actorId) ?? null) : actor;
     if (!refundTo) continue;
     const changes = byPc.get(refundTo) ?? {};
     changes[delta.meterKey] = (changes[delta.meterKey] ?? 0) + Number(delta.amount);
