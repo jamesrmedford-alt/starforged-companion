@@ -17,8 +17,9 @@
  */
 
 // ─────────────────────────────────────────────────────────────────────────────
-// KEY MAPS (verified against vendor/foundry-ironsworn/system/lang/en.json
-// keys when the submodule is initialised; English fallbacks always present)
+// KEY MAPS (the stat, meter and debility keys are checked against
+// vendor/foundry-ironsworn/system/lang/en.json by tests/unit/i18n.test.js;
+// English fallbacks always present)
 // ─────────────────────────────────────────────────────────────────────────────
 
 const STAT_KEYS = {
@@ -36,22 +37,26 @@ const METER_KEYS = {
   momentum: { key: "IRONSWORN.Momentum", en: "Momentum" },
 };
 
+// The system names a debility under IRONSWORN.IMPACT.* (Starforged's impacts)
+// or, for the three Ironsworn-only ones, IRONSWORN.DEBILITY.*; its strings
+// are lowercase ("marked wounded"). Every key was IRONSWORN.<Name>, which no
+// language file ships, so a debility never localised (issue #342 Z70).
 const DEBILITY_KEYS = {
   // Character debilities
-  wounded:           { key: "IRONSWORN.Wounded",          en: "Wounded"          },
-  shaken:            { key: "IRONSWORN.Shaken",           en: "Shaken"           },
-  unprepared:        { key: "IRONSWORN.Unprepared",       en: "Unprepared"       },
-  encumbered:        { key: "IRONSWORN.Encumbered",       en: "Encumbered"       },
-  maimed:            { key: "IRONSWORN.Maimed",           en: "Maimed"           },
-  corrupted:         { key: "IRONSWORN.Corrupted",        en: "Corrupted"        },
-  cursed:            { key: "IRONSWORN.Cursed",           en: "Cursed"           },
-  tormented:         { key: "IRONSWORN.Tormented",        en: "Tormented"        },
-  permanentlyharmed: { key: "IRONSWORN.PermanentlyHarmed", en: "Permanently Harmed" },
-  traumatized:       { key: "IRONSWORN.Traumatized",      en: "Traumatized"      },
-  doomed:            { key: "IRONSWORN.Doomed",           en: "Doomed"           },
-  indebted:          { key: "IRONSWORN.Indebted",         en: "Indebted"         },
+  wounded:           { key: "IRONSWORN.IMPACT.Wounded",           en: "Wounded"          },
+  shaken:            { key: "IRONSWORN.IMPACT.Shaken",            en: "Shaken"           },
+  unprepared:        { key: "IRONSWORN.IMPACT.Unprepared",        en: "Unprepared"       },
+  encumbered:        { key: "IRONSWORN.DEBILITY.Encumbered",      en: "Encumbered"       },
+  maimed:            { key: "IRONSWORN.DEBILITY.Maimed",          en: "Maimed"           },
+  corrupted:         { key: "IRONSWORN.DEBILITY.Corrupted",       en: "Corrupted"        },
+  cursed:            { key: "IRONSWORN.IMPACT.Cursed",            en: "Cursed"           },
+  tormented:         { key: "IRONSWORN.IMPACT.Tormented",         en: "Tormented"        },
+  permanentlyharmed: { key: "IRONSWORN.IMPACT.Permanentlyharmed", en: "Permanently Harmed" },
+  traumatized:       { key: "IRONSWORN.IMPACT.Traumatized",       en: "Traumatized"      },
+  doomed:            { key: "IRONSWORN.IMPACT.Doomed",            en: "Doomed"           },
+  indebted:          { key: "IRONSWORN.IMPACT.Indebted",          en: "Indebted"         },
   // Starship debilities
-  battered:          { key: "IRONSWORN.Battered",         en: "Battered"         },
+  battered:          { key: "IRONSWORN.IMPACT.Battered",          en: "Battered"         },
 };
 
 // Move slug → English fallback. Localisation keys for move titles vary across

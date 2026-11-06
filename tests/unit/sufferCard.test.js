@@ -97,11 +97,13 @@ describe("summarizeSufferCalls", () => {
 
   it("labels meters and impacts through the system localisation (i18n)", () => {
     const saved = game.i18n;
+    // The system's own keys for impacts (issue #342 Z70 — IRONSWORN.Doomed /
+    // IRONSWORN.Wounded are in no language file it ships).
     game.i18n = {
       localize: (key) => ({
-        "IRONSWORN.Health":   "Santé",
-        "IRONSWORN.Doomed":   "Condamné",
-        "IRONSWORN.Wounded":  "Blessé",
+        "IRONSWORN.Health":          "Santé",
+        "IRONSWORN.IMPACT.Doomed":   "Condamné",
+        "IRONSWORN.IMPACT.Wounded":  "Blessé",
       })[key] ?? key,
     };
     try {
