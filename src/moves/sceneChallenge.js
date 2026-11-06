@@ -103,22 +103,29 @@ export function assetMatchMove({ moveId = null, moveName = null } = {}) {
 }
 
 /**
- * The move a scene-challenge variant is made as when no scene challenge is
- * open: the ordinary move it varies — the variant's progress and segments
- * would land on nothing, and its strong hit takes no momentum. Any other
- * move, or a variant while a challenge is open, is itself. Never the other
- * way: an ordinary Face Danger stays one while a challenge is open (the
- * interpreter types the variant; a fight mid-challenge is not the
- * challenge's).
+ * The move a scene-challenge variant is made as outside its scene challenge:
+ * the ordinary move it varies — the variant's progress and segments would
+ * land on nothing, and its strong hit takes no momentum. Outside is no
+ * challenge open — or, given the challenge the variant was made in
+ * (`trackId`), that one ended or gone, whatever else is open: a Batch Mode
+ * entry is rolled after it was read, and an earlier entry's Finish the Scene
+ * can end its challenge while another stays open
+ * (ROUND-VARIANT-TWO-CHALLENGES). Any other move, or a variant within its
+ * challenge, is itself. Never the other way: an ordinary Face Danger stays
+ * one while a challenge is open (the interpreter types the variant; a fight
+ * mid-challenge is not the challenge's).
  *
  * @param {string} moveId
  * @param {Array<Object>} allTracks — listProgressTracks()
+ * @param {{ trackId?: string|null }} [opts] — the variant's own challenge, by id
  * @returns {string}
  */
-export function moveOutsideSceneChallenge(moveId, allTracks) {
+export function moveOutsideSceneChallenge(moveId, allTracks, { trackId = null } = {}) {
   const ordinary = SCENE_CHALLENGE_VARIANTS[moveId];
   if (!ordinary) return moveId;
-  return (allTracks ?? []).some(t => t?.type === "scene_challenge" && !t.completed) ? moveId : ordinary;
+  const open = (allTracks ?? []).filter(t => t?.type === "scene_challenge" && !t.completed);
+  const within = typeof trackId === "string" && trackId ? open.some(t => t.id === trackId) : open.length > 0;
+  return within ? moveId : ordinary;
 }
 
 /**

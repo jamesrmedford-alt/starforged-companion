@@ -455,7 +455,13 @@ context lists an open `scene_challenge` (never a re-key of the ordinary move
 resolved as the ordinary move, `sceneChallenge.moveOutsideSceneChallenge` —
 as `readMove` reads it and again as `rollMove` rolls it: a Batch Mode entry
 read while the challenge was open, rolled after an earlier entry's Finish the
-Scene ended it, is the ordinary move, issue #342 Z39).
+Scene ended it, is the ordinary move, issue #342 Z39). With another challenge
+still open that rule keeps the variant, so the round notes the challenge a
+variant was read against (`noteReadTrack` → the reading's
+`variantChallengeId`) and `rollEntry` rolls it as the ordinary move once that
+one has ended (`moveOutsideSceneChallenge`'s `trackId`) — the scoring,
+finding the challenge it named over, took the sole open one
+(ROUND-VARIANT-TWO-CHALLENGES).
 The pacing classifier nominates them for a paced card's Roll too, told of the
 open challenge as of a fight (`router.detectOpenSceneChallenges` → its
 SCENE CHALLENGE line; a variant it names with none open is the ordinary

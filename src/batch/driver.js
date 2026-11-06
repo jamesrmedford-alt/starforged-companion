@@ -59,7 +59,8 @@ import {
 import { resultUpgradeBlocker } from "../moves/burnMomentum.js";
 import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
-import { selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
+import { selectSceneChallengeTrack, moveOutsideSceneChallenge, SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
+import { moveDisplayName } from "../system/i18n.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
 import {
   ROUND_PHASE,
@@ -522,16 +523,20 @@ export function startReading(userId) {
  * Scene move acts on, as read — its id, so the roll can tell when it ended
  * earlier in the round (a round entry is rolled later than it was read): a
  * second Finish the Scene is refused, not rolled against an ended scene
- * (issue #342 Z07).
+ * (issue #342 Z07). A scene-challenge variant's challenge is noted apart
+ * (`variantChallengeId`): rolled after that one ended, the variant is the
+ * ordinary move (rollEntry), not refused — whatever else is open
+ * (ROUND-VARIANT-TWO-CHALLENGES).
  *
  * @param {Object} reading
  */
 async function noteReadTrack(reading) {
   if (reading?.kind !== READING_KIND.MOVE) return;
   const moveId = reading.moveId;
+  const variant = Object.prototype.hasOwnProperty.call(SCENE_CHALLENGE_VARIANTS, moveId);
   const type = ROUND_FIGHT_MOVES.has(moveId) ? "combat"
     : (moveId === "undertake_an_expedition" || moveId === "finish_an_expedition") ? "expedition"
-    : moveId === "finish_the_scene" ? "scene_challenge" : null;
+    : (moveId === "finish_the_scene" || variant) ? "scene_challenge" : null;
   if (!type) return;
   const all = await listProgressTracks().catch(() => []);
   const open = all.filter(t => t.type === type && !t.completed);
@@ -543,7 +548,9 @@ async function noteReadTrack(reading) {
     : named ? open.find(t => t.id === named)
       : (target ? open.find(t => String(t.label ?? "").trim().toLowerCase() === target) : null)
         ?? (open.length === 1 ? open[0] : null);
-  if (track) {
+  if (track && variant) {
+    reading.variantChallengeId = track.id;
+  } else if (track) {
     reading.trackId = track.id;
     reading.trackLabel = track.label ?? null;
   }
@@ -920,6 +927,19 @@ async function rollEntry(round, entry) {
 
   const campaignState = workingCopy();
   const interpretation = interpretationForRoll(reading, choices);
+  // A scene-challenge variant whose own challenge ended before its roll (an
+  // earlier entry's Finish the Scene) is the ordinary move, though another
+  // challenge stays open: rollMove's rule looks for any open one (Z39), and
+  // the scoring took that other one (ROUND-VARIANT-TWO-CHALLENGES).
+  if (reading.variantChallengeId) {
+    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []),
+      { trackId: reading.variantChallengeId });
+    if (ordinary !== interpretation.moveId) {
+      console.debug(`${MODULE_ID} | Batch Mode: ${entry.actorName}'s ${interpretation.moveId} — its scene challenge ended earlier in the round; rolled as ${ordinary}.`);
+      interpretation.moveId   = ordinary;
+      interpretation.moveName = moveDisplayName(ordinary);
+    }
+  }
   const rolled = await rollMove({
     interpretation, campaignState, speakerActorId: entry.actorId, narration: entry.text,
     tokenDragSetCourse:     reading.forced?.tokenDragSetCourse ?? null,

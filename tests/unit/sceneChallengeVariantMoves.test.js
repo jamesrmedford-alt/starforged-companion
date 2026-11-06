@@ -201,6 +201,18 @@ describe("scoreSceneChallenge (issue #338 D2)", () => {
     expect(moveOutsideSceneChallenge("face_danger_scene_challenge", open)).toBe("face_danger_scene_challenge");
     expect(moveOutsideSceneChallenge("face_danger", open)).toBe("face_danger");
   });
+
+  it("moveOutsideSceneChallenge: given its own challenge, a variant is the ordinary move once that one ended, whatever else is open (ROUND-VARIANT-TWO-CHALLENGES)", () => {
+    const tracks = [
+      { id: "escape", type: "scene_challenge", completed: true },
+      { id: "storm",  type: "scene_challenge", completed: false },
+    ];
+    expect(moveOutsideSceneChallenge("face_danger_scene_challenge", tracks, { trackId: "escape" })).toBe("face_danger");
+    expect(moveOutsideSceneChallenge("secure_an_advantage_scene_challenge", tracks, { trackId: "gone" })).toBe("secure_an_advantage");
+    expect(moveOutsideSceneChallenge("face_danger_scene_challenge", tracks, { trackId: "storm" })).toBe("face_danger_scene_challenge");
+    expect(moveOutsideSceneChallenge("face_danger_scene_challenge", tracks)).toBe("face_danger_scene_challenge");   // control: no challenge named — any open one
+    expect(moveOutsideSceneChallenge("face_danger", tracks, { trackId: "storm" })).toBe("face_danger");
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
