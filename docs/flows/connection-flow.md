@@ -75,7 +75,8 @@ recorded under its name promoted to it; its bond is §2's.
   card, its bond Items, its `connectionIds` entry and its portraits (the
   "Art:" journal entries and their `artAssetIds` index entries —
   `art/storage.deleteEntityArtAssets`, canonical GM, the index written on a
-  copy; XCARD-CONNECTION-PORTRAIT-ORPHAN) while the record holds
+  copy, on the GM's campaignState write chain — ART-INDEX-WRITE-OFF-CHAIN;
+  XCARD-CONNECTION-PORTRAIT-ORPHAN) while the record holds
   nothing beyond its creation, its sheet nothing the table wrote (Notes text
   outside the seed's marked introduction and the portrait block, or a
   Characteristics line the seed did not write — `sheetWrittenByTable`) and no

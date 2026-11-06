@@ -289,12 +289,13 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
   the fire-and-forget writers, and since CAMPSTATE-CHAIN-PARTIAL the relay
   handlers' writes (Set a Flag, Take a Break, Begin / End a Session), the
   move's record (`persistResolution`), every `writeOwnedFields` writer, the
-  next-move claims and grant, the move lock's paths, the redirect clear and
-  the spotlight persist (a Take a Break or a move's record read inside an
-  oracle capture's or an X-Card pause's round trip put the cache's old
-  fields back); a new writer joins the chain, and a chained task never waits
-  on another one (it would wait for itself). A task reads the store at its
-  start, with no await before the read or between the read and its write.
+  next-move claims and grant, the move lock's paths, the redirect clear, the
+  spotlight persist and the art index's writes (a Take a Break or a move's
+  record read inside an oracle capture's or an X-Card pause's round trip put
+  the cache's old fields back); a new writer joins the chain, and a chained
+  task never waits on another one (it would wait for itself). A task reads
+  the store at its start, with no await before the read or between the read
+  and its write.
   The X-Card's pause is the one write that jumps the chain
   (`runCampaignStateWriteNow`): it waits for nothing, and every chained write
   that has not yet read the store waits for it to land — an oracle card
