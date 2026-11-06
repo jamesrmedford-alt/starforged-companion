@@ -131,6 +131,14 @@ passage" drawing.
   id (`{ entityId }`) — so the narrator no longer gets two locations (issue
   #321 U56). `!at` and the panel button write a copy of the stored
   campaignState, so a refused write leaves the GM's cache as it was (U58).
+  `!at` docks the ship at the place it resolved, by that place's id — it was
+  re-inferred from the typed name, so a fragment ("Bleak") was free text
+  (known-issues AT-PARTIAL-NAME-SHIP) — and every resolver by name
+  (`resolveCurrentLocationName`; `inferShipPosition`'s index, for the
+  narrator's ship / position too) takes the active sector's namesake first,
+  as the site ladder does (U48): generated site names repeat across sectors,
+  and the older sector's derelict became the current location, the ship's
+  position and its token's place on that sector's map (issue #342 Z15).
 - **Narrator awareness**: the §6.5 ship block renders `COMMAND VEHICLE` +
   `SHIP POSITION` lines — every arrival recorder writes only after arrival,
   so those sources read as stationary ("docked at" / "in orbit of";

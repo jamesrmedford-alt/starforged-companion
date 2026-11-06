@@ -531,7 +531,8 @@ describe('inferShipPositionFromEntityId — arrival by the destination\'s id', (
     const state = { settlementIds: ['actor-old', 'actor-new'], activeSectorId: 'sec-new',
       sectors: [sec('sec-old', 'Old Reach'), sec('sec-new', 'New Reach')] };
 
-    expect(inferShipPosition('Bleakhold', state).nearestSettlementId).toBe('actor-old');   // the name's first match
+    // The name's first match is the active sector's namesake (issue #342 Z15)…
+    expect(inferShipPosition('Bleakhold', state).nearestSettlementId).toBe('actor-new');
 
     const p = inferShipPositionFromEntityId('actor-new', state, { source: 'scene_token' });
     expect(p).toMatchObject({
@@ -539,6 +540,9 @@ describe('inferShipPositionFromEntityId — arrival by the destination\'s id', (
       freeText: '', updatedBy: 'scene_token',
     });
     expect(p.updatedAt).toBeTruthy();
+    // …and an id naming the other one records that one, in its own sector.
+    expect(inferShipPositionFromEntityId('actor-old', state, { source: 'scene_token' }))
+      .toMatchObject({ nearestSettlementId: 'actor-old', sectorId: 'sec-old' });
   });
 
   it('resolves the planet a settlement belongs to, as the name path does', () => {

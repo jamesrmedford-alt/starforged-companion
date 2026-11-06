@@ -6313,6 +6313,12 @@ function escapeChatHtml(s) {
  * and planet collections in that priority order. Case-insensitive prefix match
  * before falling back to substring match.
  *
+ * On each rung a match in the active sector wins: generated site names repeat
+ * across sectors (every derelict is "Derelict Starship" or "Derelict
+ * Settlement"), and the first in storage order — the older sector's — set the
+ * current location, the ship and its token on the wrong map (issue #342 Z15;
+ * the site ladder's rule, issue #321 U48).
+ *
  * @param {string} name
  * @param {Object} campaignState
  * @returns {{ id: string, type: string, entity: Object }|null}
@@ -6346,9 +6352,14 @@ export function resolveCurrentLocationName(name, campaignState) {
     }
   }
 
-  return candidates.find(c => c.lc === target)
-      ?? candidates.find(c => c.lc.startsWith(target))
-      ?? candidates.find(c => c.lc.includes(target))
+  const activeSectorId = campaignState?.activeSectorId ?? null;
+  const pick = (fits) => {
+    const hits = candidates.filter(fits);
+    return (activeSectorId && hits.find(c => c.entity?.sectorId === activeSectorId)) || hits[0] || null;
+  };
+  return pick(c => c.lc === target)
+      ?? pick(c => c.lc.startsWith(target))
+      ?? pick(c => c.lc.includes(target))
       ?? null;
 }
 
@@ -6411,10 +6422,11 @@ async function handleAtCommand(message) {
   await game.settings.set(MODULE_ID, "campaignState", campaignState);
 
   // Fact-continuity §20 — when ship positioning is enabled, treat the
-  // GM's `!at` as "the party (and their ship) is here." Infer the
-  // position from the same name the player typed and persist it on
-  // the command vehicle.
-  await maybeUpdateShipPositionFromName(arg, campaignState, "at_command");
+  // GM's `!at` as "the party (and their ship) is here": the place just set
+  // as the current location, by its id — re-inferred from the typed name, a
+  // fragment ("Bleak") was free text and a namesake in an older sector was
+  // that sector's (issue #342 Z15; known-issues AT-PARTIAL-NAME-SHIP).
+  await maybeUpdateShipPositionFromName(arg, campaignState, "at_command", { entityId: match.id });
 
   await ChatMessage.create({
     // The name is the Actor's — model text a GM confirmed, or typed on the
