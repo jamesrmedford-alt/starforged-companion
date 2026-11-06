@@ -311,7 +311,10 @@ X-carded narration is dropped. **[1b] X-CARD — REDIRECT**: while
 narrator to take the story elsewhere without naming the removed beat;
 `registerXCardRedirectHook` (canonical GM) clears it when the first narrator
 card posts with the X-Card lifted — not a fallback, a published reflection or
-an X-carded card.
+an X-carded card — on the GM's campaignState write chain, so the Batch Mode
+round's lock release right after its card reads the store once the clear has
+landed (it wrote the redirect back, and every later round carried it:
+CAMPSTATE-CHAIN-PARTIAL).
 
 **A Burn Momentum or Improve Result** supersedes what narrated the outcome it
 replaced (issue #338 D8): the move's narration card is flagged

@@ -20,6 +20,7 @@ import {
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
+import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
@@ -1865,7 +1866,10 @@ function xCardRedirectPending(cs) {
  * with the X-Card lifted is one that delivered it. A fallback card (nothing
  * was delivered), a published Private Channel reflection (not a narration)
  * and an X-carded card do not count. On the canonical GM — a single-emitter
- * world write onto the latest store.
+ * world write onto the latest store, read at its turn on the client's
+ * campaignState write chain: the Batch Mode round's lock release, read inside
+ * this clear's round trip right after its card, wrote the redirect back, and
+ * every later round carried it (CAMPSTATE-CHAIN-PARTIAL).
  */
 export function registerXCardRedirectHook() {
   Hooks.on('createChatMessage', (message) => {
@@ -1878,10 +1882,12 @@ export function registerXCardRedirectHook() {
   });
 }
 
-async function clearXCardRedirect() {
-  const latest = storedCampaignState();
-  if (!latest?.xCardRedirect || latest.xCardActive) return;
-  await game.settings.set(MODULE_ID, 'campaignState', { ...latest, xCardRedirect: null });
+function clearXCardRedirect() {
+  return serialiseCampaignStateWrite(async () => {
+    const latest = storedCampaignState();
+    if (!latest?.xCardRedirect || latest.xCardActive) return;
+    await game.settings.set(MODULE_ID, 'campaignState', { ...latest, xCardRedirect: null });
+  }, 'X-Card redirect clear');
 }
 
 /**

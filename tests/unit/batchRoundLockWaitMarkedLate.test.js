@@ -100,7 +100,9 @@ beforeEach(async () => {
 afterEach(async () => {
   await table.settle(); await table.drain();
   // The driver's host as index.js configures it.
-  gm.run(() => driver.configureBatchDriver({ claimMoveLock: index.claimPendingMoveLock, releaseMoveLock: index.releasePendingMoveLock }));
+  gm.run(() => driver.configureBatchDriver({
+    claimMoveLock: index.claimPendingMoveLock, releaseMoveLock: index.releasePendingMoveLock, moveLockFree: index.isMoveLockFreeHere,
+  }));
 });
 
 async function relay(userId, kind, payload) {
@@ -133,6 +135,7 @@ function holdFirstBusyAnswer(gap) {
       return lock;
     },
     releaseMoveLock: index.releasePendingMoveLock,
+    moveLockFree:    index.isMoveLockFreeHere,
   }));
   return { get used() { return !armed; } };
 }

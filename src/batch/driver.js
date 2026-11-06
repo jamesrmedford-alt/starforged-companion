@@ -222,13 +222,15 @@ let _freeFlowRunner = null;
  * Hand the driver src/index.js's move-lock paths. Called once at load.
  *
  * @param {{ claimMoveLock: () => Promise<{ claim: string|null, busy?: boolean, refused?: boolean }>,
- *   releaseMoveLock: (claim: string|null) => Promise<boolean> }} host
+ *   releaseMoveLock: (claim: string|null) => Promise<boolean>,
+ *   moveLockFree: () => boolean }} host — `moveLockFree`: the lock free in
+ *   this client's store, and no claim of this client's on its way
  */
 export function configureBatchDriver(host) {
-  for (const name of ["claimMoveLock", "releaseMoveLock"]) {
+  for (const name of ["claimMoveLock", "releaseMoveLock", "moveLockFree"]) {
     if (typeof host?.[name] !== "function") throw new Error(`batch driver: the host lacks ${name}`);
   }
-  _host = { claimMoveLock: host.claimMoveLock, releaseMoveLock: host.releaseMoveLock };
+  _host = { claimMoveLock: host.claimMoveLock, releaseMoveLock: host.releaseMoveLock, moveLockFree: host.moveLockFree };
 }
 
 /**
@@ -733,11 +735,13 @@ function claimRoundLock() {
  * once the claim's answer is back, so a release that landed between the
  * claim's read and this mark was heard with nothing waiting, and no later
  * write woke the round (ROUND-LOCK-WAIT-MARKED-LATE). The lock is read again
- * once the wait is marked: free already, the pass goes round again.
+ * once the wait is marked — as this client knows it, a free-flow claim still
+ * on its way counting as taken (its write and then its release wake the
+ * round): free already, the pass goes round again.
  */
 function waitForLock() {
   _waitingForLock = true;
-  if (campaignStateNow().pendingMove) return;
+  if (!host().moveLockFree()) return;
   _waitingForLock = false;
   advanceRound("lock-free");
 }
