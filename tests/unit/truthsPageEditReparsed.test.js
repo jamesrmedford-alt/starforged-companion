@@ -122,3 +122,82 @@ describe('the GM edits the saved Setting Truths page', () => {
     expect(table.world.campaignState().worldTruthsJournalId).toBe('j-own');
   }, 30_000);
 });
+
+// Issue #342 Z16 (TRUTHS-JOURNAL-BY-NAME): the campaign's truths journal is
+// known by its id (`worldTruthsJournalId`), but the edit hook also required
+// the system's "Setting Truths" title, and the world-load reconcile took the
+// newest journal so TITLED over the linked one. A GM who files the journal
+// under a name of their own — natural with two same-named saves in the
+// sidebar — then had an edit go unparsed, and every load relinked the
+// superseded save: the narrator's truths silently reverted to it.
+describe('the linked truths journal, renamed by the GM', () => {
+  it('an edit of its page still reaches worldTruths', async () => {
+    expect(table.world.campaignState().worldTruthsJournalId).toBe('j-1');   // linked (the setup is real)
+    saved.journal.name = 'Our Campaign Truths';
+    table.fireDocumentHook('gm-1', 'updateJournalEntry', saved.journal, { name: 'Our Campaign Truths' });
+    await table.settle();
+
+    editPage('gm-1', saved.page, EDITED);
+    await table.settle();
+
+    // It kept 'The Sun Plague extinguished the stars.' — the pre-edit text — until the next load.
+    expect(cataclysm()).toBe('The Sun Plague extinguished the stars, and the Forge alone endured.');
+    expect(table.world.campaignState().worldTruthsJournalId).toBe('j-1');
+  }, 30_000);
+});
+
+describe('two dialog saves, then the world reloads', () => {
+  const NEWER = SAVED.replace('The Sun Plague</strong>', 'The Long Night</strong>');
+
+  async function secondSave({ hooks = true } = {}) {
+    const newer = truthsJournal('j-2', NEWER, 2_000);
+    table.journal.set('j-2', newer.journal);
+    if (hooks) {
+      table.fireDocumentHook('gm-1', 'createJournalEntry', newer.journal);
+      table.fireDocumentHook('gm-1', 'createJournalEntryPage', newer.page);
+      await table.settle();
+    }
+    return newer;
+  }
+
+  /** The world-load reconcile the canonical GM's ready hook runs (index.js). */
+  async function reload() {
+    const gm = table.client('gm-1');
+    const { reconcileSystemTruths } = await gm.import('../../src/truths/generator.js');
+    await gm.run(() => reconcileSystemTruths());
+    await table.settle();
+  }
+
+  it('the newer save renamed: the load keeps it, and does not relink the superseded one still titled "Setting Truths"', async () => {
+    const newer = await secondSave();
+    expect(table.world.campaignState()).toMatchObject({ worldTruthsJournalId: 'j-2' });   // the newest save is the campaign's
+    expect(table.world.campaignState().worldTruths.cataclysm.title).toBe('The Long Night');
+    newer.journal.name = 'Our Campaign Truths';
+
+    await reload();
+
+    // It relinked 'j-1', and the truths reverted to 'The Sun Plague'.
+    expect(table.world.campaignState().worldTruthsJournalId).toBe('j-2');
+    expect(table.world.campaignState().worldTruths.cataclysm.title).toBe('The Long Night');
+  }, 30_000);
+
+  it('control: the superseded save renamed instead, the load leaves the campaign\'s truths alone', async () => {
+    await secondSave();
+    saved.journal.name = 'Setting Truths (old)';
+
+    await reload();
+
+    expect(table.world.campaignState().worldTruthsJournalId).toBe('j-2');
+    expect(table.world.campaignState().worldTruths.cataclysm.title).toBe('The Long Night');
+  }, 30_000);
+
+  it('control: a newer save the world never recorded is still brought in at load — the newest save wins (issue #321 U65)', async () => {
+    await secondSave({ hooks: false });
+    expect(table.world.campaignState().worldTruthsJournalId).toBe('j-1');
+
+    await reload();
+
+    expect(table.world.campaignState().worldTruthsJournalId).toBe('j-2');
+    expect(table.world.campaignState().worldTruths.cataclysm.title).toBe('The Long Night');
+  }, 30_000);
+});

@@ -8219,8 +8219,11 @@ Hooks.on("createJournalEntryPage", async (page) => {
  * wording is tweaked on the page; only the page's creation was read, so the
  * narrator's WORLD TRUTHS block and the vow scene's Iron truth kept the
  * pre-edit text until the next world load while `!lore` read the page live
- * (rules/reachability.md §5). The linked journal only: a superseded save is
- * not the campaign's truths (the newest save wins). The module's own World
+ * (rules/reachability.md §5). The linked journal only — by its id, whatever
+ * the GM has since named it: a superseded save is not the campaign's truths
+ * (the newest save wins), and the system's "Setting Truths" title was
+ * required too, so an edit after the GM filed the journal under a name of
+ * their own was not re-parsed (issue #342 Z16). The module's own World
  * Truths journal (the Playtest Quickstart's) is skipped by its flags: its
  * page's flag holds the truths and the page text is a printout of them that
  * this parser cannot read back (its sub-table line is an italic paragraph
@@ -8236,8 +8239,6 @@ Hooks.on("updateJournalEntryPage", async (page, changed) => {
   if (page.flags?.[MODULE_ID]) return;
   if (entry.flags?.[MODULE_ID]) return;
 
-  const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
-  if (!systemTitle || entry.name !== systemTitle) return;
   if (game.settings.get(MODULE_ID, "campaignState")?.worldTruthsJournalId !== entry.id) return;
 
   // A page edited down to no truth (or "The Story So Far" `!lore` adds beside

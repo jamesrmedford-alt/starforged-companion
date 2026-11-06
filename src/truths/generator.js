@@ -342,8 +342,13 @@ function journalsNewestFirst(names) {
   return (game.journal?.contents ?? [])
     .map((j, order) => ({ j, order }))
     .filter(({ j }) => names.includes(j?.name))
-    .sort((a, b) => ((Number(b.j._stats?.createdTime) || 0) - (Number(a.j._stats?.createdTime) || 0)) || (b.order - a.order))
+    .sort((a, b) => (createdTime(b.j) - createdTime(a.j)) || (b.order - a.order))
     .map(({ j }) => j);
+}
+
+/** A journal's creation time (0 when the document carries none). */
+function createdTime(journal) {
+  return Number(journal?._stats?.createdTime) || 0;
 }
 
 /**
@@ -387,6 +392,13 @@ export async function recordSystemTruths(journalId, html) {
  * Quickstart's (the module's own journal linked) is left alone. Writes only
  * when the link or the truths differ.
  *
+ * The saves are found by the system's title, but the linked journal is known
+ * by its id: it stays the campaign's unless a save found by title is newer
+ * (`_stats.createdTime`) — "the newest save wins". A GM who filed the newest
+ * save under a name of their own had the superseded one, still titled
+ * "Setting Truths", relinked at every load, and the narrator's truths
+ * reverted to it (issue #342 Z16).
+ *
  * @returns {Promise<boolean>} true when written
  */
 export async function reconcileSystemTruths() {
@@ -398,7 +410,10 @@ export async function reconcileSystemTruths() {
   const newest  = title
     ? journalsNewestFirst([title]).find(j => !isModuleTruthsJournal(j) && truthsPageHtml(j))
     : null;
-  const journal = newest ?? (truthsPageHtml(linked) ? linked : null);
+  const current = truthsPageHtml(linked) ? linked : null;
+  const journal = newest && current && createdTime(newest) <= createdTime(current)
+    ? current
+    : (newest ?? current);
   if (!journal) return false;
 
   const truths = parseSystemTruthsHtml(truthsPageHtml(journal));

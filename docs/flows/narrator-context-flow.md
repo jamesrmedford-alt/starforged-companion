@@ -333,7 +333,9 @@ seeds it (issue #336 Y21) — last 5 this session, "the dice established
 these"; skipped for meta modes) · [4] world
 truths (`campaignState.worldTruths` — the Quickstart's rolled truths or the
 World Truths dialog's newest save, parsed from its "Setting Truths" page as
-it is linked, and again on each edit of that page (issue #337 Y39 — the
+it is linked, and again on each edit of that page — the linked journal by its
+id, renamed or not, and kept at load unless a save found by title is newer
+(issue #342 Z16) (issue #337 Y39 — the
 Quickstart's own journal page is a printout of its flag, not re-read, and
 `!lore` summarises the flag, not the printout: known-issues
 LORE-READS-QUICKSTART-PRINTOUT), so the block, the vow scene's Iron truth
