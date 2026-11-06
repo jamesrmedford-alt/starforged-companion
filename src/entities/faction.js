@@ -70,18 +70,8 @@ export const FactionSchema = {
 
 
 export async function createFaction(data, campaignState) {
-  // The journal an earlier creation of this faction made, whose registration
-  // the world refused, is adopted — listed now — never a second one (known-
-  // issues JOURNAL-ORPHAN-ON-REFUSAL, issue #337 Y34's get-or-create). One
-  // faction whatever article, case or spacing names it (issue #336 Y31).
-  const adopted = await adoptUnlistedEntityJournal(FLAG_KEY, "factionIds", data?.name, campaignState,
-    { label: "faction", nameKey: factionNameKey });
-  if (adopted) return adopted;
-
   const now = new Date().toISOString();
-  const id  = generateId();
-
-  const faction = {
+  const record = (id) => ({
     ...FactionSchema,
     ...data,
     _id:       id,
@@ -89,7 +79,26 @@ export async function createFaction(data, campaignState) {
     rumors:    data.rumors ?? [],
     createdAt: now,
     updatedAt: now,
-  };
+  });
+  const pageOf = (faction) => ({
+    name:  "Faction Data",
+    type:  "text",
+    text:  { format: 1, content: renderEntityBody(faction) },
+    flags: { [MODULE_ID]: { [FLAG_KEY]: faction } },
+  });
+
+  // The journal an earlier creation of this faction made, whose registration
+  // the world refused, is adopted — listed now — never a second one (known-
+  // issues JOURNAL-ORPHAN-ON-REFUSAL, issue #337 Y34's get-or-create). One
+  // faction whatever article, case or spacing names it (issue #336 Y31). One
+  // whose page the world refused is completed with this record, under the id
+  // its entry already names (known-issues FACTION-PAGELESS-JOURNAL).
+  const adopted = await adoptUnlistedEntityJournal(FLAG_KEY, "factionIds", data?.name, campaignState,
+    { label: "faction", nameKey: factionNameKey, page: (entityId) => pageOf(record(entityId || generateId())) });
+  if (adopted) return adopted;
+
+  const id      = generateId();
+  const faction = record(id);
 
   const entry = await JournalEntry.create({
     name:   faction.name || "Unknown Faction",
@@ -97,12 +106,7 @@ export async function createFaction(data, campaignState) {
     flags:  { [MODULE_ID]: { entityType: "faction", entityId: id } },
   });
 
-  await entry.createEmbeddedDocuments("JournalEntryPage", [{
-    name:  "Faction Data",
-    type:  "text",
-    text:  { format: 1, content: renderEntityBody(faction) },
-    flags: { [MODULE_ID]: { [FLAG_KEY]: faction } },
-  }]);
+  await entry.createEmbeddedDocuments("JournalEntryPage", [pageOf(faction)]);
 
   // The store first, the caller's copy once the world took it (issue #331 X35).
   if (await registerEntityId(campaignState, "factionIds", entry.id, { label: "faction" })) {

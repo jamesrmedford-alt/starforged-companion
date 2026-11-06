@@ -60,7 +60,14 @@ second (`registry.adoptUnlistedEntityJournal`, a creature's creator likewise),
 and the canonical GM's world load lists a faction or creature journal its list
 misses (`migrator.registerUnlistedEntityActors` — known-issues
 JOURNAL-ORPHAN-ON-REFUSAL: a retried Confirm made a second journal, the first
-left unlisted and never seeded). That listing lists the record bare, so a
+left unlisted and never seeded). A creation whose page the world refused after
+its journal landed leaves an entry flagged as the faction's with no page —
+no record for the adoption or the load listing to read: the next creation of
+that faction completes it, giving it its page (the new record, under the id
+the entry's `entityId` flag names) before registering it
+(`adoptUnlistedEntityJournal`'s `page` — known-issues FACTION-PAGELESS-JOURNAL,
+the Chronicle's issue #342 Z62 shape: the retried Confirm made a second
+journal and the first stayed empty and unlisted for good). That listing lists the record bare, so a
 Confirm that then finds the faction listed (U25's "exists" path) finishes it
 — the seed, the stance reconcile and the backlinked World Journal mirror its
 creation would have run, each a no-op once done

@@ -337,14 +337,26 @@ export async function adoptUnlistedEntityActor(typeKey, listKey, name, campaignS
  * Syndicate" is the Iron Syndicate's — an exact name first, as
  * findFactionByName. null when there is none (or no name to match).
  *
+ * With `opts.page`, an unlisted entry of `typeKey` with no page at all — a
+ * creation whose page the world refused after the entry landed — is the
+ * creation to complete (known-issues FACTION-PAGELESS-JOURNAL, the Chronicle's
+ * issue #342 Z62 shape): nothing reads a record off it, so the retried Confirm
+ * made a second journal and the first stayed empty and unlisted. Matched by
+ * the entry's own name (its creator names it after the record), it gets the
+ * page `opts.page(entityId)` describes — the creator's record under the id
+ * the entry's `entityId` flag names — and is registered as above. One with a
+ * record still wins.
+ *
  * @param {string} typeKey — a journal-hosted type: faction, creature
  * @param {string} listKey — its campaignState id list, e.g. "factionIds"
  * @param {string} name
  * @param {Object} campaignState — the caller's copy
- * @param {{ label?: string, nameKey?: (name: string) => string }} [opts]
- * @returns {Promise<Object|null>} the adopted record; rejects when its registration is refused
+ * @param {{ label?: string, nameKey?: (name: string) => string,
+ *   page?: (entityId: string|null) => Object }} [opts]
+ * @returns {Promise<Object|null>} the adopted record; rejects when its page
+ *   or its registration is refused
  */
-export async function adoptUnlistedEntityJournal(typeKey, listKey, name, campaignState, { label = typeKey, nameKey = caseBlindName } = {}) {
+export async function adoptUnlistedEntityJournal(typeKey, listKey, name, campaignState, { label = typeKey, nameKey = caseBlindName, page = null } = {}) {
   if (HOST_COLLECTION[typeKey] !== 'journal' || !campaignState || typeof campaignState !== 'object') return null;
   const exact = caseBlindName(name);
   const key   = nameKey(name);
@@ -358,12 +370,37 @@ export async function adoptUnlistedEntityJournal(typeKey, listKey, name, campaig
     if (caseBlindName(recordName) === exact) { match = { document, data }; break; }
     if (!match && nameKey(recordName) === key) match = { document, data };
   }
+  if (!match && typeof page === 'function') match = await completePagelessEntityJournal(typeKey, listed, exact, key, nameKey, page);
   if (!match) return null;
   if (await registerEntityId(campaignState, listKey, match.document.id, { label })) {
     campaignState[listKey].push(match.document.id);
   }
   console.log(`${MODULE_ID} | ${label}: adopted the unregistered journal "${match.document.name}" (${match.document.id})`);
   return match.data;
+}
+
+/**
+ * adoptUnlistedEntityJournal's page-less half: the unlisted entry of
+ * `typeKey` with no page whose own name is `exact` (else has `key`), given
+ * the page `page(entityId)` describes. Rejects when the page is refused —
+ * the entry stays page-less and unlisted, for the next creation to complete.
+ *
+ * @returns {Promise<{ document: JournalEntry, data: Object }|null>}
+ */
+async function completePagelessEntityJournal(typeKey, listed, exact, key, nameKey, page) {
+  let target = null;
+  for (const document of globalThis.game?.journal ?? []) {
+    if (!document?.id || listed.has(document.id)) continue;
+    if (document.flags?.[MODULE_ID]?.entityType !== typeKey) continue;
+    if (document.pages?.contents?.length) continue;
+    if (caseBlindName(document.name) === exact) { target = document; break; }
+    if (!target && nameKey(document.name) === key) target = document;
+  }
+  if (!target) return null;
+  const pageData = page(target.flags[MODULE_ID].entityId ?? null);
+  await target.createEmbeddedDocuments('JournalEntryPage', [pageData]);
+  console.log(`${MODULE_ID} | ${typeKey}: completed the page-less journal "${target.name}" (${target.id})`);
+  return { document: target, data: readEntityFlag(typeKey, target) ?? pageData?.flags?.[MODULE_ID]?.[typeKey] ?? null };
 }
 
 /** A name trimmed and lowercased — "" for none. */
