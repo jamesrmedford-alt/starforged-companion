@@ -34,8 +34,8 @@ import { archiveSceneTruth }          from '../world/worldJournal.js';
 import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
 import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
 import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
-import { rememberSessionRetractions, rememberNarratedTruths, retractNarrationCapture } from './retractions.js';
-import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY } from './ledgers.js';
+import { rememberSessionRetractions, rememberNarratedTruths, retractNarrationCapture, propagateRetraction } from './retractions.js';
+import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY } from './ledgers.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { isNarrationXCarded } from '../context/safety.js';
 
@@ -178,7 +178,7 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   for (const truth of truths) {
     if (truth?.id) handled.add(truth.id);
     closed.push(truth);
-    counts[await migrateSceneTruth(truth, campaignState, placeOf)] += 1;
+    counts[await migrateSceneTruth(truth, campaignState, placeOf, sceneId)] += 1;
   }
 
   // Where each recorded character was and what shape they were in outlives
@@ -207,7 +207,7 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   const fields = [...SCENE_FIELDS];
   if (clearPacingOverride(campaignState)) fields.push('pacing');
 
-  await persistEndedScene(campaignState, fields, `endScene (${reason})`, closed);
+  await persistEndedScene(campaignState, fields, `endScene (${reason})`, closed, sceneId);
 
   return { ...counts };
 }
@@ -226,14 +226,17 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
  * @param {string[]} fields        — its scene fields (and pacing)
  * @param {string}   label
  * @param {Object[]} closed        — the truths it closed
+ * @param {string|null} sceneId    — the scene it ended
  * @returns {Promise<void>}
  */
-async function persistEndedScene(campaignState, fields, label, closed) {
+async function persistEndedScene(campaignState, fields, label, closed, sceneId) {
   try {
     if (typeof game === 'undefined' || !game?.settings?.set) return;
     await serialiseCampaignStateWrite(async () => {
+      let stored = null;
+      try { stored = game.settings.get(MODULE_ID, 'campaignState'); } catch { stored = null; }
       const target = { ...mergeOwnedFields(campaignState, fields, label) };
-      target.sessionRetractions = endedSceneRetractions(campaignState, target, closed);
+      target.sessionRetractions = endedSceneRetractions(campaignState, stored ?? target, closed, sceneId);
       await game.settings.set(MODULE_ID, 'campaignState', target);
       campaignState.sessionRetractions = target.sessionRetractions;
     }, label);
@@ -254,16 +257,25 @@ async function persistEndedScene(campaignState, fields, label, closed) {
  * rememberNarratedTruths, XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). A session
  * minted meanwhile keeps its own list.
  *
+ * While the store still holds the scene, each truth is the store's entry when
+ * that one is retracted: a strike or Replace that landed during the end's
+ * awaits sticks — kept as the session's strike, not as a live truth
+ * (STRIKE-DURING-SCENE-END-LOST; mergeSceneLedgers' "a retraction sticks").
+ *
  * @param {Object}   campaignState — endScene's copy (the scene's session)
  * @param {Object}   latest        — the store as this write's turn reads it
  * @param {Object[]} closed        — the truths the scene end closed
+ * @param {string|null} [sceneId]  — the scene it ended
  * @returns {Object|null}
  */
-function endedSceneRetractions(campaignState, latest, closed) {
+function endedSceneRetractions(campaignState, latest, closed, sceneId = null) {
   const sessionId = campaignState?.currentSessionId ?? null;
   const stored = latest?.sessionRetractions ?? null;
   if (!sessionId || (latest?.currentSessionId ?? null) !== sessionId) return stored;
-  const scene = { currentSessionId: sessionId, sessionRetractions: stored, sceneTruths: [...(closed ?? [])] };
+  const inStore = new Map((sceneId && (latest.currentSceneId ?? null) === sceneId && Array.isArray(latest.sceneTruths)
+    ? latest.sceneTruths : []).filter(t => t?.id).map(t => [t.id, t]));
+  const truths = (closed ?? []).map(t => (inStore.get(t?.id)?.retracted ? inStore.get(t.id) : t));
+  const scene = { currentSessionId: sessionId, sessionRetractions: stored, sceneTruths: truths };
   retractNarrations(scene, Array.isArray(latest.xCardedNarrationIds) ? latest.xCardedNarrationIds : []);
   rememberSessionRetractions(scene);
   rememberNarratedTruths(scene, scene.sceneTruths);
@@ -276,25 +288,39 @@ function endedSceneRetractions(campaignState, latest, closed) {
  * rest — and a place-less scene truth — to World Journal Lore. Marks the
  * truth's `migratedTo`.
  *
+ * The truth's entry in the store is read right before each write and again
+ * after it, while the store still holds the scene: endScene works on a copy,
+ * and a strike or Replace that landed meanwhile retracted the entry there. A
+ * truth retracted by then is not migrated; a copy written as the correction
+ * landed is taken back by the correction's own propagation
+ * (STRIKE-DURING-SCENE-END-LOST — the struck fact was archived as confirmed
+ * lore). The X-Card is checked the same way (XCARD-DURING-SCENE-END-MIGRATES).
+ *
  * @param {Object} truth
  * @param {Object} campaignState
  * @param {{ place: Object|null|undefined }} placeOf — the scene's place, resolved once
+ * @param {string|null} [sceneId] — the scene being ended
  * @returns {Promise<"migrated"|"archived"|"skipped">}
  */
-async function migrateSceneTruth(truth, campaignState, placeOf) {
+async function migrateSceneTruth(truth, campaignState, placeOf, sceneId = null) {
   if (!truth || truth.retracted || truth.migratedTo) return 'skipped';
   const subject = truth.subject;
   if (!subject) return 'skipped';
   // Nothing from a narration the X-Card removed — checked right before each
   // write, since the copy may predate the card, and a copy that landed with
   // the card already played is taken back (XCARD-DURING-SCENE-END-MIGRATES;
-  // the capture writers' rule, XCARD-LATE-CAPTURE).
-  if (isNarrationXCarded(truth.narrationId)) return 'skipped';
+  // the capture writers' rule, XCARD-LATE-CAPTURE). Nor a truth the table
+  // corrected meanwhile (STRIKE-DURING-SCENE-END-LOST).
+  const settled = () => isNarrationXCarded(truth.narrationId) || !!storedSceneTruth(truth, sceneId)?.retracted;
+  // After a write: the copy is taken back when the card or a correction landed while it was written.
+  const takenBack = async (filedOn = null) => (await takeBackXCarded([truth.narrationId]))
+    || (await takeBackCorrected(truth, sceneId, campaignState, filedOn));
+  if (settled()) return 'skipped';
 
   if (subject.kind === 'entity' && subject.entityId) {
     const ok = await safeMigrateToEntityTier(truth, subject);
     if (!ok) return 'skipped';
-    if (await takeBackXCarded([truth.narrationId])) return 'skipped';
+    if (await takenBack()) return 'skipped';
     truth.migratedTo = { kind: 'entityGenerativeTier', entityId: subject.entityId };
     return 'migrated';
   }
@@ -309,18 +335,61 @@ async function migrateSceneTruth(truth, campaignState, placeOf) {
     if (place) {
       const ok = await safeMigrateToEntityTier(truth, { entityId: place.id, entityType: place.type });
       if (ok) {
-        if (await takeBackXCarded([truth.narrationId])) return 'skipped';
+        if (await takenBack({ kind: 'entity', entityId: place.id, entityType: place.type })) return 'skipped';
         truth.migratedTo = { kind: 'entityGenerativeTier', entityId: place.id };
         return 'migrated';
       }
-      if (isNarrationXCarded(truth.narrationId)) return 'skipped';   // before the archive's write
+      if (settled()) return 'skipped';   // before the archive's write
     }
   }
   const result = await safeArchiveSceneTruth(truth, campaignState);
   if (!result?.pageId) return 'skipped';
-  if (await takeBackXCarded([truth.narrationId])) return 'skipped';
+  if (await takenBack()) return 'skipped';
   truth.migratedTo = { kind: 'worldJournalLore', loreEntryId: result.pageId };
   return 'archived';
+}
+
+/**
+ * The truth's entry in the store while the store still holds the scene being
+ * ended, else null — a strike, a Replace or an X-Card can land on it while
+ * endScene works on its copy (STRIKE-DURING-SCENE-END-LOST).
+ *
+ * @param {Object} truth
+ * @param {string|null} sceneId
+ * @returns {Object|null}
+ */
+function storedSceneTruth(truth, sceneId) {
+  if (!truth?.id || !sceneId) return null;
+  let latest = null;
+  try { latest = game.settings.get(MODULE_ID, 'campaignState'); } catch { latest = null; }
+  if (!latest || (latest.currentSceneId ?? null) !== sceneId) return null;
+  return (Array.isArray(latest.sceneTruths) ? latest.sceneTruths : []).find(t => t?.id === truth.id) ?? null;
+}
+
+/**
+ * A scene end's copy of a truth the table struck or replaced while it was
+ * written: the correction's own propagation (retractions.js
+ * propagateRetraction — the subject's tier details stating it, the session's
+ * lore stating it about the subject), re-run for the copy it ran before, on
+ * where the copy was filed (`filedOn`, a place's card for a scene truth). A
+ * superseded narration's truth is not a correction — its records stand
+ * (issue #338 D8) — and an X-carded one is takeBackXCarded's. Never throws.
+ *
+ * @param {Object} truth
+ * @param {string|null} sceneId
+ * @param {Object} campaignState
+ * @param {Object|null} [filedOn] — the entity subject the copy was filed on, when not the truth's own
+ * @returns {Promise<boolean>} true when it was corrected (its copy taken back)
+ */
+async function takeBackCorrected(truth, sceneId, campaignState, filedOn = null) {
+  const now = storedSceneTruth(truth, sceneId);
+  if (!now?.retracted || now.retractedBy === XCARD_RETRACTED_BY || now.retractedBy === SUPERSEDED_RETRACTED_BY) return false;
+  try {
+    await propagateRetraction(filedOn ? { ...now, subject: filedOn } : now, campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sceneLifecycle: taking back a copy of a corrected truth failed:`, err?.message ?? err);
+  }
+  return true;
 }
 
 /**
@@ -382,7 +451,7 @@ async function migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, c
     for (const truth of fresh) {
       handled.add(truth.id);
       closed.push(truth);
-      counts[await migrateSceneTruth(truth, campaignState, placeOf)] += 1;
+      counts[await migrateSceneTruth(truth, campaignState, placeOf, sceneId)] += 1;
     }
     if (Object.keys(changedState).length) {
       await keepLastKnownWhereabouts({ ...campaignState, sceneState: { bySubject: changedState } });

@@ -696,7 +696,16 @@ newest first, up to four; issue #335 Y01) — and every migrated tier detail and
 archived Lore page carries its truth's `narrationId`, for an X-Card played
 after the scene ended (above) — or while it runs: each of those writes checks
 the X-Card first and takes its copy back when the card landed meanwhile
-(XCARD-DURING-SCENE-END-MIGRATES). It discards state and clears the frame.
+(XCARD-DURING-SCENE-END-MIGRATES). A strike or Replace that lands while it
+runs sticks the same way: each truth's migration re-reads its entry in the
+store (while the store still holds the scene) before and after its write — a
+truth corrected by then is not migrated, and a copy written as the correction
+landed is taken back by the correction's own `propagateRetraction`, re-run
+on where it was filed (a superseded narration's records stand, issue #338
+D8) — and the write that ends the scene keeps the scene's truths as the store
+holds them, so the strike is kept and named for the session
+(STRIKE-DURING-SCENE-END-LOST: the struck fact was archived as confirmed lore
+and kept as a live truth). It discards state and clears the frame.
 Before that final write it re-reads the store and, while the store is
 still this scene, migrates the truths and keeps the whereabouts that a
 narration persisted during its awaits (`migrateLateSceneFacts`, a few
