@@ -70,9 +70,14 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   one detection call, at the widest class among the entries it captures — a
   Make a Connection miss creates no one (scope §9) and takes no part, so the
   rest of the round is captured whatever the confirm order (issue #342 Z08: a
-  round led by a miss skipped its whole capture) — its results routed per
-  entry: each Make a Connection hit creates the figure its own character met,
-  with its own seed and bond, synchronously (Z09 — `connection-flow.md` §1),
+  round led by a miss skipped its whole capture). Its prompt names one lead
+  move — the first Make a Connection hit, else the first rolled move; a
+  round with neither (actions with no roll, moves the roll stage refused) is
+  told no move was rolled, as paced narration's is (`PACED_NARRATIVE_MOVE_ID`
+  — it read "Move: null.", ROUND-DETECTION-NULL-MOVE) — and its results are
+  routed per entry: each Make a Connection hit creates the figure its own
+  character met, with its own seed and bond, synchronously (Z09 —
+  `connection-flow.md` §1),
   and the rest wait on a draft card carrying every acting PC, whose
   connection rows ask which of them, or no one (D3); the tier pass runs
   whatever the class, each entry by its free-flow rule (Z10 — "Post-narration

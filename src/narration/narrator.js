@@ -1079,10 +1079,13 @@ function runRoundNarrationPasses(narration, entries, campaignState, { narrationI
   const isConnection = (e) => e.input?.kind === 'move' && e.input.moveId === 'make_a_connection';
   const captured = entries.filter(e => !isConnection(e) || isHit(e.input.outcome));
   const hits = captured.filter(isConnection);
-  const lead = hits[0] ?? captured.find(e => e.input?.kind === 'move') ?? captured[0];
+  // The detection names one lead move. A round with no rolled move — actions
+  // with no roll, moves the roll stage refused — is told so as paced
+  // narration's is: its prompt read "Move: null." (ROUND-DETECTION-NULL-MOVE).
+  const lead = hits[0] ?? captured.find(e => e.input?.kind === 'move') ?? null;
   const resolution = {
-    moveId:          lead?.input?.moveId ?? null,
-    outcome:         lead?.input?.outcome ?? null,
+    moveId:          lead ? lead.input.moveId ?? null : PACED_NARRATIVE_MOVE_ID,
+    outcome:         lead ? lead.input.outcome ?? null : PACED_NARRATIVE_OUTCOME,
     playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
   };
 
