@@ -2,7 +2,7 @@
 // Phase 2 — foundry-ironsworn localisation wrapper.
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import {
   localizeStat,
   localizeMeter,
@@ -77,8 +77,12 @@ describe('Phase 2 — i18n wrapper', () => {
 // IRONSWORN.IMPACT.* / IRONSWORN.DEBILITY.*), so localizeDebility always fell
 // back to English — "marked Wounded" beside the system's own French sheet.
 // This check fails the day a vendor bump renames a key.
-describe('the key maps name strings the vendored system ships', () => {
-  const VENDOR_LANG = 'vendor/foundry-ironsworn/system/lang';
+// Read from the vendored submodule: skipped where it isn't checked out (as the
+// other vendored-data checks are), so the rest of this file still runs.
+const VENDOR_LANG = 'vendor/foundry-ironsworn/system/lang';
+const vendored = existsSync(`${VENDOR_LANG}/en.json`);
+
+describe.skipIf(!vendored)('the key maps name strings the vendored system ships', () => {
   const flat = (obj, prefix = '', out = {}) => {
     for (const [k, v] of Object.entries(obj)) {
       const key = prefix ? `${prefix}.${k}` : k;
@@ -93,7 +97,7 @@ describe('the key maps name strings the vendored system ships', () => {
     const block = src.split(`const ${name} = {`)[1]?.split('\n};')[0] ?? '';
     return [...block.matchAll(/(\w+):\s*\{\s*key:\s*"([^"]+)"/g)].map(m => ({ slug: m[1], key: m[2] }));
   };
-  const en = lang('en');
+  const en = vendored ? lang('en') : {};
   let originalI18n;
   beforeEach(() => { _resetI18nWarnGuard(); originalI18n = global.game.i18n; });
   afterEach(() => { global.game.i18n = originalI18n; });
