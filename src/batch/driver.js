@@ -29,7 +29,8 @@
  *     `finally` through the lock's own paths — never held across the wait for
  *     an upgrade decision. Each acting entry is rolled (rollMove) and recorded
  *     (recordMove) in confirm order; then the upgrades, the one narration
- *     (narrateRound), finishMove for each entry, the close and the next round.
+ *     (narrateRound), the close and the next round — and, off the advance
+ *     pass, finishMove for each entry (a GM's rider prompt holds no round).
  *   - Recovery (rules/reachability.md §7): a round left rolling, upgrading or
  *     narrating is resumed on the canonical GM's `ready` and when the GM
  *     resolving it leaves. A recorded entry is never rolled again; one with a
@@ -957,26 +958,82 @@ function roundNarrationPosted(roundId) {
  * asset riders, a GM prompt included, after the narration with the lock free
  * — and the non-participants' forced moves it held run as free-flow.
  *
+ * Only the call whose close ends the round does the rest: a round another
+ * call already closed is that call's, so its riders pay once (a refused close
+ * used to run them, then the advance pass's retry ran them again — issue #342
+ * Z20). The riders and the held moves run off the advance pass: an
+ * unanswered "✦ Apply asset effects" prompt, or a held move's own prompts,
+ * held every later round — Send now included — until the GM answered it
+ * (Z03). Free-flow runs its riders with the move lock released for the same
+ * reason (PLAYTEST-1712 M/N).
+ *
  * @param {Object} round
  * @param {string} reason
+ * @returns {Promise<boolean>} whether this call closed the round
  */
 async function finishRound(round, reason) {
-  const closed = await queueRoundWrite(r => (r?.id === round.id ? closeRound(r, { reason, now: nowIso() }) : r))
-    .catch(err => { console.warn(`${MODULE_ID} | Batch Mode: the round could not be closed:`, err?.message ?? err); return null; });
-  const finished = closed?.id === round.id ? closed : round;
-  if (finished.modeOffAfter) {
+  const closed = await closeRoundHere(round, reason);
+  if (!closed) {
+    _rolledHere.clear();
+    return false;
+  }
+  if (closed.modeOffAfter) {
     await game.settings.set(MODULE_ID, BATCH_ENABLED_SETTING, false).catch(err =>
       console.warn(`${MODULE_ID} | Batch Mode: could not be turned off after the round:`, err?.message ?? err));
   } else {
     await openRoundIfDue("next-round");
   }
   const cs = workingCopy();
-  for (const userId of finished.acting ?? []) {
-    const rolled = rolledFor(finished.entries[userId]);
-    if (rolled) await finishMove(rolled, cs).catch(err => console.warn(`${MODULE_ID} | Batch Mode: consequence riders failed:`, err?.message ?? err));
-  }
+  const moves = (closed.acting ?? []).map(id => rolledFor(closed.entries[id])).filter(Boolean);
   _rolledHere.clear();
-  await runHeldFreeFlowMoves();
+  afterTheRound(async () => {
+    for (const rolled of moves) {
+      await finishMove(rolled, cs).catch(err => console.warn(`${MODULE_ID} | Batch Mode: consequence riders failed:`, err?.message ?? err));
+    }
+  });
+  runHeldMovesSoon();
+  return true;
+}
+
+/**
+ * Close the round as this call's own close: the round as written, or null
+ * when it was already closed (another call finished it). A close the world
+ * refuses is tried once more; refused again, it throws — the advance pass
+ * stops with the round as it was.
+ *
+ * @param {Object} round
+ * @param {string} reason
+ * @returns {Promise<Object|null>}
+ */
+async function closeRoundHere(round, reason) {
+  for (let attempt = 0; ; attempt += 1) {
+    let closing = false;
+    try {
+      const written = await queueRoundWrite((r) => {
+        closing = r?.id === round.id && r.phase !== ROUND_PHASE.CLOSED;
+        return closing ? closeRound(r, { reason, now: nowIso() }) : r;
+      });
+      return closing ? written : null;
+    } catch (err) {
+      if (attempt >= 1) throw err;
+      console.warn(`${MODULE_ID} | Batch Mode: the round's close was not saved — trying again:`, err?.message ?? err);
+    }
+  }
+}
+
+// What finished rounds leave to run — each round's consequence riders, one
+// round after another, never on the advance pass (finishRound).
+let _afterRounds = Promise.resolve();
+
+function afterTheRound(work) {
+  _afterRounds = _afterRounds.then(work).catch(err =>
+    console.warn(`${MODULE_ID} | Batch Mode: after the round:`, err?.message ?? err));
+}
+
+/** The forced moves a resolving round held, run as free-flow off the advance pass. */
+function runHeldMovesSoon() {
+  Promise.resolve().then(runHeldFreeFlowMoves).catch(err =>
+    console.warn(`${MODULE_ID} | Batch Mode: the held moves:`, err?.message ?? err));
 }
 
 /**
@@ -1130,15 +1187,23 @@ async function joinHeldMoves() {
   }
 }
 
+// True while runHeldFreeFlowMoves is draining: one drain at a time, oldest first.
+let _runningHeld = false;
+
 /** A non-participant's forced move a resolving round held runs now, as free-flow. */
 async function runHeldFreeFlowMoves() {
-  if (isResolving(getStoredRound())) return;
-  while (_heldForFreeFlow.length) {
-    const id = _heldForFreeFlow.shift();
-    const message = game.messages?.get?.(id) ?? null;
-    if (!message || !_freeFlowRunner) continue;
-    await Promise.resolve(_freeFlowRunner(message)).catch(err =>
-      console.warn(`${MODULE_ID} | Batch Mode: a held move failed:`, err?.message ?? err));
+  if (_runningHeld || isResolving(getStoredRound())) return;
+  _runningHeld = true;
+  try {
+    while (_heldForFreeFlow.length) {
+      const id = _heldForFreeFlow.shift();
+      const message = game.messages?.get?.(id) ?? null;
+      if (!message || !_freeFlowRunner) continue;
+      await Promise.resolve(_freeFlowRunner(message)).catch(err =>
+        console.warn(`${MODULE_ID} | Batch Mode: a held move failed:`, err?.message ?? err));
+    }
+  } finally {
+    _runningHeld = false;
   }
 }
 
