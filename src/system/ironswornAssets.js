@@ -120,9 +120,10 @@ export function pickStarshipIcon(seed) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Map a Starforged PLANET_TYPE oracle result string to its bundled token path.
- * Returns a generic icon when the type has no confirmed system asset
- * (e.g. "Tainted World").
+ * Map a Starforged PLANET_TYPE oracle result string to its bundled token path
+ * — every one of the table's eleven classes has a system token (the Tainted
+ * World's was missed, so its pins drew the generic circle — issue #342 Z61).
+ * Returns a generic icon for any other string.
  */
 export function iconForPlanetType(type) {
   const typeMap = {
@@ -135,6 +136,7 @@ export function iconForPlanetType(type) {
     "Ocean World":     `${IS_PATHS.PLANETS}/Starforged-Planet-Token-Ocean-01.webp`,
     "Rocky World":     `${IS_PATHS.PLANETS}/Starforged-Planet-Token-Rocky-01.webp`,
     "Shattered World": `${IS_PATHS.PLANETS}/Starforged-Planet-Token-Shattered-01.webp`,
+    "Tainted World":   `${IS_PATHS.PLANETS}/Starforged-Planet-Token-Tainted-01.webp`,
     "Vital World":     `${IS_PATHS.PLANETS}/Starforged-Planet-Token-Vital-01.webp`,
   };
   return typeMap[type] ?? "icons/svg/circle.svg";

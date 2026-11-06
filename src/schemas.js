@@ -598,12 +598,21 @@ export const CampaignStateSchema = {
 
   // Bare strikes of this session's ended scenes (issue #286 B6), so the
   // CORRECTED block and the rolling-summary prompt keep naming them after
-  // their scene closes. Written by endScene (rememberSessionRetractions);
-  // read by sessionRetractedFacts (src/factContinuity/retractions.js); an
-  // X-Card drops the strikes of the narration it removes, by `narrationId`
-  // (ledgers.js retractNarrations).
-  //   { sessionId, facts: [{ label, fact, sceneId, at, narrationId }] }  (cap 20)
-  sessionRetractions: { sessionId: null, facts: [] },
+  // their scene closes, and a later scene's narrator re-assertion is refused
+  // (issue #342 Z42). Written by endScene (rememberSessionRetractions); read
+  // by sessionRetractedFacts (src/factContinuity/retractions.js) and
+  // findSessionStrike (ledgers.js). `blocked`: the ended scenes' X-Card
+  // retractions, unnamed — read only by findSessionStrike's write half
+  // (applySidecar) and loreRetractionHolder, rendered nowhere; an X-Card
+  // moves the kept strikes of the narration it removes there, by
+  // `narrationId` (ledgers.js retractNarrations — XCARD-RETRACTION-SCENE-SCOPED),
+  // and its truths a scene end closed live (`narrated`: written by endScene —
+  // rememberNarratedTruths — read only by that move; unnamed —
+  // XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
+  //   { sessionId, facts: [{ label, fact, sceneId, at, narrationId, truthId, subjectKey, retractedBy, asserter }]  (cap 20),
+  //     blocked: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50),
+  //     narrated: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50) }
+  sessionRetractions: { sessionId: null, facts: [], blocked: [], narrated: [] },
 
   // Narrator rotating spotlight (issue #232). Per-scene round-robin pointer
   // naming the PC the narrator last drew into an open prompting beat, so the

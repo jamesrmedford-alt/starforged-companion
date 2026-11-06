@@ -36,6 +36,9 @@ import {
   resolveSubject,
   subjectKey,
   findBareStrike,
+  findSessionStrike,
+  dropSessionStrike,
+  subjectNames,
   canCorrectTruth,
   findTruthByIdOrPrefix,
 } from "./ledgers.js";
@@ -205,6 +208,7 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
   let changed = null;        // the ledger field this command changed
   let struckTruth = false;
   let lift = null;           // a `!truth set` lifting a strike: { strikeId, truthId }
+  let liftKept = null;       // …or one an earlier scene kept: { strike, dropped }
   try {
     // A truth or state set with no scene open starts one first, as a
     // narration does (ensureSceneStarted — the issue #321 U34 rule for the
@@ -238,16 +242,23 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
           : `No matching truth (id or unique 4+ char prefix required, and you must have permission).`;
     } else if (parsed.domain === "truth") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
-      const struck  = findBareStrike(campaignState.sceneTruths, subject, String(parsed.fact ?? "").trim());
-      const truth   = setTruth(subject, parsed.fact, campaignState, permCtx);
+      const fact    = String(parsed.fact ?? "").trim();
+      const names   = subjectNames(subject, parsed.subject, entities);
+      const struck  = findBareStrike(campaignState.sceneTruths, subject, fact);
+      // A strike an earlier scene of this session kept is lifted the same
+      // way (issue #342 Z42): CORRECTED went on naming it beside the GM's
+      // binding truth, and its lore stayed out of canon.
+      const kept    = struck ? null : findSessionStrike(campaignState, subject, fact, names);
+      const truth   = setTruth(subject, parsed.fact, campaignState, { ...permCtx, names });
       if (truth) changed = "sceneTruths";
       // The set lifts the strike (W60); the lore it retracted comes back
       // once the lift is in the store (below).
       if (truth && struck?.id) lift = { strikeId: struck.id, truthId: truth.id };
+      if (truth && kept) liftKept = { strike: kept, dropped: false };
       // The id `!truth strike` takes is shown (issue #326 W67).
       resultLine = truth
-        ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em> <code>${escapeHtml(String(truth.id).slice(0, 8))}</code>.${struck ? " The strike on it is lifted." : ""}`
-        : (struck && !isGM)
+        ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em> <code>${escapeHtml(String(truth.id).slice(0, 8))}</code>.${(struck || kept) ? " The strike on it is lifted." : ""}`
+        : ((struck || kept) && !isGM)
           ? `Truth not recorded — the GM struck that fact; only a GM can restore it.`
           : `Truth not recorded — empty subject or fact.`;
     } else if (parsed.verb === "strike") {
@@ -272,9 +283,18 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
     // propagated stay; a released move lock is not written back), and a
     // Strike's regen mark on the stored rolling summary. A no-match writes
     // nothing.
+    // A kept strike's lift is dropped from the stored session list in the
+    // same write — while the store holds this scene: an X-Card that took the
+    // strike over meanwhile has dropped it already (nothing to lift), and a
+    // scene changed meanwhile takes the truth's set with it.
     if (changed) {
       await persistSceneLedgerFields(campaignState, [changed], "!truth/!state", {
-        onto: struckTruth ? markSummaryForRegen : null,
+        onto: struckTruth ? markSummaryForRegen
+          : liftKept ? (target) => {
+            if ((target.currentSceneId ?? null) !== (campaignState.currentSceneId ?? null)) return;
+            liftKept.dropped = dropSessionStrike(target, liftKept.strike);
+          }
+            : null,
       });
     }
 
@@ -293,6 +313,13 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
         await restoreStruckLore(lift.strikeId, { heldBy: loreRetractionHolder(latest) }).catch(err =>
           console.warn(`${MODULE_ID} | !truth set: restoring the struck lore failed:`, err?.message ?? err));
       }
+    }
+    // A kept strike's lift the store took (the drop above) restores its lore
+    // the same way, by the struck truth's id it kept (issue #342 Z42).
+    if (liftKept?.dropped && liftKept.strike.truthId) {
+      const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      await restoreStruckLore(liftKept.strike.truthId, { heldBy: loreRetractionHolder(latest) }).catch(err =>
+        console.warn(`${MODULE_ID} | !truth set: restoring the struck lore failed:`, err?.message ?? err));
     }
   } catch (err) {
     console.error(`${MODULE_ID} | !truth/!state command failed:`, err);

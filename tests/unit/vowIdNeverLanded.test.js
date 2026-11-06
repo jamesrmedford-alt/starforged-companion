@@ -37,12 +37,19 @@ function makeCard(id, flags) {
   return msg;
 }
 
-/** A vow Item; `vowIdFlag: null` is a sheet-made vow whose createItem-hook stamp never landed. */
-function makeVow(id, { vowIdFlag = id, reward = null } = {}) {
+/**
+ * A vow Item; `vowIdFlag: null` is a sheet-made vow whose createItem-hook
+ * stamp never landed. `moduleScope: false` — neither stamp landed, so the
+ * Item has no module flag scope at all, as Foundry leaves an Item no module
+ * ever wrote (issue #342 Z55: the empty scope this fixture used hid a throw).
+ */
+function makeVow(id, { vowIdFlag = id, reward = null, moduleScope = true } = {}) {
   const item = {
     id, name: 'Break the Covenant', type: 'progress',
     system: { subtype: 'vow', rank: 3, current: 16, completed: false },
-    flags: { [MODULE_ID]: { ...(vowIdFlag ? { vowId: vowIdFlag } : {}), ...(reward ? { reward } : {}) } },
+    flags: moduleScope
+      ? { [MODULE_ID]: { ...(vowIdFlag ? { vowId: vowIdFlag } : {}), ...(reward ? { reward } : {}) } }
+      : {},
   };
   item.setFlag = async (mod, key, val) => { (item.flags[mod] ??= {})[key] = val; };
   return item;
@@ -113,5 +120,34 @@ describe('a sheet-made vow whose vowId flag never landed (VOW-ID-NEVER-LANDED)',
     ]);
     expect(await setSharedVowReward('shared-1', REWARD)).toEqual({ ok: true });
     expect([a, b].map(i => i.flags[MODULE_ID].reward?.status)).toEqual(['promised', 'promised']);
+  });
+});
+
+// Issue #342 Z55: when neither createItem stamp landed — `vowSetupOffered`
+// and `vowId` are back-to-back writes of the same Item, so a world that
+// refuses one typically refuses both — the Item carries no module flag scope.
+// isVowCopy finds it by its id, and vowRewardStatuses read
+// `item.flags[MODULE_ID].reward` unguarded: a TypeError out of the reward
+// pick before its card was claimed, a GM-console line on the relay, and every
+// retry the same (the cards auditor's CARD-1 drives it from the createItem
+// hook: rewardPickNoFlagNamespace.test.js).
+describe('a reward pick on a sheet-made vow neither of whose createItem stamps landed', () => {
+  it('sets the reward on the vow, as for a vow whose vowId stamp alone was lost', async () => {
+    const bare = makeVow('v1', { vowIdFlag: null, moduleScope: false });
+    game.actors._setAll([makeTestActor({ id: 'pc-kira', name: 'Kira', items: { contents: [bare] } })]);
+    const card = onTheTable(makeCard('reward-3', { rewardChoiceCard: true, vowId: 'v1', rewardOptions: [REWARD] }));
+
+    const result = await applyRewardPickFromRelay({ messageId: card.id, idx: 0 }, P1_CTX)
+      .catch(err => ({ threw: String(err?.message ?? err) }));
+
+    expect(result).toEqual({ applied: true });
+    expect(bare.flags[MODULE_ID]?.reward).toMatchObject({ status: 'promised', description: 'A salvaged jump drive' });
+    expect(card.flags[MODULE_ID].rewardChosen).toBe(true);
+  });
+
+  it('control: the fix\'s own case — an empty module scope (vowSetupOffered landed, vowId did not) — works', async () => {
+    const card = onTheTable(makeCard('reward-4', { rewardChoiceCard: true, vowId: 'v1', rewardOptions: [REWARD] }));
+    expect(await applyRewardPickFromRelay({ messageId: card.id, idx: 0 }, P1_CTX)).toEqual({ applied: true });
+    expect(vow.flags[MODULE_ID].reward).toMatchObject({ status: 'promised' });
   });
 });

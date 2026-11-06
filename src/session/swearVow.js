@@ -182,9 +182,15 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
   const flags = message?.flags?.[MODULE_ID] ?? {};
   const meta  = flags.incitingMeta ?? null;
 
+  // A working copy: the oath scene below mints a scene and applies its
+  // sidecar's truths, state and frame on the object it is given, each before
+  // a write the world can refuse — on the cached setting a refusal left them
+  // on this GM's cache alone (issue #342 Z02; the X09 / Y04 rule,
+  // rules/foundry-api.md).
   let campaignState = null;
   try {
-    campaignState = game.settings.get(MODULE_ID, "campaignState");
+    const stored = game.settings.get(MODULE_ID, "campaignState");
+    campaignState = stored ? foundry.utils.deepClone(stored) : null;
   } catch (err) {
     console.warn(`${MODULE_ID} | swearVow: campaignState read failed:`, err?.message ?? err);
   }
@@ -422,13 +428,16 @@ function awaitSessionGate(cardId, rearm) {
 /**
  * createChatMessage: the session gate's notice naming the forced ⚔ post it
  * dropped (`gatedMessageId`) re-arms the button that made it — only on the
- * post's author's client: the button disabled itself there alone.
+ * post's author's client: the button disabled itself there alone. So does a
+ * Batch Mode round's notice that the press was not rolled because the crew's
+ * swear is already on its way (`swearPressDropped`, src/batch/driver.js —
+ * issue #342 Z30).
  *
  * @param {ChatMessage} notice
  */
 function rearmSwearOnGateRefusal(notice) {
   const f = notice?.flags?.[MODULE_ID];
-  const postId = f?.sessionGateNotice ? f.gatedMessageId : null;
+  const postId = (f?.sessionGateNotice || f?.swearPressDropped) ? f.gatedMessageId : null;
   if (!postId || !_swearAwaitingGate.size) return;
   const post = globalThis.game?.messages?.get?.(postId) ?? null;
   const cardId = post?.flags?.[MODULE_ID]?.incitingSwearMessageId ?? null;
@@ -649,14 +658,20 @@ async function postVowWriteRefusedNotice(ctx, text, { title = "Not saved" } = {}
   }).catch(err => console.warn(`${MODULE_ID} | swearVow: the not-saved notice failed:`, err?.message ?? err));
 }
 
-/** Every copy's reward status for a vow, by its vowId (copies on every PC — actorBridge isVowCopy). */
+/**
+ * Every copy's reward status for a vow, by its vowId (copies on every PC —
+ * actorBridge isVowCopy). A copy found by its Item id may carry no module
+ * flags at all — a sheet vow both of whose createItem stamps the world
+ * refused — so the read is guarded: it threw, and every reward pick on the
+ * vow failed with nothing said (issue #342 Z55).
+ */
 function vowRewardStatuses(vowId) {
   const out = [];
   for (const actor of getPlayerActors()) {
     const items = actor.items?.contents ?? (Array.isArray(actor.items) ? actor.items : []);
     for (const item of items) {
       if (isVowCopy(item, vowId)) {
-        const status = item.flags[MODULE_ID].reward?.status;
+        const status = item.flags?.[MODULE_ID]?.reward?.status;
         if (typeof status === "string") out.push(status);
       }
     }

@@ -396,6 +396,7 @@ export function computeTokenPositionRecord(scene, x, y) {
     // SHIP-POSITION-FLAG-MERGE).
     narrationId:         null,
     previous:            null,
+    tokenBefore:         null,
   };
 }
 
@@ -548,40 +549,9 @@ export function handleCommandVehicleTokenReposition(tokenDoc, changes, options, 
  */
 export async function syncCommandVehicleTokenToPosition(position, campaignState) {
   try {
-    const anchorId = position?.nearestSettlementId || position?.nearestLocationId || null;
-    if (!anchorId) return null;
-    if (!game.user?.isGM) return null;
-
-    try {
-      const positioning = game.settings.get(MODULE_ID, "factContinuity.shipPositioning") !== false;
-      const tokenAfford = game.settings.get(MODULE_ID, "factContinuity.shipTokenEnabled")  !== false;
-      if (!positioning || !tokenAfford) return null;
-    } catch (err) {
-      console.debug?.(`${MODULE_ID} | token sync: settings read failed:`, err?.message ?? err);
-    }
-
-    // Resolve the sector Scene: the position's sector when known, else the
-    // active sector. Scenes are flagged { sectorScene, sectorId } by
-    // sceneBuilder.
-    const sectorId = position.sectorId ?? campaignState?.activeSectorId ?? null;
-    const scenes = game.scenes?.contents ?? [];
-    const scene = scenes.find(s =>
-      s?.flags?.[MODULE_ID]?.sectorScene
-      && (!sectorId || s.flags[MODULE_ID].sectorId === sectorId),
-    );
-    if (!scene) return null;
-
-    const tokens = scene.tokens?.contents ?? scene.tokens ?? [];
-    const token = Array.isArray(tokens)
-      ? tokens.find(t => t?.flags?.[MODULE_ID]?.commandVehicle)
-      : null;
-    if (!token) return null;
-
-    const note = findSettlementNoteById(scene, anchorId);
-    if (!note) return null;
-
-    const destX = Number(note.x ?? 0);
-    const destY = Number(note.y ?? 0);
+    const plan = planTokenSync(position, campaignState);
+    if (!plan) return null;
+    const { token, destX, destY } = plan;
     if (Number(token.x) === destX && Number(token.y) === destY) return token;
 
     // POSITION_SYNC_OPTION marks this as a fiction→token sync so the token
@@ -596,25 +566,99 @@ export async function syncCommandVehicleTokenToPosition(position, campaignState)
 }
 
 /**
- * Move the command-vehicle Token to the destination Note's coords on a
- * non-miss `set_a_course` resolution triggered by a Token drag. Called
- * from the move pipeline in index.js after resolution. No-op when the
- * Scene or Token has been removed in the meantime.
+ * Where the fiction→token sync would put the command-vehicle Token for a
+ * position record: the sector Scene, the Token on it, and the coordinates of
+ * the pin that anchors the record — or null when it would move nothing (no
+ * pin anchors the record, the feature is off, no scene / token / pin). The
+ * Scene is the position's sector's when known, else the active sector's
+ * (scenes are flagged { sectorScene, sectorId } by sceneBuilder). A read.
+ */
+function planTokenSync(position, campaignState) {
+  const anchorId = position?.nearestSettlementId || position?.nearestLocationId || null;
+  if (!anchorId) return null;
+  if (!game.user?.isGM) return null;
+
+  try {
+    const positioning = game.settings.get(MODULE_ID, "factContinuity.shipPositioning") !== false;
+    const tokenAfford = game.settings.get(MODULE_ID, "factContinuity.shipTokenEnabled")  !== false;
+    if (!positioning || !tokenAfford) return null;
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | token sync: settings read failed:`, err?.message ?? err);
+  }
+
+  const sectorId = position.sectorId ?? campaignState?.activeSectorId ?? null;
+  const scenes = game.scenes?.contents ?? [];
+  const scene = scenes.find(s =>
+    s?.flags?.[MODULE_ID]?.sectorScene
+    && (!sectorId || s.flags[MODULE_ID].sectorId === sectorId),
+  );
+  if (!scene) return null;
+
+  const tokens = scene.tokens?.contents ?? scene.tokens ?? [];
+  const token = Array.isArray(tokens)
+    ? tokens.find(t => t?.flags?.[MODULE_ID]?.commandVehicle)
+    : null;
+  if (!token) return null;
+
+  const note = findSettlementNoteById(scene, anchorId);
+  if (!note) return null;
+  return { scene, token, destX: Number(note.x ?? 0), destY: Number(note.y ?? 0) };
+}
+
+/**
+ * Where the command-vehicle Token stands before the fiction→token sync for
+ * this position record moves it — `{ sceneId, tokenId, x, y }` — or null when
+ * the sync would leave it where it is. A narration's ship move records it on
+ * its position record (`tokenBefore`, the narrator's applyShipPositionChanges),
+ * so an X-Card on that narration puts the Token back where the removed beat
+ * took it from — a spot no pin need anchor, deep space included
+ * (restoreShipPositionAfterXCard, issue #342 Z12). Never throws.
+ *
+ * @param {Object} position — the position record about to be written
+ * @param {Object} campaignState
+ * @returns {{ sceneId: string|null, tokenId: string|null, x: number, y: number }|null}
+ */
+export function commandVehicleTokenSpotBeforeSync(position, campaignState) {
+  try {
+    const plan = planTokenSync(position, campaignState);
+    if (!plan) return null;
+    const x = Number(plan.token.x);
+    const y = Number(plan.token.y);
+    if (x === plan.destX && y === plan.destY) return null;   // the sync moves nothing
+    return { sceneId: plan.scene.id ?? null, tokenId: plan.token.id ?? null, x, y };
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | command-vehicle token spot read failed:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * Move the command-vehicle Token to given coordinates on its Scene: the
+ * destination Note's on a non-miss `set_a_course` resolution triggered by a
+ * Token drag (the move pipeline in index.js, after resolution), or the spot a
+ * removed narration's sync took it from (the X-Card's restore — issue #342
+ * Z12). No-op when the Scene or Token has been removed in the meantime.
+ *
+ * @param {{ sceneId: string, tokenId: string, destX: number, destY: number }} payload
+ * @returns {Promise<boolean>} whether the Token was moved
  */
 export async function moveCommandVehicleTokenToDestination(payload) {
-  if (!payload) return;
+  if (!payload) return false;
   const scene = game.scenes?.get?.(payload.sceneId);
-  if (!scene) return;
+  if (!scene) return false;
   const tokens = scene.tokens?.contents ?? scene.tokens ?? [];
   const token  = Array.isArray(tokens) ? tokens.find(t => t.id === payload.tokenId) : null;
-  if (!token) return;
+  if (!token) return false;
   try {
     // Programmatic commit of an already-resolved set_a_course — not a drag,
     // not a new position statement (maybeUpdateShipPositionFromName wrote
-    // the record). The option keeps the token hooks out of the way.
+    // the record) — or of the X-Card's restore, which wrote its record. The
+    // option keeps the token hooks out of the way.
     await token.update({ x: payload.destX, y: payload.destY }, { [POSITION_SYNC_OPTION]: true });
+    return true;
   } catch (err) {
     console.debug?.(`${MODULE_ID} | command-vehicle Token move failed:`, err?.message ?? err);
+    return false;
   }
 }
 

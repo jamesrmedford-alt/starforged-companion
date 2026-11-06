@@ -39,7 +39,7 @@
 
 import { TRUTH_CATEGORIES, TRUTH_TABLES, SUB_TABLES } from "./tables.js";
 import { apiPost } from "../api-proxy.js";
-import { mergeOwnedFields } from "../factContinuity/sceneLifecycle.js";
+import { writeOwnedFields } from "../factContinuity/sceneLifecycle.js";
 import { stripMarkup } from "../audio/segments.js";
 
 const MODULE_ID      = "starforged-companion";
@@ -342,8 +342,13 @@ function journalsNewestFirst(names) {
   return (game.journal?.contents ?? [])
     .map((j, order) => ({ j, order }))
     .filter(({ j }) => names.includes(j?.name))
-    .sort((a, b) => ((Number(b.j._stats?.createdTime) || 0) - (Number(a.j._stats?.createdTime) || 0)) || (b.order - a.order))
+    .sort((a, b) => (createdTime(b.j) - createdTime(a.j)) || (b.order - a.order))
     .map(({ j }) => j);
+}
+
+/** A journal's creation time (0 when the document carries none). */
+function createdTime(journal) {
+  return Number(journal?._stats?.createdTime) || 0;
 }
 
 /**
@@ -387,6 +392,13 @@ export async function recordSystemTruths(journalId, html) {
  * Quickstart's (the module's own journal linked) is left alone. Writes only
  * when the link or the truths differ.
  *
+ * The saves are found by the system's title, but the linked journal is known
+ * by its id: it stays the campaign's unless a save found by title is newer
+ * (`_stats.createdTime`) — "the newest save wins". A GM who filed the newest
+ * save under a name of their own had the superseded one, still titled
+ * "Setting Truths", relinked at every load, and the narrator's truths
+ * reverted to it (issue #342 Z16).
+ *
  * @returns {Promise<boolean>} true when written
  */
 export async function reconcileSystemTruths() {
@@ -398,7 +410,10 @@ export async function reconcileSystemTruths() {
   const newest  = title
     ? journalsNewestFirst([title]).find(j => !isModuleTruthsJournal(j) && truthsPageHtml(j))
     : null;
-  const journal = newest ?? (truthsPageHtml(linked) ? linked : null);
+  const current = truthsPageHtml(linked) ? linked : null;
+  const journal = newest && current && createdTime(newest) <= createdTime(current)
+    ? current
+    : (newest ?? current);
   if (!journal) return false;
 
   const truths = parseSystemTruthsHtml(truthsPageHtml(journal));
@@ -412,12 +427,14 @@ export async function reconcileSystemTruths() {
  * Link `journalId` as the campaign's truths journal, with the truths it holds
  * — never the link alone while worldTruths says something else. A save with
  * no truth that reads keeps the stored ones (the dialog's empty save).
- * WORLD_TRUTHS_FIELDS only, onto the latest store; rejects when refused.
+ * WORLD_TRUTHS_FIELDS only, onto the latest store at this write's turn on the
+ * client's campaignState write chain (CAMPSTATE-CHAIN-PARTIAL); rejects when
+ * refused.
  */
 async function writeTruthsLink(journalId, truths) {
   const fields = { worldTruthsSet: true, worldTruthsJournalId: journalId };
   if (truths && Object.keys(truths).length) fields.worldTruths = truths;
-  await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(fields, WORLD_TRUTHS_FIELDS, "world truths"));
+  await writeOwnedFields(fields, WORLD_TRUTHS_FIELDS, "world truths");
 }
 
 const H2_RE     = /<h2\b[^>]*>([\s\S]*?)<\/h2>/gi;
@@ -561,10 +578,10 @@ export async function generateLoreRecap(campaignState) {
   // a move releasing its lock (rules/reachability.md §9).
   // Set on a copy: the caller hands in the cached setting, which kept a recap
   // the world refused (issue #326 W51; rules/foundry-api.md). The caller's
-  // object takes it once the write has landed.
+  // object takes it once the write has landed. On the client's campaignState
+  // write chain, onto the store as the write ahead left it (CAMPSTATE-CHAIN-PARTIAL).
   try {
-    await game.settings.set(MODULE_ID, "campaignState",
-      mergeOwnedFields({ ...campaignState, loreRecap: recap }, ["loreRecap"], "!lore"));
+    await writeOwnedFields({ ...campaignState, loreRecap: recap }, ["loreRecap"], "!lore");
   } catch (err) {
     console.error(`${MODULE_ID} | lore: failed to persist loreRecap:`, err);
     ui?.notifications?.error("Starforged Companion: the lore recap was not saved — the world did not take the write.");
@@ -765,11 +782,10 @@ function findEntry(entries, roll) {
   return entries?.find(e => roll >= e.min && roll <= e.max) ?? null;
 }
 
-/** Write WORLD_TRUTHS_FIELDS of `campaignState` onto the latest stored campaignState. */
+/** Write WORLD_TRUTHS_FIELDS of `campaignState` onto the latest stored campaignState (on the client's write chain). */
 async function persistWorldTruthsFields(campaignState) {
   try {
-    const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
-    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(campaignState, WORLD_TRUTHS_FIELDS, "world truths"));
+    await writeOwnedFields(campaignState, WORLD_TRUTHS_FIELDS, "world truths");
   } catch (err) {
     console.error(`${MODULE_ID} | truths: persisting the world truths failed:`, err);
     throw err;

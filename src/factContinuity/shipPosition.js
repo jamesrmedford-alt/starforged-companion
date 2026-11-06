@@ -44,7 +44,9 @@ const SOURCE_VALUES = new Set([
  * survived a later `!at`, Set a Course, expedition or token move, and an
  * X-Card on that narration then reverted the GM's move
  * (restoreShipPositionAfterXCard — SHIP-POSITION-FLAG-MERGE). Only a
- * narration's move sets them.
+ * narration's move sets them — and `tokenBefore`, where the sector-map token
+ * stood before that narration's sync moved it (`{ sceneId, tokenId, x, y }`),
+ * so the X-Card puts the token back too (issue #342 Z12).
  *
  * @returns {Object}
  */
@@ -59,6 +61,7 @@ export function emptyPosition() {
     updatedBy:           null,
     narrationId:         null,
     previous:            null,
+    tokenBefore:         null,
   };
 }
 
@@ -99,10 +102,12 @@ export function inferShipPosition(seedRef, campaignState, options = {}) {
   // exists as a real location once the GM accepts it, and we want a
   // best-effort match against everything currently present.
   // `options.entities` lets tests (or pre-hydrated callers) inject the
-  // roster directly.
-  const entities = Array.isArray(options.entities)
-    ? options.entities
-    : collectEntitiesForIndex(campaignState);
+  // roster directly. The index keeps the first entity of a name, so a name
+  // several places share is the active sector's (activeSectorNamesakeFirst).
+  const entities = activeSectorNamesakeFirst(
+    Array.isArray(options.entities) ? options.entities : collectEntitiesForIndex(campaignState),
+    campaignState.activeSectorId ?? null,
+  );
   const index    = buildNameIndex(entities, []);
 
   const hit = matchSeedAgainstIndex(index, ref);
@@ -287,6 +292,36 @@ function collectEntitiesForIndex(campaignState) {
     if (Array.isArray(records)) {
       for (const e of records) pushOne(out, e, entityType, null);
     }
+  }
+  return out;
+}
+
+/**
+ * The roster with each name several entities share led by the active
+ * sector's: generated site names repeat across sectors (every derelict is
+ * "Derelict Starship" or "Derelict Settlement", numbered only within one
+ * sector), and the name index keeps the first entity of a name — the older
+ * sector's, so `!at`, the narrator's ship / position and an arrival by name
+ * docked the ship there and moved its token on that sector's map (issue #342
+ * Z15; the site ladder's rule, issue #321 U48). Every other entity keeps its
+ * place. Pure.
+ *
+ * @param {Object[]} entities — the index roster (each with `name`, `sectorId`)
+ * @param {string|null} activeSectorId
+ * @returns {Object[]}
+ */
+function activeSectorNamesakeFirst(entities, activeSectorId) {
+  if (!activeSectorId || !Array.isArray(entities)) return entities;
+  const nameKey = (e) => String(e?.name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  const byName = new Map();
+  for (const e of entities) {
+    const key = nameKey(e);
+    if (!byName.has(key)) byName.set(key, []);
+    byName.get(key).push(e);
+  }
+  const out = [];
+  for (const [, group] of byName) {
+    out.push(...group.filter(e => e?.sectorId === activeSectorId), ...group.filter(e => e?.sectorId !== activeSectorId));
   }
   return out;
 }

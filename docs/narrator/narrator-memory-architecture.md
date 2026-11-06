@@ -185,6 +185,12 @@ CLAUDE.md "audit consumers" rule):
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
   3) — a published reflection shows there too
+- the Batch Mode Round window's "Latest narration" (`src/ui/roundWindow.js`
+  `newestNarration`, issue #340) — the session's newest narrator card that is
+  no fallback, not burn-superseded and not X-carded: by the card's `xCarded`
+  flag and by the stored `xCardedNarrationIds` (`isNarrationXCarded`), which
+  the X-Card's pause write names before the flag lands; its `refresh`
+  compares the narration as well as the view (issue #342 Z32)
 
 **Knob:** `narratorContextCards` (world, 1–50, default 20; Narrator pane).
 @scene keeps its own `sceneContextCards`.
@@ -219,10 +225,14 @@ a sidecar writes, and the frame, carries the narration's `narrationId` (its
 card carries the same id). The X-Card retracts what the narration it answers
 wrote (`retractNarrations`): its truths `retractedBy: "xcard"` — rendered
 nowhere, not even under CORRECTED, never migrated, still blocking a
-re-assertion; a truth the table had already struck is relabelled the
-X-Card's and its kept `sessionRetractions` entry dropped, so neither
-CORRECTED nor the summary's leave-out list names it and `!truth set` cannot
-lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — its state values removed (each restoring the value it
+re-assertion — for the rest of the session: a scene end keeps them unnamed
+on `sessionRetractions.blocked`, which `findSessionStrike`'s write half reads
+(XCARD-RETRACTION-SCENE-SCOPED), and keeps its live narration truths on
+`sessionRetractions.narrated`, which an X-Card on a narration whose scene has
+ended moves there (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED); a truth the table had already struck is
+relabelled the X-Card's and its kept `sessionRetractions` entry moved to
+those blocks, so neither CORRECTED nor the summary's leave-out list names it
+and `!truth set` cannot lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — its state values removed (each restoring the value it
 superseded: a state entry keeps a bounded `previous` chain, issue #326 W41)
 and its frame cleared, in the same
 write as the pause; the ids are kept on `xCardedNarrationIds`, so
@@ -249,7 +259,9 @@ does what a scene end migrated from the narration's ledger entries before the
 card was played (issue #335 Y01 — the pick is session-scoped, the ledger is
 empty by then): the tier detail, the archived Lore page and the LAST KNOWN
 value, which keeps the values it superseded and falls back to the newest one
-no removed narration set.
+no removed narration set. A scene end still running when the card is played
+checks it right before each of those writes, and takes back a copy written as
+the card landed (XCARD-DURING-SCENE-END-MIGRATES).
 
 **Narration ids and an upgrade (issue #338 D8).** A Burn Momentum or Improve
 Result retracts the ledger entries of the narrations it supersedes — the move
@@ -369,7 +381,11 @@ fail-open) and biased toward developments over trivia. Unnamed/uncarded figures
 match nothing → no record → stay freely mutable, which the "name sparingly"
 casting nudge (`NARRATOR_PERMISSIONS.discovery` + `appendSidecarInstruction`)
 reinforces by keeping one-off functionaries unnamed. Decision: decisions.md →
-"Named-NPC continuity".
+"Named-NPC continuity". A Batch Mode round's narration is both kinds at once:
+its tier pass takes each entry by its free-flow rule — an unrolled action the
+prompt's matched set (as paced), a rolled interaction-class move its own
+relevance (as the move pass) — whatever the round's widest class
+(`roundTierRefs`, issue #342 Z10).
 
 ---
 
@@ -528,7 +544,9 @@ regressions, all are known scope cuts:
    (the full session card feed, never summary-of-summary) via one Haiku call,
    **debounced at K = round(1.5 × N)** cards (N = `narratorContextCards`), so
    most turns are a free cached read. Stored on `campaignState.sessionSummary`
-   (keyed by `sessionId`), rendered as system-prompt §[4c] *STORY SO FAR (THIS
+   (keyed by `sessionId`; a copy of the latest store, on the GM's
+   campaignState write chain — CACHE-MUTATED-BEFORE-WRITE), rendered as
+   system-prompt §[4c] *STORY SO FAR (THIS
    SESSION)*, and written to the World Journal Session Log at End Session for
    subsequent use. GM-gated + fail-open; toggle `narratorSessionSummary`
    (default on). Drop priority + the "not a fact store" invariant: decisions.md

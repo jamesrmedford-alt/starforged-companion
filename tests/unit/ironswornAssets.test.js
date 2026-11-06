@@ -13,6 +13,7 @@ import {
   iconForPlanetType,
   iconForStellarObject,
 } from '../../src/system/ironswornAssets.js';
+import { PLANET_TYPE } from '../../src/oracles/tables/planets.js';
 
 describe('Phase 1 — IS_PATHS constants', () => {
   it('IS_BASE matches systems/foundry-ironsworn/assets', () => {
@@ -140,6 +141,33 @@ describe('pickStarshipIcon — against the vendored foundry-ironsworn', () => {
   });
 });
 
+// Issue #342 Z61 (TAINTED-WORLD-GENERIC-ICON) — a sector's planet pin takes its
+// icon from iconForPlanetType(planet.type) (sceneBuilder.js). The map had ten
+// of the eleven classes the Planet Type table rolls: a Tainted World (93–98,
+// about one planet in seventeen) drew Foundry's generic circle, though the
+// system ships its Tainted tokens beside the other ten.
+describe('every rolled planet class gets the system token it ships', () => {
+  const VENDOR = 'vendor/foundry-ironsworn/system';
+  const vendored = fs.existsSync(`${VENDOR}/assets`);
+  const toVendor = (runtimePath) => runtimePath.replace(`systems/${IS_SYSTEM_ID}/`, `${VENDOR}/`);
+
+  it.skipIf(!vendored)('a Tainted World pin uses the vendor Tainted token, not the generic circle', () => {
+    expect(fs.existsSync(`${VENDOR}/assets/planets/Starforged-Planet-Token-Tainted-01.webp`)).toBe(true);   // control: the vendor ships it
+    const icon = iconForPlanetType('Tainted World');
+    expect(icon).not.toBe('icons/svg/circle.svg');
+    expect(icon.startsWith(`${IS_BASE}/planets/`) && fs.existsSync(toVendor(icon))).toBe(true);
+  });
+
+  it.skipIf(!vendored)('every class the Planet Type table rolls maps to a vendor file that exists', () => {
+    const classes = [...new Set(PLANET_TYPE.map(r => r.result))];
+    expect(classes).toHaveLength(11);
+    for (const type of classes) {
+      const icon = iconForPlanetType(type);
+      expect(fs.existsSync(toVendor(icon)), `${type} → ${icon}`).toBe(true);
+    }
+  });
+});
+
 describe('iconForPlanetType / iconForStellarObject', () => {
   it('returns a known asset path for "Desert World"', () => {
     expect(iconForPlanetType('Desert World')).toBe(
@@ -148,7 +176,13 @@ describe('iconForPlanetType / iconForStellarObject', () => {
   });
 
   it('returns the generic circle for unknown planet types', () => {
-    expect(iconForPlanetType('Tainted World')).toBe('icons/svg/circle.svg');
+    expect(iconForPlanetType('Made-up World')).toBe('icons/svg/circle.svg');
+  });
+
+  it('returns the Tainted token for "Tainted World" (issue #342 Z61)', () => {
+    expect(iconForPlanetType('Tainted World')).toBe(
+      `${IS_PATHS.PLANETS}/Starforged-Planet-Token-Tainted-01.webp`
+    );
   });
 
   it('returns the bundled token for the black-hole stellar string', () => {

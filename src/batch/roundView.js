@@ -17,7 +17,7 @@
  *   - With no session, no keyed GM, or no GM at all, the window says why.
  */
 
-import { ROUND_PHASE, ENTRY_STATUS, READING_KIND, roundIsOpen, isResolving, entryFor, undecidedUpgrades } from "./round.js";
+import { ROUND_PHASE, ENTRY_STATUS, ENTRY_ERROR, READING_KIND, roundIsOpen, isResolving, entryFor, isOwedEntry, undecidedUpgrades } from "./round.js";
 
 /** The labels an entry's status shows its own player. */
 const OWN_STATUS_LABELS = Object.freeze({
@@ -34,13 +34,19 @@ const OWN_STATUS_LABELS = Object.freeze({
 /** Why a round can't go on, said in every window. */
 export const ROUND_NOTICES = Object.freeze({
   noSession:   "No session has begun — the round opens once Begin a Session starts one.",
-  noGm:        "No GM is connected — your action is kept here, and is sent once a GM joins.",
+  // Nothing sends it on a GM's return: the window says what to do (issue #342 Z33).
+  noGm:        "No GM is connected — your action is kept here; submit it once a GM has joined.",
   noKeyedGm:   "No GM with a Claude key is connected, so the round can't be read. Your action is kept; it is read once one joins.",
   xCard:       "The X-Card is in play — the round can't be resolved until a GM resumes.",
   resolving:   "The round is being resolved…",
   readFailed:  "Couldn't read your action — try again.",
+  characterGone: "Your character is no longer in the game, so this action can't be read or rolled.",
   notReceived: "Your action wasn't received. Send it again.",
 });
+
+/** What an entry's error says: its character gone, or a reading that failed. */
+const entryErrorNotice = (error) => (!error ? null
+  : error === ENTRY_ERROR.CHARACTER_GONE ? ROUND_NOTICES.characterGone : ROUND_NOTICES.readFailed);
 
 const humanise = (slug) => String(slug ?? "")
   .split("_").filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(" ");
@@ -113,23 +119,37 @@ function ownView(round, viewer, { collecting, moveLabel, statLabel, notReceived 
   const status = entry.status;
   const awaitingUpgrade = round.phase === ROUND_PHASE.UPGRADING && entry.upgrade && !entry.upgrade.decided;
   const statusLabel = awaitingUpgrade ? "Deciding upgrade" : (OWN_STATUS_LABELS[status] ?? null);
+  // A roll a card owes (the resist roll at 0) is confirmed, never withdrawn,
+  // passed, edited or swapped for the player's own action (issue #342 D2).
+  const owed = isOwedEntry(entry);
   return {
     actorName:    entry.actorName,
     status,
     statusLabel,
     text:         entry.text ?? "",
     submissionId: entry.submissionId ?? null,
-    error:        entry.error ? ROUND_NOTICES.readFailed : null,
+    error:        entryErrorNotice(entry.error),
     notReceived:  !!notReceived,
     reading,
     choices:      entry.choices ?? null,
-    offer:        entry.offer ? { text: entry.offer.text, moveName: entry.offer.forced?.moveId ? moveLabel(entry.offer.forced.moveId) : null } : null,
-    canEdit:      collecting,
-    canSubmit:    collecting,
-    canPass:      collecting && status !== ENTRY_STATUS.PASSED,
-    canWithdraw:  collecting && status !== ENTRY_STATUS.WAITING && status !== ENTRY_STATUS.PASSED,
+    owed,
+    // The action the player wrote, set aside for the owed roll: their draft for the next round.
+    setAside:     typeof entry.setAside?.text === "string" && entry.setAside.text ? entry.setAside.text : null,
+    // A card's move offered beside the player's own: use it, or keep their own
+    // reading (Keep mine — once there is one to keep). Undecided, it joins
+    // the next round.
+    offer:        entry.offer ? {
+      text:     entry.offer.text,
+      moveName: entry.offer.forced?.moveId ? moveLabel(entry.offer.forced.moveId) : null,
+      canUse:   collecting && !owed,
+      canKeep:  collecting && !owed && (status === ENTRY_STATUS.READ || status === ENTRY_STATUS.READY) && !!entry.reading,
+    } : null,
+    canEdit:      collecting && !owed,
+    canSubmit:    collecting && !owed,
+    canPass:      collecting && !owed && status !== ENTRY_STATUS.PASSED,
+    canWithdraw:  collecting && !owed && status !== ENTRY_STATUS.WAITING && status !== ENTRY_STATUS.PASSED,
     canConfirm:   collecting && status === ENTRY_STATUS.READ && !!reading && !reading.blocked,
-    canReread:    collecting && status === ENTRY_STATUS.READ && reading?.kind === READING_KIND.NARRATIVE,
+    canReread:    collecting && !owed && status === ENTRY_STATUS.READ && reading?.kind === READING_KIND.NARRATIVE,
     upgrade:      awaitingUpgrade ? upgradeView(entry, { moveLabel }) : null,
   };
 }
@@ -201,7 +221,7 @@ function gmView(round, { collecting, connected, xCardActive, moveLabel, statLabe
       userName:  e.userName,
       status:    e.status,
       text:      e.text ?? "",
-      error:     e.error ? ROUND_NOTICES.readFailed : null,
+      error:     entryErrorNotice(e.error),
       reading:   e.reading ? readingView(e.reading, { moveLabel, statLabel }) : null,
     }));
   const waitingFor = collecting
@@ -209,13 +229,15 @@ function gmView(round, { collecting, connected, xCardActive, moveLabel, statLabe
         .filter(e => connected.has(e.userId) && e.status !== ENTRY_STATUS.READY && e.status !== ENTRY_STATUS.PASSED)
         .map(e => e.actorName)
     : (round.phase === ROUND_PHASE.UPGRADING ? undecidedUpgrades(round).map(id => round.entries[id]?.actorName).filter(Boolean) : []);
-  const sendable = collecting || round.phase === ROUND_PHASE.UPGRADING;
+  // Send now works in every open phase: while the round rolls or narrates it
+  // runs a resolution a refused step stopped again (the GMs are told when one
+  // does — issue #342 Z18).
   return {
     entries,
     waitingFor,
     sendNow: {
-      enabled: sendable && !xCardActive,
-      reason:  xCardActive ? ROUND_NOTICES.xCard : (sendable ? null : ROUND_NOTICES.resolving),
+      enabled: !xCardActive,
+      reason:  xCardActive ? ROUND_NOTICES.xCard : null,
       label:   round.phase === ROUND_PHASE.UPGRADING ? "Send now (keep the rest)" : "Send now",
     },
     discard: { enabled: collecting },

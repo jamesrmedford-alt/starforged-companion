@@ -120,16 +120,38 @@ passage" drawing.
   no Burn / Improve; T05) whose `legacyMark` marks the discoveries legacy,
   which clears at its tenth box (T02).
 - **Location tracking**: `!at <name>` writes BOTH
-  `campaignState.currentLocationId/Type` and the ship position (bare `!at`
-  clears both), and since the LOCATION-DUAL-STORE fix the arrival block does
+  `campaignState.currentLocationId/Type` and the ship position (a bare `!at`
+  clears the current location only; the ship stays where it is — issue #342
+  Z74), and since the LOCATION-DUAL-STORE fix the arrival block does
   too — a tracked destination reached by move updates `currentLocationId`
   via the same resolver (a token-drop arrival by the pin's Actor id first,
-  `currentLocationForEntityId` — issue #321 U52). The Entities panel's "Set as
+  `currentLocationForEntityId` — issue #321 U52), and the ship docks at
+  that pick by its id, as `!at` does: each store had its own resolver, so a
+  fragment ("Bleak") made Bleakhold the current location by the name
+  resolver's prefix rung while the ship's position, which takes a full name
+  or a name part, was the free text "Bleak" and its token stayed put
+  (known-issues ARRIVAL-FRAGMENT-SHIP-FREE-TEXT). When neither the id nor
+  the name resolves, the current location is the place the position record
+  the arrival just wrote names (`maybeUpdateShipPositionFromName`'s return —
+  its location, else settlement, else planet): the position's word scan finds
+  "Bleakhold" in "the expedition to Bleakhold", the name resolver only a
+  place whose name holds the whole label, so the ship docked there while the
+  current location stayed where the crew set out (known-issues
+  ARRIVAL-LOCATION-PHRASE-SPLIT). A record that names no place (free text)
+  leaves it. The Entities panel's "Set as
   current location" moves the ship as `!at` does — the shared
   `maybeUpdateShipPositionFromName`, source `at_command`, with the entity's
   id (`{ entityId }`) — so the narrator no longer gets two locations (issue
   #321 U56). `!at` and the panel button write a copy of the stored
   campaignState, so a refused write leaves the GM's cache as it was (U58).
+  `!at` docks the ship at the place it resolved, by that place's id — it was
+  re-inferred from the typed name, so a fragment ("Bleak") was free text
+  (known-issues AT-PARTIAL-NAME-SHIP) — and every resolver by name
+  (`resolveCurrentLocationName`; `inferShipPosition`'s index, for the
+  narrator's ship / position too) takes the active sector's namesake first,
+  as the site ladder does (U48): generated site names repeat across sectors,
+  and the older sector's derelict became the current location, the ship's
+  position and its token's place on that sector's map (issue #342 Z15).
 - **Narrator awareness**: the §6.5 ship block renders `COMMAND VEHICLE` +
   `SHIP POSITION` lines — every arrival recorder writes only after arrival,
   so those sources read as stationary ("docked at" / "in orbit of";
@@ -143,7 +165,10 @@ passage" drawing.
   location (`syncCommandVehicleTokenToPosition` reads `nearestLocationId`
   too: a Finish an Expedition, `!at`, Entities-panel, narrator or
   X-Card-restore arrival at a derelict left the token on the settlement it
-  had left — Y14); a free-text position leaves it where it is.
+  had left — Y14); a free-text position leaves it where it is. The X-Card's
+  restore puts the token back where the removed narration's sync took it
+  from (the record's `tokenBefore`), a spot no pin need anchor — deep space
+  included (issue #342 Z12).
   Active expeditions appear only in the generic Progress Tracks context
   section (up to 4 active tracks) — no dedicated journey block.
 
@@ -167,7 +192,16 @@ it alone (issue #331 X18). A refused meter write before it (the roller's
 momentum) no longer stops that write: the arrival is saved and the meters
 are the card's steps instead (issue #336 Y16). `finish_an_expedition`
 is also an arrival move: the ship position writes with source `"expedition"`
-("docked at …"); the Set a Course feedback card ("Course held cleanly (+1
+("docked at …"). It arrives at the site the expedition was for — its track's
+`siteId` link, else the unexplored site its label names
+(`siteDiscovery.selectExpeditionSite`, never the sole-site guess) — by the
+site's location Actor (`maybeUpdateShipPositionFromName`'s `{ entityId }` and
+`currentLocationForEntityId`), so the ship record, its token (onto the site's
+pin, §1) and `currentLocationId` follow the site the same move charts; the
+crew names an unexplored site in their own words (its pin reads "Unexplored
+Site"), so the label alone resolved to no place and all three stayed on the
+settlement they had left (issue #342 Z14). An expedition for no site arrives
+at the place its label names; the Set a Course feedback card ("Course held cleanly (+1
 momentum)") is Set a Course's alone (issue #326 W46). Miss leaves the track open and posts the recommit offer
 (below, "Advisory-only branches"): its **🔁 Recommit** relays
 `expedition.recommit` to the canonical GM (`cardActions.applyRecommitOffer`),
@@ -175,13 +209,20 @@ which claims the GM-authored offer card (`recommitted`) before running
 `performRecommit` — once per card whoever presses (any user may), where every
 press or re-render used to recommit again; a refused track write releases the
 claim (issue #321 U20, which also folded the old raw `expedition.recommit`
-socket relay into `GM_ACTIONS`).
+socket relay into `GM_ACTIONS`). Either outcome is said to the presser
+(`cardActions.tellRecommitOutcome`, issue #342 Z58): a refused write is
+whispered to them and the GMs to press again, and an expedition finished or
+deleted since gets a short card ("… is finished — nothing was recommitted").
 
 ## 4. Site discovery
 
 `revealSectorSite` (shared by expedition-finish and `!reveal-site`):
 `selectSectorSite` picks the target — the expedition's `siteId` link first,
-then exact → whole-word substring → type-keyword vault/derelict → sole-undiscovered,
+then exact → whole-word substring → type-keyword vault/derelict → sole-undiscovered
+(the finish passes `requireLabelMatch`: no sole-undiscovered rung, and the
+pin's own "Unexplored Site" names the active sector's one unexplored site, so
+an expedition to a settlement or a trailblaze charts nothing — issue #342 D7;
+`!reveal-site` keeps the guess),
 each rung over every sector before the next (the guesses only when
 unambiguous: an earlier sector's sole site used to preempt a later sector's
 exact match, issue #300 F07), the active sector first on every rung
@@ -192,7 +233,9 @@ contains "…I"); a link to no stored site falls back to the label — flips `di
 location Actor `visited`, and restyles the scene — pin renamed to the site's
 real name with the discovered icon, dashed passage → solid brightened route —
 then posts the "◈ Site Discovered" card. The flag is saved onto the state as
-it is after those awaits (`persistSiteFlag`, `src/sectors/siteDiscovery.js`),
+it is after those awaits (`persistSiteFlag`, `src/sectors/siteDiscovery.js`;
+to the store at its turn on the GM's campaignState write chain —
+CAMPSTATE-CHAIN-REST),
 never the state read before them, which reverted an X-Card or Take a Break
 relayed meanwhile (issue #321 U06c); the pipeline's working copy gets it too.
 
@@ -226,9 +269,16 @@ summary lives in the `known-issues.md` table and the code.
 
 - ~~Expedition→site linkage was name-fuzzy~~ — **addressed**: expedition
   creation stamps `siteId` when the destination confidently names an
-  undiscovered site (`selectSectorSite` with `requireLabelMatch`; never
-  the sole-undiscovered guess), and `revealSectorSite` reveals the linked
-  site first.
+  undiscovered site, or is the pin's own "Unexplored Site" and the active
+  sector has exactly one unexplored site (issue #342 D7)
+  (`selectExpeditionSite` — the finish's own ladder, `selectSectorSite` with
+  `requireLabelMatch` over each site's name as the table knows it, its
+  location Actor's; never the sole-undiscovered guess), and
+  `revealSectorSite` reveals the linked site first. The stamp read only the
+  records' generated names, so a site the GM had renamed was linked to
+  nothing — or, its new name holding a type keyword ("The Ghost Spire", a
+  vault), to the sector's one unexplored derelict, which the finish then
+  charted and docked at (known-issues EXPEDITION-STAMP-SITE-NAME).
 - ~~Advisory-only branches~~ — **addressed**: the finish-miss card offers
   **🔁 Recommit** (rolls the challenge dice, clears the lowest die's boxes,
   raises the rank — `planRecommit`; once per card since issue #321 U20, §3),

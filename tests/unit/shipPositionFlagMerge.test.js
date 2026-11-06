@@ -113,12 +113,15 @@ describe('SHIP-POSITION-FLAG-MERGE — a later move clears the narration a sidec
 
   it('every position record names no narration and no earlier position', () => {
     const cs = stored();
-    expect(emptyPosition()).toMatchObject({ narrationId: null, previous: null });
-    expect(inferShipPosition('Bleakhold', cs, { source: 'at_command' })).toMatchObject({ nearestSettlementId: 'act-bleak', narrationId: null, previous: null });
-    expect(inferShipPosition('somewhere in the drift', cs)).toMatchObject({ narrationId: null, previous: null });
-    expect(inferShipPositionFromEntityId('act-bleak', cs, { source: 'expedition' })).toMatchObject({ narrationId: null, previous: null });
+    // `tokenBefore` too — where a narration's sync took the map token from
+    // (issue #342 Z12): only a narration's move sets it.
+    const none = { narrationId: null, previous: null, tokenBefore: null };
+    expect(emptyPosition()).toMatchObject(none);
+    expect(inferShipPosition('Bleakhold', cs, { source: 'at_command' })).toMatchObject({ nearestSettlementId: 'act-bleak', ...none });
+    expect(inferShipPosition('somewhere in the drift', cs)).toMatchObject(none);
+    expect(inferShipPositionFromEntityId('act-bleak', cs, { source: 'expedition' })).toMatchObject(none);
     const scene = { grid: { size: 100 }, flags: { [MODULE_ID]: { sectorScene: true, sectorId: 'sec-1' } }, notes: { contents: [] } };
-    expect(computeTokenPositionRecord(scene, 0, 0)).toMatchObject({ narrationId: null, previous: null });
+    expect(computeTokenPositionRecord(scene, 0, 0)).toMatchObject(none);
   });
 
   it.each([

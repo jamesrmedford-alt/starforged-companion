@@ -30,6 +30,7 @@ import { newNarrationId } from "../factContinuity/ledgers.js";
 import { clockStillTriggered } from "./payThePriceClocks.js";
 import { stripMarkup } from "../audio/segments.js";
 import { replaceKeepingInput } from "../ui/keepTypedInput.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -392,22 +393,36 @@ export async function adjustClockSegments(clockId, delta) {
  * subsequently undone by burning momentum. Idempotent — clocks already at
  * zero or not found are silently skipped. GM-gated at the call site.
  *
+ * Reports the clocks the rewind takes out of their triggered state — full as
+ * this queued write reads them, below full after — whoever's price filled
+ * them: the upgrade supersedes their trigger vignettes (issue #338 D8). It
+ * was judged on the burned price's own receipt, so a clock another player's
+ * price had filled since was rewound below full with its vignette left live,
+ * and the next price fired a second one (issue #342 Z46; Y37's rule — a
+ * queued write decides on what it reads).
+ *
  * @param {string[]} ids  array of clock `_id` values to decrement by 1 segment
+ * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension" }>>}
+ *   the clocks taken out of their triggered state (empty when none, or nothing was written)
  */
 export async function revertTensionClocksForBurn(ids) {
   return serialiseClockWrite(async () => {
-    if (!ids?.length) return;
+    if (!ids?.length) return [];
     const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
     let dirty = false;
+    const untriggered = [];
     const now = new Date().toISOString();
     for (const id of ids) {
       const c = (state.clocks ?? []).find(x => x._id === id);
       if (!c || (c.filled ?? 0) <= 0) continue;
+      const wasFull = (c.filled ?? 0) >= c.segments;
       c.filled = Math.max(0, (c.filled ?? 0) - 1);
       c.updatedAt = now;
       dirty = true;
+      if (wasFull && c.filled < c.segments) untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension" });
     }
     if (dirty) await writeState(state);
+    return untriggered;
   });
 }
 
@@ -482,7 +497,10 @@ export async function advanceCampaignClocksForBeginSession() {
  * entry names a clock and the fill it rolled to; the clock is set to at least
  * that fill, within its segments, so a Retry after a GM advanced it by hand
  * — or a second Retry — never advances it twice. A clock no longer on the list
- * is skipped and named. One write, on a copy; nothing is rolled.
+ * is skipped and named. One write, on a copy; nothing is rolled. A clock the
+ * saved fill triggers gets its trigger vignette once the write lands: the
+ * trigger was owed, not taken back — Begin narrates no trigger it could not
+ * save, and the Retry's fill fired none (issue #342 Z63).
  *
  * @param {Array<{ _id: string, filled: number }>} entries
  * @returns {Promise<{ ok: true, applied: Array<{_id, name, filled}>, missing: string[] }
@@ -490,9 +508,10 @@ export async function advanceCampaignClocksForBeginSession() {
  */
 export async function applyClockAdvances(entries) {
   return serialiseClockWrite(async () => {
-    const state   = foundry.utils.deepClone(readState());
-    const applied = [];
-    const missing = [];
+    const state     = foundry.utils.deepClone(readState());
+    const applied   = [];
+    const missing   = [];
+    const triggered = [];
     for (const e of Array.isArray(entries) ? entries : []) {
       const clock = (state.clocks ?? []).find(c => c._id === e?._id) ?? null;
       if (!clock) { missing.push(String(e?._id ?? "?")); continue; }
@@ -501,6 +520,7 @@ export async function applyClockAdvances(entries) {
       clock.filled    = target;
       clock.updatedAt = new Date().toISOString();
       applied.push({ _id: clock._id, name: clock.name, filled: clock.filled });
+      if (isFull(clock)) triggered.push(vignetteData(clock));
     }
     if (applied.length) {
       try {
@@ -510,6 +530,7 @@ export async function applyClockAdvances(entries) {
         return { ok: false, reason: "refused", error: String(err?.message ?? err) };
       }
     }
+    for (const clockData of triggered) fireClockVignette(clockData);
     return { ok: true, applied, missing };
   });
 }
@@ -736,28 +757,27 @@ async function writeState(state) {
   await game.settings.set(MODULE_ID, "campaignState", state);
 }
 
-/** The last clock write queued on this client (serialiseClockWrite). */
-let _clockWriteTail = Promise.resolve();
-
 /**
- * Run one clock read-modify-write after the one before it on this client has
- * landed. The clocks are one array in campaignState, written whole, and the
- * cached value changes only when the server answers — so a write that read
- * during another's round trip saved the old list over it: two clock actions
- * (↻ on two clocks, two `!clock` verbs, a Pay the Price advance racing a
- * click) lost one (issue #326 W53, the issue #321 U57 shape the Progress
- * Tracks panel's writeTracks serialises). A write that fails does not hold up
- * the next. `task` must read the state itself and must not call another
- * clock writer: it would wait for itself.
+ * Run one clock read-modify-write after the campaignState write before it on
+ * this client has landed. The clocks are one array in campaignState, written
+ * whole, and the cached value changes only when the server answers — so a
+ * write that read during another's round trip saved the old list over it: two
+ * clock actions (↻ on two clocks, two `!clock` verbs, a Pay the Price advance
+ * racing a click) lost one (issue #326 W53, the issue #321 U57 shape the
+ * Progress Tracks panel's writeTracks serialises). The queue is the one every
+ * fire-and-forget campaignState writer on this client shares
+ * (multiplayer/campaignStateChain.js): a clock queued only behind clocks
+ * erased the oracle result the Pay the Price's own card had just recorded
+ * (issue #342 Z17). A write that fails does not hold up the next. `task` must
+ * read the state itself and must not call another chained writer: it would
+ * wait for itself.
  *
  * @template T
  * @param {() => Promise<T>} task
  * @returns {Promise<T>}
  */
 function serialiseClockWrite(task) {
-  const run = _clockWriteTail.then(task);
-  _clockWriteTail = run.catch(() => {});
-  return run;
+  return serialiseCampaignStateWrite(task, "clock write");
 }
 
 // Every writer here works on a copy of the state: `readState` returns this

@@ -31,6 +31,7 @@ import { readSheetPronouns } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { PORTRAIT_BLOCK_RE } from "../art/notesPortrait.js";
 import { deleteEntityArtAssets } from "../art/storage.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID  = "starforged-companion";
@@ -289,6 +290,7 @@ export async function forgeBond(journalEntryId, options = {}) {
     updates.secondRole = options.secondRole;
   }
 
+  const connection = getConnection(journalEntryId);
   const updated = await updateConnection(journalEntryId, updates);
 
   await addHistoryEntry(
@@ -296,6 +298,21 @@ export async function forgeBond(journalEntryId, options = {}) {
     `Bond forged.${options.secondRole ? ` Second role: ${options.secondRole}.` : ""}`,
     options.sessionId
   );
+
+  // The bond Items mirror the record (BOND-ITEM-MIRROR): the forge is written
+  // through as the vendor's `completed` — the sheet's forged bond — as ticks,
+  // rank and a loss are, so CHARACTER STATE says the bond is forged (issue
+  // #342 Z57: only the record changed). Best-effort — the record stays the
+  // source of truth. Dynamic import avoids an actorBridge cycle.
+  try {
+    const { setBondItemForged } = await import("../character/actorBridge.js");
+    await setBondItemForged(
+      { connectionId: updated?._id ?? connection?._id ?? journalEntryId, name: updated?.name ?? connection?.name ?? null },
+      true,
+    );
+  } catch (err) {
+    console.warn(`${MODULE_ID} | bond item forge mirror failed:`, err?.message ?? err);
+  }
 
   return updated;
 }
@@ -451,7 +468,8 @@ function sheetWrittenByTable(document, record) {
  * hand the scene-ledger facts keyed to it back to its name (ledgers.js
  * demoteEntitySubject — a kept narration's facts about the NPC, promoted to
  * the card when it was made). One write of a copy; no await between the read
- * and the write — the registerEntityIdInStore pattern. A refused write leaves
+ * and the write — the registerEntityIdInStore pattern — on the client's
+ * campaignState write chain (CAMPSTATE-CHAIN-REST). A refused write leaves
  * an id no Actor answers, which every reader skips.
  *
  * @param {string} actorId
@@ -460,14 +478,16 @@ function sheetWrittenByTable(document, record) {
  */
 async function unregisterDeletedConnection(actorId, name) {
   const { demoteEntitySubject } = await import("../factContinuity/ledgers.js");
-  const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  const target = { ...latest };
-  const listed = Array.isArray(latest.connectionIds) && latest.connectionIds.includes(actorId);
-  if (listed) target.connectionIds = latest.connectionIds.filter(id => id !== actorId);
-  const demoted = demoteEntitySubject(actorId, name, target) > 0;
-  if (!listed && !demoted) return;
   try {
-    await game.settings.set(MODULE_ID, "campaignState", target);
+    await serialiseCampaignStateWrite(async () => {
+      const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const target = { ...latest };
+      const listed = Array.isArray(latest.connectionIds) && latest.connectionIds.includes(actorId);
+      if (listed) target.connectionIds = latest.connectionIds.filter(id => id !== actorId);
+      const demoted = demoteEntitySubject(actorId, name, target) > 0;
+      if (!listed && !demoted) return;
+      await game.settings.set(MODULE_ID, "campaignState", target);
+    }, "deleted connection");
   } catch (err) {
     console.warn(`${MODULE_ID} | X-Card: unlisting the deleted connection ${actorId} failed:`, err?.message ?? err);
   }

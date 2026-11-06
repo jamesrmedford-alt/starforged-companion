@@ -44,6 +44,12 @@ export const ENTRY_STATUS = Object.freeze({
   REFUSED:   "refused",
 });
 
+/** An entry's error the window says as such — any other is a reading that failed, to try again. */
+export const ENTRY_ERROR = Object.freeze({
+  // Its character was deleted (or is no PC now) since the round opened: not read, not rolled (issue #342 Z35).
+  CHARACTER_GONE: "character-gone",
+});
+
 /** What a reading found: a move to roll, or a line narrated without a roll. */
 export const READING_KIND = Object.freeze({
   MOVE:      "move",
@@ -58,6 +64,8 @@ const MAX_CHOSEN_ABILITIES = 24;
 
 const RESOLVING = new Set([ROUND_PHASE.ROLLING, ROUND_PHASE.UPGRADING, ROUND_PHASE.NARRATING]);
 const SETTLED_ENTRY = new Set([ENTRY_STATUS.RECORDED, ENTRY_STATUS.REFUSED]);
+// An entry holding an action of its own — written, or a card's move — not yet rolled.
+const OWN_ACTION = new Set([ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY]);
 
 /** A transition refused — `reason` is a stable code, `message` what the requester is told. */
 export class RoundRefusal extends Error {
@@ -88,6 +96,21 @@ export function isResolving(round) {
 export function entryFor(round, userId) {
   return (userId && round?.entries?.[userId]) || null;
 }
+
+/**
+ * True for an entry that is a move a card owes — the resist roll at 0 a
+ * suffer card posts (`owedMove`, issue #330 D3): the roller's next move, not
+ * optional — it can't be withdrawn, passed, edited or set aside for the
+ * player's own action (issue #342 D2).
+ *
+ * @param {Object|null} entry
+ * @returns {boolean}
+ */
+export function isOwedEntry(entry) {
+  return entry?.readAs?.forced?.owed === true;
+}
+
+const OWED_MESSAGE = "This roll is owed — resisting is your next move, so it can't be withdrawn, passed or changed.";
 
 /**
  * The round as stored, or null when the setting holds nothing usable — a
@@ -156,6 +179,7 @@ function newEntry(participant) {
     reading:      null,
     choices:      null,
     offer:        null,
+    setAside:     null,
     rolled:       null,
     upgrade:      null,
     error:        null,
@@ -181,24 +205,24 @@ export function nextRoundNumber(previous, sessionId) {
 }
 
 /**
- * A new round, collecting, with an entry waiting for each participant.
+ * A new round, collecting, with an entry waiting for each participant. (No
+ * scene id: the narration uses the scene current when it runs, and nothing
+ * read the one a round opened in — issue #342 Z37.)
  *
- * @param {{ id: string, number: number, sessionId: string|null, sceneId?: string|null,
+ * @param {{ id: string, number: number, sessionId: string|null,
  *   now: string, participants: Array<Object> }} args
  * @returns {Object}
  */
-export function createRound({ id, number, sessionId, sceneId = null, now, participants = [] }) {
+export function createRound({ id, number, sessionId, now, participants = [] }) {
   const entries = {};
   for (const p of participants) if (p?.userId) entries[p.userId] = newEntry(p);
   return {
     id,
     number,
     sessionId: sessionId ?? null,
-    sceneId,
     phase:         ROUND_PHASE.COLLECTING,
     openedAt:      now,
     resolverId:    null,
-    resolverClaim: null,
     sendNow:       false,
     modeOffAfter:  false,
     order:         [],
@@ -300,6 +324,7 @@ export function submitEntry(round, { userId, text, submissionId, now, readAs = n
   if (!clean) refuse("bad-text", `An action must be 1–${ROUND_TEXT_MAX} characters.`);
   if (!submissionId) refuse("bad-submission", "That submission carried no id.");
   if (entry.submissionId === submissionId) return round;   // a repeat of the same submission
+  if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.SUBMITTED, text: clean, submissionId, submittedAt: now,
     readyAt: null, reading: null, choices: null, error: null, readAs: readAs ?? null,
@@ -307,7 +332,8 @@ export function submitEntry(round, { userId, text, submissionId, now, readAs = n
 }
 
 /**
- * A player withdraws their action: back to waiting.
+ * A player withdraws their action: back to waiting. A card's move offered
+ * beside it stays offered — withdrawing (or Edit) is not choosing to drop it.
  *
  * @param {Object} round
  * @param {{ userId: string }} args
@@ -317,14 +343,17 @@ export function withdrawEntry(round, { userId }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   if (entry.status === ENTRY_STATUS.WAITING) return round;
+  if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.WAITING, submissionId: null, submittedAt: null, readyAt: null,
-    reading: null, choices: null, error: null, readAs: null, offer: null,
+    reading: null, choices: null, error: null, readAs: null,
   }, { order: withoutUser(round.order, userId) });
 }
 
 /**
- * A player passes this round. Silent: nothing names them anywhere.
+ * A player passes this round. Silent: nothing names them anywhere. A card's
+ * move offered beside their action stays offered (it joins the next round
+ * when the round resolves without it — takeCardMoves).
  *
  * @param {Object} round
  * @param {{ userId: string }} args
@@ -334,9 +363,10 @@ export function passEntry(round, { userId }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   if (entry.status === ENTRY_STATUS.PASSED) return round;
+  if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.PASSED, submissionId: null, readyAt: null, reading: null,
-    choices: null, error: null, readAs: null, offer: null,
+    choices: null, error: null, readAs: null,
   }, { order: withoutUser(round.order, userId) });
 }
 
@@ -378,7 +408,9 @@ function readingMayLand(round, userId, submissionId) {
 /**
  * A player confirms their reading: Ready, with the choices the window made —
  * checked against the reading (validateChoices). The entry joins the end of
- * the confirm order: entries roll, and are narrated, in that order.
+ * the confirm order: entries roll, and are narrated, in that order. It is
+ * also "Keep mine" beside a card's offered move: the offer is dropped — on a
+ * Ready entry that is all it does.
  *
  * @param {Object} round
  * @param {{ userId: string, submissionId: string, choices: Object, now: string }} args
@@ -388,11 +420,14 @@ export function confirmEntry(round, { userId, submissionId, choices, now }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   if (entry.submissionId !== submissionId) refuse("stale", "That reading is out of date — your action was changed since.");
-  if (entry.status === ENTRY_STATUS.READY) return round;
+  // An owed roll is no choice against an offer: confirming it drops nothing —
+  // a card's move offered beside it waits for the next round.
+  const owed = isOwedEntry(entry);
+  if (entry.status === ENTRY_STATUS.READY) return entry.offer && !owed ? withEntry(round, userId, { offer: null }) : round;
   if (entry.status !== ENTRY_STATUS.READ || !entry.reading) refuse("unread", "Your action hasn't been read yet.");
   const checked = validateChoices(entry.reading, choices);
   return withEntry(round, userId, {
-    status: ENTRY_STATUS.READY, choices: checked, readyAt: now, offer: null,
+    status: ENTRY_STATUS.READY, choices: checked, readyAt: now, offer: owed ? (entry.offer ?? null) : null,
   }, { order: [...withoutUser(round.order, userId), userId] });
 }
 
@@ -411,12 +446,13 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   if (entry.submissionId !== submissionId) refuse("stale", "That reading is out of date — your action was changed since.");
+  if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   if (useOffer) {
     if (!entry.offer) refuse("no-offer", "There is no card move to use.");
     return withEntry(round, userId, {
       status: ENTRY_STATUS.SUBMITTED, text: entry.offer.text, submissionId: newSubmissionId, submittedAt: now,
       readyAt: null, reading: null, choices: null, error: null, offer: null,
-      readAs: { move: true, forced: entry.offer.forced ?? null },
+      readAs: { move: true, forced: entry.offer.forced ?? null, messageId: entry.offer.messageId ?? null },
     }, { order: withoutUser(round.order, userId) });
   }
   if (entry.status !== ENTRY_STATUS.READ || entry.reading?.kind !== READING_KIND.NARRATIVE) {
@@ -424,10 +460,16 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
   }
   const offered = entry.reading?.suggestedMove ?? null;
   if (moveId && moveId !== offered) refuse("bad-move", "That move wasn't offered.");
+  // "Roll ⟨move⟩" rolls the suggestion as the paced card's Roll does: a
+  // scene-challenge move names the challenge the classifier named, by id
+  // (PACED-VARIANT-NO-TARGET; issue #342 Z38) — with two open, unnamed, it
+  // marked neither.
+  const target = entry.reading?.suggestedTargetId;
+  const moveTargetId = moveId && typeof target === "string" && target ? target : null;
   return withEntry(round, userId, {
     status: ENTRY_STATUS.SUBMITTED, submissionId: newSubmissionId, submittedAt: now,
     readyAt: null, reading: null, choices: null, error: null,
-    readAs: { move: true, moveId: moveId ?? null },
+    readAs: { move: true, moveId: moveId ?? null, ...(moveTargetId ? { moveTargetId } : {}) },
   }, { order: withoutUser(round.order, userId) });
 }
 
@@ -436,28 +478,78 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
  * Attempt to Finish the Fight, a Which-fight pick, Swear it, a token-drag Set
  * a Course …). It becomes the entry, waiting for the player's confirm — or,
  * when they have already submitted their own action, an offer beside it, and
- * the window asks which to keep.
+ * the window asks which to keep. Its chat message's id rides along
+ * (`messageId`): a card move the round does not take is held for the next
+ * round by it (takeCardMoves) — its card is claimed, so it is never dropped.
+ *
+ * A move the card owes (`forced.owed` — the resist roll at 0, issue #330 D3)
+ * is the roller's next move, not an option (issue #342 D2): it becomes the
+ * entry even beside an action already written, which is set aside for the
+ * next round (`setAside` — its author's window keeps it as the draft; a card
+ * move that was the entry is handed back in `held`, to be held). A second
+ * owed move while one is the entry is held for the next round itself.
  *
  * @param {Object} round
- * @param {{ userId: string, text: string, forced: Object, submissionId: string, now: string }} args
- * @returns {{ round: Object, read: boolean }} `read`: the forced move is the entry now, to be read
+ * @param {{ userId: string, text: string, forced: Object, submissionId: string, now: string,
+ *   messageId?: string|null }} args
+ * @returns {{ round: Object, read: boolean, held: Array<{ userId: string, messageId: string }> }}
+ *   `read`: the forced move is the entry now, to be read; `held`: card moves for the driver to hold
  */
-export function offerForcedMove(round, { userId, text, forced, submissionId, now }) {
+export function offerForcedMove(round, { userId, text, forced, submissionId, now, messageId = null }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   const clean = cleanSubmissionText(text) ?? cleanSubmissionText(forced?.moveName ?? forced?.moveId ?? "") ?? "—";
-  const own = entry.status === ENTRY_STATUS.SUBMITTED || entry.status === ENTRY_STATUS.READ || entry.status === ENTRY_STATUS.READY;
-  if (own) {
-    return { round: withEntry(round, userId, { offer: { text: clean, forced, at: now } }), read: false };
+  const own = OWN_ACTION.has(entry.status);
+  const owed = forced?.owed === true;
+  if (owed && isOwedEntry(entry) && own) {
+    return { round, read: false, held: messageId ? [{ userId, messageId }] : [] };
   }
+  if (own && !owed) {
+    return { round: withEntry(round, userId, { offer: { text: clean, forced, messageId, at: now } }), read: false, held: [] };
+  }
+  // The entry now: a written action it displaces is set aside for the next
+  // round; a card move it displaces is held for it.
+  const displacedCard = own && entry.readAs?.messageId ? entry.readAs.messageId : null;
+  const setAside = own && !displacedCard && entry.text ? { text: entry.text, at: now } : null;
   return {
     round: withEntry(round, userId, {
       status: ENTRY_STATUS.SUBMITTED, text: clean, submissionId, submittedAt: now,
-      readyAt: null, reading: null, choices: null, error: null, offer: null,
-      readAs: { move: true, forced },
+      readyAt: null, reading: null, choices: null, error: null,
+      // An offer still undecided stays beside the new entry (it joins the next round).
+      offer: entry.offer ?? null,
+      readAs: { move: true, forced, messageId },
+      ...(setAside ? { setAside } : {}),
     }, { order: withoutUser(round.order, userId) }),
     read: true,
+    held: displacedCard ? [{ userId, messageId: displacedCard }] : [],
   };
+}
+
+/**
+ * The card buttons' moves a round leaves behind as it stops collecting: every
+ * offer still undecided — the round resolved, or closed, before its player
+ * chose — and every card move that was an entry the round does not roll (not
+ * in `acting`: its player left before confirming, its reading failed; or
+ * every one when the round closes unresolved). Their cards are claimed, so
+ * each is handed back by its chat message's id for the driver to hold for
+ * the next round (a card's forced move is held, not dropped — issue #337
+ * Y08). The offers come off the entries; an entry keeps its own move's id.
+ *
+ * @param {Object} round
+ * @param {{ acting?: string[] }} [opts] — the entries the round rolls (none for a round closed unresolved)
+ * @returns {{ round: Object, held: Array<{ userId: string, messageId: string }> }}
+ */
+export function takeCardMoves(round, { acting = [] } = {}) {
+  const held = [];
+  let entries = null;
+  for (const e of Object.values(round?.entries ?? {})) {
+    if (e.offer?.messageId) held.push({ userId: e.userId, messageId: e.offer.messageId });
+    if (OWN_ACTION.has(e.status) && e.readAs?.messageId && !acting.includes(e.userId)) {
+      held.push({ userId: e.userId, messageId: e.readAs.messageId });
+    }
+    if (e.offer) (entries ??= { ...round.entries })[e.userId] = { ...e, offer: null };
+  }
+  return { round: entries ? { ...round, entries } : round, held };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -541,18 +633,20 @@ export function readingsInFlight(round) {
 }
 
 /**
- * Collecting → rolling. The resolver's claim names the GM resolving it, so
- * another client's recovery leaves it alone while that GM is connected.
+ * Collecting → rolling. `resolverId` names the GM resolving it, so another
+ * client's recovery leaves it alone while that GM is connected (driver.js
+ * recoverRound). The move lock's claim stays with the lock (campaignState
+ * `pendingMoveClaim`): the round kept a copy nothing read (issue #342 Z37).
  *
  * @param {Object} round
- * @param {{ resolverId: string, resolverClaim: string, now: string, sendNow?: boolean }} args
+ * @param {{ resolverId: string, now: string, sendNow?: boolean }} args
  * @returns {Object}
  */
-export function beginResolution(round, { resolverId, resolverClaim, now, sendNow = false }) {
+export function beginResolution(round, { resolverId, now, sendNow = false }) {
   if (!roundIsOpen(round)) refuse("no-round", "There is no round open.");
   if (round.phase !== ROUND_PHASE.COLLECTING) refuse("resolving", "This round is already being resolved.");
   return {
-    ...round, phase: ROUND_PHASE.ROLLING, resolverId, resolverClaim,
+    ...round, phase: ROUND_PHASE.ROLLING, resolverId,
     resolvingAt: now, sendNow: !!sendNow || !!round.sendNow, acting: null,
   };
 }
@@ -597,7 +691,7 @@ function requireActing(round, userId) {
  * An acting entry's move was rolled: its result card is up (the record follows).
  *
  * @param {Object} round
- * @param {{ userId: string, rolled: Object }} args — { resolutionId, cardId, outcome, isMatch, moveId, narrationInput }
+ * @param {{ userId: string, rolled: Object }} args — { resolutionId, cardId, outcome, moveId, narrationInput }
  * @returns {Object}
  */
 export function markRolled(round, { userId, rolled }) {

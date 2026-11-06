@@ -161,9 +161,12 @@ duplicate or silently hit the wrong target.
 - When only a name is available (narrator prose, a chat command), use a
   **bounded ladder** — exact → whole-word substring → type-keyword-when-unique →
   sole-open — and **stop before guessing** when a wrong guess is costly
-  (`requireLabelMatch` on the expedition→site stamp is exactly this: no
-  sole-open fallback when *creating* a link, only when *revealing*). A rename
-  or an ambiguous name must never fan a write to the wrong record.
+  (`requireLabelMatch` on the expedition→site stamp and on the Finish an
+  Expedition's reveal is exactly this: no sole-open fallback when *creating*
+  a link or when a move *charts* a site — an expedition to Bleakhold charted
+  the sector's last unexplored derelict, issue #342 D7; only the GM's
+  `!reveal-site` guesses). A rename or an ambiguous name must never fan a
+  write to the wrong record.
 
 ## 7. World state must survive reload and reconnect
 
@@ -183,7 +186,11 @@ per-session must be idempotent on reload, and transient locks must reset.
 - **Client-local state re-derives on reconnect.** Audio autoplay, PTT, and
   keyed-GM presence are per-client — persist what must survive (autoplay state
   across reconnect) and re-advertise / re-register the rest on `ready`; never
-  assume a socket peer's memory carried over.
+  assume a socket peer's memory carried over. A shared list each client
+  advertises itself into is re-advertised on every write of it, too: two GMs
+  loading at once each wrote the list they read, and the later write dropped
+  the other's id until its next load (the key registries' healing, issue #342
+  Z68).
 
 ## 8. A GM-gated write on a player-invokable path is a silent failure — relay it
 
@@ -242,8 +249,9 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
 
 - Re-read the store **immediately** before the write (no `await` between the
   read and the `set`) and write only the fields this path owns
-  (`persistCampaignStateFields(campaignState, fields, label)` /
-  `mergeOwnedFields`, `src/factContinuity/sceneLifecycle.js`) — or, when the
+  (`writeOwnedFields(campaignState, fields, label)` — or
+  `persistCampaignStateFields`, which logs a refusal instead of throwing —
+  over `mergeOwnedFields`, `src/factContinuity/sceneLifecycle.js`) — or, when the
   path owns a wide slice, merge per a documented field policy
   (`persistResolution`'s `mergeWithLatestState`: relay-owned fields take the
   stored value, id lists union, legacy ticks take the higher count, scene
@@ -270,6 +278,38 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
   pipeline, which runs outside it. A safety action must not wait in that
   queue behind a slow handler: the X-Card runs unqueued, which is safe only
   because no handler writes back a snapshot held across an `await`.
+- **Writers of different kinds share one write chain.** Each writer kind
+  serialised against its own kind only — two captures (X44), two clock
+  writes (W53) — so a clock advance sent inside the oracle capture's round
+  trip still erased the result its Pay the Price card had just recorded, and
+  so did the `!oracle` follow-up's scene start (issue #342 Z17). The
+  campaignState read-and-set writers on a client run through
+  `serialiseCampaignStateWrite` (`src/multiplayer/campaignStateChain.js`),
+  each reading the store at its turn, once the write ahead of it has landed —
+  the fire-and-forget writers, and since CAMPSTATE-CHAIN-PARTIAL and
+  CAMPSTATE-CHAIN-REST every other one: the relay handlers' writes, the
+  move's record (`persistResolution`), every `writeOwnedFields` writer, the
+  next-move claims and grant, the move lock's paths, the commands' and
+  panels' writes, the entity registrations and migrations (a Take a Break or
+  a move's record read inside an oracle capture's or an X-Card pause's round
+  trip put the cache's old fields back). A new writer joins the chain
+  (`tests/unit/campaignStateChainSweep.test.js` fails on one that does not),
+  and a chained task never waits on another one (it would wait for itself).
+  A task reads the store at its start, with no await before the read or
+  between the read and its write. The X-Card's pause is the one write that
+  jumps the chain
+  (`runCampaignStateWriteNow`): it waits for nothing, and every chained write
+  that has not yet read the store waits for it to land — an oracle card
+  captured while the pause was on its way carried `xCardActive: false` back
+  (CAMPSTATE-CHAIN-PARTIAL).
+- **A writer that fires on every message keeps out of campaignState.** The
+  chat-activity stamp wrote `{ ...cached, lastSessionTimestamp }` on the
+  canonical GM whenever a message landed on a due stamp — and a relayed
+  X-Card's, Set a Flag's, Take a Break's or End a Session's own card is such a
+  message, created while the handler's write is still on its way: the stamp,
+  built from the cache without it, landed after it and undid it (issue #342
+  Z01). It is its own setting (`sessionActivity`) now; a fact that is not
+  campaignState's to hold gets its own key rather than a whole-object write.
 
 ## Detection — the mechanical sweep
 
@@ -312,8 +352,8 @@ matched in the text with its strings intact. It reports:
   production entry point (`module.json` `esmodules`, minus the Quench entry).
 
 `--strict` exits 1 on any DEAD export or setting, and CI runs it that way
-after lint (issue #282 item 5). Two unit tests sweep for what the scan can't
-see:
+after lint (issue #282 item 5). Three unit tests sweep for what the scan
+can't see:
 
 - `tests/unit/campaignStateFields.test.js`: every campaignState field (the
   schema keys, plus every field seen on a name that only holds campaignState)
@@ -327,9 +367,19 @@ see:
   document hook handler (these fire on every client) carries an
   `isCanonicalGM()` or author check, in its body or a same-file helper it
   calls. Handlers that only re-render or mirror into their own client are
-  listed as local-only, with the reason, and may contain no shared write.
+  listed as local-only, with the reason, and may contain no shared write;
+  one that writes only its own GM's entry of a per-user registry (the key
+  registries' healing — the one fact only that GM's browser knows) is listed
+  as own-entry, with the reason.
   Its first run gated the sector-overview rewrite, which ran on every
   client.
+- `tests/unit/campaignStateChainSweep.test.js`: every
+  `game.settings.set(MODULE_ID, "campaignState", …)` in production code runs
+  on the client's write chain (§9) — inside a `serialiseCampaignStateWrite`
+  / `runCampaignStateWriteNow` / `serialiseClockWrite` call, or in a named
+  helper that only such a call reaches — unless listed off it with a reason
+  (none today). Its first run listed the 27 writers CAMPSTATE-CHAIN-REST put
+  on the chain.
 
 Known blind spot: a *live*
 same-named function masks parallel-dead siblings (`FORMATFORCONTEXT-DEAD` hid

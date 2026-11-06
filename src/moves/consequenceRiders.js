@@ -228,7 +228,13 @@ async function writeCharacterMeters(actor, deltas, { resolutionId = null } = {})
 /**
  * A rider's supply loss while unprepared, to a different suffer move: the
  * "make a suffer move (-N)" picker without Sacrifice Resources — the W16
- * picker — bound to the move the riders follow. Never throws.
+ * picker — bound to the move the riders follow. A picker posted once that
+ * move's result was already burned or improved is the upgraded outcome's own
+ * (`upgraded`): a Batch Mode round runs its riders after its upgrade step,
+ * for the final outcome, and the picker was retired as superseded at the
+ * first pick — the cost never paid (issue #342 Z28). One posted before an
+ * upgrade still leaves with the outcome it superseded (issue #311 P03).
+ * Never throws.
  *
  * @param {Actor} actor
  * @param {number} amount — the loss
@@ -237,14 +243,17 @@ async function writeCharacterMeters(actor, deltas, { resolutionId = null } = {})
  */
 async function redirectSupplyLoss(actor, amount, resolutionId) {
   const name = escapeHtml(actor.name ?? "The character");
+  const bound = typeof resolutionId === "string" && resolutionId ? resolutionId : null;
   let posted = null;
   try {
     const { postSufferChoiceCard } = await import("./sufferCard.js");
+    const { upgradeKindFor } = await import("./resultUpgrade.js");
     posted = await postSufferChoiceCard({
       sufferPrompt: { kind: "any", amount, count: 1, exclude: ["sacrifice_resources"] },
       actor,
       executorOpts: {},
-      resolutionId: typeof resolutionId === "string" && resolutionId ? resolutionId : null,
+      resolutionId: bound,
+      upgraded: !!(bound && upgradeKindFor(bound)),
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | consequenceRiders: the redirected supply loss's picker could not be posted:`, err?.message ?? err);

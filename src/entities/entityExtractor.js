@@ -46,6 +46,7 @@ import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
 import { HONORIFIC_PREFIXES, wholeWordPattern } from "../context/relevanceResolver.js";
 import { isNarrationXCarded }              from "../context/safety.js";
+import { serialiseCampaignStateWrite }     from "../multiplayer/campaignStateChain.js";
 
 import {
   recordLoreDiscovery,
@@ -522,6 +523,13 @@ function detectionFromParsed(parsed, campaignState) {
  *   is confirmed as the roller's connection (issue #325 W23).
  * @param {string}  [options.namingText] — the move's narration (player's and
  *   narrator's), for the pending-draft fallback
+ * @param {Array<{ actorId: string|null, connectionSeed?: Object|null, owns: (figure: Object) => boolean }>} [options.connectionRollers]
+ *   — a Batch Mode round's Make a Connection hits, in confirm order, in place
+ *   of `autoCreateConnection` (issue #342 Z09): each creates one connection,
+ *   the first detected (else pending) one its `owns` says its own roller's
+ *   action met, with its own seed and its bond on its roller. The rest are
+ *   queued — the round's narration is several characters', so its first
+ *   connection is not the first hit's.
  * @param {string}  [options.sessionId]
  * @param {string}  [options.source]  — telemetry flag attached to the
  *   GM draft card. "paced_narrative" for paced-path detection;
@@ -529,6 +537,10 @@ function detectionFromParsed(parsed, campaignState) {
  * @param {string|null} [options.actorId] — the PC the narration was for (the
  *   roller): an auto-created connection's bond Item goes to them, and the
  *   draft card carries it so Confirm does too (issue #321 U23).
+ * @param {string[]|null} [options.actorIds] — a Batch Mode round's acting PCs:
+ *   with two or more, the draft card carries them all (`flags.actorIds`) in
+ *   place of `actorId`, and a connection row's Confirm asks which of them the
+ *   NPC is a connection of, or none (issue #342 D3).
  * @param {string|null} [options.narrationId] — the narration whose capture
  *   this is: stamped on the faction it surfaces to the World Journal, so an
  *   X-Card on the narration deletes that page (issue #335 Y02; issue #329
@@ -547,6 +559,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   const pendingNormalized = new Set(
     collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
   );
+  const slots = connectionSlots(options);
 
   for (const entity of entities ?? []) {
     if (removed()) return { created, queued: [] };
@@ -564,9 +577,10 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     // already reviewing them; re-flagging causes the suggestion loop.
     if (pendingNormalized.has(normalizeEntityName(entity.name))) continue;
 
-    if (options.autoCreateConnection && entity.type === "connection" && !created.length) {
+    const slot = entity.type === "connection" ? slots.find(s => !s.done && s.takes(entity)) : null;
+    if (slot) {
       try {
-        const seedData = buildConnectionSeedData(entity, options.connectionSeed ?? null);
+        const seedData = buildConnectionSeedData(entity, slot.connectionSeed);
         const record = await createConnection({
           name:                      seedData.name,
           description:               seedData.description,
@@ -585,12 +599,13 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
         if (removed()) return { created, queued: [] };
         await postCreationEnrichment("connection", record, campaignState);
         if (removed()) return { created, queued: [] };
-        await registerConnectionOnActiveCharacter(record, { actorId: options.actorId ?? null }).catch(err =>
+        await registerConnectionOnActiveCharacter(record, { actorId: slot.actorId }).catch(err =>
           console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
         if (removed()) return { created, queued: [] };
         // The narration that introduced them recorded their identity anchor
         // under their name, before the card existed.
         await promoteNewEntityLedgerSubjects(entity.name, "connection", record, campaignState);
+        slot.done = true;
         created.push({ entity, record });
       } catch (err) {
         console.error(`${MODULE_ID} | entityExtractor: auto-create connection failed:`, err);
@@ -626,22 +641,64 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
 
   // Make a Connection: the NPC its narration names may sit in a pending draft
   // row the detection left out — confirm it as the roller's (issue #325 W23),
-  // stamped with the narration like an auto-created one.
-  if (options.autoCreateConnection && !created.length && options.namingText && !removed()) {
-    const confirmed = await confirmNamedPendingConnection(options.namingText, options.actorId ?? null, narrationId)
+  // stamped with the narration like an auto-created one. Each hit that made
+  // no one gets its own row (a round's — issue #342 Z09).
+  for (const slot of slots) {
+    if (slot.done || !slot.names || removed()) continue;
+    const confirmed = await confirmNamedPendingConnection(slot.names, slot.actorId, narrationId)
       .catch(err => {
         console.warn(`${MODULE_ID} | routeEntityDrafts: confirming the pending connection failed:`, err?.message ?? err);
         return null;
       });
-    if (confirmed) created.push(confirmed);
+    if (confirmed) {
+      slot.done = true;
+      created.push(confirmed);
+    }
   }
 
   if (removed()) return { created, queued: [] };
   if (queued.length) {
-    await postDraftEntityCard(queued, campaignState, { source: options.source, actorId: options.actorId, narrationId });
+    await postDraftEntityCard(queued, campaignState, {
+      source: options.source, actorId: options.actorId, actorIds: options.actorIds ?? null, narrationId,
+    });
   }
 
   return { created, queued };
+}
+
+/**
+ * The connections a capture may create (routeEntityDrafts): one per Make a
+ * Connection hit (scope §9). Free-flow's one hit (`autoCreateConnection`)
+ * takes the first connection detected — its narration is that move's alone —
+ * and a pending row its `namingText` names. A Batch Mode round's hits
+ * (`connectionRollers`) each take only a figure their `owns` gives their own
+ * roller (issue #342 Z09: the round's first connection, whoever met them,
+ * went to the first hit's roller with that roller's seed).
+ *
+ * @param {Object} options — routeEntityDrafts' options
+ * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, done: boolean }>}
+ */
+function connectionSlots(options) {
+  if (Array.isArray(options.connectionRollers)) {
+    return options.connectionRollers
+      .filter(r => r && typeof r.owns === "function")
+      .map(r => ({
+        actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
+        connectionSeed: r.connectionSeed ?? null,
+        takes:          (entity) => r.owns(entity) === true,
+        names:          (draft) => r.owns(draft) === true,
+        done:           false,
+      }));
+  }
+  if (!options.autoCreateConnection) return [];
+  const hay = String(options.namingText ?? "");
+  return [{
+    actorId:        options.actorId ?? null,
+    connectionSeed: options.connectionSeed ?? null,
+    takes:          () => true,
+    names:          hay.trim() ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(hay) : null,
+    done:           false,
+  }];
 }
 
 
@@ -1001,10 +1058,14 @@ export async function promoteNewEntityLedgerSubjects(name, typeKey, record, camp
     };
 
     const callerChanged = promote(campaignState);
-    const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState");
-    if (!latest) return;
-    const changed = latest === campaignState ? callerChanged : promote(latest);
-    if (changed) await globalThis.game.settings.set(MODULE_ID, "campaignState", latest);
+    // Read and written at its turn on the client's campaignState write chain
+    // (CAMPSTATE-CHAIN-REST).
+    await serialiseCampaignStateWrite(async () => {
+      const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState");
+      if (!latest) return;
+      const changed = latest === campaignState ? callerChanged : promote(latest);
+      if (changed) await globalThis.game.settings.set(MODULE_ID, "campaignState", latest);
+    }, "promote ledger subjects");
   } catch (err) {
     console.warn(`${MODULE_ID} | promote ledger subjects for "${text}" failed:`, err?.message ?? err);
   }
@@ -1234,28 +1295,40 @@ export function entityExistsForName(name, type, campaignState) {
 }
 
 /**
- * The listed connection record a name names, by entityExistsForName's rule
- * (normalizeEntityName — a title aside), a record of exactly that name
- * first. null when none.
+ * The listed record of a type a name names, by entityExistsForName's rule
+ * (normalizeEntityName — a title aside; a faction by findFactionByName
+ * first), a record of exactly that name first. null when none.
  *
+ * @param {string} type — an entity type (connection, faction, ship, …)
  * @param {string} name
  * @param {Object} campaignState
  * @returns {Object|null}
  */
-function listedConnectionNamed(name, campaignState) {
-  const exact  = String(name ?? "").trim().toLowerCase();
-  const target = normalizeEntityName(name);
-  if (!target) return null;
+function listedRecordNamed(type, name, campaignState) {
+  if (type === "faction") {
+    const hit = findFactionByName(name, campaignState);
+    if (hit) return hit.faction;
+  }
+  const idsField = ENTITY_ID_FIELDS[type];
+  const getter   = ENTITY_GETTERS[type];
+  const exact    = String(name ?? "").trim().toLowerCase();
+  const target   = normalizeEntityName(name);
+  if (!idsField || !getter || !target) return null;
   let same = null;
-  for (const id of campaignState?.connectionIds ?? []) {
+  for (const id of campaignState?.[idsField] ?? []) {
     let rec = null;
-    try { rec = getConnection(id); }
+    try { rec = getter(id); }
     catch { continue; }
     if (!rec?.name) continue;
     if (rec.name.trim().toLowerCase() === exact) return rec;
     if (!same && normalizeEntityName(rec.name) === target) same = rec;
   }
   return same;
+}
+
+/** The listed connection record a name names (listedRecordNamed). */
+function listedConnectionNamed(name, campaignState) {
+  return listedRecordNamed("connection", name, campaignState);
 }
 
 /**
@@ -1689,7 +1762,15 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   // the rendered DOM.
   const drafts = entities.map((e, idx) => ({ ...e, index: idx, status: "pending" }));
 
-  const html = renderDraftCardHtml(drafts);
+  // A Batch Mode round's narration is several PCs' (issue #342 D3): the card
+  // carries every acting PC (`actorIds`), and a connection row's Confirm asks
+  // which of them the NPC is a connection of, or none — the detection cannot
+  // tell which of them met whom.
+  const listed = [...new Set((Array.isArray(options.actorIds) ? options.actorIds : [])
+    .filter(id => typeof id === "string" && id))];
+  const actorIds = listed.length > 1 ? listed : [];
+
+  const html = renderDraftCardHtml(drafts, actorIds.length ? draftCardHolders(actorIds) : null);
 
   const whisper = collectGmIds();
 
@@ -1701,7 +1782,8 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   const source = options.source === "paced_narrative" ? "paced_narrative" : "move_resolution";
   // The PC the narration was for: a confirmed connection's bond Item goes to
   // them (confirmDraft), not the first PC (issue #321 U23).
-  const actorId = typeof options.actorId === "string" && options.actorId ? options.actorId : null;
+  const actorId = actorIds.length ? null
+    : (typeof options.actorId === "string" && options.actorId ? options.actorId : (listed[0] ?? null));
   // The narration whose capture queued these rows: an X-Card on it withdraws
   // the ones still pending (withdrawNarrationDrafts — issue #338 D6(i)).
   const narrationId = typeof options.narrationId === "string" && options.narrationId ? options.narrationId : null;
@@ -1715,7 +1797,7 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
           draftEntityCard: true,
           drafts,
           source,
-          ...(actorId ? { actorId } : {}),
+          ...(actorIds.length ? { actorIds } : (actorId ? { actorId } : {})),
           ...(narrationId ? { narrationId } : {}),
         },
       },
@@ -1727,11 +1809,28 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
 }
 
 /**
+ * The acting PCs a round's draft card offers a connection row to (issue #342
+ * D3): each of `actorIds` that is still a PC, with its current name.
+ *
+ * @param {string[]} actorIds
+ * @returns {Array<{ actorId: string, name: string }>}
+ */
+function draftCardHolders(actorIds) {
+  return (Array.isArray(actorIds) ? actorIds : [])
+    .map(id => globalThis.game?.actors?.get?.(id) ?? null)
+    .filter(isPlayerCharacterActor)
+    .map(actor => ({ actorId: actor.id, name: String(actor.name ?? "").trim() || "Unnamed character" }));
+}
+
+/**
  * Render the HTML body of the draft entity card from a `drafts` array.
  * Pure / re-runnable so the renderChatMessage hook can rebuild after each
- * Confirm/Dismiss click.
+ * Confirm/Dismiss click. `holders` — on a round's card, its acting PCs
+ * (draftCardHolders): a pending connection row asks whose connection it is,
+ * a button per PC and "No one", in place of its Confirm (issue #342 D3);
+ * null on any other card.
  */
-function renderDraftCardHtml(drafts) {
+function renderDraftCardHtml(drafts, holders = null) {
   const items = drafts.map((e) => {
     const glyph = TYPE_GLYPHS[e.type] ?? "◇";
     const label = TYPE_LABELS[e.type] ?? e.type;
@@ -1745,6 +1844,16 @@ function renderDraftCardHtml(drafts) {
       actions = `<span class="sf-draft-status sf-draft-status-dismissed">✕ Dismissed</span>`;
     } else if (status === DRAFT_XCARDED) {
       actions = `<span class="sf-draft-status sf-draft-status-xcarded">Withdrawn — X-Card</span>`;
+    } else if (e.type === "connection" && Array.isArray(holders)) {
+      actions =
+        `<span class="sf-draft-holder-ask">Confirm — whose connection?</span>` +
+        holders.map(h =>
+          `<button class="sf-draft-btn sf-draft-confirm" data-action="sf-draft-confirm" ` +
+          `data-index="${e.index}" data-actor-id="${escapeHtml(h.actorId)}">${escapeHtml(h.name)}</button>`).join("") +
+        `<button class="sf-draft-btn sf-draft-confirm" data-action="sf-draft-confirm" ` +
+        `data-index="${e.index}" data-actor-id="">No one</button>` +
+        `<button class="sf-draft-btn sf-draft-dismiss" ` +
+        `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
     } else {
       actions =
         `<button class="sf-draft-btn sf-draft-confirm" ` +
@@ -1815,7 +1924,8 @@ export function registerDraftCardHooks() {
         ev.preventDefault();
         ev.stopPropagation();
         const idx = Number(btn.dataset.index);
-        handleDraftConfirm(message, idx).catch(err =>
+        // A round's connection row: whose connection the GM picked ("" — no one).
+        handleDraftConfirm(message, idx, btn.dataset.actorId).catch(err =>
           console.error(`${MODULE_ID} | draft confirm failed:`, err));
       });
     });
@@ -1837,27 +1947,84 @@ export function registerDraftCardHooks() {
 // double-click, a re-rendered card — created the entity twice (issue #302).
 const _draftsInFlight = new Set();
 
-async function handleDraftConfirm(message, draftIndex) {
+/**
+ * A Confirm press. On a round's card (`flags.actorIds`, issue #342 D3) a
+ * connection row's press names whose connection the NPC is — `pick` is one
+ * of the card's acting PCs, or "" for no one — checked against the card's
+ * own choices, as the connection pickers check theirs; a press that names
+ * none of them creates nothing.
+ *
+ * @param {ChatMessage} message
+ * @param {number} draftIndex
+ * @param {string} [pick] — the pressed button's `data-actor-id`
+ * @returns {Promise<void>}
+ */
+async function handleDraftConfirm(message, draftIndex, pick) {
   const key = `${message?.id}:${draftIndex}`;
   if (_draftsInFlight.has(key)) return;
   _draftsInFlight.add(key);
   try {
-    await confirmDraft(message, draftIndex);
+    const opts = draftConfirmPick(message, draftIndex, pick);
+    if (!opts) {
+      console.warn(`${MODULE_ID} | draft confirm: "${pick ?? ""}" is not a character this card offers — nothing created.`);
+      globalThis.ui?.notifications?.warn?.("Pick whose connection this is — one of the characters on the card, or No one.");
+      return;
+    }
+    await confirmDraft(message, draftIndex, opts);
   } finally {
     _draftsInFlight.delete(key);
   }
 }
 
 /**
+ * The bond a Confirm press asks for (handleDraftConfirm): `{}` — the card's
+ * own PC (`flags.actorId`), as every card but a round's; on a round's card
+ * (`flags.actorIds`) a connection row's pick — `{ actorId }` for one of its
+ * acting PCs, `{ noBond: true }` for no one, or null when the press names
+ * neither (a stale button, a PC no longer on the card).
+ *
+ * @param {ChatMessage} message
+ * @param {number} draftIndex
+ * @param {string|undefined} pick
+ * @returns {{ actorId?: string, noBond?: true }|null}
+ */
+function draftConfirmPick(message, draftIndex, pick) {
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  const offered = Array.isArray(f.actorIds) ? f.actorIds : null;
+  const draft = (Array.isArray(f.drafts) ? f.drafts : []).find(d => d?.index === draftIndex);
+  if (!offered || draft?.type !== "connection") return {};
+  if (pick === "") return { noBond: true };
+  return (typeof pick === "string" && offered.includes(pick) && draftCardHolders([pick]).length) ? { actorId: pick } : null;
+}
+
+/**
+ * Whose sheet a confirmed connection row's bond Item goes on
+ * (registerConnectionOnActiveCharacter's target): `opts.actorId` — a Make a
+ * Connection's roller (confirmNamedPendingConnection, issue #325 W23) or the
+ * PC a GM picked on a round's card; nobody's for `opts.noBond` (issue #342
+ * D3); else the card's own PC (`flags.actorId`, issue #321 U23).
+ *
+ * @param {ChatMessage} message
+ * @param {{ actorId?: string|null, noBond?: boolean }} opts
+ * @returns {{ actorId: string|null }|{ actors: [] }}
+ */
+function draftBondHolder(message, opts) {
+  if (typeof opts?.actorId === "string" && opts.actorId) return { actorId: opts.actorId };
+  if (opts?.noBond === true) return { actors: [] };
+  return { actorId: message?.flags?.[MODULE_ID]?.actorId ?? null };
+}
+
+/**
  * Create a draft row's entity and mark the row confirmed. A connection's bond
  * Item goes to the PC of the card's narration (`flags.actorId`), or to
  * `opts.actorId` — the roller of a Make a Connection that named the pending
- * NPC (issue #325 W23). Returns the created record (null when nothing was
- * created).
+ * NPC (issue #325 W23), or the PC a GM picked on a round's card — or to no
+ * one (`opts.noBond`, issue #342 D3; draftBondHolder). Returns the created
+ * record (null when nothing was created).
  *
  * @param {ChatMessage} message — the draft card
  * @param {number} draftIndex
- * @param {{ actorId?: string|null, narrationId?: string|null }} [opts] —
+ * @param {{ actorId?: string|null, noBond?: boolean, narrationId?: string|null }} [opts] —
  *   `narrationId`: the Make a Connection narration confirming the row,
  *   stamped on the connection with the row (`createdFromNarrationId`,
  *   `createdFromDraft`)
@@ -1888,10 +2055,15 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     const existing = draft.type === "connection" ? listedConnectionNamed(draft.name, campaignState) : null;
     if (existing) {
       await registerConnectionOnActiveCharacter(existing, {
-        actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
+        ...draftBondHolder(message, opts),
       }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     }
+
+    // The rest of what its creation does, each step a no-op once done: a
+    // refused Confirm whose record the world load listed died before them
+    // (issue #342 Z60).
+    await completeListedEntity(draft, campaignState);
     await setDraftStatus(message, draftIndex, "confirmed");
     return null;
   }
@@ -1927,7 +2099,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
       // no bond for it (XCARD-LATE-CAPTURE).
       if (isNarrationXCarded(opts.narrationId)) return null;
       await registerConnectionOnActiveCharacter(record, {
-        actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
+        ...draftBondHolder(message, opts),
       }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     } else if (draft.type === "ship") {
@@ -1952,25 +2124,12 @@ async function confirmDraft(message, draftIndex, opts = {}) {
       // faction oracles — previously factions were created bare (name +
       // description) and frozen there (FACTION-DUAL-STORE /
       // FACTION-RECORD-WRITE-ONCE).
-      const wjEntry = getFactionEntry(draft.name);
       record = await creator({
         name:                      draft.name,
         description:               draft.description ?? "",
         portraitSourceDescription: draft.description ?? "",
       }, campaignState);
-      try {
-        const hit = findFactionByName(draft.name, campaignState);
-        if (hit) {
-          await seedFactionRecord(hit.id);
-          if (wjEntry?.attitude && wjEntry.attitude !== "unknown") {
-            await applyAttitudeToFactionRecord(draft.name, wjEntry.attitude, campaignState);
-          }
-          // Backlink the WJ intelligence entry to the record (also re-syncs).
-          await recordFactionIntelligence(draft.name, { entityId: hit.id }, campaignState);
-        }
-      } catch (err) {
-        console.warn(`${MODULE_ID} | draft confirm: faction reconcile/seed failed:`, err?.message ?? err);
-      }
+      await reconcileConfirmedFaction(draft.name, campaignState);
     } else {
       record = await creator({
         name:                      draft.name,
@@ -1991,25 +2150,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
   if (record) {
     await postCreationEnrichment(draft.type, record, campaignState);
 
-    // Mirror a confirmed faction into the World Journal — Factions page so it
-    // lands as established lore. The WJ faction loop (routeWorldJournalResults)
-    // skips any faction that already has an entity record, so without this the
-    // entity and the journal stay disconnected and the Factions page stays
-    // empty (playtest finding).
-    // No attitude: the entry keeps the one the narration established (a new
-    // entry starts "unknown"); the backlink is the host id, as the reconcile
-    // above writes it. Passing attitude "unknown" overwrote a known attitude,
-    // and record._id re-pointed the backlink (issue #321 U28).
-    if (draft.type === "faction") {
-      try {
-        await recordFactionIntelligence(draft.name, {
-          summary:  draft.description ?? "",
-          entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
-        }, campaignState);
-      } catch (err) {
-        console.warn(`${MODULE_ID} | draft confirm: faction World Journal mirror failed:`, err?.message ?? err);
-      }
-    }
+    if (draft.type === "faction") await mirrorConfirmedFaction(draft, campaignState);
 
     // Promote any free-text fact-continuity ledger entries that were
     // captured against this name into entity-scoped entries pointing at
@@ -2027,6 +2168,99 @@ async function confirmDraft(message, draftIndex, opts = {}) {
 }
 
 /**
+ * What a confirmed faction's creation makes of its record, each step a no-op
+ * once done (FACTION-RECORD-WRITE-ONCE / FACTION-DUAL-STORE): the Starforged
+ * faction oracles rolled (`seedFactionRecord` — once, by its `seeded` flag),
+ * the stance the narration gave it on the World Journal taken as the record's
+ * canonical one, and that entry backlinked to the record's host id (which
+ * re-syncs the stance) unless it already links it. The creation runs it, and
+ * a Confirm that finds the faction already listed (completeListedEntity).
+ * Never throws.
+ *
+ * @param {string} name
+ * @param {Object} campaignState
+ * @returns {Promise<void>}
+ */
+async function reconcileConfirmedFaction(name, campaignState) {
+  try {
+    const hit = findFactionByName(name, campaignState);
+    if (!hit) return;
+    await seedFactionRecord(hit.id);
+    const wjEntry = getFactionEntry(name);
+    if (wjEntry?.attitude && wjEntry.attitude !== "unknown") {
+      await applyAttitudeToFactionRecord(name, wjEntry.attitude, campaignState);
+    }
+    if (wjEntry?.entityId !== hit.id) {
+      await recordFactionIntelligence(name, { entityId: hit.id }, campaignState);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | draft confirm: faction reconcile/seed failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Mirror a confirmed faction into the World Journal — Factions page so it
+ * lands as established lore. The WJ faction loop (routeWorldJournalResults)
+ * skips any faction that already has an entity record, so without this the
+ * entity and the journal stay disconnected and the Factions page stays empty
+ * (playtest finding). No attitude: the entry keeps the one the narration
+ * established (a new entry starts "unknown"); the backlink is the host id, as
+ * the reconcile writes it. Passing attitude "unknown" overwrote a known
+ * attitude, and record._id re-pointed the backlink (issue #321 U28). Never
+ * throws.
+ *
+ * @param {Object} draft — the confirmed row (`name`, `description`)
+ * @param {Object} campaignState
+ * @returns {Promise<void>}
+ */
+async function mirrorConfirmedFaction(draft, campaignState) {
+  try {
+    await recordFactionIntelligence(draft.name, {
+      summary:  draft.description ?? "",
+      entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
+    }, campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | draft confirm: faction World Journal mirror failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Finish an entity a draft Confirm found already listed (issue #342 Z60). A
+ * Confirm whose registration the world refused leaves its record unlisted,
+ * and the canonical GM's world load lists it
+ * (migrator.registerUnlistedEntityActors) — so the retried Confirm took the
+ * "exists" path, and nothing the refused one died before ever ran: a faction
+ * stayed unseeded, without the stance the narration gave it and unlinked from
+ * its World Journal entry. The creation's later steps run here, each a no-op
+ * once done, so a Confirm whose card write was lost (issue #321 U25) changes
+ * nothing: a faction's seed and stance reconcile (reconcileConfirmedFaction)
+ * and its World Journal mirror while the entry does not link the record yet;
+ * the portrait, for a record with none; the ledger facts recorded under its
+ * name promoted to it. (A connection's bond is the caller's.) Never throws.
+ *
+ * @param {Object} draft — the row (`type`, `name`, `description`)
+ * @param {Object} campaignState
+ * @returns {Promise<void>}
+ */
+async function completeListedEntity(draft, campaignState) {
+  try {
+    const record = listedRecordNamed(draft.type, draft.name, campaignState);
+    if (!record) return;
+    let mirror = false;
+    if (draft.type === "faction") {
+      const hit = findFactionByName(draft.name, campaignState);
+      mirror = !!hit && getFactionEntry(draft.name)?.entityId !== hit.id;
+      await reconcileConfirmedFaction(draft.name, campaignState);
+    }
+    if (!record.portraitId) await postCreationEnrichment(draft.type, record, campaignState);
+    if (mirror) await mirrorConfirmedFaction(draft, campaignState);
+    await promoteNewEntityLedgerSubjects(draft.name, draft.type, record, campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | draft confirm: finishing the listed ${draft.type} "${draft.name}" failed:`, err?.message ?? err);
+  }
+}
+
+/**
  * A Make a Connection hit on an NPC whose draft card is still pending (issue
  * #325 W23): the detection pass leaves a pending name out (its prompt says
  * not to return it, and the parse and routeEntityDrafts skip it), so the move
@@ -2038,14 +2272,16 @@ async function confirmDraft(message, draftIndex, opts = {}) {
  * the row back to pending (connection.retractNarrationConnections;
  * MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED).
  *
- * @param {string} text — the player's narration and the narrator's
+ * @param {(draft: Object) => boolean} names — whether the move's narration
+ *   names a row as its roller's: free-flow's, the row's full name in the
+ *   player's narration and the narrator's; a round's hit, the row's figure
+ *   its roller met (connectionSlots — issue #342 Z09)
  * @param {string|null} actorId — the roller
  * @param {string|null} [narrationId] — the Make a Connection's narration
  * @returns {Promise<{ entity: Object, record: Object }|null>}
  */
-async function confirmNamedPendingConnection(text, actorId, narrationId = null) {
-  const hay = String(text ?? "");
-  if (!hay.trim()) return null;
+async function confirmNamedPendingConnection(names, actorId, narrationId = null) {
+  if (typeof names !== "function") return null;
   const messages = [...(globalThis.game?.messages?.contents ?? [])].reverse();   // the newest card first
   for (const message of messages) {
     const f = message?.flags?.[MODULE_ID];
@@ -2053,7 +2289,7 @@ async function confirmNamedPendingConnection(text, actorId, narrationId = null) 
     for (const draft of Array.isArray(f.drafts) ? f.drafts : []) {
       if (draft?.type !== "connection" || (draft.status && draft.status !== "pending")) continue;
       const name = typeof draft.name === "string" ? draft.name.trim() : "";
-      if (!name || !wholeWordPattern(name).test(hay)) continue;
+      if (!name || !names(draft)) continue;
       const record = await confirmDraft(message, draft.index, { actorId, narrationId });
       return record ? { entity: draft, record } : null;
     }
@@ -2068,15 +2304,17 @@ async function handleDraftDismiss(message, draftIndex) {
   const draft = drafts.find(d => d.index === draftIndex);
   if (!draft || draft.status !== "pending") return;
 
-  const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
-  const list = Array.isArray(campaignState.dismissedEntities)
-    ? [...campaignState.dismissedEntities]
-    : [];
-  if (draft.name && !list.includes(draft.name)) list.push(draft.name);
-  campaignState.dismissedEntities = list;
-
+  // A copy of the latest store, at its turn on the client's campaignState
+  // write chain: set on the cached object, a refused write left the GM's
+  // client holding a dismissal the world never took, and read inside an
+  // oracle capture's round trip it erased the answer (CACHE-MUTATED-BEFORE-WRITE).
   try {
-    await globalThis.game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await serialiseCampaignStateWrite(() => {
+      const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+      const list = Array.isArray(latest.dismissedEntities) ? [...latest.dismissedEntities] : [];
+      if (draft.name && !list.includes(draft.name)) list.push(draft.name);
+      return globalThis.game.settings.set(MODULE_ID, "campaignState", { ...latest, dismissedEntities: list });
+    }, "draft dismiss");
   } catch (err) {
     console.error(`${MODULE_ID} | draft dismiss: settings.set failed:`, err);
     return;
@@ -2212,7 +2450,9 @@ async function updateDraftCard(message, drafts) {
   // been removed from the collection.
   if (!message?.id || !globalThis.game?.messages?.get?.(message.id)) return;
 
-  const content = renderDraftCardHtml(drafts);
+  // A round's card keeps asking whose connection a row is (issue #342 D3).
+  const offered = message.flags?.[MODULE_ID]?.actorIds;
+  const content = renderDraftCardHtml(drafts, Array.isArray(offered) && offered.length ? draftCardHolders(offered) : null);
   try {
     // Update content first, then flags via setFlag so we don't accidentally
     // clobber sibling flags (draftEntityCard, source) by passing a partial

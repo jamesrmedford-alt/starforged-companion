@@ -1161,13 +1161,20 @@ export function getActiveThreats(_campaignState) {
 }
 
 /**
- * Up to 3 factions, most recently updated first.
+ * The World Journal's factions, most recently updated first — up to 3 (the
+ * detection pass's view), or `limit` of them. The narrator's [4e] takes every
+ * one (`limit: Infinity`): mergeFactionLandscape ranks them with the faction
+ * records by recency, and a faction's newest World Journal write can lift its
+ * record into that block (issue #342 Z13).
+ *
+ * @param {Object} [_campaignState]
+ * @param {{ limit?: number }} [opts]
  */
-export function getFactionLandscape(_campaignState) {
+export function getFactionLandscape(_campaignState, { limit = 3 } = {}) {
   const journal = findJournal(JOURNAL_NAMES.factions);
   return readEntries(journal, FLAG_KEYS.factions)
     .sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""))
-    .slice(0, 3);
+    .slice(0, limit);
 }
 
 /**

@@ -70,18 +70,8 @@ export const FactionSchema = {
 
 
 export async function createFaction(data, campaignState) {
-  // The journal an earlier creation of this faction made, whose registration
-  // the world refused, is adopted — listed now — never a second one (known-
-  // issues JOURNAL-ORPHAN-ON-REFUSAL, issue #337 Y34's get-or-create). One
-  // faction whatever article, case or spacing names it (issue #336 Y31).
-  const adopted = await adoptUnlistedEntityJournal(FLAG_KEY, "factionIds", data?.name, campaignState,
-    { label: "faction", nameKey: factionNameKey });
-  if (adopted) return adopted;
-
   const now = new Date().toISOString();
-  const id  = generateId();
-
-  const faction = {
+  const record = (id) => ({
     ...FactionSchema,
     ...data,
     _id:       id,
@@ -89,7 +79,26 @@ export async function createFaction(data, campaignState) {
     rumors:    data.rumors ?? [],
     createdAt: now,
     updatedAt: now,
-  };
+  });
+  const pageOf = (faction) => ({
+    name:  "Faction Data",
+    type:  "text",
+    text:  { format: 1, content: renderEntityBody(faction) },
+    flags: { [MODULE_ID]: { [FLAG_KEY]: faction } },
+  });
+
+  // The journal an earlier creation of this faction made, whose registration
+  // the world refused, is adopted — listed now — never a second one (known-
+  // issues JOURNAL-ORPHAN-ON-REFUSAL, issue #337 Y34's get-or-create). One
+  // faction whatever article, case or spacing names it (issue #336 Y31). One
+  // whose page the world refused is completed with this record, under the id
+  // its entry already names (known-issues FACTION-PAGELESS-JOURNAL).
+  const adopted = await adoptUnlistedEntityJournal(FLAG_KEY, "factionIds", data?.name, campaignState,
+    { label: "faction", nameKey: factionNameKey, page: (entityId) => pageOf(record(entityId || generateId())) });
+  if (adopted) return adopted;
+
+  const id      = generateId();
+  const faction = record(id);
 
   const entry = await JournalEntry.create({
     name:   faction.name || "Unknown Faction",
@@ -97,12 +106,7 @@ export async function createFaction(data, campaignState) {
     flags:  { [MODULE_ID]: { entityType: "faction", entityId: id } },
   });
 
-  await entry.createEmbeddedDocuments("JournalEntryPage", [{
-    name:  "Faction Data",
-    type:  "text",
-    text:  { format: 1, content: renderEntityBody(faction) },
-    flags: { [MODULE_ID]: { [FLAG_KEY]: faction } },
-  }]);
+  await entry.createEmbeddedDocuments("JournalEntryPage", [pageOf(faction)]);
 
   // The store first, the caller's copy once the world took it (issue #331 X35).
   if (await registerEntityId(campaignState, "factionIds", entry.id, { label: "faction" })) {
@@ -267,32 +271,44 @@ export async function seedFactionRecord(journalEntryId) {
  * (FACTION-PACKET-DEAD / FACTION-DUAL-STORE fix): entity records win for
  * record-backed factions (their `relationship` is the canonical stance);
  * WJ-only factions contribute their attitude + known goal. Deduped by name,
- * capped. Pure — exported for unit testing.
+ * the most recently updated first — a faction's time is the later of its
+ * record's `updatedAt` (every stance write, seed and attitude sync stamps it)
+ * and its World Journal entry's — then capped. Records and World Journal
+ * factions compete for the cap on that time: in creation order a campaign's
+ * first four records held it for good, and no newer faction ever reached
+ * [4e] (issue #342 Z13). Equal times keep the input order (records, then the
+ * World Journal's). A record whose stance is still `unknown` shows the one
+ * its World Journal attitude maps to (ATTITUDE_TO_RELATIONSHIP). Pure —
+ * exported for unit testing.
  *
  * @param {Array<Object>} records   — faction entity records (listFactions)
- * @param {Array<Object>} wjEntries — WJ faction entries (getFactionLandscape)
+ * @param {Array<Object>} wjEntries — WJ faction entries (getFactionLandscape),
+ *   every one: a faction's World Journal time can lift its record into the cap
  * @param {number} [cap=4]
  * @returns {Array<{ name: string, stance: string, detail: string }>}
  */
 export function mergeFactionLandscape(records, wjEntries, cap = 4) {
-  const out = [];
-  const seen = new Set();
+  const byKey = new Map();   // factionNameKey → { line, at, order }
+  const stamp = (v) => String(v ?? "");
 
   for (const f of records ?? []) {
     if (!f?.name) continue;
     const key = factionNameKey(f.name);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (byKey.has(key)) continue;
     const latestProject = f.projects?.[f.projects.length - 1];
-    out.push({
-      name:   f.name,
-      stance: (f.relationship && f.relationship !== "unknown")
-        ? f.relationship.replace(/_/g, " ")
-        : "",
-      detail: [
-        f.subtype ? `${f.type}: ${f.subtype}` : f.type,
-        latestProject ? `project: ${latestProject}` : "",
-      ].filter(Boolean).join(" · "),
+    byKey.set(key, {
+      at:    stamp(f.updatedAt),
+      order: byKey.size,
+      line:  {
+        name:   f.name,
+        stance: (f.relationship && f.relationship !== "unknown")
+          ? f.relationship.replace(/_/g, " ")
+          : "",
+        detail: [
+          f.subtype ? `${f.type}: ${f.subtype}` : f.type,
+          latestProject ? `project: ${latestProject}` : "",
+        ].filter(Boolean).join(" · "),
+      },
     });
   }
 
@@ -300,16 +316,34 @@ export function mergeFactionLandscape(records, wjEntries, cap = 4) {
     const name = e?.factionName ?? "";
     if (!name) continue;
     const key = factionNameKey(name);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({
-      name,
-      stance: (e.attitude && e.attitude !== "unknown") ? e.attitude : "",
-      detail: e.knownGoal ? `goal: ${e.knownGoal}` : "",
+    const at  = stamp(e.updatedAt);
+    const hit = byKey.get(key);
+    if (hit) {
+      // The record's line; the later of the two times.
+      if (at.localeCompare(hit.at) > 0) hit.at = at;
+      // A record with no stance yet takes the one its World Journal attitude
+      // maps to — the stance a reconcile gives it. The world load lists a
+      // faction whose Confirm's registration was refused, bare, and its
+      // record hid the stance the narration had given it (issue #342 Z60).
+      const mapped = ATTITUDE_TO_RELATIONSHIP[String(e.attitude ?? "").toLowerCase()];
+      if (!hit.line.stance && mapped) hit.line.stance = mapped.replace(/_/g, " ");
+      continue;
+    }
+    byKey.set(key, {
+      at,
+      order: byKey.size,
+      line:  {
+        name,
+        stance: (e.attitude && e.attitude !== "unknown") ? e.attitude : "",
+        detail: e.knownGoal ? `goal: ${e.knownGoal}` : "",
+      },
     });
   }
 
-  return out.slice(0, Math.max(0, cap));
+  return [...byKey.values()]
+    .sort((a, b) => b.at.localeCompare(a.at) || a.order - b.order)
+    .slice(0, Math.max(0, cap))
+    .map(c => c.line);
 }
 
 export function listFactions(campaignState) {

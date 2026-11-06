@@ -14,6 +14,7 @@ import { createSettlement, updateSettlement } from "../entities/settlement.js";
 import { createConnection }    from "../entities/connection.js";
 import { createLocation }      from "../entities/location.js";
 import { ENTITY_ID_LISTS, unionIdList } from "../entities/registry.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 import { generateSectorSites, buildSiteLocationData } from "./precursorSites.js";
 import { getOrCreateSectorJournalFolder } from "../entities/folder.js";
 import { finalizeEntityArtOnly } from "../entities/finalize.js";
@@ -563,9 +564,15 @@ export async function storeSector(sector, extras, campaignState) {
   // World Journal integration — record the sector trouble as an active
   // threat so the narrator-context assembler surfaces it during play.
   // Non-blocking: a WJ write failure should not abort sector creation.
+  // The threat is named by its trouble AND its sector: recordThreat upserts
+  // by name, and the Sector Trouble table has 20 rows, so a second sector
+  // that rolled the same trouble took over the first's page — ACTIVE THREATS
+  // told the first sector's trouble as the second's, and resolving it for
+  // one resolved both (issue #342 Z65). A retried creation of the same
+  // sector still updates its own page (known-issues SECTOR-CREATE-PARTIAL).
   if (sector?.trouble) {
     try {
-      await recordThreat(sector.trouble, {
+      await recordThreat(sector.name ? `${sector.trouble} — ${sector.name}` : sector.trouble, {
         type:     "environmental",
         severity: "looming",
         summary:  `Trouble in ${sector.name ?? "this sector"}: ${sector.trouble}`,
@@ -610,24 +617,27 @@ function applyStoredSector(campaignState, stored) {
  * copy (they run with persist:false so sector creation is one write) — never
  * the caller's whole object. Sector creation holds that copy across entity
  * creation, art and narrator calls, often minutes; writing it whole reverted
- * every write relayed meanwhile, an X-Card included (issue #300 F14).
+ * every write relayed meanwhile, an X-Card included (issue #300 F14). Read at
+ * its turn on the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
  *
  * @param {Object} stored         the sector record storeSector built
  * @param {Object} campaignState  the caller's copy (already updated in place)
  */
 async function persistSectorOntoStore(stored, campaignState) {
-  const latest  = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  const sectors = Array.isArray(latest.sectors) ? [...latest.sectors] : [];
-  const at      = sectors.findIndex(s => s?.id === stored.id);
-  if (at >= 0) sectors[at] = stored;
-  else         sectors.push(stored);
-  const next = { ...latest, sectors, activeSectorId: stored.id };
-  for (const key of ENTITY_ID_LISTS) {
-    const merged = unionIdList(latest[key], campaignState[key]);
-    if (merged) next[key] = merged;
-  }
   try {
-    await game.settings.set(MODULE_ID, "campaignState", next);
+    await serialiseCampaignStateWrite(() => {
+      const latest  = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const sectors = Array.isArray(latest.sectors) ? [...latest.sectors] : [];
+      const at      = sectors.findIndex(s => s?.id === stored.id);
+      if (at >= 0) sectors[at] = stored;
+      else         sectors.push(stored);
+      const next = { ...latest, sectors, activeSectorId: stored.id };
+      for (const key of ENTITY_ID_LISTS) {
+        const merged = unionIdList(latest[key], campaignState[key]);
+        if (merged) next[key] = merged;
+      }
+      return game.settings.set(MODULE_ID, "campaignState", next);
+    }, "sector");
   } catch (err) {
     console.error(`${MODULE_ID} | sectorGenerator: storing the sector failed:`, err);
     throw err;

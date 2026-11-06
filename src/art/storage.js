@@ -28,6 +28,7 @@
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID   = "starforged-companion";
 const FLAG_KEY    = "artAsset";
@@ -123,6 +124,30 @@ export async function loadArtAsset(assetId, campaignState = null) {
   }
 }
 
+/**
+ * The newest portrait the Art Cache holds for an entity that no regeneration
+ * superseded — or null. The generator asks only for an entity whose record
+ * names no portrait it can load, so the one found is one no record names: a
+ * first portrait made and stored whose link the world refused (known-issues
+ * FIRST-PORTRAIT-LINK-REFUSED). Linking it saves it without buying a second
+ * image (generator.js).
+ *
+ * @param {string} entityType — the asset's entityType ("connection", …)
+ * @param {string} entityId   — the entity record's `_id` (the asset's entityId)
+ * @returns {ArtAsset|null}
+ */
+export function findEntityPortrait(entityType, entityId) {
+  if (!entityType || !entityId) return null;
+  let found = null;
+  for (const entry of game.journal?.contents ?? []) {
+    if (entry?.flags?.[MODULE_ID]?.entityType !== "artAsset") continue;
+    const asset = readAssetFromEntry(entry);
+    if (asset?.entityType !== entityType || asset?.entityId !== entityId || asset.superseded) continue;
+    if (!found || String(asset.generatedAt ?? "") > String(found.generatedAt ?? "")) found = asset;
+  }
+  return found;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE
 // ─────────────────────────────────────────────────────────────────────────────
@@ -139,9 +164,10 @@ export async function loadArtAsset(assetId, campaignState = null) {
  * as stays: the client has no file delete.
  *
  * Canonical GM only (single emitter). The index write is a copy of the latest
- * stored campaignState with no await between its read and write; a refused
- * write is logged, never thrown, and leaves index entries no journal entry
- * answers, which loadArtAsset passes over.
+ * stored campaignState with no await between its read and write, on the
+ * client's campaignState write chain; a refused write is logged, never
+ * thrown, and leaves index entries no journal entry answers, which
+ * loadArtAsset passes over.
  *
  * @param {string} entityType — the asset's entityType ("connection", …)
  * @param {string} entityId   — the entity record's `_id` (the asset's entityId)
@@ -173,17 +199,21 @@ export async function deleteEntityArtAssets(entityType, entityId, { portraitId =
   // The linked portrait's index entry goes when no entry holds it any more.
   if (portraitId && !(game.journal?.contents ?? []).some(owned)) gone.add(portraitId);
 
-  const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  const index = latest.artAssetIds ?? {};
-  const drop = [...gone].filter(id => Object.prototype.hasOwnProperty.call(index, id));
-  if (drop.length) {
-    const next = { ...index };
-    for (const id of drop) delete next[id];
-    try {
+  // Read and written at its turn on the client's campaignState write chain:
+  // read inside the round trip of a write ahead (a clock advance, an oracle
+  // capture), it put that write's fields back (ART-INDEX-WRITE-OFF-CHAIN).
+  try {
+    await serialiseCampaignStateWrite(async () => {
+      const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const index = latest.artAssetIds ?? {};
+      const drop = [...gone].filter(id => Object.prototype.hasOwnProperty.call(index, id));
+      if (!drop.length) return;
+      const next = { ...index };
+      for (const id of drop) delete next[id];
       await game.settings.set(MODULE_ID, "campaignState", { ...latest, artAssetIds: next });
-    } catch (err) {
-      console.warn(`${MODULE_ID} | art/storage: dropping ${drop.length} deleted portrait(s) from the art index failed — the entries name nothing now:`, err?.message ?? err);
-    }
+    }, "art index: deleted portraits");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | art/storage: dropping deleted portraits from the art index failed — the entries name nothing now:`, err?.message ?? err);
   }
   return deleted;
 }
@@ -294,16 +324,24 @@ function buildEntryName(asset) {
 
 /**
  * Add one entry to the art index on the latest stored campaignState (no await
- * between read and write). Always written: the caller's copy is often the
- * setting's cached object, already holding the entry.
+ * between read and write), read at its turn on the client's campaignState
+ * write chain: read inside the round trip of a write ahead (a clock advance,
+ * an oracle capture), it put that write's fields back
+ * (ART-INDEX-WRITE-OFF-CHAIN). Decided on the store, never on the caller's
+ * copy — that is often the setting's cached object, already holding the
+ * entry: nothing is written when the store already names it (a portrait's
+ * lock or regeneration state changing re-stores the same asset).
  */
 async function registerArtAssetInStore(assetId, entryName) {
-  const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
   try {
-    await game.settings.set(MODULE_ID, "campaignState", {
-      ...latest,
-      artAssetIds: { ...(latest.artAssetIds ?? {}), [assetId]: entryName },
-    });
+    await serialiseCampaignStateWrite(async () => {
+      const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      if (latest.artAssetIds?.[assetId] === entryName) return;
+      await game.settings.set(MODULE_ID, "campaignState", {
+        ...latest,
+        artAssetIds: { ...(latest.artAssetIds ?? {}), [assetId]: entryName },
+      });
+    }, "art index");
   } catch (err) {
     console.error(`${MODULE_ID} | art/storage: registering the art asset failed:`, err);
     throw err;

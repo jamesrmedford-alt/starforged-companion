@@ -20,7 +20,9 @@ mirrors `relationshipTicks` onto the bond Items (`setBondItemTicks`), so the
 two stay in step; `loseConnection` (`!sever`) writes the record's
 `active: false` through as `flags[MODULE].lost` (`setBondItemLost` — issue
 #330 D10; a module flag, not the vendor's `completed`, which the sheet shows
-as a forged bond). The Items are keyed by the record's `_id`
+as a forged bond); and `forgeBond` writes `bonded: true` through as that
+`completed` (`setBondItemForged` — issue #342 Z57: the forge reached the
+record only, so the sheet and CHARACTER STATE never showed the bond). The Items are keyed by the record's `_id`
 (`flags[MODULE].connectionId`, written by every creator) and matched by it
 alone (`actorBridge.bondItemsFor`); the name reaches only an Item with no
 key, and only the PC's one of that name — a same-named sibling's Item is
@@ -30,9 +32,10 @@ passed the host Actor id, which no Item carries).
 
 ## 1. Meet (creation)
 
-Five paths converge on `createConnection()`. It registers the NPC card's id
+Four paths converge on `createConnection()`. It registers the NPC card's id
 in `connectionIds` on the caller's copy and on the latest stored campaignState
-(`registerEntityIdInStore`) — never by writing the caller's copy whole, which
+(`registerEntityIdInStore`, on the GM's campaignState write chain —
+CAMPSTATE-CHAIN-REST) — never by writing the caller's copy whole, which
 reverted a relayed X-Card when the caller was the move pipeline (issue #300
 F14). Sector creation passes `persist: false` and registers everything in its
 final `storeSector` write. A creation whose registration the world refused
@@ -40,7 +43,11 @@ leaves its card unlisted; the next creation of that name (and sector) adopts
 it instead of making a second card (`registry.adoptUnlistedEntityActor` —
 every Actor-hosted creator does), and the canonical GM's world load lists any
 flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
-— issue #337 Y34: a retried draft Confirm made a second "Vex").
+— issue #337 Y34: a retried draft Confirm made a second "Vex"). A Confirm that
+then finds the card listed finishes what its creation died before
+(`entityExtractor.completeListedEntity`, each step a no-op once done — issue
+#342 Z60): the portrait for a card with none, and the scene-ledger facts
+recorded under its name promoted to it; its bond is §2's.
 
 - **`make_a_connection` move** — the resolver carries text-only outcomes; the
   actual creation rides the post-narration discovery pass (canonical GM, hits
@@ -55,12 +62,22 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
   is confirmed as the roller's connection (`confirmNamedPendingConnection` →
   `confirmDraft` with the roller's `actorId`; issue #325 W23 — the card said
   "Connection made" and nothing was made, and a later Confirm bonded the old
-  narration's PC). The auto-created record carries the narration's id
+  narration's PC). A Batch Mode round's narration is several characters', so
+  each Make a Connection hit in it creates one connection — the figure its
+  own character met: the roller's own line names them, else their detected
+  description names that character, else every clause of the narration
+  naming them names that character alone (`narrator.js roundFigureOwner`) —
+  with that hit's seed, bonded to its roller, and confirms only a pending row
+  its own roller met (`runRoundNarrationPasses` → `connectionRollers` →
+  `routeEntityDrafts`' slots; issue #342 Z09 — the round's first connection,
+  whoever met them, went to the first hit's roller with that roller's seed).
+  A figure the round cannot place waits on the draft card. The auto-created record carries the narration's id
   (`createdFromNarrationId`): an X-Card on that narration deletes the NPC
   card, its bond Items, its `connectionIds` entry and its portraits (the
   "Art:" journal entries and their `artAssetIds` index entries —
   `art/storage.deleteEntityArtAssets`, canonical GM, the index written on a
-  copy; XCARD-CONNECTION-PORTRAIT-ORPHAN) while the record holds
+  copy, on the GM's campaignState write chain — ART-INDEX-WRITE-OFF-CHAIN;
+  XCARD-CONNECTION-PORTRAIT-ORPHAN) while the record holds
   nothing beyond its creation, its sheet nothing the table wrote (Notes text
   outside the seed's marked introduction and the portrait block, or a
   Characteristics line the seed did not write — `sheetWrittenByTable`) and no
@@ -81,10 +98,17 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
 - **Entity-extraction drafts** — connections detected in any other narration
   queue on the GM-whispered "New Entities Detected" card; Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
-  #302), Dismiss records the name in `dismissedEntities`. The card carries the
+  #302), Dismiss records the name in `dismissedEntities` (a copy of the
+  latest store, on the GM's campaignState write chain —
+  CACHE-MUTATED-BEFORE-WRITE). The card carries the
   PC its narration was for (flag `actorId`, stamped by every detection path
   that knows it — move, paced, `@scene`, oracle follow-up), and Confirm puts
-  the bond Item on that PC (issue #321 U23). Each Confirm / Dismiss writes its
+  the bond Item on that PC (issue #321 U23). A Batch Mode round's card
+  carries every acting PC instead (`actorIds`; issue #342 D3, the
+  maintainer's ruling A — it was the first entry's PC): a connection row's
+  Confirm is a button per acting PC and **No one**, the pick checked against
+  the card's own `actorIds` (`draftConfirmPick`), and the bond goes on the PC
+  picked, or on no sheet (`draftBondHolder`). Each Confirm / Dismiss writes its
   own row's status, one write at a time per card, on the live card
   (`setDraftStatus`) — a whole-card copy written back reverted a row resolved
   meanwhile — and Confirm creates nothing when an entity of that name and
@@ -105,9 +129,16 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates
   the connection, a bond Item on every PC who swore the vow — issue #321 U23 —
   and stamps `linkedConnectionName` on the shared vow items).
-- **Manual sidebar creation** — `createActor` hook + `autoSeedConnection`
-  setting → `seedConnectionActor` rolls role/goal/first-look/disposition,
-  writes biography/notes/pronouns, fires a silent portrait.
+
+The `createActor` seed hook (canonical GM, `autoSeedConnection` on) is not a
+fifth path: it populates a card one of the four made (`connectionNeedsSeed`:
+the module's connection record present, not yet `seeded`) —
+`seedConnectionActor` rolls role/goal/first-look/disposition, writes
+biography/notes/pronouns and fires a silent portrait. A character Actor made by
+hand in the Actors sidebar carries no module flag: it is never seeded, never
+listed in `connectionIds`, and the module takes it for a **player character**
+(`isPlayerCharacterActor` — no `entityType`), so it joins the PARTY roster and
+the CHARACTER blocks (issue #342 Z73).
 
 What the narration established wins over the seed's rolls (decisions.md,
 issue #286 D3): `buildConnectionSeedData` writes the detected (or Make a
@@ -201,23 +232,30 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   first pays.
 - **Suggestion buttons** on connection-category move cards
   (`wireConnectionSuggestionButtons`) relay `connection.suggest` to the
-  canonical GM (`cardActions.applyConnectionSuggestion`), which claims the
-  move card once (`connectionSuggestionTaken`) and posts a **connection
-  picker** card (`postConnectionPickerCard` — `flags.choices` lists the
-  offered connections; forge offers only un-bonded ones). Each press used to
+  canonical GM (`cardActions.applyConnectionSuggestion`), which checks the
+  presser is the move card's roller's player or a GM (`cardRollerPc` on the
+  card's `actorId`, as the same card's ⚑ — a refused press is told whose
+  button it is), claims the move card once (`connectionSuggestionTaken`)
+  and posts a **connection picker** card (`postConnectionPickerCard` —
+  `flags.choices` lists the offered connections; forge offers only un-bonded
+  ones; `flags.actorId` carries the move card's roller). Each press used to
   post a fresh picker from the clicker's client, so two presses developed the
-  relationship twice (issue #325 W11). Any user's pick relays
-  `connection.pick` to the canonical GM (`wireConnectionPickerButtons` →
-  `relayCardAction` → `applyConnectionPick`, `src/moves/cardActions.js`),
-  which checks the pick is one of the card's choices (its buttons' data
-  attributes for an older card) and that the clicker's PC is one the
-  requester owns — a player with no PC of their own is refused, only a GM
-  may press as nobody (`relayedClickerPc`, issue #331 X19) — claims the card
+  relationship twice (issue #325 W11). A pick relays `connection.pick` to
+  the canonical GM (`wireConnectionPickerButtons` → `relayCardAction` →
+  `applyConnectionPick`, `src/moves/cardActions.js`), which checks the pick
+  is one of the card's choices (its buttons' data attributes for an older
+  card) and whose it is (`cardRollerPc`): the picker's roller, whose player
+  or a GM may pick — on a picker that names none, the clicker's PC, one the
+  requester owns (a player with no PC of their own is refused, only a GM may
+  press as nobody — `relayedClickerPc`, issue #331 X19) — claims the card
   (`resolved`, in-flight guarded) and posts the forced Develop Your
-  Relationship / Forge a Bond move **once** — speaking as the clicker's PC,
-  so the pipeline credits the roller although the GM authors the message,
-  and naming the picked connection as `forcedMoveTargetId` (its host Actor
-  id) and `forcedMoveTarget` (its name). A refused claim posts nothing and a
+  Relationship / Forge a Bond move **once** — speaking as that PC, so the
+  pipeline credits the roller although the GM authors the message, and
+  naming the picked connection as `forcedMoveTargetId` (its host Actor id)
+  and `forcedMoveTarget` (its name). The picker named no roller, so the pick
+  spoke as its presser: a GM's press developed the first PC's bond, and a
+  crewmate took the roller's follow-up as theirs (issue #342 Z56). The
+  picker lists every active connection; a crewmate's own develop is typed. A refused claim posts nothing and a
   failed post releases the claim: it posted first, and a stamp the world
   refused left the picker live for a second Develop (issue #336 Y24). The forced move carries
   `deferWhileBusy`: met by the move lock, it is held on the canonical GM and
@@ -240,7 +278,8 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
 `relationshipTicks` via `enrichProgressTicks` (see `decisions.md`). On a
 **hit — strong or weak** (BOND-WEAK-FORGE fix; the weak hit forges too, with
 their request in the fiction) the pipeline branch flips the record
-(`forgeBond`: `bonded`, `allyFlag`, optional second role, history entry),
+(`forgeBond`: `bonded`, `allyFlag`, optional second role, history entry,
+and every PC's bond Item marked forged — `setBondItemForged`),
 marks rank-scaled bonds-legacy ticks (`legacyRewardTicks`), and posts the
 forge card; a sheet-rolled forge pays the same way via the native consequence
 hook (`shouldForgeBond` into `payForgedBondNative`, idempotent —
@@ -255,7 +294,12 @@ relays `bond.recommit` (`cardActions.applyBondRecommitOffer`, the roller's
 player or a GM, claimed once), and `performBondRecommit` clears the lowest
 die's boxes from `relationshipTicks`, steps the record's rank once, writes
 both through to the bond Items (`setBondItemTicks` / `setBondItemRank`) and
-adds a history entry. A miss rolled on the sheet gets the same offer, for the
+adds a history entry. A connection bonded, severed or deleted since the miss
+gets a short card ("Sable is already bonded — nothing was recommitted"), the
+offer closed, and a record write the world refused is whispered to the
+presser and the GMs to press again, the claim released
+(`cardActions.tellRecommitOutcome`, issue #342 Z58 — both were a console line
+on the GM's). A miss rolled on the sheet gets the same offer, for the
 connection `findSheetBondConnection` resolves — none for a bond made by hand
 or a connection already bonded (`offerSheetMissRecommit`, issue #331 X62: the
 consequence hook acted on hits only). Both hooks classify the
@@ -306,7 +350,8 @@ renders every turn, lists a lost connection apart from the reuse-first cast,
 the initial one (`formatSectorNpcProfile` — issue #325 W37: it offered a
 severed NPC as friendly cast); CHARACTER STATE shows each bond's
 progress and its rank by name (`readConnections` maps the vendor's numeric
-rank through `rankName` — issue #321 U62), and a severed one apart, under
+rank through `rankName` — issue #321 U62), a forged one as "bonded" (the
+Item's `completed`, issue #342 Z57 — it read "fulfilled", a vow's word), and a severed one apart, under
 "Connections lost" (`readConnections`' `lost` — issue #330 D10). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
 bond's Item as history. `background` and `secrets` have no production writer, so neither

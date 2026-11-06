@@ -7,7 +7,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence } from '../../src/multiplayer/gmGate.js';
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, isAudioGM } from '../../src/multiplayer/gmGate.js';
 
 function setUsers(users, currentUserId) {
   // game.users must be iterable (Foundry Collection); array works for Array.from.
@@ -249,5 +249,52 @@ describe('hasKeyedActiveGM — the RUN_ON.CLAUDE / oracle follow-up routing pred
     expect(hasKeyedActiveGM()).toBe(false);
     expect(getCapturedWarns().some(w => /hasKeyedActiveGM: keyed-GM registry read failed/.test(w))).toBe(true);
     get.mockRestore();
+  });
+});
+
+// Issue #342 Z67: the GM that answers keyless players' narrator-audio requests
+// is chosen by the ElevenLabs key, not the Claude key the canonical GM is.
+describe('isAudioGM / advertiseElevenLabsKeyPresence — the audio GM holds the ElevenLabs key', () => {
+  const M = 'starforged-companion';
+  const AUDIO = `${M}.audioKeyedGmUserIds`;
+  const gms = [
+    { id: 'gm-a', isGM: true, active: true },
+    { id: 'gm-b', isGM: true, active: true },
+    { id: 'pl-1', isGM: false, active: true },
+  ];
+
+  it('the lowest-id active GM holding an ElevenLabs key answers — not the canonical GM', () => {
+    global.game.settings._store.set(AUDIO, ['gm-b']);
+    setUsers(gms, 'gm-a');
+    expect(isCanonicalGM()).toBe(true);
+    expect(isAudioGM()).toBe(false);
+    setUsers(gms, 'gm-b');
+    expect(isAudioGM()).toBe(true);
+    setUsers(gms, 'pl-1');
+    expect(isAudioGM()).toBe(false);
+  });
+
+  it('with no active GM holding one, the canonical GM answers (as before)', () => {
+    setUsers(gms, 'gm-a');
+    expect(isAudioGM()).toBe(true);
+    global.game.settings._store.set(AUDIO, ['gm-b']);
+    setUsers([gms[0], { ...gms[1], active: false }, gms[2]], 'gm-a');
+    expect(isAudioGM()).toBe(true);
+  });
+
+  it('advertises a GM\'s ElevenLabs key, never a blank one, and only for a GM', async () => {
+    global.game.user = { isGM: true, id: 'gm-a' };
+    global.game.settings._store.set(`${M}.elevenLabsApiKey`, '   ');
+    await advertiseElevenLabsKeyPresence();
+    expect(global.game.settings._store.get(AUDIO)).toBeUndefined();
+    global.game.settings._store.set(`${M}.elevenLabsApiKey`, 'sk_el');
+    await advertiseElevenLabsKeyPresence();
+    expect(global.game.settings._store.get(AUDIO)).toEqual(['gm-a']);
+    // It is the ElevenLabs registry: the Claude registry is untouched.
+    expect(global.game.settings._store.get(`${M}.keyedGmUserIds`)).toBeUndefined();
+    global.game.user = { isGM: false, id: 'pl-1' };
+    global.game.settings._store.set(AUDIO, []);
+    await advertiseElevenLabsKeyPresence();
+    expect(global.game.settings._store.get(AUDIO)).toEqual([]);
   });
 });

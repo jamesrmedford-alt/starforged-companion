@@ -8,7 +8,10 @@
  * the dice established and could contradict a roll the table just made.
  *
  * Storage: `campaignState.recentOracles` — a small append ring of
- * `{ name, question, answer, sessionId, at }`, capped at RECENT_ORACLE_CAP.
+ * `{ name, question, answer, sessionId, at }`, capped at RECENT_ORACLE_CAP;
+ * a move's own Pay the Price also carries its move's `resolutionId`, so a
+ * Burn Momentum or Improve Result that reverts the price takes it back out
+ * (`dropOracleResultsOf`, issue #342 Z11).
  * Written by the canonical GM's capture hook in src/index.js (the command
  * handlers run on whichever client typed the command, which may not be able
  * to write world settings — the result card carries an `oracleMemory` flag
@@ -48,12 +51,37 @@ export function recordOracleResult(campaignState, entry, opts = {}) {
     answer,
     sessionId: campaignState.currentSessionId ?? null,
     at:        opts.now ?? Date.now(),
+    // The move whose Pay the Price this is: an upgrade that reverts the price
+    // drops it (dropOracleResultsOf).
+    ...(typeof entry.resolutionId === 'string' && entry.resolutionId ? { resolutionId: entry.resolutionId } : {}),
   };
   campaignState.recentOracles.push(stored);
   if (campaignState.recentOracles.length > RECENT_ORACLE_CAP) {
     campaignState.recentOracles.splice(0, campaignState.recentOracles.length - RECENT_ORACLE_CAP);
   }
   return stored;
+}
+
+/**
+ * Take a move's Pay the Price out of the ring: a Burn Momentum or Improve
+ * Result that reverts the price — "the price was never actually paid" — left
+ * it in RECENT ORACLE RESULTS, which tells every narration the dice
+ * established it and must not be contradicted, beside the upgraded outcome's
+ * re-narration (issue #342 Z11). Replaces `campaignState.recentOracles` with
+ * the ring without the entries stamped with `resolutionId`; mutates nothing
+ * else. Pure, like recordOracleResult: the caller writes a copy.
+ *
+ * @param {Object} campaignState
+ * @param {string} resolutionId — the move resolution whose price was reverted
+ * @returns {number} how many entries were dropped
+ */
+export function dropOracleResultsOf(campaignState, resolutionId) {
+  if (!campaignState || typeof resolutionId !== 'string' || !resolutionId) return 0;
+  const ring = Array.isArray(campaignState.recentOracles) ? campaignState.recentOracles : [];
+  const kept = ring.filter(e => !(e && typeof e === 'object' && e.resolutionId === resolutionId));
+  if (kept.length === ring.length) return 0;
+  campaignState.recentOracles = kept;
+  return ring.length - kept.length;
 }
 
 /**

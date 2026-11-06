@@ -77,7 +77,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
@@ -95,8 +95,7 @@ import {
   updateTrackFields,
   getProgressTrack,
 } from "./ui/progressTracks.js";
-import { applyExpeditionProgress, legacyRewardTicks, planRecommit } from "./moves/expedition.js";
-import { selectSectorSite } from "./sectors/precursorSites.js";
+import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack } from "./moves/expedition.js";
 import { shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
@@ -135,7 +134,6 @@ import {
   registerSettingsHooks,
   getMischiefDial,
   getAutoRecapEnabled,
-  getSessionGapHours,
   getRecapGmOnly,
   getShipPositioningEnabled,
   getShipAutoMoveOnCourse,
@@ -163,8 +161,9 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 import { wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
-import { rollSessionIfDue, registerSessionActivityHook, SESSION_MINT_FIELDS, isSessionActive } from "./session/lifecycle.js";
+import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
+import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
 import { requestOracleNarration } from "./oracles/oracleFollowup.js";
@@ -194,7 +193,7 @@ import {
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing } from "./multiplayer/gmGate.js";
 import { registerGmRelaySocket, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
@@ -224,6 +223,7 @@ import {
   isBatchModeEnabled,
   acceptRoundUpgrade,
   setBatchFreeFlowRunner,
+  noteMoveLockFreed,
 } from "./batch/driver.js";
 import { registerRoundWindowHooks } from "./ui/roundWindow.js";
 
@@ -276,6 +276,19 @@ function warnKeyAdvertiseRefused(err) {
     : "Starforged Companion: your cleared Claude key could not be unregistered for the table (the world did not save it) — narration may still be routed to your client until you reload Foundry.");
 }
 
+/**
+ * The world refused the audio-keyed GM registry write a GM's ElevenLabs key
+ * change made: the table keeps sending keyless players' audio requests where
+ * it did. Said as warnKeyAdvertiseRefused says it for the Claude key (issue
+ * #337 Y40's rule; issue #342 Z67).
+ *
+ * @param {Error} err
+ */
+function warnAudioKeyAdvertiseRefused(err) {
+  console.warn(`${MODULE_ID} | audio-keyed GM advertise failed:`, err);
+  ui.notifications?.warn?.("Starforged Companion: your ElevenLabs key change could not be registered for the table (the world did not save it) — players' narrator audio is not routed by it until you reload Foundry.");
+}
+
 function registerCoreSettings() {
   game.settings.register(MODULE_ID, "campaignState", {
     name:    "Campaign State",
@@ -285,6 +298,8 @@ function registerCoreSettings() {
     type:    Object,
     default: { ...CampaignStateSchema },
   });
+  // The chat-activity stamp, its own setting beside campaignState (issue #342 Z01).
+  registerSessionActivitySetting();
 
   game.settings.register(MODULE_ID, "claudeApiKey", {
     name:    "Claude API Key",
@@ -499,6 +514,17 @@ function registerCoreSettings() {
     name: "ElevenLabs API Key",
     hint: "Your ElevenLabs API key. Stored locally in your browser — never sent to Foundry's server.",
     scope: "client", config: false, type: String, default: "",
+    // A GM's key is advertised to the table, so a keyless player's audio
+    // request is answered by a GM who can make the clip (gmGate.isAudioGM —
+    // issue #342 Z67).
+    onChange: () => { advertiseElevenLabsKeyPresence().catch(warnAudioKeyAdvertiseRefused); },
+  });
+  // The GMs whose client holds an ElevenLabs key — user ids only, never the
+  // key (issue #209), as keyedGmUserIds is for the Claude key. The keyless
+  // players' narrator audio is served by the lowest-id one (issue #342 Z67).
+  game.settings.register(MODULE_ID, "audioKeyedGmUserIds", {
+    name: "Audio-keyed GM registry", scope: "world", config: false,
+    type: Array, default: [],
   });
   game.settings.register(MODULE_ID, "audio.clientEnabled", {
     name: "Enable audio narration on this client", scope: "client",
@@ -574,30 +600,6 @@ export async function initSessionId(campaignState) {
     `(#${campaignState.sessionNumber})`
   );
   return campaignState;
-}
-
-
-// ────────────────────────────────────────────���────────────────────────────────
-// SESSION START DETECTION
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Return true when a world load should be treated as the start of a new session
- * for auto-recap purposes — i.e. the lastSessionTimestamp gap exceeds the
- * configured threshold.
- *
- * Exported for unit testing.
- *
- * @param {Object} campaignState
- * @param {number} [gapHours]  — override the setting (for tests)
- * @returns {boolean}
- */
-export function isNewSessionStart(campaignState, gapHours) {
-  const last = campaignState?.lastSessionTimestamp;
-  if (!last) return false;
-  const threshold = gapHours ?? getSessionGapHours();
-  const hoursSince = (Date.now() - new Date(last)) / 3_600_000;
-  return hoursSince > threshold;
 }
 
 
@@ -771,9 +773,12 @@ configureMovePipeline({
 
 // A Batch Mode round claims and releases the move lock through its own paths
 // (issue #340): the claim for its rolls and records, again for its narration.
+// A round waiting for the lock reads whether it is free as this client knows
+// it — a free-flow claim on its way included.
 configureBatchDriver({
   claimMoveLock:   claimPendingMoveLock,
   releaseMoveLock: releasePendingMoveLock,
+  moveLockFree:    isMoveLockFreeHere,
 });
 
 /**
@@ -962,53 +967,47 @@ export function registerChatHook() {
     // while a pipeline is running would otherwise race on campaignState writes
     // and post duplicate narration cards.
     const campaignState = game.settings.get(MODULE_ID, "campaignState");
-    if (campaignState.pendingMove) {
-      // A claimed card's forced move is held, not dropped: its button reads
-      // taken everywhere, so a drop lost the action (issue #325 W02).
-      if (message.flags?.[MODULE_ID]?.deferWhileBusy === true) {
-        deferForcedMove(message);
+
+    // Claim the lock before any async work so other clients see it
+    // immediately — this one at once (the claim is marked in flight), every
+    // client once its write lands. The claimant rides it: if their browser
+    // goes, the next canonical GM releases a lock nobody holds
+    // (releaseLockOfDisconnectedGM, issue #325 W25). So does the claim's own
+    // token: this pipeline releases the lock only while the store still holds
+    // this claim — after a handover its GM may have claimed it again for a
+    // later move (issue #329 X08). The claim is the round's claim
+    // (claimPendingMoveLock): a copy of the store written on the client's
+    // campaignState write chain. Set on the cache in place and written whole,
+    // it was read inside the round trip of the write ahead and put that
+    // write's fields back (CAMPSTATE-CHAIN-PARTIAL).
+    const lock = await claimPendingMoveLock();
+    if (!lock.claim) {
+      if (lock.busy) {
+        // A claimed card's forced move is held, not dropped: its button reads
+        // taken everywhere, so a drop lost the action (issue #325 W02).
+        if (message.flags?.[MODULE_ID]?.deferWhileBusy === true) {
+          deferForcedMove(message);
+          return;
+        }
+        ui?.notifications?.info(
+          "Starforged Companion: A move is already being resolved. " +
+          "Please wait for the current narration to complete.",
+          { permanent: false }
+        );
         return;
       }
-      ui?.notifications?.info(
-        "Starforged Companion: A move is already being resolved. " +
-        "Please wait for the current narration to complete.",
-        { permanent: false }
-      );
-      return;
-    }
-
-    // Claim the lock before any async work so other clients see it immediately.
-    // The claimant rides it: if their browser goes, the next canonical GM
-    // releases a lock nobody holds (releaseLockOfDisconnectedGM, issue #325
-    // W25). So does the claim's own token: this pipeline releases the lock
-    // only while the store still holds this claim — after a handover its GM
-    // may have claimed it again for a later move (issue #329 X08).
-    const lockClaim = foundry.utils.randomID();
-    campaignState.pendingMove = true;
-    campaignState.pendingMoveBy = game.user?.id ?? null;
-    campaignState.pendingMoveClaim = lockClaim;
-    try {
-      await game.settings.set(MODULE_ID, "campaignState", campaignState);
-    } catch (err) {
-      // The claim never landed. `campaignState` is this client's cached
-      // setting value (Foundry returns it by reference): left set, the flag
-      // refused every later move here until a reload (issue #302).
-      campaignState.pendingMove = false;
-      campaignState.pendingMoveBy = null;
-      campaignState.pendingMoveClaim = null;
-      console.error(`${MODULE_ID} | could not claim the move lock:`, err);
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
       return;
     }
-    // This client's pipeline holds the lock now: a stale write that carries
-    // back a claim this client released puts this one back over it
-    // (restoreLockOverCarriedBackClaim).
-    _heldMoveLockClaim = lockClaim;
+    const lockClaim = lock.claim;
     // Whether this move has released its lock. Once it has, the lock may be
     // another move's: the early release below lets the next move start while
     // this one's rider prompt is open, so this move's finally must not clear
     // it again (issue #315 S01).
     let lockReleased = false;
+    // Whether the early release was tried: the finally's release is then its
+    // one retry (FREE-FLOW-RELEASE-REFUSED-TWICE).
+    let releaseTried = false;
 
     const apiKey = apiKeyForPacing;
     const dial   = getMischiefDial();
@@ -1078,6 +1077,7 @@ export function registerChatHook() {
         // (known-issues PLAYTEST-1712 M/N, fixed here). The finally below
         // releases for the throw / cancelled-confirm paths, and retries a
         // release that was refused here.
+        releaseTried = true;
         lockReleased = await releasePendingMoveLock(lockClaim);
 
         // Stage 5 — finish it: the asset consequence riders, whose prompt no
@@ -1096,8 +1096,14 @@ export function registerChatHook() {
       // Safety net: release the lock if the pipeline threw or the confirm
       // dialog was cancelled before the success-path release above ran, or
       // that release was refused. Never once it has landed: a later move may
-      // hold the lock by now (issue #315 S01).
-      if (!lockReleased) await releasePendingMoveLock(lockClaim);
+      // hold the lock by now (issue #315 S01). A release the world refuses
+      // is tried once more — the early release's retry is this one — and,
+      // refused again, the lock stays held until a reload: the GMs are told,
+      // as a round's refused release tells them (issue #342 Z19). It was
+      // dropped in silence (FREE-FLOW-RELEASE-REFUSED-TWICE).
+      if (!lockReleased) lockReleased = await releasePendingMoveLock(lockClaim);
+      if (!lockReleased && !releaseTried) lockReleased = await releasePendingMoveLock(lockClaim);
+      if (!lockReleased) await postMoveLockNotReleasedCard();
     }
   };
   Hooks.on("createChatMessage", onMessage);
@@ -1106,8 +1112,11 @@ export function registerChatHook() {
   setBatchFreeFlowRunner((message) => onMessage(message, { batchReleased: true }));
   // A held forced move runs once a campaignState write leaves the lock free
   // — the pipeline's own release, a stale lock cleared at load (issue #325
-  // W02).
-  Hooks.on("updateSetting", (setting) => drainDeferredForcedMoves(setting, onMessage));
+  // W02) — or once the claim it was held behind is refused.
+  _heldMovePipeline = onMessage;
+  Hooks.on("updateSetting", (setting) => {
+    if (setting?.key === `${MODULE_ID}.campaignState`) drainDeferredForcedMoves();
+  });
   // A claim this client released, carried back by a write built from a cache
   // that had not seen the release, is put back by its claimant
   // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
@@ -1152,6 +1161,26 @@ async function releaseLockOfDisconnectedGM(user, connected) {
 }
 
 /**
+ * The world refused a free-flow move's lock release twice (its early release
+ * and the `finally`'s retry, or two tries in the `finally`): the lock stays
+ * held by this GM, and every later move is refused ("A move is already being
+ * resolved") until it is freed — the ready reset frees it when this GM's
+ * browser reloads. The GMs are whispered, as a Batch Mode round's refused
+ * release whispers them (issue #342 Z19; FREE-FLOW-RELEASE-REFUSED-TWICE).
+ * Never throws.
+ *
+ * @returns {Promise<void>}
+ */
+async function postMoveLockNotReleasedCard() {
+  const who = escapeChatHtml(game.user?.name ?? "the resolving GM");
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Move lock not released</strong><p>The world did not save the move lock's release after a move. Until it is freed, the next move is refused (&ldquo;A move is already being resolved&rdquo;) &mdash; reloading ${who}'s browser frees it.</p></div>`,
+    whisper: gmUserIds(),
+    flags:   { [MODULE_ID]: { moveLockNotReleasedCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | the move-lock notice failed:`, err?.message ?? err));
+}
+
+/**
  * The move lock a world load finds on the canonical GM: stale — returned as
  * `{ claim }` for the ready reset to clear — unless another user who is
  * connected holds it. Then that GM's pipeline is mid-move and the lock stands
@@ -1191,6 +1220,11 @@ const _releasedMoveLockClaims = [];
 const RELEASED_MOVE_LOCK_CLAIMS_KEPT = 16;
 // The claim this client's pipeline holds now (claimed, not yet released).
 let _heldMoveLockClaim = null;
+// A Batch Mode round's claim on its way to the server (claimPendingMoveLock
+// writes a copy, so this client's cache reads the lock free until it lands):
+// the free-flow check treats it as taken. A drained free-flow move and a
+// waiting round woke on the same release and both claimed (issue #342 Z25).
+let _moveLockClaimInFlight = null;
 
 /** Remember a claim this client released — its lock is free, or another claim's. */
 function noteMoveLockClaimReleased(claim) {
@@ -1219,9 +1253,16 @@ function restoreLockOverCarriedBackClaim(setting) {
   console.warn(`${MODULE_ID} | A write carried back a move lock this client had released — putting it back.`);
   if (!_heldMoveLockClaim) return releasePendingMoveLock(claim);
   // A later move of this client's holds the lock: the stale write overwrote
-  // its claim, which goes back (on a copy of the store as it is now).
-  return game.settings.set(MODULE_ID, "campaignState",
-    { ...state, pendingMove: true, pendingMoveBy: game.user.id, pendingMoveClaim: _heldMoveLockClaim });
+  // its claim, which goes back — on a copy of the store as it is at this
+  // write's turn on the client's write chain, while the store still carries
+  // the spent claim and the later one is still held.
+  return serialiseCampaignStateWrite(() => {
+    const now = game.settings.get(MODULE_ID, "campaignState");
+    const carried = now?.pendingMove ? (now.pendingMoveClaim ?? null) : null;
+    if (carried !== claim || !_heldMoveLockClaim) return undefined;
+    return game.settings.set(MODULE_ID, "campaignState",
+      { ...now, pendingMove: true, pendingMoveBy: game.user.id, pendingMoveClaim: _heldMoveLockClaim });
+  }, "move lock put back");
 }
 
 // ── Forced moves held while another move is resolved (issue #325 W02) ───────
@@ -1352,20 +1393,26 @@ function renderHeldUntilSessionNote(message, root) {
 }
 onChatMessageRender((message, root) => renderHeldUntilSessionNote(message, root));
 
+// The free-flow pipeline a held forced move is handed back to (registerChatHook).
+let _heldMovePipeline = null;
+
 /**
  * On a campaignState write that leaves the move lock free, hand the oldest
  * held forced move back to the pipeline — on the canonical GM only. One per
  * write: the move it starts claims the lock, and its release (another write)
- * hands over the next. A held message deleted meanwhile is skipped.
- *
- * @param {{ key?: string }} setting — the updateSetting hook's document
- * @param {(message: ChatMessage) => Promise<void>} runPipeline
+ * hands over the next. A held message deleted meanwhile is skipped. A claim
+ * the world refused writes nothing, so its refusal hands one back too — the
+ * free-flow pipeline's and a Batch Mode round's (claimPendingMoveLock): a
+ * move held behind it waited for some later write to free the lock
+ * (FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM).
  */
-function drainDeferredForcedMoves(setting, runPipeline) {
-  if (setting?.key !== `${MODULE_ID}.campaignState`) return;
-  if (!_deferredForcedMoves.length || !isCanonicalGM()) return;
+function drainDeferredForcedMoves() {
+  const runPipeline = _heldMovePipeline;
+  if (!runPipeline || !_deferredForcedMoves.length || !isCanonicalGM()) return;
   const state = game.settings.get(MODULE_ID, "campaignState");
-  if (state?.pendingMove) return;
+  // A round's claim still on its way holds the lock too: the move would only
+  // be held again — and drained again, at once, forever (issue #342 Z25).
+  if (state?.pendingMove || _moveLockClaimInFlight) return;
   // Held until a session begins: the gate would only hold it again (issue #329 X14).
   if (!isSessionActive(state)) return;
   let message = null;
@@ -1383,7 +1430,7 @@ function drainDeferredForcedMoves(setting, runPipeline) {
     .catch(err => console.warn(`${MODULE_ID} | a held forced move failed:`, err?.message ?? err))
     .finally(() => {
       if (!_deferredForcedMoves.includes(id)) _drainedForcedMoves.delete(id);
-      drainDeferredForcedMoves(setting, runPipeline);
+      drainDeferredForcedMoves();
     });
 }
 
@@ -1408,6 +1455,33 @@ function currentLocationForEntityId(id) {
     if (entity) return { id, type, entity };
   }
   return null;
+}
+
+/**
+ * The location Actor id of the site a Finish an Expedition arrives at — the
+ * site its track links, else the unexplored one its label names
+ * (siteDiscovery.selectExpeditionSite: never a guess, so an expedition to a
+ * settlement arrives there by name) — or null. The crew names an unexplored
+ * site in their own words, so the arrival by the label alone resolved to no
+ * place and left the ship, its token and CURRENT LOCATION at the settlement
+ * they had left while the same move charted the site (issue #342 Z14).
+ *
+ * @param {{ moveTarget?: string|null, moveTargetId?: string|null }|null} interpretation
+ * @param {Object} campaignState
+ * @returns {Promise<string|null>}
+ */
+async function expeditionSiteActorId(interpretation, campaignState) {
+  try {
+    const label = interpretation?.moveTarget ?? null;
+    const track = selectExpeditionTrack(await listProgressTracks(), label,
+      { trackId: interpretation?.moveTargetId ?? null });
+    const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
+    const found = selectExpeditionSite(campaignState, track?.label ?? label, { siteId: track?.siteId ?? null });
+    return found?.site?.actorId ?? null;
+  } catch (err) {
+    console.debug(`${MODULE_ID} | expedition arrival: the expedition's site could not be read:`, err?.message ?? err);
+    return null;
+  }
 }
 
 /**
@@ -1494,26 +1568,45 @@ async function applyOutcomeEffects({
     // names its destination by the pin's settlement Actor (forcedMoveTargetId
     // → moveTargetId): arrive at that settlement by its id, not by a name a
     // rename leaves behind or a namesake in another sector matches first
-    // (issue #321 U52). Finish an Expedition's moveTargetId is a track's.
+    // (issue #321 U52). Finish an Expedition's moveTargetId is a track's: it
+    // arrives at the site that expedition was for, by the site's location
+    // Actor (issue #342 Z14), else at the place its label names.
     const destinationId = resolution.moveId === "set_a_course"
       ? (interpretation?.moveTargetId ?? null)
-      : null;
-    await maybeUpdateShipPositionFromName(
-      moveTarget,
-      campaignState,
-      tokenDragSetCourse ? "scene_token"
-        : resolution.moveId === "finish_an_expedition" ? "expedition"
-        : "set_a_course",
-      { entityId: destinationId },
-    );
+      : await expeditionSiteActorId(interpretation, campaignState);
 
     // Keep the campaign's "current location" in step with the arrival —
     // previously only a manual !at wrote currentLocationId, so travelling
     // by move left the narrator options / entity-panel highlight pointing
     // at the last !at (LOCATION-DUAL-STORE fix). Same resolver as !at; a
     // destination that isn't a tracked entity leaves the store untouched.
-    const arrivedAt = currentLocationForEntityId(destinationId)
+    // The pick comes first and the ship docks at it by its id, as `!at` does
+    // since issue #342 Z15: each store had its own resolver, so a fragment
+    // ("Bleak") made Bleakhold the current location — the name resolver's
+    // prefix rung — while the ship's position, which takes a full name or a
+    // name part only, was the free text "Bleak" and its token stayed where
+    // it was (known-issues ARRIVAL-FRAGMENT-SHIP-FREE-TEXT).
+    const named = currentLocationForEntityId(destinationId)
       ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
+    const docked = await maybeUpdateShipPositionFromName(
+      moveTarget,
+      campaignState,
+      tokenDragSetCourse ? "scene_token"
+        : resolution.moveId === "finish_an_expedition" ? "expedition"
+        : "set_a_course",
+      { entityId: named?.id ?? destinationId },
+    );
+
+    // When the id and the name both miss, the place the ship just docked at:
+    // the position's word scan finds "Bleakhold" in "the expedition to
+    // Bleakhold", the name resolver only a place whose name holds the whole
+    // label — the ship docked there while the current location stayed where
+    // the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT). A record
+    // naming no place (free text) leaves the store untouched.
+    const arrivedAt = named
+      ?? [docked?.nearestLocationId, docked?.nearestSettlementId, docked?.nearestPlanetId]
+        .map(id => currentLocationForEntityId(typeof id === "string" ? id : null)).find(Boolean)
+      ?? null;
     if (arrivedAt) {
       campaignState.currentLocationId   = arrivedAt.id;
       campaignState.currentLocationType = arrivedAt.type;
@@ -1584,15 +1677,20 @@ async function applyOutcomeEffects({
         // Link the new expedition to the undiscovered site its destination
         // confidently names (exact/substring/type keyword — never the
         // sole-undiscovered guess), searched across every sector at once
-        // (issue #300 F07). Finishing then reveals THIS site instead of
-        // re-guessing by name — the audit's "expedition→site linkage is
-        // name-fuzzy" gap.
+        // (issue #300 F07); the pin's own "Unexplored Site" names the active
+        // sector's one unexplored site (issue #342 D7). Finishing then
+        // reveals THIS site instead of re-guessing by name — the audit's
+        // "expedition→site linkage is name-fuzzy" gap — and reveals no site
+        // for an expedition that names none. The finish's own ladder
+        // (selectExpeditionSite): a site is named by its location Actor, as
+        // the GM may have renamed it — over the records' generated names
+        // alone, the vault renamed "The Ghost Spire" matched nothing and the
+        // "ghost" keyword linked the derelict, which the finish then charted
+        // (known-issues EXPEDITION-STAMP-SITE-NAME).
         if (result.created) {
           try {
-            const linked = selectSectorSite(campaignState.sectors, result.track.label, {
-              requireLabelMatch: true,
-              activeSectorId:    campaignState.activeSectorId ?? null,
-            });
+            const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
+            const linked = selectExpeditionSite(campaignState, result.track.label);
             if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
           } catch (err) {
             console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
@@ -2026,32 +2124,69 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Claim the move-concurrency lock for a Batch Mode round (issue #340): its
- * rolls and records, and again its narration — each released in a `finally`
- * through releasePendingMoveLock, as the free-flow pipeline releases its own.
+ * Claim the move-concurrency lock — for a free-flow move (onMessage), and for
+ * a Batch Mode round (issue #340): its rolls and records, and again its
+ * narration — each released in a `finally` through releasePendingMoveLock.
  * Never across the wait for an upgrade decision (decisions.md → "Move-
  * concurrency lock covers narration + persistence, not post-roll prompts").
- * Writes a copy of the store as it is now, so a refused claim leaves this
- * client's cache free. The claim's token rides the lock, and this client
- * holds it (restoreLockOverCarriedBackClaim puts it back over a stale write).
+ * The claim is marked in flight at once, so this client's free-flow check,
+ * the held-move drain and a round's claim see the lock taken until the write
+ * lands (issue #342 Z25), and the write — a copy of the store, so a refused
+ * claim leaves this client's cache free — runs on the client's campaignState
+ * write chain, built from the store as the write ahead of it left it
+ * (CAMPSTATE-CHAIN-PARTIAL: the free-flow claim, set on the cache in place
+ * and written whole, put back the fields of a write still on its way). The
+ * claim's token rides the lock, and this client holds it
+ * (restoreLockOverCarriedBackClaim puts it back over a stale write). A refused
+ * claim writes nothing, so what waits for the lock behind it is woken at once:
+ * a forced move held meanwhile is handed back (drainDeferredForcedMoves —
+ * FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM), and a Batch Mode round
+ * waiting for the lock goes on (driver.js noteMoveLockFreed —
+ * ROUND-WAIT-AFTER-REFUSED-CLAIM).
  *
  * @returns {Promise<{ claim: string|null, busy?: boolean, refused?: boolean }>}
  *   `busy`: another move holds the lock; `refused`: the world refused the write
  */
 export async function claimPendingMoveLock() {
-  const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  if (latest.pendingMove) return { claim: null, busy: true };
+  if (!isMoveLockFreeHere()) return { claim: null, busy: true };
   const claim = foundry.utils.randomID();
+  _moveLockClaimInFlight = claim;
+  let outcome = "claimed";
   try {
-    // A copy (rules/foundry-api.md): a refused claim leaves the cache free.
-    await game.settings.set(MODULE_ID, "campaignState",
-      { ...latest, pendingMove: true, pendingMoveBy: game.user?.id ?? null, pendingMoveClaim: claim });
+    await serialiseCampaignStateWrite(async () => {
+      const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      // Taken by another client's write while this claim waited its turn.
+      if (latest.pendingMove) { outcome = "busy"; return; }
+      // A copy (rules/foundry-api.md): a refused claim leaves the cache free.
+      await game.settings.set(MODULE_ID, "campaignState",
+        { ...latest, pendingMove: true, pendingMoveBy: game.user?.id ?? null, pendingMoveClaim: claim });
+    }, "move lock claim");
   } catch (err) {
     console.error(`${MODULE_ID} | could not claim the move lock:`, err);
+    outcome = "refused";
+  } finally {
+    if (_moveLockClaimInFlight === claim) _moveLockClaimInFlight = null;
+  }
+  if (outcome === "refused") {
+    drainDeferredForcedMoves();
+    noteMoveLockFreed();
     return { claim: null, refused: true };
   }
+  if (outcome === "busy") return { claim: null, busy: true };
   _heldMoveLockClaim = claim;
   return { claim };
+}
+
+/**
+ * Whether the move lock is free as this client knows it: free in its store,
+ * and no claim of its own on the way (issue #342 Z25). A round waiting for
+ * the lock reads this once its wait is marked (driver.js waitForLock —
+ * ROUND-LOCK-WAIT-MARKED-LATE). Exported for the driver's host seam in tests.
+ *
+ * @returns {boolean}
+ */
+export function isMoveLockFreeHere() {
+  return !_moveLockClaimInFlight && !game.settings.get(MODULE_ID, "campaignState")?.pendingMove;
 }
 
 /**
@@ -2084,31 +2219,38 @@ export async function claimPendingMoveLock() {
  * this client puts the lock back then (restoreLockOverCarriedBackClaim —
  * LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
  *
+ * Read and written on the client's campaignState write chain, once the write
+ * ahead of it has landed: a Batch Mode round released its lock right after
+ * its card, inside the round trip of the X-Card redirect's clear that card
+ * set off, and wrote the redirect back (CAMPSTATE-CHAIN-PARTIAL).
+ *
  * @param {string|null} [claim] — the releasing pipeline's `pendingMoveClaim`
  * @returns {Promise<boolean>} whether the lock is free now, or no longer this
  *   claim's — false when the release was refused (the caller retries it)
  */
-export async function releasePendingMoveLock(claim = null) {
-  const latestState = game.settings.get(MODULE_ID, "campaignState");
-  if (!latestState?.pendingMove) {               // already released — cheap no-op
-    noteMoveLockClaimReleased(claim);
-    return true;
-  }
-  if (claim && latestState.pendingMoveClaim && latestState.pendingMoveClaim !== claim) {
-    console.debug?.(`${MODULE_ID} | the move lock is another move's claim now — not released.`);
-    noteMoveLockClaimReleased(claim);
-    return true;
-  }
-  // Write a copy: `get` returns this client's cached value, and clearing the
-  // flag on it before a write that failed made the retry (the pipeline's
-  // finally) read "released" and skip — the world kept the lock (issue #302).
-  return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false, pendingMoveBy: null, pendingMoveClaim: null }).then(() => {
-    noteMoveLockClaimReleased(claim);
-    return true;
-  }, err => {
-    console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err);
-    return false;
-  });
+export function releasePendingMoveLock(claim = null) {
+  return serialiseCampaignStateWrite(() => {
+    const latestState = game.settings.get(MODULE_ID, "campaignState");
+    if (!latestState?.pendingMove) {               // already released — cheap no-op
+      noteMoveLockClaimReleased(claim);
+      return true;
+    }
+    if (claim && latestState.pendingMoveClaim && latestState.pendingMoveClaim !== claim) {
+      console.debug?.(`${MODULE_ID} | the move lock is another move's claim now — not released.`);
+      noteMoveLockClaimReleased(claim);
+      return true;
+    }
+    // Write a copy: `get` returns this client's cached value, and clearing the
+    // flag on it before a write that failed made the retry (the pipeline's
+    // finally) read "released" and skip — the world kept the lock (issue #302).
+    return game.settings.set(MODULE_ID, "campaignState", { ...latestState, pendingMove: false, pendingMoveBy: null, pendingMoveClaim: null }).then(() => {
+      noteMoveLockClaimReleased(claim);
+      return true;
+    }, err => {
+      console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err);
+      return false;
+    });
+  }, "move lock release");
 }
 
 /** Drop the owning actor's cached snapshot when one of its Items changes — this client's cache only. */
@@ -3457,8 +3599,11 @@ async function handlePayThePriceCommand(message) {
   // — another player's PC never pays it (#326 D8) — but said nothing: the card
   // read "Routes to endure_harm (-1)" and nobody was harmed (issue #337 Y43).
   // Refused here, before the card: it says the price was not applied, and the
-  // player is told why, as a move they narrate is.
-  const noPayer = !!result.sufferRoutes?.length && !speakerActorId && !game.user?.isGM;
+  // player is told why, as a move they narrate is. A narrative price — most
+  // of the table, no route — has no payer either: it was narrated for the
+  // first PC and remembered as established (issue #342 Z49), so the payer
+  // alone decides, routes or not.
+  const noPayer = !speakerActorId && !game.user?.isGM;
   const narration = {
     kind:       "pay_the_price",
     oracleName: "Pay the Price",
@@ -3466,7 +3611,7 @@ async function handlePayThePriceCommand(message) {
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
     speakerActorId,
   };
-  const routesLine = noPayer
+  const routesLine = noPayer && result.sufferRoutes?.length
     ? sufferRoutesFooter(result.sufferRoutes, { notApplied: `${escapeChatHtml(game.user?.name ?? "the player who rolled it")} has no character of their own to pay it` })
     : sufferRoutesFooter(result.sufferRoutes);
   // A price nobody pays is not part of the story (PTP-PCLESS-NARRATED-AS-FIRST-PC):
@@ -3520,19 +3665,20 @@ async function handlePayThePriceCommand(message) {
  * The commands themselves run on whichever client typed them — possibly a
  * player who cannot write world settings — hence capture-on-GM via the hook.
  */
-// The ring's read-modify-writes, one at a time on this client: two oracle
-// cards inside one write round trip each read the ring before the other's
-// write landed, and the second write dropped the first result (issue #331
-// X44 — the CLOCK-LOST-UPDATE shape; serialiseClockWrite's queue).
-let _oracleMemoryWrites = Promise.resolve();
-
+// The ring's read-modify-writes run on this client's campaignState write
+// chain: two oracle cards inside one write round trip each read the ring
+// before the other's write landed, and the second write dropped the first
+// result (issue #331 X44); and a whole-object write of another kind sent
+// inside the capture's round trip — the Pay the Price's clock advance right
+// after its card, the scene start of the `!oracle`'s own follow-up — carried
+// the ring without it (issue #342 Z17).
 function registerOracleMemoryCaptureHook() {
   Hooks.on("createChatMessage", (message) => {
     try {
       if (!isCanonicalGM()) return;
       const entry = message?.flags?.[MODULE_ID]?.oracleMemory;
       if (!entry || typeof entry !== "object") return;
-      _oracleMemoryWrites = _oracleMemoryWrites.then(() => captureOracleResult(entry));
+      void serialiseCampaignStateWrite(() => captureOracleResult(entry), "oracle memory");
     } catch (err) {
       console.warn(`${MODULE_ID} | oracle-memory capture failed:`, err?.message ?? err);
     }
@@ -3764,8 +3910,10 @@ async function postRecommitOfferCard(track) {
  * "expedition.recommit", issue #321 U20) runs it once per card.
  *
  * @param {string} trackId
- * @returns {Promise<{ ok: boolean, reason?: "no-track"|"write-refused" }>}
- *   "write-refused": the track write failed and nothing changed
+ * @returns {Promise<{ ok: boolean, reason?: "no-track"|"write-refused", why?: "finished"|"gone", name?: string|null }>}
+ *   "write-refused": the track write failed and nothing changed; "no-track":
+ *   the expedition is `finished` or `gone` (the offer's handler says which —
+ *   cardActions.tellRecommitOutcome, issue #342 Z58)
  */
 export async function performRecommit(trackId) {
   let track = null;
@@ -3777,7 +3925,7 @@ export async function performRecommit(trackId) {
   }
   if (!track || track.completed) {
     console.warn(`${MODULE_ID} | recommit: track ${trackId} missing or already completed.`);
-    return { ok: false, reason: "no-track" };
+    return { ok: false, reason: "no-track", why: track ? "finished" : "gone", name: track?.label ?? null };
   }
   const dice = rollChallengeDice();
   const plan = planRecommit(track.ticks, track.rank, dice);
@@ -3937,14 +4085,18 @@ export async function performVowRecommit({ vowName = null, itemId = null, actorI
  * Item (setBondItemTicks / setBondItemRank — BOND-ITEM-MIRROR).
  *
  * @param {{ hostId?: string|null }} bond
- * @returns {Promise<{ ok: boolean, reason?: "no-connection"|"write-refused" }>}
+ * @returns {Promise<{ ok: boolean, reason?: "no-connection"|"write-refused", why?: "gone"|"lost"|"bonded", name?: string|null }>}
+ *   "no-connection": the connection is `gone`, `lost` or `bonded` since the
+ *   miss (the offer's handler says which — cardActions.tellRecommitOutcome,
+ *   issue #342 Z58)
  */
 export async function performBondRecommit({ hostId = null } = {}) {
   const conn   = await import("./entities/connection.js");
   const record = hostId ? conn.getConnection(hostId) : null;
   if (!record || record.active === false || record.bonded) {
     console.warn(`${MODULE_ID} | bond recommit: connection ${hostId ?? "?"} is gone, lost or bonded — nothing recommitted.`);
-    return { ok: false, reason: "no-connection" };
+    return { ok: false, reason: "no-connection",
+      why: !record ? "gone" : record.active === false ? "lost" : "bonded", name: record?.name ?? null };
   }
   const dice = rollChallengeDice();
   const plan = planRecommit(Number(record.relationshipTicks ?? 0), rankName(record.rank), dice);
@@ -4135,10 +4287,15 @@ export async function awardSavedLegacyXp(campaignState) {
  *   legacy write itself
  */
 async function writeLegacyTicks(key, ticks) {
-  const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
-  const marked = addLegacyTicks(cs, key, ticks, { awardXp: false });
-  await game.settings.set(MODULE_ID, "campaignState", cs);
+  // On the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+  let marked;
+  await serialiseCampaignStateWrite(async () => {
+    const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
+    const mark = addLegacyTicks(cs, key, ticks, { awardXp: false });
+    await game.settings.set(MODULE_ID, "campaignState", cs);
+    marked = mark;
+  }, "legacy ticks");
   return payLegacyMark(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
 }
 
@@ -4443,7 +4600,12 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
   const { primary } = resolveVowItemCopies(vowName, { actorId });
   const item = primary?.item?.system?.completed === true ? null : (primary?.item ?? null);
   const vowRank        = item?.system?.rank ?? null;
-  const vowId          = item?.flags?.[MODULE_ID]?.vowId ?? null;
+  // Named as its copies are found (vowCopyId: the flag, else the Item's own
+  // id): from the flag alone, a sheet vow whose stamp never landed carried
+  // null, so 🤝 Deepen's once-only record found the vow by its name only and
+  // a rename allowed a second deepen (known-issues
+  // FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY).
+  const vowId          = vowCopyId(item);
   const connectionName = item?.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
   const safeVow   = escapeChatHtml(vowName ?? "your vow");
   const deepenBtn = connectionName
@@ -4727,15 +4889,17 @@ function collectPlayerVowItems() {
   return all;
 }
 
-// Every copy of `primary`'s vow across PCs — by the shared vowId flag when
-// present, else by the item's exact name.
+// Every copy of `primary`'s vow across PCs — the copies its id names
+// (isVowCopy / vowCopyId: the shared `vowId` flag, else the Item's own id).
+// A vow with no `vowId` flag (written on a sheet with no GM connected, or its
+// stamp refused) is only itself: the exact-name fallback served pre-vowId
+// shared vows, which swearSharedVowForAll never makes, and it took a
+// crewmate's independent namesake — two "Background Vow"s — for a copy, so
+// one PC's fulfilment completed, paid and stamped the other's (issue #342
+// Z59; issue #301 B02's "the roller's own vow").
 function collectVowCopies(all, primary) {
-  const vowId = primary.item.flags?.[MODULE_ID]?.vowId ?? null;
-  const primaryName = (primary.item.name ?? "").toLowerCase();
-  return all.filter(e =>
-    vowId
-      ? e.item.flags?.[MODULE_ID]?.vowId === vowId
-      : (e.item.name ?? "").toLowerCase() === primaryName);
+  const id = vowCopyId(primary.item);
+  return id ? all.filter(e => isVowCopy(e.item, id)) : [primary];
 }
 
 // GM-side: deliver the linked vow's promised concrete reward (#241 Phase 2) when
@@ -4771,7 +4935,11 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, ac
   for (const { actor, item } of copies) {
     const r = item?.flags?.[MODULE_ID]?.reward;
     if (r) anyRewardFlag = true;
-    if (r?.status === "promised") { reward = r; vowId = item.flags[MODULE_ID].vowId; rewardHolder = actor ?? null; break; }
+    // The claim below is keyed as every copy is found (isVowCopy): the flag,
+    // else the Item's own id — keyed on the flag alone, a sheet vow whose
+    // stamp never landed kept its reward "promised" and paid it again
+    // (issue #342 Z54).
+    if (r?.status === "promised") { reward = r; vowId = vowCopyId(item); rewardHolder = actor ?? null; break; }
   }
   if (!reward) {
     if (noteIfAbsent && copies.length && !anyRewardFlag) {
@@ -4857,7 +5025,7 @@ export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = fal
   // completeVowItemByName — may have already marked the copies completed
   // before this payoff runs, so fall back to searching ALL copies with the
   // same name ladder (exact, then substring), preferring the roller's, and
-  // then collect EVERY PC's copy of that vow (by vowId, else name).
+  // then collect EVERY PC's copy of that vow (collectVowCopies — by its id).
   // Collecting only the first PC's copy made a shared vow's reward land on the
   // first PC instead of the roller.
   let { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId });
@@ -4968,8 +5136,11 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
   }
 
   if (failures.length) {
+    // The vow as its copies are found (vowCopyId), so its Retry finds a sheet
+    // vow whose stamp never landed after a rename too (known-issues
+    // FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY).
     await postPayoffFailureCard({
-      source: "fulfil", vowName: item.name ?? vowName ?? null, vowId: item.flags?.[MODULE_ID]?.vowId ?? null,
+      source: "fulfil", vowName: item.name ?? vowName ?? null, vowId: vowCopyId(item),
       actorId, outcome, failures,
     }).catch(err => console.warn(`${MODULE_ID} | native-fulfil: failure card failed:`, err?.message ?? err));
   }
@@ -5205,12 +5376,13 @@ async function recordPayoffStep(copies, step) {
   }
 }
 
-// Every copy of a payoff card's vow (completed ones included): by its vowId,
-// else by its exact name, the roller's copy first.
+// Every copy of a payoff card's vow (completed ones included): by its vowId
+// (isVowCopy — the flag, or the Item's own id for a vow whose stamp never
+// landed), else by its exact name, the roller's copy first.
 function payoffVowCopies({ vowId = null, vowName = null, actorId = null } = {}) {
   const all = collectPlayerVowItems();
   if (vowId) {
-    const byId = all.filter(e => e.item.flags?.[MODULE_ID]?.vowId === vowId);
+    const byId = all.filter(e => isVowCopy(e.item, vowId));
     if (byId.length) return byId;
   }
   const lo = String(vowName ?? "").trim().toLowerCase();
@@ -5493,12 +5665,15 @@ async function runPayoffStep(s, card, copies) {
       return retryRiderStep(s, card?.actorId ?? null);
     case "arrival": {
       // A move's arrival whose record the world refused (issue #331 X18):
-      // the place it reached, written onto the latest store.
+      // the place it reached, written onto the latest store (on the client's
+      // campaignState write chain — CAMPSTATE-CHAIN-REST).
       const located = currentLocationForEntityId(typeof s.locationId === "string" ? s.locationId : null);
       if (!located || located.type !== s.locationType) return { ok: false, reason: "invalid step" };
       try {
-        const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        await game.settings.set(MODULE_ID, "campaignState", { ...stored, currentLocationId: located.id, currentLocationType: located.type });
+        await serialiseCampaignStateWrite(() => {
+          const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+          return game.settings.set(MODULE_ID, "campaignState", { ...stored, currentLocationId: located.id, currentLocationType: located.type });
+        }, "payoff retry: arrival");
         return { ok: true };
       } catch (err) {
         console.warn(`${MODULE_ID} | payoff retry: the arrival was refused again:`, err?.message ?? err);
@@ -5816,13 +5991,16 @@ async function postMilestonePickerCard(vows, actorId, marks = 1) {
  * Forge shows only unbonded connections; develop shows all active ones.
  * `connections` null reads the active connection records (the GM-side
  * "connection.suggest" handler, issue #325 W11). Returns the posted card, or
- * null when there was nothing to offer or the post failed.
+ * null when there was nothing to offer or the post failed. `actorId` is the
+ * move card's roller: the pick is their follow-up, rolled as them (issue #342
+ * Z56 — the picker named no roller, so the pick spoke as its presser).
  *
  * @param {Array<Object>|null} connections — records with `__hostId`
  * @param {"develop"|"forge"} action
+ * @param {{ actorId?: string|null }} [opts]
  * @returns {Promise<ChatMessage|null>}
  */
-export async function postConnectionPickerCard(connections, action) {
+export async function postConnectionPickerCard(connections, action, { actorId = null } = {}) {
   if (!Array.isArray(connections)) connections = await activeConnectionRecords();
   const eligible = action === "forge"
     ? connections.filter(c => !c.bonded)
@@ -5845,6 +6023,7 @@ export async function postConnectionPickerCard(connections, action) {
       flags: { [MODULE_ID]: {
         connectionPicker: true, pickAction: action, resolved: false,
         choices: eligible.map(c => ({ hostId: c.__hostId ?? "", name: c.name ?? "" })),
+        ...(actorId ? { actorId } : {}),
       } },
     });
   } catch (err) {
@@ -5940,7 +6119,9 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
         [MODULE_ID]: {
           payThePriceCard: true,
           sufferRoutes:    result.sufferRoutes,
-          oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result },
+          // Its move's resolution: a burn or improvement that reverts the
+          // price takes it out of RECENT ORACLE RESULTS (issue #342 Z11).
+          oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result, ...(resolutionId ? { resolutionId } : {}) },
         },
       },
     });
@@ -5980,10 +6161,13 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
  * clamped loss never took and skipped the fallback's real one (issue #311 P04).
  * Harm or stress past the meter is taken as momentum (`momentumLoss`, issue
  * #314 Q02): that is a receipt of its own, which an improvement refunds and a
- * burn's reset replaces.
+ * burn's reset replaces — save a price the burned outcome keeps, whose
+ * momentum loss comes off the reset (burnMomentum.js burnMeterChanges, issue
+ * #342 Z51).
  *
  * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
- * @returns {Array<{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number, overflow?: true }>}
+ * @returns {Array<{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number,
+ *   overflow?: true, unpreparedMarked?: true, alliesMarked?: string[] }>}
  */
 function ptpMeterReceipts(landed) {
   const meterKey = SUFFER_METERS[landed?.move];
@@ -5991,7 +6175,15 @@ function ptpMeterReceipts(landed) {
   const receipts = [];
   const amount = Number(landed.before) - Number(landed.after);
   if (amount > 0) {
-    receipts.push({ move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after });
+    // A supply loss to 0 names whom it marked unprepared — the payer, the
+    // allies sharing the supply — so an upgrade that reverts the price clears
+    // those marks, and only those, once the refunded supply is above 0
+    // (resultUpgrade.js revertPayThePrice; issue #342 D4).
+    const marks = meterKey === "supply" ? {
+      ...(landed.unpreparedMarked === true ? { unpreparedMarked: true } : {}),
+      ...(Array.isArray(landed.alliesMarkedIds) && landed.alliesMarkedIds.length ? { alliesMarked: [...landed.alliesMarkedIds] } : {}),
+    } : {};
+    receipts.push({ move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after, ...marks });
   }
   const m = landed.momentumLoss;
   if (m && m.taken > 0) {
@@ -6275,6 +6467,12 @@ function escapeChatHtml(s) {
  * and planet collections in that priority order. Case-insensitive prefix match
  * before falling back to substring match.
  *
+ * On each rung a match in the active sector wins: generated site names repeat
+ * across sectors (every derelict is "Derelict Starship" or "Derelict
+ * Settlement"), and the first in storage order — the older sector's — set the
+ * current location, the ship and its token on the wrong map (issue #342 Z15;
+ * the site ladder's rule, issue #321 U48).
+ *
  * @param {string} name
  * @param {Object} campaignState
  * @returns {{ id: string, type: string, entity: Object }|null}
@@ -6308,9 +6506,14 @@ export function resolveCurrentLocationName(name, campaignState) {
     }
   }
 
-  return candidates.find(c => c.lc === target)
-      ?? candidates.find(c => c.lc.startsWith(target))
-      ?? candidates.find(c => c.lc.includes(target))
+  const activeSectorId = campaignState?.activeSectorId ?? null;
+  const pick = (fits) => {
+    const hits = candidates.filter(fits);
+    return (activeSectorId && hits.find(c => c.entity?.sectorId === activeSectorId)) || hits[0] || null;
+  };
+  return pick(c => c.lc === target)
+      ?? pick(c => c.lc.startsWith(target))
+      ?? pick(c => c.lc.includes(target))
       ?? null;
 }
 
@@ -6348,13 +6551,17 @@ async function handleAtCommand(message) {
   }
 
   // A copy: a refused write must leave this client's cached state as it was
-  // (issue #321 U58).
+  // (issue #321 U58). The two fields are written onto the store as it is at
+  // the write's turn on the client's campaignState write chain
+  // (CAMPSTATE-CHAIN-REST).
   const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
+  const writeCurrentLocation = (id, type) => serialiseCampaignStateWrite(() => game.settings.set(MODULE_ID, "campaignState",
+    { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}), currentLocationId: id, currentLocationType: type }), "!at");
 
   if (!arg) {
     campaignState.currentLocationId   = null;
     campaignState.currentLocationType = null;
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await writeCurrentLocation(null, null);
     await ChatMessage.create({
       content: "<p><strong>Current location cleared.</strong></p>",
       flags:   { [MODULE_ID]: { atCommandCard: true } },
@@ -6370,13 +6577,14 @@ async function handleAtCommand(message) {
 
   campaignState.currentLocationId   = match.id;
   campaignState.currentLocationType = match.type;
-  await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  await writeCurrentLocation(match.id, match.type);
 
   // Fact-continuity §20 — when ship positioning is enabled, treat the
-  // GM's `!at` as "the party (and their ship) is here." Infer the
-  // position from the same name the player typed and persist it on
-  // the command vehicle.
-  await maybeUpdateShipPositionFromName(arg, campaignState, "at_command");
+  // GM's `!at` as "the party (and their ship) is here": the place just set
+  // as the current location, by its id — re-inferred from the typed name, a
+  // fragment ("Bleak") was free text and a namesake in an older sector was
+  // that sector's (issue #342 Z15; known-issues AT-PARTIAL-NAME-SHIP).
+  await maybeUpdateShipPositionFromName(arg, campaignState, "at_command", { entityId: match.id });
 
   await ChatMessage.create({
     // The name is the Actor's — model text a GM confirmed, or typed on the
@@ -6508,8 +6716,10 @@ async function handleSectorCommand(message) {
     ui.notifications.warn(`Sector "${name}" not found. Use !sector list to see all sectors.`);
     return;
   }
-  campaignState.activeSectorId = match.id;
-  await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  // Onto the store as it is at this write's turn on the client's
+  // campaignState write chain (CAMPSTATE-CHAIN-REST).
+  await serialiseCampaignStateWrite(() => game.settings.set(MODULE_ID, "campaignState",
+    { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}), activeSectorId: match.id }), "!sector");
   await ChatMessage.create({
     content: `<p>Active sector switched to <strong>${escapeChatHtml(match.name)}</strong>.</p>`,
     flags: { [MODULE_ID]: { sectorSwitch: true } },
@@ -7098,10 +7308,17 @@ Hooks.once("ready", () => {
   registerErrorLogSocket();   // GM listens for relayed non-GM client errors
   flushErrorLogBuffer();
   flushApiTransactionLogBuffer();
+  // A GM's entry another GM's concurrent write dropped is put back (issue
+  // #342 Z68) — heard from before this load's own advertise.
+  registerKeyRegistryHealing();
   // Advertise this client's Claude-key presence so the single-emitter pipeline
   // routes to a keyed GM (no-op for non-GMs; writes only when state changes).
   advertiseClaudeKeyPresence().catch((err) =>
     console.warn(`${MODULE_ID} | keyed-GM advertise failed:`, err));
+  // And its ElevenLabs key, so keyless players' audio reaches a GM who can
+  // make it (issue #342 Z67).
+  advertiseElevenLabsKeyPresence().catch((err) =>
+    console.warn(`${MODULE_ID} | audio-keyed GM advertise failed:`, err));
   console.log(`${MODULE_ID} | Ready`);
 
   // Show the floating Companion launcher. It replaces the old scene-controls
@@ -7155,7 +7372,6 @@ Hooks.once("ready", () => {
       console.log(`${MODULE_ID} | Reset stale pendingMove lock on ready`);
     }
 
-    const wasNewSession = isNewSessionStart(prevState);
     const priorSessionId = prevState.currentSessionId ?? null;
 
     // NARR-SESSION-SCENE (narrator-context audit 2026-07): when the session
@@ -7170,8 +7386,10 @@ Hooks.once("ready", () => {
     // nothing to write (no stale lock, no new session) nothing is written: the
     // merge starts from this client's cache, which can lag a co-GM's latest
     // write — the live lock's own release among them — and would carry the old
-    // value back over it (issue #335 Y07).
-    initSessionId(prevState).then(updated => {
+    // value back over it (issue #335 Y07). Read and written on the client's
+    // campaignState write chain, once the write ahead of it has landed
+    // (CAMPSTATE-CHAIN-PARTIAL).
+    initSessionId(prevState).then(updated => serialiseCampaignStateWrite(() => {
       const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
       const clearLock = !!staleLock && !!latest.pendingMove && (latest.pendingMoveClaim ?? null) === staleLock.claim;
       const minted = (updated?.currentSessionId ?? null) !== priorSessionId;
@@ -7181,14 +7399,19 @@ Hooks.once("ready", () => {
         ...(minted ? SESSION_MINT_FIELDS : []),
       ];
       return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"));
-    }).then(async () => {
+    }, "session start")).then(async () => {
       const freshState = game.settings.get(MODULE_ID, "campaignState");
-      // Auto-recap: post campaign recap when a new session is detected
-      if (wasNewSession && getAutoRecapEnabled()) {
+      // Auto-recap: the "Previously On" campaign recap introduces the session
+      // this load started — the boundary is End a Session or four idle hours
+      // (issue #286 C4) — and a world's first session has none before it. A
+      // "Session gap (hours)" setting decided it apart from the boundary, so
+      // it could post mid-session or stay silent at a new one (issue #342 D6).
+      const newSession = (freshState?.currentSessionId ?? null) !== priorSessionId;
+      if (newSession && priorSessionId && getAutoRecapEnabled()) {
         await postCampaignRecap(freshState, { silent: false }).catch(err => {
           console.error(`${MODULE_ID} | Auto-recap failed:`, err);
         });
-      } else if (freshState.currentSessionId !== priorSessionId) {
+      } else if (newSession) {
         // A new session's first narration carries the campaign recap from
         // its cache (buildNarratorExtras) — refresh it now, off that path.
         getCampaignRecap(freshState).catch(err =>
@@ -7970,8 +8193,9 @@ onChatMessageRender((message, root) => wireConnectionSuggestionButtons(message, 
  * Wire the per-connection buttons on a connection picker card. Clicking one
  * relays the pick to the canonical GM ("connection.pick" →
  * src/moves/cardActions.js applyConnectionPick), which posts the forced move
- * (develop_your_relationship or forge_a_bond) ONCE — speaking as the clicker's
- * PC so the pipeline credits the roller — and stamps the card resolved. The
+ * (develop_your_relationship or forge_a_bond) ONCE — speaking as the picker's
+ * roller (the move card's; the clicker's PC, relayed here, only on a picker
+ * that names none) so the pipeline credits the roller — and stamps the card resolved. The
  * picker is often authored by someone other than the clicker, so the clicker's
  * own client could not stamp it, and a second click re-rolled the move. A
  * click that is not delivered (no GM connected) re-arms the buttons.
@@ -8082,12 +8306,14 @@ Hooks.on("createJournalEntry", async (entry) => {
   if (!systemTitle || entry.name !== systemTitle) return;
 
   // A copy: a refused write must not leave this client's cached setting
-  // claiming the journal is linked (rules/foundry-api.md).
-  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
-  if (campaignState.worldTruthsSet) return; // Already recorded with real content
-
-  campaignState.worldTruthsJournalId = entry.id;
-  await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
+  // claiming the journal is linked (rules/foundry-api.md). Read and written
+  // at its turn on the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+  await serialiseCampaignStateWrite(() => {
+    const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
+    if (campaignState.worldTruthsSet) return undefined; // Already recorded with real content
+    campaignState.worldTruthsJournalId = entry.id;
+    return game.settings.set(MODULE_ID, "campaignState", campaignState);
+  }, "truths journal link").catch(err =>
     console.error(`${MODULE_ID} | createJournalEntry: failed to persist journal id:`, err)
   );
 });
@@ -8164,8 +8390,11 @@ Hooks.on("createJournalEntryPage", async (page) => {
  * wording is tweaked on the page; only the page's creation was read, so the
  * narrator's WORLD TRUTHS block and the vow scene's Iron truth kept the
  * pre-edit text until the next world load while `!lore` read the page live
- * (rules/reachability.md §5). The linked journal only: a superseded save is
- * not the campaign's truths (the newest save wins). The module's own World
+ * (rules/reachability.md §5). The linked journal only — by its id, whatever
+ * the GM has since named it: a superseded save is not the campaign's truths
+ * (the newest save wins), and the system's "Setting Truths" title was
+ * required too, so an edit after the GM filed the journal under a name of
+ * their own was not re-parsed (issue #342 Z16). The module's own World
  * Truths journal (the Playtest Quickstart's) is skipped by its flags: its
  * page's flag holds the truths and the page text is a printout of them that
  * this parser cannot read back (its sub-table line is an italic paragraph
@@ -8181,8 +8410,6 @@ Hooks.on("updateJournalEntryPage", async (page, changed) => {
   if (page.flags?.[MODULE_ID]) return;
   if (entry.flags?.[MODULE_ID]) return;
 
-  const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "";
-  if (!systemTitle || entry.name !== systemTitle) return;
   if (game.settings.get(MODULE_ID, "campaignState")?.worldTruthsJournalId !== entry.id) return;
 
   // A page edited down to no truth (or "The Story So Far" `!lore` adds beside

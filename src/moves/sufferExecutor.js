@@ -345,8 +345,13 @@ async function postResistRoll(actor, which, opts = {}, upgradeFirst = false) {
       sufferPrompt: resistRollPrompt(which, { upgradeFirst }),
       actor,
       // A move's Pay the Price owes it: the card is the price's, kept when an
-      // upgrade keeps the price (issue #335 Y09).
-      executorOpts: opts.priceCard === true ? { priceCard: true } : {},
+      // upgrade keeps the price (issue #335 Y09) — and the upgraded outcome's
+      // when a kept price card's pick posts it after the upgrade (issue #342
+      // Z47: it was refused as the superseded outcome's).
+      executorOpts: {
+        ...(opts.priceCard === true ? { priceCard: true } : {}),
+        ...(opts.upgraded === true ? { upgraded: true } : {}),
+      },
       moveId: RESIST_ROLLS[which].moveId,
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });
@@ -534,13 +539,15 @@ export async function endureStress(actor, amount, opts = {}) {
  * crew, as it is marked (clearUnprepared).
  *
  * @param {Actor} actor  whose supply is now 0
- * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesNotMarked: string[] }>}
+ * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesMarkedIds: string[], alliesNotMarked: string[] }>}
  *   `unpreparedMarked` is false when `actor` was already unprepared; the
  *   allies by name — marked now, or whose write was refused (warned, never
- *   thrown: the supply loss has landed either way)
+ *   thrown: the supply loss has landed either way) — and the ones marked now
+ *   by id, so an upgrade that reverts the price clears exactly those
+ *   (`alliesMarkedIds`, issue #342 D4)
  */
 export async function markUnprepared(actor) {
-  const marks = { unpreparedMarked: false, alliesMarked: [], alliesNotMarked: [] };
+  const marks = { unpreparedMarked: false, alliesMarked: [], alliesMarkedIds: [], alliesNotMarked: [] };
   if (!actor) return marks;
   if (!actor.system?.debility?.unprepared) {
     await setDebility(actor, "unprepared", true);
@@ -551,6 +558,7 @@ export async function markUnprepared(actor) {
     try {
       await setDebility(ally, "unprepared", true);
       marks.alliesMarked.push(ally.name ?? ally.id);
+      marks.alliesMarkedIds.push(ally.id);
     } catch (err) {
       console.warn(`${MODULE_ID} | sufferExecutor: marking ${ally.name ?? ally.id} unprepared failed:`, err?.message ?? err);
       marks.alliesNotMarked.push(ally.name ?? ally.id);
@@ -639,9 +647,10 @@ function escapeHtml(s) {
  * not the meter (issue #338 D3): issue #325 W16 redirected the loss at 0
  * supply alone, so a PC unprepared above 0 — Outcast's "+1 supply" at 0
  * clears nothing — paid it from the supply. Read by this executor's guard,
- * the choice card's greyed Sacrifice Resources (sufferDialog
- * isOptionAvailable, sufferCard) and an asset rider's supply cost
- * (consequenceRiders.js).
+ * the "make a suffer move" picker's greyed Sacrifice Resources (sufferCard
+ * anySufferBlocked — an enumerated card's Sacrifice Resources option stays
+ * open and is redirected by this executor, issue #342 D1) and an asset
+ * rider's supply cost (consequenceRiders.js).
  *
  * @param {Actor|null} actor
  * @returns {boolean}
@@ -700,6 +709,9 @@ export async function sacrificeResources(actor, amount, opts = {}) {
 
   const marks = atZero ? await markUnprepared(actor) : null;
   const unpreparedMarked = !!marks?.unpreparedMarked;
+  // Whom this loss marked unprepared, by id: an upgrade that reverts the
+  // price clears exactly those marks (issue #342 D4).
+  const alliesMarkedIds = marks?.alliesMarkedIds ?? [];
 
   if (!opts.skipCard) {
     let body = `Supply: ${before} → ${after}`;
@@ -714,7 +726,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     });
   }
 
-  return { before, after, atZero, unpreparedMarked };
+  return { before, after, atZero, unpreparedMarked, alliesMarkedIds };
 }
 
 /**

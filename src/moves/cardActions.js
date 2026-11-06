@@ -143,10 +143,11 @@ const PICK_MOVES = Object.freeze({
  *
  * Validates the pick against the card's own choices, claims the picker
  * (`resolved`), then posts the forced Develop Your Relationship / Forge a
- * Bond move ONCE — with `speaker.actor` = the clicker's PC, so the pipeline's
- * resolveSpeakerActorId credits the roller even though the GM authors the
- * message, and the picked connection as `forcedMoveTargetId` (host id) +
- * `forcedMoveTarget` (name). Idempotent per card: a refused claim posts
+ * Bond move ONCE — with `speaker.actor` = the picker's roller (the move
+ * card's, its `actorId`; the clicker's PC on a picker that names none), so
+ * the pipeline's resolveSpeakerActorId credits the roller even though the GM
+ * authors the message, and the picked connection as `forcedMoveTargetId`
+ * (host id) + `forcedMoveTarget` (name). Idempotent per card: a refused claim posts
  * nothing, and a post that fails releases the claim (issue #336 Y24).
  *
  * @param {{ messageId?: string, hostId?: string|null, connectionName?: string|null,
@@ -182,12 +183,15 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
     return { posted: false, reason: "not-on-card" };
   }
 
-  // The clicker's PC — credit the roller. Must be a PC the requester owns; a
-  // GM with no PC relays none (the pipeline resolves their speaker), and a
-  // player with no PC of their own is refused — with no speaker the forced
-  // move was rolled as the GM's first PC, another player's character
-  // developing or forging the bond (issue #331 X19; #326 D8).
-  const { actor, refused } = relayedClickerPc(payload, ctx, "connection pick");
+  // The picker's roller — the move card's, carried by applyConnectionSuggestion:
+  // the forced move is their follow-up, their player's or a GM's to pick
+  // (cardRollerPc; issue #342 Z56 — it spoke as the presser, so a GM's pick
+  // developed the first PC's bond). A picker that names none acts as the
+  // clicker's PC, which must be one the requester owns; a GM with no PC
+  // relays none (the pipeline resolves their speaker), and a player with no
+  // PC of their own is refused — with no speaker the forced move was rolled
+  // as the GM's first PC (issue #331 X19; #326 D8).
+  const { actor, refused } = cardRollerPc(f, payload, ctx, "connection pick");
   if (refused) return { posted: false, reason: refused };
   if (!actor) {
     console.debug(`${MODULE_ID} | connection pick: no clicker PC relayed (a GM's press) — the pipeline resolves the speaker from the message author.`);
@@ -636,9 +640,12 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
  * One attempt per card, claimed on the GM-authored card (`fulfilAttempted`)
  * before the post, behind the in-flight guard; a post that fails releases the
  * claim. The roll is the card's roller's (`actorId`): their player or a GM may
- * press it, and the move speaks as that PC. The vow rides by its Item id —
- * the move card's, the roller's sole open vow when it was posted; the
- * won-fight card's by its name, the roller's copy. A card posted before the
+ * press it, and the move speaks as that PC — on a won-fight card, the vow's
+ * holder: the winner when they hold a copy, else the PC holding the vow the
+ * fight served (resolveVowHolderActor, as its ⚑ — issue #342 D5), so a
+ * miss's 🔁 recommit offer is the holder's too. The vow rides by its Item id
+ * — the move card's, the roller's sole open vow when it was posted; the
+ * won-fight card's by its name, the holder's copy. A card posted before the
  * roller was stamped rolls for the clicker's own PC (the payload's `actorId`,
  * which the requester must own).
  *
@@ -665,8 +672,23 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
     return { posted: false, reason: "already-attempted" };
   }
 
+  const vowName = fightCard && typeof f.vowName === "string" && f.vowName ? f.vowName : null;
   const cardActorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
-  const actorId = cardActorId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
+  let rollerId = cardActorId;
+  if (vowName) {
+    // A won-fight card's 🏁 is the vow's holder's move (issue #342 D5): the
+    // winner when they hold a copy — every case issue #329 X05 settled —
+    // else the PC holding the vow the fight served, as the same card's ⚑
+    // marks it (resolveVowHolderActor). It was the winner's whoever held the
+    // vow: the holder's player was refused their own vow's roll, and the
+    // winner's player rolled it as the winner. A vow found nowhere keeps the
+    // card's roller (no first-PC guess).
+    const { resolveVowItemCopies, resolveVowHolderActor } = await import("../index.js");
+    if (resolveVowItemCopies(vowName, { actorId: cardActorId }).primary) {
+      rollerId = resolveVowHolderActor(vowName, cardActorId)?.id ?? cardActorId;
+    }
+  }
+  const actorId = rollerId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | attempt to fulfil: ${actorId} is not a player character — refused.`);
@@ -679,7 +701,6 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
     return { posted: false, reason: "not-owner" };
   }
 
-  const vowName = fightCard && typeof f.vowName === "string" && f.vowName ? f.vowName : null;
   let vowItemId = fightCard ? null : (f.milestoneSuggestion.vowItemId ?? null);
   if (vowName) {
     const { resolveVowItemCopies } = await import("../index.js");
@@ -971,13 +992,14 @@ export function applyWhichFightPick(payload = {}, ctx = {}) {
  * crew's), and the GM-authored card is claimed (`recommitted`) before the
  * recommit, behind the in-flight guard. A track write the world refused
  * changed nothing and releases the claim, so the press can be made again;
- * an expedition already over leaves the offer closed.
+ * an expedition already over leaves the offer closed. Either is said to the
+ * presser (tellRecommitOutcome — issue #342 Z58: the GM's console only).
  *
  * @param {{ messageId?: string }} payload
- * @param {Object} [_ctx]
+ * @param {Object} [ctx]
  * @returns {Promise<{ applied: boolean, reason?: string }>}
  */
-export async function applyRecommitOffer(payload = {}, _ctx = {}) {
+export async function applyRecommitOffer(payload = {}, ctx = {}) {
   const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
   const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
   if (!message) {
@@ -1009,6 +1031,7 @@ export async function applyRecommitOffer(payload = {}, _ctx = {}) {
       await message.update({ [`flags.${MODULE_ID}.recommitted`]: false })
         .catch(e => console.warn(`${MODULE_ID} | recommit: releasing the claim failed:`, e?.message ?? e));
     }
+    await tellRecommitOutcome(ctx, res, { what: "expedition", name: res?.name ?? f.trackLabel ?? null });
     return { applied: res?.ok === true, ...(res?.reason ? { reason: res.reason } : {}) };
   } finally {
     _inFlight.delete(key);
@@ -1021,9 +1044,14 @@ export async function applyRecommitOffer(payload = {}, _ctx = {}) {
  * offers "🔁 Recommit"; the GM-authored card is claimed (`recommitted`)
  * before the recommit, behind the in-flight guard, as an expedition's is
  * (applyRecommitOffer). The vow or bond is the roller's: their player or a
- * GM may press it. A write the world refused changed nothing and releases
- * the claim; a vow fulfilled or a bond forged since the miss leaves the
- * offer closed (issue #335 Y10).
+ * GM may press it — a roller no longer one of the table's player characters
+ * is refused as gone, as the card-roller buttons refuse one (refusePress
+ * "not-a-pc"; known-issues RECOMMIT-GONE-ROLLER-WORDING: a player was told
+ * the card named no character of theirs, and a GM's press did nothing). A
+ * write the world refused changed nothing and releases the claim; a vow
+ * fulfilled or a bond forged since the miss leaves the offer closed (issue
+ * #335 Y10). Each is said to the presser (tellRecommitOutcome — issue #342
+ * Z58: only the fulfilled vow got a card).
  *
  * @param {{ messageId?: string }} payload
  * @param {Object} [ctx]
@@ -1035,6 +1063,7 @@ export function applyVowRecommitOffer(payload = {}, ctx = {}) {
     perform: async (f) => (await import("../index.js")).performVowRecommit({
       vowName: f.vowName ?? null, itemId: f.itemId ?? null, actorId: f.actorId ?? null,
     }),
+    what: "vow", name: (f) => f.vowName ?? null,
   });
 }
 
@@ -1043,10 +1072,11 @@ export function applyBondRecommitOffer(payload = {}, ctx = {}) {
   return applyRollerRecommit(payload, ctx, {
     flag: "bondRecommitOfferCard", label: "bond recommit",
     perform: async (f) => (await import("../index.js")).performBondRecommit({ hostId: f.hostId ?? null }),
+    what: "bond", name: (f) => f.connectionName ?? null,
   });
 }
 
-async function applyRollerRecommit(payload, ctx, { flag, label, perform }) {
+async function applyRollerRecommit(payload, ctx, { flag, label, perform, what, name }) {
   const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
   const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
   if (!message) {
@@ -1060,6 +1090,11 @@ async function applyRollerRecommit(payload, ctx, { flag, label, perform }) {
   }
   const actorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
+  if (actorId && !isPlayerCharacterActor(actor)) {
+    console.warn(`${MODULE_ID} | ${label}: ${actorId} is not a player character — refused.`);
+    refusePress(ctx, "not-a-pc");
+    return { applied: false, reason: "not-a-pc" };
+  }
   if (actor ? !requesterOwnsActor(actor, ctx) : !ctx?.requesterIsGM) {
     console.warn(`${MODULE_ID} | ${label}: user ${ctx?.requesterId ?? "?"} may not recommit ${actor?.name ?? "this card"}'s — refused.`);
     refusePress(ctx, "not-owner", actor);
@@ -1084,10 +1119,67 @@ async function applyRollerRecommit(payload, ctx, { flag, label, perform }) {
       await message.update({ [`flags.${MODULE_ID}.recommitted`]: false })
         .catch(e => console.warn(`${MODULE_ID} | ${label}: releasing the claim failed:`, e?.message ?? e));
     }
+    await tellRecommitOutcome(ctx, res, { what, name: res?.name ?? name(f) });
     return { applied: res?.ok === true, ...(res?.reason ? { reason: res.reason } : {}) };
   } finally {
     _inFlight.delete(key);
   }
+}
+
+// What a 🔁 Recommit that changed nothing tells the presser, by what it was
+// for: the offer's own title, and why there was nothing to recommit.
+const RECOMMIT_TITLES = { expedition: "🔁 Recommit to the Expedition", vow: "🔁 Recommit to the Vow", bond: "🔁 Recommit to the Bond" };
+const RECOMMIT_NOTHING = {
+  "no-track":      { finished: "is finished", gone: "is no longer a progress track" },
+  "no-vow":        { gone: "is no longer on its character's sheet" },
+  "no-connection": { bonded: "is already bonded", lost: "is no longer a connection", gone: "is no longer a connection" },
+};
+
+/**
+ * Say what a 🔁 Recommit that changed nothing did, to whoever pressed it
+ * (issue #342 Z58 — both cases were a console line on the GM's): a write the
+ * world refused is whispered to the presser and the GMs, as a refused reward
+ * pick or link is (issue #329 X07) — its claim was released, so the press can
+ * be made again; a target gone, finished or bonded since the miss gets the
+ * short card a vow fulfilled since gets (issue #335 Y10), the offer closed.
+ * Every other outcome is already on a card (the "Recommitted" card, Y10's)
+ * or says nothing. Never throws.
+ *
+ * @param {Object} ctx — the relay context
+ * @param {{ ok?: boolean, reason?: string, why?: string }|null} res — perform*'s
+ * @param {{ what: "expedition"|"vow"|"bond", name?: string|null }} about
+ */
+async function tellRecommitOutcome(ctx, res, { what, name = null }) {
+  const title = RECOMMIT_TITLES[what] ?? "🔁 Recommit";
+  const label = `<strong>${escapeHtml(name || `that ${what}`)}</strong>`;
+  let content = null;
+  let whisper = null;
+  if (res?.reason === "write-refused") {
+    content = `<div class="sf-ptp-card"><strong>Not saved</strong><p>The recommit to ${label} could not be saved &mdash; nothing changed. Press ${escapeHtml(title)} again.</p></div>`;
+    const gmIds = Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM).map(u => u.id);
+    whisper = [...new Set([ctx?.requesterId ?? globalThis.game?.user?.id ?? null, ...gmIds].filter(Boolean))];
+  } else if (RECOMMIT_NOTHING[res?.reason]) {
+    const why = RECOMMIT_NOTHING[res.reason][res.why] ?? Object.values(RECOMMIT_NOTHING[res.reason]).at(-1);
+    content = `<div class="sf-ptp-card"><strong>${escapeHtml(title)}</strong><p>${label} ${why} &mdash; nothing was recommitted.</p></div>`;
+  }
+  if (!content) return;
+  try {
+    await globalThis.ChatMessage.create({
+      content,
+      ...(whisper ? { whisper } : {}),
+      flags: { [MODULE_ID]: { recommitOutcomeNotice: true, reason: res.reason } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | recommit: telling the presser failed:`, err?.message ?? err);
+  }
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1416,11 +1508,19 @@ export async function applyWayOutPick(payload = {}, ctx = {}) {
  * posted (index.js postConnectionPickerCard — whose pick is claimed once,
  * applyConnectionPick); a picker that could not be posted releases it.
  *
+ * The follow-up is the card's roller's (issue #329 X05, #338 D1), as the
+ * same card's ⚑ is (applyMilestoneSuggestion): with a roller named, only
+ * their player or a GM may press it, and the picker carries them
+ * (`actorId`), so its pick is rolled as them. The picker named no roller, so
+ * the pick spoke as its presser — a GM's press developed the first PC's
+ * bond, and a crewmate took the follow-up as theirs (issue #342 Z56). A card
+ * that names none stays the presser's.
+ *
  * @param {{ messageId?: string, pickAction?: string }} payload
- * @param {Object} [_ctx]
+ * @param {Object} [ctx]
  * @returns {Promise<{ posted: boolean, reason?: string }>}
  */
-export async function applyConnectionSuggestion(payload = {}, _ctx = {}) {
+export async function applyConnectionSuggestion(payload = {}, ctx = {}) {
   const messageId = typeof payload.messageId === "string" ? payload.messageId : null;
   const message   = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
   if (!message) {
@@ -1439,6 +1539,11 @@ export async function applyConnectionSuggestion(payload = {}, _ctx = {}) {
     console.debug(`${MODULE_ID} | connection suggestion: card ${messageId} already taken — ignoring the press.`);
     return { posted: false, reason: "already-claimed" };
   }
+  const rollerId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
+  if (rollerId) {
+    const { refused } = cardRollerPc(f, payload, ctx, "connection suggestion");
+    if (refused) return { posted: false, reason: refused };
+  }
 
   _inFlight.add(key);
   try {
@@ -1449,7 +1554,7 @@ export async function applyConnectionSuggestion(payload = {}, _ctx = {}) {
       return { posted: false, reason: "claim-refused" };
     }
     const { postConnectionPickerCard } = await import("../index.js");
-    const posted = await postConnectionPickerCard(null, pickAction).catch(err => {
+    const posted = await postConnectionPickerCard(null, pickAction, { actorId: rollerId }).catch(err => {
       console.warn(`${MODULE_ID} | connection suggestion: picker failed:`, err?.message ?? err);
       return null;
     });

@@ -8,8 +8,8 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { initSessionId, isNewSessionStart } from '../../src/index.js';
-import { sessionNeedsMint, mintSession, touchSessionActivity, SESSION_IDLE_HOURS, SESSION_MINT_FIELDS } from '../../src/session/lifecycle.js';
+import { initSessionId } from '../../src/index.js';
+import { sessionNeedsMint, mintSession, touchSessionActivity, sessionLastSeenAt, SESSION_IDLE_HOURS, SESSION_MINT_FIELDS } from '../../src/session/lifecycle.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -107,51 +107,6 @@ describe('initSessionId()', () => {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// isNewSessionStart()
-// ─────────────────────────────────────────────────────────────────────────────
-
-describe('isNewSessionStart()', () => {
-  beforeEach(() => {
-    game.settings._store.delete(`${MODULE_ID}.sessionGapHours`);
-  });
-
-  it('returns false when lastSessionTimestamp is null', () => {
-    const state = makeState({ lastSessionTimestamp: null });
-    expect(isNewSessionStart(state)).toBe(false);
-  });
-
-  it('returns false when gap is less than sessionGapHours', () => {
-    const state = makeState({ lastSessionTimestamp: hoursAgo(2) });
-    expect(isNewSessionStart(state, 4)).toBe(false);
-  });
-
-  it('returns true when gap exceeds sessionGapHours', () => {
-    const state = makeState({ lastSessionTimestamp: hoursAgo(6) });
-    expect(isNewSessionStart(state, 4)).toBe(true);
-  });
-
-  it('uses sessionGapHours from settings when no override is passed', () => {
-    game.settings._store.set(`${MODULE_ID}.sessionGapHours`, 10);
-    // Gap of 8 hours; threshold 10 → should be false
-    const state = makeState({ lastSessionTimestamp: hoursAgo(8) });
-    expect(isNewSessionStart(state)).toBe(false);
-    // Gap of 12 hours; threshold 10 → should be true
-    const state2 = makeState({ lastSessionTimestamp: hoursAgo(12) });
-    expect(isNewSessionStart(state2)).toBe(true);
-  });
-
-  it('defaults to 4 hours when sessionGapHours not set', () => {
-    // Gap of 5 hours, default threshold 4 → true
-    const state = makeState({ lastSessionTimestamp: hoursAgo(5) });
-    expect(isNewSessionStart(state)).toBe(true);
-    // Gap of 3 hours, default threshold 4 → false
-    const state2 = makeState({ lastSessionTimestamp: hoursAgo(3) });
-    expect(isNewSessionStart(state2)).toBe(false);
-  });
-});
-
-
-// ─────────────────────────────────────────────────────────────────────────────
 // CampaignStateSchema — session fields
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -191,6 +146,7 @@ describe('session boundaries (issue #286 C3, C4)', () => {
 
   beforeEach(() => {
     game.settings._store.delete(`${MODULE_ID}.campaignState`);
+    game.settings._store.delete(`${MODULE_ID}.sessionActivity`);
   });
 
   it('a session End a Session marked is over, however recent', () => {
@@ -245,18 +201,35 @@ describe('session boundaries (issue #286 C3, C4)', () => {
     expect(state.previousSessionSummary).toBe(older);
   });
 
-  it('chat activity refreshes the timestamp at most every 10 minutes', async () => {
+  it('chat activity refreshes the activity stamp at most every 10 minutes', async () => {
     const now = Date.now();
     game.settings._store.set(`${MODULE_ID}.campaignState`,
       makeState({ currentSessionId: 's1', lastSessionTimestamp: new Date(now - 5 * MIN).toISOString(), pendingMove: true }));
     expect(await touchSessionActivity(now)).toBe(false);
 
-    game.settings._store.set(`${MODULE_ID}.campaignState`,
-      makeState({ currentSessionId: 's1', lastSessionTimestamp: new Date(now - 11 * MIN).toISOString(), pendingMove: true }));
+    const minted = new Date(now - 11 * MIN).toISOString();
+    const state = makeState({ currentSessionId: 's1', lastSessionTimestamp: minted, pendingMove: true });
+    game.settings._store.set(`${MODULE_ID}.campaignState`, state);
     expect(await touchSessionActivity(now)).toBe(true);
-    const stored = game.settings.get(MODULE_ID, 'campaignState');
-    expect(stored.lastSessionTimestamp).toBe(new Date(now).toISOString());
-    expect(stored.pendingMove).toBe(true);   // written onto the latest store, nothing else touched
+    // Its own setting (issue #342 Z01): campaignState is not written at all —
+    // a whole-object write from this client's cache carried back what it
+    // had not seen yet.
+    expect(game.settings.get(MODULE_ID, 'sessionActivity')).toEqual({ sessionId: 's1', at: new Date(now).toISOString() });
+    expect(game.settings.get(MODULE_ID, 'campaignState')).toBe(state);
+    expect(state.lastSessionTimestamp).toBe(minted);
+    expect(sessionLastSeenAt(state)).toBe(new Date(now).toISOString());
+    // The next message within ten minutes of the stamp writes nothing.
+    expect(await touchSessionActivity(now + 5 * MIN)).toBe(false);
+  });
+
+  it('the idle limit counts the activity stamp of this session only', () => {
+    const state = makeState({ currentSessionId: 's2', lastSessionTimestamp: hoursAgo(5) });
+    game.settings._store.set(`${MODULE_ID}.sessionActivity`, { sessionId: 's2', at: hoursAgo(1) });
+    expect(sessionNeedsMint(state)).toBe(false);
+    // A stamp left by the session before is not this one's activity.
+    game.settings._store.set(`${MODULE_ID}.sessionActivity`, { sessionId: 's1', at: hoursAgo(1) });
+    expect(sessionNeedsMint(state)).toBe(true);
+    expect(sessionLastSeenAt(state)).toBe(state.lastSessionTimestamp);
   });
 
   it('activity never revives a session that is over — idle past the limit, or ended', async () => {

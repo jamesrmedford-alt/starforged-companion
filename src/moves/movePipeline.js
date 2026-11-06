@@ -55,6 +55,7 @@ import {
   readMomentumState,
   completeVowItem,
   setSharedVowReward,
+  vowCopyId,
   setBondItemRank,
 } from "../character/actorBridge.js";
 import { getActiveCombatPosition, listProgressTracks, completeProgressTrack } from "../ui/progressTracks.js";
@@ -70,7 +71,7 @@ import { resolveRelevance } from "../context/relevanceResolver.js";
 import { getCurrentSiteKind } from "../entities/location.js";
 import { ClarificationDialog, applyClarificationSelection } from "../world/clarificationDialog.js";
 import { swearSharedVowForAll } from "../session/swearVow.js";
-import { takeNextMoveAdd, clearPersistedNextMoveAdd, consumeNextMoveBonus } from "./nextMoveAdd.js";
+import { consumeNextMoveAdd, consumeNextMoveBonus } from "./nextMoveAdd.js";
 import { decidePacing } from "../pacing/router.js";
 import { READING_KIND } from "../batch/round.js";
 
@@ -262,11 +263,14 @@ export async function readMove({
   // A scene-challenge move (Face Danger / Secure an Advantage within a
   // scene challenge — issue #338 D2) with no challenge open is the
   // ordinary move it varies: its progress and segments would land on
-  // nothing, and its strong hit takes no momentum.
+  // nothing, and its strong hit takes no momentum. So is one whose own
+  // challenge — the one it names by id, as a paced card's Roll does — has
+  // ended, whatever else is open (PACED-VARIANT-ROLL-ENDED-CHALLENGE).
   if (SCENE_CHALLENGE_VARIANTS[interpretation.moveId]) {
-    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []));
+    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []),
+      { trackId: interpretation.moveTargetId ?? null });
     if (ordinary !== interpretation.moveId) {
-      console.debug(`${MODULE_ID} | ${interpretation.moveId}: no scene challenge is open — resolved as ${ordinary}.`);
+      console.debug(`${MODULE_ID} | ${interpretation.moveId}: its scene challenge is not open — resolved as ${ordinary}.`);
       interpretation.moveId   = ordinary;
       interpretation.moveName = moveDisplayName(ordinary);
     }
@@ -449,15 +453,16 @@ export async function postTargetChoiceCard(read, { narration, speakerActorId }) 
  * @param {Object} args.campaignState — a working copy
  * @param {string|null} args.apiKey
  * @param {*} args.dial — the Mischief dial
- * @param {{ move?: boolean, moveId?: string|null, forced?: Object|null }|null} [args.readAs]
- *   read as a move ("Roll a move instead"), as the move named ("Roll ⟨move⟩"),
- *   or as a card button's forced move
+ * @param {{ move?: boolean, moveId?: string|null, moveTargetId?: string|null, forced?: Object|null }|null} [args.readAs]
+ *   read as a move ("Roll a move instead"), as the move named ("Roll ⟨move⟩"
+ *   — with the challenge the classifier named for it, by id), or as a card
+ *   button's forced move
  * @returns {Promise<Object>} the reading
  */
 export async function readAction({ text, speakerActorId, campaignState, apiKey, dial, readAs = null }) {
   const forced = readAs?.forced?.moveId
     ? readAs.forced
-    : (readAs?.moveId ? { moveId: readAs.moveId } : null);
+    : (readAs?.moveId ? { moveId: readAs.moveId, moveTargetId: readAs.moveTargetId ?? null } : null);
   const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
   let pacing = null;
   if (!readAs?.move) {
@@ -653,6 +658,24 @@ export async function rollMove({
     combatPosition = await getActiveCombatPosition(speakerActorId ?? getPlayerActors()[0]?.id ?? null);
   }
 
+  // A scene-challenge variant with no challenge open is the ordinary move it
+  // varies (issue #338 D2; readMove applies it as it reads) — and again here,
+  // as it is rolled: a Batch Mode entry is rolled after it was read, so an
+  // earlier entry's Finish the Scene can have ended the challenge, and the
+  // variant would mark nothing and take no momentum on a strong hit (issue
+  // #342 Z39). One naming its challenge by id (a paced card's Roll) is the
+  // ordinary move once that one has ended, whatever else is open
+  // (PACED-VARIANT-ROLL-ENDED-CHALLENGE).
+  if (SCENE_CHALLENGE_VARIANTS[interpretation.moveId]) {
+    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []),
+      { trackId: interpretation.moveTargetId ?? null });
+    if (ordinary !== interpretation.moveId) {
+      console.debug(`${MODULE_ID} | ${interpretation.moveId}: its scene challenge is not open as it is rolled — rolled as ${ordinary}.`);
+      interpretation.moveId   = ordinary;
+      interpretation.moveName = moveDisplayName(ordinary);
+    }
+  }
+
   // Apply opt-in adds from abilities the player kept checked in the
   // dialog. confirmInterpretation mutates interpretation.appliedAbilityAdds.
   const abilityAdds = Number(interpretation.appliedAbilityAdds ?? 0);
@@ -729,9 +752,13 @@ export async function rollMove({
   // card, a "Which vow?" pick) names it by id. When that track was
   // deleted or finished meanwhile, nothing is rolled — and it says so: a
   // same-named sibling is a different fight, and a score of 0 would be a
-  // certain miss with its consequences (issue #306 R06, #321 U02).
+  // certain miss with its consequences (issue #306 R06, #321 U02). A scene
+  // challenge's Finish the Scene too (issue #326 D6 made it a progress move
+  // after R06): a second finish, or a stale row, rolled a certain miss and
+  // paid its price for a scene already over (issue #342 Z07).
   if (interpretation.moveTargetId
-      && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow")
+      && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow"
+        || tickInfo?.source === "scene_challenge")
       && !tickInfo.trackId) {
     await postTrackGoneCard(interpretation).catch(err =>
       console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
@@ -751,16 +778,16 @@ export async function rollMove({
   }
 
   // Take a Break → "Move on": a single-use +1 on the next action roll (not
-  // a progress move). Consumed from the working copy (so persistResolution's
-  // clone can't resurrect it) and from the stored campaignState. Taken
-  // after the enrichment, on the roll kind it resolved: a bonded Develop
-  // Your Relationship (no roll by its data) rolls +rank and takes the +1
-  // (issue #326 W48 — it was taken by the next roll after it).
+  // a progress move). Claimed on the stored campaignState before it is added
+  // — a refused claim adds nothing and leaves it pending, so it is never
+  // added to two rolls (issue #342 Z52) — and dropped from the working copy.
+  // Taken after the enrichment, on the roll kind it resolved: a bonded
+  // Develop Your Relationship (no roll by its data) rolls +rank and takes the
+  // +1 (issue #326 W48 — it was taken by the next roll after it).
   const rollKind = interpretation.rollKind ?? null;
-  const breakAdd = takeNextMoveAdd(campaignState, interpretation.moveId, { rollKind });
+  const breakAdd = await consumeNextMoveAdd(campaignState, interpretation.moveId, { rollKind });
   if (breakAdd > 0) {
     interpretation.adds = (interpretation.adds ?? 0) + breakAdd;
-    await clearPersistedNextMoveAdd();
   }
   // "+1 on your next move" the roller earned (Secure an Advantage, Gain
   // Ground): their own, on their next action roll — claimed on the store
@@ -975,8 +1002,12 @@ export async function rollMove({
         await postExpeditionFinishCard(fin).catch(err =>
           console.warn(`${MODULE_ID} | expedition finish card failed:`, err?.message ?? err));
 
-        // Reaching the end of an expedition discovers any unexplored sector
-        // site it led to (precursor vault / derelict). The discovered flag
+        // Reaching the end of an expedition discovers the unexplored sector
+        // site it led to (precursor vault / derelict): the one its track
+        // links, or the one its label names — never the sector's sole site
+        // by guess, which charted the frontier derelict at the end of an
+        // expedition to Bleakhold (issue #342 D7; the arrival went to the
+        // same site — selectExpeditionSite, Z14). The discovered flag
         // is folded into the in-memory campaignState so it rides along with
         // the pending persistResolution write below (revealSectorSite sets
         // it on a copy — issue #326 W51); the scene pin + passage and the
@@ -986,6 +1017,7 @@ export async function rollMove({
           const revealed = await revealSectorSite(fin.track?.label ?? interpretation.moveTarget, {
             source:   "expedition",
             siteId:   fin.track?.siteId ?? null,
+            requireLabelMatch: true,
             getState: () => campaignState,
             setState: (next) => { campaignState.sectors = next.sectors; },
           });
@@ -1180,8 +1212,11 @@ export async function rollMove({
         const rewardCopy = copies.find(({ item }) =>
           item.flags?.[MODULE_ID]?.reward?.status === "promised");
         if (rewardCopy) {
+          // Keyed as the copies are found — the flag, else the Item's own id:
+          // a sheet vow whose stamp never landed kept a forsaken vow's reward
+          // "promised" (issue #342 Z54).
           const f = rewardCopy.item.flags[MODULE_ID];
-          await setSharedVowReward(f.vowId, { ...f.reward, status: "lost" }).catch(() => {});
+          await setSharedVowReward(vowCopyId(rewardCopy.item), { ...f.reward, status: "lost" }).catch(() => {});
         }
         await postForsakeVowCard(primary.item.name).catch(err =>
           console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));
@@ -1273,6 +1308,9 @@ export async function rollMove({
     vehicleActorId:  interpretation.vehicleActorId ?? null,
     companionItemId: interpretation.companionItemId ?? null,
     combatTrackId:   moveFight?.id ?? null,
+    // A support vehicle's own roll: its integrity choices change that asset's
+    // track, not the command vehicle's (issue #342 Z53). Absent otherwise.
+    ...(interpretation.vehicleItemId ? { vehicleItemId: interpretation.vehicleItemId } : {}),
     // Heal's patient: its recovery is checked against and applied to them
     // (issue #325 W04). Absent for every other move.
     ...(interpretation.patientActorId ? { patientActorId: interpretation.patientActorId } : {}),

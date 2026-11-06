@@ -16,6 +16,7 @@
 import { selectSectorSite } from "./precursorSites.js";
 import { restyleSiteOnScene }  from "./sceneBuilder.js";
 import { updateLocation, getLocation } from "../entities/location.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -42,6 +43,37 @@ export function siteDisplayName(site) {
 }
 
 /**
+ * The site an expedition is for: the discovery its track links (`siteId`),
+ * charted or not, else the unexplored site its label names — exact, whole
+ * words or the type keyword (`requireLabelMatch`: never the sole-site guess,
+ * so an expedition to a settlement is for no site). Finishing the expedition
+ * arrives there, by the site's location Actor: the crew names an unexplored
+ * site in their own words (its pin reads "Unexplored Site"), so the label
+ * alone resolved to no place — SHIP POSITION named a phrase, and the token and
+ * CURRENT LOCATION stayed on the settlement they left (issue #342 Z14). A
+ * read of the given state.
+ *
+ * @param {Object} state — campaignState (its `sectors`, `activeSectorId`)
+ * @param {string|null} label — the expedition's label
+ * @param {{ siteId?: string|null }} [opts] — the track's link
+ * @returns {{ sector: Object, site: Object }|null}
+ */
+export function selectExpeditionSite(state, label, { siteId = null } = {}) {
+  const sectors = Array.isArray(state?.sectors) ? state.sectors : [];
+  if (siteId) {
+    for (const sector of sectors) {
+      const site = (sector?.mapData?.discoveries ?? []).find(d => d?.id === siteId);
+      if (site) return { sector, site };
+    }
+  }
+  return selectSectorSite(sectors, label, {
+    requireLabelMatch: true,
+    activeSectorId:    state?.activeSectorId ?? null,
+    siteName:          siteDisplayName,
+  });
+}
+
+/**
  * Reveal the first undiscovered site (across all stored sectors) matching a
  * destination label. Returns the revealed { sector, site } or null when nothing
  * matched. Persists campaign state only when a site is revealed.
@@ -55,6 +87,10 @@ export function siteDisplayName(site) {
  *   reveal the "wrong" one). The ladder runs across every sector at once
  *   (selectSectorSite), so neither this id nor an exact name can be preempted
  *   by a guess in an earlier sector (issue #300 F07).
+ * @param {boolean}  [opts.requireLabelMatch] — reveal only a site the link or
+ *   the label names, never the sole-site guess: a Finish an Expedition's
+ *   reveal (an expedition to a settlement charted the sector's last unexplored
+ *   site — issue #342 D7). `!reveal-site` keeps the guess.
  * @param {Function} [opts.getState]  — () => campaignState
  * @param {Function} [opts.setState]  — (state) => Promise — the state with the
  *   flag set, a copy; the move pipeline's seam folds its sectors into the
@@ -65,17 +101,18 @@ export function siteDisplayName(site) {
  * @returns {Promise<{sector:Object, site:Object}|null>}
  */
 export async function revealSectorSite(label, opts = {}) {
-  const getState  = opts.getState  ?? (() => game.settings.get(MODULE_ID, "campaignState"));
-  const setState  = opts.setState  ?? (s => game.settings.set(MODULE_ID, "campaignState", s));
+  const getState  = opts.getState  ?? storedState;
+  const setState  = opts.setState  ?? null;   // the store, on the write chain
   const getScene  = opts.getScene  ?? (id => game.scenes?.get?.(id) ?? null);
   const updateLoc = opts.updateLoc ?? updateLocation;
   const restyle   = opts.restyle   ?? restyleSiteOnScene;
 
   const state = getState();
   const found = selectSectorSite(state?.sectors, label, {
-    siteId:         opts.siteId ?? null,
-    activeSectorId: state?.activeSectorId ?? null,
-    siteName:       siteDisplayName,
+    siteId:            opts.siteId ?? null,
+    activeSectorId:    state?.activeSectorId ?? null,
+    siteName:          siteDisplayName,
+    requireLabelMatch: opts.requireLabelMatch === true,
   });
   if (!found) return null;
   const { sector, site: match } = found;
@@ -114,13 +151,12 @@ export async function revealSectorSite(label, opts = {}) {
  */
 export async function saveSiteDiscovered({ sectorId = null, siteId = null } = {}) {
   if (!sectorId || !siteId) return { ok: false, reason: "invalid step" };
-  const getState = () => game.settings.get(MODULE_ID, "campaignState");
-  const sector = (getState()?.sectors ?? []).find(s => s?.id === sectorId) ?? null;
+  const sector = (storedState()?.sectors ?? []).find(s => s?.id === sectorId) ?? null;
   const site   = sector?.mapData?.discoveries?.find?.(d => d?.id === siteId) ?? null;
   if (!site) return { ok: false, reason: "site-gone" };
   if (site.discovered) return { ok: true };
   try {
-    await persistSiteFlag(getState, s => game.settings.set(MODULE_ID, "campaignState", s), sector, site, "discovered", "saveSiteDiscovered");
+    await persistSiteFlag(storedState, null, sector, site, "discovered", "saveSiteDiscovered");
     return { ok: true };
   } catch (err) {
     console.warn(`${MODULE_ID} | saveSiteDiscovered: the world refused the write:`, err?.message ?? err);
@@ -186,8 +222,8 @@ export async function postSiteDiscoveryCard(result) {
  * @returns {Promise<{sector:Object, site:Object}|null>}
  */
 export async function clearSectorSite(label, opts = {}) {
-  const getState  = opts.getState  ?? (() => game.settings.get(MODULE_ID, "campaignState"));
-  const setState  = opts.setState  ?? (s => game.settings.set(MODULE_ID, "campaignState", s));
+  const getState  = opts.getState  ?? storedState;
+  const setState  = opts.setState  ?? null;   // the store, on the write chain
   const updateLoc = opts.updateLoc ?? updateLocation;
 
   const state = getState();
@@ -220,8 +256,8 @@ export async function clearSectorSite(label, opts = {}) {
  * stored, nothing is written. A refused write rejects (the caller reports it)
  * and leaves the stored state as it was — nothing is set on it beforehand.
  *
- * @param {Function} getState
- * @param {Function} setState
+ * @param {Function} getState — the injected seam's (unused with no setState: the store's)
+ * @param {Function|null} setState — null for the stored campaignState
  * @param {Object}   sector — the sector the record was found in
  * @param {Object}   site   — the discovery record
  * @param {"discovered"|"cleared"} key
@@ -229,7 +265,21 @@ export async function clearSectorSite(label, opts = {}) {
  * @returns {Promise<void>}
  */
 async function persistSiteFlag(getState, setState, sector, site, key, label) {
-  const latest  = getState();
+  // With no setState seam the flag goes to the store: read and written at its
+  // turn on the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+  if (!setState) {
+    return serialiseCampaignStateWrite(async () => {
+      const next = withSiteFlag(storedState(), sector, site, key, label);
+      if (next) await game.settings.set(MODULE_ID, "campaignState", next);
+    }, label);
+  }
+  const next = withSiteFlag(getState(), sector, site, key, label);
+  if (next) await setState(next);
+  return undefined;
+}
+
+/** The state with the site's flag set — a copy — or null when the site is no longer stored. */
+function withSiteFlag(latest, sector, site, key, label) {
   const sameSector = (s) => s === sector || (sector?.id != null && s?.id === sector.id);
   const sameSite   = (d) => d === site   || (site?.id   != null && d?.id === site.id);
   let found = false;
@@ -250,9 +300,14 @@ async function persistSiteFlag(getState, setState, sector, site, key, label) {
   });
   if (!found) {
     console.warn(`${MODULE_ID} | ${label}: "${site?.name ?? site?.id}" is no longer stored — not saved.`);
-    return;
+    return null;
   }
-  await setState({ ...latest, sectors });
+  return { ...latest, sectors };
+}
+
+/** The stored campaignState (this client's cached value). */
+function storedState() {
+  return game.settings.get(MODULE_ID, "campaignState");
 }
 
 function escapeSiteHtml(s) {

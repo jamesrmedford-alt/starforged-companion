@@ -43,9 +43,25 @@ Terminology up front, because it drives every gap below:
   granted-or-lost check also take the Item whose own id is the `vowId`
   (`actorBridge.isVowCopy`): a sheet-made vow's cards name it by its Item id,
   and the createItem hook's stamp of that id as the flag can fail
-  (known-issues VOW-ID-NEVER-LANDED); fulfilment completion and payoff resolve through
-  `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
-  then collects every copy by `vowId`. (The old exact-name-only payoff
+  (known-issues VOW-ID-NEVER-LANDED). A writer that starts from an Item names
+  its copies the same way (`actorBridge.vowCopyId`: the flag, else the Item's
+  own id) — the reward grant's claim, Forsake's lost flip and the payoff
+  Retry's copies: keyed on the flag alone, such a vow's reward stayed
+  "promised" after it was granted and was granted again by the fulfilment and
+  every later linked win, and a forsaken vow's reward was never lost (issue
+  #342 Z54); so does a card that names the vow for a later press — the
+  won-fight card's and a fulfilment's payoff-failure card's `vowId`, read by
+  🤝 Deepen's once-only record and the Retry (from the flag alone they
+  carried null, found the vow by its name only, and after a rename deepened
+  its connection a second time — known-issues
+  FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY); fulfilment completion and payoff
+  resolve through `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
+  then collects every copy by the vow's id (`collectVowCopies`: `isVowCopy`
+  of `vowCopyId` — the `vowId` flag, else the Item's own id). A vow with no
+  `vowId` flag (written on a sheet while no GM was connected, or its stamp
+  refused) is only itself: copies used to fall back to every PC's vow of the
+  same exact name, so two crewmates' "Background Vow"s fulfilled, paid,
+  recommitted and forsook each other (issue #342 Z59). (The old exact-name-only payoff
   matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The
   sole-open rung is only for a name that matches nothing: it never applies
   when the name matches (exactly or by substring) a vow that is already
@@ -74,7 +90,11 @@ the value (`matchLabelLine`; the closing `**` leaked into the vow, the clock
 and the target's name, which then matched no established NPC — issue #325
 W33). The card's
 **⚔ Swear this vow** button posts a forced `swear_an_iron_vow` ChatMessage
-carrying `incitingSwearMessageId` — the post itself is the relay; the
+carrying `incitingSwearMessageId` — the post itself is the relay (the card is
+not claimed: in Batch Mode the round driver rolls one press per card — a
+press while the card is sworn, or while its swear is already an entry, an
+offer or held for the next round, is not rolled and its presser is told,
+the `swearPressDropped` notice re-arming their button, issue #342 Z30); the
 canonical GM's pipeline swear branch calls `swearSharedVowForAll`
 (`src/session/swearVow.js`), which: creates the vow **item on every PC**
 (`createCharacterVowItem` — idempotent by `vowId`, carries
@@ -102,7 +122,9 @@ the presser and the GMs are whispered why (issue #329 X07):
 for another pick ("could not be saved … choose it again"); `no-copy`, a vow
 no character holds any more (its Item deleted; a sheet-made vow whose `vowId`
 flag never landed is still found by its Item id — known-issues
-VOW-ID-NEVER-LANDED), closes the card (`rewardChosen: "no-vow"`) — "choose
+VOW-ID-NEVER-LANDED — even one with no module flags at all, both its
+createItem stamps refused: the granted-or-lost check read that scope
+unguarded and threw, so every pick failed unsaid, issue #342 Z55), closes the card (`rewardChosen: "no-vow"`) — "choose
 it again" asked for a retry that could never land (issue #336 Y27).
 
 **Player-authored vows.** `registerPlayerVowHook` (createItem hook, GM-side)
@@ -179,7 +201,10 @@ All real progress lands on **item ticks** (`system.current`) via
   `fightVow.markMilestone`; the mark is recorded per card on the vow's
   payoff ledger, `fulfilPayoff["milestone:<card id>"]` — `markFightVowMilestoneOnce`
   — so a re-press after a stamp the world refused marks nothing, issue #336
-  Y24). The card's rank and 🤝 Deepen connection come
+  Y24). Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
+  it was the card's roller's, so a crewmate who won the fight rolled another
+  PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs. The
+  card's rank and 🤝 Deepen connection come
   from the same roller-first resolution (`postFightVowMilestoneCard`), not
   the first PC holding a vow of that name.
 - **Shared-vow lockstep**: `registerSharedVowSyncHook` copies changed fields
@@ -272,7 +297,7 @@ weak = reduced/with-a-string, miss = lost; one-time via `reward.status`).
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
 exact → whole-word substring ladder, preferring the roller's, then collects **every**
-PC's copy (by `vowId`, else name) — so the reward lands on the **roller's
+PC's copy (by its id, as above) — so the reward lands on the **roller's
 copy** when they hold one, else on the PC holding the promised reward (it
 used to collect only the first PC's copy, so a shared vow's reward went to
 the first PC). No journal track and no item matched → `console.warn`,
@@ -296,7 +321,14 @@ the Item holds it (a vendor number or a name — `setVowItemTrack`). A vow
 fulfilled since the miss (a later roll, a crewmate's fulfilment, the sheet)
 is refused with a short card and the offer stays closed — a fulfilled vow's
 track never moves, and the press lowered it and raised its rank on every
-copy (issue #335 Y10); a completed copy is never written. The miss is a
+copy (issue #335 Y10); a completed copy is never written. A press that
+changes nothing else is said too (`cardActions.tellRecommitOutcome`, issue
+#342 Z58 — a console line on the GM's): a refused write is whispered to the
+presser and the GMs ("could not be saved … press it again", X07's shape —
+the claim released), and a vow deleted since (`no-vow`) gets the short card,
+the offer closed; a roller no longer one of the table's PCs is refused as
+gone, to a player or a GM (`refusePress` "not-a-pc" — known-issues
+RECOMMIT-GONE-ROLLER-WORDING: a GM's press did nothing). The miss is a
 progress roll, never burned or improved, so no upgrade retires the offer. A miss
 rolled on the sheet gets the same offer, for the roller's vow Item of the
 roll's name (`registerNativeFulfilConsequenceHook` → `offerSheetMissRecommit`,

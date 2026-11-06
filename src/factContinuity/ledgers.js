@@ -93,6 +93,16 @@ export function applySidecar(sidecar, ctx) {
       }
       continue;
     }
+    // A strike an earlier scene of this session kept blocks it too: the
+    // session's CORRECTED still names it "do NOT re-assert", and the ring
+    // still carries the prose that stated it (issue #342 Z42 — recorded live
+    // beside CORRECTED, then archived as canon at the next scene end). So
+    // does an earlier scene's X-Card retraction, kept unnamed
+    // (XCARD-RETRACTION-SCENE-SCOPED) — the log names neither.
+    if (findSessionStrike(campaignState, subject, fact, subjectNames(subject, subjectRef, entities), { blocked: true })) {
+      console.debug?.('starforged-companion | factContinuity: narrator re-asserted a fact retracted earlier this session; append blocked.');
+      continue;
+    }
 
     const id = newTruthId();
     campaignState.sceneTruths.push({
@@ -281,12 +291,19 @@ function stateEntryWithout(entry, ids) {
  * (XCARD-AFTER-STRIKE-STILL-NAMED): a bare strike — the GM's or a player's,
  * no replacement — is relabelled `retractedBy: "xcard"` (its `retractedAt`
  * kept), and the strike a scene end kept for the session
- * (`sessionRetractions`, with its truth's `narrationId`) is dropped. Left as
- * the table's, the CORRECTED block and the summary's leave-out list named the
+ * (`sessionRetractions.facts`, with its truth's `narrationId`) moves to the
+ * session's unnamed X-Card blocks (`sessionRetractions.blocked`), which go on
+ * blocking a re-assertion (XCARD-RETRACTION-SCENE-SCOPED). Left as the
+ * table's, the CORRECTED block and the summary's leave-out list named the
  * removed content for the rest of the session (U07), and `!truth set` could
  * lift it (an X-Card's retraction is never lifted — issue #331 X31). A
  * superseded narration's (`by` SUPERSEDED_RETRACTED_BY) leaves the table's
  * strike as it is: the correction stands over the re-narration.
+ *
+ * A narration whose scene has ended left no truth in the ledger — the scene
+ * end migrated them, and kept them on `sessionRetractions.narrated` (unnamed,
+ * retractions.js rememberNarratedTruths): the X-Card moves its narrations'
+ * there to the session's blocks too (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
  *
  * Replaces `sceneTruths`, `sceneState`, `sceneFrame` and (for the X-Card)
  * `sessionRetractions` on `campaignState` with new objects and never changes
@@ -321,9 +338,19 @@ export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETR
     });
   }
 
-  const sessionStrikes = campaignState.sessionRetractions;
-  if (xCard && Array.isArray(sessionStrikes?.facts) && sessionStrikes.facts.some(f => ids.has(f?.narrationId))) {
-    campaignState.sessionRetractions = { ...sessionStrikes, facts: sessionStrikes.facts.filter(f => !ids.has(f?.narrationId)) };
+  // The session's kept strikes and closed narration truths of these
+  // narrations: blocked from now on, named nowhere.
+  const kept = campaignState.sessionRetractions;
+  const theirs = (list) => (Array.isArray(list) ? list : []).filter(f => ids.has(f?.narrationId));
+  const struck = xCard ? theirs(kept?.facts) : [];
+  const closed = xCard ? theirs(kept?.narrated) : [];
+  if (struck.length || closed.length) {
+    campaignState.sessionRetractions = {
+      ...kept,
+      ...(struck.length ? { facts: kept.facts.filter(f => !ids.has(f?.narrationId)) } : {}),
+      ...(closed.length ? { narrated: kept.narrated.filter(f => !ids.has(f?.narrationId)) } : {}),
+      blocked: withXCardBlocks(kept.blocked, [...struck, ...closed]),
+    };
   }
 
   const bySubject = campaignState.sceneState?.bySubject;
@@ -685,7 +712,8 @@ export function replaceTruth(truthId, replacement, campaignState, ctx = {}) {
  * @param {Object} subjectRef — resolved subject ({kind, ...})
  * @param {string} fact
  * @param {Object} campaignState
- * @param {Object} [ctx]
+ * @param {Object} [ctx] — `names`: the names the subject goes by
+ *   (subjectNames), to find a strike an earlier scene of this session kept
  * @returns {Object|null} the new truth entry
  */
 export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
@@ -698,10 +726,14 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   // prompt carried the fact as binding and under CORRECTED ("do NOT
   // re-assert") together for the rest of the session. A player may not
   // overturn a GM's strike — they may not strike a GM truth either (issue
-  // #326 W60).
+  // #326 W60). A strike an earlier scene of this session kept is lifted the
+  // same way — dropped from `sessionRetractions` on this copy; the caller
+  // writes the drop onto the store (dropSessionStrike — issue #342 Z42).
   const strike = findBareStrike(campaignState.sceneTruths, subjectRef, cleanFact);
+  const kept   = strike ? null : findSessionStrike(campaignState, subjectRef, cleanFact, ctx.names ?? []);
+  const lifted = strike ?? kept;
   const isGM = ctx.isGM ?? true;
-  if (strike && !isGM && (strike.retractedBy === 'gm' || strike.asserter === 'gm')) return null;
+  if (lifted && !isGM && (lifted.retractedBy === 'gm' || lifted.asserter === 'gm')) return null;
 
   const entry = {
     id:          newTruthId(),
@@ -723,7 +755,125 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   };
   campaignState.sceneTruths.push(entry);
   if (strike) strike.correctedTo = entry.id;
+  if (kept) dropSessionStrike(campaignState, kept);
   return entry;
+}
+
+/**
+ * The names a resolved subject goes by, for matching a strike a scene kept
+ * (sessionRetractions keeps its subject's name — retractions.js
+ * rememberSessionRetractions): the reference it was resolved from and, for a
+ * recorded entity, the roster's name for it.
+ *
+ * @param {Object} subject — resolveSubject's result
+ * @param {string} subjectRef — what it was resolved from
+ * @param {Array} [entities] — the roster (collectAllEntities)
+ * @returns {string[]}
+ */
+export function subjectNames(subject, subjectRef, entities = []) {
+  const names = [String(subjectRef ?? '').trim()];
+  if (subject?.kind === 'entity') {
+    const hit = (Array.isArray(entities) ? entities : []).find(e => (e?.journalId ?? e?._id) === subject.entityId);
+    if (typeof hit?.name === 'string') names.push(hit.name.trim());
+  }
+  return names.filter(Boolean);
+}
+
+/**
+ * A strike an earlier scene of this session kept (`sessionRetractions`,
+ * issue #286 B6) of this subject and fact, or null. The session's CORRECTED
+ * names it until the session ends, so it blocks a narrator's re-assertion
+ * (applySidecar) and a GM's `!truth set` lifts it (setTruth), as the active
+ * scene's strike does (issue #342 Z42 — the strike outlived its scene as
+ * text only). A kept strike is its subject and its fact (issue #321 U39):
+ * the subject by its key when the strike kept one, else by the name it was
+ * kept under; the fact compared as findEquivalentTruth compares.
+ *
+ * `blocked`: the write half's lookup (applySidecar) — the session's X-Card
+ * retractions kept past their scene (`sessionRetractions.blocked`) match
+ * too, matched the same way. They block a re-assertion as a strike does but
+ * are named nowhere and never lifted (XCARD-RETRACTION-SCENE-SCOPED), so the
+ * lift (setTruth, `!truth set`) leaves them out.
+ *
+ * @param {Object} campaignState
+ * @param {Object} subject — resolved subject ({kind, ...})
+ * @param {string} fact
+ * @param {string[]} [names] — the names the subject goes by (subjectNames)
+ * @param {{ blocked?: boolean }} [opts]
+ * @returns {Object|null} the kept entry
+ */
+export function findSessionStrike(campaignState, subject, fact, names = [], { blocked = false } = {}) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+  const kept = campaignState?.sessionRetractions;
+  if (!sessionId || kept?.sessionId !== sessionId) return null;
+  const list = [
+    ...(Array.isArray(kept.facts) ? kept.facts : []),
+    ...(blocked && Array.isArray(kept.blocked) ? kept.blocked : []),
+  ];
+  const norm = normaliseFactText(fact);
+  if (!norm || !list.length) return null;
+  const key = subjectKey(subject);
+  const labels = new Set([...(Array.isArray(names) ? names : []), ...(subject?.kind === 'scene' ? ['scene'] : [])]
+    .map(n => String(n ?? '').trim().toLowerCase()).filter(Boolean));
+  return list.find(f => f && normaliseFactText(f.fact) === norm
+    && ((!!f.subjectKey && f.subjectKey === key) || labels.has(String(f.label ?? '').trim().toLowerCase()))) ?? null;
+}
+
+/** How many X-Card retractions a session keeps blocking past their scene (as `xCardedNarrationIds` keeps). */
+const SESSION_XCARD_BLOCK_CAP = 50;
+
+/**
+ * The session's unnamed X-Card blocks with `adds` (kept strikes or retracted
+ * truths, as `{ label, fact, subjectKey, narrationId, truthId }`): each once
+ * — by subject and fact — the newest kept up to the cap
+ * (XCARD-RETRACTION-SCENE-SCOPED). A block is what findSessionStrike's write
+ * half matches, and nothing renders it. A new array; pure.
+ *
+ * @param {Array<Object>|undefined} blocked — the session's blocks so far
+ * @param {Array<Object>} adds
+ * @returns {Array<Object>}
+ */
+export function withXCardBlocks(blocked, adds) {
+  const out = (Array.isArray(blocked) ? blocked : []).filter(Boolean);
+  const label = (b) => String(b?.label ?? '').trim().toLowerCase();
+  for (const a of Array.isArray(adds) ? adds : []) {
+    const fact = String(a?.fact ?? '').trim();
+    if (!fact) continue;
+    const entry = {
+      label:       String(a.label ?? '').trim(),
+      fact,
+      subjectKey:  typeof a.subjectKey === 'string' && a.subjectKey ? a.subjectKey : null,
+      narrationId: typeof a.narrationId === 'string' && a.narrationId ? a.narrationId : null,
+      truthId:     typeof a.truthId === 'string' && a.truthId ? a.truthId : null,
+    };
+    if (out.some(b => normaliseFactText(b.fact) === normaliseFactText(fact)
+      && ((entry.subjectKey && b.subjectKey === entry.subjectKey) || label(b) === label(entry)))) continue;
+    out.push(entry);
+  }
+  return out.slice(-SESSION_XCARD_BLOCK_CAP);
+}
+
+/**
+ * Drop a kept strike (findSessionStrike's entry) from `sessionRetractions` —
+ * a lift: CORRECTED and the summary's leave-out list stop naming it. Matched
+ * by the struck truth's id when the entry kept one, else by its label and
+ * fact. The object is replaced, never changed. Mutates campaignState.
+ *
+ * @param {Object} campaignState
+ * @param {Object} strike — the kept entry
+ * @returns {boolean} true when an entry was dropped
+ */
+export function dropSessionStrike(campaignState, strike) {
+  const kept = campaignState?.sessionRetractions;
+  if (!strike || !Array.isArray(kept?.facts)) return false;
+  const same = (f) => (strike.truthId
+    ? f?.truthId === strike.truthId
+    : String(f?.label ?? '').trim().toLowerCase() === String(strike.label ?? '').trim().toLowerCase()
+      && normaliseFactText(f?.fact) === normaliseFactText(strike.fact));
+  const facts = kept.facts.filter(f => !same(f));
+  if (facts.length === kept.facts.length) return false;
+  campaignState.sessionRetractions = { ...kept, facts };
+  return true;
 }
 
 /**

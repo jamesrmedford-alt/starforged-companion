@@ -34,10 +34,13 @@
  *      (issue #286 C3) for the narrator's LAST SESSION block, and closes the
  *      session-active gate: a new session is begun at Begin a Session
  *      (issue #321 U12).
- *   - `registerSessionActivityHook()` — the canonical GM refreshes
- *      `lastSessionTimestamp` on chat activity, at most every
- *      ACTIVITY_STAMP_MINUTES. Activity extends a live session; it never
- *      revives one that has gone idle.
+ *   - `registerSessionActivityHook()` — the canonical GM refreshes the
+ *      session's activity stamp on chat activity, at most every
+ *      ACTIVITY_STAMP_MINUTES — the world setting `sessionActivity`
+ *      (`registerSessionActivitySetting`), never campaignState (issue #342
+ *      Z01). The idle check measures from the later of it and the mint's
+ *      `lastSessionTimestamp` (`sessionLastSeenAt`). Activity extends a live
+ *      session; it never revives one that has gone idle.
  *
  * Why a separate module instead of inlining into src/index.js: the
  * SessionPanel UI in src/ui/sessionPanel.js needs to call these
@@ -125,8 +128,31 @@ export function sessionMinutesActive(campaignState, now = new Date()) {
 /** Hours without chat activity after which the session is over. */
 export const SESSION_IDLE_HOURS = 4;
 
-/** Chat activity refreshes `lastSessionTimestamp` at most this often. */
+/** Chat activity refreshes the session's activity stamp at most this often. */
 const ACTIVITY_STAMP_MINUTES = 10;
+
+/**
+ * The chat-activity stamp's own world setting, `{ sessionId, at }` — never a
+ * campaignState field (issue #342 Z01). The stamp runs on whatever message
+ * lands on the canonical GM, typically while that GM's own campaignState write
+ * is still on its way to the server (a relayed X-Card's pause, Set a Flag,
+ * Take a Break or End a Session, whose card follows the relay): written as
+ * `{ ...cached campaignState, lastSessionTimestamp }`, it was built from a
+ * cache that had not seen that write yet, landed after it and put every field
+ * back. A setting of its own carries nothing else.
+ */
+const SESSION_ACTIVITY_SETTING = "sessionActivity";
+
+/** Register the activity stamp's world setting. Call from `init`. */
+export function registerSessionActivitySetting() {
+  game.settings.register(MODULE_ID, SESSION_ACTIVITY_SETTING, {
+    name:    "Session activity",
+    scope:   "world",
+    config:  false,
+    type:    Object,
+    default: null,
+  });
+}
 
 /** campaignState fields mintSession writes — what its caller persists. */
 export const SESSION_MINT_FIELDS = Object.freeze([
@@ -139,9 +165,45 @@ export const SESSION_MINT_FIELDS = Object.freeze([
   "sessionActiveStartedAt",
 ]);
 
+/** Epoch ms of the activity stamp for `sessionId`; NaN when there is none for it. */
+function activityMs(sessionId) {
+  if (!sessionId) return NaN;
+  let stamp = null;
+  try {
+    stamp = game.settings.get(MODULE_ID, SESSION_ACTIVITY_SETTING);
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | session activity stamp unread:`, err?.message ?? err);
+  }
+  return stamp?.sessionId === sessionId ? Date.parse(stamp.at ?? "") : NaN;
+}
+
+/**
+ * Epoch ms the session was last seen live: the later of its mint
+ * (`lastSessionTimestamp`) and its last chat-activity stamp; NaN when neither
+ * is known.
+ */
+function lastSeenMs(campaignState) {
+  const times = [Date.parse(campaignState?.lastSessionTimestamp ?? ""), activityMs(campaignState?.currentSessionId)]
+    .filter(Number.isFinite);
+  return times.length ? Math.max(...times) : NaN;
+}
+
+/**
+ * When the session in campaignState was last seen live — its mint or its
+ * latest chat activity, whichever is later — as an ISO string; null when
+ * unknown. For display (the settings panel's About pane).
+ *
+ * @param {Object|null|undefined} campaignState
+ * @returns {string|null}
+ */
+export function sessionLastSeenAt(campaignState) {
+  const last = lastSeenMs(campaignState);
+  return Number.isFinite(last) ? new Date(last).toISOString() : null;
+}
+
 /** Milliseconds since the session was last seen live; Infinity when unknown. */
 function idleMs(campaignState, now) {
-  const last = Date.parse(campaignState?.lastSessionTimestamp ?? "");
+  const last = lastSeenMs(campaignState);
   return Number.isFinite(last) ? now - last : Infinity;
 }
 
@@ -247,9 +309,16 @@ export function mintSession(campaignState, now = Date.now()) {
  * over (sessionNeedsMint), close it out and mint the next one. A session
  * nobody ended first gets its rolling summary brought up to date — End a
  * Session refreshes its own — so the summary carried forward covers all of
- * it. Its scene closes under its own id, so migrated truths, whereabouts and
- * strikes keep that session's number. Mutates campaignState; endScene
- * persists the scene fields itself, the caller persists SESSION_MINT_FIELDS.
+ * it. An ended session's is brought up to date only when it has no text: an
+ * X-Card played on End's closing vignette empties a summary that covered the
+ * beat it removed ("the next regen reads the remaining cards"), and no
+ * narration of the ended session follows to regenerate it (issue #342 Z41 —
+ * the session just played went missing from LAST SESSION). One End left with
+ * text is kept as it is — it lacks only End's own closing vignette, not worth
+ * a second summary call. Its scene closes under its own id, so migrated
+ * truths, whereabouts and strikes keep that session's number. Mutates
+ * campaignState; endScene persists the scene fields itself, the caller
+ * persists SESSION_MINT_FIELDS.
  *
  * @param {Object} campaignState
  * @param {Object} [opts]
@@ -260,7 +329,9 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
   if (!sessionNeedsMint(campaignState, now)) return false;
   const closing = campaignState.currentSessionId;
   const ended   = !!closing && campaignState.sessionEndedId === closing;
-  if (closing && !ended) {
+  const summary = campaignState.sessionSummary;
+  const summarised = !!closing && summary?.sessionId === closing && typeof summary?.text === "string" && !!summary.text.trim();
+  if (closing && (!ended || !summarised)) {
     try {
       const { finalizeSessionSummary } = await import("../narration/narrator.js");
       await finalizeSessionSummary(campaignState);
@@ -284,8 +355,8 @@ let _stampInFlight = false;
 
 /**
  * Keep the session alive while the table plays: on the canonical GM, every
- * chat message may refresh `lastSessionTimestamp` (touchSessionActivity), so
- * the idle check measures from the last message rather than from the mint.
+ * chat message may refresh the session's activity stamp (touchSessionActivity),
+ * so the idle check measures from the last message rather than from the mint.
  */
 export function registerSessionActivityHook() {
   Hooks.on("createChatMessage", () => {
@@ -296,14 +367,18 @@ export function registerSessionActivityHook() {
 }
 
 /**
- * Refresh `lastSessionTimestamp` on the latest stored campaignState, at most
- * every ACTIVITY_STAMP_MINUTES. Activity extends a live session; it never
+ * Refresh the session's activity stamp, at most every ACTIVITY_STAMP_MINUTES.
+ * It is written to its own world setting (`{ sessionId, at }`), never to
+ * campaignState: a campaignState write here would carry this client's cached
+ * value — which may not yet hold a write still on its way to the server — back
+ * over that write (issue #342 Z01). Activity extends a live session; it never
  * revives one that is over — after SESSION_IDLE_HOURS, or once End a Session
  * marked it — so the message that opens Begin a Session cannot cancel the new
- * session that Begin is about to start.
+ * session that Begin is about to start, and a stamp counts only for the
+ * session it names.
  *
  * @param {number} [now] — epoch ms
- * @returns {Promise<boolean>} true when the timestamp was written
+ * @returns {Promise<boolean>} true when the stamp was written
  */
 export async function touchSessionActivity(now = Date.now()) {
   if (_stampInFlight) return false;
@@ -312,9 +387,9 @@ export async function touchSessionActivity(now = Date.now()) {
   if (idleMs(latest, now) < ACTIVITY_STAMP_MINUTES * 60_000) return false;
   _stampInFlight = true;
   try {
-    await game.settings.set(MODULE_ID, "campaignState", {
-      ...latest,
-      lastSessionTimestamp: new Date(now).toISOString(),
+    await game.settings.set(MODULE_ID, SESSION_ACTIVITY_SETTING, {
+      sessionId: latest.currentSessionId,
+      at:        new Date(now).toISOString(),
     });
   } finally {
     _stampInFlight = false;

@@ -575,6 +575,76 @@ export function readAssetIntegrity(actor, itemId) {
 }
 
 /**
+ * The character's support vehicles: `asset` Items with an enabled condition
+ * track named Integrity (readAssetIntegrity's test — the vendor's Hoverbike,
+ * Rover, Skiff, Shuttle, Snub Fighter, Service Pod and Exosuit, all category
+ * "Support Vehicle"). A Command Vehicle asset is not one: the command
+ * vehicle's integrity is its ship record's (entities/ship.js), and that asset
+ * rides on the starship Actor.
+ *
+ * @param {Actor|null} actor
+ * @returns {Item[]}
+ */
+export function listSupportVehicleAssets(actor) {
+  const items = actor?.items?.contents ?? actor?.items ?? [];
+  return (Array.isArray(items) ? items : []).filter(i => i?.type === 'asset'
+    && readAssetIntegrity(actor, i.id) !== null
+    && !/command vehicle/i.test(String(i.system?.category ?? '')));
+}
+
+/**
+ * Is this support vehicle battered? Its card's own Battered condition
+ * (`system.conditions[]`, vendor asset.ts) — the "if your vehicle is not
+ * battered" of Withstand Damage's +1 integrity. Null when `itemId` names no
+ * support vehicle on `actor`.
+ *
+ * @param {Actor|null} actor
+ * @param {string} itemId
+ * @returns {boolean|null}
+ */
+export function readVehicleAssetBattered(actor, itemId) {
+  const asset = listSupportVehicleAssets(actor).find(i => i.id === itemId);
+  if (!asset) return null;
+  return (asset.system?.conditions ?? [])
+    .some(c => String(c?.name ?? '').trim().toLowerCase() === 'battered' && c?.ticked === true);
+}
+
+/**
+ * Change a support vehicle's integrity — its Integrity track — by `delta`,
+ * kept within the track's min..max: Withstand Damage's "+1 integrity" /
+ * "-1 integrity" when the roll was the vehicle's (statEnrichment's
+ * `vehicleItemId`). A rise is refused while the vehicle is battered, as the
+ * ship record's writer refuses one (entities/ship.js changeIntegrity). The
+ * sibling of applyCompanionHealthChange; reports, never throws.
+ *
+ * @param {Actor} actor
+ * @param {number} delta
+ * @param {{ itemId?: string|null }} [opts] — the vehicle asset
+ * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, before?: number, after?: number, reason?: "no-vehicle"|"battered"|"refused", error?: string }>}
+ */
+export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null } = {}) {
+  const asset = itemId ? listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null : null;
+  if (!asset) {
+    console.warn(`actorBridge | vehicle integrity: no support vehicle${itemId ? ` ${itemId}` : ''} on ${actor?.name ?? actor?.id ?? 'no actor'} — ${delta >= 0 ? '+' : ''}${delta} not applied.`);
+    return { ok: false, reason: 'no-vehicle' };
+  }
+  const track  = asset.system?.track ?? {};
+  const before = Number(track.value ?? 0);
+  const at     = { itemId: asset.id, name: asset.name ?? null, before };
+  if (delta > 0 && readVehicleAssetBattered(actor, asset.id)) return { ok: false, reason: 'battered', ...at };
+  const after  = clamp(before + delta, Number(track.min ?? 0), Number(track.max ?? 5));
+  if (after === before) return { ok: true, ...at, after };
+  try {
+    await asset.update({ 'system.track.value': after });
+  } catch (err) {
+    console.warn(`actorBridge | vehicle integrity: ${asset.name ?? asset.id} update failed:`, err?.message ?? err);
+    return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
+  }
+  invalidateActorCache(actor.id);
+  return { ok: true, ...at, after };
+}
+
+/**
  * Change a companion's health — its asset track — by `delta`, kept within
  * the track's min..max. Companion health went to applyMeterChanges, which
  * has no such meter and dropped it (issue #309 N03).
@@ -714,6 +784,20 @@ export async function completeVowItem(actor, vowItemId) {
 export function isVowCopy(item, vowId) {
   return !!vowId && item?.type === "progress"
     && (item.flags?.[MODULE_ID]?.vowId === vowId || item.id === vowId);
+}
+
+/**
+ * The id that names a vow Item's copies (isVowCopy): its module `vowId` flag,
+ * else its own Item id — what a sheet-made vow whose createItem stamp never
+ * landed is named by (known-issues VOW-ID-NEVER-LANDED). A writer keyed on
+ * the flag alone skipped such a vow: its reward's one-time claim never
+ * flipped, so the reward was granted again (issue #342 Z54). Null for no item.
+ *
+ * @param {Item|null} item
+ * @returns {string|null}
+ */
+export function vowCopyId(item) {
+  return item?.flags?.[MODULE_ID]?.vowId ?? item?.id ?? null;
 }
 
 /**
@@ -931,6 +1015,30 @@ export async function setBondItemLost(keys = {}, lost = true) {
 }
 
 /**
+ * Mirror a forged bond onto each PC's bond Item: the record's `bonded: true`
+ * (Forge a Bond's hit, connection.forgeBond) written through as the vendor's
+ * `system.completed` — what the sheet renders as a forged bond (issue #330
+ * D10) and CHARACTER STATE reads (readConnections → "bonded"). The forge was
+ * the one change of the record's bond state the mirror never saw (issue #342
+ * Z57). Same matching as setBondItemTicks (bondItemsFor).
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys
+ * @param {boolean} [forged=true]
+ * @returns {Promise<number>} how many items were updated
+ */
+export async function setBondItemForged(keys = {}, forged = true) {
+  let updated = 0;
+  for (const { actor, item } of bondItemsFor(keys)) {
+    if ((item.system?.completed === true) === forged) continue;
+    await item.update({ "system.completed": forged }).catch(err =>
+      console.warn(`actorBridge | setBondItemForged failed:`, err?.message ?? err));
+    invalidateActorCache(actor.id);
+    updated++;
+  }
+  return updated;
+}
+
+/**
  * Delete the bond Items keyed to one connection, across every PC — unless the
  * table has marked one (a tick, a forged bond, a loss), which is a use of the
  * connection: then none is deleted and `marked` is true. Only Items keyed by
@@ -1135,11 +1243,17 @@ export async function advanceVowClocks(actor, { by = 1, lockstep = null } = {}) 
  * item cannot be found, or the clock is already at zero. GM-gated at the call
  * site.
  *
+ * `opts.untriggered` collects each entry whose clock the landed rewind took
+ * out of its full state — read on the Item as it is rewound, whoever's price
+ * filled it (issue #342 Z46): the upgrade supersedes that clock's trigger
+ * vignette (issue #338 D8).
+ *
  * @param {Array<{actorId:string, itemId:string}>} entries
+ * @param {{ untriggered?: Array<Object>|null }} [opts]
  * @returns {Promise<Array<Object>>} the entries whose write was refused — the
  *   upgrade reports them to the GMs with a Retry (issue #311 P06)
  */
-export async function revertVowClocksForBurn(entries) {
+export async function revertVowClocksForBurn(entries, { untriggered = null } = {}) {
   const failed = [];
   for (const entry of entries ?? []) {
     const { actorId, itemId } = entry;
@@ -1148,9 +1262,11 @@ export async function revertVowClocksForBurn(entries) {
     if (!item) continue;
     const cur = Number(item.system?.clockTicks ?? 0);
     if (cur <= 0) continue;
+    const max = Number(item.system?.clockMax ?? 0);
     try {
       await item.update({ "system.clockTicks": Math.max(0, cur - 1) });
       invalidateActorCache(actorId);
+      if (Array.isArray(untriggered) && max > 0 && cur >= max) untriggered.push(entry);
     } catch (err) {
       console.warn(`actorBridge | revertVowClocksForBurn failed for item ${itemId}:`, err?.message ?? err);
       failed.push(entry);

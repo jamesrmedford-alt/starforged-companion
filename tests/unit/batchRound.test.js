@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ROUND_PHASE, ENTRY_STATUS, READING_KIND, ROUND_TEXT_MAX, RoundRefusal,
   participantsFrom, createRound, addParticipant, closeRound, nextRoundNumber, storedRound,
-  submitEntry, withdrawEntry, passEntry, recordReading, readingFailed, confirmEntry, rereadEntry, offerForcedMove,
+  submitEntry, withdrawEntry, passEntry, recordReading, readingFailed, confirmEntry, rereadEntry, offerForcedMove, takeCardMoves, isOwedEntry,
   validateChoices, cleanSubmissionText,
   readyToResolve, readingsInFlight, beginResolution, actingOrder, fixActing,
   markRolled, markRecorded, markRefused, allSettled,
@@ -31,7 +31,7 @@ const pcs = [
   { id: 'pc-ren',  name: 'Ren',  ownerIds: ['pl-2'] },
 ];
 const participants = () => participantsFrom({ users, pcs });
-const open = () => createRound({ id: 'r1', number: 1, sessionId: 's1', sceneId: 'sc', now: NOW, participants: participants() });
+const open = () => createRound({ id: 'r1', number: 1, sessionId: 's1', now: NOW, participants: participants() });
 
 const MOVE_READING = {
   kind: READING_KIND.MOVE, moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'edge',
@@ -124,7 +124,7 @@ describe('transitions', () => {
   it('a confirm with a stale submissionId is refused; a submit while rolling is refused', () => {
     const r = readied(open(), 'pl-1');
     refusedWith(() => confirmEntry(r, { userId: 'pl-1', submissionId: 'old', choices: {}, now: NOW }), 'stale');
-    const rolling = beginResolution(r, { resolverId: 'gm-1', resolverClaim: 'c', now: NOW });
+    const rolling = beginResolution(r, { resolverId: 'gm-1', now: NOW });
     refusedWith(() => submitEntry(rolling, { userId: 'pl-2', text: 'late', submissionId: 'x', now: NOW }), 'resolving');
   });
 
@@ -152,6 +152,14 @@ describe('transitions', () => {
     refusedWith(() => rereadEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'n', now: NOW }), 'not-narrative');
   });
 
+  it('"Roll ⟨move⟩" carries the challenge the classifier named for it, by id; "Roll a move instead" names none (issue #342 Z38)', () => {
+    const reading = { kind: READING_KIND.NARRATIVE, suggestedMove: 'face_danger_scene_challenge', suggestedTargetId: 'chase' };
+    const named = rereadEntry(readied(open(), 'pl-1', reading), { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'n', now: NOW, moveId: 'face_danger_scene_challenge' });
+    expect(named.entries['pl-1'].readAs).toEqual({ move: true, moveId: 'face_danger_scene_challenge', moveTargetId: 'chase' });
+    const free = rereadEntry(readied(open(), 'pl-1', reading), { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'n', now: NOW });
+    expect(free.entries['pl-1'].readAs).toEqual({ move: true, moveId: null });
+  });
+
   it('a card button\'s move becomes the entry — or, beside an action already submitted, an offer', () => {
     const forced = { moveId: 'take_decisive_action', moveTargetId: 'f1' };
     const taken = offerForcedMove(open(), { userId: 'pl-1', text: 'Finish it', forced, submissionId: 'f', now: NOW });
@@ -162,6 +170,91 @@ describe('transitions', () => {
     expect(offered.round.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.READ, offer: { text: 'Finish it', forced } });
     const used = rereadEntry(offered.round, { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'u', now: NOW, useOffer: true });
     expect(used.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.SUBMITTED, text: 'Finish it', offer: null, readAs: { move: true, forced } });
+  });
+
+  it('a card move carries its chat message\'s id — as the entry, as an offer, and when the offer is used (issue #342 Z05)', () => {
+    const forced = { moveId: 'take_decisive_action' };
+    const taken = offerForcedMove(open(), { userId: 'pl-1', text: 'Finish it', forced, submissionId: 'f', now: NOW, messageId: 'm-1' });
+    expect(taken.round.entries['pl-1'].readAs).toMatchObject({ messageId: 'm-1' });
+    const offered = offerForcedMove(readied(open(), 'pl-1'), { userId: 'pl-1', text: 'Finish it', forced, submissionId: 'f', now: NOW, messageId: 'm-2' });
+    expect(offered.round.entries['pl-1'].offer).toMatchObject({ messageId: 'm-2' });
+    const used = rereadEntry(offered.round, { userId: 'pl-1', submissionId: 's-pl-1', newSubmissionId: 'u', now: NOW, useOffer: true });
+    expect(used.entries['pl-1'].readAs).toMatchObject({ messageId: 'm-2' });
+  });
+
+  it('only Keep mine drops an offer — on a Ready entry too; Withdraw and Pass leave it offered (issue #342 Z05)', () => {
+    const forced = { moveId: 'face_danger' };
+    const offer = (r) => offerForcedMove(r, { userId: 'pl-1', text: 'Dive', forced, submissionId: 'f', now: NOW, messageId: 'm' }).round;
+    const ready = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
+    const kept = confirmEntry(offer(ready), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
+    expect(kept.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.READY, offer: null });
+    expect(confirmEntry(ready, { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW })).toBe(ready);   // nothing to drop
+    expect(withdrawEntry(offer(ready), { userId: 'pl-1' }).entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.WAITING, offer: { text: 'Dive' } });
+    expect(passEntry(offer(ready), { userId: 'pl-1' }).entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.PASSED, offer: { text: 'Dive' } });
+  });
+});
+
+describe('a roll a card owes — the resist roll at 0 (issue #342 D2, ruling A)', () => {
+  const owedMove = { moveId: 'endure_harm', owed: true };
+  const press = (r, extra = {}) => offerForcedMove(r, {
+    userId: 'pl-1', text: 'Kira resists the harm.', forced: owedMove, submissionId: 'o', now: NOW, messageId: 'm-resist', ...extra,
+  });
+
+  it('is the entry even beside an action already written — which is set aside for the next round, not offered', () => {
+    const ready = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
+    const res = press(ready);
+    expect(res.read).toBe(true);
+    expect(res.held).toEqual([]);
+    const e = res.round.entries['pl-1'];
+    expect(e).toMatchObject({ status: ENTRY_STATUS.SUBMITTED, text: 'Kira resists the harm.', submissionId: 'o', offer: null,
+      readAs: { move: true, forced: owedMove, messageId: 'm-resist' }, setAside: { text: 'pl-1 acts' } });
+    expect(isOwedEntry(e)).toBe(true);
+    expect(res.round.order).toEqual([]);                                  // out of the confirm order until confirmed
+  });
+
+  it('a card move it displaces is held for the next round; a second owed move is held itself', () => {
+    const tda = offerForcedMove(open(), { userId: 'pl-1', text: 'Finish it', forced: { moveId: 'take_decisive_action' }, submissionId: 't', now: NOW, messageId: 'm-tda' }).round;
+    const res = press(tda);
+    expect(res.held).toEqual([{ userId: 'pl-1', messageId: 'm-tda' }]);
+    expect(res.round.entries['pl-1'].setAside).toBeNull();
+    const again = offerForcedMove(res.round, { userId: 'pl-1', text: 'Kira resists the stress.', forced: { moveId: 'endure_stress', owed: true }, submissionId: 'o2', now: NOW, messageId: 'm-stress' });
+    expect(again.round).toBe(res.round);
+    expect(again.held).toEqual([{ userId: 'pl-1', messageId: 'm-stress' }]);
+  });
+
+  it('refuses Withdraw, Pass, a rewrite and a re-read; a confirm keeps an offer beside it undecided', () => {
+    let r = press(open()).round;
+    r = recordReading(r, { userId: 'pl-1', submissionId: 'o', reading: MOVE_READING });
+    refusedWith(() => withdrawEntry(r, { userId: 'pl-1' }), 'owed');
+    refusedWith(() => passEntry(r, { userId: 'pl-1' }), 'owed');
+    refusedWith(() => submitEntry(r, { userId: 'pl-1', text: 'I run.', submissionId: 'n', now: NOW }), 'owed');
+    r = offerForcedMove(r, { userId: 'pl-1', text: 'Dive', forced: { moveId: 'face_danger' }, submissionId: 'd', now: NOW, messageId: 'm-dive' }).round;
+    refusedWith(() => rereadEntry(r, { userId: 'pl-1', submissionId: 'o', newSubmissionId: 'u', now: NOW, useOffer: true }), 'owed');
+    const confirmed = confirmEntry(r, { userId: 'pl-1', submissionId: 'o', choices: {}, now: NOW });
+    expect(confirmed.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.READY, offer: { text: 'Dive' } });
+    expect(confirmEntry(confirmed, { userId: 'pl-1', submissionId: 'o', choices: {}, now: NOW })).toBe(confirmed);
+  });
+});
+
+describe('the card moves a round leaves behind (takeCardMoves, issue #342 Z05)', () => {
+  const forced = { moveId: 'face_danger' };
+  it('hands back every undecided offer, and the card-move entries it does not roll; the offers come off', () => {
+    let r = readied(open(), 'pl-1');
+    r = offerForcedMove(r, { userId: 'pl-1', text: 'Dive', forced, submissionId: 'f', now: NOW, messageId: 'm-offer' }).round;
+    r = offerForcedMove(r, { userId: 'pl-2', text: 'Cover', forced, submissionId: 'g', now: NOW, messageId: 'm-entry' }).round;
+    const resolved = takeCardMoves(r, { acting: ['pl-1'] });
+    expect(resolved.held).toEqual([{ userId: 'pl-1', messageId: 'm-offer' }, { userId: 'pl-2', messageId: 'm-entry' }]);
+    expect(resolved.round.entries['pl-1'].offer).toBeNull();
+    expect(r.entries['pl-1'].offer).not.toBeNull();                       // a copy: the input is untouched
+    // An acting card-move entry is rolled, not held.
+    expect(takeCardMoves(r, { acting: ['pl-1', 'pl-2'] }).held).toEqual([{ userId: 'pl-1', messageId: 'm-offer' }]);
+  });
+
+  it('a round closed unresolved hands back every card move; with none, the round itself comes back', () => {
+    const r = offerForcedMove(open(), { userId: 'pl-2', text: 'Cover', forced, submissionId: 'g', now: NOW, messageId: 'm-entry' }).round;
+    expect(takeCardMoves(r).held).toEqual([{ userId: 'pl-2', messageId: 'm-entry' }]);
+    const plain = readied(open(), 'pl-1');
+    expect(takeCardMoves(plain)).toEqual({ round: plain, held: [] });
   });
 });
 
@@ -177,7 +270,7 @@ describe('when a round resolves', () => {
   it('nobody acting resolves it with no one in it; nobody connected leaves it waiting', () => {
     const r = passEntry(passEntry(open(), { userId: 'pl-1' }), { userId: 'pl-2' });
     expect(readyToResolve(r, { connectedUserIds: ['pl-1', 'pl-2'] })).toBe(true);
-    expect(actingOrder(fixActing(beginResolution(r, { resolverId: 'gm', resolverClaim: 'c', now: NOW })))).toEqual([]);
+    expect(actingOrder(fixActing(beginResolution(r, { resolverId: 'gm', now: NOW })))).toEqual([]);
     expect(readyToResolve(open(), { connectedUserIds: [] })).toBe(false);
   });
 
@@ -185,14 +278,14 @@ describe('when a round resolves', () => {
     let r = readied(open(), 'pl-1');                                           // read, not confirmed
     r = submitEntry(r, { userId: 'pl-2', text: 'still reading', submissionId: 'q', now: NOW });   // in flight
     expect(readingsInFlight(r)).toEqual(['pl-2']);
-    r = beginResolution(r, { resolverId: 'gm-1', resolverClaim: 'c', now: NOW, sendNow: true });
+    r = beginResolution(r, { resolverId: 'gm-1', now: NOW, sendNow: true });
     // The reading in flight lands before the acting entries are fixed.
     r = recordReading(r, { userId: 'pl-2', submissionId: 'q', reading: NARRATIVE_READING });
     r = fixActing(r);
     expect(r.acting).toEqual(['pl-1', 'pl-2']);
     // Once fixed, a late reading does not land.
     const late = submitEntry(open(), { userId: 'pl-1', text: 'x', submissionId: 'z', now: NOW });
-    const fixed = fixActing(beginResolution(late, { resolverId: 'g', resolverClaim: 'c', now: NOW, sendNow: true }));
+    const fixed = fixActing(beginResolution(late, { resolverId: 'g', now: NOW, sendNow: true }));
     expect(recordReading(fixed, { userId: 'pl-1', submissionId: 'z', reading: MOVE_READING })).toBe(fixed);
   });
 
@@ -201,12 +294,12 @@ describe('when a round resolves', () => {
     r = readingFailed(r, { userId: 'pl-1', submissionId: 'z', error: 'boom' });
     expect(readingsInFlight(r)).toEqual([]);
     expect(r.entries['pl-1'].error).toBe('boom');
-    expect(fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW, sendNow: true })).acting).toEqual([]);
+    expect(fixActing(beginResolution(r, { resolverId: 'g', now: NOW, sendNow: true })).acting).toEqual([]);
   });
 
   it('a round already resolving cannot begin again', () => {
-    const r = beginResolution(open(), { resolverId: 'g', resolverClaim: 'c', now: NOW });
-    refusedWith(() => beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW }), 'resolving');
+    const r = beginResolution(open(), { resolverId: 'g', now: NOW });
+    refusedWith(() => beginResolution(r, { resolverId: 'g', now: NOW }), 'resolving');
   });
 });
 
@@ -246,7 +339,7 @@ describe('the round\'s life', () => {
   it('rolling → upgrading for the offered rollers → narrating → closed', () => {
     let r = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
     r = confirmEntry(readied(r, 'pl-2'), { userId: 'pl-2', submissionId: 's-pl-2', choices: {}, now: NOW });
-    r = fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW }));
+    r = fixActing(beginResolution(r, { resolverId: 'g', now: NOW }));
     r = markRolled(r, { userId: 'pl-1', rolled: { resolutionId: 'res-1', cardId: 'card-1', outcome: 'weak_hit' } });
     r = markRecorded(r, { userId: 'pl-1', recordedAt: NOW });
     expect(allSettled(r)).toBe(false);
@@ -266,7 +359,7 @@ describe('the round\'s life', () => {
 
   it('nothing offered goes straight to narrating; Keep for the undecided, or for those who left', () => {
     let r = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
-    r = markRecorded(fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW })), { userId: 'pl-1', recordedAt: NOW });
+    r = markRecorded(fixActing(beginResolution(r, { resolverId: 'g', now: NOW })), { userId: 'pl-1', recordedAt: NOW });
     expect(beginUpgrades(r, { offers: {} }).phase).toBe(ROUND_PHASE.NARRATING);
     const up = beginUpgrades(r, { offers: { 'pl-1': { burn: {}, improve: null, cardId: 'c' } } });
     expect(keepUndecidedUpgrades(up, { now: NOW, userIds: ['pl-2'] }).entries['pl-1'].upgrade.decided).toBeNull();
@@ -275,7 +368,7 @@ describe('the round\'s life', () => {
 
   it('a refused entry is settled, with the narration input of an action with no roll', () => {
     let r = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
-    r = markRefused(fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW })),
+    r = markRefused(fixActing(beginResolution(r, { resolverId: 'g', now: NOW })),
       { userId: 'pl-1', reason: 'The fight ended.', narrationInput: { kind: 'refused' }, recordedAt: NOW });
     expect(r.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.REFUSED, rolled: { refused: 'The fight ended.' } });
     expect(allSettled(r)).toBe(true);
@@ -284,7 +377,7 @@ describe('the round\'s life', () => {
   it('recovery: recorded entries are never rolled again; one rolled without a record is apart; the rest roll', () => {
     let r = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
     r = confirmEntry(readied(r, 'pl-2'), { userId: 'pl-2', submissionId: 's-pl-2', choices: {}, now: NOW });
-    r = fixActing(beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW }));
+    r = fixActing(beginResolution(r, { resolverId: 'g', now: NOW }));
     r = markRecorded(markRolled(r, { userId: 'pl-1', rolled: { cardId: 'c1' } }), { userId: 'pl-1', recordedAt: NOW });
     expect(recoveryPlan(r)).toEqual({ recorded: ['pl-1'], unrecorded: [], toRoll: ['pl-2'] });
     r = markRolled(r, { userId: 'pl-2', rolled: { cardId: 'c2' } });
@@ -296,7 +389,7 @@ describe('the round\'s life', () => {
     const before = JSON.stringify(r);
     submitEntry(r, { userId: 'pl-1', text: 'x', submissionId: 'a', now: NOW });
     passEntry(r, { userId: 'pl-2' });
-    beginResolution(r, { resolverId: 'g', resolverClaim: 'c', now: NOW });
+    beginResolution(r, { resolverId: 'g', now: NOW });
     expect(JSON.stringify(r)).toBe(before);
   });
 });

@@ -23,6 +23,7 @@
  */
 
 import { requestGmAction } from "../multiplayer/gmRelay.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -111,18 +112,24 @@ export async function applySafetyFlag(payload = {}, ctx = {}) {
   }
   const visibility = payload.visibility === "private" ? "private" : "public";
 
-  // Written on a copy: `get` returns this client's cached state, and a
-  // refused write must leave it as it was (issue #321 U58).
-  const state = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
-  state.safetyFlags = [...(state.safetyFlags ?? []), {
+  const flag = {
     _id:        foundry.utils.randomID(),
     text,
     visibility,
     createdBy:  ctx?.requester?.name ?? "unknown",
     createdAt:  new Date().toISOString(),
-  }];
+  };
   try {
-    await game.settings.set(MODULE_ID, "campaignState", state);
+    // On the client's campaignState write chain, read once the write ahead
+    // has landed: read inside an oracle capture's round trip, it erased the
+    // answer (CAMPSTATE-CHAIN-PARTIAL). Written on a copy: `get` returns this
+    // client's cached state, and a refused write must leave it as it was
+    // (issue #321 U58).
+    await serialiseCampaignStateWrite(() => {
+      const state = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+      state.safetyFlags = [...(state.safetyFlags ?? []), flag];
+      return game.settings.set(MODULE_ID, "campaignState", state);
+    }, "Set a Flag");
   } catch (err) {
     // The note never repeats the flag's text: a private flag's card went to the GMs alone.
     if (ctx?.local === false) {
@@ -273,15 +280,19 @@ export async function openTakeABreakDialog() {
  * @returns {Promise<void>}
  */
 export async function applyTakeBreak(_payload = {}, ctx = {}) {
-  // Written on a copy: the card says a refused +1 "was not recorded", and the
-  // cached state the move pipeline reads must agree — it used to keep the +1
-  // (issue #321 U58).
-  const state = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
-  // Consumed by the move pipeline on the next action roll
-  // (src/moves/nextMoveAdd.js takeNextMoveAdd).
-  state.nextMoveAdd = { value: 1, source: "take_a_break", setAt: new Date().toISOString() };
   try {
-    await game.settings.set(MODULE_ID, "campaignState", state);
+    // On the client's campaignState write chain, read once the write ahead
+    // has landed: read inside an oracle capture's round trip, it erased the
+    // answer (CAMPSTATE-CHAIN-PARTIAL). Written on a copy: the card says a
+    // refused +1 "was not recorded", and the cached state the move pipeline
+    // reads must agree — it used to keep the +1 (issue #321 U58).
+    await serialiseCampaignStateWrite(() => {
+      const state = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+      // Consumed by the move pipeline on the next action roll
+      // (src/moves/nextMoveAdd.js consumeNextMoveAdd).
+      state.nextMoveAdd = { value: 1, source: "take_a_break", setAt: new Date().toISOString() };
+      return game.settings.set(MODULE_ID, "campaignState", state);
+    }, "Take a Break");
   } catch (err) {
     if (ctx?.local === false) {
       await postRelayedNotRecordedCard("Take a Break", "The +1 on the next move was not recorded — the world did not save it. Take a Break again to claim it.", {

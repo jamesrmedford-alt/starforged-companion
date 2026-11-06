@@ -791,7 +791,8 @@ describe('Batch Mode — a relayed submission the GM never receives', () => {
     expect(interpretMove.mock.calls.filter(([t]) => t === 'I lunge for the hatch before it seals.')).toHaveLength(1);
     const after = await c.run(async () => (await app._prepareContext({})));
     expect(after.view.own.notReceived).toBe(false);
-    expect(after.draft).toBe('');
+    // Received, its text stays the draft until the round takes it (issue #342 Z31).
+    expect(after.draft).toBe('I lunge for the hatch before it seals.');
     await c.run(() => app.close());
   });
 });

@@ -4161,7 +4161,7 @@ function registerEncounterSpawnLiveTests(quench) {
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SESSION LIFECYCLE — initSessionId, isNewSessionStart, recap
+// SESSION LIFECYCLE — initSessionId, sessionNeedsMint, recap
 // ─────────────────────────────────────────────────────────────────────────────
 
 function registerSessionTests(quench) {
@@ -4215,20 +4215,25 @@ function registerSessionTests(quench) {
         });
       });
 
-      describe("isNewSessionStart — gap threshold", function () {
-        it("returns true when the gap exceeds sessionGapHours", async function () {
-          const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
+      // The world load's mint decides the auto-recap too: the "Session gap
+      // (hours)" setting it used to read is retired (issue #342 D6).
+      describe("sessionNeedsMint — the session boundary the auto-recap follows", function () {
+        it("a session idle for four hours or more is over", async function () {
+          const { sessionNeedsMint } = await import(`/modules/${MODULE_ID}/src/session/lifecycle.js`);
           const state = {
-            lastSessionTimestamp: new Date(Date.now() - 24 * 3600 * 1000).toISOString(),
+            currentSessionId: "session-old",
+            lastSessionTimestamp: new Date(Date.now() - 5 * 3600 * 1000).toISOString(),
           };
-          assert.isTrue(idx.isNewSessionStart(state, 12));
+          assert.isTrue(sessionNeedsMint(state));
         });
-        it("returns false when the gap is under sessionGapHours", async function () {
-          const idx = await import(`/modules/${MODULE_ID}/src/index.js`);
+        it("a session seen within four hours goes on, and an ended one is over", async function () {
+          const { sessionNeedsMint } = await import(`/modules/${MODULE_ID}/src/session/lifecycle.js`);
           const state = {
+            currentSessionId: "session-live",
             lastSessionTimestamp: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
           };
-          assert.isFalse(idx.isNewSessionStart(state, 12));
+          assert.isFalse(sessionNeedsMint(state));
+          assert.isTrue(sessionNeedsMint({ ...state, sessionEndedId: "session-live" }));
         });
       });
 
@@ -11520,44 +11525,57 @@ function registerMoveLockLifecycleTests(quench) {
           const open = await waitForBatch(() => (round()?.phase === "collecting" && round().entries?.[me] ? round() : null), "an open round");
 
           // The round as a reload leaves it: rolled and recorded, its roller
-          // offered a burn and not yet decided.
-          const input = narrationInputFrom({
-            _id: `quench-lock-${foundry.utils.randomID()}`, moveId: "face_danger", moveName: "Face Danger",
-            statUsed: "edge", outcome: "weak_hit", outcomeLabel: "Weak Hit", isMatch: false,
-            loremasterContext: "[MOVE: Face Danger +edge] [OUTCOME: Weak Hit]",
-          }, { resolvedClass: "embellishment", entityIds: [], entityTypes: [] });
-          let r = R.submitEntry(open, { userId: me, text: "QUENCH LOCK: I edge along the gantry.", submissionId: "quench-lock-2", now });
-          r = R.recordReading(r, { userId: me, submissionId: "quench-lock-2", reading: {
-            kind: "move", moveId: "face_danger", moveName: "Face Danger", statUsed: "edge", rationale: "", mischiefAside: "",
-            abilities: [], statOptions: [], targetChoices: null, interpretation: { moveId: "face_danger", extractedRiders: [] },
-          } });
-          r = R.confirmEntry(r, { userId: me, submissionId: "quench-lock-2", choices: {}, now });
-          r = R.fixActing(R.beginResolution(r, { resolverId: me, resolverClaim: "quench-lock-claim", now }));
-          r = R.markRecorded(R.markRolled(r, { userId: me, rolled: { resolutionId: input.resolutionId, cardId: null, narrationInput: input } }),
-            { userId: me, recordedAt: now });
-          r = R.beginUpgrades(r, { offers: { [me]: { burn: { momentum: 6, previewOutcome: "strong_hit" }, improve: null, cardId: null } } });
-          assert.equal(r.phase, "upgrading", "the fixture waits on an upgrade");
-          await game.settings.set(MODULE, "batchMode.round", r);
-
-          timeline = [];
-          await recoverRound("quench-reload");
-          await new Promise(resolve => setTimeout(resolve, 1000));
-          assert.equal(round()?.phase, "upgrading", "the resumed round waits for the roller's choice");
-          assert.isFalse(lockHeld(), "the move lock is free while a roller decides");
-
-          await withSilencedNotifications(async () => {
-            await requestGmAction("batch.keep", { roundId: r.id });
-            await waitForBatch(() => game.messages.contents.some(m => m.flags?.[MODULE]?.narratorCard && m.flags[MODULE].roundId === r.id),
-              "the resumed round's card", 40000);
+          // offered a burn and not yet decided — on a move card that still
+          // takes it (since issue #342 Z26 / Z27 a round keeps, silently, an
+          // offer its card can no longer take, a missing card included).
+          const resolutionId = `quench-lock-${foundry.utils.randomID()}`;
+          const card = await ChatMessage.create({
+            content: "<p>QUENCH LOCK: Face Danger — Weak Hit</p>",
+            flags: { [MODULE]: { resolutionId, burn: {
+              canBurn: true, consumed: false, originalApplied: true, momentum: 6, previewOutcome: "strong_hit", resolutionId,
+            } } },
           });
-          await waitForBatch(() => round()?.number === r.number + 1 && round()?.phase === "collecting", "the next round");
-          await waitForBatch(() => !lockHeld(), "the lock to release");
-          assert.isTrue(timeline.some(t => t.what === "round" && t.phase === "narrating" && t.narrationClaim && t.lock),
-            "the narration runs under the move lock");
-          assert.isFalse(timeline.some(t => t.what === "round" && t.phase === "upgrading" && t.lock),
-            "the lock is never held while the round waits on an upgrade");
-          const cards = game.messages.contents.filter(m => m.flags?.[MODULE]?.narratorCard && m.flags[MODULE].roundId === r.id);
-          assert.lengthOf(cards, 1, "the resumed round narrates once");
+          try {
+            const input = narrationInputFrom({
+              _id: resolutionId, moveId: "face_danger", moveName: "Face Danger",
+              statUsed: "edge", outcome: "weak_hit", outcomeLabel: "Weak Hit", isMatch: false,
+              loremasterContext: "[MOVE: Face Danger +edge] [OUTCOME: Weak Hit]",
+            }, { resolvedClass: "embellishment", entityIds: [], entityTypes: [] });
+            let r = R.submitEntry(open, { userId: me, text: "QUENCH LOCK: I edge along the gantry.", submissionId: "quench-lock-2", now });
+            r = R.recordReading(r, { userId: me, submissionId: "quench-lock-2", reading: {
+              kind: "move", moveId: "face_danger", moveName: "Face Danger", statUsed: "edge", rationale: "", mischiefAside: "",
+              abilities: [], statOptions: [], targetChoices: null, interpretation: { moveId: "face_danger", extractedRiders: [] },
+            } });
+            r = R.confirmEntry(r, { userId: me, submissionId: "quench-lock-2", choices: {}, now });
+            r = R.fixActing(R.beginResolution(r, { resolverId: me, resolverClaim: "quench-lock-claim", now }));
+            r = R.markRecorded(R.markRolled(r, { userId: me, rolled: { resolutionId: input.resolutionId, cardId: card.id, narrationInput: input } }),
+              { userId: me, recordedAt: now });
+            r = R.beginUpgrades(r, { offers: { [me]: { burn: { momentum: 6, previewOutcome: "strong_hit" }, improve: null, cardId: card.id } } });
+            assert.equal(r.phase, "upgrading", "the fixture waits on an upgrade");
+            await game.settings.set(MODULE, "batchMode.round", r);
+
+            timeline = [];
+            await recoverRound("quench-reload");
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            assert.equal(round()?.phase, "upgrading", "the resumed round waits for the roller's choice");
+            assert.isFalse(lockHeld(), "the move lock is free while a roller decides");
+
+            await withSilencedNotifications(async () => {
+              await requestGmAction("batch.keep", { roundId: r.id });
+              await waitForBatch(() => game.messages.contents.some(m => m.flags?.[MODULE]?.narratorCard && m.flags[MODULE].roundId === r.id),
+                "the resumed round's card", 40000);
+            });
+            await waitForBatch(() => round()?.number === r.number + 1 && round()?.phase === "collecting", "the next round");
+            await waitForBatch(() => !lockHeld(), "the lock to release");
+            assert.isTrue(timeline.some(t => t.what === "round" && t.phase === "narrating" && t.narrationClaim && t.lock),
+              "the narration runs under the move lock");
+            assert.isFalse(timeline.some(t => t.what === "round" && t.phase === "upgrading" && t.lock),
+              "the lock is never held while the round waits on an upgrade");
+            const cards = game.messages.contents.filter(m => m.flags?.[MODULE]?.narratorCard && m.flags[MODULE].roundId === r.id);
+            assert.lengthOf(cards, 1, "the resumed round narrates once");
+          } finally {
+            await card.delete().catch(() => {});
+          }
         });
       });
     },

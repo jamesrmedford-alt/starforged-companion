@@ -88,19 +88,21 @@ describe('the action box', () => {
     expect(root.querySelector('.sf-round-header').textContent).toContain('Round 2');
   });
 
-  it('Submit relays the text with a new submission id, and keeps the draft until the round shows it', async () => {
+  it('Submit relays the text with a new submission id; Sent once the round shows it — the draft stays until the round takes it', async () => {
     const round = roundWith();
     const { app } = await render();
     await app.draftFromOutside('I slip through the vent.');
     await RoundWindowApp.DEFAULT_OPTIONS.actions.submit.call(app, null, null);
     expect(relayed.calls).toEqual([{ kind: 'batch.submit', payload: { roundId: round.id, text: 'I slip through the vent.', submissionId: expect.any(String) } }]);
     expect(app.draft).toBe('I slip through the vent.');
-    // The round shows it: Sent — the draft goes.
+    // The round shows it: Sent ("Reading your action…"). The draft is kept: the
+    // round may never roll it (issue #342 Z31 — roundWindowUnrolledAction.test.js).
     const { submissionId } = relayed.calls[0].payload;
     const shown = R.submitEntry(round, { userId: ME(), text: 'I slip through the vent.', submissionId, now: NOW });
     game.settings._store.set(`${MODULE_ID}.batchMode.round`, shown);
     await app.onRoundUpdate(shown);
-    expect(app.draft).toBe('');
+    expect((await app._prepareContext({})).view.own.notReceived).toBe(false);
+    expect(app.draft).toBe('I slip through the vent.');
   });
 
   it('with no GM connected: says it wasn\'t saved, and the draft is kept', async () => {
@@ -152,6 +154,52 @@ describe('a reading to confirm', () => {
   });
 });
 
+describe('a card\'s move offered beside the player\'s own (issue #342 Z05)', () => {
+  const forced = { moveId: 'take_decisive_action' };
+  const offered = (r) => R.offerForcedMove(r, { userId: ME(), text: 'Take decisive action.', forced, submissionId: 'f', now: NOW, messageId: 'm-1' }).round;
+
+  it('a Ready entry: Keep mine relays the confirm with the choices it was confirmed with — no form, no "pick one first"', async () => {
+    const round = roundWith(r => offered(R.confirmEntry(R.recordReading(
+      R.submitEntry(r, { userId: ME(), text: 'I strike at the nearest one.', submissionId: 'sub1', now: NOW }),
+      { userId: ME(), submissionId: 'sub1', reading: READING }), { userId: ME(), submissionId: 'sub1', choices: { abilityIds: ['a1'], targetId: 'f2' }, now: NOW })));
+    const { app, root } = await render();
+    expect(root.querySelector('input[name="sf-round-target"]')).toBeNull();   // a Ready reading shows no form
+    const keep = root.querySelector('[data-action="keepMine"]');
+    expect(keep).toBeTruthy();
+    await RoundWindowApp.DEFAULT_OPTIONS.actions.keepMine.call(app, null, keep);
+    expect(relayed.calls).toEqual([{ kind: 'batch.confirm', payload: {
+      roundId: round.id, submissionId: 'sub1', choices: { abilityIds: ['a1'], statReplacement: null, targetId: 'f2' },
+    } }]);
+  });
+
+  it('an entry with no reading to keep (withdrawn) offers the card\'s move, and says it waits for the next round', async () => {
+    roundWith(r => R.withdrawEntry(offered(R.submitEntry(r, { userId: ME(), text: 'x', submissionId: 'w', now: NOW })), { userId: ME() }));
+    const { root } = await render();
+    expect(root.querySelector('[data-action="useOffer"]')).toBeTruthy();
+    expect(root.querySelector('[data-action="keepMine"]')).toBeNull();
+    expect(root.querySelector('.sf-round-offer').textContent).toMatch(/joins the next round/);
+  });
+});
+
+describe('a roll a card owes (issue #342 D2)', () => {
+  it('shows Confirm only — no Edit, Withdraw, Pass, Keep mine or Use — and that the written action is kept for the next round', async () => {
+    roundWith(r => {
+      let x = R.submitEntry(r, { userId: ME(), text: 'I drag myself behind the console.', submissionId: 'own', now: NOW });
+      x = R.offerForcedMove(x, { userId: ME(), text: 'Kira resists the harm.', forced: { moveId: 'endure_harm', owed: true }, submissionId: 'o', now: NOW, messageId: 'm' }).round;
+      x = R.offerForcedMove(x, { userId: ME(), text: 'Dive.', forced: { moveId: 'face_danger' }, submissionId: 'd', now: NOW, messageId: 'm2' }).round;
+      return R.recordReading(x, { userId: ME(), submissionId: 'o', reading: { ...READING, moveId: 'endure_harm', moveName: 'Endure Harm', targetChoices: null } });
+    });
+    const { root } = await render();
+    expect(root.querySelector('[data-action="confirm"]')).toBeTruthy();
+    for (const action of ['edit', 'withdraw', 'pass', 'keepMine', 'useOffer', 'submit']) {
+      expect(root.querySelector(`[data-action="${action}"]`), action).toBeNull();
+    }
+    expect(root.querySelector('textarea[name="sf-round-text"]')).toBeNull();
+    expect(root.textContent).toContain('This roll is owed');
+    expect(root.textContent).toContain('I drag myself behind the console.');
+  });
+});
+
 describe('a reading with no roll', () => {
   it('offers Just narrate, and Roll ⟨move⟩ when the classifier suggested one', async () => {
     roundWith(r => R.recordReading(
@@ -171,7 +219,7 @@ describe('the upgrade decision', () => {
     roundWith(r => {
       let x = R.confirmEntry(R.recordReading(R.submitEntry(r, { userId: ME(), text: 'x', submissionId: 'u', now: NOW }),
         { userId: ME(), submissionId: 'u', reading: { ...READING, targetChoices: null } }), { userId: ME(), submissionId: 'u', choices: {}, now: NOW });
-      x = R.fixActing(R.beginResolution(x, { resolverId: 'gm', resolverClaim: 'c', now: NOW }));
+      x = R.fixActing(R.beginResolution(x, { resolverId: 'gm', now: NOW }));
       x = R.markRecorded(R.markRolled(x, { userId: ME(), rolled: { cardId: 'card-9', moveId: 'strike', outcome: 'weak_hit' } }), { userId: ME(), recordedAt: NOW });
       return R.beginUpgrades(x, { offers: { [ME()]: { burn: { momentum: 9, previewOutcome: 'strong_hit' }, improve: { previewOutcome: 'strong_hit', label: 'Fugitive' }, cardId: 'card-9' } } });
     });

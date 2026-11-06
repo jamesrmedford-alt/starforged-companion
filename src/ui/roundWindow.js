@@ -17,7 +17,9 @@
  *   - A submission shows Sent only once the round shows it: the round state is
  *     the acknowledgement relays don't have. Not there after
  *     RELAY_RECOVERY_MS, the window says it wasn't received and offers Send
- *     again (the same submission — it lands once).
+ *     again (the same submission — it lands once). Its text stays the draft
+ *     until the round takes it: a failed reading, a round that resolves or
+ *     closes without it, gives it back (draftAfterRound).
  *   - With no GM connected, requestGmAction warns and the window says the
  *     action wasn't saved; the draft is kept.
  *
@@ -26,7 +28,7 @@
  */
 
 import { buildRoundView } from "../batch/roundView.js";
-import { ROUND_PHASE, ENTRY_STATUS, READING_KIND, isResolving, entryFor, roundIsOpen } from "../batch/round.js";
+import { ROUND_PHASE, ENTRY_STATUS, READING_KIND, ROUND_TEXT_MAX, isResolving, entryFor, roundIsOpen, cleanSubmissionText } from "../batch/round.js";
 import {
   BATCH_ENABLED_SETTING,
   getStoredRound,
@@ -42,6 +44,8 @@ import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { relayCardButtonClick, RELAY_RECOVERY_MS } from "../moves/burnMomentum.js";
 import { renderMoveAbilitiesForm, readMoveAbilitiesForm } from "./settingsPanel.js";
 import { isXCardActive } from "../narration/narrator.js";
+import { sanitizePlayerText } from "../narration/narratorPrompt.js";
+import { isNarrationXCarded } from "../context/safety.js";
 import { isSessionActive } from "../session/lifecycle.js";
 import { moveDisplayName, localizeStat } from "../system/i18n.js";
 
@@ -58,14 +62,20 @@ const RELAY_FAILURES = {
   "no-gm": "No GM is connected, so this wasn't saved. Your action is kept here — try again once a GM has joined.",
 };
 
-/** The newest narration of this session (the window shows it, collapsible). */
+/**
+ * The newest narration of this session (the window shows it, collapsible) —
+ * never one the X-Card removed: its card's `xCarded` flag lands after the
+ * pause's own write, which already names it (`xCardedNarrationIds`,
+ * isNarrationXCarded), and the window re-renders on that write (issue #342
+ * Z32; decisions.md "The X-Card forgets what it answered").
+ */
 function newestNarration() {
   let sessionId = null;
   try { sessionId = game.settings.get(MODULE_ID, "campaignState")?.currentSessionId ?? null; }
   catch { sessionId = null; }
   const cards = (game.messages?.contents ?? []).filter(m => {
     const f = m?.flags?.[MODULE_ID];
-    return f?.narratorCard && !f.narrationFallback && !f.xCarded && !f.burnSuperseded
+    return f?.narratorCard && !f.narrationFallback && !f.xCarded && !isNarrationXCarded(f.narrationId) && !f.burnSuperseded
       && (!sessionId || f.sessionId === sessionId) && typeof f.narrationText === "string" && f.narrationText.trim()
       && !(Array.isArray(m.whisper) && m.whisper.length);
   });
@@ -127,6 +137,8 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
   #pending = null;
   #notReceived = false;
   #failure = "";
+  // Why #failure was set — "no-gm" clears itself once a GM is connected again.
+  #failureReason = null;
   #busy = false;
   #recentOpen = true;
   #draft = null;
@@ -170,7 +182,7 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     const { view } = context;
     const root = document.createElement("div");
     root.className = "sf-round-body";
-    this.#lastViewJson = JSON.stringify(view);
+    this.#lastViewJson = renderKey(context);
 
     const parts = [];
     parts.push(`<header class="sf-round-header"><strong>${view.number ? `Round ${escapeHtml(String(view.number))}` : "Round"}</strong>`
@@ -224,8 +236,14 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     const active = document.activeElement;
     const typing = active?.name === "sf-round-text" && content.contains(active);
     const caret = typing ? [active.selectionStart, active.selectionEnd] : null;
+    // What the player chose in the reading's form — its abilities, stat swap
+    // and target — survives any re-render of the same reading: another
+    // player's confirm, "pick one first", the narration toggle (issue #342
+    // Z06; decisions.md "A panel's re-render keeps what the user is typing").
+    const picks = readingPicks(content);
     content.innerHTML = "";
     content.append(result);
+    if (picks) restoreReadingPicks(content, picks);
     if (typing) {
       const input = content.querySelector("textarea[name='sf-round-text']");
       if (input) {
@@ -261,11 +279,21 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       out.push(`<p class="sf-round-hint">You're sitting this round out. Write an action to join it after all.</p>`);
     }
     if (!writing && own.text) out.push(`<blockquote class="sf-round-line">${escapeHtml(own.text)}</blockquote>`);
+    // A roll the card owes: the player's next move — confirmed, never withdrawn, passed or edited (issue #342 D2).
+    if (own.owed) {
+      out.push(`<p class="sf-round-hint">This roll is owed — resisting is your next move, so it can't be withdrawn, passed or changed.</p>`);
+      if (own.setAside) out.push(`<p class="sf-round-hint">The action you wrote — <em>${escapeHtml(own.setAside)}</em> — is kept as your draft for the next round.</p>`);
+    }
 
     if (own.offer) {
       out.push(`<div class="sf-round-offer"><p>A card offers ${escapeHtml(own.offer.moveName ?? "a move")} for you: <em>${escapeHtml(own.offer.text)}</em></p>`
-        + `<div class="sf-round-actions"><button type="button" data-action="useOffer">Use the card's move</button>`
-        + `<button type="button" data-action="keepMine">Keep mine</button></div></div>`);
+        + (own.offer.canUse || own.offer.canKeep
+          ? `<div class="sf-round-actions">`
+            + (own.offer.canUse ? `<button type="button" data-action="useOffer">Use the card's move</button>` : "")
+            + (own.offer.canKeep ? `<button type="button" data-action="keepMine">Keep mine</button>` : "")
+            + `</div>`
+          : "")
+        + `<p class="sf-round-hint">Not chosen before the round resolves, the card's move joins the next round.</p></div>`);
     }
 
     if (own.status === ENTRY_STATUS.SUBMITTED && !own.error) out.push(`<p class="sf-round-hint">Reading your action…</p>`);
@@ -273,9 +301,12 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     if (own.upgrade) out.push(this.#upgradeHtml(own.upgrade));
 
     if (writing) {
+      // A reading that failed gives the action back to try again — the
+      // draft, else the text the round holds (issue #342 Z31).
+      const boxText = own.error && !String(context.draft ?? "").trim() ? own.text : context.draft;
       out.push(`<textarea name="sf-round-text" class="sf-round-input" rows="3" maxlength="2000"`
         + ` placeholder="What does ${escapeHtml(own.actorName || "your character")} do? (Enter to submit, Shift+Enter for a new line)"`
-        + `${context.busy ? " disabled" : ""}>${escapeHtml(context.draft)}</textarea>`);
+        + `${context.busy ? " disabled" : ""}>${escapeHtml(boxText)}</textarea>`);
       out.push(`<div class="sf-round-actions"><button type="button" class="sf-round-primary" data-action="submit"${context.busy ? " disabled" : ""}>Submit</button>`
         + (own.canPass ? `<button type="button" data-action="pass"${context.busy ? " disabled" : ""}>Pass</button>` : "")
         + `</div>`);
@@ -289,6 +320,8 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
         + (own.canWithdraw ? `<button type="button" data-action="withdraw">Withdraw</button>` : "")
         + (own.canPass ? `<button type="button" data-action="pass">Pass</button>` : "")
         + `</div>`);
+    } else if (own.owed && own.canConfirm) {
+      out.push(`<div class="sf-round-actions"><button type="button" class="sf-round-primary" data-action="confirm">Confirm</button></div>`);
     }
     out.push(`</section>`);
     return out.join("");
@@ -302,7 +335,8 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
         + `</p></div>`;
     }
     const ready = own.status === ENTRY_STATUS.READY;
-    const parts = [`<div class="sf-round-reading">`,
+    // Keyed by its submission, so a re-render carries the picks of this reading only (readingPicks).
+    const parts = [`<div class="sf-round-reading" data-submission-id="${escapeHtml(own.submissionId ?? "")}">`,
       `<div class="sf-round-row"><span class="sf-round-label">Move</span> <strong>${escapeHtml(r.moveName)}</strong></div>`];
     if (r.statName) parts.push(`<div class="sf-round-row"><span class="sf-round-label">Stat</span> ${escapeHtml(r.statName)}</div>`);
     if (r.rationale) parts.push(`<p class="sf-round-rationale">${escapeHtml(r.rationale)}</p>`);
@@ -360,26 +394,37 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
 
   /**
    * The stored round changed: a pending submission the round now shows is
-   * Sent (its draft goes); then re-render when the view changed.
+   * Sent; then re-render when the view changed. The draft stays until the
+   * round takes the action (registerRoundWindowHooks, draftAfterRound): the
+   * round entry is not the only copy of an action it may never roll (issue
+   * #342 Z31).
    *
    * @param {Object|null} round
    */
   async onRoundUpdate(round) {
     const entry = entryFor(round, game.user?.id);
-    if (this.#pending && entry?.submissionId === this.#pending.submissionId) {
+    // Sent — or, its round no longer the one collecting (resolved, ended,
+    // replaced: the GM refused it and said why), it can never land: Send
+    // again would re-send it there forever. Its text is still the draft, for
+    // the round collecting now (issue #342 Z34).
+    const moved = this.#pending && (round?.id !== this.#pending.roundId || round?.phase !== ROUND_PHASE.COLLECTING);
+    if (this.#pending && (moved || entry?.submissionId === this.#pending.submissionId)) {
       clearTimeout(this.#pending.timer);
-      if (this.draft.trim() === String(this.#pending.text).trim()) await this.#setDraft("");
       this.#pending = null;
       this.#notReceived = false;
     }
     await this.refresh();
   }
 
-  /** Re-render when what the window shows has changed. */
+  /**
+   * Re-render when what the window shows has changed — the view, and the
+   * latest narration (a card posted, or removed by the X-Card, while the
+   * window is open).
+   */
   async refresh() {
     if (!this.rendered) return;
     const context = await this._prepareContext({});
-    if (JSON.stringify(context.view) === this.#lastViewJson) return;
+    if (renderKey(context) === this.#lastViewJson) return;
     await this.render();
   }
 
@@ -423,14 +468,31 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
    */
   async #relay(kind, payload) {
     this.#failure = "";
+    this.#failureReason = null;
     let res = null;
     try { res = await requestGmAction(kind, payload); }
     catch (err) {
       console.error(`${MODULE_ID} | Round window: ${kind} failed:`, err);
       res = { ok: false, reason: "error" };
     }
-    if (!res?.ok) this.#failure = RELAY_FAILURES[res?.reason] ?? "That wasn't saved — try again.";
+    if (!res?.ok) {
+      this.#failure = RELAY_FAILURES[res?.reason] ?? "That wasn't saved — try again.";
+      this.#failureReason = res?.reason ?? null;
+    }
     return res;
+  }
+
+  /**
+   * A user connected or left, or the keyed-GM registry changed: the banners
+   * say whether a GM — and a GM with a Claude key — is connected, so follow
+   * it. A "no GM is connected" refusal is stale once one is (issue #342 Z33).
+   */
+  async onConnectionChange() {
+    if (this.#failureReason === "no-gm" && Array.from(game.users ?? []).some(u => u?.isGM && u?.active)) {
+      this.#failure = "";
+      this.#failureReason = null;
+    }
+    await this.refresh();
   }
 
   /** Send a submission and wait to see it in the round. */
@@ -469,6 +531,15 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     const text = this.#inputText().trim();
     const round = getStoredRound();
     if (!text || !roundIsOpen(round)) return;
+    // Bounded as the round bounds it — said here: a refusal comes back only
+    // as a whisper, and the window would wait for it as "not received" (a
+    // table-talk line longer than the box allows can become the draft).
+    if (!cleanSubmissionText(text)) {
+      this.#failure = `An action must be 1–${ROUND_TEXT_MAX} characters — shorten it and submit again.`;
+      this.#failureReason = "bad-text";
+      await this.render();
+      return;
+    }
     await this.#send({ roundId: round.id, text, submissionId: foundry.utils.randomID() });
   }
 
@@ -517,6 +588,7 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       choices.targetId = root?.querySelector?.("input[name='sf-round-target']:checked")?.value ?? null;
       if (entry.reading.targetChoices?.options?.length && !choices.targetId) {
         this.#failure = `${entry.reading.targetChoices.prompt ?? "Choose one"} — pick one first.`;
+        this.#failureReason = "no-target";
         await this.render();
         return;
       }
@@ -546,8 +618,19 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     await this.render();
   }
 
-  /** Keep mine: confirm the player's own reading, which drops the card's offer. */
+  /**
+   * Keep mine: confirm the player's own reading, which drops the card's offer.
+   * An entry already Ready keeps the choices it was confirmed with (its form
+   * is not shown) — the confirm only drops the offer.
+   */
   static async #onKeepMine(event, target) {
+    const round = getStoredRound();
+    const entry = entryFor(round, game.user?.id);
+    if (round && entry?.status === ENTRY_STATUS.READY) {
+      await this.#relay("batch.confirm", { roundId: round.id, submissionId: entry.submissionId, choices: entry.choices ?? {} });
+      await this.render();
+      return;
+    }
     return RoundWindowApp.#onConfirm.call(this, event, target);
   }
 
@@ -594,6 +677,53 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     this.#recentOpen = !this.#recentOpen;
     await this.render();
   }
+}
+
+/** What a render shows that can change under it: the view model, the latest narration, a failure said. */
+function renderKey(context) {
+  return JSON.stringify({ view: context?.view ?? null, recent: context?.recent ?? "", failure: context?.failure ?? "" });
+}
+
+/**
+ * The picks in a rendered reading's form, by its submission: each ability
+ * checkbox's state (by its key), the checked stat-swap and target radios.
+ * Null when the window shows no move reading's form.
+ *
+ * @param {ParentNode} content
+ * @returns {{ submissionId: string, abilities: Map<string, boolean>, stat: string|null, target: string|null,
+ *   hasStat: boolean, hasTarget: boolean }|null}
+ */
+function readingPicks(content) {
+  const form = content?.querySelector?.(".sf-round-reading[data-submission-id]");
+  const submissionId = form?.dataset?.submissionId;
+  if (!submissionId) return null;
+  const abilities = new Map();
+  for (const cb of form.querySelectorAll(".sf-applicable-ability-cb")) {
+    if (cb.dataset?.key) abilities.set(cb.dataset.key, !!cb.checked);
+  }
+  const radio = (name) => {
+    const all = form.querySelectorAll(`input[name="${name}"]`);
+    const on = [...all].find(r => r.checked);
+    return { has: all.length > 0, value: on ? String(on.value ?? "") : null };
+  };
+  const stat = radio("sf-stat-sub");
+  const target = radio("sf-round-target");
+  return { submissionId, abilities, stat: stat.value, target: target.value, hasStat: stat.has, hasTarget: target.has };
+}
+
+/** Put the picks back on the new tree — only on the same reading (its submission id). */
+function restoreReadingPicks(content, picks) {
+  const form = content?.querySelector?.(".sf-round-reading[data-submission-id]");
+  if (!form || form.dataset?.submissionId !== picks.submissionId) return;
+  for (const cb of form.querySelectorAll(".sf-applicable-ability-cb")) {
+    const key = cb.dataset?.key;
+    if (key && picks.abilities.has(key)) cb.checked = picks.abilities.get(key);
+  }
+  const set = (name, value) => {
+    for (const r of form.querySelectorAll(`input[name="${name}"]`)) r.checked = String(r.value ?? "") === value;
+  };
+  if (picks.hasStat && picks.stat !== null) set("sf-stat-sub", picks.stat);
+  if (picks.hasTarget && picks.target !== null) set("sf-round-target", picks.target);
 }
 
 function phaseLabel(phase) {
@@ -693,14 +823,7 @@ export function registerRoundWindowHooks() {
         _lastOpenedRoundId = round.id;
         await RoundWindowApp.open();
       }
-      if (round?.phase === ROUND_PHASE.CLOSED && ["session-ended", "discarded", "mode-off"].includes(round.closeReason)) {
-        const text = entryFor(round, game.user?.id)?.text ?? "";
-        if (text && [ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY].includes(entryFor(round, game.user?.id)?.status)
-            && !getRoundDraft().trim()) {
-          await setRoundDraft(text);
-          await RoundWindowApp.instance?.draftFromOutside(text);
-        }
-      }
+      await keepDraftWithRound(round);
       await RoundWindowApp.instance?.onRoundUpdate(round);
     })();
     work.catch(err => console.warn(`${MODULE_ID} | Round window: the round's change:`, err?.message ?? err));
@@ -720,8 +843,29 @@ export function registerRoundWindowHooks() {
     RoundWindowApp.instance?.draftFromOutside(draft)
       .catch(err => console.warn(`${MODULE_ID} | Round window: the draft:`, err?.message ?? err));
   });
-  // The session, the X-Card and the keyed GMs the window's banners show.
-  Hooks.on("updateSetting", onCampaignStateForWindow);
+  // The session, the X-Card and the keyed GMs the window's banners show — a
+  // setting's first write is a createSetting (the keyed-GM registry's is).
+  Hooks.on("updateSetting", onSettingForWindow);
+  Hooks.on("createSetting", onSettingForWindow);
+  // Whether a GM is connected (issue #342 Z33).
+  Hooks.on("userConnected", () => {
+    RoundWindowApp.instance?.onConnectionChange()
+      .catch(err => console.debug?.(`${MODULE_ID} | Round window refresh failed:`, err?.message ?? err));
+  });
+  // The round's card says the round took this player's line (draftAfterRound's
+  // signal for a client that missed the round's changes).
+  Hooks.on("createChatMessage", (message) => {
+    onRoundCardForDraft(message).catch(err => console.warn(`${MODULE_ID} | Round window: the round card's draft:`, err?.message ?? err));
+  });
+  // At load, the stored round as it stands — an action a round closed without
+  // rolling while this player was away is their draft again — and the newest
+  // round card: one that names the draft took it while they were away.
+  keepDraftWithRound(getStoredRound())
+    .then(() => {
+      const cards = (game.messages?.contents ?? []).filter(m => Array.isArray(m?.flags?.[MODULE_ID]?.roundEntries));
+      return cards.length ? onRoundCardForDraft(cards[cards.length - 1]) : null;
+    })
+    .catch(err => console.warn(`${MODULE_ID} | Round window: the draft at load:`, err?.message ?? err));
   // A round open at load — a reload mid-round gets its window back.
   if (isBatchModeEnabled()) {
     const round = getStoredRound();
@@ -732,9 +876,81 @@ export function registerRoundWindowHooks() {
   }
 }
 
-/** Re-render this client's window when the campaign state it shows changed (local only). */
-function onCampaignStateForWindow(setting) {
-  if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+/**
+ * What this player's draft becomes as the round changes: "" once the round
+ * took their action (their entry acts — rolled, or narrated with no roll);
+ * the action's text when the draft is empty and the round did not take it —
+ * a round closed without rolling it (End a Session, Discard, the mode off; or
+ * resolved while it was unconfirmed, its reading failed, its author away), or
+ * the action an owed roll set aside; else null — leave the draft. A card's
+ * move is no draft: it is held for the next round (driver takeCardMoves).
+ * The submitted text stays the draft until then, so a round entry is never
+ * an unrolled action's only copy (issue #342 Z31).
+ *
+ * @param {Object|null} round
+ * @param {string} draft — the draft as it stands
+ * @returns {string|null}
+ */
+function draftAfterRound(round, draft) {
+  const mine = entryFor(round, game.user?.id);
+  if (!mine) return null;
+  const typed = String(draft ?? "").trim();
+  if (typed) {
+    const taken = Array.isArray(round.acting) && round.acting.includes(mine.userId);
+    return taken && typed === String(mine.text ?? "").trim() ? "" : null;
+  }
+  if (mine.setAside?.text) return mine.setAside.text;
+  const unrolled = round.phase === ROUND_PHASE.CLOSED && !mine.readAs?.messageId
+    && [ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY].includes(mine.status);
+  return unrolled && mine.text ? mine.text : null;
+}
+
+/** Keep this client's draft with the round (draftAfterRound) — the window's copy too. */
+async function keepDraftWithRound(round) {
+  const draft = getRoundDraft();
+  const next = draftAfterRound(round, draft);
+  if (next === null || next === draft) return;
+  await setRoundDraft(next);
+  await RoundWindowApp.instance?.draftFromOutside(next);
+}
+
+/**
+ * True when a round's card names this player's line as their draft holds it
+ * (`roundEntries`, the players who acted): the round took the action — said
+ * by the card even to a client that missed the round's own changes (its
+ * author away while it resolved).
+ *
+ * @param {ChatMessage|null} message
+ * @param {string} draft
+ * @returns {boolean}
+ */
+function roundCardTookDraft(message, draft) {
+  const entries = message?.flags?.[MODULE_ID]?.roundEntries;
+  if (!Array.isArray(entries) || !String(draft ?? "").trim()) return false;
+  const line = sanitizePlayerText(draft);
+  return entries.some(e => e?.userId === game.user?.id && e.playerText === line);
+}
+
+/** createChatMessage (local only): the round's card names this player's draft — it was taken. */
+async function onRoundCardForDraft(message) {
+  if (!roundCardTookDraft(message, getRoundDraft())) return;
+  await setRoundDraft("");
+  await RoundWindowApp.instance?.draftFromOutside("");
+}
+
+/**
+ * Re-render this client's window when what its banners show changed (local
+ * only): the campaign state (the session, the X-Card) or the keyed-GM
+ * registry (whether a GM with a Claude key is connected).
+ */
+function onSettingForWindow(setting) {
+  const key = setting?.key;
+  if (key === `${MODULE_ID}.keyedGmUserIds`) {
+    RoundWindowApp.instance?.onConnectionChange()
+      .catch(err => console.debug?.(`${MODULE_ID} | Round window refresh failed:`, err?.message ?? err));
+    return;
+  }
+  if (key !== `${MODULE_ID}.campaignState`) return;
   RoundWindowApp.instance?.refresh()
     .catch(err => console.debug?.(`${MODULE_ID} | Round window refresh failed:`, err?.message ?? err));
 }

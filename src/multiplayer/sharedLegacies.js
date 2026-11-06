@@ -28,6 +28,7 @@
 import { getPlayerActors, isPlayerCharacterActor, readSheetLegacy, writeSheetLegacy, SHEET_LEGACY_TRACKS } from "../character/actorBridge.js";
 import { legacyProgress, legacyTrackFromProgress } from "../moves/legacyTracks.js";
 import { isCanonicalGM } from "./gmGate.js";
+import { serialiseCampaignStateWrite } from "./campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -70,15 +71,19 @@ export async function mirrorLegacyToSheets(track, { pcs = null } = {}) {
 /**
  * Save the shared track as `progress` (a copy of the stored state — the cached
  * value must stay as it was if the world refuses the write), then mirror it.
+ * Read and written at its turn on the client's campaignState write chain
+ * (CAMPSTATE-CHAIN-REST).
  */
-async function setSharedProgress(track, progress) {
-  const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  if (legacyProgress(stored.legacyTracks?.[track]) === progress) return false;
-  await game.settings.set(MODULE_ID, "campaignState", {
-    ...stored,
-    legacyTracks: { ...(stored.legacyTracks ?? {}), [track]: legacyTrackFromProgress(progress) },
-  });
-  return true;
+function setSharedProgress(track, progress) {
+  return serialiseCampaignStateWrite(async () => {
+    const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    if (legacyProgress(stored.legacyTracks?.[track]) === progress) return false;
+    await game.settings.set(MODULE_ID, "campaignState", {
+      ...stored,
+      legacyTracks: { ...(stored.legacyTracks ?? {}), [track]: legacyTrackFromProgress(progress) },
+    });
+    return true;
+  }, "shared legacy track");
 }
 
 /**

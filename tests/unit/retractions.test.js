@@ -251,9 +251,14 @@ describe('session retractions', () => {
   });
 
   it('still list one subject\'s same strike once when two scenes made it', () => {
-    const cs = makeState({ sessionRetractions: { sessionId: 'sess-1', facts: [{ label: 'Vance', fact: 'Is dead', sceneId: 'sc-0', at: 1 }] } });
+    const cs = makeState();
     applySidecar({ newTruths: [{ subject: 'vance', fact: 'is dead' }], stateChanges: [] }, { campaignState: cs });
     strikeTruth(cs.sceneTruths[0].id, cs);
+    // An earlier scene's strike of the same fact, kept for the session. (Laid
+    // in after the truth: since issue #342 Z42 a kept strike blocks the
+    // narrator re-asserting it in a later scene, so this state is a stale
+    // copy's, or a kept entry from before the strike kept its id.)
+    cs.sessionRetractions = { sessionId: 'sess-1', facts: [{ label: 'Vance', fact: 'Is dead', sceneId: 'sc-0', at: 1 }] };
 
     expect(sessionRetractedFacts(cs)).toEqual([{ label: 'Vance', fact: 'Is dead' }]);
     rememberSessionRetractions(cs);

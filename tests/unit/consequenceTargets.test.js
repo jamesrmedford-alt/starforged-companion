@@ -275,3 +275,60 @@ describe('Gain Ground — "Mark progress" marks the fight the move was about (is
     expect(resolved.content).toContain('Not applied: combat progress ×1 — its fight is over');
   });
 });
+
+// Issue #342 Z53: a support vehicle's Withstand Damage rolled, and changed,
+// the command vehicle. The vehicle the move names — the PC's own asset with
+// an Integrity track — is now the roll's, and its choices change that track.
+describe('Withstand Damage — a support vehicle the move names (issue #342 Z53)', () => {
+  let ship, bike;
+  /** A vendor-shaped support vehicle (json-packs/starforged-assets/Hoverbike). */
+  function hoverbike(value, battered = false) {
+    const item = {
+      id: 'asset-hoverbike', name: 'Hoverbike', type: 'asset',
+      system: { category: 'Support Vehicle', abilities: [],
+        track: { enabled: true, name: 'Integrity', value, min: 0, max: 3 },
+        conditions: [{ name: 'Battered', ticked: battered }] },
+      update: async (changes) => {
+        if ('system.track.value' in changes) item.system.track.value = changes['system.track.value'];
+      },
+    };
+    return item;
+  }
+  async function withBike(value, battered = false) {
+    bike = hoverbike(value, battered);
+    pat = table.addActor({ id: 'pc-pat', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [bike] } });
+    ship = table.addActor({ id: 'ship-wayfarer', name: 'Wayfarer', type: 'starship', flags: { [MODULE_ID]: {
+      entityType: 'ship',
+      ship: { _id: 'ship-rec', name: 'Wayfarer', isCommandVehicle: true, integrity: 4, integrityMax: 5, battered: false },
+    } } });
+    await table.client('gm-1').run(() => game.settings.set(MODULE_ID, 'campaignState', { ...world(), shipIds: [ship.id] }));
+  }
+  const move = { moveId: 'withstand_damage', statUsed: 'integrity', moveTarget: 'Hoverbike', adds: 0, confidence: 1 };
+  const integrity = () => ship.flags[MODULE_ID].ship.integrity;
+
+  it('a strong hit\'s +1 integrity raises the bike\'s track, not the starship\'s', async () => {
+    await withBike(2);
+    await typedMove(move, STRONG);
+    const [card] = sufferCards('withstand_damage');
+    expect(card.flags[MODULE_ID].executorOpts).toMatchObject({ vehicleItemId: 'asset-hoverbike', vehicleActorId: null });
+    const resolved = await choose('withstand_damage', 0);
+    expect(resolved.content).toContain('integrity +1');
+    expect({ bike: bike.system.track.value, ship: integrity() }).toEqual({ bike: 3, ship: 4 });
+  });
+
+  it('a miss\'s -1 integrity dents the bike', async () => {
+    // d10 challenge dice 0.85 → 9, 0.95 → 10; d6 action die 0.2 → 2 (+2 integrity = 4).
+    await withBike(2);
+    await typedMove(move, [0.85, 0.95, 0.2]);
+    await choose('withstand_damage', 0);
+    expect({ bike: bike.system.track.value, ship: integrity() }).toEqual({ bike: 1, ship: 4 });
+  });
+
+  it('the bike battered, its +1 integrity is not offered — whatever the starship\'s state', async () => {
+    await withBike(2, true);
+    await typedMove(move, STRONG);
+    const [card] = sufferCards('withstand_damage');
+    expect(card.content).toMatch(/data-option-index="0"[^>]*disabled/);
+    expect(card.content).not.toMatch(/data-option-index="1"[^>]*disabled/);
+  });
+});

@@ -53,6 +53,7 @@
     { "id": "round-1", "do": "roundConfirm", "as": "gm", "resolves": true,
       "dice": { "challenge": [2, 5], "action": 5 },
       "acted": ["Mira Kestrel", "Ren Adeyemi"], "outcomes": { "Mira Kestrel": "strong_hit" },
+      "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "calls": [
         { "kind": "callNarratorAPI>narrateRound",
           "section": {
@@ -84,6 +85,7 @@
         { "check": "round", "number": 2, "phase": "collecting" }
       ] },
     { "id": "round-2", "do": "sendNow", "acted": ["Ren Adeyemi"],
+      "optionalCalls": ["callHaiku>defaultCallTierAPI"],
       "calls": [
         { "kind": "callNarratorAPI>narrateRound",
           "section": {

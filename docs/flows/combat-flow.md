@@ -37,13 +37,17 @@ Two cross-cutting facts to hold onto:
   card is upgraded at most once. The pipeline gives each resolution an `_id`
   so the upgrade can strike the original narration card — and retract its
   ledger entries by its `narrationId`; a clock the reversal rewinds out of
-  its trigger has its trigger vignette struck and retracted the same way
-  (issue #338 D8). Each upgrade claims
+  its trigger — full before the rewind, whoever's price filled it (issue
+  #342 Z46) — has its trigger vignette struck and retracted the same way
+  (issue #338 D8), at the GMs' Retry too when the world refused the rewind
+  (UPGRADE-RETRY-REWIND-NO-SUPERSEDE). Each upgrade claims
   the card (`consumed`) before any effect; then (`src/moves/resultUpgrade.js`)
   it reverts the miss's Pay the Price from what each route landed — a "Roll
   twice" lands each leaf's route (issue #314 Q03), and harm past a meter is a
   momentum receipt of its own (Q02), which an improvement refunds and a
-  burn's reset replaces — retires the
+  burn's reset replaces; a supply loss to 0 takes back the unprepared marks it
+  made once the supply is refunded above 0 — for a burn, before its reset is
+  computed (issue #342 D4) — retires the
   move's pending choice card (bound by `resolutionId`) and posts the upgraded
   outcome's choice for the move's fight, vehicle and companion; a write that
   does not land goes to the GMs' payoff card with a Retry (issue #311 P03–P06).
@@ -70,10 +74,13 @@ Two cross-cutting facts to hold onto:
   from a lost miss pays the won fight's milestone and reward
   (`applyWonFightPayoff`, shared with the end-of-fight branch); a weak hit
   that pays the price too keeps the miss's Pay the Price (issue #313,
-  UPGRADE-PIPELINE-EFFECTS) — and the cards it posted, stamped `priceCard`
+  UPGRADE-PIPELINE-EFFECTS) — its momentum loss (harm or stress past 0)
+  coming off the burn's reset, the price being the burned outcome's effect
+  (issue #342 Z51) — and the cards it posted, stamped `priceCard`
   (the resist roll its harm owes, a redirected loss's picker): kept as the
   upgraded outcome's, not retired with the superseded outcome's (issue #335
-  Y09). The
+  Y09), and so is a card a kept card's pick posts after the burn — the resist
+  roll the redirected loss's Endure Harm owes at 0 (issue #342 Z47). The
   threshold card's buttons relay `combat.threshold` to the canonical GM (its
   older ad-hoc `combat.enterFray` socket is retired — issue #329 X06).
 - **A fight played in Batch Mode rounds** (issue #340) uses the same stages.
@@ -311,7 +318,13 @@ clicker's DOM, so a re-render or another client rolled Battle again on a
 finished fight, its +2 momentum or a second Pay the Price (issue #325 W11).
 The "not rolled" guards run before the pipeline takes Take a Break's +1 or
 the roller's next-move bonus, so a Battle that is not rolled leaves both
-pending for the next action roll made (issue #331 X17).
+pending for the next action roll made (issue #331 X17). Both are claimed on
+the store before they are added (`consumeNextMoveAdd`, `consumeNextMoveBonus`):
+a refused claim adds nothing and leaves the +1 pending, so it never lands on
+two rolls (issue #342 Z52). Each claim — and `grantNextMoveBonus` — reads and
+writes on the GM's campaignState write chain, once the write ahead of it has
+landed (CAMPSTATE-CHAIN-PARTIAL: a claim read inside an oracle capture's round
+trip erased the answer).
 
 **Face Defeat** closes the track as a loss (no payoff) and routes Pay the Price.
 
@@ -343,16 +356,24 @@ weak-hit win −1, min 1), each mark adding ticks by the *vow's* rank
 card's roller when they hold a copy, else the PC holding the resolved vow
 (`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks — spoken as
-the card's roller, with their copy of the vow by its Item id, issue #329
-X05; relayed `fulfilVow.attempt` and claimed once on the card,
-`fulfilAttempted` — the roller's player or a GM may press it) and
+the vow's holder, as ⚑ marks it: the card's roller when they hold a copy
+(issue #329 X05), else the PC holding the vow the fight served
+(`resolveVowHolderActor(vowName, actorId)`, issue #342 D5), with their copy
+of the vow by its Item id; relayed `fulfilVow.attempt` and claimed once on
+the card, `fulfilAttempted` — the holder's player or a GM may press it, and
+a miss's 🔁 recommit offer is the holder's. It was spoken as the card's
+roller whoever held the vow: Kira's player was refused her own vow's roll on
+the card of a fight Ren won, and Ren's player rolled it as Ren) and
 **🤝 Deepen your bond** when the vow links a connection
 (`deepenVowConnectionOnce` → `deepenLinkedConnection`, scaled by the vow's
 rank). A vow deepens its connection once (issue #326 D1): the press is
 recorded on the vow's payoff ledger (`fulfilPayoff.deepen`, the card carries
-the vow's `vowId`), so the fulfilment's deepen is skipped; a press after the
+the vow's id as its copies are found — `vowCopyId`: the `vowId` flag, else
+the Item's own id), so the fulfilment's deepen is skipped; a press after the
 fulfilment's deepen deepens nothing and posts a short "already deepened"
-card. Once the card's vow is
+card. (Taken from the flag alone, a sheet vow whose stamp never landed
+carried null and was found by its name only: after a rename the press
+deepened a second time — known-issues FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY.) Once the card's vow is
 fulfilled its milestone and 🏁 are retired on every client and render
 (`wireFightVowButtons` → `linkedVowCompleted`), and a press that reaches the
 GM marks nothing (issue #325 W29). It then grants the
@@ -419,7 +440,14 @@ the challenge's own track (`PROGRESS_TICK_SOURCES.finish_the_scene` →
 outcome — the pipeline's `finishScene` consequence completes the track
 (`finishSceneChallenge` → `completeProgressTrack`, which retires the tension
 clock before the track write), before a weak hit's or miss's Pay the Price
-is routed, so the ended scene's clock does not tick.
+is routed, so the ended scene's clock does not tick. A row whose challenge
+was finished or deleted before the roll — a stale render, another player's
+Finish the Scene landing first — rolls nothing: the "not rolled" guard covers
+the `scene_challenge` source by id, as it does a fight's (issue #342 Z07); a
+score of 0 was a certain miss paying a price for a scene already over. In a
+Batch Mode round the driver notes Finish the Scene's challenge as read
+(`noteReadTrack`), so a second Finish the Scene — pressed or typed — is
+refused "ended earlier in this round", as a fight move is.
 Pre-session (the pipeline's session gate would ignore the bridge) it keeps
 the bespoke instant display roll (`type: 'progressRoll'` card — display-only
 by design).
@@ -428,7 +456,16 @@ moves (issue #338 D2): `face_danger_scene_challenge` /
 `secure_an_advantage_scene_challenge`, which the interpreter types when its
 context lists an open `scene_challenge` (never a re-key of the ordinary move
 — a fight mid-challenge is a fight; a variant with no challenge open is
-resolved as the ordinary move, `sceneChallenge.moveOutsideSceneChallenge`).
+resolved as the ordinary move, `sceneChallenge.moveOutsideSceneChallenge` —
+as `readMove` reads it and again as `rollMove` rolls it: a Batch Mode entry
+read while the challenge was open, rolled after an earlier entry's Finish the
+Scene ended it, is the ordinary move, issue #342 Z39). With another challenge
+still open that rule keeps the variant, so the round notes the challenge a
+variant was read against (`noteReadTrack` → the reading's
+`variantChallengeId`) and `rollEntry` rolls it as the ordinary move once that
+one has ended (`moveOutsideSceneChallenge`'s `trackId`) — the scoring,
+finding the challenge it named over, took the sole open one
+(ROUND-VARIANT-TWO-CHALLENGES).
 The pacing classifier nominates them for a paced card's Roll too, told of the
 open challenge as of a fight (`router.detectOpenSceneChallenges` → its
 SCENE CHALLENGE line; a variant it names with none open is the ordinary
@@ -438,7 +475,16 @@ The classifier names the challenge the move is part of; the router keeps it,
 or the sole open one, on the card by id (`suggestedMoveTargetId`), and the
 Roll (`cardActions.applyPacedRoll`) forwards it as `forcedMoveTargetId` — with
 two challenges open it named none and the scoring asked which
-(PACED-VARIANT-NO-TARGET).
+(PACED-VARIANT-NO-TARGET). A Roll pressed after that challenge ended is the
+ordinary move, whatever else is open: `readMove` and `rollMove` hand the
+move's `moveTargetId` to `moveOutsideSceneChallenge` (its `trackId`), so the
+confirm dialog shows, and the dice roll, Face Danger — it was made as the
+variant, and its scoring found the challenge it named over: nothing marked,
+no momentum on a strong hit (PACED-VARIANT-ROLL-ENDED-CHALLENGE). A Batch
+Mode reading keeps it as the no-roll reading's `suggestedTargetId`, and the
+Round window's "Roll ⟨move⟩" carries
+it (`round.rereadEntry` → `readAs.moveTargetId` → `readAction`'s forced
+`moveTargetId`; issue #342 Z38).
 An asset ability linked to Face Danger / Secure an Advantage applies to its
 variant: the ability scanner and the rider extraction match a variant as its
 ordinary move (`sceneChallenge.assetMatchMove` — SCENE-VARIANT-ABILITIES-UNKEYED).

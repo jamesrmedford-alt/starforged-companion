@@ -20,6 +20,7 @@ import {
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
+import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
@@ -60,7 +61,7 @@ import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
-import { readCharacterSnapshot, getPlayerActors } from '../character/actorBridge.js';
+import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
@@ -289,7 +290,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     character       = null,
     relevance       = null,
     oracleSeeds     = null,
-    actingNames     = null,
+    actingActorIds  = null,
   } = opts;
 
   // The scene's ledgers as they stand in the store (issue #325 W05; rules/
@@ -316,7 +317,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       console.warn(`${MODULE_ID} | narrator: campaignTruths build failed:`, err);
       return '';
     }),
-    party:              buildPartyContext(character?.name ?? null, actingNames),
+    party:              buildPartyContext(character?.name ?? null, actingActorIds),
     audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     // Spotlight rotation (issue #232) — multiplayer turn-implication nudge.
     // Advances the per-scene pointer as a side effect; '' when not applicable.
@@ -385,10 +386,13 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   extras.activeThreats    = wjSectionEnabled('threatsInContext')
     ? safeWjRead(() => getActiveThreats(campaignState).slice(0, 4), 'threats')
     : [];
+  // The most recently updated factions, records and World Journal ranked
+  // together (issue #342 Z13 — in creation order the first four records held
+  // the block for good).
   extras.factionLandscape = wjSectionEnabled('factionLandscapeInContext')
     ? safeWjRead(() => mergeFactionLandscape(
         listFactions(campaignState),
-        getFactionLandscape(campaignState),
+        getFactionLandscape(campaignState, { limit: Infinity }),
       ), 'factions')
     : [];
 
@@ -907,7 +911,11 @@ export function roundNarrationEntries(round) {
     .map(e => ({
       userId:    e.userId,
       actorId:   e.actorId,
-      actorName: e.actorName || 'Someone',
+      // The PC as it is named now, by its id: the entry's name was copied when
+      // the round opened, and a rename since (a new character's name settled
+      // in the first session) narrated the old one (issue #342 Z36). The
+      // copy names a PC that is gone.
+      actorName: String(game.actors?.get?.(e.actorId)?.name ?? '').trim() || e.actorName || 'Someone',
       userName:  e.userName ?? '',
       text:      e.text ?? '',
       input:     e.rolled?.narrationInput ?? { kind: 'narrative' },
@@ -969,14 +977,19 @@ export async function narrateRound({ round, campaignState }) {
   }
   const relevance = { resolvedClass: widest, entityIds: ids, entityTypes: types };
 
+  // A block per acting PC still in the game, by its own id: getActiveCharacter
+  // falls back to another PC for an id that no longer resolves, so an entry
+  // whose PC was deleted since the round opened (refused, Z35) brought a PC
+  // who sat the round out into it (ROUND-CHARACTER-BLOCK-GONE-PC).
   const characters = entries
+    .filter(e => isPlayerCharacterActor(game.actors?.get?.(e.actorId) ?? null))
     .map(e => getActiveCharacter(campaignState, e.actorId))
     .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId && o?.name === c.name) === i);
   const extras = await buildNarratorExtras('round_resolution', campaignState, {
     playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
     character:       null,
     relevance,
-    actingNames:     entries.map(e => e.actorName),
+    actingActorIds:  entries.map(e => e.actorId),
   });
   extras.roundCharacters = characters;
 
@@ -1013,7 +1026,9 @@ export async function narrateRound({ round, campaignState }) {
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
         matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
       });
-      await runRoundNarrationPasses(narration, entries, relevance, campaignState, { narrationId });
+      await runRoundNarrationPasses(narration, entries, campaignState, {
+        narrationId, matchedEntityIds: extras.matchedEntityIds ?? [], matchedEntityTypes: extras.matchedEntityTypes ?? [],
+      });
       scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round' });
       return { posted: 'card', narrationId, card };
     } catch (err) {
@@ -1026,31 +1041,179 @@ export async function narrateRound({ round, campaignState }) {
 }
 
 /**
- * The capture a round's narration gets: one pass, at the widest class
- * (runPostNarrationPasses). A Make a Connection hit keeps its roller and seed
- * for the auto-create; with two in one round, the first auto-creates and the
- * second's NPC goes to a draft card, as any other detected NPC does.
+ * The capture a round's narration gets: one detection call for the round,
+ * its results routed per entry (issue #342).
+ *
+ * A Make a Connection miss creates no one (scope §9) — that entry's rule, not
+ * the round's: it takes no part in the capture, neither its lead nor its
+ * class, and the rest of the round is captured as though it were not there
+ * (Z08 — a round led by a miss skipped its whole capture).
+ *
+ * Each Make a Connection hit creates one connection — the figure its own
+ * character met (roundFigureOwner), with its own seed, bonded to its roller —
+ * synchronously, as free-flow's does (Z09: the round's first connection,
+ * whoever met them, went to the first hit's roller with that roller's seed).
+ * Otherwise the detection runs ~2 s after the card, at the captured entries'
+ * widest class: none at embellishment, as runPostNarrationPasses rules. What
+ * it queues goes on a draft card carrying every acting PC (D3 — the
+ * maintainer's ruling A): a connection row's Confirm asks which of them the
+ * NPC is a connection of, or no one; it was filed as the first entry's PC.
+ *
+ * The tier pass — an NPC's NARRATOR-ADDED developments — runs whatever that
+ * class is, over what the round's interaction-class entries were about
+ * (roundTierRefs; Z10: it ran over the rolled moves' entities alone, only
+ * when the widest class was interaction, so an unrolled action's NPC, or
+ * every NPC beside a discovery roll, got no details).
  *
  * @param {string} narration
  * @param {Array<Object>} entries — roundNarrationEntries
- * @param {Object} relevance — the round's union, at the widest class
  * @param {Object} campaignState
- * @param {{ narrationId: string }} opts
+ * @param {{ narrationId: string, matchedEntityIds?: string[], matchedEntityTypes?: string[] }} opts —
+ *   the matched set the round's prompt used (buildNarratorExtras)
  * @returns {Promise<void>}
  */
-function runRoundNarrationPasses(narration, entries, relevance, campaignState, { narrationId }) {
+function runRoundNarrationPasses(narration, entries, campaignState, { narrationId, matchedEntityIds = [], matchedEntityTypes = [] }) {
+  // The capture's world-scoped writes are the canonical GM's (the
+  // runPostNarrationPasses gate).
+  if (!isCanonicalGM()) return Promise.resolve();
   const isHit = (o) => o === 'strong_hit' || o === 'weak_hit';
-  const connection = entries.find(e => e.input?.kind === 'move' && e.input.moveId === 'make_a_connection' && isHit(e.input.outcome));
-  const lead = connection ?? entries[0];
+  const isConnection = (e) => e.input?.kind === 'move' && e.input.moveId === 'make_a_connection';
+  const captured = entries.filter(e => !isConnection(e) || isHit(e.input.outcome));
+  const hits = captured.filter(isConnection);
+  // The detection names one lead move. A round with no rolled move — actions
+  // with no roll, moves the roll stage refused — is told so as paced
+  // narration's is: its prompt read "Move: null." (ROUND-DETECTION-NULL-MOVE).
+  const lead = hits[0] ?? captured.find(e => e.input?.kind === 'move') ?? null;
   const resolution = {
-    moveId:          connection ? 'make_a_connection' : (lead?.input?.moveId ?? null),
-    outcome:         connection ? connection.input.outcome : (lead?.input?.outcome ?? null),
-    oracleSeeds:     connection ? (connection.input.oracleSeeds ?? null) : null,
+    moveId:          lead ? lead.input.moveId ?? null : PACED_NARRATIVE_MOVE_ID,
+    outcome:         lead ? lead.input.outcome ?? null : PACED_NARRATIVE_OUTCOME,
     playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
   };
-  return runPostNarrationPasses(narration, resolution, relevance, campaignState, {
-    actorId: lead?.actorId ?? null, narrationId,
-  });
+
+  const refs = roundTierRefs(captured, matchedEntityIds, matchedEntityTypes);
+  if (refs.length) {
+    setTimeout(() => {
+      appendGenerativeTierUpdates(
+        narration, refs, campaignState?.currentSessionId, campaignState?.sessionNumber, { narrationId },
+      ).catch(err => console.error(`${MODULE_ID} | round tier update failed:`, err));
+    }, ASYNC_DETECTION_DELAY_MS);
+  }
+
+  // Its draft card carries every acting PC — whose connection a figure is,
+  // the GM's Confirm asks (issue #342 D3); one acting PC is free-flow's card.
+  const actorIds = [...new Set(entries.map(e => e.actorId).filter(id => typeof id === 'string' && id))];
+  const options = { actorId: actorIds.length === 1 ? actorIds[0] : null, actorIds, narrationId };
+  if (hits.length) {
+    const owner = roundFigureOwner(entries, narration);
+    return runDiscoveryDetection(narration, resolution, campaignState, {
+      ...options,
+      connectionRollers: hits.map(e => ({
+        actorId:        e.actorId ?? null,
+        connectionSeed: e.input.oracleSeeds?.connectionSeed ?? null,
+        owns:           (figure) => !!e.actorId && owner(figure) === e.actorId,
+      })),
+    });
+  }
+  if (widestRoundClass(captured) === 'embellishment') return Promise.resolve();
+  setTimeout(() => {
+    runDiscoveryDetection(narration, resolution, campaignState, options)
+      .catch(err => console.error(`${MODULE_ID} | round detection failed:`, err));
+  }, ASYNC_DETECTION_DELAY_MS);
+  return Promise.resolve();
+}
+
+/**
+ * The entities a round's tier pass covers (issue #342 Z10), each entry as its
+ * free-flow narration's pass would: an action with no roll is narrated as
+ * paced narration is (widestRoundClass), so it brings what the round's prompt
+ * matched — paced's rule (schedulePacedTierUpdate), the scene frame's cast
+ * included; a rolled interaction-class move brings its own relevance — the
+ * move pass's rule (runPostNarrationPasses; architecture §8.2: a move's tier
+ * pass follows the player's text, not the frame); a discovery- or
+ * embellishment-class move brings none.
+ *
+ * @param {Array<Object>} entries — the captured roundNarrationEntries
+ * @param {string[]} matchedEntityIds
+ * @param {string[]} matchedEntityTypes
+ * @returns {Array<{ journalId: string, type: string|undefined }>}
+ */
+function roundTierRefs(entries, matchedEntityIds, matchedEntityTypes) {
+  const refs = [];
+  const add = (id, type) => {
+    if (typeof id === 'string' && id && !refs.some(r => r.journalId === id)) refs.push({ journalId: id, type });
+  };
+  for (const e of entries ?? []) {
+    if (e?.input?.kind !== 'move') {
+      (matchedEntityIds ?? []).forEach((id, i) => add(id, matchedEntityTypes?.[i]));
+    } else if (e.input.relevance?.resolvedClass === 'interaction') {
+      (e.input.relevance.entityIds ?? []).forEach((id, i) => add(id, e.input.relevance.entityTypes?.[i]));
+    }
+  }
+  return refs;
+}
+
+/**
+ * Whose action in a round met a figure its narration introduced — an acting
+ * PC's id, or null when the round cannot tell (issue #342 Z09). A bounded
+ * ladder that stops before a guess (rules/reachability.md §6):
+ *   1. the acting player whose own line names the figure (several: null);
+ *   2. else the acting PC the figure's detected description names;
+ *   3. else the acting PC the narration names beside it — every sentence or
+ *      clause (. ! ? ;) naming the figure names that PC and no other.
+ * Names match whole words; the figure's own name is taken out first, so a
+ * PC's name inside it ("Kira's Brother") is not a mention. A round with one
+ * acting PC is free-flow's case: every figure is theirs.
+ *
+ * @param {Array<Object>} entries — roundNarrationEntries
+ * @param {string} narration
+ * @returns {(figure: { name?: string, description?: string }) => (string|null)}
+ */
+function roundFigureOwner(entries, narration) {
+  const pcs = [];
+  for (const e of entries ?? []) {
+    if (e?.actorId && !pcs.some(p => p.actorId === e.actorId)) {
+      pcs.push({ actorId: e.actorId, name: String(e.actorName ?? '').trim() });
+    }
+  }
+  if (pcs.length <= 1) return () => pcs[0]?.actorId ?? null;
+  const clauses = String(narration ?? '').split(/[.!?;\n]+/);
+  const only = (ids) => (ids.size === 1 ? [...ids][0] : null);
+  return (figure) => {
+    const name = String(figure?.name ?? '').trim();
+    if (!name) return null;
+    const pattern = wholeWordPattern(name);
+    const without = (text) => String(text ?? '').replace(wholeWordPattern(name, 'gi'), ' ');
+    const byLine = new Set(entries.filter(e => e?.actorId && pattern.test(String(e.text ?? ''))).map(e => e.actorId));
+    if (byLine.size) return only(byLine);
+    const byDescription = actingPcsNamedIn(without(figure.description), pcs);
+    if (byDescription.size) return only(byDescription);
+    const byNarration = new Set(clauses.filter(c => pattern.test(c)).flatMap(c => [...actingPcsNamedIn(without(c), pcs)]));
+    return only(byNarration);
+  };
+}
+
+/**
+ * The acting PCs a text names: a full name, or a first or last name no other
+ * acting PC shares, as whole words.
+ *
+ * @param {string} text
+ * @param {Array<{ actorId: string, name: string }>} pcs
+ * @returns {Set<string>} actor ids
+ */
+function actingPcsNamedIn(text, pcs) {
+  const out = new Set();
+  const hay = String(text ?? '');
+  if (!hay.trim()) return out;
+  const parts = (n) => String(n ?? '').split(/\s+/).filter(p => p.length >= 2);
+  for (const pc of pcs) {
+    if (!pc.name) continue;
+    const own = parts(pc.name);
+    const shared = (tok) => pcs.some(o => o !== pc && parts(o.name).some(p => p.toLowerCase() === tok.toLowerCase()));
+    const tokens = [pc.name, own.length > 1 ? own[0] : null, own.length > 1 ? own.at(-1) : null]
+      .filter(tok => tok && (tok === pc.name || !shared(tok)));
+    if (tokens.some(tok => wholeWordPattern(tok).test(hay))) out.add(pc.actorId);
+  }
+  return out;
 }
 
 /** One entry's line on a round card: who, and what the move rolled. */
@@ -1340,6 +1503,12 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: options.autoCreateConnection === true,
       connectionSeed:       options.connectionSeed ?? null,
+      // A Batch Mode round's Make a Connection hits, each its own roller and
+      // seed (runRoundNarrationPasses — issue #342 Z09).
+      connectionRollers:    options.connectionRollers ?? null,
+      // A round's acting PCs: its draft card asks which of them a new
+      // connection belongs to (issue #342 D3).
+      actorIds:             options.actorIds ?? null,
       sessionId:            campaignState?.currentSessionId ?? '',
       actorId:              options.actorId ?? null,
       // What names a Make a Connection's NPC — a pending draft's included
@@ -1697,7 +1866,10 @@ function xCardRedirectPending(cs) {
  * with the X-Card lifted is one that delivered it. A fallback card (nothing
  * was delivered), a published Private Channel reflection (not a narration)
  * and an X-carded card do not count. On the canonical GM — a single-emitter
- * world write onto the latest store.
+ * world write onto the latest store, read at its turn on the client's
+ * campaignState write chain: the Batch Mode round's lock release, read inside
+ * this clear's round trip right after its card, wrote the redirect back, and
+ * every later round carried it (CAMPSTATE-CHAIN-PARTIAL).
  */
 export function registerXCardRedirectHook() {
   Hooks.on('createChatMessage', (message) => {
@@ -1710,10 +1882,12 @@ export function registerXCardRedirectHook() {
   });
 }
 
-async function clearXCardRedirect() {
-  const latest = storedCampaignState();
-  if (!latest?.xCardRedirect || latest.xCardActive) return;
-  await game.settings.set(MODULE_ID, 'campaignState', { ...latest, xCardRedirect: null });
+function clearXCardRedirect() {
+  return serialiseCampaignStateWrite(async () => {
+    const latest = storedCampaignState();
+    if (!latest?.xCardRedirect || latest.xCardActive) return;
+    await game.settings.set(MODULE_ID, 'campaignState', { ...latest, xCardRedirect: null });
+  }, 'X-Card redirect clear');
 }
 
 /**
@@ -1914,15 +2088,18 @@ export async function getCampaignRecap(campaignState, options = {}) {
     // Written on a copy of the latest store: `get` hands back the cached
     // value, and a refused write left the GM's cache holding a recap the
     // world lacked — served as current on this client alone (issue #331
-    // X25). One emitter: the canonical GM.
+    // X25). One emitter: the canonical GM. Read at its turn on the client's
+    // campaignState write chain (CAMPSTATE-CHAIN-REST).
     if (text?.trim() && isCanonicalGM()) {
-      const cs = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? campaignState) };
-      cs.campaignRecapCache = {
-        text:            text,
-        generatedAt:     new Date().toISOString(),
-        ...key,          // the chronicle it was made from
-      };
-      await game.settings.set(MODULE_ID, 'campaignState', cs);
+      await serialiseCampaignStateWrite(() => {
+        const cs = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? campaignState) };
+        cs.campaignRecapCache = {
+          text:            text,
+          generatedAt:     new Date().toISOString(),
+          ...key,          // the chronicle it was made from
+        };
+        return game.settings.set(MODULE_ID, 'campaignState', cs);
+      }, 'campaign recap cache');
     }
 
     return text ?? '';
@@ -2071,11 +2248,17 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   // other ledger write — a plain isGM gate raced in multi-GM worlds). Non-GM
   // clients keep the fresh text for this call but leave the durable write to
   // the canonical GM's own narration pass.
+  // Written on a copy of the latest store, at its turn on the client's
+  // campaignState write chain: set on the cached object first, a refused
+  // write left the GM's client serving a summary the world never took, and
+  // read inside an oracle capture's round trip it erased the answer
+  // (CACHE-MUTATED-BEFORE-WRITE).
   if (isCanonicalGM()) {
     try {
-      const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
-      stored.sessionSummary = record;
-      await game.settings.set(MODULE_ID, 'campaignState', stored);
+      await serialiseCampaignStateWrite(() => {
+        const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
+        return game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
+      }, 'rolling summary');
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary persist failed:`, err?.message ?? err);
     }
@@ -2178,7 +2361,10 @@ function refreshRollingSessionSummary() {
     try {
       do {
         _summaryRefreshAgain = false;
-        await getRollingSessionSummary(game.settings.get(MODULE_ID, 'campaignState'));
+        // A copy: getRollingSessionSummary sets the summary on the object it
+        // is given — the cached setting itself, before a write the world can
+        // refuse (CACHE-MUTATED-BEFORE-WRITE).
+        await getRollingSessionSummary({ ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) });
       } while (_summaryRefreshAgain);
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary refresh failed:`, err?.message ?? err);
@@ -2960,7 +3146,13 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     return null;
   }
 
-  const character    = getActiveCharacter(campaignState, options?.speakerActorId);
+  // The speaker's own character. A player with no PC of their own at a table
+  // of several resolves to none (resolveSpeakerActorId gives the first PC
+  // only to a GM or in solo play — issue #321 U23): the line is still
+  // narrated (#326 D8) but with no character — getActiveCharacter's
+  // first-PC fallback made it Kira's CHARACTER block, Kira speaking, and the
+  // ring's "Kira wrote" (issue #342 Z50).
+  const character    = options?.speakerActorId ? getActiveCharacter(campaignState, options.speakerActorId) : null;
   await ensureSceneStarted(campaignState, 'first_narration_paced');
 
   // Don't suggest a social move against a fellow player character (finding G):
@@ -4360,15 +4552,15 @@ function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState, 
     campaignState.spotlight = record;
     // Persisted onto a copy of the latest store, by the canonical GM: set on
     // the cached value first, a refused write left this GM's pointer a step
-    // ahead of the world's (issue #331 X26).
+    // ahead of the world's (issue #331 X26). Read at its turn on the client's
+    // campaignState write chain, once the write ahead has landed
+    // (CAMPSTATE-CHAIN-PARTIAL).
     if (isCanonicalGM()) {
-      try {
+      serialiseCampaignStateWrite(() => {
         const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
-        game.settings.set(MODULE_ID, 'campaignState', { ...stored, spotlight: record }).catch(err =>
-          console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err));
-      } catch (err) {
-        console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err);
-      }
+        return game.settings.set(MODULE_ID, 'campaignState', { ...stored, spotlight: record });
+      }, 'spotlight').catch(err =>
+        console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err));
     }
 
     return buildSpotlightBlock(selection);
@@ -4386,15 +4578,23 @@ function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState, 
  * always agree.
  *
  * @param {string|null} speakingName
+ * @param {string[]|null} [actingActorIds] — a Batch Mode round's acting PCs, by actor id
  * @returns {{ names: string[], speaking: string|null }|null}
  */
-function buildPartyContext(speakingName = null, actingNames = null) {
+function buildPartyContext(speakingName = null, actingActorIds = null) {
   try {
+    const round = Array.isArray(actingActorIds) && actingActorIds.length ? new Set(actingActorIds) : null;
     // CHAR-PARTY-NAMES-ONLY (character-detail audit 2026-07): the roster
     // used to carry bare names, so third-person narration had pronouns for
     // no PC and misgendered non-speaking party members. Carry each member's
     // recorded pronouns + callsign (snapshot reads are cached).
     const members = (getPlayerActors() ?? [])
+      // A Batch Mode round (issue #340) is told only who acted: who sat it
+      // out is never sent, so the roster names the acting PCs alone — by
+      // actor id: matched by the names the round copied when it opened, a
+      // PC renamed since fell out, and with it the whole roster (issue #342
+      // Z36; rules/reachability.md §6).
+      .filter(a => !round || round.has(a?.id))
       .map(a => {
         try { return readCharacterSnapshot(a); } catch { return null; }
       })
@@ -4403,17 +4603,14 @@ function buildPartyContext(speakingName = null, actingNames = null) {
         name:     s.name.trim(),
         pronouns: s.pronouns ?? '',
         callsign: s.callsign ?? '',
-      }))
-      // A Batch Mode round (issue #340) is told only who acted: who sat it
-      // out is never sent, so the roster names the acting PCs alone.
-      .filter(m => !Array.isArray(actingNames) || !actingNames.length || actingNames.includes(m.name));
+      }));
     if (members.length < 2) return null;
     return {
       names:    members.map(m => m.name),   // kept for back-compat consumers
       members,
       speaking: speakingName ?? null,
-      // A Batch Mode round names who acts in it (issue #340).
-      ...(Array.isArray(actingNames) && actingNames.length ? { acting: actingNames } : {}),
+      // A Batch Mode round names who acts in it (issue #340) — as they are named now.
+      ...(round ? { acting: members.map(m => m.name) } : {}),
     };
   } catch (err) {
     console.debug?.(`${MODULE_ID} | narrator: party context build failed:`, err?.message ?? err);
@@ -4738,6 +4935,15 @@ function trimPositionHistory(position, depth = 1) {
  * empty position when it recorded none; the sector token follows. Runs on the
  * canonical GM (suppressScene's finish). Never throws.
  *
+ * The token goes back where the removed narration's sync took it from (the
+ * `tokenBefore` its record carries — the oldest removed one's, when several
+ * moved it): the sync moves a token only onto a pin, so a ship parked in deep
+ * space, or with no position, kept its token on the removed destination's pin
+ * while the narrator was told otherwise — and the token is the position
+ * statement, so its next nudge recorded the removed place again (issue #342
+ * Z12). A record with no spot (written before it, or a move that left the
+ * token where it was) falls back to the sync of the restored position.
+ *
  * @param {string[]} narrationIds — the X-carded narrations
  * @param {Object} [campaignState]
  * @returns {Promise<boolean>} whether the ship was moved back
@@ -4751,21 +4957,34 @@ export async function restoreShipPositionAfterXCard(narrationIds, campaignState 
     if (!cvActorId) return false;
     let position = shipPositionRecord(cvActorId, getShip);
     if (!position?.narrationId || !removed.has(position.narrationId)) return false;
-    while (position?.narrationId && removed.has(position.narrationId)) position = position.previous ?? null;
+    let tokenSpot = null;
+    while (position?.narrationId && removed.has(position.narrationId)) {
+      if (position.tokenBefore && typeof position.tokenBefore === 'object') tokenSpot = position.tokenBefore;
+      position = position.previous ?? null;
+    }
     const { emptyPosition } = await import('../factContinuity/shipPosition.js');
-    // Every key written — `narrationId` / `previous` too, null when the
-    // position put back has none: setFlag merges, so a key left out kept the
-    // removed narration's (SHIP-POSITION-FLAG-MERGE).
+    // Every key written — `narrationId` / `previous` / `tokenBefore` too, null
+    // when the position put back has none: setFlag merges, so a key left out
+    // kept the removed narration's (SHIP-POSITION-FLAG-MERGE).
     const restored = position
       ? { ...emptyPosition(), ...position }
       : { ...emptyPosition(), updatedAt: new Date().toISOString(), updatedBy: 'manual' };
     await updateShip(cvActorId, { position: restored });
-    // The token follows whatever pin the restored position names — a
-    // settlement's or a site's (a recorded location — issue #335 Y14); the
-    // sync leaves it where it is for a position no pin anchors.
-    const { syncCommandVehicleTokenToPosition } = await import('../sectors/sectorSceneHooks.js');
-    await syncCommandVehicleTokenToPosition(restored, campaignState).catch(err =>
-      console.debug?.(`${MODULE_ID} | shipPosition: X-Card token sync failed:`, err?.message ?? err));
+    const { syncCommandVehicleTokenToPosition, moveCommandVehicleTokenToDestination } = await import('../sectors/sectorSceneHooks.js');
+    const tokenBack = tokenSpot
+      ? await moveCommandVehicleTokenToDestination({
+        sceneId: tokenSpot.sceneId, tokenId: tokenSpot.tokenId, destX: Number(tokenSpot.x), destY: Number(tokenSpot.y),
+      }).catch(err => {
+        console.debug?.(`${MODULE_ID} | shipPosition: X-Card token restore failed:`, err?.message ?? err);
+        return false;
+      })
+      : false;
+    // Otherwise the token follows whatever pin the restored position names —
+    // a settlement's or a site's (a recorded location — issue #335 Y14).
+    if (!tokenBack) {
+      await syncCommandVehicleTokenToPosition(restored, campaignState).catch(err =>
+        console.debug?.(`${MODULE_ID} | shipPosition: X-Card token sync failed:`, err?.message ?? err));
+    }
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | X-Card: the ship's position could not be restored:`, err?.message ?? err);
@@ -4805,20 +5024,22 @@ async function applyShipPositionChanges(changes, campaignState, { narrationId = 
     const cvActorId = getCommandVehicleActorId(campaignState);
     if (!cvActorId) return;
     const position = inferShipPosition(dest, campaignState, { source: 'narrator_sidecar' });
+    const { syncCommandVehicleTokenToPosition, commandVehicleTokenSpotBeforeSync } = await import('../sectors/sectorSceneHooks.js');
     // The narration that moved the ship, and where it was before: an X-Card
     // on that narration puts it back (restoreShipPositionAfterXCard, issue
     // #325 W07 — the move was routed around the ledgers with no narration id,
-    // so SHIP POSITION kept naming the removed destination).
+    // so SHIP POSITION kept naming the removed destination) — the sector-map
+    // token too, from wherever the sync below takes it (issue #342 Z12).
     if (typeof narrationId === 'string' && narrationId) {
       position.narrationId = narrationId;
       const prior = shipPositionRecord(cvActorId, getShip);
       if (prior) position.previous = trimPositionHistory(prior);
+      position.tokenBefore = commandVehicleTokenSpotBeforeSync(position, campaignState);
     }
     await updateShip(cvActorId, { position });
 
     // Cluster C — the map follows the fiction (see index.js
     // maybeUpdateShipPositionFromName for the chat-command twin).
-    const { syncCommandVehicleTokenToPosition } = await import('../sectors/sectorSceneHooks.js');
     await syncCommandVehicleTokenToPosition(position, campaignState).catch(err =>
       console.debug?.(`${MODULE_ID} | shipPosition: sidecar token sync failed:`, err?.message ?? err));
   } catch (err) {

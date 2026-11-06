@@ -221,7 +221,7 @@ async function beginSessionOnce(payload) {
   let sessionId = null;
   try {
     const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS } = await import("../session/lifecycle.js");
-    const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
+    const { writeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
     const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
     await rollSessionIfDue(cs);
     if (cs.currentSessionId && cs.sessionStartedId === cs.currentSessionId) {
@@ -238,7 +238,9 @@ async function beginSessionOnce(payload) {
     if (quest || connection) cs.sessionFocus = { sessionId: cs.currentSessionId ?? null, quest, connection };
     cs.questFocus      = "";
     cs.connectionFocus = "";
-    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(cs, BEGIN_SESSION_FIELDS.concat(SESSION_MINT_FIELDS), "begin session"));
+    // On the client's campaignState write chain, merged onto the store as
+    // the write ahead left it (CAMPSTATE-CHAIN-PARTIAL).
+    await writeOwnedFields(cs, BEGIN_SESSION_FIELDS.concat(SESSION_MINT_FIELDS), "begin session");
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     begun = true;
   } catch (err) {
@@ -291,7 +293,11 @@ async function beginSessionOnce(payload) {
           console.warn(`${MODULE_ID} | session-start clocks: failure card failed:`, err?.message ?? err);
         }
       }
-      const advanced = clockResults.filter(r => r.advanced);
+      // A trigger the world refused to save is owed, not taken back: the
+      // Retry's fill narrates it when it lands (clocks.applyClockAdvances).
+      // Narrated here it was dropped as rewound — the store is not full —
+      // and the Retry narrated nothing (issue #342 Z63).
+      const advanced = clockResults.filter(r => r.advanced && !(r.triggered && r.saved === false));
       if (advanced.length) {
         clockVignettes = new Promise(resolve => setTimeout(async () => {
           try {
@@ -599,10 +605,13 @@ async function endSessionOnce(payload, ctx = {}) {
   // summary was finalised (issue #331 X41). Written whole, `state` reverted a
   // move persisted meanwhile (its legacy ticks, entity ids, its released
   // `pendingMove` lock). A write failure still throws (the card says so),
-  // before anything else of the End has run.
-  const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
+  // before anything else of the End has run. On the client's campaignState
+  // write chain, merged onto the store as the write ahead left it: merged
+  // onto the cache inside an oracle capture's round trip, it erased the
+  // answer (CAMPSTATE-CHAIN-PARTIAL).
+  const { writeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
   try {
-    await game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(state, END_SESSION_FIELDS, "end session"));
+    await writeOwnedFields(state, END_SESSION_FIELDS, "end session");
   } catch (err) {
     if (ctx?.local === false) {
       await postSessionNotEndedCard("The session was not ended — the world did not save it. No focus or momentum was recorded. Try End a Session again.");
@@ -610,6 +619,16 @@ async function endSessionOnce(payload, ctx = {}) {
     throw err;
   }
   Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
+
+  // The +1 momentum a noted focus earns, as soon as the gate write says the
+  // session ended with one — never after the scene close and the summary's
+  // Claude call, which it does not need: a GM who left during those seconds
+  // took the award with them, the world said "ended, focus noted", and a
+  // later End's correction paid nothing and called it taken (issue #342 Z64).
+  // A refused write is still owed on the GMs' card (P08).
+  if (questFocus || connectionFocus) {
+    await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — a focus noted" });
+  }
 
   // NARR-SESSION-SCENE (narrator-context audit 2026-07): End Session used
   // to flip the gate only — the active scene survived into the next
@@ -647,11 +666,6 @@ async function endSessionOnce(payload, ctx = {}) {
     } catch (err) {
       console.warn(`${MODULE_ID} | session log write failed:`, err?.message ?? err);
     }
-  }
-
-  const bonus = !!(questFocus || connectionFocus);
-  if (bonus) {
-    await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — a focus noted" });
   }
 
   // Fire-and-forget closing vignette — narrator-generated slice-of-life
@@ -708,10 +722,9 @@ async function correctEndedSession(state, { questFocus, connectionFocus }, ctx =
   if (given) {
     if (questFocus)      state.questFocus      = questFocus;
     if (connectionFocus) state.connectionFocus = connectionFocus;
-    const { mergeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
+    const { writeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
     try {
-      await game.settings.set(MODULE_ID, "campaignState",
-        mergeOwnedFields(state, ["questFocus", "connectionFocus"], "end session (focus correction)"));
+      await writeOwnedFields(state, ["questFocus", "connectionFocus"], "end session (focus correction)");
     } catch (err) {
       // A relayed correction posts no card on the player's client — this note
       // was going to be the only word (issue #335 Y06).

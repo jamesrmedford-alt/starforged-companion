@@ -219,8 +219,9 @@ const SEND_NOW_REFUSALS = {
 /**
  * gmRelay "batch.sendNow" (GMs only) — resolve the round now, with no confirm
  * step; during the upgrade step, Keep for everyone still deciding. With
- * `modeOffAfter`, Batch Mode turns off once the round is done. The
- * resolution runs outside the queue.
+ * `modeOffAfter`, Batch Mode turns off once the round is done — a round
+ * already resolving is only marked, and its rollers still decide (the
+ * toolbar's switch). The resolution runs outside the queue.
  *
  * @param {{ roundId: string, modeOffAfter?: boolean }} payload
  */

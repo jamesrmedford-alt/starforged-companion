@@ -110,27 +110,46 @@ layers. This file is the never-break list.
    ignores instructions vs. model re-emits the fact). Since issue #286 (B6)
    a Strike also reaches the stores that copied the fact
    (`propagateRetraction`, `src/factContinuity/retractions.js` — same-session
-   tier details on the subject, same-session auto-confirmed lore that states
+   tier details on the subject, save pinned and promoted ones (a promoted
+   entry is what lets an X-Card take its Notes line, issue #342 Z43),
+   same-session auto-confirmed lore that states
    it about the struck subject (issue #321 U39 — sidecar facts are
    subject-less phrases, so a bare fact match retracted another character's
    lore), a summary regen), and the scene's strikes outlive it for the
    session (`campaignState.sessionRetractions` → CORRECTED + the summary's
-   leave-out list; a strike is its subject and fact together, U39). Any new
+   leave-out list; a strike is its subject and fact together, U39) — both
+   halves of it: a kept strike blocks a later scene's re-assertion too, and a
+   GM's `!truth set` lifts it, restoring its lore by the truth id it keeps
+   (`findSessionStrike` / `dropSessionStrike`, issue #342 Z42). Any new
    correction path calls `propagateRetraction` — the X-Card does, for each
    truth it retracts (issue #321 U07). An X-Card retraction
-   (`retractedBy: "xcard"`) blocks re-assertion like a strike but is never
-   named under CORRECTED or in the leave-out list: naming it would hand the
-   narrator the content the table removed — so it takes over the table's
-   strike of a truth its narration wrote, relabelled `"xcard"`, with the
-   strike's kept `sessionRetractions` entry dropped by its `narrationId`, and
-   a `!truth set` can lift neither (XCARD-AFTER-STRIKE-STILL-NAMED). A superseded narration's
+   (`retractedBy: "xcard"`) blocks re-assertion like a strike — for the
+   rest of the session, as a kept strike does: a scene end keeps it apart,
+   unnamed (`sessionRetractions.blocked`, read by `findSessionStrike`'s write
+   half and `loreRetractionHolder` alone — XCARD-RETRACTION-SCENE-SCOPED) —
+   but is never named under CORRECTED, in the leave-out list or on a card:
+   naming it would hand the narrator the content the table removed — so it
+   takes over the table's strike of a truth its narration wrote, relabelled
+   `"xcard"`, with the strike's kept `sessionRetractions` entry moved by its
+   `narrationId` to those unnamed blocks, and a `!truth set` can lift neither
+   (XCARD-AFTER-STRIKE-STILL-NAMED). A narration whose scene has already
+   ended is blocked the same way: a scene end keeps each live narration truth
+   it closes, unnamed (`sessionRetractions.narrated`), and the X-Card moves
+   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). A scene
+   end adds what it keeps onto the session's list as the store has it at its
+   write's turn — never its copy's list whole — so an X-Card played during its
+   awaits keeps what it wrote (XCARD-DURING-SCENE-END-RACE), and a strike or
+   Replace made then sticks: each migration re-reads the truth's stored entry
+   before and after its write, and the end keeps the scene's truths as the
+   store holds them (STRIKE-DURING-SCENE-END-LOST). A superseded narration's
    (`retractedBy: "superseded"` — what a Burn Momentum / Improve Result
    replaced, retracted by its `narrationId`, issue #338 D8) is never named
    either, and blocks nothing: the re-narration may state the fact again. Anything a narration writes
    outside the ledgers carries its `narrationId` so the X-Card can undo it
    too — the command vehicle's position does (issue #325 W07; every other
    position writer writes `narrationId: null`, as `setFlag` merges —
-   SHIP-POSITION-FLAG-MERGE), and so does
+   SHIP-POSITION-FLAG-MERGE), with where its sync took the sector-map token
+   from (`tokenBefore` — the X-Card puts the token back, issue #342 Z12), and so does
    everything its capture records: World Journal entries (with the versions
    they replaced — a faction the draft routing surfaces too, issue #335 Y02),
    Session Log beats, tier details (a promoted one's line in the notes too,
@@ -147,7 +166,10 @@ layers. This file is the never-break list.
    (XCARD-CAPTURE-TRANSITIONS); so does what a scene end migrates from its
    ledger entries — the tier detail, the archived Lore page and the LAST
    KNOWN value with the values it superseded — since the card may be played
-   after the scene ended (issue #335 Y01); a narration
+   after the scene ended (issue #335 Y01), or while it runs: each of those
+   writes checks `isNarrationXCarded` right before it writes and takes its
+   copy back when the card landed meanwhile (XCARD-DURING-SCENE-END-MIGRATES);
+   a narration
    is built from the ledgers as they stand in the store, never a pre-dialog
    snapshot (W05), and a summary the X-Card emptied is stamped newer than any
    working copy's (W06).

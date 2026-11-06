@@ -33,7 +33,7 @@
  */
 
 import { buildPrompt, buildRegenerationPrompt, buildNeutralPortraitPrompt } from "./promptBuilder.js";
-import { storeArtAsset, loadArtAsset }           from "./storage.js";
+import { storeArtAsset, loadArtAsset, findEntityPortrait } from "./storage.js";
 import { generateOpenRouterImage }                from "./openRouterImage.js";
 import {
   getEntityDocument,
@@ -44,6 +44,12 @@ import { uploadedPath } from "../net/uploadResult.js";
 import { PORTRAIT_BLOCK_RE } from "./notesPortrait.js";
 
 const MODULE_ID = "starforged-companion";
+
+// This client's first-portrait generations in flight, by entity
+// (`<type>:<host id>` → the generation's promise): one image at a time per
+// entity, claimed before the image call and released in a `finally`
+// (known-issues PORTRAIT-LATE-FIRST-GENERATION).
+const _portraitsInFlight = new Map();
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -77,11 +83,49 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
       console.log(`${MODULE_ID} | Art: portrait locked for ${entity._id} — skipping`);
       return null;
     }
-    if (existing && !existing.regenerationUsed) {
-      // One regeneration permitted — but caller must explicitly request it
+    if (existing) {
+      // Only regeneratePortrait replaces a portrait — the caller must ask for
+      // it. One whose regeneration is claimed (`regenerationUsed` while its
+      // image is out, or once a regenerated portrait's record write was
+      // refused) stays the entity's: generating past it billed the portrait
+      // the one regeneration had spent (known-issues
+      // REGEN-LINK-REFUSED-SECOND-REGEN).
       console.log(`${MODULE_ID} | Art: portrait exists for ${entity._id} — use regeneratePortrait() to replace`);
       return existing;
     }
+  }
+
+  // One image at a time per entity on this client (known-issues
+  // PORTRAIT-LATE-FIRST-GENERATION): a second generation while one is out —
+  // the Entities panel's Generate pressed while a new card's seed is making
+  // its portrait — waits for it and gets its portrait. Each bought an image,
+  // and the later link won.
+  const slot = `${entityType}:${journalEntryId}`;
+  const inFlight = _portraitsInFlight.get(slot);
+  if (inFlight) {
+    console.debug(`${MODULE_ID} | Art: a portrait for ${entityType} ${entity._id} is already being made — waiting for it.`);
+    return inFlight;
+  }
+  const run = makeFirstPortrait(journalEntryId, entityType, entity, campaignState);
+  _portraitsInFlight.set(slot, run);
+  try {
+    return await run;
+  } finally {
+    if (_portraitsInFlight.get(slot) === run) _portraitsInFlight.delete(slot);
+  }
+}
+
+/** generatePortrait's image call and its writes, once its slot is claimed. */
+async function makeFirstPortrait(journalEntryId, entityType, entity, campaignState) {
+  // A portrait already made for this entity that no record names — stored,
+  // its link refused — is the one to save: no second image is bought (known-
+  // issues FIRST-PORTRAIT-LINK-REFUSED; the next press of Generate, the card's
+  // seed or a Finalise each bought another).
+  const made = findEntityPortrait(entityType, entity._id);
+  if (made) {
+    if (!getEntityDocument(entityType, journalEntryId)) return null;
+    console.debug(`${MODULE_ID} | Art: ${entityType} ${entity._id} has a portrait made but not saved — saving it, no new image.`);
+    return linkFirstPortrait(journalEntryId, entityType, entity, made);
   }
 
   const { prompt, size } = buildPrompt(entityType, entity.portraitSourceDescription, entity);
@@ -93,13 +137,44 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
   // X-Card took back with the narration that made it, while the call was out
   // (issue #338 D6(ii); XCARD-LATE-CAPTURE): stored, the portrait would be an
   // Art Cache entry nothing links to.
-  if (!getEntityDocument(entityType, journalEntryId)) {
+  const document = getEntityDocument(entityType, journalEntryId);
+  if (!document) {
     console.debug(`${MODULE_ID} | Art: ${entityType} ${journalEntryId} was deleted before its portrait came back — not stored.`);
     return null;
   }
+  // The record as it stands now: a portrait linked while the image was out —
+  // another GM's Generate, perhaps then its one regeneration — is the
+  // entity's, and this image is not stored. Linked unchecked, a late first
+  // portrait replaced a locked regenerated one with a fresh unlocked one, and
+  // Regenerate was offered again (known-issues PORTRAIT-LATE-FIRST-GENERATION).
+  const linkedMeanwhile = readEntityFlag(entityType, document)?.portraitId ?? null;
+  if (linkedMeanwhile && linkedMeanwhile !== (entity.portraitId ?? null)) {
+    console.debug(`${MODULE_ID} | Art: ${entityType} ${entity._id} was given a portrait while this one was being made — it stands; this image is not stored.`);
+    return (await loadArtAsset(linkedMeanwhile)) ?? null;
+  }
 
   await storeArtAsset(asset, campaignState);
-  await linkPortraitToEntity(journalEntryId, entityType, asset._id);
+  return linkFirstPortrait(journalEntryId, entityType, entity, asset);
+}
+
+/**
+ * Link a stored first portrait to its entity's record, and put it on the
+ * Actor only once the record names it. A refused link leaves the Actor as it
+ * was and tells the GM; the stored portrait is the one the next generation
+ * links (known-issues FIRST-PORTRAIT-LINK-REFUSED — the card and its token
+ * showed a portrait the record did not name, "Portrait generated" was said,
+ * and Generate was offered, and billed, again).
+ *
+ * @returns {Promise<ArtAsset|null>} the portrait, once the record names it
+ */
+async function linkFirstPortrait(journalEntryId, entityType, entity, asset) {
+  if (!(await linkPortraitToEntity(journalEntryId, entityType, asset._id))) {
+    // A host gone meanwhile is not the world refusing a save.
+    if (getEntityDocument(entityType, journalEntryId) && typeof ui !== "undefined") {
+      ui.notifications?.warn(`Starforged Companion: The portrait for ${entity.name ?? "this entity"} could not be saved — the world refused it. Generate portrait saves it again, without making a new image.`);
+    }
+    return null;
+  }
   await attachPortraitToActor(journalEntryId, entityType, asset.b64, asset._id);
 
   console.log(`${MODULE_ID} | Art: generated portrait for ${entityType} ${entity._id}`);
@@ -110,11 +185,21 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
  * Regenerate a portrait — the one permitted second attempt.
  * Only callable if: portrait exists, regeneration not yet used, not locked.
  *
+ * The regeneration is claimed before its image is bought (known-issues
+ * REGEN-LINK-REFUSED-SECOND-REGEN): the portrait the record names is marked
+ * `regenerationUsed`, so a second press — another GM's included — finds it
+ * spent, and only an image that could not be made gives it back. It used to
+ * be marked only by the new portrait, once linked: a refused link left the
+ * record on a portrait that carried no sign of it, and Regenerate was offered
+ * — and billed — again. A regenerated portrait the world did not save (its
+ * store or its record write refused) spends it: the earlier portrait stays
+ * the entity's, locked, and the GM is told.
+ *
  * @param {string} journalEntryId
  * @param {string} entityType
  * @param {Object} entity
  * @param {Object} campaignState
- * @returns {Promise<ArtAsset|null>}
+ * @returns {Promise<ArtAsset|null>} the new portrait, once the record names it
  */
 export async function regeneratePortrait(journalEntryId, entityType, entity, campaignState) {
   if (!canKeepPortrait()) return null;
@@ -143,23 +228,87 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
     return null;
   }
 
+  // The claim — before anything is billed.
+  const claimed = existing ? { ...existing, regenerationUsed: true } : null;
+  if (claimed) {
+    try {
+      await storeArtAsset(claimed, campaignState);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | Art: the regeneration could not be claimed for ${entity._id} — nothing was generated:`, err?.message ?? err);
+      return null;
+    }
+  }
+
   const { prompt, size } = buildRegenerationPrompt(entityType, entity.portraitSourceDescription, entity);
   const neutralPrompt = buildNeutralPortraitPrompt(entityType, entity).prompt;
   const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt);
 
-  if (!asset) return null;
-
-  if (existing) {
-    await storeArtAsset({ ...existing, superseded: true }, campaignState);
+  if (!asset) {
+    await releaseRegeneration(claimed, campaignState);
+    return null;
   }
 
   const lockedAsset = { ...asset, regenerationUsed: true, locked: true };
-  await storeArtAsset(lockedAsset, campaignState);
-  await linkPortraitToEntity(journalEntryId, entityType, lockedAsset._id);
+  let linked = false;
+  try {
+    await storeArtAsset(lockedAsset, campaignState);
+    linked = await linkPortraitToEntity(journalEntryId, entityType, lockedAsset._id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Art: the regenerated portrait for ${entity._id} could not be stored:`, err?.message ?? err);
+  }
+  if (!linked) {
+    await keepRegenerationSpent(claimed, entity, campaignState);
+    return null;
+  }
+
+  // The earlier portrait is superseded only once the record names the new
+  // one — as it stands now (another GM's press may have locked it meanwhile).
+  if (claimed) {
+    const current = (await loadArtAsset(claimed._id)) ?? claimed;
+    await storeArtAsset({ ...current, superseded: true }, campaignState).catch(err =>
+      console.warn(`${MODULE_ID} | Art: marking the earlier portrait of ${entity._id} superseded failed:`, err?.message ?? err));
+  }
   await attachPortraitToActor(journalEntryId, entityType, lockedAsset.b64, lockedAsset._id);
 
   console.log(`${MODULE_ID} | Art: regenerated (and locked) portrait for ${entityType} ${entity._id}`);
   return lockedAsset;
+}
+
+/**
+ * An image that could not be made gives the claimed regeneration back: the
+ * portrait the record names is as it was before the claim — unlocked too, as
+ * it was then (a second GM's press during the call, reading the claim as
+ * spent, locks it). A refused write leaves the regeneration spent, logged.
+ *
+ * @param {ArtAsset|null} claimed
+ * @param {Object} campaignState
+ */
+async function releaseRegeneration(claimed, campaignState) {
+  if (!claimed) return;
+  const current = (await loadArtAsset(claimed._id)) ?? claimed;
+  await storeArtAsset({ ...current, regenerationUsed: false, locked: false }, campaignState).catch(err =>
+    console.warn(`${MODULE_ID} | Art: giving the regeneration of ${claimed.entityId ?? "?"} back failed — it stays spent:`, err?.message ?? err));
+}
+
+/**
+ * A regenerated portrait the world did not save — its store or its record
+ * write refused: the image was bought, so the one regeneration is spent. The
+ * earlier portrait stays the entity's, locked, as a regenerated one is, and
+ * the GM is told.
+ *
+ * @param {ArtAsset|null} claimed
+ * @param {Object} entity
+ * @param {Object} campaignState
+ */
+async function keepRegenerationSpent(claimed, entity, campaignState) {
+  if (claimed) {
+    const current = (await loadArtAsset(claimed._id)) ?? claimed;
+    await storeArtAsset({ ...current, regenerationUsed: true, locked: true }, campaignState).catch(err =>
+      console.warn(`${MODULE_ID} | Art: locking the earlier portrait of ${entity._id} failed — its regeneration stays spent:`, err?.message ?? err));
+  }
+  if (typeof ui !== "undefined") {
+    ui.notifications?.warn(`Starforged Companion: The regenerated portrait for ${entity.name ?? "this entity"} could not be saved — the world refused it. The earlier portrait stays, now locked: the one regeneration is spent.`);
+  }
 }
 
 
@@ -242,7 +391,11 @@ async function callOpenRouter(prompt, size, entityId, entityType, fallbackPrompt
 /**
  * Write the generated asset ID back to the entity record. Routes through the
  * entity registry so journal-hosted and (post-migration) actor-hosted entities
- * share one write path.
+ * share one write path. Reports whether the record names the portrait now —
+ * a regeneration whose link was refused spends its regeneration on the
+ * earlier portrait (regeneratePortrait); the refusal used to be logged only.
+ *
+ * @returns {Promise<boolean>}
  */
 async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
   try {
@@ -254,7 +407,7 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
       // deletes the actor. That's a race, not a defect; log at debug so
       // the console isn't littered with warnings on every Quench run.
       console.debug(`${MODULE_ID} | Art: host document gone before portrait link landed: ${entityType} ${journalEntryId}`);
-      return;
+      return false;
     }
 
     const existing = readEntityFlag(entityType, document) ?? {};
@@ -265,8 +418,10 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
     });
 
     console.log(`${MODULE_ID} | Art: linked portrait ${artAssetId} to ${entityType} ${journalEntryId}`);
+    return true;
   } catch (err) {
     console.error(`${MODULE_ID} | Art: failed to link portrait to entity:`, err.message);
+    return false;
   }
 }
 

@@ -68,7 +68,6 @@ import {
 } from "./resolver.js";
 import {
   getActor,
-  getPlayerActors,
   readMomentumState,
 } from "../character/actorBridge.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
@@ -571,26 +570,36 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // applied and the button re-arms.
   if (!(await claimUpgradeCard(message, "burn"))) return { applied: false, reason: "claim-refused" };
 
+  // A weak hit that pays the price too (Battle, Clash) keeps the one already
+  // rolled: reverting it and rolling again would be the same price over.
+  const priceStands = !!burn.ptpReversals && newConsequences.routePayThePrice === true;
+
   // Each write after the claim: one the world refuses goes to the GMs, with a
   // Retry (resultUpgrade.js applyUpgradeStep).
   const failures = [];
+
+  // Revert Pay-the-Price side effects that fired before the burn button was
+  // visible: clock advances, any suffer-route meter loss (e.g. Endure Harm
+  // -1 from a PtP table roll on the original miss) and the unprepared marks
+  // its supply loss made — unless the price stands. First, so the reset below
+  // is the PC's without an impact a price that never happened marked: "burn
+  // momentum before applying any other effects of the move" (issue #342 D4 —
+  // the stale mark lowered the burner's reset from +2 to +1). A burn refunds
+  // no momentum, so the value read above still stands.
+  if (burn.ptpReversals && !priceStands) {
+    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures, resolutionId: burn.resolutionId ?? null }).catch(err =>
+      console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
+  }
+
   await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: burnMeterChanges({
     burnState:        burn,
     currentMomentum:  momentum.value,
-    newMomentumReset: momentum.reset,
+    newMomentumReset: readMomentumState(actor).reset,
     newConsequences,
+    // The price that stands is the burned outcome's: its momentum loss lands
+    // after the reset (issue #342 Z51).
+    keptPriceMomentum: priceStands ? priceMomentumTaken(burn.ptpReversals, actor.id) : 0,
   }) }, failures);
-
-  // Revert Pay-the-Price side effects that fired before the burn button was
-  // visible: clock advances and any suffer-route meter loss (e.g. Endure Harm
-  // -1 from a PtP table roll on the original miss). A weak hit that pays the
-  // price too (Clash) keeps the one already rolled: reverting it and rolling
-  // again would be the same price over.
-  const priceStands = !!burn.ptpReversals && newConsequences.routePayThePrice === true;
-  if (burn.ptpReversals && !priceStands) {
-    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures }).catch(err =>
-      console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
-  }
 
   // The original outcome's pending choice is retired and the burned outcome's
   // offered once (issue #311 P03). A price that stands keeps the cards it
@@ -637,10 +646,19 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
  * is accepted only once it is recorded): momentum goes to the reset value plus
  * the upgraded outcome's momentum; health / spirit / supply swap the original's
  * change for the upgraded one's.
+ *
+ * A Pay the Price the burned outcome keeps (a Battle or Clash burned to a weak
+ * hit — `priceStands`) is that outcome's effect, applied after the burn:
+ * "You must burn momentum before applying any other effects of the move". The
+ * momentum it took (`keptPriceMomentum` — harm or stress past 0, its
+ * receipt) comes off the reset value; the reset refunded it while the harm
+ * stood, 2 where the rules give 1 (issue #342 Z51). A price the burn undoes
+ * is no part of the burned outcome: its momentum loss is replaced by the
+ * reset, as before. applyMeterChanges clamps the result to the PC's bounds.
  */
-function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newConsequences }) {
+function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newConsequences, keptPriceMomentum = 0 }) {
   const orig = burnState.originalConsequences ?? {};
-  const targetMomentum = newMomentumReset + Number(newConsequences.momentumChange ?? 0);
+  const targetMomentum = newMomentumReset + Number(newConsequences.momentumChange ?? 0) - (Number(keptPriceMomentum) || 0);
   const swap = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
   return {
     momentum: targetMomentum - currentMomentum,
@@ -801,10 +819,16 @@ function currentFlags(message) {
   return (live ?? message)?.flags?.[MODULE_ID] ?? null;
 }
 
+/**
+ * The card's own roller — never another PC in their place (credit the
+ * roller). A card whose PC was deleted burned the world's first PC's
+ * momentum and refunded the gone PC's price onto them (issue #342 Z48); it
+ * now burns nothing (`no-actor`), as Improve Result on the same card and a
+ * suffer card whose PC is gone do (issue #336 Y20).
+ *
+ * @param {string|null} actorId
+ * @returns {Actor|null}
+ */
 function resolveActor(actorId) {
-  if (actorId) {
-    const a = game.actors?.get?.(actorId);
-    if (a) return a;
-  }
-  return getActor(actorId) ?? getPlayerActors()[0] ?? null;
+  return getActor(actorId) ?? null;
 }

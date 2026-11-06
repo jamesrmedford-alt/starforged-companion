@@ -21,6 +21,7 @@ import { generatePortrait, regeneratePortrait } from '../art/generator.js';
 import { supportsFinalize } from "../entities/finalize.js";
 import { loadArtAsset, getDataUri }             from '../art/storage.js';
 import { requestGmAction }                      from '../multiplayer/gmRelay.js';
+import { serialiseCampaignStateWrite }          from '../multiplayer/campaignStateChain.js';
 import {
   getEntityDocument,
   readEntityFlag,
@@ -31,6 +32,8 @@ import {
   withSheetNotes,
 } from '../entities/registry.js';
 import { notesAsCardText } from '../narration/narratorPrompt.js';
+import { isNarrationXCarded } from '../context/safety.js';
+import { withoutPromotedParagraphs } from '../factContinuity/retractions.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -1035,12 +1038,16 @@ export class EntityPanelApp extends ApplicationV2 {
       }
 
       // Written on a copy: a refused write must leave this client's cached
-      // state as it was (issue #321 U58).
-      const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
-      const isAlreadyCurrent = campaignState.currentLocationId === journalId;
-      campaignState.currentLocationId   = isAlreadyCurrent ? null : journalId;
-      campaignState.currentLocationType = isAlreadyCurrent ? null : type;
-      await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+      // state as it was (issue #321 U58). Read and written at its turn on the
+      // client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+      const { campaignState, isAlreadyCurrent } = await serialiseCampaignStateWrite(async () => {
+        const cs = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+        const current = cs.currentLocationId === journalId;
+        cs.currentLocationId   = current ? null : journalId;
+        cs.currentLocationType = current ? null : type;
+        await game.settings.set(MODULE_ID, 'campaignState', cs);
+        return { campaignState: cs, isAlreadyCurrent: current };
+      }, 'Set as current location');
       // The party — and their ship — is here, as `!at <name>` has it: the
       // same command-vehicle position update, so the narrator's current
       // location and SHIP POSITION agree (issue #321 U56). Clearing the
@@ -1075,10 +1082,13 @@ export class EntityPanelApp extends ApplicationV2 {
       ui?.notifications?.warn('Undismissing an entity is GM-only (writes campaign state).');
       return;
     }
-    const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };   // a copy (issue #321 U58)
-    const list = (campaignState.dismissedEntities ?? []).filter(n => n !== name);
-    campaignState.dismissedEntities = list;
-    await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+    // A copy (issue #321 U58), at its turn on the client's campaignState write
+    // chain (CAMPSTATE-CHAIN-REST).
+    await serialiseCampaignStateWrite(() => {
+      const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+      campaignState.dismissedEntities = (campaignState.dismissedEntities ?? []).filter(n => n !== name);
+      return game.settings.set(MODULE_ID, 'campaignState', campaignState);
+    }, 'undismiss');
     this.render();
   }
 
@@ -1205,7 +1215,11 @@ function isEntityActor(actor) {
 /**
  * Whether an Actor update changes what the panel shows: an entity record
  * flag set, edited or removed; or, on an entity Actor, its name (the host
- * name wins over the record's) or a ship's impacts (read from its sheet).
+ * name wins over the record's), a ship's impacts, or the Notes tab and an NPC
+ * card's pronouns — all read from its sheet (notesFromSheet, issue #329 X12;
+ * withSheetNotes, issue #335 Y13). The X-Card takes a promoted detail off the
+ * Notes tab after it writes the record (issue #338 D7), so a panel that
+ * followed only the record kept showing what it removed (issue #342 Z45).
  */
 function actorUpdateShowsInPanel(actor, change) {
   if (!change || typeof change !== 'object') return false;
@@ -1214,7 +1228,7 @@ function actorUpdateShowsInPanel(actor, change) {
     has(`flags.${MODULE_ID}.${typeKey}`) || has(`flags.${MODULE_ID}.-=${typeKey}`));
   if (touchesRecord) return true;
   if (!isEntityActor(actor)) return false;
-  return has('name') || has('system.debility');
+  return has('name') || has('system.debility') || has('system.notes') || has('system.pronouns');
 }
 
 /**
@@ -1323,6 +1337,11 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
     // The entry keeps the text the Promote put in the notes beside the
     // narration id it carries: an X-Card on that narration takes the line
     // out of the notes too (retractNarrationCapture — issue #338 D7).
+    // A detail of a narration the X-Card removed is not promoted (issue #342
+    // Z44): its capture undo takes it off the card, and nothing would take
+    // its line off the Notes tab the narrator reads.
+    const narrationId = tier[idx]?.narrationId ?? null;
+    if (isNarrationXCarded(narrationId)) return refusedEntityEdit('no-detail', payload);
     const mark     = (e) => ({ ...e, promoted: true, promotedAt: now, promotedText: detail });
     const promoted = tier.map((e, i) => (i === idx ? mark(e) : e));
     if (hasSheetNotes(typeKey) && document?.system) {
@@ -1337,6 +1356,21 @@ export async function applyEntityEditFromRelay(payload = {}, _ctx = {}) {
       const fresh     = readEntityFlag(typeKey, document) ?? data;
       const freshTier = Array.isArray(fresh.generativeTier) ? fresh.generativeTier : [];
       const at        = freshTier.findIndex(shown);
+      // The X-Card played on its narration during that write (it runs
+      // unqueued): its undo dropped the entry while it was not yet promoted,
+      // so it left the line — or will, reaching this record after the line —
+      // and the line goes back off the tab with no promoted entry written
+      // (issue #342 Z44). So does one whose entry is gone otherwise (a Remove
+      // meanwhile): a line no entry carries reaches no X-Card. An X-Card
+      // after this check finds the mark — its undo reads this record only
+      // after its own pause, card and journal writes, sent after the mark —
+      // and takes both (D7).
+      if (at === -1 || isNarrationXCarded(narrationId)) {
+        const html = String(document.system.notes ?? '');
+        const back = withoutPromotedParagraphs(html, [detail]);
+        if (back !== html) await document.update({ 'system.notes': back });
+        return refusedEntityEdit('no-detail', payload);
+      }
       next = { ...fresh, generativeTier: freshTier.map((e, i) => (i === at ? mark(e) : e)) };
     } else {
       next = {

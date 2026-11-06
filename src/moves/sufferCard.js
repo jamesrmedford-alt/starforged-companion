@@ -28,7 +28,7 @@ import {
   isRetryableSufferCall,
 } from "./sufferDialog.js";
 import { isUnprepared } from "./sufferExecutor.js";
-import { getActor, readCompanionHealth } from "../character/actorBridge.js";
+import { getActor, readCompanionHealth, readVehicleAssetBattered } from "../character/actorBridge.js";
 import { getShip, getCommandVehicleActorId, isShipBattered } from "../entities/ship.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { localizeMeter, localizeDebility } from "../system/i18n.js";
@@ -100,9 +100,11 @@ export function sufferMultiCap(prompt) {
  * What an option's `requires` is checked against (isOptionAvailable): the PC;
  * the companion's health — the companion the move was rolled for (the card's
  * `executorOpts.companionItemId`), else the PC's only companion, 0 with none;
- * and whether the vehicle is battered — the vehicle the move was rolled
- * against (`executorOpts.vehicleActorId`), else the command vehicle; null when
- * there is none, so a "+1 integrity" with no vehicle to raise is unavailable.
+ * and whether the vehicle is battered — the PC's support vehicle the move was
+ * rolled for (`executorOpts.vehicleItemId`, its own Battered condition — issue
+ * #342 Z53), else the vehicle the move was rolled against
+ * (`executorOpts.vehicleActorId`), else the command vehicle; null when there
+ * is none, so a "+1 integrity" with no vehicle to raise is unavailable.
  * Companion health was never supplied, so "companion health > 0" always read
  * 0 (issue #309 N03); the PC's own impacts stood in for the vehicle's (N02).
  *
@@ -117,6 +119,10 @@ function optionContext(actor, executorOpts = {}) {
     ? executorOpts.patientActorId : null;
   const patient = patientId ? (globalThis.game?.actors?.get?.(patientId) ?? null) : null;
   const patientCompanion = !!executorOpts?.patientCompanionItemId;
+  if (executorOpts?.vehicleItemId) {
+    return { actor, companionHealth, patient, patientCompanion,
+      vehicleBattered: readVehicleAssetBattered(actor, executorOpts.vehicleItemId) };
+  }
   let vehicleBattered = null;
   try {
     const vehicleId = executorOpts?.vehicleActorId
@@ -317,6 +323,9 @@ function labelForSuffer(id) {
  * dispatchPayThePriceSufferRoute): the resist roll its harm owes, the picker
  * of a loss it redirected — is stamped `priceCard`, so an upgrade that keeps
  * the price keeps it too (resultUpgrade.js reconcileChoices, issue #335 Y09).
+ * A card posted from a kept price card's executor opts (`upgraded` in them —
+ * resultUpgrade.js keepPriceCard) is the upgraded outcome's too (issue #342
+ * Z47).
  *
  * @param {{ sufferPrompt: Object, actor: Actor, executorOpts?: Object, moveId?: string|null,
  *   resolutionId?: string|null, upgraded?: boolean }} args
@@ -334,7 +343,7 @@ export async function postSufferChoiceCard({ sufferPrompt, actor, executorOpts =
           actorId:       actor?.id ?? null,
           moveId,
           resolutionId,
-          ...(upgraded ? { upgraded: true } : {}),
+          ...(upgraded || executorOpts?.upgraded === true ? { upgraded: true } : {}),
           ...(executorOpts?.priceCard === true ? { priceCard: true } : {}),
           pickedIndices: [],
           resolved:      false,

@@ -9,12 +9,14 @@
  * (issue #311 P05 — an improvement kept a miss's Pay the Price harm and clock
  * advance, which a burn of the same miss reverted):
  *
- *   - revertPayThePrice — the clocks the miss's Pay the Price advanced, and the
+ *   - revertPayThePrice — the clocks the miss's Pay the Price advanced, the
  *     PC-meter losses its route landed (the receipts index.js ptpMeterReceipts
  *     records — a harm's overflow into momentum is one of its own, issue #314
- *     Q02). Vehicle and companion routes, and impacts an executor marked, are
- *     not reversed (decisions.md → "Burn Momentum reverses Pay-the-Price side
- *     effects").
+ *     Q02), the price's entry in RECENT ORACLE RESULTS (issue #342 Z11), and
+ *     the unprepared marks its supply loss made, once the supply is refunded
+ *     above 0 (issue #342 D4). Vehicle and companion routes, and the other
+ *     impacts an executor marked, are not reversed (decisions.md → "Burn
+ *     Momentum reverses Pay-the-Price side effects").
  *
  *   - reconcileChoices — the move's choice card. A pending card of the
  *     superseded outcome is retired (and a pick that reaches it anyway is
@@ -46,7 +48,10 @@
  * re-narrate and log the same way (renarrateUpgrade).
  */
 
-import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot } from "../character/actorBridge.js";
+import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDebility } from "../character/actorBridge.js";
+import { isUnprepared } from "./sufferExecutor.js";
+import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -86,18 +91,30 @@ export async function claimUpgradeCard(message, kind) {
  * entries still owed, and the step pushed carries those alone — a Retry must
  * not rewind the clocks that landed again (issue #314 Q05).
  *
+ * A clock rewind (`tensionClocks`, `vowClocks`) reports on `report.untriggered`
+ * the clocks its landed writes took out of their triggered state, as the
+ * writes read them (issue #342 Z46).
+ *
  * @param {{ effect: "meters", pcId: string, changes: Object }
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string }> }
  *   | { effect: "vowClocks", entries: Array<{ actorId: string, itemId: string, name?: string }> }
+ *   | { effect: "unprepared", pcIds: string[] }
  *   | { effect: "choiceCard", pcId: string, sufferPrompt: Object, executorOpts: Object, moveId: string|null, resolutionId: string|null }} step
  * @param {Array<Object>} failures
+ * @param {{ untriggered?: Array<Object> }|null} [report] — filled in by a clock rewind
  * @returns {Promise<boolean>} whether it landed
  */
-export async function applyUpgradeStep(step, failures) {
+export async function applyUpgradeStep(step, failures, report = null) {
   try {
     const res = await runUpgradeStep(step);
+    if (report && typeof report === "object" && Array.isArray(res.untriggered)) report.untriggered = res.untriggered;
     if (res.ok) return true;
-    failures.push({ ...step, ...(res.entries ? { entries: res.entries } : {}), step: "upgrade", reason: res.reason ?? "refused" });
+    failures.push({
+      ...step,
+      ...(res.entries ? { entries: res.entries } : {}),
+      ...(res.pcIds ? { pcIds: res.pcIds } : {}),
+      step: "upgrade", reason: res.reason ?? "refused",
+    });
   } catch (err) {
     console.warn(`${MODULE_ID} | upgrade ${step.effect} not applied:`, err?.message ?? err);
     failures.push({ ...step, step: "upgrade", reason: "refused", error: String(err?.message ?? err) });
@@ -116,16 +133,34 @@ async function runUpgradeStep(step) {
     }
     case "tensionClocks": {
       const { revertTensionClocksForBurn } = await import("../clocks/clocks.js");
-      await revertTensionClocksForBurn(step.clocks.map(c => c._id));
-      return { ok: true };
+      const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id));
+      return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [] };
     }
     case "vowClocks": {
       const { revertVowClocksForBurn } = await import("../character/actorBridge.js");
       // Each Item's rewind stands alone: the ones the world refused are the
       // step still owed (issue #314 Q05 — the whole step was queued, and the
       // Retry rewound the landed clocks once more).
-      const failed = await revertVowClocksForBurn(step.entries);
-      return failed.length ? { ok: false, reason: "refused", entries: failed } : { ok: true };
+      const untriggered = [];
+      const failed = await revertVowClocksForBurn(step.entries, { untriggered });
+      return failed.length ? { ok: false, reason: "refused", entries: failed, untriggered } : { ok: true, untriggered };
+    }
+    case "unprepared": {
+      // The marks a reverted price made, each its own write: the refused ones
+      // are the step still owed (the vowClocks shape). A PC gone, or no
+      // longer unprepared (cleared since), needs nothing.
+      const failed = [];
+      for (const id of step.pcIds ?? []) {
+        const pc = globalThis.game?.actors?.get?.(id) ?? null;
+        if (!pc || !isUnprepared(pc)) continue;
+        try {
+          await setDebility(pc, "unprepared", false);
+        } catch (err) {
+          console.warn(`${MODULE_ID} | upgrade: clearing ${pc.name ?? id}'s unprepared failed:`, err?.message ?? err);
+          failed.push(id);
+        }
+      }
+      return failed.length ? { ok: false, reason: "refused", pcIds: failed } : { ok: true };
     }
     case "choiceCard": {
       const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
@@ -164,7 +199,14 @@ export async function retryUpgradeStep(s) {
       if (!Array.isArray(s.clocks) || !s.clocks.every(c => typeof c?._id === "string")) return { ok: false, reason: "invalid step" };
       break;
     case "vowClocks":
-      if (!Array.isArray(s.entries) || !s.entries.every(e => typeof e?.actorId === "string" && typeof e?.itemId === "string")) {
+      if (!Array.isArray(s.entries) || !s.entries.every(e => typeof e?.actorId === "string" && typeof e?.itemId === "string"
+        && (e.vowId == null || typeof e.vowId === "string"))) {
+        return { ok: false, reason: "invalid step" };
+      }
+      break;
+    case "unprepared":
+      if (!Array.isArray(s.pcIds) || !s.pcIds.length
+        || !s.pcIds.every(id => typeof id === "string" && isPlayerCharacterActor(globalThis.game?.actors?.get?.(id) ?? null))) {
         return { ok: false, reason: "invalid step" };
       }
       break;
@@ -178,16 +220,36 @@ export async function retryUpgradeStep(s) {
       return { ok: false, reason: "invalid step" };
   }
   const failures = [];
-  return (await applyUpgradeStep(s, failures)) ? { ok: true } : { ok: false, ...failures[0] };
+  const report = {};
+  const landed = await applyUpgradeStep(s, failures, report);
+  // A clock rewind takes back the trigger its vignette narrated, as the first
+  // pass's does (revertPayThePrice, issue #342 Z46): the Retry of a refused
+  // rewind left the vignette live beside a clock no longer full, and the
+  // clock's next fill fired a second one (UPGRADE-RETRY-REWIND-NO-SUPERSEDE).
+  if (s.effect === "tensionClocks" || s.effect === "vowClocks") {
+    const untriggered = s.effect === "tensionClocks"
+      ? (Array.isArray(report.untriggered) ? report.untriggered : [])
+      : vowClocksUntriggered(s.entries, report.untriggered, landed ? [] : (failures[0]?.entries ?? s.entries));
+    await supersedeTriggerVignettes(untriggered, upgradeKind(s.kind));
+  }
+  return landed ? { ok: true } : { ok: false, ...failures[0] };
 }
+
+/** An upgrade step's kind — its vignette note says which — "burn" unless it says "improve". */
+const upgradeKind = (kind) => (kind === "improve" ? "improve" : "burn");
 
 /** What a Retry needs of a failed upgrade step. */
 export function upgradeStepRecord(f) {
   return {
     step: "upgrade", effect: f.effect,
     ...(f.effect === "meters"        ? { pcId: f.pcId ?? null, changes: f.changes ?? {} } : {}),
-    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })) } : {}),
-    ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({ actorId: e.actorId, itemId: e.itemId, name: e.name ?? null })) } : {}),
+    // A clock step's kind and a vow copy's vow id: what its Retry supersedes the
+    // rewound clock's trigger vignette by (retryUpgradeStep).
+    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })), kind: upgradeKind(f.kind) } : {}),
+    ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({
+      actorId: e.actorId, itemId: e.itemId, vowId: typeof e.vowId === "string" && e.vowId ? e.vowId : null, name: e.name ?? null,
+    })), kind: upgradeKind(f.kind) } : {}),
+    ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string") } : {}),
     ...(f.effect === "choiceCard"    ? { pcId: f.pcId ?? null, sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {},
       moveId: f.moveId ?? null, resolutionId: f.resolutionId ?? null } : {}),
   };
@@ -222,6 +284,10 @@ export function describeUpgradeStep(f, why) {
     }
     case "vowClocks":
       return (f.entries ?? []).map(e => `Rewind the ${escapeHtml(e.name ?? "vow")} clock one segment — ${why}.`).join("<br>");
+    case "unprepared": {
+      const names = (f.pcIds ?? []).map(id => escapeHtml(globalThis.game?.actors?.get?.(id)?.name ?? "a character")).join(", ");
+      return `Clear unprepared for ${names || "the crew"} — the reverted price marked it, and its supply was refunded — ${why}.`;
+    }
     case "choiceCard": {
       const pc = f.pcId ? (globalThis.game?.actors?.get?.(f.pcId) ?? null) : null;
       return `The upgraded result's choice card for ${escapeHtml(pc?.name ?? "the character")} — ${why}. Nothing on it has been chosen yet.`;
@@ -254,6 +320,29 @@ function sufferMeterDeltas(ptpReversals) {
   return ptpReversals?.sufferMeterDelta?.meterKey ? [ptpReversals.sufferMeterDelta] : [];
 }
 
+/**
+ * The PCs whose unprepared the reverted price itself marked — a supply
+ * receipt's payer (`unpreparedMarked`) and the allies it marked with them
+ * (`alliesMarked`, by id) — for a receipt whose refund landed (`refunded`, the
+ * payers' ids) and left the payer's supply above 0. Issue #342 D4.
+ *
+ * @param {Object|null} ptpReversals
+ * @param {Set<string>} refunded
+ * @returns {string[]}
+ */
+function unpreparedMarksToClear(ptpReversals, refunded) {
+  const ids = new Set();
+  for (const d of sufferMeterDeltas(ptpReversals)) {
+    if (d.meterKey !== "supply" || typeof d.actorId !== "string" || !refunded.has(d.actorId)) continue;
+    if (!d.unpreparedMarked && !(Array.isArray(d.alliesMarked) && d.alliesMarked.length)) continue;
+    const payer = game.actors?.get?.(d.actorId) ?? null;
+    if (!(Number(readCharacterSnapshot(payer)?.meters?.supply ?? 0) > 0)) continue;   // still exhausted: the marks stand
+    if (d.unpreparedMarked) ids.add(d.actorId);
+    for (const id of Array.isArray(d.alliesMarked) ? d.alliesMarked : []) if (typeof id === "string" && id) ids.add(id);
+  }
+  return [...ids];
+}
+
 const REVERSAL_CARDS = {
   burn:    { title: "⏰ Burn reversal",    lead: "Momentum burned — the Price reverts:", flag: "burnReversal" },
   improve: { title: "⏰ Improve reversal", lead: "Result improved — the Price reverts:", flag: "improveReversal" },
@@ -261,48 +350,55 @@ const REVERSAL_CARDS = {
 
 /**
  * Revert the Pay the Price side effects of the superseded miss: rewind each
- * clock it advanced (tension clocks, vow countdown clocks) by one segment and
- * refund the PC-meter losses its route landed. A burn resets momentum, which
- * already undoes a momentum loss, so a burn refunds none; an improvement keeps
- * the momentum the PC has, so it refunds that too. Posts a card listing what
- * was unwound; a write the world refuses goes onto `failures`
- * (applyUpgradeStep).
+ * clock it advanced (tension clocks, vow countdown clocks) by one segment,
+ * refund the PC-meter losses its route landed, and take the price out of
+ * RECENT ORACLE RESULTS (forgetRevertedPrice — issue #342 Z11). A burn resets
+ * momentum, which already undoes a momentum loss, so a burn refunds none; an
+ * improvement keeps the momentum the PC has, so it refunds that too. Posts a
+ * card listing what was unwound; a write the world refuses goes onto
+ * `failures` (applyUpgradeStep).
  *
  * @param {Object|null} ptpReversals — the card's `ptpReversals`:
  *   `{ clocksAdvanced, sufferMeterDeltas }` (a card from before issue #314
  *   carries one `sufferMeterDelta`)
  * @param {Actor|null} actor — the upgrading PC (a receipt's own PC first)
- * @param {{ kind?: "burn"|"improve", failures?: Array<Object> }} [opts]
+ * @param {{ kind?: "burn"|"improve", failures?: Array<Object>, resolutionId?: string|null }} [opts]
+ *   `resolutionId` — the upgraded move's, which its price's oracle memory carries
  * @returns {Promise<string[]>} what was unwound
  */
-export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", failures = [] } = {}) {
+export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", failures = [], resolutionId = null } = {}) {
   if (!ptpReversals) return [];
+  await forgetRevertedPrice(resolutionId, kind);
   const reverted = [];
   const advanced = ptpReversals.clocksAdvanced ?? [];
 
   // 1. Rewind clock advances
   const tension = advanced.filter(c => c.type === "tension" && c._id).map(c => ({ _id: c._id, name: c.name ?? null }));
   const entries = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId)
-    .map(c => ({ actorId: c.actorId, itemId: c.itemId, name: c.name ?? null }));
-  // The clocks the price triggered whose rewind lands: out of their
-  // triggered state, so the trigger their vignette narrates did not happen
-  // (issue #338 D8).
+    .map(c => ({ actorId: c.actorId, itemId: c.itemId, vowId: c.vowId ?? null, name: c.name ?? null }));
+  // The clocks whose landed rewind takes them out of their triggered state:
+  // the trigger their vignette narrates did not happen (issue #338 D8).
+  // Judged on the clock as the rewind reads it — full before, below full
+  // after — not on this price's receipt: another player's price may have
+  // filled it since, and its vignette stayed live beside a clock no longer
+  // full, the next price firing a second one (issue #342 Z46).
   const untriggered = [];
-  if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension }, failures)) {
+  const tensionReport = {};
+  // A step carries its kind, for its Retry's supersede (retryUpgradeStep).
+  if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension, kind }, failures, tensionReport)) {
     for (const c of tension) reverted.push(`${c.name} clock rewound`);
-    untriggered.push(...advanced.filter(c => c.type === "tension" && c._id && c.triggered));
+    untriggered.push(...(tensionReport.untriggered ?? []));
   }
   if (entries.length) {
     // The rewinds that landed are reported; the refused ones are on the step
     // the GMs retry (issue #314 Q05).
     const at = failures.length;
-    const ok = await applyUpgradeStep({ effect: "vowClocks", entries }, failures);
-    const owed = new Set(ok ? [] : (failures[at]?.entries ?? entries).map(e => e.itemId));
-    for (const v of entries) if (!owed.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
-    // A shared vow's clock is rewound once every copy of it is.
-    const vows = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId);
-    untriggered.push(...vows.filter(c => c.triggered
-      && !vows.some(o => owed.has(o.itemId) && (o.vowId ?? o.itemId) === (c.vowId ?? c.itemId))));
+    const vowReport = {};
+    const ok = await applyUpgradeStep({ effect: "vowClocks", entries, kind }, failures, vowReport);
+    const owed = ok ? [] : (failures[at]?.entries ?? entries);
+    const owedIds = new Set(owed.map(e => e.itemId));
+    for (const v of entries) if (!owedIds.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
+    untriggered.push(...vowClocksUntriggered(entries, vowReport.untriggered, owed));
   }
   await supersedeTriggerVignettes(untriggered, kind);
 
@@ -310,20 +406,42 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // move that ran, a meter's before and after), never the table's annotation
   // (issue #311 P04). A harm's overflow into momentum is a receipt of its own
   // (issue #314 Q02); a burn's reset replaces momentum, so a burn refunds none.
-  // One write per PC.
+  // One write per PC. A receipt that names its PC refunds that PC or nobody —
+  // one deleted since is not stood in for by the upgrading PC (issue #342
+  // Z48); a receipt from before receipts named one refunds the upgrading PC.
   const byPc = new Map();
   for (const delta of sufferMeterDeltas(ptpReversals)) {
     if (!(delta.amount > 0) || (kind === "burn" && delta.meterKey === "momentum")) continue;
-    const refundTo = (delta.actorId ? game.actors?.get?.(delta.actorId) : null) ?? actor;
+    const refundTo = delta.actorId ? (game.actors?.get?.(delta.actorId) ?? null) : actor;
     if (!refundTo) continue;
     const changes = byPc.get(refundTo) ?? {};
     changes[delta.meterKey] = (changes[delta.meterKey] ?? 0) + Number(delta.amount);
     byPc.set(refundTo, changes);
   }
+  const refunded = new Set();
   for (const [refundTo, changes] of byPc) {
     if (await applyUpgradeStep({ effect: "meters", pcId: refundTo.id, changes }, failures)) {
+      refunded.add(refundTo.id);
       for (const [meterKey, amount] of Object.entries(changes)) reverted.push(`${meterKey} +${amount} refunded`);
     }
+  }
+
+  // 3. The unprepared marks the reverted price itself made — its payer's and
+  // the allies sharing the supply it took to 0 (the receipt's
+  // `unpreparedMarked` / `alliesMarked`), never a mark that was there before —
+  // cleared once the refunded supply is back above 0: the rules key
+  // unprepared on an exhausted supply the reversal says never happened, and
+  // since issue #338 D3 a stale mark redirected every crew member's loss of
+  // resources and kept their momentum lowered until a Resupply (issue #342
+  // D4, ruling A narrowly). A refused clear is an upgrade step for the GMs'
+  // Retry, as the refund is.
+  const unmark = unpreparedMarksToClear(ptpReversals, refunded);
+  if (unmark.length) {
+    const at = failures.length;
+    const ok = await applyUpgradeStep({ effect: "unprepared", pcIds: unmark }, failures);
+    const owed = new Set(ok ? [] : (failures[at]?.pcIds ?? unmark));
+    const cleared = unmark.filter(id => !owed.has(id)).map(id => game.actors?.get?.(id)?.name ?? id);
+    if (cleared.length) reverted.push(`${cleared.map(escapeHtml).join(", ")} no longer unprepared`);
   }
 
   if (!reverted.length) return reverted;
@@ -334,6 +452,41 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     flags:   { [MODULE_ID]: { clockCard: true, [card.flag]: true } },
   }).catch(err => console.warn(`${MODULE_ID} | ${kind}: reversal card failed:`, err));
   return reverted;
+}
+
+
+/**
+ * The reverted price leaves the narrator's memory: its card's `oracleMemory`
+ * (stamped with the move's `resolutionId`, index.js postMovePayThePriceCard)
+ * stood in RECENT ORACLE RESULTS — "the dice established these outcomes …
+ * must not contradict them" — beside the upgraded outcome's re-narration and
+ * every later narration this session, for a price that was never paid (issue
+ * #342 Z11). On the canonical GM, through the campaignState write chain the
+ * capture writes on (so a capture still queued lands first), on a copy of the
+ * stored state. Best-effort, as the capture is: a refusal is logged and the
+ * entry stays. Never throws.
+ *
+ * @param {string|null} resolutionId
+ * @param {"burn"|"improve"} kind
+ * @returns {Promise<boolean>} whether an entry was dropped
+ */
+async function forgetRevertedPrice(resolutionId, kind) {
+  if (typeof resolutionId !== "string" || !resolutionId) return false;
+  try {
+    const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
+    if (!isCanonicalGM()) return false;
+    return await serialiseCampaignStateWrite(async () => {
+      const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState");
+      if (!stored || typeof stored !== "object") return false;
+      const copy = { ...stored };
+      if (!dropOracleResultsOf(copy, resolutionId)) return false;
+      await game.settings.set(MODULE_ID, "campaignState", copy);
+      return true;
+    }, `${kind}: the reverted price's oracle memory`);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${kind}: the reverted price could not be taken out of the recent oracle results:`, err?.message ?? err);
+    return false;
+  }
 }
 
 
@@ -409,6 +562,29 @@ function supersededVignetteContent(content, kind) {
   const struck = html.replace(/<em>([\s\S]*?)<\/em>/,
     (_full, inner) => `<em class="sf-narration-superseded" style="opacity:0.55;text-decoration:line-through;"><s>${inner}</s></em>`);
   return /<\/div>\s*$/.test(struck) ? struck.replace(/<\/div>\s*$/, `${note}</div>`) : struck + note;
+}
+
+/**
+ * The vow clocks a landed rewind took out of their triggered state, as
+ * supersedeTriggerVignettes takes them (advanced-clock entries, by their vow —
+ * vignetteClockId): each copy the rewind reported (`emptied`), once no copy
+ * of its vow is still owed — a shared vow's clock is rewound once every copy
+ * of it is (issue #342 Z46). The first pass's and its Retry's
+ * (UPGRADE-RETRY-REWIND-NO-SUPERSEDE).
+ *
+ * @param {Array<{ actorId: string, itemId: string, vowId?: string|null }>} entries — the copies the step rewinds
+ * @param {Array<{ itemId: string }>|undefined} emptied — the copies its landed writes took out of full
+ * @param {Array<{ itemId: string }>} owed — the copies the world refused
+ * @returns {Array<Object>}
+ */
+function vowClocksUntriggered(entries, emptied, owed) {
+  const out   = new Set((Array.isArray(emptied) ? emptied : []).map(e => e?.itemId));
+  const still = new Set((Array.isArray(owed) ? owed : []).map(e => e?.itemId));
+  const vowOf = (e) => e.vowId ?? e.itemId;
+  const list  = Array.isArray(entries) ? entries : [];
+  return list
+    .filter(c => out.has(c.itemId) && !list.some(o => still.has(o.itemId) && vowOf(o) === vowOf(c)))
+    .map(c => ({ ...c, type: "vow" }));
 }
 
 /**
@@ -675,15 +851,23 @@ export async function retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCa
  * pick on it is not refused as the superseded outcome's, and it closes
  * nothing), and a "burn or improve first" hint it carried goes — the upgrade
  * is spent. The burn used to retire it with the superseded outcome's cards,
- * and the roll the kept harm owes was never made (issue #335 Y09). Best
- * effort: a refused update leaves the card as it was.
+ * and the roll the kept harm owes was never made (issue #335 Y09). The keep
+ * rides its executor opts too (`executorOpts.upgraded`), so a card its pick
+ * posts — the resist roll a redirected loss's Endure Harm owes at 0 — is the
+ * upgraded outcome's as well (sufferCard.js postSufferChoiceCard): posted
+ * after the burn, it was refused as the superseded outcome's and the owed
+ * roll lost (issue #342 Z47). Best effort: a refused update leaves the card
+ * as it was.
  *
  * @param {ChatMessage} card
  * @returns {Promise<boolean>} whether the card was kept
  */
 async function keepPriceCard(card) {
   const f = card.flags[MODULE_ID];
-  const update = { [`flags.${MODULE_ID}.upgraded`]: true };
+  const update = {
+    [`flags.${MODULE_ID}.upgraded`]:              true,
+    [`flags.${MODULE_ID}.executorOpts.upgraded`]: true,
+  };
   if (f.sufferPrompt?.hint) {
     update[`flags.${MODULE_ID}.sufferPrompt.hint`] = null;
     try {

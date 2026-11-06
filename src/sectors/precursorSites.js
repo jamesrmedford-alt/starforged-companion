@@ -257,6 +257,11 @@ function normalizeLabel(s) {
   return String(s ?? "").trim().toLowerCase().replace(/^the\s+/, "");
 }
 
+// The label an unexplored site's pin shows until it is charted
+// (sceneBuilder.createSectorScene's site Notes) — the only name the crew can
+// give a site they have not reached.
+const UNEXPLORED_PIN_LABEL = normalizeLabel("Unexplored Site");
+
 /**
  * Choose the site a reveal, a clear or an expedition link targets, across
  * every stored sector. Mirrors selectExpeditionTrack's matching ladder —
@@ -285,9 +290,13 @@ function normalizeLabel(s) {
  *   or null; a link to no stored site falls back to the label)
  * @param {string|null} [opts.activeSectorId] — tried first on every rung
  * @param {boolean} [opts.requireLabelMatch] — true skips the sole-site guess,
- *   so only a name/type-confident match returns. Used when STAMPING an
- *   expedition→site link at creation (a guess there would tie unrelated
- *   expeditions to the one remaining site); reveal and clear keep the guess.
+ *   so only a site the label names returns: by name, whole words or type
+ *   keyword — or, for the pin's own "Unexplored Site", the active sector's one
+ *   eligible site (the only way a crew can name a site it has not reached).
+ *   Used when STAMPING an expedition→site link at creation and when FINISHING
+ *   an expedition (a guess would tie — and chart — unrelated expeditions to
+ *   the one remaining site: an expedition to Bleakhold charted the frontier
+ *   derelict, issue #342 D7); `!reveal-site` and `!clear-site` keep the guess.
  * @returns {{ sector: Object, site: Object }|null}
  */
 export function selectSectorSite(sectors, label, {
@@ -335,6 +344,9 @@ export function selectSectorSite(sectors, label, {
     ...(/derelict|wreck|ghost/.test(want) ? ["derelict"] : []),
   ];
   const active = inActive(candidates);
+  // The pin's own label names the active sector's one unexplored site — when
+  // a label must name its site, the guess below never fires (issue #342 D7).
+  if (requireLabelMatch && want === UNEXPLORED_PIN_LABEL && active.length === 1) return active[0];
   for (const scope of [active, candidates]) {
     if (!scope.length) continue;
     for (const kind of kinds) {

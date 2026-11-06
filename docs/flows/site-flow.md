@@ -45,11 +45,19 @@ Two reveal paths, both funnelling through `revealSectorSite`
 (`src/sectors/siteDiscovery.js`, dependency-injected, GM-gated by callers):
 
 1. **Finishing an expedition** whose track was stamped with a `siteId` FK at
-   creation (`requireLabelMatch` — no guessing) or whose label fuzzy-matches
-   (`selectSectorSite`: exact → whole-word substring → type-keyword-when-unique →
-   sole-undiscovered, each rung over every sector before the next — issue
-   #300 F07 — the active sector first on every rung, since generated names
-   repeat across sectors — issue #321 U48; a site is named by its location
+   creation (`selectExpeditionSite`, the finish's own ladder below —
+   `requireLabelMatch`, no guessing, over the site's location-Actor name, so
+   a site the GM renamed is linked by its new name: known-issues
+   EXPEDITION-STAMP-SITE-NAME) or whose label names the site
+   (`selectSectorSite` with `requireLabelMatch`: exact → whole-word substring →
+   type-keyword-when-unique → the pin's own "Unexplored Site", which names the
+   active sector's one unexplored site — never the sole-undiscovered guess, so
+   an expedition to a settlement, or a trailblaze that names no place, charts
+   nothing: the guess charted the sector's last unexplored site at the end of
+   an expedition to Bleakhold — issue #342 D7; each rung over every sector
+   before the next — issue #300 F07 — the active sector first on every rung,
+   since generated names repeat across sectors — issue #321 U48; a site is
+   named by its location
    Actor — `siteDisplayName`, the record's generated name a fallback — so a
    site the GM renamed matches, and the narrator's Charted sites and the
    cards name it, by its new name: issue #326 W75). The link, or an exact name,
@@ -58,13 +66,16 @@ Two reveal paths, both funnelling through `revealSectorSite`
    link to no stored site falls back to the label. The reveal mutates the in-memory campaignState so the
    pending `persistResolution` write carries it (its stale-snapshot merge
    keeps the pipeline's copy of `sectors` — `mergeWithLatestState`).
-2. **`!reveal-site <name>`** — manual, GM-only, with the same ladder.
+2. **`!reveal-site <name>`** — manual, GM-only, with the same ladder and the
+   sole-undiscovered guess as its last rung (with no name, the sole
+   unexplored site).
 
 Revealing flips `discovered`, sets the location Actor `status: "visited"`,
 restyles the scene pin + passage to charted appearance, persists, and posts
 the **◈ Site Discovered** card ("undertake an expedition there, or Explore
 a Waypoint to move through its zones"). The persist (`persistSiteFlag`) sets
 the flag on a copy of the state as it is after the Actor and scene awaits —
+read at its turn on the GM's campaignState write chain (CAMPSTATE-CHAIN-REST) —
 `!reveal-site` and `!clear-site` used to write back the state read before
 them, reverting an X-Card, Take a Break or `!bond` relayed meanwhile (issue
 #321 U06c); a site no longer stored writes nothing.
@@ -98,13 +109,17 @@ theming, full oracle spreads, name dedup); sites are `canonicalLocked` so
 entity discovery never overwrites them; pins stay unlabelled until
 discovery, and the sector anchor's settlement-only roster means undis-
 covered sites leak nowhere; the expedition→site link is stamped strictly
-(`requireLabelMatch`) and revealed precisely (`siteId` FK with the fuzzy
-ladder as fallback — the 2026-07 soft-spot fixes); `!reveal-site` is
+(`requireLabelMatch`) and revealed precisely (`siteId` FK with the
+label-match ladder as fallback — no sole-site guess at the finish since issue
+#342 D7 — the 2026-07 soft-spot fixes); `!reveal-site` is
 GM-gated with a not-found notice; the reveal updates record + pin + state
 in one pass, tolerating per-step failures; and arrival by move sets
 `currentLocationId` for location-type entities (LOCATION-DUAL-STORE fix),
 so a named site becomes the CURRENT LOCATION card with its full record the
-moment the crew actually goes there. A charted site's pin is a ship-position
+moment the crew actually goes there — the Finish an Expedition that charts a
+site arrives at it by its location Actor (the track's `siteId`, else the site
+its label names: `selectExpeditionSite`), not by the label the crew gave it,
+which named no place (issue #342 Z14). A charted site's pin is a ship-position
 anchor both ways (issue #335 Y14): the command-vehicle token parked on or near
 it records the site as the ship's position (`nearestLocationId`, "near" it —
 never a Set a Course, sites are reached by expedition), and an arrival there

@@ -16,6 +16,8 @@
 //   syncSafetyToCampaignState() bridges the two, called on every write and on ready.
 
 import { playXCard, resumeNarrationAfterXCard, bindXCardCard } from '../context/safety.js';
+import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
+import { sessionLastSeenAt } from '../session/lifecycle.js';
 import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
 import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
@@ -70,7 +72,6 @@ const SETTING = {
   SCENE_CONTEXT_CARDS:      'sceneContextCards',
   // ── Previously On / recap ────────────────────────────────────────────────
   AUTO_RECAP_ENABLED:       'autoRecapEnabled',
-  SESSION_GAP_HOURS:        'sessionGapHours',
   RECAP_GM_ONLY:            'recapGmOnly',
   // ── World Journal ─────────────────────────────────────────────────────────
   WJ_LORE_IN_CONTEXT:          'loreInContext',
@@ -369,22 +370,19 @@ export function registerSettings() {
 
   // ── Previously On / recap ────────────────────────────────────────────────
 
+  // The recap follows the session boundary (End a Session, or four hours with
+  // no chat activity — issue #286 C4): it posts when a world load starts a new
+  // session. The "Session Gap Threshold (hours)" setting that decided it was
+  // retired (issue #342 D6): it set only the recap, not the boundary, so the
+  // recap could post mid-session or stay silent at a new one. A world that
+  // stored a value keeps it, unread — nothing gets an unregistered setting.
   game.settings.register(MODULE_ID, SETTING.AUTO_RECAP_ENABLED, {
     name:    'Auto Recap at Session Start',
-    hint:    'When enabled, a campaign recap is automatically posted to chat when a new session begins (after a gap longer than the threshold).',
+    hint:    'When enabled, a campaign recap is automatically posted to chat when a world load starts a new session (after End a Session, or four hours with no chat activity).',
     scope:   'world',
     config:  false,
     type:    Boolean,
     default: true,
-  });
-
-  game.settings.register(MODULE_ID, SETTING.SESSION_GAP_HOURS, {
-    name:    'Session Gap Threshold (hours)',
-    hint:    'Hours of inactivity that define the start of a new session for auto-recap purposes.',
-    scope:   'world',
-    config:  false,
-    type:    Number,
-    default: 4,
   });
 
   game.settings.register(MODULE_ID, SETTING.RECAP_GM_ONLY, {
@@ -682,7 +680,6 @@ function getVowSwearingScene() {
 
 // ── Previously On / recap ────────────────────────────────────────────────
 function getAutoRecapEnabled() { return game.settings.get(MODULE_ID, SETTING.AUTO_RECAP_ENABLED) ?? true; }
-function getSessionGapHours()  { return game.settings.get(MODULE_ID, SETTING.SESSION_GAP_HOURS)  ?? 4; }
 function getRecapGmOnly()      { return game.settings.get(MODULE_ID, SETTING.RECAP_GM_ONLY)      ?? true; }
 
 // ── Pacing classifier ────────────────────────────────────────────────────
@@ -768,29 +765,33 @@ async function syncSafetyToCampaignState() {
   }
 
   try {
-    // Written on a copy, the safety object too: a refused write must leave
-    // this client's cached state as it was (issue #321 U58).
-    const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
-    campaignState.safety = { ...(campaignState.safety ?? {}) };
+    // Read and written at its turn on the client's campaignState write chain
+    // (CAMPSTATE-CHAIN-REST).
+    await serialiseCampaignStateWrite(() => {
+      // Written on a copy, the safety object too: a refused write must leave
+      // this client's cached state as it was (issue #321 U58).
+      const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+      campaignState.safety = { ...(campaignState.safety ?? {}) };
 
-    // Global Lines and Veils — GM-controlled, world-scoped
-    campaignState.safety.lines = getGlobalLines();
-    campaignState.safety.veils = getGlobalVeils();
+      // Global Lines and Veils — GM-controlled, world-scoped
+      campaignState.safety.lines = getGlobalLines();
+      campaignState.safety.veils = getGlobalVeils();
 
-    // Private Lines — client-scoped, keyed by player ID in campaignState
-    // Each player only writes their own entry; others are preserved
-    const userId = game.user?.id;
-    if (userId) {
-      const existing = campaignState.safety.privateLines ?? [];
-      const others   = existing.filter(e => e.playerId !== userId);
-      const myLines  = getPrivateLines();
+      // Private Lines — client-scoped, keyed by player ID in campaignState
+      // Each player only writes their own entry; others are preserved
+      const userId = game.user?.id;
+      if (userId) {
+        const existing = campaignState.safety.privateLines ?? [];
+        const others   = existing.filter(e => e.playerId !== userId);
+        const myLines  = getPrivateLines();
 
-      campaignState.safety.privateLines = myLines.length > 0
-        ? [...others, { playerId: userId, lines: myLines }]
-        : others;   // Don't write an empty entry — avoids noise in the state
-    }
+        campaignState.safety.privateLines = myLines.length > 0
+          ? [...others, { playerId: userId, lines: myLines }]
+          : others;   // Don't write an empty entry — avoids noise in the state
+      }
 
-    await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+      return game.settings.set(MODULE_ID, 'campaignState', campaignState);
+    }, 'safety sync');
   } catch (err) {
     // Non-Foundry context (tests) or settings not yet available
     console.warn(`${MODULE_ID} | syncSafetyToCampaignState: could not sync:`, err.message);
@@ -838,14 +839,17 @@ export async function applyPrivateLinesSync(payload = {}, ctx = {}) {
     .filter(l => typeof l === 'string' && l.trim())
     .map(l => l.trim().slice(0, 500));
 
-  // Written on a copy, the safety object too (issue #321 U58).
-  const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
-  campaignState.safety = { ...(campaignState.safety ?? {}) };
-  const others = (campaignState.safety.privateLines ?? []).filter(e => e.playerId !== playerId);
-  campaignState.safety.privateLines = lines.length > 0
-    ? [...others, { playerId, lines }]
-    : others;
-  await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+  // Written on a copy, the safety object too (issue #321 U58), at its turn on
+  // the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+  await serialiseCampaignStateWrite(() => {
+    const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+    campaignState.safety = { ...(campaignState.safety ?? {}) };
+    const others = (campaignState.safety.privateLines ?? []).filter(e => e.playerId !== playerId);
+    campaignState.safety.privateLines = lines.length > 0
+      ? [...others, { playerId, lines }]
+      : others;
+    return game.settings.set(MODULE_ID, 'campaignState', campaignState);
+  }, 'Private Lines');
   return true;
 }
 
@@ -968,7 +972,6 @@ export class SettingsPanelApp extends ApplicationV2 {
       narrationTones:        NARRATION_TONES,
       narrationLevities:     NARRATION_LEVITIES,
       autoRecapEnabled:      getAutoRecapEnabled(),
-      sessionGapHours:       getSessionGapHours(),
       recapGmOnly:           getRecapGmOnly(),
       // Documented in the help's Settings Reference, registered config:false
       // and rendered nowhere until issue #322 V06.
@@ -1009,7 +1012,8 @@ export class SettingsPanelApp extends ApplicationV2 {
       },
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
-      lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
+      // The mint or the latest chat activity, whichever is later (issue #342 Z01).
+      lastSessionTimestamp:  sessionLastSeenAt(campaignState),
       // Populated for every client — all three keys are client-scoped
       // (per-browser BYOK), so a player can manage their own. The render only
       // shows players the keys they use (Claude for the Private Channel,
@@ -1437,13 +1441,7 @@ export class SettingsPanelApp extends ApplicationV2 {
             <input type="checkbox" name="autoRecapEnabled" ${ctx.autoRecapEnabled ? 'checked' : ''} ${dis}>
             Auto recap at session start
           </label>
-          <span class="narrator-field-hint">Post a campaign recap to chat automatically when a new session begins.</span>
-        </div>
-        <div class="narrator-field">
-          <label class="narrator-field-label">Session gap (hours)</label>
-          <input class="settings-input narrator-number-input" name="sessionGapHours"
-                 type="number" min="1" max="48" value="${ctx.sessionGapHours}" ${dis}>
-          <span class="narrator-field-hint">Hours of inactivity before a world load is treated as a new session.</span>
+          <span class="narrator-field-hint">Post a campaign recap to chat automatically when a world load starts a new session — after End a Session, or four hours with no chat activity.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">
@@ -1885,8 +1883,6 @@ export class SettingsPanelApp extends ApplicationV2 {
       const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 
       const autoRecapEnabled = el.querySelector('[name="autoRecapEnabled"]')?.checked ?? true;
-      const sessionGapRaw    = el.querySelector('[name="sessionGapHours"]')?.value;
-      const sessionGapHours  = Math.max(1, Math.min(48, Number(sessionGapRaw) || 4));
       const recapGmOnly      = el.querySelector('[name="recapGmOnly"]')?.checked ?? true;
 
       // The rows issue #322 V06 added: documented, but nothing could set them.
@@ -1914,7 +1910,6 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.VOW_SWEARING_SCENE,       vowScene),
         game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
-        game.settings.set(MODULE_ID, SETTING.SESSION_GAP_HOURS,      sessionGapHours),
         game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
         game.settings.set(MODULE_ID, SETTING.NARRATION_MAX_TOKENS,   maxTokens),
         game.settings.set(MODULE_ID, SETTING.SCENE_QUERY_ENABLED,    checked('sceneQueryEnabled', true)),
@@ -2495,4 +2490,4 @@ function registerPrivateLinesGmPull() {
 }
 
 export { getDial as getMischiefDial };
-export { getAutoRecapEnabled, getSessionGapHours, getRecapGmOnly };
+export { getAutoRecapEnabled, getRecapGmOnly };

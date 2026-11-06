@@ -101,6 +101,8 @@ afterEach(async () => {
     const client = table.client(id);
     const transcript = await client.import('../../src/private-channel/transcript.js');
     client.run(() => transcript._resetBuffers());
+    const { PrivateChannelApp } = await client.import('../../src/private-channel/app.js');
+    client.run(() => PrivateChannelApp._resetInstances());
   }
 });
 
@@ -173,5 +175,70 @@ describe("issue #337 Y41 — a default Player's Private Channel with no GM conne
     expect(notices('pl-1', SAVED_NOW)).toHaveLength(1);
     const transcript = await transcriptOn('pl-1');
     expect(table.client('pl-1').run(() => transcript.isTranscriptUnsaved('pl-1'))).toBe(false);
+  }, 30_000);
+});
+
+// Issue #342 Z66 (PRIVATE-UNSAVED-LINE-NOT-RENDERED): the window's line is
+// computed when it renders, and it rendered only on a Send (before and after
+// the narrator's reply). The flush that finds no journal runs 5 s after the
+// reply and the one that saves after a later reply, and neither rendered the
+// open window: the line appeared a Send late — a player who missed the toast
+// saw nothing, and a reload lost the conversation — and once saved, it kept
+// saying "not saved yet … Don't reload" beside the "saved now" toast.
+describe('issue #342 Z66 — the open window\'s "not saved" line follows the conversation', () => {
+  /** Pat's Private Channel window, open on his client, with its renders counted. */
+  async function openWindow() {
+    const c = table.client('pl-1');
+    const { PrivateChannelApp } = await c.import('../../src/private-channel/app.js');
+    const app = await c.run(() => PrivateChannelApp.open({ userId: 'pl-1' }));
+    const renders = [];
+    app.render = async function render(options) {
+      renders.push(await this._prepareContext(options ?? {}));
+      return this;
+    };
+    return { app, renders };
+  }
+
+  it('the open window shows the line once a flush finds no journal', async () => {
+    expectConsoleError(/journal create failed/);
+    await table.leave('gm-1');
+    try {
+      const { renders } = await openWindow();
+      renders.length = 0;
+      await sayAndFlush('pl-1', 'I never told anyone about the ring.');
+      await table.settle();
+      // Nothing rendered the window: the line waited for the next Send.
+      expect(renders.map(r => r.unsaved)).toContain(true);
+    } finally {
+      await table.join('gm-1');
+    }
+  }, 30_000);
+
+  it('the line goes once a later flush saves the conversation', async () => {
+    expectConsoleError(/journal create failed/);
+    await table.leave('gm-1');
+    const { app, renders } = await openWindow();
+    await sayAndFlush('pl-1', 'I never told anyone about the ring.');
+    await table.join('gm-1');
+    // A send renders the window — the line is shown (still unsaved) …
+    await app.render();
+    expect(renders.at(-1).unsaved).toBe(true);
+    renders.length = 0;
+    // … then the debounced flush lands with a GM connected: "saved now".
+    await sayAndFlush('pl-1', 'Or about the debt.');
+    await table.settle();
+    expect(notices('pl-1', SAVED_NOW)).toHaveLength(1);
+    // The window's line goes with it; the last render said "not saved yet … Don't reload".
+    expect(renders.map(r => r.unsaved)).toContain(false);
+    expect(renders.at(-1).unsaved).toBe(false);
+  }, 30_000);
+
+  it('control: a flush that changes nothing renders nothing — a saved conversation stays as it is', async () => {
+    const { renders } = await openWindow();
+    renders.length = 0;
+    await sayAndFlush('pl-1', 'I never told anyone about the ring.');
+    await table.settle();
+    expect(notices('pl-1', SAVED_NOW)).toHaveLength(0);
+    expect(renders).toHaveLength(0);
   }, 30_000);
 });
