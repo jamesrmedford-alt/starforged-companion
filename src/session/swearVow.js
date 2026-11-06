@@ -182,9 +182,15 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
   const flags = message?.flags?.[MODULE_ID] ?? {};
   const meta  = flags.incitingMeta ?? null;
 
+  // A working copy: the oath scene below mints a scene and applies its
+  // sidecar's truths, state and frame on the object it is given, each before
+  // a write the world can refuse — on the cached setting a refusal left them
+  // on this GM's cache alone (issue #342 Z02; the X09 / Y04 rule,
+  // rules/foundry-api.md).
   let campaignState = null;
   try {
-    campaignState = game.settings.get(MODULE_ID, "campaignState");
+    const stored = game.settings.get(MODULE_ID, "campaignState");
+    campaignState = stored ? foundry.utils.deepClone(stored) : null;
   } catch (err) {
     console.warn(`${MODULE_ID} | swearVow: campaignState read failed:`, err?.message ?? err);
   }

@@ -295,8 +295,15 @@ export async function routePacedInput({
   if (pacing.runMove) return pacing;
 
   // NARRATIVE / NARRATIVE_WITH_MOVE_AVAILABLE — run the narrator and stop.
+  // On a working copy: the caller's object is the canonical GM's cached
+  // campaignState, and the narrator mints a scene, advances the spotlight and
+  // applies its sidecar on the object it is given, each before a write the
+  // world can refuse — a refusal left the scene and the facts on this GM's
+  // cache alone, and its next whole-object write carried them into the world
+  // (issue #342 Z02; the X09 / Y04 rule, rules/foundry-api.md).
   const { suggestedMove, suggestedTargetId } = pacing;
-  await narratePacedInput(playerText, campaignState, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}) })
+  const working = foundry.utils.deepClone(campaignState);
+  await narratePacedInput(playerText, working, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}) })
     .catch(err => console.error(`${MODULE_ID} | narratePacedInput failed:`, err));
 
   return {
