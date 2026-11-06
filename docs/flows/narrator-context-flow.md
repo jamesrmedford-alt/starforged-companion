@@ -592,7 +592,9 @@ passes it to the narration too. Raw oracle
 *results* — and the at-0 choice card's mortal-wound / desolation roll
 (`rollImpactTable`, issue #336 Y21) — additionally carry a structured
 `oracleMemory` flag (not a `!ptp` price nobody pays — the dice established
-nothing a character took, PTP-PCLESS-NARRATED-AS-FIRST-PC); the canonical
+nothing a character took, PTP-PCLESS-NARRATED-AS-FIRST-PC; any price a
+player with no character of their own rolls, routed or narrative, issue #342
+Z49); the canonical
 GM's capture hook (`registerOracleMemoryCaptureHook`, `src/index.js`) ledgers
 them into `campaignState.recentOracles` (`src/oracles/oracleMemory.js`,
 cap 8) — on the GM's campaignState write chain

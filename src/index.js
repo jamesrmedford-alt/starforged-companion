@@ -3505,8 +3505,11 @@ async function handlePayThePriceCommand(message) {
   // — another player's PC never pays it (#326 D8) — but said nothing: the card
   // read "Routes to endure_harm (-1)" and nobody was harmed (issue #337 Y43).
   // Refused here, before the card: it says the price was not applied, and the
-  // player is told why, as a move they narrate is.
-  const noPayer = !!result.sufferRoutes?.length && !speakerActorId && !game.user?.isGM;
+  // player is told why, as a move they narrate is. A narrative price — most
+  // of the table, no route — has no payer either: it was narrated for the
+  // first PC and remembered as established (issue #342 Z49), so the payer
+  // alone decides, routes or not.
+  const noPayer = !speakerActorId && !game.user?.isGM;
   const narration = {
     kind:       "pay_the_price",
     oracleName: "Pay the Price",
@@ -3514,7 +3517,7 @@ async function handlePayThePriceCommand(message) {
     rolledLine: `d100 = ${result.roll} → ${result.result}`,
     speakerActorId,
   };
-  const routesLine = noPayer
+  const routesLine = noPayer && result.sufferRoutes?.length
     ? sufferRoutesFooter(result.sufferRoutes, { notApplied: `${escapeChatHtml(game.user?.name ?? "the player who rolled it")} has no character of their own to pay it` })
     : sufferRoutesFooter(result.sufferRoutes);
   // A price nobody pays is not part of the story (PTP-PCLESS-NARRATED-AS-FIRST-PC):
