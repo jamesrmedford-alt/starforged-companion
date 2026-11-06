@@ -28,7 +28,7 @@
  */
 
 import { buildRoundView } from "../batch/roundView.js";
-import { ROUND_PHASE, ENTRY_STATUS, READING_KIND, isResolving, entryFor, roundIsOpen } from "../batch/round.js";
+import { ROUND_PHASE, ENTRY_STATUS, READING_KIND, ROUND_TEXT_MAX, isResolving, entryFor, roundIsOpen, cleanSubmissionText } from "../batch/round.js";
 import {
   BATCH_ENABLED_SETTING,
   getStoredRound,
@@ -403,7 +403,12 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
    */
   async onRoundUpdate(round) {
     const entry = entryFor(round, game.user?.id);
-    if (this.#pending && entry?.submissionId === this.#pending.submissionId) {
+    // Sent — or, its round no longer the one collecting (resolved, ended,
+    // replaced: the GM refused it and said why), it can never land: Send
+    // again would re-send it there forever. Its text is still the draft, for
+    // the round collecting now (issue #342 Z34).
+    const moved = this.#pending && (round?.id !== this.#pending.roundId || round?.phase !== ROUND_PHASE.COLLECTING);
+    if (this.#pending && (moved || entry?.submissionId === this.#pending.submissionId)) {
       clearTimeout(this.#pending.timer);
       this.#pending = null;
       this.#notReceived = false;
@@ -526,6 +531,15 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     const text = this.#inputText().trim();
     const round = getStoredRound();
     if (!text || !roundIsOpen(round)) return;
+    // Bounded as the round bounds it — said here: a refusal comes back only
+    // as a whisper, and the window would wait for it as "not received" (a
+    // table-talk line longer than the box allows can become the draft).
+    if (!cleanSubmissionText(text)) {
+      this.#failure = `An action must be 1–${ROUND_TEXT_MAX} characters — shorten it and submit again.`;
+      this.#failureReason = "bad-text";
+      await this.render();
+      return;
+    }
     await this.#send({ roundId: round.id, text, submissionId: foundry.utils.randomID() });
   }
 
