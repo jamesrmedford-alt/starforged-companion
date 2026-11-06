@@ -224,13 +224,21 @@ export function markSummaryForRegen(campaignState) {
   return true;
 }
 
+/**
+ * Drop the subject's same-session tier details that state the struck fact.
+ * A pinned detail stays (the GM keeps it), and so does a promoted one — its
+ * line is the GM's on the Notes tab, and the entry is the one link between
+ * that line and its narration: dropped, an X-Card on that narration could no
+ * longer take the line off the Notes tab (issue #342 Z43 — D7's reach). The
+ * entry and its Notes copy change together.
+ */
 async function dropTierDetails(subject, fact, sessionId) {
   const document = getEntityDocument(subject.entityType, subject.entityId);
   if (!document) return 0;
   const data = readEntityFlag(subject.entityType, document) ?? {};
   const tier = Array.isArray(data.generativeTier) ? data.generativeTier : [];
   const keep = tier.filter(e =>
-    e?.pinned || (sessionId && e?.sessionId !== sessionId) || !factsOverlap(e?.detail, fact));
+    e?.pinned || e?.promoted || (sessionId && e?.sessionId !== sessionId) || !factsOverlap(e?.detail, fact));
   const dropped = tier.length - keep.length;
   if (!dropped) return 0;
   await writeEntityFlag(subject.entityType, document, {

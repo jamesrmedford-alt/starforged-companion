@@ -665,8 +665,10 @@ ring, and the closing scene's truths keep the closing session's number.
 - **A Strike reaches every copy** (issue #286 B6): `!truth strike` and the
   correction dialog's Strike / Replace — and, since issue #321 U07, the
   X-Card for each truth it retracts — call `propagateRetraction` — the
-  subject entity's same-session tier details that state the fact are dropped,
-  same-session lore that states it **about the struck subject** goes
+  subject entity's same-session tier details that state the fact are dropped
+  (save a pinned one, and a promoted one — its Notes line is the GM's, and
+  the entry is the link the X-Card's D7 undo follows to take that line off:
+  issue #342 Z43), same-session lore that states it **about the struck subject** goes
   `retracted` + unconfirmed (an archived scene truth must carry the subject's
   label, other lore must name the text subject or the entity as whole words,
   a scene truth's fact alone decides; issue #321 U39 — sidecar facts are

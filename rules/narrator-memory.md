@@ -110,7 +110,9 @@ layers. This file is the never-break list.
    ignores instructions vs. model re-emits the fact). Since issue #286 (B6)
    a Strike also reaches the stores that copied the fact
    (`propagateRetraction`, `src/factContinuity/retractions.js` — same-session
-   tier details on the subject, same-session auto-confirmed lore that states
+   tier details on the subject, save pinned and promoted ones (a promoted
+   entry is what lets an X-Card take its Notes line, issue #342 Z43),
+   same-session auto-confirmed lore that states
    it about the struck subject (issue #321 U39 — sidecar facts are
    subject-less phrases, so a bare fact match retracted another character's
    lore), a summary regen), and the scene's strikes outlive it for the
