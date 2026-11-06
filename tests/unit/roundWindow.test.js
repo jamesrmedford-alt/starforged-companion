@@ -179,6 +179,25 @@ describe('a card\'s move offered beside the player\'s own (issue #342 Z05)', () 
   });
 });
 
+describe('a roll a card owes (issue #342 D2)', () => {
+  it('shows Confirm only — no Edit, Withdraw, Pass, Keep mine or Use — and that the written action is kept for the next round', async () => {
+    roundWith(r => {
+      let x = R.submitEntry(r, { userId: ME(), text: 'I drag myself behind the console.', submissionId: 'own', now: NOW });
+      x = R.offerForcedMove(x, { userId: ME(), text: 'Kira resists the harm.', forced: { moveId: 'endure_harm', owed: true }, submissionId: 'o', now: NOW, messageId: 'm' }).round;
+      x = R.offerForcedMove(x, { userId: ME(), text: 'Dive.', forced: { moveId: 'face_danger' }, submissionId: 'd', now: NOW, messageId: 'm2' }).round;
+      return R.recordReading(x, { userId: ME(), submissionId: 'o', reading: { ...READING, moveId: 'endure_harm', moveName: 'Endure Harm', targetChoices: null } });
+    });
+    const { root } = await render();
+    expect(root.querySelector('[data-action="confirm"]')).toBeTruthy();
+    for (const action of ['edit', 'withdraw', 'pass', 'keepMine', 'useOffer', 'submit']) {
+      expect(root.querySelector(`[data-action="${action}"]`), action).toBeNull();
+    }
+    expect(root.querySelector('textarea[name="sf-round-text"]')).toBeNull();
+    expect(root.textContent).toContain('This roll is owed');
+    expect(root.textContent).toContain('I drag myself behind the console.');
+  });
+});
+
 describe('a reading with no roll', () => {
   it('offers Just narrate, and Roll ⟨move⟩ when the classifier suggested one', async () => {
     roundWith(r => R.recordReading(

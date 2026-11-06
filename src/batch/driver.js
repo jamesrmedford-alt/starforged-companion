@@ -1354,21 +1354,31 @@ function forcedFromFlags(f) {
     swearToConnection:      typeof f.swearToConnection === "string" ? f.swearToConnection : null,
     tokenDragSetCourse:     f.tokenDragSetCourse ?? null,
     incitingSwearMessageId: typeof f.incitingSwearMessageId === "string" ? f.incitingSwearMessageId : null,
+    // A move the card owes (the resist roll at 0): the roller's entry, never an offer (issue #342 D2).
+    ...(f.owedMove === true ? { owed: true } : {}),
   };
 }
 
-/** Make a forced move its roller's entry (or an offer beside theirs). */
+/**
+ * Make a forced move its roller's entry (or an offer beside theirs). A move
+ * the card owes takes the entry even beside one written (round.js
+ * offerForcedMove); a card move it displaces — or a second owed move — is
+ * held for the next round.
+ */
 async function joinRound(message, userId) {
   const f = message?.flags?.[MODULE_ID] ?? {};
   const forced = forcedFromFlags(f);
   let read = false;
+  let held = [];
+  let written = null;
   try {
-    await queueRoundWrite((latest) => {
+    written = await queueRoundWrite((latest) => {
       const res = offerForcedMove(latest, {
         userId, text: stripHtml(String(message?.content ?? "")), forced, submissionId: randomId(), now: nowIso(),
         messageId: message?.id ?? null,
       });
       read = res.read;
+      held = res.held ?? [];
       return res.round;
     });
   } catch (err) {
@@ -1377,6 +1387,7 @@ async function joinRound(message, userId) {
     if (participant) holdForNextRound(message, participant);
     return;
   }
+  holdCardMoves(held, written);
   if (read) startReading(userId);
 }
 

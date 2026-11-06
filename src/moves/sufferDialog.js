@@ -374,13 +374,16 @@ async function runSufferCall(call, actor, opts) {
       // The resist roll at 0 (issue #330 D3): Endure Harm / Stress posted as
       // the card's PC — the move pipeline rolls it +health / +iron (or
       // +spirit / +heart), whichever is higher, and its miss card offers the
-      // at-0 choice. Held while another move resolves (deferWhileBusy).
+      // at-0 choice. Held while another move resolves (deferWhileBusy). It is
+      // owed (`owedMove`): in a Batch Mode round it is the roller's entry,
+      // never an optional offer beside one (src/batch/round.js
+      // offerForcedMove, issue #342 D2).
       const what = call.moveId === "endure_stress" ? "the stress" : "the harm";
       try {
         await ChatMessage.create({
           content: `${actor?.name ?? "The character"} resists ${what}.`,
           ...(actor ? { speaker: { actor: actor.id, alias: actor.name } } : {}),
-          flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: call.moveId, deferWhileBusy: true } },
+          flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: call.moveId, deferWhileBusy: true, owedMove: true } },
         });
       } catch (err) {
         console.warn(`${MODULE_ID} | resist roll: the move could not be posted:`, err?.message ?? err);

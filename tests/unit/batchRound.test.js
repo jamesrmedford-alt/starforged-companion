@@ -11,7 +11,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ROUND_PHASE, ENTRY_STATUS, READING_KIND, ROUND_TEXT_MAX, RoundRefusal,
   participantsFrom, createRound, addParticipant, closeRound, nextRoundNumber, storedRound,
-  submitEntry, withdrawEntry, passEntry, recordReading, readingFailed, confirmEntry, rereadEntry, offerForcedMove, takeCardMoves,
+  submitEntry, withdrawEntry, passEntry, recordReading, readingFailed, confirmEntry, rereadEntry, offerForcedMove, takeCardMoves, isOwedEntry,
   validateChoices, cleanSubmissionText,
   readyToResolve, readingsInFlight, beginResolution, actingOrder, fixActing,
   markRolled, markRecorded, markRefused, allSettled,
@@ -183,6 +183,48 @@ describe('transitions', () => {
     expect(confirmEntry(ready, { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW })).toBe(ready);   // nothing to drop
     expect(withdrawEntry(offer(ready), { userId: 'pl-1' }).entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.WAITING, offer: { text: 'Dive' } });
     expect(passEntry(offer(ready), { userId: 'pl-1' }).entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.PASSED, offer: { text: 'Dive' } });
+  });
+});
+
+describe('a roll a card owes — the resist roll at 0 (issue #342 D2, ruling A)', () => {
+  const owedMove = { moveId: 'endure_harm', owed: true };
+  const press = (r, extra = {}) => offerForcedMove(r, {
+    userId: 'pl-1', text: 'Kira resists the harm.', forced: owedMove, submissionId: 'o', now: NOW, messageId: 'm-resist', ...extra,
+  });
+
+  it('is the entry even beside an action already written — which is set aside for the next round, not offered', () => {
+    const ready = confirmEntry(readied(open(), 'pl-1'), { userId: 'pl-1', submissionId: 's-pl-1', choices: {}, now: NOW });
+    const res = press(ready);
+    expect(res.read).toBe(true);
+    expect(res.held).toEqual([]);
+    const e = res.round.entries['pl-1'];
+    expect(e).toMatchObject({ status: ENTRY_STATUS.SUBMITTED, text: 'Kira resists the harm.', submissionId: 'o', offer: null,
+      readAs: { move: true, forced: owedMove, messageId: 'm-resist' }, setAside: { text: 'pl-1 acts' } });
+    expect(isOwedEntry(e)).toBe(true);
+    expect(res.round.order).toEqual([]);                                  // out of the confirm order until confirmed
+  });
+
+  it('a card move it displaces is held for the next round; a second owed move is held itself', () => {
+    const tda = offerForcedMove(open(), { userId: 'pl-1', text: 'Finish it', forced: { moveId: 'take_decisive_action' }, submissionId: 't', now: NOW, messageId: 'm-tda' }).round;
+    const res = press(tda);
+    expect(res.held).toEqual([{ userId: 'pl-1', messageId: 'm-tda' }]);
+    expect(res.round.entries['pl-1'].setAside).toBeNull();
+    const again = offerForcedMove(res.round, { userId: 'pl-1', text: 'Kira resists the stress.', forced: { moveId: 'endure_stress', owed: true }, submissionId: 'o2', now: NOW, messageId: 'm-stress' });
+    expect(again.round).toBe(res.round);
+    expect(again.held).toEqual([{ userId: 'pl-1', messageId: 'm-stress' }]);
+  });
+
+  it('refuses Withdraw, Pass, a rewrite and a re-read; a confirm keeps an offer beside it undecided', () => {
+    let r = press(open()).round;
+    r = recordReading(r, { userId: 'pl-1', submissionId: 'o', reading: MOVE_READING });
+    refusedWith(() => withdrawEntry(r, { userId: 'pl-1' }), 'owed');
+    refusedWith(() => passEntry(r, { userId: 'pl-1' }), 'owed');
+    refusedWith(() => submitEntry(r, { userId: 'pl-1', text: 'I run.', submissionId: 'n', now: NOW }), 'owed');
+    r = offerForcedMove(r, { userId: 'pl-1', text: 'Dive', forced: { moveId: 'face_danger' }, submissionId: 'd', now: NOW, messageId: 'm-dive' }).round;
+    refusedWith(() => rereadEntry(r, { userId: 'pl-1', submissionId: 'o', newSubmissionId: 'u', now: NOW, useOffer: true }), 'owed');
+    const confirmed = confirmEntry(r, { userId: 'pl-1', submissionId: 'o', choices: {}, now: NOW });
+    expect(confirmed.entries['pl-1']).toMatchObject({ status: ENTRY_STATUS.READY, offer: { text: 'Dive' } });
+    expect(confirmEntry(confirmed, { userId: 'pl-1', submissionId: 'o', choices: {}, now: NOW })).toBe(confirmed);
   });
 });
 

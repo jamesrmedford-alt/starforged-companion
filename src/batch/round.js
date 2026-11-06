@@ -92,6 +92,21 @@ export function entryFor(round, userId) {
 }
 
 /**
+ * True for an entry that is a move a card owes — the resist roll at 0 a
+ * suffer card posts (`owedMove`, issue #330 D3): the roller's next move, not
+ * optional — it can't be withdrawn, passed, edited or set aside for the
+ * player's own action (issue #342 D2).
+ *
+ * @param {Object|null} entry
+ * @returns {boolean}
+ */
+export function isOwedEntry(entry) {
+  return entry?.readAs?.forced?.owed === true;
+}
+
+const OWED_MESSAGE = "This roll is owed — resisting is your next move, so it can't be withdrawn, passed or changed.";
+
+/**
  * The round as stored, or null when the setting holds nothing usable — a
  * malformed value is treated as no round, never thrown on.
  *
@@ -158,6 +173,7 @@ function newEntry(participant) {
     reading:      null,
     choices:      null,
     offer:        null,
+    setAside:     null,
     rolled:       null,
     upgrade:      null,
     error:        null,
@@ -302,6 +318,7 @@ export function submitEntry(round, { userId, text, submissionId, now, readAs = n
   if (!clean) refuse("bad-text", `An action must be 1–${ROUND_TEXT_MAX} characters.`);
   if (!submissionId) refuse("bad-submission", "That submission carried no id.");
   if (entry.submissionId === submissionId) return round;   // a repeat of the same submission
+  if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.SUBMITTED, text: clean, submissionId, submittedAt: now,
     readyAt: null, reading: null, choices: null, error: null, readAs: readAs ?? null,
@@ -320,6 +337,7 @@ export function withdrawEntry(round, { userId }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   if (entry.status === ENTRY_STATUS.WAITING) return round;
+  if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.WAITING, submissionId: null, submittedAt: null, readyAt: null,
     reading: null, choices: null, error: null, readAs: null,
@@ -339,6 +357,7 @@ export function passEntry(round, { userId }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   if (entry.status === ENTRY_STATUS.PASSED) return round;
+  if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.PASSED, submissionId: null, readyAt: null, reading: null,
     choices: null, error: null, readAs: null,
@@ -395,11 +414,14 @@ export function confirmEntry(round, { userId, submissionId, choices, now }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   if (entry.submissionId !== submissionId) refuse("stale", "That reading is out of date — your action was changed since.");
-  if (entry.status === ENTRY_STATUS.READY) return entry.offer ? withEntry(round, userId, { offer: null }) : round;
+  // An owed roll is no choice against an offer: confirming it drops nothing —
+  // a card's move offered beside it waits for the next round.
+  const owed = isOwedEntry(entry);
+  if (entry.status === ENTRY_STATUS.READY) return entry.offer && !owed ? withEntry(round, userId, { offer: null }) : round;
   if (entry.status !== ENTRY_STATUS.READ || !entry.reading) refuse("unread", "Your action hasn't been read yet.");
   const checked = validateChoices(entry.reading, choices);
   return withEntry(round, userId, {
-    status: ENTRY_STATUS.READY, choices: checked, readyAt: now, offer: null,
+    status: ENTRY_STATUS.READY, choices: checked, readyAt: now, offer: owed ? (entry.offer ?? null) : null,
   }, { order: [...withoutUser(round.order, userId), userId] });
 }
 
@@ -418,6 +440,7 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   if (entry.submissionId !== submissionId) refuse("stale", "That reading is out of date — your action was changed since.");
+  if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   if (useOffer) {
     if (!entry.offer) refuse("no-offer", "There is no card move to use.");
     return withEntry(round, userId, {
@@ -447,26 +470,46 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
  * (`messageId`): a card move the round does not take is held for the next
  * round by it (takeCardMoves) — its card is claimed, so it is never dropped.
  *
+ * A move the card owes (`forced.owed` — the resist roll at 0, issue #330 D3)
+ * is the roller's next move, not an option (issue #342 D2): it becomes the
+ * entry even beside an action already written, which is set aside for the
+ * next round (`setAside` — its author's window keeps it as the draft; a card
+ * move that was the entry is handed back in `held`, to be held). A second
+ * owed move while one is the entry is held for the next round itself.
+ *
  * @param {Object} round
  * @param {{ userId: string, text: string, forced: Object, submissionId: string, now: string,
  *   messageId?: string|null }} args
- * @returns {{ round: Object, read: boolean }} `read`: the forced move is the entry now, to be read
+ * @returns {{ round: Object, read: boolean, held: Array<{ userId: string, messageId: string }> }}
+ *   `read`: the forced move is the entry now, to be read; `held`: card moves for the driver to hold
  */
 export function offerForcedMove(round, { userId, text, forced, submissionId, now, messageId = null }) {
   requireCollecting(round);
   const entry = requireEntry(round, userId);
   const clean = cleanSubmissionText(text) ?? cleanSubmissionText(forced?.moveName ?? forced?.moveId ?? "") ?? "—";
   const own = OWN_ACTION.has(entry.status);
-  if (own) {
-    return { round: withEntry(round, userId, { offer: { text: clean, forced, messageId, at: now } }), read: false };
+  const owed = forced?.owed === true;
+  if (owed && isOwedEntry(entry) && own) {
+    return { round, read: false, held: messageId ? [{ userId, messageId }] : [] };
   }
+  if (own && !owed) {
+    return { round: withEntry(round, userId, { offer: { text: clean, forced, messageId, at: now } }), read: false, held: [] };
+  }
+  // The entry now: a written action it displaces is set aside for the next
+  // round; a card move it displaces is held for it.
+  const displacedCard = own && entry.readAs?.messageId ? entry.readAs.messageId : null;
+  const setAside = own && !displacedCard && entry.text ? { text: entry.text, at: now } : null;
   return {
     round: withEntry(round, userId, {
       status: ENTRY_STATUS.SUBMITTED, text: clean, submissionId, submittedAt: now,
-      readyAt: null, reading: null, choices: null, error: null, offer: null,
+      readyAt: null, reading: null, choices: null, error: null,
+      // An offer still undecided stays beside the new entry (it joins the next round).
+      offer: entry.offer ?? null,
       readAs: { move: true, forced, messageId },
+      ...(setAside ? { setAside } : {}),
     }, { order: withoutUser(round.order, userId) }),
     read: true,
+    held: displacedCard ? [{ userId, messageId: displacedCard }] : [],
   };
 }
 

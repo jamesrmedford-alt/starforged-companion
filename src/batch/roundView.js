@@ -17,7 +17,7 @@
  *   - With no session, no keyed GM, or no GM at all, the window says why.
  */
 
-import { ROUND_PHASE, ENTRY_STATUS, READING_KIND, roundIsOpen, isResolving, entryFor, undecidedUpgrades } from "./round.js";
+import { ROUND_PHASE, ENTRY_STATUS, READING_KIND, roundIsOpen, isResolving, entryFor, isOwedEntry, undecidedUpgrades } from "./round.js";
 
 /** The labels an entry's status shows its own player. */
 const OWN_STATUS_LABELS = Object.freeze({
@@ -113,6 +113,9 @@ function ownView(round, viewer, { collecting, moveLabel, statLabel, notReceived 
   const status = entry.status;
   const awaitingUpgrade = round.phase === ROUND_PHASE.UPGRADING && entry.upgrade && !entry.upgrade.decided;
   const statusLabel = awaitingUpgrade ? "Deciding upgrade" : (OWN_STATUS_LABELS[status] ?? null);
+  // A roll a card owes (the resist roll at 0) is confirmed, never withdrawn,
+  // passed, edited or swapped for the player's own action (issue #342 D2).
+  const owed = isOwedEntry(entry);
   return {
     actorName:    entry.actorName,
     status,
@@ -123,21 +126,24 @@ function ownView(round, viewer, { collecting, moveLabel, statLabel, notReceived 
     notReceived:  !!notReceived,
     reading,
     choices:      entry.choices ?? null,
+    owed,
+    // The action the player wrote, set aside for the owed roll: their draft for the next round.
+    setAside:     typeof entry.setAside?.text === "string" && entry.setAside.text ? entry.setAside.text : null,
     // A card's move offered beside the player's own: use it, or keep their own
     // reading (Keep mine — once there is one to keep). Undecided, it joins
     // the next round.
     offer:        entry.offer ? {
       text:     entry.offer.text,
       moveName: entry.offer.forced?.moveId ? moveLabel(entry.offer.forced.moveId) : null,
-      canUse:   collecting,
-      canKeep:  collecting && (status === ENTRY_STATUS.READ || status === ENTRY_STATUS.READY) && !!entry.reading,
+      canUse:   collecting && !owed,
+      canKeep:  collecting && !owed && (status === ENTRY_STATUS.READ || status === ENTRY_STATUS.READY) && !!entry.reading,
     } : null,
-    canEdit:      collecting,
-    canSubmit:    collecting,
-    canPass:      collecting && status !== ENTRY_STATUS.PASSED,
-    canWithdraw:  collecting && status !== ENTRY_STATUS.WAITING && status !== ENTRY_STATUS.PASSED,
+    canEdit:      collecting && !owed,
+    canSubmit:    collecting && !owed,
+    canPass:      collecting && !owed && status !== ENTRY_STATUS.PASSED,
+    canWithdraw:  collecting && !owed && status !== ENTRY_STATUS.WAITING && status !== ENTRY_STATUS.PASSED,
     canConfirm:   collecting && status === ENTRY_STATUS.READ && !!reading && !reading.blocked,
-    canReread:    collecting && status === ENTRY_STATUS.READ && reading?.kind === READING_KIND.NARRATIVE,
+    canReread:    collecting && !owed && status === ENTRY_STATUS.READ && reading?.kind === READING_KIND.NARRATIVE,
     upgrade:      awaitingUpgrade ? upgradeView(entry, { moveLabel }) : null,
   };
 }

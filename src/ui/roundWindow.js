@@ -261,6 +261,11 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       out.push(`<p class="sf-round-hint">You're sitting this round out. Write an action to join it after all.</p>`);
     }
     if (!writing && own.text) out.push(`<blockquote class="sf-round-line">${escapeHtml(own.text)}</blockquote>`);
+    // A roll the card owes: the player's next move — confirmed, never withdrawn, passed or edited (issue #342 D2).
+    if (own.owed) {
+      out.push(`<p class="sf-round-hint">This roll is owed — resisting is your next move, so it can't be withdrawn, passed or changed.</p>`);
+      if (own.setAside) out.push(`<p class="sf-round-hint">The action you wrote — <em>${escapeHtml(own.setAside)}</em> — is kept as your draft for the next round.</p>`);
+    }
 
     if (own.offer) {
       out.push(`<div class="sf-round-offer"><p>A card offers ${escapeHtml(own.offer.moveName ?? "a move")} for you: <em>${escapeHtml(own.offer.text)}</em></p>`
@@ -294,6 +299,8 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
         + (own.canWithdraw ? `<button type="button" data-action="withdraw">Withdraw</button>` : "")
         + (own.canPass ? `<button type="button" data-action="pass">Pass</button>` : "")
         + `</div>`);
+    } else if (own.owed && own.canConfirm) {
+      out.push(`<div class="sf-round-actions"><button type="button" class="sf-round-primary" data-action="confirm">Confirm</button></div>`);
     }
     out.push(`</section>`);
     return out.join("");
@@ -708,6 +715,13 @@ export function registerRoundWindowHooks() {
       if (round?.phase === ROUND_PHASE.COLLECTING && round.id !== _lastOpenedRoundId && isBatchModeEnabled() && roundIsMine(round)) {
         _lastOpenedRoundId = round.id;
         await RoundWindowApp.open();
+      }
+      // The action this player wrote, set aside for a roll a card owes, is
+      // their draft for the next round (the GM cannot write a client's draft).
+      const setAside = entryFor(round, game.user?.id)?.setAside?.text ?? "";
+      if (setAside && !getRoundDraft().trim()) {
+        await setRoundDraft(setAside);
+        await RoundWindowApp.instance?.draftFromOutside(setAside);
       }
       if (round?.phase === ROUND_PHASE.CLOSED && ["session-ended", "discarded", "mode-off"].includes(round.closeReason)) {
         const mine = entryFor(round, game.user?.id);
