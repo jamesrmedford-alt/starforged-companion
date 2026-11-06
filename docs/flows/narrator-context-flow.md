@@ -56,14 +56,17 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   line and a latitude line — and the instruction to act for no one else and
   remark on no one who didn't act. Who sat the round out is never sent. Its
   sidecar, X-Card gate, rate-limit retry, `!narrator debug` capture and
-  fallback are every narration's; its one capture pass runs at the widest
-  class (`runRoundNarrationPasses`) among the entries it captures — a Make a
-  Connection miss creates no one (scope §9) and takes no part, so the rest of
-  the round is captured whatever the confirm order (issue #342 Z08: a round
-  led by a miss skipped its whole capture); each Make a Connection hit creates
-  the figure its own character met, with its own seed and bond, synchronously
-  (Z09 — `connection-flow.md` §1); the tier pass runs whatever the class,
-  each entry by its free-flow rule (Z10 — "Post-narration capture" below).
+  fallback are every narration's; its capture (`runRoundNarrationPasses`) is
+  one detection call, at the widest class among the entries it captures — a
+  Make a Connection miss creates no one (scope §9) and takes no part, so the
+  rest of the round is captured whatever the confirm order (issue #342 Z08: a
+  round led by a miss skipped its whole capture) — its results routed per
+  entry: each Make a Connection hit creates the figure its own character met,
+  with its own seed and bond, synchronously (Z09 — `connection-flow.md` §1),
+  and the rest wait on a draft card carrying every acting PC, whose
+  connection rows ask which of them, or no one (D3); the tier pass runs
+  whatever the class, each entry by its free-flow rule (Z10 — "Post-narration
+  capture" below).
 - **Claude-calling chat commands** — `@scene`, `!recap`, `!ship envision`,
   `!ship history`, `!incite` — route `RUN_ON.CLAUDE` (`CHAT_COMMAND_ROUTES`,
   `src/index.js`; policy in `src/multiplayer/commandRouting.js`): the keyed canonical GM when `hasKeyedActiveGM()`, else the
@@ -512,7 +515,9 @@ its own relevance (`roundTierRefs`; issue #342 Z10 — it ran over the rolled
 moves' entities only, and not at all beside a discovery roll). New entities from any of these queue on
 the GM's draft card — only make_a_connection auto-creates; the card carries
 the PC the narration was for (`actorId`, every path that knows it), whose
-sheet a confirmed connection's bond Item goes on (issue #321 U23). The
+sheet a confirmed connection's bond Item goes on (issue #321 U23) — a
+round's card every acting PC (`actorIds`), its connection rows' Confirm asking
+which of them, or no one (issue #342 D3). The
 detection reply's cap is 1,500 tokens (`DETECTION_MAX_TOKENS`; it was 600):
 a reply cut off or not a JSON object is logged and the GM told
 (`notifyDetectionFailure`), where it used to drop the narration's entities,

@@ -99,7 +99,12 @@ recorded under its name promoted to it; its bond is §2's.
   #302), Dismiss records the name in `dismissedEntities`. The card carries the
   PC its narration was for (flag `actorId`, stamped by every detection path
   that knows it — move, paced, `@scene`, oracle follow-up), and Confirm puts
-  the bond Item on that PC (issue #321 U23). Each Confirm / Dismiss writes its
+  the bond Item on that PC (issue #321 U23). A Batch Mode round's card
+  carries every acting PC instead (`actorIds`; issue #342 D3, the
+  maintainer's ruling A — it was the first entry's PC): a connection row's
+  Confirm is a button per acting PC and **No one**, the pick checked against
+  the card's own `actorIds` (`draftConfirmPick`), and the bond goes on the PC
+  picked, or on no sheet (`draftBondHolder`). Each Confirm / Dismiss writes its
   own row's status, one write at a time per card, on the live card
   (`setDraftStatus`) — a whole-card copy written back reverted a row resolved
   meanwhile — and Confirm creates nothing when an entity of that name and

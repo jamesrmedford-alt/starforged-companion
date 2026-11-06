@@ -536,6 +536,10 @@ function detectionFromParsed(parsed, campaignState) {
  * @param {string|null} [options.actorId] — the PC the narration was for (the
  *   roller): an auto-created connection's bond Item goes to them, and the
  *   draft card carries it so Confirm does too (issue #321 U23).
+ * @param {string[]|null} [options.actorIds] — a Batch Mode round's acting PCs:
+ *   with two or more, the draft card carries them all (`flags.actorIds`) in
+ *   place of `actorId`, and a connection row's Confirm asks which of them the
+ *   NPC is a connection of, or none (issue #342 D3).
  * @param {string|null} [options.narrationId] — the narration whose capture
  *   this is: stamped on the faction it surfaces to the World Journal, so an
  *   X-Card on the narration deletes that page (issue #335 Y02; issue #329
@@ -653,7 +657,9 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
 
   if (removed()) return { created, queued: [] };
   if (queued.length) {
-    await postDraftEntityCard(queued, campaignState, { source: options.source, actorId: options.actorId, narrationId });
+    await postDraftEntityCard(queued, campaignState, {
+      source: options.source, actorId: options.actorId, actorIds: options.actorIds ?? null, narrationId,
+    });
   }
 
   return { created, queued };
@@ -1751,7 +1757,15 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   // the rendered DOM.
   const drafts = entities.map((e, idx) => ({ ...e, index: idx, status: "pending" }));
 
-  const html = renderDraftCardHtml(drafts);
+  // A Batch Mode round's narration is several PCs' (issue #342 D3): the card
+  // carries every acting PC (`actorIds`), and a connection row's Confirm asks
+  // which of them the NPC is a connection of, or none — the detection cannot
+  // tell which of them met whom.
+  const listed = [...new Set((Array.isArray(options.actorIds) ? options.actorIds : [])
+    .filter(id => typeof id === "string" && id))];
+  const actorIds = listed.length > 1 ? listed : [];
+
+  const html = renderDraftCardHtml(drafts, actorIds.length ? draftCardHolders(actorIds) : null);
 
   const whisper = collectGmIds();
 
@@ -1763,7 +1777,8 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
   const source = options.source === "paced_narrative" ? "paced_narrative" : "move_resolution";
   // The PC the narration was for: a confirmed connection's bond Item goes to
   // them (confirmDraft), not the first PC (issue #321 U23).
-  const actorId = typeof options.actorId === "string" && options.actorId ? options.actorId : null;
+  const actorId = actorIds.length ? null
+    : (typeof options.actorId === "string" && options.actorId ? options.actorId : (listed[0] ?? null));
   // The narration whose capture queued these rows: an X-Card on it withdraws
   // the ones still pending (withdrawNarrationDrafts — issue #338 D6(i)).
   const narrationId = typeof options.narrationId === "string" && options.narrationId ? options.narrationId : null;
@@ -1777,7 +1792,7 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
           draftEntityCard: true,
           drafts,
           source,
-          ...(actorId ? { actorId } : {}),
+          ...(actorIds.length ? { actorIds } : (actorId ? { actorId } : {})),
           ...(narrationId ? { narrationId } : {}),
         },
       },
@@ -1789,11 +1804,28 @@ async function postDraftEntityCard(entities, _campaignState, options = {}) {
 }
 
 /**
+ * The acting PCs a round's draft card offers a connection row to (issue #342
+ * D3): each of `actorIds` that is still a PC, with its current name.
+ *
+ * @param {string[]} actorIds
+ * @returns {Array<{ actorId: string, name: string }>}
+ */
+function draftCardHolders(actorIds) {
+  return (Array.isArray(actorIds) ? actorIds : [])
+    .map(id => globalThis.game?.actors?.get?.(id) ?? null)
+    .filter(isPlayerCharacterActor)
+    .map(actor => ({ actorId: actor.id, name: String(actor.name ?? "").trim() || "Unnamed character" }));
+}
+
+/**
  * Render the HTML body of the draft entity card from a `drafts` array.
  * Pure / re-runnable so the renderChatMessage hook can rebuild after each
- * Confirm/Dismiss click.
+ * Confirm/Dismiss click. `holders` — on a round's card, its acting PCs
+ * (draftCardHolders): a pending connection row asks whose connection it is,
+ * a button per PC and "No one", in place of its Confirm (issue #342 D3);
+ * null on any other card.
  */
-function renderDraftCardHtml(drafts) {
+function renderDraftCardHtml(drafts, holders = null) {
   const items = drafts.map((e) => {
     const glyph = TYPE_GLYPHS[e.type] ?? "◇";
     const label = TYPE_LABELS[e.type] ?? e.type;
@@ -1807,6 +1839,16 @@ function renderDraftCardHtml(drafts) {
       actions = `<span class="sf-draft-status sf-draft-status-dismissed">✕ Dismissed</span>`;
     } else if (status === DRAFT_XCARDED) {
       actions = `<span class="sf-draft-status sf-draft-status-xcarded">Withdrawn — X-Card</span>`;
+    } else if (e.type === "connection" && Array.isArray(holders)) {
+      actions =
+        `<span class="sf-draft-holder-ask">Confirm — whose connection?</span>` +
+        holders.map(h =>
+          `<button class="sf-draft-btn sf-draft-confirm" data-action="sf-draft-confirm" ` +
+          `data-index="${e.index}" data-actor-id="${escapeHtml(h.actorId)}">${escapeHtml(h.name)}</button>`).join("") +
+        `<button class="sf-draft-btn sf-draft-confirm" data-action="sf-draft-confirm" ` +
+        `data-index="${e.index}" data-actor-id="">No one</button>` +
+        `<button class="sf-draft-btn sf-draft-dismiss" ` +
+        `data-action="sf-draft-dismiss" data-index="${e.index}">Dismiss</button>`;
     } else {
       actions =
         `<button class="sf-draft-btn sf-draft-confirm" ` +
@@ -1877,7 +1919,8 @@ export function registerDraftCardHooks() {
         ev.preventDefault();
         ev.stopPropagation();
         const idx = Number(btn.dataset.index);
-        handleDraftConfirm(message, idx).catch(err =>
+        // A round's connection row: whose connection the GM picked ("" — no one).
+        handleDraftConfirm(message, idx, btn.dataset.actorId).catch(err =>
           console.error(`${MODULE_ID} | draft confirm failed:`, err));
       });
     });
@@ -1899,27 +1942,84 @@ export function registerDraftCardHooks() {
 // double-click, a re-rendered card — created the entity twice (issue #302).
 const _draftsInFlight = new Set();
 
-async function handleDraftConfirm(message, draftIndex) {
+/**
+ * A Confirm press. On a round's card (`flags.actorIds`, issue #342 D3) a
+ * connection row's press names whose connection the NPC is — `pick` is one
+ * of the card's acting PCs, or "" for no one — checked against the card's
+ * own choices, as the connection pickers check theirs; a press that names
+ * none of them creates nothing.
+ *
+ * @param {ChatMessage} message
+ * @param {number} draftIndex
+ * @param {string} [pick] — the pressed button's `data-actor-id`
+ * @returns {Promise<void>}
+ */
+async function handleDraftConfirm(message, draftIndex, pick) {
   const key = `${message?.id}:${draftIndex}`;
   if (_draftsInFlight.has(key)) return;
   _draftsInFlight.add(key);
   try {
-    await confirmDraft(message, draftIndex);
+    const opts = draftConfirmPick(message, draftIndex, pick);
+    if (!opts) {
+      console.warn(`${MODULE_ID} | draft confirm: "${pick ?? ""}" is not a character this card offers — nothing created.`);
+      globalThis.ui?.notifications?.warn?.("Pick whose connection this is — one of the characters on the card, or No one.");
+      return;
+    }
+    await confirmDraft(message, draftIndex, opts);
   } finally {
     _draftsInFlight.delete(key);
   }
 }
 
 /**
+ * The bond a Confirm press asks for (handleDraftConfirm): `{}` — the card's
+ * own PC (`flags.actorId`), as every card but a round's; on a round's card
+ * (`flags.actorIds`) a connection row's pick — `{ actorId }` for one of its
+ * acting PCs, `{ noBond: true }` for no one, or null when the press names
+ * neither (a stale button, a PC no longer on the card).
+ *
+ * @param {ChatMessage} message
+ * @param {number} draftIndex
+ * @param {string|undefined} pick
+ * @returns {{ actorId?: string, noBond?: true }|null}
+ */
+function draftConfirmPick(message, draftIndex, pick) {
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  const offered = Array.isArray(f.actorIds) ? f.actorIds : null;
+  const draft = (Array.isArray(f.drafts) ? f.drafts : []).find(d => d?.index === draftIndex);
+  if (!offered || draft?.type !== "connection") return {};
+  if (pick === "") return { noBond: true };
+  return (typeof pick === "string" && offered.includes(pick) && draftCardHolders([pick]).length) ? { actorId: pick } : null;
+}
+
+/**
+ * Whose sheet a confirmed connection row's bond Item goes on
+ * (registerConnectionOnActiveCharacter's target): `opts.actorId` — a Make a
+ * Connection's roller (confirmNamedPendingConnection, issue #325 W23) or the
+ * PC a GM picked on a round's card; nobody's for `opts.noBond` (issue #342
+ * D3); else the card's own PC (`flags.actorId`, issue #321 U23).
+ *
+ * @param {ChatMessage} message
+ * @param {{ actorId?: string|null, noBond?: boolean }} opts
+ * @returns {{ actorId: string|null }|{ actors: [] }}
+ */
+function draftBondHolder(message, opts) {
+  if (typeof opts?.actorId === "string" && opts.actorId) return { actorId: opts.actorId };
+  if (opts?.noBond === true) return { actors: [] };
+  return { actorId: message?.flags?.[MODULE_ID]?.actorId ?? null };
+}
+
+/**
  * Create a draft row's entity and mark the row confirmed. A connection's bond
  * Item goes to the PC of the card's narration (`flags.actorId`), or to
  * `opts.actorId` — the roller of a Make a Connection that named the pending
- * NPC (issue #325 W23). Returns the created record (null when nothing was
- * created).
+ * NPC (issue #325 W23), or the PC a GM picked on a round's card — or to no
+ * one (`opts.noBond`, issue #342 D3; draftBondHolder). Returns the created
+ * record (null when nothing was created).
  *
  * @param {ChatMessage} message — the draft card
  * @param {number} draftIndex
- * @param {{ actorId?: string|null, narrationId?: string|null }} [opts] —
+ * @param {{ actorId?: string|null, noBond?: boolean, narrationId?: string|null }} [opts] —
  *   `narrationId`: the Make a Connection narration confirming the row,
  *   stamped on the connection with the row (`createdFromNarrationId`,
  *   `createdFromDraft`)
@@ -1950,7 +2050,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     const existing = draft.type === "connection" ? listedConnectionNamed(draft.name, campaignState) : null;
     if (existing) {
       await registerConnectionOnActiveCharacter(existing, {
-        actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
+        ...draftBondHolder(message, opts),
       }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     }
@@ -1994,7 +2094,7 @@ async function confirmDraft(message, draftIndex, opts = {}) {
       // no bond for it (XCARD-LATE-CAPTURE).
       if (isNarrationXCarded(opts.narrationId)) return null;
       await registerConnectionOnActiveCharacter(record, {
-        actorId: opts.actorId ?? message?.flags?.[MODULE_ID]?.actorId ?? null,
+        ...draftBondHolder(message, opts),
       }).catch(err =>
         console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
     } else if (draft.type === "ship") {
@@ -2343,7 +2443,9 @@ async function updateDraftCard(message, drafts) {
   // been removed from the collection.
   if (!message?.id || !globalThis.game?.messages?.get?.(message.id)) return;
 
-  const content = renderDraftCardHtml(drafts);
+  // A round's card keeps asking whose connection a row is (issue #342 D3).
+  const offered = message.flags?.[MODULE_ID]?.actorIds;
+  const content = renderDraftCardHtml(drafts, Array.isArray(offered) && offered.length ? draftCardHolders(offered) : null);
   try {
     // Update content first, then flags via setFlag so we don't accidentally
     // clobber sibling flags (draftEntityCard, source) by passing a partial

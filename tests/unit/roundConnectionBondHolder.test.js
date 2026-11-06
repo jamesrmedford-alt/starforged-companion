@@ -209,3 +209,38 @@ describe("Z09 — each Make a Connection hit in a round creates the connection i
       .toEqual({ 'Dace Mirren': 'pending', 'Orla Teague': 'confirmed' });
   });
 });
+
+describe('D3 (ruling A) — the bond holder of an NPC a round introduces', () => {
+  it("a round where Vex (second entry) talks to a new NPC: the draft card names every acting PC, so Confirm can ask whose connection Doss is", async () => {
+    const round = structuredClone(ROUND);
+    round.entries['pl-1'].rolled.narrationInput = {
+      kind: 'move', moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'edge', outcome: 'weak_hit', outcomeLabel: 'Weak Hit',
+      relevance: { resolvedClass: 'interaction', entityIds: [], entityTypes: [] }, resolutionId: 'res-k',
+    };
+    round.entries['pl-1'].text = 'I squeeze through the maintenance crawlway.';
+    round.entries['pl-2'].rolled.narrationInput = { kind: 'narrative' };
+    round.entries['pl-2'].text = 'I ask the old mechanic, Doss, where the part went.';
+    script(
+      'Kira squeezes through the crawlway while Vex corners Doss, the old mechanic.\n```json\n{"newTruths":[],"stateChanges":[]}\n```',
+      JSON.stringify({ entities: [{ name: 'Doss', type: 'connection', description: 'An old mechanic Vex questions.' }], worldJournal: {}, renames: [] }),
+    );
+    vi.useFakeTimers();
+    try {
+      const res = await narrate(round);
+      expect(res.posted).toBe('card');
+      await vi.advanceTimersByTimeAsync(2500);   // the interaction-class detection runs ~2 s after the card
+    } finally {
+      vi.useRealTimers();
+    }
+    const card = draftCards().find(c => c.flags[MODULE_ID].drafts.some(d => d.name === 'Doss'));
+    expect(card).toBeTruthy();
+    // Ruling A: the card names the round's acting PCs — not silently the first entry's.
+    expect(card.flags[MODULE_ID].actorIds ?? [card.flags[MODULE_ID].actorId]).toEqual(['pc-kira', 'pc-vex']);   // was: ['pc-kira']
+    expect(card.flags[MODULE_ID].actorId).toBeUndefined();
+    // …and Doss's row asks whose connection she is, a button per acting PC and No one.
+    expect(card.content).toContain('Confirm — whose connection?');
+    expect(card.content).toMatch(/data-actor-id="pc-kira">Kira</);
+    expect(card.content).toMatch(/data-actor-id="pc-vex">Vex</);
+    expect(card.content).toMatch(/data-actor-id="">No one</);
+  });
+});

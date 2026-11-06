@@ -1044,7 +1044,10 @@ export async function narrateRound({ round, campaignState }) {
  * synchronously, as free-flow's does (Z09: the round's first connection,
  * whoever met them, went to the first hit's roller with that roller's seed).
  * Otherwise the detection runs ~2 s after the card, at the captured entries'
- * widest class: none at embellishment, as runPostNarrationPasses rules.
+ * widest class: none at embellishment, as runPostNarrationPasses rules. What
+ * it queues goes on a draft card carrying every acting PC (D3 — the
+ * maintainer's ruling A): a connection row's Confirm asks which of them the
+ * NPC is a connection of, or no one; it was filed as the first entry's PC.
  *
  * The tier pass — an NPC's NARRATOR-ADDED developments — runs whatever that
  * class is, over what the round's interaction-class entries were about
@@ -1083,7 +1086,10 @@ function runRoundNarrationPasses(narration, entries, campaignState, { narrationI
     }, ASYNC_DETECTION_DELAY_MS);
   }
 
-  const options = { actorId: lead?.actorId ?? null, narrationId };
+  // Its draft card carries every acting PC — whose connection a figure is,
+  // the GM's Confirm asks (issue #342 D3); one acting PC is free-flow's card.
+  const actorIds = [...new Set(entries.map(e => e.actorId).filter(id => typeof id === 'string' && id))];
+  const options = { actorId: actorIds.length === 1 ? actorIds[0] : null, actorIds, narrationId };
   if (hits.length) {
     const owner = roundFigureOwner(entries, narration);
     return runDiscoveryDetection(narration, resolution, campaignState, {
@@ -1487,6 +1493,9 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       // A Batch Mode round's Make a Connection hits, each its own roller and
       // seed (runRoundNarrationPasses — issue #342 Z09).
       connectionRollers:    options.connectionRollers ?? null,
+      // A round's acting PCs: its draft card asks which of them a new
+      // connection belongs to (issue #342 D3).
+      actorIds:             options.actorIds ?? null,
       sessionId:            campaignState?.currentSessionId ?? '',
       actorId:              options.actorId ?? null,
       // What names a Make a Connection's NPC — a pending draft's included
