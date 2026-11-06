@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-2 RIDER-PROMPT-HOLDS-NEXT-ROUND (eleventh audit).
  *
@@ -60,7 +61,7 @@ vi.mock('../../../src/moves/resolver.js', async (importOriginal) => {
   };
 });
 
-import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
+import { simulateTable, USERS } from '../../helpers/multiClient.js';
 import { scriptClaude, deferred } from '../../helpers/faults.js';
 import { CampaignStateSchema } from '../../../src/schemas.js';
 

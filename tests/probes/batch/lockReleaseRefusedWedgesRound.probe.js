@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-10 ROUND-LOCK-RELEASE-NO-RETRY (eleventh audit).
  *
@@ -47,7 +48,7 @@ vi.mock('../../../src/moves/resolver.js', async (importOriginal) => {
   };
 });
 
-import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
+import { simulateTable, USERS } from '../../helpers/multiClient.js';
 import { campaignStateWrite, failWrites, scriptClaude } from '../../helpers/faults.js';
 import { CampaignStateSchema } from '../../../src/schemas.js';
 

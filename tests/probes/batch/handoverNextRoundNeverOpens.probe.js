@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-6 HANDOVER-NEXT-ROUND-NOT-OPENED (eleventh audit).
  *
@@ -49,7 +50,7 @@ vi.mock('../../../src/moves/resolver.js', async (importOriginal) => {
   };
 });
 
-import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
+import { simulateTable, USERS } from '../../helpers/multiClient.js';
 import { scriptClaude } from '../../helpers/faults.js';
 import { CampaignStateSchema } from '../../../src/schemas.js';
 

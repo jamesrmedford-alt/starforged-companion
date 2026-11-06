@@ -26,6 +26,8 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/upgrades/roundUpgradeRiderPickerRefused.probe.js
  */
 
+/* global silenceConsoleErrors */
+
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 
 const control = vi.hoisted(() => ({ dice: [] }));

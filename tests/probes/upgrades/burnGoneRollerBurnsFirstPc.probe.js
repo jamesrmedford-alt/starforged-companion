@@ -17,6 +17,8 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/upgrades/burnGoneRollerBurnsFirstPc.probe.js
  */
 
+/* global silenceConsoleErrors, makeTestActor */
+
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { applyBurnFromRelay, registerBurnMomentumHook } from '../../../src/moves/burnMomentum.js';
 import { applyImproveFromRelay, registerImproveResultHook } from '../../../src/moves/improveResult.js';

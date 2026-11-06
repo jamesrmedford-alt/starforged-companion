@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors, structuredClone -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-13 ROUND-ROLL-INSTEAD-NO-TARGET (eleventh audit; PACED-VARIANT-NO-TARGET in the round).
  *

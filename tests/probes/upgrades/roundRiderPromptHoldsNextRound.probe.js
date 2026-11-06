@@ -20,6 +20,8 @@
  * Run: npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/upgrades/roundRiderPromptHoldsNextRound.probe.js
  */
 
+/* global silenceConsoleErrors */
+
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach, vi } from 'vitest';
 
 const control = vi.hoisted(() => ({ dice: [] }));

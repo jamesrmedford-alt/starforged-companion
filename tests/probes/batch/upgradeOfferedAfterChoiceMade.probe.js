@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-14 UPGRADE-OFFER-IGNORES-CHOICE (eleventh audit).
  *

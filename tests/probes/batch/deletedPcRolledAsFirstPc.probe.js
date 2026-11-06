@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-4 ROUND-ENTRY-PC-GONE-FIRST-PC (eleventh audit).
  *

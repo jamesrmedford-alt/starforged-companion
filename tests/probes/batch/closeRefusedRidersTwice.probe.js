@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-15 ROUND-CLOSE-REFUSED-RIDERS-TWICE (eleventh audit).
  *

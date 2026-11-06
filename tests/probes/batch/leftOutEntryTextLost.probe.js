@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-5 READ-FAILED-TEXT-GONE, second path (eleventh audit).
  *

@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-12 HELD-CARD-MOVE-LOST-ON-MODE-OFF (eleventh audit).
  *

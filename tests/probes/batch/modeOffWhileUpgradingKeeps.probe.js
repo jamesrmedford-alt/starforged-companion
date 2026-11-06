@@ -1,3 +1,4 @@
+/* global silenceConsoleErrors -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-9 MODE-OFF-FORCES-KEEP (eleventh audit).
  *

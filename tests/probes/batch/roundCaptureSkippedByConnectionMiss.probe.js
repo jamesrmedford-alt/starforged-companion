@@ -1,3 +1,4 @@
+/* global makeTestActor -- tests/setup.js and Node globals, as in tests/unit */
 /**
  * Probe — BATCH-3 ROUND-CAPTURE-LEAD-CONNECTION-MISS (eleventh audit).
  *
