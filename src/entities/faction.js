@@ -267,32 +267,42 @@ export async function seedFactionRecord(journalEntryId) {
  * (FACTION-PACKET-DEAD / FACTION-DUAL-STORE fix): entity records win for
  * record-backed factions (their `relationship` is the canonical stance);
  * WJ-only factions contribute their attitude + known goal. Deduped by name,
- * capped. Pure — exported for unit testing.
+ * the most recently updated first — a faction's time is the later of its
+ * record's `updatedAt` (every stance write, seed and attitude sync stamps it)
+ * and its World Journal entry's — then capped. Records and World Journal
+ * factions compete for the cap on that time: in creation order a campaign's
+ * first four records held it for good, and no newer faction ever reached
+ * [4e] (issue #342 Z13). Equal times keep the input order (records, then the
+ * World Journal's). Pure — exported for unit testing.
  *
  * @param {Array<Object>} records   — faction entity records (listFactions)
- * @param {Array<Object>} wjEntries — WJ faction entries (getFactionLandscape)
+ * @param {Array<Object>} wjEntries — WJ faction entries (getFactionLandscape),
+ *   every one: a faction's World Journal time can lift its record into the cap
  * @param {number} [cap=4]
  * @returns {Array<{ name: string, stance: string, detail: string }>}
  */
 export function mergeFactionLandscape(records, wjEntries, cap = 4) {
-  const out = [];
-  const seen = new Set();
+  const byKey = new Map();   // factionNameKey → { line, at, order }
+  const stamp = (v) => String(v ?? "");
 
   for (const f of records ?? []) {
     if (!f?.name) continue;
     const key = factionNameKey(f.name);
-    if (seen.has(key)) continue;
-    seen.add(key);
+    if (byKey.has(key)) continue;
     const latestProject = f.projects?.[f.projects.length - 1];
-    out.push({
-      name:   f.name,
-      stance: (f.relationship && f.relationship !== "unknown")
-        ? f.relationship.replace(/_/g, " ")
-        : "",
-      detail: [
-        f.subtype ? `${f.type}: ${f.subtype}` : f.type,
-        latestProject ? `project: ${latestProject}` : "",
-      ].filter(Boolean).join(" · "),
+    byKey.set(key, {
+      at:    stamp(f.updatedAt),
+      order: byKey.size,
+      line:  {
+        name:   f.name,
+        stance: (f.relationship && f.relationship !== "unknown")
+          ? f.relationship.replace(/_/g, " ")
+          : "",
+        detail: [
+          f.subtype ? `${f.type}: ${f.subtype}` : f.type,
+          latestProject ? `project: ${latestProject}` : "",
+        ].filter(Boolean).join(" · "),
+      },
     });
   }
 
@@ -300,16 +310,28 @@ export function mergeFactionLandscape(records, wjEntries, cap = 4) {
     const name = e?.factionName ?? "";
     if (!name) continue;
     const key = factionNameKey(name);
-    if (seen.has(key)) continue;
-    seen.add(key);
-    out.push({
-      name,
-      stance: (e.attitude && e.attitude !== "unknown") ? e.attitude : "",
-      detail: e.knownGoal ? `goal: ${e.knownGoal}` : "",
+    const at  = stamp(e.updatedAt);
+    const hit = byKey.get(key);
+    if (hit) {
+      // The record's line; the later of the two times.
+      if (at.localeCompare(hit.at) > 0) hit.at = at;
+      continue;
+    }
+    byKey.set(key, {
+      at,
+      order: byKey.size,
+      line:  {
+        name,
+        stance: (e.attitude && e.attitude !== "unknown") ? e.attitude : "",
+        detail: e.knownGoal ? `goal: ${e.knownGoal}` : "",
+      },
     });
   }
 
-  return out.slice(0, Math.max(0, cap));
+  return [...byKey.values()]
+    .sort((a, b) => b.at.localeCompare(a.at) || a.order - b.order)
+    .slice(0, Math.max(0, cap))
+    .map(c => c.line);
 }
 
 export function listFactions(campaignState) {

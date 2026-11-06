@@ -385,10 +385,13 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   extras.activeThreats    = wjSectionEnabled('threatsInContext')
     ? safeWjRead(() => getActiveThreats(campaignState).slice(0, 4), 'threats')
     : [];
+  // The most recently updated factions, records and World Journal ranked
+  // together (issue #342 Z13 — in creation order the first four records held
+  // the block for good).
   extras.factionLandscape = wjSectionEnabled('factionLandscapeInContext')
     ? safeWjRead(() => mergeFactionLandscape(
         listFactions(campaignState),
-        getFactionLandscape(campaignState),
+        getFactionLandscape(campaignState, { limit: Infinity }),
       ), 'factions')
     : [];
 

@@ -22,8 +22,9 @@ auto-surface in `routeEntityDrafts` included, since issue #335 Y02 — carries
 the narration's `narrationId`, so an X-Card on that narration deletes a page
 it made and restores one it rewrote (`undoNarrationEntries`, issue #329 X01);
 the auto-surface was unstamped and the removed faction stayed in [4e]. Read
-by `getFactionLandscape` (up to 3, most recently updated) and `!journal
-faction` commands.
+by `getFactionLandscape` (most recently updated first: up to 3 for the
+detection pass, every one for the narrator's [4e] merge — `{ limit }`) and
+`!journal faction` commands.
 
 **Identity by name** (issue #336 Y31): one faction is one page and one
 stance whatever article, case or spacing names it. Every faction lookup by
@@ -73,15 +74,21 @@ the active sector, rendered in the ACTIVE SECTOR block. Static, name-only.
 - **Matched entity cards** render the full record (type, influence,
   `relationship` stance, latest project, quirk, description, generative-tier
   details) when the relevance resolver matches the faction's name — and
-  since 2026-07 the [4e] landscape carries every faction's stance line on
-  every call regardless of matching.
+  since 2026-07 the [4e] landscape carries the four most recently updated
+  factions' stance lines on every call regardless of matching.
 - **The faction landscape reaches every narrator call** ([4e], 2026-07):
-  `mergeFactionLandscape` renders entity records first (canonical stance +
-  type + latest project) with WJ-only factions appended (attitude + known
-  goal), deduped by name and capped. ACTIVE THREATS [4d] and ESTABLISHED
-  LORE [4f] ride the same seam. `describeWorldJournalState` still feeds the
-  detection Haiku, which now classifies against the same map the narrator
-  writes with.
+  `mergeFactionLandscape` merges the entity records (canonical stance +
+  type + latest project) with every World Journal faction (a WJ-only one
+  gives its attitude + known goal), deduped by name — a record wins its
+  name — and ranks them most recently updated first (a faction's time is the
+  later of its record's `updatedAt` and its WJ entry's), capped at 4. Until
+  issue #342 Z13 the records came first in creation order, so a campaign's
+  first four records held the block for good and no newer faction — a fifth
+  record, a faction a narration had just named — ever reached it. ACTIVE
+  THREATS [4d] and ESTABLISHED LORE [4f] ride the same seam.
+  `describeWorldJournalState` still feeds the detection Haiku the three most
+  recently updated WJ factions — the newest end of the same recency-ranked
+  map the narrator writes with.
 - **Generative tier works.** The paced/move tier-update pass is
   type-agnostic (`runNarrationTierUpdate` maps matched ids + types), so a
   matched faction accrues salience-gated development details like any other
@@ -91,7 +98,7 @@ the active sector, rendered in the ACTIVE SECTOR block. Static, name-only.
 
 | Code | Class | Defect → fix |
 |---|---|---|
-| FACTION-PACKET-DEAD | LOSE-PLOT | The assembler packet was built at three callsites and never read → **retired from all live paths** (index Step 8, burn-momentum, improve-result — whose `if (!packet) return` guard had silently aborted re-narration on assembly failure; the 2026-10 post-merge review found those two re-narration calls still passing `null` in the removed packet's argument slot, so `narrateResolution` received `null` for campaignState and re-narration failed into a console warning — now `narrate(synthResolution, campaignState, { speakerActorId })`, describing the PC who rolled). The load-bearing sections now flow through `buildNarratorExtras`: **[4d] ACTIVE THREATS** (top 4), **[4e] FACTION LANDSCAPE** (`mergeFactionLandscape` — records canonical, WJ-only appended), **[4f] ESTABLISHED LORE** (recent 5, clipped), gated on the existing `threatsInContext` / `factionLandscapeInContext` / `loreInContext` settings. The assembler module was later deleted outright (#271, see `unreachable-code-audit.md`) |
+| FACTION-PACKET-DEAD | LOSE-PLOT | The assembler packet was built at three callsites and never read → **retired from all live paths** (index Step 8, burn-momentum, improve-result — whose `if (!packet) return` guard had silently aborted re-narration on assembly failure; the 2026-10 post-merge review found those two re-narration calls still passing `null` in the removed packet's argument slot, so `narrateResolution` received `null` for campaignState and re-narration failed into a console warning — now `narrate(synthResolution, campaignState, { speakerActorId })`, describing the PC who rolled). The load-bearing sections now flow through `buildNarratorExtras`: **[4d] ACTIVE THREATS** (top 4), **[4e] FACTION LANDSCAPE** (`mergeFactionLandscape` — records canonical, WJ-only merged in, most recently updated first since issue #342 Z13), **[4f] ESTABLISHED LORE** (recent 5, clipped), gated on the existing `threatsInContext` / `factionLandscapeInContext` / `loreInContext` settings. The assembler module was later deleted outright (#271, see `unreachable-code-audit.md`) |
 | FACTION-DUAL-STORE | WRONG-DETAIL | Two unreconciled records per faction → draft-confirm now reconciles: the new entity record inherits the WJ entry's attitude (mapped) and the WJ entry backlinks the record via `entityId` (the host JournalEntry id); the WJ entry remains the intelligence log under the record's canon. Since issue #321 U28 the confirm's WJ mirror keeps the established attitude and that backlink — it wrote `unknown` and the record's `_id` |
 | FACTION-ATTITUDE-SPLIT-BRAIN | WRONG-DETAIL | Attitude shifts wrote only the WJ store → `recordFactionIntelligence` itself syncs every attitude write (detection transitions, `!journal faction`, auto-surface) onto `record.relationship` via `ATTITUDE_TO_RELATIONSHIP` (hostile→antagonistic, neutral→apathetic, allied→open_alliance; unknown never overwrites). The record is the canonical stance home — decisions.md |
 | FACTION-RECORD-WRITE-ONCE | LOSE-PLOT | Records frozen at creation → `seedFactionRecord` rolls the Starforged faction oracles (type + per-type subtype, influence, quirk, first project) on draft-confirm, idempotent via the new `seeded` flag; the attitude sync above gives the record its narrative write path; generative-tier accrual unchanged. `addRumor`/`setProject` remain panel/API affordances |
@@ -105,8 +112,9 @@ the active sector, rendered in the ACTIVE SECTOR block. Static, name-only.
   entity record is canonical"). `sector.faction` stays a name-only flavor
   mention (unchanged).
 - **No dissolution lifecycle — reaffirmed.** `active` stays dormant until a
-  real need appears; the landscape block naturally rotates to recently
-  updated factions.
+  real need appears; the landscape block rotates to the recently updated
+  factions (it ranks by recency since issue #342 Z13 — before that it held
+  the first four records created).
 
 ## 5. What held up under audit
 
