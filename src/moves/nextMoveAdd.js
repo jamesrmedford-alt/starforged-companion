@@ -22,6 +22,7 @@
  */
 
 import { moveRollKind } from "../schemas.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -52,7 +53,9 @@ export function isActionRollMove(moveId, rollKind = null) {
  * roll. It used to be added first, from the working copy, and cleared after
  * with its refusal a console warning — so a refused clear added one +1 to two
  * rolls (issue #342 Z52). The pipeline's working copy drops it too. Runs on
- * the canonical GM (the move pipeline's client).
+ * the canonical GM (the move pipeline's client), on its campaignState write
+ * chain: read inside an oracle capture's round trip, the claim erased the
+ * answer (CAMPSTATE-CHAIN-PARTIAL).
  *
  * @param {Object|null} campaignState — the pipeline's working copy (mutated)
  * @param {string} moveId
@@ -61,23 +64,26 @@ export function isActionRollMove(moveId, rollKind = null) {
  */
 export async function consumeNextMoveAdd(campaignState, moveId, { rollKind = null } = {}) {
   if (!isActionRollMove(moveId, rollKind)) return 0;
-  let latest;
-  try {
-    latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  } catch {
-    return 0;
-  }
-  const value = Number(latest.nextMoveAdd?.value ?? 0);
-  if (!latest.nextMoveAdd || !(value > 0)) return 0;
-  const next = { ...latest };
-  delete next.nextMoveAdd;
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", next);
-  } catch (err) {
-    console.warn(`${MODULE_ID} | Take a Break: taking the +1 was refused — not added, still pending:`, err?.message ?? err);
-    return 0;
-  }
-  if (campaignState && typeof campaignState === "object") delete campaignState.nextMoveAdd;
+  const value = await serialiseCampaignStateWrite(async () => {
+    let latest;
+    try {
+      latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    } catch {
+      return 0;
+    }
+    const pending = Number(latest.nextMoveAdd?.value ?? 0);
+    if (!latest.nextMoveAdd || !(pending > 0)) return 0;
+    const next = { ...latest };
+    delete next.nextMoveAdd;
+    try {
+      await game.settings.set(MODULE_ID, "campaignState", next);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | Take a Break: taking the +1 was refused — not added, still pending:`, err?.message ?? err);
+      return 0;
+    }
+    return pending;
+  }, "Take a Break's +1");
+  if (value > 0 && campaignState && typeof campaignState === "object") delete campaignState.nextMoveAdd;
   return value;
 }
 
@@ -88,10 +94,11 @@ export async function consumeNextMoveAdd(campaignState, moveId, { rollKind = nul
 /**
  * Record a "+1 on your next move" for a character, onto the latest stored
  * campaignState (no await between the read and the write — the field is
- * store-owned, persistResolution's merge keeps the store's value). Two
- * pending grants add up. Runs on the canonical GM: a choice card's pick and a
- * move's other effects are applied there. A write the world refuses throws,
- * so the caller can report it.
+ * store-owned, persistResolution's merge keeps the store's value), read at
+ * its turn on the client's campaignState write chain (CAMPSTATE-CHAIN-PARTIAL).
+ * Two pending grants add up. Runs on the canonical GM: a choice card's pick
+ * and a move's other effects are applied there. A write the world refuses
+ * throws, so the caller can report it.
  *
  * @param {string|null} actorId — the character who earned it
  * @param {number} amount
@@ -101,24 +108,27 @@ export async function consumeNextMoveAdd(campaignState, moveId, { rollKind = nul
 export async function grantNextMoveBonus(actorId, amount, source = null) {
   const add = Math.floor(Number(amount));
   if (typeof actorId !== "string" || !actorId || !(add > 0)) return { ok: false, reason: "invalid" };
-  const latest  = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  const bonuses = { ...(latest.nextMoveBonuses ?? {}) };
-  const prev    = bonuses[actorId];
-  const value   = Math.max(0, Math.floor(Number(prev?.value ?? 0)) || 0) + add;
-  bonuses[actorId] = {
-    value,
-    sources: [...(Array.isArray(prev?.sources) ? prev.sources : []), ...(source ? [source] : [])],
-    setAt:   new Date().toISOString(),
-  };
-  await game.settings.set(MODULE_ID, "campaignState", { ...latest, nextMoveBonuses: bonuses });
-  return { ok: true, value };
+  return serialiseCampaignStateWrite(async () => {
+    const latest  = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const bonuses = { ...(latest.nextMoveBonuses ?? {}) };
+    const prev    = bonuses[actorId];
+    const value   = Math.max(0, Math.floor(Number(prev?.value ?? 0)) || 0) + add;
+    bonuses[actorId] = {
+      value,
+      sources: [...(Array.isArray(prev?.sources) ? prev.sources : []), ...(source ? [source] : [])],
+      setAt:   new Date().toISOString(),
+    };
+    await game.settings.set(MODULE_ID, "campaignState", { ...latest, nextMoveBonuses: bonuses });
+    return { ok: true, value };
+  }, "next-move bonus");
 }
 
 /**
  * Take a character's pending "+1 on your next move" for this move. Only an
  * action roll takes it. It is claimed on the store before it is added: a
  * refused write adds nothing and leaves it pending for the next roll, so it is
- * never added twice. The pipeline's working copy drops it too.
+ * never added twice. The pipeline's working copy drops it too. On the
+ * client's campaignState write chain (CAMPSTATE-CHAIN-PARTIAL).
  *
  * @param {Object|null} campaignState — the pipeline's working copy (mutated)
  * @param {string|null} actorId — the roller
@@ -128,22 +138,26 @@ export async function grantNextMoveBonus(actorId, amount, source = null) {
  */
 export async function consumeNextMoveBonus(campaignState, actorId, moveId, { rollKind = null } = {}) {
   if (typeof actorId !== "string" || !actorId || !isActionRollMove(moveId, rollKind)) return 0;
-  let latest;
-  try {
-    latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  } catch {
-    return 0;
-  }
-  const value = Math.floor(Number(latest.nextMoveBonuses?.[actorId]?.value ?? 0));
+  const value = await serialiseCampaignStateWrite(async () => {
+    let latest;
+    try {
+      latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    } catch {
+      return 0;
+    }
+    const pending = Math.floor(Number(latest.nextMoveBonuses?.[actorId]?.value ?? 0));
+    if (!(pending > 0)) return 0;
+    const bonuses = { ...latest.nextMoveBonuses };
+    delete bonuses[actorId];
+    try {
+      await game.settings.set(MODULE_ID, "campaignState", { ...latest, nextMoveBonuses: bonuses });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | next-move bonus: taking ${actorId}'s +${pending} was refused — not added, still pending:`, err?.message ?? err);
+      return 0;
+    }
+    return pending;
+  }, "next-move bonus");
   if (!(value > 0)) return 0;
-  const bonuses = { ...latest.nextMoveBonuses };
-  delete bonuses[actorId];
-  try {
-    await game.settings.set(MODULE_ID, "campaignState", { ...latest, nextMoveBonuses: bonuses });
-  } catch (err) {
-    console.warn(`${MODULE_ID} | next-move bonus: taking ${actorId}'s +${value} was refused — not added, still pending:`, err?.message ?? err);
-    return 0;
-  }
   if (campaignState?.nextMoveBonuses?.[actorId]) {
     campaignState.nextMoveBonuses = { ...campaignState.nextMoveBonuses };
     delete campaignState.nextMoveBonuses[actorId];

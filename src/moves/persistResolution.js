@@ -41,6 +41,7 @@ import { postSufferChoiceCard } from './sufferCard.js';
 import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
 import { mergeLegacyTrack, payDeferredLegacyXp } from './legacyTracks.js';
+import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 
 const MODULE_ID  = 'starforged-companion';
 
@@ -126,26 +127,33 @@ export async function persistResolution(resolution, campaignState, speakerActorI
   // Lines, `!bond` ticks, `!truth` corrections, oracle memory, clocks…).
   // Re-read the store right before the write (no await in between) and merge
   // — see mergeWithLatestState for the per-field policy. The session-log
-  // append goes onto the merged object so it lands in the live session.
-  const updated = mergeWithLatestState(
-    foundry.utils.deepClone(campaignState ?? {}),
-    game.settings.get(MODULE_ID, 'campaignState'),
-  );
-  updated.updatedAt = new Date().toISOString();
-  try {
-    await game.settings.set(MODULE_ID, 'campaignState', updated);
-  } catch (err) {
-    // The roller's meters (written above) stand, unless they were refused
-    // too; what the working copy alone holds — a legacy mark, an arrival, a
-    // site reveal — never reached the world. Tagged so the pipeline tells the
-    // GMs what, with a Retry, rather than blaming the API key (issue #331 X18).
-    const refused = new Error(`the world did not save the move's record: ${err?.message ?? err}`);
-    refused.moveRecordRefused = true;
-    refused.meterFailures = meterFailures;
-    refused.cardFailures = cardFailures;
-    refused.cause = err;
-    throw refused;
-  }
+  // append goes onto the merged object so it lands in the live session. Read
+  // at this write's turn on the client's campaignState write chain, once the
+  // write ahead of it — an X-Card pause still on its way among them — has
+  // landed: read inside the pause's round trip, the store-owned fields took
+  // the cache's `xCardActive: false` and lifted the pause (CAMPSTATE-CHAIN-PARTIAL).
+  const updated = await serialiseCampaignStateWrite(async () => {
+    const merged = mergeWithLatestState(
+      foundry.utils.deepClone(campaignState ?? {}),
+      game.settings.get(MODULE_ID, 'campaignState'),
+    );
+    merged.updatedAt = new Date().toISOString();
+    try {
+      await game.settings.set(MODULE_ID, 'campaignState', merged);
+    } catch (err) {
+      // The roller's meters (written above) stand, unless they were refused
+      // too; what the working copy alone holds — a legacy mark, an arrival, a
+      // site reveal — never reached the world. Tagged so the pipeline tells the
+      // GMs what, with a Retry, rather than blaming the API key (issue #331 X18).
+      const refused = new Error(`the world did not save the move's record: ${err?.message ?? err}`);
+      refused.moveRecordRefused = true;
+      refused.meterFailures = meterFailures;
+      refused.cardFailures = cardFailures;
+      refused.cause = err;
+      throw refused;
+    }
+    return merged;
+  }, 'move record');
 
   // The legacy ticks the pipeline marked on its working copy are saved: their
   // box XP is paid now, never before (issue #326 W52 — a refused persist had

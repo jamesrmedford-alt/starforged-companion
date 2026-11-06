@@ -593,15 +593,19 @@ relay-owned fields such as `xCardActive`, `safety`, `safetyFlags`,
 `sceneTruths` union by id with retractions sticky; a scene change mid-move
 keeps the stored scene ledgers; what an X-carded narration wrote —
 the store's `xCardedNarrationIds` — is retracted from the working copy first,
-and a frame it wrote yields to the store's, issue #321 U07). The registrations that run inside those long
+and a frame it wrote yields to the store's, issue #321 U07) — read at its
+turn on the GM's campaignState write chain, once the write ahead (an X-Card
+pause still on its way among them) has landed: read inside the pause's round
+trip, its store-owned `xCardActive` came from the cache and lifted the pause
+(CAMPSTATE-CHAIN-PARTIAL). The registrations that run inside those long
 callers write only their own key onto the latest store, never the caller's
 copy: an entity creator's id (`registerEntityIdInStore`, `entities/registry.js`
 — the Make a Connection auto-create used to write the pipeline's snapshot whole
 and clear a mid-narration X-Card, issue #300 F14), a portrait's art-index entry
 (`storeArtAsset`), and a new sector (`storeSector`). Since issue #321 U06 so
 do the other writers that hold a snapshot across an await: `!lore` writes only
-`loreRecap` (`mergeOwnedFields`; store-owned in `persistResolution`'s merge,
-U06a/g); `!truth` / `!state` and the correction dialog work on a fresh copy
+`loreRecap` (`writeOwnedFields`, on the write chain; store-owned in
+`persistResolution`'s merge, U06a/g); `!truth` / `!state` and the correction dialog work on a fresh copy
 and persist only the ledger field they changed through
 `persistSceneLedgerFields`, a Strike's or Replace's regen mark on the stored
 rolling summary riding the same write (`opts.onto` → `markSummaryForRegen`,

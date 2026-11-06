@@ -249,8 +249,9 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
 
 - Re-read the store **immediately** before the write (no `await` between the
   read and the `set`) and write only the fields this path owns
-  (`persistCampaignStateFields(campaignState, fields, label)` /
-  `mergeOwnedFields`, `src/factContinuity/sceneLifecycle.js`) — or, when the
+  (`writeOwnedFields(campaignState, fields, label)` — or
+  `persistCampaignStateFields`, which logs a refusal instead of throwing —
+  over `mergeOwnedFields`, `src/factContinuity/sceneLifecycle.js`) — or, when the
   path owns a wide slice, merge per a documented field policy
   (`persistResolution`'s `mergeWithLatestState`: relay-owned fields take the
   stored value, id lists union, legacy ticks take the higher count, scene
@@ -282,10 +283,16 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
   writes (W53) — so a clock advance sent inside the oracle capture's round
   trip still erased the result its Pay the Price card had just recorded, and
   so did the `!oracle` follow-up's scene start (issue #342 Z17). The
-  fire-and-forget campaignState writers on a client run through
+  campaignState read-and-set writers on a client run through
   `serialiseCampaignStateWrite` (`src/multiplayer/campaignStateChain.js`),
-  each reading the store at its turn, once the write ahead of it has landed;
-  a new writer of that kind joins the chain, and a chained task never waits
+  each reading the store at its turn, once the write ahead of it has landed —
+  the fire-and-forget writers, and since CAMPSTATE-CHAIN-PARTIAL the relay
+  handlers' writes (Set a Flag, Take a Break, Begin / End a Session), the
+  move's record (`persistResolution`), every `writeOwnedFields` writer, the
+  next-move claims and grant, the move lock's paths, the redirect clear and
+  the spotlight persist (a Take a Break or a move's record read inside an
+  oracle capture's or an X-Card pause's round trip put the cache's old
+  fields back); a new writer joins the chain, and a chained task never waits
   on another one (it would wait for itself). A task reads the store at its
   start, with no await before the read or between the read and its write.
   The X-Card's pause is the one write that jumps the chain

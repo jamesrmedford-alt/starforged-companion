@@ -35,7 +35,7 @@
 
 import { runPlaytestQuickstart }                                  from "./quickstart.js";
 import { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS }    from "./lifecycle.js";
-import { mergeOwnedFields }                                       from "../factContinuity/sceneLifecycle.js";
+import { writeOwnedFields }                                       from "../factContinuity/sceneLifecycle.js";
 import { finalizeEntity }                                         from "../entities/finalize.js";
 import { envisionShip, renderEnvisionHtml, appendNotesSection }  from "../entities/shipEnvision.js";
 import { isLoneShipCandidate }                                    from "../entities/ship.js";
@@ -167,8 +167,8 @@ export async function runCampaignStart(opts = {}) {
     // The session is begun: it counts toward the session number, and a later
     // Begin a Session in it repeats no start effects (issue #330 D12; #300 F11).
     campaignState.sessionStartedId = campaignState.currentSessionId ?? null;
-    await game.settings.set(MODULE_ID, "campaignState",
-      mergeOwnedFields(campaignState, CAMPAIGN_START_BEGIN_FIELDS, "campaign start begin"));
+    // On the client's campaignState write chain (CAMPSTATE-CHAIN-PARTIAL).
+    await writeOwnedFields(campaignState, CAMPAIGN_START_BEGIN_FIELDS, "campaign start begin");
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     await ChatMessage.create({
       content:

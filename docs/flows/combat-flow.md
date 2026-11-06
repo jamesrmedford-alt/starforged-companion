@@ -321,7 +321,10 @@ the roller's next-move bonus, so a Battle that is not rolled leaves both
 pending for the next action roll made (issue #331 X17). Both are claimed on
 the store before they are added (`consumeNextMoveAdd`, `consumeNextMoveBonus`):
 a refused claim adds nothing and leaves the +1 pending, so it never lands on
-two rolls (issue #342 Z52).
+two rolls (issue #342 Z52). Each claim — and `grantNextMoveBonus` — reads and
+writes on the GM's campaignState write chain, once the write ahead of it has
+landed (CAMPSTATE-CHAIN-PARTIAL: a claim read inside an oracle capture's round
+trip erased the answer).
 
 **Face Defeat** closes the track as a loss (no payoff) and routes Pay the Price.
 

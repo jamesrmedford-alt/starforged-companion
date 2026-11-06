@@ -12,9 +12,13 @@
  *   - endScene(campaignState, { reason }) — migrate entity-scoped truths to
  *       entity generative tiers, archive free-text and scene-scoped truths
  *       to the WJ Lore journal, then discard active ledgers.
- *   - mergeOwnedFields / persistCampaignStateFields — write only the fields a
- *       caller owns onto the latest stored campaignState (stale-snapshot
- *       writers: scene lifecycle, End a Session).
+ *   - mergeOwnedFields / writeOwnedFields / persistCampaignStateFields —
+ *       write only the fields a caller owns onto the latest stored
+ *       campaignState, on the client's campaignState write chain
+ *       (stale-snapshot writers: scene lifecycle, Begin / End a Session, the
+ *       world truths, `!lore`, Campaign Start, the ready mint);
+ *       writeOwnedFields rejects on a refusal, persistCampaignStateFields
+ *       logs it.
  *   - mergeSceneLedgers / persistSceneLedgerFields — the scene-ledger merge
  *       (scene-id check + truth union) for persistResolution and the narrator
  *       sidecar persist.
@@ -698,12 +702,31 @@ export function mergeOwnedFields(campaignState, fields, label) {
 }
 
 /**
- * Persist only `fields` of `campaignState`, merged onto the LATEST stored
+ * Write only `fields` of `campaignState`, merged onto the LATEST stored
  * campaignState (mergeOwnedFields) — read at this write's turn on the
  * client's campaignState write chain, once the write ahead of it has landed:
  * a scene start sent inside the round trip of the oracle capture its own
  * `!oracle` card fired merged onto a cache without the result, and erased it
- * (issue #342 Z17). Failures are logged, never thrown.
+ * (issue #342 Z17); so did End a Session, Begin a Session, the world truths,
+ * `!lore` and Campaign Start, each merging onto the cache as they found it
+ * (CAMPSTATE-CHAIN-PARTIAL). Rejects when the world refuses the write, for a
+ * caller that reports it; persistCampaignStateFields logs it instead.
+ *
+ * @param {Object}   campaignState — the caller's working copy (source of `fields`)
+ * @param {string[]} fields        — top-level keys this write owns
+ * @param {string}   label         — for the logs
+ * @returns {Promise<unknown>}
+ */
+export function writeOwnedFields(campaignState, fields, label) {
+  return serialiseCampaignStateWrite(
+    () => game.settings.set(MODULE_ID, 'campaignState', mergeOwnedFields(campaignState, fields, label)),
+    label,
+  );
+}
+
+/**
+ * Persist only `fields` of `campaignState` onto the latest store
+ * (writeOwnedFields). Failures are logged, never thrown.
  *
  * @param {Object}   campaignState — the caller's working copy (source of `fields`)
  * @param {string[]} fields        — top-level keys this write owns
@@ -713,10 +736,7 @@ export function mergeOwnedFields(campaignState, fields, label) {
 export async function persistCampaignStateFields(campaignState, fields, label) {
   try {
     if (typeof game === 'undefined' || !game?.settings?.set) return;
-    await serialiseCampaignStateWrite(
-      () => game.settings.set(MODULE_ID, 'campaignState', mergeOwnedFields(campaignState, fields, label)),
-      label,
-    );
+    await writeOwnedFields(campaignState, fields, label);
   } catch (err) {
     // Player clients can't write world settings; tolerate.
     console.warn(`${MODULE_ID} | sceneLifecycle: campaignState persist failed (${label}):`, err);

@@ -4540,15 +4540,15 @@ function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState, 
     campaignState.spotlight = record;
     // Persisted onto a copy of the latest store, by the canonical GM: set on
     // the cached value first, a refused write left this GM's pointer a step
-    // ahead of the world's (issue #331 X26).
+    // ahead of the world's (issue #331 X26). Read at its turn on the client's
+    // campaignState write chain, once the write ahead has landed
+    // (CAMPSTATE-CHAIN-PARTIAL).
     if (isCanonicalGM()) {
-      try {
+      serialiseCampaignStateWrite(() => {
         const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
-        game.settings.set(MODULE_ID, 'campaignState', { ...stored, spotlight: record }).catch(err =>
-          console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err));
-      } catch (err) {
-        console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err);
-      }
+        return game.settings.set(MODULE_ID, 'campaignState', { ...stored, spotlight: record });
+      }, 'spotlight').catch(err =>
+        console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err));
     }
 
     return buildSpotlightBlock(selection);
