@@ -273,7 +273,7 @@ developer-only and excluded from the release.
 
 | File | Purpose |
 |------|---------|
-| `ironswornAssets.js` | Runtime path constants for foundry-ironsworn art (starships, locations, icons). `pickStarshipIcon` picks one of the system's 15 starship tokens, `assets/starships/Ship-NNs.webp` — the `Starforged-Starship-Token-NN.webp` names it built were never in the system (issue #321 U31). |
+| `ironswornAssets.js` | Runtime path constants for foundry-ironsworn art (starships, locations, icons). `pickStarshipIcon` picks one of the system's 15 starship tokens, `assets/starships/Ship-NNs.webp` — the `Starforged-Starship-Token-NN.webp` names it built were never in the system (issue #321 U31). `iconForPlanetType` maps each of the Planet Type table's eleven classes to its system token — a Tainted World drew the generic circle (issue #342 Z61). |
 | `ironswornPacks.js` | Canonical compendium lookup (moves, oracles, encounters, truths). |
 | `campaignTruths.js` | Injects the foundry-ironsworn canonical-truths digest into context. |
 | `encounterSpawn.js` | `!sfc encounter <name>` canonical encounter spawn. A GM's token is built from a world Actor — one already imported from that compendium entry (`_stats.compendiumSource` / `flags.core.sourceId`), else a fresh `importFromCompendium` (issue #306 R12); otherwise the stat card, which reads the foe's embedded `progress` Item — its rank by name and its description, the compendium's Features / Drives / Tactics and lore; a vendor foe keeps none of them on `actor.system`, so the card showed only the name (issue #321 U32). |
