@@ -730,9 +730,13 @@ export async function rollMove({
   // card, a "Which vow?" pick) names it by id. When that track was
   // deleted or finished meanwhile, nothing is rolled — and it says so: a
   // same-named sibling is a different fight, and a score of 0 would be a
-  // certain miss with its consequences (issue #306 R06, #321 U02).
+  // certain miss with its consequences (issue #306 R06, #321 U02). A scene
+  // challenge's Finish the Scene too (issue #326 D6 made it a progress move
+  // after R06): a second finish, or a stale row, rolled a certain miss and
+  // paid its price for a scene already over (issue #342 Z07).
   if (interpretation.moveTargetId
-      && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow")
+      && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow"
+        || tickInfo?.source === "scene_challenge")
       && !tickInfo.trackId) {
     await postTrackGoneCard(interpretation).catch(err =>
       console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));

@@ -433,7 +433,14 @@ the challenge's own track (`PROGRESS_TICK_SOURCES.finish_the_scene` →
 outcome — the pipeline's `finishScene` consequence completes the track
 (`finishSceneChallenge` → `completeProgressTrack`, which retires the tension
 clock before the track write), before a weak hit's or miss's Pay the Price
-is routed, so the ended scene's clock does not tick.
+is routed, so the ended scene's clock does not tick. A row whose challenge
+was finished or deleted before the roll — a stale render, another player's
+Finish the Scene landing first — rolls nothing: the "not rolled" guard covers
+the `scene_challenge` source by id, as it does a fight's (issue #342 Z07); a
+score of 0 was a certain miss paying a price for a scene already over. In a
+Batch Mode round the driver notes Finish the Scene's challenge as read
+(`noteReadTrack`), so a second Finish the Scene — pressed or typed — is
+refused "ended earlier in this round", as a fight move is.
 Pre-session (the pipeline's session gate would ignore the bridge) it keeps
 the bespoke instant display roll (`type: 'progressRoll'` card — display-only
 by design).

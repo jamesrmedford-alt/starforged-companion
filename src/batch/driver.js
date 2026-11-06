@@ -59,6 +59,7 @@ import {
 import { resultUpgradeBlocker } from "../moves/burnMomentum.js";
 import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
+import { selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
 import {
   ROUND_PHASE,
@@ -503,9 +504,11 @@ export function startReading(userId) {
 }
 
 /**
- * The fight or expedition a combat or expedition move acts on, as read — its
- * id, so the roll can tell when it ended earlier in the round (a round
- * entry is rolled later than it was read).
+ * The fight, expedition or scene challenge a combat, expedition or Finish the
+ * Scene move acts on, as read — its id, so the roll can tell when it ended
+ * earlier in the round (a round entry is rolled later than it was read): a
+ * second Finish the Scene is refused, not rolled against an ended scene
+ * (issue #342 Z07).
  *
  * @param {Object} reading
  */
@@ -513,14 +516,19 @@ async function noteReadTrack(reading) {
   if (reading?.kind !== READING_KIND.MOVE) return;
   const moveId = reading.moveId;
   const type = ROUND_FIGHT_MOVES.has(moveId) ? "combat"
-    : (moveId === "undertake_an_expedition" || moveId === "finish_an_expedition") ? "expedition" : null;
+    : (moveId === "undertake_an_expedition" || moveId === "finish_an_expedition") ? "expedition"
+    : moveId === "finish_the_scene" ? "scene_challenge" : null;
   if (!type) return;
-  const open = (await listProgressTracks().catch(() => [])).filter(t => t.type === type && !t.completed);
+  const all = await listProgressTracks().catch(() => []);
+  const open = all.filter(t => t.type === type && !t.completed);
   const named = reading.interpretation?.moveTargetId ?? null;
   const target = String(reading.interpretation?.moveTarget ?? "").trim().toLowerCase();
-  const track = named ? open.find(t => t.id === named)
-    : (target ? open.find(t => String(t.label ?? "").trim().toLowerCase() === target) : null)
-      ?? (open.length === 1 ? open[0] : null);
+  // A scene challenge resolves as the roll resolves it (by id, the name, else the sole open one).
+  const track = type === "scene_challenge"
+    ? selectSceneChallengeTrack(all, reading.interpretation?.moveTarget ?? null, { trackId: named })
+    : named ? open.find(t => t.id === named)
+      : (target ? open.find(t => String(t.label ?? "").trim().toLowerCase() === target) : null)
+        ?? (open.length === 1 ? open[0] : null);
   if (track) {
     reading.trackId = track.id;
     reading.trackLabel = track.label ?? null;
