@@ -78,22 +78,38 @@ async function resetTable(clocks) {
   scriptClaude(table, { fallback: () => 'The breach seals behind Kira.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });
 }
 
-/** The server: campaignState writes held, applied in the order sent, until none is left. */
+/**
+ * The server, first in first out: EVERY write — a setting, a chat card, an
+ * actor update — is held and applied in the order it was sent, so a write
+ * lands before anything sent after it (Foundry's socket order). A Claude call
+ * answers only once every write sent before it has landed (it takes seconds;
+ * a Foundry round trip does not).
+ */
 function serverOrder() {
   const sent = [];
   table.interceptWrites((w) => {
-    if (w.kind !== 'setting' || w.key !== CS_KEY) return undefined;
-    let release;
+    let release, landed;
     const held = new Promise(r => { release = r; });
-    sent.push({ value: w.value, release });
+    const done = new Promise(r => { landed = r; });
+    sent.push({ kind: w.kind, key: w.key, value: w.value, release: () => { release(); landed(); }, done });
     return held;
+  });
+  table.claude.respond(async (call) => {
+    await Promise.all(sent.map(s => s.done));
+    return /SIDECAR|NARRATOR ROLE/.test(call?.system ?? '')
+      ? 'The breach seals behind Kira.\n```json\n{"newTruths":[],"stateChanges":[]}\n```'
+      : '{}';
   });
   return {
     sent,
     async applyAll() {
-      for (let i = 0; i < 80; i++) {
+      for (let i = 0; i < 200; i++) {
         const batch = sent.filter(s => !s.applied);
-        if (!batch.length) { await table.settle(); if (!sent.some(s => !s.applied)) break; continue; }
+        if (!batch.length) {
+          await table.settle();
+          if (!sent.some(s => !s.applied)) break;
+          continue;
+        }
         for (const s of batch) { s.applied = true; s.release(); }
         await table.settle();
       }
