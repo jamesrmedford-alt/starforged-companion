@@ -8,7 +8,9 @@ drift, so search by symbol. Sibling docs: `vow-flow.md`, `connection-flow.md`,
 Two cross-cutting facts to hold onto:
 
 - **The move pipeline runs only on the canonical GM client** (`isCanonicalGM()`
-  gate at the top of the narration handler in `src/index.js`); the inner
+  gate at the top of the narration handler in `src/index.js`, whose stages —
+  `readMove`, `rollMove` with the per-move consequence branches, `recordMove`,
+  `finishMove` — live in `src/moves/movePipeline.js`, issue #340); the inner
   `game.user.isGM` checks on each consequence branch are belt-and-suspenders.
   Its effects credit the **roller**: one `rollerActor` (the message's speaker,
   first PC only as a fallback — a GM's, or at a one-PC table; a PC-less player
