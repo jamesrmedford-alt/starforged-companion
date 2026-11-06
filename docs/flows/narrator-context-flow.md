@@ -62,7 +62,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   the round is captured whatever the confirm order (issue #342 Z08: a round
   led by a miss skipped its whole capture); each Make a Connection hit creates
   the figure its own character met, with its own seed and bond, synchronously
-  (Z09 — `connection-flow.md` §1).
+  (Z09 — `connection-flow.md` §1); the tier pass runs whatever the class,
+  each entry by its free-flow rule (Z10 — "Post-narration capture" below).
 - **Claude-calling chat commands** — `@scene`, `!recap`, `!ship envision`,
   `!ship history`, `!incite` — route `RUN_ON.CLAUDE` (`CHAT_COMMAND_ROUTES`,
   `src/index.js`; policy in `src/multiplayer/commandRouting.js`): the keyed canonical GM when `hasKeyedActiveGM()`, else the
@@ -503,7 +504,12 @@ neither. Oracle follow-ups run detection and the tier pass; session
 vignettes and vow scenes run the tier pass for the recorded entities they
 name (`scheduleNarrationCapture`). `@scene` answers run detection and the
 tier pass too, on the canonical GM only (`scheduleSceneAnswerCapture`, issue
-#321 U36). New entities from any of these queue on
+#321 U36). A Batch Mode round runs one detection, at the widest class among
+the entries it captures, and a tier pass whatever that class is, over what
+each interaction-class entry was about, by that entry's free-flow rule — an
+unrolled action the prompt's matched set (paced), a rolled interaction move
+its own relevance (`roundTierRefs`; issue #342 Z10 — it ran over the rolled
+moves' entities only, and not at all beside a discovery roll). New entities from any of these queue on
 the GM's draft card — only make_a_connection auto-creates; the card carries
 the PC the narration was for (`actorId`, every path that knows it), whose
 sheet a confirmed connection's bond Item goes on (issue #321 U23). The

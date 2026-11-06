@@ -369,7 +369,11 @@ fail-open) and biased toward developments over trivia. Unnamed/uncarded figures
 match nothing → no record → stay freely mutable, which the "name sparingly"
 casting nudge (`NARRATOR_PERMISSIONS.discovery` + `appendSidecarInstruction`)
 reinforces by keeping one-off functionaries unnamed. Decision: decisions.md →
-"Named-NPC continuity".
+"Named-NPC continuity". A Batch Mode round's narration is both kinds at once:
+its tier pass takes each entry by its free-flow rule — an unrolled action the
+prompt's matched set (as paced), a rolled interaction-class move its own
+relevance (as the move pass) — whatever the round's widest class
+(`roundTierRefs`, issue #342 Z10).
 
 ---
 

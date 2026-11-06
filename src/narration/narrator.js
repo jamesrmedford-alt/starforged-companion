@@ -1016,7 +1016,9 @@ export async function narrateRound({ round, campaignState }) {
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
         matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
       });
-      await runRoundNarrationPasses(narration, entries, relevance, campaignState, { narrationId });
+      await runRoundNarrationPasses(narration, entries, campaignState, {
+        narrationId, matchedEntityIds: extras.matchedEntityIds ?? [], matchedEntityTypes: extras.matchedEntityTypes ?? [],
+      });
       scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round' });
       return { posted: 'card', narrationId, card };
     } catch (err) {
@@ -1041,16 +1043,26 @@ export async function narrateRound({ round, campaignState }) {
  * character met (roundFigureOwner), with its own seed, bonded to its roller —
  * synchronously, as free-flow's does (Z09: the round's first connection,
  * whoever met them, went to the first hit's roller with that roller's seed).
- * A round with no hit runs runPostNarrationPasses at the widest class.
+ * Otherwise the detection runs ~2 s after the card, at the captured entries'
+ * widest class: none at embellishment, as runPostNarrationPasses rules.
+ *
+ * The tier pass — an NPC's NARRATOR-ADDED developments — runs whatever that
+ * class is, over what the round's interaction-class entries were about
+ * (roundTierRefs; Z10: it ran over the rolled moves' entities alone, only
+ * when the widest class was interaction, so an unrolled action's NPC, or
+ * every NPC beside a discovery roll, got no details).
  *
  * @param {string} narration
  * @param {Array<Object>} entries — roundNarrationEntries
- * @param {Object} relevance — the round's union, at the widest class
  * @param {Object} campaignState
- * @param {{ narrationId: string }} opts
+ * @param {{ narrationId: string, matchedEntityIds?: string[], matchedEntityTypes?: string[] }} opts —
+ *   the matched set the round's prompt used (buildNarratorExtras)
  * @returns {Promise<void>}
  */
-function runRoundNarrationPasses(narration, entries, relevance, campaignState, { narrationId }) {
+function runRoundNarrationPasses(narration, entries, campaignState, { narrationId, matchedEntityIds = [], matchedEntityTypes = [] }) {
+  // The capture's world-scoped writes are the canonical GM's (the
+  // runPostNarrationPasses gate).
+  if (!isCanonicalGM()) return Promise.resolve();
   const isHit = (o) => o === 'strong_hit' || o === 'weak_hit';
   const isConnection = (e) => e.input?.kind === 'move' && e.input.moveId === 'make_a_connection';
   const captured = entries.filter(e => !isConnection(e) || isHit(e.input.outcome));
@@ -1061,25 +1073,64 @@ function runRoundNarrationPasses(narration, entries, relevance, campaignState, {
     outcome:         lead?.input?.outcome ?? null,
     playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
   };
-  if (!hits.length) {
-    const capturedRelevance = { ...relevance, resolvedClass: widestRoundClass(captured) };
-    return runPostNarrationPasses(narration, resolution, capturedRelevance, campaignState, {
-      actorId: lead?.actorId ?? null, narrationId,
+
+  const refs = roundTierRefs(captured, matchedEntityIds, matchedEntityTypes);
+  if (refs.length) {
+    setTimeout(() => {
+      appendGenerativeTierUpdates(
+        narration, refs, campaignState?.currentSessionId, campaignState?.sessionNumber, { narrationId },
+      ).catch(err => console.error(`${MODULE_ID} | round tier update failed:`, err));
+    }, ASYNC_DETECTION_DELAY_MS);
+  }
+
+  const options = { actorId: lead?.actorId ?? null, narrationId };
+  if (hits.length) {
+    const owner = roundFigureOwner(entries, narration);
+    return runDiscoveryDetection(narration, resolution, campaignState, {
+      ...options,
+      connectionRollers: hits.map(e => ({
+        actorId:        e.actorId ?? null,
+        connectionSeed: e.input.oracleSeeds?.connectionSeed ?? null,
+        owns:           (figure) => !!e.actorId && owner(figure) === e.actorId,
+      })),
     });
   }
-  // The detection pass's world-scoped writes are the canonical GM's
-  // (runPostNarrationPasses' gate).
-  if (!isCanonicalGM()) return Promise.resolve();
-  const owner = roundFigureOwner(entries, narration);
-  return runDiscoveryDetection(narration, resolution, campaignState, {
-    connectionRollers: hits.map(e => ({
-      actorId:        e.actorId ?? null,
-      connectionSeed: e.input.oracleSeeds?.connectionSeed ?? null,
-      owns:           (figure) => !!e.actorId && owner(figure) === e.actorId,
-    })),
-    actorId: lead?.actorId ?? null,
-    narrationId,
-  });
+  if (widestRoundClass(captured) === 'embellishment') return Promise.resolve();
+  setTimeout(() => {
+    runDiscoveryDetection(narration, resolution, campaignState, options)
+      .catch(err => console.error(`${MODULE_ID} | round detection failed:`, err));
+  }, ASYNC_DETECTION_DELAY_MS);
+  return Promise.resolve();
+}
+
+/**
+ * The entities a round's tier pass covers (issue #342 Z10), each entry as its
+ * free-flow narration's pass would: an action with no roll is narrated as
+ * paced narration is (widestRoundClass), so it brings what the round's prompt
+ * matched — paced's rule (schedulePacedTierUpdate), the scene frame's cast
+ * included; a rolled interaction-class move brings its own relevance — the
+ * move pass's rule (runPostNarrationPasses; architecture §8.2: a move's tier
+ * pass follows the player's text, not the frame); a discovery- or
+ * embellishment-class move brings none.
+ *
+ * @param {Array<Object>} entries — the captured roundNarrationEntries
+ * @param {string[]} matchedEntityIds
+ * @param {string[]} matchedEntityTypes
+ * @returns {Array<{ journalId: string, type: string|undefined }>}
+ */
+function roundTierRefs(entries, matchedEntityIds, matchedEntityTypes) {
+  const refs = [];
+  const add = (id, type) => {
+    if (typeof id === 'string' && id && !refs.some(r => r.journalId === id)) refs.push({ journalId: id, type });
+  };
+  for (const e of entries ?? []) {
+    if (e?.input?.kind !== 'move') {
+      (matchedEntityIds ?? []).forEach((id, i) => add(id, matchedEntityTypes?.[i]));
+    } else if (e.input.relevance?.resolvedClass === 'interaction') {
+      (e.input.relevance.entityIds ?? []).forEach((id, i) => add(id, e.input.relevance.entityTypes?.[i]));
+    }
+  }
+  return refs;
 }
 
 /**
