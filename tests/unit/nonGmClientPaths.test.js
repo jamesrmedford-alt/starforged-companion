@@ -32,8 +32,10 @@ vi.mock('../../src/audio/cache.js', () => {
   };
 });
 
+// The audio module's GM-side gate is the audio GM — the GM holding the
+// ElevenLabs key, else the canonical GM (issue #342 Z67).
 vi.mock('../../src/multiplayer/gmGate.js', () => ({
-  isCanonicalGM: vi.fn().mockReturnValue(true),
+  isAudioGM: vi.fn().mockReturnValue(true),
 }));
 
 vi.mock('../../src/audio/elevenlabs.js', () => ({
@@ -52,7 +54,7 @@ import {
 } from '../../src/audio/index.js';
 
 import { write as mockWrite, lookup as mockLookup, cacheKey as mockCacheKey } from '../../src/audio/cache.js';
-import { isCanonicalGM }     from '../../src/multiplayer/gmGate.js';
+import { isAudioGM }         from '../../src/multiplayer/gmGate.js';
 import { synthesise as mockSynthesise } from '../../src/audio/elevenlabs.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -131,7 +133,7 @@ describe('registerAudioSocket — GM relay contract', () => {
   beforeEach(() => {
     game.socket._reset();
     vi.clearAllMocks();
-    vi.mocked(isCanonicalGM).mockReturnValue(true);
+    vi.mocked(isAudioGM).mockReturnValue(true);
     vi.mocked(mockWrite).mockResolvedValue('/worlds/test/audio/deadbeef.mp3');
   });
 
@@ -145,15 +147,15 @@ describe('registerAudioSocket — GM relay contract', () => {
     expect(game.socket._handlers.get(AUDIO_SOCKET_NAME).length).toBeGreaterThan(0);
   });
 
-  it('handler ignores payloads when this client is not the canonical GM', async () => {
-    vi.mocked(isCanonicalGM).mockReturnValue(false);
+  it('handler ignores payloads when this client is not the audio GM', async () => {
+    vi.mocked(isAudioGM).mockReturnValue(false);
     registerAudioSocket();
     const [handler] = game.socket._handlers.get(AUDIO_SOCKET_NAME);
     await handler({ kind: 'audio.cache.write', hash: 'abc', b64: btoa('x') });
     expect(mockWrite).not.toHaveBeenCalled();
   });
 
-  it('handler calls cacheWrite when canonical GM receives a non-GM client relay', async () => {
+  it('handler calls cacheWrite when the audio GM receives a non-GM client relay', async () => {
     registerAudioSocket();
     const [handler] = game.socket._handlers.get(AUDIO_SOCKET_NAME);
 
@@ -231,7 +233,7 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
     _resetSynthStateForTests();
     vi.clearAllMocks();
     game.socket._reset();
-    vi.mocked(isCanonicalGM).mockReturnValue(true);
+    vi.mocked(isAudioGM).mockReturnValue(true);
     vi.mocked(mockLookup).mockResolvedValue(null);       // default: cache miss
     vi.mocked(mockCacheKey).mockResolvedValue(HASH);
     vi.mocked(mockWrite).mockResolvedValue('/worlds/test/audio/x.mp3');
@@ -270,8 +272,8 @@ describe('handleSynthRequest — GM synthesises on a keyless client request', ()
     expect(doneEmits()[0].payload.path).toBe(`/worlds/test/audio/${HASH}.mp3`);
   });
 
-  it('ignores synth requests when not the canonical GM', async () => {
-    vi.mocked(isCanonicalGM).mockReturnValue(false);
+  it('ignores synth requests when not the audio GM', async () => {
+    vi.mocked(isAudioGM).mockReturnValue(false);
     const handler = getHandler();
     await handler({ kind: 'audio.synth.request', hash: HASH, spec: SPEC });
     expect(mockSynthesise).not.toHaveBeenCalled();

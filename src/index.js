@@ -193,7 +193,7 @@ import {
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence } from "./multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence } from "./multiplayer/gmGate.js";
 import { registerGmRelaySocket, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
@@ -273,6 +273,19 @@ function warnKeyAdvertiseRefused(err) {
   ui.notifications?.warn?.(keyed
     ? "Starforged Companion: your Claude key could not be registered for the table (the world did not save it) — the table will not route its narration to your key until you reload Foundry."
     : "Starforged Companion: your cleared Claude key could not be unregistered for the table (the world did not save it) — narration may still be routed to your client until you reload Foundry.");
+}
+
+/**
+ * The world refused the audio-keyed GM registry write a GM's ElevenLabs key
+ * change made: the table keeps sending keyless players' audio requests where
+ * it did. Said as warnKeyAdvertiseRefused says it for the Claude key (issue
+ * #337 Y40's rule; issue #342 Z67).
+ *
+ * @param {Error} err
+ */
+function warnAudioKeyAdvertiseRefused(err) {
+  console.warn(`${MODULE_ID} | audio-keyed GM advertise failed:`, err);
+  ui.notifications?.warn?.("Starforged Companion: your ElevenLabs key change could not be registered for the table (the world did not save it) — players' narrator audio is not routed by it until you reload Foundry.");
 }
 
 function registerCoreSettings() {
@@ -498,6 +511,17 @@ function registerCoreSettings() {
     name: "ElevenLabs API Key",
     hint: "Your ElevenLabs API key. Stored locally in your browser — never sent to Foundry's server.",
     scope: "client", config: false, type: String, default: "",
+    // A GM's key is advertised to the table, so a keyless player's audio
+    // request is answered by a GM who can make the clip (gmGate.isAudioGM —
+    // issue #342 Z67).
+    onChange: () => { advertiseElevenLabsKeyPresence().catch(warnAudioKeyAdvertiseRefused); },
+  });
+  // The GMs whose client holds an ElevenLabs key — user ids only, never the
+  // key (issue #209), as keyedGmUserIds is for the Claude key. The keyless
+  // players' narrator audio is served by the lowest-id one (issue #342 Z67).
+  game.settings.register(MODULE_ID, "audioKeyedGmUserIds", {
+    name: "Audio-keyed GM registry", scope: "world", config: false,
+    type: Array, default: [],
   });
   game.settings.register(MODULE_ID, "audio.clientEnabled", {
     name: "Enable audio narration on this client", scope: "client",
@@ -7152,6 +7176,10 @@ Hooks.once("ready", () => {
   // routes to a keyed GM (no-op for non-GMs; writes only when state changes).
   advertiseClaudeKeyPresence().catch((err) =>
     console.warn(`${MODULE_ID} | keyed-GM advertise failed:`, err));
+  // And its ElevenLabs key, so keyless players' audio reaches a GM who can
+  // make it (issue #342 Z67).
+  advertiseElevenLabsKeyPresence().catch((err) =>
+    console.warn(`${MODULE_ID} | audio-keyed GM advertise failed:`, err));
   console.log(`${MODULE_ID} | Ready`);
 
   // Show the floating Companion launcher. It replaces the old scene-controls

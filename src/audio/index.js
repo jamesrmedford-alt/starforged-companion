@@ -11,9 +11,13 @@
  * starts as soon as the card renders.
  *
  * Multi-client cache writes: each client generates locally on demand
- * and emits a socket message to the canonical GM, which then writes
+ * and emits a socket message to the audio GM, which then writes
  * the MP3 to `worlds/${worldId}/audio/` — when it holds no ElevenLabs
  * key itself; a keyed GM makes and caches its own clips (issue #338 D10).
+ * The audio GM (gmGate.isAudioGM) is the lowest-id active GM holding an
+ * ElevenLabs key, else the canonical GM: the canonical GM is chosen by the
+ * Claude key, and a keyless one answered every keyless player's Play with
+ * "no clip" while a keyed co-GM stood down (issue #342 Z67).
  * After the first generation, subsequent clients hit the cache. See
  * AUDIO_SOCKET_NAME below.
  */
@@ -34,7 +38,7 @@ import {
   userGestureReceived,
   stopActivePlayback,
 } from "./playback.js";
-import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { isAudioGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 export const AUDIO_SOCKET_NAME = `module.${MODULE_ID}`;
@@ -50,7 +54,7 @@ const cardLoadGeneration = (message) => _loadGenerationByCard.get(message) ?? 0;
 const cancelCardLoad     = (message) => _loadGenerationByCard.set(message, cardLoadGeneration(message) + 1);
 let _gestureOverlayShown = false;
 
-// Keyless playback: a client without an ElevenLabs key asks the canonical GM to
+// Keyless playback: a client without an ElevenLabs key asks the audio GM to
 // synthesise + cache an uncached clip, then plays the resulting file. Each
 // request is awaited per content-hash (multiple waiters allowed) with a
 // timeout; the GM signals completion over the socket with the file's path.
@@ -61,7 +65,7 @@ const _pendingSynth  = new Map();   // hash -> Set<resolve>
 // (synthesiseToCacheOnce).
 const _synthInFlight = new Map();
 
-// A keyed Player who may not browse the cache asks the canonical GM whether a
+// A keyed Player who may not browse the cache asks the audio GM whether a
 // clip is already there (`audio.cache.ask` → `audio.cache.found`) before
 // synthesising it on their own key (issue #326 W79). Lookup only: the GM never
 // synthesises for an ask, and its answer resolves only these waiters — never a
@@ -267,8 +271,8 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
     const found = await cacheLookupDetailed(hash);
     let src = found.path;
     if (!src) {
-      if (hasElevenLabsKey() && isCanonicalGM()) {
-        // The canonical GM writes the cache itself, and shares the synthesis
+      if (hasElevenLabsKey() && isAudioGM()) {
+        // The audio GM writes the cache itself, and shares the synthesis
         // with any player's request for the same clip.
         const spec = { voiceId, modelId: voices.modelId, text: p.text, speed: voices.speed };
         const made = await synthesiseToCacheOnce(hash, spec, getSetting("elevenLabsApiKey", ""));
@@ -277,7 +281,7 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
         // A default Player may not browse the cache, so a cached clip read as
         // a miss and every play was synthesised — billed — again on their key,
         // its bytes re-sent for a re-upload (issue #326 W79). Ask the
-        // canonical GM for the cached file first.
+        // audio GM for the cached file first.
         if (!found.browsed && !globalThis.game?.user?.isGM) src = await askGmForCachedPath(hash);
         if (!src) {
           const bytes = await synthesise({
@@ -290,8 +294,9 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
           });
           src = await commitToCache(hash, bytes);
         }
-      } else if (isCanonicalGM()) {
-        // A keyless request goes to the canonical GM — this client. A socket
+      } else if (isAudioGM()) {
+        // A keyless request goes to the audio GM — this client, with no GM
+        // holding a key (isAudioGM falls back to the canonical GM). A socket
         // emit never reaches its sender, so the request sat out its 30 s
         // timeout on itself and then told the GM to "ask the GM" (issue #326
         // W80). Fail at once and name where the key goes.
@@ -360,8 +365,8 @@ async function writeToCache(hash, bytes) {
 }
 
 /**
- * A keyed client that is not the canonical GM: relay the synthesised bytes to
- * the canonical GM, which writes them to the cache when it holds no key of its
+ * A keyed client that is not the audio GM: relay the synthesised bytes to
+ * the audio GM, which writes them to the cache when it holds no key of its
  * own (fire-and-forget; handleCacheWrite), and resolve to the blob URL of the
  * in-memory bytes so playback can begin without waiting for the GM-side write.
  */
@@ -442,7 +447,7 @@ export function registerAudioSocket() {
 // the audio of a card nobody had played yet with bytes of their own, served
 // to every later Play (issue #338 D10).
 async function handleCacheWrite(payload) {
-  if (!isCanonicalGM()) return;
+  if (!isAudioGM()) return;
   if (hasElevenLabsKey()) {
     console.debug(`${MODULE_ID} | audio cache relay: this GM holds an ElevenLabs key and makes its own clips — the relayed clip is not filed.`);
     return;
@@ -498,7 +503,7 @@ async function isNarratorCardClipKey(hash) {
 // done signal with only the hash left them "not ready" every time, and on The
 // Forge only the upload's own response names the file (issue #321 U60).
 async function handleSynthRequest(payload) {
-  if (!isCanonicalGM()) return;
+  if (!isAudioGM()) return;
   const hash = typeof payload.hash === "string" ? payload.hash : "";
   const spec = payload.spec;
   if (!hash) return;
@@ -545,7 +550,7 @@ async function handleSynthRequest(payload) {
 // carries no spec, and its answer must not bill the GM) — but it joins this
 // clip's in-flight synthesis, so a clip being made is not made twice.
 async function handleCacheAsk(payload) {
-  if (!isCanonicalGM()) return;
+  if (!isAudioGM()) return;
   const hash = typeof payload.hash === "string" ? payload.hash : "";
   if (!hash) return;
   let path = null;
@@ -597,7 +602,7 @@ function relayedClipPath(hash, path) {
   return undefined;
 }
 
-// Keyed Player who may not browse: ask the canonical GM for a clip's cached
+// Keyed Player who may not browse: ask the audio GM for a clip's cached
 // path; null when there is none, no GM is online, or no answer comes in time.
 async function askGmForCachedPath(hash) {
   const gmOnline = Array.from(globalThis.game?.users ?? []).some(u => u?.isGM && u?.active);
@@ -624,7 +629,7 @@ function resolvePendingSynth(hash, path) {
   for (const resolve of set) resolve(src);
 }
 
-// Keyless client: ask the canonical GM to synthesise + cache `hash`, wait for
+// Keyless client: ask the audio GM to synthesise + cache `hash`, wait for
 // the done signal (or time out), then return the path it names — or, without
 // one, the cache lookup's (a Trusted Player may browse; a Player may not).
 async function requestGmSynthesis(hash, spec) {

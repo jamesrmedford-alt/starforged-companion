@@ -132,19 +132,84 @@ export function hasKeyedActiveGM() {
  * @returns {Promise<void>}
  */
 export async function advertiseClaudeKeyPresence() {
+  return advertiseKeyPresence(KEY_REGISTRIES.claude);
+}
+
+/**
+ * Record (or clear) THIS client's ElevenLabs-key presence in the world-scoped
+ * audio-keyed GM registry (`audioKeyedGmUserIds`), so a keyless player's
+ * narrator-audio request is answered by a GM that can make the clip
+ * (isAudioGM). The ElevenLabs key is a second per-browser key, independent of
+ * the Claude key the canonical GM is chosen by: with it on a co-GM only, the
+ * keyless canonical GM answered "no clip" and the co-GM stood down (issue
+ * #342 Z67). Same rules as advertiseClaudeKeyPresence: GM-only, ids only,
+ * writes only when membership changes. Call sites: the `ready` hook and the
+ * elevenLabsApiKey `onChange`.
+ *
+ * @returns {Promise<void>}
+ */
+export async function advertiseElevenLabsKeyPresence() {
+  return advertiseKeyPresence(KEY_REGISTRIES.elevenLabs);
+}
+
+// Each per-browser key a GM's client may hold, and the world registry naming
+// the GMs whose client holds one (user ids only — the key never leaves the
+// browser, issue #209).
+const KEY_REGISTRIES = Object.freeze({
+  claude:     Object.freeze({ keySetting: "claudeApiKey",     registry: "keyedGmUserIds",
+    holds: (key) => !!key }),
+  // As the audio module reads it (hasElevenLabsKey): blank is no key.
+  elevenLabs: Object.freeze({ keySetting: "elevenLabsApiKey", registry: "audioKeyedGmUserIds",
+    holds: (key) => typeof key === "string" && key.trim().length > 0 }),
+});
+
+/** Put THIS GM in, or take it out of, one key registry — a write only when its membership is wrong. */
+async function advertiseKeyPresence({ keySetting, registry, holds }) {
   const game = globalThis.game;
   if (!game?.user?.isGM) return;
 
-  const hasKey = !!game.settings?.get(MODULE_ID, "claudeApiKey");
-  const list   = game.settings?.get(MODULE_ID, "keyedGmUserIds");
+  const hasKey = holds(game.settings?.get(MODULE_ID, keySetting));
+  const list   = game.settings?.get(MODULE_ID, registry);
   const ids    = Array.isArray(list) ? list : [];
   const id     = game.user.id;
   const member = ids.includes(id);
 
   if (hasKey && !member) {
-    await game.settings.set(MODULE_ID, "keyedGmUserIds", [...ids, id]);
+    await game.settings.set(MODULE_ID, registry, [...ids, id]);
   } else if (!hasKey && member) {
-    await game.settings.set(MODULE_ID, "keyedGmUserIds", ids.filter(x => x !== id));
+    await game.settings.set(MODULE_ID, registry, ids.filter(x => x !== id));
   }
   // else: membership already correct — no write.
+}
+
+/**
+ * True iff THIS client is the GM that serves narrator audio to keyless clients
+ * — answers `audio.synth.request`, `audio.cache.ask` and files a relayed clip
+ * (src/audio/index.js): the lowest-id active GM whose client advertised an
+ * ElevenLabs key (`audioKeyedGmUserIds`), else — no active GM holds one —
+ * the canonical GM, as before (it then says the key is missing). The help
+ * promises that only a GM needs the key, any GM; the canonical GM is chosen
+ * by the Claude key, so a keyless canonical GM answered every keyless
+ * player's Play with "no clip" while a keyed co-GM stood down (issue #342
+ * Z67). Every client reads the same registry and user list, so exactly one
+ * GM answers.
+ *
+ * @returns {boolean}
+ */
+export function isAudioGM() {
+  const game = globalThis.game;
+  if (!game?.user?.isGM) return false;
+  let keyed;
+  try {
+    keyed = game.settings?.get(MODULE_ID, KEY_REGISTRIES.elevenLabs.registry);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | isAudioGM: audio-keyed GM registry read failed; using the canonical GM:`, err?.message ?? err);
+    keyed = null;
+  }
+  const keyedSet = new Set(Array.isArray(keyed) ? keyed : []);
+  const pool = Array.from(game.users ?? []).filter(u => u?.isGM && u?.active && keyedSet.has(u.id));
+  if (!pool.length) return isCanonicalGM();
+  let first = pool[0];
+  for (const u of pool) if (u.id < first.id) first = u;
+  return first.id === game.user.id;
 }
