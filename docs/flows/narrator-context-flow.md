@@ -197,9 +197,14 @@ the beat, so a repeat play removes nothing more (fallback, burn-superseded
 and whispered cards are never chosen). It retracts what their sidecars wrote
 (`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"` — a truth
 the table had struck is relabelled so, and the strike a scene end kept for
-the session (`sessionRetractions`, with its truth's `narrationId`) dropped:
+the session (`sessionRetractions.facts`, with its truth's `narrationId`)
+moved to the session's unnamed X-Card blocks (`sessionRetractions.blocked`):
 named under CORRECTED it handed the narrator the removed content, and
-`!truth set` could lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — state
+`!truth set` could lift it (XCARD-AFTER-STRIKE-STILL-NAMED); dropped, it
+blocked nothing (XCARD-RETRACTION-SCENE-SCOPED). A scene end keeps the
+scene's X-Card retractions there too, so each blocks the narrator's
+re-assertion for the rest of the session — `findSessionStrike`'s write half
+reads them, the lift does not, and nothing renders them — state
 values removed — each gives way to the value it superseded, kept on the entry
 as a bounded `previous` chain, so an earlier kept narration's value stands
 again (issue #326 W41) — a frame they wrote cleared), appends their `narrationId`s to
@@ -724,8 +729,9 @@ ring, and the closing scene's truths keep the closing session's number.
   issue #321 U40; a `!truth set` that lifts the strike restores it —
   `restoreStruckLore`, issue #331 X31 — unless another standing retraction
   of the session still states it: another strike, to which it is handed so
-  lifting that one restores it, an X-Card retraction or an earlier scene's
-  kept strike, issue #336 Y32), and the
+  lifting that one restores it, an X-Card retraction — the active scene's or
+  an earlier scene's kept block — or an earlier scene's kept strike, issue
+  #336 Y32), and the
   rolling summary regenerates on the next refresh with a "RETRACTED BY THE
   TABLE — leave these out" list. `endScene` keeps the scene's bare strikes on
   `campaignState.sessionRetractions`, so CORRECTED and that list hold for the
@@ -738,7 +744,13 @@ ring, and the closing scene's truths keep the closing session's number.
   GM's `!truth set` lifts it (a player's is refused over a GM's, W60) —
   dropped from the stored list in the command's write, its lore restored by
   that id (issue #342 Z42: it was recorded live beside CORRECTED and archived
-  as canon, and a set rendered beside the strike it should have lifted).
+  as canon, and a set rendered beside the strike it should have lifted). The
+  scene's X-Card retractions are kept beside them, unnamed
+  (`sessionRetractions.blocked`): `applySidecar` blocks their re-assertion
+  the same way (`findSessionStrike(…, { blocked: true })`), a lift's lore
+  restore counts them (`loreRetractionHolder`), and nothing names them or
+  lifts them — their block was the scene's retracted entry, which the scene
+  end cleared (XCARD-RETRACTION-SCENE-SCOPED).
 - `!truth` / `!state` resolve subjects **against the full entity roster**,
   so entity-keyed entries are addressable by name from the commands (the
   correction dialog always could). The commands are checked on the typist's

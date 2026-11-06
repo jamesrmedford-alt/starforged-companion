@@ -38,7 +38,7 @@
 
 import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments, hasSheetNotes } from '../entities/registry.js';
 import { retractSessionLore, undoNarrationEntries } from '../world/worldJournal.js';
-import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey } from './ledgers.js';
+import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey, withXCardBlocks } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -177,7 +177,9 @@ function loreStatesStrike(entry, subject, label, fact) {
  *     id they keep, which a `!truth set` lifts too (issue #342 Z42) — `true`
  *     for one kept before they kept it;
  *   - the active scene's X-Card retractions (never lifted, U07) → `true`: the
- *     entry stays out of canon.
+ *     entry stays out of canon — and the earlier scenes' too, kept unnamed
+ *     (`sessionRetractions.blocked`, XCARD-RETRACTION-SCENE-SCOPED: once its
+ *     scene ended, a lift restored the X-carded fact to canon).
  * The lifted strike itself is linked (`correctedTo`) on the lift's copy, or —
  * kept from an earlier scene — dropped from it, so it is not one of them.
  *
@@ -188,22 +190,26 @@ export function loreRetractionHolder(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
   const active = (campaignState?.sceneTruths ?? []).filter(t =>
     (isNamedStrike(t) || (t?.retracted && t.retractedBy === XCARD_RETRACTED_BY)) && String(t.fact ?? '').trim());
-  const earlier = (sessionId && campaignState?.sessionRetractions?.sessionId === sessionId)
-    ? (campaignState.sessionRetractions.facts ?? []) : [];
+  const thisSession = !!sessionId && campaignState?.sessionRetractions?.sessionId === sessionId;
+  const earlier = thisSession ? (campaignState.sessionRetractions.facts ?? []) : [];
+  const blocked = thisSession ? (campaignState.sessionRetractions.blocked ?? []) : [];
+  // A kept entry is its label and fact: "scene" for a scene truth, else a name.
+  const statesKept = (entry, f) => {
+    const label = String(f?.label ?? '').trim();
+    const fact  = String(f?.fact ?? '').trim();
+    if (!label || !fact) return false;
+    const subject = label.toLowerCase() === 'scene' ? { kind: 'scene' } : { kind: 'text', text: label };
+    return loreStatesStrike(entry, subject, label, fact);
+  };
   return (entry) => {
     for (const t of active) {
       if (!loreStatesStrike(entry, t.subject, subjectLabel(t.subject), String(t.fact).trim())) continue;
       return (t.retractedBy !== XCARD_RETRACTED_BY && typeof t.id === 'string' && t.id) ? t.id : true;
     }
     for (const f of earlier) {
-      const label = String(f?.label ?? '').trim();
-      const fact  = String(f?.fact ?? '').trim();
-      if (!label || !fact) continue;
-      // A kept strike is its label and fact: "scene" for a scene truth, else a name.
-      const subject = label.toLowerCase() === 'scene' ? { kind: 'scene' } : { kind: 'text', text: label };
-      if (loreStatesStrike(entry, subject, label, fact)) return (typeof f.truthId === 'string' && f.truthId) ? f.truthId : true;
+      if (statesKept(entry, f)) return (typeof f.truthId === 'string' && f.truthId) ? f.truthId : true;
     }
-    return null;
+    return blocked.some(f => statesKept(entry, f)) ? true : null;
   };
 }
 
@@ -490,9 +496,10 @@ function isNamedStrike(t) {
  * At scene end, keep the scene's bare strikes (a Replace's replacement
  * stands, so it is not kept) on `campaignState.sessionRetractions` for the
  * rest of the session. Each keeps the `narrationId` of the narration that
- * asserted it: an X-Card played on that narration later drops it
- * (ledgers.js retractNarrations — XCARD-AFTER-STRIKE-STILL-NAMED: naming it
- * would hand the narrator the content the table removed). Each keeps what a
+ * asserted it: an X-Card played on that narration later takes it out of the
+ * named list into the unnamed blocks below (ledgers.js retractNarrations —
+ * XCARD-AFTER-STRIKE-STILL-NAMED: naming it would hand the narrator the
+ * content the table removed). Each keeps what a
  * strike is to its two defenses too (issue #342 Z42 — it outlived its scene as
  * text only): its subject's key, which a later scene's narrator re-assertion
  * is blocked by (ledgers.js findSessionStrike); who struck it and who
@@ -500,17 +507,33 @@ function isNamedStrike(t) {
  * (W60); and the struck truth's id, by which a lift restores the lore it
  * retracted (restoreStruckLore). Mutates campaignState; endScene persists it.
  *
+ * The scene's X-Card retractions are kept too, apart and unnamed
+ * (`sessionRetractions.blocked` — ledgers.js withXCardBlocks): they go on
+ * blocking a re-assertion for the session (findSessionStrike's write half)
+ * and holding their lore out of canon (loreRetractionHolder), and nothing
+ * renders them — not CORRECTED, not the summary's leave-out list, no card.
+ * Their block was the retracted ledger entry, which the scene end clears
+ * (XCARD-RETRACTION-SCENE-SCOPED).
+ *
  * @param {Object} campaignState
  */
 export function rememberSessionRetractions(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
   if (!sessionId) return;
-  const struck = (campaignState.sceneTruths ?? []).filter(isNamedStrike);
-  if (!struck.length) return;
+  const truths = campaignState.sceneTruths ?? [];
+  const struck = truths.filter(isNamedStrike);
+  const removed = truths.filter(t => t?.retracted && t.retractedBy === XCARD_RETRACTED_BY && String(t.fact ?? '').trim());
+  if (!struck.length && !removed.length) return;
 
-  const prior = campaignState.sessionRetractions?.sessionId === sessionId
-    ? (campaignState.sessionRetractions.facts ?? [])
-    : [];
+  const same = campaignState.sessionRetractions?.sessionId === sessionId;
+  const prior = same ? (campaignState.sessionRetractions.facts ?? []) : [];
+  const blocked = withXCardBlocks(same ? campaignState.sessionRetractions.blocked : [], removed.map(t => ({
+    label:       subjectLabel(t.subject),
+    fact:        String(t.fact).trim(),
+    subjectKey:  subjectKey(t.subject) || null,
+    narrationId: t.narrationId ?? null,
+    truthId:     t.id ?? null,
+  })));
   const facts = [...prior];
   for (const t of struck) {
     const strike = { label: subjectLabel(t.subject), fact: String(t.fact).trim() };
@@ -526,7 +549,7 @@ export function rememberSessionRetractions(campaignState) {
       asserter:    t.asserter ?? null,
     });
   }
-  campaignState.sessionRetractions = { sessionId, facts: facts.slice(-SESSION_RETRACTION_CAP) };
+  campaignState.sessionRetractions = { sessionId, facts: facts.slice(-SESSION_RETRACTION_CAP), blocked };
 }
 
 /**

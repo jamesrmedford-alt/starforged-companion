@@ -123,12 +123,16 @@ layers. This file is the never-break list.
    (`findSessionStrike` / `dropSessionStrike`, issue #342 Z42). Any new
    correction path calls `propagateRetraction` — the X-Card does, for each
    truth it retracts (issue #321 U07). An X-Card retraction
-   (`retractedBy: "xcard"`) blocks re-assertion like a strike but is never
-   named under CORRECTED or in the leave-out list: naming it would hand the
-   narrator the content the table removed — so it takes over the table's
-   strike of a truth its narration wrote, relabelled `"xcard"`, with the
-   strike's kept `sessionRetractions` entry dropped by its `narrationId`, and
-   a `!truth set` can lift neither (XCARD-AFTER-STRIKE-STILL-NAMED). A superseded narration's
+   (`retractedBy: "xcard"`) blocks re-assertion like a strike — for the
+   rest of the session, as a kept strike does: a scene end keeps it apart,
+   unnamed (`sessionRetractions.blocked`, read by `findSessionStrike`'s write
+   half and `loreRetractionHolder` alone — XCARD-RETRACTION-SCENE-SCOPED) —
+   but is never named under CORRECTED, in the leave-out list or on a card:
+   naming it would hand the narrator the content the table removed — so it
+   takes over the table's strike of a truth its narration wrote, relabelled
+   `"xcard"`, with the strike's kept `sessionRetractions` entry moved by its
+   `narrationId` to those unnamed blocks, and a `!truth set` can lift neither
+   (XCARD-AFTER-STRIKE-STILL-NAMED). A superseded narration's
    (`retractedBy: "superseded"` — what a Burn Momentum / Improve Result
    replaced, retracted by its `narrationId`, issue #338 D8) is never named
    either, and blocks nothing: the re-narration may state the fact again. Anything a narration writes

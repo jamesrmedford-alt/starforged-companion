@@ -96,12 +96,11 @@ export function applySidecar(sidecar, ctx) {
     // A strike an earlier scene of this session kept blocks it too: the
     // session's CORRECTED still names it "do NOT re-assert", and the ring
     // still carries the prose that stated it (issue #342 Z42 — recorded live
-    // beside CORRECTED, then archived as canon at the next scene end).
-    if (findSessionStrike(campaignState, subject, fact, subjectNames(subject, subjectRef, entities))) {
-      console.debug?.(
-        'starforged-companion | factContinuity: narrator re-asserted a fact struck earlier this session; append blocked:',
-        fact,
-      );
+    // beside CORRECTED, then archived as canon at the next scene end). So
+    // does an earlier scene's X-Card retraction, kept unnamed
+    // (XCARD-RETRACTION-SCENE-SCOPED) — the log names neither.
+    if (findSessionStrike(campaignState, subject, fact, subjectNames(subject, subjectRef, entities), { blocked: true })) {
+      console.debug?.('starforged-companion | factContinuity: narrator re-asserted a fact retracted earlier this session; append blocked.');
       continue;
     }
 
@@ -292,8 +291,10 @@ function stateEntryWithout(entry, ids) {
  * (XCARD-AFTER-STRIKE-STILL-NAMED): a bare strike — the GM's or a player's,
  * no replacement — is relabelled `retractedBy: "xcard"` (its `retractedAt`
  * kept), and the strike a scene end kept for the session
- * (`sessionRetractions`, with its truth's `narrationId`) is dropped. Left as
- * the table's, the CORRECTED block and the summary's leave-out list named the
+ * (`sessionRetractions.facts`, with its truth's `narrationId`) moves to the
+ * session's unnamed X-Card blocks (`sessionRetractions.blocked`), which go on
+ * blocking a re-assertion (XCARD-RETRACTION-SCENE-SCOPED). Left as the
+ * table's, the CORRECTED block and the summary's leave-out list named the
  * removed content for the rest of the session (U07), and `!truth set` could
  * lift it (an X-Card's retraction is never lifted — issue #331 X31). A
  * superseded narration's (`by` SUPERSEDED_RETRACTED_BY) leaves the table's
@@ -334,7 +335,11 @@ export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETR
 
   const sessionStrikes = campaignState.sessionRetractions;
   if (xCard && Array.isArray(sessionStrikes?.facts) && sessionStrikes.facts.some(f => ids.has(f?.narrationId))) {
-    campaignState.sessionRetractions = { ...sessionStrikes, facts: sessionStrikes.facts.filter(f => !ids.has(f?.narrationId)) };
+    campaignState.sessionRetractions = {
+      ...sessionStrikes,
+      facts:   sessionStrikes.facts.filter(f => !ids.has(f?.narrationId)),
+      blocked: withXCardBlocks(sessionStrikes.blocked, sessionStrikes.facts.filter(f => ids.has(f?.narrationId))),
+    };
   }
 
   const bySubject = campaignState.sceneState?.bySubject;
@@ -773,23 +778,68 @@ export function subjectNames(subject, subjectRef, entities = []) {
  * the subject by its key when the strike kept one, else by the name it was
  * kept under; the fact compared as findEquivalentTruth compares.
  *
+ * `blocked`: the write half's lookup (applySidecar) — the session's X-Card
+ * retractions kept past their scene (`sessionRetractions.blocked`) match
+ * too, matched the same way. They block a re-assertion as a strike does but
+ * are named nowhere and never lifted (XCARD-RETRACTION-SCENE-SCOPED), so the
+ * lift (setTruth, `!truth set`) leaves them out.
+ *
  * @param {Object} campaignState
  * @param {Object} subject — resolved subject ({kind, ...})
  * @param {string} fact
  * @param {string[]} [names] — the names the subject goes by (subjectNames)
+ * @param {{ blocked?: boolean }} [opts]
  * @returns {Object|null} the kept entry
  */
-export function findSessionStrike(campaignState, subject, fact, names = []) {
+export function findSessionStrike(campaignState, subject, fact, names = [], { blocked = false } = {}) {
   const sessionId = campaignState?.currentSessionId ?? null;
   const kept = campaignState?.sessionRetractions;
-  if (!sessionId || kept?.sessionId !== sessionId || !Array.isArray(kept.facts)) return null;
+  if (!sessionId || kept?.sessionId !== sessionId) return null;
+  const list = [
+    ...(Array.isArray(kept.facts) ? kept.facts : []),
+    ...(blocked && Array.isArray(kept.blocked) ? kept.blocked : []),
+  ];
   const norm = normaliseFactText(fact);
-  if (!norm) return null;
+  if (!norm || !list.length) return null;
   const key = subjectKey(subject);
   const labels = new Set([...(Array.isArray(names) ? names : []), ...(subject?.kind === 'scene' ? ['scene'] : [])]
     .map(n => String(n ?? '').trim().toLowerCase()).filter(Boolean));
-  return kept.facts.find(f => f && normaliseFactText(f.fact) === norm
+  return list.find(f => f && normaliseFactText(f.fact) === norm
     && ((!!f.subjectKey && f.subjectKey === key) || labels.has(String(f.label ?? '').trim().toLowerCase()))) ?? null;
+}
+
+/** How many X-Card retractions a session keeps blocking past their scene (as `xCardedNarrationIds` keeps). */
+const SESSION_XCARD_BLOCK_CAP = 50;
+
+/**
+ * The session's unnamed X-Card blocks with `adds` (kept strikes or retracted
+ * truths, as `{ label, fact, subjectKey, narrationId, truthId }`): each once
+ * — by subject and fact — the newest kept up to the cap
+ * (XCARD-RETRACTION-SCENE-SCOPED). A block is what findSessionStrike's write
+ * half matches, and nothing renders it. A new array; pure.
+ *
+ * @param {Array<Object>|undefined} blocked — the session's blocks so far
+ * @param {Array<Object>} adds
+ * @returns {Array<Object>}
+ */
+export function withXCardBlocks(blocked, adds) {
+  const out = (Array.isArray(blocked) ? blocked : []).filter(Boolean);
+  const label = (b) => String(b?.label ?? '').trim().toLowerCase();
+  for (const a of Array.isArray(adds) ? adds : []) {
+    const fact = String(a?.fact ?? '').trim();
+    if (!fact) continue;
+    const entry = {
+      label:       String(a.label ?? '').trim(),
+      fact,
+      subjectKey:  typeof a.subjectKey === 'string' && a.subjectKey ? a.subjectKey : null,
+      narrationId: typeof a.narrationId === 'string' && a.narrationId ? a.narrationId : null,
+      truthId:     typeof a.truthId === 'string' && a.truthId ? a.truthId : null,
+    };
+    if (out.some(b => normaliseFactText(b.fact) === normaliseFactText(fact)
+      && ((entry.subjectKey && b.subjectKey === entry.subjectKey) || label(b) === label(entry)))) continue;
+    out.push(entry);
+  }
+  return out.slice(-SESSION_XCARD_BLOCK_CAP);
 }
 
 /**
