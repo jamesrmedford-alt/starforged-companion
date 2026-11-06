@@ -135,7 +135,10 @@ layers. This file is the never-break list.
    (XCARD-AFTER-STRIKE-STILL-NAMED). A narration whose scene has already
    ended is blocked the same way: a scene end keeps each live narration truth
    it closes, unnamed (`sessionRetractions.narrated`), and the X-Card moves
-   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). A superseded narration's
+   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). A scene
+   end adds what it keeps onto the session's list as the store has it at its
+   write's turn — never its copy's list whole — so an X-Card played during its
+   awaits keeps what it wrote (XCARD-DURING-SCENE-END-RACE). A superseded narration's
    (`retractedBy: "superseded"` — what a Burn Momentum / Improve Result
    replaced, retracted by its `narrationId`, issue #338 D8) is never named
    either, and blocks nothing: the re-narration may state the fact again. Anything a narration writes

@@ -43,12 +43,19 @@ const SESSION = 'sess-4';
 const stored   = () => game.settings.get(MODULE_ID, 'campaignState');
 const syncChat = () => { global.game.messages = { contents: ChatMessage._created.slice() }; };
 
+/** A held page creation: a test sets `holdNextCreate` to make the next page creation wait on it. */
+let holdNextCreate = null;
+
 function makeJournal(name) {
   const pages = [];
   const journal = {
     id: `journal-${name}`, name, flags: {},
     pages: { get contents() { return pages; }, find: (fn) => pages.find(fn) },
-    createEmbeddedDocuments: async (_type, docs) => { const created = docs.map(makePage); pages.push(...created); return created; },
+    createEmbeddedDocuments: async (_type, docs) => {
+      const hold = holdNextCreate;
+      if (hold) { holdNextCreate = null; hold.reached(); await hold.release; }
+      const created = docs.map(makePage); pages.push(...created); return created;
+    },
     setFlag: async (mod, key, val) => { (journal.flags[mod] ??= {})[key] = val; },
     getFlag: (mod, key) => journal.flags?.[mod]?.[key],
   };
@@ -69,6 +76,7 @@ function makePage(doc) {
 
 let journals, orig;
 beforeEach(() => {
+  holdNextCreate = null;
   journals = new Map();
   orig = { get: game.journal.get, getName: game.journal.getName, find: game.journal.find, create: global.JournalEntry?.create };
   game.journal.get     = (id) => [...journals.values()].find(j => j.id === id) ?? null;
@@ -271,6 +279,69 @@ describe('XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED — an X-Card on an ended scene\'s 
     await someoneSpeaks();
     await narrate('nar-2', [{ subject: 'Vance', fact: DEAD }]);
     expect(liveTruths(DEAD)).toHaveLength(1);
+  });
+});
+
+/**
+ * XCARD-DURING-SCENE-END-RACE (found while fixing XCARD-RETRACTION-SCENE-
+ * SCOPED). endScene works on a copy across its awaits — each truth's
+ * migration, the World Journal pages — and wrote its copy's
+ * `sessionRetractions` whole. An X-Card played meanwhile lost what it wrote
+ * there: the scene's truths it retracted were kept as live (no block), and a
+ * strike an earlier scene kept, which the X-Card took over into the unnamed
+ * blocks, was named again under CORRECTED. endScene's write now adds the
+ * scene's retractions onto the store's as it stands at its turn, seen as the
+ * X-Card left them.
+ */
+describe('XCARD-DURING-SCENE-END-RACE — an X-Card played while a scene ends keeps what it wrote', () => {
+  /** End the scene (`!scene start`'s end), holding it at its first page creation while `during` runs. */
+  async function endSceneWhile(during) {
+    let release;
+    const reached = new Promise((resolve) => {
+      holdNextCreate = { reached: resolve, release: new Promise((r) => { release = r; }) };
+    });
+    const ending = endScene(foundry.utils.deepClone(stored()), { reason: 'scene_command' });
+    await reached;
+    await during();
+    release();
+    await ending;
+    game.settings._store.set(KEY, { ...stored(), currentSceneId: 'sc-2', sceneState: { bySubject: {}, sceneId: 'sc-2' } });
+  }
+
+  it("an X-Card on the scene's narration while its truths are archived: they stay blocked — named nowhere", async () => {
+    await narrate('nar-1', [{ subject: 'Vance', fact: DEAD }]);
+    await endSceneWhile(async () => { await playXCard(); resume(); });
+    expect(stored().xCardedNarrationIds).toEqual(['nar-1']);       // control: the X-Card landed mid-end
+
+    await someoneSpeaks();
+    await narrate('nar-2', [{ subject: 'Vance', fact: DEAD }]);
+    expect(liveTruths(DEAD)).toEqual([]);                          // was: the scene end kept it live — recorded again
+    expect(named()).toEqual([]);
+    expect(corrected()).not.toContain(DEAD);
+  });
+
+  it('an X-Card taking over a strike an earlier scene kept, while this scene ends: the strike stays the X-Card\'s — not named again', async () => {
+    await narrate('nar-1', [{ subject: 'Vance', fact: DEAD }]);
+    await strike(DEAD);
+    await nextScene();
+    expect(named()).toEqual(['Vance — Is dead']);                  // control: kept and named
+    await gm('!truth set "Kira" Took the shuttle');                // the GM's: this scene's one truth, nar-1 still the newest narration
+
+    await endSceneWhile(async () => { await playXCard(); resume(); });
+
+    expect(named()).toEqual([]);                                    // was: named again — the end wrote its copy's list back
+    expect(corrected()).not.toContain(DEAD);
+    await someoneSpeaks();
+    await narrate('nar-2', [{ subject: 'Vance', fact: DEAD }]);
+    expect(liveTruths(DEAD)).toEqual([]);
+  });
+
+  it("control: with no X-Card meanwhile, the end keeps the scene's strike named and its live narration truth for a later X-Card", async () => {
+    await narrate('nar-1', [{ subject: 'Vance', fact: DEAD }, { subject: 'Kira', fact: 'Took the shuttle' }]);
+    await strike(DEAD);
+    await endSceneWhile(async () => {});
+    expect(named()).toEqual(['Vance — Is dead']);
+    expect(stored().sessionRetractions.narrated.map(n => n.fact)).toEqual(['Took the shuttle']);
   });
 });
 

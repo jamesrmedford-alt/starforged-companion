@@ -680,17 +680,24 @@ record as `lastKnown` (C1, rendered as LAST KNOWN on the card) — each value
 with the `narrationId` that set it and the values it superseded (`previous`,
 newest first, up to four; issue #335 Y01) — and every migrated tier detail and
 archived Lore page carries its truth's `narrationId`, for an X-Card played
-after the scene ended (above). It keeps the
-scene's strikes for the session (B6), then discards state and clears the
-frame. Before that final write it re-reads the store and, while the store is
+after the scene ended (above). It discards state and clears the frame.
+Before that final write it re-reads the store and, while the store is
 still this scene, migrates the truths and keeps the whereabouts that a
 narration persisted during its awaits (`migrateLateSceneFacts`, a few
 passes) — the final write used to clear them unmigrated (issue #325 W24).
 Both persist only their scene fields
 (`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`)
-onto the latest stored campaignState (`persistCampaignStateFields`) — when
+onto the latest stored campaignState (`persistCampaignStateFields`;
+`endScene`'s own `persistEndedScene`, on the same write chain) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
-pipeline's stale snapshot. Triggers for `endScene`: the two
+pipeline's stale snapshot. `endScene`'s write also keeps the scene's strikes,
+X-Card retractions and live narration truths for the session (B6;
+`sessionRetractions` — below), added at that write's turn onto the session's
+list as the store has it then, the scene's truths seen through the store's
+`xCardedNarrationIds` (`endedSceneRetractions` → `retractNarrations`): it
+wrote its copy's list whole, so an X-Card played during its awaits lost what
+it wrote there — a strike it took over was named again, and the scene's
+truths it retracted were kept live (XCARD-DURING-SCENE-END-RACE). Triggers for `endScene`: the two
 commands, the implicit path, **End Session**
 (`session_close`), and the close-out before a new session is minted
 (`rollSessionIfDue`: `session_gap_remint` for a session that went idle,

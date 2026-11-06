@@ -147,6 +147,9 @@ async function openScene(campaignState, reason) {
  *      discard sceneState
  *   4. Discard sceneTruths
  *   5. Clear currentSceneId
+ *   6. Keep the scene's strikes, X-Card retractions and live narration
+ *      truths for the session — added, at the write's turn, onto the session's
+ *      list as the store has it then (persistEndedScene)
  *
  * @param {Object} campaignState
  * @param {Object} [opts]
@@ -164,7 +167,7 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   // Where this scene happened, for its scene-subject truths (resolved once).
   const placeOf = { place: undefined };
   const handled = new Set();
-  // Every truth this end closes, late arrivals too (rememberNarratedTruths).
+  // Every truth this end closes, late arrivals too (persistEndedScene).
   const closed = [];
 
   for (const truth of truths) {
@@ -172,11 +175,6 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
     closed.push(truth);
     counts[await migrateSceneTruth(truth, campaignState, placeOf)] += 1;
   }
-
-  // The scene's strikes outlive it for the rest of the session (issue #286
-  // B6): the CORRECTED block and the summary prompt keep naming them, because
-  // the ring and the summary's source prose still say them.
-  rememberSessionRetractions(campaignState);
 
   // Where each recorded character was and what shape they were in outlives
   // the scene on their card (issue #286 C1) — scene state is discarded next.
@@ -188,11 +186,6 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   // migrated, archived or kept as LAST KNOWN, and was in no store afterwards
   // (issue #325 W24). A few passes; each re-reads the store.
   await migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts, closed);
-
-  // The narration truths it closed stay findable for the session, unnamed, so
-  // an X-Card played later on their narration blocks them
-  // (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
-  rememberNarratedTruths(campaignState, closed);
 
   // Discard active ledgers regardless of per-entry migration outcomes — the
   // truths array is preserved-with-retraction-and-migration markers but the
@@ -206,12 +199,70 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   // `!pace hot` / `!pace quiet` last "for the current scene" (the help), and
   // only `!pace clear` cleared them (issue #322 V21): the override ends with
   // the scene.
-  const fields = [...SCENE_FIELDS, 'sessionRetractions'];
+  const fields = [...SCENE_FIELDS];
   if (clearPacingOverride(campaignState)) fields.push('pacing');
 
-  await persistCampaignStateFields(campaignState, fields, `endScene (${reason})`);
+  await persistEndedScene(campaignState, fields, `endScene (${reason})`, closed);
 
   return { ...counts };
+}
+
+/**
+ * endScene's write, on the client's campaignState write chain (as
+ * persistCampaignStateFields): its scene fields from its copy onto the latest
+ * store (mergeOwnedFields), and the session's kept retractions as the store
+ * has them at this write's turn with the scene's added
+ * (endedSceneRetractions). It wrote its copy's list whole, so an X-Card
+ * played during its awaits lost what it wrote there
+ * (XCARD-DURING-SCENE-END-RACE). The caller's copy takes the list written.
+ * Failures are logged, never thrown.
+ *
+ * @param {Object}   campaignState — endScene's copy
+ * @param {string[]} fields        — its scene fields (and pacing)
+ * @param {string}   label
+ * @param {Object[]} closed        — the truths it closed
+ * @returns {Promise<void>}
+ */
+async function persistEndedScene(campaignState, fields, label, closed) {
+  try {
+    if (typeof game === 'undefined' || !game?.settings?.set) return;
+    await serialiseCampaignStateWrite(async () => {
+      const target = { ...mergeOwnedFields(campaignState, fields, label) };
+      target.sessionRetractions = endedSceneRetractions(campaignState, target, closed);
+      await game.settings.set(MODULE_ID, 'campaignState', target);
+      campaignState.sessionRetractions = target.sessionRetractions;
+    }, label);
+  } catch (err) {
+    // Player clients can't write world settings; tolerate.
+    console.warn(`${MODULE_ID} | sceneLifecycle: campaignState persist failed (${label}):`, err);
+  }
+}
+
+/**
+ * The session's kept retractions an ended scene leaves: the latest store's —
+ * with a `!truth set`'s lift and the X-Card's moves into the unnamed blocks
+ * made meanwhile — plus the scene's, seen as the X-Card has left them (its
+ * `xCardedNarrationIds`, retractNarrations): its bare strikes (named —
+ * rememberSessionRetractions), its X-Card retractions, a strike the X-Card
+ * took over included (unnamed blocks — XCARD-RETRACTION-SCENE-SCOPED), and its
+ * live narration truths (unnamed, for a later X-Card —
+ * rememberNarratedTruths, XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). A session
+ * minted meanwhile keeps its own list.
+ *
+ * @param {Object}   campaignState — endScene's copy (the scene's session)
+ * @param {Object}   latest        — the store as this write's turn reads it
+ * @param {Object[]} closed        — the truths the scene end closed
+ * @returns {Object|null}
+ */
+function endedSceneRetractions(campaignState, latest, closed) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+  const stored = latest?.sessionRetractions ?? null;
+  if (!sessionId || (latest?.currentSessionId ?? null) !== sessionId) return stored;
+  const scene = { currentSessionId: sessionId, sessionRetractions: stored, sceneTruths: [...(closed ?? [])] };
+  retractNarrations(scene, Array.isArray(latest.xCardedNarrationIds) ? latest.xCardedNarrationIds : []);
+  rememberSessionRetractions(scene);
+  rememberNarratedTruths(scene, scene.sceneTruths);
+  return scene.sessionRetractions;
 }
 
 /**
