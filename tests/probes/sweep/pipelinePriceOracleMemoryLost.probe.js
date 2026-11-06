@@ -14,11 +14,14 @@
  * RESULTS; persistResolution keeps `recentOracles` store-owned, so the move's
  * record never restores it.
  *
- * The server round trip is modelled with interceptWrites (SESS-1's model):
- * every campaignState write is held and applied in the order it was sent.
+ * The server round trip is modelled with interceptWrites: every write — a
+ * setting, a card, an actor update — is held and applied in the order it was
+ * sent (Foundry's socket order), and a Claude call answers only once every
+ * write sent before it has landed. With no tension clock (the control) that
+ * model gives the price back; only the clock write between loses it.
  */
 
-import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 
 const control = vi.hoisted(() => ({ dice: [], interpretation: null, ptp: 1 }));
 vi.mock('../../../src/pacing/router.js', async (original) => ({
@@ -54,7 +57,6 @@ import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
 import { scriptClaude } from '../../helpers/faults.js';
 import { CampaignStateSchema } from '../../../src/schemas.js';
 
-const CS_KEY = `${MODULE_ID}.campaignState`;
 const PRICE = 'A trusted individual or community acts against you';
 // challenge 6, 7; action die 1 — iron 3 + 1 misses.
 const MISS = [0.55, 0.65, 0.1];
@@ -117,11 +119,17 @@ function serverOrder() {
   };
 }
 
-async function faceDangerMiss() {
+/** Kira's player types the line; the server applies everything, in order, until the move is done. */
+async function faceDangerMiss(server) {
   control.interpretation = { moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'iron', adds: 0, rationale: 'probe', mischiefApplied: false };
   control.dice = MISS;
-  await table.client('pl-1').chat('Kira dives for the breach controls.', { speaker: { actor: pc.id } });
-  await table.settle();
+  // The line's own create is a held write: let the server run while it waits.
+  const typed = table.client('pl-1').chat('Kira dives for the breach controls.', { speaker: { actor: pc.id } });
+  await server.applyAll();
+  await typed;
+  await server.applyAll();
+  await table.drain();
+  await server.applyAll();
 }
 
 const TENSION = { _id: 'clk-raid', name: 'The raiders close in', type: 'tension', segments: 6, filled: 2, active: true };
@@ -130,9 +138,7 @@ describe("SWP-1 — a move's own Pay the Price keeps its oracle memory when the 
   it("Kira's miss: the price (no suffer route) stays in RECENT ORACLE RESULTS after the clock write", async () => {
     await resetTable([{ ...TENSION }]);
     const server = serverOrder();
-    await faceDangerMiss();
-    await server.applyAll();
-    await table.drain();
+    await faceDangerMiss(server);
 
     const card = table.cards(f => f.payThePriceCard).at(-1);
     expect(card?.flags?.[MODULE_ID]?.sufferRoutes ?? null).toEqual([]);   // no route
@@ -144,9 +150,7 @@ describe("SWP-1 — a move's own Pay the Price keeps its oracle memory when the 
   it('control: with no tension clock, the same miss remembers its price', async () => {
     await resetTable([]);
     const server = serverOrder();
-    await faceDangerMiss();
-    await server.applyAll();
-    await table.drain();
+    await faceDangerMiss(server);
     expect(world().pendingMove).toBe(false);
     expect(remembered()).toEqual([PRICE]);
   }, 30_000);

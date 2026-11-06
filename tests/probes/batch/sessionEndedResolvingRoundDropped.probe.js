@@ -13,7 +13,7 @@
  * with its card's Burn / Improve left open. So: Kira rolls a weak hit, the
  * round waits for her Burn / Keep, the GM ends the session, a player's
  * browser reconnects — the round is gone, its rolled move never narrated, and
- * Kira's Keep answers "That round has ended."
+ * Kira's Keep is refused ("The round isn't waiting for an upgrade.").
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
