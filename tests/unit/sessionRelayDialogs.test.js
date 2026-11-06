@@ -316,14 +316,16 @@ describe("End a Session", () => {
 
     // The gate is shut in the store before the scene close and the summary's
     // call: written after them, a line typed meanwhile was rolled into the
-    // session being ended (issue #331 X41).
+    // session being ended (issue #331 X41). The focus momentum follows the
+    // gate at once — paid after the summary's Claude call, it was lost to a
+    // GM who left during it (issue #342 Z64).
     expect(calls).toEqual([
       "set:campaignState",
+      "momentum:a1:1",
+      "momentum:a2:1",
       "endScene",
       "summary",
       "sessionLog",
-      "momentum:a1:1",
-      "momentum:a2:1",
     ]);
     expect(state()).toMatchObject({ sessionActive: false, questFocus: "Find the beacon", connectionFocus: "Mara" });
     expect(Hooks.callAll).toHaveBeenCalledWith(`${MODULE_ID}.sessionStateChanged`, { active: false });
@@ -376,7 +378,7 @@ describe("End a Session", () => {
       game.settings._store.set(`${MODULE_ID}.campaignState`, live());
       await expect(applyEndSession({ questFocus: "Find the archive" }, {}))
         .resolves.toEqual({ alreadyEnded: false });
-      expect(calls).toEqual(["endScene", "summary", "sessionLog", "momentum:a1:1", "momentum:a2:1"]);
+      expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "endScene", "summary", "sessionLog"]);
       expect(vi.getTimerCount()).toBe(1);
 
       calls.length = 0;
@@ -397,7 +399,7 @@ describe("End a Session", () => {
         applyEndSession({ connectionFocus: "Mara" }, {}),
       ]);
       expect(results.map(r => r.alreadyEnded)).toEqual([false, true]);
-      expect(calls).toEqual(["endScene", "summary", "sessionLog", "momentum:a1:1", "momentum:a2:1"]);
+      expect(calls).toEqual(["momentum:a1:1", "momentum:a2:1", "endScene", "summary", "sessionLog"]);
       expect(state()).toMatchObject({ questFocus: "Find the archive", connectionFocus: "Mara" });
     });
 

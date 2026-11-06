@@ -615,6 +615,16 @@ async function endSessionOnce(payload, ctx = {}) {
   }
   Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: false });
 
+  // The +1 momentum a noted focus earns, as soon as the gate write says the
+  // session ended with one — never after the scene close and the summary's
+  // Claude call, which it does not need: a GM who left during those seconds
+  // took the award with them, the world said "ended, focus noted", and a
+  // later End's correction paid nothing and called it taken (issue #342 Z64).
+  // A refused write is still owed on the GMs' card (P08).
+  if (questFocus || connectionFocus) {
+    await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — a focus noted" });
+  }
+
   // NARR-SESSION-SCENE (narrator-context audit 2026-07): End Session used
   // to flip the gate only — the active scene survived into the next
   // session, whose empty ring + empty summary then mixed with stale scene
@@ -651,11 +661,6 @@ async function endSessionOnce(payload, ctx = {}) {
     } catch (err) {
       console.warn(`${MODULE_ID} | session log write failed:`, err?.message ?? err);
     }
-  }
-
-  const bonus = !!(questFocus || connectionFocus);
-  if (bonus) {
-    await applyMomentumToAllPlayers(1, { sessionId: state.currentSessionId ?? null, award: "End a Session — a focus noted" });
   }
 
   // Fire-and-forget closing vignette — narrator-generated slice-of-life
