@@ -644,9 +644,10 @@ function escapeHtml(s) {
  * not the meter (issue #338 D3): issue #325 W16 redirected the loss at 0
  * supply alone, so a PC unprepared above 0 — Outcast's "+1 supply" at 0
  * clears nothing — paid it from the supply. Read by this executor's guard,
- * the choice card's greyed Sacrifice Resources (sufferDialog
- * isOptionAvailable, sufferCard) and an asset rider's supply cost
- * (consequenceRiders.js).
+ * the "make a suffer move" picker's greyed Sacrifice Resources (sufferCard
+ * anySufferBlocked — an enumerated card's Sacrifice Resources option stays
+ * open and is redirected by this executor, issue #342 D1) and an asset
+ * rider's supply cost (consequenceRiders.js).
  *
  * @param {Actor|null} actor
  * @returns {boolean}

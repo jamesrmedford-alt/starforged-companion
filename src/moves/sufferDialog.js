@@ -17,7 +17,7 @@
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, isUnprepared } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -498,13 +498,6 @@ async function runSufferCall(call, actor, opts) {
   }
 }
 
-/** The suffer moves an option (or its chain) makes. */
-function optionSuffers(opt) {
-  if (!opt || typeof opt !== "object") return [];
-  if (Array.isArray(opt.chain)) return opt.chain.flatMap(optionSuffers);
-  return typeof opt.suffer === "string" ? [opt.suffer] : [];
-}
-
 /**
  * The ally an Aid Your Ally's benefits go to (`opts.allyActorId`, resolved
  * before the dice — statEnrichment.js resolveAidedAlly), or null. Issue #325
@@ -632,12 +625,16 @@ async function postDeferredCard(title, body, flags = {}) {
  *   (sufferCard.js optionContext builds it from the card)
  */
 export function isOptionAvailable(opt, ctx = {}) {
-  // A loss of resources while unprepared is applied to a different suffer
-  // move (Sacrifice Resources: "When you suffer a loss of resources while
-  // unprepared … apply the cost to a different suffer move"): at 0 supply it
-  // cost nothing and settled the choice (issue #325 W16), and above 0 it was
-  // paid from the supply — keyed on the impact, at any supply (issue #338 D3).
-  if (optionSuffers(opt).includes("sacrifice_resources") && isUnprepared(ctx.actor)) return false;
+  // An option that sacrifices resources stays open while unprepared: the
+  // rule moves the cost, it does not remove the choice ("When you suffer a
+  // loss of resources while unprepared … apply the cost to a different
+  // suffer move"). Picked, the Sacrifice Resources executor posts the "make a
+  // suffer move (-N)" picker without Sacrifice Resources — the cost at its
+  // own size, to the move the player chooses (issue #325 W16's redirect).
+  // Greying it left Check Your Gear's and Heal's weak hits only the costlier
+  // Lose Momentum (-2) (issue #342 D1; the "any" picker still greys it,
+  // sufferCard.js anySufferBlocked — picking another move there IS the
+  // redirect).
   if (!opt?.requires) return true;
   const req = String(opt.requires);
   const actor = ctx.actor;

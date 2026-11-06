@@ -10,9 +10,11 @@
  * (`before <= 0 && unprepared`; the card greyed the option at 0), so Kira,
  * unprepared at supply 1, paid a Sacrifice Resources (-1) from the supply.
  * Now a loss while unprepared, at any supply, goes to another suffer move:
- * the executor posts the picker, and the choice card greys Sacrifice
- * Resources. (Resupply's clear is the crew's — resupplyClearsCrewUnprepared —
- * so one crewmate's Resupply leaves no ally unprepared above 0.)
+ * the executor posts the picker, whose "any" list greys Sacrifice Resources;
+ * an enumerated card's Sacrifice Resources option stays open and is
+ * redirected by the executor (issue #342 D1, option A). (Resupply's clear is
+ * the crew's — resupplyClearsCrewUnprepared — so one crewmate's Resupply
+ * leaves no ally unprepared above 0.)
  */
 
 /* global makeTestActor */
@@ -74,12 +76,15 @@ describe("a loss of resources while unprepared, at any supply, goes to another s
     expect(card.content).toMatch(/Supply: 1 — <strong>unprepared<\/strong>: the loss goes to another suffer move/);
   });
 
-  it("the choice card greys Sacrifice Resources while unprepared above 0 — an enumerated option and the 'any' picker", () => {
+  // Issue #342 D1 (option A): an enumerated option that sacrifices resources
+  // stays open while unprepared — picked, its executor redirects the cost —
+  // and the "any" picker greys it (picking another move there IS the redirect).
+  it("the 'any' picker greys Sacrifice Resources while unprepared above 0; an enumerated option stays open", () => {
     const kira = pcWith(2, true);
-    expect(isOptionAvailable(sacrificeOption, { actor: kira })).toBe(false);
+    expect(isOptionAvailable(sacrificeOption, { actor: kira })).toBe(true);
     const html = renderSufferCard({ kind: "any", amount: 1, count: 1 }, kira);
     expect(html).toMatch(/data-suffer-id="sacrifice_resources" disabled>Sacrifice Resources \(-1\) \(unavailable\)/);
-    expect(isUnprepared(kira)).toBe(true);   // the one predicate both read
+    expect(isUnprepared(kira)).toBe(true);   // the predicate the picker and the executor read
   });
 
   it("control: unprepared at 0 is redirected (issue #325 W16)", async () => {
@@ -87,7 +92,7 @@ describe("a loss of resources while unprepared, at any supply, goes to another s
     const r = await sacrificeResources(kira, 1);
     expect(r).toMatchObject({ atZero: true, redirected: true });
     expect(kira.system.supply.value).toBe(0);
-    expect(isOptionAvailable(sacrificeOption, { actor: kira })).toBe(false);
+    expect(isOptionAvailable(sacrificeOption, { actor: kira })).toBe(true);
   });
 
   it("control: a PC who is not unprepared loses the supply", async () => {
