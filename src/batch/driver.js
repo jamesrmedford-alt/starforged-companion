@@ -728,6 +728,21 @@ function claimRoundLock() {
 }
 
 /**
+ * The round's claim met a busy lock: wait for the campaignState write that
+ * frees it (onCampaignStateChanged runs the pass again). The wait is marked
+ * once the claim's answer is back, so a release that landed between the
+ * claim's read and this mark was heard with nothing waiting, and no later
+ * write woke the round (ROUND-LOCK-WAIT-MARKED-LATE). The lock is read again
+ * once the wait is marked: free already, the pass goes round again.
+ */
+function waitForLock() {
+  _waitingForLock = true;
+  if (campaignStateNow().pendingMove) return;
+  _waitingForLock = false;
+  advanceRound("lock-free");
+}
+
+/**
  * Release the round's claim (index.js releasePendingMoveLock). A release the
  * world refuses is tried once more, as free-flow's `finally` retries its own
  * (issue #315 S01); refused again, the GMs are told and the round's next
@@ -760,7 +775,7 @@ async function startResolution({ sendNow }) {
   const lock = await claimRoundLock();
   if (!lock.claim) {
     if (lock.busy) {
-      _waitingForLock = true;
+      waitForLock();
       console.debug(`${MODULE_ID} | Batch Mode: a move holds the lock — the round resolves once it is free.`);
       return false;
     }
@@ -810,7 +825,7 @@ async function rollRound(claim) {
   if (!claim) {
     const lock = await claimRoundLock();
     if (!lock.claim) {
-      if (lock.busy) _waitingForLock = true;
+      if (lock.busy) waitForLock();
       return false;
     }
     own = lock.claim;
@@ -1191,7 +1206,7 @@ async function narrateTheRound() {
   }
   const lock = await claimRoundLock();
   if (!lock.claim) {
-    if (lock.busy) _waitingForLock = true;
+    if (lock.busy) waitForLock();
     return false;
   }
   _narratingRoundId = round.id;
