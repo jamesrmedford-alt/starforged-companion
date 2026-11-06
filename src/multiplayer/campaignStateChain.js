@@ -23,11 +23,25 @@
  * (factContinuity/sceneLifecycle.js `persistCampaignStateFields`,
  * `persistSceneLedgerFields`).
  *
- * A task reads the stored campaignState itself, inside its turn, and must not
- * wait on another task of this chain — it would wait for itself. A
- * predecessor that never settles (a write the server never answers) is waited
- * on for at most CAMPAIGN_STATE_WRITE_WAIT_MS from when it started; then the
- * next one goes, warned, so one hung write cannot hold every later one.
+ * A task reads the stored campaignState itself, inside its turn — at its
+ * start, with no await before the read or between the read and its write —
+ * and must not wait on another task of this chain: it would wait for itself.
+ * A predecessor that never settles (a write the server never answers) is
+ * waited on for at most CAMPAIGN_STATE_WRITE_WAIT_MS from when it started;
+ * then the next one goes, warned, so one hung write cannot hold every later
+ * one.
+ *
+ * The X-Card's pause is the one write that does not wait its turn
+ * (`runCampaignStateWriteNow`): a safety write must not wait behind a write
+ * that never settles (decisions.md → "X-Card: anyone plays it, a GM resumes
+ * it"). It is written at once, from the store as this client has it, and
+ * every chained write that has not yet read the store waits for it to land —
+ * one that read the cache inside the pause's round trip carried
+ * `xCardActive: false` back (CAMPSTATE-CHAIN-PARTIAL: an oracle card the GM
+ * captured meanwhile). A chained write already sent when the pause is played
+ * was built without it and lands first; the pause, built without that write,
+ * lands after it and keeps the X-Card's fields — and takes back that write's
+ * own change, the price of not waiting.
  */
 
 const MODULE_ID = "starforged-companion";
@@ -39,6 +53,10 @@ const CAMPAIGN_STATE_WRITE_WAIT_MS = 10_000;
 // `started` and `done` only ever resolve, so a failed write never poisons the
 // chain.
 let _tail = null;
+
+// Writes that jumped the chain (runCampaignStateWriteNow) and have not landed:
+// every chained write waits for them before it reads the store.
+const _jumped = new Set();
 
 /**
  * Run `task` — one campaignState read-modify-write — after the one queued
@@ -64,6 +82,16 @@ export function serialiseCampaignStateWrite(task, label = "campaignState write")
   return (async () => {
     try {
       if (prev) await waitForWriteAhead(prev, label);
+      // A write that jumped the chain meanwhile (the X-Card's pause) lands
+      // first; checked again after each wait, and never with an await between
+      // the last check and the task's read.
+      const waited = new Set();
+      for (let jumped = nextJumped(waited); jumped; jumped = nextJumped(waited)) {
+        waited.add(jumped);
+        await waitForWriteAhead(jumped, label);
+        // Not landed within its bound: no later write waits for it either.
+        if (!jumped.settled) _jumped.delete(jumped);
+      }
       entry.startedAt = Date.now();
       markStarted();
       return await task();
@@ -75,6 +103,45 @@ export function serialiseCampaignStateWrite(task, label = "campaignState write")
       if (_tail === entry) _tail = null;
     }
   })();
+}
+
+/**
+ * Run `task` — the X-Card's pause — at once, ahead of the chain: it waits for
+ * no write, and every chained write that has not yet read the store waits for
+ * it to land (at most CAMPAIGN_STATE_WRITE_WAIT_MS from its start), so none
+ * carries the pause back. `task` reads the store itself and writes with no
+ * await between. The caller gets the task's own result or rejection.
+ *
+ * @template T
+ * @param {() => Promise<T>} task
+ * @param {string} [label] — for the wait warning of the writes behind it
+ * @returns {Promise<T>}
+ */
+export function runCampaignStateWriteNow(task, label = "campaignState write") {
+  let release;
+  const entry = {
+    label,
+    startedAt: Date.now(),
+    settled:   false,
+    started:   Promise.resolve(),
+    done:      new Promise(resolve => { release = resolve; }),
+  };
+  _jumped.add(entry);
+  return (async () => {
+    try {
+      return await task();
+    } finally {
+      entry.settled = true;
+      release();
+      _jumped.delete(entry);
+    }
+  })();
+}
+
+/** A write that jumped the chain, not landed and not yet waited for. */
+function nextJumped(waited) {
+  for (const entry of _jumped) if (!waited.has(entry)) return entry;
+  return null;
 }
 
 /** Wait for the write ahead to settle — at most CAMPAIGN_STATE_WRITE_WAIT_MS from its start. */

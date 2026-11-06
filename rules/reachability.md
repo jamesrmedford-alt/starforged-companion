@@ -286,7 +286,13 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
   `serialiseCampaignStateWrite` (`src/multiplayer/campaignStateChain.js`),
   each reading the store at its turn, once the write ahead of it has landed;
   a new writer of that kind joins the chain, and a chained task never waits
-  on another one (it would wait for itself).
+  on another one (it would wait for itself). A task reads the store at its
+  start, with no await before the read or between the read and its write.
+  The X-Card's pause is the one write that jumps the chain
+  (`runCampaignStateWriteNow`): it waits for nothing, and every chained write
+  that has not yet read the store waits for it to land — an oracle card
+  captured while the pause was on its way carried `xCardActive: false` back
+  (CAMPSTATE-CHAIN-PARTIAL).
 - **A writer that fires on every message keeps out of campaignState.** The
   chat-activity stamp wrote `{ ...cached, lastSessionTimestamp }` on the
   canonical GM whenever a message landed on a due stamp — and a relayed

@@ -24,6 +24,8 @@
  * the world-scoped campaignState, which every client receives.
  */
 
+import { runCampaignStateWriteNow, serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
+
 const MODULE_ID = "starforged-companion";
 
 
@@ -152,6 +154,12 @@ function readOwnPrivateLines() {
  * lore that copied them (propagateRetraction). The pause comes first: if the
  * memory side fails, the pause is still written.
  *
+ * The pause jumps this client's campaignState write chain
+ * (runCampaignStateWriteNow): written at once, behind no other write, and
+ * every chained write that has not yet read the store waits for it to land —
+ * an oracle card captured while it was on its way carried `xCardActive: false`
+ * back (CAMPSTATE-CHAIN-PARTIAL).
+ *
  * @param {Object} [_payload] — relay payload (unused)
  * @param {Object} [ctx]      — relay context (anyone may play the X-Card; `local: false` on a relayed play)
  * @returns {Promise<boolean>} true when the pause was persisted
@@ -165,13 +173,15 @@ export async function suppressScene(_payload, ctx) {
   });
   let removal = NO_REMOVAL;
   try {
-    // A copy: a write that fails must leave this client's cached value as it
-    // was, or the narrator here would hold a pause that never landed (#302).
-    const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
-    cs.xCardActive = true;
-    cs.xCardPlays = (Number(cs.xCardPlays) || 0) + 1;
-    removal = removeXCardedNarration(narrator, cs);
-    await game.settings.set(MODULE_ID, "campaignState", cs);
+    await runCampaignStateWriteNow(() => {
+      // A copy: a write that fails must leave this client's cached value as
+      // it was, or the narrator here would hold a pause that never landed (#302).
+      const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+      cs.xCardActive = true;
+      cs.xCardPlays = (Number(cs.xCardPlays) || 0) + 1;
+      removal = removeXCardedNarration(narrator, cs);
+      return game.settings.set(MODULE_ID, "campaignState", cs);
+    }, "X-Card pause");
   } catch (err) {
     console.warn(`${MODULE_ID} | suppressScene: could not persist X-Card state:`, err.message);
     if (ctx?.local === false) {
@@ -328,15 +338,22 @@ function escapeHtml(s) {
  *     narration" button and the GM's typed `!x clear`;
  *   - the module API (`game.modules.get('starforged-companion').api.clearXCard`).
  *
+ * On this client's campaignState write chain: read once the writes ahead of
+ * it — the pause itself among them — have landed. Read inside the pause's
+ * round trip, it put back the play count and narrator memory from before the
+ * pause (CAMPSTATE-CHAIN-PARTIAL).
+ *
  * @returns {Promise<boolean>} true when the flag was cleared
  */
 export async function clearXCard() {
   try {
-    // A copy: a failed write must not leave this client's cached value saying
-    // the X-Card is cleared — the narrator here would resume (issue #302).
-    const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
-    cs.xCardActive = false;
-    await game.settings.set(MODULE_ID, "campaignState", cs);
+    await serialiseCampaignStateWrite(() => {
+      // A copy: a failed write must not leave this client's cached value
+      // saying the X-Card is cleared — the narrator here would resume (#302).
+      const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+      cs.xCardActive = false;
+      return game.settings.set(MODULE_ID, "campaignState", cs);
+    }, "X-Card resume");
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | clearXCard: could not clear X-Card state:`, err.message);
