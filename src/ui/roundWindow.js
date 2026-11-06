@@ -17,7 +17,9 @@
  *   - A submission shows Sent only once the round shows it: the round state is
  *     the acknowledgement relays don't have. Not there after
  *     RELAY_RECOVERY_MS, the window says it wasn't received and offers Send
- *     again (the same submission — it lands once).
+ *     again (the same submission — it lands once). Its text stays the draft
+ *     until the round takes it: a failed reading, a round that resolves or
+ *     closes without it, gives it back (draftAfterRound).
  *   - With no GM connected, requestGmAction warns and the window says the
  *     action wasn't saved; the draft is kept.
  *
@@ -42,6 +44,7 @@ import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { relayCardButtonClick, RELAY_RECOVERY_MS } from "../moves/burnMomentum.js";
 import { renderMoveAbilitiesForm, readMoveAbilitiesForm } from "./settingsPanel.js";
 import { isXCardActive } from "../narration/narrator.js";
+import { sanitizePlayerText } from "../narration/narratorPrompt.js";
 import { isSessionActive } from "../session/lifecycle.js";
 import { moveDisplayName, localizeStat } from "../system/i18n.js";
 
@@ -289,9 +292,12 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     if (own.upgrade) out.push(this.#upgradeHtml(own.upgrade));
 
     if (writing) {
+      // A reading that failed gives the action back to try again — the
+      // draft, else the text the round holds (issue #342 Z31).
+      const boxText = own.error && !String(context.draft ?? "").trim() ? own.text : context.draft;
       out.push(`<textarea name="sf-round-text" class="sf-round-input" rows="3" maxlength="2000"`
         + ` placeholder="What does ${escapeHtml(own.actorName || "your character")} do? (Enter to submit, Shift+Enter for a new line)"`
-        + `${context.busy ? " disabled" : ""}>${escapeHtml(context.draft)}</textarea>`);
+        + `${context.busy ? " disabled" : ""}>${escapeHtml(boxText)}</textarea>`);
       out.push(`<div class="sf-round-actions"><button type="button" class="sf-round-primary" data-action="submit"${context.busy ? " disabled" : ""}>Submit</button>`
         + (own.canPass ? `<button type="button" data-action="pass"${context.busy ? " disabled" : ""}>Pass</button>` : "")
         + `</div>`);
@@ -379,7 +385,10 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
 
   /**
    * The stored round changed: a pending submission the round now shows is
-   * Sent (its draft goes); then re-render when the view changed.
+   * Sent; then re-render when the view changed. The draft stays until the
+   * round takes the action (registerRoundWindowHooks, draftAfterRound): the
+   * round entry is not the only copy of an action it may never roll (issue
+   * #342 Z31).
    *
    * @param {Object|null} round
    */
@@ -387,7 +396,6 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     const entry = entryFor(round, game.user?.id);
     if (this.#pending && entry?.submissionId === this.#pending.submissionId) {
       clearTimeout(this.#pending.timer);
-      if (this.draft.trim() === String(this.#pending.text).trim()) await this.#setDraft("");
       this.#pending = null;
       this.#notReceived = false;
     }
@@ -765,23 +773,7 @@ export function registerRoundWindowHooks() {
         _lastOpenedRoundId = round.id;
         await RoundWindowApp.open();
       }
-      // The action this player wrote, set aside for a roll a card owes, is
-      // their draft for the next round (the GM cannot write a client's draft).
-      const setAside = entryFor(round, game.user?.id)?.setAside?.text ?? "";
-      if (setAside && !getRoundDraft().trim()) {
-        await setRoundDraft(setAside);
-        await RoundWindowApp.instance?.draftFromOutside(setAside);
-      }
-      if (round?.phase === ROUND_PHASE.CLOSED && ["session-ended", "discarded", "mode-off"].includes(round.closeReason)) {
-        const mine = entryFor(round, game.user?.id);
-        const text = mine?.text ?? "";
-        // A card's move is held for the next round instead (driver takeCardMoves).
-        if (text && !mine.readAs?.messageId && [ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY].includes(mine.status)
-            && !getRoundDraft().trim()) {
-          await setRoundDraft(text);
-          await RoundWindowApp.instance?.draftFromOutside(text);
-        }
-      }
+      await keepDraftWithRound(round);
       await RoundWindowApp.instance?.onRoundUpdate(round);
     })();
     work.catch(err => console.warn(`${MODULE_ID} | Round window: the round's change:`, err?.message ?? err));
@@ -803,6 +795,20 @@ export function registerRoundWindowHooks() {
   });
   // The session, the X-Card and the keyed GMs the window's banners show.
   Hooks.on("updateSetting", onCampaignStateForWindow);
+  // The round's card says the round took this player's line (draftAfterRound's
+  // signal for a client that missed the round's changes).
+  Hooks.on("createChatMessage", (message) => {
+    onRoundCardForDraft(message).catch(err => console.warn(`${MODULE_ID} | Round window: the round card's draft:`, err?.message ?? err));
+  });
+  // At load, the stored round as it stands — an action a round closed without
+  // rolling while this player was away is their draft again — and the newest
+  // round card: one that names the draft took it while they were away.
+  keepDraftWithRound(getStoredRound())
+    .then(() => {
+      const cards = (game.messages?.contents ?? []).filter(m => Array.isArray(m?.flags?.[MODULE_ID]?.roundEntries));
+      return cards.length ? onRoundCardForDraft(cards[cards.length - 1]) : null;
+    })
+    .catch(err => console.warn(`${MODULE_ID} | Round window: the draft at load:`, err?.message ?? err));
   // A round open at load — a reload mid-round gets its window back.
   if (isBatchModeEnabled()) {
     const round = getStoredRound();
@@ -811,6 +817,68 @@ export function registerRoundWindowHooks() {
       RoundWindowApp.open().catch(err => console.warn(`${MODULE_ID} | Round window: open on ready failed:`, err?.message ?? err));
     }
   }
+}
+
+/**
+ * What this player's draft becomes as the round changes: "" once the round
+ * took their action (their entry acts — rolled, or narrated with no roll);
+ * the action's text when the draft is empty and the round did not take it —
+ * a round closed without rolling it (End a Session, Discard, the mode off; or
+ * resolved while it was unconfirmed, its reading failed, its author away), or
+ * the action an owed roll set aside; else null — leave the draft. A card's
+ * move is no draft: it is held for the next round (driver takeCardMoves).
+ * The submitted text stays the draft until then, so a round entry is never
+ * an unrolled action's only copy (issue #342 Z31).
+ *
+ * @param {Object|null} round
+ * @param {string} draft — the draft as it stands
+ * @returns {string|null}
+ */
+function draftAfterRound(round, draft) {
+  const mine = entryFor(round, game.user?.id);
+  if (!mine) return null;
+  const typed = String(draft ?? "").trim();
+  if (typed) {
+    const taken = Array.isArray(round.acting) && round.acting.includes(mine.userId);
+    return taken && typed === String(mine.text ?? "").trim() ? "" : null;
+  }
+  if (mine.setAside?.text) return mine.setAside.text;
+  const unrolled = round.phase === ROUND_PHASE.CLOSED && !mine.readAs?.messageId
+    && [ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY].includes(mine.status);
+  return unrolled && mine.text ? mine.text : null;
+}
+
+/** Keep this client's draft with the round (draftAfterRound) — the window's copy too. */
+async function keepDraftWithRound(round) {
+  const draft = getRoundDraft();
+  const next = draftAfterRound(round, draft);
+  if (next === null || next === draft) return;
+  await setRoundDraft(next);
+  await RoundWindowApp.instance?.draftFromOutside(next);
+}
+
+/**
+ * True when a round's card names this player's line as their draft holds it
+ * (`roundEntries`, the players who acted): the round took the action — said
+ * by the card even to a client that missed the round's own changes (its
+ * author away while it resolved).
+ *
+ * @param {ChatMessage|null} message
+ * @param {string} draft
+ * @returns {boolean}
+ */
+function roundCardTookDraft(message, draft) {
+  const entries = message?.flags?.[MODULE_ID]?.roundEntries;
+  if (!Array.isArray(entries) || !String(draft ?? "").trim()) return false;
+  const line = sanitizePlayerText(draft);
+  return entries.some(e => e?.userId === game.user?.id && e.playerText === line);
+}
+
+/** createChatMessage (local only): the round's card names this player's draft — it was taken. */
+async function onRoundCardForDraft(message) {
+  if (!roundCardTookDraft(message, getRoundDraft())) return;
+  await setRoundDraft("");
+  await RoundWindowApp.instance?.draftFromOutside("");
 }
 
 /** Re-render this client's window when the campaign state it shows changed (local only). */

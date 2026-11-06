@@ -88,19 +88,21 @@ describe('the action box', () => {
     expect(root.querySelector('.sf-round-header').textContent).toContain('Round 2');
   });
 
-  it('Submit relays the text with a new submission id, and keeps the draft until the round shows it', async () => {
+  it('Submit relays the text with a new submission id; Sent once the round shows it — the draft stays until the round takes it', async () => {
     const round = roundWith();
     const { app } = await render();
     await app.draftFromOutside('I slip through the vent.');
     await RoundWindowApp.DEFAULT_OPTIONS.actions.submit.call(app, null, null);
     expect(relayed.calls).toEqual([{ kind: 'batch.submit', payload: { roundId: round.id, text: 'I slip through the vent.', submissionId: expect.any(String) } }]);
     expect(app.draft).toBe('I slip through the vent.');
-    // The round shows it: Sent — the draft goes.
+    // The round shows it: Sent ("Reading your action…"). The draft is kept: the
+    // round may never roll it (issue #342 Z31 — roundWindowUnrolledAction.test.js).
     const { submissionId } = relayed.calls[0].payload;
     const shown = R.submitEntry(round, { userId: ME(), text: 'I slip through the vent.', submissionId, now: NOW });
     game.settings._store.set(`${MODULE_ID}.batchMode.round`, shown);
     await app.onRoundUpdate(shown);
-    expect(app.draft).toBe('');
+    expect((await app._prepareContext({})).view.own.notReceived).toBe(false);
+    expect(app.draft).toBe('I slip through the vent.');
   });
 
   it('with no GM connected: says it wasn\'t saved, and the draft is kept', async () => {
