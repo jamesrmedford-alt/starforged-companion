@@ -112,7 +112,11 @@ multi-client harness (`tests/helpers/multiClient.js`).
   recorded result); a player's Begin a Session persisting (and its dialog
   opening on the player's screen only); Burn Momentum applying once (player
   and GM both click, then the player clicks the spent button); a player's
-  Private Lines reaching `campaignState.safety`. Add a scenario as one
+  Private Lines reaching `campaignState.safety`; a Batch Mode round (issue
+  #340: the window opening in the player's browser, a typed line kept as
+  table talk, the GM's Send now, one round card credited to the roller —
+  Claude answered by a stub on the GM page's `fetch`, since the canonical GM
+  reads and narrates). Add a scenario as one
   more `await scenario(...)` block. Assert on GM-side state, and wait with
   `page.waitForFunction`, never a fixed sleep (`SETTLE_MS` is only the
   window for a duplicate to show up).
@@ -196,9 +200,9 @@ fact block, detection and draft cards, End and Begin a Session.
   is logged `OPTIONAL`. A contract fails even when a recorded reply
   answered the call, so the prompt can't lose data a canned reply would
   paper over. STALE stays a warning: a prompt change does not need a key to
-  merge unless it breaks a contract. first-session is strict;
-  `tests/unit/playthroughReplay.test.js` checks its declarations against its
-  recording on every PR, no Foundry needed.
+  merge unless it breaks a contract. first-session and batch-round are
+  strict; `tests/unit/playthroughReplay.test.js` checks their declarations
+  against their recordings on every PR, no Foundry needed.
 - **Scenarios are data** (`playthroughs/*.json`): the seed (PC, sector,
   ship, settlements, where they are, and optionally a sector map — a flagged
   scene with a pin per settlement and the ship's token on one), the settings
@@ -208,10 +212,16 @@ fact block, detection and draft cards, End and Begin a Session.
   in their browser; `expectCard` pins whether a named NPC's card is in it),
   `dragShip` (drops the ship's token on a settlement's pin; checks the token
   stays put while the Set a Course it starts is pending), `endSession`,
+  the Batch Mode steps (issue #340: `batchMode` — the GM's toolbar switch;
+  `roundSubmit` — an action written in its author's Round window and read on
+  the canonical GM, `reads` / `move` pinning the reading; `roundConfirm` —
+  Confirm in the window, `resolves` waiting for the round card, its `acted`
+  characters and `outcomes`, and the next round; `sendNow` — the GM's Send
+  now; the seed's `gmPc` assigns the GM a PC of their own),
   `expect` — each with `then` checks. The checks (`moveLockReleased`,
   `ledgerTruth`, `npcCard`, `noDraftFor`, `sessionLog`, `journalPage`,
   `momentum`, `shipPosition`, `shipToken`, `currentLocation`, `card`,
-  `noMarkup`) poll for up to 20 s — what a request carried is a strict
+  `round`, `roundCards`, `noMarkup`) poll for up to 20 s — what a request carried is a strict
   step's call contract, not a check; the
   runner first waits until no Claude call has started for 4 s, so the passes
   a narration schedules 2 s later have landed (a negative check would pass

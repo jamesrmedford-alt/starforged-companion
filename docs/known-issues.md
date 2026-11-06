@@ -1355,7 +1355,8 @@ Open — pinned or described, not fixed (each needs a decision first):
   shows on the canonical GM's screen (the pipeline runs there), not the
   typist's — who sees nothing. A KNOWN ISSUE row in `faultMatrix.test.js`
   pins it and fails once it is fixed. Proposed: whisper the notice to the
-  message's author.
+  message's author. Free-flow only: in Batch Mode (issue #340) a typed line
+  is table talk kept as its author's draft, and a round drops no action.
 - **DRAFT-CONFIRM-TWO-GMS** (DUPLICATE). Two GMs clicking Confirm on the same
   draft at the same moment can still create it twice: the in-flight guard is
   per client. Proposed: relay draft Confirm / Dismiss to the canonical GM

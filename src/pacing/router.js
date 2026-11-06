@@ -5,6 +5,10 @@
  * Pipeline integration: src/index.js calls `routePacedInput(message,
  * campaignState)` for undecorated player narration (everything that today
  * goes into `isPlayerNarration()` after all `!`/`@scene` intercepts).
+ * `routePacedInput` is `decidePacing` (the decision) followed by the
+ * narration a NARRATIVE decision gets; a Batch Mode round's reading calls
+ * `decidePacing` alone and shows the decision in the player's Round window
+ * (issue #340 — src/moves/movePipeline.js readAction).
  *
  * Three outcomes:
  *   - MOVE                          → run the move interpreter pipeline (unchanged)
@@ -137,31 +141,34 @@ function defaultDial(category) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Decide how to handle a paced player input and dispatch accordingly.
- *
- * Returns an object describing what was done so the caller can decide whether
- * to continue with the move pipeline. When `runMove === true` the caller
- * (src/index.js) runs the existing interpretMove → confirm → resolve flow.
- *
- * Recovery commands (`!roll`) bypass the classifier by setting
- * `campaignState.pacing.forceNextAsMove = true` before this is called.
+ * Decide how a paced player input should be handled — the classifier's
+ * decision, without acting on it: the pacing master switch, a `!roll` force,
+ * the classifier, the combat backstop, the recent-density window and the
+ * telemetry. routePacedInput dispatches the narration for a NARRATIVE
+ * decision; a Batch Mode round's reading (src/moves/movePipeline.js
+ * readAction) shows the decision in the player's Round window instead — so
+ * it passes `ignoreForceMove`: a round's readings ignore `!roll` (the window
+ * has "Roll a move instead"), while `!pace` overrides still apply.
  *
  * @param {Object} args
  * @param {string} args.playerText
  * @param {Object} args.campaignState
  * @param {Object|null} args.character
  * @param {string} args.apiKey
+ * @param {boolean} [args.ignoreForceMove] — a round's reading: `pacing.forceNextAsMove` is not read
  * @returns {Promise<{
  *   runMove: boolean,
  *   decision: string,
  *   suggestedMove: string|null,
+ *   suggestedTargetId?: string|null,
  *   category: string,
  *   confidence: number,
  *   reasoning: string,
+ *   forced?: boolean,
  * }>}
  */
-export async function routePacedInput({
-  playerText, campaignState, character, apiKey, speakerActorId = null,
+export async function decidePacing({
+  playerText, campaignState, character, apiKey, ignoreForceMove = false,
 }) {
   const pacingConfig = readPacingConfig(campaignState);
 
@@ -175,7 +182,7 @@ export async function routePacedInput({
   // a player with no character), and a refused line spent the `!roll` — the
   // retyped line went back through the classifier (issue #331 X37). The
   // pipeline spends it once the line holds the move lock (consumeForceMove).
-  if (pacingConfig.forceMove) {
+  if (pacingConfig.forceMove && !ignoreForceMove) {
     return { runMove: true, decision: PACING_DECISION.MOVE, suggestedMove: null, category: "exploration", confidence: 1, reasoning: "!roll override", forced: true };
   }
 
@@ -232,7 +239,7 @@ export async function routePacedInput({
     };
   }
 
-  // NARRATIVE / NARRATIVE_WITH_MOVE_AVAILABLE — run the narrator and stop.
+  // NARRATIVE / NARRATIVE_WITH_MOVE_AVAILABLE — narration, no roll.
   const suggestedMove = result.decision === PACING_DECISION.NARRATIVE_WITH_MOVE_AVAILABLE
     ? result.suggestedMove
     : null;
@@ -245,16 +252,60 @@ export async function routePacedInput({
     ? (selectSceneChallengeTrack(openChallenges, result.sceneChallenge ?? null)?.id ?? null)
     : null;
 
+  return {
+    runMove: false,
+    decision: result.decision,
+    suggestedMove,
+    suggestedTargetId,
+    category: result.category,
+    confidence: result.confidence,
+    reasoning: result.reasoning,
+  };
+}
+
+/**
+ * Decide how to handle a paced player input and dispatch accordingly — the
+ * free-flow path: decidePacing, then the narration for a NARRATIVE decision.
+ *
+ * Returns an object describing what was done so the caller can decide whether
+ * to continue with the move pipeline. When `runMove === true` the caller
+ * (src/index.js) runs the existing interpretMove → confirm → resolve flow.
+ *
+ * Recovery commands (`!roll`) bypass the classifier by setting
+ * `campaignState.pacing.forceNextAsMove = true` before this is called.
+ *
+ * @param {Object} args
+ * @param {string} args.playerText
+ * @param {Object} args.campaignState
+ * @param {Object|null} args.character
+ * @param {string} args.apiKey
+ * @returns {Promise<{
+ *   runMove: boolean,
+ *   decision: string,
+ *   suggestedMove: string|null,
+ *   category: string,
+ *   confidence: number,
+ *   reasoning: string,
+ * }>}
+ */
+export async function routePacedInput({
+  playerText, campaignState, character, apiKey, speakerActorId = null,
+}) {
+  const pacing = await decidePacing({ playerText, campaignState, character, apiKey });
+  if (pacing.runMove) return pacing;
+
+  // NARRATIVE / NARRATIVE_WITH_MOVE_AVAILABLE — run the narrator and stop.
+  const { suggestedMove, suggestedTargetId } = pacing;
   await narratePacedInput(playerText, campaignState, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}) })
     .catch(err => console.error(`${MODULE_ID} | narratePacedInput failed:`, err));
 
   return {
     runMove: false,
-    decision: result.decision,
+    decision: pacing.decision,
     suggestedMove,
-    category: result.category,
-    confidence: result.confidence,
-    reasoning: result.reasoning,
+    category: pacing.category,
+    confidence: pacing.confidence,
+    reasoning: pacing.reasoning,
   };
 }
 

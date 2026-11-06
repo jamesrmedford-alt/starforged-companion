@@ -796,13 +796,17 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
  * @param {string|null} args.speakerActorId — the upgrading PC
  * @param {Function|null} args.narrate — narrateResolution
  * @param {"burn"|"improve"} args.kind
+ * @param {string|null} [args.upgradeOf] — the original resolution's id
  */
-export async function renarrateUpgrade({ resolution, campaignState, speakerActorId, narrate, kind }) {
+export async function renarrateUpgrade({ resolution, campaignState, speakerActorId, narrate, kind, upgradeOf = null }) {
   if (typeof narrate !== "function") {
     console.warn(`${MODULE_ID} | ${kind}: no narrator registered — the upgraded outcome is not re-narrated.`);
     return;
   }
-  await narrate(resolution, campaignState, { speakerActorId });
+  // `upgradeOf` names the resolution upgraded: a Batch Mode round entry not
+  // yet narrated takes the upgraded resolution instead of a narration of its
+  // own — the round narrates once, with the final outcomes (issue #340).
+  await narrate(resolution, campaignState, { speakerActorId, upgradeOf, kind });
 }
 
 /**

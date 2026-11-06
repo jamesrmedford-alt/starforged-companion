@@ -28,6 +28,8 @@ import { openSectorCreator }     from "../sectors/sectorPanel.js";
 import { openWorldJournalPanel } from "../world/worldJournalPanel.js";
 import { openSystemTruthsDialog } from "../truths/generator.js";
 import { openCustomOraclesPanel } from "../oracles/customOracles.js";
+import { openRoundWindow, toggleBatchMode } from "./roundWindow.js";
+import { isBatchModeEnabled, onBatchModeToggled, onRoundChanged, getStoredRound } from "../batch/driver.js";
 
 const { ApplicationV2 } = foundry.applications.api;
 
@@ -39,6 +41,8 @@ const DRAG_THRESHOLD_PX = 6;
 /** Maps a tool key (from companionToolbarTools) to the function that opens its panel. */
 const OPENERS = {
   sfSession:        openSessionPanel,
+  sfBatchMode:      toggleBatchMode,
+  sfRound:          openRoundWindow,
   progressTracks:   openProgressTracks,
   entityPanel:      openEntityPanel,
   chronicle:        openChroniclePanel,
@@ -84,7 +88,13 @@ export class CompanionToolbarApp extends ApplicationV2 {
     let privateChannelEnabled = false;
     try { privateChannelEnabled = !!isPrivateChannelEnabled(); }
     catch (err) { console.warn(`${MODULE_ID} | toolbar: private-channel check failed:`, err); }
-    return { tools: companionToolbarTools({ isGM, privateChannelEnabled }) };
+    let batchModeEnabled = false;
+    let roundParticipant = false;
+    try {
+      batchModeEnabled = isBatchModeEnabled();
+      roundParticipant = !!getStoredRound()?.entries?.[globalThis.game?.user?.id];
+    } catch (err) { console.warn(`${MODULE_ID} | toolbar: Batch Mode check failed:`, err); }
+    return { tools: companionToolbarTools({ isGM, privateChannelEnabled, batchModeEnabled, roundParticipant }) };
   }
 
   /** Whether the compact layout's tool list is open. */
@@ -127,11 +137,18 @@ export class CompanionToolbarApp extends ApplicationV2 {
       btn.title          = tool.title;
       btn.setAttribute("aria-label", tool.title);
       btn.innerHTML      = `<i class="${tool.icon}"></i>`;
+      // A toggle (Batch Mode, issue #340) shows whether it is on.
+      const toggle = tool.kind === "toggle";
+      if (toggle) {
+        btn.setAttribute("aria-pressed", String(!!tool.pressed));
+        btn.classList.toggle("is-pressed", !!tool.pressed);
+        btn.title = `${tool.title}: ${tool.pressed ? "on" : "off"}`;
+      }
       if (compact) {
         // A touch screen has no hover tooltips, so every tool is labelled.
         const label = document.createElement("span");
         label.className   = "sf-companion-toolbar__label";
-        label.textContent = tool.title;
+        label.textContent = toggle ? `${tool.title}: ${tool.pressed ? "on" : "off"}` : tool.title;
         btn.appendChild(label);
       }
       btn.addEventListener("click", (event) => {
@@ -287,6 +304,11 @@ export class CompanionToolbarApp extends ApplicationV2 {
       // The Private Channel switch shows or hides the ✦ button on every
       // client at once, not after a reload (issue #326 W86).
       onPrivateChannelToggled(() => CompanionToolbarApp.rerenderIfOpen());
+      // So does the Batch Mode switch — the toggle's pressed state and the
+      // Round tool — and a round opening, which can bring a player into it
+      // (issue #340).
+      onBatchModeToggled(() => CompanionToolbarApp.rerenderIfOpen());
+      onRoundChanged(() => CompanionToolbarApp.rerenderIfOpen());
     }
     CompanionToolbarApp.#instance.render({ force: true });
     return CompanionToolbarApp.#instance;

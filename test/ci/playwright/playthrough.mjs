@@ -108,6 +108,8 @@ async function setUpWorld(gm, scenario) {
     await drop(CONFIG.Scene.documentClass, game.scenes.contents.filter(sc => sc.flags?.[MODULE_ID]?.sectorScene));
     const fresh = game.settings.settings.get(`${MODULE_ID}.campaignState`)?.default ?? {};
     await game.settings.set(MODULE_ID, "campaignState", foundry.utils.deepClone(fresh));
+    // No Batch Mode round from an earlier suite (issue #340).
+    if (game.settings.settings.has(`${MODULE_ID}.batchMode.round`)) await game.settings.set(MODULE_ID, "batchMode.round", null);
 
     // Pinned settings, restored after the run.
     const restore = {};
@@ -135,6 +137,20 @@ async function setUpWorld(gm, scenario) {
       ownership: { default: 0, [user.id]: CONST.DOCUMENT_OWNERSHIP_LEVELS.OWNER },
     });
     await user.update({ character: pc.id });
+
+    // A PC of the GM's own (`seed.gmPc`): a GM takes part in a Batch Mode
+    // round only with an assigned PC. Unassigned again after the run.
+    let gmPcId = null;
+    if (seed.gmPc) {
+      const gmPc = await Actor.create({
+        name:   seed.gmPc.name,
+        type:   "character",
+        system: { pronouns: seed.gmPc.pronouns ?? "", ...(seed.gmPc.stats ?? {}) },
+      });
+      window.__sfcRestoreCharacter = game.user.character?.id ?? null;
+      await game.user.update({ character: gmPc.id });
+      gmPcId = gmPc.id;
+    }
 
     const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
     let sectorId = null;
@@ -183,7 +199,7 @@ async function setUpWorld(gm, scenario) {
         await scene.createEmbeddedDocuments("Token", [token.toObject()]);
       }
     }
-    return { gmId: game.user.id, playerId: user.id, pcId: pc.id };
+    return { gmId: game.user.id, playerId: user.id, pcId: pc.id, gmPcId };
   }, { MODULE_ID, MODULE_SRC, PLAYER_NAME, PAGE_KEY, scenario });
 }
 
@@ -191,6 +207,10 @@ async function restoreWorld(gm) {
   await gm.page.evaluate(async (MODULE_ID) => {
     for (const [key, value] of Object.entries(window.__sfcRestore ?? {})) {
       await game.settings.set(MODULE_ID, key, value).catch(() => {});
+    }
+    if (window.__sfcRestoreCharacter !== undefined) {
+      await game.user.update({ character: window.__sfcRestoreCharacter }).catch(() => {});
+      delete window.__sfcRestoreCharacter;
     }
   }, MODULE_ID).catch(err => log(`restoring settings failed: ${err?.message ?? err}`));
 }
@@ -283,6 +303,57 @@ async function resolveMove(ctx, step, before, beforeAccept = null) {
   const left = await ctx.gm.page.evaluate(() => (window.__sfcDice ?? []).length);
   assert(left === 0, `${left} scripted dice were never rolled — did the resolver stop using rollDie?`);
   if (step.outcome) assert(card.flags.outcome === step.outcome, `the move resolved ${card.flags.outcome}, the scenario expects ${step.outcome}`);
+  await waitForState(ctx.gm, "cs.pendingMove !== true", "the move lock to release");
+}
+
+// ── Batch Mode rounds (issue #340) ───────────────────────────────────────────
+
+const ROUND_WINDOW = `#${MODULE_ID}-round-window`;
+
+/** The user a step acts as: the GM, or the player. */
+const userOf = (ctx, who) => (who === "gm" ? ctx.ids.gmId : ctx.ids.playerId);
+
+/** Wait until the GM's stored round passes `test` (a function body over `r` and `ids`); returns it. */
+async function waitForRound(gm, test, label, ids = {}, timeout = STEP_MS) {
+  try {
+    return await gm.page.waitForFunction(({ MODULE_ID, test, ids }) => {
+      const r = game.settings.get(MODULE_ID, "batchMode.round") ?? null;
+      return new Function("r", "ids", `return (${test});`)(r, ids) ? r : null;
+    }, { MODULE_ID, test, ids }, { timeout }).then(h => h.jsonValue());
+  } catch {
+    throw new Error(`timed out waiting for ${label}`);
+  }
+}
+
+/** Click a control in a client's Round window once it shows (a DOM click, as on the cards). */
+async function clickInWindow(client, action, label) {
+  const sel = `${ROUND_WINDOW} [data-action="${action}"]`;
+  await client.page.waitForFunction((s) => !!document.querySelector(s), sel, { timeout: STEP_MS }).catch(() => {
+    throw new Error(`the ${client.label}'s Round window never showed ${label}`);
+  });
+  await client.page.evaluate((s) => document.querySelector(s).click(), sel);
+}
+
+/**
+ * A round resolving: the scripted dice all rolled, one round card listing
+ * the characters the step names (`acted`, in order) with their outcomes, the
+ * next round open, and the move lock free.
+ */
+async function roundResolved(ctx, step, open, before) {
+  const card = await waitForCard(ctx.gm, before, `f.narratorCard === true && f.roundId === ${JSON.stringify(open.id)}`,
+    `round ${open.number}'s card`, STEP_MS * 2);
+  const left = await ctx.gm.page.evaluate(() => (window.__sfcDice ?? []).length);
+  assert(left === 0, `${left} scripted dice were never rolled — did the resolver stop using rollDie?`);
+  const entries = card.flags.roundEntries ?? [];
+  if (step.acted) {
+    const names = entries.map(e => e.playerName);
+    assert(JSON.stringify(names) === JSON.stringify(step.acted), `round ${open.number}'s card lists ${JSON.stringify(names)}, the scenario expects ${JSON.stringify(step.acted)}`);
+  }
+  for (const [name, outcome] of Object.entries(step.outcomes ?? {})) {
+    const entry = entries.find(e => e.playerName === name);
+    assert(entry?.outcome === outcome, `${name}'s move resolved ${entry?.outcome ?? "(no roll)"}, the scenario expects ${outcome}`);
+  }
+  await waitForRound(ctx.gm, "r && r.id !== ids.roundId && r.phase === 'collecting'", "the next round to open", { roundId: open.id });
   await waitForState(ctx.gm, "cs.pendingMove !== true", "the move lock to release");
 }
 
@@ -411,6 +482,88 @@ const STEPS = {
     for (const heading of step.carries ?? []) {
       assert(found.headings.some(h => h === heading || h.startsWith(`${heading} `)), `the private prompt lacks ${heading}`);
     }
+  },
+
+  /**
+   * The GM's toolbar switch (issue #340). On: a round opens with every
+   * participant in it, and each one's Round window with it. Off (with nothing
+   * submitted, so no prompt): the windows close.
+   */
+  async batchMode(ctx, step) {
+    await ctx.gm.page.evaluate(async (MODULE_SRC) => {
+      let btn = document.querySelector('[data-tool="sfBatchMode"]');
+      if (!btn) {
+        const { CompanionToolbarApp } = await import(`${MODULE_SRC}/ui/companionToolbar.js`);
+        CompanionToolbarApp.open();
+        for (let i = 0; i < 50 && !btn; i++) {
+          await new Promise(r => setTimeout(r, 100));
+          btn = document.querySelector('[data-tool="sfBatchMode"]');
+        }
+      }
+      if (!btn) throw new Error("the GM's toolbar has no Batch Mode switch");
+      btn.click();
+    }, MODULE_SRC);
+    const box = `${ROUND_WINDOW} textarea[name="sf-round-text"]`;
+    if (step.on === false) {
+      await ctx.gm.page.waitForFunction((id) => game.settings.get(id, "batchMode.enabled") === false, MODULE_ID, { timeout: STEP_MS });
+      for (const c of [ctx.gm, ctx.player]) {
+        await c.page.waitForFunction((s) => !document.querySelector(s), ROUND_WINDOW, { timeout: STEP_MS })
+          .catch(() => { throw new Error(`the ${c.label}'s Round window stayed open with Batch Mode off`); });
+      }
+      return;
+    }
+    const players = [ctx.ids.playerId, ...(ctx.ids.gmPcId ? [ctx.ids.gmId] : [])];
+    await waitForRound(ctx.gm, "r && r.phase === 'collecting' && ids.players.every(id => !!r.entries?.[id])",
+      "a round with every participant in it", { players });
+    for (const c of [ctx.player, ...(ctx.ids.gmPcId ? [ctx.gm] : [])]) {
+      await c.page.waitForFunction((s) => !!document.querySelector(s), box, { timeout: STEP_MS })
+        .catch(() => { throw new Error(`the ${c.label}'s Round window never opened`); });
+    }
+  },
+
+  /** A participant writes an action in their Round window and submits it; the canonical GM reads it. */
+  async roundSubmit(ctx, step) {
+    const actor = ctx.client(step.as);
+    const userId = userOf(ctx, step.as);
+    const box = `${ROUND_WINDOW} textarea[name="sf-round-text"]`;
+    await actor.page.waitForFunction((s) => !!document.querySelector(s), box, { timeout: STEP_MS });
+    await actor.page.evaluate(({ box, text }) => {
+      const input = document.querySelector(box);
+      input.value = text;
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    }, { box, text: step.text });
+    await clickInWindow(actor, "submit", "Submit");
+    const round = await waitForRound(ctx.gm, "r?.entries?.[ids.userId]?.status === 'read'", `${step.as}'s reading`, { userId });
+    const reading = round.entries[userId].reading ?? {};
+    if (step.reads) assert(reading.kind === step.reads, `the action was read as ${reading.kind}, the scenario expects ${step.reads}`);
+    if (step.move) assert(reading.moveId === step.move, `the reading proposes ${reading.moveId}, the scenario expects ${step.move}`);
+    await actor.page.waitForFunction((s) => !!document.querySelector(s), `${ROUND_WINDOW} [data-action="confirm"]`, { timeout: STEP_MS })
+      .catch(() => { throw new Error(`the ${actor.label}'s Round window never showed the reading`); });
+  },
+
+  /**
+   * A participant confirms their reading in the window. With `resolves`, the
+   * round resolves on it: the scripted dice roll, one round card, the next round.
+   */
+  async roundConfirm(ctx, step) {
+    const actor = ctx.client(step.as);
+    const userId = userOf(ctx, step.as);
+    const before = await messageIds(ctx.gm);
+    const open = await waitForRound(ctx.gm, "r && r.phase === 'collecting'", "an open round");
+    await ctx.gm.page.evaluate((q) => { window.__sfcDice = q; }, diceQueue(step.dice));
+    await clickInWindow(actor, "confirm", "Confirm");
+    await waitForRound(ctx.gm, "!r || r.id !== ids.roundId || r.entries?.[ids.userId]?.status !== 'read'",
+      `${step.as}'s confirm`, { roundId: open.id, userId });
+    if (step.resolves) await roundResolved(ctx, step, open, before);
+  },
+
+  /** The GM presses Send now in their Round window: the round resolves with whoever acted, and no one else. */
+  async sendNow(ctx, step) {
+    const before = await messageIds(ctx.gm);
+    const open = await waitForRound(ctx.gm, "r && r.phase === 'collecting'", "an open round");
+    await ctx.gm.page.evaluate((q) => { window.__sfcDice = q; }, diceQueue(step.dice));
+    await clickInWindow(ctx.gm, "sendNow", "Send now");
+    await roundResolved(ctx, step, open, before);
   },
 
   /** Run checks (each retried until it passes or CHECK_MS runs out). */
@@ -568,6 +721,24 @@ const CHECKS = {
       .filter(m => m.flags?.[MODULE_ID]?.[flag] && (!outcome || m.flags[MODULE_ID].outcome === outcome)).length,
     { MODULE_ID, flag: c.flag, outcome: c.outcome ?? null });
     assert(n === (c.count ?? 1), `${n} card(s) carry ${c.flag}${c.outcome ? ` (${c.outcome})` : ""}, expected ${c.count ?? 1}`);
+  },
+
+  /** The Batch Mode round as the GM's world holds it: its number and phase (issue #340). */
+  async round(ctx, c) {
+    const r = await ctx.gm.page.evaluate((id) => {
+      const round = game.settings.get(id, "batchMode.round");
+      return round ? { number: round.number, phase: round.phase } : null;
+    }, MODULE_ID);
+    assert(r, "there is no Batch Mode round");
+    if (c.number !== undefined) assert(r.number === c.number, `the round is number ${r.number}, expected ${c.number}`);
+    if (c.phase) assert(r.phase === c.phase, `the round is ${r.phase}, expected ${c.phase}`);
+  },
+
+  /** `count` round cards are in chat — one per round narrated (issue #340). */
+  async roundCards(ctx, c) {
+    const n = await ctx.gm.page.evaluate((id) => game.messages.contents
+      .filter(m => m.flags?.[id]?.narratorCard && m.flags[id].roundId).length, MODULE_ID);
+    assert(n === (c.count ?? 1), `${n} round card(s) in chat, expected ${c.count ?? 1}`);
   },
 
   /** No chat card shows the narrator's `<npc>` voice markup, raw or escaped (v1.6.1 F9, PLAYTEST-1717 A). */

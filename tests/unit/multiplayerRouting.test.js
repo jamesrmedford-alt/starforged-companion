@@ -115,7 +115,13 @@ beforeAll(async () => {
   // Record instead of executing — on every client's own module copy.
   for (const client of table.clients) {
     for (const route of client.index.CHAT_COMMAND_ROUTES) {
-      route.run = (message) => { ran.push({ client: client.id, route: route.name, id: message.id }); };
+      // `!roll`'s real handler stays reachable for the Batch Mode check below.
+      const real = route.run;
+      route.run = (message) => {
+        ran.push({ client: client.id, route: route.name, id: message.id });
+        if (route.name === '!roll' && route.realInBatchCheck) return real(message);
+        return undefined;
+      };
     }
   }
 }, 30_000);
@@ -179,5 +185,36 @@ describe('a canonical-GM command with no GM connected', () => {
     expect(table.client('pl-1').notifications.filter(n => n.level === 'warn' && /no GM is connected/.test(n.message)))
       .toHaveLength(1);
     expect(table.client('pl-2').notifications).toEqual([]);
+  });
+});
+
+// Issue #340 — `!roll` in Batch Mode: a round's readings ignore it, so it tells
+// the typist to use "Roll a move instead" in their Round window, and sets
+// nothing — under every table shape, on the typist's client only.
+describe.each(SHAPES)('!roll in Batch Mode — $name', (shape) => {
+  it('tells the typist to use "Roll a move instead", and sets nothing', async () => {
+    for (const client of table.clients) {
+      client.index.CHAT_COMMAND_ROUTES.find(r => r.name === '!roll').realInBatchCheck = true;
+    }
+    try {
+      await table.reset({ world: { settings: { 'batchMode.enabled': true, keyedGmUserIds: shape.keyed } } });
+      for (const id of shape.away) await table.leave(id);
+      ran.length = 0;
+      const author = table.client(shape.author);
+      await author.run(() => ChatMessage.create({ content: '!roll' }));
+      await table.settle();
+
+      expect(ran.filter(r => r.route === '!roll').map(r => r.client)).toEqual([shape.author]);
+      expect(author.notifications.filter(n => /Batch Mode is on .*Roll a move instead/.test(n.message))).toHaveLength(1);
+      for (const other of table.clients.filter(c => c.id !== shape.author)) {
+        expect(other.notifications.filter(n => /Roll a move instead/.test(n.message))).toEqual([]);
+      }
+      expect(table.world.campaignState()?.pacing?.forceNextAsMove ?? false).toBe(false);
+      expect(table.cards(f => f.rollCommandCard)).toEqual([]);
+    } finally {
+      for (const client of table.clients) {
+        client.index.CHAT_COMMAND_ROUTES.find(r => r.name === '!roll').realInBatchCheck = false;
+      }
+    }
   });
 });

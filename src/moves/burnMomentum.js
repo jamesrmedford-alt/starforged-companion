@@ -136,15 +136,18 @@ export function releaseResultUpgrade(messageId) {
  * consequence was already chosen on its choice card ("choice-made" — what the
  * choice applied stands, so upgrading would stack two outcomes' choices;
  * issue #311 P03), or the roller has made another move since ("later-move" —
- * an upgrade belongs to the move being made, issue #326 D4). The GM handlers
+ * an upgrade belongs to the move being made, issue #326 D4), or a Batch Mode
+ * round decided it before it was narrated ("round-closed" — the roller kept
+ * the result, or the round's narration began: issue #340). The GM handlers
  * also check the choice cards and the later moves themselves (resultUpgrade.js
  * consequenceChosen, laterMoveFollows).
  * @param {Object} upgrade   the card's `burn` or `improve` flag
  * @param {Object} [other]   the card's other upgrade flag
- * @returns {"original-pending"|"already-upgraded"|"later-move"|"choice-made"|null}
+ * @returns {"original-pending"|"already-upgraded"|"round-closed"|"later-move"|"choice-made"|null}
  */
 export function resultUpgradeBlocker(upgrade, other) {
   if (other?.consumed) return "already-upgraded";
+  if (upgrade?.roundClosed) return "round-closed";
   if (upgrade?.laterMove) return "later-move";
   if (upgrade?.choiceMade) return "choice-made";
   if (upgrade?.originalApplied !== true) return "original-pending";
@@ -160,10 +163,14 @@ export const UPGRADE_PENDING_TITLE = "Available once the move's result is record
 /** Tooltip on a burn / improve button closed by the roller's next move (issue #326 D4). */
 export const UPGRADE_LATER_MOVE_TITLE = "An upgrade belongs to the move being made — this character has made another move since";
 
+/** Tooltip on a burn / improve button a Batch Mode round closed (issue #340). */
+export const UPGRADE_ROUND_CLOSED_TITLE = "Decided before the round was narrated — the round tells this result";
+
 /** Why the GM handlers refused an upgrade (resultUpgradeBlocker's reasons), for the log. */
 export const UPGRADE_REFUSALS = {
   "original-pending": "the original outcome is not recorded yet",
   "already-upgraded": "the result was already upgraded",
+  "round-closed":     "the round decided this result before it was narrated",
   "later-move":       "the roller has made another move since",
   "choice-made":      "the move's consequence was already chosen",
 };
@@ -346,6 +353,12 @@ export function registerBurnMomentumHook({ narrate, applyEffects } = {}) {
     if (blocker === "already-upgraded") {
       btn.disabled    = true;
       btn.textContent = "🔥 Burn Momentum — the result was already improved";
+      return;
+    }
+    if (blocker === "round-closed") {
+      btn.disabled    = true;
+      btn.textContent = "🔥 Burn Momentum — decided before the round was narrated";
+      btn.title       = UPGRADE_ROUND_CLOSED_TITLE;
       return;
     }
     if (blocker === "later-move") {
@@ -613,7 +626,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // campaign has no API key configured or the narrator is otherwise disabled,
   // the move card is still correctly updated above. The burning PC is the
   // card's actor, not the first PC (credit the roller).
-  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: burn.actorId ?? null, narrate, kind: "burn" })
+  await renarrateUpgrade({ resolution: upgraded, campaignState, speakerActorId: burn.actorId ?? null, narrate, kind: "burn", upgradeOf: burn.resolutionId ?? null })
     .catch(err => console.warn(`${MODULE_ID} | burnMomentum: re-narration failed:`, err));
 
   return { applied: true };

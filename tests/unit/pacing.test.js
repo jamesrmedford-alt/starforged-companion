@@ -16,6 +16,7 @@ import {
 
 import {
   routePacedInput,
+  decidePacing,
   applyPaceCommand,
   markForceNextAsMove,
   readPacingConfig,
@@ -750,6 +751,93 @@ describe('routePacedInput()', () => {
 
     expect(result.runMove).toBe(false);
     expect(result.decision).toBe('NARRATIVE_WITH_MOVE_AVAILABLE');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// router: decidePacing — the decision alone (issue #340)
+// ---------------------------------------------------------------------------
+
+// routePacedInput is decidePacing and then the narration a NARRATIVE decision
+// gets. A Batch Mode round's reading calls decidePacing alone: the decision is
+// shown in the player's Round window, and a round's readings ignore `!roll`
+// (the window has "Roll a move instead") while `!pace` overrides still apply.
+describe('decidePacing()', () => {
+  beforeEach(() => {
+    apiPost.mockReset();
+    narratePacedInput.mockReset();
+    logPacingDecision.mockReset();
+    listProgressTracks.mockReset();
+    listProgressTracks.mockResolvedValue([]);
+    resetRecentDensity();
+    game.settings._store.clear();
+    game.settings._store.set('starforged-companion.pacing.enabled', true);
+    game.settings._store.set('starforged-companion.pacing.densityWindow', 5);
+  });
+
+  afterEach(() => {
+    resetRecentDensity();
+  });
+
+  it('decides NARRATIVE_WITH_MOVE_AVAILABLE without narrating — the round shows it in the window', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'compel',
+      category: 'social', confidence: 0.7, reasoning: 'could push',
+    }));
+    const result = await decidePacing({
+      playerText: 'I lean across the table',
+      campaignState: { ...BASE_STATE, pacing: { sceneOverride: null, forceNextAsMove: false } },
+      character: { name: 'Kira' },
+      apiKey: 'sk-ant-test',
+    });
+    expect(result).toMatchObject({ runMove: false, decision: 'NARRATIVE_WITH_MOVE_AVAILABLE', suggestedMove: 'compel', suggestedTargetId: null });
+    expect(narratePacedInput).not.toHaveBeenCalled();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(logPacingDecision).toHaveBeenCalledTimes(1);   // telemetry as for a typed line
+  });
+
+  it('ignoreForceMove reads the line with the classifier although !roll is set — and leaves the flag', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'NARRATIVE', suggestedMove: null, category: 'downtime', confidence: 0.8, reasoning: 'quiet',
+    }));
+    const state = { ...BASE_STATE, pacing: { sceneOverride: null, forceNextAsMove: true } };
+    const read = await decidePacing({ playerText: 'I check my gear', campaignState: state, character: null, apiKey: 'sk-ant-test', ignoreForceMove: true });
+    expect(read).toMatchObject({ runMove: false, decision: 'NARRATIVE' });
+    expect(apiPost).toHaveBeenCalledTimes(1);
+    expect(state.pacing.forceNextAsMove).toBe(true);
+
+    // Control: without it, !roll forces the move, as a typed line does.
+    const forced = await decidePacing({ playerText: 'I check my gear', campaignState: state, character: null, apiKey: 'sk-ant-test' });
+    expect(forced).toMatchObject({ runMove: true, forced: true });
+    expect(apiPost).toHaveBeenCalledTimes(1);
+  });
+
+  it('a !pace override still reaches the classifier when !roll is ignored', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'MOVE', suggestedMove: 'face_danger', category: 'exploration', confidence: 0.9, reasoning: 'risky',
+    }));
+    await decidePacing({
+      playerText: 'I jump the gap',
+      campaignState: { ...BASE_STATE, pacing: { sceneOverride: { modifier: 3, label: 'hot' }, forceNextAsMove: true } },
+      character: null,
+      apiKey: 'sk-ant-test',
+      ignoreForceMove: true,
+    });
+    expect(apiPost.mock.calls[0][2].messages[0].content).toContain('Scene override: hot (+3)');
+  });
+
+  it('routePacedInput is decidePacing and its narration — the same decision, the same shape as before', async () => {
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'NARRATIVE', suggestedMove: null, category: 'social', confidence: 0.8, reasoning: 'casual',
+    }));
+    const result = await routePacedInput({
+      playerText: 'I sip my drink',
+      campaignState: { ...BASE_STATE, pacing: { sceneOverride: null, forceNextAsMove: false } },
+      character: { name: 'Kira' },
+      apiKey: 'sk-ant-test',
+    });
+    expect(result).toEqual({ runMove: false, decision: 'NARRATIVE', suggestedMove: null, category: 'social', confidence: 0.8, reasoning: 'casual' });
+    expect(narratePacedInput).toHaveBeenCalledTimes(1);
   });
 });
 

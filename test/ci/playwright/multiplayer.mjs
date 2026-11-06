@@ -14,8 +14,9 @@
 // its own `game` state.
 //
 // Scenarios: the X-Card, `!oracle` producing exactly one card, a player's
-// Begin a Session persisting, Burn Momentum applying once, and a player's
-// Private Lines reaching campaignState.safety.
+// Begin a Session persisting, Burn Momentum applying once, a player's
+// Private Lines reaching campaignState.safety, and a Batch Mode round (the
+// window opening in the player's browser, Send now, one round card).
 //
 // Exit code 0 when every scenario passes; 1 otherwise. Failure screenshots
 // land in ./artifacts (uploaded by .github/workflows/e2e.yml).
@@ -28,6 +29,8 @@ import {
 
 const PLAYER_NAME = "E2E Player";
 const PC_NAME     = "E2E Kira";
+const GM_PC_NAME  = "E2E Ren (GM)";
+const ROUND_WINDOW = `#${MODULE_ID}-round-window`;
 const RUN_CAP_MS  = 8 * 60_000;
 
 const results = [];
@@ -204,6 +207,150 @@ async function main() {
       const added = await newCards(gm, "sessionLifecycleCard", before);
       assert(added.length === 1 && added[0].author === ids.playerId,
         `expected one session card from the player, got ${JSON.stringify(added.map(c => c.author))}`);
+    });
+
+    await scenario("Batch Mode round: the window opens on the player's screen, chat is table talk, Send now narrates one round for its roller", async () => {
+      try {
+        // GM side: Claude answered at the fetch boundary (CI has no key; the
+        // keyed canonical GM reads and narrates), a PC of the GM's own — the
+        // round then waits for the GM until Send now — and nothing for the
+        // player to burn, so the round never waits on an upgrade.
+        await gm.page.evaluate(async ({ MODULE_ID, GM_PC_NAME, actorId }) => {
+          const real = window.fetch;
+          const calls = [];
+          window.__e2eBatch = { real, calls, keyBefore: game.settings.get(MODULE_ID, "claudeApiKey"), characterBefore: game.user.character?.id ?? null };
+          window.fetch = async (url, init) => {
+            const target = typeof url === "string" ? url : url?.url ?? String(url);
+            if (!target.includes("api.anthropic.com")) return real(url, init);
+            const body = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+            const system = (body.system ?? []).map(b => b?.text ?? "").join("\n\n");
+            const user = (body.messages ?? []).map(m => (typeof m.content === "string"
+              ? m.content : (m.content ?? []).map(c => c?.text ?? "").join(""))).join("\n\n");
+            calls.push({ system: system.slice(0, 120), user });
+            let text;
+            if (system.startsWith("You are the pacing pre-classifier")) {
+              text = JSON.stringify({ decision: "MOVE", suggestedMove: "face_danger", category: "exploration", confidence: 0.9, reasoning: "E2E" });
+            } else if (system.startsWith("You are the move interpreter")) {
+              text = JSON.stringify({ moveId: "face_danger", statUsed: "edge", rationale: "E2E: a dash under fire.", mischiefApplied: false, confidence: "high" });
+            } else if (system.includes("## RESPONSE FORMAT — MANDATORY SIDECAR")) {
+              text = "E2E: the round turns.\n\n```json\n{\"newTruths\":[],\"stateChanges\":[]}\n```";
+            } else {
+              text = /json/i.test(system) ? "{}" : "E2E: the round turns.";
+            }
+            return new Response(JSON.stringify({ content: [{ type: "text", text }], stop_reason: "end_turn", usage: { input_tokens: 10, output_tokens: 10 } }),
+              { status: 200, headers: { "Content-Type": "application/json" } });
+          };
+          await game.settings.set(MODULE_ID, "claudeApiKey", "sk-ant-e2e-batch-stub");
+          for (let i = 0; i < 50 && !(game.settings.get(MODULE_ID, "keyedGmUserIds") ?? []).includes(game.user.id); i++) {
+            await new Promise(r => setTimeout(r, 100));
+          }
+          const gmPc = await Actor.create({ name: GM_PC_NAME, type: "character" });
+          await game.user.update({ character: gmPc.id });
+          await game.actors.get(actorId).update({ "system.momentum.value": 0 });
+          const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+          cs.sessionActive = true;
+          cs.xCardActive = false;
+          cs.pendingMove = false;
+          cs.currentSessionId ??= `e2e-batch-${Date.now()}`;
+          await game.settings.set(MODULE_ID, "campaignState", cs);
+        }, { MODULE_ID, GM_PC_NAME, actorId: ids.actorId });
+
+        // The GM turns the mode on from the toolbar.
+        await gm.page.evaluate(async (MODULE_SRC) => {
+          let btn = document.querySelector('[data-tool="sfBatchMode"]');
+          if (!btn) {
+            const { CompanionToolbarApp } = await import(`${MODULE_SRC}/ui/companionToolbar.js`);
+            CompanionToolbarApp.open();
+            for (let i = 0; i < 50 && !btn; i++) {
+              await new Promise(r => setTimeout(r, 100));
+              btn = document.querySelector('[data-tool="sfBatchMode"]');
+            }
+          }
+          if (!btn) throw new Error("the GM's toolbar has no Batch Mode switch");
+          btn.click();
+        }, MODULE_SRC);
+        const roundId = await gm.page.waitForFunction(({ MODULE_ID, playerId, gmId }) => {
+          const r = game.settings.get(MODULE_ID, "batchMode.round");
+          return r?.phase === "collecting" && r.entries?.[playerId] && r.entries?.[gmId] ? r.id : null;
+        }, { MODULE_ID, playerId: ids.playerId, gmId: ids.gmId }, { timeout: STEP_MS }).then(h => h.jsonValue());
+
+        // The window opens on the player's screen.
+        const box = `${ROUND_WINDOW} textarea[name="sf-round-text"]`;
+        await player.page.waitForFunction((sel) => !!document.querySelector(sel), box, { timeout: STEP_MS });
+
+        // A typed line is table talk: not narrated, not rolled — it becomes the window's draft.
+        const TALK = "E2E: keep an eye on the corridor behind us.";
+        const narratedBefore = (await cards(gm, "narratorCard")).length;
+        const rolledBefore = (await cards(gm, "moveResolution")).length;
+        await chat(player, TALK);
+        await player.page.waitForFunction(({ sel, TALK }) => document.querySelector(sel)?.value === TALK,
+          { sel: box, TALK }, { timeout: STEP_MS });
+        await sleep(SETTLE_MS);
+        assert((await cards(gm, "narratorCard")).length === narratedBefore, "a chat line was narrated while Batch Mode is on");
+        assert((await cards(gm, "moveResolution")).length === rolledBefore, "a chat line was rolled while Batch Mode is on");
+
+        // The player submits an action and confirms the reading in the window.
+        const ACTION = "E2E: I vault the barricade and sprint for the hatch.";
+        await player.page.evaluate(({ win, box, ACTION }) => {
+          const input = document.querySelector(box);
+          input.value = ACTION;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          document.querySelector(`${win} [data-action="submit"]`).click();
+        }, { win: ROUND_WINDOW, box, ACTION });
+        const confirm = `${ROUND_WINDOW} [data-action="confirm"]`;
+        await player.page.waitForFunction((sel) => !!document.querySelector(sel), confirm, { timeout: STEP_MS });
+        await player.page.evaluate((sel) => document.querySelector(sel).click(), confirm);
+        await gm.page.waitForFunction(({ MODULE_ID, playerId }) =>
+          game.settings.get(MODULE_ID, "batchMode.round")?.entries?.[playerId]?.status === "ready",
+        { MODULE_ID, playerId: ids.playerId }, { timeout: STEP_MS });
+        const waiting = await gm.page.evaluate((MODULE_ID) => game.settings.get(MODULE_ID, "batchMode.round")?.phase, MODULE_ID);
+        assert(waiting === "collecting", `the round should wait for the GM's PC, but it is ${waiting}`);
+
+        // The GM sends it now, without acting.
+        const sendNow = `${ROUND_WINDOW} [data-action="sendNow"]`;
+        await gm.page.waitForFunction((sel) => !!document.querySelector(sel), sendNow, { timeout: STEP_MS });
+        await gm.page.evaluate((sel) => document.querySelector(sel).click(), sendNow);
+        await gm.page.waitForFunction(({ MODULE_ID, roundId }) =>
+          game.messages.contents.some(m => m.flags?.[MODULE_ID]?.narratorCard && m.flags[MODULE_ID].roundId === roundId),
+        { MODULE_ID, roundId }, { timeout: STEP_MS * 2 });
+        await sleep(SETTLE_MS);
+
+        const roundCards = (await cards(gm, "narratorCard")).filter(c => c.flags.roundId === roundId);
+        assert(roundCards.length === 1, `expected one round card, got ${roundCards.length}`);
+        const entries = roundCards[0].flags.roundEntries ?? [];
+        assert(entries.length === 1 && entries[0].actorId === ids.actorId,
+          `the round card lists ${JSON.stringify(entries.map(e => e.playerName))} — expected the player's PC alone`);
+        const results = (await cards(gm, "moveResolution")).filter(c => c.flags.roundId === roundId);
+        assert(results.length === 1, `expected one result card for the round, got ${results.length}`);
+        assert(results[0].flags.actorId === ids.actorId, `the move was credited to ${results[0].flags.actorId}, not the player's PC`);
+        const onPlayer = (await cards(player, "narratorCard")).filter(c => c.flags.roundId === roundId);
+        assert(onPlayer.length === 1, `the player's client sees ${onPlayer.length} round cards`);
+        const narrations = await gm.page.evaluate(() => window.__e2eBatch.calls.filter(c => c.user.includes("## THIS ROUND")).map(c => c.user));
+        assert(narrations.length === 1, `expected one narration request for the round, got ${narrations.length}`);
+        assert(narrations[0].includes(PC_NAME), "the round's narration request doesn't name the player's PC");
+        assert(!narrations[0].includes(GM_PC_NAME), "the GM's PC, which didn't act, is named in the round's narration request");
+        assert(!narrations[0].includes(TALK), "table talk reached the narrator");
+        await gm.page.waitForFunction(({ MODULE_ID, roundId }) => {
+          const r = game.settings.get(MODULE_ID, "batchMode.round");
+          return r && r.id !== roundId && r.phase === "collecting";
+        }, { MODULE_ID, roundId }, { timeout: STEP_MS });
+      } finally {
+        // The mode off (the switch itself, not the toolbar's toggle: a round
+        // left collecting after a failure would ask the GM first), the windows
+        // closed, and the GM's key, PC and fetch put back.
+        await gm.page.evaluate(async ({ MODULE_ID }) => {
+          await game.settings.set(MODULE_ID, "batchMode.enabled", false);
+          const saved = window.__e2eBatch;
+          if (!saved) return;
+          await new Promise(r => setTimeout(r, 2500));   // the passes a narration schedules land on the stub
+          window.fetch = saved.real;
+          await game.settings.set(MODULE_ID, "claudeApiKey", saved.keyBefore ?? "");
+          await game.user.update({ character: saved.characterBefore });
+          window.__e2eBatch = null;
+        }, { MODULE_ID }).catch(err => log(`Batch Mode cleanup failed: ${err?.message ?? err}`));
+      }
+      await player.page.waitForFunction((sel) => !document.querySelector(sel), ROUND_WINDOW, { timeout: STEP_MS })
+        .catch(() => { throw new Error("the player's Round window stayed open after Batch Mode was turned off"); });
     });
   } catch (err) {
     results.push({ name: "setup", ok: false, error: err?.message ?? String(err) });

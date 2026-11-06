@@ -21,6 +21,10 @@
  *                     from one card, on one client and on two
  *   Disconnect        a relayed Burn Momentum the GM never receives (relays
  *                     have no ack — the button re-arms), then one that lands
+ *   Batch Mode        (issue #340) a round's narration failing every way a move's
+ *                     can; a reading that fails; refused round writes and a
+ *                     refused lock claim; repeated Submit / Confirm / Send now;
+ *                     a submission the GM never receives (Send again)
  *
  * Expected outcomes come from the documented contracts (decisions.md: the move
  * lock is released in a `finally`; a move's result stands when its narration
@@ -44,13 +48,19 @@ const control = vi.hoisted(() => ({ confirm: true, dice: null }));
 vi.mock('../../src/pacing/router.js', async (importOriginal) => ({
   ...(await importOriginal()),
   routePacedInput: vi.fn(async () => ({ runMove: true, decision: 'MOVE', suggestedMove: null })),
+  // A Batch Mode round's reading (issue #340 rows): every action a move.
+  decidePacing: vi.fn(async () => ({ runMove: true, decision: 'MOVE', suggestedMove: null })),
 }));
 vi.mock('../../src/moves/interpreter.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  interpretMove: vi.fn(async (narration) => ({
-    moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'iron', adds: 0, rationale: 'test', mischiefApplied: false,
-    playerNarration: narration, inputMethod: 'chat',
-  })),
+  interpretMove: vi.fn(async (narration) => {
+    // A Batch Mode row's reading that fails (issue #340 row 23).
+    if (/UNREADABLE/.test(narration)) throw new Error('the interpreter failed (test fault)');
+    return {
+      moveId: 'face_danger', moveName: 'Face Danger', statUsed: 'iron', adds: 0, rationale: 'test', mischiefApplied: false,
+      playerNarration: narration, inputMethod: 'chat',
+    };
+  }),
 }));
 vi.mock('../../src/moves/abilityScanner.js', async (importOriginal) => ({
   ...(await importOriginal()),
@@ -541,5 +551,247 @@ describe("a relayed click the GM never receives", () => {
     expect(table.world.message(card._id).flags[MODULE_ID].burn.consumed).toBe(true);
     expect(momentumOf('pc-pat')).toBe(3);   // reset to 2, +1 for the strong hit — once
     expect(button().disabled).toBe(true);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Batch Mode (issue #340) — a round's faults
+// ─────────────────────────────────────────────────────────────────────────────
+
+const round = () => table.world.getSetting('batchMode.round');
+const roundWrite = (client = null) => (w) => w.kind === 'setting' && w.key === `${MODULE_ID}.batchMode.round` && (!client || w.client === client);
+const roundFallbacks = () => table.cards(f => f.narrationFallback && f.roundId);
+const roundNarrated = () => table.cards(f => f.narratorCard && !f.narrationFallback && f.roundId);
+let subSeq = 0;
+
+async function batchRelay(userId, kind, payload) {
+  const c = table.client(userId);
+  const gmRelay = await c.import('../../src/multiplayer/gmRelay.js');
+  const res = await c.run(() => gmRelay.requestGmAction(kind, payload));
+  await table.settle();
+  return res;
+}
+async function batchOn() {
+  await table.client('gm-1').setSetting('batchMode.enabled', true);
+  await table.settle();
+}
+async function batchSubmit(userId, text = 'I brace against the hull and push through.') {
+  const submissionId = `bsub-${userId}-${++subSeq}`;
+  await batchRelay(userId, 'batch.submit', { roundId: round().id, text, submissionId });
+  return submissionId;
+}
+async function batchConfirm(userId) {
+  const r = round();
+  return batchRelay(userId, 'batch.confirm', { roundId: r.id, submissionId: r.entries[userId].submissionId, choices: {} });
+}
+/** Kira acts and confirms, Ren passes: the round resolves. */
+async function kiraActsRenPasses() {
+  await batchSubmit('pl-1');
+  await batchConfirm('pl-1');
+  await batchRelay('pl-2', 'batch.pass', { roundId: round().id });
+}
+/** The round stands and play goes on: its result recorded once, the lock free, round 2 open. */
+function expectRoundRecorded() {
+  expect(table.cards(f => f.moveResolution && f.roundId)).toHaveLength(1);
+  expect(momentumOf('pc-pat')).toBe(3);
+  expect(world().pendingMove).toBe(false);
+  expect(round()).toMatchObject({ number: 2, phase: 'collecting' });
+}
+
+describe('Batch Mode — the round\'s narration fails: the moves stand, the fallback round card posts, the next round opens', () => {
+  beforeEach(() => { silenceConsoleErrors(); });
+
+  it.each([
+    ['an overloaded API (529)', () => claudeFault.overloaded()],
+    ['a server error (500)', () => claudeFault.serverError()],
+    ['a malformed reply body', () => claudeFault.malformed()],
+    ['a network error', () => claudeFault.networkError()],
+    ['a reply with no text (synthetic)', () => ({ id: 'msg_empty', type: 'message', role: 'assistant', content: [], stop_reason: 'end_turn' })],
+  ])('%s', async (_label, reply) => {
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY }).when(isNarration, reply());
+    await batchOn();
+    await kiraActsRenPasses();
+    await table.drain();
+    expectRoundRecorded();
+    expect(roundFallbacks()).toHaveLength(1);
+    expect(roundFallbacks()[0].flags[MODULE_ID].narrationText).toMatch(/narration unavailable/);
+    expect(roundNarrated()).toHaveLength(0);
+  });
+
+  it('a rate limit is retried once after 5 s — narrated once', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY }).when(isNarration, claudeFault.rateLimited());
+    await batchOn();
+    await kiraActsRenPasses();
+    await vi.advanceTimersByTimeAsync(5_000);
+    await table.drain();
+    expect(table.claude.calls.filter(isNarration)).toHaveLength(2);
+    expect(roundNarrated()).toHaveLength(1);
+    expect(roundFallbacks()).toHaveLength(0);
+    expectRoundRecorded();
+  });
+
+  it.each([
+    ['a reply body that stalls', () => claudeFault.stalledBody()],
+    ['a request never answered', () => claudeFault.hang()],
+  ])('%s: the request deadline ends it; the lock is held until then and released after', async (_label, reply) => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY }).when(isNarration, reply());
+    await batchOn();
+    await kiraActsRenPasses();
+    expect(world().pendingMove).toBe(true);          // the narration holds the lock
+    await vi.advanceTimersByTimeAsync(DEFAULT_TIMEOUT_MS);
+    await table.drain();
+    expect(roundFallbacks()).toHaveLength(1);
+    expectRoundRecorded();
+  });
+});
+
+describe('Batch Mode — a reading fails', () => {
+  it('the entry says it couldn\'t be read; the round isn\'t wedged; Send now leaves it out', async () => {
+    silenceConsoleErrors();
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY });
+    await batchOn();
+    await batchSubmit('pl-1', 'I do something UNREADABLE.');
+    expect(round().entries['pl-1']).toMatchObject({ status: 'submitted', error: expect.stringMatching(/interpreter failed/) });
+    const c = table.client('pl-1');
+    const mod = await c.import('../../src/ui/roundWindow.js');
+    const view = await c.run(async () => (await new mod.RoundWindowApp()._prepareContext({})).view);
+    expect(view.own.error).toMatch(/Couldn't read your action — try again/);
+
+    await batchSubmit('pl-2');
+    await batchConfirm('pl-2');
+    await batchRelay('gm-1', 'batch.sendNow', { roundId: round().id });
+    await table.drain();
+    expect(table.cards(f => f.moveResolution && f.roundId).map(m => m.flags[MODULE_ID].roundUserId)).toEqual(['pl-2']);
+    expect(round()).toMatchObject({ number: 2, phase: 'collecting' });
+  });
+});
+
+describe('Batch Mode — refused writes', () => {
+  beforeEach(() => { silenceConsoleErrors(); });
+
+  it('a refused transition half-applies nothing; the requester is told; the next try lands', async () => {
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY });
+    await batchOn();
+    failWrites(table, roundWrite('gm-1'), { times: 1 });
+    await batchSubmit('pl-1');
+    expect(round().entries['pl-1'].status).toBe('waiting');
+    expect(table.cards(f => f.batchRefusedNotice).map(m => m.content).join()).toMatch(/could not be saved/);
+    await batchSubmit('pl-1');
+    expect(round().entries['pl-1'].status).toBe('read');
+  });
+
+  it('a refused open: the GMs are told; the next write that is due opens it', async () => {
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY });
+    failWrites(table, roundWrite('gm-1'), { times: 1 });
+    await batchOn();
+    expect(round()).toBeUndefined();
+    expect(table.cards(f => f.batchNotice).map(m => m.content).join()).toMatch(/the round did not open/);
+    // The next campaignState write (any move of play) opens it.
+    await table.client('gm-1').setSetting('campaignState', { ...world(), sessionNumber: 1, updatedAt: 'later' });
+    await table.drain();
+    expect(round()).toMatchObject({ number: 1, phase: 'collecting' });
+  });
+
+  it('the resolver\'s claim refused: the round stays collecting, the GM is told, Send now again resolves it', async () => {
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY });
+    await batchOn();
+    await batchSubmit('pl-1');
+    await batchConfirm('pl-1');
+    failWrites(table, (w) => roundWrite('gm-1')(w) && w.value?.phase === 'rolling', { times: 1 });
+    await batchRelay('gm-1', 'batch.sendNow', { roundId: round().id });
+    await table.drain();
+    expect(round().phase).toBe('collecting');
+    expect(table.cards(f => f.batchNotice).map(m => m.content).join()).toMatch(/still collecting/);
+    expect(world().pendingMove).toBe(false);
+    await batchRelay('gm-1', 'batch.sendNow', { roundId: round().id });
+    await table.drain();
+    expect(table.cards(f => f.moveResolution && f.roundId)).toHaveLength(1);
+  });
+
+  it('a refused move-lock claim at resolution leaves the round collecting, and the GM is told', async () => {
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY });
+    await batchOn();
+    await batchSubmit('pl-1');
+    await batchConfirm('pl-1');
+    failWrites(table, (w) => campaignStateWrite('gm-1')(w) && w.value?.pendingMove === true, { times: 1 });
+    await batchRelay('gm-1', 'batch.sendNow', { roundId: round().id });
+    await table.drain();
+    expect(round().phase).toBe('collecting');
+    expect(world().pendingMove).toBe(false);
+    expect(table.cards(f => f.batchNotice).map(m => m.content).join()).toMatch(/did not save the move lock/);
+  });
+});
+
+describe('Batch Mode — repeat clicks', () => {
+  it('a double Submit, Confirm and Send now, on one client and two, make one transition and one resolution', async () => {
+    traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY });
+    await batchOn();
+    const r = round();
+    // The same submission twice (a double click), at once.
+    await Promise.all([
+      batchRelay('pl-1', 'batch.submit', { roundId: r.id, text: 'I brace and push.', submissionId: 'dup' }),
+      batchRelay('pl-1', 'batch.submit', { roundId: r.id, text: 'I brace and push.', submissionId: 'dup' }),
+    ]);
+    const { interpretMove } = await import('../../src/moves/interpreter.js');
+    expect(interpretMove.mock.calls.filter(([t]) => t === 'I brace and push.')).toHaveLength(1);
+    await Promise.all([batchConfirm('pl-1'), batchConfirm('pl-1')]);
+    expect(round().order).toEqual(['pl-1']);
+    // Send now from both clients a GM is on — the player's is refused anyway.
+    await Promise.all([
+      batchRelay('gm-1', 'batch.sendNow', { roundId: r.id }),
+      batchRelay('gm-1', 'batch.sendNow', { roundId: r.id }),
+    ]);
+    await table.drain();
+    expect(table.cards(f => f.moveResolution && f.roundId)).toHaveLength(1);
+    expect(table.cards(f => f.narratorCard && f.roundId)).toHaveLength(1);
+    expect(momentumOf('pc-pat')).toBe(3);
+  });
+});
+
+describe('Batch Mode — a relayed submission the GM never receives', () => {
+  it('the window offers Send again after RELAY_RECOVERY_MS, and the second, received, lands once', async () => {
+    const trace = traceTable(table);
+    scriptClaude(table, { fallback: () => REPLY });
+    await batchOn();
+    const c = table.client('pl-1');
+    const mod = await c.import('../../src/ui/roundWindow.js');
+    const app = await c.run(() => mod.RoundWindowApp.open());
+    await c.run(() => app.draftFromOutside('I lunge for the hatch before it seals.'));
+
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    trace.mark("the GM's connection drops");
+    table.client('gm-1').connected = false;
+    await c.run(() => mod.RoundWindowApp.DEFAULT_OPTIONS.actions.submit.call(app, null, null));
+    await table.settle();
+    expect(round().entries['pl-1'].status).toBe('waiting');
+    await vi.advanceTimersByTimeAsync(RELAY_RECOVERY_MS);
+    await table.settle();
+    const view = await c.run(async () => (await app._prepareContext({})).view);
+    expect(view.own.notReceived).toBe(true);
+    expect(view.draft ?? (await c.run(async () => (await app._prepareContext({})).draft))).toBeTruthy();
+
+    vi.useRealTimers();
+    trace.mark('the connection is back; Send again');
+    table.client('gm-1').connected = true;
+    await c.run(() => mod.RoundWindowApp.DEFAULT_OPTIONS.actions.sendAgain.call(app, null, null));
+    await table.drain();
+    expect(round().entries['pl-1']).toMatchObject({ status: 'read', text: 'I lunge for the hatch before it seals.' });
+    const { interpretMove } = await import('../../src/moves/interpreter.js');
+    expect(interpretMove.mock.calls.filter(([t]) => t === 'I lunge for the hatch before it seals.')).toHaveLength(1);
+    const after = await c.run(async () => (await app._prepareContext({})));
+    expect(after.view.own.notReceived).toBe(false);
+    expect(after.draft).toBe('');
+    await c.run(() => app.close());
   });
 });

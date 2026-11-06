@@ -690,6 +690,9 @@ const NARRATOR_PERMISSION_KEYS = new Set(Object.keys(NARRATOR_PERMISSIONS));
 // extras.narratorClass always overrides the default.
 const DEFAULT_PERMISSION_CLASS_BY_MODE = {
   move_resolution:     null,
+  // A Batch Mode round (issue #340): the widest class among its entries, from
+  // each move's relevance — passed in as extras.narratorClass, as for a move.
+  round_resolution:    null,
   paced_narrative:     'interaction',
   scene_interrogation: 'embellishment',
   oracle_followup:     'embellishment',
@@ -1007,6 +1010,7 @@ export function formatEntityCard(entity, entityType) {
  */
 const NARRATOR_MODES = new Set([
   'move_resolution',
+  'round_resolution',   // A Batch Mode round: every acting player's action narrated once — see narrateRound (issue #340)
   'paced_narrative',
   'scene_interrogation',
   'oracle_followup',
@@ -1030,7 +1034,7 @@ const META_MODES = new Set(['campaign_recap']);
 // 3–5 paragraphs, the vignettes, vow, clock, oracle and inciting beats their
 // sentence counts), so the STYLE block's Length line is theirs alone: it was
 // sent to every mode, beside the mode's own length (issue #326 W40).
-const NARRATION_LENGTH_MODES = new Set(['move_resolution', 'paced_narrative']);
+const NARRATION_LENGTH_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
 
 const ROLE_DESCRIPTIONS = {
   move_resolution:
@@ -1039,6 +1043,15 @@ const ROLE_DESCRIPTIONS = {
     `that serves the story.\n\n` +
     `Do not repeat the mechanical outcome verbatim. Transform it into narrative. ` +
     `Keep the player in the fiction.`,
+
+  round_resolution:
+    `You are the narrator for an Ironsworn: Starforged campaign played by several players ` +
+    `at once. Your role is to narrate one round of play — every character who acted, each ` +
+    `action and the outcome its move rolled — as a single scene of vivid, atmospheric ` +
+    `prose that serves the story.\n\n` +
+    `Do not repeat a mechanical outcome verbatim. Transform each into narrative, in the ` +
+    `order given, and keep every action with the character who took it. Keep the players ` +
+    `in the fiction.`,
 
   paced_narrative:
     `You are the narrator for an Ironsworn: Starforged solo campaign. Your role is to ` +
@@ -1651,8 +1664,14 @@ export function buildNarratorSystemPrompt(
   // roster lists it apart as lost (issue #331 X29). The roster and CHARACTER
   // STATE name the connections; a bare count told the narrator nothing else.
 
-  // [8] Character
-  if (character) parts.push(buildCharacterBlock(character));
+  // [8] Character — a round (issue #340) has one CHARACTER block per acting
+  // PC, in the round's order; every other mode the one character speaking.
+  const roundCharacters = Array.isArray(extras?.roundCharacters) ? extras.roundCharacters.filter(Boolean) : [];
+  if (roundCharacters.length) {
+    for (const c of roundCharacters) parts.push(buildCharacterBlock(c));
+  } else if (character) {
+    parts.push(buildCharacterBlock(character));
+  }
 
   // [8b] Party roster — multiplayer speaker disambiguation. Rendered only
   // when more than one player character shares the campaign; names the PC
@@ -2133,6 +2152,116 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
   return parts.join('\n\n');
 }
 
+/** A round's narration grows this many sentences for each acting entry past the first. */
+export const ROUND_EXTRA_SENTENCES_PER_ENTRY = 2;
+/** …up to this many times the Length setting. */
+export const ROUND_SENTENCE_CAP_FACTOR = 3;
+/** Its max tokens scale with the acting entries, up to this many. */
+export const ROUND_TOKEN_ENTRY_CAP = 3;
+
+/**
+ * The sentences a round's narration is asked for (issue #340): the Length
+ * setting, plus ROUND_EXTRA_SENTENCES_PER_ENTRY for each further acting
+ * entry, capped at ROUND_SENTENCE_CAP_FACTOR × the setting.
+ *
+ * @param {number} narrationLength — the Length (sentences) setting
+ * @param {number} actingCount
+ * @returns {number}
+ */
+export function roundSentenceTarget(narrationLength, actingCount) {
+  const base = Math.max(1, Number(narrationLength) || 3);
+  const extra = Math.max(0, (Number(actingCount) || 1) - 1) * ROUND_EXTRA_SENTENCES_PER_ENTRY;
+  return Math.min(base + extra, base * ROUND_SENTENCE_CAP_FACTOR);
+}
+
+/**
+ * The max tokens a round's narration may use, before the sidecar's headroom:
+ * the narration setting × the acting entries, up to ROUND_TOKEN_ENTRY_CAP.
+ *
+ * @param {number} narrationMaxTokens
+ * @param {number} actingCount
+ * @returns {number}
+ */
+export function roundMaxTokens(narrationMaxTokens, actingCount) {
+  const base = Math.max(1, Number(narrationMaxTokens) || 1000);
+  return base * Math.min(Math.max(1, Number(actingCount) || 1), ROUND_TOKEN_ENTRY_CAP);
+}
+
+/** What each class lets the narrator do with an entry, in one line. */
+const ROUND_LATITUDE_LINES = Object.freeze({
+  discovery:     'Latitude: something new may enter the fiction.',
+  interaction:   'Latitude: deepen what is established.',
+  embellishment: 'Latitude: embellish only.',
+});
+
+/**
+ * The user message for a Batch Mode round's narration (issue #340): the
+ * recent scene, then THIS ROUND — every acting entry in order: who acted,
+ * the move and stat, its outcome (and the price it paid), the line the player
+ * wrote, the latitude its move allows — then the instruction to narrate the
+ * round as one scene. Only the characters listed act: no one who sat the
+ * round out is named, and the instruction forbids acting for, or remarking
+ * on, anyone else. Player lines are sanitised (sanitizePlayerText): one line
+ * each, inside its quotes.
+ *
+ * @param {Object} args
+ * @param {string} [args.recentContext] — the last ring entries
+ * @param {Array<{ actorName: string, text: string, input: Object }>} args.entries — in order;
+ *   `input` is the entry's narration input: { kind: "move"|"narrative"|"refused", moveName,
+ *   statUsed, outcomeLabel, outcome, loremasterContext, oracleSeeds, relevance, reason }
+ * @param {number} args.sentenceTarget — roundSentenceTarget
+ * @returns {string}
+ */
+export function buildRoundUserMessage({ recentContext = '', entries = [], sentenceTarget = 3 }) {
+  const parts = [];
+  const cleanedRecent = stripHtml(recentContext).trim();
+  if (cleanedRecent) parts.push(`## RECENT SCENE\n\n${cleanedRecent}`);
+
+  const acting = entries.filter(e => e && typeof e.actorName === 'string' && e.actorName.trim());
+  const n = acting.length;
+  const blocks = acting.map((e, i) => {
+    const name = e.actorName.trim();
+    const input = e.input ?? {};
+    const lines = [];
+    if (input.kind === 'move') {
+      const stat = input.statUsed ? ` (+${input.statUsed})` : '';
+      const outcome = String(input.outcomeLabel ?? input.outcome ?? '').replace(/_/g, ' ').trim().toLowerCase();
+      lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}${stat}${outcome ? `: ${outcome}` : ''}`);
+      if (input.loremasterContext) lines.push(String(input.loremasterContext).trim());
+      const seeds = formatOracleSeedsBlock(input.oracleSeeds);
+      if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
+    } else if (input.kind === 'refused') {
+      lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}: not rolled`);
+      lines.push(`${input.reason ?? 'It could not be rolled.'} Narrate this as an action with no roll: no success or failure is decided for it.`);
+    } else {
+      lines.push(`### ${i + 1}. ${name} — no roll`);
+    }
+    const said = sanitizePlayerText(e.text ?? '');
+    if (said) lines.push(`${name}: "${said}"`);
+    if (input.kind === 'move') {
+      const latitude = ROUND_LATITUDE_LINES[input.relevance?.resolvedClass] ?? ROUND_LATITUDE_LINES.embellishment;
+      lines.push(latitude);
+    }
+    return lines.join('\n');
+  });
+  parts.push(
+    `## THIS ROUND — ${n} character${n !== 1 ? 's' : ''} acted at once, in this order\n\n` +
+    blocks.join('\n\n'),
+  );
+
+  const target = Math.max(1, Number(sentenceTarget) || 3);
+  parts.push(
+    `Narrate the round as one scene in ${target}–${target + 1} sentences. Narrate each action ` +
+    `and its outcome in the order given, and attribute each to its own character only — let ` +
+    `the actions meet where the fiction allows. Do not explain a mechanical outcome — embody it. ` +
+    `An action with no roll happens as described, with no success or failure decided. Only the ` +
+    `characters listed above act this round: invent no action for anyone else, and do not ` +
+    `remark on who did not act. Close on a beat the whole party can answer, not a question ` +
+    `to one character.`,
+  );
+  return parts.join('\n\n');
+}
+
 // ---------------------------------------------------------------------------
 // Section builders (pure — no async, no Foundry API)
 // ---------------------------------------------------------------------------
@@ -2165,13 +2294,18 @@ export function buildPartyBlock(party) {
   const speaking = typeof party?.speaking === 'string' && party.speaking.trim()
     ? party.speaking.trim()
     : null;
+  // A Batch Mode round names who acts in it (issue #340) — and no one else.
+  const acting = new Set(Array.isArray(party?.acting) ? party.acting.filter(n => typeof n === 'string').map(n => n.trim()) : []);
   const roster = members
     .map(m => {
       const idBits = [];
       if (m.callsign) idBits.push(`"${m.callsign}"`);
       if (m.pronouns) idBits.push(m.pronouns);
       const id = idBits.length ? ` (${idBits.join(', ')})` : '';
-      return `${m.name}${id}${speaking && m.name === speaking ? ' (speaking this turn)' : ''}`;
+      const mark = acting.size
+        ? (acting.has(m.name) ? ' (acting this round)' : '')
+        : (speaking && m.name === speaking ? ' (speaking this turn)' : '');
+      return `${m.name}${id}${mark}`;
     })
     .join(', ');
 
@@ -2180,10 +2314,16 @@ export function buildPartyBlock(party) {
     '## PARTY',
     '',
     `This is a multiplayer campaign. Player characters: ${roster}.`,
-    'Each chat input belongs to exactly one of them — attribute actions and',
-    'dialogue to the named speaker only, and never merge the player',
-    'characters into a single "you". Other PCs are present in the scene',
-    'only when the fiction or the scene frame says so.',
+    ...(acting.size ? [
+      'This round, only the characters marked acting this round act — each',
+      'action belongs to its own character. Invent no action for anyone else,',
+      'and never merge the player characters into a single "you".',
+    ] : [
+      'Each chat input belongs to exactly one of them — attribute actions and',
+      'dialogue to the named speaker only, and never merge the player',
+      'characters into a single "you". Other PCs are present in the scene',
+      'only when the fiction or the scene frame says so.',
+    ]),
     ...(anyPronouns ? [
       'The pronouns above are each character\'s recorded pronouns — use them',
       'exactly; never infer gender from a name.',

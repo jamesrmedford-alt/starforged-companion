@@ -85,7 +85,9 @@ describe("re-narration credits the roller", () => {
     const [resolution, state, options] = narrate.mock.calls[0];
     expect(resolution.outcome).toBe("strong_hit");
     expect(state).toMatchObject({ currentSessionId: "s1" });
-    expect(options).toEqual({ speakerActorId: "pc-roller" });
+    // The roller, and what was upgraded — a Batch Mode round entry not yet
+    // narrated takes the upgraded resolution by it (issue #340).
+    expect(options).toEqual({ speakerActorId: "pc-roller", upgradeOf: null, kind: "burn" });
   });
 
   it("Improve Result narrates with campaignState and the improving PC as speaker", async () => {
@@ -104,6 +106,6 @@ describe("re-narration credits the roller", () => {
     const [resolution, state, options] = narrate.mock.calls[0];
     expect(resolution.outcome).toBe("strong_hit");
     expect(state).toMatchObject({ currentSessionId: "s1" });
-    expect(options).toEqual({ speakerActorId: "pc-roller" });
+    expect(options).toEqual({ speakerActorId: "pc-roller", upgradeOf: null, kind: "improve" });
   });
 });

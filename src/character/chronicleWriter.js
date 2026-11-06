@@ -3,8 +3,9 @@
 // Automatic chronicle entries — generates a one-sentence narrative beat from
 // a passage of narrator prose and writes it to the chronicle of the active PC.
 //
-// Two callers in production: narrateResolution (move pipeline) and
-// narratePacedInput (paced narration). Both fire-and-forget through
+// Three callers in production: narrateResolution (move pipeline),
+// narratePacedInput (paced narration) and narrateRound (a Batch Mode round,
+// issue #340 — one entry per round). All fire-and-forget through
 // scheduleChronicleEntry so the chronicle write does not block the chat card.
 //
 // Gated on the `chronicleAutoEntry` setting (default true; registered in
@@ -88,7 +89,7 @@ Constraints:
  * @param {Object} args.campaignState
  * @param {string} [args.moveId]    — present for move-pipeline calls
  * @param {string} [args.outcome]   — present for move-pipeline calls
- * @param {"move"|"paced"} args.kind
+ * @param {"move"|"paced"|"round"} args.kind
  */
 export function scheduleChronicleEntry(args) {
   if (!isAutoEntryEnabled()) return;
@@ -169,6 +170,8 @@ async function callChronicleAPI({ apiKey, narrationText, moveId, outcome, kind }
     if (outcome) contextLines.push(`Outcome: ${outcome}`);
   } else if (kind === 'paced') {
     contextLines.push('Context: paced narration — no move was rolled.');
+  } else if (kind === 'round') {
+    contextLines.push('Context: one round in which several characters acted at once — capture the beat that changed the most.');
   }
   const contextBlock = contextLines.length
     ? `## CONTEXT\n\n${contextLines.join('\n')}\n\n`

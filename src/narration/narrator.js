@@ -10,6 +10,9 @@ import {
   buildCampaignRecapUserMessage,
   buildSharedStorySections,
   buildPacedNarrativeUserMessage,
+  buildRoundUserMessage,
+  roundSentenceTarget,
+  roundMaxTokens,
   formatEntityCard,
   formatSettlementPlanet,
   sanitizePlayerText,
@@ -286,6 +289,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     character       = null,
     relevance       = null,
     oracleSeeds     = null,
+    actingNames     = null,
   } = opts;
 
   // The scene's ledgers as they stand in the store (issue #325 W05; rules/
@@ -312,7 +316,7 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       console.warn(`${MODULE_ID} | narrator: campaignTruths build failed:`, err);
       return '';
     }),
-    party:              buildPartyContext(character?.name ?? null),
+    party:              buildPartyContext(character?.name ?? null, actingNames),
     audioMarkupEnabled: audioMarkupEnabledFromSettings(),
     // Spotlight rotation (issue #232) — multiplayer turn-implication nudge.
     // Advances the per-scene pointer as a side effect; '' when not applicable.
@@ -418,6 +422,25 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
       extras.entityNamesById    = collectEntityNamesById(relevance.entityIds, relevance.entityTypes);
     }
     extras.oracleSeeds = oracleSeeds;
+  } else if (mode === 'round_resolution') {
+    // A Batch Mode round (issue #340): each move entry resolved its own
+    // relevance when it rolled (the GM's clarification dialog included), and
+    // narrateRound hands in their union at the widest class. The entries'
+    // text, joined, is matched lexically too (no API call) and unioned in.
+    // Each entry keeps its oracle seeds in the user message, not here.
+    const lexical = await resolvePathRelevance(playerNarration, sceneState);
+    const ids   = [...(relevance?.entityIds ?? [])];
+    const types = [...(relevance?.entityTypes ?? [])];
+    lexical.entityIds.forEach((id, i) => {
+      if (ids.includes(id)) return;
+      ids.push(id);
+      types.push(lexical.entityTypes?.[i]);
+    });
+    extras.narratorClass      = relevance?.resolvedClass ?? null;
+    extras.entityCards        = collectEntityCards(ids, types);
+    extras.matchedEntityIds   = ids;
+    extras.matchedEntityTypes = types;
+    extras.entityNamesById    = collectEntityNamesById(ids, types);
   } else {
     // One uniform rule for every non-move mode: resolve relevance lexically
     // (no API cost). Modes with no player text (vignette / inciting / recap)
@@ -844,6 +867,350 @@ export async function narrateResolution(resolution, campaignState, options = {})
 
 
 // ---------------------------------------------------------------------------
+// A Batch Mode round — every acting player's action, narrated once (issue #340)
+// ---------------------------------------------------------------------------
+
+/** Each class's rank: a round narrates at the widest class among its entries. */
+const PERMISSION_CLASS_RANK = Object.freeze({ embellishment: 0, interaction: 1, discovery: 2 });
+
+/**
+ * The widest permission class among a round's entries — discovery, then
+ * interaction, then embellishment. A move entry brings its own relevance's
+ * class; an action with no roll (a narrative entry, or one the roll stage
+ * refused) is narrated as paced narration is, at interaction.
+ *
+ * @param {Array<{ input: Object }>} entries
+ * @returns {"discovery"|"interaction"|"embellishment"}
+ */
+export function widestRoundClass(entries) {
+  let best = 'embellishment';
+  for (const e of entries ?? []) {
+    const cls = e?.input?.kind === 'move' ? (e.input.relevance?.resolvedClass ?? 'embellishment') : 'interaction';
+    if ((PERMISSION_CLASS_RANK[cls] ?? 0) > PERMISSION_CLASS_RANK[best]) best = cls;
+  }
+  return best;
+}
+
+/**
+ * The acting entries of a round, in order, as the narration takes them —
+ * each with the narration input its roll kept (src/moves/movePipeline.js
+ * narrationInputFrom), the refusal the roll stage gave it, or none: an action
+ * with no roll. Nobody who sat the round out is here.
+ *
+ * @param {Object} round — src/batch/round.js
+ * @returns {Array<{ userId: string, actorId: string, actorName: string, userName: string, text: string, input: Object }>}
+ */
+export function roundNarrationEntries(round) {
+  return (round?.acting ?? [])
+    .map(id => round.entries?.[id])
+    .filter(Boolean)
+    .map(e => ({
+      userId:    e.userId,
+      actorId:   e.actorId,
+      actorName: e.actorName || 'Someone',
+      userName:  e.userName ?? '',
+      text:      e.text ?? '',
+      input:     e.rolled?.narrationInput ?? { kind: 'narrative' },
+    }));
+}
+
+/**
+ * Narrate a Batch Mode round as one scene and post its one card (issue #340
+ * — the narrator mode `round_resolution`). The canonical GM's round driver
+ * calls it once every acting entry is rolled, recorded and its upgrade
+ * decided, under the move lock. As every narration does: the X-Card gate on
+ * entry and on the reply (the moves stand; the round posts the "narration
+ * paused" notice), one rate-limit retry, the sidecar applied under one
+ * `narrationId`, the `!narrator debug` capture, and a fallback card on
+ * failure — "Move: outcome — narration unavailable" for each entry, with the
+ * flag family and `narrationFallback`, so the session recap counts the moves.
+ *
+ * Context goes through buildNarratorExtras('round_resolution', …): the
+ * entries' text joined for lexical relevance and lore, each move entry's own
+ * relevance unioned, at the widest class; a CHARACTER block for every acting
+ * PC, the PARTY block naming who acts, no SPOTLIGHT (every PC is asked each
+ * round). The narrator is told only who acted.
+ *
+ * @param {{ round: Object, campaignState: Object }} args — a working copy of campaignState
+ * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object }>}
+ */
+export async function narrateRound({ round, campaignState }) {
+  const entries = roundNarrationEntries(round);
+  if (!entries.length) return { posted: null };
+  const settings = getNarratorSettings();
+  if (!settings.narrationEnabled) return { posted: null };
+
+  if (isXCardActive(campaignState)) {
+    console.debug(`${MODULE_ID} | narrateRound: X-Card active — narration paused.`);
+    return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
+  }
+  const xCard = watchXCard(campaignState);
+  const narrationId = newNarrationId();
+
+  const apiKey = getApiKey();
+  if (!apiKey) {
+    console.warn(`${MODULE_ID} | narrateRound: Claude API key not configured`);
+    return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState) };
+  }
+
+  await ensureSceneStarted(campaignState, 'first_narration_round_resolution');
+
+  // Each move entry's relevance, unioned, at the widest class among them.
+  const widest = widestRoundClass(entries);
+  const ids = [];
+  const types = [];
+  for (const e of entries) {
+    const rel = e.input?.kind === 'move' ? e.input.relevance : null;
+    (rel?.entityIds ?? []).forEach((id, i) => {
+      if (ids.includes(id)) return;
+      ids.push(id);
+      types.push(rel.entityTypes?.[i]);
+    });
+  }
+  const relevance = { resolvedClass: widest, entityIds: ids, entityTypes: types };
+
+  const characters = entries
+    .map(e => getActiveCharacter(campaignState, e.actorId))
+    .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId && o?.name === c.name) === i);
+  const extras = await buildNarratorExtras('round_resolution', campaignState, {
+    playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
+    character:       null,
+    relevance,
+    actingNames:     entries.map(e => e.actorName),
+  });
+  extras.roundCharacters = characters;
+
+  const sentenceTarget = roundSentenceTarget(settings.narrationLength, entries.length);
+  const systemPrompt = buildNarratorSystemPrompt(
+    campaignState, { ...settings, narrationLength: sentenceTarget }, null, '', extras,
+  );
+  const userMessage = buildRoundUserMessage({
+    recentContext: getRecentNarrationContext(
+      campaignState?.currentSessionId ?? null,
+      Math.min(MOVE_RING_CARDS, getNarratorContextCards()),
+    ),
+    entries,
+    sentenceTarget,
+  });
+  const maxTokens = maxTokensWithSidecar(roundMaxTokens(settings.narrationMaxTokens, entries.length));
+
+  // One call, and one retry after a rate limit. The call is made here, not in
+  // a helper, so its caller is narrateRound (the playthrough harness files a
+  // call under the two module functions above the proxy).
+  for (let tries = 0; tries < 2; tries += 1) {
+    try {
+      if (tries) await delay(RETRY_DELAY_MS);
+      const raw = await callNarratorAPI({
+        label: 'narrateRound', apiKey, systemPrompt, userMessage, model: settings.narrationModel, maxTokens,
+      });
+      if (xCard.interrupted('narrateRound')) {
+        return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
+      }
+      const narration = applyNarratorSidecar(raw, campaignState, {
+        moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
+      });
+      if (!narration?.trim()) break;
+      const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
+        matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
+      });
+      await runRoundNarrationPasses(narration, entries, relevance, campaignState, { narrationId });
+      scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round' });
+      return { posted: 'card', narrationId, card };
+    } catch (err) {
+      if (!tries && isRateLimit(err)) continue;
+      console.error(`${MODULE_ID} | narrateRound ${tries ? 'retry ' : ''}failed:`, err);
+      break;
+    }
+  }
+  return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState) };
+}
+
+/**
+ * The capture a round's narration gets: one pass, at the widest class
+ * (runPostNarrationPasses). A Make a Connection hit keeps its roller and seed
+ * for the auto-create; with two in one round, the first auto-creates and the
+ * second's NPC goes to a draft card, as any other detected NPC does.
+ *
+ * @param {string} narration
+ * @param {Array<Object>} entries — roundNarrationEntries
+ * @param {Object} relevance — the round's union, at the widest class
+ * @param {Object} campaignState
+ * @param {{ narrationId: string }} opts
+ * @returns {Promise<void>}
+ */
+function runRoundNarrationPasses(narration, entries, relevance, campaignState, { narrationId }) {
+  const isHit = (o) => o === 'strong_hit' || o === 'weak_hit';
+  const connection = entries.find(e => e.input?.kind === 'move' && e.input.moveId === 'make_a_connection' && isHit(e.input.outcome));
+  const lead = connection ?? entries[0];
+  const resolution = {
+    moveId:          connection ? 'make_a_connection' : (lead?.input?.moveId ?? null),
+    outcome:         connection ? connection.input.outcome : (lead?.input?.outcome ?? null),
+    oracleSeeds:     connection ? (connection.input.oracleSeeds ?? null) : null,
+    playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
+  };
+  return runPostNarrationPasses(narration, resolution, relevance, campaignState, {
+    actorId: lead?.actorId ?? null, narrationId,
+  });
+}
+
+/** One entry's line on a round card: who, and what the move rolled. */
+function roundEntryHtml(e) {
+  const input = e.input ?? {};
+  const roll = input.kind === 'move'
+    ? `${escapeHtml(input.moveName ?? moveDisplayName(input.moveId))}: ${escapeHtml(String(input.outcomeLabel ?? input.outcome ?? '').replace(/_/g, ' '))}`
+    : input.kind === 'refused'
+      ? `${escapeHtml(input.moveName ?? 'A move')}: not rolled`
+      : 'no roll';
+  const said = sanitizePlayerText(e.text ?? '');
+  return `<li class="sf-round-entry"><strong>${escapeHtml(e.actorName)}</strong> — ${roll}`
+    + (said ? `<div class="sf-round-entry-line">“${escapeHtml(said)}”</div>` : '')
+    + `</li>`;
+}
+
+/** The round card's `roundEntries`: the players who acted, and no one else. */
+function roundEntriesFlag(entries) {
+  return entries.map(e => ({
+    userId:       e.userId,
+    actorId:      e.actorId,
+    playerName:   e.actorName,
+    playerText:   sanitizePlayerText(e.text ?? ''),
+    moveId:       e.input?.kind === 'move' ? (e.input.moveId ?? null) : null,
+    outcome:      e.input?.kind === 'move' ? (e.input.outcome ?? null) : null,
+    isMatch:      e.input?.kind === 'move' ? e.input.isMatch === true : false,
+    resolutionId: e.input?.kind === 'move' ? (e.input.resolutionId ?? '') : '',
+  }));
+}
+
+/**
+ * The round's one narrator card: each acting player's line and roll, then
+ * the prose (issue #340). It carries the flag family — `narratorCard`,
+ * `narrationText`, `sessionId`, `narrationId`, `matchedEntityIds` — and
+ * `roundId`, `roundNumber` and `roundEntries`; its own `moveId`, `outcome`
+ * and `resolutionId` stay empty (a Burn Momentum's supersede never matches
+ * it: upgrades are decided before the round is narrated).
+ *
+ * @param {string} narrationText
+ * @param {Object} round
+ * @param {Array<Object>} entries — roundNarrationEntries
+ * @param {Object} campaignState
+ * @param {{ matchedEntityIds?: string[], narrationId?: string|null }} [options]
+ * @returns {Promise<ChatMessage>}
+ */
+export async function postRoundNarrationCard(narrationText, round, entries, campaignState, options = {}) {
+  const matchedEntityIds = Array.isArray(options.matchedEntityIds) ? options.matchedEntityIds : [];
+  return ChatMessage.create({
+    content: `
+      <div class="sf-narration-card sf-round-card">
+        <div class="sf-narration-label">◈ Round ${escapeHtml(String(round?.number ?? ''))}</div>
+        <ul class="sf-round-entries">${entries.map(roundEntryHtml).join('')}</ul>
+        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
+        <div class="sf-narration-footer">
+          <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
+            <i class="fas fa-play"></i> Play
+          </button>
+          <button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden>
+            <i class="fas fa-stop"></i> Stop
+          </button>
+        </div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        narratorCard:     true,
+        narrationCard:    true,
+        narrationText,
+        sessionId:        campaignState?.currentSessionId ?? null,
+        sessionNumber:    campaignState?.sessionNumber ?? null,
+        moveId:           null,
+        outcome:          null,
+        isMatch:          false,
+        resolutionId:     '',
+        matchedEntityIds,
+        playerText:       '',
+        playerName:       null,
+        narrationId:      typeof options.narrationId === 'string' && options.narrationId ? options.narrationId : null,
+        roundId:          round?.id ?? null,
+        roundNumber:      round?.number ?? null,
+        roundEntries:     roundEntriesFlag(entries),
+        timestamp:        new Date().toISOString(),
+      },
+    },
+  });
+}
+
+/**
+ * The round's card when its narration failed: each entry's "Move: outcome —
+ * narration unavailable" — the flag family with `narrationFallback`, so the
+ * session recap counts the moves and every narrator-memory read leaves it out
+ * (rules/narrator-memory.md invariant 1). No narrationId: no sidecar ran.
+ */
+async function postRoundFallbackCard(round, entries, campaignState = null) {
+  const lines = entries.map(e => {
+    const input = e.input ?? {};
+    const what = input.kind === 'move'
+      ? `${input.moveName ?? moveDisplayName(input.moveId)}: ${input.outcomeLabel ?? String(input.outcome ?? '').replace(/_/g, ' ')}`
+      : `${e.actorName}: no roll`;
+    return `${input.kind === 'move' ? `${e.actorName} — ` : ''}${what} — narration unavailable.`;
+  });
+  return ChatMessage.create({
+    content: `
+      <div class="sf-narration-card sf-narration-fallback sf-round-card">
+        <div class="sf-narration-label">◈ Round ${escapeHtml(String(round?.number ?? ''))}</div>
+        <div class="sf-narration-prose">${lines.map(escapeHtml).join('<br>')}</div>
+        <div class="sf-narration-error">Narration unavailable — check your API key and proxy.</div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        narratorCard:      true,
+        narrationCard:     true,
+        narrationFallback: true,
+        narrationText:     lines.join(' '),
+        sessionId:         campaignState?.currentSessionId ?? null,
+        sessionNumber:     campaignState?.sessionNumber ?? null,
+        moveId:            null,
+        outcome:           null,
+        resolutionId:      '',
+        matchedEntityIds:  [],
+        roundId:           round?.id ?? null,
+        roundNumber:       round?.number ?? null,
+        roundEntries:      roundEntriesFlag(entries),
+        timestamp:         new Date().toISOString(),
+      },
+    },
+  });
+}
+
+/**
+ * The notice a round posts instead of its narration while the X-Card is in
+ * play (or when it was played while the narration was written). Not a
+ * narrator card: never in the ring, the summary or the Chronicle. The moves
+ * stand.
+ */
+async function postRoundPausedCard(round, entries, campaignState = null) {
+  const moves = entries
+    .filter(e => e.input?.kind === 'move')
+    .map(e => `${e.actorName} — ${e.input.moveName ?? moveDisplayName(e.input.moveId)}: ${e.input.outcomeLabel ?? String(e.input.outcome ?? '').replace(/_/g, ' ')}`);
+  return ChatMessage.create({
+    content: `
+      <div class="sf-narration-card sf-narration-fallback sf-round-card">
+        <div class="sf-narration-label">◈ Round ${escapeHtml(String(round?.number ?? ''))}</div>
+        <div class="sf-narration-prose">${moves.length ? moves.map(escapeHtml).join('<br>') : 'Round resolved.'}</div>
+        <div class="sf-narration-error">${xCardDiscardReason(campaignState, 'Narration')}</div>
+      </div>
+    `.trim(),
+    flags: {
+      [MODULE_ID]: {
+        narrationPaused: true,
+        sessionId:       campaignState?.currentSessionId ?? null,
+        roundId:         round?.id ?? null,
+        roundNumber:     round?.number ?? null,
+      },
+    },
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Post-narration passes — combined detection + generative tier updates
 // ---------------------------------------------------------------------------
 
@@ -1093,6 +1460,17 @@ function ringEntryText(message) {
   const f = message?.flags?.[MODULE_ID] ?? {};
   const prose = typeof f.narrationText === 'string' ? f.narrationText.trim() : '';
   if (!prose) return '';
+  // A Batch Mode round's card (issue #340): one line for each player who
+  // acted, in the round's order, then the prose.
+  if (Array.isArray(f.roundEntries) && f.roundEntries.length) {
+    const lines = f.roundEntries.map(e => {
+      const said = sanitizePlayerText(String(e?.playerText ?? ''));
+      if (!said) return null;
+      const who = typeof e?.playerName === 'string' && e.playerName.trim() ? e.playerName.trim() : 'Player';
+      return `PLAYER — ${who} wrote: "${said}"`;
+    }).filter(Boolean);
+    return [...lines, prose].join('\n');
+  }
   const said  = sanitizePlayerText(String(f.playerText ?? f.sceneQuestion ?? ''));
   if (!said) return prose;
   const who  = typeof f.playerName === 'string' && f.playerName.trim() ? f.playerName.trim() : 'Player';
@@ -1208,11 +1586,16 @@ export function xCardedNarrationCards(sessionId) {
 
   const newest   = messages[newestIdx];
   const newestAt = messageTime(newest);
+  const newestRound = newest?.flags?.[MODULE_ID]?.roundId ?? null;
   const beat = [newest];
   for (let i = newestIdx - 1; i >= 0; i--) {
     const m = messages[i];
     const f = m?.flags?.[MODULE_ID];
     if (!f) break;                              // someone spoke: the beat began after it
+    // A Batch Mode round's card is a beat of its own (issue #340): the walk
+    // stops at a card of another round. Round submissions aren't chat
+    // messages, so nothing else would end the beat between two rounds.
+    if (f.roundId && f.roundId !== newestRound) break;
     // A forced move's post — the Roll button's re-post of the player's line,
     // a way-out / Battle / milestone / fulfil button, a token drag — is the
     // player acting: the beat began after it too (issue #326 W42 — the walk
@@ -1419,6 +1802,24 @@ export async function postSessionRecap(campaignState, sessionId = null, { sessio
 
   for (const msg of messages) {
     const f = msg.flags[MODULE_ID];
+    // A Batch Mode round's card (issue #340) counts each entry's move,
+    // outcome and match; its prose's first sentence is quoted once.
+    if (Array.isArray(f.roundEntries) && f.roundEntries.length) {
+      const text = stripMarkup((f.xCarded || f.narrationFallback) ? '' : (f.narrationText ?? ''));
+      const firstSentence = text.split(/[.!?]/)[0]?.trim() ?? '';
+      const moves = f.roundEntries.filter(e => e?.moveId);
+      for (const e of moves) {
+        totalMoves++;
+        if (e.outcome && outcomes[e.outcome] !== undefined) outcomes[e.outcome]++;
+        if (e.isMatch) matchContext = moveDisplayName(e.moveId);
+      }
+      const rolls = moves.map(e => `${moveDisplayName(e.moveId)}${e.outcome ? ` → ${e.outcome.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())}` : ''}`);
+      const label = `Round${f.roundNumber ? ` ${f.roundNumber}` : ''}`;
+      if (rolls.length || firstSentence) {
+        moveLines.push(`• ${label}${rolls.length ? `: ${rolls.join('; ')}` : ''}${firstSentence ? ` — ${escapeHtml(firstSentence)}` : ''}`);
+      }
+      continue;
+    }
     const moveName = f.moveId ? moveDisplayName(f.moveId) : null;
     const outcome  = f.outcome ?? null;
     // A narration the X-Card removed (issue #321 U07) and a fallback card
@@ -3987,7 +4388,7 @@ function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState, 
  * @param {string|null} speakingName
  * @returns {{ names: string[], speaking: string|null }|null}
  */
-function buildPartyContext(speakingName = null) {
+function buildPartyContext(speakingName = null, actingNames = null) {
   try {
     // CHAR-PARTY-NAMES-ONLY (character-detail audit 2026-07): the roster
     // used to carry bare names, so third-person narration had pronouns for
@@ -4002,12 +4403,17 @@ function buildPartyContext(speakingName = null) {
         name:     s.name.trim(),
         pronouns: s.pronouns ?? '',
         callsign: s.callsign ?? '',
-      }));
+      }))
+      // A Batch Mode round (issue #340) is told only who acted: who sat it
+      // out is never sent, so the roster names the acting PCs alone.
+      .filter(m => !Array.isArray(actingNames) || !actingNames.length || actingNames.includes(m.name));
     if (members.length < 2) return null;
     return {
       names:    members.map(m => m.name),   // kept for back-compat consumers
       members,
       speaking: speakingName ?? null,
+      // A Batch Mode round names who acts in it (issue #340).
+      ...(Array.isArray(actingNames) && actingNames.length ? { acting: actingNames } : {}),
     };
   } catch (err) {
     console.debug?.(`${MODULE_ID} | narrator: party context build failed:`, err?.message ?? err);

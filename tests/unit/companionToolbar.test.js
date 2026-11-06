@@ -67,18 +67,38 @@ describe("companionToolbarTools — visibility", () => {
   it("shows the full set to a GM with the private channel on", () => {
     const k = keys({ isGM: true, privateChannelEnabled: true });
     expect(k).toEqual([
-      "sfSession", "progressTracks", "entityPanel", "chronicle", "clocks",
+      "sfSession", "sfBatchMode", "progressTracks", "entityPanel", "chronicle", "clocks",
       "sfPrivateChannel", "sfSettings", "sectorCreator", "worldJournal",
       "worldTruths", "customOracles",
     ]);
   });
 
-  it("returns plain {key,title,icon} data with no leaked visibility flag", () => {
-    for (const tool of companionToolbarTools({ isGM: true, privateChannelEnabled: true })) {
-      expect(Object.keys(tool).sort()).toEqual(["icon", "key", "title"]);
+  it("returns plain {key,title,icon} data with no leaked visibility flag — a toggle adds only its kind and pressed state", () => {
+    for (const tool of companionToolbarTools({ isGM: true, privateChannelEnabled: true, batchModeEnabled: true })) {
+      expect(Object.keys(tool).sort()).toEqual(tool.kind === "toggle"
+        ? ["icon", "key", "kind", "pressed", "title"]
+        : ["icon", "key", "title"]);
       expect(typeof tool.title).toBe("string");
       expect(tool.icon).toMatch(/^fas /);
     }
+  });
+
+  // Issue #340 — Batch Mode: the GM's switch (the toolbar's one toggle) and
+  // the Round tool, which reopens the Round window while the mode is on.
+  it("a GM sees the Batch Mode switch, pressed or not; a player never does", () => {
+    const off = companionToolbarTools({ isGM: true, batchModeEnabled: false }).find(t => t.key === "sfBatchMode");
+    const on  = companionToolbarTools({ isGM: true, batchModeEnabled: true }).find(t => t.key === "sfBatchMode");
+    expect(off).toMatchObject({ kind: "toggle", pressed: false, icon: "fas fa-layer-group" });
+    expect(on).toMatchObject({ kind: "toggle", pressed: true });
+    expect(keys({ isGM: false, batchModeEnabled: true, roundParticipant: true })).not.toContain("sfBatchMode");
+  });
+
+  it("players see Round only while the mode is on and they have a character in the round; a GM while it is on", () => {
+    expect(keys({ isGM: false, batchModeEnabled: false, roundParticipant: true })).not.toContain("sfRound");
+    expect(keys({ isGM: false, batchModeEnabled: true, roundParticipant: false })).not.toContain("sfRound");
+    expect(keys({ isGM: false, batchModeEnabled: true, roundParticipant: true })).toContain("sfRound");
+    expect(keys({ isGM: true, batchModeEnabled: true })).toContain("sfRound");
+    expect(keys({ isGM: true, batchModeEnabled: false })).not.toContain("sfRound");
   });
 
   it("defaults to the player-safe set when called with no args", () => {

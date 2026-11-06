@@ -77,6 +77,7 @@ const LOCAL_ONLY = {
   'src/index.js updateItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
   'src/index.js deleteItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
   'src/private-channel/transcript.js createJournalEntry inline#1': 'ends this client\'s wait for the transcript journal the GM created for it',
+  'src/ui/roundWindow.js updateSetting onCampaignStateForWindow': 're-renders this client\'s Batch Mode Round window when the session, X-Card or keyed GMs its banners show changed (issue #340)',
 };
 
 const NOT_CALLS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'new', 'import', 'super']);
