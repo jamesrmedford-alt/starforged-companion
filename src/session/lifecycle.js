@@ -247,9 +247,16 @@ export function mintSession(campaignState, now = Date.now()) {
  * over (sessionNeedsMint), close it out and mint the next one. A session
  * nobody ended first gets its rolling summary brought up to date — End a
  * Session refreshes its own — so the summary carried forward covers all of
- * it. Its scene closes under its own id, so migrated truths, whereabouts and
- * strikes keep that session's number. Mutates campaignState; endScene
- * persists the scene fields itself, the caller persists SESSION_MINT_FIELDS.
+ * it. An ended session's is brought up to date only when it has no text: an
+ * X-Card played on End's closing vignette empties a summary that covered the
+ * beat it removed ("the next regen reads the remaining cards"), and no
+ * narration of the ended session follows to regenerate it (issue #342 Z41 —
+ * the session just played went missing from LAST SESSION). One End left with
+ * text is kept as it is — it lacks only End's own closing vignette, not worth
+ * a second summary call. Its scene closes under its own id, so migrated
+ * truths, whereabouts and strikes keep that session's number. Mutates
+ * campaignState; endScene persists the scene fields itself, the caller
+ * persists SESSION_MINT_FIELDS.
  *
  * @param {Object} campaignState
  * @param {Object} [opts]
@@ -260,7 +267,9 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
   if (!sessionNeedsMint(campaignState, now)) return false;
   const closing = campaignState.currentSessionId;
   const ended   = !!closing && campaignState.sessionEndedId === closing;
-  if (closing && !ended) {
+  const summary = campaignState.sessionSummary;
+  const summarised = !!closing && summary?.sessionId === closing && typeof summary?.text === "string" && !!summary.text.trim();
+  if (closing && (!ended || !summarised)) {
     try {
       const { finalizeSessionSummary } = await import("../narration/narrator.js");
       await finalizeSessionSummary(campaignState);

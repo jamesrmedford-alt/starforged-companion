@@ -405,7 +405,10 @@ on chat activity, at most every 10 minutes, and never for a session already
 over (`registerSessionActivityHook`). The next world load (`initSessionId`,
 ready hook) or Begin a Session, whichever comes first, runs `rollSessionIfDue`:
 an unended session's summary is brought up to date
-(`finalizeSessionSummary`), its scene closes under its own id, then
+(`finalizeSessionSummary`) — an ended one's too when it has no text: End a
+Session finalises its own, but an X-Card on End's closing vignette empties a
+summary that covered the beat it removed, and nothing regenerated it (issue
+#342 Z41) — its scene closes under its own id, then
 `mintSession` keeps that summary as `previousSessionSummary` — a session
 nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
