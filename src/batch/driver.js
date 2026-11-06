@@ -569,10 +569,16 @@ async function advanceOnce() {
  * A GM pressed Send now: resolve the round at once, with whoever acted.
  * Anyone who hasn't submitted is simply not in it; a reading still running
  * is waited for, and a reading not yet confirmed is used as read. During the
- * upgrade step it means Keep for everyone still deciding. While the round
- * resolves it only records `modeOffAfter`. The resolution itself runs on the
- * advance pass, never inside the relay handler that asked (its rolls and
- * narration must not hold the GM relay queue).
+ * upgrade step it means Keep for everyone still deciding. The resolution
+ * itself runs on the advance pass, never inside the relay handler that asked
+ * (its rolls and narration must not hold the GM relay queue).
+ *
+ * With `modeOffAfter` (the toolbar's switch, or its "Send now, then turn off"
+ * for a collecting round), Batch Mode turns off once the round is done. A
+ * round already resolving is only marked: it finishes as it would — a roller
+ * deciding Burn / Improve / Keep still decides — and only a GM's own Send now
+ * keeps for them (issue #342 Z04: the switch forced Keep on every roller
+ * still deciding, and closed their card's Burn and Improve).
  *
  * @param {{ modeOffAfter?: boolean }} [opts]
  * @returns {Promise<{ ok: boolean, reason?: string }>}
@@ -582,6 +588,7 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
   const round = getStoredRound();
   if (!roundIsOpen(round)) return { ok: false, reason: "no-round" };
   if (modeOffAfter) await queueRoundWrite(r => markModeOffAfter(r)).catch(err => console.warn(`${MODULE_ID} | Batch Mode: mode-off-after not saved:`, err?.message ?? err));
+  if (modeOffAfter && isResolving(round)) return { ok: true, reason: "mode-off-after" };
   if (round.phase === ROUND_PHASE.UPGRADING) {
     await keepUpgrades(null);
     advanceRound("send-now");
