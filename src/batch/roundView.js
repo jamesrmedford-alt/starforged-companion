@@ -34,7 +34,8 @@ const OWN_STATUS_LABELS = Object.freeze({
 /** Why a round can't go on, said in every window. */
 export const ROUND_NOTICES = Object.freeze({
   noSession:   "No session has begun — the round opens once Begin a Session starts one.",
-  noGm:        "No GM is connected — your action is kept here, and is sent once a GM joins.",
+  // Nothing sends it on a GM's return: the window says what to do (issue #342 Z33).
+  noGm:        "No GM is connected — your action is kept here; submit it once a GM has joined.",
   noKeyedGm:   "No GM with a Claude key is connected, so the round can't be read. Your action is kept; it is read once one joins.",
   xCard:       "The X-Card is in play — the round can't be resolved until a GM resumes.",
   resolving:   "The round is being resolved…",

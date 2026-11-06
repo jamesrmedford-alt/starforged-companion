@@ -137,6 +137,8 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
   #pending = null;
   #notReceived = false;
   #failure = "";
+  // Why #failure was set — "no-gm" clears itself once a GM is connected again.
+  #failureReason = null;
   #busy = false;
   #recentOpen = true;
   #draft = null;
@@ -461,14 +463,31 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
    */
   async #relay(kind, payload) {
     this.#failure = "";
+    this.#failureReason = null;
     let res = null;
     try { res = await requestGmAction(kind, payload); }
     catch (err) {
       console.error(`${MODULE_ID} | Round window: ${kind} failed:`, err);
       res = { ok: false, reason: "error" };
     }
-    if (!res?.ok) this.#failure = RELAY_FAILURES[res?.reason] ?? "That wasn't saved — try again.";
+    if (!res?.ok) {
+      this.#failure = RELAY_FAILURES[res?.reason] ?? "That wasn't saved — try again.";
+      this.#failureReason = res?.reason ?? null;
+    }
     return res;
+  }
+
+  /**
+   * A user connected or left, or the keyed-GM registry changed: the banners
+   * say whether a GM — and a GM with a Claude key — is connected, so follow
+   * it. A "no GM is connected" refusal is stale once one is (issue #342 Z33).
+   */
+  async onConnectionChange() {
+    if (this.#failureReason === "no-gm" && Array.from(game.users ?? []).some(u => u?.isGM && u?.active)) {
+      this.#failure = "";
+      this.#failureReason = null;
+    }
+    await this.refresh();
   }
 
   /** Send a submission and wait to see it in the round. */
@@ -555,6 +574,7 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       choices.targetId = root?.querySelector?.("input[name='sf-round-target']:checked")?.value ?? null;
       if (entry.reading.targetChoices?.options?.length && !choices.targetId) {
         this.#failure = `${entry.reading.targetChoices.prompt ?? "Choose one"} — pick one first.`;
+        this.#failureReason = "no-target";
         await this.render();
         return;
       }
@@ -645,9 +665,9 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
   }
 }
 
-/** What a render shows that its view can change: the view model and the latest narration. */
+/** What a render shows that can change under it: the view model, the latest narration, a failure said. */
 function renderKey(context) {
-  return JSON.stringify({ view: context?.view ?? null, recent: context?.recent ?? "" });
+  return JSON.stringify({ view: context?.view ?? null, recent: context?.recent ?? "", failure: context?.failure ?? "" });
 }
 
 /**
@@ -809,8 +829,15 @@ export function registerRoundWindowHooks() {
     RoundWindowApp.instance?.draftFromOutside(draft)
       .catch(err => console.warn(`${MODULE_ID} | Round window: the draft:`, err?.message ?? err));
   });
-  // The session, the X-Card and the keyed GMs the window's banners show.
-  Hooks.on("updateSetting", onCampaignStateForWindow);
+  // The session, the X-Card and the keyed GMs the window's banners show — a
+  // setting's first write is a createSetting (the keyed-GM registry's is).
+  Hooks.on("updateSetting", onSettingForWindow);
+  Hooks.on("createSetting", onSettingForWindow);
+  // Whether a GM is connected (issue #342 Z33).
+  Hooks.on("userConnected", () => {
+    RoundWindowApp.instance?.onConnectionChange()
+      .catch(err => console.debug?.(`${MODULE_ID} | Round window refresh failed:`, err?.message ?? err));
+  });
   // The round's card says the round took this player's line (draftAfterRound's
   // signal for a client that missed the round's changes).
   Hooks.on("createChatMessage", (message) => {
@@ -897,9 +924,19 @@ async function onRoundCardForDraft(message) {
   await RoundWindowApp.instance?.draftFromOutside("");
 }
 
-/** Re-render this client's window when the campaign state it shows changed (local only). */
-function onCampaignStateForWindow(setting) {
-  if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+/**
+ * Re-render this client's window when what its banners show changed (local
+ * only): the campaign state (the session, the X-Card) or the keyed-GM
+ * registry (whether a GM with a Claude key is connected).
+ */
+function onSettingForWindow(setting) {
+  const key = setting?.key;
+  if (key === `${MODULE_ID}.keyedGmUserIds`) {
+    RoundWindowApp.instance?.onConnectionChange()
+      .catch(err => console.debug?.(`${MODULE_ID} | Round window refresh failed:`, err?.message ?? err));
+    return;
+  }
+  if (key !== `${MODULE_ID}.campaignState`) return;
   RoundWindowApp.instance?.refresh()
     .catch(err => console.debug?.(`${MODULE_ID} | Round window refresh failed:`, err?.message ?? err));
 }
