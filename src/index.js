@@ -1010,6 +1010,9 @@ export function registerChatHook() {
     // this one's rider prompt is open, so this move's finally must not clear
     // it again (issue #315 S01).
     let lockReleased = false;
+    // Whether the early release was tried: the finally's release is then its
+    // one retry (FREE-FLOW-RELEASE-REFUSED-TWICE).
+    let releaseTried = false;
 
     const apiKey = apiKeyForPacing;
     const dial   = getMischiefDial();
@@ -1079,6 +1082,7 @@ export function registerChatHook() {
         // (known-issues PLAYTEST-1712 M/N, fixed here). The finally below
         // releases for the throw / cancelled-confirm paths, and retries a
         // release that was refused here.
+        releaseTried = true;
         lockReleased = await releasePendingMoveLock(lockClaim);
 
         // Stage 5 — finish it: the asset consequence riders, whose prompt no
@@ -1097,8 +1101,14 @@ export function registerChatHook() {
       // Safety net: release the lock if the pipeline threw or the confirm
       // dialog was cancelled before the success-path release above ran, or
       // that release was refused. Never once it has landed: a later move may
-      // hold the lock by now (issue #315 S01).
-      if (!lockReleased) await releasePendingMoveLock(lockClaim);
+      // hold the lock by now (issue #315 S01). A release the world refuses
+      // is tried once more — the early release's retry is this one — and,
+      // refused again, the lock stays held until a reload: the GMs are told,
+      // as a round's refused release tells them (issue #342 Z19). It was
+      // dropped in silence (FREE-FLOW-RELEASE-REFUSED-TWICE).
+      if (!lockReleased) lockReleased = await releasePendingMoveLock(lockClaim);
+      if (!lockReleased && !releaseTried) lockReleased = await releasePendingMoveLock(lockClaim);
+      if (!lockReleased) await postMoveLockNotReleasedCard();
     }
   };
   Hooks.on("createChatMessage", onMessage);
@@ -1150,6 +1160,26 @@ async function releaseLockOfDisconnectedGM(user, connected) {
     whisper: gmUserIds(),
     flags:   { [MODULE_ID]: { moveLockReleasedCard: true } },
   }).catch(err => console.warn(`${MODULE_ID} | move-lock card failed:`, err?.message ?? err));
+}
+
+/**
+ * The world refused a free-flow move's lock release twice (its early release
+ * and the `finally`'s retry, or two tries in the `finally`): the lock stays
+ * held by this GM, and every later move is refused ("A move is already being
+ * resolved") until it is freed — the ready reset frees it when this GM's
+ * browser reloads. The GMs are whispered, as a Batch Mode round's refused
+ * release whispers them (issue #342 Z19; FREE-FLOW-RELEASE-REFUSED-TWICE).
+ * Never throws.
+ *
+ * @returns {Promise<void>}
+ */
+async function postMoveLockNotReleasedCard() {
+  const who = escapeChatHtml(game.user?.name ?? "the resolving GM");
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Move lock not released</strong><p>The world did not save the move lock's release after a move. Until it is freed, the next move is refused (&ldquo;A move is already being resolved&rdquo;) &mdash; reloading ${who}'s browser frees it.</p></div>`,
+    whisper: gmUserIds(),
+    flags:   { [MODULE_ID]: { moveLockNotReleasedCard: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | the move-lock notice failed:`, err?.message ?? err));
 }
 
 /**
