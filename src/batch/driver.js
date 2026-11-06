@@ -1338,6 +1338,12 @@ async function keepTableTalk(message) {
  */
 async function takeForcedMove(message) {
   const cs = campaignStateNow();
+  // The inciting vow is sworn once for the crew: a second press is not rolled.
+  const taken = incitingSwearTaken(message);
+  if (taken) {
+    await tellSwearNotRolled(message, taken);
+    return true;
+  }
   const actorId = resolveSpeakerActorId(message, cs);
   const participant = currentParticipants().find(p => p.actorId === actorId) ?? null;
   const round = getStoredRound();
@@ -1352,6 +1358,57 @@ async function takeForcedMove(message) {
   }
   await joinRound(message, participant.userId);
   return true;
+}
+
+// The statuses of an entry whose action is still the round's to roll, or rolled.
+const SWEARING = new Set([ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY, ENTRY_STATUS.ROLLED, ENTRY_STATUS.RECORDED]);
+
+/**
+ * An inciting card's ⚔ Swear this vow is the crew's one swear (the shared
+ * founding vow: one swear, its roll the clicker's), and the card is not
+ * claimed — every client may press it, and a press held per presser would
+ * roll the swear once per press (issue #337 Y36). So in Batch Mode a press is
+ * not rolled when the card is sworn already, or when its swear is already
+ * some participant's entry, an offer beside one, or held for the next round
+ * (issue #342 Z30). Null when the press is the card's first.
+ *
+ * @param {ChatMessage} message — a forced post
+ * @returns {{ sworn: true }|{ by: string }|null}
+ */
+function incitingSwearTaken(message) {
+  const cardId = message?.flags?.[MODULE_ID]?.incitingSwearMessageId;
+  if (typeof cardId !== "string" || !cardId) return null;
+  if (game.messages?.get?.(cardId)?.flags?.[MODULE_ID]?.vowSworn === true) return { sworn: true };
+  const swears = (forced) => forced?.incitingSwearMessageId === cardId;
+  const round = getStoredRound();
+  if (roundIsOpen(round)) {
+    for (const e of Object.values(round.entries ?? {})) {
+      if (e.readAs?.messageId === message.id || e.offer?.messageId === message.id) continue;   // this very post again
+      if ((SWEARING.has(e.status) && swears(e.readAs?.forced)) || swears(e.offer?.forced)) return { by: e.actorName ?? "" };
+    }
+  }
+  for (const id of _heldForRound) {
+    if (id === message.id) continue;
+    const held = game.messages?.get?.(id) ?? null;
+    if (held?.flags?.[MODULE_ID]?.incitingSwearMessageId !== cardId) continue;
+    const actorId = resolveSpeakerActorId(held, campaignStateNow());
+    return { by: game.actors?.get?.(actorId)?.name ?? "" };
+  }
+  return null;
+}
+
+/**
+ * Tell the presser — and the GMs — that their ⚔ press was not rolled, and
+ * why. The notice names the post (`gatedMessageId`), so the presser's own
+ * client re-arms its button (swearVow.js rearmSwearOnGateRefusal), as the
+ * session gate's notice does.
+ */
+async function tellSwearNotRolled(message, taken) {
+  const author = messageAuthorId(message);
+  const body = taken.sworn
+    ? "This vow has already been sworn — the crew swears it once, so this press was not rolled."
+    : `${taken.by ? `${escapeHtml(taken.by)} is` : "Someone is"} already swearing this vow for the crew this round — it is sworn once, so this press was not rolled.`;
+  await whisper([author, ...gmIds()], "Swear this vow", body, { swearPressDropped: true, gatedMessageId: message?.id ?? null });
 }
 
 function forcedFromFlags(f) {
@@ -1432,6 +1489,12 @@ async function joinHeldMoves() {
     const id = _heldForRound.shift();
     const message = game.messages?.get?.(id) ?? null;
     if (!message) continue;
+    // An inciting swear sworn while it was held is not rolled again.
+    const taken = incitingSwearTaken(message);
+    if (taken) {
+      await tellSwearNotRolled(message, taken);
+      continue;
+    }
     const actorId = resolveSpeakerActorId(message, campaignStateNow());
     const entry = Object.values(getStoredRound()?.entries ?? {}).find(e => e.actorId === actorId) ?? null;
     if (!entry) {

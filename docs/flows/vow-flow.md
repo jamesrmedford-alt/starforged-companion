@@ -85,7 +85,11 @@ the value (`matchLabelLine`; the closing `**` leaked into the vow, the clock
 and the target's name, which then matched no established NPC — issue #325
 W33). The card's
 **⚔ Swear this vow** button posts a forced `swear_an_iron_vow` ChatMessage
-carrying `incitingSwearMessageId` — the post itself is the relay; the
+carrying `incitingSwearMessageId` — the post itself is the relay (the card is
+not claimed: in Batch Mode the round driver rolls one press per card — a
+press while the card is sworn, or while its swear is already an entry, an
+offer or held for the next round, is not rolled and its presser is told,
+the `swearPressDropped` notice re-arming their button, issue #342 Z30); the
 canonical GM's pipeline swear branch calls `swearSharedVowForAll`
 (`src/session/swearVow.js`), which: creates the vow **item on every PC**
 (`createCharacterVowItem` — idempotent by `vowId`, carries
