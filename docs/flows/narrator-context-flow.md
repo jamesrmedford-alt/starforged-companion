@@ -60,7 +60,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   class (`runRoundNarrationPasses`) among the entries it captures — a Make a
   Connection miss creates no one (scope §9) and takes no part, so the rest of
   the round is captured whatever the confirm order (issue #342 Z08: a round
-  led by a miss skipped its whole capture).
+  led by a miss skipped its whole capture); each Make a Connection hit creates
+  the figure its own character met, with its own seed and bond, synchronously
+  (Z09 — `connection-flow.md` §1).
 - **Claude-calling chat commands** — `@scene`, `!recap`, `!ship envision`,
   `!ship history`, `!incite` — route `RUN_ON.CLAUDE` (`CHAT_COMMAND_ROUTES`,
   `src/index.js`; policy in `src/multiplayer/commandRouting.js`): the keyed canonical GM when `hasKeyedActiveGM()`, else the

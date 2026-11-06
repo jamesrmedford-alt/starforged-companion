@@ -1029,15 +1029,19 @@ export async function narrateRound({ round, campaignState }) {
 }
 
 /**
- * The capture a round's narration gets: one pass, at the widest class
- * (runPostNarrationPasses). A Make a Connection hit keeps its roller and seed
- * for the auto-create; with two in one round, the first auto-creates and the
- * second's NPC goes to a draft card, as any other detected NPC does.
+ * The capture a round's narration gets: one detection call for the round,
+ * its results routed per entry (issue #342).
  *
  * A Make a Connection miss creates no one (scope §9) — that entry's rule, not
  * the round's: it takes no part in the capture, neither its lead nor its
  * class, and the rest of the round is captured as though it were not there
- * (issue #342 Z08 — a round led by a miss skipped its whole capture).
+ * (Z08 — a round led by a miss skipped its whole capture).
+ *
+ * Each Make a Connection hit creates one connection — the figure its own
+ * character met (roundFigureOwner), with its own seed, bonded to its roller —
+ * synchronously, as free-flow's does (Z09: the round's first connection,
+ * whoever met them, went to the first hit's roller with that roller's seed).
+ * A round with no hit runs runPostNarrationPasses at the widest class.
  *
  * @param {string} narration
  * @param {Array<Object>} entries — roundNarrationEntries
@@ -1050,18 +1054,96 @@ function runRoundNarrationPasses(narration, entries, relevance, campaignState, {
   const isHit = (o) => o === 'strong_hit' || o === 'weak_hit';
   const isConnection = (e) => e.input?.kind === 'move' && e.input.moveId === 'make_a_connection';
   const captured = entries.filter(e => !isConnection(e) || isHit(e.input.outcome));
-  const connection = captured.find(isConnection);
-  const lead = connection ?? captured.find(e => e.input?.kind === 'move') ?? captured[0];
+  const hits = captured.filter(isConnection);
+  const lead = hits[0] ?? captured.find(e => e.input?.kind === 'move') ?? captured[0];
   const resolution = {
     moveId:          lead?.input?.moveId ?? null,
     outcome:         lead?.input?.outcome ?? null,
-    oracleSeeds:     connection ? (connection.input.oracleSeeds ?? null) : null,
     playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
   };
-  const capturedRelevance = { ...relevance, resolvedClass: widestRoundClass(captured) };
-  return runPostNarrationPasses(narration, resolution, capturedRelevance, campaignState, {
-    actorId: lead?.actorId ?? null, narrationId,
+  if (!hits.length) {
+    const capturedRelevance = { ...relevance, resolvedClass: widestRoundClass(captured) };
+    return runPostNarrationPasses(narration, resolution, capturedRelevance, campaignState, {
+      actorId: lead?.actorId ?? null, narrationId,
+    });
+  }
+  // The detection pass's world-scoped writes are the canonical GM's
+  // (runPostNarrationPasses' gate).
+  if (!isCanonicalGM()) return Promise.resolve();
+  const owner = roundFigureOwner(entries, narration);
+  return runDiscoveryDetection(narration, resolution, campaignState, {
+    connectionRollers: hits.map(e => ({
+      actorId:        e.actorId ?? null,
+      connectionSeed: e.input.oracleSeeds?.connectionSeed ?? null,
+      owns:           (figure) => !!e.actorId && owner(figure) === e.actorId,
+    })),
+    actorId: lead?.actorId ?? null,
+    narrationId,
   });
+}
+
+/**
+ * Whose action in a round met a figure its narration introduced — an acting
+ * PC's id, or null when the round cannot tell (issue #342 Z09). A bounded
+ * ladder that stops before a guess (rules/reachability.md §6):
+ *   1. the acting player whose own line names the figure (several: null);
+ *   2. else the acting PC the figure's detected description names;
+ *   3. else the acting PC the narration names beside it — every sentence or
+ *      clause (. ! ? ;) naming the figure names that PC and no other.
+ * Names match whole words; the figure's own name is taken out first, so a
+ * PC's name inside it ("Kira's Brother") is not a mention. A round with one
+ * acting PC is free-flow's case: every figure is theirs.
+ *
+ * @param {Array<Object>} entries — roundNarrationEntries
+ * @param {string} narration
+ * @returns {(figure: { name?: string, description?: string }) => (string|null)}
+ */
+function roundFigureOwner(entries, narration) {
+  const pcs = [];
+  for (const e of entries ?? []) {
+    if (e?.actorId && !pcs.some(p => p.actorId === e.actorId)) {
+      pcs.push({ actorId: e.actorId, name: String(e.actorName ?? '').trim() });
+    }
+  }
+  if (pcs.length <= 1) return () => pcs[0]?.actorId ?? null;
+  const clauses = String(narration ?? '').split(/[.!?;\n]+/);
+  const only = (ids) => (ids.size === 1 ? [...ids][0] : null);
+  return (figure) => {
+    const name = String(figure?.name ?? '').trim();
+    if (!name) return null;
+    const pattern = wholeWordPattern(name);
+    const without = (text) => String(text ?? '').replace(wholeWordPattern(name, 'gi'), ' ');
+    const byLine = new Set(entries.filter(e => e?.actorId && pattern.test(String(e.text ?? ''))).map(e => e.actorId));
+    if (byLine.size) return only(byLine);
+    const byDescription = actingPcsNamedIn(without(figure.description), pcs);
+    if (byDescription.size) return only(byDescription);
+    const byNarration = new Set(clauses.filter(c => pattern.test(c)).flatMap(c => [...actingPcsNamedIn(without(c), pcs)]));
+    return only(byNarration);
+  };
+}
+
+/**
+ * The acting PCs a text names: a full name, or a first or last name no other
+ * acting PC shares, as whole words.
+ *
+ * @param {string} text
+ * @param {Array<{ actorId: string, name: string }>} pcs
+ * @returns {Set<string>} actor ids
+ */
+function actingPcsNamedIn(text, pcs) {
+  const out = new Set();
+  const hay = String(text ?? '');
+  if (!hay.trim()) return out;
+  const parts = (n) => String(n ?? '').split(/\s+/).filter(p => p.length >= 2);
+  for (const pc of pcs) {
+    if (!pc.name) continue;
+    const own = parts(pc.name);
+    const shared = (tok) => pcs.some(o => o !== pc && parts(o.name).some(p => p.toLowerCase() === tok.toLowerCase()));
+    const tokens = [pc.name, own.length > 1 ? own[0] : null, own.length > 1 ? own.at(-1) : null]
+      .filter(tok => tok && (tok === pc.name || !shared(tok)));
+    if (tokens.some(tok => wholeWordPattern(tok).test(hay))) out.add(pc.actorId);
+  }
+  return out;
 }
 
 /** One entry's line on a round card: who, and what the move rolled. */
@@ -1351,6 +1433,9 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
     await routeEntityDrafts(detection.entities, campaignState, {
       autoCreateConnection: options.autoCreateConnection === true,
       connectionSeed:       options.connectionSeed ?? null,
+      // A Batch Mode round's Make a Connection hits, each its own roller and
+      // seed (runRoundNarrationPasses — issue #342 Z09).
+      connectionRollers:    options.connectionRollers ?? null,
       sessionId:            campaignState?.currentSessionId ?? '',
       actorId:              options.actorId ?? null,
       // What names a Make a Connection's NPC — a pending draft's included

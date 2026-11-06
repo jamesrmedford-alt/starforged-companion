@@ -522,6 +522,13 @@ function detectionFromParsed(parsed, campaignState) {
  *   is confirmed as the roller's connection (issue #325 W23).
  * @param {string}  [options.namingText] — the move's narration (player's and
  *   narrator's), for the pending-draft fallback
+ * @param {Array<{ actorId: string|null, connectionSeed?: Object|null, owns: (figure: Object) => boolean }>} [options.connectionRollers]
+ *   — a Batch Mode round's Make a Connection hits, in confirm order, in place
+ *   of `autoCreateConnection` (issue #342 Z09): each creates one connection,
+ *   the first detected (else pending) one its `owns` says its own roller's
+ *   action met, with its own seed and its bond on its roller. The rest are
+ *   queued — the round's narration is several characters', so its first
+ *   connection is not the first hit's.
  * @param {string}  [options.sessionId]
  * @param {string}  [options.source]  — telemetry flag attached to the
  *   GM draft card. "paced_narrative" for paced-path detection;
@@ -547,6 +554,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   const pendingNormalized = new Set(
     collectPendingDraftNames().map(normalizeEntityName).filter(Boolean),
   );
+  const slots = connectionSlots(options);
 
   for (const entity of entities ?? []) {
     if (removed()) return { created, queued: [] };
@@ -564,9 +572,10 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     // already reviewing them; re-flagging causes the suggestion loop.
     if (pendingNormalized.has(normalizeEntityName(entity.name))) continue;
 
-    if (options.autoCreateConnection && entity.type === "connection" && !created.length) {
+    const slot = entity.type === "connection" ? slots.find(s => !s.done && s.takes(entity)) : null;
+    if (slot) {
       try {
-        const seedData = buildConnectionSeedData(entity, options.connectionSeed ?? null);
+        const seedData = buildConnectionSeedData(entity, slot.connectionSeed);
         const record = await createConnection({
           name:                      seedData.name,
           description:               seedData.description,
@@ -585,12 +594,13 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
         if (removed()) return { created, queued: [] };
         await postCreationEnrichment("connection", record, campaignState);
         if (removed()) return { created, queued: [] };
-        await registerConnectionOnActiveCharacter(record, { actorId: options.actorId ?? null }).catch(err =>
+        await registerConnectionOnActiveCharacter(record, { actorId: slot.actorId }).catch(err =>
           console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
         if (removed()) return { created, queued: [] };
         // The narration that introduced them recorded their identity anchor
         // under their name, before the card existed.
         await promoteNewEntityLedgerSubjects(entity.name, "connection", record, campaignState);
+        slot.done = true;
         created.push({ entity, record });
       } catch (err) {
         console.error(`${MODULE_ID} | entityExtractor: auto-create connection failed:`, err);
@@ -626,14 +636,19 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
 
   // Make a Connection: the NPC its narration names may sit in a pending draft
   // row the detection left out — confirm it as the roller's (issue #325 W23),
-  // stamped with the narration like an auto-created one.
-  if (options.autoCreateConnection && !created.length && options.namingText && !removed()) {
-    const confirmed = await confirmNamedPendingConnection(options.namingText, options.actorId ?? null, narrationId)
+  // stamped with the narration like an auto-created one. Each hit that made
+  // no one gets its own row (a round's — issue #342 Z09).
+  for (const slot of slots) {
+    if (slot.done || !slot.names || removed()) continue;
+    const confirmed = await confirmNamedPendingConnection(slot.names, slot.actorId, narrationId)
       .catch(err => {
         console.warn(`${MODULE_ID} | routeEntityDrafts: confirming the pending connection failed:`, err?.message ?? err);
         return null;
       });
-    if (confirmed) created.push(confirmed);
+    if (confirmed) {
+      slot.done = true;
+      created.push(confirmed);
+    }
   }
 
   if (removed()) return { created, queued: [] };
@@ -642,6 +657,41 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   }
 
   return { created, queued };
+}
+
+/**
+ * The connections a capture may create (routeEntityDrafts): one per Make a
+ * Connection hit (scope §9). Free-flow's one hit (`autoCreateConnection`)
+ * takes the first connection detected — its narration is that move's alone —
+ * and a pending row its `namingText` names. A Batch Mode round's hits
+ * (`connectionRollers`) each take only a figure their `owns` gives their own
+ * roller (issue #342 Z09: the round's first connection, whoever met them,
+ * went to the first hit's roller with that roller's seed).
+ *
+ * @param {Object} options — routeEntityDrafts' options
+ * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, done: boolean }>}
+ */
+function connectionSlots(options) {
+  if (Array.isArray(options.connectionRollers)) {
+    return options.connectionRollers
+      .filter(r => r && typeof r.owns === "function")
+      .map(r => ({
+        actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
+        connectionSeed: r.connectionSeed ?? null,
+        takes:          (entity) => r.owns(entity) === true,
+        names:          (draft) => r.owns(draft) === true,
+        done:           false,
+      }));
+  }
+  if (!options.autoCreateConnection) return [];
+  const hay = String(options.namingText ?? "");
+  return [{
+    actorId:        options.actorId ?? null,
+    connectionSeed: options.connectionSeed ?? null,
+    takes:          () => true,
+    names:          hay.trim() ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(hay) : null,
+    done:           false,
+  }];
 }
 
 
@@ -2117,14 +2167,16 @@ async function completeListedEntity(draft, campaignState) {
  * the row back to pending (connection.retractNarrationConnections;
  * MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED).
  *
- * @param {string} text — the player's narration and the narrator's
+ * @param {(draft: Object) => boolean} names — whether the move's narration
+ *   names a row as its roller's: free-flow's, the row's full name in the
+ *   player's narration and the narrator's; a round's hit, the row's figure
+ *   its roller met (connectionSlots — issue #342 Z09)
  * @param {string|null} actorId — the roller
  * @param {string|null} [narrationId] — the Make a Connection's narration
  * @returns {Promise<{ entity: Object, record: Object }|null>}
  */
-async function confirmNamedPendingConnection(text, actorId, narrationId = null) {
-  const hay = String(text ?? "");
-  if (!hay.trim()) return null;
+async function confirmNamedPendingConnection(names, actorId, narrationId = null) {
+  if (typeof names !== "function") return null;
   const messages = [...(globalThis.game?.messages?.contents ?? [])].reverse();   // the newest card first
   for (const message of messages) {
     const f = message?.flags?.[MODULE_ID];
@@ -2132,7 +2184,7 @@ async function confirmNamedPendingConnection(text, actorId, narrationId = null) 
     for (const draft of Array.isArray(f.drafts) ? f.drafts : []) {
       if (draft?.type !== "connection" || (draft.status && draft.status !== "pending")) continue;
       const name = typeof draft.name === "string" ? draft.name.trim() : "";
-      if (!name || !wholeWordPattern(name).test(hay)) continue;
+      if (!name || !names(draft)) continue;
       const record = await confirmDraft(message, draft.index, { actorId, narrationId });
       return record ? { entity: draft, record } : null;
     }

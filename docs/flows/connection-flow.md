@@ -61,7 +61,16 @@ recorded under its name promoted to it; its bond is §2's.
   is confirmed as the roller's connection (`confirmNamedPendingConnection` →
   `confirmDraft` with the roller's `actorId`; issue #325 W23 — the card said
   "Connection made" and nothing was made, and a later Confirm bonded the old
-  narration's PC). The auto-created record carries the narration's id
+  narration's PC). A Batch Mode round's narration is several characters', so
+  each Make a Connection hit in it creates one connection — the figure its
+  own character met: the roller's own line names them, else their detected
+  description names that character, else every clause of the narration
+  naming them names that character alone (`narrator.js roundFigureOwner`) —
+  with that hit's seed, bonded to its roller, and confirms only a pending row
+  its own roller met (`runRoundNarrationPasses` → `connectionRollers` →
+  `routeEntityDrafts`' slots; issue #342 Z09 — the round's first connection,
+  whoever met them, went to the first hit's roller with that roller's seed).
+  A figure the round cannot place waits on the draft card. The auto-created record carries the narration's id
   (`createdFromNarrationId`): an X-Card on that narration deletes the NPC
   card, its bond Items, its `connectionIds` entry and its portraits (the
   "Art:" journal entries and their `artAssetIds` index entries —
