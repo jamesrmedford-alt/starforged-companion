@@ -300,6 +300,11 @@ function stateEntryWithout(entry, ids) {
  * superseded narration's (`by` SUPERSEDED_RETRACTED_BY) leaves the table's
  * strike as it is: the correction stands over the re-narration.
  *
+ * A narration whose scene has ended left no truth in the ledger — the scene
+ * end migrated them, and kept them on `sessionRetractions.narrated` (unnamed,
+ * retractions.js rememberNarratedTruths): the X-Card moves its narrations'
+ * there to the session's blocks too (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
+ *
  * Replaces `sceneTruths`, `sceneState`, `sceneFrame` and (for the X-Card)
  * `sessionRetractions` on `campaignState` with new objects and never changes
  * the ones it was given, so the caller may pass a shallow copy of the stored
@@ -333,12 +338,18 @@ export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETR
     });
   }
 
-  const sessionStrikes = campaignState.sessionRetractions;
-  if (xCard && Array.isArray(sessionStrikes?.facts) && sessionStrikes.facts.some(f => ids.has(f?.narrationId))) {
+  // The session's kept strikes and closed narration truths of these
+  // narrations: blocked from now on, named nowhere.
+  const kept = campaignState.sessionRetractions;
+  const theirs = (list) => (Array.isArray(list) ? list : []).filter(f => ids.has(f?.narrationId));
+  const struck = xCard ? theirs(kept?.facts) : [];
+  const closed = xCard ? theirs(kept?.narrated) : [];
+  if (struck.length || closed.length) {
     campaignState.sessionRetractions = {
-      ...sessionStrikes,
-      facts:   sessionStrikes.facts.filter(f => !ids.has(f?.narrationId)),
-      blocked: withXCardBlocks(sessionStrikes.blocked, sessionStrikes.facts.filter(f => ids.has(f?.narrationId))),
+      ...kept,
+      ...(struck.length ? { facts: kept.facts.filter(f => !ids.has(f?.narrationId)) } : {}),
+      ...(closed.length ? { narrated: kept.narrated.filter(f => !ids.has(f?.narrationId)) } : {}),
+      blocked: withXCardBlocks(kept.blocked, [...struck, ...closed]),
     };
   }
 

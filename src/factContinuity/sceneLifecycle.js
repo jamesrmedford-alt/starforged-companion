@@ -30,7 +30,7 @@ import { archiveSceneTruth }          from '../world/worldJournal.js';
 import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
 import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
 import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
-import { rememberSessionRetractions } from './retractions.js';
+import { rememberSessionRetractions, rememberNarratedTruths } from './retractions.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY } from './ledgers.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 
@@ -164,9 +164,12 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   // Where this scene happened, for its scene-subject truths (resolved once).
   const placeOf = { place: undefined };
   const handled = new Set();
+  // Every truth this end closes, late arrivals too (rememberNarratedTruths).
+  const closed = [];
 
   for (const truth of truths) {
     if (truth?.id) handled.add(truth.id);
+    closed.push(truth);
     counts[await migrateSceneTruth(truth, campaignState, placeOf)] += 1;
   }
 
@@ -184,7 +187,12 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
   // below clears the scene on the latest store: such a fact was never
   // migrated, archived or kept as LAST KNOWN, and was in no store afterwards
   // (issue #325 W24). A few passes; each re-reads the store.
-  await migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts);
+  await migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts, closed);
+
+  // The narration truths it closed stay findable for the session, unnamed, so
+  // an X-Card played later on their narration blocks them
+  // (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
+  rememberNarratedTruths(campaignState, closed);
 
   // Discard active ledgers regardless of per-entry migration outcomes — the
   // truths array is preserved-with-retraction-and-migration markers but the
@@ -264,8 +272,9 @@ const LATE_FACT_PASSES = 3;
  * @param {Set<string>} handled — ids of the truths already migrated
  * @param {{ place: Object|null|undefined }} placeOf
  * @param {{ migrated: number, archived: number, skipped: number }} counts — mutated
+ * @param {Object[]} [closed] — the truths the end closes; the late ones are added
  */
-async function migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts) {
+async function migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts, closed = []) {
   if (!sceneId) return;
   for (let pass = 0; pass < LATE_FACT_PASSES; pass++) {
     let latest = null;
@@ -285,6 +294,7 @@ async function migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, c
 
     for (const truth of fresh) {
       handled.add(truth.id);
+      closed.push(truth);
       counts[await migrateSceneTruth(truth, campaignState, placeOf)] += 1;
     }
     if (Object.keys(changedState).length) {

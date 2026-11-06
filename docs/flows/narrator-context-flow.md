@@ -204,7 +204,11 @@ named under CORRECTED it handed the narrator the removed content, and
 blocked nothing (XCARD-RETRACTION-SCENE-SCOPED). A scene end keeps the
 scene's X-Card retractions there too, so each blocks the narrator's
 re-assertion for the rest of the session — `findSessionStrike`'s write half
-reads them, the lift does not, and nothing renders them — state
+reads them, the lift does not, and nothing renders them — and each live
+narration truth it closes on `sessionRetractions.narrated`, unnamed, which an
+X-Card on that narration — the session's newest, its scene since ended —
+moves to the blocks: the ledger it retracts holds none of them, and nothing
+stopped the narrator re-asserting them (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED) — state
 values removed — each gives way to the value it superseded, kept on the entry
 as a bounded `previous` chain, so an earlier kept narration's value stands
 again (issue #326 W41) — a frame they wrote cleared), appends their `narrationId`s to
@@ -750,7 +754,10 @@ ring, and the closing scene's truths keep the closing session's number.
   the same way (`findSessionStrike(…, { blocked: true })`), a lift's lore
   restore counts them (`loreRetractionHolder`), and nothing names them or
   lifts them — their block was the scene's retracted entry, which the scene
-  end cleared (XCARD-RETRACTION-SCENE-SCOPED).
+  end cleared (XCARD-RETRACTION-SCENE-SCOPED). Its live narration truths are
+  kept too (`sessionRetractions.narrated`, unnamed, read only by the X-Card's
+  `retractNarrations`), so an X-Card on a narration whose scene has ended
+  blocks what it recorded (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
 - `!truth` / `!state` resolve subjects **against the full entity roster**,
   so entity-keyed entries are addressable by name from the commands (the
   correction dialog always could). The commands are checked on the typist's

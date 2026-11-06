@@ -132,7 +132,10 @@ layers. This file is the never-break list.
    takes over the table's strike of a truth its narration wrote, relabelled
    `"xcard"`, with the strike's kept `sessionRetractions` entry moved by its
    `narrationId` to those unnamed blocks, and a `!truth set` can lift neither
-   (XCARD-AFTER-STRIKE-STILL-NAMED). A superseded narration's
+   (XCARD-AFTER-STRIKE-STILL-NAMED). A narration whose scene has already
+   ended is blocked the same way: a scene end keeps each live narration truth
+   it closes, unnamed (`sessionRetractions.narrated`), and the X-Card moves
+   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). A superseded narration's
    (`retractedBy: "superseded"` — what a Burn Momentum / Improve Result
    replaced, retracted by its `narrationId`, issue #338 D8) is never named
    either, and blocks nothing: the re-narration may state the fact again. Anything a narration writes

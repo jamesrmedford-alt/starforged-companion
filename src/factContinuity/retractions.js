@@ -549,7 +549,52 @@ export function rememberSessionRetractions(campaignState) {
       asserter:    t.asserter ?? null,
     });
   }
-  campaignState.sessionRetractions = { sessionId, facts: facts.slice(-SESSION_RETRACTION_CAP), blocked };
+  campaignState.sessionRetractions = {
+    ...(same ? campaignState.sessionRetractions : {}),   // the session's other lists (`narrated`)
+    sessionId, facts: facts.slice(-SESSION_RETRACTION_CAP), blocked,
+  };
+}
+
+/**
+ * How many of its ended scenes' narration truths a session keeps for a later
+ * X-Card — the newest: the X-Card answers only the session's newest beat.
+ */
+const SESSION_NARRATED_CAP = 50;
+
+/**
+ * At scene end, keep each narration truth the scene closes live — with the
+ * `narrationId` of the narration that recorded it — on an unnamed list
+ * (`sessionRetractions.narrated`). The X-Card answers the session's newest
+ * narration, which can be in a scene that has since ended; it takes back what
+ * that scene end migrated (retractNarrationCapture, issue #335 Y01), but the
+ * ledger it retracts holds none of those truths, so nothing blocked the
+ * narrator re-asserting them (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). An X-Card
+ * on the narration moves them to the session's blocks (ledgers.js
+ * retractNarrations); nothing else reads the list, and nothing renders it. A
+ * GM's `!truth set` carries no narration id and is not kept. Mutates
+ * campaignState; endScene persists it.
+ *
+ * @param {Object} campaignState
+ * @param {Array<Object>} truths — the truths the scene end closed (migrated, archived or dropped)
+ */
+export function rememberNarratedTruths(campaignState, truths) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+  if (!sessionId) return;
+  const closed = (Array.isArray(truths) ? truths : []).filter(t => t && !t.retracted
+    && typeof t.narrationId === 'string' && t.narrationId && String(t.fact ?? '').trim());
+  if (!closed.length) return;
+  const same = campaignState.sessionRetractions?.sessionId === sessionId;
+  const base = same ? campaignState.sessionRetractions : { sessionId, facts: [], blocked: [] };
+  const narrated = [...(Array.isArray(base.narrated) ? base.narrated : [])];
+  for (const t of closed) {
+    const truthId = typeof t.id === 'string' && t.id ? t.id : null;
+    if (truthId && narrated.some(n => n?.truthId === truthId)) continue;
+    narrated.push({
+      label: subjectLabel(t.subject), fact: String(t.fact).trim(),
+      subjectKey: subjectKey(t.subject) || null, narrationId: t.narrationId, truthId,
+    });
+  }
+  campaignState.sessionRetractions = { ...base, sessionId, narrated: narrated.slice(-SESSION_NARRATED_CAP) };
 }
 
 /**

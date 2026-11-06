@@ -605,10 +605,14 @@ export const CampaignStateSchema = {
   // retractions, unnamed — read only by findSessionStrike's write half
   // (applySidecar) and loreRetractionHolder, rendered nowhere; an X-Card
   // moves the kept strikes of the narration it removes there, by
-  // `narrationId` (ledgers.js retractNarrations — XCARD-RETRACTION-SCENE-SCOPED).
+  // `narrationId` (ledgers.js retractNarrations — XCARD-RETRACTION-SCENE-SCOPED),
+  // and its truths a scene end closed live (`narrated`: written by endScene —
+  // rememberNarratedTruths — read only by that move; unnamed —
+  // XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
   //   { sessionId, facts: [{ label, fact, sceneId, at, narrationId, truthId, subjectKey, retractedBy, asserter }]  (cap 20),
-  //     blocked: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50) }
-  sessionRetractions: { sessionId: null, facts: [], blocked: [] },
+  //     blocked: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50),
+  //     narrated: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50) }
+  sessionRetractions: { sessionId: null, facts: [], blocked: [], narrated: [] },
 
   // Narrator rotating spotlight (issue #232). Per-scene round-robin pointer
   // naming the PC the narrator last drew into an open prompting beat, so the

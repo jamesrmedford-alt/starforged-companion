@@ -32,7 +32,7 @@ import { applyNarratorSidecar, postNarrationCard } from '../../src/narration/nar
 import { suppressScene } from '../../src/context/safety.js';
 import { endScene } from '../../src/factContinuity/sceneLifecycle.js';
 import { applyFactContinuityCommand } from '../../src/factContinuity/chatCommands.js';
-import { sessionRetractedFacts } from '../../src/factContinuity/retractions.js';
+import { sessionRetractedFacts, rememberNarratedTruths } from '../../src/factContinuity/retractions.js';
 import { findSessionStrike, withXCardBlocks } from '../../src/factContinuity/ledgers.js';
 import { buildLedgerBlock } from '../../src/narration/narratorPrompt.js';
 import { getConfirmedLore, recordLoreDiscovery, JOURNAL_NAMES } from '../../src/world/worldJournal.js';
@@ -216,6 +216,64 @@ describe('XCARD-RETRACTION-SCENE-SCOPED — an X-Card retraction blocks a re-ass
   });
 });
 
+/**
+ * XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED (found while fixing XCARD-RETRACTION-
+ * SCENE-SCOPED). The X-Card answers the session's newest narration, which can
+ * be in a scene that has already ended (`!scene start`, then the card): its
+ * truths were migrated at the scene end — archived as lore, or filed on a card
+ * — and the X-Card takes those copies back (issue #335 Y01), but the ledger it
+ * retracts holds none of them, so nothing blocked the narrator re-asserting
+ * them. The scene end now keeps each narration truth it closes on an unnamed
+ * list (`sessionRetractions.narrated`), and the X-Card moves its narration's
+ * there to the session's blocks — never named.
+ */
+describe('XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED — an X-Card on an ended scene\'s narration blocks its truths too', () => {
+  const lore = () => (journals.get(JOURNAL_NAMES.lore)?.pages.contents ?? []).map(p => p.flags?.[MODULE_ID]?.loreEntry).filter(Boolean);
+
+  it('the narration\'s truth was archived at the scene end: after the X-Card the narrator cannot record it again — named nowhere', async () => {
+    await narrate('nar-1', [{ subject: 'Vance', fact: DEAD }]);
+    await nextScene();                                              // the truth leaves the ledger, archived as lore
+    expect(stored().sceneTruths).toEqual([]);
+    expect(lore().some(e => e.narrationId === 'nar-1')).toBe(true);
+
+    await playXCard();                                              // nar-1 is still the session's newest narration
+    resume();
+    await someoneSpeaks();
+    await narrate('nar-2', [{ subject: 'Vance', fact: DEAD }]);
+
+    expect(liveTruths(DEAD)).toEqual([]);                          // was: recorded again as a binding truth
+    expect(named(), 'CORRECTED / the leave-out list').toEqual([]);
+    expect(corrected()).not.toContain(DEAD);
+  });
+
+  it('control: an X-Card on a later narration leaves the earlier scene\'s truth canon — the narrator may restate it', async () => {
+    await narrate('nar-1', [{ subject: 'Vance', fact: DEAD }]);
+    await nextScene();
+    await someoneSpeaks();
+    await narrate('nar-2', [{ subject: 'Kira', fact: 'Took the shuttle' }]);
+    await playXCard();                                              // on nar-2 alone
+    resume();
+    await nextScene();
+    await someoneSpeaks();
+    await narrate('nar-3', [{ subject: 'Vance', fact: DEAD }, { subject: 'Kira', fact: 'Took the shuttle' }]);
+
+    expect(liveTruths(DEAD)).toHaveLength(1);                      // nar-1 was never X-carded
+    expect(liveTruths('Took the shuttle')).toEqual([]);            // nar-2's stays blocked
+  });
+
+  it("control: a GM's own `!truth set`, closed with its scene, is no narration's — no X-Card blocks it", async () => {
+    await gm(`!truth set "Vance" ${DEAD}`);
+    await nextScene();
+    await someoneSpeaks();
+    await narrate('nar-1', [{ subject: 'Kira', fact: 'Took the shuttle' }]);
+    await playXCard();
+    resume();
+    await someoneSpeaks();
+    await narrate('nar-2', [{ subject: 'Vance', fact: DEAD }]);
+    expect(liveTruths(DEAD)).toHaveLength(1);
+  });
+});
+
 describe('the session\'s X-Card blocks (sessionRetractions.blocked)', () => {
   const VANCE = { kind: 'text', text: 'Vance' };
   const cs = (blocked, sessionId = SESSION) => ({
@@ -229,6 +287,23 @@ describe('the session\'s X-Card blocks (sessionRetractions.blocked)', () => {
     expect(findSessionStrike(state, VANCE, DEAD, ['Vance'])).toBeNull();
     expect(findSessionStrike(state, { kind: 'text', text: 'Kira' }, DEAD, ['Kira'], { blocked: true })).toBeNull();   // another subject
     expect(findSessionStrike(cs(state.sessionRetractions.blocked, 'sess-3'), VANCE, DEAD, ['Vance'], { blocked: true })).toBeNull();   // another session's
+  });
+
+  it("rememberNarratedTruths keeps each live narration truth a scene end closes, once — not a struck one, an X-carded one or the GM's", () => {
+    const truth = (id, fact, extra = {}) => ({ id, fact, subject: { kind: 'text', text: 'Vance' }, narrationId: 'nar-1', retracted: false, ...extra });
+    const state = { currentSessionId: SESSION, sessionRetractions: { sessionId: SESSION, facts: [{ label: 'Kira', fact: DEAD }], blocked: [] } };
+    rememberNarratedTruths(state, [
+      truth('tr-1', DEAD),
+      truth('tr-1', DEAD),                                            // the same truth twice (a late pass)
+      truth('tr-2', BODY, { retracted: true, retractedBy: 'gm' }),   // struck: kept as a strike instead
+      truth('tr-4', 'Fled the dock', { retracted: true, retractedBy: 'xcard' }),   // X-carded: a block already
+      truth('tr-3', 'Owes the crew', { narrationId: undefined }),   // a GM's !truth set
+    ]);
+    expect(state.sessionRetractions.narrated).toEqual([
+      { label: 'Vance', fact: DEAD, subjectKey: 'vance', narrationId: 'nar-1', truthId: 'tr-1' },
+    ]);
+    expect(state.sessionRetractions.facts).toEqual([{ label: 'Kira', fact: DEAD }]);   // the session's strikes kept
+    expect(sessionRetractedFacts({ ...state, sceneTruths: [] }).map(f => f.label)).toEqual(['Kira']);   // never named
   });
 
   it('withXCardBlocks keeps each subject and fact once, and the newest fifty', () => {

@@ -227,7 +227,9 @@ wrote (`retractNarrations`): its truths `retractedBy: "xcard"` — rendered
 nowhere, not even under CORRECTED, never migrated, still blocking a
 re-assertion — for the rest of the session: a scene end keeps them unnamed
 on `sessionRetractions.blocked`, which `findSessionStrike`'s write half reads
-(XCARD-RETRACTION-SCENE-SCOPED); a truth the table had already struck is
+(XCARD-RETRACTION-SCENE-SCOPED), and keeps its live narration truths on
+`sessionRetractions.narrated`, which an X-Card on a narration whose scene has
+ended moves there (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED); a truth the table had already struck is
 relabelled the X-Card's and its kept `sessionRetractions` entry moved to
 those blocks, so neither CORRECTED nor the summary's leave-out list names it
 and `!truth set` cannot lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — its state values removed (each restoring the value it
