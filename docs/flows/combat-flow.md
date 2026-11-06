@@ -39,7 +39,8 @@ Two cross-cutting facts to hold onto:
   ledger entries by its `narrationId`; a clock the reversal rewinds out of
   its trigger — full before the rewind, whoever's price filled it (issue
   #342 Z46) — has its trigger vignette struck and retracted the same way
-  (issue #338 D8). Each upgrade claims
+  (issue #338 D8), at the GMs' Retry too when the world refused the rewind
+  (UPGRADE-RETRY-REWIND-NO-SUPERSEDE). Each upgrade claims
   the card (`consumed`) before any effect; then (`src/moves/resultUpgrade.js`)
   it reverts the miss's Pay the Price from what each route landed — a "Roll
   twice" lands each leaf's route (issue #314 Q03), and harm past a meter is a

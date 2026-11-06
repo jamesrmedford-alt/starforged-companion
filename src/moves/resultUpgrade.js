@@ -199,7 +199,8 @@ export async function retryUpgradeStep(s) {
       if (!Array.isArray(s.clocks) || !s.clocks.every(c => typeof c?._id === "string")) return { ok: false, reason: "invalid step" };
       break;
     case "vowClocks":
-      if (!Array.isArray(s.entries) || !s.entries.every(e => typeof e?.actorId === "string" && typeof e?.itemId === "string")) {
+      if (!Array.isArray(s.entries) || !s.entries.every(e => typeof e?.actorId === "string" && typeof e?.itemId === "string"
+        && (e.vowId == null || typeof e.vowId === "string"))) {
         return { ok: false, reason: "invalid step" };
       }
       break;
@@ -219,16 +220,35 @@ export async function retryUpgradeStep(s) {
       return { ok: false, reason: "invalid step" };
   }
   const failures = [];
-  return (await applyUpgradeStep(s, failures)) ? { ok: true } : { ok: false, ...failures[0] };
+  const report = {};
+  const landed = await applyUpgradeStep(s, failures, report);
+  // A clock rewind takes back the trigger its vignette narrated, as the first
+  // pass's does (revertPayThePrice, issue #342 Z46): the Retry of a refused
+  // rewind left the vignette live beside a clock no longer full, and the
+  // clock's next fill fired a second one (UPGRADE-RETRY-REWIND-NO-SUPERSEDE).
+  if (s.effect === "tensionClocks" || s.effect === "vowClocks") {
+    const untriggered = s.effect === "tensionClocks"
+      ? (Array.isArray(report.untriggered) ? report.untriggered : [])
+      : vowClocksUntriggered(s.entries, report.untriggered, landed ? [] : (failures[0]?.entries ?? s.entries));
+    await supersedeTriggerVignettes(untriggered, upgradeKind(s.kind));
+  }
+  return landed ? { ok: true } : { ok: false, ...failures[0] };
 }
+
+/** An upgrade step's kind — its vignette note says which — "burn" unless it says "improve". */
+const upgradeKind = (kind) => (kind === "improve" ? "improve" : "burn");
 
 /** What a Retry needs of a failed upgrade step. */
 export function upgradeStepRecord(f) {
   return {
     step: "upgrade", effect: f.effect,
     ...(f.effect === "meters"        ? { pcId: f.pcId ?? null, changes: f.changes ?? {} } : {}),
-    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })) } : {}),
-    ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({ actorId: e.actorId, itemId: e.itemId, name: e.name ?? null })) } : {}),
+    // A clock step's kind and a vow copy's vow id: what its Retry supersedes the
+    // rewound clock's trigger vignette by (retryUpgradeStep).
+    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })), kind: upgradeKind(f.kind) } : {}),
+    ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({
+      actorId: e.actorId, itemId: e.itemId, vowId: typeof e.vowId === "string" && e.vowId ? e.vowId : null, name: e.name ?? null,
+    })), kind: upgradeKind(f.kind) } : {}),
     ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string") } : {}),
     ...(f.effect === "choiceCard"    ? { pcId: f.pcId ?? null, sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {},
       moveId: f.moveId ?? null, resolutionId: f.resolutionId ?? null } : {}),
@@ -355,7 +375,7 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // 1. Rewind clock advances
   const tension = advanced.filter(c => c.type === "tension" && c._id).map(c => ({ _id: c._id, name: c.name ?? null }));
   const entries = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId)
-    .map(c => ({ actorId: c.actorId, itemId: c.itemId, name: c.name ?? null }));
+    .map(c => ({ actorId: c.actorId, itemId: c.itemId, vowId: c.vowId ?? null, name: c.name ?? null }));
   // The clocks whose landed rewind takes them out of their triggered state:
   // the trigger their vignette narrates did not happen (issue #338 D8).
   // Judged on the clock as the rewind reads it — full before, below full
@@ -364,7 +384,8 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // full, the next price firing a second one (issue #342 Z46).
   const untriggered = [];
   const tensionReport = {};
-  if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension }, failures, tensionReport)) {
+  // A step carries its kind, for its Retry's supersede (retryUpgradeStep).
+  if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension, kind }, failures, tensionReport)) {
     for (const c of tension) reverted.push(`${c.name} clock rewound`);
     untriggered.push(...(tensionReport.untriggered ?? []));
   }
@@ -373,14 +394,11 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     // the GMs retry (issue #314 Q05).
     const at = failures.length;
     const vowReport = {};
-    const ok = await applyUpgradeStep({ effect: "vowClocks", entries }, failures, vowReport);
-    const owed = new Set(ok ? [] : (failures[at]?.entries ?? entries).map(e => e.itemId));
-    for (const v of entries) if (!owed.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
-    // A shared vow's clock is rewound once every copy of it is.
-    const vows = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId);
-    const emptied = new Set((vowReport.untriggered ?? []).map(e => e.itemId));
-    untriggered.push(...vows.filter(c => emptied.has(c.itemId)
-      && !vows.some(o => owed.has(o.itemId) && (o.vowId ?? o.itemId) === (c.vowId ?? c.itemId))));
+    const ok = await applyUpgradeStep({ effect: "vowClocks", entries, kind }, failures, vowReport);
+    const owed = ok ? [] : (failures[at]?.entries ?? entries);
+    const owedIds = new Set(owed.map(e => e.itemId));
+    for (const v of entries) if (!owedIds.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
+    untriggered.push(...vowClocksUntriggered(entries, vowReport.untriggered, owed));
   }
   await supersedeTriggerVignettes(untriggered, kind);
 
@@ -544,6 +562,29 @@ function supersededVignetteContent(content, kind) {
   const struck = html.replace(/<em>([\s\S]*?)<\/em>/,
     (_full, inner) => `<em class="sf-narration-superseded" style="opacity:0.55;text-decoration:line-through;"><s>${inner}</s></em>`);
   return /<\/div>\s*$/.test(struck) ? struck.replace(/<\/div>\s*$/, `${note}</div>`) : struck + note;
+}
+
+/**
+ * The vow clocks a landed rewind took out of their triggered state, as
+ * supersedeTriggerVignettes takes them (advanced-clock entries, by their vow —
+ * vignetteClockId): each copy the rewind reported (`emptied`), once no copy
+ * of its vow is still owed — a shared vow's clock is rewound once every copy
+ * of it is (issue #342 Z46). The first pass's and its Retry's
+ * (UPGRADE-RETRY-REWIND-NO-SUPERSEDE).
+ *
+ * @param {Array<{ actorId: string, itemId: string, vowId?: string|null }>} entries — the copies the step rewinds
+ * @param {Array<{ itemId: string }>|undefined} emptied — the copies its landed writes took out of full
+ * @param {Array<{ itemId: string }>} owed — the copies the world refused
+ * @returns {Array<Object>}
+ */
+function vowClocksUntriggered(entries, emptied, owed) {
+  const out   = new Set((Array.isArray(emptied) ? emptied : []).map(e => e?.itemId));
+  const still = new Set((Array.isArray(owed) ? owed : []).map(e => e?.itemId));
+  const vowOf = (e) => e.vowId ?? e.itemId;
+  const list  = Array.isArray(entries) ? entries : [];
+  return list
+    .filter(c => out.has(c.itemId) && !list.some(o => still.has(o.itemId) && vowOf(o) === vowOf(c)))
+    .map(c => ({ ...c, type: "vow" }));
 }
 
 /**

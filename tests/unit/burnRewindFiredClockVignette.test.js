@@ -35,7 +35,7 @@ vi.mock('../../src/system/campaignTruths.js', async () => {
 });
 
 import { apiPost } from '../../src/api-proxy.js';
-import { revertPayThePrice } from '../../src/moves/resultUpgrade.js';
+import { revertPayThePrice, retryUpgradeStep, upgradeStepRecord } from '../../src/moves/resultUpgrade.js';
 import { supersedeOriginalNarration } from '../../src/moves/burnMomentum.js';
 import { applySidecar, retractNarrations } from '../../src/factContinuity/ledgers.js';
 import { sessionRetractedFacts } from '../../src/factContinuity/retractions.js';
@@ -166,6 +166,30 @@ describe('issue #338 D8 — a burn rewinds a clock out of its triggered state', 
     }
     expect(vignette.flags[MODULE_ID].burnSuperseded).toBeUndefined();
     expect(state().sceneTruths[0].retracted).toBe(false);
+  });
+
+  it("the GMs' Retry of that refused rewind supersedes the vignette once it lands — an improvement's says so (UPGRADE-RETRY-REWIND-NO-SUPERSEDE)", async () => {
+    expectConsoleError(/upgrade tensionClocks not applied|refused/i);
+    const vignette = vignetteCard();
+    setMessages([vignette]);
+    const failures = [];
+    const set = vi.spyOn(game.settings, 'set').mockRejectedValueOnce(new Error('refused by the test'));
+    try {
+      await revertPayThePrice({ clocksAdvanced: CLOCKS_ADVANCED, sufferMeterDeltas: [] }, null, { kind: 'improve', failures });
+    } finally {
+      set.mockRestore();
+    }
+    expect(vignette.flags[MODULE_ID].burnSuperseded).toBeUndefined();   // the clock is still full
+    const step = upgradeStepRecord(failures[0]);
+
+    await expect(retryUpgradeStep(step)).resolves.toEqual({ ok: true });
+
+    expect(state().clocks[0].filled).toBe(3);
+    expect(vignette.flags[MODULE_ID].burnSuperseded).toBe(true);           // was: undefined
+    expect(state().sceneTruths.find(x => x.id === 'tr-1')).toMatchObject({ retracted: true, retractedBy: 'superseded' });
+    // The step keeps the upgrade's kind, so its note is the improvement's.
+    expect(step).toEqual({ step: 'upgrade', effect: 'tensionClocks', clocks: [{ _id: 't1', name: 'Reactor breach' }], kind: 'improve' });
+    expect(vignette.content).toMatch(/the result was improved and the clock rewound/);
   });
 
   it("a vow's countdown clock rewound out of its trigger supersedes its vignette, named by the vow", async () => {

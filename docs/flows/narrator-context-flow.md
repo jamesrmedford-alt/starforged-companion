@@ -312,8 +312,12 @@ judged on the clock as the rewind reads it (`revertTensionClocksForBurn` /
 `revertVowClocksForBurn` report it), whoever's price filled it (issue #342
 Z46) — the clock's newest live trigger vignette of the session, found by the
 `clockId` every trigger vignette carries (`resultUpgrade.js`
-`supersedeTriggerVignettes`); `sessionNarratorCards` leaves both out of the
-ring, the rolling summary's source and the recap. Their ledger entries are
+`supersedeTriggerVignettes`) — at the reversal, and at the GMs' Retry of a
+rewind the world refused (`retryUpgradeStep`: the step keeps the upgrade's
+kind and each vow copy's vow id; its vignette stayed live beside a clock no
+longer full, UPGRADE-RETRY-REWIND-NO-SUPERSEDE); `sessionNarratorCards`
+leaves both out of the ring, the rolling summary's source and the recap.
+Their ledger entries are
 retracted by `narrationId` through the X-Card's `retractNarrations`, with
 `{ by: "superseded" }` (`retractSupersededNarrations` — the store and the
 upgrade's working copy): rendered nowhere, never named under CORRECTED, and,
