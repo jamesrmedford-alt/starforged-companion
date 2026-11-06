@@ -55,6 +55,7 @@ import {
   readMomentumState,
   completeVowItem,
   setSharedVowReward,
+  vowCopyId,
   setBondItemRank,
 } from "../character/actorBridge.js";
 import { getActiveCombatPosition, listProgressTracks, completeProgressTrack } from "../ui/progressTracks.js";
@@ -1180,8 +1181,11 @@ export async function rollMove({
         const rewardCopy = copies.find(({ item }) =>
           item.flags?.[MODULE_ID]?.reward?.status === "promised");
         if (rewardCopy) {
+          // Keyed as the copies are found — the flag, else the Item's own id:
+          // a sheet vow whose stamp never landed kept a forsaken vow's reward
+          // "promised" (issue #342 Z54).
           const f = rewardCopy.item.flags[MODULE_ID];
-          await setSharedVowReward(f.vowId, { ...f.reward, status: "lost" }).catch(() => {});
+          await setSharedVowReward(vowCopyId(rewardCopy.item), { ...f.reward, status: "lost" }).catch(() => {});
         }
         await postForsakeVowCard(primary.item.name).catch(err =>
           console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));

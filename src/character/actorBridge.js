@@ -787,6 +787,20 @@ export function isVowCopy(item, vowId) {
 }
 
 /**
+ * The id that names a vow Item's copies (isVowCopy): its module `vowId` flag,
+ * else its own Item id — what a sheet-made vow whose createItem stamp never
+ * landed is named by (known-issues VOW-ID-NEVER-LANDED). A writer keyed on
+ * the flag alone skipped such a vow: its reward's one-time claim never
+ * flipped, so the reward was granted again (issue #342 Z54). Null for no item.
+ *
+ * @param {Item|null} item
+ * @returns {string|null}
+ */
+export function vowCopyId(item) {
+  return item?.flags?.[MODULE_ID]?.vowId ?? item?.id ?? null;
+}
+
+/**
  * Set the promised concrete reward (#241 Phase 2) on every copy of a shared vow,
  * found by its vowId (isVowCopy) across all player characters. GM-only (Item flag
  * writes). No-op when the vow or reward is missing.

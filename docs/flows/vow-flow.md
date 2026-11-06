@@ -43,7 +43,13 @@ Terminology up front, because it drives every gap below:
   granted-or-lost check also take the Item whose own id is the `vowId`
   (`actorBridge.isVowCopy`): a sheet-made vow's cards name it by its Item id,
   and the createItem hook's stamp of that id as the flag can fail
-  (known-issues VOW-ID-NEVER-LANDED); fulfilment completion and payoff resolve through
+  (known-issues VOW-ID-NEVER-LANDED). A writer that starts from an Item names
+  its copies the same way (`actorBridge.vowCopyId`: the flag, else the Item's
+  own id) — the reward grant's claim, Forsake's lost flip and the payoff
+  Retry's copies: keyed on the flag alone, such a vow's reward stayed
+  "promised" after it was granted and was granted again by the fulfilment and
+  every later linked win, and a forsaken vow's reward was never lost (issue
+  #342 Z54); fulfilment completion and payoff resolve through
   `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
   then collects every copy by `vowId`. (The old exact-name-only payoff
   matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The

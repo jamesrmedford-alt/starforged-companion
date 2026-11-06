@@ -77,7 +77,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
@@ -4746,7 +4746,11 @@ async function grantLinkedVowReward(vowName, outcome, { noteIfAbsent = false, ac
   for (const { actor, item } of copies) {
     const r = item?.flags?.[MODULE_ID]?.reward;
     if (r) anyRewardFlag = true;
-    if (r?.status === "promised") { reward = r; vowId = item.flags[MODULE_ID].vowId; rewardHolder = actor ?? null; break; }
+    // The claim below is keyed as every copy is found (isVowCopy): the flag,
+    // else the Item's own id — keyed on the flag alone, a sheet vow whose
+    // stamp never landed kept its reward "promised" and paid it again
+    // (issue #342 Z54).
+    if (r?.status === "promised") { reward = r; vowId = vowCopyId(item); rewardHolder = actor ?? null; break; }
   }
   if (!reward) {
     if (noteIfAbsent && copies.length && !anyRewardFlag) {
@@ -5180,12 +5184,13 @@ async function recordPayoffStep(copies, step) {
   }
 }
 
-// Every copy of a payoff card's vow (completed ones included): by its vowId,
-// else by its exact name, the roller's copy first.
+// Every copy of a payoff card's vow (completed ones included): by its vowId
+// (isVowCopy — the flag, or the Item's own id for a vow whose stamp never
+// landed), else by its exact name, the roller's copy first.
 function payoffVowCopies({ vowId = null, vowName = null, actorId = null } = {}) {
   const all = collectPlayerVowItems();
   if (vowId) {
-    const byId = all.filter(e => e.item.flags?.[MODULE_ID]?.vowId === vowId);
+    const byId = all.filter(e => isVowCopy(e.item, vowId));
     if (byId.length) return byId;
   }
   const lo = String(vowName ?? "").trim().toLowerCase();
