@@ -162,7 +162,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 import { wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
-import { rollSessionIfDue, registerSessionActivityHook, SESSION_MINT_FIELDS, isSessionActive } from "./session/lifecycle.js";
+import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
@@ -297,6 +297,8 @@ function registerCoreSettings() {
     type:    Object,
     default: { ...CampaignStateSchema },
   });
+  // The chat-activity stamp, its own setting beside campaignState (issue #342 Z01).
+  registerSessionActivitySetting();
 
   game.settings.register(MODULE_ID, "claudeApiKey", {
     name:    "Claude API Key",

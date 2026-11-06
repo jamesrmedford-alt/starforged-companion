@@ -59,7 +59,8 @@
  * store with no await in between, and no handler writes back a campaignState
  * snapshot held across an await (each merges only the fields it owns onto the
  * latest store — decisions.md → "Long-running pipeline writes merge
- * relay-owned fields").
+ * relay-owned fields"). The chat-activity stamp its own card fires writes its
+ * own setting, not campaignState (issue #342 Z01).
  *
  * Trust model — read before relying on a permission check
  * -------------------------------------------------------

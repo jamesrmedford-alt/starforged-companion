@@ -410,9 +410,14 @@ cached text.
 **Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
 the rolling summary and recent oracles are scoped to `currentSessionId`. A
 session is over once End a Session marks it (`sessionEndedId`) or after four
-hours with no chat message — the canonical GM refreshes `lastSessionTimestamp`
-on chat activity, at most every 10 minutes, and never for a session already
-over (`registerSessionActivityHook`). The next world load (`initSessionId`,
+hours with no chat message — measured from the later of the mint's
+`lastSessionTimestamp` and the session's activity stamp, which the canonical GM
+refreshes on chat activity, at most every 10 minutes, and never for a session
+already over (`registerSessionActivityHook`). The stamp is its own world setting
+(`sessionActivity`, `{ sessionId, at }`), never a campaignState write: built
+from the GM's cache while a relayed X-Card's, flag's or End a Session's write
+was still in flight, it carried the old campaignState back over it (issue #342
+Z01). The next world load (`initSessionId`,
 ready hook) or Begin a Session, whichever comes first, runs `rollSessionIfDue`:
 an unended session's summary is brought up to date
 (`finalizeSessionSummary`) — an ended one's too when it has no text: End a

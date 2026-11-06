@@ -277,6 +277,14 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
   pipeline, which runs outside it. A safety action must not wait in that
   queue behind a slow handler: the X-Card runs unqueued, which is safe only
   because no handler writes back a snapshot held across an `await`.
+- **A writer that fires on every message keeps out of campaignState.** The
+  chat-activity stamp wrote `{ ...cached, lastSessionTimestamp }` on the
+  canonical GM whenever a message landed on a due stamp — and a relayed
+  X-Card's, Set a Flag's, Take a Break's or End a Session's own card is such a
+  message, created while the handler's write is still on its way: the stamp,
+  built from the cache without it, landed after it and undid it (issue #342
+  Z01). It is its own setting (`sessionActivity`) now; a fact that is not
+  campaignState's to hold gets its own key rather than a whole-object write.
 
 ## Detection — the mechanical sweep
 

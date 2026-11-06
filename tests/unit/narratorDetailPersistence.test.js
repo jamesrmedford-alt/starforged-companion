@@ -486,7 +486,10 @@ describe('a session carries into the next one (C3, C4)', () => {
   it('chat activity keeps a long session alive; once idle past four hours it is not revived', async () => {
     table.world.setSetting('campaignState', { ...world(), lastSessionTimestamp: new Date(Date.now() - 20 * 60_000).toISOString() });
     await narrateMove('I keep watch.');
-    expect(Date.now() - Date.parse(world().lastSessionTimestamp)).toBeLessThan(60_000);
+    // The activity stamp is its own setting (issue #342 Z01).
+    const stamp = table.world.getSetting('sessionActivity');
+    expect(stamp?.sessionId).toBe('sess-1');
+    expect(Date.now() - Date.parse(stamp?.at ?? '')).toBeLessThan(60_000);
 
     // A reload now resumes the session, however long ago it began.
     const gm = table.client('gm-1');
@@ -495,8 +498,10 @@ describe('a session carries into the next one (C3, C4)', () => {
 
     const idle = new Date(Date.now() - 5 * 3_600_000).toISOString();
     table.world.setSetting('campaignState', { ...world(), lastSessionTimestamp: idle });
+    table.world.setSetting('sessionActivity', { sessionId: 'sess-1', at: idle });
     await narrateMove('I wake up.');
     expect(world().lastSessionTimestamp).toBe(idle);
+    expect(table.world.getSetting('sessionActivity')).toEqual({ sessionId: 'sess-1', at: idle });
   });
 });
 

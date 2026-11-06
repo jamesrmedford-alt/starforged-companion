@@ -16,6 +16,7 @@
 //   syncSafetyToCampaignState() bridges the two, called on every write and on ready.
 
 import { playXCard, resumeNarrationAfterXCard, bindXCardCard } from '../context/safety.js';
+import { sessionLastSeenAt } from '../session/lifecycle.js';
 import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
 import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
@@ -1003,7 +1004,8 @@ export class SettingsPanelApp extends ApplicationV2 {
       },
       sessionNumber:         campaignState.sessionNumber         ?? 0,
       currentSessionId:      campaignState.currentSessionId      ?? '',
-      lastSessionTimestamp:  campaignState.lastSessionTimestamp  ?? null,
+      // The mint or the latest chat activity, whichever is later (issue #342 Z01).
+      lastSessionTimestamp:  sessionLastSeenAt(campaignState),
       // Populated for every client — all three keys are client-scoped
       // (per-browser BYOK), so a player can manage their own. The render only
       // shows players the keys they use (Claude for the Private Channel,
