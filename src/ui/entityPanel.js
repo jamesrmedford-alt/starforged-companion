@@ -1207,7 +1207,11 @@ function isEntityActor(actor) {
 /**
  * Whether an Actor update changes what the panel shows: an entity record
  * flag set, edited or removed; or, on an entity Actor, its name (the host
- * name wins over the record's) or a ship's impacts (read from its sheet).
+ * name wins over the record's), a ship's impacts, or the Notes tab and an NPC
+ * card's pronouns — all read from its sheet (notesFromSheet, issue #329 X12;
+ * withSheetNotes, issue #335 Y13). The X-Card takes a promoted detail off the
+ * Notes tab after it writes the record (issue #338 D7), so a panel that
+ * followed only the record kept showing what it removed (issue #342 Z45).
  */
 function actorUpdateShowsInPanel(actor, change) {
   if (!change || typeof change !== 'object') return false;
@@ -1216,7 +1220,7 @@ function actorUpdateShowsInPanel(actor, change) {
     has(`flags.${MODULE_ID}.${typeKey}`) || has(`flags.${MODULE_ID}.-=${typeKey}`));
   if (touchesRecord) return true;
   if (!isEntityActor(actor)) return false;
-  return has('name') || has('system.debility');
+  return has('name') || has('system.debility') || has('system.notes') || has('system.pronouns');
 }
 
 /**
