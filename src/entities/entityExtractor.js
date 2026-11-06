@@ -46,6 +46,7 @@ import { rollOracle }                      from "../oracles/roller.js";
 import { onChatMessageRender }             from "../system/chatHooks.js";
 import { HONORIFIC_PREFIXES, wholeWordPattern } from "../context/relevanceResolver.js";
 import { isNarrationXCarded }              from "../context/safety.js";
+import { serialiseCampaignStateWrite }     from "../multiplayer/campaignStateChain.js";
 
 import {
   recordLoreDiscovery,
@@ -2299,15 +2300,17 @@ async function handleDraftDismiss(message, draftIndex) {
   const draft = drafts.find(d => d.index === draftIndex);
   if (!draft || draft.status !== "pending") return;
 
-  const campaignState = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
-  const list = Array.isArray(campaignState.dismissedEntities)
-    ? [...campaignState.dismissedEntities]
-    : [];
-  if (draft.name && !list.includes(draft.name)) list.push(draft.name);
-  campaignState.dismissedEntities = list;
-
+  // A copy of the latest store, at its turn on the client's campaignState
+  // write chain: set on the cached object, a refused write left the GM's
+  // client holding a dismissal the world never took, and read inside an
+  // oracle capture's round trip it erased the answer (CACHE-MUTATED-BEFORE-WRITE).
   try {
-    await globalThis.game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await serialiseCampaignStateWrite(() => {
+      const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+      const list = Array.isArray(latest.dismissedEntities) ? [...latest.dismissedEntities] : [];
+      if (draft.name && !list.includes(draft.name)) list.push(draft.name);
+      return globalThis.game.settings.set(MODULE_ID, "campaignState", { ...latest, dismissedEntities: list });
+    }, "draft dismiss");
   } catch (err) {
     console.error(`${MODULE_ID} | draft dismiss: settings.set failed:`, err);
     return;

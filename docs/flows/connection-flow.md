@@ -97,7 +97,9 @@ recorded under its name promoted to it; its bond is §2's.
 - **Entity-extraction drafts** — connections detected in any other narration
   queue on the GM-whispered "New Entities Detected" card; Confirm creates the
   same way (once per draft on the clicking GM — an in-flight guard, issue
-  #302), Dismiss records the name in `dismissedEntities`. The card carries the
+  #302), Dismiss records the name in `dismissedEntities` (a copy of the
+  latest store, on the GM's campaignState write chain —
+  CACHE-MUTATED-BEFORE-WRITE). The card carries the
   PC its narration was for (flag `actorId`, stamped by every detection path
   that knows it — move, paced, `@scene`, oracle follow-up), and Confirm puts
   the bond Item on that PC (issue #321 U23). A Batch Mode round's card

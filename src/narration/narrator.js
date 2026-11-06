@@ -2245,11 +2245,17 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   // other ledger write — a plain isGM gate raced in multi-GM worlds). Non-GM
   // clients keep the fresh text for this call but leave the durable write to
   // the canonical GM's own narration pass.
+  // Written on a copy of the latest store, at its turn on the client's
+  // campaignState write chain: set on the cached object first, a refused
+  // write left the GM's client serving a summary the world never took, and
+  // read inside an oracle capture's round trip it erased the answer
+  // (CACHE-MUTATED-BEFORE-WRITE).
   if (isCanonicalGM()) {
     try {
-      const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
-      stored.sessionSummary = record;
-      await game.settings.set(MODULE_ID, 'campaignState', stored);
+      await serialiseCampaignStateWrite(() => {
+        const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
+        return game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
+      }, 'rolling summary');
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary persist failed:`, err?.message ?? err);
     }
@@ -2352,7 +2358,10 @@ function refreshRollingSessionSummary() {
     try {
       do {
         _summaryRefreshAgain = false;
-        await getRollingSessionSummary(game.settings.get(MODULE_ID, 'campaignState'));
+        // A copy: getRollingSessionSummary sets the summary on the object it
+        // is given — the cached setting itself, before a write the world can
+        // refuse (CACHE-MUTATED-BEFORE-WRITE).
+        await getRollingSessionSummary({ ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) });
       } while (_summaryRefreshAgain);
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary refresh failed:`, err?.message ?? err);

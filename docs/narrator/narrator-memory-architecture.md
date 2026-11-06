@@ -544,7 +544,9 @@ regressions, all are known scope cuts:
    (the full session card feed, never summary-of-summary) via one Haiku call,
    **debounced at K = round(1.5 × N)** cards (N = `narratorContextCards`), so
    most turns are a free cached read. Stored on `campaignState.sessionSummary`
-   (keyed by `sessionId`), rendered as system-prompt §[4c] *STORY SO FAR (THIS
+   (keyed by `sessionId`; a copy of the latest store, on the GM's
+   campaignState write chain — CACHE-MUTATED-BEFORE-WRITE), rendered as
+   system-prompt §[4c] *STORY SO FAR (THIS
    SESSION)*, and written to the World Journal Session Log at End Session for
    subsequent use. GM-gated + fail-open; toggle `narratorSessionSummary`
    (default on). Drop priority + the "not a fact store" invariant: decisions.md
