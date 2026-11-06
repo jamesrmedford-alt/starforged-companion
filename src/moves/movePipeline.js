@@ -654,6 +654,21 @@ export async function rollMove({
     combatPosition = await getActiveCombatPosition(speakerActorId ?? getPlayerActors()[0]?.id ?? null);
   }
 
+  // A scene-challenge variant with no challenge open is the ordinary move it
+  // varies (issue #338 D2; readMove applies it as it reads) — and again here,
+  // as it is rolled: a Batch Mode entry is rolled after it was read, so an
+  // earlier entry's Finish the Scene can have ended the challenge, and the
+  // variant would mark nothing and take no momentum on a strong hit (issue
+  // #342 Z39).
+  if (SCENE_CHALLENGE_VARIANTS[interpretation.moveId]) {
+    const ordinary = moveOutsideSceneChallenge(interpretation.moveId, await listProgressTracks().catch(() => []));
+    if (ordinary !== interpretation.moveId) {
+      console.debug(`${MODULE_ID} | ${interpretation.moveId}: no scene challenge is open as it is rolled — rolled as ${ordinary}.`);
+      interpretation.moveId   = ordinary;
+      interpretation.moveName = moveDisplayName(ordinary);
+    }
+  }
+
   // Apply opt-in adds from abilities the player kept checked in the
   // dialog. confirmInterpretation mutates interpretation.appliedAbilityAdds.
   const abilityAdds = Number(interpretation.appliedAbilityAdds ?? 0);

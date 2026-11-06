@@ -449,7 +449,10 @@ moves (issue #338 D2): `face_danger_scene_challenge` /
 `secure_an_advantage_scene_challenge`, which the interpreter types when its
 context lists an open `scene_challenge` (never a re-key of the ordinary move
 — a fight mid-challenge is a fight; a variant with no challenge open is
-resolved as the ordinary move, `sceneChallenge.moveOutsideSceneChallenge`).
+resolved as the ordinary move, `sceneChallenge.moveOutsideSceneChallenge` —
+as `readMove` reads it and again as `rollMove` rolls it: a Batch Mode entry
+read while the challenge was open, rolled after an earlier entry's Finish the
+Scene ended it, is the ordinary move, issue #342 Z39).
 The pacing classifier nominates them for a paced card's Roll too, told of the
 open challenge as of a fight (`router.detectOpenSceneChallenges` → its
 SCENE CHALLENGE line; a variant it names with none open is the ordinary
