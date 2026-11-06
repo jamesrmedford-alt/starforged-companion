@@ -87,6 +87,7 @@ import {
   decideUpgrade,
   keepUndecidedUpgrades,
   upgradesSettled,
+  undecidedUpgrades,
   beginNarration,
   claimNarration,
   recoveryPlan,
@@ -605,7 +606,8 @@ async function advanceOnce() {
     case ROUND_PHASE.ROLLING:
       return rollRound(null);
     case ROUND_PHASE.UPGRADING:
-      if (!upgradesSettled(round)) return false;
+      await keepUndecidable(round);
+      if (!upgradesSettled(getStoredRound())) return false;
       await queueRoundWrite(r => beginNarration(r));
       return true;
     case ROUND_PHASE.NARRATING:
@@ -989,6 +991,22 @@ async function keepUpgrades(userIds) {
     const kept = Object.values(after.entries).filter(e => e.upgrade?.decided === "keep" && !before?.entries?.[e.userId]?.upgrade?.decided).map(e => e.userId);
     await closeCardUpgrades(after, kept);
   }
+}
+
+/**
+ * The upgrade offers no one can answer are kept, as the round's lifecycle
+ * keeps them ("the roller left = Keep", round.js): a roller who isn't
+ * connected — gone before the step began, or since. Only a leave during the
+ * step was kept, so a roller who confirmed and dropped before it kept the
+ * round waiting until a GM pressed Send now (issue #342 Z26). Silent, as a
+ * pass is.
+ *
+ * @param {Object} round — upgrading
+ */
+async function keepUndecidable(round) {
+  const connected = new Set(connectedUserIds());
+  const gone = undecidedUpgrades(round).filter(id => !connected.has(id));
+  if (gone.length) await keepUpgrades(gone);
 }
 
 /**
