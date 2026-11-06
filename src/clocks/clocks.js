@@ -393,22 +393,36 @@ export async function adjustClockSegments(clockId, delta) {
  * subsequently undone by burning momentum. Idempotent — clocks already at
  * zero or not found are silently skipped. GM-gated at the call site.
  *
+ * Reports the clocks the rewind takes out of their triggered state — full as
+ * this queued write reads them, below full after — whoever's price filled
+ * them: the upgrade supersedes their trigger vignettes (issue #338 D8). It
+ * was judged on the burned price's own receipt, so a clock another player's
+ * price had filled since was rewound below full with its vignette left live,
+ * and the next price fired a second one (issue #342 Z46; Y37's rule — a
+ * queued write decides on what it reads).
+ *
  * @param {string[]} ids  array of clock `_id` values to decrement by 1 segment
+ * @returns {Promise<Array<{ _id: string, name: string|null, type: "tension" }>>}
+ *   the clocks taken out of their triggered state (empty when none, or nothing was written)
  */
 export async function revertTensionClocksForBurn(ids) {
   return serialiseClockWrite(async () => {
-    if (!ids?.length) return;
+    if (!ids?.length) return [];
     const state = foundry.utils.deepClone(readState());   // a copy (issue #321 U58)
     let dirty = false;
+    const untriggered = [];
     const now = new Date().toISOString();
     for (const id of ids) {
       const c = (state.clocks ?? []).find(x => x._id === id);
       if (!c || (c.filled ?? 0) <= 0) continue;
+      const wasFull = (c.filled ?? 0) >= c.segments;
       c.filled = Math.max(0, (c.filled ?? 0) - 1);
       c.updatedAt = now;
       dirty = true;
+      if (wasFull && c.filled < c.segments) untriggered.push({ _id: c._id, name: c.name ?? null, type: "tension" });
     }
     if (dirty) await writeState(state);
+    return untriggered;
   });
 }
 

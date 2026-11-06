@@ -89,16 +89,22 @@ export async function claimUpgradeCard(message, kind) {
  * entries still owed, and the step pushed carries those alone — a Retry must
  * not rewind the clocks that landed again (issue #314 Q05).
  *
+ * A clock rewind (`tensionClocks`, `vowClocks`) reports on `report.untriggered`
+ * the clocks its landed writes took out of their triggered state, as the
+ * writes read them (issue #342 Z46).
+ *
  * @param {{ effect: "meters", pcId: string, changes: Object }
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string }> }
  *   | { effect: "vowClocks", entries: Array<{ actorId: string, itemId: string, name?: string }> }
  *   | { effect: "choiceCard", pcId: string, sufferPrompt: Object, executorOpts: Object, moveId: string|null, resolutionId: string|null }} step
  * @param {Array<Object>} failures
+ * @param {{ untriggered?: Array<Object> }|null} [report] — filled in by a clock rewind
  * @returns {Promise<boolean>} whether it landed
  */
-export async function applyUpgradeStep(step, failures) {
+export async function applyUpgradeStep(step, failures, report = null) {
   try {
     const res = await runUpgradeStep(step);
+    if (report && typeof report === "object" && Array.isArray(res.untriggered)) report.untriggered = res.untriggered;
     if (res.ok) return true;
     failures.push({ ...step, ...(res.entries ? { entries: res.entries } : {}), step: "upgrade", reason: res.reason ?? "refused" });
   } catch (err) {
@@ -119,16 +125,17 @@ async function runUpgradeStep(step) {
     }
     case "tensionClocks": {
       const { revertTensionClocksForBurn } = await import("../clocks/clocks.js");
-      await revertTensionClocksForBurn(step.clocks.map(c => c._id));
-      return { ok: true };
+      const untriggered = await revertTensionClocksForBurn(step.clocks.map(c => c._id));
+      return { ok: true, untriggered: Array.isArray(untriggered) ? untriggered : [] };
     }
     case "vowClocks": {
       const { revertVowClocksForBurn } = await import("../character/actorBridge.js");
       // Each Item's rewind stands alone: the ones the world refused are the
       // step still owed (issue #314 Q05 — the whole step was queued, and the
       // Retry rewound the landed clocks once more).
-      const failed = await revertVowClocksForBurn(step.entries);
-      return failed.length ? { ok: false, reason: "refused", entries: failed } : { ok: true };
+      const untriggered = [];
+      const failed = await revertVowClocksForBurn(step.entries, { untriggered });
+      return failed.length ? { ok: false, reason: "refused", entries: failed, untriggered } : { ok: true, untriggered };
     }
     case "choiceCard": {
       const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
@@ -290,24 +297,30 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   const tension = advanced.filter(c => c.type === "tension" && c._id).map(c => ({ _id: c._id, name: c.name ?? null }));
   const entries = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId)
     .map(c => ({ actorId: c.actorId, itemId: c.itemId, name: c.name ?? null }));
-  // The clocks the price triggered whose rewind lands: out of their
-  // triggered state, so the trigger their vignette narrates did not happen
-  // (issue #338 D8).
+  // The clocks whose landed rewind takes them out of their triggered state:
+  // the trigger their vignette narrates did not happen (issue #338 D8).
+  // Judged on the clock as the rewind reads it — full before, below full
+  // after — not on this price's receipt: another player's price may have
+  // filled it since, and its vignette stayed live beside a clock no longer
+  // full, the next price firing a second one (issue #342 Z46).
   const untriggered = [];
-  if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension }, failures)) {
+  const tensionReport = {};
+  if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension }, failures, tensionReport)) {
     for (const c of tension) reverted.push(`${c.name} clock rewound`);
-    untriggered.push(...advanced.filter(c => c.type === "tension" && c._id && c.triggered));
+    untriggered.push(...(tensionReport.untriggered ?? []));
   }
   if (entries.length) {
     // The rewinds that landed are reported; the refused ones are on the step
     // the GMs retry (issue #314 Q05).
     const at = failures.length;
-    const ok = await applyUpgradeStep({ effect: "vowClocks", entries }, failures);
+    const vowReport = {};
+    const ok = await applyUpgradeStep({ effect: "vowClocks", entries }, failures, vowReport);
     const owed = new Set(ok ? [] : (failures[at]?.entries ?? entries).map(e => e.itemId));
     for (const v of entries) if (!owed.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
     // A shared vow's clock is rewound once every copy of it is.
     const vows = advanced.filter(c => c.type === "vow" && c.actorId && c.itemId);
-    untriggered.push(...vows.filter(c => c.triggered
+    const emptied = new Set((vowReport.untriggered ?? []).map(e => e.itemId));
+    untriggered.push(...vows.filter(c => emptied.has(c.itemId)
       && !vows.some(o => owed.has(o.itemId) && (o.vowId ?? o.itemId) === (c.vowId ?? c.itemId))));
   }
   await supersedeTriggerVignettes(untriggered, kind);

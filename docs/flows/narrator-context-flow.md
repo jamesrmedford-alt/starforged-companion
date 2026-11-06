@@ -297,7 +297,9 @@ an X-carded card.
 replaced (issue #338 D8): the move's narration card is flagged
 `burnSuperseded` and struck (`supersedeOriginalNarration`), and so is the
 trigger vignette of a clock its reversal rewinds out of its triggered state —
-the clock's newest live trigger vignette of the session, found by the
+judged on the clock as the rewind reads it (`revertTensionClocksForBurn` /
+`revertVowClocksForBurn` report it), whoever's price filled it (issue #342
+Z46) — the clock's newest live trigger vignette of the session, found by the
 `clockId` every trigger vignette carries (`resultUpgrade.js`
 `supersedeTriggerVignettes`); `sessionNarratorCards` leaves both out of the
 ring, the rolling summary's source and the recap. Their ledger entries are

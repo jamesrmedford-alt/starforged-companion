@@ -115,6 +115,18 @@ describe('revertTensionClocksForBurn', () => {
     await revertTensionClocksForBurn([]);
     expect(storedClocks()[0].filled).toBe(3); // unchanged
   });
+
+  // Issue #342 Z46: the upgrade supersedes the trigger vignette of a clock the
+  // rewind takes out of its triggered state, whoever's price filled it.
+  it('reports the clocks it takes from full to below full, as its write reads them', async () => {
+    setClocks([
+      { _id: 't1', name: 'Breach', type: 'tension', segments: 4, filled: 4, active: true },
+      { _id: 't2', name: 'Doom',   type: 'tension', segments: 4, filled: 2, active: true },
+    ]);
+    expect(await revertTensionClocksForBurn(['t1', 't2'])).toEqual([{ _id: 't1', name: 'Breach', type: 'tension' }]);
+    expect(await revertTensionClocksForBurn(['t1'])).toEqual([]);   // 3 → 2: it was not full
+    expect(await revertTensionClocksForBurn([])).toEqual([]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

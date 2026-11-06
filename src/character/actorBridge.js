@@ -1243,11 +1243,17 @@ export async function advanceVowClocks(actor, { by = 1, lockstep = null } = {}) 
  * item cannot be found, or the clock is already at zero. GM-gated at the call
  * site.
  *
+ * `opts.untriggered` collects each entry whose clock the landed rewind took
+ * out of its full state — read on the Item as it is rewound, whoever's price
+ * filled it (issue #342 Z46): the upgrade supersedes that clock's trigger
+ * vignette (issue #338 D8).
+ *
  * @param {Array<{actorId:string, itemId:string}>} entries
+ * @param {{ untriggered?: Array<Object>|null }} [opts]
  * @returns {Promise<Array<Object>>} the entries whose write was refused — the
  *   upgrade reports them to the GMs with a Retry (issue #311 P06)
  */
-export async function revertVowClocksForBurn(entries) {
+export async function revertVowClocksForBurn(entries, { untriggered = null } = {}) {
   const failed = [];
   for (const entry of entries ?? []) {
     const { actorId, itemId } = entry;
@@ -1256,9 +1262,11 @@ export async function revertVowClocksForBurn(entries) {
     if (!item) continue;
     const cur = Number(item.system?.clockTicks ?? 0);
     if (cur <= 0) continue;
+    const max = Number(item.system?.clockMax ?? 0);
     try {
       await item.update({ "system.clockTicks": Math.max(0, cur - 1) });
       invalidateActorCache(actorId);
+      if (Array.isArray(untriggered) && max > 0 && cur >= max) untriggered.push(entry);
     } catch (err) {
       console.warn(`actorBridge | revertVowClocksForBurn failed for item ${itemId}:`, err?.message ?? err);
       failed.push(entry);

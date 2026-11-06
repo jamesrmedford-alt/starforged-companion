@@ -132,11 +132,24 @@ describe('issue #338 D8 — a burn rewinds a clock out of its triggered state', 
   });
 
   it('a clock the price advanced without triggering leaves every vignette alone', async () => {
+    // The clock stands below full: its trigger (before a reset) happened.
+    game.settings._store.set(KEY, { ...state(), clocks: [{ ...state().clocks[0], filled: 3 }] });
     const vignette = vignetteCard();
     setMessages([vignette]);
     await revertPayThePrice({ clocksAdvanced: [{ ...CLOCKS_ADVANCED[0], filled: 3, triggered: false }], sufferMeterDeltas: [] }, null, { kind: 'burn', failures: [] });
+    expect(state().clocks[0].filled).toBe(2);
     expect(vignette.flags[MODULE_ID].burnSuperseded).toBeUndefined();
     expect(state().sceneTruths[0].retracted).toBe(false);
+  });
+
+  it("a clock another price filled after this one advanced it is rewound out of its trigger: the vignette is superseded (issue #342 Z46)", async () => {
+    // This price took it 2 → 3; another player's then 3 → 4, firing the vignette.
+    const vignette = vignetteCard();
+    setMessages([vignette]);
+    await revertPayThePrice({ clocksAdvanced: [{ ...CLOCKS_ADVANCED[0], filled: 3, triggered: false }], sufferMeterDeltas: [] }, null, { kind: 'burn', failures: [] });
+    expect(state().clocks[0].filled).toBe(3);
+    expect(vignette.flags[MODULE_ID].burnSuperseded).toBe(true);
+    expect(state().sceneTruths[0]).toMatchObject({ retracted: true, retractedBy: 'superseded' });
   });
 
   it('a rewind the world refuses leaves the vignette standing (the clock is still triggered)', async () => {
@@ -156,7 +169,7 @@ describe('issue #338 D8 — a burn rewinds a clock out of its triggered state', 
   });
 
   it("a vow's countdown clock rewound out of its trigger supersedes its vignette, named by the vow", async () => {
-    const item = { id: 'item-1', system: { clockTicks: 4 }, async update(changes) { item.system.clockTicks = changes['system.clockTicks']; return item; } };
+    const item = { id: 'item-1', system: { clockTicks: 4, clockMax: 4 }, async update(changes) { item.system.clockTicks = changes['system.clockTicks']; return item; } };
     game.actors._set('pc-kira', { id: 'pc-kira', name: 'Kira', items: [item] });
     const entry = { actorId: 'pc-kira', itemId: 'item-1', vowId: 'vow-chen', name: "Chen's captivity", type: 'vow', filled: 4, segments: 4, triggered: true };
     expect(vignetteClockId(entry)).toBe('vow-chen');
