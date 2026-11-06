@@ -45,6 +45,12 @@ import { PORTRAIT_BLOCK_RE } from "./notesPortrait.js";
 
 const MODULE_ID = "starforged-companion";
 
+// This client's first-portrait generations in flight, by entity
+// (`<type>:<host id>` → the generation's promise): one image at a time per
+// entity, claimed before the image call and released in a `finally`
+// (known-issues PORTRAIT-LATE-FIRST-GENERATION).
+const _portraitsInFlight = new Map();
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PUBLIC API
@@ -89,6 +95,28 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
     }
   }
 
+  // One image at a time per entity on this client (known-issues
+  // PORTRAIT-LATE-FIRST-GENERATION): a second generation while one is out —
+  // the Entities panel's Generate pressed while a new card's seed is making
+  // its portrait — waits for it and gets its portrait. Each bought an image,
+  // and the later link won.
+  const slot = `${entityType}:${journalEntryId}`;
+  const inFlight = _portraitsInFlight.get(slot);
+  if (inFlight) {
+    console.debug(`${MODULE_ID} | Art: a portrait for ${entityType} ${entity._id} is already being made — waiting for it.`);
+    return inFlight;
+  }
+  const run = makeFirstPortrait(journalEntryId, entityType, entity, campaignState);
+  _portraitsInFlight.set(slot, run);
+  try {
+    return await run;
+  } finally {
+    if (_portraitsInFlight.get(slot) === run) _portraitsInFlight.delete(slot);
+  }
+}
+
+/** generatePortrait's image call and its writes, once its slot is claimed. */
+async function makeFirstPortrait(journalEntryId, entityType, entity, campaignState) {
   const { prompt, size } = buildPrompt(entityType, entity.portraitSourceDescription, entity);
   const neutralPrompt = buildNeutralPortraitPrompt(entityType, entity).prompt;
   const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt);
@@ -98,9 +126,20 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
   // X-Card took back with the narration that made it, while the call was out
   // (issue #338 D6(ii); XCARD-LATE-CAPTURE): stored, the portrait would be an
   // Art Cache entry nothing links to.
-  if (!getEntityDocument(entityType, journalEntryId)) {
+  const document = getEntityDocument(entityType, journalEntryId);
+  if (!document) {
     console.debug(`${MODULE_ID} | Art: ${entityType} ${journalEntryId} was deleted before its portrait came back — not stored.`);
     return null;
+  }
+  // The record as it stands now: a portrait linked while the image was out —
+  // another GM's Generate, perhaps then its one regeneration — is the
+  // entity's, and this image is not stored. Linked unchecked, a late first
+  // portrait replaced a locked regenerated one with a fresh unlocked one, and
+  // Regenerate was offered again (known-issues PORTRAIT-LATE-FIRST-GENERATION).
+  const linkedMeanwhile = readEntityFlag(entityType, document)?.portraitId ?? null;
+  if (linkedMeanwhile && linkedMeanwhile !== (entity.portraitId ?? null)) {
+    console.debug(`${MODULE_ID} | Art: ${entityType} ${entity._id} was given a portrait while this one was being made — it stands; this image is not stored.`);
+    return (await loadArtAsset(linkedMeanwhile)) ?? null;
   }
 
   await storeArtAsset(asset, campaignState);
