@@ -51,7 +51,12 @@ Terminology up front, because it drives every gap below:
   every later linked win, and a forsaken vow's reward was never lost (issue
   #342 Z54); fulfilment completion and payoff resolve through
   `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
-  then collects every copy by `vowId`. (The old exact-name-only payoff
+  then collects every copy by the vow's id (`collectVowCopies`: `isVowCopy`
+  of `vowCopyId` — the `vowId` flag, else the Item's own id). A vow with no
+  `vowId` flag (written on a sheet while no GM was connected, or its stamp
+  refused) is only itself: copies used to fall back to every PC's vow of the
+  same exact name, so two crewmates' "Background Vow"s fulfilled, paid,
+  recommitted and forsook each other (issue #342 Z59). (The old exact-name-only payoff
   matching was the VOW-RENAME-PAYOFF defect, fixed this cycle.) The
   sole-open rung is only for a name that matches nothing: it never applies
   when the name matches (exactly or by substring) a vow that is already
@@ -280,7 +285,7 @@ weak = reduced/with-a-string, miss = lost; one-time via `reward.status`).
 Because the copies are already completed when the payoff runs,
 `payFulfilledVowNative` falls back to searching **all** copies with the same
 exact → whole-word substring ladder, preferring the roller's, then collects **every**
-PC's copy (by `vowId`, else name) — so the reward lands on the **roller's
+PC's copy (by its id, as above) — so the reward lands on the **roller's
 copy** when they hold one, else on the PC holding the promised reward (it
 used to collect only the first PC's copy, so a shared vow's reward went to
 the first PC). No journal track and no item matched → `console.warn`,

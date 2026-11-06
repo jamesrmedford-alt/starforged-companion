@@ -4702,15 +4702,17 @@ function collectPlayerVowItems() {
   return all;
 }
 
-// Every copy of `primary`'s vow across PCs — by the shared vowId flag when
-// present, else by the item's exact name.
+// Every copy of `primary`'s vow across PCs — the copies its id names
+// (isVowCopy / vowCopyId: the shared `vowId` flag, else the Item's own id).
+// A vow with no `vowId` flag (written on a sheet with no GM connected, or its
+// stamp refused) is only itself: the exact-name fallback served pre-vowId
+// shared vows, which swearSharedVowForAll never makes, and it took a
+// crewmate's independent namesake — two "Background Vow"s — for a copy, so
+// one PC's fulfilment completed, paid and stamped the other's (issue #342
+// Z59; issue #301 B02's "the roller's own vow").
 function collectVowCopies(all, primary) {
-  const vowId = primary.item.flags?.[MODULE_ID]?.vowId ?? null;
-  const primaryName = (primary.item.name ?? "").toLowerCase();
-  return all.filter(e =>
-    vowId
-      ? e.item.flags?.[MODULE_ID]?.vowId === vowId
-      : (e.item.name ?? "").toLowerCase() === primaryName);
+  const id = vowCopyId(primary.item);
+  return id ? all.filter(e => isVowCopy(e.item, id)) : [primary];
 }
 
 // GM-side: deliver the linked vow's promised concrete reward (#241 Phase 2) when
@@ -4836,7 +4838,7 @@ export async function payFulfilledVowNative(vowName, outcome, { skipLegacy = fal
   // completeVowItemByName — may have already marked the copies completed
   // before this payoff runs, so fall back to searching ALL copies with the
   // same name ladder (exact, then substring), preferring the roller's, and
-  // then collect EVERY PC's copy of that vow (by vowId, else name).
+  // then collect EVERY PC's copy of that vow (collectVowCopies — by its id).
   // Collecting only the first PC's copy made a shared vow's reward land on the
   // first PC instead of the roller.
   let { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId });
