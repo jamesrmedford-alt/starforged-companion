@@ -62,3 +62,36 @@ describe("rules/foundry-api.md's v12 → v13 table says what the code does (issu
     expect(calls).toEqual([]);
   });
 });
+
+// The Progress Tracks row described the position toggle as "mirrored to the
+// clicker's assigned character (`game.user.character`)" — the W56 bug
+// (issue #326), since fixed in the code and in combat-flow.md: the toggle
+// sends the clicker's PC as resolveUserActorId resolves it, and the PC's own
+// position is the one cycled. Its opening also listed track types the panel
+// doesn't show (vows, connections, legacy) — issue #342 Z72.
+describe("docs/file-structure.md's Progress Tracks row says what the panel does (issue #342 Z72)", () => {
+  const row   = doc.split('\n').find(l => l.startsWith('| `progressTracks.js` |')) ?? '';
+  const panel = fs.readFileSync(path.join(root, 'src/ui/progressTracks.js'), 'utf8');
+
+  it('control: the toggle sends resolveUserActorId\'s PC, and the combat flow map says so', () => {
+    const toggle = panel.split('static #onToggleCombatState(')[1]?.split('\n  }\n')[0] ?? '';
+    expect(toggle).toMatch(/resolveUserActorId\(game\.user, game\.settings\.get\(MODULE_ID, 'campaignState'\)\)/);
+    expect(fs.readFileSync(path.join(root, 'docs/flows/combat-flow.md'), 'utf8').replace(/\s+/g, ' '))
+      .toMatch(/the clicker's PC resolved by `resolveUserActorId`/);
+    expect(row).toMatch(/the fight position toggle/);                     // the row is found
+  });
+
+  it('the row names the toggle\'s PC as resolveUserActorId resolves it, not `game.user.character`', () => {
+    expect(row).not.toMatch(/assigned character \(`game\.user\.character`\)/);
+    expect(row).toMatch(/`resolveUserActorId`/);
+  });
+
+  it('the row lists the track types the panel shows (PANEL_TRACK_TYPES)', () => {
+    const types = panel.split('const PANEL_TRACK_TYPES = {')[1]?.split('};')[0] ?? '';
+    const labels = [...types.matchAll(/:\s*'([^']+)'/g)].map(m => m[1]);
+    expect(labels).toEqual(['Combat', 'Expedition', 'Scene Challenge']);
+    const opening = row.split('). ')[0];
+    expect(opening).toMatch(/fights, expeditions, scene challenges/);
+    expect(opening).not.toMatch(/vows\/expeditions\/combats\/connections\/legacy/);
+  });
+});
