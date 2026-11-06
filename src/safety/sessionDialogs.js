@@ -278,7 +278,7 @@ export async function applyTakeBreak(_payload = {}, ctx = {}) {
   // (issue #321 U58).
   const state = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
   // Consumed by the move pipeline on the next action roll
-  // (src/moves/nextMoveAdd.js takeNextMoveAdd).
+  // (src/moves/nextMoveAdd.js consumeNextMoveAdd).
   state.nextMoveAdd = { value: 1, source: "take_a_break", setAt: new Date().toISOString() };
   try {
     await game.settings.set(MODULE_ID, "campaignState", state);

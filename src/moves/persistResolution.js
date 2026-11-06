@@ -202,8 +202,8 @@ async function applyMetersOrNote(actor, changes, failures, opts = null) {
 //                                   (issue #321 U07)
 //       safety                      settingsPanel safety sync + "safety.syncPrivateLines" relay
 //       safetyFlags                 sessionDialogs applySafetyFlag ("safety.setFlag" relay)
-//       nextMoveAdd                 sessionDialogs applyTakeBreak; the pipeline consumes it
-//                                   on the store via clearPersistedNextMoveAdd
+//       nextMoveAdd                 sessionDialogs applyTakeBreak; the pipeline claims it
+//                                   on the store via consumeNextMoveAdd (issue #342 Z52)
 //       nextMoveBonuses             nextMoveAdd.js grantNextMoveBonus (a choice card's pick,
 //                                   a move's other effects) / consumeNextMoveBonus — store
 //                                   writes (issue #322 V02)

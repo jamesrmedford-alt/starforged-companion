@@ -107,7 +107,7 @@ describe("persistResolution — concurrent writes survive the stale working copy
   it("a store-side deletion of a store-owned field is honoured (consumed +1 is not resurrected)", async () => {
     stored().nextMoveAdd = { value: 1 };
     const snapshot = pipelineSnapshot();
-    delete stored().nextMoveAdd;           // consumed on the store (clearPersistedNextMoveAdd)
+    delete stored().nextMoveAdd;           // consumed on the store (consumeNextMoveAdd)
     await persistResolution(resolution(), snapshot);
     expect(stored().nextMoveAdd).toBeUndefined();
   });

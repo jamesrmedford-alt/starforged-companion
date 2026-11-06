@@ -315,7 +315,10 @@ clicker's DOM, so a re-render or another client rolled Battle again on a
 finished fight, its +2 momentum or a second Pay the Price (issue #325 W11).
 The "not rolled" guards run before the pipeline takes Take a Break's +1 or
 the roller's next-move bonus, so a Battle that is not rolled leaves both
-pending for the next action roll made (issue #331 X17).
+pending for the next action roll made (issue #331 X17). Both are claimed on
+the store before they are added (`consumeNextMoveAdd`, `consumeNextMoveBonus`):
+a refused claim adds nothing and leaves the +1 pending, so it never lands on
+two rolls (issue #342 Z52).
 
 **Face Defeat** closes the track as a loss (no payoff) and routes Pay the Price.
 

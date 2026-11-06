@@ -7,7 +7,8 @@
 // and the GM's next whole-object write carried it into the world after all:
 //   - !pace / !roll (router.js applyPaceCommand / markForceNextAsMove), whose
 //     card then claimed the change;
-//   - Take a Break's clear (nextMoveAdd.js clearPersistedNextMoveAdd);
+//   - Take a Break's clear (nextMoveAdd.js — since issue #342 Z52 the claim,
+//     consumeNextMoveAdd, before the +1 is added);
 //   - !oracle-add's save and remove (customOracles.js), which registered the
 //     table locally before the write;
 //   - bond.apply's legacy ticks (bondCommand.js).
@@ -17,7 +18,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { applyPaceCommand, markForceNextAsMove } from "../../src/pacing/router.js";
-import { clearPersistedNextMoveAdd } from "../../src/moves/nextMoveAdd.js";
+import { consumeNextMoveAdd } from "../../src/moves/nextMoveAdd.js";
 import { saveCustomOracle, removeCustomOracle, _resetCustomOracleSyncHookForTests } from "../../src/oracles/customOracles.js";
 import { ORACLE_TABLES, unregisterOracleTable } from "../../src/oracles/roller.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
@@ -75,16 +76,16 @@ describe("!pace / !roll: a refused write changes nothing and says so (issue #326
 });
 
 describe("Take a Break's clear and the custom oracles: a refused write leaves the cache as the world (issue #326 W51)", () => {
-  it("Take a Break +1: a refused clear leaves the grant pending in the cache", async () => {
+  it("Take a Break +1: a refused claim leaves the grant pending in the cache", async () => {
     game.settings._store.set(KEY, { ...CampaignStateSchema, nextMoveAdd: { value: 1, source: "take_a_break" } });
     refuseNextWrite();
-    await clearPersistedNextMoveAdd();
+    expect(await consumeNextMoveAdd({}, "face_danger")).toBe(0);
     expect(cached().nextMoveAdd).toEqual({ value: 1, source: "take_a_break" });
   });
 
-  it("control: a landed clear removes it from the store", async () => {
+  it("control: a landed claim removes it from the store", async () => {
     game.settings._store.set(KEY, { ...CampaignStateSchema, nextMoveAdd: { value: 1, source: "take_a_break" } });
-    await clearPersistedNextMoveAdd();
+    expect(await consumeNextMoveAdd({}, "face_danger")).toBe(1);
     expect(cached().nextMoveAdd).toBeUndefined();
   });
 

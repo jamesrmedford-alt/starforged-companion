@@ -10,7 +10,8 @@
  *    move (not a progress move)") records the table-wide
  *    `campaignState.nextMoveAdd` on the canonical GM (applyTakeBreak in
  *    src/safety/sessionDialogs.js); the next action roll takes it, whoever
- *    makes it (takeNextMoveAdd).
+ *    makes it (consumeNextMoveAdd — claimed on the store before it is added,
+ *    issue #342 Z52).
  *  - "+1 on your next move" — Secure an Advantage's strong hit (beside its +2
  *    momentum), its weak-hit pick and Gain Ground's — is the roller's own:
  *    `campaignState.nextMoveBonuses[actorId]`, granted on the canonical GM
@@ -42,44 +43,42 @@ export function isActionRollMove(moveId, rollKind = null) {
 }
 
 /**
- * Consume a pending Take a Break add for this move. Pure over its arguments:
- * returns the add (0 when none is pending or the move is not an action roll)
- * and deletes `nextMoveAdd` from the given campaignState when it is used.
+ * Take the pending Take a Break add for this move — whoever's roll it is.
+ * Only an action roll takes it. It is claimed on the store before it is
+ * added, as consumeNextMoveBonus claims its sibling: the latest stored
+ * campaignState is written without `nextMoveAdd` (a copy — rules/foundry-
+ * api.md, issue #326 W51), and the value is returned only once that write
+ * lands. A refused claim adds nothing and leaves the +1 pending for the next
+ * roll. It used to be added first, from the working copy, and cleared after
+ * with its refusal a console warning — so a refused clear added one +1 to two
+ * rolls (issue #342 Z52). The pipeline's working copy drops it too. Runs on
+ * the canonical GM (the move pipeline's client).
  *
- * @param {Object} campaignState — the pipeline's working copy (mutated)
+ * @param {Object|null} campaignState — the pipeline's working copy (mutated)
  * @param {string} moveId
  * @param {{ rollKind?: string|null }} [opts] — the interpretation's roll kind
- * @returns {number}
+ * @returns {Promise<number>} the add (0 when none is pending, the move is not an action roll, or the claim was refused)
  */
-export function takeNextMoveAdd(campaignState, moveId, { rollKind = null } = {}) {
-  const grant = campaignState?.nextMoveAdd;
-  const value = Number(grant?.value ?? 0);
-  if (!grant || !(value > 0)) return 0;
+export async function consumeNextMoveAdd(campaignState, moveId, { rollKind = null } = {}) {
   if (!isActionRollMove(moveId, rollKind)) return 0;
-  delete campaignState.nextMoveAdd;
-  return value;
-}
-
-/**
- * Persist the consumption: re-read the latest campaignState and drop the
- * grant, so a later write of a stale copy cannot resurrect it. Runs on the
- * canonical GM (the move pipeline's client).
- *
- * @returns {Promise<void>}
- */
-export async function clearPersistedNextMoveAdd() {
+  let latest;
   try {
-    const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
-    if (!latest.nextMoveAdd) return;
-    // A copy (rules/foundry-api.md): deleting the grant from the cached value
-    // before a refused write left the GM's client without a +1 the world
-    // still held (issue #326 W51).
-    const next = { ...latest };
-    delete next.nextMoveAdd;
+    latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  } catch {
+    return 0;
+  }
+  const value = Number(latest.nextMoveAdd?.value ?? 0);
+  if (!latest.nextMoveAdd || !(value > 0)) return 0;
+  const next = { ...latest };
+  delete next.nextMoveAdd;
+  try {
     await game.settings.set(MODULE_ID, "campaignState", next);
   } catch (err) {
-    console.warn(`${MODULE_ID} | Take a Break: clearing the used +1 failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | Take a Break: taking the +1 was refused — not added, still pending:`, err?.message ?? err);
+    return 0;
   }
+  if (campaignState && typeof campaignState === "object") delete campaignState.nextMoveAdd;
+  return value;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

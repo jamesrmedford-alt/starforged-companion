@@ -71,7 +71,7 @@ import { resolveRelevance } from "../context/relevanceResolver.js";
 import { getCurrentSiteKind } from "../entities/location.js";
 import { ClarificationDialog, applyClarificationSelection } from "../world/clarificationDialog.js";
 import { swearSharedVowForAll } from "../session/swearVow.js";
-import { takeNextMoveAdd, clearPersistedNextMoveAdd, consumeNextMoveBonus } from "./nextMoveAdd.js";
+import { consumeNextMoveAdd, consumeNextMoveBonus } from "./nextMoveAdd.js";
 import { decidePacing } from "../pacing/router.js";
 import { READING_KIND } from "../batch/round.js";
 
@@ -752,16 +752,16 @@ export async function rollMove({
   }
 
   // Take a Break → "Move on": a single-use +1 on the next action roll (not
-  // a progress move). Consumed from the working copy (so persistResolution's
-  // clone can't resurrect it) and from the stored campaignState. Taken
-  // after the enrichment, on the roll kind it resolved: a bonded Develop
-  // Your Relationship (no roll by its data) rolls +rank and takes the +1
-  // (issue #326 W48 — it was taken by the next roll after it).
+  // a progress move). Claimed on the stored campaignState before it is added
+  // — a refused claim adds nothing and leaves it pending, so it is never
+  // added to two rolls (issue #342 Z52) — and dropped from the working copy.
+  // Taken after the enrichment, on the roll kind it resolved: a bonded
+  // Develop Your Relationship (no roll by its data) rolls +rank and takes the
+  // +1 (issue #326 W48 — it was taken by the next roll after it).
   const rollKind = interpretation.rollKind ?? null;
-  const breakAdd = takeNextMoveAdd(campaignState, interpretation.moveId, { rollKind });
+  const breakAdd = await consumeNextMoveAdd(campaignState, interpretation.moveId, { rollKind });
   if (breakAdd > 0) {
     interpretation.adds = (interpretation.adds ?? 0) + breakAdd;
-    await clearPersistedNextMoveAdd();
   }
   // "+1 on your next move" the roller earned (Secure an Advantage, Gain
   // Ground): their own, on their next action roll — claimed on the store
