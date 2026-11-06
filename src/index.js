@@ -1535,28 +1535,36 @@ async function applyOutcomeEffects({
     const destinationId = resolution.moveId === "set_a_course"
       ? (interpretation?.moveTargetId ?? null)
       : await expeditionSiteActorId(interpretation, campaignState);
-    const docked = await maybeUpdateShipPositionFromName(
-      moveTarget,
-      campaignState,
-      tokenDragSetCourse ? "scene_token"
-        : resolution.moveId === "finish_an_expedition" ? "expedition"
-        : "set_a_course",
-      { entityId: destinationId },
-    );
 
     // Keep the campaign's "current location" in step with the arrival —
     // previously only a manual !at wrote currentLocationId, so travelling
     // by move left the narrator options / entity-panel highlight pointing
     // at the last !at (LOCATION-DUAL-STORE fix). Same resolver as !at; a
     // destination that isn't a tracked entity leaves the store untouched.
+    // The pick comes first and the ship docks at it by its id, as `!at` does
+    // since issue #342 Z15: each store had its own resolver, so a fragment
+    // ("Bleak") made Bleakhold the current location — the name resolver's
+    // prefix rung — while the ship's position, which takes a full name or a
+    // name part only, was the free text "Bleak" and its token stayed where
+    // it was (known-issues ARRIVAL-FRAGMENT-SHIP-FREE-TEXT).
+    const named = currentLocationForEntityId(destinationId)
+      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
+    const docked = await maybeUpdateShipPositionFromName(
+      moveTarget,
+      campaignState,
+      tokenDragSetCourse ? "scene_token"
+        : resolution.moveId === "finish_an_expedition" ? "expedition"
+        : "set_a_course",
+      { entityId: named?.id ?? destinationId },
+    );
+
     // When the id and the name both miss, the place the ship just docked at:
     // the position's word scan finds "Bleakhold" in "the expedition to
     // Bleakhold", the name resolver only a place whose name holds the whole
     // label — the ship docked there while the current location stayed where
     // the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT). A record
     // naming no place (free text) leaves the store untouched.
-    const arrivedAt = currentLocationForEntityId(destinationId)
-      ?? resolveCurrentLocationName(moveTarget ?? "", campaignState)
+    const arrivedAt = named
       ?? [docked?.nearestLocationId, docked?.nearestSettlementId, docked?.nearestPlanetId]
         .map(id => currentLocationForEntityId(typeof id === "string" ? id : null)).find(Boolean)
       ?? null;
