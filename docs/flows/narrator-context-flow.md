@@ -57,7 +57,10 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   remark on no one who didn't act. Who sat the round out is never sent. Its
   sidecar, X-Card gate, rate-limit retry, `!narrator debug` capture and
   fallback are every narration's; its one capture pass runs at the widest
-  class (`runRoundNarrationPasses`).
+  class (`runRoundNarrationPasses`) among the entries it captures — a Make a
+  Connection miss creates no one (scope §9) and takes no part, so the rest of
+  the round is captured whatever the confirm order (issue #342 Z08: a round
+  led by a miss skipped its whole capture).
 - **Claude-calling chat commands** — `@scene`, `!recap`, `!ship envision`,
   `!ship history`, `!incite` — route `RUN_ON.CLAUDE` (`CHAT_COMMAND_ROUTES`,
   `src/index.js`; policy in `src/multiplayer/commandRouting.js`): the keyed canonical GM when `hasKeyedActiveGM()`, else the

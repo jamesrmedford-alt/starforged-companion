@@ -1034,6 +1034,11 @@ export async function narrateRound({ round, campaignState }) {
  * for the auto-create; with two in one round, the first auto-creates and the
  * second's NPC goes to a draft card, as any other detected NPC does.
  *
+ * A Make a Connection miss creates no one (scope §9) — that entry's rule, not
+ * the round's: it takes no part in the capture, neither its lead nor its
+ * class, and the rest of the round is captured as though it were not there
+ * (issue #342 Z08 — a round led by a miss skipped its whole capture).
+ *
  * @param {string} narration
  * @param {Array<Object>} entries — roundNarrationEntries
  * @param {Object} relevance — the round's union, at the widest class
@@ -1043,15 +1048,18 @@ export async function narrateRound({ round, campaignState }) {
  */
 function runRoundNarrationPasses(narration, entries, relevance, campaignState, { narrationId }) {
   const isHit = (o) => o === 'strong_hit' || o === 'weak_hit';
-  const connection = entries.find(e => e.input?.kind === 'move' && e.input.moveId === 'make_a_connection' && isHit(e.input.outcome));
-  const lead = connection ?? entries[0];
+  const isConnection = (e) => e.input?.kind === 'move' && e.input.moveId === 'make_a_connection';
+  const captured = entries.filter(e => !isConnection(e) || isHit(e.input.outcome));
+  const connection = captured.find(isConnection);
+  const lead = connection ?? captured.find(e => e.input?.kind === 'move') ?? captured[0];
   const resolution = {
-    moveId:          connection ? 'make_a_connection' : (lead?.input?.moveId ?? null),
-    outcome:         connection ? connection.input.outcome : (lead?.input?.outcome ?? null),
+    moveId:          lead?.input?.moveId ?? null,
+    outcome:         lead?.input?.outcome ?? null,
     oracleSeeds:     connection ? (connection.input.oracleSeeds ?? null) : null,
     playerNarration: entries.map(e => e.text).filter(Boolean).join('\n'),
   };
-  return runPostNarrationPasses(narration, resolution, relevance, campaignState, {
+  const capturedRelevance = { ...relevance, resolvedClass: widestRoundClass(captured) };
+  return runPostNarrationPasses(narration, resolution, capturedRelevance, campaignState, {
     actorId: lead?.actorId ?? null, narrationId,
   });
 }
