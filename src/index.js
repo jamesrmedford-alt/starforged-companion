@@ -937,7 +937,7 @@ export function registerChatHook() {
     // while a pipeline is running would otherwise race on campaignState writes
     // and post duplicate narration cards.
     const campaignState = game.settings.get(MODULE_ID, "campaignState");
-    if (campaignState.pendingMove) {
+    if (campaignState.pendingMove || _moveLockClaimInFlight) {
       // A claimed card's forced move is held, not dropped: its button reads
       // taken everywhere, so a drop lost the action (issue #325 W02).
       if (message.flags?.[MODULE_ID]?.deferWhileBusy === true) {
@@ -1166,6 +1166,11 @@ const _releasedMoveLockClaims = [];
 const RELEASED_MOVE_LOCK_CLAIMS_KEPT = 16;
 // The claim this client's pipeline holds now (claimed, not yet released).
 let _heldMoveLockClaim = null;
+// A Batch Mode round's claim on its way to the server (claimPendingMoveLock
+// writes a copy, so this client's cache reads the lock free until it lands):
+// the free-flow check treats it as taken. A drained free-flow move and a
+// waiting round woke on the same release and both claimed (issue #342 Z25).
+let _moveLockClaimInFlight = null;
 
 /** Remember a claim this client released — its lock is free, or another claim's. */
 function noteMoveLockClaimReleased(claim) {
@@ -1340,7 +1345,9 @@ function drainDeferredForcedMoves(setting, runPipeline) {
   if (setting?.key !== `${MODULE_ID}.campaignState`) return;
   if (!_deferredForcedMoves.length || !isCanonicalGM()) return;
   const state = game.settings.get(MODULE_ID, "campaignState");
-  if (state?.pendingMove) return;
+  // A round's claim still on its way holds the lock too: the move would only
+  // be held again — and drained again, at once, forever (issue #342 Z25).
+  if (state?.pendingMove || _moveLockClaimInFlight) return;
   // Held until a session begins: the gate would only hold it again (issue #329 X14).
   if (!isSessionActive(state)) return;
   let message = null;
@@ -2007,16 +2014,22 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * Never across the wait for an upgrade decision (decisions.md → "Move-
  * concurrency lock covers narration + persistence, not post-roll prompts").
  * Writes a copy of the store as it is now, so a refused claim leaves this
- * client's cache free. The claim's token rides the lock, and this client
- * holds it (restoreLockOverCarriedBackClaim puts it back over a stale write).
+ * client's cache free — and marks the claim in flight until the write lands,
+ * so this client's free-flow check sees the lock taken meanwhile, as it sees
+ * its own in-place claim (issue #342 Z25). The claim's token rides the lock,
+ * and this client holds it (restoreLockOverCarriedBackClaim puts it back over
+ * a stale write).
  *
  * @returns {Promise<{ claim: string|null, busy?: boolean, refused?: boolean }>}
  *   `busy`: another move holds the lock; `refused`: the world refused the write
  */
 export async function claimPendingMoveLock() {
   const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  if (latest.pendingMove) return { claim: null, busy: true };
+  if (latest.pendingMove || _moveLockClaimInFlight) return { claim: null, busy: true };
   const claim = foundry.utils.randomID();
+  // In flight until the write lands: this client's free-flow check sees it at
+  // once, as it sees its own in-place claim (issue #342 Z25).
+  _moveLockClaimInFlight = claim;
   try {
     // A copy (rules/foundry-api.md): a refused claim leaves the cache free.
     await game.settings.set(MODULE_ID, "campaignState",
@@ -2024,6 +2037,8 @@ export async function claimPendingMoveLock() {
   } catch (err) {
     console.error(`${MODULE_ID} | could not claim the move lock:`, err);
     return { claim: null, refused: true };
+  } finally {
+    if (_moveLockClaimInFlight === claim) _moveLockClaimInFlight = null;
   }
   _heldMoveLockClaim = claim;
   return { claim };
