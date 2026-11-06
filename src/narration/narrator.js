@@ -60,7 +60,7 @@ import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
-import { readCharacterSnapshot, getPlayerActors } from '../character/actorBridge.js';
+import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
@@ -976,7 +976,12 @@ export async function narrateRound({ round, campaignState }) {
   }
   const relevance = { resolvedClass: widest, entityIds: ids, entityTypes: types };
 
+  // A block per acting PC still in the game, by its own id: getActiveCharacter
+  // falls back to another PC for an id that no longer resolves, so an entry
+  // whose PC was deleted since the round opened (refused, Z35) brought a PC
+  // who sat the round out into it (ROUND-CHARACTER-BLOCK-GONE-PC).
   const characters = entries
+    .filter(e => isPlayerCharacterActor(game.actors?.get?.(e.actorId) ?? null))
     .map(e => getActiveCharacter(campaignState, e.actorId))
     .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId && o?.name === c.name) === i);
   const extras = await buildNarratorExtras('round_resolution', campaignState, {

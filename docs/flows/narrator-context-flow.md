@@ -48,7 +48,10 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   and lore; each move entry's own relevance (resolved when it rolled — the
   GM's clarification dialog included) unioned, at the widest class (an entry
   with no roll counts as interaction); a CHARACTER block per acting PC
-  (`extras.roundCharacters`); PARTY naming only the PCs who act
+  still in the game (`extras.roundCharacters`, by the entry's actor id — an
+  entry whose PC was deleted since the round opened gets none:
+  `getActiveCharacter`'s fallback brought a PC who sat the round out into
+  it, ROUND-CHARACTER-BLOCK-GONE-PC); PARTY naming only the PCs who act
   (`actingActorIds` — the roster filtered by actor id, each named as the
   sheet names it now, marked "acting this round"; the round's own copy of a
   name, taken when it opened, names only a PC since deleted — issue #342
