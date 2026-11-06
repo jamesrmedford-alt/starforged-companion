@@ -343,9 +343,14 @@ weak-hit win −1, min 1), each mark adding ticks by the *vow's* rank
 card's roller when they hold a copy, else the PC holding the resolved vow
 (`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks — spoken as
-the card's roller, with their copy of the vow by its Item id, issue #329
-X05; relayed `fulfilVow.attempt` and claimed once on the card,
-`fulfilAttempted` — the roller's player or a GM may press it) and
+the vow's holder, as ⚑ marks it: the card's roller when they hold a copy
+(issue #329 X05), else the PC holding the vow the fight served
+(`resolveVowHolderActor(vowName, actorId)`, issue #342 D5), with their copy
+of the vow by its Item id; relayed `fulfilVow.attempt` and claimed once on
+the card, `fulfilAttempted` — the holder's player or a GM may press it, and
+a miss's 🔁 recommit offer is the holder's. It was spoken as the card's
+roller whoever held the vow: Kira's player was refused her own vow's roll on
+the card of a fight Ren won, and Ren's player rolled it as Ren) and
 **🤝 Deepen your bond** when the vow links a connection
 (`deepenVowConnectionOnce` → `deepenLinkedConnection`, scaled by the vow's
 rank). A vow deepens its connection once (issue #326 D1): the press is

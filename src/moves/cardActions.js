@@ -640,9 +640,12 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
  * One attempt per card, claimed on the GM-authored card (`fulfilAttempted`)
  * before the post, behind the in-flight guard; a post that fails releases the
  * claim. The roll is the card's roller's (`actorId`): their player or a GM may
- * press it, and the move speaks as that PC. The vow rides by its Item id —
- * the move card's, the roller's sole open vow when it was posted; the
- * won-fight card's by its name, the roller's copy. A card posted before the
+ * press it, and the move speaks as that PC — on a won-fight card, the vow's
+ * holder: the winner when they hold a copy, else the PC holding the vow the
+ * fight served (resolveVowHolderActor, as its ⚑ — issue #342 D5), so a
+ * miss's 🔁 recommit offer is the holder's too. The vow rides by its Item id
+ * — the move card's, the roller's sole open vow when it was posted; the
+ * won-fight card's by its name, the holder's copy. A card posted before the
  * roller was stamped rolls for the clicker's own PC (the payload's `actorId`,
  * which the requester must own).
  *
@@ -669,8 +672,23 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
     return { posted: false, reason: "already-attempted" };
   }
 
+  const vowName = fightCard && typeof f.vowName === "string" && f.vowName ? f.vowName : null;
   const cardActorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
-  const actorId = cardActorId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
+  let rollerId = cardActorId;
+  if (vowName) {
+    // A won-fight card's 🏁 is the vow's holder's move (issue #342 D5): the
+    // winner when they hold a copy — every case issue #329 X05 settled —
+    // else the PC holding the vow the fight served, as the same card's ⚑
+    // marks it (resolveVowHolderActor). It was the winner's whoever held the
+    // vow: the holder's player was refused their own vow's roll, and the
+    // winner's player rolled it as the winner. A vow found nowhere keeps the
+    // card's roller (no first-PC guess).
+    const { resolveVowItemCopies, resolveVowHolderActor } = await import("../index.js");
+    if (resolveVowItemCopies(vowName, { actorId: cardActorId }).primary) {
+      rollerId = resolveVowHolderActor(vowName, cardActorId)?.id ?? cardActorId;
+    }
+  }
+  const actorId = rollerId ?? (typeof payload.actorId === "string" && payload.actorId ? payload.actorId : null);
   const actor   = actorId ? (globalThis.game?.actors?.get?.(actorId) ?? null) : null;
   if (actorId && !isPlayerCharacterActor(actor)) {
     console.warn(`${MODULE_ID} | attempt to fulfil: ${actorId} is not a player character — refused.`);
@@ -683,7 +701,6 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
     return { posted: false, reason: "not-owner" };
   }
 
-  const vowName = fightCard && typeof f.vowName === "string" && f.vowName ? f.vowName : null;
   let vowItemId = fightCard ? null : (f.milestoneSuggestion.vowItemId ?? null);
   if (vowName) {
     const { resolveVowItemCopies } = await import("../index.js");

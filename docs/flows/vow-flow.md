@@ -192,7 +192,10 @@ All real progress lands on **item ticks** (`system.current`) via
   `fightVow.markMilestone`; the mark is recorded per card on the vow's
   payoff ledger, `fulfilPayoff["milestone:<card id>"]` — `markFightVowMilestoneOnce`
   — so a re-press after a stamp the world refused marks nothing, issue #336
-  Y24). The card's rank and 🤝 Deepen connection come
+  Y24). Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
+  it was the card's roller's, so a crewmate who won the fight rolled another
+  PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs. The
+  card's rank and 🤝 Deepen connection come
   from the same roller-first resolution (`postFightVowMilestoneCard`), not
   the first PC holding a vow of that name.
 - **Shared-vow lockstep**: `registerSharedVowSyncHook` copies changed fields
