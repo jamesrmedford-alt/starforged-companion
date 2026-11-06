@@ -4501,7 +4501,12 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
   const { primary } = resolveVowItemCopies(vowName, { actorId });
   const item = primary?.item?.system?.completed === true ? null : (primary?.item ?? null);
   const vowRank        = item?.system?.rank ?? null;
-  const vowId          = item?.flags?.[MODULE_ID]?.vowId ?? null;
+  // Named as its copies are found (vowCopyId: the flag, else the Item's own
+  // id): from the flag alone, a sheet vow whose stamp never landed carried
+  // null, so 🤝 Deepen's once-only record found the vow by its name only and
+  // a rename allowed a second deepen (known-issues
+  // FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY).
+  const vowId          = vowCopyId(item);
   const connectionName = item?.flags?.[MODULE_ID]?.linkedConnectionName ?? null;
   const safeVow   = escapeChatHtml(vowName ?? "your vow");
   const deepenBtn = connectionName
@@ -5032,8 +5037,11 @@ async function payFulfilledVowCopies(item, allCopies, vowName, outcome, { skipLe
   }
 
   if (failures.length) {
+    // The vow as its copies are found (vowCopyId), so its Retry finds a sheet
+    // vow whose stamp never landed after a rename too (known-issues
+    // FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY).
     await postPayoffFailureCard({
-      source: "fulfil", vowName: item.name ?? vowName ?? null, vowId: item.flags?.[MODULE_ID]?.vowId ?? null,
+      source: "fulfil", vowName: item.name ?? vowName ?? null, vowId: vowCopyId(item),
       actorId, outcome, failures,
     }).catch(err => console.warn(`${MODULE_ID} | native-fulfil: failure card failed:`, err?.message ?? err));
   }

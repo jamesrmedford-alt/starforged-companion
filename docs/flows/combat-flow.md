@@ -364,9 +364,12 @@ the card of a fight Ren won, and Ren's player rolled it as Ren) and
 (`deepenVowConnectionOnce` → `deepenLinkedConnection`, scaled by the vow's
 rank). A vow deepens its connection once (issue #326 D1): the press is
 recorded on the vow's payoff ledger (`fulfilPayoff.deepen`, the card carries
-the vow's `vowId`), so the fulfilment's deepen is skipped; a press after the
+the vow's id as its copies are found — `vowCopyId`: the `vowId` flag, else
+the Item's own id), so the fulfilment's deepen is skipped; a press after the
 fulfilment's deepen deepens nothing and posts a short "already deepened"
-card. Once the card's vow is
+card. (Taken from the flag alone, a sheet vow whose stamp never landed
+carried null and was found by its name only: after a rename the press
+deepened a second time — known-issues FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY.) Once the card's vow is
 fulfilled its milestone and 🏁 are retired on every client and render
 (`wireFightVowButtons` → `linkedVowCompleted`), and a press that reaches the
 GM marks nothing (issue #325 W29). It then grants the

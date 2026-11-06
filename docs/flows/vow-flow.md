@@ -49,8 +49,13 @@ Terminology up front, because it drives every gap below:
   Retry's copies: keyed on the flag alone, such a vow's reward stayed
   "promised" after it was granted and was granted again by the fulfilment and
   every later linked win, and a forsaken vow's reward was never lost (issue
-  #342 Z54); fulfilment completion and payoff resolve through
-  `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
+  #342 Z54); so does a card that names the vow for a later press — the
+  won-fight card's and a fulfilment's payoff-failure card's `vowId`, read by
+  🤝 Deepen's once-only record and the Retry (from the flag alone they
+  carried null, found the vow by its name only, and after a rename deepened
+  its connection a second time — known-issues
+  FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY); fulfilment completion and payoff
+  resolve through `resolveVowItemCopies` — a name ladder (exact → whole-word substring → sole-open) that
   then collects every copy by the vow's id (`collectVowCopies`: `isVowCopy`
   of `vowCopyId` — the `vowId` flag, else the Item's own id). A vow with no
   `vowId` flag (written on a sheet while no GM was connected, or its stamp
