@@ -30,7 +30,7 @@ passed the host Actor id, which no Item carries).
 
 ## 1. Meet (creation)
 
-Five paths converge on `createConnection()`. It registers the NPC card's id
+Four paths converge on `createConnection()`. It registers the NPC card's id
 in `connectionIds` on the caller's copy and on the latest stored campaignState
 (`registerEntityIdInStore`) — never by writing the caller's copy whole, which
 reverted a relayed X-Card when the caller was the move pipeline (issue #300
@@ -105,9 +105,16 @@ flagged entity Actor its list misses (`migrator.registerUnlistedEntityActors`
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates
   the connection, a bond Item on every PC who swore the vow — issue #321 U23 —
   and stamps `linkedConnectionName` on the shared vow items).
-- **Manual sidebar creation** — `createActor` hook + `autoSeedConnection`
-  setting → `seedConnectionActor` rolls role/goal/first-look/disposition,
-  writes biography/notes/pronouns, fires a silent portrait.
+
+The `createActor` seed hook (canonical GM, `autoSeedConnection` on) is not a
+fifth path: it populates a card one of the four made (`connectionNeedsSeed`:
+the module's connection record present, not yet `seeded`) —
+`seedConnectionActor` rolls role/goal/first-look/disposition, writes
+biography/notes/pronouns and fires a silent portrait. A character Actor made by
+hand in the Actors sidebar carries no module flag: it is never seeded, never
+listed in `connectionIds`, and the module takes it for a **player character**
+(`isPlayerCharacterActor` — no `entityType`), so it joins the PARTY roster and
+the CHARACTER blocks (issue #342 Z73).
 
 What the narration established wins over the seed's rolls (decisions.md,
 issue #286 D3): `buildConnectionSeedData` writes the detected (or Make a
