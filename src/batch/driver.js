@@ -747,6 +747,19 @@ function waitForLock() {
 }
 
 /**
+ * The move lock is free again with no campaignState write to say so: a claim
+ * on its way was refused (index.js claimPendingMoveLock). A round waiting for
+ * the lock goes on, as the write that frees it would let it — waiting behind
+ * a free-flow claim the world refused, it sat collecting, ready, until
+ * someone acted again (ROUND-WAIT-AFTER-REFUSED-CLAIM).
+ */
+export function noteMoveLockFreed() {
+  if (!_waitingForLock || !host().moveLockFree()) return;
+  _waitingForLock = false;
+  advanceRound("lock-free");
+}
+
+/**
  * Release the round's claim (index.js releasePendingMoveLock). A release the
  * world refuses is tried once more, as free-flow's `finally` retries its own
  * (issue #315 S01); refused again, the GMs are told and the round's next

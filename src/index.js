@@ -223,6 +223,7 @@ import {
   isBatchModeEnabled,
   acceptRoundUpgrade,
   setBatchFreeFlowRunner,
+  noteMoveLockFreed,
 } from "./batch/driver.js";
 import { registerRoundWindowHooks } from "./ui/roundWindow.js";
 
@@ -2137,9 +2138,11 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * and written whole, put back the fields of a write still on its way). The
  * claim's token rides the lock, and this client holds it
  * (restoreLockOverCarriedBackClaim puts it back over a stale write). A refused
- * claim writes nothing, so a forced move held behind it meanwhile is handed
- * back at once (drainDeferredForcedMoves —
- * FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM).
+ * claim writes nothing, so what waits for the lock behind it is woken at once:
+ * a forced move held meanwhile is handed back (drainDeferredForcedMoves —
+ * FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM), and a Batch Mode round
+ * waiting for the lock goes on (driver.js noteMoveLockFreed —
+ * ROUND-WAIT-AFTER-REFUSED-CLAIM).
  *
  * @returns {Promise<{ claim: string|null, busy?: boolean, refused?: boolean }>}
  *   `busy`: another move holds the lock; `refused`: the world refused the write
@@ -2166,6 +2169,7 @@ export async function claimPendingMoveLock() {
   }
   if (outcome === "refused") {
     drainDeferredForcedMoves();
+    noteMoveLockFreed();
     return { claim: null, refused: true };
   }
   if (outcome === "busy") return { claim: null, busy: true };
