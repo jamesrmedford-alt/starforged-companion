@@ -259,7 +259,9 @@ does what a scene end migrated from the narration's ledger entries before the
 card was played (issue #335 Y01 — the pick is session-scoped, the ledger is
 empty by then): the tier detail, the archived Lore page and the LAST KNOWN
 value, which keeps the values it superseded and falls back to the newest one
-no removed narration set.
+no removed narration set. A scene end still running when the card is played
+checks it right before each of those writes, and takes back a copy written as
+the card landed (XCARD-DURING-SCENE-END-MIGRATES).
 
 **Narration ids and an upgrade (issue #338 D8).** A Burn Momentum or Improve
 Result retracts the ledger entries of the narrations it supersedes — the move

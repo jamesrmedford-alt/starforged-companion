@@ -34,9 +34,10 @@ import { archiveSceneTruth }          from '../world/worldJournal.js';
 import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
 import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
 import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
-import { rememberSessionRetractions, rememberNarratedTruths } from './retractions.js';
+import { rememberSessionRetractions, rememberNarratedTruths, retractNarrationCapture } from './retractions.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY } from './ledgers.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
+import { isNarrationXCarded } from '../context/safety.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -284,10 +285,16 @@ async function migrateSceneTruth(truth, campaignState, placeOf) {
   if (!truth || truth.retracted || truth.migratedTo) return 'skipped';
   const subject = truth.subject;
   if (!subject) return 'skipped';
+  // Nothing from a narration the X-Card removed — checked right before each
+  // write, since the copy may predate the card, and a copy that landed with
+  // the card already played is taken back (XCARD-DURING-SCENE-END-MIGRATES;
+  // the capture writers' rule, XCARD-LATE-CAPTURE).
+  if (isNarrationXCarded(truth.narrationId)) return 'skipped';
 
   if (subject.kind === 'entity' && subject.entityId) {
     const ok = await safeMigrateToEntityTier(truth, subject);
     if (!ok) return 'skipped';
+    if (await takeBackXCarded([truth.narrationId])) return 'skipped';
     truth.migratedTo = { kind: 'entityGenerativeTier', entityId: subject.entityId };
     return 'migrated';
   }
@@ -302,15 +309,40 @@ async function migrateSceneTruth(truth, campaignState, placeOf) {
     if (place) {
       const ok = await safeMigrateToEntityTier(truth, { entityId: place.id, entityType: place.type });
       if (ok) {
+        if (await takeBackXCarded([truth.narrationId])) return 'skipped';
         truth.migratedTo = { kind: 'entityGenerativeTier', entityId: place.id };
         return 'migrated';
       }
+      if (isNarrationXCarded(truth.narrationId)) return 'skipped';   // before the archive's write
     }
   }
   const result = await safeArchiveSceneTruth(truth, campaignState);
   if (!result?.pageId) return 'skipped';
+  if (await takeBackXCarded([truth.narrationId])) return 'skipped';
   truth.migratedTo = { kind: 'worldJournalLore', loreEntryId: result.pageId };
   return 'archived';
+}
+
+/**
+ * A scene end's copy of what a narration wrote, landed after the X-Card
+ * removed that narration: taken back as the X-Card takes back what its
+ * narration left — the detail, the Lore page, the LAST KNOWN value, by the
+ * narration's id (retractions.js retractNarrationCapture). The X-Card's own
+ * undo ran before the copy existed (XCARD-DURING-SCENE-END-MIGRATES). Never
+ * throws.
+ *
+ * @param {Array<string|null|undefined>} narrationIds — the narrations the write copied
+ * @returns {Promise<boolean>} true when one of them was X-carded (its copies taken back)
+ */
+async function takeBackXCarded(narrationIds) {
+  const removed = [...new Set((narrationIds ?? []).filter(id => isNarrationXCarded(id)))];
+  if (!removed.length) return false;
+  try {
+    await retractNarrationCapture(removed);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sceneLifecycle: taking back a copy the X-Card removed failed:`, err?.message ?? err);
+  }
+  return true;
 }
 
 const LATE_FACT_PASSES = 3;
@@ -593,6 +625,12 @@ function escapeRegExp(s) {
  * state entry carried). Both are always written, null when none: Foundry's
  * setFlag merges a nested object into the stored one key by key.
  *
+ * A value a narration the X-Card removed set gives way, right before each
+ * record's write, to the one it superseded — the X-Card's own rule
+ * (retractNarrations), on the stored `xCardedNarrationIds`: the copy may
+ * predate the card. A value written as the card landed is taken back
+ * (XCARD-DURING-SCENE-END-MIGRATES).
+ *
  * @param {Object} campaignState
  * @returns {Promise<number>} entities updated
  */
@@ -604,7 +642,7 @@ async function keepLastKnownWhereabouts(campaignState) {
   for (const [key, entries] of Object.entries(bySubject)) {
     const subject = subjectFromStateKey(key);
     if (subject.kind !== 'entity' || !Array.isArray(entries)) continue;
-    const kept = entries.filter(e =>
+    const kept = withoutXCardedValues(key, entries).filter(e =>
       WHEREABOUTS_ATTRIBUTES.includes(String(e?.attribute ?? '').trim().toLowerCase())
       && String(e?.value ?? '').trim());
     if (!kept.length) continue;
@@ -612,9 +650,11 @@ async function keepLastKnownWhereabouts(campaignState) {
       const resolved = resolveEntityById(subject.entityId);
       if (!resolved) continue;
       const lastKnown = { ...(resolved.data.lastKnown ?? {}) };
+      const written = [];
       for (const e of kept) {
         const attr = String(e.attribute).trim().toLowerCase();
         lastKnown[attr] = lastKnownValue(e, sessionNum, lastKnown[attr]);
+        written.push(lastKnown[attr]);
       }
       await writeEntityFlag(resolved.typeKey, resolved.document, {
         ...resolved.data,
@@ -622,11 +662,31 @@ async function keepLastKnownWhereabouts(campaignState) {
         updatedAt: new Date().toISOString(),
       });
       updated += 1;
+      await takeBackXCarded(written.flatMap(v => [v.narrationId, ...(v.previous ?? []).map(p => p?.narrationId)]));
     } catch (err) {
       console.warn(`${MODULE_ID} | sceneLifecycle: keeping ${subject.entityId}'s last known whereabouts failed:`, err?.message ?? err);
     }
   }
   return updated;
+}
+
+/**
+ * A subject's state values as the X-Card has left them, read from the store
+ * now: each value a removed narration set gives way to the one it superseded
+ * (retractNarrations — the X-Card's own rule). The caller's own entries when
+ * nothing they hold was removed.
+ *
+ * @param {string} key — the subject's state key
+ * @param {Object[]} entries
+ * @returns {Object[]}
+ */
+function withoutXCardedValues(key, entries) {
+  let removed = [];
+  try { removed = game.settings.get(MODULE_ID, 'campaignState')?.xCardedNarrationIds ?? []; } catch { removed = []; }
+  if (!Array.isArray(removed) || !removed.length) return entries;
+  const view = { sceneState: { bySubject: { [key]: entries } } };
+  retractNarrations(view, removed);
+  return view.sceneState.bySubject[key] ?? [];
 }
 
 /** How many earlier values a LAST KNOWN value keeps (`previous`), for an X-Card on the narration that set it. */

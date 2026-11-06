@@ -289,7 +289,14 @@ scene end migrated carries the truth's id too (issue #335 Y01) — the tier
 detail, the archived Lore page (a page it rewrote is restored) and the LAST
 KNOWN value, which falls back to the newest value in its `previous` chain no
 removed narration set (a kept narration of the scene, then the earlier
-scene's). A state transition the capture
+scene's). A card played while the scene end is still migrating is met the
+same way: each migration write checks the stored `xCardedNarrationIds`
+right before it writes — a LAST KNOWN value a removed narration set gives way
+to the one it superseded — and a copy written as the card landed is taken
+back by the narration's id (`takeBackXCarded` → `retractNarrationCapture`;
+XCARD-DURING-SCENE-END-MIGRATES: the scene end's copy still held the beat
+live, and its writes after the card's own undo left the removed fact as a
+detail, as confirmed lore and as LAST KNOWN). A state transition the capture
 applies to an entry it did not make — a threat resolved or escalated
 (`updateThreatSeverity`), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
@@ -687,7 +694,9 @@ record as `lastKnown` (C1, rendered as LAST KNOWN on the card) — each value
 with the `narrationId` that set it and the values it superseded (`previous`,
 newest first, up to four; issue #335 Y01) — and every migrated tier detail and
 archived Lore page carries its truth's `narrationId`, for an X-Card played
-after the scene ended (above). It discards state and clears the frame.
+after the scene ended (above) — or while it runs: each of those writes checks
+the X-Card first and takes its copy back when the card landed meanwhile
+(XCARD-DURING-SCENE-END-MIGRATES). It discards state and clears the frame.
 Before that final write it re-reads the store and, while the store is
 still this scene, migrates the truths and keeps the whereabouts that a
 narration persisted during its awaits (`migrateLateSceneFacts`, a few

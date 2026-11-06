@@ -163,7 +163,10 @@ layers. This file is the never-break list.
    (XCARD-CAPTURE-TRANSITIONS); so does what a scene end migrates from its
    ledger entries — the tier detail, the archived Lore page and the LAST
    KNOWN value with the values it superseded — since the card may be played
-   after the scene ended (issue #335 Y01); a narration
+   after the scene ended (issue #335 Y01), or while it runs: each of those
+   writes checks `isNarrationXCarded` right before it writes and takes its
+   copy back when the card landed meanwhile (XCARD-DURING-SCENE-END-MIGRATES);
+   a narration
    is built from the ledgers as they stand in the store, never a pre-dialog
    snapshot (W05), and a summary the X-Card emptied is stamped newer than any
    working copy's (W06).
