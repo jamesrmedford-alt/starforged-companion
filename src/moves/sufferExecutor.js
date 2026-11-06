@@ -539,13 +539,15 @@ export async function endureStress(actor, amount, opts = {}) {
  * crew, as it is marked (clearUnprepared).
  *
  * @param {Actor} actor  whose supply is now 0
- * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesNotMarked: string[] }>}
+ * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesMarkedIds: string[], alliesNotMarked: string[] }>}
  *   `unpreparedMarked` is false when `actor` was already unprepared; the
  *   allies by name — marked now, or whose write was refused (warned, never
- *   thrown: the supply loss has landed either way)
+ *   thrown: the supply loss has landed either way) — and the ones marked now
+ *   by id, so an upgrade that reverts the price clears exactly those
+ *   (`alliesMarkedIds`, issue #342 D4)
  */
 export async function markUnprepared(actor) {
-  const marks = { unpreparedMarked: false, alliesMarked: [], alliesNotMarked: [] };
+  const marks = { unpreparedMarked: false, alliesMarked: [], alliesMarkedIds: [], alliesNotMarked: [] };
   if (!actor) return marks;
   if (!actor.system?.debility?.unprepared) {
     await setDebility(actor, "unprepared", true);
@@ -556,6 +558,7 @@ export async function markUnprepared(actor) {
     try {
       await setDebility(ally, "unprepared", true);
       marks.alliesMarked.push(ally.name ?? ally.id);
+      marks.alliesMarkedIds.push(ally.id);
     } catch (err) {
       console.warn(`${MODULE_ID} | sufferExecutor: marking ${ally.name ?? ally.id} unprepared failed:`, err?.message ?? err);
       marks.alliesNotMarked.push(ally.name ?? ally.id);
@@ -706,6 +709,9 @@ export async function sacrificeResources(actor, amount, opts = {}) {
 
   const marks = atZero ? await markUnprepared(actor) : null;
   const unpreparedMarked = !!marks?.unpreparedMarked;
+  // Whom this loss marked unprepared, by id: an upgrade that reverts the
+  // price clears exactly those marks (issue #342 D4).
+  const alliesMarkedIds = marks?.alliesMarkedIds ?? [];
 
   if (!opts.skipCard) {
     let body = `Supply: ${before} → ${after}`;
@@ -720,7 +726,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     });
   }
 
-  return { before, after, atZero, unpreparedMarked };
+  return { before, after, atZero, unpreparedMarked, alliesMarkedIds };
 }
 
 /**

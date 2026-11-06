@@ -12,10 +12,11 @@
  *   - revertPayThePrice — the clocks the miss's Pay the Price advanced, the
  *     PC-meter losses its route landed (the receipts index.js ptpMeterReceipts
  *     records — a harm's overflow into momentum is one of its own, issue #314
- *     Q02), and the price's entry in RECENT ORACLE RESULTS (issue #342 Z11).
- *     Vehicle and companion routes, and impacts an executor marked, are not
- *     reversed (decisions.md → "Burn Momentum reverses Pay-the-Price side
- *     effects").
+ *     Q02), the price's entry in RECENT ORACLE RESULTS (issue #342 Z11), and
+ *     the unprepared marks its supply loss made, once the supply is refunded
+ *     above 0 (issue #342 D4). Vehicle and companion routes, and the other
+ *     impacts an executor marked, are not reversed (decisions.md → "Burn
+ *     Momentum reverses Pay-the-Price side effects").
  *
  *   - reconcileChoices — the move's choice card. A pending card of the
  *     superseded outcome is retired (and a pick that reaches it anyway is
@@ -47,7 +48,8 @@
  * re-narrate and log the same way (renarrateUpgrade).
  */
 
-import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot } from "../character/actorBridge.js";
+import { applyMeterChanges, isPlayerCharacterActor, readCharacterSnapshot, setDebility } from "../character/actorBridge.js";
+import { isUnprepared } from "./sufferExecutor.js";
 import { dropOracleResultsOf } from "../oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
@@ -96,6 +98,7 @@ export async function claimUpgradeCard(message, kind) {
  * @param {{ effect: "meters", pcId: string, changes: Object }
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string }> }
  *   | { effect: "vowClocks", entries: Array<{ actorId: string, itemId: string, name?: string }> }
+ *   | { effect: "unprepared", pcIds: string[] }
  *   | { effect: "choiceCard", pcId: string, sufferPrompt: Object, executorOpts: Object, moveId: string|null, resolutionId: string|null }} step
  * @param {Array<Object>} failures
  * @param {{ untriggered?: Array<Object> }|null} [report] — filled in by a clock rewind
@@ -106,7 +109,12 @@ export async function applyUpgradeStep(step, failures, report = null) {
     const res = await runUpgradeStep(step);
     if (report && typeof report === "object" && Array.isArray(res.untriggered)) report.untriggered = res.untriggered;
     if (res.ok) return true;
-    failures.push({ ...step, ...(res.entries ? { entries: res.entries } : {}), step: "upgrade", reason: res.reason ?? "refused" });
+    failures.push({
+      ...step,
+      ...(res.entries ? { entries: res.entries } : {}),
+      ...(res.pcIds ? { pcIds: res.pcIds } : {}),
+      step: "upgrade", reason: res.reason ?? "refused",
+    });
   } catch (err) {
     console.warn(`${MODULE_ID} | upgrade ${step.effect} not applied:`, err?.message ?? err);
     failures.push({ ...step, step: "upgrade", reason: "refused", error: String(err?.message ?? err) });
@@ -136,6 +144,23 @@ async function runUpgradeStep(step) {
       const untriggered = [];
       const failed = await revertVowClocksForBurn(step.entries, { untriggered });
       return failed.length ? { ok: false, reason: "refused", entries: failed, untriggered } : { ok: true, untriggered };
+    }
+    case "unprepared": {
+      // The marks a reverted price made, each its own write: the refused ones
+      // are the step still owed (the vowClocks shape). A PC gone, or no
+      // longer unprepared (cleared since), needs nothing.
+      const failed = [];
+      for (const id of step.pcIds ?? []) {
+        const pc = globalThis.game?.actors?.get?.(id) ?? null;
+        if (!pc || !isUnprepared(pc)) continue;
+        try {
+          await setDebility(pc, "unprepared", false);
+        } catch (err) {
+          console.warn(`${MODULE_ID} | upgrade: clearing ${pc.name ?? id}'s unprepared failed:`, err?.message ?? err);
+          failed.push(id);
+        }
+      }
+      return failed.length ? { ok: false, reason: "refused", pcIds: failed } : { ok: true };
     }
     case "choiceCard": {
       const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
@@ -178,6 +203,12 @@ export async function retryUpgradeStep(s) {
         return { ok: false, reason: "invalid step" };
       }
       break;
+    case "unprepared":
+      if (!Array.isArray(s.pcIds) || !s.pcIds.length
+        || !s.pcIds.every(id => typeof id === "string" && isPlayerCharacterActor(globalThis.game?.actors?.get?.(id) ?? null))) {
+        return { ok: false, reason: "invalid step" };
+      }
+      break;
     case "choiceCard": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
       if (!isPlayerCharacterActor(pc)) return { ok: false, reason: "no-pc" };
@@ -198,6 +229,7 @@ export function upgradeStepRecord(f) {
     ...(f.effect === "meters"        ? { pcId: f.pcId ?? null, changes: f.changes ?? {} } : {}),
     ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })) } : {}),
     ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({ actorId: e.actorId, itemId: e.itemId, name: e.name ?? null })) } : {}),
+    ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string") } : {}),
     ...(f.effect === "choiceCard"    ? { pcId: f.pcId ?? null, sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {},
       moveId: f.moveId ?? null, resolutionId: f.resolutionId ?? null } : {}),
   };
@@ -232,6 +264,10 @@ export function describeUpgradeStep(f, why) {
     }
     case "vowClocks":
       return (f.entries ?? []).map(e => `Rewind the ${escapeHtml(e.name ?? "vow")} clock one segment — ${why}.`).join("<br>");
+    case "unprepared": {
+      const names = (f.pcIds ?? []).map(id => escapeHtml(globalThis.game?.actors?.get?.(id)?.name ?? "a character")).join(", ");
+      return `Clear unprepared for ${names || "the crew"} — the reverted price marked it, and its supply was refunded — ${why}.`;
+    }
     case "choiceCard": {
       const pc = f.pcId ? (globalThis.game?.actors?.get?.(f.pcId) ?? null) : null;
       return `The upgraded result's choice card for ${escapeHtml(pc?.name ?? "the character")} — ${why}. Nothing on it has been chosen yet.`;
@@ -262,6 +298,29 @@ export async function reportUpgradeFailures(actor, failures) {
 function sufferMeterDeltas(ptpReversals) {
   if (Array.isArray(ptpReversals?.sufferMeterDeltas)) return ptpReversals.sufferMeterDeltas.filter(d => d?.meterKey);
   return ptpReversals?.sufferMeterDelta?.meterKey ? [ptpReversals.sufferMeterDelta] : [];
+}
+
+/**
+ * The PCs whose unprepared the reverted price itself marked — a supply
+ * receipt's payer (`unpreparedMarked`) and the allies it marked with them
+ * (`alliesMarked`, by id) — for a receipt whose refund landed (`refunded`, the
+ * payers' ids) and left the payer's supply above 0. Issue #342 D4.
+ *
+ * @param {Object|null} ptpReversals
+ * @param {Set<string>} refunded
+ * @returns {string[]}
+ */
+function unpreparedMarksToClear(ptpReversals, refunded) {
+  const ids = new Set();
+  for (const d of sufferMeterDeltas(ptpReversals)) {
+    if (d.meterKey !== "supply" || typeof d.actorId !== "string" || !refunded.has(d.actorId)) continue;
+    if (!d.unpreparedMarked && !(Array.isArray(d.alliesMarked) && d.alliesMarked.length)) continue;
+    const payer = game.actors?.get?.(d.actorId) ?? null;
+    if (!(Number(readCharacterSnapshot(payer)?.meters?.supply ?? 0) > 0)) continue;   // still exhausted: the marks stand
+    if (d.unpreparedMarked) ids.add(d.actorId);
+    for (const id of Array.isArray(d.alliesMarked) ? d.alliesMarked : []) if (typeof id === "string" && id) ids.add(id);
+  }
+  return [...ids];
 }
 
 const REVERSAL_CARDS = {
@@ -341,10 +400,30 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     changes[delta.meterKey] = (changes[delta.meterKey] ?? 0) + Number(delta.amount);
     byPc.set(refundTo, changes);
   }
+  const refunded = new Set();
   for (const [refundTo, changes] of byPc) {
     if (await applyUpgradeStep({ effect: "meters", pcId: refundTo.id, changes }, failures)) {
+      refunded.add(refundTo.id);
       for (const [meterKey, amount] of Object.entries(changes)) reverted.push(`${meterKey} +${amount} refunded`);
     }
+  }
+
+  // 3. The unprepared marks the reverted price itself made — its payer's and
+  // the allies sharing the supply it took to 0 (the receipt's
+  // `unpreparedMarked` / `alliesMarked`), never a mark that was there before —
+  // cleared once the refunded supply is back above 0: the rules key
+  // unprepared on an exhausted supply the reversal says never happened, and
+  // since issue #338 D3 a stale mark redirected every crew member's loss of
+  // resources and kept their momentum lowered until a Resupply (issue #342
+  // D4, ruling A narrowly). A refused clear is an upgrade step for the GMs'
+  // Retry, as the refund is.
+  const unmark = unpreparedMarksToClear(ptpReversals, refunded);
+  if (unmark.length) {
+    const at = failures.length;
+    const ok = await applyUpgradeStep({ effect: "unprepared", pcIds: unmark }, failures);
+    const owed = new Set(ok ? [] : (failures[at]?.pcIds ?? unmark));
+    const cleared = unmark.filter(id => !owed.has(id)).map(id => game.actors?.get?.(id)?.name ?? id);
+    if (cleared.length) reverted.push(`${cleared.map(escapeHtml).join(", ")} no longer unprepared`);
   }
 
   if (!reverted.length) return reverted;

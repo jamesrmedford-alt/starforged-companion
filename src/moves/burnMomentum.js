@@ -577,23 +577,29 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
   // Each write after the claim: one the world refuses goes to the GMs, with a
   // Retry (resultUpgrade.js applyUpgradeStep).
   const failures = [];
+
+  // Revert Pay-the-Price side effects that fired before the burn button was
+  // visible: clock advances, any suffer-route meter loss (e.g. Endure Harm
+  // -1 from a PtP table roll on the original miss) and the unprepared marks
+  // its supply loss made — unless the price stands. First, so the reset below
+  // is the PC's without an impact a price that never happened marked: "burn
+  // momentum before applying any other effects of the move" (issue #342 D4 —
+  // the stale mark lowered the burner's reset from +2 to +1). A burn refunds
+  // no momentum, so the value read above still stands.
+  if (burn.ptpReversals && !priceStands) {
+    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures, resolutionId: burn.resolutionId ?? null }).catch(err =>
+      console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
+  }
+
   await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: burnMeterChanges({
     burnState:        burn,
     currentMomentum:  momentum.value,
-    newMomentumReset: momentum.reset,
+    newMomentumReset: readMomentumState(actor).reset,
     newConsequences,
     // The price that stands is the burned outcome's: its momentum loss lands
     // after the reset (issue #342 Z51).
     keptPriceMomentum: priceStands ? priceMomentumTaken(burn.ptpReversals, actor.id) : 0,
   }) }, failures);
-
-  // Revert Pay-the-Price side effects that fired before the burn button was
-  // visible: clock advances and any suffer-route meter loss (e.g. Endure Harm
-  // -1 from a PtP table roll on the original miss) — unless the price stands.
-  if (burn.ptpReversals && !priceStands) {
-    await revertPayThePrice(burn.ptpReversals, actor, { kind: "burn", failures, resolutionId: burn.resolutionId ?? null }).catch(err =>
-      console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
-  }
 
   // The original outcome's pending choice is retired and the burned outcome's
   // offered once (issue #311 P03). A price that stands keeps the cards it

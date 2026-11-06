@@ -6056,7 +6056,8 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
  * #342 Z51).
  *
  * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
- * @returns {Array<{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number, overflow?: true }>}
+ * @returns {Array<{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number,
+ *   overflow?: true, unpreparedMarked?: true, alliesMarked?: string[] }>}
  */
 function ptpMeterReceipts(landed) {
   const meterKey = SUFFER_METERS[landed?.move];
@@ -6064,7 +6065,15 @@ function ptpMeterReceipts(landed) {
   const receipts = [];
   const amount = Number(landed.before) - Number(landed.after);
   if (amount > 0) {
-    receipts.push({ move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after });
+    // A supply loss to 0 names whom it marked unprepared — the payer, the
+    // allies sharing the supply — so an upgrade that reverts the price clears
+    // those marks, and only those, once the refunded supply is above 0
+    // (resultUpgrade.js revertPayThePrice; issue #342 D4).
+    const marks = meterKey === "supply" ? {
+      ...(landed.unpreparedMarked === true ? { unpreparedMarked: true } : {}),
+      ...(Array.isArray(landed.alliesMarkedIds) && landed.alliesMarkedIds.length ? { alliesMarked: [...landed.alliesMarkedIds] } : {}),
+    } : {};
+    receipts.push({ move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after, ...marks });
   }
   const m = landed.momentumLoss;
   if (m && m.taken > 0) {
