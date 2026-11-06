@@ -123,6 +123,30 @@ export async function loadArtAsset(assetId, campaignState = null) {
   }
 }
 
+/**
+ * The newest portrait the Art Cache holds for an entity that no regeneration
+ * superseded — or null. The generator asks only for an entity whose record
+ * names no portrait it can load, so the one found is one no record names: a
+ * first portrait made and stored whose link the world refused (known-issues
+ * FIRST-PORTRAIT-LINK-REFUSED). Linking it saves it without buying a second
+ * image (generator.js).
+ *
+ * @param {string} entityType — the asset's entityType ("connection", …)
+ * @param {string} entityId   — the entity record's `_id` (the asset's entityId)
+ * @returns {ArtAsset|null}
+ */
+export function findEntityPortrait(entityType, entityId) {
+  if (!entityType || !entityId) return null;
+  let found = null;
+  for (const entry of game.journal?.contents ?? []) {
+    if (entry?.flags?.[MODULE_ID]?.entityType !== "artAsset") continue;
+    const asset = readAssetFromEntry(entry);
+    if (asset?.entityType !== entityType || asset?.entityId !== entityId || asset.superseded) continue;
+    if (!found || String(asset.generatedAt ?? "") > String(found.generatedAt ?? "")) found = asset;
+  }
+  return found;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // DELETE
 // ─────────────────────────────────────────────────────────────────────────────

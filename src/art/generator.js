@@ -33,7 +33,7 @@
  */
 
 import { buildPrompt, buildRegenerationPrompt, buildNeutralPortraitPrompt } from "./promptBuilder.js";
-import { storeArtAsset, loadArtAsset }           from "./storage.js";
+import { storeArtAsset, loadArtAsset, findEntityPortrait } from "./storage.js";
 import { generateOpenRouterImage }                from "./openRouterImage.js";
 import {
   getEntityDocument,
@@ -117,6 +117,17 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
 
 /** generatePortrait's image call and its writes, once its slot is claimed. */
 async function makeFirstPortrait(journalEntryId, entityType, entity, campaignState) {
+  // A portrait already made for this entity that no record names — stored,
+  // its link refused — is the one to save: no second image is bought (known-
+  // issues FIRST-PORTRAIT-LINK-REFUSED; the next press of Generate, the card's
+  // seed or a Finalise each bought another).
+  const made = findEntityPortrait(entityType, entity._id);
+  if (made) {
+    if (!getEntityDocument(entityType, journalEntryId)) return null;
+    console.debug(`${MODULE_ID} | Art: ${entityType} ${entity._id} has a portrait made but not saved — saving it, no new image.`);
+    return linkFirstPortrait(journalEntryId, entityType, entity, made);
+  }
+
   const { prompt, size } = buildPrompt(entityType, entity.portraitSourceDescription, entity);
   const neutralPrompt = buildNeutralPortraitPrompt(entityType, entity).prompt;
   const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt);
@@ -143,7 +154,27 @@ async function makeFirstPortrait(journalEntryId, entityType, entity, campaignSta
   }
 
   await storeArtAsset(asset, campaignState);
-  await linkPortraitToEntity(journalEntryId, entityType, asset._id);
+  return linkFirstPortrait(journalEntryId, entityType, entity, asset);
+}
+
+/**
+ * Link a stored first portrait to its entity's record, and put it on the
+ * Actor only once the record names it. A refused link leaves the Actor as it
+ * was and tells the GM; the stored portrait is the one the next generation
+ * links (known-issues FIRST-PORTRAIT-LINK-REFUSED — the card and its token
+ * showed a portrait the record did not name, "Portrait generated" was said,
+ * and Generate was offered, and billed, again).
+ *
+ * @returns {Promise<ArtAsset|null>} the portrait, once the record names it
+ */
+async function linkFirstPortrait(journalEntryId, entityType, entity, asset) {
+  if (!(await linkPortraitToEntity(journalEntryId, entityType, asset._id))) {
+    // A host gone meanwhile is not the world refusing a save.
+    if (getEntityDocument(entityType, journalEntryId) && typeof ui !== "undefined") {
+      ui.notifications?.warn(`Starforged Companion: The portrait for ${entity.name ?? "this entity"} could not be saved — the world refused it. Generate portrait saves it again, without making a new image.`);
+    }
+    return null;
+  }
   await attachPortraitToActor(journalEntryId, entityType, asset.b64, asset._id);
 
   console.log(`${MODULE_ID} | Art: generated portrait for ${entityType} ${entity._id}`);
