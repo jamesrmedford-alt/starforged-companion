@@ -186,7 +186,11 @@ per-session must be idempotent on reload, and transient locks must reset.
 - **Client-local state re-derives on reconnect.** Audio autoplay, PTT, and
   keyed-GM presence are per-client — persist what must survive (autoplay state
   across reconnect) and re-advertise / re-register the rest on `ready`; never
-  assume a socket peer's memory carried over.
+  assume a socket peer's memory carried over. A shared list each client
+  advertises itself into is re-advertised on every write of it, too: two GMs
+  loading at once each wrote the list they read, and the later write dropped
+  the other's id until its next load (the key registries' healing, issue #342
+  Z68).
 
 ## 8. A GM-gated write on a player-invokable path is a silent failure — relay it
 
@@ -330,7 +334,10 @@ see:
   document hook handler (these fire on every client) carries an
   `isCanonicalGM()` or author check, in its body or a same-file helper it
   calls. Handlers that only re-render or mirror into their own client are
-  listed as local-only, with the reason, and may contain no shared write.
+  listed as local-only, with the reason, and may contain no shared write;
+  one that writes only its own GM's entry of a per-user registry (the key
+  registries' healing — the one fact only that GM's browser knows) is listed
+  as own-entry, with the reason.
   Its first run gated the sector-overview rewrite, which ran on every
   client.
 

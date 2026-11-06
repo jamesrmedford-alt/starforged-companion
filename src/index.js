@@ -193,7 +193,7 @@ import {
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence } from "./multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing } from "./multiplayer/gmGate.js";
 import { registerGmRelaySocket, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
@@ -7172,6 +7172,9 @@ Hooks.once("ready", () => {
   registerErrorLogSocket();   // GM listens for relayed non-GM client errors
   flushErrorLogBuffer();
   flushApiTransactionLogBuffer();
+  // A GM's entry another GM's concurrent write dropped is put back (issue
+  // #342 Z68) — heard from before this load's own advertise.
+  registerKeyRegistryHealing();
   // Advertise this client's Claude-key presence so the single-emitter pipeline
   // routes to a keyed GM (no-op for non-GMs; writes only when state changes).
   advertiseClaudeKeyPresence().catch((err) =>

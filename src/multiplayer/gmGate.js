@@ -182,6 +182,36 @@ async function advertiseKeyPresence({ keySetting, registry, holds }) {
   // else: membership already correct — no write.
 }
 
+let healingRegistered = false;
+
+/**
+ * Keep THIS GM's own membership right in each key registry whenever the
+ * registry is written. Two GMs who load at once each read the list before the
+ * other's write lands, and the later write drops the earlier GM's id; nothing
+ * put it back until that GM's next load, so once the listed GM left,
+ * hasKeyedActiveGM() was false at a table with a keyed GM — `RUN_ON.CLAUDE`
+ * commands and oracle follow-ups ran on the typist's key or failed, and Batch
+ * Mode could not read its rounds (issue #342 Z68). The audio registry (Z67)
+ * has the same shape. Every GM hears each write of a registry and
+ * re-advertises: a write only when the list misstates this GM, so the
+ * registry converges and the hook cannot loop. Registered at `ready`, before
+ * the load's own advertise.
+ */
+export function registerKeyRegistryHealing() {
+  if (healingRegistered) return;
+  healingRegistered = true;
+  Hooks.on("updateSetting", onKeyRegistryWritten);
+  Hooks.on("createSetting", onKeyRegistryWritten);
+}
+
+/** A world setting landed: when it is a key registry, put this GM's own entry right. */
+function onKeyRegistryWritten(setting) {
+  const entry = Object.values(KEY_REGISTRIES).find(r => setting?.key === `${MODULE_ID}.${r.registry}`);
+  if (!entry || !globalThis.game?.user?.isGM) return;
+  advertiseKeyPresence(entry).catch(err =>
+    console.warn(`${MODULE_ID} | ${entry.registry}: re-advertising this GM failed:`, err?.message ?? err));
+}
+
 /**
  * True iff THIS client is the GM that serves narrator audio to keyless clients
  * — answers `audio.synth.request`, `audio.cache.ask` and files a relayed clip

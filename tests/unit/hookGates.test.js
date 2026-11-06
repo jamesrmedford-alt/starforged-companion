@@ -17,7 +17,9 @@
  * userId / the message's author) — in its own body or in a same-file helper
  * it calls (followed three calls deep). A handler that only touches its own
  * client (re-rendering a panel, mirroring state into memory) is listed in
- * LOCAL_ONLY with the reason, and may not contain a shared write.
+ * LOCAL_ONLY with the reason, and may not contain a shared write; one that
+ * writes only its own GM's entry of a per-user registry is listed in
+ * OWN_ENTRY with the reason.
  *
  * pre* hooks are not scanned: Foundry runs them only on the client making
  * the change.
@@ -80,6 +82,18 @@ const LOCAL_ONLY = {
   'src/ui/roundWindow.js updateSetting onCampaignStateForWindow': 're-renders this client\'s Batch Mode Round window when the session, X-Card or keyed GMs its banners show changed (issue #340)',
 };
 
+/**
+ * Handlers that run on every GM client by design and write only that GM's own
+ * entry of a per-user registry — the one fact only its own browser knows
+ * (whether it holds a key), which no other client can write for it. Each
+ * writes only when the stored list misstates its own GM, so the registry
+ * converges and nothing is emitted twice. Key and reason as LOCAL_ONLY's.
+ */
+const OWN_ENTRY = {
+  'src/multiplayer/gmGate.js updateSetting onKeyRegistryWritten': 're-advertises this GM\'s own key-registry membership when another GM\'s concurrent write dropped or misstated it (issue #342 Z68)',
+  'src/multiplayer/gmGate.js createSetting onKeyRegistryWritten': 'same, first write of the registry',
+};
+
 const NOT_CALLS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'new', 'import', 'super']);
 
 /** The handler's source plus every same-file function it calls, `depth` calls deep. */
@@ -138,7 +152,7 @@ describe('document hook handlers run their shared writes on one client', () => {
   });
 
   it('every handler has an author / canonical-GM gate, or is listed as local-only', () => {
-    const ungated = handlers.filter(h => !gated(h) && !LOCAL_ONLY[h.key]);
+    const ungated = handlers.filter(h => !gated(h) && !LOCAL_ONLY[h.key] && !OWN_ENTRY[h.key]);
     expect(
       ungated.map(h => `${h.where} ${h.hook} (${h.key})`),
       'These handlers run on every client with no isCanonicalGM() / author check. Gate the shared write, ' +
@@ -153,9 +167,9 @@ describe('document hook handlers run their shared writes on one client', () => {
     expect(writers).toEqual([]);
   });
 
-  it('every LOCAL_ONLY entry still names an ungated handler', () => {
+  it('every LOCAL_ONLY and OWN_ENTRY entry still names an ungated handler', () => {
     const byKey = new Map(handlers.map(h => [h.key, h]));
-    for (const key of Object.keys(LOCAL_ONLY)) {
+    for (const key of [...Object.keys(LOCAL_ONLY), ...Object.keys(OWN_ENTRY)]) {
       expect(byKey.has(key), `${key} no longer exists — remove it from LOCAL_ONLY`).toBe(true);
       expect(gated(byKey.get(key)), `${key} is gated now — remove it from LOCAL_ONLY`).toBe(false);
     }
