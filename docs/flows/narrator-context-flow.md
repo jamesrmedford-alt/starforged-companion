@@ -686,7 +686,13 @@ ring, and the closing scene's truths keep the closing session's number.
   rest of the session — the ring and the summary's source prose still state
   the fact after the scene closes. Strikes are told apart by subject and
   fact together, so two characters' identical struck facts are both kept
-  (U39).
+  (U39). A kept strike keeps its truth's id, subject key and who struck it,
+  and stays a strike, not just text: `applySidecar` blocks a later scene's
+  re-assertion of it (`findSessionStrike` — by subject key, else name), and a
+  GM's `!truth set` lifts it (a player's is refused over a GM's, W60) —
+  dropped from the stored list in the command's write, its lore restored by
+  that id (issue #342 Z42: it was recorded live beside CORRECTED and archived
+  as canon, and a set rendered beside the strike it should have lifted).
 - `!truth` / `!state` resolve subjects **against the full entity roster**,
   so entity-keyed entries are addressable by name from the commands (the
   correction dialog always could). The commands are checked on the typist's

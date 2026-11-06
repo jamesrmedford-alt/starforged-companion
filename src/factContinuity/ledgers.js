@@ -93,6 +93,17 @@ export function applySidecar(sidecar, ctx) {
       }
       continue;
     }
+    // A strike an earlier scene of this session kept blocks it too: the
+    // session's CORRECTED still names it "do NOT re-assert", and the ring
+    // still carries the prose that stated it (issue #342 Z42 — recorded live
+    // beside CORRECTED, then archived as canon at the next scene end).
+    if (findSessionStrike(campaignState, subject, fact, subjectNames(subject, subjectRef, entities))) {
+      console.debug?.(
+        'starforged-companion | factContinuity: narrator re-asserted a fact struck earlier this session; append blocked:',
+        fact,
+      );
+      continue;
+    }
 
     const id = newTruthId();
     campaignState.sceneTruths.push({
@@ -685,7 +696,8 @@ export function replaceTruth(truthId, replacement, campaignState, ctx = {}) {
  * @param {Object} subjectRef — resolved subject ({kind, ...})
  * @param {string} fact
  * @param {Object} campaignState
- * @param {Object} [ctx]
+ * @param {Object} [ctx] — `names`: the names the subject goes by
+ *   (subjectNames), to find a strike an earlier scene of this session kept
  * @returns {Object|null} the new truth entry
  */
 export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
@@ -698,10 +710,14 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   // prompt carried the fact as binding and under CORRECTED ("do NOT
   // re-assert") together for the rest of the session. A player may not
   // overturn a GM's strike — they may not strike a GM truth either (issue
-  // #326 W60).
+  // #326 W60). A strike an earlier scene of this session kept is lifted the
+  // same way — dropped from `sessionRetractions` on this copy; the caller
+  // writes the drop onto the store (dropSessionStrike — issue #342 Z42).
   const strike = findBareStrike(campaignState.sceneTruths, subjectRef, cleanFact);
+  const kept   = strike ? null : findSessionStrike(campaignState, subjectRef, cleanFact, ctx.names ?? []);
+  const lifted = strike ?? kept;
   const isGM = ctx.isGM ?? true;
-  if (strike && !isGM && (strike.retractedBy === 'gm' || strike.asserter === 'gm')) return null;
+  if (lifted && !isGM && (lifted.retractedBy === 'gm' || lifted.asserter === 'gm')) return null;
 
   const entry = {
     id:          newTruthId(),
@@ -723,7 +739,80 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   };
   campaignState.sceneTruths.push(entry);
   if (strike) strike.correctedTo = entry.id;
+  if (kept) dropSessionStrike(campaignState, kept);
   return entry;
+}
+
+/**
+ * The names a resolved subject goes by, for matching a strike a scene kept
+ * (sessionRetractions keeps its subject's name — retractions.js
+ * rememberSessionRetractions): the reference it was resolved from and, for a
+ * recorded entity, the roster's name for it.
+ *
+ * @param {Object} subject — resolveSubject's result
+ * @param {string} subjectRef — what it was resolved from
+ * @param {Array} [entities] — the roster (collectAllEntities)
+ * @returns {string[]}
+ */
+export function subjectNames(subject, subjectRef, entities = []) {
+  const names = [String(subjectRef ?? '').trim()];
+  if (subject?.kind === 'entity') {
+    const hit = (Array.isArray(entities) ? entities : []).find(e => (e?.journalId ?? e?._id) === subject.entityId);
+    if (typeof hit?.name === 'string') names.push(hit.name.trim());
+  }
+  return names.filter(Boolean);
+}
+
+/**
+ * A strike an earlier scene of this session kept (`sessionRetractions`,
+ * issue #286 B6) of this subject and fact, or null. The session's CORRECTED
+ * names it until the session ends, so it blocks a narrator's re-assertion
+ * (applySidecar) and a GM's `!truth set` lifts it (setTruth), as the active
+ * scene's strike does (issue #342 Z42 — the strike outlived its scene as
+ * text only). A kept strike is its subject and its fact (issue #321 U39):
+ * the subject by its key when the strike kept one, else by the name it was
+ * kept under; the fact compared as findEquivalentTruth compares.
+ *
+ * @param {Object} campaignState
+ * @param {Object} subject — resolved subject ({kind, ...})
+ * @param {string} fact
+ * @param {string[]} [names] — the names the subject goes by (subjectNames)
+ * @returns {Object|null} the kept entry
+ */
+export function findSessionStrike(campaignState, subject, fact, names = []) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+  const kept = campaignState?.sessionRetractions;
+  if (!sessionId || kept?.sessionId !== sessionId || !Array.isArray(kept.facts)) return null;
+  const norm = normaliseFactText(fact);
+  if (!norm) return null;
+  const key = subjectKey(subject);
+  const labels = new Set([...(Array.isArray(names) ? names : []), ...(subject?.kind === 'scene' ? ['scene'] : [])]
+    .map(n => String(n ?? '').trim().toLowerCase()).filter(Boolean));
+  return kept.facts.find(f => f && normaliseFactText(f.fact) === norm
+    && ((!!f.subjectKey && f.subjectKey === key) || labels.has(String(f.label ?? '').trim().toLowerCase()))) ?? null;
+}
+
+/**
+ * Drop a kept strike (findSessionStrike's entry) from `sessionRetractions` —
+ * a lift: CORRECTED and the summary's leave-out list stop naming it. Matched
+ * by the struck truth's id when the entry kept one, else by its label and
+ * fact. The object is replaced, never changed. Mutates campaignState.
+ *
+ * @param {Object} campaignState
+ * @param {Object} strike — the kept entry
+ * @returns {boolean} true when an entry was dropped
+ */
+export function dropSessionStrike(campaignState, strike) {
+  const kept = campaignState?.sessionRetractions;
+  if (!strike || !Array.isArray(kept?.facts)) return false;
+  const same = (f) => (strike.truthId
+    ? f?.truthId === strike.truthId
+    : String(f?.label ?? '').trim().toLowerCase() === String(strike.label ?? '').trim().toLowerCase()
+      && normaliseFactText(f?.fact) === normaliseFactText(strike.fact));
+  const facts = kept.facts.filter(f => !same(f));
+  if (facts.length === kept.facts.length) return false;
+  campaignState.sessionRetractions = { ...kept, facts };
+  return true;
 }
 
 /**

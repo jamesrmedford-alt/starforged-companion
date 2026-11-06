@@ -115,7 +115,10 @@ layers. This file is the never-break list.
    subject-less phrases, so a bare fact match retracted another character's
    lore), a summary regen), and the scene's strikes outlive it for the
    session (`campaignState.sessionRetractions` → CORRECTED + the summary's
-   leave-out list; a strike is its subject and fact together, U39). Any new
+   leave-out list; a strike is its subject and fact together, U39) — both
+   halves of it: a kept strike blocks a later scene's re-assertion too, and a
+   GM's `!truth set` lifts it, restoring its lore by the truth id it keeps
+   (`findSessionStrike` / `dropSessionStrike`, issue #342 Z42). Any new
    correction path calls `propagateRetraction` — the X-Card does, for each
    truth it retracts (issue #321 U07). An X-Card retraction
    (`retractedBy: "xcard"`) blocks re-assertion like a strike but is never

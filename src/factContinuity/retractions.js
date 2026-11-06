@@ -38,7 +38,7 @@
 
 import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments, hasSheetNotes } from '../entities/registry.js';
 import { retractSessionLore, undoNarrationEntries } from '../world/worldJournal.js';
-import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY } from './ledgers.js';
+import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -173,11 +173,13 @@ function loreStatesStrike(entry, subject, label, fact) {
  * matched the strike (loreStatesStrike):
  *   - the active scene's other bare strikes → that truth's id, so the entry
  *     is handed to it and lifting it restores the entry;
- *   - the active scene's X-Card retractions (never lifted, U07), and the
- *     earlier scenes' strikes (`sessionRetractions`, kept without an id) →
- *     `true`: the entry stays out of canon.
- * The lifted strike itself is linked (`correctedTo`) on the lift's copy, so it
- * is not one of them.
+ *   - the earlier scenes' strikes (`sessionRetractions`) → the struck truth's
+ *     id they keep, which a `!truth set` lifts too (issue #342 Z42) — `true`
+ *     for one kept before they kept it;
+ *   - the active scene's X-Card retractions (never lifted, U07) → `true`: the
+ *     entry stays out of canon.
+ * The lifted strike itself is linked (`correctedTo`) on the lift's copy, or —
+ * kept from an earlier scene — dropped from it, so it is not one of them.
  *
  * @param {Object} campaignState — the lift's working copy, after the lift
  * @returns {(entry: Object) => (string|true|null)} null when nothing holds it
@@ -199,7 +201,7 @@ export function loreRetractionHolder(campaignState) {
       if (!label || !fact) continue;
       // A kept strike is its label and fact: "scene" for a scene truth, else a name.
       const subject = label.toLowerCase() === 'scene' ? { kind: 'scene' } : { kind: 'text', text: label };
-      if (loreStatesStrike(entry, subject, label, fact)) return true;
+      if (loreStatesStrike(entry, subject, label, fact)) return (typeof f.truthId === 'string' && f.truthId) ? f.truthId : true;
     }
     return null;
   };
@@ -480,8 +482,13 @@ function isNamedStrike(t) {
  * rest of the session. Each keeps the `narrationId` of the narration that
  * asserted it: an X-Card played on that narration later drops it
  * (ledgers.js retractNarrations — XCARD-AFTER-STRIKE-STILL-NAMED: naming it
- * would hand the narrator the content the table removed). Mutates
- * campaignState; endScene persists it.
+ * would hand the narrator the content the table removed). Each keeps what a
+ * strike is to its two defenses too (issue #342 Z42 — it outlived its scene as
+ * text only): its subject's key, which a later scene's narrator re-assertion
+ * is blocked by (ledgers.js findSessionStrike); who struck it and who
+ * asserted it, which decide whether a player's `!truth set` may lift it
+ * (W60); and the struck truth's id, by which a lift restores the lore it
+ * retracted (restoreStruckLore). Mutates campaignState; endScene persists it.
  *
  * @param {Object} campaignState
  */
@@ -503,6 +510,10 @@ export function rememberSessionRetractions(campaignState) {
       sceneId:     t.sceneId ?? null,
       at:          t.retractedAt ?? Date.now(),
       narrationId: typeof t.narrationId === 'string' && t.narrationId ? t.narrationId : null,
+      truthId:     typeof t.id === 'string' && t.id ? t.id : null,
+      subjectKey:  subjectKey(t.subject) || null,
+      retractedBy: t.retractedBy ?? null,
+      asserter:    t.asserter ?? null,
     });
   }
   campaignState.sessionRetractions = { sessionId, facts: facts.slice(-SESSION_RETRACTION_CAP) };
