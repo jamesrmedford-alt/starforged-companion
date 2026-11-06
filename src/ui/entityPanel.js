@@ -21,6 +21,7 @@ import { generatePortrait, regeneratePortrait } from '../art/generator.js';
 import { supportsFinalize } from "../entities/finalize.js";
 import { loadArtAsset, getDataUri }             from '../art/storage.js';
 import { requestGmAction }                      from '../multiplayer/gmRelay.js';
+import { serialiseCampaignStateWrite }          from '../multiplayer/campaignStateChain.js';
 import {
   getEntityDocument,
   readEntityFlag,
@@ -1037,12 +1038,16 @@ export class EntityPanelApp extends ApplicationV2 {
       }
 
       // Written on a copy: a refused write must leave this client's cached
-      // state as it was (issue #321 U58).
-      const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
-      const isAlreadyCurrent = campaignState.currentLocationId === journalId;
-      campaignState.currentLocationId   = isAlreadyCurrent ? null : journalId;
-      campaignState.currentLocationType = isAlreadyCurrent ? null : type;
-      await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+      // state as it was (issue #321 U58). Read and written at its turn on the
+      // client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+      const { campaignState, isAlreadyCurrent } = await serialiseCampaignStateWrite(async () => {
+        const cs = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+        const current = cs.currentLocationId === journalId;
+        cs.currentLocationId   = current ? null : journalId;
+        cs.currentLocationType = current ? null : type;
+        await game.settings.set(MODULE_ID, 'campaignState', cs);
+        return { campaignState: cs, isAlreadyCurrent: current };
+      }, 'Set as current location');
       // The party — and their ship — is here, as `!at <name>` has it: the
       // same command-vehicle position update, so the narrator's current
       // location and SHIP POSITION agree (issue #321 U56). Clearing the
@@ -1077,10 +1082,13 @@ export class EntityPanelApp extends ApplicationV2 {
       ui?.notifications?.warn('Undismissing an entity is GM-only (writes campaign state).');
       return;
     }
-    const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };   // a copy (issue #321 U58)
-    const list = (campaignState.dismissedEntities ?? []).filter(n => n !== name);
-    campaignState.dismissedEntities = list;
-    await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+    // A copy (issue #321 U58), at its turn on the client's campaignState write
+    // chain (CAMPSTATE-CHAIN-REST).
+    await serialiseCampaignStateWrite(() => {
+      const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+      campaignState.dismissedEntities = (campaignState.dismissedEntities ?? []).filter(n => n !== name);
+      return game.settings.set(MODULE_ID, 'campaignState', campaignState);
+    }, 'undismiss');
     this.render();
   }
 

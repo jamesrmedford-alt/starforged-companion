@@ -4287,10 +4287,15 @@ export async function awardSavedLegacyXp(campaignState) {
  *   legacy write itself
  */
 async function writeLegacyTicks(key, ticks) {
-  const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
-  const marked = addLegacyTicks(cs, key, ticks, { awardXp: false });
-  await game.settings.set(MODULE_ID, "campaignState", cs);
+  // On the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+  let marked;
+  await serialiseCampaignStateWrite(async () => {
+    const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    const cs = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
+    const mark = addLegacyTicks(cs, key, ticks, { awardXp: false });
+    await game.settings.set(MODULE_ID, "campaignState", cs);
+    marked = mark;
+  }, "legacy ticks");
   return payLegacyMark(key, marked.boxes, marked.xp, { clearedNow: marked.cleared });
 }
 
@@ -5660,12 +5665,15 @@ async function runPayoffStep(s, card, copies) {
       return retryRiderStep(s, card?.actorId ?? null);
     case "arrival": {
       // A move's arrival whose record the world refused (issue #331 X18):
-      // the place it reached, written onto the latest store.
+      // the place it reached, written onto the latest store (on the client's
+      // campaignState write chain — CAMPSTATE-CHAIN-REST).
       const located = currentLocationForEntityId(typeof s.locationId === "string" ? s.locationId : null);
       if (!located || located.type !== s.locationType) return { ok: false, reason: "invalid step" };
       try {
-        const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
-        await game.settings.set(MODULE_ID, "campaignState", { ...stored, currentLocationId: located.id, currentLocationType: located.type });
+        await serialiseCampaignStateWrite(() => {
+          const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+          return game.settings.set(MODULE_ID, "campaignState", { ...stored, currentLocationId: located.id, currentLocationType: located.type });
+        }, "payoff retry: arrival");
         return { ok: true };
       } catch (err) {
         console.warn(`${MODULE_ID} | payoff retry: the arrival was refused again:`, err?.message ?? err);
@@ -6543,13 +6551,17 @@ async function handleAtCommand(message) {
   }
 
   // A copy: a refused write must leave this client's cached state as it was
-  // (issue #321 U58).
+  // (issue #321 U58). The two fields are written onto the store as it is at
+  // the write's turn on the client's campaignState write chain
+  // (CAMPSTATE-CHAIN-REST).
   const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
+  const writeCurrentLocation = (id, type) => serialiseCampaignStateWrite(() => game.settings.set(MODULE_ID, "campaignState",
+    { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}), currentLocationId: id, currentLocationType: type }), "!at");
 
   if (!arg) {
     campaignState.currentLocationId   = null;
     campaignState.currentLocationType = null;
-    await game.settings.set(MODULE_ID, "campaignState", campaignState);
+    await writeCurrentLocation(null, null);
     await ChatMessage.create({
       content: "<p><strong>Current location cleared.</strong></p>",
       flags:   { [MODULE_ID]: { atCommandCard: true } },
@@ -6565,7 +6577,7 @@ async function handleAtCommand(message) {
 
   campaignState.currentLocationId   = match.id;
   campaignState.currentLocationType = match.type;
-  await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  await writeCurrentLocation(match.id, match.type);
 
   // Fact-continuity §20 — when ship positioning is enabled, treat the
   // GM's `!at` as "the party (and their ship) is here": the place just set
@@ -6704,8 +6716,10 @@ async function handleSectorCommand(message) {
     ui.notifications.warn(`Sector "${name}" not found. Use !sector list to see all sectors.`);
     return;
   }
-  campaignState.activeSectorId = match.id;
-  await game.settings.set(MODULE_ID, "campaignState", campaignState);
+  // Onto the store as it is at this write's turn on the client's
+  // campaignState write chain (CAMPSTATE-CHAIN-REST).
+  await serialiseCampaignStateWrite(() => game.settings.set(MODULE_ID, "campaignState",
+    { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}), activeSectorId: match.id }), "!sector");
   await ChatMessage.create({
     content: `<p>Active sector switched to <strong>${escapeChatHtml(match.name)}</strong>.</p>`,
     flags: { [MODULE_ID]: { sectorSwitch: true } },
@@ -8292,12 +8306,14 @@ Hooks.on("createJournalEntry", async (entry) => {
   if (!systemTitle || entry.name !== systemTitle) return;
 
   // A copy: a refused write must not leave this client's cached setting
-  // claiming the journal is linked (rules/foundry-api.md).
-  const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
-  if (campaignState.worldTruthsSet) return; // Already recorded with real content
-
-  campaignState.worldTruthsJournalId = entry.id;
-  await game.settings.set(MODULE_ID, "campaignState", campaignState).catch(err =>
+  // claiming the journal is linked (rules/foundry-api.md). Read and written
+  // at its turn on the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+  await serialiseCampaignStateWrite(() => {
+    const campaignState = { ...game.settings.get(MODULE_ID, "campaignState") };
+    if (campaignState.worldTruthsSet) return undefined; // Already recorded with real content
+    campaignState.worldTruthsJournalId = entry.id;
+    return game.settings.set(MODULE_ID, "campaignState", campaignState);
+  }, "truths journal link").catch(err =>
     console.error(`${MODULE_ID} | createJournalEntry: failed to persist journal id:`, err)
   );
 });

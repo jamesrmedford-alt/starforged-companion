@@ -34,7 +34,8 @@ passed the host Actor id, which no Item carries).
 
 Four paths converge on `createConnection()`. It registers the NPC card's id
 in `connectionIds` on the caller's copy and on the latest stored campaignState
-(`registerEntityIdInStore`) — never by writing the caller's copy whole, which
+(`registerEntityIdInStore`, on the GM's campaignState write chain —
+CAMPSTATE-CHAIN-REST) — never by writing the caller's copy whole, which
 reverted a relayed X-Card when the caller was the move pipeline (issue #300
 F14). Sector creation passes `persist: false` and registers everything in its
 final `storeSector` write. A creation whose registration the world refused

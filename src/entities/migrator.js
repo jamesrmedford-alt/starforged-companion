@@ -27,6 +27,7 @@ import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
 import { STARFORGED_CHARACTER_SHEET } from "./connection.js";
 import { getEntityDocument, readEntityFlag, writeEntityFlag, iterEntityDocuments, hasSheetNotes, unionIdList } from "./registry.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 import { getOrCreateSectorJournalFolder, getOrCreateSectorActorFolder, getOrCreateSectorNpcActorFolder, getOrCreateActorFolder, folderParentId } from "./folder.js";
 import {
   rewriteSectorOverviewSettlements,
@@ -154,14 +155,17 @@ async function runMigration() {
       // The move lock as the store holds it now, never as this snapshot held
       // it across the awaits above: a move that claimed or released the lock
       // meanwhile keeps it — the lock's own paths alone write it
-      // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
-      const latest = globalThis.game.settings.get(MODULE_ID, "campaignState") ?? {};
-      await globalThis.game.settings.set(MODULE_ID, "campaignState", {
-        ...campaignState,
-        pendingMove:      latest.pendingMove ?? false,
-        pendingMoveBy:    latest.pendingMoveBy ?? null,
-        pendingMoveClaim: latest.pendingMoveClaim ?? null,
-      });
+      // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE). Read at this write's turn on
+      // the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+      await serialiseCampaignStateWrite(() => {
+        const latest = globalThis.game.settings.get(MODULE_ID, "campaignState") ?? {};
+        return globalThis.game.settings.set(MODULE_ID, "campaignState", {
+          ...campaignState,
+          pendingMove:      latest.pendingMove ?? false,
+          pendingMoveBy:    latest.pendingMoveBy ?? null,
+          pendingMoveClaim: latest.pendingMoveClaim ?? null,
+        });
+      }, "entity migration");
     } catch (err) {
       console.error(`${MODULE_ID} | migrator: persistCampaignState failed:`, err);
       summary.notes.push(`Failed to persist campaignState: ${err.message}`);
@@ -679,16 +683,19 @@ export async function migrateJournalConnectionsToActors(campaignState) {
   if (!swaps.size) return summary;
 
   // The swap is saved first, onto the store as it is now — connectionIds
-  // alone, with no await between the read and the write. Only once it landed
-  // are the old journals deleted; refused, they stay, and the next load
-  // migrates them again (reusing the cards made here).
+  // alone, with no await between the read and the write, at its turn on the
+  // client's campaignState write chain (CAMPSTATE-CHAIN-REST). Only once it
+  // landed are the old journals deleted; refused, they stay, and the next
+  // load migrates them again (reusing the cards made here).
   try {
-    const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? state;
-    const current = Array.isArray(latest.connectionIds) ? latest.connectionIds : ids;
-    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", {
-      ...latest,
-      connectionIds: current.map(id => swaps.get(id) ?? id),
-    });
+    await serialiseCampaignStateWrite(() => {
+      const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? state;
+      const current = Array.isArray(latest.connectionIds) ? latest.connectionIds : ids;
+      return globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", {
+        ...latest,
+        connectionIds: current.map(id => swaps.get(id) ?? id),
+      });
+    }, "connection migration");
   } catch (err) {
     console.warn(`${MODULE_ID} | migrateJournalConnectionsToActors: persist failed — the old journals are kept for the next load:`, err);
     return summary;
@@ -871,12 +878,15 @@ export async function registerUnlistedEntityActors() {
   if (!fields.length) return summary;
 
   // Onto the store as it is now, the id lists alone — no await between the
-  // read and the write.
-  const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
-  const next   = { ...latest };
-  for (const field of fields) next[field] = unionIdList(latest[field], additions[field]);
+  // read and the write, at its turn on the client's campaignState write chain
+  // (CAMPSTATE-CHAIN-REST).
   try {
-    await globalThis.game.settings.set(MODULE_ID, "campaignState", next);
+    await serialiseCampaignStateWrite(() => {
+      const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+      const next   = { ...latest };
+      for (const field of fields) next[field] = unionIdList(latest[field], additions[field]);
+      return globalThis.game.settings.set(MODULE_ID, "campaignState", next);
+    }, "unlisted entity registration");
   } catch (err) {
     console.warn(`${MODULE_ID} | registerUnlistedEntityActors: listing the unregistered entities failed — the next load tries again:`, err);
     return summary;

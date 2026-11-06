@@ -286,17 +286,18 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
   campaignState read-and-set writers on a client run through
   `serialiseCampaignStateWrite` (`src/multiplayer/campaignStateChain.js`),
   each reading the store at its turn, once the write ahead of it has landed —
-  the fire-and-forget writers, and since CAMPSTATE-CHAIN-PARTIAL the relay
-  handlers' writes (Set a Flag, Take a Break, Begin / End a Session), the
+  the fire-and-forget writers, and since CAMPSTATE-CHAIN-PARTIAL and
+  CAMPSTATE-CHAIN-REST every other one: the relay handlers' writes, the
   move's record (`persistResolution`), every `writeOwnedFields` writer, the
-  next-move claims and grant, the move lock's paths, the redirect clear, the
-  spotlight persist and the art index's writes (a Take a Break or a move's
-  record read inside an oracle capture's or an X-Card pause's round trip put
-  the cache's old fields back); a new writer joins the chain, and a chained
-  task never waits on another one (it would wait for itself). A task reads
-  the store at its start, with no await before the read or between the read
-  and its write.
-  The X-Card's pause is the one write that jumps the chain
+  next-move claims and grant, the move lock's paths, the commands' and
+  panels' writes, the entity registrations and migrations (a Take a Break or
+  a move's record read inside an oracle capture's or an X-Card pause's round
+  trip put the cache's old fields back). A new writer joins the chain
+  (`tests/unit/campaignStateChainSweep.test.js` fails on one that does not),
+  and a chained task never waits on another one (it would wait for itself).
+  A task reads the store at its start, with no await before the read or
+  between the read and its write. The X-Card's pause is the one write that
+  jumps the chain
   (`runCampaignStateWriteNow`): it waits for nothing, and every chained write
   that has not yet read the store waits for it to land — an oracle card
   captured while the pause was on its way carried `xCardActive: false` back
@@ -351,8 +352,8 @@ matched in the text with its strings intact. It reports:
   production entry point (`module.json` `esmodules`, minus the Quench entry).
 
 `--strict` exits 1 on any DEAD export or setting, and CI runs it that way
-after lint (issue #282 item 5). Two unit tests sweep for what the scan can't
-see:
+after lint (issue #282 item 5). Three unit tests sweep for what the scan
+can't see:
 
 - `tests/unit/campaignStateFields.test.js`: every campaignState field (the
   schema keys, plus every field seen on a name that only holds campaignState)
@@ -372,6 +373,13 @@ see:
   as own-entry, with the reason.
   Its first run gated the sector-overview rewrite, which ran on every
   client.
+- `tests/unit/campaignStateChainSweep.test.js`: every
+  `game.settings.set(MODULE_ID, "campaignState", …)` in production code runs
+  on the client's write chain (§9) — inside a `serialiseCampaignStateWrite`
+  / `runCampaignStateWriteNow` / `serialiseClockWrite` call, or in a named
+  helper that only such a call reaches — unless listed off it with a reason
+  (none today). Its first run listed the 27 writers CAMPSTATE-CHAIN-REST put
+  on the chain.
 
 Known blind spot: a *live*
 same-named function masks parallel-dead siblings (`FORMATFORCONTEXT-DEAD` hid

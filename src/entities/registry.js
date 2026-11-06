@@ -19,6 +19,7 @@
  */
 
 import { readSheetPronouns } from '../character/actorBridge.js';
+import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -436,11 +437,14 @@ export function warnEntityNotRegistered(kind, name) {
 export async function registerEntityIdInStore(listKey, id, label = listKey) {
   // Always written: the caller's copy is often the setting's cached object,
   // which already holds the id the creator pushed onto it — a "registered
-  // already" check would read that copy, not what is stored.
-  const latest = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState') ?? {};
-  const list   = unionIdList(latest[listKey], [id]);
+  // already" check would read that copy, not what is stored. Read and written
+  // at its turn on the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
   try {
-    await globalThis.game.settings.set(MODULE_ID, 'campaignState', { ...latest, [listKey]: list });
+    await serialiseCampaignStateWrite(() => {
+      const latest = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState') ?? {};
+      const list   = unionIdList(latest[listKey], [id]);
+      return globalThis.game.settings.set(MODULE_ID, 'campaignState', { ...latest, [listKey]: list });
+    }, `${label}: registration`);
   } catch (err) {
     console.error(`${MODULE_ID} | ${label}: registering ${listKey} failed:`, err);
     throw err;

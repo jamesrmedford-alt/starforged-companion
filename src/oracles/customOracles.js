@@ -26,6 +26,7 @@ import {
   CUSTOM_ORACLE_CATEGORY, dieSizeForTable,
 } from "./roller.js";
 import { showD100 } from "../dice/diceAnimation.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 const CAMPAIGN_STATE_KEY = `${MODULE_ID}.campaignState`;
@@ -263,11 +264,15 @@ export async function saveCustomOracle(tableId, name, entries, { unparsed = [] }
   // cached state took the table and the table was registered before a write
   // that could be refused, so it rolled on the GM's client alone and the
   // GM's next whole-object write carried it into the world (issue #326 W51).
-  const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  const state  = { ...cached };
-  state.customOracles = { ...(cached.customOracles ?? {}), [tableId]: { name, entries } };
+  // Read and written at its turn on the client's campaignState write chain
+  // (CAMPSTATE-CHAIN-REST).
   try {
-    await game.settings.set(MODULE_ID, "campaignState", state);
+    await serialiseCampaignStateWrite(() => {
+      const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
+      const state  = { ...cached };
+      state.customOracles = { ...(cached.customOracles ?? {}), [tableId]: { name, entries } };
+      return game.settings.set(MODULE_ID, "campaignState", state);
+    }, "custom oracle");
   } catch (err) {
     console.warn(`${MODULE_ID} | custom oracle: saving "${tableId}" was refused:`, err?.message ?? err);
     await postCard(`<strong>Custom oracle not saved</strong><p>The world did not take the write — <code>${escapeHtml(tableId)}</code> was not saved. Try again.</p>`);
@@ -393,13 +398,15 @@ export function validateCustomOracleEntries(entries) {
  * @returns {Promise<void>}
  */
 export async function removeCustomOracle(tableId) {
-  const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
-  if (cached.customOracles?.[tableId]) {
+  // At its turn on the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+  await serialiseCampaignStateWrite(async () => {
+    const cached = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    if (!cached.customOracles?.[tableId]) return;
     const state = { ...cached };
     state.customOracles = { ...cached.customOracles };
     delete state.customOracles[tableId];
     await game.settings.set(MODULE_ID, "campaignState", state);
-  }
+  }, "custom oracle removal");
   unregisterOracleTable(tableId);
 }
 

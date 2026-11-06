@@ -75,6 +75,7 @@ restyles the scene pin + passage to charted appearance, persists, and posts
 the **◈ Site Discovered** card ("undertake an expedition there, or Explore
 a Waypoint to move through its zones"). The persist (`persistSiteFlag`) sets
 the flag on a copy of the state as it is after the Actor and scene awaits —
+read at its turn on the GM's campaignState write chain (CAMPSTATE-CHAIN-REST) —
 `!reveal-site` and `!clear-site` used to write back the state read before
 them, reverting an X-Card, Take a Break or `!bond` relayed meanwhile (issue
 #321 U06c); a site no longer stored writes nothing.

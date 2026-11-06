@@ -32,6 +32,7 @@ import { classifyInput, PACING_DECISION, PACING_CATEGORIES } from "./classifier.
 import { SCENE_CHALLENGE_VARIANTS, selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
 import { narratePacedInput } from "../narration/narrator.js";
 import { logPacingDecision } from "./telemetry.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -386,9 +387,12 @@ export async function consumeForceMove(campaignState) {
   // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
   const pacing = { ...campaignState.pacing, forceNextAsMove: false };
   try {
-    const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState;
-    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState",
-      { ...latest, pacing: { ...(latest.pacing ?? campaignState.pacing), forceNextAsMove: false } });
+    // At its turn on the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+    await serialiseCampaignStateWrite(() => {
+      const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState;
+      return globalThis.game?.settings?.set?.(MODULE_ID, "campaignState",
+        { ...latest, pacing: { ...(latest.pacing ?? campaignState.pacing), forceNextAsMove: false } });
+    }, "!roll spent");
     campaignState.pacing = pacing;
   } catch (err) {
     console.warn(`${MODULE_ID} | pacing: failed to clear forceNextAsMove:`, err);
@@ -437,7 +441,7 @@ export async function applyPaceCommand(campaignState, subcommand) {
   // GM's client — and the card — claiming an override the world never got
   // (issue #326 W51). The caller's object takes the change once it landed.
   const pacing = { ...(campaignState?.pacing ?? {}), sceneOverride };
-  if (!await persist({ ...campaignState, pacing })) {
+  if (!await persistPacing({ sceneOverride })) {
     return {
       status: `The pacing override was not ${sub === "clear" ? "cleared" : "set"} — the world did not take the write.`,
       persisted: false,
@@ -465,15 +469,22 @@ function formatPaceStatus(campaignState) {
 }
 
 /**
- * Write a campaignState (a copy — never the cached value) on a GM client.
+ * Write a change to `campaignState.pacing` on a GM client — onto a copy of the
+ * stored campaignState (never the cached value) as it is at the write's turn
+ * on the client's campaignState write chain. The caller's object was written
+ * whole, putting back whatever landed after it was read (CAMPSTATE-CHAIN-REST).
  *
- * @param {Object} campaignState
+ * @param {Object} change — the pacing fields this write sets
  * @returns {Promise<boolean>} true when the world took it
  */
-async function persist(campaignState) {
+async function persistPacing(change) {
   if (!globalThis.game?.user?.isGM) return false;
   try {
-    await globalThis.game?.settings?.set?.(MODULE_ID, "campaignState", campaignState);
+    await serialiseCampaignStateWrite(() => {
+      const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+      return globalThis.game?.settings?.set?.(MODULE_ID, "campaignState",
+        { ...latest, pacing: { ...(latest.pacing ?? {}), ...change } });
+    }, "pacing");
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | pacing: persist failed:`, err);
@@ -500,7 +511,7 @@ async function persist(campaignState) {
  */
 export async function markForceNextAsMove(campaignState) {
   const pacing = { ...(campaignState?.pacing ?? {}), forceNextAsMove: true };
-  if (!await persist({ ...campaignState, pacing })) return false;
+  if (!await persistPacing({ forceNextAsMove: true })) return false;
   if (campaignState) campaignState.pacing = pacing;
   return true;
 }

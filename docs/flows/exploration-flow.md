@@ -233,7 +233,9 @@ contains "…I"); a link to no stored site falls back to the label — flips `di
 location Actor `visited`, and restyles the scene — pin renamed to the site's
 real name with the discovered icon, dashed passage → solid brightened route —
 then posts the "◈ Site Discovered" card. The flag is saved onto the state as
-it is after those awaits (`persistSiteFlag`, `src/sectors/siteDiscovery.js`),
+it is after those awaits (`persistSiteFlag`, `src/sectors/siteDiscovery.js`;
+to the store at its turn on the GM's campaignState write chain —
+CAMPSTATE-CHAIN-REST),
 never the state read before them, which reverted an X-Card or Take a Break
 relayed meanwhile (issue #321 U06c); the pipeline's working copy gets it too.
 

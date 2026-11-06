@@ -31,6 +31,7 @@ import { getPlayerActors, applyMeterChanges, setBondItemRank, readMomentumState 
 import { resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { requestGmAction } from "../multiplayer/gmRelay.js";
 import { requesterOwnsActor } from "./burnMomentum.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -205,12 +206,17 @@ export async function applyBondEffects(payload = {}, ctx = {}) {
     const { addLegacyTicks, awardSavedLegacyXp } = await import("../index.js");
     // Marked on a copy (rules/foundry-api.md): the cached state took the
     // ticks before a write that could be refused, and the GM's next
-    // whole-object write carried them into the world (issue #326 W51).
-    const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
-    const campaignState = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
-    addLegacyTicks(campaignState, "bonds", ticks);
+    // whole-object write carried them into the world (issue #326 W51). Read
+    // and written at its turn on the client's campaignState write chain
+    // (CAMPSTATE-CHAIN-REST).
     try {
-      await game.settings.set(MODULE_ID, "campaignState", campaignState);
+      const campaignState = await serialiseCampaignStateWrite(async () => {
+        const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
+        const marked = { ...stored, legacyTracks: foundry.utils.deepClone(stored.legacyTracks ?? {}) };
+        addLegacyTicks(marked, "bonds", ticks);
+        await game.settings.set(MODULE_ID, "campaignState", marked);
+        return marked;
+      }, "!bond legacy ticks");
       // The box XP once the ticks are saved — it was paid before the save,
       // so a refusal paid XP for ticks never saved (issue #326 W52).
       await awardSavedLegacyXp(campaignState);

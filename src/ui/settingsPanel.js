@@ -16,6 +16,7 @@
 //   syncSafetyToCampaignState() bridges the two, called on every write and on ready.
 
 import { playXCard, resumeNarrationAfterXCard, bindXCardCard } from '../context/safety.js';
+import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { sessionLastSeenAt } from '../session/lifecycle.js';
 import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
@@ -764,29 +765,33 @@ async function syncSafetyToCampaignState() {
   }
 
   try {
-    // Written on a copy, the safety object too: a refused write must leave
-    // this client's cached state as it was (issue #321 U58).
-    const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
-    campaignState.safety = { ...(campaignState.safety ?? {}) };
+    // Read and written at its turn on the client's campaignState write chain
+    // (CAMPSTATE-CHAIN-REST).
+    await serialiseCampaignStateWrite(() => {
+      // Written on a copy, the safety object too: a refused write must leave
+      // this client's cached state as it was (issue #321 U58).
+      const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+      campaignState.safety = { ...(campaignState.safety ?? {}) };
 
-    // Global Lines and Veils — GM-controlled, world-scoped
-    campaignState.safety.lines = getGlobalLines();
-    campaignState.safety.veils = getGlobalVeils();
+      // Global Lines and Veils — GM-controlled, world-scoped
+      campaignState.safety.lines = getGlobalLines();
+      campaignState.safety.veils = getGlobalVeils();
 
-    // Private Lines — client-scoped, keyed by player ID in campaignState
-    // Each player only writes their own entry; others are preserved
-    const userId = game.user?.id;
-    if (userId) {
-      const existing = campaignState.safety.privateLines ?? [];
-      const others   = existing.filter(e => e.playerId !== userId);
-      const myLines  = getPrivateLines();
+      // Private Lines — client-scoped, keyed by player ID in campaignState
+      // Each player only writes their own entry; others are preserved
+      const userId = game.user?.id;
+      if (userId) {
+        const existing = campaignState.safety.privateLines ?? [];
+        const others   = existing.filter(e => e.playerId !== userId);
+        const myLines  = getPrivateLines();
 
-      campaignState.safety.privateLines = myLines.length > 0
-        ? [...others, { playerId: userId, lines: myLines }]
-        : others;   // Don't write an empty entry — avoids noise in the state
-    }
+        campaignState.safety.privateLines = myLines.length > 0
+          ? [...others, { playerId: userId, lines: myLines }]
+          : others;   // Don't write an empty entry — avoids noise in the state
+      }
 
-    await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+      return game.settings.set(MODULE_ID, 'campaignState', campaignState);
+    }, 'safety sync');
   } catch (err) {
     // Non-Foundry context (tests) or settings not yet available
     console.warn(`${MODULE_ID} | syncSafetyToCampaignState: could not sync:`, err.message);
@@ -834,14 +839,17 @@ export async function applyPrivateLinesSync(payload = {}, ctx = {}) {
     .filter(l => typeof l === 'string' && l.trim())
     .map(l => l.trim().slice(0, 500));
 
-  // Written on a copy, the safety object too (issue #321 U58).
-  const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
-  campaignState.safety = { ...(campaignState.safety ?? {}) };
-  const others = (campaignState.safety.privateLines ?? []).filter(e => e.playerId !== playerId);
-  campaignState.safety.privateLines = lines.length > 0
-    ? [...others, { playerId, lines }]
-    : others;
-  await game.settings.set(MODULE_ID, 'campaignState', campaignState);
+  // Written on a copy, the safety object too (issue #321 U58), at its turn on
+  // the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+  await serialiseCampaignStateWrite(() => {
+    const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+    campaignState.safety = { ...(campaignState.safety ?? {}) };
+    const others = (campaignState.safety.privateLines ?? []).filter(e => e.playerId !== playerId);
+    campaignState.safety.privateLines = lines.length > 0
+      ? [...others, { playerId, lines }]
+      : others;
+    return game.settings.set(MODULE_ID, 'campaignState', campaignState);
+  }, 'Private Lines');
   return true;
 }
 

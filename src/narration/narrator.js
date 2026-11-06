@@ -2088,15 +2088,18 @@ export async function getCampaignRecap(campaignState, options = {}) {
     // Written on a copy of the latest store: `get` hands back the cached
     // value, and a refused write left the GM's cache holding a recap the
     // world lacked — served as current on this client alone (issue #331
-    // X25). One emitter: the canonical GM.
+    // X25). One emitter: the canonical GM. Read at its turn on the client's
+    // campaignState write chain (CAMPSTATE-CHAIN-REST).
     if (text?.trim() && isCanonicalGM()) {
-      const cs = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? campaignState) };
-      cs.campaignRecapCache = {
-        text:            text,
-        generatedAt:     new Date().toISOString(),
-        ...key,          // the chronicle it was made from
-      };
-      await game.settings.set(MODULE_ID, 'campaignState', cs);
+      await serialiseCampaignStateWrite(() => {
+        const cs = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? campaignState) };
+        cs.campaignRecapCache = {
+          text:            text,
+          generatedAt:     new Date().toISOString(),
+          ...key,          // the chronicle it was made from
+        };
+        return game.settings.set(MODULE_ID, 'campaignState', cs);
+      }, 'campaign recap cache');
     }
 
     return text ?? '';

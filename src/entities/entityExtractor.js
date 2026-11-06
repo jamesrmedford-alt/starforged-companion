@@ -1058,10 +1058,14 @@ export async function promoteNewEntityLedgerSubjects(name, typeKey, record, camp
     };
 
     const callerChanged = promote(campaignState);
-    const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState");
-    if (!latest) return;
-    const changed = latest === campaignState ? callerChanged : promote(latest);
-    if (changed) await globalThis.game.settings.set(MODULE_ID, "campaignState", latest);
+    // Read and written at its turn on the client's campaignState write chain
+    // (CAMPSTATE-CHAIN-REST).
+    await serialiseCampaignStateWrite(async () => {
+      const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState");
+      if (!latest) return;
+      const changed = latest === campaignState ? callerChanged : promote(latest);
+      if (changed) await globalThis.game.settings.set(MODULE_ID, "campaignState", latest);
+    }, "promote ledger subjects");
   } catch (err) {
     console.warn(`${MODULE_ID} | promote ledger subjects for "${text}" failed:`, err?.message ?? err);
   }
