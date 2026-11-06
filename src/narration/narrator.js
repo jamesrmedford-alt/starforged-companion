@@ -4894,6 +4894,15 @@ function trimPositionHistory(position, depth = 1) {
  * empty position when it recorded none; the sector token follows. Runs on the
  * canonical GM (suppressScene's finish). Never throws.
  *
+ * The token goes back where the removed narration's sync took it from (the
+ * `tokenBefore` its record carries — the oldest removed one's, when several
+ * moved it): the sync moves a token only onto a pin, so a ship parked in deep
+ * space, or with no position, kept its token on the removed destination's pin
+ * while the narrator was told otherwise — and the token is the position
+ * statement, so its next nudge recorded the removed place again (issue #342
+ * Z12). A record with no spot (written before it, or a move that left the
+ * token where it was) falls back to the sync of the restored position.
+ *
  * @param {string[]} narrationIds — the X-carded narrations
  * @param {Object} [campaignState]
  * @returns {Promise<boolean>} whether the ship was moved back
@@ -4907,21 +4916,34 @@ export async function restoreShipPositionAfterXCard(narrationIds, campaignState 
     if (!cvActorId) return false;
     let position = shipPositionRecord(cvActorId, getShip);
     if (!position?.narrationId || !removed.has(position.narrationId)) return false;
-    while (position?.narrationId && removed.has(position.narrationId)) position = position.previous ?? null;
+    let tokenSpot = null;
+    while (position?.narrationId && removed.has(position.narrationId)) {
+      if (position.tokenBefore && typeof position.tokenBefore === 'object') tokenSpot = position.tokenBefore;
+      position = position.previous ?? null;
+    }
     const { emptyPosition } = await import('../factContinuity/shipPosition.js');
-    // Every key written — `narrationId` / `previous` too, null when the
-    // position put back has none: setFlag merges, so a key left out kept the
-    // removed narration's (SHIP-POSITION-FLAG-MERGE).
+    // Every key written — `narrationId` / `previous` / `tokenBefore` too, null
+    // when the position put back has none: setFlag merges, so a key left out
+    // kept the removed narration's (SHIP-POSITION-FLAG-MERGE).
     const restored = position
       ? { ...emptyPosition(), ...position }
       : { ...emptyPosition(), updatedAt: new Date().toISOString(), updatedBy: 'manual' };
     await updateShip(cvActorId, { position: restored });
-    // The token follows whatever pin the restored position names — a
-    // settlement's or a site's (a recorded location — issue #335 Y14); the
-    // sync leaves it where it is for a position no pin anchors.
-    const { syncCommandVehicleTokenToPosition } = await import('../sectors/sectorSceneHooks.js');
-    await syncCommandVehicleTokenToPosition(restored, campaignState).catch(err =>
-      console.debug?.(`${MODULE_ID} | shipPosition: X-Card token sync failed:`, err?.message ?? err));
+    const { syncCommandVehicleTokenToPosition, moveCommandVehicleTokenToDestination } = await import('../sectors/sectorSceneHooks.js');
+    const tokenBack = tokenSpot
+      ? await moveCommandVehicleTokenToDestination({
+        sceneId: tokenSpot.sceneId, tokenId: tokenSpot.tokenId, destX: Number(tokenSpot.x), destY: Number(tokenSpot.y),
+      }).catch(err => {
+        console.debug?.(`${MODULE_ID} | shipPosition: X-Card token restore failed:`, err?.message ?? err);
+        return false;
+      })
+      : false;
+    // Otherwise the token follows whatever pin the restored position names —
+    // a settlement's or a site's (a recorded location — issue #335 Y14).
+    if (!tokenBack) {
+      await syncCommandVehicleTokenToPosition(restored, campaignState).catch(err =>
+        console.debug?.(`${MODULE_ID} | shipPosition: X-Card token sync failed:`, err?.message ?? err));
+    }
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | X-Card: the ship's position could not be restored:`, err?.message ?? err);
@@ -4961,20 +4983,22 @@ async function applyShipPositionChanges(changes, campaignState, { narrationId = 
     const cvActorId = getCommandVehicleActorId(campaignState);
     if (!cvActorId) return;
     const position = inferShipPosition(dest, campaignState, { source: 'narrator_sidecar' });
+    const { syncCommandVehicleTokenToPosition, commandVehicleTokenSpotBeforeSync } = await import('../sectors/sectorSceneHooks.js');
     // The narration that moved the ship, and where it was before: an X-Card
     // on that narration puts it back (restoreShipPositionAfterXCard, issue
     // #325 W07 — the move was routed around the ledgers with no narration id,
-    // so SHIP POSITION kept naming the removed destination).
+    // so SHIP POSITION kept naming the removed destination) — the sector-map
+    // token too, from wherever the sync below takes it (issue #342 Z12).
     if (typeof narrationId === 'string' && narrationId) {
       position.narrationId = narrationId;
       const prior = shipPositionRecord(cvActorId, getShip);
       if (prior) position.previous = trimPositionHistory(prior);
+      position.tokenBefore = commandVehicleTokenSpotBeforeSync(position, campaignState);
     }
     await updateShip(cvActorId, { position });
 
     // Cluster C — the map follows the fiction (see index.js
     // maybeUpdateShipPositionFromName for the chat-command twin).
-    const { syncCommandVehicleTokenToPosition } = await import('../sectors/sectorSceneHooks.js');
     await syncCommandVehicleTokenToPosition(position, campaignState).catch(err =>
       console.debug?.(`${MODULE_ID} | shipPosition: sidecar token sync failed:`, err?.message ?? err));
   } catch (err) {

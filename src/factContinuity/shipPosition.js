@@ -44,7 +44,9 @@ const SOURCE_VALUES = new Set([
  * survived a later `!at`, Set a Course, expedition or token move, and an
  * X-Card on that narration then reverted the GM's move
  * (restoreShipPositionAfterXCard — SHIP-POSITION-FLAG-MERGE). Only a
- * narration's move sets them.
+ * narration's move sets them — and `tokenBefore`, where the sector-map token
+ * stood before that narration's sync moved it (`{ sceneId, tokenId, x, y }`),
+ * so the X-Card puts the token back too (issue #342 Z12).
  *
  * @returns {Object}
  */
@@ -59,6 +61,7 @@ export function emptyPosition() {
     updatedBy:           null,
     narrationId:         null,
     previous:            null,
+    tokenBefore:         null,
   };
 }
 

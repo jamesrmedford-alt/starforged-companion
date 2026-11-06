@@ -135,7 +135,8 @@ layers. This file is the never-break list.
    outside the ledgers carries its `narrationId` so the X-Card can undo it
    too — the command vehicle's position does (issue #325 W07; every other
    position writer writes `narrationId: null`, as `setFlag` merges —
-   SHIP-POSITION-FLAG-MERGE), and so does
+   SHIP-POSITION-FLAG-MERGE), with where its sync took the sector-map token
+   from (`tokenBefore` — the X-Card puts the token back, issue #342 Z12), and so does
    everything its capture records: World Journal entries (with the versions
    they replaced — a faction the draft routing surfaces too, issue #335 Y02),
    Session Log beats, tier details (a promoted one's line in the notes too,

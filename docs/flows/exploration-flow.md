@@ -144,7 +144,10 @@ passage" drawing.
   location (`syncCommandVehicleTokenToPosition` reads `nearestLocationId`
   too: a Finish an Expedition, `!at`, Entities-panel, narrator or
   X-Card-restore arrival at a derelict left the token on the settlement it
-  had left — Y14); a free-text position leaves it where it is.
+  had left — Y14); a free-text position leaves it where it is. The X-Card's
+  restore puts the token back where the removed narration's sync took it
+  from (the record's `tokenBefore`), a spot no pin need anchor — deep space
+  included (issue #342 Z12).
   Active expeditions appear only in the generic Progress Tracks context
   section (up to 4 active tracks) — no dedicated journey block.
 

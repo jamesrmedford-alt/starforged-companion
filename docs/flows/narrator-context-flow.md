@@ -203,10 +203,16 @@ narration's `narrationId` and the position before it (`previous`, up to
 three deep), and the X-Card's finish (`restoreShipPositionAfterXCard`) puts
 back the latest position no removed narration wrote — an empty one when
 there is none — and moves the sector token with it; SHIP POSITION kept
-naming the removed destination (issue #325 W07). Every other position
+naming the removed destination (issue #325 W07). The token goes back where
+the removed narration's sync took it from — the record's `tokenBefore`
+(`{ sceneId, tokenId, x, y }`, `commandVehicleTokenSpotBeforeSync`), the
+oldest removed one's when several moved it — a spot no pin need anchor: the
+sync moves a token only onto a pin, so a ship parked in deep space kept its
+token on the removed destination (issue #342 Z12); a record with no spot
+falls back to the restored position's pin. Every other position
 writer — `!at`, Set a Course, an expedition's arrival, the Entities panel, a
-token move, the restore itself — writes `narrationId: null, previous: null`
-(`emptyPosition`, `computeTokenPositionRecord`): the record goes through
+token move, the restore itself — writes `narrationId: null, previous: null,
+tokenBefore: null` (`emptyPosition`, `computeTokenPositionRecord`): the record goes through
 `setFlag`, which merges key by key, so a narrator move's id and chain
 survived a later GM move and the X-Card then put the ship back over it
 (SHIP-POSITION-FLAG-MERGE). So is what the narration's
