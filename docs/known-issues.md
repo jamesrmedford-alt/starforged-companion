@@ -11,7 +11,7 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Eleventh bug audit (issue #342) — all seventy-four fixed and the eight decisions built in the v1.7.37 cycle
+### Eleventh bug audit (issue #342) — all seventy-four fixed and the eight decisions built in the v1.8.0 cycle
 
 Found by the eleventh bug audit (2026-11-06) of `8a4ae3b` (the merge of
 Batch Mode, PR #341), with a probe per finding (`tests/probes/` on branch
@@ -165,7 +165,7 @@ model-dependent).
 Found while fixing the eleventh audit: fifteen items, all fixed since at the
 maintainer's request — see the next section.
 
-### The eleventh audit's open items — all fifteen fixed in the v1.7.37 cycle, with the fourteen found while fixing them
+### The eleventh audit's open items — all fifteen fixed in the v1.8.0 cycle, with the fourteen found while fixing them
 
 The fifteen items found while fixing issue #342 and left open (listed in the
 section above until now) were fixed at the maintainer's request on
@@ -1635,7 +1635,7 @@ Open — pinned or described, not fixed (each needs a decision first):
   message's author. Free-flow only: in Batch Mode (issue #340) a typed line
   is table talk kept as its author's draft, and a round drops no action (the
   eleventh audit found three ways it did — Z18, Z29, Z31 — all fixed in the
-  v1.7.37 cycle).
+  v1.8.0 cycle).
 - **DRAFT-CONFIRM-TWO-GMS** (DUPLICATE). Two GMs clicking Confirm on the same
   draft at the same moment can still create it twice: the in-flight guard is
   per client. Proposed: relay draft Confirm / Dismiss to the canonical GM
