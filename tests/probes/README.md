@@ -2,7 +2,7 @@
 
 Probe tests from the twelfth bug audit of `22bdbeb` (the report is `docs/testing/bug-audit-12-2026-11-10.md`; its area notes `docs/testing/bug-audit-12-2026-11-10-area-notes.md` and the refuter pass `docs/testing/bug-audit-12-2026-11-10-refuter-pass.md`): 70 findings AA01–AA70 and 7 decisions D1–D7.
 
-Filed as GitHub issue ISSUE_LINK.
+Filed as GitHub issue [#345](https://github.com/jamesrmedford-alt/starforged-companion/issues/345).
 
 Each probe asserts the **correct** behaviour, so it fails while its finding is open and passes once the finding is fixed. Tests named `control: …` pass today by design. The files are named `*.probe.js` so `npm test` never collects them.
 
