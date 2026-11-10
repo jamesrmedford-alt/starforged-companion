@@ -1,5 +1,5 @@
 /**
- * UI-10 CHRONICLE-PIN-UNREAD (twelfth audit, ui area; PRODUCED-BUT-DEAD).
+ * UI-9 CHRONICLE-PIN-UNREAD (twelfth audit, ui area; PRODUCED-BUT-DEAD).
  *
  * The Chronicle panel's 📌 / 📍 button pins an entry
  * (src/character/chroniclePanel.js:178-190 → requestChronicleEdit op "pin" →
@@ -122,7 +122,7 @@ async function nextNarrationPrompt() {
   return call ? `${call.system}\n${call.userText}` : '';
 }
 
-describe('UI-10: a pinned Chronicle entry reaches the narrator', () => {
+describe('UI-9: a pinned Chronicle entry reaches the narrator', () => {
   it('control: the player\'s pin is saved on the entry (through the GM)', async () => {
     await pinOnPlayersPanel();
     expect(storedEntries().map(e => [e.text, e.pinned])).toEqual([[PINNED, true]]);

@@ -1,5 +1,8 @@
 /**
- * UI-5 SESSION-PANEL-INCITE-SKIPS-KEYED-GM (twelfth audit, ui area).
+ * UI-D1 SESSION-PANEL-INCITE-SKIPS-KEYED-GM (twelfth audit, ui area) —
+ * A DECISION CANDIDATE, not filed as a defect: decisions.md → "Issue #330
+ * decisions" D15 records "a GM's press runs it on the GM's client as before".
+ * This probe shows what that leaves for a keyless co-GM.
  *
  * `!incite` is RUN_ON.CLAUDE (src/index.js:651): with a keyed GM connected
  * the canonical (keyed) GM runs it, whoever typed it. The Session panel's
@@ -51,7 +54,7 @@ async function pressEnvisionOn(userId) {
   await table.drain();
 }
 
-describe('UI-5: a keyless GM\'s ✦ Envision Inciting Incident', () => {
+describe('UI-D1: a keyless GM\'s ✦ Envision Inciting Incident', () => {
   it('control: Gus typing !incite gets the keyed GM\'s narrated incident', async () => {
     await table.client('gm-2').chat('!incite');
     await table.settle();

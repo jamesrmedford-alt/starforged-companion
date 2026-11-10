@@ -1,5 +1,5 @@
 /**
- * UI-8 CLOCKS-PANEL-ODDS-DEFAULT-SMALL-CHANCE (twelfth audit, ui area).
+ * UI-7 CLOCKS-PANEL-ODDS-DEFAULT-SMALL-CHANCE (twelfth audit, ui area).
  *
  * A campaign clock advances at Begin a Session by an Ask the Oracle roll at
  * its `advanceOdds`. The documented default is "likely": createClock falls
@@ -37,7 +37,7 @@ beforeEach(async () => {
 
 const clockNamed = (name) => (table.world.campaignState()?.clocks ?? []).find(c => c.name === name);
 
-describe('UI-8: a campaign clock added from the Clocks panel', () => {
+describe('UI-7: a campaign clock added from the Clocks panel', () => {
   it('control: `!clock new` makes a campaign clock at the documented default odds, likely', async () => {
     await table.client('gm-1').chat('!clock new "The Covenant\'s purge" 6 campaign');
     await table.settle();

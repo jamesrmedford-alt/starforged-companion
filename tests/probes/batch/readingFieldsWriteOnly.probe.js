@@ -16,7 +16,7 @@
  *     (src/batch/driver.js 975-980) passes none, so rollMove reads the
  *     position again at the roll (movePipeline.js 657-659) — the stored copy
  *     is never used.
- *   - `decision` (readAction 482-487, readingFromMove 513): the pacing
+ *   - `decision` (readAction 480 and 492, readingFromMove 512): the pacing
  *     classifier's decision, shown nowhere and decided on nowhere.
  * rules/reachability.md §1: "A producer with zero consumers is a bug … a
  * schema field" — delete it, wire it, or mark it.

@@ -1,5 +1,5 @@
 /**
- * UI-7 README-STALE-CLAIMS (twelfth audit, ui area; DOC-DRIFT).
+ * UI-6 README-STALE-CLAIMS (twelfth audit, ui area; DOC-DRIFT).
  *
  * README.md is the first thing a new table reads; three of its statements
  * are claims a reader acts on that the code (and the in-game help, already
@@ -37,7 +37,7 @@ const ROOT = path.resolve(__dirname, '../../..');
 const README = fs.readFileSync(path.join(ROOT, 'README.md'), 'utf8');
 const MODULE_ID = 'starforged-companion';
 
-describe('UI-7 (a): the README\'s Private Lines privacy claim', () => {
+describe('UI-6 (a): the README\'s Private Lines privacy claim', () => {
   let table;
   let savedDocument;
   beforeAll(async () => {
@@ -72,7 +72,7 @@ describe('UI-7 (a): the README\'s Private Lines privacy claim', () => {
   }, 60_000);
 });
 
-describe('UI-7 (b, c): the README\'s developer and feature claims', () => {
+describe('UI-6 (b, c): the README\'s developer and feature claims', () => {
   it('(b) the README\'s "ContextPacketSchema.tokenBudget" should exist in src/schemas.js', () => {
     expect(README).toMatch(/ContextPacketSchema\.tokenBudget/);    // control: the claim is there
     const schemas = fs.readFileSync(path.join(ROOT, 'src/schemas.js'), 'utf8');

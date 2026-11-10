@@ -183,4 +183,18 @@ describe('CARD-MOVE-ENTRY-DROPPED-BY-PASS — a card\'s move that is the entry, 
     expect({ status: next.status, text: next.text ?? null })
       .toEqual({ status: 'read', text: expect.stringMatching(/decisive action/i) });
   }, 60_000);
+
+  it('Withdraw is the same: the card\'s move she withdrew is gone when a GM sends the round', async () => {
+    const card = await kiraStrikeCard();
+    await pressFinishTheFight(card);
+    await relay('pl-1', 'batch.withdraw', { roundId: round().id });
+    expect(round().entries['pl-1']).toMatchObject({ status: 'waiting', readAs: null });
+    await relay('gm-1', 'batch.sendNow', { roundId: round().id });
+    await table.drain();
+    expect(round()).toMatchObject({ number: 2, phase: 'collecting' });
+    expect(claimed(card)).toBe(true);
+    const next = round().entries['pl-1'];
+    expect({ status: next.status, text: next.text ?? null })
+      .toEqual({ status: 'read', text: expect.stringMatching(/decisive action/i) });
+  }, 60_000);
 });

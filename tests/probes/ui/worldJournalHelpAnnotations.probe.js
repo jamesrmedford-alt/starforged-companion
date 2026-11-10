@@ -1,5 +1,5 @@
 /**
- * UI-6 WJ-HELP-ANNOTATIONS-DELETED (twelfth audit, ui area; DOC-DRIFT).
+ * UI-5 WJ-HELP-ANNOTATIONS-DELETED (twelfth audit, ui area; DOC-DRIFT).
  *
  * The in-game help's World Journal page (src/help/helpJournal.js PAGES,
  * "World Journal") ends with an "Annotations" section:
@@ -50,7 +50,7 @@ function productionSources() {
   return out;
 }
 
-describe('UI-6: the help\'s World Journal "Annotations" section', () => {
+describe('UI-5: the help\'s World Journal "Annotations" section', () => {
   it('control: the help page does promise player annotations', () => {
     expect(wjHelp()).toMatch(/Any player can annotate any world journal entry/);
   });

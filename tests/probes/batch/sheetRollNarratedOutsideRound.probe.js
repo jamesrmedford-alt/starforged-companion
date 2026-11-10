@@ -11,7 +11,7 @@
  *
  * The third way is not covered: a vow or connection progress roll made on the
  * foundry-ironsworn sheet (Fulfill Your Vow, Forge a Bond). Its narration hook
- * (src/index.js registerNativeProgressRollHook, 2496-2566 at 22bdbeb) never
+ * (src/index.js registerNativeProgressRollHook, 2497-2570 at 22bdbeb; narrateResolution at 2563) never
  * looks at Batch Mode: the keyed canonical GM narrates it at once
  * (narrateResolution), on its own card, in the middle of the round that is
  * collecting — the one action of the round told outside the round, and before

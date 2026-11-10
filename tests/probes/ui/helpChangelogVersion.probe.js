@@ -1,5 +1,5 @@
 /**
- * UI-9 HELP-CHANGELOG-UNTAGGED-VERSION (twelfth audit, ui area; DOC-DRIFT).
+ * UI-8 HELP-CHANGELOG-UNTAGGED-VERSION (twelfth audit, ui area; DOC-DRIFT).
  *
  * CLAUDE.md's version-pinning rule: the help Changelog's newest
  * `<h3>v…</h3>` names the version the unreleased work ships under, and
@@ -30,7 +30,7 @@ const cmp = (a, b) => { const x = semver(a), y = semver(b); for (let i = 0; i < 
 const latestTag = () => execSync('git tag --sort=-version:refname', { cwd: ROOT }).toString().split('\n').find(t => /^v\d+\.\d+\.\d+$/.test(t.trim()))?.trim();
 const newestHelpHeading = () => /<h3>(v\d+\.\d+\.\d+)<\/h3>/.exec(PAGES.find(p => p.name === 'Changelog').text.content)?.[1];
 
-describe('UI-9: the help Changelog\'s newest heading vs the release tags', () => {
+describe('UI-8: the help Changelog\'s newest heading vs the release tags', () => {
   it('control: CONTENT_VERSION equals the newest help heading (rule step 3)', () => {
     expect(`v${CONTENT_VERSION}`).toBe(newestHelpHeading());
   });
