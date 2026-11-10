@@ -7,7 +7,7 @@
  * capture writes a narrator-asserted lore entry, a contradiction card is
  * posted, or a threat's severity changes — and pressing the toolbar's World
  * Journal button again while it is open only brings it to the front
- * (openWorldJournalPanel, :434-437: `if (_wjPanelInstance?.rendered) {
+ * (openWorldJournalPanel, :439-442: `if (_wjPanelInstance?.rendered) {
  * bringToTop(); return; }`). Every sibling panel was given a refresh — Clocks
  * (issue #322 V12), the Entities panel (F12, X56), the Chronicle (R11), the
  * Progress Tracks panel, the toolbar (W86) — and each one's opener renders

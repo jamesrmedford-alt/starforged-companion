@@ -17,11 +17,11 @@
  *  (b) README.md:286 "The budget is defined in src/schemas.js
  *      (ContextPacketSchema.tokenBudget)" — no ContextPacketSchema exists
  *      anywhere in src/ (the context packet was retired, FACTION-PACKET-DEAD).
- *  (c) README.md:49-50 "Progress tracks — vows, expeditions, combats,
+ *  (c) README.md:50-51 "Progress tracks — vows, expeditions, combats,
  *      connections, and legacy tracks. Stored in a dedicated journal,
  *      displayed in a sidebar panel." The panel and its journal hold fights,
  *      expeditions and scene challenges (PANEL_TRACK_TYPES,
- *      src/ui/progressTracks.js:67-71); vows and legacies are on the sheet,
+ *      src/ui/progressTracks.js:71-75); vows and legacies are on the sheet,
  *      connections on their cards — the drift Z72 corrected in
  *      file-structure.md.
  */

@@ -4,14 +4,14 @@
  * Issue #336 Y18 (RESIST-CARD-CLOSES-BURN-UNHINTED) gave the price's resist
  * card the "Burn momentum or improve the result first …" hint while the move
  * whose price it is still offers an upgrade (sufferExecutor.js:288
- * RESIST_UPGRADE_FIRST, :321 resistRollPrompt, :334 upgradeFirstOwed). The
+ * RESIST_UPGRADE_FIRST, :301 resistRollPrompt, :320 upgradeFirstOwed). The
  * price's other card was left without it: a "You waste resources" price
  * while the PC is unprepared posts the W16 redirect picker — "make a suffer
  * move (-1)" without Sacrifice Resources — bound to the move's resolution
- * and stamped `priceCard` (sufferExecutor.js:690-704, no hint in its
+ * and stamped `priceCard` (sufferExecutor.js:688-694, no hint in its
  * prompt). A pick on it is that outcome's chosen consequence:
- * resultUpgrade.js:665-680 outcomeChoiceCards / consequenceChosen count it,
- * and sufferCard.js:568/609 closeUpgradesForChoice stamps the move card's
+ * resultUpgrade.js:657 outcomeChoiceCards / :676 consequenceChosen count it,
+ * and sufferCard.js:590/611 (closeUpgradesForChoice, resultUpgrade.js:727) stamps the move card's
  * Burn / Improve `choiceMade`. The rules' "burn momentum before applying any
  * other effects of the move" is enforced, but — unlike the resist card — the
  * player is never told: picking first silently spends the burn.

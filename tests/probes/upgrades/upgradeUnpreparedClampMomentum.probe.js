@@ -5,18 +5,18 @@
  * are cleared, and "a burn reverts the price before its meter write, so its
  * momentum reset is computed without the cleared impact" (decisions.md →
  * "A reversal clears the unprepared its reverted price made";
- * burnMomentum.js:584-594 reverts first). Two siblings were left:
+ * burnMomentum.js:584-597 reverts first, then reads the reset). Two siblings were left:
  *
  *   (a) Improve Result writes its meters FIRST and reverts the price after
- *       (src/moves/improveResult.js:351 applyUpgradeStep "meters", then :357
+ *       (src/moves/improveResult.js:345 applyUpgradeStep "meters", then :353
  *       revertPayThePrice). The strong hit's +1 momentum is clamped under the
  *       max the undone price's unprepared mark lowered (actorBridge.js
- *       applyMeterChanges:374/:399 — max = 10 − impacts), and the mark is
+ *       applyMeterChanges:376/:404 — max = 10 − impacts), and the mark is
  *       cleared only afterwards: the momentum the rules give is lost.
  *   (b) The mark itself clamped an ally's momentum down when it was made
  *       (sufferExecutor.js markUnprepared → actorBridge.setDebility →
  *       recalculateMomentumBounds:1305-1316, 10 → 9). The reversal clears the
- *       mark (resultUpgrade.js:437-444) but never gives back what that clamp
+ *       mark (resultUpgrade.js:438-444) but never gives back what that clamp
  *       took, for a price "never actually paid" (decisions.md → "Burn Momentum
  *       reverses Pay-the-Price side effects"). A burn's reset hides this for
  *       the burner; an ally — and an improver — keep the loss.
@@ -132,7 +132,7 @@ describe('UPG-2 (a) — Improve Result writes its momentum under the undone pric
 
 describe('UPG-2 (c) — the burn spends the momentum the price\'s mark clamped, not the momentum held at the roll', () => {
   // "A burn spends the momentum from before the move" (decisions.md, issue
-  // #322 V04): burnMomentum.js:213-215 burnableMomentum adds back only the
+  // #322 V04): burnMomentum.js:212-215 burnableMomentum adds back only the
   // price's momentum receipts (priceMomentumTaken), never the clamp its
   // unprepared mark made, and clamps to the max that mark lowered.
   // challenge 8, 9; action die 1 — iron 3 + 1 = 4 misses both.

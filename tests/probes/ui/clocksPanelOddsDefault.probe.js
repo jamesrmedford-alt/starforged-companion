@@ -6,7 +6,7 @@
  * back to it (src/clocks/clocks.js:258-259), `!clock new … campaign` uses it,
  * and the help says so ("Default type tension; default odds likely (campaign
  * only)"). The Clocks panel's add form builds its odds <select> with no
- * option marked selected (src/clocks/clocks.js:78-79), so a browser shows —
+ * option marked selected (src/clocks/clocks.js:80-81, :114), so a browser shows —
  * and submits — the first one, "small chance" (yes on ≤ 10, against ≤ 75 for
  * likely). A GM who picks Campaign and presses Add without touching the odds
  * gets a clock that almost never advances.

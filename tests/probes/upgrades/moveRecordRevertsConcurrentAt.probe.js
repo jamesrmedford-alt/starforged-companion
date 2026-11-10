@@ -5,8 +5,8 @@
  * claims the lock (src/index.js:969 `const campaignState =
  * game.settings.get(...)`), narrates (seconds — a Claude call), and only then
  * records the move: persistResolution merges the working copy onto the latest
- * store (src/moves/persistResolution.js:126-131 mergeWithLatestState). Its
- * field policy (persistResolution.js:248-269, decisions.md "persistResolution
+ * store (src/moves/persistResolution.js:135-140, mergeWithLatestState :316). Its
+ * field policy (persistResolution.js:199-269, STORE_OWNED_FIELDS :270, decisions.md "persistResolution
  * re-reads the stored campaignState …") keeps the WORKING COPY for every field
  * it does not list as store-owned or merge — "the pipeline's own writes:
  * arrival location, site reveals …" — `currentLocationId` /
@@ -14,7 +14,7 @@
  * field the move changed from one it merely carried: a move that arrived
  * nowhere still writes back the location it read before its narration.
  *
- * `!at` (src/index.js:6544-6597) writes currentLocationId/Type onto the store
+ * `!at` (src/index.js:6544-6580) writes currentLocationId/Type onto the store
  * on the GM's campaignState write chain, and docks the ship there
  * (maybeUpdateShipPositionFromName — the ship record, another document).
  *

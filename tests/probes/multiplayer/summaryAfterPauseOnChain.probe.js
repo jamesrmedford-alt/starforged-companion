@@ -8,7 +8,7 @@
  * whether to keep its reply by the X-Card BEFORE it waits its turn on the
  * client's campaignState write chain:
  *   narrator.js:2234  if (xCardPlayCount() !== xCardPlaysAtStart || isXCardActive(null)) return '';
- *   narrator.js:2256-2260  serialiseCampaignStateWrite(() => {
+ *   narrator.js:2258-2261  serialiseCampaignStateWrite(() => {
  *       const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
  *       return game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
  *     }, 'rolling summary');

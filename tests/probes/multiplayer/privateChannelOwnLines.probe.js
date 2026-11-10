@@ -12,10 +12,10 @@
  *   src/context/safety.js:569-581 resolvePrivateLines — the campaignState
  *     entry for that user id, nothing else.
  * A player's Private Lines reach campaignState only through the canonical GM
- * (the `safety.syncPrivateLines` relay, src/ui/settingsPanel.js:807-822);
+ * (the `safety.syncPrivateLines` relay, src/ui/settingsPanel.js:808-822);
  * with no GM connected the relay is deferred until a GM's relay is ready.
  * The shared narrator built on a player's client was fixed for exactly this
- * (SAFETY-PRIVATE-LINES-SHARED → formatNarratorSafetyContext, safety.js:96-106
+ * (SAFETY-PRIVATE-LINES-SHARED → formatNarratorSafetyContext, safety.js:95-106
  * reads the player's client setting, "the canonical store; the campaignState
  * copy is stale or missing when no GM was online"), but the Private Channel —
  * the sibling path on the same client — still reads the stale copy.
@@ -24,8 +24,11 @@
  * Settings (the panel's own action), opens their Private Channel and sends a
  * message. The private narrator's request carries no PRIVATE LINES section.
  *
- * Control: the same flow with the GM connected (the relay stores the line in
- * campaignState) — the private narrator's request carries the line.
+ * Controls: (1) the same flow with the GM connected (the relay stores the
+ * line in campaignState) — the private narrator's request carries the line;
+ * (2) with no GM connected, the same player's `@scene` (shared narration,
+ * RUN_ON.CLAUDE on the author's own key) carries the line — read from the
+ * client setting. Same client, same moment: only the Private Channel drops it.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';

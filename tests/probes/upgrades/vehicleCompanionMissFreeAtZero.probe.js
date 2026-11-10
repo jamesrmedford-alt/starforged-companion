@@ -13,11 +13,13 @@
  * delta, free at 0, and now runs the executor so the overflow is momentum
  * (decisions.md issue #314 Q02 "Harm or stress past the meter is momentum").
  * The two sibling suffer moves were left as bare clamped deltas:
- *   src/moves/resolver.js:950   withstand_damage miss → { integrity: -1 }
- *   src/moves/resolver.js:983   companion_takes_a_hit miss → { companionHealth: -1 }
- *   src/moves/sufferDialog.js:331-345 runSufferCall "meter" → applyVehicleIntegrity /
- *     applyVehicleAssetIntegrityChange / applyCompanionHealthChange — each clamps at 0
+ *   src/moves/resolver.js:1018  withstand_damage miss → { integrity: -1 }
+ *   src/moves/resolver.js:1045  companion_takes_a_hit miss → { companionHealth: -1 }
+ *   src/moves/sufferDialog.js:331-344 runSufferCall "meter" → applyVehicleAssetIntegrityChange /
+ *     applyVehicleIntegrity / applyCompanionHealthChange — each clamps at 0
  *   src/entities/ship.js:336 (updateShip clamps), src/character/actorBridge.js:635, :665
+ * (Endure Harm's own miss runs the executor: sufferExecutor.js splitOverflow /
+ * overflowToMomentum, endureHarm.)
  * So at 0 integrity (where the roll is +0 and a miss the likely result), or a
  * companion at 0 health, "-1 integrity" / "-1 companion health" costs nothing
  * — the card says "Applied: integrity -1" — while the other option costs 2
@@ -141,6 +143,7 @@ describe('UPG-1 Withstand Damage — a miss at 0 integrity', () => {
     await typedMove(move, MISS);
     const resolved = await choose('withstand_damage', 0);
     expect(resolved.flags[MODULE_ID].resolved).toBe(true);
+    expect(resolved.content).toContain('Applied: integrity -1');   // the card says it was paid
     expect(integrity()).toBe(0);
     // "If your integrity is 0, Lose Momentum equal to any remaining damage."
     expect(kira.system.momentum.value, 'the remaining damage is momentum').toBe(1);

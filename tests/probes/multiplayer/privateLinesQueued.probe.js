@@ -5,7 +5,7 @@
  * MP-2 PRIVATE-LINES-QUEUED (SAFETY)
  *
  * A player's Private Lines reach the shared narrator only through the GM
- * relay `safety.syncPrivateLines` (src/ui/settingsPanel.js:807-822 →
+ * relay `safety.syncPrivateLines` (src/ui/settingsPanel.js:808-822 →
  * applyPrivateLinesSync, :832). Every relayed action runs through ONE
  * serialised queue on the canonical GM (src/multiplayer/gmRelay.js:282-304
  * enqueueGmAction), and a Claude-calling handler holds that queue for its
@@ -16,8 +16,11 @@
  * sync is the same safety write and still waits in that queue: a Private
  * Line a player adds while the GM narrates an oracle follow-up (oracle.narrate,
  * `claude: true`) is missing from every move narrated meanwhile — the move
- * pipeline reads the safety block from the store (narrator buildNarratorExtras,
- * known-issues U08) and the store does not have it yet.
+ * pipeline reads the safety block from the store (narrator.js:313
+ * buildNarratorExtras — known-issues U08) and the store does not have it yet.
+ * The relay queue delay itself is an accepted limitation (known-issues →
+ * "One serialised GM queue"); its safety consequence for Private Lines is
+ * the one XCARD-QUEUED removed for the X-Card alone.
  *
  * Scenario: Quinn types `!oracle …`; the GM's follow-up narration call is
  * slow (held). Pat adds the Private Line "spiders" in Companion Settings.
