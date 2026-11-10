@@ -1,0 +1,205 @@
+/* global silenceConsoleErrors */
+/**
+ * Twelfth audit — CARD area probe.
+ *
+ * CARD-3 FIGHT-CARD-ACTS-ON-ANOTHER-VOW (WRONG-TARGET) — a victory card's ⚑
+ * Mark milestone and 🏁 Attempt to Fulfill find their vow by its NAME only;
+ * the card's `vowId` (stamped as vowCopyId since FIGHT-PAYOFF-CARD-VOWID-
+ * FLAG-ONLY) is read by 🤝 Deepen's ledger and nothing else. Whenever that
+ * name no longer finds the vow the fight served, the mark and the roll fall
+ * through to ANOTHER vow — issue #325 W29's defect, which W29 closed only for
+ * a fulfilled vow on a card whose roller holds it.
+ *
+ * (a) Fulfilled, winner ≠ holder (the case issue #342 D5 made the decided
+ *     norm). Kira enters the fray serving "Find Chen"; Ren lands the decisive
+ *     blow, so the card (index.js postFightVowMilestoneCard ~4594) is Ren's.
+ *     Kira's player presses its 🏁 (D5: the holder's) and fulfils "Find Chen".
+ *     W29's guard, linkedVowCompleted(vowName, actorId) (index.js ~4664),
+ *     reads ONLY the card roller's vows whenever that PC holds any
+ *     (`mine.length ? mine : vows`); Ren holds no "Find Chen", so it never
+ *     sees the fulfilled vow: wireFightVowButtons (~5789) leaves ⚑ armed, and
+ *     markLinkedVowMilestone (~4640) → resolveVowHolderActor (~4682) finds no
+ *     holder and returns Ren → applyReachMilestone(Ren, "Find Chen") →
+ *     selectMilestoneVow's sole-open rung marks Ren's "Repay the Syndicate".
+ * (b) Renamed, winner ≠ holder. Kira renames "Find Chen". ⚑ marks Ren's sole
+ *     open vow (as above); 🏁 (cardActions.applyAttemptFulfilVow ~675-708)
+ *     finds no primary by name, keeps the card's roller Ren, refuses Kira's
+ *     player, and Ren's player's press rolls a nameless-match Fulfill Your
+ *     Vow that selectFulfilVow scores on Ren's own sole open vow — a strong
+ *     hit fulfils and pays "Repay the Syndicate".
+ * (c) Deleted, winner = holder. Kira won her own fight; "Find Chen" is then
+ *     removed from her sheet. Her 🏁 rolls Fulfill Your Vow "Find Chen",
+ *     which matches nothing and so scores her sole other open vow: a strong
+ *     hit fulfils "Repay Old Debts" from the card of a fight for "Find Chen".
+ *
+ * Driven on a booted table: the real postFightVowMilestoneCard, clicks on the
+ * card DOM, the forced fulfil through the real pipeline (fightCardFulfilAsHolder
+ * .test.js's set-up).
+ */
+
+import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+
+// Challenge dice 1 and 1 against two boxes: a strong hit — the vow is fulfilled.
+const control = vi.hoisted(() => ({ dice: [0.0, 0.0] }));
+vi.mock('../../../src/moves/abilityScanner.js', async (original) => ({
+  ...(await original()), scanForApplicableAbilities: vi.fn(async () => []),
+}));
+vi.mock('../../../src/ui/settingsPanel.js', async (original) => ({
+  ...(await original()), confirmInterpretation: vi.fn(async () => true),
+}));
+vi.mock('../../../src/moves/resolver.js', async (original) => {
+  const real = await original();
+  return { ...real, resolveMove: vi.fn((...args) => {
+    const rng = vi.spyOn(Math, 'random');
+    for (const value of control.dice) rng.mockReturnValueOnce(value);
+    try { return real.resolveMove(...args); } finally { rng.mockRestore(); }
+  }) };
+});
+
+import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
+import { scriptClaude } from '../../helpers/faults.js';
+import { CampaignStateSchema } from '../../../src/schemas.js';
+
+function makeVow(id, name, vowId) {
+  const item = {
+    id, type: 'progress', name, flags: { [MODULE_ID]: { vowId } },
+    system: { subtype: 'vow', rank: 'dangerous', current: 8, completed: false },
+    async update(changes) {
+      for (const [k, v] of Object.entries(changes)) {
+        if (k === 'system.current') item.system.current = v;
+        if (k === 'system.completed') item.system.completed = v;
+        if (k === 'system.rank') item.system.rank = v;
+      }
+      return item;
+    },
+    async setFlag(scope, key, value) { (item.flags[scope] ??= {})[key] = value; return item; },
+    async getFlag(scope, key) { return item.flags[scope]?.[key]; },
+  };
+  return item;
+}
+
+let table, kirasVow, rensVow, kiraItems;
+
+async function postVictoryCard(winner) {
+  const gm = table.client('gm-1');
+  const index = await gm.import('../../src/index.js');
+  await gm.run(() => index.postFightVowMilestoneCard('Find Chen', 1, winner));
+  await table.settle();
+  const [card] = table.cards(f => f.fightVowCard);
+  return card;
+}
+
+async function press(userId, id, selector) {
+  table.client(userId).click(id, selector);
+  await table.settle(); await table.drain();
+}
+
+beforeAll(async () => { table = await simulateTable({ users: [USERS.GM, USERS.P1, USERS.P2] }); }, 30_000);
+afterAll(() => table?.teardown());
+
+beforeEach(async () => {
+  control.dice = [0.0, 0.0];
+  await table.reset({ world: { settings: {
+    chronicleAutoEntry: false, narratorSessionSummary: false,
+    campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1,
+      currentSceneId: 'sc-1', sceneTruths: [], clocks: [] },
+  } } });
+  await table.setClaudeKey('gm-1', 'sk-ant-test');
+  kirasVow = makeVow('vow-kira', 'Find Chen', 'vid-kira');
+  rensVow  = makeVow('vow-ren', 'Repay the Syndicate', 'vid-ren');
+  table.addActor({ id: 'pc-ren',  name: 'Ren',  ownership: { 'pl-2': 3 }, items: { contents: [rensVow] } });
+  kiraItems = [kirasVow];
+  // A live item list (find / filter read it too), so a vow removed from the
+  // sheet mid-test is gone for every reader.
+  const live = (list) => ({ contents: list, find: (fn) => list.find(fn) ?? null, filter: (fn) => list.filter(fn),
+    [Symbol.iterator]: () => list[Symbol.iterator]() });
+  table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: live(kiraItems) });
+  scriptClaude(table, { fallback: () => 'Chen is found.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });
+  silenceConsoleErrors();
+});
+
+describe('CARD-3 — a victory card whose vow its holder fulfilled from it', () => {
+  it('control: Kira won her own fight — after she fulfils "Find Chen", ⚑ marks nothing', async () => {
+    const card = await postVictoryCard('pc-kira');
+    await press('pl-1', card._id, '[data-action="sf-fulfill-vow"]');
+    expect(kirasVow.system.completed, 'Kira fulfilled her vow (setup)').toBe(true);
+    await press('pl-2', card._id, '[data-action="sf-mark-milestone"]');
+    expect(rensVow.system.current).toBe(8);
+  }, 30_000);
+
+  it('Ren landed the blow — after Kira fulfils "Find Chen", ⚑ does not mark Ren\'s other vow', async () => {
+    const card = await postVictoryCard('pc-ren');
+    await press('pl-1', card._id, '[data-action="sf-fulfill-vow"]');
+    expect(kirasVow.system.completed, 'Kira fulfilled her vow from the card (setup, D5)').toBe(true);
+    await press('pl-2', card._id, '[data-action="sf-mark-milestone"]');
+    expect(rensVow.system.current, 'Ren\'s "Repay the Syndicate" — a vow the fight never served — is not marked').toBe(8);
+  }, 30_000);
+
+  it('…and the card retires its ⚑ once the vow it served is fulfilled (W29), as on Kira\'s own card', async () => {
+    const card = await postVictoryCard('pc-ren');
+    await press('pl-1', card._id, '[data-action="sf-fulfill-vow"]');
+    expect(kirasVow.system.completed, 'setup').toBe(true);
+    const root = table.client('pl-2').render(card._id);
+    expect(root.querySelector('[data-action="sf-mark-milestone"]')?.disabled).toBe(true);
+  }, 30_000);
+});
+
+// The same hop with the vow renamed instead of fulfilled: the card carries the
+// vow's id (`vowId`, vowCopyId — FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY stamped it
+// so 🤝 Deepen finds a renamed vow), but ⚑ and 🏁 still resolve by the card's
+// name and fall back to the card's roller, Ren.
+describe('CARD-3 — a victory card whose vow its holder renamed since', () => {
+  it('control: Ren landed the blow, nothing renamed — ⚑ marks Kira\'s vow', async () => {
+    const card = await postVictoryCard('pc-ren');
+    await press('pl-1', card._id, '[data-action="sf-mark-milestone"]');
+    expect([kirasVow.system.current, rensVow.system.current]).toEqual([16, 8]);
+  }, 30_000);
+
+  it('Kira renamed "Find Chen" — ⚑ marks her vow (the card\'s vowId), not Ren\'s sole open vow', async () => {
+    const card = await postVictoryCard('pc-ren');
+    expect(card.flags[MODULE_ID].vowId, 'the card names the vow by id (setup)').toBe('vid-kira');
+    kirasVow.name = 'Bring Chen Home';
+    await press('pl-1', card._id, '[data-action="sf-mark-milestone"]');
+    expect({ kira: kirasVow.system.current, ren: rensVow.system.current }).toEqual({ kira: 16, ren: 8 });
+  }, 30_000);
+
+  it('Kira renamed "Find Chen" — her player may still attempt to fulfil it from the card, rolled as Kira', async () => {
+    control.dice = [0.95, 0.95];   // a miss: nothing completes either way
+    const card = await postVictoryCard('pc-ren');
+    kirasVow.name = 'Bring Chen Home';
+    await press('pl-1', card._id, '[data-action="sf-fulfill-vow"]');
+    const rolled = table.cards(f => f.forcedMoveId === 'fulfill_your_vow')
+      .map(m => `${m.speaker?.actor ?? null}→${m.flags[MODULE_ID].forcedMoveTargetId ?? null}`);
+    expect(rolled).toEqual(['pc-kira→vow-kira']);
+  }, 30_000);
+
+  it('Kira renamed "Find Chen" — Ren\'s player\'s 🏁 on that card does not fulfil Ren\'s own "Repay the Syndicate"', async () => {
+    control.dice = [0.0, 0.0];     // a strong hit for whatever vow is scored
+    const card = await postVictoryCard('pc-ren');
+    kirasVow.name = 'Bring Chen Home';
+    await press('pl-2', card._id, '[data-action="sf-fulfill-vow"]');
+    expect(rensVow.system.completed, 'Ren\'s unrelated vow is not fulfilled from a card for Kira\'s fight').toBe(false);
+  }, 30_000);
+});
+
+describe('CARD-3 — a victory card whose vow was deleted since', () => {
+  it('control: Kira won her own fight, both vows on her sheet — her 🏁 fulfils "Find Chen", not "Repay Old Debts"', async () => {
+    control.dice = [0.0, 0.0];
+    const other = makeVow('vow-kira-2', 'Repay Old Debts', 'vid-kira-2');
+    kiraItems.push(other);
+    const card = await postVictoryCard('pc-kira');
+    await press('pl-1', card._id, '[data-action="sf-fulfill-vow"]');
+    expect({ findChen: kirasVow.system.completed, other: other.system.completed }).toEqual({ findChen: true, other: false });
+  }, 30_000);
+
+  it('Kira won her own fight, then "Find Chen" was deleted — her 🏁 does not fulfil her OTHER vow', async () => {
+    control.dice = [0.0, 0.0];     // a strong hit for whatever vow is scored
+    const other = makeVow('vow-kira-2', 'Repay Old Debts', 'vid-kira-2');
+    kiraItems.push(other);
+    const card = await postVictoryCard('pc-kira');
+    // "Find Chen" leaves her sheet; her other vow stays.
+    kiraItems.splice(kiraItems.indexOf(kirasVow), 1);
+    await press('pl-1', card._id, '[data-action="sf-fulfill-vow"]');
+    expect(other.system.completed, '"Repay Old Debts" is not fulfilled from the card of a fight for "Find Chen"').toBe(false);
+  }, 30_000);
+});
