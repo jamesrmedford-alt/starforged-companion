@@ -169,7 +169,10 @@ CLAUDE.md "audit consumers" rule):
   two minutes (issue #340)
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
   `resolutionId`, unaffected; it flags the card `burnSuperseded`, which
-  `sessionNarratorCards` leaves out (ring, summary, recap). Since issue #338
+  `sessionNarratorCards` leaves out (ring, summary, recap), after dropping a
+  rolling summary already made from it (`dropSummaryOfSupersededCards`, the
+  X-Card's covered-index rule — the debounce's count did not move, issue #345
+  AA24). Since issue #338
   D8 a Burn Momentum / Improve Result that rewinds a clock out of its trigger
   flags that clock's newest live trigger vignette of the session (found by
   its `clockId`) the same way (`resultUpgrade.js` supersedeTriggerVignettes),

@@ -721,7 +721,9 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
  * and frame stayed binding beside the re-narration's (issue #338 D8) — in the
  * store and on the upgrade's working copy (`campaignState`), which the
  * re-narration applies its sidecar to (resultUpgrade.js
- * retractSupersededNarrations).
+ * retractSupersededNarrations). A rolling summary made from it is dropped
+ * first, as the X-Card drops one (narrator.js dropSummaryOfSupersededCards,
+ * issue #345 AA24).
  *
  * @param {Object} burn  the burn (or improve) flag blob (carries resolutionId)
  * @param {{ kind?: "burn"|"improve", campaignState?: Object|null }} [opts]
@@ -737,6 +739,11 @@ export async function supersedeOriginalNarration(burn, { kind = "burn", campaign
       && f?.burnSuperseded !== true;
   });
   if (!card) return;
+  // A rolling summary made from it goes first, while the card is still in
+  // memory: the count it is debounced on does not move (issue #345 AA24).
+  await import("../narration/narrator.js")
+    .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards([card]))
+    .catch(err => console.warn(`${MODULE_ID} | ${kind}: the rolling summary of the superseded narration could not be dropped:`, err?.message ?? err));
   await card.update({
     [`flags.${MODULE_ID}.burnSuperseded`]: true,
     content: buildSupersededNarrationContent(card.content, kind),

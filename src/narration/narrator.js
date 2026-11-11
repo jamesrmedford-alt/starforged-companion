@@ -1823,10 +1823,7 @@ export function applyXCardToNarratorMemory(cs) {
   const summary = cs.sessionSummary;
   let summaryDropped = false;
   if (cards.length && summary?.sessionId === sessionId) {
-    // The summary was made from the session's cards in memory, oldest first:
-    // it covers the first `coveredCount` of them.
-    const firstIdx = sessionNarratorCards(sessionId).indexOf(cards[0]);
-    if (firstIdx >= 0 && firstIdx < (Number(summary.coveredCount) || 0)) {
+    if (summaryCoversCards(summary, sessionId, cards)) {
       // Stamped now: a move in flight merges its working copy's summary back
       // only when that one is newer (persistResolution's sessionSummary
       // rule). Kept at the old `updatedAt`, the tie wrote the removed beat
@@ -1840,6 +1837,68 @@ export function applyXCardToNarratorMemory(cs) {
 
   cs.xCardRedirect = { sessionId, at: new Date().toISOString() };
   return { cards, retracted, sessionId, summaryDropped };
+}
+
+/**
+ * Whether the rolling summary was made from any of `cards`: it was made from
+ * the session's cards in memory, oldest first, and covers the first
+ * `coveredCount` of them (the X-Card's covered-index rule). Read while the
+ * cards are still in memory — before they are flagged.
+ *
+ * @param {Object|null} summary — campaignState.sessionSummary
+ * @param {string|null} sessionId
+ * @param {Object[]} cards — ChatMessage documents
+ * @returns {boolean}
+ */
+function summaryCoversCards(summary, sessionId, cards) {
+  if (!sessionId || summary?.sessionId !== sessionId || !cards?.length) return false;
+  const inMemory = sessionNarratorCards(sessionId);
+  const at = cards
+    .map(c => inMemory.findIndex(m => m === c || (!!m?.id && m.id === c?.id)))
+    .filter(i => i >= 0);
+  return at.length > 0 && Math.min(...at) < (Number(summary.coveredCount) || 0);
+}
+
+/**
+ * Drop the session's rolling summary when it was made from narrations a Burn
+ * Momentum or Improve Result is about to supersede — the move narration it
+ * replaces, the trigger vignette of a clock it rewinds (issue #345 AA24).
+ * Flagged `burnSuperseded`, a card leaves the summary's source, and its
+ * re-narration joins it: the count stays where the summary's coverage is, so
+ * the debounce kept serving the replaced outcome as STORY SO FAR — beside its
+ * re-narration — for up to round(1.5 × Context Cards) narrations. As the
+ * X-Card drops a summary that covered what it removed: text emptied, a regen
+ * due (`coveredCount` 0), stamped now so a working copy's older summary does
+ * not merge back over it. Call it BEFORE the cards are flagged (the coverage
+ * is read from their place in memory). On the canonical GM, onto the latest
+ * store at its turn on the write chain. Never throws.
+ *
+ * @param {Object[]} cards — the narration cards to be superseded
+ * @returns {Promise<boolean>} whether the summary was dropped
+ */
+export async function dropSummaryOfSupersededCards(cards) {
+  const list = (Array.isArray(cards) ? cards : []).filter(Boolean);
+  if (!list.length) return false;
+  try {
+    if (!isCanonicalGM()) return false;
+    const stored = storedCampaignState();
+    const sessionId = stored?.currentSessionId ?? null;
+    if (!summaryCoversCards(stored?.sessionSummary, sessionId, list)) return false;
+    return await serialiseCampaignStateWrite(async () => {
+      const latest = storedCampaignState();
+      const summary = latest?.sessionSummary;
+      if (!summary || summary.sessionId !== sessionId) return false;
+      if (!summary.text && !(Number(summary.coveredCount) > 0)) return false;   // dropped already
+      await game.settings.set(MODULE_ID, 'campaignState', {
+        ...latest,
+        sessionSummary: { ...summary, text: '', coveredCount: 0, updatedAt: new Date().toISOString() },
+      });
+      return true;
+    }, 'superseded narration: rolling summary');
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the rolling summary of a superseded narration could not be dropped:`, err?.message ?? err);
+    return false;
+  }
 }
 
 /**

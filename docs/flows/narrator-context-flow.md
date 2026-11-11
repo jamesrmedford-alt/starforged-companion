@@ -357,8 +357,13 @@ Z46) — the clock's newest live trigger vignette of the session, found by the
 rewind the world refused (`retryUpgradeStep`: the step keeps the upgrade's
 kind and each vow copy's vow id; its vignette stayed live beside a clock no
 longer full, UPGRADE-RETRY-REWIND-NO-SUPERSEDE); `sessionNarratorCards`
-leaves both out of the ring, the rolling summary's source and the recap.
-Their ledger entries are
+leaves both out of the ring, the rolling summary's source and the recap. A
+rolling summary already made from either is dropped first, while the card
+is still in memory — the X-Card's covered-index rule, text emptied and a
+regen due (`narrator.js` `dropSummaryOfSupersededCards`): one card left the
+source and the re-narration joined it, so the count the summary is debounced
+on did not move, and STORY SO FAR told the replaced outcome for up to
+round(1.5 × Context Cards) narrations (issue #345 AA24). Their ledger entries are
 retracted by `narrationId` through the X-Card's `retractNarrations`, with
 `{ by: "superseded" }` (`retractSupersededNarrations` — the store and the
 upgrade's working copy): rendered nowhere, never named under CORRECTED, and,

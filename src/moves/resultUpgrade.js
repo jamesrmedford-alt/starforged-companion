@@ -594,7 +594,8 @@ function vowClocksUntriggered(entries, emptied, owed) {
  * vignetteClockId; an older one, from before the clock was reset, happened)
  * — is superseded as the move narration is: struck, and flagged
  * `burnSuperseded` so the recent-narration ring, the rolling summary and the
- * session recap leave it out; and what its sidecar wrote is retracted by its
+ * session recap leave it out (a summary already made from it is dropped
+ * first — issue #345 AA24); and what its sidecar wrote is retracted by its
  * narration id (retractSupersededNarrations). It stood as live fiction with
  * binding truths, and the clock's next trigger fired a second vignette for
  * the same clock (issue #338 D8). Canonical GM. Never throws.
@@ -612,7 +613,7 @@ async function supersedeTriggerVignettes(clocks, kind) {
     if (!clockIds.size) return;
     const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
     const newestFirst = [...allMessages()].reverse();
-    const narrationIds = [];
+    const cards = [];
     for (const clockId of clockIds) {
       // Its vignette is still being written: it is narrated only while the
       // clock is full, so it drops itself — and the newest card of the clock
@@ -623,7 +624,16 @@ async function supersedeTriggerVignettes(clocks, kind) {
         return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId
           && (f.sessionId ?? null) === sessionId && f.burnSuperseded !== true && f.xCarded !== true;
       });
-      if (!card) continue;
+      if (card) cards.push(card);
+    }
+    if (!cards.length) return;
+    // A rolling summary made from them goes first, while they are still in
+    // memory (issue #345 AA24 — the move narration's supersede does the same).
+    await import("../narration/narrator.js")
+      .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards(cards))
+      .catch(err => console.warn(`${MODULE_ID} | ${kind}: the rolling summary of a rewound clock's vignette could not be dropped:`, err?.message ?? err));
+    const narrationIds = [];
+    for (const card of cards) {
       await card.update({
         [`flags.${MODULE_ID}.burnSuperseded`]: true,
         content: supersededVignetteContent(card.content, kind),
