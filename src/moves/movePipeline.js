@@ -616,6 +616,25 @@ function jsonCopy(value) {
   return JSON.parse(JSON.stringify(value ?? null));
 }
 
+/**
+ * The roller's asset whose checked ability offered the stat substitution the
+ * confirm chose — the Snub Fighter of "you may roll +integrity", the Survey
+ * Bot of "roll +its health" — or null when none, or several, did (issue #345
+ * AA10). A command vehicle module's is not the roller's (its "+integrity" is
+ * the command vehicle's).
+ *
+ * @param {Object} interpretation — confirmed: `applicableAbilities`, `appliedAbilityKeys`
+ * @param {string} stat — the substituted stat
+ * @returns {string|null}
+ */
+function substitutingAssetId(interpretation, stat) {
+  const keys = new Set(Array.isArray(interpretation?.appliedAbilityKeys) ? interpretation.appliedAbilityKeys : []);
+  const ids = new Set((Array.isArray(interpretation?.applicableAbilities) ? interpretation.applicableAbilities : [])
+    .filter(a => keys.has(a?.key) && a.statReplacement === stat && a.source === "character" && a.assetId)
+    .map(a => a.assetId));
+  return ids.size === 1 ? [...ids][0] : null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 3 — roll the move
 // ─────────────────────────────────────────────────────────────────────────────
@@ -694,6 +713,10 @@ export async function rollMove({
   if (subStat) {
     interpretation.statSubstitutedFrom = interpretation.statUsed;
     interpretation.statUsed = subStat;
+    // The roller's asset whose checked ability offered it: a vehicle's
+    // "+integrity" or a companion's "+its health" is that asset's own track
+    // (statEnrichment — issue #345 AA10).
+    interpretation.statSubstitutedAssetId = substitutingAssetId(interpretation, subStat);
   }
 
   // Fill in statValue from the speaker's character sheet. The

@@ -2436,7 +2436,10 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
     const costLabel = adds > 0 && a.weakHitAsMiss
       ? `<span class="sf-ability-cost" title="Taking this add counts a weak hit as a miss">— a weak hit counts as a miss</span>`
       : '';
-    const statLabel = stat ? `<span class="sf-ability-stat-sub" title="May substitute the listed stat">↻ +${escapeAttr(stat)}</span>` : '';
+    // A swap names its stat as the Stat row does — a meter an asset lets you
+    // roll ("+its health" is companion_health) is humanised, never shown raw
+    // (issue #345 AA10).
+    const subLabel  = stat ? `<span class="sf-ability-stat-sub" title="May substitute the listed stat">↻ +${escapeAttr(statLabel(stat))}</span>` : '';
     const tag       = a.source === 'command_vehicle' ? 'Vehicle' : (a.category || 'Asset');
     const summary   = a.summary ? `<div class="sf-ability-summary">${escapeAttr(a.summary)}</div>` : '';
     const sourceTag = a.detection === 'structured' ? '🔗 explicit' : '✨ inferred';
@@ -2451,7 +2454,7 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
         <span class="sf-ability-tag">[${escapeAttr(tag)}]</span>
         ${addsLabel}
         ${costLabel}
-        ${statLabel}
+        ${subLabel}
         <span class="sf-ability-detection" title="${sourceTag}">${sourceTag}</span>
         ${summary}
       </label>`;
@@ -2470,12 +2473,12 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
       <div class="sf-stat-sub-row">
         <label class="sf-stat-sub-option">
           <input type="radio" name="sf-stat-sub" value="" checked>
-          Keep listed (+${escapeAttr(currentStat || '?')})
+          Keep listed (+${escapeAttr(currentStat ? statLabel(currentStat) : '?')})
         </label>
         ${uniqueStats.map(stat => `
           <label class="sf-stat-sub-option">
             <input type="radio" name="sf-stat-sub" value="${escapeAttr(stat)}">
-            Substitute +${escapeAttr(stat)}
+            Substitute +${escapeAttr(statLabel(stat))}
           </label>`).join('')}
       </div>
       <p class="sf-ability-hint">Only available when a checked ability allows a stat swap.</p>

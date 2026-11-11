@@ -22,10 +22,12 @@
  *   - vehicle stat   (integrity) → command-vehicle Actor's
  *                                  flags[MODULE_ID].ship.integrity — or,
  *                                  when the move names one of the roller's
- *                                  support vehicles, that asset's Integrity
- *                                  track (vehicleItemId)
+ *                                  support vehicles (or that vehicle's
+ *                                  ability swapped the stat for it), that
+ *                                  asset's Integrity track (vehicleItemId)
  *   - companion_health → the Companion asset's track value
- *                                  (resolveCompanionHealth); the roll's
+ *                                  (the swapping companion's, else
+ *                                  resolveCompanionHealth); the roll's
  *                                  companion and vehicle are recorded on
  *                                  the interpretation for its consequences
  *                                  (companionItemId / vehicleActorId /
@@ -145,13 +147,28 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
   // A support vehicle the move names — the roller's asset with its own
   // Integrity track (the Hoverbike, Rover, Skiff …) — is the vehicle the
   // roll is made for: "+integrity" is that track, and the choices change it
-  // (vehicleItemId), not the command vehicle in orbit (issue #342 Z53).
+  // (vehicleItemId), not the command vehicle in orbit (issue #342 Z53). So is
+  // the one whose ability swapped the move's stat for "+integrity" — the
+  // Snub Fighter's Enter the Fray (issue #345 AA10).
   if (statUsed === "integrity") {
-    const bike = selectNamedVehicleAsset(actor, interpretation);
+    const bike = substitutingAsset(listSupportVehicleAssets(actor), interpretation)
+      ?? selectNamedVehicleAsset(actor, interpretation);
     if (bike) {
       interpretation.statValue      = readAssetIntegrity(actor, bike.id) ?? 0;
       interpretation.vehicleItemId  = bike.id;
       interpretation.vehicleActorId = null;
+      return interpretation.statValue;
+    }
+  }
+
+  // A companion whose ability swapped the move's stat for "+its health" — the
+  // Survey Bot's Face Danger, the Banshee's Set a Course — rolls its own
+  // health, not the healthiest companion's (issue #345 AA10).
+  if (statUsed === "companion_health") {
+    const companion = substitutingAsset(listCompanionAssets(actor), interpretation);
+    if (companion) {
+      interpretation.statValue       = Number(companion.system?.track?.value ?? 0);
+      interpretation.companionItemId = companion.id;
       return interpretation.statValue;
     }
   }
@@ -467,6 +484,21 @@ function selectCompanionAsset(actor) {
     if (!chosen || (c.system?.track?.value ?? 0) > (chosen.system?.track?.value ?? 0)) chosen = c;
   }
   return chosen;
+}
+
+/**
+ * Of `assets` (the roller's support vehicles, or companions), the one whose
+ * ability the confirm's stat substitution came from — the pipeline stamps it
+ * as `statSubstitutedAssetId` beside `statSubstitutedFrom` (issue #345 AA10).
+ * Null when the roll's stat was not substituted, or by another asset.
+ *
+ * @param {Item[]} assets
+ * @param {Object} interpretation
+ * @returns {Item|null}
+ */
+function substitutingAsset(assets, interpretation) {
+  const id = interpretation?.statSubstitutedFrom ? interpretation.statSubstitutedAssetId : null;
+  return typeof id === "string" && id ? (assets.find(a => a?.id === id) ?? null) : null;
 }
 
 /**

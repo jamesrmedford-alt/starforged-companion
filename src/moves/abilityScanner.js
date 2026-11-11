@@ -57,12 +57,29 @@ const KNOWN_CHARACTER_CATEGORIES = [
 
 const MAX_ABILITY_TEXT_CHARS = 600;
 
-// Stats that an asset ability may substitute for the listed move stat
-// (e.g. Empath's "roll +heart in place of the listed stat"). Only the five
-// canonical stats are valid substitutions per the play kit — supply /
-// integrity / health / spirit / companion_health are situational stats
-// scoped to specific moves and never substitute.
-const SUBSTITUTABLE_STATS = ["edge", "heart", "iron", "shadow", "wits"];
+// What an asset ability may let a move roll instead of its listed stat: the
+// five action stats (Empath's "roll +heart in place of the listed stat") and
+// the meters the vendored assets name — the roller's +supply (Trader on
+// Sojourn / Compel, Weapon Master) and +spirit (Seer, Empath), a vehicle's
+// +integrity (Rover, Skiff, Snub Fighter, Service Pod, Overseer, Sensor
+// Array, Ace) and a companion's "+its health" (Banshee, Combat Bot, Survey
+// Bot, Utility Bot; Sidekick's "+their health"), read as companion_health. A
+// code comment here once ruled the meters out — "they never substitute" —
+// against the text: an asset substitutes where it says so (issue #331 X23),
+// and the confirm dialog has no stat picker, so the ability's roll could
+// never be made (issue #345 AA10). A vehicle's or companion's own track is
+// read for its roll (statEnrichment, `statSubstitutedAssetId`).
+const SUBSTITUTABLE_STATS = ["edge", "heart", "iron", "shadow", "wits", "supply", "spirit", "integrity", "companion_health"];
+
+// How an ability's text names each one it may be rolled with: a companion's
+// health is "+its health" / "+their health".
+const STAT_CUE = Object.freeze({ companion_health: "(?:its|their)\\s+health" });
+
+/** The stat a cue in ability text names ("Heart" → "heart", "its health" → "companion_health"). */
+function statNamed(cue) {
+  const s = String(cue ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  return s === "its health" || s === "their health" ? "companion_health" : s;
+}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -272,13 +289,13 @@ function buildHaikuPrompt(abilities, moveId, moveName, narration) {
     list,
     ``,
     `Return ONLY a JSON object of the form:`,
-    `{ "matches": [ { "key": "<ability key>", "summary": "<one short sentence: what the ability does for this move>", "statReplacement": "<one of edge|heart|iron|shadow|wits, or null>" }, ... ] }`,
+    `{ "matches": [ { "key": "<ability key>", "summary": "<one short sentence: what the ability does for this move>", "statReplacement": "<one of ${SUBSTITUTABLE_STATS.join("|")}, or null>" }, ... ] }`,
     ``,
     `Rules:`,
     `- Include an ability only when its trigger condition genuinely applies to this move and this narration.`,
     `- Do NOT include abilities whose trigger is unrelated (e.g. an "Endure Harm" ability when the move is "Gather Information").`,
     `- "matches" may be an empty array. Prefer false negatives over false positives.`,
-    `- statReplacement: set to one of the five stats ONLY when the ability text explicitly lets the player roll a different stat than the move's listed one (e.g. Empath's "roll +heart in place of the listed stat"). Otherwise return null. Numeric +N adds are reported via the adds extractor, not here.`,
+    `- statReplacement: set ONLY when the ability text explicitly lets the player roll a different stat or meter than the move's listed one (e.g. Empath's "roll +heart in place of the listed stat", Trader's "you may roll +supply", a vehicle's "roll +integrity"); a companion's "+its health" is companion_health. Otherwise return null. Numeric +N adds are reported via the adds extractor, not here.`,
     `- Output JSON only, no prose, no markdown fences.`,
   ].join("\n");
 }
@@ -483,17 +500,23 @@ export function extractResultImprovement(text) {
  * move's. A cost mention ("Lose Momentum (-1)") names no move (namedMoves).
  * Numeric +N adds are extractAdds'.
  *
+ * A meter is offered as an action stat is (issue #345 AA10): Trader's "When
+ * you Sojourn or Compel, you may roll +supply", Seer's "Gather Information …,
+ * roll +spirit", the Snub Fighter's "When you Enter the Fray, you may roll
+ * +integrity", Survey Bot's "Face Danger …, roll +its health"
+ * (companion_health).
+ *
  * @param {string} text — the ability's text (HTML stripped, links kept)
  * @param {string|null} [moveName] — the move being made ("Strike")
- * @returns {"edge"|"heart"|"iron"|"shadow"|"wits"|null}
+ * @returns {"edge"|"heart"|"iron"|"shadow"|"wits"|"supply"|"spirit"|"integrity"|"companion_health"|null}
  */
 export function extractStatReplacement(text, moveName = null) {
   const s = String(text ?? "");
   if (!s.trim()) return null;
-  const stat     = `(${SUBSTITUTABLE_STATS.join("|")})\\b`;
+  const stat     = `(${SUBSTITUTABLE_STATS.map(name => STAT_CUE[name] ?? name).join("|")})\\b`;
   const explicit = new RegExp(`\\bmay\\s+(?:roll|use)\\s+\\+${stat}|\\b(?:roll|use)\\s+\\+${stat}\\s+(?:instead|in\\s+place\\s+of)`, "i");
   const bare     = new RegExp(`\\broll\\s+\\+${stat}`, "i");
-  const cued     = (sentence, re) => { const m = sentence.match(re); return m ? (m[1] ?? m[2]).toLowerCase() : null; };
+  const cued     = (sentence, re) => { const m = sentence.match(re); return m ? statNamed(m[1] ?? m[2]) : null; };
 
   const target    = moveTarget(moveName);
   const sentences = s.split(/(?<=[.!?])\s+/);
