@@ -812,7 +812,13 @@ ring, and the closing scene's truths keep the closing session's number.
   rest of the session — the ring and the summary's source prose still state
   the fact after the scene closes. Strikes are told apart by subject and
   fact together, so two characters' identical struck facts are both kept
-  (U39). A kept strike keeps its truth's id, subject key and who struck it,
+  (U39). A kept strike keeps its truth's id, subject key and who struck it —
+  and, for a scene fact, the place it was asserted at (`place`, the truth's
+  `sceneLocation`): its block, its lift and its CORRECTED line stand only at
+  that place, or where either place is unknown (`keptStrikeStandsAt`; issue
+  #345 AA28 — struck at Bleakhold, it blocked Vantage Station's own fact of
+  the same words, and a set there lifted Bleakhold's strike; the summary's
+  leave-out list still names it, and the X-Card's blocks keep no place) —
   and stays a strike, not just text: `applySidecar` blocks a later scene's
   re-assertion of it (`findSessionStrike` — by subject key, else name), and a
   GM's `!truth set` lifts it (a player's is refused over a GM's, W60) —

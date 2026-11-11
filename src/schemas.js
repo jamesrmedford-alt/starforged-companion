@@ -610,8 +610,10 @@ export const CampaignStateSchema = {
   // and its truths a scene end closed live (`narrated`: written by endScene —
   // rememberNarratedTruths — read only by that move; unnamed —
   // XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
-  //   { sessionId, facts: [{ label, fact, sceneId, at, narrationId, truthId, subjectKey, retractedBy, asserter }]  (cap 20),
-  //     blocked: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50),
+  // A scene fact's strike, and a Replace's original, keep `place` (the truth's
+  // sceneLocation) and stand only there (keptStrikeStandsAt, issue #345 AA28).
+  //   { sessionId, facts: [{ label, fact, place?, sceneId, at, narrationId, truthId, subjectKey, retractedBy, asserter }]  (cap 20),
+  //     blocked: [{ label, fact, subjectKey, narrationId, truthId, place? }]  (cap 50),
   //     narrated: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50) }
   sessionRetractions: { sessionId: null, facts: [], blocked: [], narrated: [] },
 

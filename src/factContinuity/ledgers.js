@@ -115,10 +115,13 @@ export function applySidecar(sidecar, ctx) {
     // does an earlier scene's X-Card retraction, kept unnamed
     // (XCARD-RETRACTION-SCENE-SCOPED) — the log names neither. Read from the
     // store as well: an X-Card on a narration whose scene has ended moves its
-    // truths to the blocks there alone (issue #345 AA04).
+    // truths to the blocks there alone (issue #345 AA04). A scene fact is
+    // checked where it is asserted: a strike at another place does not
+    // stand here (issue #345 AA28).
     const names = subjectNames(subject, subjectRef, entities);
-    if (findSessionStrike(campaignState, subject, fact, names, { blocked: true })
-      || (stored && findSessionStrike(stored, subject, fact, names, { blocked: true }))) {
+    const lookup = { blocked: true, place: sceneLocation };
+    if (findSessionStrike(campaignState, subject, fact, names, lookup)
+      || (stored && findSessionStrike(stored, subject, fact, names, lookup))) {
       console.debug?.('starforged-companion | factContinuity: narrator re-asserted a fact retracted earlier this session; append blocked.');
       continue;
     }
@@ -362,7 +365,9 @@ export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETR
   }
 
   // The session's kept strikes and closed narration truths of these
-  // narrations: blocked from now on, named nowhere.
+  // narrations: blocked from now on, named nowhere — anywhere, as the
+  // X-Card's own blocks are: a strike's kept place is left behind (issue
+  // #345 AA28).
   const kept = campaignState.sessionRetractions;
   const theirs = (list) => (Array.isArray(list) ? list : []).filter(f => ids.has(f?.narrationId));
   const struck = xCard ? theirs(kept?.facts) : [];
@@ -372,7 +377,7 @@ export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETR
       ...kept,
       ...(struck.length ? { facts: kept.facts.filter(f => !ids.has(f?.narrationId)) } : {}),
       ...(closed.length ? { narrated: kept.narrated.filter(f => !ids.has(f?.narrationId)) } : {}),
-      blocked: withXCardBlocks(kept.blocked, [...struck, ...closed]),
+      blocked: withXCardBlocks(kept.blocked, [...struck, ...closed].map(f => ({ ...f, place: null }))),
     };
   }
 
@@ -767,7 +772,9 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   // overturn a GM's strike — they may not strike a GM truth either (issue
   // #326 W60). A strike an earlier scene of this session kept is lifted the
   // same way — dropped from `sessionRetractions` on this copy; the caller
-  // writes the drop onto the store (dropSessionStrike — issue #342 Z42).
+  // writes the drop onto the store (dropSessionStrike — issue #342 Z42) —
+  // where it stands: a scene fact struck at another place is that place's,
+  // and this set is this place's own (findSessionStrike, issue #345 AA28).
   const strike = findBareStrike(campaignState.sceneTruths, subjectRef, cleanFact);
   const kept   = strike ? null : findSessionStrike(campaignState, subjectRef, cleanFact, ctx.names ?? []);
   const lifted = strike ?? kept;
@@ -834,14 +841,23 @@ export function subjectNames(subject, subjectRef, entities = []) {
  * are named nowhere and never lifted (XCARD-RETRACTION-SCENE-SCOPED), so the
  * lift (setTruth, `!truth set`) leaves them out.
  *
+ * `place`: where the fact is asserted now (default: the scene frame's
+ * location). A scene fact is a fact about its place (issue #326 D2), so a
+ * kept strike of one — or a Replace's original — stands only at the place it
+ * was asserted at (its kept `place`, keptStrikeStandsAt): the strike at
+ * Bleakhold blocked the same words as Vantage Station's own scene fact for the
+ * rest of the session, and a `!truth set` there lifted it (issue #345 AA28).
+ * The X-Card's blocks keep no place — a removed scene fact stays blocked
+ * anywhere.
+ *
  * @param {Object} campaignState
  * @param {Object} subject — resolved subject ({kind, ...})
  * @param {string} fact
  * @param {string[]} [names] — the names the subject goes by (subjectNames)
- * @param {{ blocked?: boolean }} [opts]
+ * @param {{ blocked?: boolean, place?: string|null }} [opts]
  * @returns {Object|null} the kept entry
  */
-export function findSessionStrike(campaignState, subject, fact, names = [], { blocked = false } = {}) {
+export function findSessionStrike(campaignState, subject, fact, names = [], { blocked = false, place } = {}) {
   const sessionId = campaignState?.currentSessionId ?? null;
   const kept = campaignState?.sessionRetractions;
   if (!sessionId || kept?.sessionId !== sessionId) return null;
@@ -854,8 +870,40 @@ export function findSessionStrike(campaignState, subject, fact, names = [], { bl
   const key = subjectKey(subject);
   const labels = new Set([...(Array.isArray(names) ? names : []), ...(subject?.kind === 'scene' ? ['scene'] : [])]
     .map(n => String(n ?? '').trim().toLowerCase()).filter(Boolean));
+  const here = place !== undefined ? place : assertedLocation(campaignState);
   return list.find(f => f && normaliseFactText(f.fact) === norm
-    && ((!!f.subjectKey && f.subjectKey === key) || labels.has(String(f.label ?? '').trim().toLowerCase()))) ?? null;
+    && ((!!f.subjectKey && f.subjectKey === key) || labels.has(String(f.label ?? '').trim().toLowerCase()))
+    && keptStrikeStandsAt(f.place, here)) ?? null;
+}
+
+/** Articles a place's wording drops before two are compared ("the docks" ~ "docks"). */
+const PLACE_ARTICLES = new Set(['a', 'an', 'the']);
+
+/** A place's words, lowercased, punctuation and articles dropped. */
+function placeWords(place) {
+  return String(place ?? '').toLowerCase().split(/[^\p{L}\p{N}]+/u)
+    .filter(w => w && !PLACE_ARTICLES.has(w)).join(' ');
+}
+
+/**
+ * Whether a strike of a scene fact the session kept — asserted at `kept`
+ * (the struck truth's `sceneLocation`) — stands at `here` (issue #345 AA28):
+ * when either place is unknown (a truth asserted before any frame stood, a
+ * scene with no frame), or one's words name the other ("Bleakhold" ~ "the
+ * Bleakhold docks" — a frame's location is the narrator's wording, so one
+ * place reads several ways). The write block (findSessionStrike), the lift
+ * and the CORRECTED block (retractions.js sessionRetractedFacts) all ask it,
+ * so a fact is never binding and under CORRECTED at once (W60). Pure.
+ *
+ * @param {string|null|undefined} kept
+ * @param {string|null|undefined} here
+ * @returns {boolean}
+ */
+export function keptStrikeStandsAt(kept, here) {
+  const k = placeWords(kept);
+  const h = placeWords(here);
+  if (!k || !h) return true;
+  return ` ${h} `.includes(` ${k} `) || ` ${k} `.includes(` ${h} `);
 }
 
 /** How many X-Card retractions a session keeps blocking past their scene (as `xCardedNarrationIds` keeps). */
@@ -863,10 +911,12 @@ const SESSION_XCARD_BLOCK_CAP = 50;
 
 /**
  * The session's unnamed X-Card blocks with `adds` (kept strikes or retracted
- * truths, as `{ label, fact, subjectKey, narrationId, truthId }`): each once
- * — by subject and fact — the newest kept up to the cap
+ * truths, as `{ label, fact, subjectKey, narrationId, truthId, place? }`):
+ * each once — by subject and fact, and place — the newest kept up to the cap
  * (XCARD-RETRACTION-SCENE-SCOPED). A block is what findSessionStrike's write
- * half matches, and nothing renders it. A new array; pure.
+ * half matches, and nothing renders it. `place` is a Replace's original's
+ * scene fact's (issue #345 AA28 — it stands only there); the X-Card's own
+ * blocks carry none. A new array; pure.
  *
  * @param {Array<Object>|undefined} blocked — the session's blocks so far
  * @param {Array<Object>} adds
@@ -878,15 +928,18 @@ export function withXCardBlocks(blocked, adds) {
   for (const a of Array.isArray(adds) ? adds : []) {
     const fact = String(a?.fact ?? '').trim();
     if (!fact) continue;
+    const place = typeof a.place === 'string' && a.place.trim() ? a.place.trim() : null;
     const entry = {
       label:       String(a.label ?? '').trim(),
       fact,
       subjectKey:  typeof a.subjectKey === 'string' && a.subjectKey ? a.subjectKey : null,
       narrationId: typeof a.narrationId === 'string' && a.narrationId ? a.narrationId : null,
       truthId:     typeof a.truthId === 'string' && a.truthId ? a.truthId : null,
+      ...(place ? { place } : {}),
     };
     if (out.some(b => normaliseFactText(b.fact) === normaliseFactText(fact)
-      && ((entry.subjectKey && b.subjectKey === entry.subjectKey) || label(b) === label(entry)))) continue;
+      && ((entry.subjectKey && b.subjectKey === entry.subjectKey) || label(b) === label(entry))
+      && placeWords(b.place) === placeWords(place))) continue;
     out.push(entry);
   }
   return out.slice(-SESSION_XCARD_BLOCK_CAP);

@@ -295,9 +295,11 @@ export function buildLedgerBlock(campaignState, options = {}) {
   // the summary's source outlive the scene. Not scope-filtered: retractions
   // are rare, load-bearing, and must hold even on turns that don't name the
   // subject. Capped at the most recent few to bound tokens; never dropped
-  // under budget pressure (truths tier).
+  // under budget pressure (truths tier). An earlier scene's strike of a scene
+  // fact is named only at its place (issue #345 AA28): elsewhere the same
+  // words are that place's own fact, which the narrator may record.
   const MAX_CORRECTION_LINES = 5;
-  const correctionLines = sessionRetractedFacts(campaignState)
+  const correctionLines = sessionRetractedFacts(campaignState, { here: frame?.location })
     .slice(-MAX_CORRECTION_LINES)
     .map(f => `  ${f.label} — ${f.fact}`);
 
