@@ -111,12 +111,29 @@ function createTrack({ label, type, rank, entityId = null, objective = null, lin
 // ---------------------------------------------------------------------------
 
 /**
+ * The dedicated progress-track JournalEntry, or null: the journal carrying
+ * the tracks flag — what a GM's rename in the sidebar leaves alone — else,
+ * one no track was saved to yet, the journal of its name. Every reader and
+ * writer found it by its name alone, so a renamed journal hid every open
+ * fight, expedition and scene challenge, and the next track write made a
+ * second, empty journal beside it (issue #345 AA62; rules/reachability.md
+ * §6). interpreter.js readOpenTrackLabels reads it the same way.
+ *
+ * @returns {JournalEntry|null}
+ */
+function findTracksJournal() {
+  return game.journal?.find?.(j => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY)))
+      ?? game.journal?.find?.(j => j?.name === JOURNAL_NAME)
+      ?? null;
+}
+
+/**
  * Return the dedicated progress-track JournalEntry, creating it if absent.
  * The journal is created hidden (ownership: NONE for players, OWNER for GM).
  * @returns {Promise<JournalEntry>}
  */
 async function getOrCreateJournal() {
-  let journal = game.journal.find(j => j.name === JOURNAL_NAME);
+  let journal = findTracksJournal();
   if (!journal) {
     journal = await JournalEntry.create({
       name: JOURNAL_NAME,
@@ -137,7 +154,7 @@ async function getOrCreateJournal() {
  * @returns {Promise<object[]>}
  */
 async function loadTracks() {
-  const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME) ?? null;
+  const journal = findTracksJournal();
   return foundry.utils.deepClone(journal?.getFlag(MODULE_ID, FLAG_KEY) ?? []);
 }
 
@@ -582,7 +599,7 @@ export class ProgressTrackApp extends ApplicationV2 {
     Hooks.on('updateJournalEntry', async (doc, change) => {
       const instance = ProgressTrackApp.#instance;
       if (!instance?.rendered) return;
-      if (doc.name !== JOURNAL_NAME) return;
+      // The tracks flag is the journal's mark, whatever its name (issue #345 AA62).
       if (!foundry.utils.hasProperty(change, `flags.${MODULE_ID}.${FLAG_KEY}`)) return;
       instance.render();
     });
@@ -883,7 +900,7 @@ export class ProgressTrackApp extends ApplicationV2 {
  */
 export async function getActiveCombatPosition(actorId = null) {
   try {
-    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    const journal = findTracksJournal();
     if (!journal) return null;
     const tracks = journal.getFlag(MODULE_ID, FLAG_KEY) ?? [];
     const combatTracks = tracks.filter(t => t.type === 'combat' && !t.completed);
@@ -913,7 +930,7 @@ export function openProgressTracks() {
  */
 export async function getActiveCombatTrack() {
   try {
-    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    const journal = findTracksJournal();
     if (!journal) return null;
     const tracks = journal.getFlag(MODULE_ID, FLAG_KEY) ?? [];
     const open = tracks.filter(t => t.type === 'combat' && !t.completed);
@@ -952,7 +969,7 @@ function withCharacterPositions(track) {
  */
 export function listOpenProgressTracks() {
   try {
-    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    const journal = findTracksJournal();
     const tracks  = journal?.getFlag?.(MODULE_ID, FLAG_KEY) ?? [];
     return Array.isArray(tracks)
       ? tracks.filter(t => t && !t.completed && t.type in PANEL_TRACK_TYPES).map(withCharacterPositions)

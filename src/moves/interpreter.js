@@ -223,8 +223,10 @@ export function buildContextSummary(campaignState) {
 const CONTEXT_LIST_CAP = 8;
 
 // The Progress Tracks journal (src/ui/progressTracks.js JOURNAL_NAME /
-// FLAG_KEY). Read directly — importing the UI panel module here would pull
-// ApplicationV2 code into the interpreter.
+// FLAG_KEY, found as its findTracksJournal finds it: by the tracks flag, the
+// name only for a journal no track was saved to — a renamed journal hid every
+// track, issue #345 AA62). Read directly — importing the UI panel module here
+// would pull ApplicationV2 code into the interpreter.
 const PROGRESS_JOURNAL_NAME = "Starforged Progress Tracks";
 const PROGRESS_FLAG_KEY     = "tracks";
 
@@ -250,7 +252,8 @@ function readOpenVowLabels() {
 /** `type "label"` for each open non-vow track in the Progress Tracks journal. */
 function readOpenTrackLabels() {
   try {
-    const journal = game.journal?.find?.(j => j.name === PROGRESS_JOURNAL_NAME);
+    const journal = game.journal?.find?.(j => Array.isArray(j?.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY)))
+                 ?? game.journal?.find?.(j => j?.name === PROGRESS_JOURNAL_NAME);
     if (!journal) return [];
     const tracks = journal.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY) ?? [];
     return (Array.isArray(tracks) ? tracks : [])

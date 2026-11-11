@@ -523,7 +523,8 @@ The panel's edits — add, +, −, ✓, ✕ and the position toggle — are writ
 the canonical GM for every user (gmRelay `progressTrack.edit` →
 `applyProgressTrackEditFromRelay`, payload checked against what the panel can
 produce; a refusal or a write that throws is reported, never swallowed). The
-tracks journal is `ownership: NONE`, so a player's own write was refused and
+tracks journal (found by its tracks flag, so a GM may rename it — issue #345
+AA62) is `ownership: NONE`, so a player's own write was refused and
 the click did nothing; reading the panel never creates the journal, only a
 write does (issue #321 U05). Every track write on a client runs one at a
 time, each on a fresh read once the previous has landed (`writeTracks`), so
