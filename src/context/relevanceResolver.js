@@ -336,7 +336,8 @@ export async function resolveRelevance(
 
 /**
  * Collect all entity records from the campaign state and return a flat array
- * of { _id, journalId, name, entityType } refs. Per scope §6, all connection
+ * of { _id, journalId, name, entityType } refs (and `sectorId`, for a record
+ * that has one). Per scope §6, all connection
  * entities (and any other named entity record) are eligible for matching.
  * `journalId` is the HOST document id (an Actor id for connections, ships,
  * settlements, planets and locations; a JournalEntry id for factions and
@@ -348,6 +349,13 @@ export async function resolveRelevance(
  * resolveEntityName unchanged (issue #286 A1: a second `{ entityId }` shape
  * dropped every recorded entity's id, so their truths and state never
  * rendered).
+ *
+ * A name several entities share is led by the active sector's
+ * (activeSectorNamesakeFirst, issue #342 Z15's rule): the name index keeps the
+ * first entity of a name, and generated site names repeat across sectors, so
+ * a sidecar subject, a scene's place and a player's line naming "Derelict
+ * Starship" took the older sector's derelict while the crew stood in the
+ * active sector's (issue #345 AA06).
  */
 export function collectAllEntities(campaignState) {
   if (!campaignState) return [];
@@ -377,10 +385,43 @@ export function collectAllEntities(campaignState) {
         journalId,
         name:       rec.name,
         entityType: type,
+        ...(typeof rec.sectorId === "string" && rec.sectorId ? { sectorId: rec.sectorId } : {}),
       });
     }
   }
-  return refs;
+  return activeSectorNamesakeFirst(refs, campaignState.activeSectorId ?? null);
+}
+
+/**
+ * The roster with each name several entities share led by the active
+ * sector's: generated site names repeat across sectors (every derelict is
+ * "Derelict Starship" or "Derelict Settlement", numbered only within one
+ * sector), and the name index keeps the first entity of a name — the older
+ * sector's. So `!at`, the narrator's ship / position and an arrival by name
+ * docked the ship there and moved its token on that sector's map (issue #342
+ * Z15; the site ladder's rule, issue #321 U48), and the narrator's own
+ * subjects and relevance took its card (issue #345 AA06). Entities of one
+ * name stay together, in their order otherwise; the rest keep their order.
+ * Pure.
+ *
+ * @param {Object[]} entities — the roster (each with `name`, and `sectorId` when it has one)
+ * @param {string|null} activeSectorId
+ * @returns {Object[]}
+ */
+export function activeSectorNamesakeFirst(entities, activeSectorId) {
+  if (!activeSectorId || !Array.isArray(entities)) return entities;
+  const nameKey = (e) => String(e?.name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
+  const byName = new Map();
+  for (const e of entities) {
+    const key = nameKey(e);
+    if (!byName.has(key)) byName.set(key, []);
+    byName.get(key).push(e);
+  }
+  const out = [];
+  for (const [, group] of byName) {
+    out.push(...group.filter(e => e?.sectorId === activeSectorId), ...group.filter(e => e?.sectorId !== activeSectorId));
+  }
+  return out;
 }
 
 const CLASSIFY_SYSTEM_PROMPT =

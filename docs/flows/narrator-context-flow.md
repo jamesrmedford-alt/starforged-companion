@@ -584,7 +584,9 @@ mandatory, so a missing fence is a lost frame update, not a quiet no-op) →
 append — the correction stands) / state supersede per subject+attribute
 (`ledgers.js`), subjects resolved against `collectAllEntities` (passed
 through in its own shape — `entityId` is the host document id; entity state
-keys are `entity:<id>`; issue #286 A1), ship
+keys are `entity:<id>`; issue #286 A1 — a name several entities share led by
+the active sector's, as `!at` resolves it: the older sector's "Derelict
+Starship" took the facts, the scene's place and relevance, issue #345 AA06), ship
 `position` stateChanges routed to the §20 ship record, `applySceneFrame`
 full-replacement snapshot — each truth, state value and the frame stamped
 with the narration's `narrationId` (`newNarrationId`; issue #321 U07, for the

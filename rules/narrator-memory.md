@@ -202,7 +202,9 @@ layers. This file is the never-break list.
    both silently dropped every recorded entity's facts). Names resolve
    through `resolveEntityName`'s bounded ladder, which never files a fact
    under an entity on an article, a title, a shared name part or a
-   lowercase common noun. Entity state keys are `entity:<id>`
+   lowercase common noun — and a name several entities share is the active
+   sector's (the roster leads it: `activeSectorNamesakeFirst`, Z15's rule —
+   issue #345 AA06). Entity state keys are `entity:<id>`
    (`subjectKey` / `subjectFromStateKey`).
 
 8. **The rolling session summary is a droppable convenience, not a fact

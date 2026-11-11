@@ -148,7 +148,9 @@ passage" drawing.
   re-inferred from the typed name, so a fragment ("Bleak") was free text
   (known-issues AT-PARTIAL-NAME-SHIP) — and every resolver by name
   (`resolveCurrentLocationName`; `inferShipPosition`'s index, for the
-  narrator's ship / position too) takes the active sector's namesake first,
+  narrator's ship / position too; and since issue #345 AA06 the narrator's
+  roster, `collectAllEntities` — its sidecar subjects, relevance and a scene
+  fact's place) takes the active sector's namesake first,
   as the site ladder does (U48): generated site names repeat across sectors,
   and the older sector's derelict became the current location, the ship's
   position and its token's place on that sector's map (issue #342 Z15).
