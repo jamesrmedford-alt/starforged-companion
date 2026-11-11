@@ -702,7 +702,7 @@ async function aidMadeInFight(moveId) {
 export async function rollMove({
   interpretation, campaignState, speakerActorId, narration,
   combatPosition = undefined, tokenDragSetCourse = null, incitingSwearMessageId = null,
-  cardFlags = null, onDiceRolled = null,
+  cardFlags = null, onDiceRolled = null, resolutionId = null,
 }) {
   const {
     postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, postDevelopRelationshipCard, applyReachMilestone,
@@ -929,7 +929,8 @@ export async function rollMove({
   // original narration after an upgrade finds that card by it — with no id
   // the struck-through pre-burn prose was never struck and kept reaching
   // the narrator's recent-narration ring (issue #300 F02).
-  resolution._id = foundry.utils.randomID();
+  // A Batch Mode round names it before the roll begins (issue #347 AB20).
+  resolution._id = resolutionId ?? foundry.utils.randomID();
 
   // The outcome's effects beyond the roller's meters and its choice card —
   // an arrival, the expedition's progress, a legacy mark, the companion's

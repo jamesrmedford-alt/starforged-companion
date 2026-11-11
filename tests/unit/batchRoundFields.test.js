@@ -103,7 +103,8 @@ function aRoundsLife() {
   r = keep(R.markModeOffAfter(r));
   r = keep(R.beginResolution(r, { resolverId: 'gm-1', now: NOW, sendNow: true }));
   r = keep(R.fixActing(r));
-  // As driver.js rollEntry stores it.
+  // As driver.js rollEntry stores it: the roll begun (issue #347 AB20), then rolled.
+  r = keep(R.markRolling(r, { userId: 'pl-1', resolutionId: 'res', now: NOW }));
   r = keep(R.markRolled(r, { userId: 'pl-1', rolled: { resolutionId: 'res', cardId: 'card', moveId: 'face_danger', outcome: 'weak_hit', narrationInput: { kind: 'move' } } }));
   r = keep(R.markRecorded(r, { userId: 'pl-1', recordedAt: NOW }));
   r = keep(R.markRefused(r, { userId: 'pl-2', reason: 'gone', narrationInput: { kind: 'refused' }, recordedAt: NOW }));

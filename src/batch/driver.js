@@ -95,6 +95,8 @@ import {
   takeOverResolution,
   handBackResolution,
   fixActing,
+  markRolling,
+  rollBegun,
   markRolled,
   markRecorded,
   markRefused,
@@ -983,15 +985,19 @@ async function rollEntry(round, entry) {
   const userId = entry.userId;
   const reading = entry.reading;
 
-  // Rolled already, its record not known to the round: never rolled again. A
-  // roll this client made and recorded (the round's own write of it refused)
-  // takes its record as made; one from before a reload is reported.
+  // Rolled already — or its roll begun — its record not known to the round:
+  // never rolled again. A roll this client made and recorded (the round's own
+  // write of it refused) takes its record as made; one from before a reload
+  // is reported, and so is one whose result card never posted (the page
+  // died, or the world refused the card), its effects perhaps partly applied
+  // (issue #347 AB20).
   const card = entry.rolled?.cardId ? game.messages?.get?.(entry.rolled.cardId) : roundResultCard(round.id, userId);
-  if (entry.status === ENTRY_STATUS.ROLLED || card) {
+  if (rollBegun(entry) || card) {
     const here = rolledHere(round.id, userId);
     if (!here || !_recordedHere.has(userId)) {
-      await tellGms("Batch Mode — a move may be incomplete",
-        `${escapeHtml(entry.actorName)}'s move was rolled before the round stopped, and its result may not have been recorded. Check its card; the round goes on without rolling it again.`,
+      await tellGms("Batch Mode — a move may be incomplete", card
+        ? `${escapeHtml(entry.actorName)}'s move was rolled before the round stopped, and its result may not have been recorded. Check its card; the round goes on without rolling it again.`
+        : `${escapeHtml(entry.actorName)}'s move was being rolled when the round stopped, and its result card was never posted: its effects may be partly applied. Check ${escapeHtml(entry.actorName)}'s sheet; the round goes on without rolling it again and narrates it as an action with no roll.`,
         { batchIncompleteNotice: true });
     }
     const rolledInfo = here ? rolledInfoFrom(here) : null;
@@ -1058,11 +1064,18 @@ async function rollEntry(round, entry) {
       interpretation.moveName = moveDisplayName(ordinary);
     }
   }
+  // The round says the roll has begun before anything is applied, under the
+  // id it will carry: a recovery — or Send now after a result card the world
+  // refused — reports it rather than rolling it again (issue #347 AB20). A
+  // refused stamp stops the round before the roll: Send now tries again.
+  const resolutionId = foundry.utils.randomID();
+  await queueRoundWrite(r => markRolling(r, { userId, resolutionId, now: nowIso() }));
   const rolled = await rollMove({
     interpretation, campaignState, speakerActorId: entry.actorId, narration: entry.text,
     tokenDragSetCourse:     reading.forced?.tokenDragSetCourse ?? null,
     incitingSwearMessageId: reading.forced?.incitingSwearMessageId ?? null,
     cardFlags: { roundId: round.id, roundNumber: round.number, roundUserId: userId },
+    resolutionId,
   });
   if (rolled.refused) {
     // rollMove posted the track-gone card ("not rolled — it was deleted or finished").

@@ -816,6 +816,30 @@ function requireActing(round, userId) {
 }
 
 /**
+ * An acting entry's roll begins: stamped before rollMove applies anything —
+ * a Take a Break +1 claimed, the dice, the outcome's effects, a miss's Pay
+ * the Price — with the resolution id the roll will carry (`rolled.resolutionId`,
+ * `rolled.rollingAt`). The round knew of a roll only from its result card
+ * on, the last thing rollMove posts: a resolver whose page died in between,
+ * or a result card the world refused, left the entry to be rolled again —
+ * new dice, a second price (issue #347 AB20). A begun entry is never rolled
+ * again: recovery and Send now report it (recoveryPlan's `unrecorded`).
+ *
+ * @param {Object} round
+ * @param {{ userId: string, resolutionId: string, now: string }} args
+ * @returns {Object}
+ */
+export function markRolling(round, { userId, resolutionId, now }) {
+  const entry = requireActing(round, userId);
+  return withEntry(round, userId, { rolled: { ...(entry.rolled ?? {}), resolutionId, rollingAt: now } });
+}
+
+/** True once an entry's roll has begun (markRolling) — whether or not its card posted. */
+export function rollBegun(entry) {
+  return !!entry && (entry.status === ENTRY_STATUS.ROLLED || !!entry.rolled?.cardId || !!entry.rolled?.rollingAt);
+}
+
+/**
  * An acting entry's move was rolled: its result card is up (the record follows).
  *
  * @param {Object} round
@@ -968,9 +992,9 @@ export function claimNarration(round, { narrationClaim, now, takeOver = false, r
 
 /**
  * What a recovery finds in a round left resolving: entries recorded (never
- * rolled again), entries whose result card is up but whose record is not
- * (reported to the GMs as possibly incomplete — not rolled again), and
- * entries still to roll.
+ * rolled again), entries whose roll began — its result card up, or not —
+ * but whose record is not (reported to the GMs as possibly incomplete — not
+ * rolled again; issue #347 AB20), and entries still to roll.
  *
  * @param {Object} round
  * @returns {{ recorded: string[], unrecorded: string[], toRoll: string[] }}
@@ -981,7 +1005,7 @@ export function recoveryPlan(round) {
     const e = round.entries[id];
     if (!e) continue;
     if (SETTLED_ENTRY.has(e.status)) out.recorded.push(id);
-    else if (e.status === ENTRY_STATUS.ROLLED || e.rolled?.cardId) out.unrecorded.push(id);
+    else if (rollBegun(e)) out.unrecorded.push(id);
     else out.toRoll.push(id);
   }
   return out;
