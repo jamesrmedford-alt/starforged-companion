@@ -86,13 +86,18 @@ const LOCAL_ONLY = {
 /**
  * Handlers that run on every GM client by design and write only that GM's own
  * entry of a per-user registry — the one fact only its own browser knows
- * (whether it holds a key), which no other client can write for it. Each
- * writes only when the stored list misstates its own GM, so the registry
- * converges and nothing is emitted twice. Key and reason as LOCAL_ONLY's.
+ * (whether it holds a key; its user's Private Lines), which no other client
+ * can write for it. Each writes only when the stored list misstates its own
+ * user, so the registry converges and nothing is emitted twice; a player's
+ * client, which cannot write the world, relays its own entry to the canonical
+ * GM on the same condition. Key and reason as LOCAL_ONLY's.
  */
 const OWN_ENTRY = {
   'src/multiplayer/gmGate.js updateSetting onKeyRegistryWritten': 're-advertises this GM\'s own key-registry membership when another GM\'s concurrent write dropped or misstated it (issue #342 Z68)',
   'src/multiplayer/gmGate.js createSetting onKeyRegistryWritten': 'same, first write of the registry',
+  // issue #345 AA35
+  'src/ui/settingsPanel.js updateSetting onCampaignStateWritten': 'puts this user\'s own Private Lines entry back when another client\'s concurrent write dropped or misstated it — a GM writes it, a player relays it to the canonical GM (issue #345 AA35)',
+  'src/ui/settingsPanel.js createSetting onCampaignStateWritten': 'same, first write of the setting',
 };
 
 const NOT_CALLS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'new', 'import', 'super']);

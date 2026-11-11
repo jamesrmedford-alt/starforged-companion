@@ -190,7 +190,7 @@ per-session must be idempotent on reload, and transient locks must reset.
   advertises itself into is re-advertised on every write of it, too: two GMs
   loading at once each wrote the list they read, and the later write dropped
   the other's id until its next load (the key registries' healing, issue #342
-  Z68).
+  Z68; the Private Lines list's, issue #345 AA35).
 
 ## 8. A GM-gated write on a player-invokable path is a silent failure — relay it
 

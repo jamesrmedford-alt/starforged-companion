@@ -5,7 +5,7 @@
 //   SettingsPanelApp        — tabbed ApplicationV2: Safety | Mischief | Narrator | About
 //   MoveConfirmDialog       — ApplicationV2 dialog replacing confirmInterpretation() stub
 //   registerSettings()      — register game.settings (call from init hook)
-//   registerSettingsHooks() — wire X-Card chat hook + initial safety sync (call from ready hook)
+//   registerSettingsHooks() — wire X-Card chat hook + Private Lines healing + initial safety sync (call from ready hook)
 //   openSettingsPanel()     — public opener
 //   confirmInterpretation() — await-able wrapper for MoveConfirmDialog
 //   getMischiefDial()       — read dial value (for mischief.js / index.js)
@@ -753,6 +753,8 @@ async function setPrivateLines(arr) {
  * { playerId, lines } objects — one entry per player. Each client only
  * updates its own entry; other players' entries are preserved.
  * This matches the shape that safety.js's resolvePrivateLines() expects.
+ * An entry another client's write drops is put back by its own user's
+ * client (registerPrivateLinesHealing, issue #345 AA35).
  */
 async function syncSafetyToCampaignState() {
   // campaignState is world-scoped — only the GM can write it. A non-GM
@@ -781,13 +783,8 @@ async function syncSafetyToCampaignState() {
       // Each player only writes their own entry; others are preserved
       const userId = game.user?.id;
       if (userId) {
-        const existing = campaignState.safety.privateLines ?? [];
-        const others   = existing.filter(e => e.playerId !== userId);
-        const myLines  = getPrivateLines();
-
-        campaignState.safety.privateLines = myLines.length > 0
-          ? [...others, { playerId: userId, lines: myLines }]
-          : others;   // Don't write an empty entry — avoids noise in the state
+        campaignState.safety.privateLines = withPrivateLinesEntry(
+          campaignState.safety.privateLines, userId, storedFormOfPrivateLines(getPrivateLines()));
       }
 
       return game.settings.set(MODULE_ID, 'campaignState', campaignState);
@@ -835,22 +832,114 @@ export async function applyPrivateLinesSync(payload = {}, ctx = {}) {
     console.warn(`${MODULE_ID} | Private Lines sync: no requesting user — ignored.`);
     return false;
   }
-  const lines = (Array.isArray(payload?.lines) ? payload.lines : [])
-    .filter(l => typeof l === 'string' && l.trim())
-    .map(l => l.trim().slice(0, 500));
+  const lines = storedFormOfPrivateLines(payload?.lines);
 
   // Written on a copy, the safety object too (issue #321 U58), at its turn on
   // the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
   await serialiseCampaignStateWrite(() => {
     const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
     campaignState.safety = { ...(campaignState.safety ?? {}) };
-    const others = (campaignState.safety.privateLines ?? []).filter(e => e.playerId !== playerId);
-    campaignState.safety.privateLines = lines.length > 0
-      ? [...others, { playerId, lines }]
-      : others;
+    campaignState.safety.privateLines = withPrivateLinesEntry(campaignState.safety.privateLines, playerId, lines);
     return game.settings.set(MODULE_ID, 'campaignState', campaignState);
   }, 'Private Lines');
   return true;
+}
+
+/**
+ * Private Lines as campaignState stores them: trimmed, non-empty strings of
+ * at most 500 characters. Both writers store this form — a GM's own sync and
+ * the relay handler — and the healing compares it, so a line the store
+ * shortens never reads as dropped (no re-sync loop).
+ *
+ * @param {*} lines
+ * @returns {string[]}
+ */
+function storedFormOfPrivateLines(lines) {
+  return (Array.isArray(lines) ? lines : [])
+    .filter(l => typeof l === 'string' && l.trim())
+    .map(l => l.trim().slice(0, 500));
+}
+
+/**
+ * campaignState.safety.privateLines with `userId`'s entry set to `lines`
+ * (stored form): every other user's entry kept, and no entry at all for an
+ * empty list (no noise in the state).
+ */
+function withPrivateLinesEntry(privateLines, userId, lines) {
+  const others = (Array.isArray(privateLines) ? privateLines : []).filter(e => e?.playerId !== userId);
+  return lines.length > 0 ? [...others, { playerId: userId, lines }] : others;
+}
+
+/** True when campaignState.safety.privateLines states `userId`'s lines as `lines`: one entry holding exactly them, or none for an empty list. */
+function privateLinesEntryHolds(privateLines, userId, lines) {
+  const own = (Array.isArray(privateLines) ? privateLines : []).filter(e => e?.playerId === userId);
+  if (!lines.length) return own.length === 0;
+  return own.length === 1 && Array.isArray(own[0]?.lines)
+    && own[0].lines.length === lines.length && own[0].lines.every((l, i) => l === lines[i]);
+}
+
+/** True when `campaignState` holds THIS client's own Private Lines as its client setting has them. */
+function holdsOwnPrivateLines(campaignState, userId) {
+  return privateLinesEntryHolds(campaignState?.safety?.privateLines, userId, storedFormOfPrivateLines(getPrivateLines()));
+}
+
+// ---------------------------------------------------------------------------
+// Private Lines healing — each user's own client keeps its entry right
+// ---------------------------------------------------------------------------
+
+/**
+ * Put THIS user's own entry in campaignState.safety.privateLines back
+ * whenever a campaignState write leaves it wrong (issue #345 AA35,
+ * PRIVATE-LINES-TWO-GM-LOST-UPDATE — the key registries' healing, issue #342
+ * Z68, for this list). Every GM writes its own entry from its cached
+ * campaignState, keeping the others it can see, at `ready` and on every
+ * Lines / Veils / Private Lines edit, and the canonical GM writes each
+ * player's relayed lines; the write chain orders writes on one client only.
+ * So two writes inside one round trip — two GMs loading at once, a co-GM's
+ * sync against a player's relayed lines — each read the list before the
+ * other's landed, and the later one dropped the other's entry: that user's
+ * hard limits were missing from every narration a GM's client built until
+ * their next load or edit, and nobody was told. Every client now hears each
+ * campaignState write and re-syncs when the list misstates it — a GM writes
+ * its own entry, a player relays its lines to the canonical GM — and only
+ * then, so the list converges and the hook cannot loop. A user's client
+ * setting is the canonical store; this keeps the stored copy written through.
+ * Registered at `ready`, before the load's own sync.
+ */
+function registerPrivateLinesHealing() {
+  Hooks.on('updateSetting', onCampaignStateWritten);
+  Hooks.on('createSetting', onCampaignStateWritten);
+}
+
+/** A world setting landed: when it is campaignState and misstates this user's Private Lines, re-sync them. */
+function onCampaignStateWritten(setting) {
+  if (setting?.key !== `${MODULE_ID}.campaignState`) return undefined;
+  const userId = game.user?.id;
+  if (!userId) return undefined;
+  try {
+    if (holdsOwnPrivateLines(game.settings.get(MODULE_ID, 'campaignState'), userId)) return undefined;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Private Lines: could not check this user's stored entry:`, err?.message ?? err);
+    return undefined;
+  }
+  const resync = game.user.isGM ? restoreOwnPrivateLines(userId) : relayPrivateLinesToGm();
+  return resync.catch(err =>
+    console.warn(`${MODULE_ID} | Private Lines: re-sync after a write that dropped them failed:`, err?.message ?? err));
+}
+
+/**
+ * GM client: write this GM's own entry onto the store as it is at the write's
+ * turn on the client's campaignState write chain — and only when it is still
+ * wrong then (this GM's own sync may have been on its way).
+ */
+function restoreOwnPrivateLines(userId) {
+  return serialiseCampaignStateWrite(() => {
+    const stored = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    if (holdsOwnPrivateLines(stored, userId)) return undefined;
+    const safety = { ...(stored.safety ?? {}) };
+    safety.privateLines = withPrivateLinesEntry(safety.privateLines, userId, storedFormOfPrivateLines(getPrivateLines()));
+    return game.settings.set(MODULE_ID, 'campaignState', { ...stored, safety });
+  }, 'Private Lines restore');
 }
 
 // ---------------------------------------------------------------------------
@@ -2451,6 +2540,11 @@ export async function confirmInterpretation(interpretation) {
  */
 export function registerSettingsHooks() {
   registerXCardHook();
+
+  // This user's own Private Lines entry, when another client's concurrent
+  // write drops it, is put back (issue #345 AA35) — heard from before this
+  // load's own sync.
+  registerPrivateLinesHealing();
 
   // Initialise campaignState.safety from current game.settings values.
   // This covers first load and the case where settings existed before this

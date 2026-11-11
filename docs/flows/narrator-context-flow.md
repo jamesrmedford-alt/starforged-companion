@@ -130,7 +130,11 @@ oracles are read from the store the same way). Each player's Private Lines now r
 (`safety.syncPrivateLines` → `applyPrivateLinesSync`, keyed on the relay
 requester) on load and again whenever the canonical GM announces its relay is
 ready (`onGmRelayReady`) — previously `syncSafetyToCampaignState` returned
-early on player clients, so only the GM's own lines were ever stored. [1] is
+early on player clients, so only the GM's own lines were ever stored. Every
+client, GM or player, also puts its own entry back when a campaignState write
+leaves it wrong (`registerPrivateLinesHealing`): two writes of the list inside
+one round trip — two GMs loading at once — dropped one user's lines from every
+GM-built prompt until their next load (issue #345 AA35). [1] is
 built by `formatNarratorSafetyContext`, which scopes Private Lines to the
 building client: on a GM's client every player's lines (deduplicated); on a
 player's client — narrating only with no keyed GM online — that player's own,
