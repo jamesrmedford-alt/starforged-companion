@@ -435,6 +435,11 @@ export class ProgressTrackApp extends ApplicationV2 {
     const clockById     = new Map((campaignState.clocks ?? []).map(c => [c._id, c]));
     // What this render shows, for onSettingChanged to compare against.
     this._clocksShown   = clocksFingerprint(campaignState.clocks ?? []);
+    // A fight's position badge shows the viewer's own position — the one its
+    // press cycles (viewerCharacter). It showed the fight's last-set one, so
+    // in a two-character fight a player saw a crewmate's bad spot as theirs,
+    // and pressing it to put that right flipped their own (issue #345 AA64).
+    const viewer        = viewerCharacter(campaignState);
 
     // Annotate each track with derived display values.
     const annotated = tracks.map(t => {
@@ -449,7 +454,9 @@ export class ProgressTrackApp extends ApplicationV2 {
         pct: Math.round((t.ticks / MAX_TICKS) * 100),
         boxes: ProgressTrackApp.#buildBoxes(t.ticks),
         canRoll: t.ticks > 0,
-        combatState: t.combatState ?? null,   // 'in_control' | 'bad_spot' | null
+        // 'in_control' | 'bad_spot' | null — a fight's, the viewer's own
+        combatState: t.type === 'combat' ? combatPositionFor(t, viewer?.id ?? null) : (t.combatState ?? null),
+        positionOf:  viewer?.name ?? null,
         tensionClock: linkedClock
           ? { filled: linkedClock.filled, segments: linkedClock.segments,
               triggered: linkedClock.filled >= linkedClock.segments }
@@ -519,7 +526,7 @@ export class ProgressTrackApp extends ApplicationV2 {
             <button class="track-btn btn-combat-state combat-${t.combatState ?? 'neutral'}"
                     data-action="toggleCombatState"
                     data-track-id="${t.id}"
-                    title="Toggle combat position (in control / in a bad spot)">
+                    title="Toggle ${t.positionOf ? `${escapeHtml(t.positionOf)}&rsquo;s` : 'the fight&rsquo;s'} combat position (in control / in a bad spot)">
               ${t.combatState === 'in_control' ? 'In control'
                 : t.combatState === 'bad_spot' ? 'In a bad spot'
                 : 'Neutral'}
@@ -1289,6 +1296,29 @@ async function readTrackAfterWrites(trackId) {
     return null;
   });
   return found;
+}
+
+/**
+ * The player character whose position a fight's badge shows on this client:
+ * the PC its press resolves (resolveUserActorId, as #onToggleCombatState)
+ * when the viewer owns it — the one the canonical GM then cycles
+ * (positionMirrorActor) — else null, when the press cycles the fight's own
+ * position (issue #345 AA64).
+ *
+ * @param {Object} campaignState
+ * @returns {Actor|null}
+ */
+function viewerCharacter(campaignState) {
+  let actorId = null;
+  try {
+    actorId = resolveUserActorId(game.user, campaignState);
+  } catch { actorId = game.user?.character?.id ?? null; }
+  const actor = actorId ? game.actors?.get?.(actorId) ?? null : null;
+  if (!actor) return null;
+  if (game.user?.isGM) return actor;
+  if (typeof actor.testUserPermission === 'function') return actor.testUserPermission(game.user, 'OWNER') ? actor : null;
+  const ownership = actor.ownership ?? {};
+  return ownership[game.user?.id] === 3 || ownership.default === 3 ? actor : null;
 }
 
 /**
