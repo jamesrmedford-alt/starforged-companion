@@ -6,6 +6,40 @@ rejected.
 
 ---
 
+## The Private Lines sync runs unqueued, like the X-Card (2026-11)
+
+**Decision:** `safety.syncPrivateLines` — a player's Private Lines relayed to
+the canonical GM — runs the moment it arrives, outside the serialised GM relay
+queue, as `xcard.activate` does (`UNQUEUED_ACTIONS`,
+`src/multiplayer/gmRelay.js`; issue #345 D5, PRIVATE-LINES-QUEUED — the
+maintainer chose option A). Its handler, `applyPrivateLinesSync`, is one
+read-and-set at its turn on the GM's campaignState write chain, with no await
+between the read and the write, so two syncs — or a sync and any other write
+on that client — still never interleave: the chain orders them, each reading
+the store as the write ahead left it.
+
+**Reason:** queued behind a Claude-calling handler (an oracle follow-up, a
+Burn / Improve re-narration, Begin / End a Session), a Private Line a player
+had just added waited seconds — up to the 270 s run budget if the handler
+hung — while the move pipeline, which is not queued, narrated straight through
+it with the line missing from the safety block it reads from the store (issue
+#321 U08). That is XCARD-QUEUED's shape for the other safety write. Running it
+unqueued rests on the X-Card's own premise, re-checked for this write: no
+relay handler writes back a campaignState snapshot held across an await —
+every write a handler reaches reads the store at its turn on the chain or
+merges only its own fields onto it, and the move pipeline's record takes
+`safety` from the store (`persistResolution`'s store-owned fields).
+
+**Rejected:** *Keep it queued and name Private Lines in the "One serialised GM
+queue" accepted limitation* (option B) — a hard limit that waits behind a slow
+narration is missing from the very narrations that run meanwhile.
+
+**Trade-offs accepted:** none new. The load-time entity migration still writes
+a snapshot held across its awaits (known-issues MIGRATE-STALE-WRITE, open); it
+is no relay handler, so the queue never ordered a sync against it either.
+
+---
+
 ## The eleventh audit's open items: every read-and-set campaignState write is on the chain, the X-Card's pause jumps it, what it removed stays blocked, a portrait is bought once (2026-11)
 
 **Decision:** (the fifteen items found while fixing issue #342, and the
@@ -2999,7 +3033,11 @@ and performed by a handler on the canonical GM:
   session activity stamp did, until issue #342 Z01 gave it a setting of its
   own). Since the eleventh audit's open items the pause also jumps the
   client's campaignState write chain (`runCampaignStateWriteNow`): every other
-  read-and-set write waits behind it, and it waits for none.
+  read-and-set write waits behind it, and it waits for none. **A player's
+  Private Lines sync is the second exception** (issue #345 D5):
+  `safety.syncPrivateLines` runs the moment it arrives too, though its write
+  still waits its turn on the chain — see "The Private Lines sync runs
+  unqueued, like the X-Card".
 - Relays are fire-and-forget (no ack). Once its listener is installed, the
   canonical GM broadcasts `gmRelay.ready` (`announceGmRelayReady`); state a
   player must hand the GM is **pulled** on that signal (`onGmRelayReady` —

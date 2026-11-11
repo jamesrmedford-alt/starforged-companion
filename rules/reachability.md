@@ -276,8 +276,10 @@ shape, and so would any Take a Break, safety flag, Private Lines, `!bond` or
 - Writers that must not interleave run through one queue (the `gmRelay`
   handler queue on the canonical GM); a merge is still needed for the
   pipeline, which runs outside it. A safety action must not wait in that
-  queue behind a slow handler: the X-Card runs unqueued, which is safe only
-  because no handler writes back a snapshot held across an `await`.
+  queue behind a slow handler: the X-Card and the Private Lines sync run
+  unqueued (issue #345 D5), which is safe only because each reads and writes
+  the store with no `await` between, and no handler writes back a snapshot
+  held across an `await`.
 - **Writers of different kinds share one write chain.** Each writer kind
   serialised against its own kind only — two captures (X44), two clock
   writes (W53) — so a clock advance sent inside the oracle capture's round

@@ -1984,7 +1984,9 @@ lives in the matching `docs/flows/*-flow.md` maps.
   call, End a Session's summary) delays later relays until it settles — or,
   if it hangs, until its run budget passes (60 s; 270 s for a handler that
   awaits a Claude call, which covers its bounded requests: issue #300 F15).
-  The X-Card is exempt — it runs the moment it reaches the GM.
+  The two safety writes are exempt — the X-Card and a player's Private Lines
+  sync run the moment they reach the GM (issue #345 D5: a line added while a
+  follow-up narrated was missing from the moves narrated meanwhile).
 - **Session vignettes need a keyed GM.** The Begin / End a Session galley and
   closing vignettes run inside the canonical-GM relay handlers, so at a
   keyless-GM table they are skipped (a player's key isn't used).
@@ -3230,8 +3232,9 @@ connected the relay is deferred (debug-logged), and every player re-sends when
 the canonical GM broadcasts that its relay listener is ready
 (`gmRelay.ready` → `onGmRelayReady`, registered by `registerPrivateLinesGmPull`)
 — a pull, because the old `userConnected` re-send fired before the GM's
-listener existed and was always dropped. The GM runs relay handlers one at a
-time, so simultaneous re-sends don't race.
+listener existed and was always dropped. Simultaneous re-sends don't race:
+each sync runs at once on the GM (unqueued since issue #345 D5) and reads
+the store at its turn on the GM's campaignState write chain.
 
 **Residual:** a player's Private Lines reach `campaignState` only once their
 client and a GM have been online together; after that they persist there.

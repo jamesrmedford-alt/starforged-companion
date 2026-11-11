@@ -822,6 +822,12 @@ async function relayPrivateLinesToGm() {
  * list removes the entry. The player id comes from the relay context, never
  * the payload, so a client can only write its own lines.
  *
+ * Runs unqueued, as the X-Card does (gmRelay UNQUEUED_ACTIONS, issue #345
+ * D5): queued behind a Claude-calling handler, a line just added was missing
+ * from every move narrated meanwhile. Its write is one read-and-set at its
+ * turn on the client's campaignState write chain, which orders it against
+ * every other write — another player's sync included.
+ *
  * @param {{ lines?: string[] }} payload
  * @param {{ requesterId?: string|null }} ctx
  * @returns {Promise<boolean>} true when campaignState was written
@@ -2563,9 +2569,10 @@ export function registerSettingsHooks() {
 
 /**
  * Player client: answer the canonical GM's relay-ready broadcast
- * (gmRelay.onGmRelayReady) with this player's Private Lines. The GM runs relay
- * handlers one at a time, so simultaneous answers from several players do not
- * race on campaignState.safety.privateLines.
+ * (gmRelay.onGmRelayReady) with this player's Private Lines. Simultaneous
+ * answers from several players do not race on campaignState.safety.privateLines:
+ * each sync's write reads the store at its turn on the GM's campaignState
+ * write chain (it runs unqueued, issue #345 D5).
  */
 function registerPrivateLinesGmPull() {
   import('../multiplayer/gmRelay.js')

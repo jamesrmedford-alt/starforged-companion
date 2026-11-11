@@ -397,6 +397,43 @@ describe('runGmAction — serialised on the GM', () => {
     await a;
     flag.mockRestore();
   });
+
+  // Issue #345 D5 (PRIVATE-LINES-QUEUED, option A) — the other safety write:
+  // queued behind a Claude-calling handler, a Private Line a player had just
+  // added was missing from every move the (unqueued) pipeline narrated meanwhile.
+  it('a Private Lines sync relayed over the socket during a long action lands at once, as the X-Card does', async () => {
+    setUsers([GM, PLAYER], 'gm-1');
+    const first = deferred();
+    const flag = vi.spyOn(sessionDialogs, 'applySafetyFlag')
+      .mockImplementationOnce(async () => { await first.promise; });
+    game.settings._store.set('starforged-companion.campaignState', { safety: { lines: [], veils: [], privateLines: [] } });
+    registerGmRelaySocket();
+    const list = game.socket._handlers.get(GM_RELAY_SOCKET);
+    const deliver = list[list.length - 1];
+    const a = deliver({ kind: `${GM_RELAY_KIND_PREFIX}safety.setFlag`, payload: {}, requesterId: 'pl-1' });
+    const sync = deliver({ kind: `${GM_RELAY_KIND_PREFIX}safety.syncPrivateLines`, payload: { lines: ['spiders'] }, requesterId: 'pl-1' });
+    try {
+      await Promise.race([sync, new Promise(r => setTimeout(r, 200))]);
+      expect(game.settings._store.get('starforged-companion.campaignState').safety.privateLines)
+        .toEqual([{ playerId: 'pl-1', lines: ['spiders'] }]);
+    } finally {
+      first.resolve();
+      await Promise.all([a, sync]);
+      flag.mockRestore();
+    }
+  });
+
+  it('two Private Lines syncs relayed back to back still land in order — the later one stands', async () => {
+    setUsers([GM, PLAYER], 'gm-1');
+    game.settings._store.set('starforged-companion.campaignState', { safety: { lines: [], veils: [], privateLines: [] } });
+    registerGmRelaySocket();
+    const list = game.socket._handlers.get(GM_RELAY_SOCKET);
+    const deliver = list[list.length - 1];
+    const sync = (lines) => deliver({ kind: `${GM_RELAY_KIND_PREFIX}safety.syncPrivateLines`, payload: { lines }, requesterId: 'pl-1' });
+    await Promise.all([sync(['spiders', 'drowning']), sync(['spiders'])]);
+    expect(game.settings._store.get('starforged-companion.campaignState').safety.privateLines)
+      .toEqual([{ playerId: 'pl-1', lines: ['spiders'] }]);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
