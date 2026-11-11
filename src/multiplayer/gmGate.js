@@ -38,6 +38,62 @@
 
 const MODULE_ID = "starforged-companion";
 
+// ── GMs whose page is still loading (issue #347 AB03) ──────────────────────
+// A user is `active` from the moment their socket connects — the start of
+// their page load — but this module's chat pipeline, hooks and relay listener
+// exist on that client only from its `ready`, often many seconds later. The
+// election ran over every active GM, so a lower-id (or keyed) GM opening the
+// world stood the connected, ready GM down for the whole load: a player's
+// X-Card, typed moves and card presses reached no handler, and nobody was
+// told. Each client keeps what it has seen of the other GMs' loads:
+//   - a GM whose connect this client saw (`userConnected`) is loading until
+//     its ready announcement arrives (gmRelay.js registerGmReadiness);
+//   - a GM that leaves is forgotten — its next connect is a new load;
+//   - a GM already connected when this client loaded is presumed ready, as
+//     every GM was before (an overlapping load stays the old election).
+// The election runs over the active GMs not known to be loading; when every
+// active GM is loading, over all of them, as before. This client never counts
+// itself as loading: its own handlers are what asks.
+const _gmLoad = new Map();   // userId → "loading" | "ready"
+
+/** A GM's socket connected: its page is loading until it announces ready. */
+export function noteGmLoading(userId) {
+  if (typeof userId === "string" && userId && userId !== globalThis.game?.user?.id) _gmLoad.set(userId, "loading");
+}
+
+/** A GM announced its page ready: its handlers are installed. */
+export function noteGmReady(userId) {
+  if (typeof userId === "string" && userId && userId !== globalThis.game?.user?.id) _gmLoad.set(userId, "ready");
+}
+
+/** A GM left: what this client knew of its load no longer holds. */
+export function forgetGmLoad(userId) {
+  _gmLoad.delete(userId);
+}
+
+/** Test seam — forget every GM's load state. */
+export function _resetGmLoadForTests() {
+  _gmLoad.clear();
+}
+
+/**
+ * The active GMs that can act: those not known to be loading — or, when every
+ * active GM is, all of them.
+ *
+ * @param {Array<User>} activeGMs
+ * @returns {Array<User>}
+ */
+function settledGMs(activeGMs) {
+  const selfId = globalThis.game?.user?.id ?? null;
+  const settled = activeGMs.filter(u => u.id === selfId || _gmLoad.get(u.id) !== "loading");
+  return settled.length ? settled : activeGMs;
+}
+
+/** The active GMs, less any still loading (settledGMs). */
+function electableGMs() {
+  return settledGMs(Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM && u?.active));
+}
+
 /**
  * @returns {boolean} true iff THIS client is the canonical GM responsible
  *   for running write-side pipeline work.
@@ -51,14 +107,14 @@ const MODULE_ID = "starforged-companion";
  *     lowest-userId active GM that has advertised a Claude key; when no active
  *     GM has advertised one, it falls back to the lowest-userId active GM, so
  *     the pipeline still has a single emitter (which surfaces a clear no-key
- *     error rather than stopping silently).
+ *     error rather than stopping silently). A GM whose page this client saw
+ *     start loading, and which has not announced ready, is passed over while
+ *     another GM can act (issue #347 AB03).
  */
 export function isCanonicalGM() {
   if (!globalThis.game?.user?.isGM) return false;
 
-  const users = globalThis.game?.users;
-  const activeGMs = Array.from(users ?? [])
-    .filter(u => u?.isGM && u?.active);
+  const activeGMs = electableGMs();
 
   if (!activeGMs.length) return false;
 
@@ -112,7 +168,8 @@ export function hasKeyedActiveGM() {
   }
   if (!Array.isArray(keyed) || !keyed.length) return false;
   const keyedSet = new Set(keyed);
-  return Array.from(game?.users ?? []).some(u => u?.isGM && u?.active && keyedSet.has(u.id));
+  // A keyed GM still loading cannot answer yet (issue #347 AB03).
+  return electableGMs().some(u => keyedSet.has(u.id));
 }
 
 /**
@@ -237,7 +294,7 @@ export function isAudioGM() {
     keyed = null;
   }
   const keyedSet = new Set(Array.isArray(keyed) ? keyed : []);
-  const pool = Array.from(game.users ?? []).filter(u => u?.isGM && u?.active && keyedSet.has(u.id));
+  const pool = electableGMs().filter(u => keyedSet.has(u.id));
   if (!pool.length) return isCanonicalGM();
   let first = pool[0];
   for (const u of pool) if (u.id < first.id) first = u;

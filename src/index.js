@@ -196,7 +196,7 @@ import {
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing } from "./multiplayer/gmGate.js";
-import { registerGmRelaySocket, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
+import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
@@ -7520,6 +7520,11 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", () => {
+  // First: which GMs are still loading, and this GM's own page is ready —
+  // before any canonical-gated work below. A GM that connected but has not
+  // reached its ready is passed over by the election while another GM can
+  // act (issue #347 AB03).
+  registerGmReadiness();
   registerErrorLogSocket();   // GM listens for relayed non-GM client errors
   flushErrorLogBuffer();
   flushApiTransactionLogBuffer();

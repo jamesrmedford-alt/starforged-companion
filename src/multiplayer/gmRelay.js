@@ -114,7 +114,7 @@
  * is (known-issues RELAY-REFUSED-PRESS-UNTOLD).
  */
 
-import { isCanonicalGM } from "./gmGate.js";
+import { isCanonicalGM, noteGmLoading, noteGmReady, forgetGmLoad, _resetGmLoadForTests } from "./gmGate.js";
 import { DEFAULT_TIMEOUT_MS } from "../net/fetchWithTimeout.js";
 
 const MODULE_ID = "starforged-companion";
@@ -131,6 +131,22 @@ export const GM_RELAY_KIND_PREFIX = "gmRelay.";
  * GM_ACTIONS.
  */
 export const GM_RELAY_READY_KIND = `${GM_RELAY_KIND_PREFIX}ready`;
+
+/**
+ * Every GM's own page-ready announcement, `{ kind, userId }` (issue #347
+ * AB03): the canonical-GM election passes over a GM whose connect a client saw
+ * until this arrives (gmGate.js). Not an action — never dispatched to a
+ * handler.
+ */
+export const GM_PAGE_READY_KIND = `${GM_RELAY_KIND_PREFIX}gm-page-ready`;
+
+/**
+ * "Is your page ready?" — `{ kind, userId }`, sent when a client sees that GM
+ * connect. A GM whose page is already loaded (a socket that dropped and came
+ * back on the same page) answers with GM_PAGE_READY_KIND; a page still loading
+ * has no listener yet and answers at its own `ready` (issue #347 AB03).
+ */
+export const GM_PAGE_READY_QUERY_KIND = `${GM_RELAY_KIND_PREFIX}gm-page-ready-query`;
 
 /**
  * How long a queued action waits for the action ahead of it — counted from
@@ -480,8 +496,9 @@ export function registerGmRelaySocket() {
     const rawKind = message?.kind;
     if (typeof rawKind !== "string" || !rawKind.startsWith(GM_RELAY_KIND_PREFIX)) return;
     // The GM-ready broadcast shares the prefix but is not an action — players'
-    // onGmRelayReady listeners handle it.
-    if (rawKind === GM_RELAY_READY_KIND) return;
+    // onGmRelayReady listeners handle it — nor is a GM's page-ready
+    // announcement (registerGmReadiness).
+    if (rawKind === GM_RELAY_READY_KIND || rawKind === GM_PAGE_READY_KIND || rawKind === GM_PAGE_READY_QUERY_KIND) return;
     const kind = rawKind.slice(GM_RELAY_KIND_PREFIX.length);
 
     if (!isCanonicalGM()) {
@@ -506,6 +523,53 @@ export function registerGmRelaySocket() {
       console.error(`${MODULE_ID} | gmRelay: action "${kind}" failed:`, err);
     }
   });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// GM page readiness (issue #347 AB03)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Track the other GMs' page loads for the canonical-GM election, and announce
+ * this GM's own. A GM is `active` from its socket's connect, at the start of
+ * its page load; its handlers exist only from its `ready`. Every client: a
+ * GM's connect marks it loading and asks it whether its page is ready (a
+ * socket that dropped and came back on a loaded page answers at once), its
+ * announcement marks it ready, its departure is forgotten (gmGate.js
+ * noteGmLoading / noteGmReady / forgetGmLoad). A GM client announces its own
+ * page ready to the table — call this early in `ready`, before any
+ * canonical-gated work. Idempotent.
+ */
+export function registerGmReadiness() {
+  if (registerGmReadiness._installed) return;
+  registerGmReadiness._installed = true;
+  const socket = globalThis.game?.socket ?? null;
+  const announce = () => {
+    if (globalThis.game?.user?.isGM && socket?.emit) {
+      socket.emit(GM_RELAY_SOCKET, { kind: GM_PAGE_READY_KIND, userId: globalThis.game.user.id });
+    }
+  };
+  globalThis.Hooks?.on?.("userConnected", (user, connected) => {
+    if (!user?.isGM || user.id === globalThis.game?.user?.id) return;
+    if (!connected) { forgetGmLoad(user.id); return; }
+    noteGmLoading(user.id);
+    socket?.emit?.(GM_RELAY_SOCKET, { kind: GM_PAGE_READY_QUERY_KIND, userId: user.id });
+  });
+  if (socket?.on) {
+    socket.on(GM_RELAY_SOCKET, (message) => {
+      const userId = typeof message?.userId === "string" ? message.userId : null;
+      if (message?.kind === GM_PAGE_READY_QUERY_KIND) {
+        if (userId && userId === globalThis.game?.user?.id) announce();
+        return;
+      }
+      if (message?.kind !== GM_PAGE_READY_KIND) return;
+      const user = userId ? globalThis.game?.users?.get?.(userId) : null;
+      if (user?.isGM) noteGmReady(userId);
+    });
+  } else {
+    console.warn(`${MODULE_ID} | gmRelay: game.socket unavailable — GM page readiness not tracked.`);
+  }
+  announce();
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -577,6 +641,8 @@ export function onGmRelayReady(callback) {
 /** Test seam — forget the install guards, the ready callbacks and the queue. */
 export function _resetGmRelayForTests() {
   registerGmRelaySocket._installed = false;
+  registerGmReadiness._installed = false;
+  _resetGmLoadForTests();
   onGmRelayReady._installed = false;
   _readyCallbacks.clear();
   _queueTail = null;

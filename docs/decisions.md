@@ -3830,6 +3830,22 @@ client makes it, with the author's own key as the no-keyed-GM fallback.
 - *Always the canonical GM* — a keyless-GM table loses every Claude command.
 - *Send the key to the GM* — violates #209 (keys never leave the browser).
 
+**Update (issue #347 AB03):** the election passes over a GM whose page is
+still loading. A user is `active` from its socket's connect — the start of its
+page load — but this module's handlers exist on that client only from its
+`ready`; electing it stood the connected, ready GM down for the whole load (a
+player's X-Card, typed moves and card presses reached no handler, and nobody
+was told). Each client marks a GM whose connect it saw as loading, asks it
+whether its page is ready (a socket that came back on a loaded page answers at
+once), and counts it again from its page-ready announcement
+(`gmRelay.js` `registerGmReadiness`, first thing in `ready`); a GM already
+connected when the client loaded is presumed ready, as before. When every
+active GM is loading, the election runs over all of them. `hasKeyedActiveGM`
+and `isAudioGM` pass over a loading GM the same way. *Trade-off accepted:* at
+the moment a lower-id GM's page reaches `ready` it counts itself canonical one
+socket hop before the GM it replaces stands down; and two GMs whose loads
+overlap each presume the other ready.
+
 ## An NPC card's or ship's notes are its sheet's Notes tab (2026-11)
 
 **Decision:** For the two entity types whose host Actor has a Notes tab — an
