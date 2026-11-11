@@ -490,9 +490,8 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     ? readAs.forced
     : (readAs?.moveId ? { moveId: readAs.moveId, moveTargetId: readAs.moveTargetId ?? null } : null);
   const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
-  let pacing = null;
   if (!readAs?.move) {
-    pacing = await decidePacing({
+    const pacing = await decidePacing({
       playerText: text, campaignState, character: speakerName ? { name: speakerName } : null,
       apiKey, ignoreForceMove: true,
     });
@@ -503,7 +502,6 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
       const suggestedMove = suppressPcDirectedSocialMove(pacing.suggestedMove ?? null, text, speakerName);
       return {
         kind:              READING_KIND.NARRATIVE,
-        decision:          pacing.decision,
         suggestedMove:     suggestedMove ?? null,
         suggestedTargetId: suggestedMove ? (pacing.suggestedTargetId ?? null) : null,
       };
@@ -515,19 +513,22 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     swearToConnection: forced?.swearToConnection ?? null,
     gatherChoices: true,
   });
-  return readingFromMove(read, { forced, decision: pacing?.decision ?? "MOVE" });
+  return readingFromMove(read, { forced });
 }
 
 /**
  * A readMove result as a stored reading: what the window shows (the move,
  * stat, rationale, Mischief aside, abilities, stat substitutions, target
- * choices) and the interpretation the roll starts from.
+ * choices) and the interpretation the roll starts from. Not the pacing
+ * decision, nor the roller's position as read: nothing read either — the
+ * roll reads the position when it is made, later than the reading (issue
+ * #345 AA41).
  *
  * @param {Object} read — readMove's result
- * @param {{ forced?: Object|null, decision?: string }} [opts]
+ * @param {{ forced?: Object|null }} [opts]
  * @returns {Object}
  */
-function readingFromMove(read, { forced = null, decision = "MOVE" } = {}) {
+function readingFromMove(read, { forced = null } = {}) {
   const interpretation = jsonCopy(read.interpretation ?? {});
   const abilities = Array.isArray(interpretation.applicableAbilities) ? interpretation.applicableAbilities : [];
   const statOptions = [...new Set(abilities
@@ -535,7 +536,6 @@ function readingFromMove(read, { forced = null, decision = "MOVE" } = {}) {
     .filter(Boolean))];
   return {
     kind:           READING_KIND.MOVE,
-    decision,
     moveId:         interpretation.moveId ?? null,
     moveName:       interpretation.moveName ?? (interpretation.moveId ? moveDisplayName(interpretation.moveId) : null),
     statUsed:       interpretation.statUsed ?? null,
@@ -545,7 +545,6 @@ function readingFromMove(read, { forced = null, decision = "MOVE" } = {}) {
     statOptions,
     targetChoices:  targetOptionsFrom(read.targetChoice),
     blocked:        read.targetChoice?.kind === "vow-gone" ? "vow-gone" : null,
-    combatPosition: read.combatPosition ?? null,
     forced: forced ? {
       tokenDragSetCourse:     forced.tokenDragSetCourse ?? null,
       incitingSwearMessageId: forced.incitingSwearMessageId ?? null,

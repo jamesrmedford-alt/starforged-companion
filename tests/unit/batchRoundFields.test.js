@@ -15,11 +15,19 @@
  * How the check works: the round's shape is not hand-listed — it is what the
  * round's own transitions (src/batch/round.js) store over a round's whole
  * life: the round's keys, an entry's, and the objects an entry holds (its
- * roll, upgrade, offer, read-as and set-aside). Each key needs a read in the
- * production files that touch the round — `<round>.key` / `<entry>.key` /
- * `.offer.key` …, comments stripped, an assignment not counted. A timestamp
- * kept for the record is listed below with its reason; an entry whose field
- * gains a reader fails the stale-entry test.
+ * roll, upgrade, offer, read-as, set-aside and confirmed choices). Each key
+ * needs a read in the production files that touch the round — `<round>.key`
+ * / `<entry>.key` / `.offer.key` …, comments stripped, an assignment not
+ * counted. A timestamp kept for the record is listed below with its reason;
+ * an entry whose field gains a reader fails the stale-entry test.
+ *
+ * An entry's reading — the largest object the round stores, one per
+ * submission — is its producer's (src/moves/movePipeline.js readAction and
+ * readingFromMove), so its keys are taken from the object literals that
+ * build it, and from what the driver adds to it (noteReadTrack). The sweep
+ * left it out, and two of its fields had no reader: the pacing `decision`
+ * and the roller's `combatPosition` as read — the round's roll reads the
+ * position when it is made (issue #345 AA41, ROUND-READING-FIELDS-WRITE-ONLY).
  */
 
 import { describe, it, expect } from 'vitest';
@@ -47,6 +55,8 @@ const NAMES = {
   offer:    ['offer'],
   readAs:   ['readAs'],
   setAside: ['setAside'],
+  reading:  ['reading'],
+  choices:  ['choices'],
 };
 
 /** Write-only on purpose: a timestamp kept on the stored round for the record. Each needs its reason. */
@@ -128,17 +138,31 @@ function literalKeys(file, anchor) {
   return keys;
 }
 
+/** The fields the driver adds to a reading as it lands (`reading.key = …`). */
+function assignedReadingKeys(file) {
+  const code = stripComments(fs.readFileSync(path.join(ROOT, file), 'utf8'));
+  return [...code.matchAll(/\breading\.([A-Za-z_$][\w$]*)\s*=(?![=>])/g)].map(m => m[1]);
+}
+
+// A stored reading's producer: readAction's reading with no roll, and readingFromMove's.
+const NARRATIVE_READING = /return \{(?=\s*kind:\s*READING_KIND\.NARRATIVE,)/;
+const MOVE_READING = /return \{(?=\s*kind:\s*READING_KIND\.MOVE,)/;
+
 /** The stored shape: kind → the keys stored under it. */
 function storedShape() {
-  const shape = { round: new Set(), entry: new Set(), rolled: new Set(), upgrade: new Set(), offer: new Set(), readAs: new Set(), setAside: new Set() };
+  const shape = { round: new Set(), entry: new Set(), rolled: new Set(), upgrade: new Set(), offer: new Set(), readAs: new Set(), setAside: new Set(), reading: new Set(), choices: new Set() };
   // What the driver hands the transitions to store.
   for (const k of literalKeys('src/batch/driver.js', /function rolledInfoFrom\(\{[^}]*\}\) \{\s*return \{/)) shape.rolled.add(k);
   for (const k of literalKeys('src/batch/driver.js', /offers\[userId\] = \{/)) shape.upgrade.add(k);
+  // What the reading's producer stores, and the driver adds.
+  for (const k of literalKeys('src/moves/movePipeline.js', NARRATIVE_READING)) shape.reading.add(k);
+  for (const k of literalKeys('src/moves/movePipeline.js', MOVE_READING)) shape.reading.add(k);
+  for (const k of assignedReadingKeys('src/batch/driver.js')) shape.reading.add(k);
   for (const round of aRoundsLife()) {
     for (const k of Object.keys(round)) shape.round.add(k);
     for (const e of Object.values(round.entries ?? {})) {
       for (const k of Object.keys(e)) shape.entry.add(k);
-      for (const nested of ['rolled', 'upgrade', 'offer', 'readAs', 'setAside']) {
+      for (const nested of ['rolled', 'upgrade', 'offer', 'readAs', 'setAside', 'reading', 'choices']) {
         if (e[nested] && typeof e[nested] === 'object') for (const k of Object.keys(e[nested])) shape[nested].add(k);
       }
     }
@@ -169,11 +193,21 @@ describe('every field a round stores is read (issue #342 Z37)', () => {
     expect(literalKeys('src/batch/driver.js', /offers\[userId\] = \{/)).toEqual(['burn', 'improve', 'cardId']);
     expect(readsOf('round', 'resolverId').length).toBeGreaterThan(0);   // control: recovery leaves a connected resolver alone
     expect(readsOf('entry', 'submissionId').length).toBeGreaterThan(0); // control: a reading lands only on its own submission
+    expect(literalKeys('src/moves/movePipeline.js', NARRATIVE_READING)).toEqual(expect.arrayContaining(['kind', 'suggestedMove', 'suggestedTargetId']));
+    expect(literalKeys('src/moves/movePipeline.js', MOVE_READING)).toEqual(expect.arrayContaining(['kind', 'moveId', 'abilities', 'targetChoices', 'blocked', 'forced', 'interpretation']));
+    expect(assignedReadingKeys('src/batch/driver.js')).toEqual(expect.arrayContaining(['trackId', 'trackLabel', 'variantChallengeId']));
+    expect([...shape.choices]).toEqual(['abilityIds', 'statReplacement', 'targetId']);
+    expect(readsOf('reading', 'interpretation').length).toBeGreaterThan(0); // control: the roll starts from the reading's interpretation
   });
 
   it('the scene it opened in and the resolver\'s lock claim are no longer stored', () => {
     expect(shape.round.has('sceneId')).toBe(false);
     expect(shape.round.has('resolverClaim')).toBe(false);
+  });
+
+  it('issue #345 AA41 — a reading no longer stores the pacing decision or the roller\'s position as read', () => {
+    expect(shape.reading.has('decision')).toBe(false);
+    expect(shape.reading.has('combatPosition')).toBe(false);
   });
 
   it.each(fields.filter(f => !FOR_THE_RECORD[f.key]).map(f => [f.key, f]))('%s has a reader', (_key, f) => {
