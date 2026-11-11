@@ -817,10 +817,14 @@ export async function rollMove({
   // certain miss with its consequences (issue #306 R06, #321 U02). A scene
   // challenge's Finish the Scene too (issue #326 D6 made it a progress move
   // after R06): a second finish, or a stale row, rolled a certain miss and
-  // paid its price for a scene already over (issue #342 Z07).
+  // paid its price for a scene already over (issue #342 Z07). And a Forge a
+  // Bond picked on a connection picker: a connection severed or deleted
+  // since was rolled at 0, and one bonded since (its id resolves nothing
+  // for a forge — selectConnection `unbonded`) said "Legacy reward marked"
+  // over a forge that marked nothing (issue #345 AA50).
   if (interpretation.moveTargetId
       && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow"
-        || tickInfo?.source === "scene_challenge")
+        || tickInfo?.source === "scene_challenge" || tickInfo?.source === "connection")
       && !tickInfo.trackId) {
     await postTrackGoneCard(interpretation).catch(err =>
       console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));

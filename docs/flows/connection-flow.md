@@ -273,7 +273,12 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   `moveTarget`, and enrichment and the develop / forge branches resolve by
   the id first (issue #301 B01 — the flags used to be missing, so forge
   scored 0 or the sole bonded connection's track, and develop marked the
-  sole bonded connection). A click with
+  sole bonded connection). A forge picked for a connection severed, deleted
+  or bonded since the picker was posted is not rolled, and a "not rolled"
+  card says so, as for a gone fight or vow (rollMove's track-gone guard; for
+  a forge the id rung resolves no bonded connection — issue #345 AA50: it
+  was rolled at 0, or its card said "Legacy reward marked" over a forge that
+  marked nothing). A click with
   no GM connected, a refusal, or a card still unresolved after
   `RELAY_RECOVERY_MS` (15 s) re-arms the buttons. (The picker used to be
   GM-only; the first 2026-10 fix let any click post the move but only the

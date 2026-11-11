@@ -138,7 +138,11 @@ export function nextRank(rank) {
  *     `campaignState.connectionIds` entry), carried by a connection picker
  *     card's choice. It is stable, so it outranks every name; an id that
  *     matches no active connection resolves nothing rather than a guess
- *     (rules/reachability.md §6 — issue #301 B01)
+ *     (rules/reachability.md §6 — issue #301 B01). With `unbonded` (Forge a
+ *     Bond), an id whose connection is bonded resolves nothing too: the
+ *     forge picker lists un-bonded connections only, so the pick is stale
+ *     (issue #345 AA50 — the bonded track was scored, and the hit's card
+ *     said a legacy reward was marked)
  *  1. Exact name match (case-insensitive, ignoring a leading "the")
  *  2. One name inside the other, as whole words, either way (`wholeWordsFit`:
  *     "Captain Ren" is Ren; "Lorenzo" is not — issue #325 W30)
@@ -166,7 +170,8 @@ export function selectConnection(connections, target, { hostId = null, unbonded 
   if (!active.length) return null;
 
   if (typeof hostId === "string" && hostId) {
-    return active.find(c => c.__hostId === hostId) ?? null;
+    const picked = active.find(c => c.__hostId === hostId) ?? null;
+    return unbonded && picked?.bonded ? null : picked;
   }
 
   if (target) {

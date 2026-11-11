@@ -760,16 +760,18 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
   } else if (source === "connection") {
     // A picker's host id first; Forge a Bond never scores a bonded connection
     // it wasn't asked for (issue #301 B01 — with the id dropped, it scored the
-    // sole bonded one's full track).
+    // sole bonded one's full track), nor one a stale picker names (AA50).
     const connections = (await deps.listConnections?.()) ?? [];
     const conn = selectConnection(connections, target, {
       hostId:   interpretation?.moveTargetId ?? null,
       unbonded: moveId === "forge_a_bond",
     });
     if (conn) {
+      // Always an id once resolved — rollMove's "not rolled" guard reads a
+      // null trackId as "the picked connection is gone" (issue #345 AA50).
       resolved = {
         ticks: Number(conn.relationshipTicks ?? 0), label: conn.name ?? null,
-        trackId: conn._id ?? conn.id ?? null, combatState: null,
+        trackId: conn._id ?? conn.id ?? conn.__hostId ?? null, combatState: null,
       };
     }
   }

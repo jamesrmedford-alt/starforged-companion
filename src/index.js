@@ -3833,9 +3833,14 @@ async function postExpeditionProgressCard({ track, created, actorId = null }) {
 async function postTrackGoneCard(interpretation) {
   const label = escapeChatHtml(interpretation?.moveTarget ?? "That track");
   const move  = escapeChatHtml(interpretation?.moveName ?? "The roll");
+  // A forge's track is a connection: severed, removed or bonded since its
+  // picker was posted (issue #345 AA50).
+  const why = interpretation?.moveId === "forge_a_bond"
+    ? "is no longer a connection to forge a bond with: they were severed, removed or bonded before the roll."
+    : "is no longer open: it was deleted or finished before the roll.";
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>${move} — not rolled</strong>`
-      + `<p><strong>${label}</strong> is no longer open: it was deleted or finished before the roll. Nothing was rolled.</p></div>`,
+      + `<p><strong>${label}</strong> ${why} Nothing was rolled.</p></div>`,
     flags:   { [MODULE_ID]: { trackGoneCard: true } },
   });
 }
