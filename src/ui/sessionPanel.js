@@ -34,7 +34,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "../safety/sessionLifecycleDialogs.js";
-import { isSessionActive, sessionMinutesActive } from "../session/lifecycle.js";
+import { isSessionActive, sessionMinutesActive, sessionNeedsMint } from "../session/lifecycle.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -115,18 +115,25 @@ export class SessionPanelApp extends ApplicationV2 {
   async _prepareContext(_options) {
     const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
     const active        = isSessionActive(campaignState);
+    // A session whose gate is still open is over after four hours without
+    // chat (sessionNeedsMint): the next Begin a Session starts the new one, as
+    // its dialog agrees. With the GM's game left loaded nothing mints, and the
+    // panel read "Active · 1800 min" with Begin disabled (issue #345 AA59).
+    const over          = active && sessionNeedsMint(campaignState);
     const minutes       = sessionMinutesActive(campaignState);
     const sessionNumber = Number(campaignState?.sessionNumber ?? 0);
-    return { active, minutes, sessionNumber };
+    return { active, over, minutes, sessionNumber };
   }
 
   /** @override */
   async _renderHTML(context, _options) {
-    const { active, minutes, sessionNumber } = context;
+    const { active, over, minutes, sessionNumber } = context;
 
-    const stateBadge = active
-      ? `<span class="badge active">Active${minutes ? ` · ${minutes} min` : ""}</span>`
-      : `<span class="badge inactive">Inactive — narration is gated</span>`;
+    const stateBadge = over
+      ? `<span class="badge over" title="No chat for four hours: this session is over. Begin Session starts the next one.">Over — four hours without chat</span>`
+      : active
+        ? `<span class="badge active">Active${minutes ? ` · ${minutes} min` : ""}</span>`
+        : `<span class="badge inactive">Inactive — narration is gated</span>`;
 
     const sessionLine = sessionNumber > 0
       ? `<p class="muted">Session #${sessionNumber}</p>`
@@ -147,7 +154,7 @@ export class SessionPanelApp extends ApplicationV2 {
 
         <section class="lifecycle-row">
           <button class="session-btn primary" data-action="beginSession"
-                  ${active ? "disabled title=\"Session already active — end it first\"" : ""}>
+                  ${active && !over ? "disabled title=\"Session already active — end it first\"" : ""}>
             Begin Session
           </button>
           <button class="session-btn primary" data-action="endSession"
