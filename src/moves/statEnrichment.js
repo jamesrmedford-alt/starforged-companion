@@ -21,8 +21,8 @@
  *   - player meters  (health/spirit/supply/momentum) → snapshot.meters[name]
  *   - vehicle stat   (integrity) → command-vehicle Actor's
  *                                  flags[MODULE_ID].ship.integrity — or,
- *                                  when the move names one of the roller's
- *                                  support vehicles (or that vehicle's
+ *                                  when the move's target names one of the
+ *                                  roller's support vehicles (or that vehicle's
  *                                  ability swapped the stat for it), that
  *                                  asset's Integrity track (vehicleItemId)
  *   - companion_health → the Companion asset's track value
@@ -516,23 +516,29 @@ function substitutingAsset(assets, interpretation) {
 
 /**
  * The support vehicle an integrity roll is made for: the roller's vehicle
- * asset (actorBridge listSupportVehicleAssets) the move's target names — or,
- * when it names nothing, the one the narration names — as whole words
- * (`namedOnce`). Null otherwise: the roll is the command vehicle's, as an
- * unnamed or starship target always was. Never a guess: a sole support
- * vehicle the move does not name is not taken for it (rules/reachability.md
- * §6).
+ * asset (actorBridge listSupportVehicleAssets) the move's target names, as
+ * whole words (`namedOnce`). Null otherwise: the roll is the command
+ * vehicle's, as an unnamed or starship target always was. Never a guess: a
+ * sole support vehicle the move does not name is not taken for it
+ * (rules/reachability.md §6).
+ *
+ * The narration does not name it. The interpreter gives withstand_damage's
+ * target "null for the command starship" (interpreter.js), and a null target
+ * read as "nothing named" let the line pick one instead — any support vehicle
+ * it mentioned, by its full name or a first or last word: "An enemy fighter
+ * rakes the Wayfarer's hull" was the Snub Fighter's hit, "The Wayfarer
+ * shudders as the hoverbike breaks loose" the Hoverbike's (issue #345 AA14,
+ * a regression of issue #342 Z53).
  *
  * @param {Actor|null} actor
- * @param {Object} interpretation — its `moveTarget` / `playerNarration`
+ * @param {Object} interpretation — its `moveTarget`
  * @returns {Item|null}
  */
 function selectNamedVehicleAsset(actor, interpretation) {
   const vehicles = listSupportVehicleAssets(actor);
   if (!vehicles.length) return null;
   const target = typeof interpretation?.moveTarget === "string" ? interpretation.moveTarget : "";
-  const prose  = typeof interpretation?.playerNarration === "string" ? interpretation.playerNarration : "";
-  return namedOnce(vehicles, target) ?? (!target.trim() ? namedOnce(vehicles, prose) : null);
+  return namedOnce(vehicles, target);
 }
 
 /**
