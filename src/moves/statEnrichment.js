@@ -26,8 +26,8 @@
  *                                  ability swapped the stat for it), that
  *                                  asset's Integrity track (vehicleItemId)
  *   - companion_health → the Companion asset's track value
- *                                  (the swapping companion's, else
- *                                  resolveCompanionHealth); the roll's
+ *                                  (the swapping or named companion's,
+ *                                  else resolveCompanionHealth); the roll's
  *                                  companion and vehicle are recorded on
  *                                  the interpretation for its consequences
  *                                  (companionItemId / vehicleActorId /
@@ -163,9 +163,13 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
 
   // A companion whose ability swapped the move's stat for "+its health" — the
   // Survey Bot's Face Danger, the Banshee's Set a Course — rolls its own
-  // health, not the healthiest companion's (issue #345 AA10).
+  // health, not the healthiest companion's (issue #345 AA10). So does the one
+  // the move's target or its line names: "The glowcat is clipped by a
+  // ricochet" is the Glowcat's hit, though the Rockhorn is healthier (issue
+  // #345 AA45 — the notice told the player to re-narrate, and nothing read it).
   if (statUsed === "companion_health") {
-    const companion = substitutingAsset(listCompanionAssets(actor), interpretation);
+    const companions = listCompanionAssets(actor);
+    const companion  = substitutingAsset(companions, interpretation) ?? namedCompanion(companions, interpretation);
     if (companion) {
       interpretation.statValue       = Number(companion.system?.track?.value ?? 0);
       interpretation.companionItemId = companion.id;
@@ -456,14 +460,14 @@ export function resolveStatValue(actor, statUsed, campaignState) {
   // Companion health — lives on the Companion-asset Item's track
   // (system.track.value). foundry-ironsworn stores it on the asset
   // schema's AssetConditionMeterField — see vendor/foundry-ironsworn/
-  // src/module/item/subtypes/asset.ts. We can't ask the player which
-  // companion is being hit mid-pipeline, so the heuristic is: of the
-  // character's Companion-category assets with an enabled track,
-  // pick the one with the highest current track value. That's the
-  // most charitable resolution and matches the typical single-
+  // src/module/item/subtypes/asset.ts. A companion the move or its line
+  // names is picked before this (enrichInterpretationStatValue); with none
+  // named the heuristic is: of the character's Companion-category assets
+  // with an enabled track, the one with the highest current track value.
+  // That's the most charitable resolution and matches the typical single-
   // companion case exactly; multi-companion characters get an info
-  // notification naming which one was used so they can adjust the
-  // narration if it's wrong.
+  // notification naming which one was used, and that naming the companion
+  // picks it (issue #345 AA45).
   if (statUsed === "companion_health") {
     return resolveCompanionHealth(actor);
   }
@@ -542,9 +546,26 @@ function selectNamedVehicleAsset(actor, interpretation) {
 }
 
 /**
+ * The companion a companion_health roll names: the one the move's target
+ * names, else the one its narration names, as whole words (`namedOnce` — the
+ * full name, or a first / last name no other companion shares) — null for
+ * none, or several (issue #345 AA45). Heal's companion is read the same way
+ * (resolveHealPatient).
+ *
+ * @param {Item[]} companions — listCompanionAssets
+ * @param {Object} interpretation — its `moveTarget` / `playerNarration`
+ * @returns {Item|null}
+ */
+function namedCompanion(companions, interpretation) {
+  const target = typeof interpretation?.moveTarget === "string" ? interpretation.moveTarget : "";
+  const prose  = typeof interpretation?.playerNarration === "string" ? interpretation.playerNarration : "";
+  return namedOnce(companions, target) ?? namedOnce(companions, prose);
+}
+
+/**
  * Resolve the character's companion_health to the highest enabled
- * Companion-asset track value (selectCompanionAsset). Notifies on
- * multi-companion ambiguity.
+ * Companion-asset track value (selectCompanionAsset) — the roll's companion
+ * when none is named. Notifies on multi-companion ambiguity.
  *
  * Exported for test coverage.
  */
@@ -563,13 +584,14 @@ export function resolveCompanionHealth(actor) {
     return 0;
   }
 
-  // For multi-companion characters we surface which one we used so the
-  // player can re-narrate if they intended a different companion.
+  // For multi-companion characters we surface which one we used, and how to
+  // roll another: name it (issue #345 AA45 — "Re-narrate if you meant a
+  // different companion" promised a remedy nothing read).
   const value = Number(chosen.system?.track?.value ?? 0);
 
   if (companions.length > 1) {
     globalThis.ui?.notifications?.info?.(
-      `Starforged Companion: companion_health rolled with ${companions.length} active Companion assets — using "${chosen.name}" (track ${value}). Re-narrate if you meant a different companion.`,
+      `Starforged Companion: no companion named among ${companions.length} — rolling the healthiest, "${chosen.name}" (track ${value}). Name the companion in your line to roll its health instead.`,
     );
   }
 
