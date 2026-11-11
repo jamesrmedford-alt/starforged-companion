@@ -92,7 +92,6 @@ const SETTING = {
   // ── Fact continuity ──────────────────────────────────────────────────────
   FC_ENABLED:                  'factContinuity.enabled',
   FC_LEDGER_IN_CONTEXT:        'factContinuity.ledgerInContext',
-  FC_SIDECAR_REQUIRED:         'factContinuity.sidecarRequired',
   FC_MAX_LEDGER_TOKENS:        'factContinuity.maxLedgerTokens',
   FC_CONSISTENCY_CHECK:        'factContinuity.consistencyCheck',
   FC_SCENE_FRAME:              'factContinuity.sceneFrame',
@@ -546,14 +545,11 @@ export function registerSettings() {
     default: true,
   });
 
-  game.settings.register(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED, {
-    name:    'Sidecar Required',
-    hint:    'When enabled, the narrator response is expected to contain a fenced JSON sidecar after every reply. When disabled, missing sidecars are tolerated silently (rare in practice).',
-    scope:   'world',
-    config:  false,
-    type:    Boolean,
-    default: true,
-  });
+  // "Sidecar Required" (`factContinuity.sidecarRequired`) is retired: nothing
+  // read it, and the only thing it could gate — the warning on a narrator reply
+  // with no sidecar fence — is a genuine loss that always warns
+  // (NARR-SIDECAR-SILENT; "No silent failures"). Whether there is a sidecar at
+  // all is FC_ENABLED's (issue #345 AA65). A stored value stays, unread.
 
   game.settings.register(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS, {
     name:    'Max Ledger Tokens',
@@ -698,7 +694,6 @@ function getPacingDials() {
 // ── Fact continuity ──────────────────────────────────────────────────────
 export function getFactContinuityEnabled()        { return game.settings.get(MODULE_ID, SETTING.FC_ENABLED)             ?? true; }
 export function getFactContinuityLedgerInContext(){ return game.settings.get(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT)   ?? true; }
-export function getFactContinuitySidecarRequired(){ return game.settings.get(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED)    ?? true; }
 export function getFactContinuityMaxLedgerTokens(){ return game.settings.get(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS)   ?? 400; }
 export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? true; }
 export function getFactContinuitySceneFrame()      { return game.settings.get(MODULE_ID, SETTING.FC_SCENE_FRAME)        ?? true; }
@@ -1096,7 +1091,6 @@ export class SettingsPanelApp extends ApplicationV2 {
       factContinuity: {
         enabled:           getFactContinuityEnabled(),
         ledgerInContext:   getFactContinuityLedgerInContext(),
-        sidecarRequired:   getFactContinuitySidecarRequired(),
         maxLedgerTokens:   getFactContinuityMaxLedgerTokens(),
         consistencyCheck:  getFactContinuityConsistencyCheck(),
         sceneFrame:        getFactContinuitySceneFrame(),
@@ -1347,13 +1341,6 @@ export class SettingsPanelApp extends ApplicationV2 {
             <input type="checkbox" name="factContinuity.ledgerInContext"
                    ${ctx.factContinuity.ledgerInContext ? 'checked' : ''} ${dis}>
             Inject the active-scene ledger into the narrator system prompt
-          </label>
-        </div>
-        <div class="pacing-field">
-          <label class="pacing-field-label">
-            <input type="checkbox" name="factContinuity.sidecarRequired"
-                   ${ctx.factContinuity.sidecarRequired ? 'checked' : ''} ${dis}>
-            Require a sidecar on every narrator response
           </label>
         </div>
         <div class="pacing-field">
@@ -2075,7 +2062,6 @@ export class SettingsPanelApp extends ApplicationV2 {
 
       const enabled          = el.querySelector('[name="factContinuity.enabled"]')?.checked          ?? true;
       const ledgerInContext  = el.querySelector('[name="factContinuity.ledgerInContext"]')?.checked  ?? true;
-      const sidecarRequired  = el.querySelector('[name="factContinuity.sidecarRequired"]')?.checked  ?? true;
       const consistencyCheck = el.querySelector('[name="factContinuity.consistencyCheck"]')?.checked ?? false;
       const sceneFrame       = el.querySelector('[name="factContinuity.sceneFrame"]')?.checked       ?? true;
       const maxRaw           = el.querySelector('[name="factContinuity.maxLedgerTokens"]')?.value;
@@ -2090,7 +2076,6 @@ export class SettingsPanelApp extends ApplicationV2 {
       await Promise.all([
         game.settings.set(MODULE_ID, SETTING.FC_ENABLED,             enabled),
         game.settings.set(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT,   ledgerInContext),
-        game.settings.set(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED,    sidecarRequired),
         game.settings.set(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS,   maxTokens),
         game.settings.set(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK,   consistencyCheck),
         game.settings.set(MODULE_ID, SETTING.FC_SCENE_FRAME,         sceneFrame),
