@@ -11,7 +11,10 @@
  *
  * In production the pipeline entry is already isCanonicalGM-gated; these tests
  * pin the belt-and-suspenders guards at the write sites themselves so a future
- * un-gated caller on a non-GM client cannot reproduce the errors.
+ * un-gated caller on a non-GM client cannot reproduce the errors. The capture
+ * itself runs on the GM that ran the narration, canonical or not by the time
+ * it lands (issue #345 AA34 — a lower-id keyed GM joining mid-narration left
+ * it running nowhere).
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -63,7 +66,9 @@ beforeEach(() => {
 // runPostNarrationPasses — gates ALL detection→World-Journal/tier writes
 // ---------------------------------------------------------------------------
 
-describe('runPostNarrationPasses — canonical-GM gate', () => {
+// issue #345 AA34: the gate is a GM's client — the one that ran the
+// narration — no longer the canonical GM at capture time.
+describe('runPostNarrationPasses — GM gate', () => {
   // make_a_connection on a hit runs detection synchronously (no setTimeout),
   // so the call is observable within the awaited promise.
   const resolution = { moveId: 'make_a_connection', outcome: 'strong_hit', _id: 'r1' };
@@ -75,10 +80,21 @@ describe('runPostNarrationPasses — canonical-GM gate', () => {
     expect(runCombinedDetectionPass).toHaveBeenCalledOnce();
   });
 
-  it('no-ops (no detection / world writes) when not the canonical GM', async () => {
+  it('no-ops (no detection / world writes) on a player\'s client', async () => {
+    const restore = asPlayer();
+    try {
+      vi.mocked(isCanonicalGM).mockReturnValue(false);
+      await runPostNarrationPasses('Some prose.', resolution, relevance, { currentSessionId: 's' });
+      expect(runCombinedDetectionPass).not.toHaveBeenCalled();
+    } finally {
+      restore();
+    }
+  });
+
+  it('runs on the GM that narrated after a lower-id keyed GM became canonical meanwhile (issue #345 AA34)', async () => {
     vi.mocked(isCanonicalGM).mockReturnValue(false);
     await runPostNarrationPasses('Some prose.', resolution, relevance, { currentSessionId: 's' });
-    expect(runCombinedDetectionPass).not.toHaveBeenCalled();
+    expect(runCombinedDetectionPass).toHaveBeenCalledOnce();
   });
 
   // Issue #286 D4: interaction-class moves ran only the tier pass; paced
@@ -102,14 +118,22 @@ describe('runPostNarrationPasses — canonical-GM gate', () => {
   });
 
   it('still no-ops for a non-GM even on an interaction-class narration', async () => {
-    vi.mocked(isCanonicalGM).mockReturnValue(false);
-    await runPostNarrationPasses(
-      'Some prose.',
-      { moveId: 'compel', outcome: 'strong_hit', _id: 'r2' },
-      { resolvedClass: 'interaction', entityIds: ['e1'], entityTypes: ['connection'] },
-      { currentSessionId: 's' },
-    );
-    expect(runCombinedDetectionPass).not.toHaveBeenCalled();
+    vi.useFakeTimers();
+    const restore = asPlayer();
+    try {
+      vi.mocked(isCanonicalGM).mockReturnValue(false);
+      await runPostNarrationPasses(
+        'Some prose.',
+        { moveId: 'compel', outcome: 'strong_hit', _id: 'r2' },
+        { resolvedClass: 'interaction', entityIds: ['e1'], entityTypes: ['connection'] },
+        { currentSessionId: 's' },
+      );
+      await vi.runAllTimersAsync();
+      expect(runCombinedDetectionPass).not.toHaveBeenCalled();
+    } finally {
+      restore();
+      vi.useRealTimers();
+    }
   });
 });
 

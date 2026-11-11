@@ -123,7 +123,12 @@ discarded. With no GM connected nothing can be recorded (debug-logged). The
 post-narration capture (§2) does not run off the canonical GM: an `@scene`
 answered on a player's client used to run the detection and tier passes,
 whose World Journal, draft-card and NPC-card writes were refused there
-(issue #321 U36).
+(issue #321 U36). A move's or a Batch Mode round's capture runs on the GM
+that narrated it (`runPostNarrationPasses` / `runRoundNarrationPasses` — a
+GM's client, never a player's), canonical when it claimed the move: they
+re-checked canonicity when the narration landed, so a lower-id keyed GM
+joining meanwhile left the capture running nowhere — a Make a Connection hit
+made no one, untold (issue #345 AA34).
 
 **Safety [1] and the X-Card.** [1] renders `campaignState.safety` global
 Lines / Veils, read from the stored setting (`buildNarratorExtras` →

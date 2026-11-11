@@ -50,8 +50,11 @@ then finds the card listed finishes what its creation died before
 recorded under its name promoted to it; its bond is §2's.
 
 - **`make_a_connection` move** — the resolver carries text-only outcomes; the
-  actual creation rides the post-narration discovery pass (canonical GM, hits
-  only): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku) →
+  actual creation rides the post-narration discovery pass (hits only), on the
+  GM that narrated the move — canonical when it claimed the move lock; a
+  lower-id keyed GM joining while the narration was written left the hit
+  saying "Connection made" with no one made (issue #345 AA34; a round's
+  likewise): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku) →
   `routeEntityDrafts` auto-creates the first connection draft
   (`buildConnectionSeedData` → `createConnection` → silent portrait →
   `registerConnectionOnActiveCharacter`, which also creates the PC's bond

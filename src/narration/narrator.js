@@ -1078,9 +1078,11 @@ export async function narrateRound({ round, campaignState }) {
  * @returns {Promise<void>}
  */
 function runRoundNarrationPasses(narration, entries, campaignState, { narrationId, matchedEntityIds = [], matchedEntityTypes = [] }) {
-  // The capture's world-scoped writes are the canonical GM's (the
-  // runPostNarrationPasses gate).
-  if (!isCanonicalGM()) return Promise.resolve();
+  // The capture's world-scoped writes are a GM's, and it runs where the round
+  // was narrated — the GM resolving it, canonical when it took the round: a
+  // lower-id keyed GM joining meanwhile left the round's capture undone (the
+  // runPostNarrationPasses gate, issue #345 AA34).
+  if (!game.user?.isGM) return Promise.resolve();
   const isHit = (o) => o === 'strong_hit' || o === 'weak_hit';
   const isConnection = (e) => e.input?.kind === 'move' && e.input.moveId === 'make_a_connection';
   const captured = entries.filter(e => !isConnection(e) || isHit(e.input.outcome));
@@ -1416,13 +1418,16 @@ export function runPostNarrationPasses(
 
   // Hardening (multiplayer): the detection passes below perform world-scoped
   // writes — World Journal pages (JournalEntryPage), entity generative tiers,
-  // and entity Actor creation. Players (and non-canonical GMs) lack permission
-  // for those, so an un-gated run on their client floods the server log with
-  // "lacks permission to create JournalEntryPage" errors (the v1.7.24-era
-  // multiplayer playtest bug). In production the pipeline entry is already
-  // isCanonicalGM-gated (src/index.js); this is belt-and-suspenders so a future
-  // un-gated caller cannot reproduce it. Single-emitter by design.
-  if (!isCanonicalGM()) return Promise.resolve();
+  // and entity Actor creation. Players lack permission for those, so an
+  // un-gated run on their client floods the server log with "lacks permission
+  // to create JournalEntryPage" errors (the v1.7.24-era multiplayer playtest
+  // bug). The single emitter is the narration: the move pipeline claims the
+  // move lock on the canonical GM (src/index.js) and narrates there once, and
+  // its capture runs where it ran. It re-checked isCanonicalGM here, so when a
+  // lower-id keyed GM joined while the narration was written, the capture ran
+  // nowhere — a Make a Connection hit said "Connection made" and made no one,
+  // and nobody was told (issue #345 AA34).
+  if (!game.user?.isGM) return Promise.resolve();
 
   const cls = relevance.resolvedClass;
 
