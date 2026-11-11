@@ -20,8 +20,8 @@ Found by the twelfth bug audit (2026-11-10) of `22bdbeb` (the merge of PR
 refuter pass): 70 findings AA01–AA70 (AA01–AA03 the three high-severity
 rows: an X-carded oracle answer kept as established, the empty Private
 Channel window, its Private Lines read from the store) and 7 decision rows
-D1–D7. The maintainer asked for issue #345 to be addressed and took the
-recommended option on every decision row: D1, D3, D4, D5, D6 and D7 option
+D1–D7. The maintainer asked for issue #345 to be addressed on 2026-11-10
+and took the recommended option on every decision row: D1, D3, D4, D5, D6 and D7 option
 A, D2 option B (decisions.md → "Issue #345 audit" names where each is
 recorded). One commit per row (AA16 and AA49 share one; AA32 has a docs
 follow-up); each fix carries its own regression tests, converted from the
