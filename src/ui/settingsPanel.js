@@ -733,6 +733,39 @@ async function setPrivateLines(arr) {
   await syncSafetyToCampaignState();
 }
 
+/**
+ * The ✕ beside a Line, Veil or Private Line: remove the item its row shows —
+ * the text the button carries (`data-item`), looked up in the list as stored
+ * now — never the item at the row's position when the pane was drawn. The
+ * pane re-renders only once its own writes have landed, and never for another
+ * GM's edit, so a position goes stale under a drawn row: a second press on the
+ * same ✕ before the re-render, or a co-GM's pane drawn before another
+ * removal, deleted a hard limit nobody chose (issue #347 AB12). An item that
+ * is gone already removes nothing, and the pane is redrawn to show the list as
+ * it is. The pressed ✕ is disabled while its write is out; a refused write
+ * re-enables it, so the press can be retried.
+ * @param {{ render: Function }} app — the panel
+ * @param {HTMLElement|{ dataset: object }} target — the pressed ✕
+ * @param {() => string[]} read — the list as stored
+ * @param {(arr: string[]) => Promise<void>} write — its writer (sync included)
+ */
+async function removeSafetyItem(app, target, read, write) {
+  const text = target?.dataset?.item;
+  if (typeof text !== 'string' || target.disabled) return;
+  const list = read();
+  const at = list.indexOf(text);
+  if (at < 0) { app.render(); return; }
+  target.disabled = true;
+  try {
+    // A new array: `get` returns the cached setting, which a refused write
+    // must leave as it was (issue #321 U58).
+    await write(list.filter((_, i) => i !== at));
+  } finally {
+    target.disabled = false;
+  }
+  app.render();
+}
+
 // ---------------------------------------------------------------------------
 // Safety sync — bridges game.settings → campaignState.safety
 // ---------------------------------------------------------------------------
@@ -1183,12 +1216,12 @@ export class SettingsPanelApp extends ApplicationV2 {
         </div>
         <ul class="safety-item-list">
           ${items.length
-            ? items.map((item, i) => `
+            ? items.map((item) => `
               <li class="safety-item">
                 <span class="safety-item-text">${escapeAttr(item)}</span>
                 ${ctx.isGM || addAction.includes('Private')
                   ? `<button class="settings-btn btn-remove-item" data-action="${removeAction}"
-                             data-index="${i}" title="Remove">✕</button>`
+                             data-item="${escapeAttr(item)}" title="Remove">✕</button>`
                   : ''}
               </li>`).join('')
             : '<li class="safety-item safety-item-empty">None set.</li>'
@@ -1891,9 +1924,7 @@ export class SettingsPanelApp extends ApplicationV2 {
   static #onRemoveLine(_event, target) {
     const work = (async () => {
       if (!game.user.isGM) return;
-      const idx = Number(target.dataset.index);
-      await setGlobalLines(getGlobalLines().filter((_, i) => i !== idx));   // sync included
-      this.render();
+      await removeSafetyItem(this, target, getGlobalLines, setGlobalLines);   // sync included
     })();
     this._lastAction = work;
     return work;
@@ -1915,9 +1946,7 @@ export class SettingsPanelApp extends ApplicationV2 {
   static #onRemoveVeil(_event, target) {
     const work = (async () => {
       if (!game.user.isGM) return;
-      const idx = Number(target.dataset.index);
-      await setGlobalVeils(getGlobalVeils().filter((_, i) => i !== idx));   // sync included
-      this.render();
+      await removeSafetyItem(this, target, getGlobalVeils, setGlobalVeils);   // sync included
     })();
     this._lastAction = work;
     return work;
@@ -1937,9 +1966,7 @@ export class SettingsPanelApp extends ApplicationV2 {
 
   static #onRemovePrivateLine(_event, target) {
     const work = (async () => {
-      const idx = Number(target.dataset.index);
-      await setPrivateLines(getPrivateLines().filter((_, i) => i !== idx));  // sync included
-      this.render();
+      await removeSafetyItem(this, target, getPrivateLines, setPrivateLines);  // sync included
     })();
     this._lastAction = work;
     return work;

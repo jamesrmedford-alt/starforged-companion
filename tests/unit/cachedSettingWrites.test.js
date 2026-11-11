@@ -184,9 +184,9 @@ describe("a refused write leaves this client's cached setting as it was (issue #
     it("adding or removing a Line or a Veil", async () => {
       for (const [name, key, dataset] of [
         ["addLine",    "globalSafetyLines", {}],
-        ["removeLine", "globalSafetyLines", { index: "0" }],
+        ["removeLine", "globalSafetyLines", { item: "gore" }],
         ["addVeil",    "globalSafetyVeils", {}],
-        ["removeVeil", "globalSafetyVeils", { index: "0" }],
+        ["removeVeil", "globalSafetyVeils", { item: "torture" }],
       ]) {
         const full = `${MODULE_ID}.${key}`;
         const was = structuredClone(cached(full));
@@ -199,7 +199,7 @@ describe("a refused write leaves this client's cached setting as it was (issue #
 
     it("adding or removing a Private Line", async () => {
       const full = `${MODULE_ID}.privateLines`;
-      for (const [name, dataset] of [["addPrivateLine", {}], ["removePrivateLine", { index: "0" }]]) {
+      for (const [name, dataset] of [["addPrivateLine", {}], ["removePrivateLine", { item: "needles" }]]) {
         const spy = refuse(full);
         expect(await action(name, panel(), dataset), name).toBeInstanceOf(Error);
         expect(cached(full), name).toEqual(["needles"]);

@@ -116,15 +116,16 @@ describe('what a player establishes reaches the GM\'s next move narration', () =
    * Run one of the Companion Settings panel's own actions on a client — the
    * production writer of the client-scoped Private Lines.
    */
-  async function panelAction(userId, action, { newPrivateLine = '', index = 0 } = {}) {
+  async function panelAction(userId, action, { newPrivateLine = '', item = '' } = {}) {
     const c = table.client(userId);
     const { SettingsPanelApp } = await c.import('../../src/ui/settingsPanel.js');
     const app = {
       element: parseHTML(`<input name="newPrivateLine" value="${newPrivateLine}">`),
       render() {},
     };
+    // A ✕ carries the text of the row it sits on (issue #347 AB12).
     const target = parseHTML('<button></button>').firstElementChild;
-    target.dataset.index = String(index);
+    target.dataset.item = item;
     await c.run(() => SettingsPanelApp.DEFAULT_OPTIONS.actions[action].call(app, null, target));
     await table.settle();
   }
@@ -136,7 +137,7 @@ describe('what a player establishes reaches the GM\'s next move narration', () =
     const first = await narrateMove('pl-2', 'pc-quinn');
     expect(first.system).toMatch(/### PRIVATE LINES[^\n]*\n- spiders/);
 
-    await panelAction('pl-1', 'removePrivateLine', { index: 0 });
+    await panelAction('pl-1', 'removePrivateLine', { item: 'spiders' });
     const second = await narrateMove('pl-2', 'pc-quinn');
     expect(second.system).not.toContain('PRIVATE LINES');
     expect(second.system).not.toContain('spiders');
