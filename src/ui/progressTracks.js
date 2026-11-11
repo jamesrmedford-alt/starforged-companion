@@ -119,10 +119,19 @@ function createTrack({ label, type, rank, entityId = null, objective = null, lin
  * second, empty journal beside it (issue #345 AA62; rules/reachability.md
  * §6). interpreter.js readOpenTrackLabels reads it the same way.
  *
+ * A world that defect already split holds two journals carrying the flag —
+ * the renamed one and the default-named one the next track write made, which
+ * every session since read and wrote: the one still carrying the default name
+ * wins, as v1.8.0 read it, never the older renamed one collection order puts
+ * first (issue #347 AB16). The two are not merged
+ * (TRACKS-JOURNAL-SPLIT-NOT-MERGED).
+ *
  * @returns {JournalEntry|null}
  */
 function findTracksJournal() {
-  return game.journal?.find?.(j => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY)))
+  const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY));
+  return game.journal?.find?.(j => flagged(j) && j?.name === JOURNAL_NAME)
+      ?? game.journal?.find?.(flagged)
       ?? game.journal?.find?.(j => j?.name === JOURNAL_NAME)
       ?? null;
 }

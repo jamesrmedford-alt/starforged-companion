@@ -1434,6 +1434,15 @@ function journalCategory(journal) {
  * recorded — or the next load — made a second one, splitting the record
  * (issue #345 AA63; rules/reachability.md §1, §6).
  *
+ * A world that defect already split holds two journals flagged with the
+ * category: the one the GM renamed, and the default-named one the next load
+ * made — which every session since read and wrote. Among several flagged
+ * journals the one still carrying the default name wins, as v1.8.0 read it;
+ * collection order put the older, renamed journal first, so the upgrade would
+ * have flipped every reader and writer onto it — the lore recorded since the
+ * split leaving ESTABLISHED LORE (issue #347 AB16). A sidebar Duplicate of a
+ * World Journal journal is the same case. The journals are not merged.
+ *
  * @param {string} name
  * @returns {JournalEntry|null}
  */
@@ -1441,7 +1450,8 @@ function findJournal(name) {
   if (!globalThis.game?.journal) return null;
   const category = nameToCategory(name);
   if (category !== "unknown") {
-    const flagged = game.journal.find?.(j => journalCategory(j) === category);
+    const flagged = game.journal.find?.(j => journalCategory(j) === category && j.name === name)
+                 ?? game.journal.find?.(j => journalCategory(j) === category);
     if (flagged) return flagged;
   }
   const named = game.journal.getName?.(name)

@@ -87,6 +87,15 @@ entries below this one.)
   World Journal one also by the canonical GM's load). Renaming them is fine
   (rules/reachability.md §6, resolve by stable id). *Rejected:* a new id flag
   — the flags these journals already carry are marks a rename leaves alone.
+  **Update (issue #347 AB16):** a world the old name lookup already split
+  holds two journals carrying the same flag — the renamed one and the
+  default-named one the next load or write made, which every session since
+  read and wrote. Among several flagged journals, the one still carrying the
+  default name wins, as v1.8.0 read it; the first in collection order was the
+  older renamed one, so the upgrade flipped every reader and writer onto stale
+  entries. The same rule holds for `findTracksJournal`, the interpreter's
+  track read and `findJournal`. The two journals are not merged
+  (TRACKS-JOURNAL-SPLIT-NOT-MERGED); a sidebar Duplicate is the same case.
 - **A retired setting leaves whole** [AA65]: the "Require a sidecar on every
   narrator response" box (`factContinuity.sidecarRequired`) is retired as
   issue #342 D6 retired the Session gap setting — its key, registration,
