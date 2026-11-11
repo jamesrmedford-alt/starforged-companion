@@ -372,6 +372,8 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
  * rolled: the pipeline posts a "Which vow?" card (index.js postWhichVowCard).
  * A pick posts the move again with the picked copy's id and name — the vow
  * the roll scores and the fulfilment completes — spoken as the card's roller.
+ * A Forsake Your Vow's card (`moveId`) posts the forsake of that copy (issue
+ * #345 AA16).
  *
  * The pick must be one of the card's own choices, and the requester must own
  * the roller's PC (the card's `actorId`) or be a GM; a card with no roller is
@@ -431,11 +433,13 @@ export async function applyFulfilVowPick(payload = {}, ctx = {}) {
       return { posted: false, reason: "claim-refused" };
     }
     try {
+      // The card's move: Fulfill Your Vow, or a Forsake Your Vow's (issue #345 AA16).
+      const forsake = f.moveId === "forsake_your_vow";
       await ChatMessage.create({
-        content: f.narration || `Attempt to fulfill ${choice.name || "my vow"}.`,
+        content: f.narration || (forsake ? `I forsake ${choice.name || "my vow"}.` : `Attempt to fulfill ${choice.name || "my vow"}.`),
         ...(actor ? { speaker: speakerFor(actor) } : {}),
         flags:   { [MODULE_ID]: {
-          bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true,
+          bypassPacing: true, forcedMoveId: forsake ? "forsake_your_vow" : "fulfill_your_vow", deferWhileBusy: true,
           forcedMoveTargetId: choice.itemId,
           ...(choice.name ? { forcedMoveTarget: choice.name } : {}),
         } },

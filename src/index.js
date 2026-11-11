@@ -3871,31 +3871,41 @@ async function postWhichFightCard({ moveId, moveName, narration, actorId = null,
 /**
  * Fulfill Your Vow with several vows open and none named: ask which vow,
  * instead of rolling a score of nothing — a certain miss (issue #321 U02).
+ * Forsake Your Vow among several of the roller's vows, or naming none of
+ * theirs, asks the same (`moveId`, selectForsakeVow — issue #345 AA16).
  * Posted in place of the move; nothing is rolled or written. Each distinct
  * vow (selectFulfilVow — a shared vow once, as the roller's copy when they
  * hold one) gets a button (wireWhichVowButtons) whose pick the canonical GM
  * applies once (gmRelay "fulfilVow.pick" → cardActions.applyFulfilVowPick):
  * the move is posted again with that copy's id, as the roller.
  *
- * @param {{ narration?: string, actorId?: string|null,
+ * @param {{ narration?: string, actorId?: string|null, moveId?: "fulfill_your_vow"|"forsake_your_vow",
  *   vows: Array<{ id: string, name?: string, rank?: string|number, ticks?: number }> }} opts
  */
-async function postWhichVowCard({ narration, actorId = null, vows }) {
+async function postWhichVowCard({ narration, actorId = null, vows, moveId = "fulfill_your_vow" }) {
+  const forsake = moveId === "forsake_your_vow";
   const buttons = vows.map(v => {
     const rank  = escapeChatHtml(rankName(v.rank).replace(/^\w/, c => c.toUpperCase()));
     const boxes = Math.floor(Number(v.ticks ?? 0) / 4);
     return `<button type="button" class="sf-followup-btn" data-action="sf-which-vow" data-item-id="${escapeChatHtml(v.id)}" `
-      + `title="Roll this vow's progress">🏁 ${escapeChatHtml(v.name || "Vow")} — ${rank}, ${boxes}/10 boxes</button>`;
+      + `title="${forsake ? "Forsake this vow" : "Roll this vow's progress"}">${forsake ? "⛓" : "🏁"} ${escapeChatHtml(v.name || "Vow")} — ${rank}, ${boxes}/10 boxes</button>`;
   }).join("");
+  const lead = forsake
+    ? (vows.length > 1
+      ? "More than one of your vows is open and nothing named one of them. Choose the vow to forsake — nothing has been cleared yet."
+      : "Nothing named one of your open vows. Forsake this one? Nothing has been cleared yet.")
+    : "More than one vow is open and nothing named this one. Choose the vow to fulfill — nothing has been rolled yet.";
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Fulfill Your Vow — which vow?</strong>`
-      + `<p>More than one vow is open and nothing named this one. Choose the vow to fulfill — nothing has been rolled yet.</p>`
+    content: `<div class="sf-ptp-card"><strong>${forsake ? "Forsake Your Vow" : "Fulfill Your Vow"} — which vow?</strong>`
+      + `<p>${lead}</p>`
       + `<div class="sf-milestone-suggest-row">${buttons}</div></div>`,
     // choices: the offered vow copies — a pick must be one of them and
     // forwards its copy as forcedMoveTargetId / forcedMoveTarget. actorId:
-    // the roller, the pick's speaker, so the move stays theirs.
+    // the roller, the pick's speaker, so the move stays theirs. moveId: the
+    // move the pick posts.
     flags: { [MODULE_ID]: {
       whichVowCard: true, narration: narration ?? null, actorId,
+      ...(forsake ? { moveId } : {}),
       choices: vows.map(v => ({ itemId: v.id, name: v.name ?? null })),
     } },
   });

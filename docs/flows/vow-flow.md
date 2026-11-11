@@ -403,7 +403,17 @@ the `forsakeVow` consequence drives a GM-gated pipeline branch that marks
 every copy of the roller's vow completed + `forsaken` (audit-preserving —
 nothing is deleted),
 closes the journal twin, flips a still-promised reward to **lost**, and posts
-the "⛓ Vow Forsaken" card. The costs suffer-prompt (Endure Stress −2 / Test
+the "⛓ Vow Forsaken" card. The vow is the roller's own, chosen when the move
+is read (`readMove` → `milestone.selectForsakeVow`, stamped `moveTargetId`):
+by name as Fulfill's (exact, then whole words — a crewmate's vow is never
+taken), unnamed their one open vow (a shared vow once); several, or a name
+none of theirs answers to, post the "Forsake Your Vow — which vow?" card
+(postWhichVowCard `moveId`) and clear nothing; with none, the move card says
+no vow was cleared and offers no costs (issue #345 AA16 — the table-wide
+sole-open rung counted copies, so two open copies cleared nothing behind
+"Vow cleared."; AA49 — a crewmate's exact-name vow beat the roller's
+whole-word one). The branch clears that copy (`resolveVowItemCopies`
+`itemId` + `ownOnly`) and closes the journal twin by its name alone. The costs suffer-prompt (Endure Stress −2 / Test
 Your Relationship / discard an asset / narrative cost) rides alongside as
 before. No legacy pays — the vow was abandoned, not achieved.
 

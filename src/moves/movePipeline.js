@@ -65,7 +65,7 @@ import { selectCombatTrack } from "./combat.js";
 import { selectConnection, planDevelopRelationship, buildConnectionSuggestion } from "./developRelationship.js";
 import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "./sceneChallenge.js";
 import { moveDisplayName } from "../system/i18n.js";
-import { buildMilestoneSuggestion, selectFulfilVow } from "./milestone.js";
+import { buildMilestoneSuggestion, selectFulfilVow, selectForsakeVow } from "./milestone.js";
 import { extractRiders } from "./consequenceRiders.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
 import { getCurrentSiteKind } from "../entities/location.js";
@@ -343,6 +343,26 @@ export async function readMove({
     }
   }
 
+  // Forsake Your Vow clears a vow on every copy, and cannot be undone: the
+  // roller's own (selectForsakeVow) — by name as Fulfill's, unnamed their one
+  // open vow (a shared vow once); among several, or for a name none of theirs
+  // answers to, it asks which, nothing cleared yet. The vow found rides the
+  // interpretation, the copy the branch after the move clears (issue #345
+  // AA16: two open copies table-wide cleared nothing behind "Vow cleared.";
+  // AA49: a crewmate's exact-name vow beat the roller's whole-word one).
+  if (interpretation.moveId === "forsake_your_vow" && !interpretation.moveTargetId) {
+    const { vow, choices, completed } = selectForsakeVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
+      { rollerActorId: rollerActor?.id ?? null });
+    if (vow) {
+      interpretation.moveTargetId = vow.id;
+      interpretation.moveTarget   = vow.name || (interpretation.moveTarget ?? null);
+    } else if (completed) {
+      targetChoice = { kind: "vow-gone" };
+    } else if (choices.length) {
+      targetChoice = { kind: "vow", vows: choices, moveId: "forsake_your_vow" };
+    }
+  }
+
   // Continue a Legacy rolls each legacy track by name. Naming none, it
   // scored 0 — "progress (0 ticks)", a certain miss — and nothing on the
   // card said no track was found (issue #331 X63). Ask which track
@@ -428,7 +448,8 @@ export async function postTargetChoiceCard(read, { narration, speakerActorId }) 
     await postTrackGoneCard(interpretation).catch(err =>
       console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
   } else if (targetChoice?.kind === "vow") {
-    await postWhichVowCard({ narration, actorId: rollerActor?.id ?? null, vows: targetChoice.vows }).catch(err =>
+    await postWhichVowCard({ narration, actorId: rollerActor?.id ?? null, vows: targetChoice.vows,
+      moveId: targetChoice.moveId ?? "fulfill_your_vow" }).catch(err =>
       console.warn(`${MODULE_ID} | which-vow card failed:`, err?.message ?? err));
   } else if (targetChoice?.kind === "legacy") {
     await postWhichLegacyCard({
@@ -1231,18 +1252,22 @@ export async function rollMove({
   // achieved. The resolver's cost sufferPrompt rides separately.
   if (resolution.consequences?.forsakeVow && game.user.isGM) {
     try {
-      // The roller's own vow first (issue #301 B02) — never another PC's
-      // vow that shares the name.
+      // The roller's own vow (issue #301 B02) — the copy readMove chose
+      // (moveTargetId: selectForsakeVow, or a "Which vow?" pick), else theirs
+      // by name; never a crewmate's (`ownOnly`, issue #345 AA49).
       const { primary, copies } = resolveVowItemCopies(interpretation.moveTarget ?? null,
-        { actorId: rollerActor?.id ?? null });
-      const fin = await finishVow(
-        { moveTarget: interpretation.moveTarget ?? primary?.item?.name ?? null, ranksDown: 0 },
-        {
-          listTracks:    () => listProgressTracks(),
-          completeTrack: (id) => completeProgressTrack(id),
-        },
-      ).catch(() => null); // journal twin close — legacyTicks deliberately unused
+        { actorId: rollerActor?.id ?? null, itemId: interpretation.moveTargetId ?? null, ownOnly: true });
+      // Its journal twin, by the vow's own name — none without a vow: the
+      // sole open journal track, or a crewmate's twin of the name the move
+      // gave, is no vow of the roller's (issue #345 AA16).
       if (primary) {
+        await finishVow(
+          { moveTarget: primary.item?.name ?? interpretation.moveTarget ?? null, ranksDown: 0 },
+          {
+            listTracks:    () => listProgressTracks(),
+            completeTrack: (id) => completeProgressTrack(id),
+          },
+        ).catch(() => null); // journal twin close — legacyTicks deliberately unused
         for (const { actor, item } of copies) {
           if (item.system?.completed !== true) {
             await completeVowItem(actor, item.id).catch(err =>
@@ -1261,11 +1286,14 @@ export async function rollMove({
         }
         await postForsakeVowCard(primary.item.name).catch(err =>
           console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));
-      } else if (fin?.track) {
-        await postForsakeVowCard(fin.track.label).catch(err =>
-          console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));
       } else {
-        console.warn(`${MODULE_ID} | forsake: no vow matched "${interpretation.moveTarget ?? "?"}" — nothing cleared.`);
+        // No open vow of the roller's to clear: the move card says so and
+        // offers no costs — it said "Vow cleared." and offered them while
+        // every vow stayed open, the miss on the GM's console alone (issue
+        // #345 AA16; "No silent no-op on a player's action").
+        console.warn(`${MODULE_ID} | forsake: no vow of ${rollerActor?.name ?? "the roller"}'s matched "${interpretation.moveTarget ?? "?"}" — nothing cleared.`);
+        resolution.consequences = { ...resolution.consequences, sufferPrompt: null,
+          otherEffect: `No open vow of ${rollerActor?.name ?? "the character"}'s to forsake — no vow was cleared, and no cost is owed.` };
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | forsake vow failed:`, err?.message ?? err);
