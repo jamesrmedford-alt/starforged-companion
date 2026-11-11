@@ -362,6 +362,14 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // fight; vows and bonds reach the CHARACTER block from the sheet.
   extras.progressTracks = (mode === 'campaign_recap') ? [] : await readOpenProgressTracks();
 
+  // Each PC's pinned Chronicle entries, for its CHARACTER block (issue #345
+  // AA07). The Chronicle panel's 📌 promises "pinned entries always appear in
+  // the narrator's context", and the pin was saved onto a flag nothing read:
+  // the context assembler's chronicle reader went with the 2026-10 dead-
+  // surface audit. Read for every PC, so a round's or the galley's blocks
+  // carry theirs too; the recap reads the whole chronicle itself.
+  extras.pinnedChronicle = (mode === 'campaign_recap') ? {} : await readPinnedChronicle(character);
+
   // Recent oracle results (narrator-context audit 2026-07) — the raw
   // `!oracle` / `!pay-the-price` outcomes for this session, so the narrator
   // never contradicts a roll the table just made. Rendered as [3b]; the
@@ -474,6 +482,45 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     : [];
 
   return extras;
+}
+
+/** How many pinned Chronicle entries a CHARACTER block carries (the newest), and how long each may run. */
+const PINNED_CHRONICLE_ENTRIES = 5;
+const PINNED_CHRONICLE_CHARS   = 300;
+
+/**
+ * Every PC's pinned Chronicle entries (issue #345 AA07) — actorId → texts,
+ * oldest first: the newest PINNED_CHRONICLE_ENTRIES of each, each on one
+ * line, clipped. `character` (the narration's PC) is read too should it not
+ * be in the roster. Fail-open: a chronicle that cannot be read gives none.
+ *
+ * @param {Object|null} [character] — getActiveCharacter's snapshot
+ * @returns {Promise<Object<string, string[]>>}
+ */
+async function readPinnedChronicle(character = null) {
+  const ids = new Set();
+  try {
+    for (const actor of getPlayerActors() ?? []) if (actor?.id) ids.add(actor.id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: listing the PCs for their pinned Chronicle entries failed:`, err?.message ?? err);
+  }
+  if (character?.actorId) ids.add(character.actorId);
+  const pinned = {};
+  for (const actorId of ids) {
+    try {
+      const texts = ((await getChronicleEntries(actorId)) ?? [])
+        .filter(e => e?.pinned === true && typeof e.text === 'string' && e.text.trim())
+        .slice(-PINNED_CHRONICLE_ENTRIES)
+        .map(e => {
+          const text = e.text.replace(/\s+/g, ' ').trim();
+          return text.length > PINNED_CHRONICLE_CHARS ? `${text.slice(0, PINNED_CHRONICLE_CHARS - 1)}…` : text;
+        });
+      if (texts.length) pinned[actorId] = texts;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: reading ${actorId}'s pinned Chronicle entries failed:`, err?.message ?? err);
+    }
+  }
+  return pinned;
 }
 
 /** The stored campaignState, or null when it cannot be read. */

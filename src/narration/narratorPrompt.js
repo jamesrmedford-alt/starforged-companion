@@ -1478,6 +1478,7 @@ export function buildNarratorSystemPrompt(
     sessionFocus         = null,
     progressTracks       = [],
     sceneLedger          = null,
+    pinnedChronicle      = null,
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1685,11 +1686,13 @@ export function buildNarratorSystemPrompt(
   // [8] Character — a round (issue #340) has one CHARACTER block per acting
   // PC, in the round's order, as the galley vignette has for two or more PCs
   // at the table (issue #345 AA31); every other mode the one character speaking.
+  // Each carries its PC's pinned Chronicle entries (issue #345 AA07).
   const roundCharacters = Array.isArray(extras?.roundCharacters) ? extras.roundCharacters.filter(Boolean) : [];
+  const pinnedFor = (c) => (c?.actorId && pinnedChronicle && typeof pinnedChronicle === 'object' ? pinnedChronicle[c.actorId] : null) ?? [];
   if (roundCharacters.length) {
-    for (const c of roundCharacters) parts.push(buildCharacterBlock(c));
+    for (const c of roundCharacters) parts.push(buildCharacterBlock(c, pinnedFor(c)));
   } else if (character) {
-    parts.push(buildCharacterBlock(character));
+    parts.push(buildCharacterBlock(character, pinnedFor(character)));
   }
 
   // [8b] Party roster — multiplayer speaker disambiguation. Rendered only
@@ -2417,7 +2420,7 @@ function buildIncitingIncidentBlock(campaignState) {
   return lines.join('\n');
 }
 
-function buildCharacterBlock(character) {
+function buildCharacterBlock(character, pinnedEntries = []) {
   const lines = ['## CHARACTER'];
 
   const idBits = [];
@@ -2496,6 +2499,16 @@ function buildCharacterBlock(character) {
   const rewards = Array.isArray(character.grantedRewards) ? character.grantedRewards : [];
   if (rewards.length) {
     lines.push(`Rewards received: ${rewards.slice(-8).map(r => `${r.description} (${r.form ?? 'gear'})`).join('; ')}`);
+  }
+
+  // The moments the player pinned in the character's Chronicle — the newest
+  // few, read by buildNarratorExtras. The panel's pin promised "pinned
+  // entries always appear in the narrator's context" and reached no prompt
+  // (issue #345 AA07).
+  const pinned = (Array.isArray(pinnedEntries) ? pinnedEntries : []).filter(t => typeof t === 'string' && t.trim());
+  if (pinned.length) {
+    lines.push('Pinned in their Chronicle (moments the player wants kept in mind):');
+    for (const text of pinned) lines.push(`  - ${text.trim()}`);
   }
 
   return lines.join('\n');

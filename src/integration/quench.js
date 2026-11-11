@@ -12207,6 +12207,7 @@ function registerPromptContractTests(quench) {
         lastSession: "Last session the crew slipped out of Bleakhold with stolen charts.",
         privateLine: "Spiders",
         chronicle:   "QUENCH CONTRACT: the crew fled Bleakhold with the charts.",
+        pinnedEntry: "QUENCH CONTRACT: she swore never to fly for the Covenant.",
         sitter:      "Jin Okafor (contract)",
         roundSeed:   "QUENCH SEED: a cargo drone drifts loose across the bay",
       };
@@ -12539,12 +12540,16 @@ function registerPromptContractTests(quench) {
           const { applySidecar, applySceneFrame } = await import(`${MODULE_PATH}/factContinuity/ledgers.js`);
           const { collectAllEntities } = await import(`${MODULE_PATH}/context/relevanceResolver.js`);
           const { mintSession }       = await import(`${MODULE_PATH}/session/lifecycle.js`);
-          const { addChronicleEntry } = await import(`${MODULE_PATH}/character/chronicle.js`);
+          const { addChronicleEntry, getChronicleEntries, setChronicleEntryPinned } = await import(`${MODULE_PATH}/character/chronicle.js`);
 
           // A second PC; a vow on the first one's sheet; a chronicle for the recap.
           fx.pcB = await Actor.create({ name: N.pcB, type: "character", system: { pronouns: "he/him" } });
           await createCharacterVowItem(fx.pcA, { name: N.vow, rank: "dangerous", vowId: "quench-contract-vow" });
           await addChronicleEntry(fx.pcA.id, { type: "discovery", text: N.chronicle, automated: true, sessionId: "quench-contract-s1" });
+          // A pinned entry, which the first PC's CHARACTER block carries (issue #345 AA07).
+          await addChronicleEntry(fx.pcA.id, { type: "moment", text: N.pinnedEntry, automated: false, sessionId: "quench-contract-s1" });
+          const pin = (await getChronicleEntries(fx.pcA.id)).find(e => e?.text === N.pinnedEntry);
+          if (pin) await setChronicleEntryPinned(fx.pcA.id, pin.id, true);
 
           // The sector's cast: an NPC with a goal, a lawless settlement, the command vehicle.
           const sector = { id: "quench-contract-sector", name: N.sector, region: "terminus", regionLabel: "Terminus", trouble: "Pirates raid the lanes" };
@@ -12622,6 +12627,7 @@ function registerPromptContractTests(quench) {
             if (mode.speaker || !fx.otherPcs.length) {
               assert.include(character.text, N.pcA, `${mode.name}: CHARACTER is the speaking (or first) PC`);
               assert.include(character.text, N.vow, `${mode.name}: CHARACTER lists the PC's open vow`);
+              assert.include(character.text, N.pinnedEntry, `${mode.name}: CHARACTER carries the PC's pinned Chronicle entry (issue #345 AA07)`);
             }
           });
         }

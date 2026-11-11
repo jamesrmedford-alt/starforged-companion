@@ -443,10 +443,12 @@ function getCurrentEntries(page) {
 }
 
 
-// The narrator reads entries directly (getChronicleEntries — narrator.js
-// selects its own recent window); the retired context assembler's
-// getChronicleForContext summary/recent helper was removed in the 2026-10
-// dead-export audit along with the chronicleContextCount setting it read.
+// The narrator reads entries directly (getChronicleEntries): the campaign
+// recap every entry, and buildNarratorExtras each PC's pinned ones for its
+// CHARACTER block (issue #345 AA07 — the pin had no reader). The retired
+// context assembler's getChronicleForContext summary/recent helper was
+// removed in the 2026-10 dead-export audit along with the
+// chronicleContextCount setting it read.
 
 
 // ─────────────────────────────────────────────────────────────────────────────

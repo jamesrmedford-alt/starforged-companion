@@ -459,7 +459,9 @@ condition last — frame/truths/corrections/ship are
 never dropped) · ([7], a legacy count of `connectionIds` that counted a
 lost connection as active, is retired — issue #331 X29) · [8]
 CHARACTER STATE (vows and bonds with progress and their rank by name — issue
-#321 U62 — granted rewards — C5) · [8b]
+#321 U62 — granted rewards — C5 — and the PC's newest five pinned Chronicle
+entries, each clipped, `extras.pinnedChronicle`: the Chronicle panel's pin
+was saved onto a flag nothing read, issue #345 AA07) · [8b]
 party roster · [8c] spotlight nudge · [9] sidecar
 instruction (last; includes the record-anchors-once and never-re-assert-
 CORRECTED rules) · [10] audio markup.
