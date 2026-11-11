@@ -41,7 +41,10 @@
  *     default. Client-scoped settings are per client (claudeApiKey,
  *     privateLines…).
  *   - `game.socket.emit` reaches every OTHER connected client, JSON-cloned,
- *     on a later macrotask. A disconnected client receives nothing.
+ *     on a later macrotask. A disconnected client receives nothing. A page
+ *     that leaves hears socket.io's own "disconnect" on its game.socket, and
+ *     one that joins again on the same page its "connect" (table.leave /
+ *     table.join).
  *   - Permission-faithful (tests/helpers/foundryPermissions.js): a player's
  *     world-setting write rejects, a non-author's ChatMessage update /
  *     delete rejects, an Actor update without OWNER rejects.
@@ -828,6 +831,21 @@ class SimClient {
     return off;
   }
 
+  /**
+   * Fire one of socket.io's own events on this client's socket — "disconnect"
+   * or "connect", which a real game.socket emits to its own page and no other
+   * (table.leave / table.join). A handler that throws is logged, as Foundry's
+   * emitter would.
+   */
+  emitOwnSocketEvent(event, ...args) {
+    for (const fn of [...(this.socketHandlers.get(event) ?? [])]) {
+      this.run(() => {
+        try { return fn(...args); }
+        catch (err) { console.error(`[${this.id}] socket ${event} handler threw:`, err); return undefined; }
+      });
+    }
+  }
+
   /** Set a setting AS THIS CLIENT (permission-checked, hooks fire). */
   setSetting(key, value, namespace = MODULE_ID) {
     return this.run(() => this.game.settings.set(namespace, key, value));
@@ -1264,14 +1282,23 @@ class SimTable {
     for (const other of this.connectedClients) {
       if (other !== c) other.run(() => other.hooks.call("userConnected", [c.user, true], false));
     }
+    // A page that lived through the drop hears its own socket reconnect
+    // (socket.io's "connect" on game.socket); a fresh page boots instead.
+    if (c.booted) c.emitOwnSocketEvent("connect");
     await c.boot();
   }
 
-  /** A user leaves: no further deliveries; `userConnected(user, false)` elsewhere. */
+  /**
+   * A user leaves: no further deliveries; `userConnected(user, false)`
+   * elsewhere. The leaving page's own socket says it dropped (socket.io's
+   * "disconnect" on game.socket), as a real client's does — a page that lives
+   * on (a drop, then join on the same page) can tell it missed deliveries.
+   */
   async leave(userId) {
     const c = this.client(userId);
     c.user.active = false;
     c.connected = false;
+    c.emitOwnSocketEvent("disconnect", "transport close");
     for (const other of this.connectedClients) {
       other.run(() => other.hooks.call("userConnected", [c.user, false], false));
     }

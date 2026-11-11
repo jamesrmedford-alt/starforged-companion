@@ -992,10 +992,17 @@ export function roundNarrationEntries(round) {
  * PC, the PARTY block naming who acts, no SPOTLIGHT (every PC is asked each
  * round). The narrator is told only who acted.
  *
- * @param {{ round: Object, campaignState: Object }} args — a working copy of campaignState
- * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object }>}
+ * `stillNarrating` — the driver's check that this call's narration is still
+ * the round's — is asked once the reply is in (or the call has failed),
+ * before anything is applied or posted: a round another GM took over,
+ * narrated or closed meanwhile is not narrated again from here — no card, no
+ * fallback, no sidecar — and the call answers `{ superseded: true }` (issue
+ * #347 AB17: the first GM's late reply posted a second card).
+ *
+ * @param {{ round: Object, campaignState: Object, stillNarrating?: (() => boolean)|null }} args — a working copy of campaignState
+ * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object, superseded?: boolean }>}
  */
-export async function narrateRound({ round, campaignState }) {
+export async function narrateRound({ round, campaignState, stillNarrating = null }) {
   const entries = roundNarrationEntries(round);
   if (!entries.length) return { posted: null };
   const settings = getNarratorSettings();
@@ -1059,6 +1066,12 @@ export async function narrateRound({ round, campaignState }) {
     sentenceTarget,
   });
   const maxTokens = maxTokensWithSidecar(roundMaxTokens(settings.narrationMaxTokens, entries.length));
+  // Asked after the call's long wait: is this narration still the round's?
+  const superseded = () => {
+    if (typeof stillNarrating !== 'function' || stillNarrating()) return false;
+    console.debug(`${MODULE_ID} | narrateRound: round ${round?.number ?? '?'} was taken over or narrated meanwhile — this reply is not posted.`);
+    return true;
+  };
 
   // One call, and one retry after a rate limit. The call is made here, not in
   // a helper, so its caller is narrateRound (the playthrough harness files a
@@ -1069,6 +1082,7 @@ export async function narrateRound({ round, campaignState }) {
       const raw = await callNarratorAPI({
         label: 'narrateRound', apiKey, systemPrompt, userMessage, model: settings.narrationModel, maxTokens,
       });
+      if (superseded()) return { posted: null, superseded: true };
       if (xCard.interrupted('narrateRound')) {
         return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
       }
@@ -1090,6 +1104,7 @@ export async function narrateRound({ round, campaignState }) {
       break;
     }
   }
+  if (superseded()) return { posted: null, superseded: true };
   return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState) };
 }
 

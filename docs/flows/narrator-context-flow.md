@@ -43,7 +43,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after
-  every acting entry is rolled and recorded and its upgrade decided. Context
+  every acting entry is rolled and recorded and its upgrade decided. Its
+  reply is posted only while the narration is still the round's (the
+  driver's `narrationStillOurs`): a co-GM's takeover, card or close since —
+  or a drop off the server while the call was out, with another GM
+  connected — and the reply is dropped, nothing applied (issue #347 AB17). Context
   goes through the same seam: the entries' text joined for lexical relevance
   and lore; each move entry's own relevance (resolved when it rolled — the
   GM's clarification dialog, asked before its dice, included — issue #347

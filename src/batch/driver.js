@@ -1325,21 +1325,88 @@ async function narrateTheRound() {
     return false;
   }
   _narratingRoundId = round.id;
+  const dropsAtClaim = _socketDrops;
+  let superseded = false;
   try {
     round = await queueRoundWrite(r => claimNarration(r, {
       narrationClaim: lock.claim, now: nowIso(), takeOver: !!r?.narrationClaim, resolverId: game.user.id,
     }));
     await closeCardUpgrades(round, null);
-    await narrateRound({ round, campaignState: workingCopy() }).catch((err) => {
+    const narrated = round;
+    const told = await narrateRound({
+      round: narrated, campaignState: workingCopy(),
+      stillNarrating: () => narrationStillOurs(narrated.id, lock.claim, dropsAtClaim),
+    }).catch((err) => {
       console.error(`${MODULE_ID} | Batch Mode: the round's narration failed:`, err);
       tellNarrationUnposted();
+      return null;
     });
+    superseded = told?.superseded === true;
   } finally {
     _narratingRoundId = null;
-    await releaseRoundLock(lock.claim);
+    // A page that lost its connection while its narration was out, with
+    // another GM connected, writes nothing more: its view of the world may
+    // be stale, and the release writes campaignState whole — it would put
+    // back what the other GM changed meanwhile. The lock it held was released
+    // by the GM it handed over to (W25), or is freed by its reload.
+    if (!(superseded && droppedSince(dropsAtClaim))) await releaseRoundLock(lock.claim);
+  }
+  // Another GM narrated it, took it over, or closed it meanwhile: the round
+  // is theirs to finish. A late finisher closed the round in its cache —
+  // after a drop, a round the table had already closed and replaced, with
+  // the actions players had written for the next (issue #347 AB17).
+  if (superseded) {
+    if (droppedSince(dropsAtClaim)) tellStalePage();
+    return false;
   }
   await finishRound(getStoredRound() ?? round, "resolved");
   return true;
+}
+
+// Times this page's socket has lost its connection to the server (socket.io's
+// "disconnect" on game.socket — registerBatchModeDriver).
+let _socketDrops = 0;
+
+/** Whether another GM is connected — one who may have taken a round over while this page was away. */
+function otherGmConnected() {
+  return Array.from(game.users ?? []).some(u => u?.isGM && u.active && u.id !== game.user?.id);
+}
+
+/** Whether this page has lost its connection since `drops` was read, with another GM connected now. */
+function droppedSince(drops) {
+  return _socketDrops !== drops && otherGmConnected();
+}
+
+/**
+ * Whether this client's narration of a round is still the round's — asked
+ * by narrateRound once its reply is in, before anything is applied or posted
+ * (issue #347 AB17). Not when the stored round is another one, no longer
+ * narrating, or narrated under another claim (a co-GM took it over); not
+ * once a narration of it is in chat; and not when this page lost its
+ * connection while the call was out and another GM is connected — a short
+ * drop reloads nothing, and the round's takeover, its card and its close may
+ * be writes this page never heard.
+ *
+ * @param {string} roundId
+ * @param {string} claim — the narration's lock claim
+ * @param {number} dropsAtClaim — the socket drops counted when it was claimed
+ * @returns {boolean}
+ */
+function narrationStillOurs(roundId, claim, dropsAtClaim) {
+  if (droppedSince(dropsAtClaim)) return false;
+  const r = getStoredRound();
+  if (r?.id !== roundId || r.phase !== ROUND_PHASE.NARRATING || r.narrationClaim !== claim) return false;
+  return !roundNarrationPosted(roundId);
+}
+
+/**
+ * This page lost its connection while it narrated a round, and its reply was
+ * not posted: told by a notification (a whisper is a write this page should
+ * not make) that its view may be out of date and a reload catches it up.
+ * Never throws.
+ */
+function tellStalePage() {
+  globalThis.ui?.notifications?.warn?.("Starforged Companion: your connection to the server dropped while this browser was narrating the Batch Mode round, so its narration was not posted — this browser may have missed what changed meanwhile, another GM taking the round over included. Reload (F5) to catch up; the round is finished by a GM who can.", { permanent: true });
 }
 
 /**
@@ -2117,6 +2184,10 @@ async function onUserConnected(user, connected) {
  */
 export function registerBatchModeDriver() {
   _xCardWas = !!campaignStateNow().xCardActive;
+  // socket.io's own event on this page's socket: a drop this page lives
+  // through reloads nothing, so its later writes may rest on a stale world
+  // (narrationStillOurs — issue #347 AB17).
+  game.socket?.on?.("disconnect", () => { _socketDrops += 1; });
   // A setting's first write is a createSetting, every later one an updateSetting.
   Hooks.on("createSetting", onBatchSettingWrite);
   Hooks.on("updateSetting", onBatchSettingWrite);
