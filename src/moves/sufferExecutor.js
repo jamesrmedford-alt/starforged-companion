@@ -289,6 +289,13 @@ const RESIST_ROLLS = {
 // issue #336 Y18).
 const RESIST_UPGRADE_FIRST = "Burn momentum or improve the result first — resisting is your next move, and closes them.";
 
+// The redirect picker of a loss of resources while unprepared (issue #325
+// W16) is the price's other card posted before the move card: a pick on it is
+// the move's chosen consequence, which closes its Burn Momentum / Improve
+// Result (issue #311 P03) — so it says to take them first, as the resist card
+// does (issue #345 AA47, Y18's sibling).
+const REDIRECT_UPGRADE_FIRST = "Burn momentum or improve the result first — choosing the suffer move is the move's consequence, and closes them.";
+
 /**
  * The resist card's prompt: one pick, which rolls Endure Harm ("harm") or
  * Endure Stress ("stress") as the PC (sufferDialog's `resist` option) —
@@ -704,19 +711,25 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     // is bound to that move's resolution, so a Burn Momentum or Improve
     // Result that undoes the price retires it and refuses a late pick, as it
     // does the move's own choice cards (issue #331 X15, issue #311 P03).
+    // While that move still offers a burn or an improvement, the picker (and
+    // this card's line) says to take it first (REDIRECT_UPGRADE_FIRST).
+    const upgradeFirst = await upgradeFirstOwed(opts);
     const redirect = await postSufferChoiceCard({
-      sufferPrompt: { kind: "any", amount, count: 1, exclude: ["sacrifice_resources"] },
+      sufferPrompt: { kind: "any", amount, count: 1, exclude: ["sacrifice_resources"],
+        ...(upgradeFirst ? { hint: REDIRECT_UPGRADE_FIRST } : {}) },
       actor,
       executorOpts,
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });
     const atZero = before <= 0;
+    const first = redirect && upgradeFirst
+      ? `; ${REDIRECT_UPGRADE_FIRST.charAt(0).toLowerCase()}${REDIRECT_UPGRADE_FIRST.slice(1, -1)}` : "";
     // The picker is posted first — this card says whether it was — so it sits
     // above this card: "choose below" pointed at nothing (W16-CHOOSE-BELOW).
     if (!opts.skipCard) {
       await postSufferCard({
         title: `Sacrifice Resources (-${amount})`,
-        body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? " (choose it on its card)" : " — choose one and apply it on the sheet"}.`,
+        body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? ` (choose it on its card${first})` : " — choose one and apply it on the sheet"}.`,
         flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero, unpreparedMarked: false, redirected: true },
       });
     }
