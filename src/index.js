@@ -162,7 +162,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 import { wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
-import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive } from "./session/lifecycle.js";
+import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
@@ -862,10 +862,15 @@ export function registerChatHook() {
     // The author is told why nothing happened (issue #329 X14): the line just
     // sat in chat, and a card button's forced move vanished. A claimed card's
     // forced move is held until a session begins, as the move lock holds it
-    // (issue #325 W02) — its button reads taken everywhere.
+    // (issue #325 W02) — its button reads taken everywhere. The session this
+    // GM's world load is replacing is over at once, though its gate reads
+    // open until the mint lands: a line typed meanwhile was narrated into it
+    // after its LAST SESSION was taken, under its old id — the new session's
+    // ring never showed it either (issue #345 AA58; Z24's rule for rounds).
     let sessionActive = true;
     try {
-      sessionActive = isSessionActive(game.settings.get(MODULE_ID, "campaignState"));
+      const gateState = game.settings.get(MODULE_ID, "campaignState");
+      sessionActive = isSessionActive(gateState) && !sessionBeingReplaced(gateState);
     } catch (err) {
       // Defensive: if the read fails, fail-OPEN — treat the session as
       // active and run the pipeline. The downside of fail-closed is
@@ -1453,8 +1458,9 @@ function drainDeferredForcedMoves() {
   // A round's claim still on its way holds the lock too: the move would only
   // be held again — and drained again, at once, forever (issue #342 Z25).
   if (state?.pendingMove || _moveLockClaimInFlight) return;
-  // Held until a session begins: the gate would only hold it again (issue #329 X14).
-  if (!isSessionActive(state)) return;
+  // Held until a session begins: the gate would only hold it again (issue #329 X14),
+  // and so while this load replaces the stored session (issue #345 AA58).
+  if (!isSessionActive(state) || sessionBeingReplaced(state)) return;
   let message = null;
   while (!message && _deferredForcedMoves.length) {
     const id = _deferredForcedMoves.shift();
@@ -7591,6 +7597,11 @@ Hooks.once("ready", () => {
     // value back over it (issue #335 Y07). Read and written on the client's
     // campaignState write chain, once the write ahead of it has landed
     // (CAMPSTATE-CHAIN-PARTIAL).
+    // The session this load replaces is over at once — for Batch Mode rounds
+    // and typed lines — though it reads live until the mint lands (issue #342
+    // Z24, #345 AA58). Noted before the mint starts and before the chat hook
+    // and the round driver are installed below.
+    noteSessionBeingReplaced(prevState);
     initSessionId(prevState).then(updated => serialiseCampaignStateWrite(() => {
       const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
       const clearLock = !!staleLock && !!latest.pendingMove && (latest.pendingMoveClaim ?? null) === staleLock.claim;
@@ -7602,6 +7613,7 @@ Hooks.once("ready", () => {
       ];
       return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"));
     }, "session start")).then(async () => {
+      noteSessionReplaced();
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: the "Previously On" campaign recap introduces the session
       // this load started — the boundary is End a Session or four idle hours

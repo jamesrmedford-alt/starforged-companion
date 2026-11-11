@@ -233,6 +233,48 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
   return idleMs(campaignState, now) >= SESSION_IDLE_HOURS * 3_600_000;
 }
 
+// The session the canonical GM's world load is replacing (issue #342 Z24):
+// its mint (rollSessionIfDue) lands only after the summary finalise and the
+// scene close, and until it does the stored session still reads live — its
+// gate open, its id current. It is over at once: no Batch Mode round reads,
+// resolves or opens in it (batch/driver.js), and no typed line is narrated
+// into it after its LAST SESSION was taken — under its old id, lost to the
+// new session's ring too (index.js's chat gate, issue #345 AA58).
+let _sessionBeingReplaced = null;
+
+/**
+ * At the canonical GM's world load, before its mint starts: when the stored
+ * session is over (sessionNeedsMint), it is the one this load replaces.
+ *
+ * @param {Object} campaignState — as the load read it
+ */
+export function noteSessionBeingReplaced(campaignState) {
+  _sessionBeingReplaced = sessionNeedsMint(campaignState) ? (campaignState?.currentSessionId ?? "") : null;
+}
+
+/**
+ * The load's mint has landed: the session it replaced is no longer current.
+ * (A refused mint leaves the note: the stored session stays over until the
+ * next mint — a Begin a Session — changes its id.)
+ */
+export function noteSessionReplaced() {
+  _sessionBeingReplaced = null;
+}
+
+/**
+ * True while campaignState still holds the session this client's world load
+ * is replacing; false once the mint has landed (or a newer session is current).
+ *
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+export function sessionBeingReplaced(campaignState) {
+  if (_sessionBeingReplaced === null) return false;
+  if ((campaignState?.currentSessionId ?? "") === _sessionBeingReplaced) return true;
+  _sessionBeingReplaced = null;
+  return false;
+}
+
 /**
  * Start a new session: keep the closing session's rolling summary as
  * `previousSessionSummary` (an older one stays when the closing session has

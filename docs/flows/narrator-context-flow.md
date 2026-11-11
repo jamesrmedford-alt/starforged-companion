@@ -514,7 +514,13 @@ LAST SESSION under its own number (it replaced it — issue #331 X65) — mints
 the next id and closes the session-active gate (`sessionActive` / `sessionActiveStartedAt`
 joined `SESSION_MINT_FIELDS`): the new session is begun by Begin a Session —
 a session nobody ended handed its open gate to the next, so Begin did nothing
-(issue #321 U12). Begin a Session's start effects (Spotlight momentum, campaign clocks, the
+(issue #321 U12). Until a load's mint lands the stored session reads live
+(gate open, id current), so the canonical GM notes it at `ready`
+(`noteSessionBeingReplaced`) and it is over at once — no Batch Mode round
+reads, resolves or opens in it (issue #342 Z24), and the chat gate tells a
+line's author no session has begun: narrated, it went into the closing
+session after its summary was taken, under its old id (issue #345 AA58).
+Begin a Session's start effects (Spotlight momentum, campaign clocks, the
 galley vignette) run once per session id: `applyBeginSession` stamps
 `sessionStartedId`, and a second Begin on that session posts a note instead
 (the dialog does not open for it) — issue #300 F11. Begin works on a copy of

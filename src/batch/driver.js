@@ -48,7 +48,7 @@
 
 import { isCanonicalGM, hasKeyedActiveGM } from "../multiplayer/gmGate.js";
 import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
-import { isSessionActive, sessionNeedsMint, touchSessionActivity } from "../session/lifecycle.js";
+import { isSessionActive, sessionBeingReplaced, touchSessionActivity } from "../session/lifecycle.js";
 import { messageAuthorId, resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { stripHtml } from "../narration/narratorPrompt.js";
 import { isXCardActive, narrateRound, narrateResolution } from "../narration/narrator.js";
@@ -1847,23 +1847,12 @@ async function runHeldFreeFlowMoves() {
 // Recovery, and the canonical GM's hooks
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The session this load is replacing: the canonical GM's `ready` mints a new
-// one when the stored one is over — End a Session marked it, or four idle
-// hours (session/lifecycle.js sessionNeedsMint) — but the mint lands only
-// after the summary finalise and the scene close. Until it does, the stored
-// session still reads live (its gate open, its id current): the recovery at
-// load read last session's submissions again on the GM's key and advanced
-// its round (issue #342 Z24). Its rounds are over: none reads, resolves or
-// opens until a new session is current.
-let _sessionBeingReplaced = null;
-
-/** True while campaignState still holds the session this load is replacing. */
-function sessionBeingReplaced(cs) {
-  if (_sessionBeingReplaced === null) return false;
-  if ((cs?.currentSessionId ?? "") === _sessionBeingReplaced) return true;
-  _sessionBeingReplaced = null;     // the mint landed (or a newer session is current)
-  return false;
-}
+// The session this load is replacing (session/lifecycle.js
+// sessionBeingReplaced, noted by the canonical GM's `ready` before its mint):
+// until the mint lands the stored session still reads live (its gate open,
+// its id current), and the recovery at load read last session's submissions
+// again on the GM's key and advanced its round (issue #342 Z24). Its rounds
+// are over: none reads, resolves or opens until a new session is current.
 
 // The recoveries issue #340 names ("Recovery"): the canonical GM's `ready`,
 // and the GM resolving a round leaving. On these a round still resolving from
@@ -2057,8 +2046,6 @@ async function onUserConnected(user, connected) {
  */
 export function registerBatchModeDriver() {
   _xCardWas = !!campaignStateNow().xCardActive;
-  // This GM's `ready` mints a new session when the stored one is over (index.js initSessionId).
-  if (isCanonicalGM() && sessionNeedsMint(campaignStateNow())) _sessionBeingReplaced = campaignStateNow().currentSessionId ?? "";
   // A setting's first write is a createSetting, every later one an updateSetting.
   Hooks.on("createSetting", onBatchSettingWrite);
   Hooks.on("updateSetting", onBatchSettingWrite);
