@@ -62,7 +62,16 @@ recorded under its name promoted to it; its bond is §2's.
   is confirmed as the roller's connection (`confirmNamedPendingConnection` →
   `confirmDraft` with the roller's `actorId`; issue #325 W23 — the card said
   "Connection made" and nothing was made, and a later Confirm bonded the old
-  narration's PC). A Batch Mode round's narration is several characters', so
+  narration's PC). When neither made anyone, the known NPC the narration
+  names (full name, whole words — and, in a round, a figure its own roller
+  met) becomes the roller's connection: an active listed NPC card — a
+  crewmate's contact — gets the roller's bond Item, no second card ("give
+  focus to an existing relationship"); a connection row the GM dismissed
+  is taken off `dismissedEntities` and confirmed as the roller's, as a
+  pending row is; naming several, none is guessed and the GMs are whispered
+  (`connectKnownNpc`, issue #345 AA19 — the detection pass leaves an
+  established or dismissed name out, so the card said "Connection made" and
+  nothing was made). A Batch Mode round's narration is several characters', so
   each Make a Connection hit in it creates one connection — the figure its
   own character met: the roller's own line names them, else their detected
   description and every clause of the narration naming them, taken
