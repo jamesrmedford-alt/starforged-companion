@@ -460,6 +460,12 @@ score of 0 was a certain miss paying a price for a scene already over. In a
 Batch Mode round the driver notes Finish the Scene's challenge as read
 (`noteReadTrack`), so a second Finish the Scene — pressed or typed — is
 refused "ended earlier in this round", as a fight move is.
+The ⬡ needs progress on the row (drawn disabled, and its press refused,
+at 0 ticks) — except a scene challenge whose tension clock is full: Finish
+the Scene is due then, progress or none, so it rolls at 0 ticks too — a
+certain miss and Pay the Price (internal `canRollProgress`, the row's
+`canRoll` and the press handler alike; the ⬡ was dead exactly then and the
+table's ✓ ended the challenge with no move — issue #345 AA68).
 Pre-session (the pipeline's session gate would ignore the bridge) it keeps
 the bespoke instant display roll (`type: 'progressRoll'` card — display-only
 by design).

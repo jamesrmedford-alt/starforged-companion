@@ -285,6 +285,29 @@ async function movePipelineAvailable() {
 }
 
 /**
+ * Whether a track's ⬡ Progress Roll can be made: once it has progress — and a
+ * scene challenge also once its tension clock is full, progress or none.
+ * Finish the Scene is "When the scene challenge tension clock or progress
+ * track is filled … roll the challenge dice and compare to your progress": at
+ * no progress a certain miss, and Pay the Price. The 0-tick guard (from the
+ * display-roll era) left the ⬡ dead exactly then, and the table's ✓ ended the
+ * challenge with no move and no price (issue #345 AA68). Every other track
+ * keeps it: a zero-progress Take Decisive Action is the trap the Enter the
+ * Fray card leaves off, and a challenge whose clock is not full is not due.
+ *
+ * @param {object} track
+ * @param {{ filled?: number, segments?: number }|null} tensionClock — the
+ *   challenge's paired clock as stored, or null
+ * @returns {boolean}
+ */
+function canRollProgress(track, tensionClock) {
+  if ((track?.ticks ?? 0) > 0) return true;
+  if (track?.type !== 'scene_challenge' || !tensionClock) return false;
+  const segments = Number(tensionClock.segments) || 0;
+  return segments > 0 && (Number(tensionClock.filled) || 0) >= segments;
+}
+
+/**
  * Execute a Progress Roll for a track.
  *
  * Each track type's roll is a real Starforged progress move with pipeline
@@ -453,7 +476,7 @@ export class ProgressTrackApp extends ApplicationV2 {
         ticksInPartialBox: t.ticks % TICKS_PER_BOX,
         pct: Math.round((t.ticks / MAX_TICKS) * 100),
         boxes: ProgressTrackApp.#buildBoxes(t.ticks),
-        canRoll: t.ticks > 0,
+        canRoll: canRollProgress(t, linkedClock),
         // 'in_control' | 'bad_spot' | null — a fight's, the viewer's own
         combatState: t.type === 'combat' ? combatPositionFor(t, viewer?.id ?? null) : (t.combatState ?? null),
         positionOf:  viewer?.name ?? null,
@@ -706,7 +729,14 @@ export class ProgressTrackApp extends ApplicationV2 {
       const trackId = target.dataset.trackId;
       const tracks = await loadTracks();
       const track = tracks.find(t => t.id === trackId);
-      if (!track || track.ticks === 0) return;
+      if (!track) return;
+      const clock = track.tensionClockId
+        ? ((game.settings.get(MODULE_ID, 'campaignState') ?? {}).clocks ?? []).find(c => c?._id === track.tensionClockId) ?? null
+        : null;
+      if (!canRollProgress(track, clock)) {
+        console.debug(`${MODULE_ID} | progress roll: "${track.label}" has no progress to roll yet — not rolled.`);
+        return;
+      }
       await rollProgress(track);
     })();
     this._lastAction = work;
