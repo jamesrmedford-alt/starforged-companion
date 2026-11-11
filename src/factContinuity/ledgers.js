@@ -971,8 +971,11 @@ export function dropSessionStrike(campaignState, strike) {
 /**
  * The active scene's bare strike of this subject + fact — retracted by the
  * table (not the X-Card, not a superseded narration's — issue #338 D8 — not a
- * Replace's struck original), compared
- * case-blind — or null. setTruth lifts it; the `!truth set` card names a
+ * Replace's struck original), the fact compared as findEquivalentTruth and
+ * findSessionStrike compare it (normaliseFactText: case, spacing and a
+ * trailing full stop aside — issue #345 AA26: "Vance Is dead." missed the
+ * strike, so a player's set over the GM's was recorded and a GM's lifted
+ * nothing) — or null. setTruth lifts it; the `!truth set` card names a
  * player's set refused over a GM's strike.
  *
  * @param {Object[]} truths
@@ -982,11 +985,12 @@ export function dropSessionStrike(campaignState, strike) {
  */
 export function findBareStrike(truths, subjectRef, fact) {
   const key = subjectKey(subjectRef);
-  const lower = fact.toLowerCase();
+  const norm = normaliseFactText(fact);
+  if (!norm) return null;
   return (Array.isArray(truths) ? truths : []).find(t =>
     t?.retracted && isBareTableStrike(t)
     && subjectKey(t.subject) === key
-    && String(t.fact ?? '').trim().toLowerCase() === lower) ?? null;
+    && normaliseFactText(t.fact) === norm) ?? null;
 }
 
 /**
