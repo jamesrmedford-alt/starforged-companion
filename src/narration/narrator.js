@@ -2916,14 +2916,24 @@ function escapeHtml(s) {
  * narratorPrompt.js ROLE_DESCRIPTIONS) regardless of any campaign tone
  * setting — Begin Session is always intentionally light.
  *
+ * The galley names the PCs it is about — those at the table
+ * (`actorIds`, collectGalleyParticipants' active split): each gets its
+ * CHARACTER block, as a round's acting PCs do — two or more are third person
+ * (issue #342 Z40's rule) — and a vignette with none present gets none. It
+ * took the campaign's first PC, so with that PC's player away the vignette's
+ * "you" was the crewmate its own user message called absent, and the PC in
+ * the galley had no block (issue #345 AA31). Without `actorIds` (the closing
+ * vignette, about an NPC) the block is the first PC's, as before.
+ *
  * @param {Object} args
  * @param {string} args.userMessage    — pre-built vignette prompt body
  *                                       (active/absent rosters, sector context,
  *                                       generation instructions)
  * @param {Object} args.campaignState
+ * @param {string[]|null} [args.actorIds] — the PCs the vignette is about (the galley's present PCs)
  * @returns {Promise<string|null>}
  */
-export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId() }) {
+export async function narrateSessionVignette({ userMessage, campaignState, narrationId = newNarrationId(), actorIds = null }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
   if (isXCardActive(campaignState))  return null;
@@ -2935,8 +2945,16 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
   // Its sidecar's facts belong to a scene (issue #321 U34; see narrateOracleFollowup).
   await ensureSceneStarted(campaignState, 'session_vignette');
 
-  const character = getActiveCharacter(campaignState);
+  // The PCs it is about, each still a PC, by its own id (narrateRound's rule).
+  const present = Array.isArray(actorIds)
+    ? actorIds
+        .filter(id => isPlayerCharacterActor(game.actors?.get?.(id) ?? null))
+        .map(id => getActiveCharacter(campaignState, id))
+        .filter((c, i, all) => c && all.findIndex(o => o?.actorId === c.actorId) === i)
+    : null;
+  const character = present ? (present.length === 1 ? present[0] : null) : getActiveCharacter(campaignState);
   const extras = await buildNarratorExtras('session_vignette', campaignState, { character });
+  if (present && present.length > 1) extras.roundCharacters = present;
   const systemPrompt = buildNarratorSystemPrompt(
     campaignState, settings, character, '', extras,
   );

@@ -1683,7 +1683,8 @@ export function buildNarratorSystemPrompt(
   // STATE name the connections; a bare count told the narrator nothing else.
 
   // [8] Character — a round (issue #340) has one CHARACTER block per acting
-  // PC, in the round's order; every other mode the one character speaking.
+  // PC, in the round's order, as the galley vignette has for two or more PCs
+  // at the table (issue #345 AA31); every other mode the one character speaking.
   const roundCharacters = Array.isArray(extras?.roundCharacters) ? extras.roundCharacters.filter(Boolean) : [];
   if (roundCharacters.length) {
     for (const c of roundCharacters) parts.push(buildCharacterBlock(c));

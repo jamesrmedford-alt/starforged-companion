@@ -376,7 +376,10 @@ async function beginSessionOnce(payload) {
       const participants = collectGalleyParticipants(cs);
       const userMessage  = buildGalleyVignetteUserMessage(participants, cs);
       const narrationId  = newNarrationId();
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId });
+      // The PCs in the galley are the vignette's CHARACTER blocks — never a
+      // first PC whose player is away (issue #345 AA31).
+      const actorIds = participants.active.map(p => p.actor?.id).filter(Boolean);
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds });
       if (text) {
         await postGalleyVignetteCard({ text, kind: "galley_begin", sessionId: cs.currentSessionId ?? "", narrationId });
       }

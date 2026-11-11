@@ -101,7 +101,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
 - **Session vignettes** (galley, closing) run in the Begin / End a Session
   relay handlers on the canonical GM (`applyBeginSession` /
   `applyEndSession`), so they need a keyed GM; at a keyless-GM table they are
-  skipped.
+  skipped. The galley's CHARACTER blocks are the PCs at the table — the
+  present split its user message lists (`collectGalleyParticipants`), each
+  its block as a round's acting PCs have, third person for two or more, none
+  when no PC is there; it took the first PC, so with that PC's player away
+  its "you" was the crewmate it called absent (issue #345 AA31). The closing
+  vignette, about an NPC, keeps the first PC's.
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the

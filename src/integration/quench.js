@@ -12361,9 +12361,13 @@ function registerPromptContractTests(quench) {
         const galley = await import(`${MODULE_PATH}/session/galleyVignette.js`);
         const { narrateSessionVignette } = await narrator();
         const cs = state();
+        // As Begin a Session runs it: the PCs at the table are its CHARACTER
+        // blocks (issue #345 AA31).
+        const participants = galley.collectGalleyParticipants(cs);
         await narrateSessionVignette({
-          userMessage: galley.buildGalleyVignetteUserMessage(galley.collectGalleyParticipants(), cs),
+          userMessage: galley.buildGalleyVignetteUserMessage(participants, cs),
           campaignState: cs,
+          actorIds: participants.active.map(p => p.actor?.id).filter(Boolean),
         });
       } };
       const CLOSING = { name: "End Session vignette", marker: "CLOSING VIGNETTE", run: async () => {
