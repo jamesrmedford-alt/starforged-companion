@@ -1,5 +1,5 @@
 /**
- * PROBE IDXA-2 — a forced move held at the move lock is stranded when
+ * PROBE IDXA-3 — a forced move held at the move lock is stranded when
  * canonicity passes to another GM (no reload involved).
  *
  * A claimed card button's forced move that meets the lock is held in the
@@ -108,7 +108,7 @@ async function pressMilestoneDuringNarration(claude) {
   return { held, card };
 }
 
-describe('IDXA-2 — a held forced move and a canonical handover', () => {
+describe('IDXA-3 — a held forced move and a canonical handover', () => {
   it('gm-1 (lower id, keyed) opens the world while gm-2 narrates: the held milestone is still marked when the lock frees', async () => {
     silenceConsoleErrors();
     const claude = await nightRunByGm2({ gm1Keyed: true });

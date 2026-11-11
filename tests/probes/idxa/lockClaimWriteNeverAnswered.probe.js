@@ -1,5 +1,5 @@
 /**
- * PROBE IDXA-4 — a move-lock claim whose write the server never answers pins
+ * PROBE IDXA-5 — a move-lock claim whose write the server never answers pins
  * this client's "claim in flight" mark for good.
  *
  * claimPendingMoveLock (src/index.js) sets `_moveLockClaimInFlight = claim`
@@ -70,7 +70,7 @@ async function tableOfOneGm() {
 
 const busyToasts = () => table.client('gm-1').notifications.filter(n => /already being resolved/.test(n.message)).length;
 
-describe('IDXA-4 — a lock claim the server never answers', () => {
+describe('IDXA-5 — a lock claim the server never answers', () => {
   it('control: a claim write the world REFUSES frees the mark — the next move starts', async () => {
     silenceConsoleErrors();
     await tableOfOneGm();

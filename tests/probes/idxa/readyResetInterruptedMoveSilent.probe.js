@@ -1,5 +1,5 @@
 /**
- * PROBE IDXA-3 — the ready reset frees an interrupted move's lock and says
+ * PROBE IDXA-4 — the ready reset frees an interrupted move's lock and says
  * nothing: the move's result was never recorded, and nobody is told.
  *
  * A free-flow move records AFTER its narration (src/index.js onMessage:
@@ -69,7 +69,7 @@ const LINE = 'I comb the archive for word of Chen.';
 const interruptedMoveNotices = () => table.cards((f, m) =>
   f.moveLockReleasedCard === true || /move lock released|may be incomplete|was interrupted|not recorded/i.test(String(m.content ?? '')));
 
-describe('IDXA-3 — a move cut short by its GM\'s reload', () => {
+describe('IDXA-4 — a move cut short by its GM\'s reload', () => {
   it('the sole GM reloads while a move is being narrated: the lock is reset and the GMs are told the move may be incomplete', async () => {
     silenceConsoleErrors();
     table = await simulateTable({

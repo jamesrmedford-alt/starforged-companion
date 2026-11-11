@@ -1,5 +1,5 @@
 /**
- * PROBE IDXA-5 — a ready GM stands down for a GM whose page is still loading.
+ * PROBE IDXA-2 — a ready GM stands down for a GM whose page is still loading.
  *
  * isCanonicalGM() (src/multiplayer/gmGate.js) picks the lowest-id ACTIVE GM
  * among those in the keyed-GM registry. A user is `active` from the moment
@@ -81,7 +81,7 @@ function gm1StartsLoading() {
   }
 }
 
-describe('IDXA-5 — the canonical GM is still loading while a ready GM is connected', () => {
+describe('IDXA-2 — the canonical GM is still loading while a ready GM is connected', () => {
   it("a player's X-Card typed during gm-1's load is recorded (gm-2 is connected and ready)", async () => {
     silenceConsoleErrors();
     await tableRunByGm2({ gm1Listed: true });
