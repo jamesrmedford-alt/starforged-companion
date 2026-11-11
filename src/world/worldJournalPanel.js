@@ -428,6 +428,64 @@ async function clearNarratorAssertion(title) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Refresh — the open panel shows what another client's write changed
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The entry pages the panel lists: Lore (its review queue) and Threats (each
+// active threat's severity).
+const PANEL_PAGE_FLAGS = [FLAG_KEYS.lore, FLAG_KEYS.threats];
+
+function isPanelPage(page, change = null) {
+  const own = page?.flags?.[MODULE_ID];
+  if (own && PANEL_PAGE_FLAGS.some(key => own[key])) return true;
+  return !!change && PANEL_PAGE_FLAGS.some(key => foundry.utils.hasProperty(change, `flags.${MODULE_ID}.${key}`));
+}
+
+function isContradictionCard(message) {
+  return message?.flags?.[MODULE_ID]?.worldJournalContradiction === true;
+}
+
+function refreshOpenPanel() {
+  if (_wjPanelInstance?.rendered) _wjPanelInstance.render();
+}
+
+/** createJournalEntryPage / deleteJournalEntryPage: a Lore or Threats entry came or went. */
+function onPanelPageWritten(page) {
+  if (isPanelPage(page)) refreshOpenPanel();
+}
+
+/** updateJournalEntryPage: a Lore or Threats entry changed (a threat's severity). */
+function onPanelPageUpdated(page, change) {
+  if (isPanelPage(page, change)) refreshOpenPanel();
+}
+
+/** create / update / deleteChatMessage: a contradiction card posted, changed or dismissed. */
+function onContradictionCardWritten(message) {
+  if (isContradictionCard(message)) refreshOpenPanel();
+}
+
+/**
+ * Re-render the open panel when what it lists changes on any client: a Lore
+ * or Threats entry page created, changed or deleted (a threat a narration
+ * escalated, a new threat), or a contradiction card posted, changed or
+ * deleted (another GM's Dismiss). The panel registered no hook, so an open
+ * one never showed a new contradiction card or a severity change (issue #345
+ * AA66) — every sibling panel re-renders on another client's write (issue
+ * #322 V12). Local only: it writes nothing. Registered once, when the panel
+ * is first opened (it is GM-only, and nothing to refresh before then).
+ */
+function registerPanelRefreshHooks() {
+  if (registerPanelRefreshHooks.installed) return;
+  registerPanelRefreshHooks.installed = true;
+  Hooks.on('createJournalEntryPage', onPanelPageWritten);
+  Hooks.on('deleteJournalEntryPage', onPanelPageWritten);
+  Hooks.on('updateJournalEntryPage', onPanelPageUpdated);
+  Hooks.on('createChatMessage', onContradictionCardWritten);
+  Hooks.on('updateChatMessage', onContradictionCardWritten);
+  Hooks.on('deleteChatMessage', onContradictionCardWritten);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Public opener
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -438,8 +496,12 @@ export function openWorldJournalPanel() {
     ui?.notifications?.warn('Starforged Companion: World Journal panel is GM-only.');
     return;
   }
+  registerPanelRefreshHooks();
+  // Pressed again while open, it shows what changed meanwhile — it only
+  // brought the panel to the front (issue #345 AA66).
   if (_wjPanelInstance?.rendered) {
-    _wjPanelInstance.bringToTop?.();
+    _wjPanelInstance.render({ force: true });
+    _wjPanelInstance.bringToFront?.();
     return;
   }
   _wjPanelInstance = new WorldJournalPanelApp();

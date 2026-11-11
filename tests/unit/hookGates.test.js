@@ -75,6 +75,13 @@ const LOCAL_ONLY = {
   'src/clocks/clocks.js updateSetting onClocksSettingChanged': 're-renders this client\'s Clocks panel when the clocks it shows changed',
   'src/clocks/clocks.js createSetting onClocksSettingChanged': 'same, first write of the setting',
   'src/character/chroniclePanel.js updateJournalEntryPage inline#1': 're-renders this client\'s Chronicle panel',
+  // issue #345 AA66 — the World Journal panel's refresh hooks
+  'src/world/worldJournalPanel.js createJournalEntryPage onPanelPageWritten': 're-renders this client\'s World Journal panel when a Lore or Threats entry is added',
+  'src/world/worldJournalPanel.js deleteJournalEntryPage onPanelPageWritten': 're-renders this client\'s World Journal panel when a Lore or Threats entry is removed',
+  'src/world/worldJournalPanel.js updateJournalEntryPage onPanelPageUpdated': 're-renders this client\'s World Journal panel when a Lore or Threats entry changes (a threat\'s severity)',
+  'src/world/worldJournalPanel.js createChatMessage onContradictionCardWritten': 're-renders this client\'s World Journal panel when a contradiction card is posted',
+  'src/world/worldJournalPanel.js updateChatMessage onContradictionCardWritten': 're-renders this client\'s World Journal panel when a contradiction card changes',
+  'src/world/worldJournalPanel.js deleteChatMessage onContradictionCardWritten': 're-renders this client\'s World Journal panel when a contradiction card is dismissed or deleted',
   'src/index.js createItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
   'src/index.js updateItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
   'src/index.js deleteItem invalidateItemOwnerSnapshot': 'drops the owner\'s cached actor snapshot on this client',
