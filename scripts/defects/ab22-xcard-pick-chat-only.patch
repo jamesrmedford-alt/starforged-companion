@@ -1,0 +1,18 @@
+Defect: AB22 (issue #347) — the X-Card's pick reads chat as it is, so a narration whose card a GM deleted is passed over and the kept beat before it is removed instead
+Tests: tests/unit/xcardAfterNarrationCardDeleted.test.js
+Catches: with the torch card deleted first, the X-Card removes the torch narration — not the deal on screen
+Catches: a person's deleted line still ends the beat
+
+diff --git a/src/narration/narrator.js b/src/narration/narrator.js
+index c2e6ba8..8db832c 100644
+--- a/src/narration/narrator.js
++++ b/src/narration/narrator.js
+@@ -1898,7 +1898,7 @@ function messageTime(message) {
+  */
+ export function xCardedNarrationCards(sessionId) {
+   if (!sessionId) return [];
+-  const messages = chatAsItWas();
++  const messages = game.messages?.contents ?? [];   // DEFECT: chat as it is — a deleted narration is passed over
+   const inMemory = { has: (m) => inNarratorMemory(m, sessionId) };
+   const isBoundary = (f) => !!(f?.xcardCard || f?.xcardClearedCard);
+ 

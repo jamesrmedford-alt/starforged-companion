@@ -1741,37 +1741,131 @@ function ringEntryText(message) {
  * @returns {Array<Object>} ChatMessage documents
  */
 function sessionNarratorCards(sessionId, { forRecap = false } = {}) {
-  return (game.messages?.contents ?? []).filter(m => {
-    const f = m.flags?.[MODULE_ID];
-    if (!f?.narratorCard) return false;
-    if (f.sessionId !== sessionId) return false;
-    // Defensive excludes — even if a future code path co-marks a system card
-    // as a narratorCard, none of these should ever feed back into the
-    // narrator's context. Avoids module-meta leaking into prose.
-    if (f.worldJournalContradiction) return false;
-    if (f.worldJournalCard) return false;
-    if (f.recapCard) return false;
-    if (f.draftEntityCard) return false;
-    // Burn Momentum superseded this prose — the pre-burn outcome it describes
-    // no longer happened, so it must not feed the ring or rolling summary (the
-    // upgraded re-narration card carries the live prose). Playtest: the struck
-    // pre-burn narration kept reaching the narrator.
-    if (f.burnSuperseded) return false;
-    // A fallback card ("<Move>: <Outcome> — narration unavailable.") is not
-    // fiction (rules/narrator-memory.md invariant 1). It keeps the flag family
-    // so the session recap still counts the move, but its line must not reach
-    // the ring or the rolling summary, nor count as the session's first
-    // narration — that cancelled the session's campaign recap (issue #321 U35).
-    // The session recap (`forRecap`) keeps it: the move happened — the recap
-    // counts it and quotes none of its line (issue #322 V05).
-    if (f.narrationFallback && !forRecap) return false;
-    // The X-Card removed this narration (issue #321 U07): the table took it
-    // out of the story, so the narrator never reads it again. Its move still
-    // happened: the recap counts it, without its prose.
-    if (f.xCarded && !forRecap) return false;
-    if (Array.isArray(m.whisper) && m.whisper.length) return false;
-    return true;
-  });
+  return (game.messages?.contents ?? []).filter(m => inNarratorMemory(m, sessionId, { forRecap }));
+}
+
+/**
+ * Whether one chat message is a narrator card of the session that narrator
+ * memory reads (sessionNarratorCards' rule, per message) — for a message still
+ * in chat or one deleted since this page loaded (the X-Card's pick, issue
+ * #347 AB22).
+ *
+ * @param {Object} m — a ChatMessage, or a deleted message's record
+ * @param {string|null} sessionId
+ * @param {{ forRecap?: boolean }} [opts]
+ * @returns {boolean}
+ */
+function inNarratorMemory(m, sessionId, { forRecap = false } = {}) {
+  const f = m?.flags?.[MODULE_ID];
+  if (!f?.narratorCard) return false;
+  if (f.sessionId !== sessionId) return false;
+  // Defensive excludes — even if a future code path co-marks a system card
+  // as a narratorCard, none of these should ever feed back into the
+  // narrator's context. Avoids module-meta leaking into prose.
+  if (f.worldJournalContradiction) return false;
+  if (f.worldJournalCard) return false;
+  if (f.recapCard) return false;
+  if (f.draftEntityCard) return false;
+  // Burn Momentum superseded this prose — the pre-burn outcome it describes
+  // no longer happened, so it must not feed the ring or rolling summary (the
+  // upgraded re-narration card carries the live prose). Playtest: the struck
+  // pre-burn narration kept reaching the narrator.
+  if (f.burnSuperseded) return false;
+  // A fallback card ("<Move>: <Outcome> — narration unavailable.") is not
+  // fiction (rules/narrator-memory.md invariant 1). It keeps the flag family
+  // so the session recap still counts the move, but its line must not reach
+  // the ring or the rolling summary, nor count as the session's first
+  // narration — that cancelled the session's campaign recap (issue #321 U35).
+  // The session recap (`forRecap`) keeps it: the move happened — the recap
+  // counts it and quotes none of its line (issue #322 V05).
+  if (f.narrationFallback && !forRecap) return false;
+  // The X-Card removed this narration (issue #321 U07): the table took it
+  // out of the story, so the narrator never reads it again. Its move still
+  // happened: the recap counts it, without its prose.
+  if (f.xCarded && !forRecap) return false;
+  if (Array.isArray(m.whisper) && m.whisper.length) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Deleted chat messages and the X-Card (issue #347 AB22)
+// ---------------------------------------------------------------------------
+//
+// The X-Card answers the newest narration — read from chat. A GM who deletes
+// a narration's chat card (the first thing a GM reaches for) took it out of
+// chat but not out of the story: its truths, state, frame and capture stayed
+// binding, and the next X-Card walked past the gap and removed the beat
+// before it — a kept narration still on screen — instead. Each client keeps a
+// record of the chat messages deleted since its page loaded, so the X-Card's
+// pick reads the chat as it was (chatAsItWas): a deleted narration is still
+// the newest one, and the X-Card removes it and what it wrote. A deletion
+// alone changes nothing in narrator memory — Clear Chat Log deletes every
+// card, and tidying chat must not rewrite the story. The record lives in the
+// page: a reload forgets it (the pick is chat-only again, as before).
+
+/** Deleted chat messages remembered, newest last. */
+const DELETED_MESSAGE_CAP = 200;
+const _deletedMessages = [];
+
+/**
+ * Remember a deleted chat message as the X-Card's pick reads one: its id, its
+ * time, its whisper and a copy of this module's flags (none for a person's
+ * message — the walk's "someone spoke"). Never throws.
+ *
+ * @param {Object} message — the deleted ChatMessage
+ */
+function rememberDeletedMessage(message) {
+  try {
+    if (!message?.id || _deletedMessages.some(d => d.id === message.id)) return;
+    const f = message.flags?.[MODULE_ID];
+    _deletedMessages.push({
+      id:        message.id,
+      timestamp: messageTime(message),
+      whisper:   Array.isArray(message.whisper) ? [...message.whisper] : [],
+      flags:     f ? { [MODULE_ID]: foundry.utils.deepClone(f) } : {},
+      deleted:   true,
+    });
+    if (_deletedMessages.length > DELETED_MESSAGE_CAP) _deletedMessages.splice(0, _deletedMessages.length - DELETED_MESSAGE_CAP);
+  } catch (err) {
+    console.debug(`${MODULE_ID} | X-Card: a deleted chat message could not be remembered:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Keep the record of deleted chat messages the X-Card's pick reads (issue
+ * #347 AB22). Every client: whichever GM is canonical when the X-Card is
+ * played saw the deletion too.
+ */
+export function registerDeletedChatHook() {
+  Hooks.on('deleteChatMessage', rememberDeletedMessage);
+}
+
+/** Test seam: forget the deleted messages remembered (a page load starts with none). */
+export function _resetDeletedMessagesForTests() { _deletedMessages.length = 0; }
+
+/**
+ * The chat as it was: the messages still in chat, with those deleted since
+ * this page loaded put back in their place by time. A message with no time
+ * is never passed; a deleted one later than every timed message goes last.
+ *
+ * @returns {Array<Object>}
+ */
+function chatAsItWas() {
+  const live = game.messages?.contents ?? [];
+  if (!_deletedMessages.length) return live;
+  const liveIds = new Set(live.map(m => m?.id).filter(Boolean));
+  const out = [...live];
+  for (const ghost of _deletedMessages) {
+    if (liveIds.has(ghost.id)) continue;
+    const at = ghost.timestamp;
+    let idx = out.length;
+    if (at !== null) {
+      const later = out.findIndex(m => { const t = messageTime(m); return t !== null && t > at; });
+      if (later >= 0) idx = later;
+    }
+    out.splice(idx, 0, ghost);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -1812,15 +1906,18 @@ function messageTime(message) {
 
 /**
  * The narrator cards an X-Card played now removes, oldest first (the rule
- * above). Reads chat only.
+ * above). Reads the chat as it was (chatAsItWas): a narration whose card a GM
+ * deleted is still the newest narration, and is removed — returned as its
+ * record (`deleted: true`), which flagXCardedCards passes over — never the
+ * kept beat before it (issue #347 AB22).
  *
  * @param {string|null} sessionId
- * @returns {Array<Object>} ChatMessage documents
+ * @returns {Array<Object>} ChatMessage documents, and deleted messages' records
  */
 export function xCardedNarrationCards(sessionId) {
   if (!sessionId) return [];
-  const messages = game.messages?.contents ?? [];
-  const inMemory = new Set(sessionNarratorCards(sessionId));
+  const messages = chatAsItWas();
+  const inMemory = { has: (m) => inNarratorMemory(m, sessionId) };
   const isBoundary = (f) => !!(f?.xcardCard || f?.xcardClearedCard);
 
   // The newest narration, unless an earlier X-Card already answered it.
@@ -1932,6 +2029,12 @@ export function applyXCardToNarratorMemory(cs) {
  */
 function summaryCoversCards(summary, sessionId, cards) {
   if (!sessionId || summary?.sessionId !== sessionId || !cards?.length) return false;
+  // A narration whose card was deleted (issue #347 AB22) has no place in
+  // chat to count: a summary written after it may have been made from it.
+  const covered = Number(summary.coveredCount) || 0;
+  const writtenAt = Date.parse(summary.updatedAt ?? '');
+  if (covered > 0 && cards.some(c => c?.deleted
+      && (!Number.isFinite(writtenAt) || (messageTime(c) ?? 0) <= writtenAt))) return true;
   const inMemory = sessionNarratorCards(sessionId);
   const at = cards
     .map(c => inMemory.findIndex(m => m === c || (!!m?.id && m.id === c?.id)))
@@ -2015,6 +2118,7 @@ function xCardedOracleResults(cards) {
 export async function flagXCardedCards(cards) {
   let flagged = 0;
   for (const message of cards ?? []) {
+    if (message?.deleted) continue;   // a deleted card's record (issue #347 AB22): nothing in chat to flag
     try {
       await message.update({ [`flags.${MODULE_ID}.xCarded`]: true });
       flagged += 1;

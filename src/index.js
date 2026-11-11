@@ -73,6 +73,7 @@ import {
   getCampaignRecap,
   registerRollingSummaryRefreshHook,
   registerXCardRedirectHook,
+  registerDeletedChatHook,
   registerPublishedReflectionHook,
   catchUpUnsummarisedSession,
 } from "./narration/narrator.js";
@@ -8101,7 +8102,8 @@ Hooks.once("ready", () => {
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
   registerXCardRedirectHook();             // #321 U07: the X-Card's redirect is cleared once the first narration after it posts
-  registerSessionActivityHook();           // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
+  registerDeletedChatHook();               // #347 AB22: the X-Card's pick reads chat as it was, a deleted narration included
+  registerSessionActivityHook();          // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
   registerClocksPanelHooks();

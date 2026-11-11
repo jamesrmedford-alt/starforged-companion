@@ -1853,6 +1853,16 @@ Each finding's ID in brackets.)
   REDIRECT" without naming the beat, and `registerXCardRedirectHook` clears it
   once that narration posts. A failure in the forgetting never blocks the
   pause.
+  **Update (issue #347 AB22):** "the narration on screen" is read from the
+  chat as it was, not as it is: each client remembers the chat messages
+  deleted since its page loaded, and the pick puts them back by time. A
+  narration whose card a GM deleted is still the newest narration, and the
+  X-Card removes it — its truths, state, frame and capture — never the kept
+  beat before it, which the walk reached across the player's line. A deletion
+  alone removes nothing: tidying chat (Clear Chat Log deletes every card)
+  must not rewrite the story. *Rejected:* undoing a narration's capture when
+  its card is deleted — for that reason. The record lives in the page: after
+  a reload the pick is chat-only again.
 - **The Private Channel is a narrator entry point** [U09; maintainer]. While
   the live `xCardActive` is set its narrator refuses on entry (and discards a
   reply the card overtook) and Publish refuses; the window says why.

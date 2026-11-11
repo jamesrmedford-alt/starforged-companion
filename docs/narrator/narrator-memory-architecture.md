@@ -171,7 +171,11 @@ CLAUDE.md "audit consumers" rule):
   X-carded card. A round card is one beat: the walk back from the newest card
   stops at a card of another round — round submissions are not chat messages,
   so without that stop it took the previous round's card within the beat's
-  two minutes (issue #340)
+  two minutes (issue #340). The pick reads the chat as it was — the messages
+  deleted since this page loaded put back by time (`chatAsItWas`, fed by
+  `registerDeletedChatHook`) — so a narration whose card a GM deleted is
+  still the one an X-Card removes, with what it wrote, and the kept beat
+  before it is left alone (issue #347 AB22); a deletion alone forgets nothing
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
   `resolutionId`, unaffected; it flags the card `burnSuperseded`, which
   `sessionNarratorCards` leaves out (ring, summary, recap), after dropping a

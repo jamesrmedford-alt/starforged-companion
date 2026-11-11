@@ -229,7 +229,14 @@ of the player's line, a button's forced move — counts as one, issue #326 W42)
 and at most two minutes older; an earlier X-Card's
 card, its "X-Card cleared" card or a card an earlier X-Card removed bounds
 the beat, so a repeat play removes nothing more (fallback, burn-superseded
-and whispered cards are never chosen). It retracts what their sidecars wrote
+and whispered cards are never chosen). The walk reads the chat as it was:
+every client remembers the chat messages deleted since its page loaded
+(`registerDeletedChatHook`, `deleteChatMessage`) and the pick puts them back
+in their place by time (`chatAsItWas`) — so a narration whose card a GM
+deleted is still the newest one, and is what the X-Card removes, never the
+kept beat before it; a deleted person's line still ends a beat (issue #347
+AB22). A deletion alone changes nothing in narrator memory (Clear Chat Log
+deletes every card); a reload forgets the record. It retracts what their sidecars wrote
 (`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"` — a truth
 the table had struck is relabelled so, and the strike a scene end kept for
 the session (`sessionRetractions.facts`, with its truth's `narrationId`)
