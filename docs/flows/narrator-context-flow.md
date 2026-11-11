@@ -635,8 +635,10 @@ moves run detection (make_a_connection auto-creates on a hit); interaction-
 class moves run the tier pass and, since issue #286 D4, detection too, as
 paced narration (the same class) always has; embellishment moves run
 neither. Oracle follow-ups run detection and the tier pass; session
-vignettes and vow scenes run the tier pass for the recorded entities they
-name (`scheduleNarrationCapture`). `@scene` answers run detection and the
+vignettes, vow scenes and clock vignettes run the tier pass for the recorded
+entities they name (`scheduleNarrationCapture`; a clock vignette's from
+`narrateClockAdvancement` itself, so all three post sites, and only once its
+"still triggered" check stands — issue #345 AA33: it ran none). `@scene` answers run detection and the
 tier pass too, on the canonical GM only (`scheduleSceneAnswerCapture`, issue
 #321 U36). A Batch Mode round runs one detection, at the widest class among
 the entries it captures, and a tier pass whatever that class is, over what

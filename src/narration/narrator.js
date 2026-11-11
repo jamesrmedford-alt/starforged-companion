@@ -3060,7 +3060,9 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
  * Burn Momentum or Improve Result undoing the price that filled it (issue
  * #338 D8), a GM taking the fill back — returns null: no card, and nothing of
  * the narration is written (its ledger persist, a relay of it from a co-GM's
- * client, a ship move, the consistency audit), so there is nothing to retract.
+ * client, a ship move, the consistency audit, the tier pass), so there is
+ * nothing to retract. A narration that stands runs the tier pass for the
+ * recorded entities it names, as a session vignette does (issue #345 AA33).
  *
  * @param {{ clock: { name:string, type:string, filled:number, segments:number, triggered:boolean }, campaignState: Object,
  *           narrationId?: string, stillTriggered?: (() => boolean|Promise<boolean>)|null }} args
@@ -3116,7 +3118,12 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     if (xCard.interrupted('narrateClockAdvancement')) return null;
     if (!(await triggerStands())) return null;
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
-    return (text && text.trim()) ? text : null;
+    if (!text?.trim()) return null;
+    // The developments of the recorded NPCs it names → their cards, as a
+    // session vignette's (#286 D4) — every post site goes through here
+    // (issue #345 AA33).
+    scheduleNarrationCapture(text, campaignState, { narrationId });
+    return text;
   } catch (err) {
     if (isRateLimit(err)) {
       try {
@@ -3130,7 +3137,9 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
         if (xCard.interrupted('narrateClockAdvancement')) return null;
         if (!(await triggerStands())) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
-        return (text && text.trim()) ? text : null;
+        if (!text?.trim()) return null;
+        scheduleNarrationCapture(text, campaignState, { narrationId });
+        return text;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
       }
