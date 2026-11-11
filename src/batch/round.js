@@ -742,6 +742,23 @@ export function beginResolution(round, { resolverId, now, sendNow = false }) {
 }
 
 /**
+ * A GM takes over a round left resolving — its resolver went away, or this
+ * client's own earlier page left it (driver.js recoverRound): the round names
+ * the GM resolving it now, so the GM who began it, back on a fresh page and
+ * canonical again, leaves it to this one instead of resuming it beside it.
+ * The takeover never re-stamped it, and both finished the round — every asset
+ * rider paid twice (issue #347 AB18).
+ *
+ * @param {Object} round
+ * @param {{ resolverId: string }} args
+ * @returns {Object}
+ */
+export function takeOverResolution(round, { resolverId }) {
+  if (!isResolving(round) || !resolverId || round.resolverId === resolverId) return round;
+  return { ...round, resolverId };
+}
+
+/**
  * The entries that act, in order: the ready ones in the order they were last
  * confirmed, then — when a GM sent the round now — readings not yet confirmed,
  * used as read, in the order they were submitted. Anyone else is simply not
@@ -909,16 +926,19 @@ export function beginNarration(round) {
 /**
  * Stamp the narration's claim: a round narrates once, even when a recovery
  * re-enters the narrating phase. A recovery takes over (`takeOver`) a claim
- * whose GM went away before the round card posted.
+ * whose GM went away before the round card posted. The GM narrating it is
+ * the round's resolver from then on (`resolverId`): a GM who became canonical
+ * mid-round and narrates it is the one the other GMs' recoveries leave it to
+ * (issue #347 AB18).
  *
  * @param {Object} round
- * @param {{ narrationClaim: string, now: string, takeOver?: boolean }} args
+ * @param {{ narrationClaim: string, now: string, takeOver?: boolean, resolverId?: string|null }} args
  * @returns {Object}
  */
-export function claimNarration(round, { narrationClaim, now, takeOver = false }) {
+export function claimNarration(round, { narrationClaim, now, takeOver = false, resolverId = null }) {
   if (round?.phase !== ROUND_PHASE.NARRATING) refuse("not-narrating", "The round isn't being narrated.");
   if (round.narrationClaim && !takeOver) refuse("narrated", "The round is already being narrated.");
-  return { ...round, narrationClaim, narrationAt: now };
+  return { ...round, narrationClaim, narrationAt: now, ...(resolverId ? { resolverId } : {}) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

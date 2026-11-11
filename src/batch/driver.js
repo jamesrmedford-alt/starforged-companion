@@ -92,6 +92,7 @@ import {
   readyToResolve,
   readingsInFlight,
   beginResolution,
+  takeOverResolution,
   fixActing,
   markRolled,
   markRecorded,
@@ -1293,7 +1294,9 @@ async function narrateTheRound() {
   }
   _narratingRoundId = round.id;
   try {
-    round = await queueRoundWrite(r => claimNarration(r, { narrationClaim: lock.claim, now: nowIso(), takeOver: !!r?.narrationClaim }));
+    round = await queueRoundWrite(r => claimNarration(r, {
+      narrationClaim: lock.claim, now: nowIso(), takeOver: !!r?.narrationClaim, resolverId: game.user.id,
+    }));
     await closeCardUpgrades(round, null);
     await narrateRound({ round, campaignState: workingCopy() }).catch((err) => {
       console.error(`${MODULE_ID} | Batch Mode: the round's narration failed:`, err);
@@ -1887,6 +1890,14 @@ export async function recoverRound(reason = "recovery") {
     } else if (isResolving(round)) {
       const resolver = round.resolverId && round.resolverId !== game.user.id ? game.users?.get?.(round.resolverId) : null;
       if (resolver?.active) return;   // that GM is resolving it
+      // This GM takes it over, and the round says so: the GM who began it,
+      // back on a fresh page and canonical again, leaves it to this one. The
+      // takeover kept the first GM's id, so that GM's recovery read the round
+      // as its own and resumed it beside this one — both closed it, and every
+      // asset rider paid twice (issue #347 AB18). A refused stamp still lets
+      // the round go on.
+      await queueRoundWrite(r => (r?.id === round.id ? takeOverResolution(r, { resolverId: game.user.id }) : r))
+        .catch(err => console.warn(`${MODULE_ID} | Batch Mode: the takeover of round ${round.number} was not saved:`, err?.message ?? err));
       const plan = recoveryPlan(round);
       console.log(`${MODULE_ID} | Batch Mode: resuming round ${round.number} (${reason}) — ${plan.recorded.length} recorded, ${plan.unrecorded.length} unrecorded, ${plan.toRoll.length} to roll.`);
       advanceRound("recovery");
