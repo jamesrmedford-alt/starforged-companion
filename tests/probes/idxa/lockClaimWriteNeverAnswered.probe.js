@@ -71,6 +71,31 @@ async function tableOfOneGm() {
 const busyToasts = () => table.client('gm-1').notifications.filter(n => /already being resolved/.test(n.message)).length;
 
 describe('IDXA-4 — a lock claim the server never answers', () => {
+  it('control: a claim write the world REFUSES frees the mark — the next move starts', async () => {
+    silenceConsoleErrors();
+    await tableOfOneGm();
+
+    let refused = 0;
+    table.interceptWrites((w) => {
+      if (refused === 0 && campaignStateWrite('gm-1')(w) && w.value?.pendingMove === true) {
+        refused += 1;
+        return new Error('The server refused the claim (test fault)');
+      }
+      return undefined;
+    });
+
+    table.client('pl-1').chat('Kira slips past the sentry and forces the hatch open.', { speaker: { actor: 'pc-1' } });
+    await table.settle(); await table.drain();
+    expect(refused).toBe(1);
+    expect(table.cards(f => f.moveResolution)).toHaveLength(0);
+
+    table.client('pl-1').chat('Kira hauls herself through the hatch and runs.', { speaker: { actor: 'pc-1' } });
+    await table.settle(); await table.drain();
+
+    expect({ moveCards: table.cards(f => f.moveResolution).length, busyToasts: busyToasts() })
+      .toEqual({ moveCards: 1, busyToasts: 0 });
+  }, 60_000);
+
   it('five minutes after a claim write that never lands, the next move still starts', async () => {
     silenceConsoleErrors();
     await tableOfOneGm();
@@ -99,31 +124,6 @@ describe('IDXA-4 — a lock claim the server never answers', () => {
     await table.settle();
     await vi.advanceTimersByTimeAsync(60_000);
     await table.settle();
-
-    expect({ moveCards: table.cards(f => f.moveResolution).length, busyToasts: busyToasts() })
-      .toEqual({ moveCards: 1, busyToasts: 0 });
-  }, 60_000);
-
-  it('control: a claim write the world REFUSES frees the mark — the next move starts', async () => {
-    silenceConsoleErrors();
-    await tableOfOneGm();
-
-    let refused = 0;
-    table.interceptWrites((w) => {
-      if (refused === 0 && campaignStateWrite('gm-1')(w) && w.value?.pendingMove === true) {
-        refused += 1;
-        return new Error('The server refused the claim (test fault)');
-      }
-      return undefined;
-    });
-
-    table.client('pl-1').chat('Kira slips past the sentry and forces the hatch open.', { speaker: { actor: 'pc-1' } });
-    await table.settle(); await table.drain();
-    expect(refused).toBe(1);
-    expect(table.cards(f => f.moveResolution)).toHaveLength(0);
-
-    table.client('pl-1').chat('Kira hauls herself through the hatch and runs.', { speaker: { actor: 'pc-1' } });
-    await table.settle(); await table.drain();
 
     expect({ moveCards: table.cards(f => f.moveResolution).length, busyToasts: busyToasts() })
       .toEqual({ moveCards: 1, busyToasts: 0 });

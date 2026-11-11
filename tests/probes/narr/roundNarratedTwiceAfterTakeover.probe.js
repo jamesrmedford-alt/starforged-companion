@@ -111,6 +111,44 @@ describe('a round whose narrating GM drops off the server while its narration is
     expect(round()).toMatchObject({ number: first.number + 1, phase: 'collecting' });
   }, 30_000);
 
+  it('is narrated once when the first GM is back within seconds and both replies arrive (a short drop)', async () => {
+    const errors = [];
+    const realError = console.error;
+    console.error = (...args) => { errors.push(args.map(String).join(' ')); };
+    try {
+      const trace = traceTable(table);
+      const first = round();
+      const heldGina = claude.hold(c => c.model === NARRATION_MODEL && c.client === 'gm-1');
+      const heldGus  = claude.hold(c => c.model === NARRATION_MODEL && c.client === 'gm-2');
+      await bothActAndConfirm();
+      await heldGina.arrived;
+      expect(round(), 'gm-1 is narrating round 1 (setup)').toMatchObject({ id: first.id, phase: 'narrating' });
+
+      trace.mark("gm-1's connection drops");
+      await table.leave('gm-1');
+      await heldGus.arrived;                       // gm-2 took the narration over: its own call is out
+      expect(roundCards(first.id), 'no card yet (setup)').toHaveLength(0);
+
+      trace.mark('gm-1 is back two seconds later (the same page); both replies arrive');
+      await table.join('gm-1');
+      heldGina.release(REPLY('Gina'));
+      await table.settle();
+      heldGus.release(REPLY('Gus'));
+      await table.settle();
+      await table.drain(5_000).catch(() => {});
+      await table.settle();
+
+      expect(table.claude.calls.filter(c => c.model === NARRATION_MODEL).map(c => c.client), 'two narration calls were billed (setup)').toEqual(['gm-1', 'gm-2']);
+      expect(
+        roundCards(first.id).map(m => m.flags[MODULE_ID].narrationText.split('\n')[0]),
+        'round 1 has two narrator cards — two tellings of one round, both in narrator memory',
+      ).toHaveLength(1);
+    } finally {
+      console.error = realError;
+      if (!table.client('gm-1').connected) await table.join('gm-1');
+    }
+  }, 60_000);
+
   it('is narrated once, and the next round keeps collecting, when the first GM\'s reply arrives after a co-GM took the narration over', async () => {
     const errors = [];
     const realError = console.error;
