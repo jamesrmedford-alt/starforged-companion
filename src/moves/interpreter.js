@@ -329,11 +329,20 @@ export function constrainMoveToPosition(moveId, combatPosition) {
 /**
  * Build a canonical-move grounding block for inclusion in the interpreter
  * user message. When the foundry-ironsworn `starforged-moves` compendium
- * contains an Item matching `slug`, its description is wrapped in a
+ * contains an Item matching `slug`, its text is wrapped in a
  * `<canonical_move>...</canonical_move>` tag the model can ground against.
  *
+ * The system's move document (`sfmove`) keeps its text in `system.Text`, an
+ * HTMLField — a string (vendor src/module/item/subtypes/sfmove.ts; every
+ * vendored starforged-moves / ironsworn-moves document). It was read as
+ * `system.description ?? system.text ?? system.Text.text`, fields no move has,
+ * so the block was "" for every real move and a forced move's stat reading
+ * never got the move's text (issue #345 AA44). Those fields stay as fallbacks.
+ * Its `@Compendium[…]{Pay the Price}` links are reduced to their labels, as
+ * actorBridge.readAssets reduces an ability's.
+ *
  * Returns "" when the slug is missing, no system is installed, or the
- * compendium document has no description text. Never throws.
+ * compendium document has no text. Never throws.
  *
  * Exported for unit testing of the grounding logic.
  *
@@ -350,13 +359,15 @@ export async function buildCanonicalMoveBlock(slug) {
     return "";
   }
   if (!doc) return "";
-  const description =
-    doc.system?.description
-    ?? doc.system?.text
-    ?? doc.system?.Text?.text
-    ?? "";
-  if (!description) return "";
-  return `<canonical_move>\n${String(description).trim()}\n</canonical_move>`;
+  const sys = doc.system ?? {};
+  const raw = [sys.Text, sys.description, sys.text, sys.Text?.text]
+    .find(v => typeof v === "string" && v.trim()) ?? "";
+  const text = raw
+    .replace(/@\w+\[[^\]]*\]\{([^}]*)\}/g, "$1")
+    .replace(/<[^>]*>/g, "")
+    .trim();
+  if (!text) return "";
+  return `<canonical_move>\n${text}\n</canonical_move>`;
 }
 
 /**

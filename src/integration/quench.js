@@ -2728,6 +2728,22 @@ function registerSystemAssetTests(quench) {
           assert.isObject(move, "pay_the_price should resolve to a Move document");
         });
 
+        it("buildCanonicalMoveBlock carries the live move document's text (system.Text)", async function () {
+          // issue #345 AA44: the block read fields no sfmove document has, and
+          // its unit fixture hand-set one — this reads the installed pack.
+          this.timeout(15000);
+          const { getCanonicalMove, _clearPackCache } =
+            await import(`${MODULE_PATH}/system/ironswornPacks.js`);
+          const { buildCanonicalMoveBlock } = await import(`${MODULE_PATH}/moves/interpreter.js`);
+          _clearPackCache();
+          if (!game.packs?.get?.("foundry-ironsworn.starforgedmoves")) { this.skip(); return; }
+          if (!await getCanonicalMove("face_danger")) { this.skip(); return; } // pack present but slug not found
+          const block = await buildCanonicalMoveBlock("face_danger");
+          assert.include(block, "<canonical_move>", "the Face Danger document's text should build the block");
+          assert.match(block, /something risky/i, "the block should hold Face Danger's own text");
+          assert.notInclude(block, "@Compendium", "move links should be reduced to their labels");
+        });
+
         it("listCanonicalEncounters returns at least one encounter when the pack is installed", async function () {
           this.timeout(15000);
           const { listCanonicalEncounters, _clearPackCache } =
