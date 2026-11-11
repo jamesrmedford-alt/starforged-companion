@@ -1234,6 +1234,48 @@ export function getFactionEntry(name) {
   return findFactionPage(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
 }
 
+/**
+ * Follow a faction's rename onto its World Journal — Factions page: the page
+ * that backlinks the faction's journal (`entityId`), else the one its old
+ * name keys to (factionNameKey) that backlinks nothing else, takes the new
+ * name — its title and `factionName` — so the faction stays one page and one
+ * [4e] line under the name its journal now has (issue #345 AA18: renamed in
+ * the Journal sidebar, the record and this page each kept the old name). A
+ * page that already holds the new name is another faction's log: nothing is
+ * merged by a guess. Never throws.
+ *
+ * @param {{ entityId: string, from?: string|null, to: string }} rename —
+ *   the faction's host JournalEntry id, its old and new names
+ * @returns {Promise<boolean>} whether a page was renamed
+ */
+export async function renameFactionEntry({ entityId, from = null, to } = {}) {
+  try {
+    const name = String(to ?? "").trim();
+    if (!name) return false;
+    const pages   = findJournal(JOURNAL_NAMES.factions)?.pages?.contents ?? [];
+    const entryOf = (p) => p?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
+    const fromKey = factionNameKey(from);
+    const page = (entityId ? pages.find(p => entryOf(p)?.entityId === entityId) : null)
+      ?? (fromKey ? pages.find(p => entryOf(p) && !entryOf(p).entityId && factionNameKey(p.name) === fromKey) : null)
+      ?? null;
+    if (!page) return false;
+    const entry = entryOf(page);
+    if (page.name === name && entry.factionName === name) return false;
+    const toKey = factionNameKey(name);
+    if (pages.some(p => p !== page && factionNameKey(p.name) === toKey)) {
+      console.warn(`${MODULE_ID} | worldJournal: a Factions page named "${name}" already exists — "${page.name}" was not renamed.`);
+      return false;
+    }
+    const data = { ...entry, factionName: name, entityId: entry.entityId ?? entityId ?? null };
+    await page.setFlag(MODULE_ID, FLAG_KEYS.factions, data);
+    await page.update({ name, text: { format: 1, content: renderPageBody(FLAG_KEYS.factions, data) } });
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | worldJournal: renaming the faction's page failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // !journal command parsing
 // ─────────────────────────────────────────────────────────────────────────────

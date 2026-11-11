@@ -187,6 +187,7 @@ import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
   handleMigrateEntitiesCommand,
+  followEntityJournalRename,
 } from "./entities/migrator.js";
 import { registerSectorOverviewSync } from "./sectors/sectorOverview.js";
 import {
@@ -2395,8 +2396,9 @@ function userOwnsActor(actor, user) {
 
 // Actor-hosted entity typeKeys whose flag record denormalises `name`
 // (registry.js HOST_COLLECTION === 'actor'). Faction/creature are
-// journal-hosted and out of scope for the rename sync.
+// journal-hosted: their rename sync is the updateJournalEntry hook below.
 const RENAME_SYNC_TYPES = new Set(["connection", "ship", "settlement", "planet", "location"]);
+const JOURNAL_RENAME_SYNC_TYPES = new Set(["faction", "creature"]);
 
 /**
  * Keep entity flag records in sync with Actor renames (v1.7.10 playtest
@@ -2436,8 +2438,35 @@ export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) 
   }
 }
 
+/**
+ * Keep a faction's or creature's record in sync with its journal's rename in
+ * the Journal sidebar (issue #345 AA18): the journal is what the GM renames
+ * and the Entities panel shows, while every narrator and detection reader
+ * uses the record's name — so the narrator kept the old name, and a
+ * narration naming the faction by its new one proposed a second faction (a
+ * second World Journal page, a draft row for a second record). The record —
+ * and a faction's World Journal page — follow the journal, by its id
+ * (migrator.followEntityJournalRename). Canonical-GM gated, as the Actor
+ * sync; the record write touches the page, not the journal's name, so the
+ * hook cannot recurse. Drift from a rename made with no GM connected is
+ * repaired at ready by syncEntityRecordNames.
+ */
+function syncJournalEntityRecordNameOnUpdate(journal, changes) {
+  try {
+    if (typeof changes?.name !== "string" || !changes.name) return;
+    if (!isCanonicalGM()) return;
+    const entityType = journal?.flags?.[MODULE_ID]?.entityType;
+    if (!JOURNAL_RENAME_SYNC_TYPES.has(entityType)) return;
+    followEntityJournalRename(entityType, journal).catch(err =>
+      console.warn(`${MODULE_ID} | rename sync: ${entityType} record update failed for ${journal?.id}:`, err?.message ?? err));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | journal rename sync hook threw:`, err?.message ?? err);
+  }
+}
+
 function registerEntityRenameSyncHook() {
   Hooks.on("updateActor", syncEntityRecordNameOnUpdate);
+  Hooks.on("updateJournalEntry", syncJournalEntityRecordNameOnUpdate);
 }
 
 /**
