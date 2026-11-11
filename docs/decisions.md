@@ -4762,6 +4762,45 @@ own release has not landed (`lockReleased`) — once it has, the lock may be
 a later move's, which the second release cleared. `releasePendingMoveLock`
 returns whether the lock is free; a refused early release is still retried.
 
+**Update (issue #347 D1):** the record above called `ClarificationDialog` a
+pre-roll dialog; it was not. It now is — see the next entry, on "Who are
+you interacting with?".
+
+## "Who are you interacting with?" is asked before the roll
+
+**Decision (issue #347 D1, option A; maintainer):** the clarification prompt
+a hybrid move opens when its line implies someone it does not name ("I slip
+past him") is asked in `rollMove` before the dice — after the "not rolled"
+guards, before any add is claimed or die rolled. The line's relevance is read
+there with the outcome unknown, so a hybrid line naming nobody is classified
+(one Haiku call) on every such move, a miss included; the classification is
+kept and the read after the roll uses it (`resolveRelevance`'s
+`classificationCache`), so a hit makes one call, as before. The GM's pick
+stands whatever the outcome: "Someone new" on a miss is narrated as a
+discovery, a picked connection as an interaction. Closing the prompt is "No
+specific entity", and the move goes on. Nothing waits on a prompt after the
+roll.
+
+**Reason:** the prompt was awaited after `resolveMove`, `applyOutcomeEffects`
+and the Pay the Price card, with the move lock held and no result card,
+narration or record until it was answered — every other move at the table
+was refused meanwhile, the v1.7.12 shape, and a reload left the move
+half-applied (issue #347 AB14). The lock record above accepts a dialog that
+holds the lock only at the move's start, where nothing has been applied;
+asked there, an unanswered prompt holds the table as the move's own confirm
+dialog does, and nothing is half-done.
+
+**Rejected:** (B) keeping it after the roll with a timeout that answers "No
+specific entity" — the rider-prompt record above rejected a watchdog on a
+held lock; (C) reaffirming the post-roll hold and correcting the record.
+
+**Trade-off accepted:** a hybrid line that names nobody costs one Haiku call
+on a miss too, and the GM can be asked about a move that then misses.
+
+**Files:** `src/moves/movePipeline.js` (`rollMove`),
+`src/context/relevanceResolver.js` (`classificationCache`, a `null`
+outcome). Test: `tests/unit/clarificationAskedBeforeRoll.test.js`.
+
 **Files:** `src/index.js` (`releasePendingMoveLock`, the release sites in the
 pipeline), `src/moves/riderDialog.js`. Tests: `tests/unit/pipeline.test.js`,
 `tests/unit/assetEffects.test.js`.

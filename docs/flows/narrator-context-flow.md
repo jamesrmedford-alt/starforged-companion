@@ -46,7 +46,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   every acting entry is rolled and recorded and its upgrade decided. Context
   goes through the same seam: the entries' text joined for lexical relevance
   and lore; each move entry's own relevance (resolved when it rolled — the
-  GM's clarification dialog included) unioned, at the widest class (an entry
+  GM's clarification dialog, asked before its dice, included — issue #347
+  D1) unioned, at the widest class (an entry
   with no roll counts as interaction); a CHARACTER block per acting PC
   still in the game (`extras.roundCharacters`, by the entry's actor id — an
   entry whose PC was deleted since the round opened gets none:
