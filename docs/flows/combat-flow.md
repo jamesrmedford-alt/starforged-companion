@@ -357,7 +357,11 @@ weak-hit win −1, min 1), each mark adding ticks by the *vow's* rank
 (`milestoneTicks`) to the vow **Item** (`markLinkedVowMilestone` →
 `applyReachMilestone` → `markVowProgress`) on the vow's **holder** — the
 card's roller when they hold a copy, else the PC holding the resolved vow
-(`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
+(`resolveVowHolderActor`). Both buttons find the vow by the id the card
+carries (`vowId`, `fightCardVow`): the holder's open copy by its Item,
+whatever it is named now — by name, a vow its holder fulfilled, renamed or
+deleted fell through to the winner's or the holder's other vow (issue #345
+AA17); a card with no id keeps the name — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks — spoken as
 the vow's holder, as ⚑ marks it: the card's roller when they hold a copy
 (issue #329 X05), else the PC holding the vow the fight served
@@ -377,9 +381,12 @@ fulfilment's deepen deepens nothing and posts a short "already deepened"
 card. (Taken from the flag alone, a sheet vow whose stamp never landed
 carried null and was found by its name only: after a rename the press
 deepened a second time — known-issues FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY.) Once the card's vow is
-fulfilled its milestone and 🏁 are retired on every client and render
-(`wireFightVowButtons` → `linkedVowCompleted`), and a press that reaches the
-GM marks nothing (issue #325 W29). It then grants the
+fulfilled — every copy, by the card's vow id, whoever fulfilled it (issue
+#345 AA17: the name guard read only the winner's vows, so ⚑ stayed armed
+after the holder fulfilled it) — or is on no sheet any more, its milestone
+and 🏁 are retired on every client and render, titled why
+(`wireFightVowButtons` → `linkedVowClosed`), and a press that reaches the
+GM marks or rolls nothing (issue #325 W29). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
 one-time (`reward.status` flips from "promised" — written first, as the

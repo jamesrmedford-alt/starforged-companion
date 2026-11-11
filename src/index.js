@@ -116,7 +116,7 @@ import {
 import { selectConnection, connectionsNamedByFragment, shouldForgeBond } from "./moves/developRelationship.js";
 import { handleBondCommand } from "./moves/bondCommand.js";
 import { postReachMilestoneCard } from "./moves/milestonePicker.js";
-import { planReachMilestone, marksForSourceRank, namesCompletedVow } from "./moves/milestone.js";
+import { planReachMilestone, marksForSourceRank, namesCompletedVow, milestoneTicks } from "./moves/milestone.js";
 import {
   collectFiringRiders,
   partitionRiders,
@@ -4688,12 +4688,19 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
 // used to be swallowed here and the card stamped anyway (issue #306 R04).
 //
 // @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
-async function markLinkedVowMilestone(vowName, marks, actorId = null) {
+async function markLinkedVowMilestone(vowName, marks, actorId = null, vowId = null) {
   try {
-    // The card's vow is already fulfilled: nothing to mark, and no other vow
-    // marked in its place (issue #325 W29).
-    if (linkedVowCompleted(vowName, actorId)) return { ok: false, reason: "vow-completed" };
-    const action = await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks);
+    // The card's vow is fulfilled, or gone from every sheet: nothing to mark,
+    // and no other vow marked in its place (issue #325 W29, issue #345 AA17).
+    const closed = linkedVowClosed({ vowName, vowId, actorId });
+    if (closed) return { ok: false, reason: closed === "gone" ? "vow-gone" : "vow-completed" };
+    // By the card's vow id: the holder's open copy, whatever it is named now
+    // (issue #345 AA17 — by name, a renamed vow fell to the winner's sole open
+    // vow). A card with no id keeps the name.
+    const byId = fightCardVow({ vowId, actorId });
+    const action = byId
+      ? await applyReachMilestone(byId.holder, byId.item.name ?? vowName ?? null, marks, { itemId: byId.item.id })
+      : await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks);
     if (action === "mark" || action === "pick") return { ok: true };
     console.warn(`${MODULE_ID} | mark linked vow: no open vow "${vowName ?? "?"}" to mark — nothing marked.`);
     return { ok: false, reason: "no-vow" };
@@ -4704,19 +4711,48 @@ async function markLinkedVowMilestone(vowName, marks, actorId = null) {
 }
 
 /**
- * True when the vow a won-fight card serves is already complete — its holder's
- * copy by name (resolveVowItemCopies prefers the roller's) is completed, and no
- * open vow carries the name. Its card's buttons are retired (issue #325 W29).
+ * The vow a won-fight card serves, by the id it carries (`vowId` — vowCopyId,
+ * FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY): its copies across every PC, whatever
+ * they are named now. "open" — `holder` the card's roller when they hold an
+ * open copy, else a PC who does, `item` that PC's copy; "completed" — every
+ * copy is; "gone" — no PC holds one (deleted). null for a card with no id:
+ * its name is all it has. ⚑, 🏁 and the card's retire check resolve the vow
+ * through it — by name, once its holder fulfilled, renamed or deleted it,
+ * they marked or fulfilled a vow the fight never served (issue #345 AA17;
+ * rules/reachability.md §6).
  *
- * @param {string|null} vowName
- * @param {string|null} [actorId]
- * @returns {boolean}
+ * @param {{ vowId?: string|null, actorId?: string|null }} card
+ * @returns {{ state: "open"|"completed"|"gone", holder?: Actor, item?: Item }|null}
  */
-function linkedVowCompleted(vowName, actorId = null) {
-  if (!String(vowName ?? "").trim()) return false;
+export function fightCardVow({ vowId = null, actorId = null } = {}) {
+  if (typeof vowId !== "string" || !vowId) return null;
+  const copies = collectPlayerVowItems().filter(e => isVowCopy(e.item, vowId));
+  if (!copies.length) return { state: "gone" };
+  const open = copies.filter(e => e.item.system?.completed !== true);
+  if (!open.length) return { state: "completed" };
+  const held = (actorId ? open.find(e => e.actor?.id === actorId) : null) ?? open[0];
+  return { state: "open", holder: held.actor, item: held.item };
+}
+
+/**
+ * Why a won-fight card's vow can no longer be marked or fulfilled from it —
+ * "completed" (issue #325 W29) or "gone" — or null while it can. By the
+ * card's vow id (fightCardVow): by name the guard read only the card
+ * roller's vows, so after the holder — not the winner — fulfilled the vow
+ * from the card, ⚑ stayed armed and marked the winner's other vow (issue #345
+ * AA17). A card with no id keeps the name: its holder's copy (the roller's
+ * when they hold one) is completed, and no open vow carries the name.
+ *
+ * @param {{ vowName?: string|null, vowId?: string|null, actorId?: string|null }} card
+ * @returns {"completed"|"gone"|null}
+ */
+function linkedVowClosed({ vowName = null, vowId = null, actorId = null } = {}) {
+  const byId = fightCardVow({ vowId, actorId });
+  if (byId) return byId.state === "open" ? null : byId.state;
+  if (!String(vowName ?? "").trim()) return null;
   const vows = getPlayerActors().flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
   const mine = actorId ? vows.filter(v => v.actorId === actorId) : [];
-  return namesCompletedVow(mine.length ? mine : vows, vowName);
+  return namesCompletedVow(mine.length ? mine : vows, vowName) ? "completed" : null;
 }
 
 /**
@@ -4809,7 +4845,7 @@ export async function markFightVowMilestoneOnce({ cardId = null, vowName = null,
     console.debug(`${MODULE_ID} | fight-vow milestone: card ${cardId} already marked "${vowName ?? "?"}" — nothing marked again.`);
     return { ok: true, skipped: true, reason: "already-marked" };
   }
-  const res = await markLinkedVowMilestone(vowName, marks, actorId);
+  const res = await markLinkedVowMilestone(vowName, marks, actorId, vowId);
   if (res?.ok && step) await recordPayoffStep(payoffVowCopies({ vowId, vowName, actorId }), step);
   return res;
 }
@@ -5841,13 +5877,22 @@ export function wireFightVowButtons(message, root) {
   const f = message?.flags?.[MODULE_ID];
   if (!f?.fightVowCard) return;
 
-  // The vow this card serves is fulfilled: its milestone and 🏁 are retired
-  // on every client and render — pressed, they acted on the PC's other vow
-  // (issue #325 W29).
-  if (linkedVowCompleted(f.vowName ?? null, typeof f.actorId === "string" ? f.actorId : null)) {
+  // The vow this card serves is fulfilled, or on no sheet any more: its
+  // milestone and 🏁 are retired on every client and render, and say why —
+  // pressed, they acted on the PC's other vow (issue #325 W29). By the card's
+  // vow id, whoever fulfilled it (issue #345 AA17).
+  const closed = linkedVowClosed({
+    vowName: f.vowName ?? null, vowId: typeof f.vowId === "string" ? f.vowId : null,
+    actorId: typeof f.actorId === "string" ? f.actorId : null,
+  });
+  if (closed) {
     for (const action of ["sf-mark-milestone", "sf-fulfill-vow"]) {
       const btn = root?.querySelector?.(`[data-action="${action}"]`);
-      if (btn) btn.disabled = true;
+      if (!btn) continue;
+      btn.disabled = true;
+      btn.title = closed === "gone"
+        ? "The vow this fight served is no longer on any character's sheet"
+        : "The vow this fight served is fulfilled";
     }
   }
 
@@ -5973,14 +6018,18 @@ async function postDevelopRelationshipCard(plan) {
  * Resolve and mark a Reach a Milestone for the given actor. `target` is the
  * optional named vow (interpretation.moveTarget); null lets planReachMilestone
  * auto-select the sole open vow or, when several are open, post a picker card.
+ * `itemId` names the vow Item itself (a won-fight card's vow, by its id —
+ * issue #345 AA17): that open vow is marked, else none.
  *
  * @param {Actor|null} actor
  * @param {string|null} target
+ * @param {number} [marks]
+ * @param {{ itemId?: string|null }} [opts]
  * @returns {Promise<"mark"|"pick"|"none"|null>} what it did — null when it
  *   could not act here (no PC, not a GM client); rejects when the mark's
  *   write is refused
  */
-async function applyReachMilestone(actor, target, marks = 1) {
+async function applyReachMilestone(actor, target, marks = 1, { itemId = null } = {}) {
   // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
   // must not claim progress on a client that can't write. In solo-GM play the
   // player is the GM, so this is the normal path. `marks` > 1 applies a major
@@ -5990,7 +6039,13 @@ async function applyReachMilestone(actor, target, marks = 1) {
     console.debug(`${MODULE_ID} | reach a milestone: ${actor ? "not a GM client" : "no player character"} — nothing marked.`);
     return null;
   }
-  const plan = planReachMilestone(readVows(actor), target);
+  // A vow named by its Item (a won-fight card's, resolved by its vow id —
+  // issue #345 AA17): that open vow, else nothing — never another by name.
+  const vows = readVows(actor);
+  const byItem = itemId ? vows.find(v => v.id === itemId && !v.completed) ?? null : null;
+  const plan = itemId
+    ? (byItem ? { action: "mark", vow: byItem, ticks: milestoneTicks(byItem.rank) } : { action: "none" })
+    : planReachMilestone(vows, target);
   if (plan.action === "mark") {
     const ticks = plan.ticks * Math.max(1, Math.floor(marks) || 1);
     await markVowProgress(actor, plan.vow.id, ticks);

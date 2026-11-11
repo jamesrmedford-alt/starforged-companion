@@ -51,7 +51,8 @@ Terminology up front, because it drives every gap below:
   every later linked win, and a forsaken vow's reward was never lost (issue
   #342 Z54); so does a card that names the vow for a later press — the
   won-fight card's and a fulfilment's payoff-failure card's `vowId`, read by
-  🤝 Deepen's once-only record and the Retry (from the flag alone they
+  🤝 Deepen's once-only record, the Retry and the won-fight card's ⚑ / 🏁 and
+  retire check (`fightCardVow`, issue #345 AA17) (from the flag alone they
   carried null, found the vow by its name only, and after a rename deepened
   its connection a second time — known-issues
   FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY); fulfilment completion and payoff
@@ -203,7 +204,11 @@ All real progress lands on **item ticks** (`system.current`) via
   — so a re-press after a stamp the world refused marks nothing, issue #336
   Y24). Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
   it was the card's roller's, so a crewmate who won the fight rolled another
-  PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs. The
+  PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs.
+  Both find the vow by the card's `vowId` (`fightCardVow`): the holder's open
+  copy by its Item, renamed or not; fulfilled (whoever fulfilled it) or on
+  no sheet, both retire and a press acts on nothing — by name they marked or
+  fulfilled the winner's or the holder's other vow (issue #345 AA17). The
   card's rank and 🤝 Deepen connection come
   from the same roller-first resolution (`postFightVowMilestoneCard`), not
   the first PC holding a vow of that name.
