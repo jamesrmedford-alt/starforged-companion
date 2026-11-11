@@ -524,8 +524,12 @@ runs posts into the ended session after it (issue #345 AA21), and an X-Card
 on End's closing vignette empties a summary that covered the beat it removed
 (issue #342 Z41); End's own closing vignette, posted after its refresh, is
 the one card that check leaves out — its scene closes under its own id, then
-`mintSession` keeps that summary as `previousSessionSummary` — a session
-nobody began (no Begin stamped it, its gate shut, End a Session did not close
+`mintSession` keeps that summary as `previousSessionSummary` (a finalise that
+could not cover the session — no key on that client yet, a failed call —
+marks it `unsummarisedSession`, and the canonical GM summarises its cards into
+`previousSessionSummary` once it has a key: `catchUpUnsummarisedSession`,
+after each narrator card, at the load and when its key is set — issue #347
+AB15) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
 begun, issue #331 X64) and adds its summary to the one before it, which stays
 LAST SESSION under its own number (it replaced it — issue #331 X65) — mints

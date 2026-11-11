@@ -81,7 +81,15 @@ entries below this one.)
   the coverage rather than a count). A regeneration is discarded when the
   X-Card was played during its call or a card it was made from is one an
   X-Card removed (W06's rule as written), no longer merely while an earlier
-  X-Card stands paused.
+  X-Card stands paused. *Update (issue #347 AB15):* the mint's finalise is
+  fail-open, so AA21 moved the single point of failure to the mint — a
+  session closed out on a client with no key yet, or while its one call
+  failed, never got LAST SESSION. The mint now marks such a session
+  (`unsummarisedSession`, one of `SESSION_MINT_FIELDS`; a session nobody
+  began is not marked — X65 folds it into the one before), and the canonical
+  GM summarises its cards for LAST SESSION once it has a key
+  (`catchUpUnsummarisedSession`: after each narrator card, at the world load,
+  when its key is set). The next mint replaces the mark.
 - **A kept strike of a scene fact stands at its place; a Replace stays
   replaced** [AA05, AA28]: a scene end keeps a Replace's original on the
   session's unnamed blocks (never named, never lifted), beside the X-Card's.

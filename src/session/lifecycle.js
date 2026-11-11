@@ -161,6 +161,7 @@ export const SESSION_MINT_FIELDS = Object.freeze([
   "lastSessionTimestamp",
   "sessionEndedId",
   "previousSessionSummary",
+  "unsummarisedSession",
   "sessionActive",
   "sessionActiveStartedAt",
 ]);
@@ -298,17 +299,28 @@ export function sessionBeingReplaced(campaignState) {
  * @param {number} [now] — epoch ms
  * @returns {Object}
  */
+/**
+ * Whether the session `campaignState` is about to close out was never begun:
+ * Begin a Session (or the Campaign Start's) stamped it, its gate is open —
+ * only a Begin opens it, and a world from before the stamp has its open gate
+ * to show for it — or End a Session closed it. A session ended before the
+ * stamp existed (issue #300 F11), or begun by a Campaign Start before it
+ * stamped, read as unbegun: the next session took its number, and the count
+ * stayed one behind (issue #331 X64).
+ *
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+function closingSessionUnbegun(campaignState) {
+  const closing = campaignState?.currentSessionId;
+  return !!closing && campaignState.sessionStartedId !== closing
+    && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
+}
+
 export function mintSession(campaignState, now = Date.now()) {
   const closing = campaignState.currentSessionId;
   const summary = campaignState.sessionSummary;
-  // Begun: Begin a Session (or the Campaign Start's) stamped it, its gate is
-  // open — only a Begin opens it, and a world from before the stamp has its
-  // open gate to show for it — or End a Session closed it. A session ended
-  // before the stamp existed (issue #300 F11), or begun by a Campaign Start
-  // before it stamped, read as unbegun: the next session took its number,
-  // and the count stayed one behind (issue #331 X64).
-  const closingUnbegun = !!closing && campaignState.sessionStartedId !== closing
-    && campaignState.sessionActive !== true && campaignState.sessionEndedId !== closing;
+  const closingUnbegun = closingSessionUnbegun(campaignState);
   if (closing && summary?.sessionId === closing && typeof summary.text === "string" && summary.text.trim()) {
     const text     = summary.text.trim();
     const prev     = campaignState.previousSessionSummary;
@@ -373,14 +385,26 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
   if (!sessionNeedsMint(campaignState, now)) return false;
   const closing = campaignState.currentSessionId;
   const ended   = !!closing && campaignState.sessionEndedId === closing;
+  // Whether the closing session's summary covers it now. The finalise is
+  // fail-open — no key on this client yet, or its one call failed — and the
+  // mint goes ahead regardless; a session closed out short is marked, and
+  // LAST SESSION summarised from its cards once a keyed canonical GM can
+  // (narrator.js catchUpUnsummarisedSession, issue #347 AB15). It was never
+  // looked at again.
+  let caughtUp = true;
   if (closing) {
     try {
       const { finalizeSessionSummary } = await import("../narration/narrator.js");
-      await finalizeSessionSummary(campaignState);
+      caughtUp = (await finalizeSessionSummary(campaignState)) !== false;
     } catch (err) {
+      caughtUp = false;
       console.warn(`${MODULE_ID} | session roll: summary finalise failed:`, err?.message ?? err);
     }
   }
+  // A session nobody began is folded into the one before it (X65): not marked.
+  const unsummarised = closing && !caughtUp && !closingSessionUnbegun(campaignState)
+    ? { sessionId: closing, sessionNumber: campaignState.sessionNumber ?? null }
+    : null;
   if (closing && hasSceneContent(campaignState)) {
     try {
       const { endScene } = await import("../factContinuity/sceneLifecycle.js");
@@ -390,6 +414,7 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
     }
   }
   mintSession(campaignState, now);
+  campaignState.unsummarisedSession = unsummarised;
   return true;
 }
 

@@ -2331,6 +2331,8 @@ function rollingSummaryEnabled() {
  * @param {Object} campaignState
  * @param {Object} [options]
  * @param {boolean} [options.forceRefresh] — regenerate regardless of debounce
+ * @param {boolean} [options.persist] — false: return the text, store nothing
+ *   (a closed session's catch-up — catchUpUnsummarisedSession)
  * @returns {Promise<string>}
  */
 export async function getRollingSessionSummary(campaignState, options = {}) {
@@ -2425,6 +2427,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   // another jumps the chain and lands first, and its pause can only empty a
   // summary already stored — this one, made from the narration it removed,
   // was written over it. Discarded then, here and on the caller's copy.
+  if (options.persist === false) return record.text;
   if (isCanonicalGM()) {
     let kept = true;
     try {
@@ -2499,6 +2502,9 @@ export function registerRollingSummaryRefreshHook() {
     const f = message?.flags?.[MODULE_ID];
     if (!f?.narratorCard || !f.narrationText) return;
     refreshRollingSessionSummary();
+    // A session the mint closed out short gets its LAST SESSION now, if a key
+    // is here (issue #347 AB15).
+    catchUpUnsummarisedSession();
   });
 }
 
@@ -2533,14 +2539,17 @@ export function registerPublishedReflectionHook() {
  * the session's first `coveredCount` cards; makes no call when every card
  * past them is End a Session's own closing vignette (End's refresh runs
  * before it posts — not worth a second call), or there is none. Updates
- * campaignState's `sessionSummary`; fail-open.
+ * campaignState's `sessionSummary`; fail-open — and says whether the summary
+ * covers the session now, so a mint can mark one it closes out short (issue
+ * #347 AB15). A summary the table turned off is "covered".
  *
  * @param {Object} campaignState
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} false when cards stay uncovered (no key on this
+ *   client, or the call failed)
  */
 export async function finalizeSessionSummary(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
-  if (!sessionId || !rollingSummaryEnabled()) return;
+  if (!sessionId || !rollingSummaryEnabled()) return true;
   // Bounded: a refresh that never settles held End and Begin a Session with it
   // (issue #347 AB05).
   if (_summaryRefresh) await settledWithin(_summaryRefresh, SUMMARY_REFRESH_WAIT_MS, 'rolling summary refresh');
@@ -2550,11 +2559,73 @@ export async function finalizeSessionSummary(campaignState) {
   const covered = (summary) => (summary?.sessionId === sessionId ? Number(summary.coveredCount) || 0 : -1);
   if (covered(stored) > covered(campaignState.sessionSummary)) campaignState.sessionSummary = stored;
   const ended = campaignState.sessionEndedId === sessionId;
-  const uncovered = sessionNarratorCards(sessionId)
+  const uncoveredCards = () => sessionNarratorCards(sessionId)
     .slice(Math.max(0, covered(campaignState.sessionSummary)))
     .filter(m => !(ended && m.flags?.[MODULE_ID]?.vignetteKind === 'npc_end'));
-  if (!uncovered.length) return;
+  if (!uncoveredCards().length) return true;
   await getRollingSessionSummary(campaignState, { forceRefresh: true });
+  return uncoveredCards().length === 0;
+}
+
+let _sessionCatchUp = null;
+
+/**
+ * LAST SESSION for a session the mint closed out short (issue #347 AB15): the
+ * mint's summary finalise is fail-open, and a session closed on a client with
+ * no key yet — keys are per browser: another device, cleared site data, a
+ * keyless co-GM who opened the world first — or while its one call failed,
+ * kept whatever the debounce had stored (nothing at all for a short session),
+ * and nothing looked at it again. The mint marks it (`unsummarisedSession`);
+ * here, on the canonical GM with a key, its cards are summarised and the
+ * summary becomes LAST SESSION, the mark cleared. Run after each narrator card
+ * (End a Session's closing vignette among them), at the world load and when
+ * this GM's key is set; one at a time; fail-open — a failed or X-Carded call
+ * leaves the mark for the next try. A later mint replaces the mark.
+ *
+ * @returns {Promise<boolean>} whether LAST SESSION was caught up
+ */
+export function catchUpUnsummarisedSession() {
+  if (_sessionCatchUp) return _sessionCatchUp;
+  let stored = null;
+  try { stored = game.settings.get(MODULE_ID, 'campaignState') ?? null; }
+  catch { stored = null; }
+  const pending = stored?.unsummarisedSession ?? null;
+  if (!pending?.sessionId || !isCanonicalGM() || !rollingSummaryEnabled() || !getApiKey()) return Promise.resolve(false);
+  _sessionCatchUp = (async () => {
+    try {
+      const hasCards = sessionNarratorCards(pending.sessionId).length > 0;
+      const text = hasCards
+        ? await getRollingSessionSummary({ ...stored, currentSessionId: pending.sessionId, sessionSummary: null },
+            { forceRefresh: true, persist: false })
+        : '';
+      if (hasCards && !text?.trim()) return false;          // failed, or X-Carded meanwhile: try again later
+      const write = serialiseCampaignStateWrite(async () => {
+        const latest = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+        if (latest.unsummarisedSession?.sessionId !== pending.sessionId) return false;   // a later mint moved on
+        await game.settings.set(MODULE_ID, 'campaignState', {
+          ...latest,
+          unsummarisedSession: null,
+          ...(text?.trim() ? { previousSessionSummary: {
+            sessionId:     pending.sessionId,
+            sessionNumber: pending.sessionNumber ?? null,
+            text:          text.trim(),
+            updatedAt:     new Date().toISOString(),
+          } } : {}),
+        });
+        return true;
+      }, 'last session catch-up');
+      if (!await settledWithin(write, WORLD_WRITE_WAIT_MS, 'last session catch-up write')) return false;
+      const done = await write;
+      if (done) console.info(`${MODULE_ID} | narrator: LAST SESSION caught up for the session closed without its summary.`);
+      return !!done;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: LAST SESSION catch-up failed:`, err?.message ?? err);
+      return false;
+    } finally {
+      _sessionCatchUp = null;
+    }
+  })();
+  return _sessionCatchUp;
 }
 
 function refreshRollingSessionSummary() {

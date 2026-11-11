@@ -74,6 +74,7 @@ import {
   registerRollingSummaryRefreshHook,
   registerXCardRedirectHook,
   registerPublishedReflectionHook,
+  catchUpUnsummarisedSession,
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
@@ -317,7 +318,12 @@ function registerCoreSettings() {
     // Keep the keyed-GM routing registry in sync the moment a GM enters or
     // clears their key, so the single-emitter pipeline always runs on a GM
     // that actually holds a key (see gmGate.js / advertiseClaudeKeyPresence).
-    onChange: () => { advertiseClaudeKeyPresence().catch(warnKeyAdvertiseRefused); },
+    onChange: () => {
+      advertiseClaudeKeyPresence().catch(warnKeyAdvertiseRefused);
+      // A session the mint closed out short, while this browser had no key,
+      // gets its LAST SESSION now (issue #347 AB15).
+      catchUpUnsummarisedSession().catch(() => {});
+    },
   });
 
   // Keyed-GM routing registry — world-scoped list of GM user IDs whose client
@@ -7872,6 +7878,10 @@ Hooks.once("ready", () => {
     }, "session start")).then(async () => {
       noteSessionReplaced();
       if (staleLockCleared) await postMoveLockReleasedCard(staleLockReleasedText(staleLock?.holder ?? null));
+      // A session closed out short — by this mint, or one before it on a
+      // client with no key — gets its LAST SESSION, if this GM has a key
+      // (issue #347 AB15).
+      catchUpUnsummarisedSession().catch(() => {});
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: the "Previously On" campaign recap introduces the session
       // this load started — the boundary is End a Session or four idle hours
