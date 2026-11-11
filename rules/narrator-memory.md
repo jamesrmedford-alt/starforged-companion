@@ -34,9 +34,10 @@ layers. This file is the never-break list.
    a published reflection's too, which its capture stamps (issue #335 Y03).
    When adding a new card type or co-marking an existing one,
    audit every `narratorCard` consumer (ring, rolling summary, session
-   recap, correction hook, audio hook, burn-supersede, the X-Card's card
-   pick and redirect hook) in the same commit — the consumer list lives in
-   architecture doc §2.
+   recap, the campaign recap's session-start gate — a published reflection
+   is no narration there, issue #345 AA32 — correction hook, audio hook,
+   burn-supersede, the X-Card's card pick and redirect hook) in the same
+   commit — the consumer list lives in architecture doc §2.
 
 2. **The sidecar JSON contract** (`appendSidecarInstruction` ↔
    `extractSidecar` ↔ `applySidecar`/`applySceneFrame`) is a matched pair.

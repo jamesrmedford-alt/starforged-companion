@@ -154,6 +154,11 @@ CLAUDE.md "audit consumers" rule):
   dropped (issue #322 V05). A round card counts each of its `roundEntries`'
   moves, outcomes and matches ("Round N: Move → Outcome"), its fallback too
   (issue #340)
+- the campaign recap's session-start gate (`sessionStartRecap`, issue #286
+  C3) — the recap goes to the session's first narration: no card
+  `sessionNarratorCards` keeps yet, save a published reflection — canon, but
+  not a narration; published first, it took the narration's recap (issue
+  #345 AA32)
 - correction-dialog render hook (`src/index.js`) — no-ops without
   `[data-action="openCorrectionDialog"]` markup
 - audio render hook (`src/index.js`) — no-ops without the hidden play-button

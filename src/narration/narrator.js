@@ -561,12 +561,17 @@ function previousSessionSummaryFor(campaignState) {
  * this read used no validity check at all, so a recap made before an entry
  * was corrected opened every session with the uncorrected story — and at a
  * table whose GM has no key, where nothing regenerates it, indefinitely.
+ *
+ * A reflection a player published from the Private Channel is canon, in the
+ * ring and the summary, but not a narration — the X-Card redirect hook's
+ * rule: published before the session's first narration, it took that
+ * narration's recap (issue #345 AA32).
  */
 async function sessionStartRecap(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
   if (!sessionId) return '';
   try {
-    if (sessionNarratorCards(sessionId).length) return '';
+    if (sessionNarratorCards(sessionId).some(m => !m.flags?.[MODULE_ID]?.publishedReflection)) return '';
   } catch {
     return '';
   }

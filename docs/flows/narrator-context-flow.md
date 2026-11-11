@@ -535,7 +535,9 @@ and an End on a session already ended only replaces the focus for next
 session and posts a note — its momentum is paid for the first focus noted,
 once (issue #309 N08). What carries over to the new session's prompts: LAST SESSION ([4c], every
 prose mode), the campaign recap ([0b], the session's first narration — no
-narrator card of the session yet — read from its cache, which End a Session
+narrator card of the session yet, a reflection published from the Private
+Channel aside: it is canon, not a narration, and published first it took the
+narration's recap (issue #345 AA32) — read from its cache, which End a Session
 and a new session's world load refresh), entity cards with their tiers and
 LAST KNOWN, established lore and the campaign premise. The recap cache stores
 the chronicle it was made from (`chronicleLength` + `chronicleHash`, over
