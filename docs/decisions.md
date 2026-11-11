@@ -1608,7 +1608,9 @@ finding's ID in brackets.)
   connection apart, saying how it was lost.
 - **A GM who leaves releases their own lock** [W25]: the lock records its
   claimant (`pendingMoveBy`); the canonical GM releases a departed GM's lock
-  and whispers the GMs.
+  and whispers the GMs. *Update (issue #347 AB14):* the ready resets whisper
+  the same card when they clear a lock — a sole GM's reload mid-move was
+  reset in silence, its move's record and Burn / Improve never landing.
 - **Short calls follow narration's thinking rule** [W27]:
   `narration/thinking.js` is the one rule, for narration and every short
   structured call on the narration model.

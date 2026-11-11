@@ -1168,11 +1168,38 @@ async function releaseLockOfDisconnectedGM(user, connected) {
   const released = await releasePendingMoveLock();
   if (!released) return;
   console.warn(`${MODULE_ID} | ${user.name ?? user.id} left while a move was being resolved — the move lock is released.`);
+  await postMoveLockReleasedCard(`${escapeChatHtml(user.name ?? "A GM")} disconnected while a move was being resolved.`);
+}
+
+/**
+ * Whisper the GMs that a move lock nobody could still be resolving was
+ * released, and that its move may be incomplete — the W25 handover's card,
+ * and the `ready` resets' (issue #347 AB14: a sole GM who reloaded mid-move
+ * had the lock reset in silence — the move's meters, record and Burn / Improve
+ * never landed, its card's Burn read "available once recorded" for good, and a
+ * retyped line rolled again on top of the first roll's marks). Never throws.
+ *
+ * @param {string} what — HTML: who left and when (escaped by the caller)
+ * @returns {Promise<void>}
+ */
+async function postMoveLockReleasedCard(what) {
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Move lock released</strong><p>${escapeChatHtml(user.name ?? "A GM")} disconnected while a move was being resolved. The table can move again; that move's narration or its result may be incomplete — check its card.</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>Move lock released</strong><p>${what} The table can move again; that move's narration or its result may be incomplete — check its card.</p></div>`,
     whisper: gmUserIds(),
     flags:   { [MODULE_ID]: { moveLockReleasedCard: true } },
   }).catch(err => console.warn(`${MODULE_ID} | move-lock card failed:`, err?.message ?? err));
+}
+
+/**
+ * The ready resets' wording for a lock whose claimant's page is gone.
+ *
+ * @param {string|null} holderId — the lock's `pendingMoveBy`
+ * @returns {string} HTML
+ */
+function staleLockReleasedText(holderId) {
+  const holder = holderId ? (game.users?.get?.(holderId) ?? null) : null;
+  const who = holder?.name ? `${escapeChatHtml(holder.name)}'s browser` : "A GM's browser";
+  return `${who} closed or reloaded while a move was being resolved.`;
 }
 
 /**
@@ -1205,7 +1232,7 @@ async function postMoveLockNotReleasedCard() {
  * earlier page held, is stale.
  *
  * @param {Object} state — campaignState with `pendingMove` set
- * @returns {{ claim: string|null }|null}
+ * @returns {{ claim: string|null, holder: string|null }|null}
  */
 function staleMoveLockAtReady(state) {
   const holder = state?.pendingMoveBy ?? null;
@@ -1214,7 +1241,7 @@ function staleMoveLockAtReady(state) {
     console.log(`${MODULE_ID} | The move lock is held by ${user.name ?? holder}, who is connected and resolving a move — not reset on ready.`);
     return null;
   }
-  return { claim: state?.pendingMoveClaim ?? null };
+  return { claim: state?.pendingMoveClaim ?? null, holder };
 }
 
 /**
@@ -1245,6 +1272,7 @@ async function releaseOwnStaleLockAtReady() {
   if (!released) return false;
   noteMoveLockClaimReleased(claim);
   console.log(`${MODULE_ID} | Reset the move lock this GM's earlier page left, on ready`);
+  await postMoveLockReleasedCard(staleLockReleasedText(userId));
   return true;
 }
 
@@ -7645,6 +7673,9 @@ Hooks.once("ready", () => {
     // Z24, #345 AA58). Noted before the mint starts and before the chat hook
     // and the round driver are installed below.
     noteSessionBeingReplaced(prevState);
+    // Whether the session start's write cleared the stale lock: the GMs are
+    // told once it has landed (issue #347 AB14).
+    let staleLockCleared = false;
     initSessionId(prevState).then(updated => serialiseCampaignStateWrite(() => {
       const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
       const clearLock = !!staleLock && !!latest.pendingMove && (latest.pendingMoveClaim ?? null) === staleLock.claim;
@@ -7654,9 +7685,11 @@ Hooks.once("ready", () => {
         ...(clearLock ? ["pendingMove", "pendingMoveBy", "pendingMoveClaim"] : []),
         ...(minted ? SESSION_MINT_FIELDS : []),
       ];
-      return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"));
+      return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"))
+        .then(() => { staleLockCleared = clearLock; });
     }, "session start")).then(async () => {
       noteSessionReplaced();
+      if (staleLockCleared) await postMoveLockReleasedCard(staleLockReleasedText(staleLock?.holder ?? null));
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: the "Previously On" campaign recap introduces the session
       // this load started — the boundary is End a Session or four idle hours
