@@ -14,6 +14,7 @@ import {
   recordOracleResult,
   readRecentOracleResults,
   dropOracleResultsOf,
+  dropOracleResultsFor,
 } from '../../src/oracles/oracleMemory.js';
 
 
@@ -122,5 +123,31 @@ describe('dropOracleResultsOf', () => {
     expect(dropOracleResultsOf(cs, 'res-1')).toBe(0);   // nothing left to drop
     expect(dropOracleResultsOf(cs, '')).toBe(0);
     expect(dropOracleResultsOf({}, 'res-2')).toBe(0);
+  });
+});
+
+
+// Issue #345 AA01: every entry keeps the id of the card it came from, and the
+// X-Card drops what its removed narrations told — by that card id (an oracle
+// follow-up) or by a move's resolution (its Pay the Price).
+describe('dropOracleResultsFor', () => {
+  it("keeps a card id and drops the entries of the named cards and resolutions only", () => {
+    const cs = makeCampaignState();
+    recordOracleResult(cs, { name: 'Ask the Oracle (likely)', question: 'Is the child dead?', answer: 'YES', cardId: 'card-1' });
+    recordOracleResult(cs, { name: 'Pay the Price', question: 'Face Danger', answer: 'You are harmed', resolutionId: 'res-1', cardId: 'card-2' });
+    recordOracleResult(cs, { name: 'Ask the Oracle (50/50)', question: 'Is the hatch sealed?', answer: 'NO', cardId: 'card-3' });
+    recordOracleResult(cs, { name: 'Pay the Price', question: 'Strike', answer: 'You are stressed', resolutionId: 'res-2' });
+    expect(cs.recentOracles[0].cardId).toBe('card-1');
+    expect(cs.recentOracles[3]).not.toHaveProperty('cardId');
+
+    const ring = cs.recentOracles;
+    expect(dropOracleResultsFor(cs, { cardIds: ['card-1'], resolutionIds: ['res-2'] })).toBe(2);
+    expect(cs.recentOracles.map(e => e.answer)).toEqual(['You are harmed', 'NO']);
+    expect(ring).toHaveLength(4);                                                // the old ring is not changed in place
+    expect(dropOracleResultsFor(cs, { cardIds: ['card-1'] })).toBe(0);           // nothing left to drop
+    expect(dropOracleResultsFor(cs, { cardIds: ['', null], resolutionIds: [] })).toBe(0);
+    expect(dropOracleResultsFor(cs)).toBe(0);
+    expect(dropOracleResultsFor(null, { cardIds: ['card-3'] })).toBe(0);
+    expect(cs.recentOracles).toHaveLength(2);
   });
 });

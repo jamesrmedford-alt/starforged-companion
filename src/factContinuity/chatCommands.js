@@ -37,6 +37,7 @@ import {
   subjectKey,
   findBareStrike,
   findSessionStrike,
+  findSessionBlock,
   dropSessionStrike,
   subjectNames,
   canCorrectTruth,
@@ -249,6 +250,9 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
       // way (issue #342 Z42): CORRECTED went on naming it beside the GM's
       // binding truth, and its lore stayed out of canon.
       const kept    = struck ? null : findSessionStrike(campaignState, subject, fact, names);
+      // What the X-Card removed, or a Replace corrected, a player may not set
+      // back (issue #345 D4); the card says so without naming either.
+      const blocked = isGM ? null : findSessionBlock(campaignState, subject, fact, names);
       const truth   = setTruth(subject, parsed.fact, campaignState, { ...permCtx, names });
       if (truth) changed = "sceneTruths";
       // The set lifts the strike (W60); the lore it retracted comes back
@@ -260,7 +264,9 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
         ? `Truth recorded: <em>${escapeHtml(parsed.subject)} — ${escapeHtml(parsed.fact)}</em> <code>${escapeHtml(String(truth.id).slice(0, 8))}</code>.${(struck || kept) ? " The strike on it is lifted." : ""}`
         : ((struck || kept) && !isGM)
           ? `Truth not recorded — the GM struck that fact; only a GM can restore it.`
-          : `Truth not recorded — empty subject or fact.`;
+          : blocked
+            ? `Truth not recorded — that fact was taken out of the story this session; only a GM can set it again.`
+            : `Truth not recorded — empty subject or fact.`;
     } else if (parsed.verb === "strike") {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const ok      = strikeStateValue(subjectKey(subject), parsed.attribute, campaignState);

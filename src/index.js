@@ -95,7 +95,7 @@ import {
   updateTrackFields,
   getProgressTrack,
 } from "./ui/progressTracks.js";
-import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack } from "./moves/expedition.js";
+import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack, UNNAMED_EXPEDITION_LABEL } from "./moves/expedition.js";
 import { shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
@@ -116,12 +116,13 @@ import {
 import { selectConnection, connectionsNamedByFragment, shouldForgeBond } from "./moves/developRelationship.js";
 import { handleBondCommand } from "./moves/bondCommand.js";
 import { postReachMilestoneCard } from "./moves/milestonePicker.js";
-import { planReachMilestone, marksForSourceRank, namesCompletedVow } from "./moves/milestone.js";
+import { planReachMilestone, marksForSourceRank, namesCompletedVow, milestoneTicks } from "./moves/milestone.js";
 import {
   collectFiringRiders,
   partitionRiders,
   applyMeterRiders,
   normaliseRider,
+  settlePreRollChoices,
 } from "./moves/consequenceRiders.js";
 import { promptRiders } from "./moves/riderDialog.js";
 
@@ -161,7 +162,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 import { wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
-import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive } from "./session/lifecycle.js";
+import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
@@ -180,12 +181,13 @@ import {
   parseEncounterCommand,
   spawnEncounter,
 } from "./system/encounterSpawn.js";
-import { registerDraftCardHooks } from "./entities/entityExtractor.js";
+import { registerDraftCardHooks, undismissRecordName } from "./entities/entityExtractor.js";
 import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
   isMigrateEntitiesCommand,
   handleMigrateEntitiesCommand,
+  followEntityJournalRename,
 } from "./entities/migrator.js";
 import { registerSectorOverviewSync } from "./sectors/sectorOverview.js";
 import {
@@ -224,6 +226,8 @@ import {
   acceptRoundUpgrade,
   setBatchFreeFlowRunner,
   noteMoveLockFreed,
+  sheetRollJoinsRound,
+  takeSheetRoll,
 } from "./batch/driver.js";
 import { registerRoundWindowHooks } from "./ui/roundWindow.js";
 
@@ -858,10 +862,15 @@ export function registerChatHook() {
     // The author is told why nothing happened (issue #329 X14): the line just
     // sat in chat, and a card button's forced move vanished. A claimed card's
     // forced move is held until a session begins, as the move lock holds it
-    // (issue #325 W02) — its button reads taken everywhere.
+    // (issue #325 W02) — its button reads taken everywhere. The session this
+    // GM's world load is replacing is over at once, though its gate reads
+    // open until the mint lands: a line typed meanwhile was narrated into it
+    // after its LAST SESSION was taken, under its old id — the new session's
+    // ring never showed it either (issue #345 AA58; Z24's rule for rounds).
     let sessionActive = true;
     try {
-      sessionActive = isSessionActive(game.settings.get(MODULE_ID, "campaignState"));
+      const gateState = game.settings.get(MODULE_ID, "campaignState");
+      sessionActive = isSessionActive(gateState) && !sessionBeingReplaced(gateState);
     } catch (err) {
       // Defensive: if the read fails, fail-OPEN — treat the session as
       // active and run the pipeline. The downside of fail-closed is
@@ -996,6 +1005,9 @@ export function registerChatHook() {
         );
         return;
       }
+      // A held move handed back is held again until a write lands, not
+      // dropped (issue #345 AA48).
+      if (reholdRefusedForcedMove(message)) return;
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
       return;
     }
@@ -1115,7 +1127,10 @@ export function registerChatHook() {
   // W02) — or once the claim it was held behind is refused.
   _heldMovePipeline = onMessage;
   Hooks.on("updateSetting", (setting) => {
-    if (setting?.key === `${MODULE_ID}.campaignState`) drainDeferredForcedMoves();
+    if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+    // A write landed: the world saves again, so a held move it refused goes (issue #345 AA48).
+    _heldMovesWaitForLandedWrite = false;
+    drainDeferredForcedMoves();
   });
   // A claim this client released, carried back by a write built from a cache
   // that had not seen the release, is put back by its claimant
@@ -1274,6 +1289,12 @@ const _deferredForcedMoves = [];
 // Ids of held moves already handed back to the pipeline once: one that meets
 // the lock again (another move claimed it first) keeps its place at the front.
 const _drainedForcedMoves = new Set();
+// Set when a held move handed back met a claim the world refused and was held
+// again: the held moves wait for a campaignState write that lands (the
+// updateSetting hook clears it). The drain's own re-ask — or another refused
+// claim's — would hand the move straight back into a claim the world still
+// refuses, again and again (the issue #342 Z25 shape). Issue #345 AA48.
+let _heldMovesWaitForLandedWrite = false;
 
 /**
  * Hold a forced move that met the move lock. A card button's GM handler
@@ -1287,15 +1308,37 @@ const _drainedForcedMoves = new Set();
  *
  * @param {ChatMessage} message — carries `flags[MODULE_ID].deferWhileBusy`
  */
-function deferForcedMove(message, { untilSession = false } = {}) {
+function deferForcedMove(message, { untilSession = false, refused = false } = {}) {
   const id = message?.id ?? null;
   if (!id || _deferredForcedMoves.includes(id)) return;
   if (_drainedForcedMoves.has(id)) _deferredForcedMoves.unshift(id);
   else _deferredForcedMoves.push(id);
   ui?.notifications?.info(untilSession
     ? "Starforged Companion: No session has begun — the move will be rolled once Begin a Session starts one."
-    : "Starforged Companion: A move is already being resolved — the next one will be rolled when it completes.",
+    : refused
+      ? "Starforged Companion: The held move could not start — the world did not save it. It stays held, and is rolled once the world saves again."
+      : "Starforged Companion: A move is already being resolved — the next one will be rolled when it completes.",
   { permanent: false });
+}
+
+/**
+ * A held move handed back (drainDeferredForcedMoves) whose own lock claim the
+ * world refused: held again, at the front, until a campaignState write lands.
+ * It was dropped with the "could not start" toast while its card stayed
+ * claimed — a refusal lasting the held-behind claim and the handed-back
+ * move's own lost the move for good (issue #345 AA48, a regression of
+ * FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM). A forced move whose first
+ * claim is refused is not held (LOCK-CLAIM-WEDGE's toast).
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean} whether it was held again
+ */
+function reholdRefusedForcedMove(message) {
+  const id = message?.id ?? null;
+  if (!id || message.flags?.[MODULE_ID]?.deferWhileBusy !== true || !_drainedForcedMoves.has(id)) return false;
+  _heldMovesWaitForLandedWrite = true;
+  deferForcedMove(message, { refused: true });
+  return true;
 }
 
 // Authors told — since a message last passed the session gate — that no
@@ -1409,12 +1452,15 @@ let _heldMovePipeline = null;
 function drainDeferredForcedMoves() {
   const runPipeline = _heldMovePipeline;
   if (!runPipeline || !_deferredForcedMoves.length || !isCanonicalGM()) return;
+  // A held move the world just refused waits for a write that lands (issue #345 AA48).
+  if (_heldMovesWaitForLandedWrite) return;
   const state = game.settings.get(MODULE_ID, "campaignState");
   // A round's claim still on its way holds the lock too: the move would only
   // be held again — and drained again, at once, forever (issue #342 Z25).
   if (state?.pendingMove || _moveLockClaimInFlight) return;
-  // Held until a session begins: the gate would only hold it again (issue #329 X14).
-  if (!isSessionActive(state)) return;
+  // Held until a session begins: the gate would only hold it again (issue #329 X14),
+  // and so while this load replaces the stored session (issue #345 AA58).
+  if (!isSessionActive(state) || sessionBeingReplaced(state)) return;
   let message = null;
   while (!message && _deferredForcedMoves.length) {
     const id = _deferredForcedMoves.shift();
@@ -1458,29 +1504,42 @@ function currentLocationForEntityId(id) {
 }
 
 /**
- * The location Actor id of the site a Finish an Expedition arrives at — the
- * site its track links, else the unexplored one its label names
- * (siteDiscovery.selectExpeditionSite: never a guess, so an expedition to a
- * settlement arrives there by name) — or null. The crew names an unexplored
- * site in their own words, so the arrival by the label alone resolved to no
- * place and left the ship, its token and CURRENT LOCATION at the settlement
- * they had left while the same move charted the site (issue #342 Z14).
+ * Where a Finish an Expedition arrives, from the expedition it completes (the
+ * track ladder's pick: by id, by the line's words, else the one open
+ * expedition):
+ *   - `siteActorId` — the location Actor of the site the expedition was for:
+ *     the site its track links, else the unexplored one its label names
+ *     (siteDiscovery.selectExpeditionSite: never a guess, so an expedition to
+ *     a settlement arrives there by name), or null. The crew names an
+ *     unexplored site in their own words, so the arrival by the label alone
+ *     resolved to no place and left the ship, its token and CURRENT LOCATION
+ *     at the settlement they had left while the same move charted the site
+ *     (issue #342 Z14).
+ *   - `label` — the expedition's label, the place an expedition for no site
+ *     is named after; null for one begun with no destination named. A line
+ *     that names no destination, or names it in words of its own, still
+ *     completes the expedition, and the arrival read its words alone — the
+ *     crew stayed where they set out (issue #345 AA22).
  *
  * @param {{ moveTarget?: string|null, moveTargetId?: string|null }|null} interpretation
  * @param {Object} campaignState
- * @returns {Promise<string|null>}
+ * @returns {Promise<{ siteActorId: string|null, label: string|null }>}
  */
-async function expeditionSiteActorId(interpretation, campaignState) {
+async function expeditionArrival(interpretation, campaignState) {
   try {
-    const label = interpretation?.moveTarget ?? null;
-    const track = selectExpeditionTrack(await listProgressTracks(), label,
+    const said  = interpretation?.moveTarget ?? null;
+    const track = selectExpeditionTrack(await listProgressTracks(), said,
       { trackId: interpretation?.moveTargetId ?? null });
     const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
-    const found = selectExpeditionSite(campaignState, track?.label ?? label, { siteId: track?.siteId ?? null });
-    return found?.site?.actorId ?? null;
+    const found = selectExpeditionSite(campaignState, track?.label ?? said, { siteId: track?.siteId ?? null });
+    const label = typeof track?.label === "string" ? track.label.trim() : "";
+    return {
+      siteActorId: found?.site?.actorId ?? null,
+      label:       label && label !== UNNAMED_EXPEDITION_LABEL ? label : null,
+    };
   } catch (err) {
     console.debug(`${MODULE_ID} | expedition arrival: the expedition's site could not be read:`, err?.message ?? err);
-    return null;
+    return { siteActorId: null, label: null };
   }
 }
 
@@ -1570,10 +1629,16 @@ async function applyOutcomeEffects({
     // rename leaves behind or a namesake in another sector matches first
     // (issue #321 U52). Finish an Expedition's moveTargetId is a track's: it
     // arrives at the site that expedition was for, by the site's location
-    // Actor (issue #342 Z14), else at the place its label names.
+    // Actor (issue #342 Z14), else at the place its label names — the label
+    // of the expedition the move completes, then the line's own words when
+    // the label names no tracked place (issue #345 AA22).
+    const expedition = resolution.moveId === "finish_an_expedition"
+      ? await expeditionArrival(interpretation, campaignState)
+      : null;
     const destinationId = resolution.moveId === "set_a_course"
       ? (interpretation?.moveTargetId ?? null)
-      : await expeditionSiteActorId(interpretation, campaignState);
+      : (expedition?.siteActorId ?? null);
+    const arrivalName = expedition?.label ?? moveTarget;
 
     // Keep the campaign's "current location" in step with the arrival —
     // previously only a manual !at wrote currentLocationId, so travelling
@@ -1587,9 +1652,10 @@ async function applyOutcomeEffects({
     // name part only, was the free text "Bleak" and its token stayed where
     // it was (known-issues ARRIVAL-FRAGMENT-SHIP-FREE-TEXT).
     const named = currentLocationForEntityId(destinationId)
+      ?? (expedition?.label ? resolveCurrentLocationName(expedition.label, campaignState) : null)
       ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
     const docked = await maybeUpdateShipPositionFromName(
-      moveTarget,
+      arrivalName,
       campaignState,
       tokenDragSetCourse ? "scene_token"
         : resolution.moveId === "finish_an_expedition" ? "expedition"
@@ -1616,10 +1682,10 @@ async function applyOutcomeEffects({
         await persistCampaignStateFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
       } else {
         noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
-          name: arrivedAt.entity?.name ?? moveTarget ?? null });
+          name: arrivedAt.entity?.name ?? arrivalName ?? null });
       }
-    } else if (moveTarget) {
-      console.debug(`${MODULE_ID} | arrival: "${moveTarget}" is not a tracked location — currentLocation unchanged.`);
+    } else if (arrivalName) {
+      console.debug(`${MODULE_ID} | arrival: "${arrivalName}" is not a tracked location — currentLocation unchanged.`);
     }
 
     // §20.4b — when the move was initiated by a Token drag and we
@@ -1649,7 +1715,7 @@ async function applyOutcomeEffects({
         resolution,
       ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
     }
-    applied.push(`arrived at ${moveTarget ?? "the destination"}`);
+    applied.push(`arrived at ${arrivalName ?? "the destination"}`);
   }
 
   // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)
@@ -2356,8 +2422,9 @@ function userOwnsActor(actor, user) {
 
 // Actor-hosted entity typeKeys whose flag record denormalises `name`
 // (registry.js HOST_COLLECTION === 'actor'). Faction/creature are
-// journal-hosted and out of scope for the rename sync.
+// journal-hosted: their rename sync is the updateJournalEntry hook below.
 const RENAME_SYNC_TYPES = new Set(["connection", "ship", "settlement", "planet", "location"]);
+const JOURNAL_RENAME_SYNC_TYPES = new Set(["faction", "creature"]);
 
 /**
  * Keep entity flag records in sync with Actor renames (v1.7.10 playtest
@@ -2390,15 +2457,49 @@ export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) 
     actor.update({
       [`flags.${MODULE_ID}.${entityType}.name`]:      newName,
       [`flags.${MODULE_ID}.${entityType}.updatedAt`]: new Date().toISOString(),
-    }).catch(err =>
-      console.warn(`${MODULE_ID} | rename sync: record update failed for ${actor.id}:`, err?.message ?? err));
+    })
+      // A name the GM once dismissed from a draft card is this record's now
+      // (issue #345 AA55): dismissed, it kept the card out of the narrator.
+      .then(() => undismissRecordName(newName))
+      .catch(err =>
+        console.warn(`${MODULE_ID} | rename sync: record update failed for ${actor.id}:`, err?.message ?? err));
   } catch (err) {
     console.warn(`${MODULE_ID} | rename sync hook threw:`, err?.message ?? err);
   }
 }
 
+/**
+ * Keep a faction's or creature's record in sync with its journal's rename in
+ * the Journal sidebar (issue #345 AA18): the journal is what the GM renames
+ * and the Entities panel shows, while every narrator and detection reader
+ * uses the record's name — so the narrator kept the old name, and a
+ * narration naming the faction by its new one proposed a second faction (a
+ * second World Journal page, a draft row for a second record). The record —
+ * and a faction's World Journal page — follow the journal, by its id
+ * (migrator.followEntityJournalRename). Canonical-GM gated, as the Actor
+ * sync; the record write touches the page, not the journal's name, so the
+ * hook cannot recurse. Drift from a rename made with no GM connected is
+ * repaired at ready by syncEntityRecordNames.
+ */
+function syncJournalEntityRecordNameOnUpdate(journal, changes) {
+  try {
+    if (typeof changes?.name !== "string" || !changes.name) return;
+    if (!isCanonicalGM()) return;
+    const entityType = journal?.flags?.[MODULE_ID]?.entityType;
+    if (!JOURNAL_RENAME_SYNC_TYPES.has(entityType)) return;
+    followEntityJournalRename(entityType, journal)
+      // A name once dismissed from a draft card is the record's now (issue #345 AA55).
+      .then(renamed => (renamed ? undismissRecordName(journal.name) : false))
+      .catch(err =>
+        console.warn(`${MODULE_ID} | rename sync: ${entityType} record update failed for ${journal?.id}:`, err?.message ?? err));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | journal rename sync hook threw:`, err?.message ?? err);
+  }
+}
+
 function registerEntityRenameSyncHook() {
   Hooks.on("updateActor", syncEntityRecordNameOnUpdate);
+  Hooks.on("updateJournalEntry", syncJournalEntityRecordNameOnUpdate);
 }
 
 /**
@@ -2493,13 +2594,23 @@ function rolledByPlayerCharacter(message) {
  * progress, our own cards, unparseable shapes) is skipped with a debug
  * breadcrumb on the deciding client (decisions.md → "No silent failures"). See
  * nativeProgressRoll.js for the vendor-coupling note.
+ *
+ * While Batch Mode is on, a participant's roll is narrated with the round
+ * (issue #345 D1 — the maintainer's option A): the canonical GM, the round's
+ * one writer, hands its outcome to the driver (takeSheetRoll), which makes it
+ * the roller's entry or holds it for the next round; the round narrates it
+ * once, with the others' actions. Only the narration moves: the payoff hook
+ * (registerNativeFulfilConsequenceHook) pays it at once, as before.
  */
 function registerNativeProgressRollHook() {
   Hooks.on("createChatMessage", (message) => {
     try {
       // Every client reads the same keyed-GM registry and user list, so one
-      // decides it narrates and the others stand down — not a failure, so no log.
-      const narratesHere = nativeRollNarratesHere(message);
+      // decides it narrates and the others stand down — not a failure, so no
+      // log. A participant's roll in Batch Mode is the round's: decided on
+      // the canonical GM, whatever the keys.
+      const toRound = sheetRollJoinsRound(message);
+      const narratesHere = toRound ? isCanonicalGM() : nativeRollNarratesHere(message);
 
       const content = String(message?.content ?? "");
       const parsed  = narratesHere ? parseIronswornProgressRoll(content) : null;
@@ -2529,7 +2640,7 @@ function registerNativeProgressRollHook() {
       const outcomeLabel = parsed.outcome === "strong_hit" ? "Strong Hit"
         : parsed.outcome === "weak_hit" ? "Weak Hit" : "Miss";
 
-      import("./narration/narrator.js").then(({ narrateResolution }) => {
+      import("./narration/narrator.js").then(async ({ narrateResolution }) => {
         // A working copy: narrateResolution starts the scene and applies the
         // sidecar on it (issue #335 Y04, the X09 rule).
         const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
@@ -2559,7 +2670,8 @@ function registerNativeProgressRollHook() {
         resolution.consequences = mapConsequences(moveId, parsed.outcome, isMatch);
         resolution.loremasterContext = buildLoremasterContext({ ...resolution, rollKind: "progress" });
         // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
-        // mechanics, just narrate the outcome.
+        // mechanics, just narrate the outcome — with the round, in Batch Mode.
+        if (toRound && await takeSheetRoll(message, resolution)) return null;
         return narrateResolution(resolution, campaignState, { speakerActorId });
       }).catch(err =>
         console.warn(`${MODULE_ID} | native progress-roll narration failed:`, err?.message ?? err));
@@ -3678,7 +3790,11 @@ function registerOracleMemoryCaptureHook() {
       if (!isCanonicalGM()) return;
       const entry = message?.flags?.[MODULE_ID]?.oracleMemory;
       if (!entry || typeof entry !== "object") return;
-      void serialiseCampaignStateWrite(() => captureOracleResult(entry), "oracle memory");
+      // Stamped with the card's own id (never a flag's): an X-Card on the
+      // follow-up narration that names this card takes the result out of the
+      // ring with it (issue #345 AA01).
+      const fromCard = { ...entry, cardId: typeof message?.id === "string" ? message.id : null };
+      void serialiseCampaignStateWrite(() => captureOracleResult(fromCard), "oracle memory");
     } catch (err) {
       console.warn(`${MODULE_ID} | oracle-memory capture failed:`, err?.message ?? err);
     }
@@ -3779,9 +3895,14 @@ async function postExpeditionProgressCard({ track, created, actorId = null }) {
 async function postTrackGoneCard(interpretation) {
   const label = escapeChatHtml(interpretation?.moveTarget ?? "That track");
   const move  = escapeChatHtml(interpretation?.moveName ?? "The roll");
+  // A forge's track is a connection: severed, removed or bonded since its
+  // picker was posted (issue #345 AA50).
+  const why = interpretation?.moveId === "forge_a_bond"
+    ? "is no longer a connection to forge a bond with: they were severed, removed or bonded before the roll."
+    : "is no longer open: it was deleted or finished before the roll.";
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>${move} — not rolled</strong>`
-      + `<p><strong>${label}</strong> is no longer open: it was deleted or finished before the roll. Nothing was rolled.</p></div>`,
+      + `<p><strong>${label}</strong> ${why} Nothing was rolled.</p></div>`,
     flags:   { [MODULE_ID]: { trackGoneCard: true } },
   });
 }
@@ -3830,31 +3951,41 @@ async function postWhichFightCard({ moveId, moveName, narration, actorId = null,
 /**
  * Fulfill Your Vow with several vows open and none named: ask which vow,
  * instead of rolling a score of nothing — a certain miss (issue #321 U02).
+ * Forsake Your Vow among several of the roller's vows, or naming none of
+ * theirs, asks the same (`moveId`, selectForsakeVow — issue #345 AA16).
  * Posted in place of the move; nothing is rolled or written. Each distinct
  * vow (selectFulfilVow — a shared vow once, as the roller's copy when they
  * hold one) gets a button (wireWhichVowButtons) whose pick the canonical GM
  * applies once (gmRelay "fulfilVow.pick" → cardActions.applyFulfilVowPick):
  * the move is posted again with that copy's id, as the roller.
  *
- * @param {{ narration?: string, actorId?: string|null,
+ * @param {{ narration?: string, actorId?: string|null, moveId?: "fulfill_your_vow"|"forsake_your_vow",
  *   vows: Array<{ id: string, name?: string, rank?: string|number, ticks?: number }> }} opts
  */
-async function postWhichVowCard({ narration, actorId = null, vows }) {
+async function postWhichVowCard({ narration, actorId = null, vows, moveId = "fulfill_your_vow" }) {
+  const forsake = moveId === "forsake_your_vow";
   const buttons = vows.map(v => {
     const rank  = escapeChatHtml(rankName(v.rank).replace(/^\w/, c => c.toUpperCase()));
     const boxes = Math.floor(Number(v.ticks ?? 0) / 4);
     return `<button type="button" class="sf-followup-btn" data-action="sf-which-vow" data-item-id="${escapeChatHtml(v.id)}" `
-      + `title="Roll this vow's progress">🏁 ${escapeChatHtml(v.name || "Vow")} — ${rank}, ${boxes}/10 boxes</button>`;
+      + `title="${forsake ? "Forsake this vow" : "Roll this vow's progress"}">${forsake ? "⛓" : "🏁"} ${escapeChatHtml(v.name || "Vow")} — ${rank}, ${boxes}/10 boxes</button>`;
   }).join("");
+  const lead = forsake
+    ? (vows.length > 1
+      ? "More than one of your vows is open and nothing named one of them. Choose the vow to forsake — nothing has been cleared yet."
+      : "Nothing named one of your open vows. Forsake this one? Nothing has been cleared yet.")
+    : "More than one vow is open and nothing named this one. Choose the vow to fulfill — nothing has been rolled yet.";
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Fulfill Your Vow — which vow?</strong>`
-      + `<p>More than one vow is open and nothing named this one. Choose the vow to fulfill — nothing has been rolled yet.</p>`
+    content: `<div class="sf-ptp-card"><strong>${forsake ? "Forsake Your Vow" : "Fulfill Your Vow"} — which vow?</strong>`
+      + `<p>${lead}</p>`
       + `<div class="sf-milestone-suggest-row">${buttons}</div></div>`,
     // choices: the offered vow copies — a pick must be one of them and
     // forwards its copy as forcedMoveTargetId / forcedMoveTarget. actorId:
-    // the roller, the pick's speaker, so the move stays theirs.
+    // the roller, the pick's speaker, so the move stays theirs. moveId: the
+    // move the pick posts.
     flags: { [MODULE_ID]: {
       whichVowCard: true, narration: narration ?? null, actorId,
+      ...(forsake ? { moveId } : {}),
       choices: vows.map(v => ({ itemId: v.id, name: v.name ?? null })),
     } },
   });
@@ -3994,12 +4125,18 @@ async function postRecommittedCard(label, dice, plan, what, fromRank, flags) {
   }).catch(err => console.warn(`${MODULE_ID} | recommit card failed:`, err?.message ?? err));
 }
 
-/** The short card a recommit of a fulfilled vow gets: nothing was recommitted. */
-async function postVowRecommitFulfilledCard(vowName) {
+/**
+ * The short card a recommit of a closed vow gets: nothing was recommitted.
+ * A forsaken vow is said to be forsaken — the miss's offer itself invites
+ * "Forsake Your Vow, or recommit", and the card called the forsaken vow
+ * fulfilled (issue #345 AA51).
+ */
+async function postVowRecommitFulfilledCard(vowName, { forsaken = false } = {}) {
+  const closed = forsaken ? "was forsaken" : "is already fulfilled";
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>🔁 Recommit to the Vow</strong>`
-      + `<p><strong>${escapeChatHtml(vowName ?? "That vow")}</strong> is already fulfilled — nothing was recommitted.</p></div>`,
-    flags: { [MODULE_ID]: { vowRecommitFulfilledCard: true, vowName: vowName ?? null } },
+      + `<p><strong>${escapeChatHtml(vowName ?? "That vow")}</strong> ${closed} — nothing was recommitted.</p></div>`,
+    flags: { [MODULE_ID]: { vowRecommitFulfilledCard: true, vowName: vowName ?? null, forsaken: forsaken === true } },
   }).catch(err => console.warn(`${MODULE_ID} | vow recommit: the fulfilled-vow card failed:`, err?.message ?? err));
 }
 
@@ -4030,8 +4167,9 @@ export async function performVowRecommit({ vowName = null, itemId = null, actorI
   // its own ticks.
   const { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId, ownOnly: true });
   if (primary?.item?.system?.completed === true) {
-    console.warn(`${MODULE_ID} | vow recommit: "${primary.item.name ?? vowName ?? "?"}" is fulfilled — nothing recommitted.`);
-    await postVowRecommitFulfilledCard(primary.item.name ?? vowName);
+    const forsaken = primary.item.flags?.[MODULE_ID]?.forsaken === true;
+    console.warn(`${MODULE_ID} | vow recommit: "${primary.item.name ?? vowName ?? "?"}" is ${forsaken ? "forsaken" : "fulfilled"} — nothing recommitted.`);
+    await postVowRecommitFulfilledCard(primary.item.name ?? vowName, { forsaken });
     return { ok: false, reason: "vow-completed" };
   }
   let twin = null;
@@ -4637,12 +4775,19 @@ export async function postFightVowMilestoneCard(vowName, marks, actorId = null) 
 // used to be swallowed here and the card stamped anyway (issue #306 R04).
 //
 // @returns {Promise<{ ok: boolean, reason?: string, error?: string }>}
-async function markLinkedVowMilestone(vowName, marks, actorId = null) {
+async function markLinkedVowMilestone(vowName, marks, actorId = null, vowId = null) {
   try {
-    // The card's vow is already fulfilled: nothing to mark, and no other vow
-    // marked in its place (issue #325 W29).
-    if (linkedVowCompleted(vowName, actorId)) return { ok: false, reason: "vow-completed" };
-    const action = await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks);
+    // The card's vow is fulfilled, or gone from every sheet: nothing to mark,
+    // and no other vow marked in its place (issue #325 W29, issue #345 AA17).
+    const closed = linkedVowClosed({ vowName, vowId, actorId });
+    if (closed) return { ok: false, reason: closed === "gone" ? "vow-gone" : "vow-completed" };
+    // By the card's vow id: the holder's open copy, whatever it is named now
+    // (issue #345 AA17 — by name, a renamed vow fell to the winner's sole open
+    // vow). A card with no id keeps the name.
+    const byId = fightCardVow({ vowId, actorId });
+    const action = byId
+      ? await applyReachMilestone(byId.holder, byId.item.name ?? vowName ?? null, marks, { itemId: byId.item.id })
+      : await applyReachMilestone(resolveVowHolderActor(vowName, actorId), vowName ?? null, marks);
     if (action === "mark" || action === "pick") return { ok: true };
     console.warn(`${MODULE_ID} | mark linked vow: no open vow "${vowName ?? "?"}" to mark — nothing marked.`);
     return { ok: false, reason: "no-vow" };
@@ -4653,19 +4798,48 @@ async function markLinkedVowMilestone(vowName, marks, actorId = null) {
 }
 
 /**
- * True when the vow a won-fight card serves is already complete — its holder's
- * copy by name (resolveVowItemCopies prefers the roller's) is completed, and no
- * open vow carries the name. Its card's buttons are retired (issue #325 W29).
+ * The vow a won-fight card serves, by the id it carries (`vowId` — vowCopyId,
+ * FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY): its copies across every PC, whatever
+ * they are named now. "open" — `holder` the card's roller when they hold an
+ * open copy, else a PC who does, `item` that PC's copy; "completed" — every
+ * copy is; "gone" — no PC holds one (deleted). null for a card with no id:
+ * its name is all it has. ⚑, 🏁 and the card's retire check resolve the vow
+ * through it — by name, once its holder fulfilled, renamed or deleted it,
+ * they marked or fulfilled a vow the fight never served (issue #345 AA17;
+ * rules/reachability.md §6).
  *
- * @param {string|null} vowName
- * @param {string|null} [actorId]
- * @returns {boolean}
+ * @param {{ vowId?: string|null, actorId?: string|null }} card
+ * @returns {{ state: "open"|"completed"|"gone", holder?: Actor, item?: Item }|null}
  */
-function linkedVowCompleted(vowName, actorId = null) {
-  if (!String(vowName ?? "").trim()) return false;
+export function fightCardVow({ vowId = null, actorId = null } = {}) {
+  if (typeof vowId !== "string" || !vowId) return null;
+  const copies = collectPlayerVowItems().filter(e => isVowCopy(e.item, vowId));
+  if (!copies.length) return { state: "gone" };
+  const open = copies.filter(e => e.item.system?.completed !== true);
+  if (!open.length) return { state: "completed" };
+  const held = (actorId ? open.find(e => e.actor?.id === actorId) : null) ?? open[0];
+  return { state: "open", holder: held.actor, item: held.item };
+}
+
+/**
+ * Why a won-fight card's vow can no longer be marked or fulfilled from it —
+ * "completed" (issue #325 W29) or "gone" — or null while it can. By the
+ * card's vow id (fightCardVow): by name the guard read only the card
+ * roller's vows, so after the holder — not the winner — fulfilled the vow
+ * from the card, ⚑ stayed armed and marked the winner's other vow (issue #345
+ * AA17). A card with no id keeps the name: its holder's copy (the roller's
+ * when they hold one) is completed, and no open vow carries the name.
+ *
+ * @param {{ vowName?: string|null, vowId?: string|null, actorId?: string|null }} card
+ * @returns {"completed"|"gone"|null}
+ */
+function linkedVowClosed({ vowName = null, vowId = null, actorId = null } = {}) {
+  const byId = fightCardVow({ vowId, actorId });
+  if (byId) return byId.state === "open" ? null : byId.state;
+  if (!String(vowName ?? "").trim()) return null;
   const vows = getPlayerActors().flatMap(a => readVows(a).map(v => ({ ...v, actorId: a.id })));
   const mine = actorId ? vows.filter(v => v.actorId === actorId) : [];
-  return namesCompletedVow(mine.length ? mine : vows, vowName);
+  return namesCompletedVow(mine.length ? mine : vows, vowName) ? "completed" : null;
 }
 
 /**
@@ -4758,7 +4932,7 @@ export async function markFightVowMilestoneOnce({ cardId = null, vowName = null,
     console.debug(`${MODULE_ID} | fight-vow milestone: card ${cardId} already marked "${vowName ?? "?"}" — nothing marked again.`);
     return { ok: true, skipped: true, reason: "already-marked" };
   }
-  const res = await markLinkedVowMilestone(vowName, marks, actorId);
+  const res = await markLinkedVowMilestone(vowName, marks, actorId, vowId);
   if (res?.ok && step) await recordPayoffStep(payoffVowCopies({ vowId, vowName, actorId }), step);
   return res;
 }
@@ -5790,13 +5964,22 @@ export function wireFightVowButtons(message, root) {
   const f = message?.flags?.[MODULE_ID];
   if (!f?.fightVowCard) return;
 
-  // The vow this card serves is fulfilled: its milestone and 🏁 are retired
-  // on every client and render — pressed, they acted on the PC's other vow
-  // (issue #325 W29).
-  if (linkedVowCompleted(f.vowName ?? null, typeof f.actorId === "string" ? f.actorId : null)) {
+  // The vow this card serves is fulfilled, or on no sheet any more: its
+  // milestone and 🏁 are retired on every client and render, and say why —
+  // pressed, they acted on the PC's other vow (issue #325 W29). By the card's
+  // vow id, whoever fulfilled it (issue #345 AA17).
+  const closed = linkedVowClosed({
+    vowName: f.vowName ?? null, vowId: typeof f.vowId === "string" ? f.vowId : null,
+    actorId: typeof f.actorId === "string" ? f.actorId : null,
+  });
+  if (closed) {
     for (const action of ["sf-mark-milestone", "sf-fulfill-vow"]) {
       const btn = root?.querySelector?.(`[data-action="${action}"]`);
-      if (btn) btn.disabled = true;
+      if (!btn) continue;
+      btn.disabled = true;
+      btn.title = closed === "gone"
+        ? "The vow this fight served is no longer on any character's sheet"
+        : "The vow this fight served is fulfilled";
     }
   }
 
@@ -5922,14 +6105,18 @@ async function postDevelopRelationshipCard(plan) {
  * Resolve and mark a Reach a Milestone for the given actor. `target` is the
  * optional named vow (interpretation.moveTarget); null lets planReachMilestone
  * auto-select the sole open vow or, when several are open, post a picker card.
+ * `itemId` names the vow Item itself (a won-fight card's vow, by its id —
+ * issue #345 AA17): that open vow is marked, else none.
  *
  * @param {Actor|null} actor
  * @param {string|null} target
+ * @param {number} [marks]
+ * @param {{ itemId?: string|null }} [opts]
  * @returns {Promise<"mark"|"pick"|"none"|null>} what it did — null when it
  *   could not act here (no PC, not a GM client); rejects when the mark's
  *   write is refused
  */
-async function applyReachMilestone(actor, target, marks = 1) {
+async function applyReachMilestone(actor, target, marks = 1, { itemId = null } = {}) {
   // GM-only: vow Item writes are GM-gated (PERSIST-001), and the result card
   // must not claim progress on a client that can't write. In solo-GM play the
   // player is the GM, so this is the normal path. `marks` > 1 applies a major
@@ -5939,7 +6126,13 @@ async function applyReachMilestone(actor, target, marks = 1) {
     console.debug(`${MODULE_ID} | reach a milestone: ${actor ? "not a GM client" : "no player character"} — nothing marked.`);
     return null;
   }
-  const plan = planReachMilestone(readVows(actor), target);
+  // A vow named by its Item (a won-fight card's, resolved by its vow id —
+  // issue #345 AA17): that open vow, else nothing — never another by name.
+  const vows = readVows(actor);
+  const byItem = itemId ? vows.find(v => v.id === itemId && !v.completed) ?? null : null;
+  const plan = itemId
+    ? (byItem ? { action: "mark", vow: byItem, ticks: milestoneTicks(byItem.rank) } : { action: "none" })
+    : planReachMilestone(vows, target);
   if (plan.action === "mark") {
     const ticks = plan.ticks * Math.max(1, Math.floor(marks) || 1);
     await markVowProgress(actor, plan.vow.id, ticks);
@@ -6167,7 +6360,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
  *
  * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
  * @returns {Array<{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number,
- *   overflow?: true, unpreparedMarked?: true, alliesMarked?: string[] }>}
+ *   overflow?: true, unpreparedMarked?: true, alliesMarked?: string[], momentumClamped?: Object<string, number> }>}
  */
 function ptpMeterReceipts(landed) {
   const meterKey = SUFFER_METERS[landed?.move];
@@ -6178,10 +6371,14 @@ function ptpMeterReceipts(landed) {
     // A supply loss to 0 names whom it marked unprepared — the payer, the
     // allies sharing the supply — so an upgrade that reverts the price clears
     // those marks, and only those, once the refunded supply is above 0
-    // (resultUpgrade.js revertPayThePrice; issue #342 D4).
+    // (resultUpgrade.js revertPayThePrice; issue #342 D4), and the momentum
+    // each mark's lowered maximum clamped away, which it gives back (issue
+    // #345 AA46).
+    const clamped = meterKey === "supply" ? momentumClampedReceipt(landed.momentumClamped) : null;
     const marks = meterKey === "supply" ? {
       ...(landed.unpreparedMarked === true ? { unpreparedMarked: true } : {}),
       ...(Array.isArray(landed.alliesMarkedIds) && landed.alliesMarkedIds.length ? { alliesMarked: [...landed.alliesMarkedIds] } : {}),
+      ...(clamped ? { momentumClamped: clamped } : {}),
     } : {};
     receipts.push({ move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after, ...marks });
   }
@@ -6190,6 +6387,13 @@ function ptpMeterReceipts(landed) {
     receipts.push({ move: landed.move, meterKey: "momentum", amount: m.taken, actorId: landed.actorId ?? null, before: m.before, after: m.after, overflow: true });
   }
   return receipts;
+}
+
+/** markUnprepared's `momentumClamped` (PC id → momentum), its whole positive entries only; null when none. */
+function momentumClampedReceipt(clamped) {
+  if (!clamped || typeof clamped !== "object") return null;
+  const entries = Object.entries(clamped).filter(([id, n]) => typeof id === "string" && id && Number.isInteger(n) && n > 0);
+  return entries.length ? Object.fromEntries(entries) : null;
 }
 
 async function postForsakeVowCard(vowName) {
@@ -6464,8 +6668,13 @@ function escapeChatHtml(s) {
 
 /**
  * Resolve a name fragment to an entity record by scanning settlement, location,
- * and planet collections in that priority order. Case-insensitive prefix match
- * before falling back to substring match.
+ * and planet collections in that priority order. Case-insensitive: the exact
+ * name, then a name it begins ("Bleak" for Bleakhold), then one name inside
+ * the other as whole words, either way (wholeWordsFit — W30's rule for every
+ * selection ladder). The raw substring rung found "home" inside "Rockhome", so
+ * a Set a Course "for home" made Rockhome the current location and, since the
+ * arrival docks the ship by this pick, moved the ship and its token there
+ * (issue #345 AA23).
  *
  * On each rung a match in the active sector wins: generated site names repeat
  * across sectors (every derelict is "Derelict Starship" or "Derelict
@@ -6487,7 +6696,7 @@ export function resolveCurrentLocationName(name, campaignState) {
     ["planet",     campaignState?.planetIds     ?? []],
   ];
 
-  // Two-pass match — exact name first, then prefix, then substring.
+  // Exact name first, then prefix, then whole words either way.
   // Reads go through the entity registry: settlements/locations/planets are
   // Actor-hosted post-migration, and the original journal-page read here
   // never matched them — `!at <settlement>` reported "not found" for every
@@ -6513,7 +6722,7 @@ export function resolveCurrentLocationName(name, campaignState) {
   };
   return pick(c => c.lc === target)
       ?? pick(c => c.lc.startsWith(target))
-      ?? pick(c => c.lc.includes(target))
+      ?? pick(c => wholeWordsFit(c.lc, target))
       ?? null;
 }
 
@@ -6807,13 +7016,19 @@ async function handleShipMapCommand(message) {
  * the world refused goes to the GMs, with a Retry for it alone (issue #315
  * S08). GM-gated by the caller.
  *
+ * A "choose one" an ability's add decided before the roll is settled by
+ * whether the confirm kept that ability checked: taken, its option's effects
+ * are the outcome's and the others are not offered again (issue #345 AA12).
+ *
  * @param {Object} resolution
- * @param {Object} interpretation — carries extractedRiders from the pre-roll pass
+ * @param {Object} interpretation — carries extractedRiders from the pre-roll pass,
+ *   the scan's applicableAbilities and the confirm's appliedAbilityKeys
  * @param {Object} campaignState
  * @param {Actor|null} characterActor
  */
 async function applyMoveConsequenceRiders(resolution, interpretation, campaignState, characterActor) {
-  const extracted = interpretation?.extractedRiders;
+  const extracted = settlePreRollChoices(interpretation?.extractedRiders,
+    interpretation?.applicableAbilities, interpretation?.appliedAbilityKeys);
   if (!Array.isArray(extracted) || !extracted.length) return;
 
   const firing = collectFiringRiders(extracted, resolution.outcome, resolution.isMatch);
@@ -7389,6 +7604,11 @@ Hooks.once("ready", () => {
     // value back over it (issue #335 Y07). Read and written on the client's
     // campaignState write chain, once the write ahead of it has landed
     // (CAMPSTATE-CHAIN-PARTIAL).
+    // The session this load replaces is over at once — for Batch Mode rounds
+    // and typed lines — though it reads live until the mint lands (issue #342
+    // Z24, #345 AA58). Noted before the mint starts and before the chat hook
+    // and the round driver are installed below.
+    noteSessionBeingReplaced(prevState);
     initSessionId(prevState).then(updated => serialiseCampaignStateWrite(() => {
       const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
       const clearLock = !!staleLock && !!latest.pendingMove && (latest.pendingMoveClaim ?? null) === staleLock.claim;
@@ -7400,6 +7620,7 @@ Hooks.once("ready", () => {
       ];
       return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"));
     }, "session start")).then(async () => {
+      noteSessionReplaced();
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: the "Previously On" campaign recap introduces the session
       // this load started — the boundary is End a Session or four idle hours

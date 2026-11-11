@@ -17,7 +17,7 @@
  *   - With no session, no keyed GM, or no GM at all, the window says why.
  */
 
-import { ROUND_PHASE, ENTRY_STATUS, ENTRY_ERROR, READING_KIND, roundIsOpen, isResolving, entryFor, isOwedEntry, undecidedUpgrades } from "./round.js";
+import { ROUND_PHASE, ENTRY_STATUS, ENTRY_ERROR, READING_KIND, roundIsOpen, isResolving, entryFor, isOwedEntry, isSheetRollEntry, undecidedUpgrades } from "./round.js";
 
 /** The labels an entry's status shows its own player. */
 const OWN_STATUS_LABELS = Object.freeze({
@@ -120,8 +120,12 @@ function ownView(round, viewer, { collecting, moveLabel, statLabel, notReceived 
   const awaitingUpgrade = round.phase === ROUND_PHASE.UPGRADING && entry.upgrade && !entry.upgrade.decided;
   const statusLabel = awaitingUpgrade ? "Deciding upgrade" : (OWN_STATUS_LABELS[status] ?? null);
   // A roll a card owes (the resist roll at 0) is confirmed, never withdrawn,
-  // passed, edited or swapped for the player's own action (issue #342 D2).
+  // passed, edited or swapped for the player's own action (issue #342 D2); a
+  // move rolled on the character sheet is the player's action as it stands
+  // (issue #345 D1).
   const owed = isOwedEntry(entry);
+  const sheetRoll = isSheetRollEntry(entry);
+  const fixed = owed || sheetRoll;
   return {
     actorName:    entry.actorName,
     status,
@@ -133,7 +137,8 @@ function ownView(round, viewer, { collecting, moveLabel, statLabel, notReceived 
     reading,
     choices:      entry.choices ?? null,
     owed,
-    // The action the player wrote, set aside for the owed roll: their draft for the next round.
+    sheetRoll,
+    // The action the player wrote, set aside for the owed roll (or the sheet roll): their draft for the next round.
     setAside:     typeof entry.setAside?.text === "string" && entry.setAside.text ? entry.setAside.text : null,
     // A card's move offered beside the player's own: use it, or keep their own
     // reading (Keep mine — once there is one to keep). Undecided, it joins
@@ -141,21 +146,31 @@ function ownView(round, viewer, { collecting, moveLabel, statLabel, notReceived 
     offer:        entry.offer ? {
       text:     entry.offer.text,
       moveName: entry.offer.forced?.moveId ? moveLabel(entry.offer.forced.moveId) : null,
-      canUse:   collecting && !owed,
+      canUse:   collecting && !fixed,
       canKeep:  collecting && !owed && (status === ENTRY_STATUS.READ || status === ENTRY_STATUS.READY) && !!entry.reading,
     } : null,
-    canEdit:      collecting && !owed,
-    canSubmit:    collecting && !owed,
-    canPass:      collecting && !owed && status !== ENTRY_STATUS.PASSED,
-    canWithdraw:  collecting && !owed && status !== ENTRY_STATUS.WAITING && status !== ENTRY_STATUS.PASSED,
+    canEdit:      collecting && !fixed,
+    canSubmit:    collecting && !fixed,
+    canPass:      collecting && !fixed && status !== ENTRY_STATUS.PASSED,
+    canWithdraw:  collecting && !fixed && status !== ENTRY_STATUS.WAITING && status !== ENTRY_STATUS.PASSED,
     canConfirm:   collecting && status === ENTRY_STATUS.READ && !!reading && !reading.blocked,
-    canReread:    collecting && !owed && status === ENTRY_STATUS.READ && reading?.kind === READING_KIND.NARRATIVE,
+    canReread:    collecting && !fixed && status === ENTRY_STATUS.READ && reading?.kind === READING_KIND.NARRATIVE,
     upgrade:      awaitingUpgrade ? upgradeView(entry, { moveLabel }) : null,
   };
 }
 
 /** The reading as the window shows it. */
 function readingView(reading, { moveLabel, statLabel }) {
+  if (reading.kind === READING_KIND.SHEET_ROLL) {
+    // Rolled on the character sheet: the move and the outcome it was rolled with.
+    const input = reading.narrationInput ?? {};
+    return {
+      kind:     READING_KIND.SHEET_ROLL,
+      moveId:   input.moveId ?? null,
+      moveName: input.moveName || (input.moveId ? moveLabel(input.moveId) : "A move"),
+      outcome:  input.outcomeLabel || (input.outcome ? humanise(input.outcome) : ""),
+    };
+  }
   if (reading.kind !== READING_KIND.MOVE) {
     return {
       kind: READING_KIND.NARRATIVE,
@@ -206,7 +221,8 @@ function tableView(round, viewer, { resolving, moveLabel }) {
       userId:    e.userId,
       actorName: e.actorName,
       text:      e.text ?? "",
-      moveName:  e.reading?.kind === READING_KIND.MOVE ? (e.reading.moveName || moveLabel(e.reading.moveId)) : null,
+      moveName:  e.reading?.kind === READING_KIND.MOVE ? (e.reading.moveName || moveLabel(e.reading.moveId))
+        : e.reading?.kind === READING_KIND.SHEET_ROLL ? (e.reading.narrationInput?.moveName || null) : null,
     }));
 }
 

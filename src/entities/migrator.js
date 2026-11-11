@@ -763,8 +763,8 @@ export async function backfillNpcCardSheets() {
 }
 
 // Actor-hosted entity types whose flag records carry a denormalised `name`
-// (registry.js HOST_COLLECTION === 'actor'). Journal-hosted types (faction,
-// creature) are out of scope — their host journal is named from the record.
+// (registry.js HOST_COLLECTION === 'actor'). The journal-hosted ones (faction,
+// creature) follow their journal's name too — JOURNAL_HOSTED_NAME_SYNC below.
 const ACTOR_HOSTED_NAME_SYNC = [
   { typeKey: "connection", campaignField: "connectionIds" },
   { typeKey: "ship",       campaignField: "shipIds"       },
@@ -772,6 +772,44 @@ const ACTOR_HOSTED_NAME_SYNC = [
   { typeKey: "planet",     campaignField: "planetIds"     },
   { typeKey: "location",   campaignField: "locationIds"   },
 ];
+
+// Journal-hosted entity types: a faction's or creature's host JournalEntry is
+// what the Journal sidebar renames and what the Entities panel shows, so its
+// name is authoritative, as an Actor's is (issue #345 AA18 — the premise "their
+// host journal is named from the record" held only for a record rename, which
+// nothing makes).
+const JOURNAL_HOSTED_NAME_SYNC = [
+  { typeKey: "faction",  campaignField: "factionIds"  },
+  { typeKey: "creature", campaignField: "creatureIds" },
+];
+
+/**
+ * Write a faction's or creature's journal name through to the stores that
+ * mirror it: the record's `name` (its page flag, the page body re-rendered —
+ * what every narrator and detection reader uses: the roster, findFactionByName,
+ * the dedup gates, [4e]) and, for a faction, its World Journal — Factions page
+ * (worldJournal.renameFactionEntry, by the page's backlink to this journal).
+ * Renamed in the sidebar, the faction kept its old name for the narrator, and a
+ * narration naming it by the new one proposed a second faction (issue #345
+ * AA18). The live updateJournalEntry hook in index.js and the ready-time
+ * repair (syncEntityRecordNames) both run it. A no-op when the names agree.
+ *
+ * @param {"faction"|"creature"} typeKey
+ * @param {JournalEntry} journal — the record's host journal
+ * @returns {Promise<boolean>} whether the record was renamed
+ */
+export async function followEntityJournalRename(typeKey, journal) {
+  if (!JOURNAL_HOSTED_NAME_SYNC.some(t => t.typeKey === typeKey)) return false;
+  const name   = typeof journal?.name === "string" ? journal.name.trim() : "";
+  const record = name ? readEntityFlag(typeKey, journal) : null;
+  if (!record || record.name === name) return false;
+  await writeEntityFlag(typeKey, journal, { ...record, name, updatedAt: new Date().toISOString() });
+  if (typeKey === "faction") {
+    const { renameFactionEntry } = await import("../world/worldJournal.js");
+    await renameFactionEntry({ entityId: journal.id, from: record.name ?? null, to: name });
+  }
+  return true;
+}
 
 /**
  * Ready-time repair (v1.7.10 playtest finding #2): reconcile entity flag
@@ -782,7 +820,9 @@ const ACTOR_HOSTED_NAME_SYNC = [
  * until a Finalise happened to rewrite it. Actor name is authoritative
  * (see seedStarshipActor). The live sync is the updateActor hook in
  * index.js; this pass repairs drift that predates it or happened while the
- * module was disabled. GM-only, idempotent.
+ * module was disabled. A faction's or creature's record follows its host
+ * journal's name the same way (followEntityJournalRename — the live sync is
+ * index.js's updateJournalEntry hook; issue #345 AA18). GM-only, idempotent.
  *
  * @param {Object} [campaignState]
  * @returns {Promise<{synced: number}>}
@@ -794,6 +834,9 @@ export async function syncEntityRecordNames(campaignState) {
   const state = campaignState
     ?? globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")
     ?? {};
+  // A name a record takes here that the GM once dismissed from a draft card
+  // comes off the Dismissed list, as the live rename sync's (issue #345 AA55).
+  const { undismissRecordName } = await import("./entityExtractor.js");
 
   for (const { typeKey, campaignField } of ACTOR_HOSTED_NAME_SYNC) {
     const ids = Array.isArray(state[campaignField]) ? state[campaignField] : [];
@@ -812,6 +855,23 @@ export async function syncEntityRecordNames(campaignState) {
           updatedAt: new Date().toISOString(),
         });
         summary.synced += 1;
+        await undismissRecordName(document.name);
+      } catch (err) {
+        console.warn(`${MODULE_ID} | syncEntityRecordNames: ${typeKey} ${id} failed:`, err?.message ?? err);
+      }
+    }
+  }
+  // A faction or creature renamed in the Journal sidebar while no GM ran the
+  // live sync (issue #345 AA18).
+  for (const { typeKey, campaignField } of JOURNAL_HOSTED_NAME_SYNC) {
+    const ids = Array.isArray(state[campaignField]) ? state[campaignField] : [];
+    for (const id of ids) {
+      try {
+        const journal = getEntityDocument(typeKey, id);
+        if (await followEntityJournalRename(typeKey, journal)) {
+          summary.synced += 1;
+          await undismissRecordName(journal.name);
+        }
       } catch (err) {
         console.warn(`${MODULE_ID} | syncEntityRecordNames: ${typeKey} ${id} failed:`, err?.message ?? err);
       }

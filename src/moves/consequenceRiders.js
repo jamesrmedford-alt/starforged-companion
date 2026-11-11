@@ -84,9 +84,68 @@ export function normaliseRider(raw, assetName = "") {
     amount,
     optional:    !!raw.optional,
     choiceGroup: raw.choiceGroup != null ? String(raw.choiceGroup) : null,
+    // The "choose one" option it belongs to, as the text names it ("Pin them
+    // down") — what a choice made before the roll is settled by (issue #345 AA12).
+    option:      typeof raw.option === "string" && raw.option.trim() ? raw.option.trim().slice(0, 80) : null,
     label:       String(raw.label ?? "").slice(0, 120) || defaultLabel(resource, amount),
     assetName:   String(assetName ?? ""),
   };
+}
+
+/**
+ * Settle the "choose one" an ability's add decided before the roll (issue
+ * #345 AA12). Gunner: "When you Strike, choose one (before rolling). Pin them
+ * down: Add +1 and take +1 momentum on a hit. Make them hurt: Mark progress
+ * on a hit." The confirm dialog pre-checks Pin them down's +1 and the roll
+ * takes it — that is the choice; the outcome prompt then offered both options
+ * again, so the player took the +1 and, seeing the hit, Make them hurt's mark
+ * as well. For each ability whose add is one option's (the scanner's
+ * `preRollChoice`):
+ *   - its add taken (the ability checked — `appliedAbilityKeys`): the riders
+ *     of that option are the outcome's own (no longer a choice), and the
+ *     other options' are dropped;
+ *   - not taken: that option's riders are dropped, and the others stay the
+ *     choice (or Neither).
+ * A rider's option is the one it names (`option`), else the one its label
+ * names. A rider in the choice that names none, with the add taken, cannot be
+ * shown to be the chosen option's: it is dropped — never doubled, as the
+ * extraction is conservative. A rider outside the choice (no choiceGroup, no
+ * option — Sensor Array's "choose one and take +1 momentum on a hit") stands.
+ * Abilities with no such choice are returned as they are.
+ *
+ * @param {Array} extracted — extractRiders' [{ key, assetName, riders }]
+ * @param {Array} abilities — the scan's applicable abilities (`key`, `preRollChoice`)
+ * @param {string[]} appliedKeys — the abilities the confirm kept checked
+ * @returns {Array} extracted, with each settled choice's riders
+ */
+export function settlePreRollChoices(extracted, abilities, appliedKeys) {
+  if (!Array.isArray(extracted)) return [];
+  const choices = new Map((Array.isArray(abilities) ? abilities : [])
+    .filter(a => a?.key && a.preRollChoice?.option)
+    .map(a => [a.key, a.preRollChoice]));
+  if (!choices.size) return extracted;
+  const taken = new Set(Array.isArray(appliedKeys) ? appliedKeys : []);
+  const norm = (s) => String(s ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  return extracted.map(entry => {
+    const choice = choices.get(entry?.key);
+    if (!choice) return entry;
+    const names = (choice.options ?? []).map(norm).filter(Boolean);
+    const optionOf = (r) => {
+      const own = norm(r?.option);
+      if (own && names.includes(own)) return own;
+      const label = norm(r?.label);
+      return names.find(n => label.includes(n)) ?? null;
+    };
+    const chosen = norm(choice.option);
+    const settled = taken.has(entry.key);
+    const riders = (Array.isArray(entry.riders) ? entry.riders : []).flatMap(r => {
+      const option = optionOf(r);
+      if (option === chosen) return settled ? [{ ...r, choiceGroup: null }] : [];
+      if (option) return settled ? [] : [r];
+      return settled && r?.choiceGroup ? [] : [r];
+    });
+    return { ...entry, riders };
+  });
 }
 
 function defaultLabel(resource, amount) {
@@ -326,6 +385,7 @@ const EXTRACT_SYSTEM = [
   '  "amount":    integer (positive to gain, negative to lose; progress = marks, usually 1),',
   '  "optional":  true if the text says "you may" / is the player\'s choice,',
   '  "choiceGroup": a short id shared by mutually-exclusive "choose one" options, else null,',
+  '  "option":    the name of the "choose one" option it belongs to, as the text names it (e.g. "Pin them down"), else null,',
   '  "label":     a short human description, e.g. "+1 momentum"',
   "}",
   "",
@@ -346,18 +406,22 @@ const EXTRACT_SYSTEM = [
  * @param {Array}  args.abilities — scanForApplicableAbilities output (key/assetName/abilityName/text)
  * @param {string} args.moveName
  * @param {string} args.apiKey
+ * @param {boolean} [args.inFight] — a fight is open: an Aid Your Ally is made as Gain Ground
  * @param {Function} [args._call] — injectable transport for tests
  * @returns {Promise<Array>}
  */
-export async function extractRiders({ abilities, moveName, apiKey, _call = callHaikuExtract }) {
+export async function extractRiders({ abilities, moveName, apiKey, inFight = false, _call = callHaikuExtract }) {
   if (!apiKey) return [];
   const list = (abilities ?? []).filter(a => a && a.text);
   if (!list.length) return [];
 
   // A scene-challenge variant's riders are its ordinary move's: "When you
   // Face Danger …" holds within the challenge (SCENE-VARIANT-ABILITIES-UNKEYED).
+  // Aid Your Ally's are its own and those of the move it is made as (issue
+  // #345 AA11).
+  const move = assetMatchMove({ moveName, inFight });
   const userPrompt =
-    `Move: ${assetMatchMove({ moveName }).moveName}\n\nAbilities:\n` +
+    `Move: ${move.moveName}${move.madeAs ? ` (made as ${move.madeAs.moveName})` : ""}\n\nAbilities:\n` +
     list.map(a => `[key:${a.key}] ${a.assetName}: ${a.text}`).join("\n");
 
   let raw;

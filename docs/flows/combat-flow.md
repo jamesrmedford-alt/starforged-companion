@@ -47,7 +47,10 @@ Two cross-cutting facts to hold onto:
   momentum receipt of its own (Q02), which an improvement refunds and a
   burn's reset replaces; a supply loss to 0 takes back the unprepared marks it
   made once the supply is refunded above 0 — for a burn, before its reset is
-  computed (issue #342 D4) — retires the
+  computed, for an improvement before its meter write (issue #342 D4) — and
+  gives back the momentum each mark's lowered maximum clamped (the receipt's
+  `momentumClamped`; a burn's burner spends it instead, issue #345 AA46) —
+  retires the
   move's pending choice card (bound by `resolutionId`) and posts the upgraded
   outcome's choice for the move's fight, vehicle and companion; a write that
   does not land goes to the GMs' payoff card with a Retry (issue #311 P03–P06).
@@ -211,7 +214,9 @@ canonical GM from the clicker's PC's own stored position — the clicker's PC
 resolved by `resolveUserActorId`, the fight's position when they have none —
 and mirrored to that PC when they own it; it read `game.user.character`, null
 for a solo GM, and cycled the fight's position while the PC's own steered the
-next move, issue #326 W56) included; the
+next move, issue #326 W56; its badge shows that same position — the viewer's
+own, the fight's when they have none — where it showed the fight's last-set
+one, a crewmate's in a two-character fight, issue #345 AA64) included; the
 badge wrote only the two mirrors and the toggle only the track, so the
 interpreter, TDA, the narrator, the sheet and the badge disagreed (issue #321
 U19). The pipeline
@@ -354,7 +359,11 @@ weak-hit win −1, min 1), each mark adding ticks by the *vow's* rank
 (`milestoneTicks`) to the vow **Item** (`markLinkedVowMilestone` →
 `applyReachMilestone` → `markVowProgress`) on the vow's **holder** — the
 card's roller when they hold a copy, else the PC holding the resolved vow
-(`resolveVowHolderActor`) — plus **🏁 Attempt to Fulfill** (a forced
+(`resolveVowHolderActor`). Both buttons find the vow by the id the card
+carries (`vowId`, `fightCardVow`): the holder's open copy by its Item,
+whatever it is named now — by name, a vow its holder fulfilled, renamed or
+deleted fell through to the winner's or the holder's other vow (issue #345
+AA17); a card with no id keeps the name — plus **🏁 Attempt to Fulfill** (a forced
 `fulfill_your_vow` bridge, which scores the vow's real item ticks — spoken as
 the vow's holder, as ⚑ marks it: the card's roller when they hold a copy
 (issue #329 X05), else the PC holding the vow the fight served
@@ -374,9 +383,12 @@ fulfilment's deepen deepens nothing and posts a short "already deepened"
 card. (Taken from the flag alone, a sheet vow whose stamp never landed
 carried null and was found by its name only: after a rename the press
 deepened a second time — known-issues FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY.) Once the card's vow is
-fulfilled its milestone and 🏁 are retired on every client and render
-(`wireFightVowButtons` → `linkedVowCompleted`), and a press that reaches the
-GM marks nothing (issue #325 W29). It then grants the
+fulfilled — every copy, by the card's vow id, whoever fulfilled it (issue
+#345 AA17: the name guard read only the winner's vows, so ⚑ stayed armed
+after the holder fulfilled it) — or is on no sheet any more, its milestone
+and 🏁 are retired on every client and render, titled why
+(`wireFightVowButtons` → `linkedVowClosed`), and a press that reaches the
+GM marks or rolls nothing (issue #325 W29). It then grants the
 linked vow's promised reward (`grantLinkedVowReward`, `actorId` = the roller),
 outcome-scaled (strong = full, weak = reduced/with-a-string, miss = lost) and
 one-time (`reward.status` flips from "promised" — written first, as the
@@ -448,6 +460,12 @@ score of 0 was a certain miss paying a price for a scene already over. In a
 Batch Mode round the driver notes Finish the Scene's challenge as read
 (`noteReadTrack`), so a second Finish the Scene — pressed or typed — is
 refused "ended earlier in this round", as a fight move is.
+The ⬡ needs progress on the row (drawn disabled, and its press refused,
+at 0 ticks) — except a scene challenge whose tension clock is full: Finish
+the Scene is due then, progress or none, so it rolls at 0 ticks too — a
+certain miss and Pay the Price (internal `canRollProgress`, the row's
+`canRoll` and the press handler alike; the ⬡ was dead exactly then and the
+table's ✓ ended the challenge with no move — issue #345 AA68).
 Pre-session (the pipeline's session gate would ignore the bridge) it keeps
 the bespoke instant display roll (`type: 'progressRoll'` card — display-only
 by design).
@@ -488,6 +506,9 @@ it (`round.rereadEntry` → `readAs.moveTargetId` → `readAction`'s forced
 An asset ability linked to Face Danger / Secure an Advantage applies to its
 variant: the ability scanner and the rider extraction match a variant as its
 ordinary move (`sceneChallenge.assetMatchMove` — SCENE-VARIANT-ABILITIES-UNKEYED).
+They match an Aid Your Ally as itself and as the move it is made as —
+Gain Ground while a fight is open (`movePipeline.aidMadeInFight`, as the roll
+resolves it), else Secure an Advantage (`madeAs` — issue #345 AA11).
 Their consequences carry `sceneProgress` (marks) and `sceneSegments` (clock
 fills), and `applyOutcomeEffects` scores them against the challenge
 (`sceneChallenge.scoreSceneChallenge` → `markProgressById` on the track,
@@ -510,7 +531,8 @@ The panel's edits — add, +, −, ✓, ✕ and the position toggle — are writ
 the canonical GM for every user (gmRelay `progressTrack.edit` →
 `applyProgressTrackEditFromRelay`, payload checked against what the panel can
 produce; a refusal or a write that throws is reported, never swallowed). The
-tracks journal is `ownership: NONE`, so a player's own write was refused and
+tracks journal (found by its tracks flag, so a GM may rename it — issue #345
+AA62) is `ownership: NONE`, so a player's own write was refused and
 the click did nothing; reading the panel never creates the journal, only a
 write does (issue #321 U05). Every track write on a client runs one at a
 time, each on a fresh read once the previous has landed (`writeTracks`), so

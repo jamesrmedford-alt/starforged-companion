@@ -8,8 +8,9 @@
  * connection the detection listed — whoever met them — with that roller's
  * seed and bond, and a second hit's contact went to the draft card as the
  * first roller's. Now each hit creates the figure its own character met
- * (the roller's own line names them, else their description, else the
- * narration's clause naming them names that character alone), with its own
+ * (the roller's own line names them, else their description and the
+ * narration's clauses naming them, together, name that character alone —
+ * issue #345 D2 sends a figure they disagree on to the card), with its own
  * seed, bonded to its own roller; a figure the round cannot place waits on the
  * draft card. CLAUDE.md "credit the roller"; decisions.md (Multiplayer
  * attribution, U23).

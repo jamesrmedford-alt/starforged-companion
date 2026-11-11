@@ -120,6 +120,22 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
       return { marked: false, reason: "vow-completed" };
     }
 
+    // The vow left the sheet since the picker was posted (deleted — a
+    // duplicate, one dropped by hand): nothing to mark, and the picker stays
+    // open for its other vows, as for a fulfilled one. Found missing only
+    // after the claim, it closed the picker for good — its other vows'
+    // buttons disabled on every render, nothing marked, nobody told (issue
+    // #345 AA53).
+    if (!actor || !vow) {
+      console.warn(`${MODULE_ID} | milestone pick: vow ${vowId ?? "?"} not found on actor ${actor?.id ?? actorId ?? "?"} — nothing marked.`);
+      await postVowGoneCard(actor);
+      if (!offered.some(c => openVowOnCard(c))) {
+        await message.update({ [`flags.${MODULE_ID}.resolved`]: true })
+          .catch(err => console.warn(`${MODULE_ID} | milestone picker resolve update failed:`, err?.message ?? err));
+      }
+      return { marked: false, reason: "no-vow" };
+    }
+
     // Claimed before the mark (issue #336 Y24; decisions #309 "claims before
     // effects"): the vow was marked first and the stamp's refusal swallowed,
     // so the picker stayed live and the next press marked the vow again. A
@@ -130,10 +146,6 @@ export async function applyMilestonePick(payload = {}, ctx = {}) {
     } catch (err) {
       console.warn(`${MODULE_ID} | milestone pick: picker card ${messageId} could not be claimed — nothing marked:`, err?.message ?? err);
       return { marked: false, reason: "claim-refused" };
-    }
-    if (!actor || !vow) {
-      console.warn(`${MODULE_ID} | milestone pick: vow ${vowId ?? "?"} not found on actor ${actor?.id ?? actorId ?? "?"} — nothing marked.`);
-      return { marked: false, reason: "no-vow" };
     }
     // A won fight's ×N milestone rides the choice (issue #326 W43); a plain
     // Reach a Milestone's picker marks once.
@@ -159,16 +171,34 @@ function openVowOnCard(choice) {
   return !!actor && readVows(actor).some(v => v.id === choice.vowId && !v.completed);
 }
 
-/** The short card a pick on a fulfilled vow gets: nothing was marked. */
+/**
+ * The short card a pick on a closed vow gets: nothing was marked. A forsaken
+ * vow is said to be forsaken, not fulfilled (issue #345 AA51).
+ */
 async function postVowFulfilledCard(vow) {
+  const closed = vow?.forsaken ? "was forsaken" : "is already fulfilled";
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>`
-        + `<p><strong>${escapeHtml(vow?.name || "That vow")}</strong> is already fulfilled — no milestone was marked. Pick an open vow.</p></div>`,
+        + `<p><strong>${escapeHtml(vow?.name || "That vow")}</strong> ${closed} — no milestone was marked. Pick an open vow.</p></div>`,
       flags:   { [MODULE_ID]: { milestoneVowFulfilledCard: true } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | milestone pick: the fulfilled-vow card failed:`, err?.message ?? err);
+  }
+}
+
+/** The short card a pick on a vow no longer on its PC's sheet gets: nothing was marked (issue #345 AA53). */
+async function postVowGoneCard(actor) {
+  const where = actor?.name ? `${escapeHtml(actor.name)}'s sheet` : "any character's sheet";
+  try {
+    await ChatMessage.create({
+      content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>`
+        + `<p>That vow is no longer on ${where} — no milestone was marked. Pick an open vow.</p></div>`,
+      flags:   { [MODULE_ID]: { milestoneVowGoneCard: true } },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | milestone pick: the vow-gone card failed:`, err?.message ?? err);
   }
 }
 

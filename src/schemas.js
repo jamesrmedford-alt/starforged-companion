@@ -602,15 +602,18 @@ export const CampaignStateSchema = {
   // (issue #342 Z42). Written by endScene (rememberSessionRetractions); read
   // by sessionRetractedFacts (src/factContinuity/retractions.js) and
   // findSessionStrike (ledgers.js). `blocked`: the ended scenes' X-Card
-  // retractions, unnamed — read only by findSessionStrike's write half
-  // (applySidecar) and loreRetractionHolder, rendered nowhere; an X-Card
+  // retractions and Replace originals (issue #345 AA05), unnamed — read only
+  // by findSessionStrike's write half (applySidecar) and
+  // loreRetractionHolder, rendered nowhere; an X-Card
   // moves the kept strikes of the narration it removes there, by
   // `narrationId` (ledgers.js retractNarrations — XCARD-RETRACTION-SCENE-SCOPED),
   // and its truths a scene end closed live (`narrated`: written by endScene —
   // rememberNarratedTruths — read only by that move; unnamed —
   // XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
-  //   { sessionId, facts: [{ label, fact, sceneId, at, narrationId, truthId, subjectKey, retractedBy, asserter }]  (cap 20),
-  //     blocked: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50),
+  // A scene fact's strike, and a Replace's original, keep `place` (the truth's
+  // sceneLocation) and stand only there (keptStrikeStandsAt, issue #345 AA28).
+  //   { sessionId, facts: [{ label, fact, place?, sceneId, at, narrationId, truthId, subjectKey, retractedBy, asserter }]  (cap 20),
+  //     blocked: [{ label, fact, subjectKey, narrationId, truthId, place? }]  (cap 50),
   //     narrated: [{ label, fact, subjectKey, narrationId, truthId }]  (cap 50) }
   sessionRetractions: { sessionId: null, facts: [], blocked: [], narrated: [] },
 
@@ -626,7 +629,9 @@ export const CampaignStateSchema = {
   // what the dice established (prompt section [3b]) instead of being free to
   // contradict a roll the table just made. Written by the canonical GM's
   // capture hook (src/index.js) via src/oracles/oracleMemory.js; capped at
-  // RECENT_ORACLE_CAP entries of { name, question, answer, sessionId, at }.
+  // RECENT_ORACLE_CAP entries of { name, question, answer, sessionId, at,
+  // cardId } — a move's own price also `resolutionId` (issue #342 Z11); the
+  // X-Card drops the entries its removed narrations told (issue #345 AA01).
   recentOracles:  [],
 };
 

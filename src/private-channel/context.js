@@ -18,13 +18,13 @@
  * the main prompt renders them. It writes nothing back; a reflection the
  * player publishes becomes canon through its chat card (publish.js).
  *
- * Reuses the shared builders rather than re-deriving: formatSafetyContext
+ * Reuses the shared builders rather than re-deriving: formatOwnSafetyContext
  * (src/context/safety.js), buildCampaignTruthsBlock (src/system/campaignTruths.js),
  * getActiveCharacter + getRecentNarrationContext + currentLocationName +
  * buildPrivateChannelStory (src/narration/narrator.js).
  */
 
-import { formatSafetyContext } from "../context/safety.js";
+import { formatOwnSafetyContext } from "../context/safety.js";
 import { buildCampaignTruthsBlock } from "../system/campaignTruths.js";
 import { getActiveCharacter, getRecentNarrationContext, currentLocationName, buildPrivateChannelStory } from "../narration/narrator.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
@@ -105,7 +105,9 @@ export async function buildPrivateContext({ campaignState, userId, actorId, tran
   const character = ownId ? getActiveCharacter(campaignState, ownId) : null;
   if (!character) throw new Error("Private channel: no active character resolvable");
 
-  const safety = formatSafetyContext(campaignState, null, userId);
+  // The player's own Private Lines from their own client setting, never the
+  // campaignState copy a GM has to relay them into (issue #345 AA03).
+  const safety = formatOwnSafetyContext(campaignState, userId);
   const truths = await buildCampaignTruthsBlock(campaignState);
   const story  = await buildPrivateChannelStory(campaignState, playerMessage ?? "");
 

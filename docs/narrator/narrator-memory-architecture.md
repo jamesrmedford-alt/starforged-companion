@@ -117,7 +117,7 @@ should remember* must carry all three flags:
 | inciting incident (`postIncitingIncidentCard`) | Cluster A1 | `narrationText` is prose only (vow line stripped); fallback cards excluded |
 | galley / end-session vignettes | 2026-06-15 | |
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
-| clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix; a trigger vignette also names its clock (`clockId`, issue #338 D8) |
+| clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix; a trigger vignette also names its clock (`clockId`, issue #338 D8); its narration runs the canonical GM's tier pass for the recorded entities it names (`narrateClockAdvancement` → `scheduleNarrationCapture`, issue #345 AA33) |
 | oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
 | Batch Mode round card (`postRoundNarrationCard`) | 2026-11 (#340) | `roundId`, `roundNumber`, `roundEntries: [{ userId, actorId, playerName, playerText, moveId, outcome, isMatch, resolutionId }]` — the players who acted and no one else; its own `moveId` / `outcome` / `resolutionId` stay empty. The round's result cards carry `roundId` too. Its fallback (`postRoundFallbackCard`) keeps the family with `narrationFallback`; the X-Card's paused notice (`narrationPaused`) is not a narrator card |
 | published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`), which stamps the card's `narrationId` on the details it records (issue #335 Y03). No sidecar, so no ledger facts |
@@ -154,6 +154,11 @@ CLAUDE.md "audit consumers" rule):
   dropped (issue #322 V05). A round card counts each of its `roundEntries`'
   moves, outcomes and matches ("Round N: Move → Outcome"), its fallback too
   (issue #340)
+- the campaign recap's session-start gate (`sessionStartRecap`, issue #286
+  C3) — the recap goes to the session's first narration: no card
+  `sessionNarratorCards` keeps yet, save a published reflection — canon, but
+  not a narration; published first, it took the narration's recap (issue
+  #345 AA32)
 - correction-dialog render hook (`src/index.js`) — no-ops without
   `[data-action="openCorrectionDialog"]` markup
 - audio render hook (`src/index.js`) — no-ops without the hidden play-button
@@ -169,7 +174,10 @@ CLAUDE.md "audit consumers" rule):
   two minutes (issue #340)
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
   `resolutionId`, unaffected; it flags the card `burnSuperseded`, which
-  `sessionNarratorCards` leaves out (ring, summary, recap). Since issue #338
+  `sessionNarratorCards` leaves out (ring, summary, recap), after dropping a
+  rolling summary already made from it (`dropSummaryOfSupersededCards`, the
+  X-Card's covered-index rule — the debounce's count did not move, issue #345
+  AA24). Since issue #338
   D8 a Burn Momentum / Improve Result that rewinds a clock out of its trigger
   flags that clock's newest live trigger vignette of the session (found by
   its `clockId`) the same way (`resultUpgrade.js` supersedeTriggerVignettes),
@@ -234,7 +242,8 @@ relabelled the X-Card's and its kept `sessionRetractions` entry moved to
 those blocks, so neither CORRECTED nor the summary's leave-out list names it
 and `!truth set` cannot lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — its state values removed (each restoring the value it
 superseded: a state entry keeps a bounded `previous` chain, issue #326 W41)
-and its frame cleared, in the same
+and its frame giving way to the frame it replaced (the frame keeps the same
+bounded chain — issue #345 D3; it used to be cleared), in the same
 write as the pause; the ids are kept on `xCardedNarrationIds`, so
 `mergeSceneLedgers` retracts them again from a stale writer's copy and a late
 relayed sidecar of that narration is dropped. What the narration's capture
@@ -333,8 +342,10 @@ position → (never) scene frame. Soft cap `factContinuity.maxLedgerTokens`.
 `campaignState.sceneFrame = { location, present[], situation, sceneId,
 updatedAt }`. The narrator emits a **full-replacement snapshot** in every
 sidecar (`sceneFrame` key); an omitted frame keeps the previous one. Applied
-by `applySceneFrame` (`ledgers.js`); cleared by `startScene`/`endScene`
-(`sceneLifecycle.js`). Rendered at the top of §6.5:
+by `applySceneFrame` (`ledgers.js`), which keeps the frames of the scene it
+replaces as a bounded `previous` chain (never rendered), so an X-Card on a
+narration puts back the frame its narration replaced (issue #345 D3);
+cleared by `startScene`/`endScene` (`sceneLifecycle.js`). Rendered at the top of §6.5:
 
 ```
 SCENE FRAME (the scene as it stands):

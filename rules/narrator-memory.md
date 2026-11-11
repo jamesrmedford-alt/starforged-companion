@@ -34,9 +34,10 @@ layers. This file is the never-break list.
    a published reflection's too, which its capture stamps (issue #335 Y03).
    When adding a new card type or co-marking an existing one,
    audit every `narratorCard` consumer (ring, rolling summary, session
-   recap, correction hook, audio hook, burn-supersede, the X-Card's card
-   pick and redirect hook) in the same commit — the consumer list lives in
-   architecture doc §2.
+   recap, the campaign recap's session-start gate — a published reflection
+   is no narration there, issue #345 AA32 — correction hook, audio hook,
+   burn-supersede, the X-Card's card pick and redirect hook) in the same
+   commit — the consumer list lives in architecture doc §2.
 
 2. **The sidecar JSON contract** (`appendSidecarInstruction` ↔
    `extractSidecar` ↔ `applySidecar`/`applySceneFrame`) is a matched pair.
@@ -100,7 +101,9 @@ layers. This file is the never-break list.
    ledger block AND blocks narrator re-assertion at `applySidecar` (GM
    `!truth set` bypasses, and lifts the strike — `correctedTo`, as a Replace
    — so the two never render together; a player's set over a GM's strike is
-   refused, issue #326 W60; the lift also restores the lore that strike
+   refused, issue #326 W60, and so is a player's set of what the X-Card
+   removed or a Replace corrected — the active scene's, or a block a scene
+   end kept (`findSessionBlock`, issue #345 D4); the lift also restores the lore that strike
    retracted, `restoreStruckLore` by the lore entry's `retractedByTruth`, so
    the re-set fact is archived as canon — issue #331 X31 — save an entry
    another standing retraction still states: it stays out of canon, handed to
@@ -120,7 +123,11 @@ layers. This file is the never-break list.
    leave-out list; a strike is its subject and fact together, U39) — both
    halves of it: a kept strike blocks a later scene's re-assertion too, and a
    GM's `!truth set` lifts it, restoring its lore by the truth id it keeps
-   (`findSessionStrike` / `dropSessionStrike`, issue #342 Z42). Any new
+   (`findSessionStrike` / `dropSessionStrike`, issue #342 Z42) — a strike of
+   a scene fact (and a Replace's original) keeps the place it was asserted
+   at, and its block, its lift and its CORRECTED line stand only there
+   (`keptStrikeStandsAt` — another place's own fact of those words is that
+   place's; the X-Card's blocks keep no place — issue #345 AA28). Any new
    correction path calls `propagateRetraction` — the X-Card does, for each
    truth it retracts (issue #321 U07). An X-Card retraction
    (`retractedBy: "xcard"`) blocks re-assertion like a strike — for the
@@ -135,7 +142,11 @@ layers. This file is the never-break list.
    (XCARD-AFTER-STRIKE-STILL-NAMED). A narration whose scene has already
    ended is blocked the same way: a scene end keeps each live narration truth
    it closes, unnamed (`sessionRetractions.narrated`), and the X-Card moves
-   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). A scene
+   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). So is
+   a Replace's struck original: a scene end keeps it on the unnamed blocks
+   too — the replacement stands, so it is named nowhere, and a `!truth set`
+   lifts nothing (a strike a set lifted, linked by `correctedTo` to a truth
+   restating it, is no Replace) — issue #345 AA05. A scene
    end adds what it keeps onto the session's list as the store has it at its
    write's turn — never its copy's list whole — so an X-Card played during its
    awaits keeps what it wrote (XCARD-DURING-SCENE-END-RACE), and a strike or
@@ -172,7 +183,14 @@ layers. This file is the never-break list.
    a narration
    is built from the ledgers as they stand in the store, never a pre-dialog
    snapshot (W05), and a summary the X-Card emptied is stamped newer than any
-   working copy's (W06).
+   working copy's (W06) — and its sidecar's re-assertion checks read the
+   store's truths, blocks and strikes beside its own copy's
+   (`applySidecar`'s `storedLedger`, issue #345 AA04). What a removed
+   narration told from RECENT ORACLE RESULTS leaves the ring in the pause's
+   write — an oracle follow-up's
+   result by the card id its card names (`oracleCardId` ↔ the entry's
+   `cardId`), a move's Pay the Price by its `resolutionId` (issue #345
+   AA01).
 
 7. **Sidecar subjects resolve against the full roster, in its own shape.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so
@@ -185,7 +203,9 @@ layers. This file is the never-break list.
    both silently dropped every recorded entity's facts). Names resolve
    through `resolveEntityName`'s bounded ladder, which never files a fact
    under an entity on an article, a title, a shared name part or a
-   lowercase common noun. Entity state keys are `entity:<id>`
+   lowercase common noun — and a name several entities share is the active
+   sector's (the roster leads it: `activeSectorNamesakeFirst`, Z15's rule —
+   issue #345 AA06). Entity state keys are `entity:<id>`
    (`subjectKey` / `subjectFromStateKey`).
 
 8. **The rolling session summary is a droppable convenience, not a fact

@@ -5,7 +5,7 @@
 //   SettingsPanelApp        — tabbed ApplicationV2: Safety | Mischief | Narrator | About
 //   MoveConfirmDialog       — ApplicationV2 dialog replacing confirmInterpretation() stub
 //   registerSettings()      — register game.settings (call from init hook)
-//   registerSettingsHooks() — wire X-Card chat hook + initial safety sync (call from ready hook)
+//   registerSettingsHooks() — wire X-Card chat hook + Private Lines healing + initial safety sync (call from ready hook)
 //   openSettingsPanel()     — public opener
 //   confirmInterpretation() — await-able wrapper for MoveConfirmDialog
 //   getMischiefDial()       — read dial value (for mischief.js / index.js)
@@ -92,7 +92,6 @@ const SETTING = {
   // ── Fact continuity ──────────────────────────────────────────────────────
   FC_ENABLED:                  'factContinuity.enabled',
   FC_LEDGER_IN_CONTEXT:        'factContinuity.ledgerInContext',
-  FC_SIDECAR_REQUIRED:         'factContinuity.sidecarRequired',
   FC_MAX_LEDGER_TOKENS:        'factContinuity.maxLedgerTokens',
   FC_CONSISTENCY_CHECK:        'factContinuity.consistencyCheck',
   FC_SCENE_FRAME:              'factContinuity.sceneFrame',
@@ -546,14 +545,11 @@ export function registerSettings() {
     default: true,
   });
 
-  game.settings.register(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED, {
-    name:    'Sidecar Required',
-    hint:    'When enabled, the narrator response is expected to contain a fenced JSON sidecar after every reply. When disabled, missing sidecars are tolerated silently (rare in practice).',
-    scope:   'world',
-    config:  false,
-    type:    Boolean,
-    default: true,
-  });
+  // "Sidecar Required" (`factContinuity.sidecarRequired`) is retired: nothing
+  // read it, and the only thing it could gate — the warning on a narrator reply
+  // with no sidecar fence — is a genuine loss that always warns
+  // (NARR-SIDECAR-SILENT; "No silent failures"). Whether there is a sidecar at
+  // all is FC_ENABLED's (issue #345 AA65). A stored value stays, unread.
 
   game.settings.register(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS, {
     name:    'Max Ledger Tokens',
@@ -698,7 +694,6 @@ function getPacingDials() {
 // ── Fact continuity ──────────────────────────────────────────────────────
 export function getFactContinuityEnabled()        { return game.settings.get(MODULE_ID, SETTING.FC_ENABLED)             ?? true; }
 export function getFactContinuityLedgerInContext(){ return game.settings.get(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT)   ?? true; }
-export function getFactContinuitySidecarRequired(){ return game.settings.get(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED)    ?? true; }
 export function getFactContinuityMaxLedgerTokens(){ return game.settings.get(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS)   ?? 400; }
 export function getFactContinuityConsistencyCheck(){ return game.settings.get(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK)  ?? true; }
 export function getFactContinuitySceneFrame()      { return game.settings.get(MODULE_ID, SETTING.FC_SCENE_FRAME)        ?? true; }
@@ -753,6 +748,8 @@ async function setPrivateLines(arr) {
  * { playerId, lines } objects — one entry per player. Each client only
  * updates its own entry; other players' entries are preserved.
  * This matches the shape that safety.js's resolvePrivateLines() expects.
+ * An entry another client's write drops is put back by its own user's
+ * client (registerPrivateLinesHealing, issue #345 AA35).
  */
 async function syncSafetyToCampaignState() {
   // campaignState is world-scoped — only the GM can write it. A non-GM
@@ -781,13 +778,8 @@ async function syncSafetyToCampaignState() {
       // Each player only writes their own entry; others are preserved
       const userId = game.user?.id;
       if (userId) {
-        const existing = campaignState.safety.privateLines ?? [];
-        const others   = existing.filter(e => e.playerId !== userId);
-        const myLines  = getPrivateLines();
-
-        campaignState.safety.privateLines = myLines.length > 0
-          ? [...others, { playerId: userId, lines: myLines }]
-          : others;   // Don't write an empty entry — avoids noise in the state
+        campaignState.safety.privateLines = withPrivateLinesEntry(
+          campaignState.safety.privateLines, userId, storedFormOfPrivateLines(getPrivateLines()));
       }
 
       return game.settings.set(MODULE_ID, 'campaignState', campaignState);
@@ -825,6 +817,12 @@ async function relayPrivateLinesToGm() {
  * list removes the entry. The player id comes from the relay context, never
  * the payload, so a client can only write its own lines.
  *
+ * Runs unqueued, as the X-Card does (gmRelay UNQUEUED_ACTIONS, issue #345
+ * D5): queued behind a Claude-calling handler, a line just added was missing
+ * from every move narrated meanwhile. Its write is one read-and-set at its
+ * turn on the client's campaignState write chain, which orders it against
+ * every other write — another player's sync included.
+ *
  * @param {{ lines?: string[] }} payload
  * @param {{ requesterId?: string|null }} ctx
  * @returns {Promise<boolean>} true when campaignState was written
@@ -835,22 +833,114 @@ export async function applyPrivateLinesSync(payload = {}, ctx = {}) {
     console.warn(`${MODULE_ID} | Private Lines sync: no requesting user — ignored.`);
     return false;
   }
-  const lines = (Array.isArray(payload?.lines) ? payload.lines : [])
-    .filter(l => typeof l === 'string' && l.trim())
-    .map(l => l.trim().slice(0, 500));
+  const lines = storedFormOfPrivateLines(payload?.lines);
 
   // Written on a copy, the safety object too (issue #321 U58), at its turn on
   // the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
   await serialiseCampaignStateWrite(() => {
     const campaignState = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
     campaignState.safety = { ...(campaignState.safety ?? {}) };
-    const others = (campaignState.safety.privateLines ?? []).filter(e => e.playerId !== playerId);
-    campaignState.safety.privateLines = lines.length > 0
-      ? [...others, { playerId, lines }]
-      : others;
+    campaignState.safety.privateLines = withPrivateLinesEntry(campaignState.safety.privateLines, playerId, lines);
     return game.settings.set(MODULE_ID, 'campaignState', campaignState);
   }, 'Private Lines');
   return true;
+}
+
+/**
+ * Private Lines as campaignState stores them: trimmed, non-empty strings of
+ * at most 500 characters. Both writers store this form — a GM's own sync and
+ * the relay handler — and the healing compares it, so a line the store
+ * shortens never reads as dropped (no re-sync loop).
+ *
+ * @param {*} lines
+ * @returns {string[]}
+ */
+function storedFormOfPrivateLines(lines) {
+  return (Array.isArray(lines) ? lines : [])
+    .filter(l => typeof l === 'string' && l.trim())
+    .map(l => l.trim().slice(0, 500));
+}
+
+/**
+ * campaignState.safety.privateLines with `userId`'s entry set to `lines`
+ * (stored form): every other user's entry kept, and no entry at all for an
+ * empty list (no noise in the state).
+ */
+function withPrivateLinesEntry(privateLines, userId, lines) {
+  const others = (Array.isArray(privateLines) ? privateLines : []).filter(e => e?.playerId !== userId);
+  return lines.length > 0 ? [...others, { playerId: userId, lines }] : others;
+}
+
+/** True when campaignState.safety.privateLines states `userId`'s lines as `lines`: one entry holding exactly them, or none for an empty list. */
+function privateLinesEntryHolds(privateLines, userId, lines) {
+  const own = (Array.isArray(privateLines) ? privateLines : []).filter(e => e?.playerId === userId);
+  if (!lines.length) return own.length === 0;
+  return own.length === 1 && Array.isArray(own[0]?.lines)
+    && own[0].lines.length === lines.length && own[0].lines.every((l, i) => l === lines[i]);
+}
+
+/** True when `campaignState` holds THIS client's own Private Lines as its client setting has them. */
+function holdsOwnPrivateLines(campaignState, userId) {
+  return privateLinesEntryHolds(campaignState?.safety?.privateLines, userId, storedFormOfPrivateLines(getPrivateLines()));
+}
+
+// ---------------------------------------------------------------------------
+// Private Lines healing — each user's own client keeps its entry right
+// ---------------------------------------------------------------------------
+
+/**
+ * Put THIS user's own entry in campaignState.safety.privateLines back
+ * whenever a campaignState write leaves it wrong (issue #345 AA35,
+ * PRIVATE-LINES-TWO-GM-LOST-UPDATE — the key registries' healing, issue #342
+ * Z68, for this list). Every GM writes its own entry from its cached
+ * campaignState, keeping the others it can see, at `ready` and on every
+ * Lines / Veils / Private Lines edit, and the canonical GM writes each
+ * player's relayed lines; the write chain orders writes on one client only.
+ * So two writes inside one round trip — two GMs loading at once, a co-GM's
+ * sync against a player's relayed lines — each read the list before the
+ * other's landed, and the later one dropped the other's entry: that user's
+ * hard limits were missing from every narration a GM's client built until
+ * their next load or edit, and nobody was told. Every client now hears each
+ * campaignState write and re-syncs when the list misstates it — a GM writes
+ * its own entry, a player relays its lines to the canonical GM — and only
+ * then, so the list converges and the hook cannot loop. A user's client
+ * setting is the canonical store; this keeps the stored copy written through.
+ * Registered at `ready`, before the load's own sync.
+ */
+function registerPrivateLinesHealing() {
+  Hooks.on('updateSetting', onCampaignStateWritten);
+  Hooks.on('createSetting', onCampaignStateWritten);
+}
+
+/** A world setting landed: when it is campaignState and misstates this user's Private Lines, re-sync them. */
+function onCampaignStateWritten(setting) {
+  if (setting?.key !== `${MODULE_ID}.campaignState`) return undefined;
+  const userId = game.user?.id;
+  if (!userId) return undefined;
+  try {
+    if (holdsOwnPrivateLines(game.settings.get(MODULE_ID, 'campaignState'), userId)) return undefined;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Private Lines: could not check this user's stored entry:`, err?.message ?? err);
+    return undefined;
+  }
+  const resync = game.user.isGM ? restoreOwnPrivateLines(userId) : relayPrivateLinesToGm();
+  return resync.catch(err =>
+    console.warn(`${MODULE_ID} | Private Lines: re-sync after a write that dropped them failed:`, err?.message ?? err));
+}
+
+/**
+ * GM client: write this GM's own entry onto the store as it is at the write's
+ * turn on the client's campaignState write chain — and only when it is still
+ * wrong then (this GM's own sync may have been on its way).
+ */
+function restoreOwnPrivateLines(userId) {
+  return serialiseCampaignStateWrite(() => {
+    const stored = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    if (holdsOwnPrivateLines(stored, userId)) return undefined;
+    const safety = { ...(stored.safety ?? {}) };
+    safety.privateLines = withPrivateLinesEntry(safety.privateLines, userId, storedFormOfPrivateLines(getPrivateLines()));
+    return game.settings.set(MODULE_ID, 'campaignState', { ...stored, safety });
+  }, 'Private Lines restore');
 }
 
 // ---------------------------------------------------------------------------
@@ -1001,7 +1091,6 @@ export class SettingsPanelApp extends ApplicationV2 {
       factContinuity: {
         enabled:           getFactContinuityEnabled(),
         ledgerInContext:   getFactContinuityLedgerInContext(),
-        sidecarRequired:   getFactContinuitySidecarRequired(),
         maxLedgerTokens:   getFactContinuityMaxLedgerTokens(),
         consistencyCheck:  getFactContinuityConsistencyCheck(),
         sceneFrame:        getFactContinuitySceneFrame(),
@@ -1252,13 +1341,6 @@ export class SettingsPanelApp extends ApplicationV2 {
             <input type="checkbox" name="factContinuity.ledgerInContext"
                    ${ctx.factContinuity.ledgerInContext ? 'checked' : ''} ${dis}>
             Inject the active-scene ledger into the narrator system prompt
-          </label>
-        </div>
-        <div class="pacing-field">
-          <label class="pacing-field-label">
-            <input type="checkbox" name="factContinuity.sidecarRequired"
-                   ${ctx.factContinuity.sidecarRequired ? 'checked' : ''} ${dis}>
-            Require a sidecar on every narrator response
           </label>
         </div>
         <div class="pacing-field">
@@ -1980,7 +2062,6 @@ export class SettingsPanelApp extends ApplicationV2 {
 
       const enabled          = el.querySelector('[name="factContinuity.enabled"]')?.checked          ?? true;
       const ledgerInContext  = el.querySelector('[name="factContinuity.ledgerInContext"]')?.checked  ?? true;
-      const sidecarRequired  = el.querySelector('[name="factContinuity.sidecarRequired"]')?.checked  ?? true;
       const consistencyCheck = el.querySelector('[name="factContinuity.consistencyCheck"]')?.checked ?? false;
       const sceneFrame       = el.querySelector('[name="factContinuity.sceneFrame"]')?.checked       ?? true;
       const maxRaw           = el.querySelector('[name="factContinuity.maxLedgerTokens"]')?.value;
@@ -1995,7 +2076,6 @@ export class SettingsPanelApp extends ApplicationV2 {
       await Promise.all([
         game.settings.set(MODULE_ID, SETTING.FC_ENABLED,             enabled),
         game.settings.set(MODULE_ID, SETTING.FC_LEDGER_IN_CONTEXT,   ledgerInContext),
-        game.settings.set(MODULE_ID, SETTING.FC_SIDECAR_REQUIRED,    sidecarRequired),
         game.settings.set(MODULE_ID, SETTING.FC_MAX_LEDGER_TOKENS,   maxTokens),
         game.settings.set(MODULE_ID, SETTING.FC_CONSISTENCY_CHECK,   consistencyCheck),
         game.settings.set(MODULE_ID, SETTING.FC_SCENE_FRAME,         sceneFrame),
@@ -2341,7 +2421,10 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
     const costLabel = adds > 0 && a.weakHitAsMiss
       ? `<span class="sf-ability-cost" title="Taking this add counts a weak hit as a miss">— a weak hit counts as a miss</span>`
       : '';
-    const statLabel = stat ? `<span class="sf-ability-stat-sub" title="May substitute the listed stat">↻ +${escapeAttr(stat)}</span>` : '';
+    // A swap names its stat as the Stat row does — a meter an asset lets you
+    // roll ("+its health" is companion_health) is humanised, never shown raw
+    // (issue #345 AA10).
+    const subLabel  = stat ? `<span class="sf-ability-stat-sub" title="May substitute the listed stat">↻ +${escapeAttr(statLabel(stat))}</span>` : '';
     const tag       = a.source === 'command_vehicle' ? 'Vehicle' : (a.category || 'Asset');
     const summary   = a.summary ? `<div class="sf-ability-summary">${escapeAttr(a.summary)}</div>` : '';
     const sourceTag = a.detection === 'structured' ? '🔗 explicit' : '✨ inferred';
@@ -2356,7 +2439,7 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
         <span class="sf-ability-tag">[${escapeAttr(tag)}]</span>
         ${addsLabel}
         ${costLabel}
-        ${statLabel}
+        ${subLabel}
         <span class="sf-ability-detection" title="${sourceTag}">${sourceTag}</span>
         ${summary}
       </label>`;
@@ -2375,12 +2458,12 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
       <div class="sf-stat-sub-row">
         <label class="sf-stat-sub-option">
           <input type="radio" name="sf-stat-sub" value="" checked>
-          Keep listed (+${escapeAttr(currentStat || '?')})
+          Keep listed (+${escapeAttr(currentStat ? statLabel(currentStat) : '?')})
         </label>
         ${uniqueStats.map(stat => `
           <label class="sf-stat-sub-option">
             <input type="radio" name="sf-stat-sub" value="${escapeAttr(stat)}">
-            Substitute +${escapeAttr(stat)}
+            Substitute +${escapeAttr(statLabel(stat))}
           </label>`).join('')}
       </div>
       <p class="sf-ability-hint">Only available when a checked ability allows a stat swap.</p>
@@ -2452,6 +2535,11 @@ export async function confirmInterpretation(interpretation) {
 export function registerSettingsHooks() {
   registerXCardHook();
 
+  // This user's own Private Lines entry, when another client's concurrent
+  // write drops it, is put back (issue #345 AA35) — heard from before this
+  // load's own sync.
+  registerPrivateLinesHealing();
+
   // Initialise campaignState.safety from current game.settings values.
   // This covers first load and the case where settings existed before this
   // sync mechanism was deployed.
@@ -2469,9 +2557,10 @@ export function registerSettingsHooks() {
 
 /**
  * Player client: answer the canonical GM's relay-ready broadcast
- * (gmRelay.onGmRelayReady) with this player's Private Lines. The GM runs relay
- * handlers one at a time, so simultaneous answers from several players do not
- * race on campaignState.safety.privateLines.
+ * (gmRelay.onGmRelayReady) with this player's Private Lines. Simultaneous
+ * answers from several players do not race on campaignState.safety.privateLines:
+ * each sync's write reads the store at its turn on the GM's campaignState
+ * write chain (it runs unqueued, issue #345 D5).
  */
 function registerPrivateLinesGmPull() {
   import('../multiplayer/gmRelay.js')

@@ -5,7 +5,8 @@
 // Players can:
 //   - Edit any entry's text inline (both automated and their own)
 //   - Add a new annotation at any point in the timeline
-//   - Pin entries (pinned entries always appear in context)
+//   - Pin entries (a character's newest five pins reach the narrator with its
+//     details — buildNarratorExtras, issue #345 AA07)
 //
 // GMs additionally can:
 //   - Delete entries

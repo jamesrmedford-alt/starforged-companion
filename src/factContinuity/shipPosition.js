@@ -20,7 +20,7 @@
  * before `applySidecar` runs.
  */
 
-import { buildNameIndex, resolveEntityName } from "../context/relevanceResolver.js";
+import { buildNameIndex, resolveEntityName, activeSectorNamesakeFirst } from "../context/relevanceResolver.js";
 import { getEntityDocument, readEntityFlag } from "../entities/registry.js";
 
 const SOURCE_VALUES = new Set([
@@ -292,36 +292,6 @@ function collectEntitiesForIndex(campaignState) {
     if (Array.isArray(records)) {
       for (const e of records) pushOne(out, e, entityType, null);
     }
-  }
-  return out;
-}
-
-/**
- * The roster with each name several entities share led by the active
- * sector's: generated site names repeat across sectors (every derelict is
- * "Derelict Starship" or "Derelict Settlement", numbered only within one
- * sector), and the name index keeps the first entity of a name — the older
- * sector's, so `!at`, the narrator's ship / position and an arrival by name
- * docked the ship there and moved its token on that sector's map (issue #342
- * Z15; the site ladder's rule, issue #321 U48). Every other entity keeps its
- * place. Pure.
- *
- * @param {Object[]} entities — the index roster (each with `name`, `sectorId`)
- * @param {string|null} activeSectorId
- * @returns {Object[]}
- */
-function activeSectorNamesakeFirst(entities, activeSectorId) {
-  if (!activeSectorId || !Array.isArray(entities)) return entities;
-  const nameKey = (e) => String(e?.name ?? "").trim().replace(/\s+/g, " ").toLowerCase();
-  const byName = new Map();
-  for (const e of entities) {
-    const key = nameKey(e);
-    if (!byName.has(key)) byName.set(key, []);
-    byName.get(key).push(e);
-  }
-  const out = [];
-  for (const [, group] of byName) {
-    out.push(...group.filter(e => e?.sectorId === activeSectorId), ...group.filter(e => e?.sectorId !== activeSectorId));
   }
   return out;
 }

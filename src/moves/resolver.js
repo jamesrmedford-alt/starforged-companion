@@ -1012,8 +1012,10 @@ const CONSEQUENCE_MAP = {
       case "miss": return {
         ...emptyConsequences(),
         // The integrity options change the vehicle the move was rolled
-        // against (sufferDialog applyVehicleIntegrity, issue #309 N02). At 0,
-        // the vehicle-type cost is the player's to apply (otherEffect).
+        // against (sufferDialog applyVehicleIntegrity, issue #309 N02); the
+        // damage the vehicle cannot take at 0 is momentum (sufferDialog
+        // lossPastZero, issue #345 AA15). At 0, the vehicle-type cost is the
+        // player's to apply (otherEffect).
         sufferPrompt: { kind: "enumerated", options: [
           { label: "-1 integrity",       integrity: -1 },
           { label: "Lose Momentum (-2)", suffer: "lose_momentum", amount: 2 },
@@ -1040,7 +1042,8 @@ const CONSEQUENCE_MAP = {
       case "miss": return {
         ...emptyConsequences(),
         // Executor handles at-0 + match → companion destroyed (Q2: prompt,
-        // not auto-discard).
+        // not auto-discard). The harm the companion cannot take at 0 is
+        // momentum (sufferDialog lossPastZero, issue #345 AA15).
         sufferPrompt: { kind: "enumerated", options: [
           { label: "-1 companion health", companionHealth: -1 },
           { label: "Lose Momentum (-2)",  suffer: "lose_momentum", amount: 2 },

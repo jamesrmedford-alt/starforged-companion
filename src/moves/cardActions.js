@@ -372,6 +372,8 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
  * rolled: the pipeline posts a "Which vow?" card (index.js postWhichVowCard).
  * A pick posts the move again with the picked copy's id and name — the vow
  * the roll scores and the fulfilment completes — spoken as the card's roller.
+ * A Forsake Your Vow's card (`moveId`) posts the forsake of that copy (issue
+ * #345 AA16).
  *
  * The pick must be one of the card's own choices, and the requester must own
  * the roller's PC (the card's `actorId`) or be a GM; a card with no roller is
@@ -431,11 +433,13 @@ export async function applyFulfilVowPick(payload = {}, ctx = {}) {
       return { posted: false, reason: "claim-refused" };
     }
     try {
+      // The card's move: Fulfill Your Vow, or a Forsake Your Vow's (issue #345 AA16).
+      const forsake = f.moveId === "forsake_your_vow";
       await ChatMessage.create({
-        content: f.narration || `Attempt to fulfill ${choice.name || "my vow"}.`,
+        content: f.narration || (forsake ? `I forsake ${choice.name || "my vow"}.` : `Attempt to fulfill ${choice.name || "my vow"}.`),
         ...(actor ? { speaker: speakerFor(actor) } : {}),
         flags:   { [MODULE_ID]: {
-          bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true,
+          bypassPacing: true, forcedMoveId: forsake ? "forsake_your_vow" : "fulfill_your_vow", deferWhileBusy: true,
           forcedMoveTargetId: choice.itemId,
           ...(choice.name ? { forcedMoveTarget: choice.name } : {}),
         } },
@@ -675,7 +679,26 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
   const vowName = fightCard && typeof f.vowName === "string" && f.vowName ? f.vowName : null;
   const cardActorId = typeof f.actorId === "string" && f.actorId ? f.actorId : null;
   let rollerId = cardActorId;
-  if (vowName) {
+  // The vow the fight served, by the card's vow id (issue #345 AA17): by name,
+  // once its holder renamed or deleted it the roll scored another vow — the
+  // winner's, or the holder's other one. Fulfilled or on no sheet any more,
+  // nothing is rolled (the card retires the button). A card with no id keeps
+  // the name below.
+  let byId = null;
+  if (fightCard) {
+    const { fightCardVow } = await import("../index.js");
+    byId = fightCardVow({ vowId: typeof f.vowId === "string" ? f.vowId : null, actorId: cardActorId });
+    if (byId && byId.state !== "open") {
+      console.warn(`${MODULE_ID} | attempt to fulfil: the vow card ${messageId} served is ${byId.state === "gone" ? "on no sheet any more" : "fulfilled"} — nothing rolled.`);
+      return { posted: false, reason: byId.state === "gone" ? "vow-gone" : "vow-completed" };
+    }
+  }
+  if (byId) {
+    // A won-fight card's 🏁 is the vow's holder's move (issue #342 D5): the
+    // winner when they hold a copy, else the PC holding the vow the fight
+    // served — found by its id.
+    rollerId = byId.holder?.id ?? cardActorId;
+  } else if (vowName) {
     // A won-fight card's 🏁 is the vow's holder's move (issue #342 D5): the
     // winner when they hold a copy — every case issue #329 X05 settled —
     // else the PC holding the vow the fight served, as the same card's ⚑
@@ -702,7 +725,11 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
   }
 
   let vowItemId = fightCard ? null : (f.milestoneSuggestion.vowItemId ?? null);
-  if (vowName) {
+  // The vow's own copy and its name now: the holder's, found by id (AA17).
+  const targetName = byId ? (byId.item?.name || vowName) : vowName;
+  if (byId) {
+    vowItemId = byId.item?.id ?? null;
+  } else if (vowName) {
     const { resolveVowItemCopies } = await import("../index.js");
     vowItemId = resolveVowItemCopies(vowName, { actorId: actor?.id ?? null }).primary?.item?.id ?? null;
   }
@@ -721,7 +748,7 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
         ...(actor ? { speaker: speakerFor(actor) } : {}),
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true,
-          ...(vowName ? { forcedMoveTarget: vowName } : {}),
+          ...(targetName ? { forcedMoveTarget: targetName } : {}),
           ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
         } },
       });
@@ -1596,9 +1623,10 @@ export async function applyFightVowMarkMilestone(payload = {}, ctx = {}) {
       vowName: f.vowName ?? null, vowId: typeof f.vowId === "string" ? f.vowId : null,
       actorId: typeof f.actorId === "string" ? f.actorId : null, marks: f.marks,
     });
-    // The card's vow is fulfilled: nothing to mark — no failure card, and no
-    // other vow marked in its place (issue #325 W29).
-    if (res?.reason === "vow-completed") return false;
+    // The card's vow is fulfilled, or on no sheet any more: nothing to mark —
+    // no failure card, and no other vow marked in its place (issue #325 W29,
+    // issue #345 AA17).
+    if (res?.reason === "vow-completed" || res?.reason === "vow-gone") return false;
     return { ...res, step: "milestone", marks: f.marks ?? 1 };
   });
 }

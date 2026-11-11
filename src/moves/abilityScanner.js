@@ -57,12 +57,29 @@ const KNOWN_CHARACTER_CATEGORIES = [
 
 const MAX_ABILITY_TEXT_CHARS = 600;
 
-// Stats that an asset ability may substitute for the listed move stat
-// (e.g. Empath's "roll +heart in place of the listed stat"). Only the five
-// canonical stats are valid substitutions per the play kit — supply /
-// integrity / health / spirit / companion_health are situational stats
-// scoped to specific moves and never substitute.
-const SUBSTITUTABLE_STATS = ["edge", "heart", "iron", "shadow", "wits"];
+// What an asset ability may let a move roll instead of its listed stat: the
+// five action stats (Empath's "roll +heart in place of the listed stat") and
+// the meters the vendored assets name — the roller's +supply (Trader on
+// Sojourn / Compel, Weapon Master) and +spirit (Seer, Empath), a vehicle's
+// +integrity (Rover, Skiff, Snub Fighter, Service Pod, Overseer, Sensor
+// Array, Ace) and a companion's "+its health" (Banshee, Combat Bot, Survey
+// Bot, Utility Bot; Sidekick's "+their health"), read as companion_health. A
+// code comment here once ruled the meters out — "they never substitute" —
+// against the text: an asset substitutes where it says so (issue #331 X23),
+// and the confirm dialog has no stat picker, so the ability's roll could
+// never be made (issue #345 AA10). A vehicle's or companion's own track is
+// read for its roll (statEnrichment, `statSubstitutedAssetId`).
+const SUBSTITUTABLE_STATS = ["edge", "heart", "iron", "shadow", "wits", "supply", "spirit", "integrity", "companion_health"];
+
+// How an ability's text names each one it may be rolled with: a companion's
+// health is "+its health" / "+their health".
+const STAT_CUE = Object.freeze({ companion_health: "(?:its|their)\\s+health" });
+
+/** The stat a cue in ability text names ("Heart" → "heart", "its health" → "companion_health"). */
+function statNamed(cue) {
+  const s = String(cue ?? "").toLowerCase().replace(/\s+/g, " ").trim();
+  return s === "its health" || s === "their health" ? "companion_health" : s;
+}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -116,6 +133,8 @@ function readAssetAbilities(actor, source) {
         hasClock:      !!ab.hasClock,
         clockTicks:    Number(ab.clockTicks ?? 0),
         clockMax:      Number(ab.clockMax ?? 4),
+        // A "choose one"'s options, by name (issue #345 AA12).
+        options:       choiceOptions(ab.description),
       });
     });
   }
@@ -127,6 +146,58 @@ function stripHtml(s) {
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * The options of an ability's "choose one": the items of the list after a
+ * "choose …" in its HTML ("choose one (before rolling)", "choose an
+ * approach"), each "Name: text" — Gunner's "Pin them down: Add +1 and take +1
+ * momentum on a hit." and "Make them hurt: Mark progress on a hit." Text is
+ * HTML-stripped with its move links kept. [] for an ability with none (a list
+ * of outcomes is no choice: Veteran's "On a strong hit with a match, …").
+ *
+ * @param {string} html — the ability's description
+ * @returns {Array<{ name: string, text: string }>}
+ */
+function choiceOptions(html) {
+  const s = String(html ?? "");
+  const at = s.search(/<ul\b/i);
+  if (at < 0 || !/\bchoose\b/i.test(stripHtml(s.slice(0, at)))) return [];
+  const end = s.indexOf("</ul>", at);
+  return [...s.slice(at, end < 0 ? undefined : end).matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)]
+    .map(m => stripHtml(m[1]))
+    .map(item => {
+      const colon = item.indexOf(":");
+      return colon > 0 && colon <= 40 ? { name: item.slice(0, colon).trim(), text: item.slice(colon + 1).trim() } : null;
+    })
+    .filter(Boolean);
+}
+
+/**
+ * A "choose one" the ability's add settles before the roll (issue #345 AA12):
+ * the add is one option's — Gunner's "Pin them down: Add +1 and take +1
+ * momentum on a hit" against "Make them hurt: Mark progress on a hit";
+ * Navigator's "Follow the safest path: Add +1"; Service Pod's "Careful: Add +2
+ * and Lose Momentum (-1)". Taking the add is choosing that option: its other
+ * effects are the outcome's, and the other options are not offered again
+ * after the roll (consequenceRiders.settlePreRollChoices). Null when the add
+ * is not an option's — the ability's lead gives it (Bounty Hunter's "add +1
+ * … and choose one"), or no option, or more than one, carries an add.
+ *
+ * @param {Object} ab — a collectEnabledAbilities entry (`text`, `options`)
+ * @param {Object} values — heldValuesFor's
+ * @returns {{ option: string, options: string[] }|null}
+ */
+function preRollChoiceOf(ab, values) {
+  const options = Array.isArray(ab?.options) ? ab.options : [];
+  if (options.length < 2) return null;
+  const hasAdd = (text) => String(text ?? "").split(/(?<=[.!?])\s+/)
+    .some(sentence => clausesOf(sentence).some(c => firstAddIn(c.text, values).add > 0));
+  const text = String(ab.text ?? "");
+  const lead = text.slice(0, Math.max(0, text.indexOf(`${options[0].name}:`)));
+  if (hasAdd(lead)) return null;
+  const adding = options.filter(o => hasAdd(o.text));
+  return adding.length === 1 ? { option: adding[0].name, options: options.map(o => o.name) } : null;
 }
 
 
@@ -226,12 +297,14 @@ function moveTarget(moveName) {
  * @param {string} moveName
  * @param {string} narration
  * @param {string} apiKey
+ * @param {{ _call?: Function, madeAs?: { moveId: string, moveName: string }|null }} [opts] — `madeAs`:
+ *   the move an Aid Your Ally is made as (sceneChallenge.assetMatchMove), named to the model
  * @returns {Promise<Array<{key, summary}>>}
  */
-export async function haikuFallback(abilities, moveId, moveName, narration, apiKey, { _call = callHaiku } = {}) {
+export async function haikuFallback(abilities, moveId, moveName, narration, apiKey, { _call = callHaiku, madeAs = null } = {}) {
   if (!apiKey || !abilities.length) return [];
 
-  const prompt = buildHaikuPrompt(abilities, moveId, moveName, narration);
+  const prompt = buildHaikuPrompt(abilities, moveId, moveName, narration, madeAs);
   let raw;
   try {
     raw = await _call(prompt, apiKey);
@@ -258,27 +331,27 @@ export async function haikuFallback(abilities, moveId, moveName, narration, apiK
     .filter(Boolean);
 }
 
-function buildHaikuPrompt(abilities, moveId, moveName, narration) {
+function buildHaikuPrompt(abilities, moveId, moveName, narration, madeAs = null) {
   const list = abilities.map(a => (
     `- key="${a.key}" asset="${a.assetName}" category="${a.category}" ability="${a.abilityName || "(unnamed)"}"\n  text: ${a.text}`
   )).join("\n");
   return [
     `You are scanning a Starforged player character's asset abilities to decide which (if any) apply to the move they are about to roll.`,
     ``,
-    `Chosen move: ${moveName} (id: ${moveId})`,
+    `Chosen move: ${moveName} (id: ${moveId})${madeAs ? `, made as ${madeAs.moveName} (id: ${madeAs.moveId}) — an ability for either move applies` : ""}`,
     `Player narration: "${narration}"`,
     ``,
     `Enabled abilities:`,
     list,
     ``,
     `Return ONLY a JSON object of the form:`,
-    `{ "matches": [ { "key": "<ability key>", "summary": "<one short sentence: what the ability does for this move>", "statReplacement": "<one of edge|heart|iron|shadow|wits, or null>" }, ... ] }`,
+    `{ "matches": [ { "key": "<ability key>", "summary": "<one short sentence: what the ability does for this move>", "statReplacement": "<one of ${SUBSTITUTABLE_STATS.join("|")}, or null>" }, ... ] }`,
     ``,
     `Rules:`,
     `- Include an ability only when its trigger condition genuinely applies to this move and this narration.`,
     `- Do NOT include abilities whose trigger is unrelated (e.g. an "Endure Harm" ability when the move is "Gather Information").`,
     `- "matches" may be an empty array. Prefer false negatives over false positives.`,
-    `- statReplacement: set to one of the five stats ONLY when the ability text explicitly lets the player roll a different stat than the move's listed one (e.g. Empath's "roll +heart in place of the listed stat"). Otherwise return null. Numeric +N adds are reported via the adds extractor, not here.`,
+    `- statReplacement: set ONLY when the ability text explicitly lets the player roll a different stat or meter than the move's listed one (e.g. Empath's "roll +heart in place of the listed stat", Trader's "you may roll +supply", a vehicle's "roll +integrity"); a companion's "+its health" is companion_health. Otherwise return null. Numeric +N adds are reported via the adds extractor, not here.`,
     `- Output JSON only, no prose, no markdown fences.`,
   ].join("\n");
 }
@@ -344,23 +417,35 @@ async function callHaiku(userPrompt, apiKey) {
  * @param {Actor}  args.characterActor
  * @param {Actor|null} args.commandShipActor
  * @param {string} args.apiKey
+ * @param {boolean} [args.inFight] — a fight is open: an Aid Your Ally is made as Gain Ground
  * @returns {Promise<Array<{ key, assetName, category, source, abilityName, summary, text, adds, detection }>>}
  */
 export async function scanForApplicableAbilities({
-  moveId, moveName, narration, characterActor, commandShipActor, apiKey,
+  moveId, moveName, narration, characterActor, commandShipActor, apiKey, inFight = false,
 }) {
   const all = collectEnabledAbilities(characterActor, commandShipActor);
   if (!all.length) return [];
 
   // A scene-challenge variant is scanned as the ordinary move it varies — its
   // links, its Haiku pass, its adds and stat (SCENE-VARIANT-ABILITIES-UNKEYED).
-  const move = assetMatchMove({ moveId, moveName });
-  const structured = structuredMatches(all, move.moveName);
-  if (structured.length > 0) {
-    return structured.map(annotate("structured", move.moveName, move.moveId, characterActor));
+  // Aid Your Ally is scanned as itself and as the move it is made as: an
+  // ability is matched, and its add and stat read, for the move its links
+  // name — Loyalist's for the aid, Veteran's for its Secure an Advantage
+  // (issue #345 AA11).
+  const move  = assetMatchMove({ moveId, moveName, inFight });
+  const moves = move.madeAs ? [move, move.madeAs] : [move];
+  const keyedTo = new Map();
+  for (const m of moves) {
+    for (const ab of structuredMatches(all, m.moveName)) if (!keyedTo.has(ab.key)) keyedTo.set(ab.key, m);
+  }
+  if (keyedTo.size > 0) {
+    return all.filter(ab => keyedTo.has(ab.key)).map(ab => {
+      const m = keyedTo.get(ab.key);
+      return annotate("structured", m.moveName, m.moveId, characterActor)(ab);
+    });
   }
 
-  const llm = await haikuFallback(all, move.moveId, move.moveName, narration, apiKey);
+  const llm = await haikuFallback(all, move.moveId, move.moveName, narration, apiKey, { madeAs: move.madeAs });
   return llm.map(annotate("haiku", move.moveName, move.moveId, characterActor));
 }
 
@@ -414,6 +499,10 @@ function annotate(detection, moveName = null, moveId = null, characterActor = nu
       // roll applies it when the ability is checked (resolveMove —
       // HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
       weakHitAsMiss:   !!found?.weakHitAsMiss,
+      // The add is one option of a "choose one": taking it (the ability
+      // checked) is that choice, made before the roll — its riders are
+      // settled by it (consequenceRiders.settlePreRollChoices, issue #345 AA12).
+      preRollChoice:   add > 0 ? preRollChoiceOf(ab, values) : null,
       // The Haiku path already populated statReplacement on its return shape;
       // the structured path lands here with no such field, so derive it from
       // the ability text via the regex fallback.
@@ -483,17 +572,23 @@ export function extractResultImprovement(text) {
  * move's. A cost mention ("Lose Momentum (-1)") names no move (namedMoves).
  * Numeric +N adds are extractAdds'.
  *
+ * A meter is offered as an action stat is (issue #345 AA10): Trader's "When
+ * you Sojourn or Compel, you may roll +supply", Seer's "Gather Information …,
+ * roll +spirit", the Snub Fighter's "When you Enter the Fray, you may roll
+ * +integrity", Survey Bot's "Face Danger …, roll +its health"
+ * (companion_health).
+ *
  * @param {string} text — the ability's text (HTML stripped, links kept)
  * @param {string|null} [moveName] — the move being made ("Strike")
- * @returns {"edge"|"heart"|"iron"|"shadow"|"wits"|null}
+ * @returns {"edge"|"heart"|"iron"|"shadow"|"wits"|"supply"|"spirit"|"integrity"|"companion_health"|null}
  */
 export function extractStatReplacement(text, moveName = null) {
   const s = String(text ?? "");
   if (!s.trim()) return null;
-  const stat     = `(${SUBSTITUTABLE_STATS.join("|")})\\b`;
+  const stat     = `(${SUBSTITUTABLE_STATS.map(name => STAT_CUE[name] ?? name).join("|")})\\b`;
   const explicit = new RegExp(`\\bmay\\s+(?:roll|use)\\s+\\+${stat}|\\b(?:roll|use)\\s+\\+${stat}\\s+(?:instead|in\\s+place\\s+of)`, "i");
   const bare     = new RegExp(`\\broll\\s+\\+${stat}`, "i");
-  const cued     = (sentence, re) => { const m = sentence.match(re); return m ? (m[1] ?? m[2]).toLowerCase() : null; };
+  const cued     = (sentence, re) => { const m = sentence.match(re); return m ? statNamed(m[1] ?? m[2]) : null; };
 
   const target    = moveTarget(moveName);
   const sentences = s.split(/(?<=[.!?])\s+/);

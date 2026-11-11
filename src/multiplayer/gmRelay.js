@@ -37,8 +37,8 @@
  * -------------
  * Every action runs through ONE promise queue on the canonical GM
  * (runGmAction, local and socket paths alike), so handlers' campaignState
- * read-modify-writes never interleave (two Private Lines syncs, a `!bond`
- * landing mid-End a Session, …). A handler that rejects releases the queue in
+ * read-modify-writes never interleave (a `!bond` landing mid-End a Session,
+ * …). A handler that rejects releases the queue in
  * a `finally`; one that never settles is waited on for at most its run budget
  * (warned) before the next action runs anyway — one bad action can never
  * wedge every later relay. The budget is GM_ACTION_TIMEOUT_MS, or for a kind
@@ -52,15 +52,20 @@
  *     delays later relays until it settles or times out;
  *   - a handler must NOT call requestGmAction itself on the canonical GM — the
  *     nested action would queue behind its own caller until the timeout.
- * The exception is the X-Card (UNQUEUED_ACTIONS): it runs the moment it
- * arrives. Queued behind a Claude-calling handler it waited up to the timeout
- * while the move pipeline — which is not queued — narrated straight through
- * it. Running it unqueued is safe because suppressScene reads and writes the
- * store with no await in between, and no handler writes back a campaignState
- * snapshot held across an await (each merges only the fields it owns onto the
- * latest store — decisions.md → "Long-running pipeline writes merge
- * relay-owned fields"). The chat-activity stamp its own card fires writes its
- * own setting, not campaignState (issue #342 Z01).
+ * The exceptions are the two safety writes (UNQUEUED_ACTIONS): the X-Card and
+ * a player's Private Lines sync run the moment they arrive. Queued behind a
+ * Claude-calling handler each waited up to the timeout while the move
+ * pipeline — which is not queued — narrated straight through it: the paused
+ * scene went on (XCARD-QUEUED), the Private Line just added was missing from
+ * the narration (issue #345 D5). Running them unqueued is safe because each
+ * reads and writes the store with no await in between — suppressScene, and
+ * applyPrivateLinesSync's one read-and-set at its turn on the client's
+ * campaignState write chain, which still orders two syncs — and no handler
+ * writes back a campaignState snapshot held across an await (each merges only
+ * the fields it owns onto the latest store — decisions.md → "Long-running
+ * pipeline writes merge relay-owned fields"). The chat-activity stamp the
+ * X-Card's own card fires writes its own setting, not campaignState (issue
+ * #342 Z01).
  *
  * Trust model — read before relying on a permission check
  * -------------------------------------------------------
@@ -250,10 +255,12 @@ export function hasActiveGM() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
- * Kinds that run immediately instead of waiting in the queue — the X-Card must
- * take effect the moment it is played (see "Serialisation" in the header).
+ * Kinds that run immediately instead of waiting in the queue — the two safety
+ * writes: the X-Card must take effect the moment it is played, and a player's
+ * Private Lines the moment they are set (issue #345 D5; see "Serialisation" in
+ * the header).
  */
-const UNQUEUED_ACTIONS = new Set(["xcard.activate"]);
+const UNQUEUED_ACTIONS = new Set(["xcard.activate", "safety.syncPrivateLines"]);
 
 // The last action enqueued, or null when the queue is idle. Each entry knows
 // when its action started running and when it settled; both only ever resolve

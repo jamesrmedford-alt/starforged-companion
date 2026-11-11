@@ -34,19 +34,24 @@
  *     pass, finishMove for each entry (a GM's rider prompt holds no round).
  *   - Recovery (rules/reachability.md §7): a round left rolling, upgrading or
  *     narrating is resumed on the canonical GM's `ready` and when the GM
- *     resolving it leaves. A recorded entry is never rolled again; one with a
- *     result card but no record is reported to the GMs as possibly incomplete.
+ *     resolving it leaves; a collecting round's lost readings are started
+ *     again then, and when a GM leaves it. A recorded entry is never rolled
+ *     again; one with a result card but no record is reported to the GMs as
+ *     possibly incomplete.
  *   - In the chat pipeline (handleBatchModeLine): a typed line is table talk;
  *     a card button's move becomes its roller's entry, or waits for the next
- *     round while one resolves.
+ *     round while one resolves. A participant's vow or bond progress roll
+ *     made on the system sheet (index.js registerNativeProgressRollHook) is
+ *     narrated with the round: its outcome becomes the roller's entry, ready
+ *     (takeSheetRoll), or waits for the next round the same way.
  */
 
 import { isCanonicalGM, hasKeyedActiveGM } from "../multiplayer/gmGate.js";
 import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
-import { isSessionActive, sessionNeedsMint, touchSessionActivity } from "../session/lifecycle.js";
+import { isSessionActive, sessionBeingReplaced, touchSessionActivity } from "../session/lifecycle.js";
 import { messageAuthorId, resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { stripHtml } from "../narration/narratorPrompt.js";
-import { isXCardActive, narrateRound } from "../narration/narrator.js";
+import { isXCardActive, narrateRound, narrateResolution } from "../narration/narrator.js";
 import {
   readAction,
   interpretationForRoll,
@@ -59,6 +64,7 @@ import {
 import { resultUpgradeBlocker } from "../moves/burnMomentum.js";
 import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
+import { resolveRelevance } from "../context/relevanceResolver.js";
 import { selectSceneChallengeTrack, moveOutsideSceneChallenge, SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
@@ -78,6 +84,8 @@ import {
   closeRound,
   nextRoundNumber,
   offerForcedMove,
+  enterSheetRoll,
+  isSheetRollEntry,
   takeCardMoves,
   recordReading,
   readingFailed,
@@ -565,8 +573,12 @@ async function noteReadTrack(reading) {
 let _advancing = null;
 let _advanceAgain = false;
 let _waitingForLock = false;
-// A GM's Send now, waiting for the advance pass to start the resolution.
-let _sendNowRequested = false;
+// A GM's Send now, waiting for the advance pass to start the resolution: the
+// id of the round it was pressed for. One that waited on a busy lock is not
+// the next round's when its own closed another way meanwhile (a Discard, End
+// a Session): it resolved that round at once, rolling a reading its player
+// had not confirmed (issue #345 AA38).
+let _sendNowRoundId = null;
 let _narratingRoundId = null;
 // The rolled stage results of the round this client rolls, by user id
 // (finishMove), and the users whose record (recordMove) ran here.
@@ -641,7 +653,8 @@ async function advanceOnce() {
   switch (round.phase) {
     case ROUND_PHASE.COLLECTING: {
       if (isXCardActive(null)) return false;
-      const sendNow = _sendNowRequested;
+      if (_sendNowRoundId !== null && _sendNowRoundId !== round.id) _sendNowRoundId = null;
+      const sendNow = _sendNowRoundId === round.id;
       if (!sendNow && !readyToResolve(round, { connectedUserIds: connectedUserIds() })) return false;
       return startResolution({ sendNow });
     }
@@ -650,6 +663,11 @@ async function advanceOnce() {
     case ROUND_PHASE.UPGRADING:
       await keepUndecidable(round);
       if (!upgradesSettled(getStoredRound())) return false;
+      // The X-Card stops a round resolving: decided, it waits for a GM to
+      // resume (the lift runs this pass again), as a collecting round does —
+      // it went on to its narration, and closed behind the paused notice,
+      // its moves never narrated (issue #345 AA43).
+      if (isXCardActive(null)) return false;
       await queueRoundWrite(r => beginNarration(r));
       return true;
     case ROUND_PHASE.NARRATING:
@@ -667,14 +685,19 @@ async function advanceOnce() {
  * rolls or narrates it runs the advance pass again, for a round a refused
  * step stopped (issue #342 Z18). The resolution itself runs on the advance
  * pass, never inside the relay handler that asked (its rolls and narration
- * must not hold the GM relay queue).
+ * must not hold the GM relay queue). A Send now waiting on a busy move lock
+ * is this round's alone: a round closed meanwhile takes it with it.
  *
  * With `modeOffAfter` (the toolbar's switch, or its "Send now, then turn off"
  * for a collecting round), Batch Mode turns off once the round is done. A
  * round already resolving is only marked: it finishes as it would — a roller
  * deciding Burn / Improve / Keep still decides — and only a GM's own Send now
  * keeps for them (issue #342 Z04: the switch forced Keep on every roller
- * still deciding, and closed their card's Burn and Improve).
+ * still deciding, and closed their card's Burn and Improve). A collecting
+ * round is marked only once its send is accepted: one the X-Card (or no key
+ * for its readings) refused kept the mark, and resolving later the ordinary
+ * way it switched Batch Mode off — a change the GM was told had not happened
+ * (issue #345 AA39).
  *
  * @param {{ modeOffAfter?: boolean }} [opts]
  * @returns {Promise<{ ok: boolean, reason?: string }>}
@@ -683,8 +706,10 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
   if (!isCanonicalGM()) return { ok: false, reason: "not-canonical" };
   const round = getStoredRound();
   if (!roundIsOpen(round)) return { ok: false, reason: "no-round" };
-  if (modeOffAfter) await queueRoundWrite(r => markModeOffAfter(r)).catch(err => console.warn(`${MODULE_ID} | Batch Mode: mode-off-after not saved:`, err?.message ?? err));
-  if (modeOffAfter && isResolving(round)) return { ok: true, reason: "mode-off-after" };
+  if (modeOffAfter && isResolving(round)) {
+    await markRoundModeOffAfter(round.id);
+    return { ok: true, reason: "mode-off-after" };
+  }
   if (round.phase === ROUND_PHASE.UPGRADING) {
     await keepUpgrades(null);
     advanceRound("send-now");
@@ -700,9 +725,16 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
   const unread = readingsInFlight(round);
   const keyed = (() => { try { return !!game.settings.get(MODULE_ID, "claudeApiKey"); } catch { return false; } })();
   if (unread.length && !keyed) return { ok: false, reason: "no-key" };
-  _sendNowRequested = true;
+  if (modeOffAfter) await markRoundModeOffAfter(round.id);
+  _sendNowRoundId = round.id;
   advanceRound("send-now");
   return { ok: true };
+}
+
+/** Mark the round a Send now was asked for to turn Batch Mode off once it is done. Never throws. */
+function markRoundModeOffAfter(roundId) {
+  return queueRoundWrite(r => (r?.id === roundId ? markModeOffAfter(r) : r))
+    .catch(err => console.warn(`${MODULE_ID} | Batch Mode: mode-off-after not saved:`, err?.message ?? err));
 }
 
 // Claims of this client's whose release the world refused, retry included:
@@ -744,6 +776,21 @@ function waitForLock() {
   if (!host().moveLockFree()) return;
   _waitingForLock = false;
   advanceRound("lock-free");
+}
+
+/**
+ * A claim the advance pass made for a round already resolving — its rolls
+ * re-entered, or its narration — came back without the lock: a busy lock is
+ * waited for; one the world refused stops the round, and the GMs are told
+ * (Send now claims it again). Only a busy lock was handled: refused, the
+ * round sat rolling or narrating with no one told and nothing waiting to wake
+ * it, every window saying "The round is being resolved…" (issue #345 AA40).
+ *
+ * @param {{ busy?: boolean, refused?: boolean }} lock — claimRoundLock's answer, with no claim
+ */
+function lockNotClaimed(lock) {
+  if (lock.busy) waitForLock();
+  else tellRoundStopped();
 }
 
 /**
@@ -796,7 +843,7 @@ async function startResolution({ sendNow }) {
       console.debug(`${MODULE_ID} | Batch Mode: a move holds the lock — the round resolves once it is free.`);
       return false;
     }
-    _sendNowRequested = false;
+    _sendNowRoundId = null;
     await tellGms("Batch Mode — the round did not start",
       "The world did not save the move lock, so the round is still collecting. Press Send now to try again.");
     return false;
@@ -808,7 +855,7 @@ async function startResolution({ sendNow }) {
       await queueRoundWrite(r => beginResolution(r, { resolverId: game.user.id, now: nowIso(), sendNow }));
     } finally {
       // Begun, or refused: either way this Send now is spent (a busy lock above keeps it).
-      _sendNowRequested = false;
+      _sendNowRoundId = null;
     }
     begun = true;
     await rollRound(lock.claim);
@@ -842,7 +889,7 @@ async function rollRound(claim) {
   if (!claim) {
     const lock = await claimRoundLock();
     if (!lock.claim) {
-      if (lock.busy) waitForLock();
+      lockNotClaimed(lock);
       return false;
     }
     own = lock.claim;
@@ -900,7 +947,8 @@ function roundResultCard(roundId, userId) {
 /**
  * Roll one acting entry and record it (rollMove → recordMove), as a typed
  * move is rolled — credited to its own PC — stamping `rolled` and its record
- * as it goes. A narrative entry is recorded as it is. An entry the roll
+ * as it goes. A narrative entry is recorded as it is, and a move rolled on
+ * the character sheet with the outcome it was rolled with. An entry the roll
  * stage cannot roll (its track ended earlier in the round, a vow already
  * fulfilled, no target picked) is refused: its card says why, and it is
  * narrated as an action with no roll.
@@ -924,6 +972,18 @@ async function rollEntry(round, entry) {
     await queueRoundWrite(r => markRecorded(rolledInfo ? markRolled(r, { userId, rolled: rolledInfo }) : r, {
       userId, recordedAt: nowIso(), narrationInput: rolledInfo?.narrationInput ?? entry.rolled?.narrationInput ?? { kind: "narrative" },
     }));
+    return;
+  }
+
+  // Rolled on the character sheet, and paid there (issue #345 D1): the round
+  // narrates it with that outcome and rolls nothing — so nothing is rolled as
+  // another PC either, whoever its character is now.
+  if (reading?.kind === READING_KIND.SHEET_ROLL) {
+    const input = reading.narrationInput ?? { kind: "narrative" };
+    await queueRoundWrite(r => markRecorded(markRolled(r, {
+      userId, rolled: { moveId: input.moveId ?? null, outcome: input.outcome ?? null, narrationInput: input },
+    }), { userId, recordedAt: nowIso() }));
+    _sheetRolls.delete(entry.readAs?.messageId);
     return;
   }
 
@@ -1207,9 +1267,10 @@ export async function acceptRoundUpgrade(upgradeOf, resolution, kind) {
 /**
  * Narrate the round once, under the move lock (claimed again here): close
  * the result cards' upgrades, claim the narration on the round, narrate
- * (narrateRound — its card, its fallback, or the X-Card's paused notice),
- * then finish the round. A claim a departed GM left, with no card posted, is
- * taken over.
+ * (narrateRound — its card, its fallback, or the X-Card's paused notice when
+ * the X-Card is played while it is written), then finish the round. While
+ * the X-Card is in play it is not begun. A claim a departed GM left, with no
+ * card posted, is taken over.
  *
  * @returns {Promise<boolean>}
  */
@@ -1221,9 +1282,13 @@ async function narrateTheRound() {
     await finishRound(round, "resolved");
     return true;
   }
+  // Not begun while the X-Card is in play: the round waits for a GM to resume
+  // (the lift runs the pass again). Played once the narration is written,
+  // narrateRound discards the reply and posts the paused notice instead.
+  if (isXCardActive(null)) return false;
   const lock = await claimRoundLock();
   if (!lock.claim) {
-    if (lock.busy) waitForLock();
+    lockNotClaimed(lock);
     return false;
   }
   _narratingRoundId = round.id;
@@ -1352,10 +1417,12 @@ function runHeldMovesSoon() {
  * What finishMove takes for an entry: this client's own roll when it rolled
  * it, else one rebuilt from the round — the final outcome (after an upgrade)
  * and the reading's riders — so a round resumed after a reload still finishes
- * its moves.
+ * its moves. Not a move rolled on the character sheet: the round only
+ * narrates it, as the sheet's own narration ran no riders (issue #345 D1).
  */
 function rolledFor(roundId, entry) {
   if (entry?.status !== ENTRY_STATUS.RECORDED) return null;
+  if (entry.reading?.kind === READING_KIND.SHEET_ROLL) return null;
   const input = entry.rolled?.narrationInput;
   if (input?.kind !== "move") return null;
   const here = rolledHere(roundId, entry.userId);
@@ -1370,12 +1437,18 @@ function rolledFor(roundId, entry) {
 // Card-button moves, and lines typed while the mode is on
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Message ids, oldest first: a participant's card-button move held for the
-// next round, and a non-participant's held until the resolving round closes.
+// Message ids, oldest first: a participant's card-button move (or sheet
+// roll) held for the next round, and a non-participant's held until the
+// resolving round closes.
 const _heldForRound = [];
 const _heldForFreeFlow = [];
 // Round ids whose table-talk notice this client's user has had.
 const _toldTableTalk = new Set();
+// The sheet rolls the round took or holds, by their roll card's id: the
+// parsed outcome as a resolution, and its roller — for the round's entry, or
+// its own narration when no round takes it after all (takeSheetRoll — issue
+// #345 D1).
+const _sheetRolls = new Map();
 
 /**
  * The chat pipeline's Batch Mode step (src/index.js onMessage), on every
@@ -1552,6 +1625,9 @@ function holdCardMoves(held, round) {
     const message = game.messages?.get?.(messageId) ?? null;
     if (!message) continue;
     const entry = round?.entries?.[userId] ?? null;
+    if (isSheetRollEntry(entry) && entry.readAs?.messageId === messageId && !_sheetRolls.has(messageId)) {
+      _sheetRolls.set(messageId, sheetRollFromEntry(entry));
+    }
     holdForNextRound(message, { userId, actorName: entry?.actorName ?? "" });
   }
 }
@@ -1560,17 +1636,162 @@ function holdForNextRound(message, participant) {
   if (!message?.id || _heldForRound.includes(message.id)) return;
   _heldForRound.push(message.id);
   const owners = Array.from(game.users ?? []).filter(u => !u.isGM && u.id === participant.userId).map(u => u.id);
+  const what = _sheetRolls.has(message.id) ? "roll on the character sheet is narrated with" : "move from the card joins";
   whisper([...owners, ...gmIds()], "Held for the next round",
-    `${escapeHtml(participant.actorName)}'s move from the card joins the next round, in the Round window.`,
+    `${escapeHtml(participant.actorName)}'s ${what} the next round, in the Round window.`,
     { batchHeldMoveNotice: true }).catch(err => console.warn(`${MODULE_ID} | Batch Mode: held-move notice failed:`, err?.message ?? err));
 }
 
-/** The card-button moves held for the next round join it, oldest first. */
+/**
+ * Whether a vow or bond progress roll made on the system sheet is narrated
+ * with a Batch Mode round (issue #345 D1): the mode on, a GM connected to run
+ * the round, and its roller — the roll card's speaker — a participant's
+ * character. Every client reaches the same answer from shared data, so the
+ * others stand down while the canonical GM takes it (takeSheetRoll). Anyone
+ * else's sheet roll is narrated at once, as a non-participant's card move
+ * runs as free-flow.
+ *
+ * @param {ChatMessage} message — a chat message (any: cheap when the mode is off)
+ * @returns {boolean}
+ */
+export function sheetRollJoinsRound(message) {
+  if (!isBatchModeEnabled()) return false;
+  if (!Array.from(game.users ?? []).some(u => u?.isGM && u?.active)) return false;
+  const actorId = typeof message?.speaker?.actor === "string" ? message.speaker.actor : null;
+  return !!actorId && currentParticipants().some(p => p.actorId === actorId);
+}
+
+/**
+ * A participant's vow or bond progress roll made on the system sheet, on the
+ * canonical GM (src/index.js registerNativeProgressRollHook; issue #345 D1 —
+ * the maintainer's option A). The system rolled it and the module's payoff
+ * hook paid it, as it always does — fulfilment, legacy, a miss's recommit
+ * offer; the round takes only its narration. While the round collects it
+ * becomes the roller's entry, ready, carrying the parsed outcome
+ * (joinSheetRoll); with no round collecting — one resolving, none open before
+ * a session, the roller not in it yet — it is held for the next round, as a
+ * card's move is, and with the mode turned off before one opens it gets its
+ * own narration (narrateSheetRoll), as before Batch Mode.
+ *
+ * @param {ChatMessage} message — the system's roll card
+ * @param {Object} resolution — its outcome, as the sheet's own narration takes it
+ * @returns {Promise<boolean>} true when the round took or holds it; false —
+ *   narrate it now (its roller is no participant)
+ */
+export async function takeSheetRoll(message, resolution) {
+  if (!isCanonicalGM() || !isBatchModeEnabled() || !message?.id || !resolution) return false;
+  const actorId = typeof message?.speaker?.actor === "string" ? message.speaker.actor : null;
+  const participant = currentParticipants().find(p => p.actorId === actorId) ?? null;
+  if (!participant) return false;
+  _sheetRolls.set(message.id, { resolution, actorId });
+  const round = getStoredRound();
+  if (!roundIsOpen(round) || round.phase !== ROUND_PHASE.COLLECTING || !entryFor(round, participant.userId)) {
+    holdForNextRound(message, participant);
+    return true;
+  }
+  await joinSheetRoll(message, participant.userId);
+  return true;
+}
+
+/**
+ * Make a sheet roll its roller's entry (round.js enterSheetRoll): ready, with
+ * the narration input its outcome gives — the relevance its narration would
+ * have resolved, as the sheet's own narration did. A card move it displaces,
+ * or the sheet roll itself beside an owed roll or another sheet roll, is held
+ * for the next round; a join the world refused is too.
+ */
+async function joinSheetRoll(message, userId) {
+  const sheet = _sheetRolls.get(message?.id);
+  if (!sheet) return;
+  const { resolution } = sheet;
+  const relevance = await resolveRelevance(resolution.playerNarration ?? "", resolution.moveId, resolution.outcome, workingCopy())
+    .catch((err) => {
+      console.warn(`${MODULE_ID} | Batch Mode: the sheet roll's relevance failed; narrated at embellishment:`, err?.message ?? err);
+      return null;
+    });
+  const narrationInput = narrationInputFrom(resolution, relevance);
+  let held = [];
+  let written = null;
+  try {
+    written = await queueRoundWrite((latest) => {
+      const res = enterSheetRoll(latest, {
+        userId, text: resolution.playerNarration ?? "", narrationInput, submissionId: randomId(), now: nowIso(),
+        messageId: message.id,
+      });
+      held = res.held;
+      return res.round;
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Batch Mode: a sheet roll could not join the round:`, err?.message ?? err);
+    const participant = currentParticipants().find(p => p.userId === userId);
+    if (participant) holdForNextRound(message, participant);
+    return;
+  }
+  holdCardMoves(held, written);
+  advanceRound("sheet-roll");
+}
+
+/**
+ * A sheet roll no round took, narrated on its own as before Batch Mode —
+ * the sheet narration's call (narrateResolution) on a working copy taken now,
+ * as its roller. Never throws.
+ */
+async function narrateSheetRoll(sheet) {
+  try {
+    await narrateResolution(sheet.resolution, workingCopy(), { speakerActorId: sheet.actorId ?? null });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Batch Mode: a held sheet roll's narration failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * A sheet roll as a stored entry keeps it — for one this client did not take
+ * (another GM's game took it before leaving, or this page reloaded since)
+ * that a round hands back: its outcome rebuilt from the entry's narration
+ * input, so it joins the next round as a sheet roll, never as a card's move
+ * to read and roll.
+ *
+ * @param {Object} entry — isSheetRollEntry
+ * @returns {{ resolution: Object, actorId: string|null }}
+ */
+function sheetRollFromEntry(entry) {
+  const input = entry.reading?.narrationInput ?? {};
+  return {
+    actorId: entry.actorId ?? null,
+    resolution: {
+      _id: input.resolutionId ?? null, moveId: input.moveId ?? null, moveName: input.moveName ?? null,
+      outcome: input.outcome ?? null, outcomeLabel: input.outcomeLabel ?? null, isMatch: input.isMatch === true,
+      isProgressMove: true, statUsed: null, loremasterContext: input.loremasterContext ?? "",
+      oracleSeeds: input.oracleSeeds ?? null, playerNarration: entry.text ?? "",
+    },
+  };
+}
+
+// The round the held moves last joined: they join a round once. Its opening
+// is heard twice (the closer's own open and the close's onRoundWritten), and
+// a second drain took again what the first one's round had handed back.
+let _heldJoinedRoundId = null;
+
+/**
+ * The card-button moves held for the next round join it, oldest first — the
+ * ones held as it opens. A move the round hands back (round.js
+ * offerForcedMove: a second owed roll beside an owed entry, or a card move
+ * an owed roll displaced) or a join the world refused is held again for the
+ * round after. Taken again in the same drain, a second owed roll looped
+ * forever, whispering "Held for the next round" and stopping the canonical
+ * GM's page (issue #345 AA08).
+ */
 async function joinHeldMoves() {
   const round = getStoredRound();
-  if (round?.phase !== ROUND_PHASE.COLLECTING) return;
-  while (_heldForRound.length) {
-    const id = _heldForRound.shift();
+  if (round?.phase !== ROUND_PHASE.COLLECTING || round.id === _heldJoinedRoundId) return;
+  _heldJoinedRoundId = round.id;
+  for (const id of [..._heldForRound]) {
+    // Each id leaves the list as it is taken, so a press meanwhile still sees
+    // the ones waiting (incitingSwearTaken); one gone meanwhile went free-flow
+    // with the mode turned off (turnedOff).
+    const at = _heldForRound.indexOf(id);
+    if (at === -1) continue;
+    _heldForRound.splice(at, 1);
     const message = game.messages?.get?.(id) ?? null;
     if (!message) continue;
     // An inciting swear sworn while it was held is not rolled again.
@@ -1586,14 +1807,19 @@ async function joinHeldMoves() {
       _heldForFreeFlow.push(id);
       continue;
     }
-    await joinRound(message, entry.userId);
+    if (_sheetRolls.has(id)) await joinSheetRoll(message, entry.userId);
+    else await joinRound(message, entry.userId);
   }
 }
 
 // True while runHeldFreeFlowMoves is draining: one drain at a time, oldest first.
 let _runningHeld = false;
 
-/** A non-participant's forced move a resolving round held runs now, as free-flow. */
+/**
+ * A non-participant's forced move a resolving round held runs now, as
+ * free-flow — and a sheet roll no round took gets the narration it had
+ * before Batch Mode (narrateSheetRoll).
+ */
 async function runHeldFreeFlowMoves() {
   if (_runningHeld || isResolving(getStoredRound())) return;
   _runningHeld = true;
@@ -1601,7 +1827,14 @@ async function runHeldFreeFlowMoves() {
     while (_heldForFreeFlow.length) {
       const id = _heldForFreeFlow.shift();
       const message = game.messages?.get?.(id) ?? null;
-      if (!message || !_freeFlowRunner) continue;
+      if (!message) continue;
+      const sheet = _sheetRolls.get(id);
+      if (sheet) {
+        _sheetRolls.delete(id);
+        await narrateSheetRoll(sheet);
+        continue;
+      }
+      if (!_freeFlowRunner) continue;
       await Promise.resolve(_freeFlowRunner(message)).catch(err =>
         console.warn(`${MODULE_ID} | Batch Mode: a held move failed:`, err?.message ?? err));
     }
@@ -1614,23 +1847,12 @@ async function runHeldFreeFlowMoves() {
 // Recovery, and the canonical GM's hooks
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The session this load is replacing: the canonical GM's `ready` mints a new
-// one when the stored one is over — End a Session marked it, or four idle
-// hours (session/lifecycle.js sessionNeedsMint) — but the mint lands only
-// after the summary finalise and the scene close. Until it does, the stored
-// session still reads live (its gate open, its id current): the recovery at
-// load read last session's submissions again on the GM's key and advanced
-// its round (issue #342 Z24). Its rounds are over: none reads, resolves or
-// opens until a new session is current.
-let _sessionBeingReplaced = null;
-
-/** True while campaignState still holds the session this load is replacing. */
-function sessionBeingReplaced(cs) {
-  if (_sessionBeingReplaced === null) return false;
-  if ((cs?.currentSessionId ?? "") === _sessionBeingReplaced) return true;
-  _sessionBeingReplaced = null;     // the mint landed (or a newer session is current)
-  return false;
-}
+// The session this load is replacing (session/lifecycle.js
+// sessionBeingReplaced, noted by the canonical GM's `ready` before its mint):
+// until the mint lands the stored session still reads live (its gate open,
+// its id current), and the recovery at load read last session's submissions
+// again on the GM's key and advanced its round (issue #342 Z24). Its rounds
+// are over: none reads, resolves or opens until a new session is current.
 
 // The recoveries issue #340 names ("Recovery"): the canonical GM's `ready`,
 // and the GM resolving a round leaving. On these a round still resolving from
@@ -1641,12 +1863,12 @@ const CLOSES_RESOLVING_ROUND = new Set(["ready", "resolver-left"]);
 
 /**
  * On the canonical GM's `ready`, when it becomes canonical (the resolving GM
- * left), when a user joins and when a keyed GM joins: a collecting round from
- * an ended session is closed, and a resolving one too on `ready` or when its
- * GM left (CLOSES_RESOLVING_ROUND) — otherwise it finishes first; one left
- * resolving whose GM is gone is resumed; a collecting one has its lost
- * readings started again and gains the participants who joined. Then a
- * round opens when one is due.
+ * left; a GM left while the round collects), when a user joins and when a
+ * keyed GM joins: a collecting round from an ended session is closed, and a
+ * resolving one too on `ready` or when its GM left (CLOSES_RESOLVING_ROUND) —
+ * otherwise it finishes first; one left resolving whose GM is gone is
+ * resumed; a collecting one has its lost readings started again and gains
+ * the participants who joined. Then a round opens when one is due.
  *
  * @param {string} [reason]
  * @returns {Promise<void>}
@@ -1806,6 +2028,15 @@ async function onUserConnected(user, connected) {
     await recoverRound("resolver-left");
     return;
   }
+  // A GM leaving may leave this GM canonical: the readings that GM's game ran
+  // died with its browser, and nothing read them again — the player's window
+  // said "Reading your action…" for good and the round could not resolve by
+  // itself (issue #345 AA42). recoverRound starts them again here, as on a
+  // load or a keyed GM joining; a reading this client runs is left to run.
+  if (user?.isGM && roundIsOpen(round) && round.phase === ROUND_PHASE.COLLECTING) {
+    await recoverRound("gm-left");
+    return;
+  }
   advanceRound("user-left");
 }
 
@@ -1815,8 +2046,6 @@ async function onUserConnected(user, connected) {
  */
 export function registerBatchModeDriver() {
   _xCardWas = !!campaignStateNow().xCardActive;
-  // This GM's `ready` mints a new session when the stored one is over (index.js initSessionId).
-  if (isCanonicalGM() && sessionNeedsMint(campaignStateNow())) _sessionBeingReplaced = campaignStateNow().currentSessionId ?? "";
   // A setting's first write is a createSetting, every later one an updateSetting.
   Hooks.on("createSetting", onBatchSettingWrite);
   Hooks.on("updateSetting", onBatchSettingWrite);

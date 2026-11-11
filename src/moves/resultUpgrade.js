@@ -343,6 +343,30 @@ function unpreparedMarksToClear(ptpReversals, refunded) {
   return [...ids];
 }
 
+/**
+ * The momentum to give back, by PC: what each mark the reversal just cleared
+ * (`clearedIds`) clamped away when the price made it — a supply receipt's
+ * `momentumClamped` (sufferExecutor markUnprepared, issue #345 AA46) — less
+ * `skipId`'s (a burn's burner, whose reset replaces it).
+ *
+ * @param {Object|null} ptpReversals
+ * @param {string[]} clearedIds
+ * @param {string|null} skipId
+ * @returns {Array<[string, number]>}
+ */
+function clampsToGiveBack(ptpReversals, clearedIds, skipId) {
+  const cleared = new Set(clearedIds);
+  const owed = new Map();
+  for (const d of sufferMeterDeltas(ptpReversals)) {
+    if (d.meterKey !== "supply" || !d.momentumClamped || typeof d.momentumClamped !== "object") continue;
+    for (const [id, n] of Object.entries(d.momentumClamped)) {
+      if (!cleared.has(id) || id === skipId || !Number.isInteger(n) || n <= 0) continue;
+      owed.set(id, (owed.get(id) ?? 0) + n);
+    }
+  }
+  return [...owed];
+}
+
 const REVERSAL_CARDS = {
   burn:    { title: "⏰ Burn reversal",    lead: "Momentum burned — the Price reverts:", flag: "burnReversal" },
   improve: { title: "⏰ Improve reversal", lead: "Result improved — the Price reverts:", flag: "improveReversal" },
@@ -351,8 +375,10 @@ const REVERSAL_CARDS = {
 /**
  * Revert the Pay the Price side effects of the superseded miss: rewind each
  * clock it advanced (tension clocks, vow countdown clocks) by one segment,
- * refund the PC-meter losses its route landed, and take the price out of
- * RECENT ORACLE RESULTS (forgetRevertedPrice — issue #342 Z11). A burn resets
+ * refund the PC-meter losses its route landed, clear the unprepared marks it
+ * made and give back the momentum they clamped (issue #342 D4, issue #345
+ * AA46), and take the price out of RECENT ORACLE RESULTS (forgetRevertedPrice
+ * — issue #342 Z11). A burn resets
  * momentum, which already undoes a momentum loss, so a burn refunds none; an
  * improvement keeps the momentum the PC has, so it refunds that too. Posts a
  * card listing what was unwound; a write the world refuses goes onto
@@ -436,12 +462,27 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // D4, ruling A narrowly). A refused clear is an upgrade step for the GMs'
   // Retry, as the refund is.
   const unmark = unpreparedMarksToClear(ptpReversals, refunded);
+  let clearedIds = [];
   if (unmark.length) {
     const at = failures.length;
     const ok = await applyUpgradeStep({ effect: "unprepared", pcIds: unmark }, failures);
     const owed = new Set(ok ? [] : (failures[at]?.pcIds ?? unmark));
-    const cleared = unmark.filter(id => !owed.has(id)).map(id => game.actors?.get?.(id)?.name ?? id);
+    clearedIds = unmark.filter(id => !owed.has(id));
+    const cleared = clearedIds.map(id => game.actors?.get?.(id)?.name ?? id);
     if (cleared.length) reverted.push(`${cleared.map(escapeHtml).join(", ")} no longer unprepared`);
+  }
+
+  // 4. The momentum each cleared mark's lowered maximum clamped away (the
+  // receipt's `momentumClamped`): the clear gave the maximum back, never the
+  // momentum — an ally at 10 stayed at 9 for a price never paid (issue #345
+  // AA46). After the clear, so it lands under the maximum the price never
+  // lowered. Not on a burn to the burner: the burn's reset replaces their
+  // momentum, as it does the price's momentum receipts. One meters step per
+  // PC, for the GMs' Retry.
+  for (const [pcId, amount] of clampsToGiveBack(ptpReversals, clearedIds, kind === "burn" ? (actor?.id ?? null) : null)) {
+    if (await applyUpgradeStep({ effect: "meters", pcId, changes: { momentum: amount } }, failures)) {
+      reverted.push(`${escapeHtml(game.actors?.get?.(pcId)?.name ?? pcId)}: momentum +${amount} given back`);
+    }
   }
 
   if (!reverted.length) return reverted;
@@ -540,7 +581,9 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
 function ledgersHold(cs, ids) {
   const theirs = (e) => !!e && typeof e === "object" && ids.has(e.narrationId);
   if ((Array.isArray(cs.sceneTruths) ? cs.sceneTruths : []).some(t => theirs(t) && !t.retracted)) return true;
-  if (theirs(cs.sceneFrame)) return true;
+  // A frame keeps the ones it replaced (issue #345 D3): one of theirs down the
+  // chain would come back if a later X-Card removed the frames above it.
+  for (let cur = cs.sceneFrame; cur && typeof cur === "object"; cur = cur.previous ?? null) if (theirs(cur)) return true;
   for (const list of Object.values(cs.sceneState?.bySubject ?? {})) {
     for (const entry of Array.isArray(list) ? list : []) {
       for (let cur = entry; cur && typeof cur === "object"; cur = cur.previous ?? null) if (theirs(cur)) return true;
@@ -594,7 +637,8 @@ function vowClocksUntriggered(entries, emptied, owed) {
  * vignetteClockId; an older one, from before the clock was reset, happened)
  * — is superseded as the move narration is: struck, and flagged
  * `burnSuperseded` so the recent-narration ring, the rolling summary and the
- * session recap leave it out; and what its sidecar wrote is retracted by its
+ * session recap leave it out (a summary already made from it is dropped
+ * first — issue #345 AA24); and what its sidecar wrote is retracted by its
  * narration id (retractSupersededNarrations). It stood as live fiction with
  * binding truths, and the clock's next trigger fired a second vignette for
  * the same clock (issue #338 D8). Canonical GM. Never throws.
@@ -612,7 +656,7 @@ async function supersedeTriggerVignettes(clocks, kind) {
     if (!clockIds.size) return;
     const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
     const newestFirst = [...allMessages()].reverse();
-    const narrationIds = [];
+    const cards = [];
     for (const clockId of clockIds) {
       // Its vignette is still being written: it is narrated only while the
       // clock is full, so it drops itself — and the newest card of the clock
@@ -623,7 +667,16 @@ async function supersedeTriggerVignettes(clocks, kind) {
         return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId
           && (f.sessionId ?? null) === sessionId && f.burnSuperseded !== true && f.xCarded !== true;
       });
-      if (!card) continue;
+      if (card) cards.push(card);
+    }
+    if (!cards.length) return;
+    // A rolling summary made from them goes first, while they are still in
+    // memory (issue #345 AA24 — the move narration's supersede does the same).
+    await import("../narration/narrator.js")
+      .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards(cards))
+      .catch(err => console.warn(`${MODULE_ID} | ${kind}: the rolling summary of a rewound clock's vignette could not be dropped:`, err?.message ?? err));
+    const narrationIds = [];
+    for (const card of cards) {
       await card.update({
         [`flags.${MODULE_ID}.burnSuperseded`]: true,
         content: supersededVignetteContent(card.content, kind),

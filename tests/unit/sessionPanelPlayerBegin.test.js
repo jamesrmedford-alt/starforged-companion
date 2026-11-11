@@ -70,7 +70,10 @@ describe("a player's Begin / End Session in the Session panel (issue #326 W85)",
   });
 
   it("during a session, a player's End Session is enabled and Begin is disabled by the state", async () => {
-    const { begin, end } = await renderPanel({ sessionActive: true, sessionActiveStartedAt: new Date().toISOString(), sessionNumber: 3 });
+    // A live session: its id and its mint's stamp. With neither the session
+    // reads over (sessionNeedsMint), and Begin is offered (issue #345 AA59).
+    const { begin, end } = await renderPanel({ sessionActive: true, sessionActiveStartedAt: new Date().toISOString(), sessionNumber: 3,
+      currentSessionId: "s3", lastSessionTimestamp: new Date().toISOString() });
     expect(begin).toEqual({ disabled: true, title: "Session already active — end it first" });
     expect(end).toEqual({ disabled: false, title: null });
   });

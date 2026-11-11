@@ -73,8 +73,27 @@ const _synthInFlight = new Map();
 const CACHE_ASK_TIMEOUT_MS = 4_000;
 const _pendingCacheAsk = new Map();   // hash -> Set<resolve>
 
+// Audio GM: hash -> the bytes of a clip it made whose cache upload failed —
+// the world's storage refused it (The Forge's Assets Library full). The next
+// Play or keyless request for the clip retries the upload with these bytes;
+// it used to synthesise — and ElevenLabs bill — the clip again every time
+// (issue #345 AA61). Newest kept, at most UNSAVED_CLIP_CAP (a clip is at most
+// a few hundred KB), for as long as the page is open; the GM is told once
+// (`_toldUnsavedClip`).
+const UNSAVED_CLIP_CAP = 32;
+const _unsavedClips = new Map();
+let _toldUnsavedClip = false;
+
+// What a keyless player is told when the GM made their clip but the world's
+// storage refused it (`audio.synth.done` with `unsaved`): the GM playing the
+// card again does not help — the storage has to accept the upload.
+const UNSAVED_CLIP_PLAYER_MESSAGE = "Narrator audio couldn't be saved to the world's file storage — it refused the GM's upload. Ask the GM to check the world's storage (on The Forge, the Assets Library's space), then try again.";
+
 /** Test-only — clear the keyless-synthesis wait/in-flight state. */
-export function _resetSynthStateForTests() { _pendingSynth.clear(); _synthInFlight.clear(); _pendingCacheAsk.clear(); }
+export function _resetSynthStateForTests() {
+  _pendingSynth.clear(); _synthInFlight.clear(); _pendingCacheAsk.clear();
+  _unsavedClips.clear(); _toldUnsavedClip = false;
+}
 
 // Cards we have already auto-played, by message id. Persisted to localStorage
 // so a player reconnecting mid-session doesn't hear every card replayed from
@@ -304,14 +323,20 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
       } else {
         // No key on this client — ask the GM to synthesise + cache it, then
         // play the resulting file. Players never need their own key.
-        src = await requestGmSynthesis(hash, {
+        const answer = await requestGmSynthesis(hash, {
           voiceId,
           modelId: voices.modelId,
           text:    p.text,
           speed:   voices.speed,
         });
+        src = answer.src;
         if (!src) {
-          throw new Error("Narrator audio isn't ready yet — ask the GM to play this card once, then try again.");
+          // The GM made the clip and the world's storage refused it: say so —
+          // "ask the GM to play it" sent the player round the same refusal
+          // (issue #345 AA61).
+          throw new Error(answer.unsaved
+            ? UNSAVED_CLIP_PLAYER_MESSAGE
+            : "Narrator audio isn't ready yet — ask the GM to play this card once, then try again.");
         }
       }
     }
@@ -329,6 +354,10 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
  * GM and a player both pressing Play) each segment was made twice (issue #321
  * U59).
  *
+ * A clip whose upload failed keeps its bytes (`_unsavedClips`): the next call
+ * for it uploads them again instead of synthesising it — every retry billed
+ * the clip again (issue #345 AA61).
+ *
  * @param {string} hash
  * @param {{ voiceId: string, modelId: string, text: string, speed: number }} spec
  * @param {string} apiKey
@@ -339,7 +368,7 @@ function synthesiseToCacheOnce(hash, spec, apiKey) {
   let pending = _synthInFlight.get(hash);
   if (!pending) {
     pending = (async () => {
-      const bytes = await synthesise({
+      const bytes = _unsavedClips.get(hash) ?? await synthesise({
         apiKey,
         voiceId: spec.voiceId,
         modelId: spec.modelId,
@@ -347,21 +376,44 @@ function synthesiseToCacheOnce(hash, spec, apiKey) {
         speed:   spec.speed,
         stream:  false,
       });
-      return { bytes, path: await writeToCache(hash, bytes) };
+      const path = await writeToCache(hash, bytes);
+      if (path) _unsavedClips.delete(hash);
+      else holdUnsavedClip(hash, bytes);
+      return { bytes, path };
     })().finally(() => _synthInFlight.delete(hash));
     _synthInFlight.set(hash, pending);
   }
   return pending;
 }
 
-/** Canonical GM: write a clip to the cache; the path, or null when the write failed. */
+/**
+ * Canonical GM: write a clip to the cache; the path, or null when the write
+ * failed — a throw, or an upload the world refused (`cache.write` → null,
+ * issue #322 V26), which used to pass unreported. A failure is logged, and the
+ * GM told once that players cannot hear narrator audio until the world's
+ * storage accepts uploads (issue #345 AA61).
+ */
 async function writeToCache(hash, bytes) {
+  let path = null;
   try {
-    return await cacheWrite(hash, bytes);
+    path = await cacheWrite(hash, bytes);
   } catch (err) {
     console.warn(`${MODULE_ID} | audio cache write (GM-direct) failed:`, err);
-    return null;
   }
+  if (path) return path;
+  console.warn(`${MODULE_ID} | audio cache write (GM-direct): clip ${String(hash).slice(0, 8)}… was not saved — the world's storage refused the upload; its bytes are kept for a retry.`);
+  if (!_toldUnsavedClip) {
+    _toldUnsavedClip = true;
+    notifyAudioFailure("Narrator audio couldn't be saved — the world's file storage refused the upload, so players can't hear narrator audio until it accepts uploads (on The Forge, check the Assets Library has space). Your game keeps the clips it made and uploads them again on the next Play, without paying for them again.");
+  }
+  return null;
+}
+
+/** Keep a made clip whose upload failed, newest last, at most UNSAVED_CLIP_CAP. */
+function holdUnsavedClip(hash, bytes) {
+  _unsavedClips.delete(hash);
+  _unsavedClips.set(hash, bytes);
+  while (_unsavedClips.size > UNSAVED_CLIP_CAP) _unsavedClips.delete(_unsavedClips.keys().next().value);
 }
 
 /**
@@ -425,7 +477,7 @@ export function registerAudioSocket() {
     switch (payload.kind) {
       case "audio.cache.write":   return handleCacheWrite(payload);
       case "audio.synth.request": return handleSynthRequest(payload);
-      case "audio.synth.done":    return resolvePendingSynth(payload.hash, payload.path);
+      case "audio.synth.done":    return resolvePendingSynth(payload.hash, payload.path, payload.unsaved === true);
       case "audio.cache.ask":     return handleCacheAsk(payload);
       case "audio.cache.found":   return resolvePendingCacheAsk(payload.hash, payload.path);
       default: return;
@@ -569,19 +621,26 @@ async function handleSynthRequest(payload) {
       return;
     }
   }
-  const signalDone = (path) => game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.done", hash, path: path ?? null });
+  // `unsaved`: the clip was made but the world's storage refused its upload —
+  // the player is told that, not "ask the GM to play it" (issue #345 AA61).
+  const signalDone = (path, unsaved = false) => game.socket?.emit?.(AUDIO_SOCKET_NAME,
+    { kind: "audio.synth.done", hash, path: path ?? null, ...(unsaved && !path ? { unsaved: true } : {}) });
   let path = null;
+  let unsaved = false;
   try {
     path = await cacheLookup(hash);
     if (path) { signalDone(path); return; }                  // already cached
     const apiKey = getSetting("elevenLabsApiKey", "");
-    if (_synthInFlight.has(hash) || (apiKey && String(apiKey).trim() && spec)) {
-      ({ path } = await synthesiseToCacheOnce(hash, spec, apiKey));
+    // A clip made earlier whose upload failed needs no key: only its upload is retried.
+    if (_synthInFlight.has(hash) || _unsavedClips.has(hash) || (apiKey && String(apiKey).trim() && spec)) {
+      const made = await synthesiseToCacheOnce(hash, spec, apiKey);
+      path = made.path;
+      unsaved = !path && made.bytes != null;
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | audio GM-synthesis (keyless request) failed:`, err);
   }
-  signalDone(path);   // success, already-cached, or failure — always unblock waiters
+  signalDone(path, unsaved);   // success, already-cached, or failure — always unblock waiters
 }
 
 // GM-side: a keyed Player who may not browse the cache asks whether a clip is
@@ -658,19 +717,22 @@ async function askGmForCachedPath(hash) {
 
 // Requester side: resolve everyone waiting on this hash with the GM's answer
 // (relayedClipPath) — a forged one is no answer: they keep waiting for the
-// GM's, or time out to "not ready".
-function resolvePendingSynth(hash, path) {
+// GM's, or time out to "not ready". `unsaved` (the GM made the clip and the
+// world's storage refused it) only changes what a "no clip" tells the player;
+// a forged one is the forged "no clip"'s nuisance (see relayedClipPath).
+function resolvePendingSynth(hash, path, unsaved = false) {
   const set = _pendingSynth.get(hash);
   if (!set) return;
   const src = relayedClipPath(hash, path);
   if (src === undefined) return;
   _pendingSynth.delete(hash);
-  for (const resolve of set) resolve(src);
+  for (const resolve of set) resolve({ src, unsaved: src === null && unsaved });
 }
 
 // Keyless client: ask the audio GM to synthesise + cache `hash`, wait for
 // the done signal (or time out), then return the path it names — or, without
-// one, the cache lookup's (a Trusted Player may browse; a Player may not).
+// one, the cache lookup's (a Trusted Player may browse; a Player may not) —
+// and whether the GM made the clip but could not save it (issue #345 AA61).
 async function requestGmSynthesis(hash, spec) {
   const ready = new Promise((resolve) => {
     let set = _pendingSynth.get(hash);
@@ -679,7 +741,9 @@ async function requestGmSynthesis(hash, spec) {
     setTimeout(() => { set.delete(resolve); resolve(null); }, SYNTH_REQUEST_TIMEOUT_MS);
   });
   game.socket?.emit?.(AUDIO_SOCKET_NAME, { kind: "audio.synth.request", hash, spec });
-  return (await ready) ?? await cacheLookup(hash);
+  const answer = await ready;
+  const src = answer?.src ?? await cacheLookup(hash);
+  return { src, unsaved: !src && answer?.unsaved === true };
 }
 
 // ---------------------------------------------------------------------------

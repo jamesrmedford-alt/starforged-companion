@@ -51,7 +51,8 @@ Terminology up front, because it drives every gap below:
   every later linked win, and a forsaken vow's reward was never lost (issue
   #342 Z54); so does a card that names the vow for a later press — the
   won-fight card's and a fulfilment's payoff-failure card's `vowId`, read by
-  🤝 Deepen's once-only record and the Retry (from the flag alone they
+  🤝 Deepen's once-only record, the Retry and the won-fight card's ⚑ / 🏁 and
+  retire check (`fightCardVow`, issue #345 AA17) (from the flag alone they
   carried null, found the vow by its name only, and after a rename deepened
   its connection a second time — known-issues
   FIGHT-PAYOFF-CARD-VOWID-FLAG-ONLY); fulfilment completion and payoff
@@ -116,7 +117,11 @@ on every copy (`setSharedVowReward`), on the canonical GM (`vow.reward`): the
 card is claimed once (`rewardChosen`), and a vow whose reward was already
 granted or lost is never promised again — an old card's pick re-promised a
 granted reward, so the next linked win or the fulfilment granted a second
-(issue #325 W11). A write that does not land posts no "🎁 Reward set", and
+(issue #325 W11). Nor is one fulfilled or forsaken on every copy with no
+reward chosen — nothing would ever grant it: the card is closed
+(`rewardChosen: "vow-fulfilled"` / `"vow-forsaken"`) and the presser and the
+GMs are whispered why (issue #345 AA52 — it was promised on the finished vow,
+"🎁 Reward set" posted). A write that does not land posts no "🎁 Reward set", and
 the presser and the GMs are whispered why (issue #329 X07):
 `setSharedVowReward` reports `{ ok, reason }` — `refused` releases the claim
 for another pick ("could not be saved … choose it again"); `no-copy`, a vow
@@ -169,9 +174,14 @@ All real progress lands on **item ticks** (`system.current`) via
   (idempotent, in-flight guarded): a refused claim marks nothing and a
   refused mark releases the claim — it marked first, and a stamp the world
   refused left the picker live for a second mark (issue #336 Y24). A vow fulfilled since the picker posted
-  is refused (`vow-completed`, a short card; the picker stays open for its
+  is refused (`vow-completed`, a short card — "was forsaken" for a vow
+  forsaken since, issue #345 AA51; the picker stays open for its
   other vows), and `markVowProgress` never marks a fulfilled vow (issue
-  #331 X20). A click with no GM connected, a refusal,
+  #331 X20). A vow deleted since is refused the same way, before the claim
+  (`no-vow`, a short card "That vow is no longer on Kira's sheet"; the
+  picker resolved only once no vow it offers is open — issue #345 AA53:
+  found missing after the claim, it closed the picker for good, unsaid).
+  A click with no GM connected, a refusal,
   or a card still unresolved after `RELAY_RECOVERY_MS` (15 s) re-arms the
   buttons (`relayCardAction`, `src/moves/cardActions.js`). The move card's
   "⚑ Mark Progress on Vow" suggestion button leads to a forced
@@ -203,7 +213,11 @@ All real progress lands on **item ticks** (`system.current`) via
   — so a re-press after a stamp the world refused marks nothing, issue #336
   Y24). Its 🏁 Attempt to Fulfill rolls as the same holder (issue #342 D5 —
   it was the card's roller's, so a crewmate who won the fight rolled another
-  PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs. The
+  PC's vow as themselves), and so the miss's 🔁 recommit offer is theirs.
+  Both find the vow by the card's `vowId` (`fightCardVow`): the holder's open
+  copy by its Item, renamed or not; fulfilled (whoever fulfilled it) or on
+  no sheet, both retire and a press acts on nothing — by name they marked or
+  fulfilled the winner's or the holder's other vow (issue #345 AA17). The
   card's rank and 🤝 Deepen connection come
   from the same roller-first resolution (`postFightVowMilestoneCard`), not
   the first PC holding a vow of that name.
@@ -321,7 +335,10 @@ the Item holds it (a vendor number or a name — `setVowItemTrack`). A vow
 fulfilled since the miss (a later roll, a crewmate's fulfilment, the sheet)
 is refused with a short card and the offer stays closed — a fulfilled vow's
 track never moves, and the press lowered it and raised its rank on every
-copy (issue #335 Y10); a completed copy is never written. A press that
+copy (issue #335 Y10); a completed copy is never written. A vow forsaken
+since (the offer itself invites "Forsake Your Vow, or recommit") is refused
+the same way, its card saying it "was forsaken" — it said "is already
+fulfilled" (issue #345 AA51). A press that
 changes nothing else is said too (`cardActions.tellRecommitOutcome`, issue
 #342 Z58 — a console line on the GM's): a refused write is whispered to the
 presser and the GMs ("could not be saved … press it again", X07's shape —
@@ -341,8 +358,13 @@ key lives (`registerNativeProgressRollHook` → `nativeRollNarratesHere`, the
 canonical GM when a keyed GM is connected, else the roller's own client with
 its own key — as the roller's PC (`resolveSpeakerActorId` on the roll card).
 Narrating only on the roller's client gave a keyless player "Narration
-unavailable" at a table whose GM holds the key (issue #321 U11). The canonical
-GM applies consequences
+unavailable" at a table whose GM holds the key (issue #321 U11). While Batch
+Mode is on, a participant's roll is narrated with the round instead (issue
+#345 D1): the canonical GM hands its outcome to the driver
+(`sheetRollJoinsRound` / `takeSheetRoll`), which makes it the roller's entry —
+ready, `READING_KIND.SHEET_ROLL` carrying the outcome's narration input
+(`round.enterSheetRoll`), never rolled again — or holds it for the next round;
+the round's one narration tells it. The canonical GM applies consequences
 (`registerNativeFulfilConsequenceHook` → `shouldPayFulfilledVow` → full
 `payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
 also pays quests legacy — from the roller's vow's rank). Both hooks act only
@@ -403,7 +425,17 @@ the `forsakeVow` consequence drives a GM-gated pipeline branch that marks
 every copy of the roller's vow completed + `forsaken` (audit-preserving —
 nothing is deleted),
 closes the journal twin, flips a still-promised reward to **lost**, and posts
-the "⛓ Vow Forsaken" card. The costs suffer-prompt (Endure Stress −2 / Test
+the "⛓ Vow Forsaken" card. The vow is the roller's own, chosen when the move
+is read (`readMove` → `milestone.selectForsakeVow`, stamped `moveTargetId`):
+by name as Fulfill's (exact, then whole words — a crewmate's vow is never
+taken), unnamed their one open vow (a shared vow once); several, or a name
+none of theirs answers to, post the "Forsake Your Vow — which vow?" card
+(postWhichVowCard `moveId`) and clear nothing; with none, the move card says
+no vow was cleared and offers no costs (issue #345 AA16 — the table-wide
+sole-open rung counted copies, so two open copies cleared nothing behind
+"Vow cleared."; AA49 — a crewmate's exact-name vow beat the roller's
+whole-word one). The branch clears that copy (`resolveVowItemCopies`
+`itemId` + `ownOnly`) and closes the journal twin by its name alone. The costs suffer-prompt (Endure Stress −2 / Test
 Your Relationship / discard an asset / narrative cost) rides alongside as
 before. No legacy pays — the vow was abandoned, not achieved.
 

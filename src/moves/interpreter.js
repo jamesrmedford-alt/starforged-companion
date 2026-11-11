@@ -177,7 +177,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
 confidence: "high" | "medium" | "low" — your certainty in the interpretation.
 statValue: ALWAYS leave as 0 — filled in by the calling code (from the character sheet for action moves, from the live progress track / vow / connection data for progress moves — see enrichInterpretationStatValue and enrichProgressTicks in src/moves/statEnrichment.js). Module data is ground truth; never estimate a value.
 progressTicks: ALWAYS leave as 0 — for progress moves the module fills the score from the live track / vow / connection data. Never estimate a tick count.
-moveTarget: the named thing the move acts on, taken from the player's narration. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; finish_the_scene and the scene-challenge moves → the scene challenge's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided; withstand_damage → the vehicle taking the damage when it is one of the character's support vehicles, by its name ("Hoverbike", "Rover", "Skiff") — null for the command starship. null when nothing is named or implied.
+moveTarget: the named thing the move acts on, taken from the player's narration. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone / forsake_your_vow → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; finish_the_scene and the scene-challenge moves → the scene challenge's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided; companion_takes_a_hit → the companion taking the hit, by its name ("Glowcat", "Rockhorn"); withstand_damage → the vehicle taking the damage when it is one of the character's support vehicles, by its name ("Hoverbike", "Rover", "Skiff") — null for the command starship, whatever other vehicle the line mentions. null when nothing is named or implied.
 expeditionRank: only for undertake_an_expedition. When the narration implies the journey's scope, infer its rank — "troublesome" (a short, easy hop), "dangerous" (default), "formidable" (a long or hostile crossing), "extreme", or "epic" (a vast, perilous undertaking). null otherwise; the player can re-rank the track later.
 healSituation: only for heal — "self" (the character mends their own wounds), "treated" (they receive treatment from someone who is not an ally), "companion" (they obtain treatment for a companion) or "ally" (they provide care to someone else). null for every other move.
 combatRank: only for enter_the_fray. When the narration implies the foe’s danger level, infer its rank — "troublesome" (minor, easy to defeat), "dangerous" (default), "formidable" (a tough, seasoned opponent), "extreme" (an overwhelming threat), or "epic" (near-impossible odds). null otherwise; the player can re-rank the combat track later.`;
@@ -223,8 +223,10 @@ export function buildContextSummary(campaignState) {
 const CONTEXT_LIST_CAP = 8;
 
 // The Progress Tracks journal (src/ui/progressTracks.js JOURNAL_NAME /
-// FLAG_KEY). Read directly — importing the UI panel module here would pull
-// ApplicationV2 code into the interpreter.
+// FLAG_KEY, found as its findTracksJournal finds it: by the tracks flag, the
+// name only for a journal no track was saved to — a renamed journal hid every
+// track, issue #345 AA62). Read directly — importing the UI panel module here
+// would pull ApplicationV2 code into the interpreter.
 const PROGRESS_JOURNAL_NAME = "Starforged Progress Tracks";
 const PROGRESS_FLAG_KEY     = "tracks";
 
@@ -250,7 +252,8 @@ function readOpenVowLabels() {
 /** `type "label"` for each open non-vow track in the Progress Tracks journal. */
 function readOpenTrackLabels() {
   try {
-    const journal = game.journal?.find?.(j => j.name === PROGRESS_JOURNAL_NAME);
+    const journal = game.journal?.find?.(j => Array.isArray(j?.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY)))
+                 ?? game.journal?.find?.(j => j?.name === PROGRESS_JOURNAL_NAME);
     if (!journal) return [];
     const tracks = journal.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY) ?? [];
     return (Array.isArray(tracks) ? tracks : [])
@@ -329,11 +332,20 @@ export function constrainMoveToPosition(moveId, combatPosition) {
 /**
  * Build a canonical-move grounding block for inclusion in the interpreter
  * user message. When the foundry-ironsworn `starforged-moves` compendium
- * contains an Item matching `slug`, its description is wrapped in a
+ * contains an Item matching `slug`, its text is wrapped in a
  * `<canonical_move>...</canonical_move>` tag the model can ground against.
  *
+ * The system's move document (`sfmove`) keeps its text in `system.Text`, an
+ * HTMLField — a string (vendor src/module/item/subtypes/sfmove.ts; every
+ * vendored starforged-moves / ironsworn-moves document). It was read as
+ * `system.description ?? system.text ?? system.Text.text`, fields no move has,
+ * so the block was "" for every real move and a forced move's stat reading
+ * never got the move's text (issue #345 AA44). Those fields stay as fallbacks.
+ * Its `@Compendium[…]{Pay the Price}` links are reduced to their labels, as
+ * actorBridge.readAssets reduces an ability's.
+ *
  * Returns "" when the slug is missing, no system is installed, or the
- * compendium document has no description text. Never throws.
+ * compendium document has no text. Never throws.
  *
  * Exported for unit testing of the grounding logic.
  *
@@ -350,13 +362,15 @@ export async function buildCanonicalMoveBlock(slug) {
     return "";
   }
   if (!doc) return "";
-  const description =
-    doc.system?.description
-    ?? doc.system?.text
-    ?? doc.system?.Text?.text
-    ?? "";
-  if (!description) return "";
-  return `<canonical_move>\n${String(description).trim()}\n</canonical_move>`;
+  const sys = doc.system ?? {};
+  const raw = [sys.Text, sys.description, sys.text, sys.Text?.text]
+    .find(v => typeof v === "string" && v.trim()) ?? "";
+  const text = raw
+    .replace(/@\w+\[[^\]]*\]\{([^}]*)\}/g, "$1")
+    .replace(/<[^>]*>/g, "")
+    .trim();
+  if (!text) return "";
+  return `<canonical_move>\n${text}\n</canonical_move>`;
 }
 
 /**

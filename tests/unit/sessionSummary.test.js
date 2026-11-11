@@ -355,4 +355,32 @@ describe('earlier sessions reach every prose mode (issue #286 C3)', () => {
     expect(calls).toHaveLength(1);
     expect(behind.sessionSummary).toMatchObject({ sessionId: 'sess-1', text: 'The whole session.', coveredCount: 2 });
   });
+
+  it("issue #345 AA21 — an ended session: no call when End's closing vignette is all the summary misses; any other card past it catches up", async () => {
+    const calls = stubFetch('The whole session.');
+    game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-stub');
+    const vignette = makeCard('Vex polishes a rifle in the galley.', 'sess-1', { vignetteKind: 'npc_end' });
+    const ended = (coveredCount) => makeState({
+      sessionEndedId: 'sess-1', sessionSummary: { sessionId: 'sess-1', text: 'Story so far.', coveredCount },
+    });
+
+    // End's refresh covered both beats; its closing vignette posted after it.
+    global.game.messages = { contents: [makeCard('Beat 1.'), makeCard('Beat 2.'), vignette] };
+    await finalizeSessionSummary(ended(2));
+    expect(calls).toHaveLength(0);
+
+    // A round End let finish posted after the vignette: the summary misses it.
+    global.game.messages = { contents: [makeCard('Beat 1.'), makeCard('Beat 2.'), vignette, makeCard('The last round.')] };
+    const behind = ended(2);
+    await finalizeSessionSummary(behind);
+    expect(calls).toHaveLength(1);
+    expect(behind.sessionSummary).toMatchObject({ sessionId: 'sess-1', text: 'The whole session.', coveredCount: 4 });
+
+    // A summary that already covers the vignette still misses the card after it.
+    game.settings._store.delete(`${MODULE_ID}.campaignState`);   // the catch-up above was stored
+    const pastVignette = ended(3);
+    await finalizeSessionSummary(pastVignette);
+    expect(calls).toHaveLength(2);
+    expect(pastVignette.sessionSummary.coveredCount).toBe(4);
+  });
 });

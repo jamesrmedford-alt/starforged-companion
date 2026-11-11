@@ -276,10 +276,12 @@ describe('haikuFallback', () => {
     expect(out[0].statReplacement).toBe('heart');
   });
 
-  it('rejects invalid stat replacements (supply, garbage, etc.)', async () => {
+  it('rejects invalid stat replacements (momentum, garbage, etc.)', async () => {
+    // issue #345 AA10: +supply is no longer invalid — an asset may say to roll
+    // it (Trader's Compel); momentum is still no stat any asset swaps in.
     const abilities = [{ key: 'a:0', assetName: 'X', text: 'plain text with no cue' }];
     const _call = vi.fn().mockResolvedValue(JSON.stringify({
-      matches: [{ key: 'a:0', summary: 's', statReplacement: 'supply' }],
+      matches: [{ key: 'a:0', summary: 's', statReplacement: 'momentum' }],
     }));
     const out = await haikuFallback(abilities, 'm', 'M', 'n', 'k', { _call });
     // Haiku returned an invalid stat; parser scrubs it to null AND the

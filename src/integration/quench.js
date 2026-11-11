@@ -2728,6 +2728,22 @@ function registerSystemAssetTests(quench) {
           assert.isObject(move, "pay_the_price should resolve to a Move document");
         });
 
+        it("buildCanonicalMoveBlock carries the live move document's text (system.Text)", async function () {
+          // issue #345 AA44: the block read fields no sfmove document has, and
+          // its unit fixture hand-set one — this reads the installed pack.
+          this.timeout(15000);
+          const { getCanonicalMove, _clearPackCache } =
+            await import(`${MODULE_PATH}/system/ironswornPacks.js`);
+          const { buildCanonicalMoveBlock } = await import(`${MODULE_PATH}/moves/interpreter.js`);
+          _clearPackCache();
+          if (!game.packs?.get?.("foundry-ironsworn.starforgedmoves")) { this.skip(); return; }
+          if (!await getCanonicalMove("face_danger")) { this.skip(); return; } // pack present but slug not found
+          const block = await buildCanonicalMoveBlock("face_danger");
+          assert.include(block, "<canonical_move>", "the Face Danger document's text should build the block");
+          assert.match(block, /something risky/i, "the block should hold Face Danger's own text");
+          assert.notInclude(block, "@Compendium", "move links should be reduced to their labels");
+        });
+
         it("listCanonicalEncounters returns at least one encounter when the pack is installed", async function () {
           this.timeout(15000);
           const { listCanonicalEncounters, _clearPackCache } =
@@ -8291,6 +8307,24 @@ function registerPrivateChannelTests(quench) {
         });
       });
 
+      describe("window", function () {
+        // Foundry's base ApplicationV2 inserts nothing into the window: a class
+        // with no _replaceHTML opened empty (issue #345 AA02).
+        it("opens with its transcript, text box and Send button in the window", async function () {
+          this.timeout(20000);
+          const { PrivateChannelApp } = await import(`${MODULE_PATH}/private-channel/app.js`);
+          const app = await PrivateChannelApp.open({ userId: game.user.id });
+          try {
+            const el = app.element;
+            assert.isOk(el?.querySelector?.("[data-pc-transcript]"), "the window shows the transcript");
+            assert.isOk(el?.querySelector?.("[data-pc-input]"), "the window shows its text box");
+            assert.isOk(el?.querySelector?.('[data-action="send"]'), "the window shows its Send button");
+          } finally {
+            await app.close();
+          }
+        });
+      });
+
       describe("transcript persistence", function () {
         it("writes a per-player journal (player OWNER) and reads the session page back", async function () {
           this.timeout(20000);
@@ -12173,6 +12207,7 @@ function registerPromptContractTests(quench) {
         lastSession: "Last session the crew slipped out of Bleakhold with stolen charts.",
         privateLine: "Spiders",
         chronicle:   "QUENCH CONTRACT: the crew fled Bleakhold with the charts.",
+        pinnedEntry: "QUENCH CONTRACT: she swore never to fly for the Covenant.",
         sitter:      "Jin Okafor (contract)",
         roundSeed:   "QUENCH SEED: a cargo drone drifts loose across the bay",
       };
@@ -12327,9 +12362,13 @@ function registerPromptContractTests(quench) {
         const galley = await import(`${MODULE_PATH}/session/galleyVignette.js`);
         const { narrateSessionVignette } = await narrator();
         const cs = state();
+        // As Begin a Session runs it: the PCs at the table are its CHARACTER
+        // blocks (issue #345 AA31).
+        const participants = galley.collectGalleyParticipants(cs);
         await narrateSessionVignette({
-          userMessage: galley.buildGalleyVignetteUserMessage(galley.collectGalleyParticipants(), cs),
+          userMessage: galley.buildGalleyVignetteUserMessage(participants, cs),
           campaignState: cs,
+          actorIds: participants.active.map(p => p.actor?.id).filter(Boolean),
         });
       } };
       const CLOSING = { name: "End Session vignette", marker: "CLOSING VIGNETTE", run: async () => {
@@ -12501,12 +12540,16 @@ function registerPromptContractTests(quench) {
           const { applySidecar, applySceneFrame } = await import(`${MODULE_PATH}/factContinuity/ledgers.js`);
           const { collectAllEntities } = await import(`${MODULE_PATH}/context/relevanceResolver.js`);
           const { mintSession }       = await import(`${MODULE_PATH}/session/lifecycle.js`);
-          const { addChronicleEntry } = await import(`${MODULE_PATH}/character/chronicle.js`);
+          const { addChronicleEntry, getChronicleEntries, setChronicleEntryPinned } = await import(`${MODULE_PATH}/character/chronicle.js`);
 
           // A second PC; a vow on the first one's sheet; a chronicle for the recap.
           fx.pcB = await Actor.create({ name: N.pcB, type: "character", system: { pronouns: "he/him" } });
           await createCharacterVowItem(fx.pcA, { name: N.vow, rank: "dangerous", vowId: "quench-contract-vow" });
           await addChronicleEntry(fx.pcA.id, { type: "discovery", text: N.chronicle, automated: true, sessionId: "quench-contract-s1" });
+          // A pinned entry, which the first PC's CHARACTER block carries (issue #345 AA07).
+          await addChronicleEntry(fx.pcA.id, { type: "moment", text: N.pinnedEntry, automated: false, sessionId: "quench-contract-s1" });
+          const pin = (await getChronicleEntries(fx.pcA.id)).find(e => e?.text === N.pinnedEntry);
+          if (pin) await setChronicleEntryPinned(fx.pcA.id, pin.id, true);
 
           // The sector's cast: an NPC with a goal, a lawless settlement, the command vehicle.
           const sector = { id: "quench-contract-sector", name: N.sector, region: "terminus", regionLabel: "Terminus", trouble: "Pirates raid the lanes" };
@@ -12584,6 +12627,7 @@ function registerPromptContractTests(quench) {
             if (mode.speaker || !fx.otherPcs.length) {
               assert.include(character.text, N.pcA, `${mode.name}: CHARACTER is the speaking (or first) PC`);
               assert.include(character.text, N.vow, `${mode.name}: CHARACTER lists the PC's open vow`);
+              assert.include(character.text, N.pinnedEntry, `${mode.name}: CHARACTER carries the PC's pinned Chronicle entry (issue #345 AA07)`);
             }
           });
         }

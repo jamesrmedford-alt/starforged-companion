@@ -656,6 +656,27 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     }
   }
 
+  // Make a Connection with an NPC the table already knows (issue #345 AA19):
+  // the move makes a connection of "an existing relationship" too, but the
+  // detection leaves an established NPC out (its prompt, the parse and the
+  // gate above) and a name the GM dismissed likewise — the move card said
+  // "Connection made" and nothing was made. The one known NPC the hit's
+  // narration names becomes the roller's connection: a listed NPC card gets
+  // their bond Item, and a connection row the GM dismissed is un-dismissed
+  // and confirmed as theirs. Naming several, none is guessed: the GMs are told.
+  for (const slot of slots) {
+    if (slot.done || !slot.names || removed()) continue;
+    const made = await connectKnownNpc(slot, campaignState, { namingText: options.namingText, narrationId })
+      .catch(err => {
+        console.warn(`${MODULE_ID} | routeEntityDrafts: connecting the known NPC failed:`, err?.message ?? err);
+        return null;
+      });
+    if (made) {
+      slot.done = true;
+      created.push(made);
+    }
+  }
+
   if (removed()) return { created, queued: [] };
   if (queued.length) {
     await postDraftEntityCard(queued, campaignState, {
@@ -673,12 +694,19 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
  * and a pending row its `namingText` names. A Batch Mode round's hits
  * (`connectionRollers`) each take only a figure their `owns` gives their own
  * roller (issue #342 Z09: the round's first connection, whoever met them,
- * went to the first hit's roller with that roller's seed).
+ * went to the first hit's roller with that roller's seed), and a pending row
+ * only when the round's `namingText` — its lines and its narration — names it
+ * too, as free-flow's must (issue #345 AA09: `owns` alone gave a one-PC
+ * round every row, and read a two-PC round's off the row's old description,
+ * so the first pending row on the newest card — an NPC the round never
+ * mentioned — was confirmed and bonded to the roller).
  *
  * @param {Object} options — routeEntityDrafts' options
  * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, done: boolean }>}
  */
 function connectionSlots(options) {
+  const hay = String(options.namingText ?? "");
+  const named = hay.trim() ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(hay) : null;
   if (Array.isArray(options.connectionRollers)) {
     return options.connectionRollers
       .filter(r => r && typeof r.owns === "function")
@@ -686,17 +714,16 @@ function connectionSlots(options) {
         actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
         connectionSeed: r.connectionSeed ?? null,
         takes:          (entity) => r.owns(entity) === true,
-        names:          (draft) => r.owns(draft) === true,
+        names:          named ? (draft) => named(draft) && r.owns(draft) === true : null,
         done:           false,
       }));
   }
   if (!options.autoCreateConnection) return [];
-  const hay = String(options.namingText ?? "");
   return [{
     actorId:        options.actorId ?? null,
     connectionSeed: options.connectionSeed ?? null,
     takes:          () => true,
-    names:          hay.trim() ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(hay) : null,
+    names:          named,
     done:           false,
   }];
 }
@@ -765,6 +792,10 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
       console.warn(`${MODULE_ID} | applyEntityRenames: ${from} → ${to} failed:`, err?.message ?? err);
       continue;
     }
+    // A revealed name the GM once dismissed from a draft card is hers now:
+    // dismissed, it kept her card out of the narrator's name index for good
+    // (issue #345 AA55).
+    await undismissRecordName(to, campaignState);
     // The revealing narration recorded its facts under the new name as a
     // text subject (no card was named that yet): they join the renamed card,
     // as a new entity's do (issue #326 W68 — they neither rendered on the
@@ -2024,10 +2055,11 @@ function draftBondHolder(message, opts) {
  *
  * @param {ChatMessage} message — the draft card
  * @param {number} draftIndex
- * @param {{ actorId?: string|null, noBond?: boolean, narrationId?: string|null }} [opts] —
+ * @param {{ actorId?: string|null, noBond?: boolean, narrationId?: string|null, dismissed?: boolean }} [opts] —
  *   `narrationId`: the Make a Connection narration confirming the row,
  *   stamped on the connection with the row (`createdFromNarrationId`,
- *   `createdFromDraft`)
+ *   `createdFromDraft`); `dismissed`: a row the GM dismissed is confirmed too
+ *   (that Make a Connection named it — connectKnownNpc)
  * @returns {Promise<Object|null>}
  */
 async function confirmDraft(message, draftIndex, opts = {}) {
@@ -2035,7 +2067,8 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     ? [...message.flags[MODULE_ID].drafts]
     : [];
   const draft = drafts.find(d => d.index === draftIndex);
-  if (!draft || draft.status !== "pending") return null;
+  // A dismissed row only for a Make a Connection that names it (connectKnownNpc — issue #345 AA19).
+  if (!draft || !(draft.status === "pending" || (opts.dismissed === true && draft.status === "dismissed"))) return null;
 
   const creator = ENTITY_CREATORS[draft.type];
   if (!creator) {
@@ -2274,8 +2307,9 @@ async function completeListedEntity(draft, campaignState) {
  *
  * @param {(draft: Object) => boolean} names — whether the move's narration
  *   names a row as its roller's: free-flow's, the row's full name in the
- *   player's narration and the narrator's; a round's hit, the row's figure
- *   its roller met (connectionSlots — issue #342 Z09)
+ *   player's narration and the narrator's; a round's hit, a row the round
+ *   names so whose figure its roller met (connectionSlots — issue #342 Z09,
+ *   #345 AA09)
  * @param {string|null} actorId — the roller
  * @param {string|null} [narrationId] — the Make a Connection's narration
  * @returns {Promise<{ entity: Object, record: Object }|null>}
@@ -2295,6 +2329,139 @@ async function confirmNamedPendingConnection(names, actorId, narrationId = null)
     }
   }
   return null;
+}
+
+/**
+ * A Make a Connection hit that made no one, on an NPC the table already knows
+ * (issue #345 AA19). The move covers "an existing relationship" ("When you
+ * search out a new relationship or give focus to an existing relationship"),
+ * but the detection pass leaves an established NPC out, and a name the GM
+ * dismissed too, so the move card said "Connection made" while nothing was
+ * made. The known NPCs the hit's narration names (the full name, whole words,
+ * and the slot's own rule — a round hit's figure its roller met) are:
+ *   - an active listed connection — Kira's contact Vance, whom Ren now makes
+ *     his own: the bond Item goes on the roller (idempotent per PC and
+ *     connection, as a draft Confirm of an existing NPC — known-issues
+ *     BOND-ITEM-AFTER-RELIST); no second card is made;
+ *   - a connection row the GM dismissed from a draft card: the name is
+ *     un-dismissed and the row confirmed as the roller's, as a pending row is
+ *     (confirmNamedPendingConnection, W23's stamps — an X-Card on this
+ *     narration puts the row back to pending).
+ * A name in both is the listed NPC, un-dismissed (a dismissed name keeps a
+ * record out of the narrator's name index). Several named: nothing is
+ * guessed, and the GMs are whispered which.
+ *
+ * @param {{ actorId: string|null, names: Function }} slot — the hit (connectionSlots)
+ * @param {Object} campaignState
+ * @param {{ namingText?: string, narrationId?: string|null }} opts
+ * @returns {Promise<{ entity: Object, record: Object }|null>}
+ */
+async function connectKnownNpc(slot, campaignState, { namingText = "", narrationId = null } = {}) {
+  const hay = String(namingText ?? "");
+  if (!hay.trim()) return null;
+  const named = (figure) => {
+    const name = String(figure?.name ?? "").trim();
+    return !!name && wholeWordPattern(name).test(hay) && slot.names(figure) === true;
+  };
+  const store = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState ?? {};
+  const dismissed = new Set((store.dismissedEntities ?? []).filter(n => typeof n === "string").map(normalizeEntityName));
+
+  const listed = [];
+  for (const id of campaignState?.connectionIds ?? []) {
+    let rec = null;
+    try { rec = getConnection(id); } catch { continue; }
+    if (rec?._id && rec.active !== false && named(rec)) listed.push(rec);
+  }
+  const rows = [];   // the newest dismissed connection row per name
+  for (const message of [...(globalThis.game?.messages?.contents ?? [])].reverse()) {
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.draftEntityCard) continue;
+    for (const draft of Array.isArray(f.drafts) ? f.drafts : []) {
+      if (draft?.type !== "connection" || draft.status !== "dismissed") continue;
+      const key = normalizeEntityName(draft.name);
+      if (!key || !dismissed.has(key) || rows.some(r => r.key === key) || !named(draft)) continue;
+      rows.push({ key, message, draft });
+    }
+  }
+
+  const keys = new Set([...listed.map(r => normalizeEntityName(r.name)), ...rows.map(r => r.key)]);
+  if (keys.size === 0) return null;
+  if (keys.size > 1) {
+    const names = [...new Set([...listed.map(r => r.name), ...rows.map(r => r.draft.name)])];
+    console.warn(`${MODULE_ID} | make a connection: the narration names several known NPCs (${names.join(", ")}) — none was made the roller's connection.`);
+    await postKnownNpcsNotice(names, slot.actorId);
+    return null;
+  }
+  const [key] = keys;
+  if (dismissed.has(key)) {
+    await undismissEntityName(key).catch(err =>
+      console.warn(`${MODULE_ID} | make a connection: un-dismissing the name failed:`, err?.message ?? err));
+  }
+  if (listed.length) {
+    const record = listed[0];
+    await registerConnectionOnActiveCharacter(record, { actorId: slot.actorId });
+    return { entity: { type: "connection", name: record.name }, record };
+  }
+  const { message, draft } = rows[0];
+  const record = await confirmDraft(message, draft.index, { actorId: slot.actorId, narrationId, dismissed: true });
+  return record ? { entity: draft, record } : null;
+}
+
+/** Take a name off the dismissed list (by normalizeEntityName), on the GM's campaignState write chain. */
+async function undismissEntityName(key, label = "make a connection undismiss") {
+  await serialiseCampaignStateWrite(() => {
+    const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+    const list = Array.isArray(latest.dismissedEntities) ? latest.dismissedEntities : [];
+    const kept = list.filter(n => normalizeEntityName(n) !== key);
+    if (kept.length === list.length) return undefined;
+    return globalThis.game.settings.set(MODULE_ID, "campaignState", { ...latest, dismissedEntities: kept });
+  }, label);
+}
+
+/**
+ * A name a record has just taken comes off the Dismissed list (issue #345
+ * AA55). A draft card's Dismiss vetoes the detector's suggestion of a name,
+ * but the name index leaves out every record whose name is dismissed
+ * (relevanceResolver indexNames), so a placeholder renamed onto a name the GM
+ * once dismissed — an identity reveal, or the GM's own sidebar rename —
+ * vanished from the narrator: no card when she was named, her facts filed as
+ * text. A name a record holds is the table's again, as a Make a Connection's
+ * (AA19). Also off `campaignState` — the caller's copy — once the store took
+ * it. GM only; never throws (a refused write is logged).
+ *
+ * @param {string} name — the record's new name
+ * @param {Object} [campaignState] — the caller's copy
+ * @returns {Promise<boolean>} whether the name was dismissed
+ */
+export async function undismissRecordName(name, campaignState = null) {
+  const key = normalizeEntityName(name);
+  if (!key || !globalThis.game?.user?.isGM) return false;
+  const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+  const held = (list) => Array.isArray(list) && list.some(n => typeof n === "string" && normalizeEntityName(n) === key);
+  if (!held(stored.dismissedEntities) && !held(campaignState?.dismissedEntities)) return false;
+  try {
+    await undismissEntityName(key, "record name undismiss");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | un-dismissing "${name}" (a record now holds it) failed:`, err?.message ?? err);
+    return false;
+  }
+  if (held(campaignState?.dismissedEntities)) {
+    campaignState.dismissedEntities = campaignState.dismissedEntities.filter(n => normalizeEntityName(n) !== key);
+  }
+  console.log(`${MODULE_ID} | "${name}" is a record's name now — taken off the Dismissed list.`);
+  return true;
+}
+
+/** GM whisper: a Make a Connection hit named several known NPCs, so none was made the roller's (issue #345 AA19). */
+async function postKnownNpcsNotice(names, actorId) {
+  const who = (actorId ? globalThis.game?.actors?.get?.(actorId)?.name : null) ?? "the character";
+  const list = names.map(n => `<strong>${escapeHtml(n)}</strong>`).join(", ");
+  await globalThis.ChatMessage?.create?.({
+    content: `<div class="sf-ptp-card"><strong>Make a Connection — no connection made</strong>`
+      + `<p>The narration names more than one NPC the table already knows (${list}), so none was made ${escapeHtml(who)}'s connection. Add the right one on ${escapeHtml(who)}'s sheet.</p></div>`,
+    whisper: collectGmIds(),
+    flags:   { [MODULE_ID]: { knownNpcsConnectionNotice: true } },
+  }).catch(err => console.warn(`${MODULE_ID} | make a connection: the notice failed:`, err?.message ?? err));
 }
 
 async function handleDraftDismiss(message, draftIndex) {

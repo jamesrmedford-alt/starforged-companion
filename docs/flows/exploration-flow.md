@@ -134,11 +134,13 @@ passage" drawing.
   the name resolves, the current location is the place the position record
   the arrival just wrote names (`maybeUpdateShipPositionFromName`'s return —
   its location, else settlement, else planet): the position's word scan finds
-  "Bleakhold" in "the expedition to Bleakhold", the name resolver only a
-  place whose name holds the whole label, so the ship docked there while the
+  "Bleakhold" in "the expedition to Bleakhold", the name resolver then only a
+  place whose name held the whole label, so the ship docked there while the
   current location stayed where the crew set out (known-issues
-  ARRIVAL-LOCATION-PHRASE-SPLIT). A record that names no place (free text)
-  leaves it. The Entities panel's "Set as
+  ARRIVAL-LOCATION-PHRASE-SPLIT; since issue #345 AA23 the resolver's last
+  rung is whole words either way, which finds a place named in words around
+  it too — the position's scan still adds a name part, "Kovash" for the
+  Kovash Hulk). A record that names no place (free text) leaves it. The Entities panel's "Set as
   current location" moves the ship as `!at` does — the shared
   `maybeUpdateShipPositionFromName`, source `at_command`, with the entity's
   id (`{ entityId }`) — so the narrator no longer gets two locations (issue
@@ -146,9 +148,15 @@ passage" drawing.
   campaignState, so a refused write leaves the GM's cache as it was (U58).
   `!at` docks the ship at the place it resolved, by that place's id — it was
   re-inferred from the typed name, so a fragment ("Bleak") was free text
-  (known-issues AT-PARTIAL-NAME-SHIP) — and every resolver by name
+  (known-issues AT-PARTIAL-NAME-SHIP) — its pick is the exact name, a name
+  it begins ("Bleak"), then one name inside the other as whole words, either
+  way (W30's rule: the raw substring rung found "home" inside "Rockhome", and
+  a Set a Course or `!at` "home" docked the ship there — issue #345 AA23) —
+  and every resolver by name
   (`resolveCurrentLocationName`; `inferShipPosition`'s index, for the
-  narrator's ship / position too) takes the active sector's namesake first,
+  narrator's ship / position too; and since issue #345 AA06 the narrator's
+  roster, `collectAllEntities` — its sidecar subjects, relevance and a scene
+  fact's place) takes the active sector's namesake first,
   as the site ladder does (U48): generated site names repeat across sectors,
   and the older sector's derelict became the current location, the ship's
   position and its token's place on that sector's map (issue #342 Z15).
@@ -201,7 +209,13 @@ pin, §1) and `currentLocationId` follow the site the same move charts; the
 crew names an unexplored site in their own words (its pin reads "Unexplored
 Site"), so the label alone resolved to no place and all three stayed on the
 settlement they had left (issue #342 Z14). An expedition for no site arrives
-at the place its label names; the Set a Course feedback card ("Course held cleanly (+1
+at the place its label names — the label of the expedition the move
+completes, the track ladder's pick (`expeditionArrival`), then the line's own
+words when the label names no tracked place (an expedition begun with no
+destination named, `UNNAMED_EXPEDITION_LABEL`, names none): a typed finish
+that named no destination, or named it in words of its own, completed the
+expedition and left the ship, its token and `currentLocationId` where the crew
+set out, read from `moveTarget` alone (issue #345 AA22); the Set a Course feedback card ("Course held cleanly (+1
 momentum)") is Set a Course's alone (issue #326 W46). Miss leaves the track open and posts the recommit offer
 (below, "Advisory-only branches"): its **🔁 Recommit** relays
 `expedition.recommit` to the canonical GM (`cardActions.applyRecommitOffer`),

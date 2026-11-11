@@ -17,6 +17,9 @@ import { wholeWordsFit } from "../context/relevanceResolver.js";
 export const EXPEDITION_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"];
 export const DEFAULT_EXPEDITION_RANK = "dangerous";
 
+/** The label of an expedition begun with no destination named — it names no place. */
+export const UNNAMED_EXPEDITION_LABEL = "Expedition";
+
 /**
  * Coerce an interpreter-supplied (LLM-inferred) rank to a valid rank, falling
  * back to `dangerous`. The inferred rank is a best guess — the player can
@@ -112,7 +115,7 @@ export async function applyExpeditionProgress({ moveTarget, moveTargetId = null,
 
   if (!track) {
     const rank  = normalizeExpeditionRank(expeditionRank);
-    const label = (moveTarget && String(moveTarget).trim()) ? String(moveTarget).trim() : "Expedition";
+    const label = (moveTarget && String(moveTarget).trim()) ? String(moveTarget).trim() : UNNAMED_EXPEDITION_LABEL;
     track   = await deps.createTrack({ label, type: "expedition", rank });
     created = true;
   }

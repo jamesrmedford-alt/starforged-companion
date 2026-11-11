@@ -266,10 +266,17 @@ To decide which `<h3>v…</h3>` heading to add or merge into:
 
 If the latest help heading is BELOW the fetched latest tag (i.e. it
 represents work that already shipped under a higher tag without the
-heading being updated), the correct repair is to rename that heading to
-`vCURRENT + 1` and bump `CONTENT_VERSION` to match — do not invent
-back-dated headings for the skipped releases unless explicitly asked.
-Surface the gap to the user.
+heading being updated — a minor or major release jumps past it), the
+correct repair is to rename that heading to the tag that shipped it,
+`vCURRENT` — the version `CHANGELOG.md`'s promotion gives the same notes,
+so the two changelogs agree — and to file the new work under a new
+`vCURRENT + 1` heading, with `CONTENT_VERSION` matching that one. Do not
+invent back-dated headings for the skipped releases unless explicitly
+asked. Surface the gap to the user. (Issue #345 D7: v1.8.0 shipped notes
+headed v1.7.37; the old repair — rename to `vCURRENT + 1` — would have
+filed them under v1.8.1 while `CHANGELOG.md` promoted them to `[1.8.0]`.)
+`tests/unit/helpChangelogVersionPin.test.js` fails while the newest help
+heading is below the newest tag merged into `HEAD` (where tags are fetched).
 
 **When in doubt, ask the user what the next release version should be.**
 The fetch is the default, but if the situation is ambiguous (e.g. a

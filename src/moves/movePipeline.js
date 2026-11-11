@@ -65,7 +65,7 @@ import { selectCombatTrack } from "./combat.js";
 import { selectConnection, planDevelopRelationship, buildConnectionSuggestion } from "./developRelationship.js";
 import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "./sceneChallenge.js";
 import { moveDisplayName } from "../system/i18n.js";
-import { buildMilestoneSuggestion, selectFulfilVow } from "./milestone.js";
+import { buildMilestoneSuggestion, selectFulfilVow, selectForsakeVow } from "./milestone.js";
 import { extractRiders } from "./consequenceRiders.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
 import { getCurrentSiteKind } from "../entities/location.js";
@@ -343,6 +343,26 @@ export async function readMove({
     }
   }
 
+  // Forsake Your Vow clears a vow on every copy, and cannot be undone: the
+  // roller's own (selectForsakeVow) — by name as Fulfill's, unnamed their one
+  // open vow (a shared vow once); among several, or for a name none of theirs
+  // answers to, it asks which, nothing cleared yet. The vow found rides the
+  // interpretation, the copy the branch after the move clears (issue #345
+  // AA16: two open copies table-wide cleared nothing behind "Vow cleared.";
+  // AA49: a crewmate's exact-name vow beat the roller's whole-word one).
+  if (interpretation.moveId === "forsake_your_vow" && !interpretation.moveTargetId) {
+    const { vow, choices, completed } = selectForsakeVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
+      { rollerActorId: rollerActor?.id ?? null });
+    if (vow) {
+      interpretation.moveTargetId = vow.id;
+      interpretation.moveTarget   = vow.name || (interpretation.moveTarget ?? null);
+    } else if (completed) {
+      targetChoice = { kind: "vow-gone" };
+    } else if (choices.length) {
+      targetChoice = { kind: "vow", vows: choices, moveId: "forsake_your_vow" };
+    }
+  }
+
   // Continue a Legacy rolls each legacy track by name. Naming none, it
   // scored 0 — "progress (0 ticks)", a certain miss — and nothing on the
   // card said no track was found (issue #331 X63). Ask which track
@@ -363,7 +383,10 @@ export async function readMove({
   // abilities that apply to the chosen move. Surfaced on the
   // confirmation dialog as opt-in checkboxes — accepted abilities
   // add their +N to interpretation.adds before the dice are rolled.
+  // An Aid Your Ally's are also those of the move it is made as (issue #345
+  // AA11) — Gain Ground while a fight is open, as it is rolled.
   const commandShipForScan      = getCommandVehicleActor(campaignState);
+  const inFight = await aidMadeInFight(interpretation.moveId);
   const applicableAbilities = await scanForApplicableAbilities({
     moveId:           interpretation.moveId,
     moveName:         interpretation.moveName,
@@ -371,6 +394,7 @@ export async function readMove({
     characterActor:   rollerActor,
     commandShipActor: commandShipForScan,
     apiKey,
+    inFight,
   }).catch(err => {
     console.warn(`${MODULE_ID} | ability scan failed:`, err);
     return [];
@@ -387,6 +411,7 @@ export async function readMove({
           abilities: applicableAbilities,
           moveName:  interpretation.moveName,
           apiKey,
+          inFight,
         }).catch(err => {
           console.warn(`${MODULE_ID} | rider extraction failed:`, err?.message ?? err);
           return [];
@@ -423,7 +448,8 @@ export async function postTargetChoiceCard(read, { narration, speakerActorId }) 
     await postTrackGoneCard(interpretation).catch(err =>
       console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
   } else if (targetChoice?.kind === "vow") {
-    await postWhichVowCard({ narration, actorId: rollerActor?.id ?? null, vows: targetChoice.vows }).catch(err =>
+    await postWhichVowCard({ narration, actorId: rollerActor?.id ?? null, vows: targetChoice.vows,
+      moveId: targetChoice.moveId ?? "fulfill_your_vow" }).catch(err =>
       console.warn(`${MODULE_ID} | which-vow card failed:`, err?.message ?? err));
   } else if (targetChoice?.kind === "legacy") {
     await postWhichLegacyCard({
@@ -464,9 +490,8 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     ? readAs.forced
     : (readAs?.moveId ? { moveId: readAs.moveId, moveTargetId: readAs.moveTargetId ?? null } : null);
   const speakerName = (speakerActorId ? game.actors?.get(speakerActorId)?.name : null) ?? null;
-  let pacing = null;
   if (!readAs?.move) {
-    pacing = await decidePacing({
+    const pacing = await decidePacing({
       playerText: text, campaignState, character: speakerName ? { name: speakerName } : null,
       apiKey, ignoreForceMove: true,
     });
@@ -477,7 +502,6 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
       const suggestedMove = suppressPcDirectedSocialMove(pacing.suggestedMove ?? null, text, speakerName);
       return {
         kind:              READING_KIND.NARRATIVE,
-        decision:          pacing.decision,
         suggestedMove:     suggestedMove ?? null,
         suggestedTargetId: suggestedMove ? (pacing.suggestedTargetId ?? null) : null,
       };
@@ -489,19 +513,22 @@ export async function readAction({ text, speakerActorId, campaignState, apiKey, 
     swearToConnection: forced?.swearToConnection ?? null,
     gatherChoices: true,
   });
-  return readingFromMove(read, { forced, decision: pacing?.decision ?? "MOVE" });
+  return readingFromMove(read, { forced });
 }
 
 /**
  * A readMove result as a stored reading: what the window shows (the move,
  * stat, rationale, Mischief aside, abilities, stat substitutions, target
- * choices) and the interpretation the roll starts from.
+ * choices) and the interpretation the roll starts from. Not the pacing
+ * decision, nor the roller's position as read: nothing read either — the
+ * roll reads the position when it is made, later than the reading (issue
+ * #345 AA41).
  *
  * @param {Object} read — readMove's result
- * @param {{ forced?: Object|null, decision?: string }} [opts]
+ * @param {{ forced?: Object|null }} [opts]
  * @returns {Object}
  */
-function readingFromMove(read, { forced = null, decision = "MOVE" } = {}) {
+function readingFromMove(read, { forced = null } = {}) {
   const interpretation = jsonCopy(read.interpretation ?? {});
   const abilities = Array.isArray(interpretation.applicableAbilities) ? interpretation.applicableAbilities : [];
   const statOptions = [...new Set(abilities
@@ -509,7 +536,6 @@ function readingFromMove(read, { forced = null, decision = "MOVE" } = {}) {
     .filter(Boolean))];
   return {
     kind:           READING_KIND.MOVE,
-    decision,
     moveId:         interpretation.moveId ?? null,
     moveName:       interpretation.moveName ?? (interpretation.moveId ? moveDisplayName(interpretation.moveId) : null),
     statUsed:       interpretation.statUsed ?? null,
@@ -519,7 +545,6 @@ function readingFromMove(read, { forced = null, decision = "MOVE" } = {}) {
     statOptions,
     targetChoices:  targetOptionsFrom(read.targetChoice),
     blocked:        read.targetChoice?.kind === "vow-gone" ? "vow-gone" : null,
-    combatPosition: read.combatPosition ?? null,
     forced: forced ? {
       tokenDragSetCourse:     forced.tokenDragSetCourse ?? null,
       incitingSwearMessageId: forced.incitingSwearMessageId ?? null,
@@ -616,6 +641,39 @@ function jsonCopy(value) {
   return JSON.parse(JSON.stringify(value ?? null));
 }
 
+/**
+ * The roller's asset whose checked ability offered the stat substitution the
+ * confirm chose — the Snub Fighter of "you may roll +integrity", the Survey
+ * Bot of "roll +its health" — or null when none, or several, did (issue #345
+ * AA10). A command vehicle module's is not the roller's (its "+integrity" is
+ * the command vehicle's).
+ *
+ * @param {Object} interpretation — confirmed: `applicableAbilities`, `appliedAbilityKeys`
+ * @param {string} stat — the substituted stat
+ * @returns {string|null}
+ */
+function substitutingAssetId(interpretation, stat) {
+  const keys = new Set(Array.isArray(interpretation?.appliedAbilityKeys) ? interpretation.appliedAbilityKeys : []);
+  const ids = new Set((Array.isArray(interpretation?.applicableAbilities) ? interpretation.applicableAbilities : [])
+    .filter(a => keys.has(a?.key) && a.statReplacement === stat && a.source === "character" && a.assetId)
+    .map(a => a.assetId));
+  return ids.size === 1 ? [...ids][0] : null;
+}
+
+/**
+ * Is this move an Aid Your Ally made while a fight is open? It is then made as
+ * Gain Ground, else as Secure an Advantage (issue #325 W17) — how it is
+ * resolved, and the move whose asset abilities apply to it (issue #345 AA11).
+ * False for any other move (no track is read).
+ *
+ * @param {string|null} moveId
+ * @returns {Promise<boolean>}
+ */
+async function aidMadeInFight(moveId) {
+  if (moveId !== "aid_your_ally") return false;
+  return (await listProgressTracks().catch(() => [])).some(t => t.type === "combat" && !t.completed);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 3 — roll the move
 // ─────────────────────────────────────────────────────────────────────────────
@@ -694,6 +752,10 @@ export async function rollMove({
   if (subStat) {
     interpretation.statSubstitutedFrom = interpretation.statUsed;
     interpretation.statUsed = subStat;
+    // The roller's asset whose checked ability offered it: a vehicle's
+    // "+integrity" or a companion's "+its health" is that asset's own track
+    // (statEnrichment — issue #345 AA10).
+    interpretation.statSubstitutedAssetId = substitutingAssetId(interpretation, subStat);
   }
 
   // Fill in statValue from the speaker's character sheet. The
@@ -755,10 +817,14 @@ export async function rollMove({
   // certain miss with its consequences (issue #306 R06, #321 U02). A scene
   // challenge's Finish the Scene too (issue #326 D6 made it a progress move
   // after R06): a second finish, or a stale row, rolled a certain miss and
-  // paid its price for a scene already over (issue #342 Z07).
+  // paid its price for a scene already over (issue #342 Z07). And a Forge a
+  // Bond picked on a connection picker: a connection severed or deleted
+  // since was rolled at 0, and one bonded since (its id resolves nothing
+  // for a forge — selectConnection `unbonded`) said "Legacy reward marked"
+  // over a forge that marked nothing (issue #345 AA50).
   if (interpretation.moveTargetId
       && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow"
-        || tickInfo?.source === "scene_challenge")
+        || tickInfo?.source === "scene_challenge" || tickInfo?.source === "connection")
       && !tickInfo.trackId) {
     await postTrackGoneCard(interpretation).catch(err =>
       console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
@@ -831,8 +897,7 @@ export async function rollMove({
   const momentum = rollerActor ? readMomentumState(rollerActor).value : null;
   // Aid Your Ally resolves as Gain Ground while a fight is open, else as
   // Secure an Advantage (issue #325 W17).
-  const inFight = interpretation.moveId === "aid_your_ally"
-    && (await listProgressTracks().catch(() => [])).some(t => t.type === "combat" && !t.completed);
+  const inFight = await aidMadeInFight(interpretation.moveId);
   const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite, momentum, inFight });
   // resolveMove leaves the id to its caller. The move card's Burn / Improve
   // flags and the narration card both carry it, and superseding the
@@ -1190,18 +1255,22 @@ export async function rollMove({
   // achieved. The resolver's cost sufferPrompt rides separately.
   if (resolution.consequences?.forsakeVow && game.user.isGM) {
     try {
-      // The roller's own vow first (issue #301 B02) — never another PC's
-      // vow that shares the name.
+      // The roller's own vow (issue #301 B02) — the copy readMove chose
+      // (moveTargetId: selectForsakeVow, or a "Which vow?" pick), else theirs
+      // by name; never a crewmate's (`ownOnly`, issue #345 AA49).
       const { primary, copies } = resolveVowItemCopies(interpretation.moveTarget ?? null,
-        { actorId: rollerActor?.id ?? null });
-      const fin = await finishVow(
-        { moveTarget: interpretation.moveTarget ?? primary?.item?.name ?? null, ranksDown: 0 },
-        {
-          listTracks:    () => listProgressTracks(),
-          completeTrack: (id) => completeProgressTrack(id),
-        },
-      ).catch(() => null); // journal twin close — legacyTicks deliberately unused
+        { actorId: rollerActor?.id ?? null, itemId: interpretation.moveTargetId ?? null, ownOnly: true });
+      // Its journal twin, by the vow's own name — none without a vow: the
+      // sole open journal track, or a crewmate's twin of the name the move
+      // gave, is no vow of the roller's (issue #345 AA16).
       if (primary) {
+        await finishVow(
+          { moveTarget: primary.item?.name ?? interpretation.moveTarget ?? null, ranksDown: 0 },
+          {
+            listTracks:    () => listProgressTracks(),
+            completeTrack: (id) => completeProgressTrack(id),
+          },
+        ).catch(() => null); // journal twin close — legacyTicks deliberately unused
         for (const { actor, item } of copies) {
           if (item.system?.completed !== true) {
             await completeVowItem(actor, item.id).catch(err =>
@@ -1220,11 +1289,14 @@ export async function rollMove({
         }
         await postForsakeVowCard(primary.item.name).catch(err =>
           console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));
-      } else if (fin?.track) {
-        await postForsakeVowCard(fin.track.label).catch(err =>
-          console.warn(`${MODULE_ID} | forsake card failed:`, err?.message ?? err));
       } else {
-        console.warn(`${MODULE_ID} | forsake: no vow matched "${interpretation.moveTarget ?? "?"}" — nothing cleared.`);
+        // No open vow of the roller's to clear: the move card says so and
+        // offers no costs — it said "Vow cleared." and offered them while
+        // every vow stayed open, the miss on the GM's console alone (issue
+        // #345 AA16; "No silent no-op on a player's action").
+        console.warn(`${MODULE_ID} | forsake: no vow of ${rollerActor?.name ?? "the roller"}'s matched "${interpretation.moveTarget ?? "?"}" — nothing cleared.`);
+        resolution.consequences = { ...resolution.consequences, sufferPrompt: null,
+          otherEffect: `No open vow of ${rollerActor?.name ?? "the character"}'s to forsake — no vow was cleared, and no cost is owed.` };
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | forsake vow failed:`, err?.message ?? err);

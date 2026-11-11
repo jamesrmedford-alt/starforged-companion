@@ -233,6 +233,48 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
   return idleMs(campaignState, now) >= SESSION_IDLE_HOURS * 3_600_000;
 }
 
+// The session the canonical GM's world load is replacing (issue #342 Z24):
+// its mint (rollSessionIfDue) lands only after the summary finalise and the
+// scene close, and until it does the stored session still reads live — its
+// gate open, its id current. It is over at once: no Batch Mode round reads,
+// resolves or opens in it (batch/driver.js), and no typed line is narrated
+// into it after its LAST SESSION was taken — under its old id, lost to the
+// new session's ring too (index.js's chat gate, issue #345 AA58).
+let _sessionBeingReplaced = null;
+
+/**
+ * At the canonical GM's world load, before its mint starts: when the stored
+ * session is over (sessionNeedsMint), it is the one this load replaces.
+ *
+ * @param {Object} campaignState — as the load read it
+ */
+export function noteSessionBeingReplaced(campaignState) {
+  _sessionBeingReplaced = sessionNeedsMint(campaignState) ? (campaignState?.currentSessionId ?? "") : null;
+}
+
+/**
+ * The load's mint has landed: the session it replaced is no longer current.
+ * (A refused mint leaves the note: the stored session stays over until the
+ * next mint — a Begin a Session — changes its id.)
+ */
+export function noteSessionReplaced() {
+  _sessionBeingReplaced = null;
+}
+
+/**
+ * True while campaignState still holds the session this client's world load
+ * is replacing; false once the mint has landed (or a newer session is current).
+ *
+ * @param {Object} campaignState
+ * @returns {boolean}
+ */
+export function sessionBeingReplaced(campaignState) {
+  if (_sessionBeingReplaced === null) return false;
+  if ((campaignState?.currentSessionId ?? "") === _sessionBeingReplaced) return true;
+  _sessionBeingReplaced = null;
+  return false;
+}
+
 /**
  * Start a new session: keep the closing session's rolling summary as
  * `previousSessionSummary` (an older one stays when the closing session has
@@ -306,16 +348,18 @@ export function mintSession(campaignState, now = Date.now()) {
 
 /**
  * At world load and Begin a Session, on the canonical GM: when the session is
- * over (sessionNeedsMint), close it out and mint the next one. A session
- * nobody ended first gets its rolling summary brought up to date — End a
- * Session refreshes its own — so the summary carried forward covers all of
- * it. An ended session's is brought up to date only when it has no text: an
- * X-Card played on End's closing vignette empties a summary that covered the
- * beat it removed ("the next regen reads the remaining cards"), and no
- * narration of the ended session follows to regenerate it (issue #342 Z41 —
- * the session just played went missing from LAST SESSION). One End left with
- * text is kept as it is — it lacks only End's own closing vignette, not worth
- * a second summary call. Its scene closes under its own id, so migrated
+ * over (sessionNeedsMint), close it out and mint the next one. The closing
+ * session first gets its rolling summary brought up to date
+ * (finalizeSessionSummary, no call when it covers every card), so the summary
+ * carried forward covers all of it — an ended session's too. End a Session
+ * refreshes its own, but that refresh can fail or never land; a Batch Mode
+ * round resolving at End, or a move narrated while End runs, posts into the
+ * ended session after it (issue #345 AA21 — the mint kept any ended summary
+ * with text, and LAST SESSION missed the session's last beats); and an X-Card
+ * played on End's closing vignette empties a summary that covered the beat it
+ * removed (issue #342 Z41). End's own closing vignette, which posts after its
+ * refresh, is the one card left out of that check — not worth a second
+ * summary call. Its scene closes under its own id, so migrated
  * truths, whereabouts and strikes keep that session's number. Mutates
  * campaignState; endScene persists the scene fields itself, the caller
  * persists SESSION_MINT_FIELDS.
@@ -329,9 +373,7 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
   if (!sessionNeedsMint(campaignState, now)) return false;
   const closing = campaignState.currentSessionId;
   const ended   = !!closing && campaignState.sessionEndedId === closing;
-  const summary = campaignState.sessionSummary;
-  const summarised = !!closing && summary?.sessionId === closing && typeof summary?.text === "string" && !!summary.text.trim();
-  if (closing && (!ended || !summarised)) {
+  if (closing) {
     try {
       const { finalizeSessionSummary } = await import("../narration/narrator.js");
       await finalizeSessionSummary(campaignState);

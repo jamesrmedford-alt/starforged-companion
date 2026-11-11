@@ -50,8 +50,11 @@ then finds the card listed finishes what its creation died before
 recorded under its name promoted to it; its bond is §2's.
 
 - **`make_a_connection` move** — the resolver carries text-only outcomes; the
-  actual creation rides the post-narration discovery pass (canonical GM, hits
-  only): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku) →
+  actual creation rides the post-narration discovery pass (hits only), on the
+  GM that narrated the move — canonical when it claimed the move lock; a
+  lower-id keyed GM joining while the narration was written left the hit
+  saying "Connection made" with no one made (issue #345 AA34; a round's
+  likewise): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku) →
   `routeEntityDrafts` auto-creates the first connection draft
   (`buildConnectionSeedData` → `createConnection` → silent portrait →
   `registerConnectionOnActiveCharacter`, which also creates the PC's bond
@@ -62,16 +65,32 @@ recorded under its name promoted to it; its bond is §2's.
   is confirmed as the roller's connection (`confirmNamedPendingConnection` →
   `confirmDraft` with the roller's `actorId`; issue #325 W23 — the card said
   "Connection made" and nothing was made, and a later Confirm bonded the old
-  narration's PC). A Batch Mode round's narration is several characters', so
+  narration's PC). When neither made anyone, the known NPC the narration
+  names (full name, whole words — and, in a round, a figure its own roller
+  met) becomes the roller's connection: an active listed NPC card — a
+  crewmate's contact — gets the roller's bond Item, no second card ("give
+  focus to an existing relationship"); a connection row the GM dismissed
+  is taken off `dismissedEntities` and confirmed as the roller's, as a
+  pending row is; naming several, none is guessed and the GMs are whispered
+  (`connectKnownNpc`, issue #345 AA19 — the detection pass leaves an
+  established or dismissed name out, so the card said "Connection made" and
+  nothing was made). A Batch Mode round's narration is several characters', so
   each Make a Connection hit in it creates one connection — the figure its
   own character met: the roller's own line names them, else their detected
-  description names that character, else every clause of the narration
-  naming them names that character alone (`narrator.js roundFigureOwner`) —
-  with that hit's seed, bonded to its roller, and confirms only a pending row
+  description and every clause of the narration naming them, taken
+  together, name that character alone (`narrator.js roundFigureOwner`; a
+  description naming one acting character and a clause another places them
+  nowhere — issue #345 D2, the maintainer's ruling B: the description was
+  read first, and a relation it named outranked the clause saying who met
+  them) — with that hit's seed, bonded to its roller, and confirms only a pending row
+  the round names (its lines or its narration, whole words — W23's test) and
   its own roller met (`runRoundNarrationPasses` → `connectionRollers` →
   `routeEntityDrafts`' slots; issue #342 Z09 — the round's first connection,
-  whoever met them, went to the first hit's roller with that roller's seed).
-  A figure the round cannot place waits on the draft card. The auto-created record carries the narration's id
+  whoever met them, went to the first hit's roller with that roller's seed;
+  issue #345 AA09 — without the naming test a one-PC round confirmed the
+  newest card's first pending row, an NPC the round never mentioned).
+  A figure the round cannot place waits on the draft card, whose connection
+  row asks whose it is (the D3 card, "Entity-extraction drafts" below). The auto-created record carries the narration's id
   (`createdFromNarrationId`): an X-Card on that narration deletes the NPC
   card, its bond Items, its `connectionIds` entry and its portraits (the
   "Art:" journal entries and their `artAssetIds` index entries —
@@ -123,7 +142,11 @@ recorded under its name promoted to it; its bond is §2's.
   U27). A rename carries its narration's id (`renamedBy`), and an X-Card on
   that narration puts the placeholder name back unless the card was renamed
   since; the card's still-pending rows are withdrawn (`xCarded`) — issue
-  #335 Y02, #338 D6(i).
+  #335 Y02, #338 D6(i). A revealed name the GM once dismissed from a draft
+  card comes off `dismissedEntities` with the rename — as a sidebar rename
+  the record follows does (`undismissRecordName`; issue #345 AA55): the name
+  index leaves out a record whose name is dismissed, so she vanished from the
+  narrator.
 - **Sector creation** — the canonical local connection, `canonicalLocked`,
   bond Item mirrored to every PC.
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates
@@ -266,7 +289,12 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   `moveTarget`, and enrichment and the develop / forge branches resolve by
   the id first (issue #301 B01 — the flags used to be missing, so forge
   scored 0 or the sole bonded connection's track, and develop marked the
-  sole bonded connection). A click with
+  sole bonded connection). A forge picked for a connection severed, deleted
+  or bonded since the picker was posted is not rolled, and a "not rolled"
+  card says so, as for a gone fight or vow (rollMove's track-gone guard; for
+  a forge the id rung resolves no bonded connection — issue #345 AA50: it
+  was rolled at 0, or its card said "Legacy reward marked" over a forge that
+  marked nothing). A click with
   no GM connected, a refusal, or a card still unresolved after
   `RELAY_RECOVERY_MS` (15 s) re-arms the buttons. (The picker used to be
   GM-only; the first 2026-10 fix let any click post the move but only the
@@ -287,7 +315,8 @@ BOND-NATIVE-FORGE fix) — on the connection the roller's bond Item names, by
 the record id it carries, else the one active connection of that exact name,
 never a fallback to another (`findSheetBondConnection`, issue #330 D5: a
 hand-made bond forged the crew's one connection) — and is narrated by the native progress-roll hook where
-a Claude key lives (`vow-flow.md` §4, issue #321 U11). On a **miss** the
+a Claude key lives (`vow-flow.md` §4, issue #321 U11), or with the Batch Mode
+round while the mode is on (issue #345 D1). On a **miss** the
 pipeline posts a recommit offer for the un-bonded connection it rolled
 (`postBondRecommitOfferCard`, issue #330 D1): **🔁 Recommit to the Bond**
 relays `bond.recommit` (`cardActions.applyBondRecommitOffer`, the roller's

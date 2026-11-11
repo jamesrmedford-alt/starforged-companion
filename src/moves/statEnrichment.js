@@ -19,13 +19,16 @@
  * snapshot:
  *   - action stats   (edge/heart/iron/shadow/wits) → snapshot.stats[name]
  *   - player meters  (health/spirit/supply/momentum) → snapshot.meters[name]
- *   - vehicle stat   (integrity) → command-vehicle Actor's
- *                                  flags[MODULE_ID].ship.integrity — or,
- *                                  when the move names one of the roller's
- *                                  support vehicles, that asset's Integrity
- *                                  track (vehicleItemId)
+ *   - vehicle stat   (integrity) → the command vehicle's STARSHIP asset's
+ *                                  Integrity track (its ship record's copy
+ *                                  for a starship with none — AA20) — or,
+ *                                  when the move's target names one of the
+ *                                  roller's support vehicles (or that vehicle's
+ *                                  ability swapped the stat for it), that
+ *                                  asset's Integrity track (vehicleItemId)
  *   - companion_health → the Companion asset's track value
- *                                  (resolveCompanionHealth); the roll's
+ *                                  (the swapping or named companion's,
+ *                                  else resolveCompanionHealth); the roll's
  *                                  companion and vehicle are recorded on
  *                                  the interpretation for its consequences
  *                                  (companionItemId / vehicleActorId /
@@ -42,7 +45,7 @@
  */
 
 import { MOVES } from "../schemas.js";
-import { readCharacterSnapshot, listCompanionAssets, listSupportVehicleAssets, readAssetIntegrity } from "../character/actorBridge.js";
+import { readCharacterSnapshot, listCompanionAssets, listSupportVehicleAssets, readAssetIntegrity, readCommandVehicleIntegrity } from "../character/actorBridge.js";
 import { getCommandVehicleActor } from "./abilityScanner.js";
 import { selectCombatTrack, combatPositionFor } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
@@ -145,13 +148,32 @@ export function enrichInterpretationStatValue(actor, interpretation, campaignSta
   // A support vehicle the move names — the roller's asset with its own
   // Integrity track (the Hoverbike, Rover, Skiff …) — is the vehicle the
   // roll is made for: "+integrity" is that track, and the choices change it
-  // (vehicleItemId), not the command vehicle in orbit (issue #342 Z53).
+  // (vehicleItemId), not the command vehicle in orbit (issue #342 Z53). So is
+  // the one whose ability swapped the move's stat for "+integrity" — the
+  // Snub Fighter's Enter the Fray (issue #345 AA10).
   if (statUsed === "integrity") {
-    const bike = selectNamedVehicleAsset(actor, interpretation);
+    const bike = substitutingAsset(listSupportVehicleAssets(actor), interpretation)
+      ?? selectNamedVehicleAsset(actor, interpretation);
     if (bike) {
       interpretation.statValue      = readAssetIntegrity(actor, bike.id) ?? 0;
       interpretation.vehicleItemId  = bike.id;
       interpretation.vehicleActorId = null;
+      return interpretation.statValue;
+    }
+  }
+
+  // A companion whose ability swapped the move's stat for "+its health" — the
+  // Survey Bot's Face Danger, the Banshee's Set a Course — rolls its own
+  // health, not the healthiest companion's (issue #345 AA10). So does the one
+  // the move's target or its line names: "The glowcat is clipped by a
+  // ricochet" is the Glowcat's hit, though the Rockhorn is healthier (issue
+  // #345 AA45 — the notice told the player to re-narrate, and nothing read it).
+  if (statUsed === "companion_health") {
+    const companions = listCompanionAssets(actor);
+    const companion  = substitutingAsset(companions, interpretation) ?? namedCompanion(companions, interpretation);
+    if (companion) {
+      interpretation.statValue       = Number(companion.system?.track?.value ?? 0);
+      interpretation.companionItemId = companion.id;
       return interpretation.statValue;
     }
   }
@@ -220,9 +242,18 @@ export async function enrichBondedDevelop(interpretation, { listConnections }) {
  *   most hurt — is `patientCompanionItemId`.
  * - Provide care for an ally: another player character named as the move's
  *   target — or, when it names none, the only other PC the narration names
- *   while the roll is +wits (the move's "Provide care") — is `patientActorId`.
+ *   (the move's "Provide care") — is `patientActorId`.
  * - Otherwise the roller tends their own wounds or receives treatment: no
  *   patient, and the card is the roller's.
+ *
+ * Which of these it is comes from the situation the interpreter read
+ * (`healSituation`: "companion", "ally", "self", "treated" — issue #330 D4).
+ * Only with none read does the stat stand in: +heart a companion's, +wits
+ * the move's Provide care. Read from the stat alone, a self-mend — which
+ * rolls the lower of iron and wits — rolled +wits by a roller whose wits is
+ * the lower, and whose line mentions a crewmate ("While Kira keeps watch, I
+ * stitch the gash on my own arm"), healed the crewmate and left the roller
+ * wounded (issue #345 AA13).
  *
  * Names match whole words (`wholeWordPattern`): a PC's full name or a first or
  * last name no other PC shares. The cost of a weak hit stays the roller's.
@@ -239,16 +270,20 @@ export function resolveHealPatient(interpretation, roller, { players = [] } = {}
   const out = { patientActorId: null, patientCompanionItemId: null };
   const target = typeof interpretation.moveTarget === "string" ? interpretation.moveTarget : "";
   const prose  = typeof interpretation.playerNarration === "string" ? interpretation.playerNarration : "";
+  const situation = typeof interpretation.healSituation === "string" && interpretation.healSituation
+    ? interpretation.healSituation : null;
 
-  if (interpretation.statUsed === "heart") {
+  if (situation === "self" || situation === "treated") {
+    // The roller's own wounds, or treatment they receive: no patient.
+  } else if (situation ? situation === "companion" : interpretation.statUsed === "heart") {
     const companions = listCompanionAssets(roller);
     const named = namedOnce(companions, target) ?? namedOnce(companions, prose);
     const hurt  = [...companions].sort((a, b) => (a.system?.track?.value ?? 0) - (b.system?.track?.value ?? 0))[0];
     out.patientCompanionItemId = (named ?? (companions.length === 1 ? companions[0] : hurt))?.id ?? null;
   } else {
     const others = (Array.isArray(players) ? players : []).filter(a => a?.id && a.id !== roller?.id);
-    const named  = namedOnce(others, target)
-      ?? (!target && interpretation.statUsed === "wits" ? namedOnce(others, prose) : null);
+    const care   = situation === "ally" || interpretation.statUsed === "wits";
+    const named  = namedOnce(others, target) ?? (!target && care ? namedOnce(others, prose) : null);
     out.patientActorId = named?.id ?? null;
   }
   interpretation.patientActorId         = out.patientActorId;
@@ -407,13 +442,14 @@ export function resolveStatValue(actor, statUsed, campaignState) {
   }
 
   // Vehicle integrity — withstand_damage rolls against the command
-  // vehicle's integrity meter (stored on the starship Actor's
-  // module flag, since foundry-ironsworn's starship schema has no
-  // native integrity field — see vendor/foundry-ironsworn/src/module/
-  // actor/subtypes/starship.ts which only carries notes + debility).
+  // vehicle's integrity: its STARSHIP asset's Integrity track, the meter the
+  // starship sheet shows and the player marks (the starship Actor's own
+  // schema has none — vendor starship.ts carries notes + debility). The ship
+  // record's copy is its mirror, read only for a starship with no STARSHIP
+  // asset (issue #345 AA20 — the record alone was rolled).
   if (statUsed === "integrity") {
     const vehicle = getCommandVehicleActor(campaignState);
-    const integrity = vehicle?.flags?.[MODULE_ID]?.ship?.integrity;
+    const integrity = readCommandVehicleIntegrity(vehicle)?.value ?? vehicle?.flags?.[MODULE_ID]?.ship?.integrity;
     if (integrity == null) {
       console.warn(
         `${MODULE_ID} | statEnrichment: withstand_damage rolled but no command vehicle integrity was readable. Defaulting to 0.`,
@@ -426,14 +462,14 @@ export function resolveStatValue(actor, statUsed, campaignState) {
   // Companion health — lives on the Companion-asset Item's track
   // (system.track.value). foundry-ironsworn stores it on the asset
   // schema's AssetConditionMeterField — see vendor/foundry-ironsworn/
-  // src/module/item/subtypes/asset.ts. We can't ask the player which
-  // companion is being hit mid-pipeline, so the heuristic is: of the
-  // character's Companion-category assets with an enabled track,
-  // pick the one with the highest current track value. That's the
-  // most charitable resolution and matches the typical single-
+  // src/module/item/subtypes/asset.ts. A companion the move or its line
+  // names is picked before this (enrichInterpretationStatValue); with none
+  // named the heuristic is: of the character's Companion-category assets
+  // with an enabled track, the one with the highest current track value.
+  // That's the most charitable resolution and matches the typical single-
   // companion case exactly; multi-companion characters get an info
-  // notification naming which one was used so they can adjust the
-  // narration if it's wrong.
+  // notification naming which one was used, and that naming the companion
+  // picks it (issue #345 AA45).
   if (statUsed === "companion_health") {
     return resolveCompanionHealth(actor);
   }
@@ -470,30 +506,68 @@ function selectCompanionAsset(actor) {
 }
 
 /**
+ * Of `assets` (the roller's support vehicles, or companions), the one whose
+ * ability the confirm's stat substitution came from — the pipeline stamps it
+ * as `statSubstitutedAssetId` beside `statSubstitutedFrom` (issue #345 AA10).
+ * Null when the roll's stat was not substituted, or by another asset.
+ *
+ * @param {Item[]} assets
+ * @param {Object} interpretation
+ * @returns {Item|null}
+ */
+function substitutingAsset(assets, interpretation) {
+  const id = interpretation?.statSubstitutedFrom ? interpretation.statSubstitutedAssetId : null;
+  return typeof id === "string" && id ? (assets.find(a => a?.id === id) ?? null) : null;
+}
+
+/**
  * The support vehicle an integrity roll is made for: the roller's vehicle
- * asset (actorBridge listSupportVehicleAssets) the move's target names — or,
- * when it names nothing, the one the narration names — as whole words
- * (`namedOnce`). Null otherwise: the roll is the command vehicle's, as an
- * unnamed or starship target always was. Never a guess: a sole support
- * vehicle the move does not name is not taken for it (rules/reachability.md
- * §6).
+ * asset (actorBridge listSupportVehicleAssets) the move's target names, as
+ * whole words (`namedOnce`). Null otherwise: the roll is the command
+ * vehicle's, as an unnamed or starship target always was. Never a guess: a
+ * sole support vehicle the move does not name is not taken for it
+ * (rules/reachability.md §6).
+ *
+ * The narration does not name it. The interpreter gives withstand_damage's
+ * target "null for the command starship" (interpreter.js), and a null target
+ * read as "nothing named" let the line pick one instead — any support vehicle
+ * it mentioned, by its full name or a first or last word: "An enemy fighter
+ * rakes the Wayfarer's hull" was the Snub Fighter's hit, "The Wayfarer
+ * shudders as the hoverbike breaks loose" the Hoverbike's (issue #345 AA14,
+ * a regression of issue #342 Z53).
  *
  * @param {Actor|null} actor
- * @param {Object} interpretation — its `moveTarget` / `playerNarration`
+ * @param {Object} interpretation — its `moveTarget`
  * @returns {Item|null}
  */
 function selectNamedVehicleAsset(actor, interpretation) {
   const vehicles = listSupportVehicleAssets(actor);
   if (!vehicles.length) return null;
   const target = typeof interpretation?.moveTarget === "string" ? interpretation.moveTarget : "";
+  return namedOnce(vehicles, target);
+}
+
+/**
+ * The companion a companion_health roll names: the one the move's target
+ * names, else the one its narration names, as whole words (`namedOnce` — the
+ * full name, or a first / last name no other companion shares) — null for
+ * none, or several (issue #345 AA45). Heal's companion is read the same way
+ * (resolveHealPatient).
+ *
+ * @param {Item[]} companions — listCompanionAssets
+ * @param {Object} interpretation — its `moveTarget` / `playerNarration`
+ * @returns {Item|null}
+ */
+function namedCompanion(companions, interpretation) {
+  const target = typeof interpretation?.moveTarget === "string" ? interpretation.moveTarget : "";
   const prose  = typeof interpretation?.playerNarration === "string" ? interpretation.playerNarration : "";
-  return namedOnce(vehicles, target) ?? (!target.trim() ? namedOnce(vehicles, prose) : null);
+  return namedOnce(companions, target) ?? namedOnce(companions, prose);
 }
 
 /**
  * Resolve the character's companion_health to the highest enabled
- * Companion-asset track value (selectCompanionAsset). Notifies on
- * multi-companion ambiguity.
+ * Companion-asset track value (selectCompanionAsset) — the roll's companion
+ * when none is named. Notifies on multi-companion ambiguity.
  *
  * Exported for test coverage.
  */
@@ -512,13 +586,14 @@ export function resolveCompanionHealth(actor) {
     return 0;
   }
 
-  // For multi-companion characters we surface which one we used so the
-  // player can re-narrate if they intended a different companion.
+  // For multi-companion characters we surface which one we used, and how to
+  // roll another: name it (issue #345 AA45 — "Re-narrate if you meant a
+  // different companion" promised a remedy nothing read).
   const value = Number(chosen.system?.track?.value ?? 0);
 
   if (companions.length > 1) {
     globalThis.ui?.notifications?.info?.(
-      `Starforged Companion: companion_health rolled with ${companions.length} active Companion assets — using "${chosen.name}" (track ${value}). Re-narrate if you meant a different companion.`,
+      `Starforged Companion: no companion named among ${companions.length} — rolling the healthiest, "${chosen.name}" (track ${value}). Name the companion in your line to roll its health instead.`,
     );
   }
 
@@ -687,16 +762,18 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
   } else if (source === "connection") {
     // A picker's host id first; Forge a Bond never scores a bonded connection
     // it wasn't asked for (issue #301 B01 — with the id dropped, it scored the
-    // sole bonded one's full track).
+    // sole bonded one's full track), nor one a stale picker names (AA50).
     const connections = (await deps.listConnections?.()) ?? [];
     const conn = selectConnection(connections, target, {
       hostId:   interpretation?.moveTargetId ?? null,
       unbonded: moveId === "forge_a_bond",
     });
     if (conn) {
+      // Always an id once resolved — rollMove's "not rolled" guard reads a
+      // null trackId as "the picked connection is gone" (issue #345 AA50).
       resolved = {
         ticks: Number(conn.relationshipTicks ?? 0), label: conn.name ?? null,
-        trackId: conn._id ?? conn.id ?? null, combatState: null,
+        trackId: conn._id ?? conn.id ?? conn.__hostId ?? null, combatState: null,
       };
     }
   }

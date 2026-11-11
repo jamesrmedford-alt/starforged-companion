@@ -111,12 +111,29 @@ function createTrack({ label, type, rank, entityId = null, objective = null, lin
 // ---------------------------------------------------------------------------
 
 /**
+ * The dedicated progress-track JournalEntry, or null: the journal carrying
+ * the tracks flag — what a GM's rename in the sidebar leaves alone — else,
+ * one no track was saved to yet, the journal of its name. Every reader and
+ * writer found it by its name alone, so a renamed journal hid every open
+ * fight, expedition and scene challenge, and the next track write made a
+ * second, empty journal beside it (issue #345 AA62; rules/reachability.md
+ * §6). interpreter.js readOpenTrackLabels reads it the same way.
+ *
+ * @returns {JournalEntry|null}
+ */
+function findTracksJournal() {
+  return game.journal?.find?.(j => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY)))
+      ?? game.journal?.find?.(j => j?.name === JOURNAL_NAME)
+      ?? null;
+}
+
+/**
  * Return the dedicated progress-track JournalEntry, creating it if absent.
  * The journal is created hidden (ownership: NONE for players, OWNER for GM).
  * @returns {Promise<JournalEntry>}
  */
 async function getOrCreateJournal() {
-  let journal = game.journal.find(j => j.name === JOURNAL_NAME);
+  let journal = findTracksJournal();
   if (!journal) {
     journal = await JournalEntry.create({
       name: JOURNAL_NAME,
@@ -137,7 +154,7 @@ async function getOrCreateJournal() {
  * @returns {Promise<object[]>}
  */
 async function loadTracks() {
-  const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME) ?? null;
+  const journal = findTracksJournal();
   return foundry.utils.deepClone(journal?.getFlag(MODULE_ID, FLAG_KEY) ?? []);
 }
 
@@ -265,6 +282,29 @@ async function movePipelineAvailable() {
   } catch {
     return false;
   }
+}
+
+/**
+ * Whether a track's ⬡ Progress Roll can be made: once it has progress — and a
+ * scene challenge also once its tension clock is full, progress or none.
+ * Finish the Scene is "When the scene challenge tension clock or progress
+ * track is filled … roll the challenge dice and compare to your progress": at
+ * no progress a certain miss, and Pay the Price. The 0-tick guard (from the
+ * display-roll era) left the ⬡ dead exactly then, and the table's ✓ ended the
+ * challenge with no move and no price (issue #345 AA68). Every other track
+ * keeps it: a zero-progress Take Decisive Action is the trap the Enter the
+ * Fray card leaves off, and a challenge whose clock is not full is not due.
+ *
+ * @param {object} track
+ * @param {{ filled?: number, segments?: number }|null} tensionClock — the
+ *   challenge's paired clock as stored, or null
+ * @returns {boolean}
+ */
+function canRollProgress(track, tensionClock) {
+  if ((track?.ticks ?? 0) > 0) return true;
+  if (track?.type !== 'scene_challenge' || !tensionClock) return false;
+  const segments = Number(tensionClock.segments) || 0;
+  return segments > 0 && (Number(tensionClock.filled) || 0) >= segments;
 }
 
 /**
@@ -418,6 +458,11 @@ export class ProgressTrackApp extends ApplicationV2 {
     const clockById     = new Map((campaignState.clocks ?? []).map(c => [c._id, c]));
     // What this render shows, for onSettingChanged to compare against.
     this._clocksShown   = clocksFingerprint(campaignState.clocks ?? []);
+    // A fight's position badge shows the viewer's own position — the one its
+    // press cycles (viewerCharacter). It showed the fight's last-set one, so
+    // in a two-character fight a player saw a crewmate's bad spot as theirs,
+    // and pressing it to put that right flipped their own (issue #345 AA64).
+    const viewer        = viewerCharacter(campaignState);
 
     // Annotate each track with derived display values.
     const annotated = tracks.map(t => {
@@ -431,8 +476,10 @@ export class ProgressTrackApp extends ApplicationV2 {
         ticksInPartialBox: t.ticks % TICKS_PER_BOX,
         pct: Math.round((t.ticks / MAX_TICKS) * 100),
         boxes: ProgressTrackApp.#buildBoxes(t.ticks),
-        canRoll: t.ticks > 0,
-        combatState: t.combatState ?? null,   // 'in_control' | 'bad_spot' | null
+        canRoll: canRollProgress(t, linkedClock),
+        // 'in_control' | 'bad_spot' | null — a fight's, the viewer's own
+        combatState: t.type === 'combat' ? combatPositionFor(t, viewer?.id ?? null) : (t.combatState ?? null),
+        positionOf:  viewer?.name ?? null,
         tensionClock: linkedClock
           ? { filled: linkedClock.filled, segments: linkedClock.segments,
               triggered: linkedClock.filled >= linkedClock.segments }
@@ -502,7 +549,7 @@ export class ProgressTrackApp extends ApplicationV2 {
             <button class="track-btn btn-combat-state combat-${t.combatState ?? 'neutral'}"
                     data-action="toggleCombatState"
                     data-track-id="${t.id}"
-                    title="Toggle combat position (in control / in a bad spot)">
+                    title="Toggle ${t.positionOf ? `${escapeHtml(t.positionOf)}&rsquo;s` : 'the fight&rsquo;s'} combat position (in control / in a bad spot)">
               ${t.combatState === 'in_control' ? 'In control'
                 : t.combatState === 'bad_spot' ? 'In a bad spot'
                 : 'Neutral'}
@@ -582,7 +629,7 @@ export class ProgressTrackApp extends ApplicationV2 {
     Hooks.on('updateJournalEntry', async (doc, change) => {
       const instance = ProgressTrackApp.#instance;
       if (!instance?.rendered) return;
-      if (doc.name !== JOURNAL_NAME) return;
+      // The tracks flag is the journal's mark, whatever its name (issue #345 AA62).
       if (!foundry.utils.hasProperty(change, `flags.${MODULE_ID}.${FLAG_KEY}`)) return;
       instance.render();
     });
@@ -682,7 +729,14 @@ export class ProgressTrackApp extends ApplicationV2 {
       const trackId = target.dataset.trackId;
       const tracks = await loadTracks();
       const track = tracks.find(t => t.id === trackId);
-      if (!track || track.ticks === 0) return;
+      if (!track) return;
+      const clock = track.tensionClockId
+        ? ((game.settings.get(MODULE_ID, 'campaignState') ?? {}).clocks ?? []).find(c => c?._id === track.tensionClockId) ?? null
+        : null;
+      if (!canRollProgress(track, clock)) {
+        console.debug(`${MODULE_ID} | progress roll: "${track.label}" has no progress to roll yet — not rolled.`);
+        return;
+      }
       await rollProgress(track);
     })();
     this._lastAction = work;
@@ -883,7 +937,7 @@ export class ProgressTrackApp extends ApplicationV2 {
  */
 export async function getActiveCombatPosition(actorId = null) {
   try {
-    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    const journal = findTracksJournal();
     if (!journal) return null;
     const tracks = journal.getFlag(MODULE_ID, FLAG_KEY) ?? [];
     const combatTracks = tracks.filter(t => t.type === 'combat' && !t.completed);
@@ -913,7 +967,7 @@ export function openProgressTracks() {
  */
 export async function getActiveCombatTrack() {
   try {
-    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    const journal = findTracksJournal();
     if (!journal) return null;
     const tracks = journal.getFlag(MODULE_ID, FLAG_KEY) ?? [];
     const open = tracks.filter(t => t.type === 'combat' && !t.completed);
@@ -952,7 +1006,7 @@ function withCharacterPositions(track) {
  */
 export function listOpenProgressTracks() {
   try {
-    const journal = game.journal?.find?.(j => j.name === JOURNAL_NAME);
+    const journal = findTracksJournal();
     const tracks  = journal?.getFlag?.(MODULE_ID, FLAG_KEY) ?? [];
     return Array.isArray(tracks)
       ? tracks.filter(t => t && !t.completed && t.type in PANEL_TRACK_TYPES).map(withCharacterPositions)
@@ -1272,6 +1326,29 @@ async function readTrackAfterWrites(trackId) {
     return null;
   });
   return found;
+}
+
+/**
+ * The player character whose position a fight's badge shows on this client:
+ * the PC its press resolves (resolveUserActorId, as #onToggleCombatState)
+ * when the viewer owns it — the one the canonical GM then cycles
+ * (positionMirrorActor) — else null, when the press cycles the fight's own
+ * position (issue #345 AA64).
+ *
+ * @param {Object} campaignState
+ * @returns {Actor|null}
+ */
+function viewerCharacter(campaignState) {
+  let actorId = null;
+  try {
+    actorId = resolveUserActorId(game.user, campaignState);
+  } catch { actorId = game.user?.character?.id ?? null; }
+  const actor = actorId ? game.actors?.get?.(actorId) ?? null : null;
+  if (!actor) return null;
+  if (game.user?.isGM) return actor;
+  if (typeof actor.testUserPermission === 'function') return actor.testUserPermission(game.user, 'OWNER') ? actor : null;
+  const ownership = actor.ownership ?? {};
+  return ownership[game.user?.id] === 3 || ownership.default === 3 ? actor : null;
 }
 
 /**

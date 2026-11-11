@@ -34,6 +34,9 @@ import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.j
 
 const MODULE_ID = "starforged-companion";
 
+// A campaign clock's odds when none is given — createClock, `!clock new` and
+// the Clocks panel's add form all start from it (issue #345 AA67).
+const DEFAULT_ADVANCE_ODDS = "likely";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Panel — ApplicationV2 singleton
@@ -77,8 +80,11 @@ function getPanelClass() {
     }
 
     async _renderHTML({ clocks }) {
+      // Drawn on the default odds createClock and `!clock new` use: with no
+      // option selected a browser shows — and submits — the first, "small
+      // chance" (issue #345 AA67).
       const oddsOpts = ["small_chance","unlikely","50_50","likely","almost_certain"]
-        .map(o => `<option value="${o}">${o.replace(/_/g, " ")}</option>`).join("");
+        .map(o => `<option value="${o}"${o === DEFAULT_ADVANCE_ODDS ? " selected" : ""}>${o.replace(/_/g, " ")}</option>`).join("");
 
       const row = (c) => {
         const bar = "█".repeat(c.filled) + "░".repeat(Math.max(0, c.segments - c.filled));
@@ -256,7 +262,7 @@ export async function createClock(input) {
   }
   const type        = input?.type === "campaign" ? "campaign" : "tension";
   const advanceOdds = ["small_chance","unlikely","50_50","likely","almost_certain"].includes(input?.advanceOdds)
-                      ? input.advanceOdds : "likely";
+                      ? input.advanceOdds : DEFAULT_ADVANCE_ODDS;
 
   const clock = {
     _id:       foundry.utils.randomID(),
@@ -575,7 +581,7 @@ async function cmdNew(parts) {
 
   const type        = rest[1]?.toLowerCase() === "campaign" ? "campaign" : "tension";
   const advanceOdds = ["small_chance","unlikely","50_50","likely","almost_certain"].includes(rest[2]?.toLowerCase())
-                       ? rest[2].toLowerCase() : "likely";
+                       ? rest[2].toLowerCase() : DEFAULT_ADVANCE_ODDS;
 
   const clock = {
     _id:       foundry.utils.randomID(),

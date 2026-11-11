@@ -18,11 +18,13 @@
  *   upgrading ──(each offered roller chose; Send now = Keep; the roller left = Keep)──► narrating
  *   narrating ──(the round card, its fallback or the X-Card's paused notice posted)──► closed
  *
- * An entry goes waiting → submitted → read → ready, or passed. One that is not
- * ready when the round resolves is left out of it, with no mark — opting out
- * is silent (decided 2026-11-06). During resolution an acting entry goes
- * rolled → recorded, or refused when the roll stage refuses it (its track
- * ended earlier in the same round); a narrative entry is recorded as it is.
+ * An entry goes waiting → submitted → read → ready, or passed — or straight
+ * to ready with a move rolled on the character sheet (enterSheetRoll). One
+ * that is not ready when the round resolves is left out of it, with no mark —
+ * opting out is silent (decided 2026-11-06). During resolution an acting
+ * entry goes rolled → recorded, or refused when the roll stage refuses it
+ * (its track ended earlier in the same round); a narrative entry is recorded
+ * as it is, and a sheet roll with the outcome it was rolled with.
  */
 
 export const ROUND_PHASE = Object.freeze({
@@ -50,10 +52,15 @@ export const ENTRY_ERROR = Object.freeze({
   CHARACTER_GONE: "character-gone",
 });
 
-/** What a reading found: a move to roll, or a line narrated without a roll. */
+/**
+ * What a reading found: a move to roll, a line narrated without a roll — or
+ * a move already rolled on the character sheet, narrated with its outcome and
+ * never rolled by the round (issue #345 D1).
+ */
 export const READING_KIND = Object.freeze({
-  MOVE:      "move",
-  NARRATIVE: "narrative",
+  MOVE:       "move",
+  NARRATIVE:  "narrative",
+  SHEET_ROLL: "sheet-roll",
 });
 
 /** The longest action a player may submit — a chat line's worth. */
@@ -111,6 +118,21 @@ export function isOwedEntry(entry) {
 }
 
 const OWED_MESSAGE = "This roll is owed — resisting is your next move, so it can't be withdrawn, passed or changed.";
+
+/**
+ * True for an entry that is a move rolled on the character sheet (a vow or
+ * bond progress roll — enterSheetRoll): already rolled and paid, it is the
+ * roller's action for the round — it can't be withdrawn, passed, edited or
+ * swapped for a card's move (issue #345 D1).
+ *
+ * @param {Object|null} entry
+ * @returns {boolean}
+ */
+export function isSheetRollEntry(entry) {
+  return entry?.reading?.kind === READING_KIND.SHEET_ROLL;
+}
+
+const SHEET_ROLL_MESSAGE = "This roll was made on your character sheet — it is your action this round, so it can't be withdrawn, passed or changed.";
 
 /**
  * The round as stored, or null when the setting holds nothing usable — a
@@ -325,6 +347,7 @@ export function submitEntry(round, { userId, text, submissionId, now, readAs = n
   if (!submissionId) refuse("bad-submission", "That submission carried no id.");
   if (entry.submissionId === submissionId) return round;   // a repeat of the same submission
   if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
+  if (isSheetRollEntry(entry)) refuse("sheet-roll", SHEET_ROLL_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.SUBMITTED, text: clean, submissionId, submittedAt: now,
     readyAt: null, reading: null, choices: null, error: null, readAs: readAs ?? null,
@@ -332,8 +355,25 @@ export function submitEntry(round, { userId, text, submissionId, now, readAs = n
 }
 
 /**
+ * The offer an entry keeps when its player withdraws, edits or passes: the
+ * one already beside it, else the card's move that was the entry itself —
+ * its card is spent by the press, so only Keep mine drops it. Reset with
+ * `readAs`, a card's move pressed before the player wrote anything was
+ * neither rolled nor held for the next round (takeCardMoves never saw it),
+ * its card still claimed (issue #345 AA37).
+ *
+ * @param {Object} entry
+ * @returns {Object|null}
+ */
+function offerKept(entry) {
+  if (entry.offer || !entry.readAs?.messageId) return entry.offer ?? null;
+  return { text: entry.text, forced: entry.readAs.forced ?? null, messageId: entry.readAs.messageId, at: entry.submittedAt ?? null };
+}
+
+/**
  * A player withdraws their action: back to waiting. A card's move offered
- * beside it stays offered — withdrawing (or Edit) is not choosing to drop it.
+ * beside it stays offered — withdrawing (or Edit) is not choosing to drop it
+ * — and a card's move that was the action is offered now (offerKept).
  *
  * @param {Object} round
  * @param {{ userId: string }} args
@@ -344,16 +384,18 @@ export function withdrawEntry(round, { userId }) {
   const entry = requireEntry(round, userId);
   if (entry.status === ENTRY_STATUS.WAITING) return round;
   if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
+  if (isSheetRollEntry(entry)) refuse("sheet-roll", SHEET_ROLL_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.WAITING, submissionId: null, submittedAt: null, readyAt: null,
-    reading: null, choices: null, error: null, readAs: null,
+    reading: null, choices: null, error: null, readAs: null, offer: offerKept(entry),
   }, { order: withoutUser(round.order, userId) });
 }
 
 /**
  * A player passes this round. Silent: nothing names them anywhere. A card's
- * move offered beside their action stays offered (it joins the next round
- * when the round resolves without it — takeCardMoves).
+ * move offered beside their action stays offered, and a card's move that was
+ * the action is offered now (offerKept): it joins the next round when the
+ * round resolves without it (takeCardMoves).
  *
  * @param {Object} round
  * @param {{ userId: string }} args
@@ -364,9 +406,10 @@ export function passEntry(round, { userId }) {
   const entry = requireEntry(round, userId);
   if (entry.status === ENTRY_STATUS.PASSED) return round;
   if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
+  if (isSheetRollEntry(entry)) refuse("sheet-roll", SHEET_ROLL_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.PASSED, submissionId: null, readyAt: null, reading: null,
-    choices: null, error: null, readAs: null,
+    choices: null, error: null, readAs: null, offer: offerKept(entry),
   }, { order: withoutUser(round.order, userId) });
 }
 
@@ -447,6 +490,7 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
   const entry = requireEntry(round, userId);
   if (entry.submissionId !== submissionId) refuse("stale", "That reading is out of date — your action was changed since.");
   if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
+  if (isSheetRollEntry(entry)) refuse("sheet-roll", SHEET_ROLL_MESSAGE);
   if (useOffer) {
     if (!entry.offer) refuse("no-offer", "There is no card move to use.");
     return withEntry(round, userId, {
@@ -487,7 +531,9 @@ export function rereadEntry(round, { userId, submissionId, newSubmissionId, now,
  * entry even beside an action already written, which is set aside for the
  * next round (`setAside` — its author's window keeps it as the draft; a card
  * move that was the entry is handed back in `held`, to be held). A second
- * owed move while one is the entry is held for the next round itself.
+ * owed move while one is the entry is held for the next round itself — as is
+ * one while the entry is a move rolled on the character sheet (that move was
+ * made first; issue #345 D1).
  *
  * @param {Object} round
  * @param {{ userId: string, text: string, forced: Object, submissionId: string, now: string,
@@ -501,7 +547,7 @@ export function offerForcedMove(round, { userId, text, forced, submissionId, now
   const clean = cleanSubmissionText(text) ?? cleanSubmissionText(forced?.moveName ?? forced?.moveId ?? "") ?? "—";
   const own = OWN_ACTION.has(entry.status);
   const owed = forced?.owed === true;
-  if (owed && isOwedEntry(entry) && own) {
+  if (owed && own && (isOwedEntry(entry) || isSheetRollEntry(entry))) {
     return { round, read: false, held: messageId ? [{ userId, messageId }] : [] };
   }
   if (own && !owed) {
@@ -526,11 +572,55 @@ export function offerForcedMove(round, { userId, text, forced, submissionId, now
 }
 
 /**
+ * A move rolled on the character sheet — a vow or bond progress roll: the
+ * system rolled it and the module's payoff hook paid it — while the round
+ * collects (issue #345 D1, the maintainer's option A). It becomes the
+ * roller's entry, ready: the round narrates it with the outcome it was rolled
+ * with (`narrationInput`, kept on its reading) and never rolls it. Like an
+ * owed roll it is the roller's action for the round (isSheetRollEntry): an
+ * action already written is set aside for the next round (`setAside` — its
+ * author's window keeps it as the draft), a card's move that was the entry
+ * is handed back in `held`, an offer beside it stays beside. Beside an owed
+ * roll or another sheet roll already the entry, it is handed back itself, to
+ * join the next round. Its chat message's id rides along (`readAs.messageId`):
+ * a round closed without resolving it hands it back (takeCardMoves).
+ *
+ * @param {Object} round
+ * @param {{ userId: string, text: string, narrationInput: Object, submissionId: string, now: string,
+ *   messageId?: string|null }} args
+ * @returns {{ round: Object, held: Array<{ userId: string, messageId: string }> }}
+ *   `held`: moves for the driver to hold for the next round — the sheet roll itself when it is not the entry
+ */
+export function enterSheetRoll(round, { userId, text, narrationInput, submissionId, now, messageId = null }) {
+  requireCollecting(round);
+  const entry = requireEntry(round, userId);
+  const own = OWN_ACTION.has(entry.status);
+  if (own && (isOwedEntry(entry) || isSheetRollEntry(entry))) {
+    return { round, held: messageId ? [{ userId, messageId }] : [] };
+  }
+  const displacedCard = own && entry.readAs?.messageId ? entry.readAs.messageId : null;
+  const setAside = own && !displacedCard && entry.text ? { text: entry.text, at: now } : null;
+  const clean = cleanSubmissionText(text) ?? cleanSubmissionText(narrationInput?.moveName ?? "") ?? "—";
+  return {
+    round: withEntry(round, userId, {
+      status: ENTRY_STATUS.READY, text: clean, submissionId, submittedAt: now, readyAt: now,
+      reading: { kind: READING_KIND.SHEET_ROLL, narrationInput: narrationInput ?? null },
+      choices: null, error: null,
+      offer: entry.offer ?? null,
+      readAs: { messageId },
+      ...(setAside ? { setAside } : {}),
+    }, { order: [...withoutUser(round.order, userId), userId] }),
+    held: displacedCard ? [{ userId, messageId: displacedCard }] : [],
+  };
+}
+
+/**
  * The card buttons' moves a round leaves behind as it stops collecting: every
  * offer still undecided — the round resolved, or closed, before its player
- * chose — and every card move that was an entry the round does not roll (not
- * in `acting`: its player left before confirming, its reading failed; or
- * every one when the round closes unresolved). Their cards are claimed, so
+ * chose — and every card move (or sheet roll — enterSheetRoll) that was an
+ * entry the round does not roll (not in `acting`: its player left before
+ * confirming, its reading failed; or every one when the round closes
+ * unresolved). Their cards are claimed, so
  * each is handed back by its chat message's id for the driver to hold for
  * the next round (a card's forced move is held, not dropped — issue #337
  * Y08). The offers come off the entries; an entry keeps its own move's id.

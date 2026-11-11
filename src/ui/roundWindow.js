@@ -284,6 +284,11 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       out.push(`<p class="sf-round-hint">This roll is owed — resisting is your next move, so it can't be withdrawn, passed or changed.</p>`);
       if (own.setAside) out.push(`<p class="sf-round-hint">The action you wrote — <em>${escapeHtml(own.setAside)}</em> — is kept as your draft for the next round.</p>`);
     }
+    // A move rolled on the character sheet: the round narrates it as rolled (issue #345 D1).
+    if (own.sheetRoll) {
+      out.push(`<p class="sf-round-hint">This roll was made on your character sheet — it is your action this round, so it can't be withdrawn, passed or changed.</p>`);
+      if (own.setAside) out.push(`<p class="sf-round-hint">The action you wrote — <em>${escapeHtml(own.setAside)}</em> — is kept as your draft for the next round.</p>`);
+    }
 
     if (own.offer) {
       out.push(`<div class="sf-round-offer"><p>A card offers ${escapeHtml(own.offer.moveName ?? "a move")} for you: <em>${escapeHtml(own.offer.text)}</em></p>`
@@ -329,6 +334,10 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
 
   #readingHtml(own) {
     const r = own.reading;
+    if (r.kind === READING_KIND.SHEET_ROLL) {
+      return `<div class="sf-round-reading"><p><strong>${escapeHtml(r.moveName)}</strong> — rolled on your character sheet`
+        + (r.outcome ? `: ${escapeHtml(r.outcome)}` : "") + `. The round narrates it with the others' actions.</p></div>`;
+    }
     if (r.kind === READING_KIND.NARRATIVE) {
       return `<div class="sf-round-reading"><p><strong>No roll needed.</strong>`
         + (r.suggestedMoveName ? ` ${escapeHtml(r.suggestedMoveName)} is available if you want to push it.` : " It is narrated as you wrote it.")
@@ -378,7 +387,9 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
         + (e.error ? `<div class="sf-round-hint">${escapeHtml(e.error)}</div>` : "")
         + (e.reading ? `<div class="sf-round-hint">${escapeHtml(e.reading.kind === READING_KIND.MOVE
           ? `${e.reading.moveName}${e.reading.statName ? ` +${e.reading.statName}` : ""}`
-          : (e.reading.suggestedMoveName ? `No roll (${e.reading.suggestedMoveName} available)` : "No roll"))}</div>` : "")
+          : e.reading.kind === READING_KIND.SHEET_ROLL
+            ? `${e.reading.moveName}${e.reading.outcome ? `: ${e.reading.outcome}` : ""} (rolled on the sheet)`
+            : (e.reading.suggestedMoveName ? `No roll (${e.reading.suggestedMoveName} available)` : "No roll"))}</div>` : "")
         + `</li>`).join("")}</ul>`);
     }
     if (gm.waitingFor.length) out.push(`<p class="sf-round-hint">Waiting for: ${gm.waitingFor.map(escapeHtml).join(", ")}</p>`);
@@ -749,7 +760,8 @@ export function openRoundWindow() {
  * The toolbar's Batch Mode switch (GMs only). On: the canonical GM opens a
  * round. Off while a round collects with actions submitted: the GM chooses —
  * send it now (then the mode turns off), discard it, or cancel. Off while a
- * round resolves: it finishes, then the mode turns off.
+ * round resolves — or a Discard answered once the round began resolving —
+ * it finishes, then the mode turns off.
  *
  * @returns {Promise<void>}
  */
@@ -767,8 +779,7 @@ export async function toggleBatchMode() {
   }
   const round = getStoredRound();
   if (isResolving(round)) {
-    await requestGmAction("batch.sendNow", { roundId: round.id, modeOffAfter: true });
-    globalThis.ui?.notifications?.info?.("Starforged Companion: the round is being resolved — Batch Mode turns off when it finishes.");
+    await turnOffAfterRound(round);
     return;
   }
   const submitted = round?.phase === ROUND_PHASE.COLLECTING
@@ -790,12 +801,34 @@ export async function toggleBatchMode() {
       return;
     }
     if (choice !== "discard") return;
+    // The players kept playing while the dialog was open: a round the last
+    // confirm started resolving meanwhile is not discarded — switched off
+    // under it, every Round window closed and its upgrade step was stranded
+    // (issue #345 AA36). It finishes, then the mode turns off (Z04).
+    const now = getStoredRound();
+    if (isResolving(now)) {
+      await turnOffAfterRound(now);
+      return;
+    }
   }
   // Off: the canonical GM closes a collecting round (its authors keep their drafts).
   await game.settings.set(MODULE_ID, BATCH_ENABLED_SETTING, false).catch(err => {
     console.warn(`${MODULE_ID} | Batch Mode could not be turned off:`, err?.message ?? err);
     globalThis.ui?.notifications?.error?.("Starforged Companion: Batch Mode could not be turned off — the world did not save it.");
   });
+}
+
+/**
+ * The switch pressed (or its Discard answered) while a round resolves: the
+ * round finishes as it would — a roller deciding Burn / Improve / Keep still
+ * decides — then Batch Mode turns off (driver.js requestSendNow; issue #342
+ * Z04). The GM is told.
+ *
+ * @param {Object} round — the stored round, resolving
+ */
+async function turnOffAfterRound(round) {
+  await requestGmAction("batch.sendNow", { roundId: round.id, modeOffAfter: true });
+  globalThis.ui?.notifications?.info?.("Starforged Companion: the round is being resolved — Batch Mode turns off when it finishes.");
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -54,13 +54,16 @@ export async function openBeginSessionDialog() {
     );
     return;
   }
-  const flagList = (state.safetyFlags ?? [])
-    .filter(f => f.visibility !== "private" || game.user?.isGM)
+  // A private flag is the GMs' alone — its text and its count: a player read
+  // "Flagged content to review (3)" over the one flag listed (issue #345 AA60).
+  const shownFlags = (state.safetyFlags ?? [])
+    .filter(f => f.visibility !== "private" || game.user?.isGM);
+  const flagList = shownFlags
     .slice(-5)
     .map(f => `<li>${escapeHtml(f.text)}</li>`)
     .join("");
   const flagBlock = flagList
-    ? `<details open><summary>Flagged content to review (${(state.safetyFlags ?? []).length})</summary><ul>${flagList}</ul></details>`
+    ? `<details open><summary>Flagged content to review (${shownFlags.length})</summary><ul>${flagList}</ul></details>`
     : `<p class="muted"><em>No flagged content. Use Set a Flag to add some.</em></p>`;
 
   const content = `
@@ -373,7 +376,10 @@ async function beginSessionOnce(payload) {
       const participants = collectGalleyParticipants(cs);
       const userMessage  = buildGalleyVignetteUserMessage(participants, cs);
       const narrationId  = newNarrationId();
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId });
+      // The PCs in the galley are the vignette's CHARACTER blocks — never a
+      // first PC whose player is away (issue #345 AA31).
+      const actorIds = participants.active.map(p => p.actor?.id).filter(Boolean);
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds });
       if (text) {
         await postGalleyVignetteCard({ text, kind: "galley_begin", sessionId: cs.currentSessionId ?? "", narrationId });
       }

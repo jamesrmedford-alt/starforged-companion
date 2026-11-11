@@ -167,14 +167,16 @@ function splitOverflow(amount, before) {
  * Take a loss's overflow as momentum (loseMomentum, no card of its own). What
  * the momentum minimum refuses is reported for the player to redirect —
  * loseMomentum's at-min rule (another suffer move, or progress cleared) is a
- * manual follow-up.
+ * manual follow-up. Also the damage a vehicle's integrity, or the harm a
+ * companion's health, cannot take (sufferDialog's integrity / companion health
+ * write — issue #345 AA15).
  *
  * @param {Actor} actor
  * @param {number} overflow
  * @returns {Promise<Object|null>} `amount` owed, `taken`, `remaining` (refused
  *   at the minimum), `before` / `after`, `atMin` — null when nothing overflowed
  */
-async function overflowToMomentum(actor, overflow) {
+export async function overflowToMomentum(actor, overflow) {
   if (overflow <= 0) return null;
   const m = await loseMomentum(actor, overflow, { skipCard: true });
   const taken = Math.max(0, m.before - m.after);
@@ -286,6 +288,13 @@ const RESIST_ROLLS = {
 // take it first, as the move card's own follow-ups do (issue #330 D2's hint;
 // issue #336 Y18).
 const RESIST_UPGRADE_FIRST = "Burn momentum or improve the result first — resisting is your next move, and closes them.";
+
+// The redirect picker of a loss of resources while unprepared (issue #325
+// W16) is the price's other card posted before the move card: a pick on it is
+// the move's chosen consequence, which closes its Burn Momentum / Improve
+// Result (issue #311 P03) — so it says to take them first, as the resist card
+// does (issue #345 AA47, Y18's sibling).
+const REDIRECT_UPGRADE_FIRST = "Burn momentum or improve the result first — choosing the suffer move is the move's consequence, and closes them.";
 
 /**
  * The resist card's prompt: one pick, which rolls Endure Harm ("harm") or
@@ -539,24 +548,27 @@ export async function endureStress(actor, amount, opts = {}) {
  * crew, as it is marked (clearUnprepared).
  *
  * @param {Actor} actor  whose supply is now 0
- * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesMarkedIds: string[], alliesNotMarked: string[] }>}
+ * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesMarkedIds: string[], alliesNotMarked: string[],
+ *   momentumClamped: Object<string, number> }>}
  *   `unpreparedMarked` is false when `actor` was already unprepared; the
  *   allies by name — marked now, or whose write was refused (warned, never
  *   thrown: the supply loss has landed either way) — and the ones marked now
  *   by id, so an upgrade that reverts the price clears exactly those
- *   (`alliesMarkedIds`, issue #342 D4)
+ *   (`alliesMarkedIds`, issue #342 D4); `momentumClamped`, by PC id, the
+ *   momentum each mark's lowered maximum clamped away, which that upgrade
+ *   gives back (issue #345 AA46)
  */
 export async function markUnprepared(actor) {
-  const marks = { unpreparedMarked: false, alliesMarked: [], alliesMarkedIds: [], alliesNotMarked: [] };
+  const marks = { unpreparedMarked: false, alliesMarked: [], alliesMarkedIds: [], alliesNotMarked: [], momentumClamped: {} };
   if (!actor) return marks;
   if (!actor.system?.debility?.unprepared) {
-    await setDebility(actor, "unprepared", true);
+    await markUnpreparedOne(actor, marks.momentumClamped);
     marks.unpreparedMarked = true;
   }
   for (const ally of supplyAllies(actor)) {
     if (ally.system?.debility?.unprepared) continue;
     try {
-      await setDebility(ally, "unprepared", true);
+      await markUnpreparedOne(ally, marks.momentumClamped);
       marks.alliesMarked.push(ally.name ?? ally.id);
       marks.alliesMarkedIds.push(ally.id);
     } catch (err) {
@@ -565,6 +577,20 @@ export async function markUnprepared(actor) {
     }
   }
   return marks;
+}
+
+/**
+ * Mark `pc` unprepared (actorBridge.setDebility, which clamps momentum to the
+ * maximum the impact lowers — recalculateMomentumBounds) and note in
+ * `clamped`, by id, the momentum that clamp took: a price "never actually
+ * paid" gives it back when an upgrade reverts it (issue #345 AA46 — the
+ * clear restored the maximum, never the momentum).
+ */
+async function markUnpreparedOne(pc, clamped) {
+  const before = readMeter(pc, "momentum");
+  await setDebility(pc, "unprepared", true);
+  const lost = before - readMeter(pc, "momentum");
+  if (lost > 0 && typeof pc.id === "string") clamped[pc.id] = lost;
 }
 
 /**
@@ -685,19 +711,25 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     // is bound to that move's resolution, so a Burn Momentum or Improve
     // Result that undoes the price retires it and refuses a late pick, as it
     // does the move's own choice cards (issue #331 X15, issue #311 P03).
+    // While that move still offers a burn or an improvement, the picker (and
+    // this card's line) says to take it first (REDIRECT_UPGRADE_FIRST).
+    const upgradeFirst = await upgradeFirstOwed(opts);
     const redirect = await postSufferChoiceCard({
-      sufferPrompt: { kind: "any", amount, count: 1, exclude: ["sacrifice_resources"] },
+      sufferPrompt: { kind: "any", amount, count: 1, exclude: ["sacrifice_resources"],
+        ...(upgradeFirst ? { hint: REDIRECT_UPGRADE_FIRST } : {}) },
       actor,
       executorOpts,
       resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
     });
     const atZero = before <= 0;
+    const first = redirect && upgradeFirst
+      ? `; ${REDIRECT_UPGRADE_FIRST.charAt(0).toLowerCase()}${REDIRECT_UPGRADE_FIRST.slice(1, -1)}` : "";
     // The picker is posted first — this card says whether it was — so it sits
     // above this card: "choose below" pointed at nothing (W16-CHOOSE-BELOW).
     if (!opts.skipCard) {
       await postSufferCard({
         title: `Sacrifice Resources (-${amount})`,
-        body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? " (choose it on its card)" : " — choose one and apply it on the sheet"}.`,
+        body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? ` (choose it on its card${first})` : " — choose one and apply it on the sheet"}.`,
         flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero, unpreparedMarked: false, redirected: true },
       });
     }
@@ -710,8 +742,10 @@ export async function sacrificeResources(actor, amount, opts = {}) {
   const marks = atZero ? await markUnprepared(actor) : null;
   const unpreparedMarked = !!marks?.unpreparedMarked;
   // Whom this loss marked unprepared, by id: an upgrade that reverts the
-  // price clears exactly those marks (issue #342 D4).
+  // price clears exactly those marks (issue #342 D4), and gives back the
+  // momentum each mark clamped (issue #345 AA46).
   const alliesMarkedIds = marks?.alliesMarkedIds ?? [];
+  const momentumClamped = marks?.momentumClamped ?? {};
 
   if (!opts.skipCard) {
     let body = `Supply: ${before} → ${after}`;
@@ -726,7 +760,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     });
   }
 
-  return { before, after, atZero, unpreparedMarked, alliesMarkedIds };
+  return { before, after, atZero, unpreparedMarked, alliesMarkedIds, momentumClamped };
 }
 
 /**

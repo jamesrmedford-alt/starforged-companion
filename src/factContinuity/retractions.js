@@ -38,7 +38,7 @@
 
 import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments, hasSheetNotes } from '../entities/registry.js';
 import { retractSessionLore, undoNarrationEntries } from '../world/worldJournal.js';
-import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey, withXCardBlocks } from './ledgers.js';
+import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey, withXCardBlocks, isReplacedOriginal, keptStrikeStandsAt } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -179,7 +179,8 @@ function loreStatesStrike(entry, subject, label, fact) {
  *   - the active scene's X-Card retractions (never lifted, U07) → `true`: the
  *     entry stays out of canon — and the earlier scenes' too, kept unnamed
  *     (`sessionRetractions.blocked`, XCARD-RETRACTION-SCENE-SCOPED: once its
- *     scene ended, a lift restored the X-carded fact to canon).
+ *     scene ended, a lift restored the X-carded fact to canon), with the
+ *     Replace originals kept beside them (issue #345 AA05).
  * The lifted strike itself is linked (`correctedTo`) on the lift's copy, or —
  * kept from an earlier scene — dropped from it, so it is not one of them.
  *
@@ -493,6 +494,24 @@ function isNamedStrike(t) {
 }
 
 /**
+ * Where a kept strike of a scene fact stands: the place its truth was
+ * asserted at (`sceneLocation`, issue #326 D2). A scene fact is its place's,
+ * so the strike stands there only (ledgers.js keptStrikeStandsAt — issue #345
+ * AA28: struck at Bleakhold, it blocked Vantage Station's own scene fact of
+ * the same words for the rest of the session). Null for any other subject,
+ * and for a scene fact asserted before any frame stood — those stand
+ * anywhere.
+ *
+ * @param {Object} t — the struck truth
+ * @returns {string|null}
+ */
+function keptPlaceOf(t) {
+  if (t?.subject?.kind !== 'scene') return null;
+  const at = typeof t.sceneLocation === 'string' ? t.sceneLocation.trim() : '';
+  return at || null;
+}
+
+/**
  * At scene end, keep the scene's bare strikes (a Replace's replacement
  * stands, so it is not kept) on `campaignState.sessionRetractions` for the
  * rest of the session. Each keeps the `narrationId` of the narration that
@@ -502,7 +521,8 @@ function isNamedStrike(t) {
  * content the table removed). Each keeps what a
  * strike is to its two defenses too (issue #342 Z42 — it outlived its scene as
  * text only): its subject's key, which a later scene's narrator re-assertion
- * is blocked by (ledgers.js findSessionStrike); who struck it and who
+ * is blocked by (ledgers.js findSessionStrike) — a scene fact's at the place
+ * it was asserted at only (`place`, keptPlaceOf — issue #345 AA28); who struck it and who
  * asserted it, which decide whether a player's `!truth set` may lift it
  * (W60); and the struck truth's id, by which a lift restores the lore it
  * retracted (restoreStruckLore). Mutates campaignState; endScene persists it.
@@ -513,7 +533,12 @@ function isNamedStrike(t) {
  * and holding their lore out of canon (loreRetractionHolder), and nothing
  * renders them — not CORRECTED, not the summary's leave-out list, no card.
  * Their block was the retracted ledger entry, which the scene end clears
- * (XCARD-RETRACTION-SCENE-SCOPED).
+ * (XCARD-RETRACTION-SCENE-SCOPED). So are a Replace's struck originals
+ * (ledgers.js isReplacedOriginal): the replacement stands, so they are never named
+ * either, and the next scene's narration restating the old wording — the
+ * ring still carries the prose that stated it — was recorded live and filed
+ * as canon beside the replacement (issue #345 AA05); an X-Card on their
+ * narration finds them blocked already.
  *
  * @param {Object} campaignState
  */
@@ -521,25 +546,34 @@ export function rememberSessionRetractions(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
   if (!sessionId) return;
   const truths = campaignState.sceneTruths ?? [];
+  const byId = new Map(truths.filter(t => t?.id).map(t => [t.id, t]));
   const struck = truths.filter(isNamedStrike);
   const removed = truths.filter(t => t?.retracted && t.retractedBy === XCARD_RETRACTED_BY && String(t.fact ?? '').trim());
-  if (!struck.length && !removed.length) return;
+  const replaced = truths.filter(t => isReplacedOriginal(t, byId));
+  if (!struck.length && !removed.length && !replaced.length) return;
 
   const same = campaignState.sessionRetractions?.sessionId === sessionId;
   const prior = same ? (campaignState.sessionRetractions.facts ?? []) : [];
-  const blocked = withXCardBlocks(same ? campaignState.sessionRetractions.blocked : [], removed.map(t => ({
+  const block = (t, place) => ({
     label:       subjectLabel(t.subject),
     fact:        String(t.fact).trim(),
     subjectKey:  subjectKey(t.subject) || null,
     narrationId: t.narrationId ?? null,
     truthId:     t.id ?? null,
-  })));
+    place,
+  });
+  // The X-Card's blocks stand anywhere; a Replace's, as a strike, at its place (AA28).
+  const blocked = withXCardBlocks(same ? campaignState.sessionRetractions.blocked : [],
+    [...removed.map(t => block(t, null)), ...replaced.map(t => block(t, keptPlaceOf(t)))]);
   const facts = [...prior];
   for (const t of struck) {
     const strike = { label: subjectLabel(t.subject), fact: String(t.fact).trim() };
-    if (facts.some(f => sameStrike(f, strike))) continue;
+    const place = keptPlaceOf(t);
+    // The same strike kept already — standing wherever this one would (issue #345 AA28).
+    if (facts.some(f => sameStrike(f, strike) && (!f.place || (place && keptStrikeStandsAt(f.place, place))))) continue;
     facts.push({
       ...strike,
+      ...(place ? { place } : {}),
       sceneId:     t.sceneId ?? null,
       at:          t.retractedAt ?? Date.now(),
       narrationId: typeof t.narrationId === 'string' && t.narrationId ? t.narrationId : null,
@@ -611,13 +645,24 @@ function sameStrike(a, b) {
  * This session's struck facts — earlier scenes' (sessionRetractions) and the
  * active scene's bare strikes — oldest first, `{ label, fact }`.
  *
+ * `here`: the place the narration stands at (the CORRECTED block's caller —
+ * the scene frame's location). An earlier scene's strike of a scene fact is
+ * that place's (issue #345 AA28), so it is named only where it stands
+ * (ledgers.js keptStrikeStandsAt) — as the narrator is blocked from
+ * re-asserting it, and a `!truth set` lifts it, there only; named elsewhere,
+ * the place's own fact of those words read binding and "do NOT re-assert" at
+ * once (W60). Left out — the summary's leave-out list, which covers the whole
+ * session's prose — every strike is named.
+ *
  * @param {Object} campaignState
+ * @param {{ here?: string|null }} [opts]
  * @returns {Array<{ label: string, fact: string }>}
  */
-export function sessionRetractedFacts(campaignState) {
+export function sessionRetractedFacts(campaignState, { here } = {}) {
   const sessionId = campaignState?.currentSessionId ?? null;
   const earlier = (sessionId && campaignState?.sessionRetractions?.sessionId === sessionId)
-    ? (campaignState.sessionRetractions.facts ?? []).map(f => ({ label: f.label, fact: f.fact }))
+    ? (campaignState.sessionRetractions.facts ?? []).filter(f => keptStrikeStandsAt(f?.place, here))
+      .map(f => ({ label: f.label, fact: f.fact }))
     : [];
   const current = (campaignState?.sceneTruths ?? [])
     .filter(isNamedStrike)

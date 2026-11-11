@@ -87,11 +87,18 @@ describe('Withstand Damage on a support vehicle (issue #342 Z53)', () => {
       .toEqual({ statValue: 2, vehicle: 'asset-hoverbike' });
   });
 
-  it('a target that names nothing leaves the narration to name the bike', () => {
+  // issue #345 AA14: a target that names nothing is the interpreter's word for
+  // the command starship ("null for the command starship") — the narration no
+  // longer names the vehicle: a support vehicle the line merely mentions took
+  // the starship's hit ("An enemy fighter rakes the Wayfarer's hull" → the
+  // Snub Fighter). It was "a target that names nothing leaves the narration
+  // to name the bike".
+  it('a target that names nothing is the command starship\'s, whatever vehicle the narration mentions', () => {
     const interp = { moveId: 'withstand_damage', statUsed: 'integrity', moveTarget: null,
       playerNarration: 'The hoverbike skids across the scree.' };
     enrichInterpretationStatValue(kiraWithHoverbike(), interp, { shipIds: ['ship-1'] });
-    expect(interp).toMatchObject({ statValue: 2, vehicleItemId: 'asset-hoverbike', vehicleActorId: null });
+    expect(interp).toMatchObject({ statValue: 5, vehicleActorId: 'ship-1' });
+    expect(interp.vehicleItemId).toBeUndefined();
   });
 
   it('a target naming the starship keeps the starship, whatever else the narration mentions', () => {

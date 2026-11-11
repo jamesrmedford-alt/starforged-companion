@@ -116,8 +116,13 @@ export async function initWorldJournals() {
   const folderId = folder?.id ?? null;
 
   for (const name of Object.values(JOURNAL_NAMES)) {
-    const existing = game.journal?.getName?.(name) ?? game.journal?.find?.(j => j.name === name);
-    if (existing) continue;
+    // By its category, so a journal the GM renamed is not made again beside
+    // it (issue #345 AA63).
+    const existing = findJournal(name);
+    if (existing) {
+      await stampJournalCategory(existing, name);
+      continue;
+    }
     try {
       await JournalEntry.create({
         name,
@@ -959,6 +964,48 @@ export async function undoNarrationEntries(narrationIds) {
 }
 
 /**
+ * The Session Log page's End-a-Session summary after an X-Card on its session
+ * (issue #345 AA27). End writes the session's rolling summary and lore titles
+ * onto the page (writeSessionLog); the X-Card's undo takes only the page's
+ * beats off (undoNarrationEntries), so an X-Card played after End — its beat
+ * reaching back to the session's last narration — left "Story so far"
+ * telling what it removed, and "Lore this session" naming lore it retracted.
+ * `narrative`: the X-Card dropped the summary the story was written from (it
+ * covered the removed narration — applyXCardToNarratorMemory), so the story
+ * leaves the page too; nothing rebuilds it there. The lore list keeps a title
+ * unless every lore entry of the session by that title is now retracted. A
+ * page End has not summarised is left alone. A journal write: the canonical
+ * GM's, after the X-Card's undo. Never throws.
+ *
+ * @param {string|null} sessionId — the X-carded narrations' session
+ * @param {{ narrative?: boolean }} [opts]
+ * @returns {Promise<boolean>} whether the page was rewritten
+ */
+export async function retractSessionLogSummary(sessionId, { narrative = false } = {}) {
+  if (typeof sessionId !== "string" || !sessionId) return false;
+  try {
+    const page    = findSessionLogPage(findJournal(JOURNAL_NAMES.sessionLog), sessionId);
+    const flag    = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.sessionLogPage];
+    const summary = flag?.summary;
+    if (!summary?.writtenAt) return false;
+    const lore    = Array.isArray(summary.lore) ? summary.lore : [];
+    const entries = readEntries(findJournal(JOURNAL_NAMES.lore), FLAG_KEYS.lore).filter(e => e.sessionId === sessionId);
+    const gone    = (title) => {
+      const theirs = entries.filter(e => e.title === title);
+      return theirs.length > 0 && theirs.every(e => e.retracted === true);
+    };
+    const kept      = lore.filter(t => !gone(t));
+    const dropStory = narrative && typeof summary.narrative === "string" && summary.narrative.trim() !== "";
+    if (!dropStory && kept.length === lore.length) return false;
+    const next = { ...summary, lore: kept, ...(dropStory ? { narrative: "" } : {}) };
+    return !!(await persistSessionLogPage(page, { ...flag, summary: next }));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: the Session Log's summary could not be revised:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
  * Put back the stance X-carded narrations moved on faction records — the
  * canonical stance home (decisions.md → "Faction stance: the entity record is
  * canonical"): each version's `recordStance`, newest first, where the record
@@ -1192,6 +1239,48 @@ export function getFactionEntry(name) {
   return findFactionPage(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
 }
 
+/**
+ * Follow a faction's rename onto its World Journal — Factions page: the page
+ * that backlinks the faction's journal (`entityId`), else the one its old
+ * name keys to (factionNameKey) that backlinks nothing else, takes the new
+ * name — its title and `factionName` — so the faction stays one page and one
+ * [4e] line under the name its journal now has (issue #345 AA18: renamed in
+ * the Journal sidebar, the record and this page each kept the old name). A
+ * page that already holds the new name is another faction's log: nothing is
+ * merged by a guess. Never throws.
+ *
+ * @param {{ entityId: string, from?: string|null, to: string }} rename —
+ *   the faction's host JournalEntry id, its old and new names
+ * @returns {Promise<boolean>} whether a page was renamed
+ */
+export async function renameFactionEntry({ entityId, from = null, to } = {}) {
+  try {
+    const name = String(to ?? "").trim();
+    if (!name) return false;
+    const pages   = findJournal(JOURNAL_NAMES.factions)?.pages?.contents ?? [];
+    const entryOf = (p) => p?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
+    const fromKey = factionNameKey(from);
+    const page = (entityId ? pages.find(p => entryOf(p)?.entityId === entityId) : null)
+      ?? (fromKey ? pages.find(p => entryOf(p) && !entryOf(p).entityId && factionNameKey(p.name) === fromKey) : null)
+      ?? null;
+    if (!page) return false;
+    const entry = entryOf(page);
+    if (page.name === name && entry.factionName === name) return false;
+    const toKey = factionNameKey(name);
+    if (pages.some(p => p !== page && factionNameKey(p.name) === toKey)) {
+      console.warn(`${MODULE_ID} | worldJournal: a Factions page named "${name}" already exists — "${page.name}" was not renamed.`);
+      return false;
+    }
+    const data = { ...entry, factionName: name, entityId: entry.entityId ?? entityId ?? null };
+    await page.setFlag(MODULE_ID, FLAG_KEYS.factions, data);
+    await page.update({ name, text: { format: 1, content: renderPageBody(FLAG_KEYS.factions, data) } });
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | worldJournal: renaming the faction's page failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // !journal command parsing
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1329,16 +1418,73 @@ function nameToCategory(journalName) {
   return "unknown";
 }
 
+/** A journal's World Journal category flag (written at its creation), or null. */
+function journalCategory(journal) {
+  return journal?.flags?.[MODULE_ID]?.worldJournalCategory ?? null;
+}
+
+/**
+ * The journal of a World Journal category (`name` is its JOURNAL_NAMES
+ * title): the one flagged with that category — what a GM's rename in the
+ * sidebar leaves alone — else the journal of its name that carries no
+ * category flag (one made before the flag), never one flagged as another
+ * category. The flag was written and never read: every reader and writer
+ * found its journal by display name, so a renamed Lore journal took every
+ * confirmed fact out of the narrator's ESTABLISHED LORE, and the next lore
+ * recorded — or the next load — made a second one, splitting the record
+ * (issue #345 AA63; rules/reachability.md §1, §6).
+ *
+ * @param {string} name
+ * @returns {JournalEntry|null}
+ */
 function findJournal(name) {
   if (!globalThis.game?.journal) return null;
-  return game.journal.getName?.(name)
+  const category = nameToCategory(name);
+  if (category !== "unknown") {
+    const flagged = game.journal.find?.(j => journalCategory(j) === category);
+    if (flagged) return flagged;
+  }
+  const named = game.journal.getName?.(name)
       ?? game.journal.find?.(j => j.name === name)
       ?? null;
+  return named && !journalCategory(named) ? named : null;
+}
+
+/**
+ * The journal of a World Journal category, by its key ("lore", "threats",
+ * "factions", "locations", "sessionLog") — found as findJournal finds it. For
+ * the World Journal panel's journal buttons and its lore lookups.
+ *
+ * @param {string} category
+ * @returns {JournalEntry|null}
+ */
+export function findWorldJournal(category) {
+  const name = JOURNAL_NAMES[category];
+  return name ? findJournal(name) : null;
+}
+
+/**
+ * Give a journal found by its name — one made before the category flag —
+ * that flag, the key every lookup now uses (issue #345 AA63). GM only; a
+ * refused stamp is logged, the journal still used.
+ */
+async function stampJournalCategory(journal, name) {
+  const category = nameToCategory(name);
+  if (category === "unknown" || journalCategory(journal) === category) return;
+  if (!game.user?.isGM || typeof journal?.setFlag !== "function") return;
+  try {
+    await journal.setFlag(MODULE_ID, "worldJournalCategory", category);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | worldJournal: marking "${journal.name}" as the ${category} journal failed:`, err?.message ?? err);
+  }
 }
 
 async function getOrCreateJournal(name) {
   let journal = findJournal(name);
-  if (journal) return journal;
+  if (journal) {
+    await stampJournalCategory(journal, name);
+    return journal;
+  }
   if (!game.user?.isGM) return null;
   try {
     journal = await JournalEntry.create({

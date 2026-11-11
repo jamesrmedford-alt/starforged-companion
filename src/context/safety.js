@@ -19,9 +19,10 @@
  * Private per-player Lines: the shared narrator prompt carries every
  * player's lines when a GM's client builds it, and only the building
  * player's own when a player's client does (formatNarratorSafetyContext);
- * the Private Channel carries its player's own. They are never shown to
- * another player or sent in another player's request — but they do sit in
- * the world-scoped campaignState, which every client receives.
+ * the Private Channel carries its player's own (formatOwnSafetyContext —
+ * from their client setting, as a player's shared narration does). They are
+ * never shown to another player or sent in another player's request — but
+ * they do sit in the world-scoped campaignState, which every client receives.
  */
 
 import { runCampaignStateWriteNow, serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -78,7 +79,7 @@ export function formatSafetyContext(campaignState, sessionState = null, currentU
 /**
  * The safety block for shared narration built on this client — the narrator
  * system prompt (buildNarratorSystemPrompt) uses it; the Private Channel
- * passes its player's id to formatSafetyContext instead.
+ * builds its player's block with formatOwnSafetyContext instead.
  *
  * Private Lines (decisions.md → "Private Lines in shared narration"):
  * - A GM's client builds for the whole table, so every player's lines go in,
@@ -96,13 +97,35 @@ export function formatNarratorSafetyContext(campaignState) {
   const user = globalThis.game?.user;
   if (user?.isGM) return formatSafetyContext(campaignState, null, "gm");
   if (!user?.id) return formatSafetyContext(campaignState);
+  return formatOwnSafetyContext(campaignState, user.id);
+}
 
+/**
+ * The safety block of a request built for one user alone: the campaign's
+ * Lines and Veils and that user's own Private Lines, never another user's —
+ * the Private Channel (buildPrivateContext, src/private-channel/context.js)
+ * and shared narration on a player's client (formatNarratorSafetyContext).
+ *
+ * On the user's own client their lines are read from their client setting,
+ * the canonical store: the campaignState copy holds them only once a GM has
+ * relayed them, so a line the player added while no GM was online was
+ * missing from their own Private Channel (issue #345 AA03). Another user's
+ * lines can only come from that copy.
+ *
+ * @param {Object} campaignState — CampaignStateSchema
+ * @param {string} userId        — the Foundry user the request is for
+ * @returns {string}             — Formatted safety context, always non-empty
+ */
+export function formatOwnSafetyContext(campaignState, userId) {
+  if (!userId || userId !== globalThis.game?.user?.id) {
+    return formatSafetyContext(campaignState, null, userId ?? null);
+  }
   const lines  = readOwnPrivateLines();
   const safety = {
     ...(campaignState?.safety ?? {}),
-    privateLines: lines.length ? [{ playerId: user.id, lines }] : [],
+    privateLines: lines.length ? [{ playerId: userId, lines }] : [],
   };
-  return formatSafetyContext({ ...(campaignState ?? {}), safety }, null, user.id);
+  return formatSafetyContext({ ...(campaignState ?? {}), safety }, null, userId);
 }
 
 /**
@@ -246,10 +269,13 @@ function removeXCardedNarration(narrator, cs) {
  * Journal entries, Session Log beats and tier details — issue #329 X01), and
  * carry their retracted facts to the stores that copied them — entity tier
  * details and this session's lore (rules/narrator-memory.md 6b: every
- * correction path calls propagateRetraction). Fail-open per step.
+ * correction path calls propagateRetraction). Last, the session's Session Log
+ * summary, which End a Session wrote: its story goes when the summary it was
+ * written from was dropped, and its lore list loses what was retracted
+ * (issue #345 AA27). Fail-open per step.
  *
  * @param {Object|null} narrator
- * @param {{ cards: Object[], retracted: Object[] }} removal
+ * @param {{ cards: Object[], retracted: Object[], sessionId?: string|null, summaryDropped?: boolean }} removal
  * @returns {Promise<void>}
  */
 async function finishXCardRemoval(narrator, removal) {
@@ -283,15 +309,25 @@ async function finishXCardRemoval(narrator, removal) {
       console.warn(`${MODULE_ID} | X-Card: removing the connections the narration created failed:`, err?.message ?? err);
     }
   }
-  if (!removal.retracted.length) return;
+  if (removal.retracted.length) {
+    try {
+      const { propagateRetraction } = await import("../factContinuity/retractions.js");
+      // propagateRetraction reads the session id and marks a copy's summary;
+      // the summary was settled in the pause's write.
+      const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+      for (const truth of removal.retracted) await propagateRetraction(truth, cs);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: carrying the retracted facts to entity details and lore failed:`, err?.message ?? err);
+    }
+  }
+  // An X-Card played after End a Session: the Session Log's "Story so far"
+  // End wrote kept telling the removed beat (issue #345 AA27). After the
+  // undo and the propagation, so the lore they retracted leaves its list.
   try {
-    const { propagateRetraction } = await import("../factContinuity/retractions.js");
-    // propagateRetraction reads the session id and marks a copy's summary;
-    // the summary was settled in the pause's write.
-    const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
-    for (const truth of removal.retracted) await propagateRetraction(truth, cs);
+    const { retractSessionLogSummary } = await import("../world/worldJournal.js");
+    await retractSessionLogSummary(removal.sessionId ?? null, { narrative: removal.summaryDropped === true });
   } catch (err) {
-    console.warn(`${MODULE_ID} | X-Card: carrying the retracted facts to entity details and lore failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | X-Card: revising the Session Log's summary failed:`, err?.message ?? err);
   }
 }
 

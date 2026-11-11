@@ -40,6 +40,7 @@
  */
 
 import { SHIPBOARD_ROLES } from "./battleStations.js";
+import { readAssetAbilityTexts } from "../character/actorBridge.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -671,10 +672,20 @@ function moduleIcon(slug) {
   return { icon: "icons/svg/chest.svg", tint: "#9AD0E0" };   // generic module
 }
 
-/** A short, HTML-free description line for a module pin. */
+/**
+ * A short, HTML-free description line for a module pin — what the module
+ * does: its `description` when it has one, else its enabled abilities' text
+ * (actorBridge.readAssetAbilityTexts), else its `requirement`. Every
+ * canonical module ships `description` and `requirement` as "" (the vendor
+ * marks `description` deprecated) and its text in its ability; read with
+ * `??`, "" never reached the next field, so every module pin — and the
+ * vision pass's target list — said "Installed ship module." (issue #345 AA56).
+ */
 function moduleDescription(item) {
-  const raw = item?.system?.description ?? item?.system?.requirement ?? "";
-  const text = String(raw).replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const plain = (raw) => String(raw ?? "").replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+  const text = plain(item?.system?.description)
+    || plain(readAssetAbilityTexts(item).join(" "))
+    || plain(item?.system?.requirement);
   return text ? truncate(text, 160) : "Installed ship module.";
 }
 

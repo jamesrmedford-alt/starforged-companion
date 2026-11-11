@@ -40,6 +40,19 @@ shift for "The Iron Syndicate" used to make a second page and never reach
 the "Iron Syndicate" record — one faction, two stances in [4e]. The other
 World Journal categories keep exact titles.
 
+**A rename in the Journal sidebar** (issue #345 AA18): the faction's host
+JournalEntry is what the GM renames and what the Entities panel shows, so its
+name is authoritative, as an Actor's is for the Actor-hosted types. The record's
+`name` and the faction's World Journal page (its title and `factionName`,
+found by the page's `entityId` backlink to that journal, else by the old name's
+key) follow it — live on the canonical GM (index.js's `updateJournalEntry`
+hook → `migrator.followEntityJournalRename` → `worldJournal.renameFactionEntry`)
+and at world load (`syncEntityRecordNames`). A creature's record follows its
+journal the same way. The sync covered Actors only, so the narrator kept the
+old name and a narration naming the new one proposed a second faction (a
+second Factions page, a draft row for a second record). A Factions page that
+already holds the new name is another faction's log and is left alone.
+
 **Faction entity records** (`src/entities/faction.js`): journal-entry-backed
 records with the full Starforged shape — type/subtype, influence,
 dominion/leadership, `projects[]`, `rumors[]`, quirk, and

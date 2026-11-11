@@ -342,17 +342,21 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
   // Each write after the claim: one the world refuses goes to the GMs, with a
   // Retry (resultUpgrade.js applyUpgradeStep).
   const failures = [];
-  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: improveMeterChanges(improve, newConsequences) }, failures);
 
   // The strong hit replaces a miss whose Pay the Price already landed: rewind
   // its clocks and refund its meter loss, as a burn does — the improvement
   // kept them on top of its own cost (issue #311 P05). (An improvement always
   // reaches a strong hit, which pays no price; the check mirrors the burn's.)
+  // First, as the burn's (issue #342 D4): the strong hit's +1 momentum was
+  // written under the maximum the reverted price's unprepared mark lowered,
+  // and capped there — 9, not 10 (issue #345 AA46).
   const priceStands = !!improve.ptpReversals && newConsequences.routePayThePrice === true;
   if (improve.ptpReversals && !priceStands) {
     await revertPayThePrice(improve.ptpReversals, actor, { kind: "improve", failures, resolutionId: improve.resolutionId ?? null }).catch(err =>
       console.warn(`${MODULE_ID} | improveResult: PtP reversal failed:`, err));
   }
+
+  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: improveMeterChanges(improve, newConsequences) }, failures);
 
   // The original outcome's pending choice is retired and the strong hit's
   // offered once (issue #311 P03); a price that stands keeps its cards, as

@@ -26,8 +26,10 @@ const MODULE_ID = "starforged-companion";
 
 // Mocks for the context/publish slice. The transcript tests above don't import
 // these modules, so these mocks are inert for them.
+// issue #345 AA03: the Private Channel builds its block with formatOwnSafetyContext
+// (the player's own lines from their client setting) — tests/unit/privateChannelOwnPrivateLines.test.js.
 vi.mock("../../src/context/safety.js", () => ({
-  formatSafetyContext: vi.fn(() => "## SAFETY CONFIGURATION\n\n(safety rules)"),
+  formatOwnSafetyContext: vi.fn(() => "## SAFETY CONFIGURATION\n\n(safety rules)"),
 }));
 vi.mock("../../src/system/campaignTruths.js", () => ({
   buildCampaignTruthsBlock: vi.fn(async () => "## WORLD TRUTHS\n\n(14 truths verbatim)"),

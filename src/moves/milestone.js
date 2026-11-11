@@ -136,6 +136,41 @@ export function selectFulfilVow(vows, target, { itemId = null, rollerActorId = n
 }
 
 /**
+ * The vow a Forsake Your Vow clears (issue #345 AA16, AA49). Forsaking clears
+ * every copy and cannot be undone, so it is the roller's own vow — a shared
+ * vow through the roller's copy — never a crewmate's:
+ *
+ *   1. A name — the roller's open vow by it: exact, then one inside the other
+ *      as whole words (Fulfill's rungs, `vowByName`). A crewmate's vow named
+ *      exactly no longer beats the roller's whole-word one (AA49). A name
+ *      that answers to the roller's fulfilled vow clears nothing (`completed`).
+ *   2. No name: the roller's open vows, one per `vowId` — one is the vow,
+ *      several are the choices. The sole-open rung counted every PC's copies,
+ *      so two open copies table-wide — two PCs' vows, or one shared vow's two
+ *      copies — cleared nothing behind a card saying "Vow cleared." (AA16).
+ *   3. A name none of the roller's open vows answers to: those vows are the
+ *      choices, even one — a wrong guess cannot be undone
+ *      (rules/reachability.md §6).
+ *
+ * No vow and no choices: the roller has no open vow to forsake.
+ *
+ * @param {Array<{ id, name, rank, ticks, completed, actorId?, vowId? }>} vows — every PC's (readAllVows)
+ * @param {string|null} target — interpretation.moveTarget
+ * @param {{ rollerActorId?: string|null }} [opts]
+ * @returns {{ vow: Object|null, choices: Object[], completed?: true }}
+ */
+export function selectForsakeVow(vows, target, { rollerActorId = null } = {}) {
+  const mine = rollerActorId ? (vows ?? []).filter(v => v && v.actorId === rollerActorId) : [];
+  const open = mine.filter(v => !v.completed);
+  const named = vowByName(open, target);
+  if (named) return { vow: named, choices: [] };
+  if (namesCompletedVow(mine, target)) return { vow: null, choices: [], completed: true };
+  const distinct = distinctVows(open, rollerActorId);
+  if (distinct.length === 1 && !String(target ?? "").trim()) return { vow: distinct[0], choices: [] };
+  return { vow: null, choices: distinct };
+}
+
+/**
  * The vow `target` names: exact (case-insensitive), then one inside the other
  * as whole words, either way — "Kade is avenged" never names the vow "Ade"
  * (issue #325 W30).

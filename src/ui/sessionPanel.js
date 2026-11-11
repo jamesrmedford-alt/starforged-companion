@@ -34,7 +34,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "../safety/sessionLifecycleDialogs.js";
-import { isSessionActive, sessionMinutesActive } from "../session/lifecycle.js";
+import { isSessionActive, sessionMinutesActive, sessionNeedsMint } from "../session/lifecycle.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -115,18 +115,25 @@ export class SessionPanelApp extends ApplicationV2 {
   async _prepareContext(_options) {
     const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
     const active        = isSessionActive(campaignState);
+    // A session whose gate is still open is over after four hours without
+    // chat (sessionNeedsMint): the next Begin a Session starts the new one, as
+    // its dialog agrees. With the GM's game left loaded nothing mints, and the
+    // panel read "Active · 1800 min" with Begin disabled (issue #345 AA59).
+    const over          = active && sessionNeedsMint(campaignState);
     const minutes       = sessionMinutesActive(campaignState);
     const sessionNumber = Number(campaignState?.sessionNumber ?? 0);
-    return { active, minutes, sessionNumber };
+    return { active, over, minutes, sessionNumber };
   }
 
   /** @override */
   async _renderHTML(context, _options) {
-    const { active, minutes, sessionNumber } = context;
+    const { active, over, minutes, sessionNumber } = context;
 
-    const stateBadge = active
-      ? `<span class="badge active">Active${minutes ? ` · ${minutes} min` : ""}</span>`
-      : `<span class="badge inactive">Inactive — narration is gated</span>`;
+    const stateBadge = over
+      ? `<span class="badge over" title="No chat for four hours: this session is over. Begin Session starts the next one.">Over — four hours without chat</span>`
+      : active
+        ? `<span class="badge active">Active${minutes ? ` · ${minutes} min` : ""}</span>`
+        : `<span class="badge inactive">Inactive — narration is gated</span>`;
 
     const sessionLine = sessionNumber > 0
       ? `<p class="muted">Session #${sessionNumber}</p>`
@@ -147,7 +154,7 @@ export class SessionPanelApp extends ApplicationV2 {
 
         <section class="lifecycle-row">
           <button class="session-btn primary" data-action="beginSession"
-                  ${active ? "disabled title=\"Session already active — end it first\"" : ""}>
+                  ${active && !over ? "disabled title=\"Session already active — end it first\"" : ""}>
             Begin Session
           </button>
           <button class="session-btn primary" data-action="endSession"
@@ -218,30 +225,22 @@ export class SessionPanelApp extends ApplicationV2 {
   static async #onTakeBreak()  { await openTakeABreakDialog(); }
 
   /**
-   * Envision Inciting Incident is anyone's, as `!incite` is (issue #330 D15).
-   * A player's press is their `!incite` line: the chat-command router runs it
-   * where a Claude key lives (RUN_ON.CLAUDE — the keyed canonical GM, else
-   * the player's own key), exactly as when they type it. The panel used to
-   * disable the button for every non-GM while the typed command worked.
+   * Envision Inciting Incident is `!incite` on a button, anyone's (issue #330
+   * D15). Every press — a player's or a GM's — is the presser's `!incite`
+   * line: the chat-command router runs it where a Claude key lives
+   * (RUN_ON.CLAUDE — the keyed canonical GM, else the presser's own key),
+   * exactly as when they type it. A GM's press ran it on the GM's own client,
+   * so a keyless co-GM's press posted the spark-only card while their typed
+   * `!incite` reached the keyed GM's narration (issue #345 D6 — the
+   * maintainer's option A). The panel used to disable the button for every
+   * non-GM while the typed command worked.
    */
   static async #onEnvisionIncite() {
-    if (!game.user?.isGM) {
-      try {
-        await ChatMessage.create({ content: "!incite" });
-      } catch (err) {
-        console.warn("starforged-companion | session panel: the !incite line could not be posted:", err?.message ?? err);
-        ui.notifications?.warn?.("Envision Inciting Incident could not be sent. Check the console.");
-      }
-      return;
-    }
     try {
-      const { runIncitingIncident } = await import("../session/incitingIncident.js");
-      // A working copy, as `!incite`'s (issue #335 Y04).
-      const campaignState = foundry.utils.deepClone(game.settings.get("starforged-companion", "campaignState") ?? {});
-      await runIncitingIncident(campaignState);
+      await ChatMessage.create({ content: "!incite" });
     } catch (err) {
-      console.warn("starforged-companion | session panel: envision incident failed:", err?.message ?? err);
-      ui.notifications?.warn?.("Envision Inciting Incident failed. Check the console.");
+      console.warn("starforged-companion | session panel: the !incite line could not be posted:", err?.message ?? err);
+      ui.notifications?.warn?.("Envision Inciting Incident could not be sent. Check the console.");
     }
   }
 }
