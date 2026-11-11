@@ -68,9 +68,12 @@ recorded under its name promoted to it; its bond is §2's.
   description names that character, else every clause of the narration
   naming them names that character alone (`narrator.js roundFigureOwner`) —
   with that hit's seed, bonded to its roller, and confirms only a pending row
+  the round names (its lines or its narration, whole words — W23's test) and
   its own roller met (`runRoundNarrationPasses` → `connectionRollers` →
   `routeEntityDrafts`' slots; issue #342 Z09 — the round's first connection,
-  whoever met them, went to the first hit's roller with that roller's seed).
+  whoever met them, went to the first hit's roller with that roller's seed;
+  issue #345 AA09 — without the naming test a one-PC round confirmed the
+  newest card's first pending row, an NPC the round never mentioned).
   A figure the round cannot place waits on the draft card. The auto-created record carries the narration's id
   (`createdFromNarrationId`): an X-Card on that narration deletes the NPC
   card, its bond Items, its `connectionIds` entry and its portraits (the

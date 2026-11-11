@@ -673,12 +673,19 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
  * and a pending row its `namingText` names. A Batch Mode round's hits
  * (`connectionRollers`) each take only a figure their `owns` gives their own
  * roller (issue #342 Z09: the round's first connection, whoever met them,
- * went to the first hit's roller with that roller's seed).
+ * went to the first hit's roller with that roller's seed), and a pending row
+ * only when the round's `namingText` — its lines and its narration — names it
+ * too, as free-flow's must (issue #345 AA09: `owns` alone gave a one-PC
+ * round every row, and read a two-PC round's off the row's old description,
+ * so the first pending row on the newest card — an NPC the round never
+ * mentioned — was confirmed and bonded to the roller).
  *
  * @param {Object} options — routeEntityDrafts' options
  * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, done: boolean }>}
  */
 function connectionSlots(options) {
+  const hay = String(options.namingText ?? "");
+  const named = hay.trim() ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(hay) : null;
   if (Array.isArray(options.connectionRollers)) {
     return options.connectionRollers
       .filter(r => r && typeof r.owns === "function")
@@ -686,17 +693,16 @@ function connectionSlots(options) {
         actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
         connectionSeed: r.connectionSeed ?? null,
         takes:          (entity) => r.owns(entity) === true,
-        names:          (draft) => r.owns(draft) === true,
+        names:          named ? (draft) => named(draft) && r.owns(draft) === true : null,
         done:           false,
       }));
   }
   if (!options.autoCreateConnection) return [];
-  const hay = String(options.namingText ?? "");
   return [{
     actorId:        options.actorId ?? null,
     connectionSeed: options.connectionSeed ?? null,
     takes:          () => true,
-    names:          hay.trim() ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(hay) : null,
+    names:          named,
     done:           false,
   }];
 }
@@ -2274,8 +2280,9 @@ async function completeListedEntity(draft, campaignState) {
  *
  * @param {(draft: Object) => boolean} names — whether the move's narration
  *   names a row as its roller's: free-flow's, the row's full name in the
- *   player's narration and the narrator's; a round's hit, the row's figure
- *   its roller met (connectionSlots — issue #342 Z09)
+ *   player's narration and the narrator's; a round's hit, a row the round
+ *   names so whose figure its roller met (connectionSlots — issue #342 Z09,
+ *   #345 AA09)
  * @param {string|null} actorId — the roller
  * @param {string|null} [narrationId] — the Make a Connection's narration
  * @returns {Promise<{ entity: Object, record: Object }|null>}
