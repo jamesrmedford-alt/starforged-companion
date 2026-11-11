@@ -6,6 +6,32 @@ rejected.
 
 ---
 
+## A help heading that a newer tag passed is renamed to the tag that shipped it (2026-11)
+
+**Decision:** when the in-game help Changelog's newest `<h3>v…</h3>` is below
+the latest release tag — its notes shipped under a tag that jumped past it —
+the repair renames that heading to the tag that shipped them (`vCURRENT`) and
+files the new work under a new `vCURRENT + 1` heading, `CONTENT_VERSION`
+matching it (CLAUDE.md's version-pinning rule; issue #345 D7,
+VERSION-PIN-RULE-MINOR-BUMP — the maintainer chose option A). Applied once:
+the v1.8.0 release's notes were headed v1.7.37 (`CONTENT_VERSION` "1.7.37");
+they are v1.8.0 now, `CHANGELOG.md`'s shipped `[Unreleased]` is promoted to
+`[1.8.0]`, and issue #345's work is v1.8.1. `tests/unit/helpChangelogVersionPin.test.js`
+fails while the newest heading is below the newest tag merged into `HEAD`
+(it skips where no tags are fetched, as in CI's shallow checkout).
+
+**Reason:** the old repair — rename the stale heading to `vCURRENT + 1` —
+files a release's notes under the version after the one that shipped them
+whenever that release jumped past the heading: v1.8.0's Batch Mode notes
+would have read v1.8.1, while `CHANGELOG.md`'s promotion gives the same notes
+`[1.8.0]`, so the two changelogs would disagree for good.
+
+**Rejected:** *Keep the rule and accept the mislabel* (option B), as
+`CHANGELOG.md` once did for a skipped release — a table reading the help
+would see the wrong version for its newest notes.
+
+---
+
 ## The Session panel's ✦ Envision Inciting Incident is `!incite` for a GM too (2026-11)
 
 **Decision:** every press of the Session panel's ✦ Envision Inciting
