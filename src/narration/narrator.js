@@ -21,6 +21,7 @@ import {
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
+import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
@@ -2427,12 +2428,17 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   if (isCanonicalGM()) {
     let kept = true;
     try {
-      kept = await serialiseCampaignStateWrite(async () => {
+      const write = serialiseCampaignStateWrite(async () => {
         if (xCardPlayCount() !== xCardPlaysAtStart) return false;
         const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
         await game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
         return true;
       }, 'rolling summary');
+      // A write the server never answers is given up after a bound: it held
+      // this refresh — and every later one, and End and Begin a Session
+      // behind them — for the rest of the page load (issue #347 AB05).
+      if (await settledWithin(write, WORLD_WRITE_WAIT_MS, 'rolling summary write')) kept = await write;
+      else console.warn(`${MODULE_ID} | narrator: the rolling summary's write was not answered — it may not be saved.`);
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary persist failed:`, err?.message ?? err);
     }
@@ -2468,6 +2474,16 @@ function cachedRollingSessionSummary(campaignState) {
 
 let _summaryRefresh = null;
 let _summaryRefreshAgain = false;
+// When the refresh in flight began: one older than SUMMARY_REFRESH_WAIT_MS
+// is passed, not joined (issue #347 AB05).
+let _summaryRefreshStartedAt = 0;
+
+/**
+ * How long a refresh may run before the next card starts its own, and how
+ * long finalizeSessionSummary waits for one — two bounded Claude calls and a
+ * bounded write, with headroom. Only a refresh that never settles is passed.
+ */
+const SUMMARY_REFRESH_WAIT_MS = 5 * 60_000;
 
 /**
  * Regenerate the rolling session summary after each narrator card posts, on
@@ -2525,7 +2541,9 @@ export function registerPublishedReflectionHook() {
 export async function finalizeSessionSummary(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
   if (!sessionId || !rollingSummaryEnabled()) return;
-  if (_summaryRefresh) await _summaryRefresh;
+  // Bounded: a refresh that never settles held End and Begin a Session with it
+  // (issue #347 AB05).
+  if (_summaryRefresh) await settledWithin(_summaryRefresh, SUMMARY_REFRESH_WAIT_MS, 'rolling summary refresh');
   let stored = null;
   try { stored = game.settings.get(MODULE_ID, 'campaignState')?.sessionSummary ?? null; }
   catch { stored = null; }
@@ -2540,11 +2558,16 @@ export async function finalizeSessionSummary(campaignState) {
 }
 
 function refreshRollingSessionSummary() {
-  if (_summaryRefresh) {
+  // A refresh still running past its bound never settled — a write the
+  // server never answered: passed, so this card refreshes the summary (issue
+  // #347 AB05). It was joined for the rest of the page load.
+  if (_summaryRefresh && Date.now() - _summaryRefreshStartedAt < SUMMARY_REFRESH_WAIT_MS) {
     _summaryRefreshAgain = true;
     return _summaryRefresh;
   }
-  _summaryRefresh = (async () => {
+  if (_summaryRefresh) console.warn(`${MODULE_ID} | narrator: a rolling summary refresh has not settled in ${SUMMARY_REFRESH_WAIT_MS}ms — starting another.`);
+  _summaryRefreshStartedAt = Date.now();
+  const mine = (async () => {
     try {
       do {
         _summaryRefreshAgain = false;
@@ -2552,14 +2575,15 @@ function refreshRollingSessionSummary() {
         // is given — the cached setting itself, before a write the world can
         // refuse (CACHE-MUTATED-BEFORE-WRITE).
         await getRollingSessionSummary({ ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) });
-      } while (_summaryRefreshAgain);
+      } while (_summaryRefreshAgain && _summaryRefresh === mine);
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary refresh failed:`, err?.message ?? err);
     } finally {
-      _summaryRefresh = null;
+      if (_summaryRefresh === mine) _summaryRefresh = null;
     }
   })();
-  return _summaryRefresh;
+  _summaryRefresh = mine;
+  return mine;
 }
 
 /**

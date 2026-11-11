@@ -197,6 +197,7 @@ import {
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing, onGmLoadChange } from "./multiplayer/gmGate.js";
+import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
@@ -2437,7 +2438,7 @@ export async function claimPendingMoveLock({ heldMove = false } = {}) {
   _moveLockClaimInFlight = claim;
   let outcome = "claimed";
   try {
-    await serialiseCampaignStateWrite(async () => {
+    const write = serialiseCampaignStateWrite(async () => {
       const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
       // Taken by another client's write while this claim waited its turn.
       if (latest.pendingMove) { outcome = "busy"; return; }
@@ -2445,6 +2446,17 @@ export async function claimPendingMoveLock({ heldMove = false } = {}) {
       await game.settings.set(MODULE_ID, "campaignState",
         { ...latest, pendingMove: true, pendingMoveBy: game.user?.id ?? null, pendingMoveClaim: claim });
     }, "move lock claim");
+    // A claim the server never answers (a dropped connection) is given up
+    // after a bound — it pinned `_moveLockClaimInFlight` for good, so every
+    // later move on this GM was "already being resolved", held card moves
+    // never drained and a waiting round waited forever (issue #347 AB05). One
+    // that lands after all is released at once: its pipeline has gone.
+    if (await settledWithin(write, MOVE_LOCK_CLAIM_WAIT_MS, "move lock claim")) {
+      await write;
+    } else {
+      outcome = "refused";
+      write.then(() => releasePendingMoveLock(claim), () => {}).catch(() => {});
+    }
   } catch (err) {
     console.error(`${MODULE_ID} | could not claim the move lock:`, err);
     outcome = "refused";
@@ -2513,7 +2525,7 @@ export function isMoveLockFreeHere() {
  *   claim's — false when the release was refused (the caller retries it)
  */
 export function releasePendingMoveLock(claim = null) {
-  return serialiseCampaignStateWrite(() => {
+  const release = serialiseCampaignStateWrite(() => {
     const latestState = game.settings.get(MODULE_ID, "campaignState");
     if (!latestState?.pendingMove) {               // already released — cheap no-op
       noteMoveLockClaimReleased(claim);
@@ -2535,7 +2547,18 @@ export function releasePendingMoveLock(claim = null) {
       return false;
     });
   }, "move lock release");
+  // A release the server never answers reads as refused after a bound, so
+  // the caller's retry — and the GMs' notice when that is refused too — runs;
+  // it waited forever, the pipeline's `finally` with it (issue #347 AB05).
+  return settledWithin(release, MOVE_LOCK_CLAIM_WAIT_MS, "move lock release")
+    .then(settled => (settled ? release : false));
 }
+
+/**
+ * How long the move lock's claim or release waits for its own write — a
+ * write the server never answers is given up after it (issue #347 AB05).
+ */
+const MOVE_LOCK_CLAIM_WAIT_MS = WORLD_WRITE_WAIT_MS;
 
 /** Drop the owning actor's cached snapshot when one of its Items changes — this client's cache only. */
 function invalidateItemOwnerSnapshot(item) {

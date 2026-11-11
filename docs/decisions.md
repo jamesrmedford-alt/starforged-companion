@@ -2303,6 +2303,17 @@ be fixed on 2026-10-29. Each finding's ID in brackets.)
   session already ended is a focus correction: it replaces the noted focus,
   repeats nothing else, posts a note, and pays the momentum only when no
   focus had been noted — the momentum is for the session's first focus.
+  *Update (issue #347 AB05):* "one at a time" waits for the End (or Begin)
+  ahead of it for at most five minutes — past the relay queue's own cap — so
+  one whose write the server never answered no longer holds every later one
+  for the rest of the page load. Every wait on a write of the module's own is
+  bounded the same way (`multiplayer/settleWithin.js`): the move lock's claim
+  and release (30 s; a claim that lands later is released at once), the
+  rolling summary's write and refresh, and a Private Channel page write (its
+  turns kept for a retry, the player told). *Trade-off accepted:* an End or
+  Begin that resumes after its five minutes runs beside the one that went
+  ahead; the Progress Tracks write queue, awaited inside the move lock, stays
+  unbounded (U57).
 - **Session lifecycle writes go on a copy** [N09, and End's twin]: Begin and
   End read `game.settings.get`'s value through `deepClone` before changing
   it (rules/foundry-api.md).
