@@ -2312,8 +2312,19 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     : '';
 
   // An X-Card played while the call is out removes a narration this summary
-  // was made from: its reply is never stored (issue #325 W06).
+  // was made from: its reply is never stored (issue #325 W06). So does one
+  // played before the call whose removal had not reached the source yet: the
+  // pause's own write names the narrations it removes (`xCardedNarrationIds`)
+  // before their cards are flagged `xCarded`. A pause still standing from an
+  // earlier play is no reason to discard — its cards are out of the source:
+  // the next session's mint at a world load, or End a Session pressed while
+  // paused, threw away the summary of the session just played and LAST
+  // SESSION was the session before (issue #345 AA57).
   const xCardPlaysAtStart = xCardPlayCount();
+  const madeFromXCarded = () => cards.some(m => {
+    const f = m?.flags?.[MODULE_ID];
+    return !!f?.xCarded || isNarrationXCarded(f?.narrationId);
+  });
 
   let text;
   try {
@@ -2330,7 +2341,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     return cachedText;
   }
   if (!text?.trim()) return cachedText;
-  if (xCardPlayCount() !== xCardPlaysAtStart || isXCardActive(null)) {
+  if (xCardPlayCount() !== xCardPlaysAtStart || madeFromXCarded()) {
     console.debug(`${MODULE_ID} | narrator: X-Card played during the rolling summary's call — its summary is discarded.`);
     return '';
   }

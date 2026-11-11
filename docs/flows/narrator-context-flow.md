@@ -241,7 +241,12 @@ summary back over it, and a regen whose Haiku call was out when the card was
 played discards its reply; issue #325 W06 — checked again by the play count
 at the write's turn on the GM's write chain, so a card played while the
 write waited behind another, which jumps the chain and lands first, discards
-it too: issue #345 AA25) and sets `xCardRedirect` — on
+it too: issue #345 AA25; a pause still standing from an earlier play does
+not — its cards are out of the source — unless the source still holds a
+narration the pause's write names, `xCardedNarrationIds`, before its card
+is flagged: the next session's mint, or End a Session pressed while paused,
+kept no summary of the session just played, issue #345 AA57) and sets
+`xCardRedirect` — on
 every play. A ship move the narration made is undone too: the sidecar's
 `ship / position` change is written to the command vehicle stamped with the
 narration's `narrationId` and the position before it (`previous`, up to
