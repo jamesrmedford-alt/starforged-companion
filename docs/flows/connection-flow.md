@@ -65,16 +65,20 @@ recorded under its name promoted to it; its bond is §2's.
   narration's PC). A Batch Mode round's narration is several characters', so
   each Make a Connection hit in it creates one connection — the figure its
   own character met: the roller's own line names them, else their detected
-  description names that character, else every clause of the narration
-  naming them names that character alone (`narrator.js roundFigureOwner`) —
-  with that hit's seed, bonded to its roller, and confirms only a pending row
+  description and every clause of the narration naming them, taken
+  together, name that character alone (`narrator.js roundFigureOwner`; a
+  description naming one acting character and a clause another places them
+  nowhere — issue #345 D2, the maintainer's ruling B: the description was
+  read first, and a relation it named outranked the clause saying who met
+  them) — with that hit's seed, bonded to its roller, and confirms only a pending row
   the round names (its lines or its narration, whole words — W23's test) and
   its own roller met (`runRoundNarrationPasses` → `connectionRollers` →
   `routeEntityDrafts`' slots; issue #342 Z09 — the round's first connection,
   whoever met them, went to the first hit's roller with that roller's seed;
   issue #345 AA09 — without the naming test a one-PC round confirmed the
   newest card's first pending row, an NPC the round never mentioned).
-  A figure the round cannot place waits on the draft card. The auto-created record carries the narration's id
+  A figure the round cannot place waits on the draft card, whose connection
+  row asks whose it is (the D3 card, "Entity-extraction drafts" below). The auto-created record carries the narration's id
   (`createdFromNarrationId`): an X-Card on that narration deletes the NPC
   card, its bond Items, its `connectionIds` entry and its portraits (the
   "Art:" journal entries and their `artAssetIds` index entries —

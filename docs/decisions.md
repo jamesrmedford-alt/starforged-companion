@@ -319,14 +319,22 @@ each row; each row's ID in brackets.)
   rewind takes out of full — another player's price's included, vow clocks
   too — not only the burned receipt's own trigger (amends #338 D8's basis).
 - **A round credits each roller, and asks when it cannot tell** [Z08, Z09,
-  Z10, Z35, Z36, Z40, D3]: a Make a Connection miss takes no part in the
-  round's capture; each hit auto-creates the NPC its own roller met
-  (`roundFigureOwner`: their own line, then the detected description, then
-  the narration's clause) or nothing — a figure two PCs could own waits on
-  D3's card; the tier pass covers unrolled entries; an entry whose PC is gone
-  is refused, never rolled as another PC; names and the PARTY roster follow
-  actor ids, not the names copied at open; two or more acting characters are
-  narrated in the third person ("Narrator tone and perspective").
+  Z10, Z35, Z36, Z40, D3; amended by issue #345 D2]: a Make a Connection miss
+  takes no part in the round's capture; each hit auto-creates the NPC its own
+  roller met (`roundFigureOwner`: their own line; else the detected
+  description and the narration's clause, when together they name that
+  roller alone) or nothing — a figure two PCs could own, or whose description
+  names one acting PC and the narration's clause another, waits on D3's card.
+  (#345 D2, the maintainer's ruling B, 2026-11: the description was read
+  first, so "once crewed with Ren" made the NPC Kira found Ren's connection —
+  the detection never says who met a figure. *Rejected:* keeping that order,
+  A; reading the clause first, C — a clause naming both PCs fell back to the
+  description, the same confident wrong owner. A description still places a
+  figure no clause places.) The tier pass covers unrolled entries; an entry
+  whose PC is gone is refused, never rolled as another PC; names and the
+  PARTY roster follow actor ids, not the names copied at open; two or more
+  acting characters are narrated in the third person ("Narrator tone and
+  perspective").
 - **A Batch Mode action is never silently dropped** [Z05, Z29, Z31, Z34, D2]:
   an untaken offer or an unrolled card-move entry is held for the next round;
   held moves run as free-flow when the mode turns off; a submitted action

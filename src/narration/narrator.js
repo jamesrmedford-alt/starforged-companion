@@ -1157,12 +1157,17 @@ function roundTierRefs(entries, matchedEntityIds, matchedEntityTypes) {
  * PC's id, or null when the round cannot tell (issue #342 Z09). A bounded
  * ladder that stops before a guess (rules/reachability.md §6):
  *   1. the acting player whose own line names the figure (several: null);
- *   2. else the acting PC the figure's detected description names;
- *   3. else the acting PC the narration names beside it — every sentence or
- *      clause (. ! ? ;) naming the figure names that PC and no other.
- * Names match whole words; the figure's own name is taken out first, so a
- * PC's name inside it ("Kira's Brother") is not a mention. A round with one
- * acting PC is free-flow's case: every figure is theirs.
+ *   2. else the one acting PC named by the figure's detected description and
+ *      by the narration's sentences or clauses (. ! ? ;) that name the
+ *      figure, taken together — either may name no one.
+ * When they disagree (the description names one acting PC, a clause another)
+ * the figure is no one's here: it waits on the draft card, whose Confirm asks
+ * whose connection it is (issue #345 D2, the maintainer's ruling B — the
+ * description outranked the clause, so "once crewed with Ren" made Kira's
+ * find Ren's connection; the detection never says who met a figure). Names
+ * match whole words; the figure's own name is taken out first, so a PC's
+ * name inside it ("Kira's Brother") is not a mention. A round with one acting
+ * PC is free-flow's case: every figure is theirs.
  *
  * @param {Array<Object>} entries — roundNarrationEntries
  * @param {string} narration
@@ -1185,10 +1190,10 @@ function roundFigureOwner(entries, narration) {
     const without = (text) => String(text ?? '').replace(wholeWordPattern(name, 'gi'), ' ');
     const byLine = new Set(entries.filter(e => e?.actorId && pattern.test(String(e.text ?? ''))).map(e => e.actorId));
     if (byLine.size) return only(byLine);
-    const byDescription = actingPcsNamedIn(without(figure.description), pcs);
-    if (byDescription.size) return only(byDescription);
-    const byNarration = new Set(clauses.filter(c => pattern.test(c)).flatMap(c => [...actingPcsNamedIn(without(c), pcs)]));
-    return only(byNarration);
+    return only(new Set([
+      ...actingPcsNamedIn(without(figure.description), pcs),
+      ...clauses.filter(c => pattern.test(c)).flatMap(c => [...actingPcsNamedIn(without(c), pcs)]),
+    ]));
   };
 }
 
