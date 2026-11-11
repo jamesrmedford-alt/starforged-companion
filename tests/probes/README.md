@@ -1,6 +1,8 @@
 # Bug-audit probes — the thirteenth audit (2026-11-11)
 
-Probe tests from the thirteenth bug audit of `53b4150` — serious bugs, stalls and locks. The report is `docs/testing/bug-audit-13-2026-11-11.md`: 24 findings AB01–AB24 and 3 decisions D1–D3. No GitHub issue has been filed.
+Probe tests from the thirteenth bug audit of `53b4150` — serious bugs, stalls and locks. The report is `docs/testing/bug-audit-13-2026-11-11.md`: 24 findings AB01–AB24 and 3 decisions D1–D3.
+
+Filed as GitHub issue [#347](https://github.com/jamesrmedford-alt/starforged-companion/issues/347).
 
 Each probe asserts the **correct** behaviour, so it fails while its finding is open and passes once the finding is fixed. Tests named `control: …` pass today by design. The files are named `*.probe.js` so `npm test` never collects them.
 
