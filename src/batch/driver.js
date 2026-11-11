@@ -1565,12 +1565,31 @@ function holdForNextRound(message, participant) {
     { batchHeldMoveNotice: true }).catch(err => console.warn(`${MODULE_ID} | Batch Mode: held-move notice failed:`, err?.message ?? err));
 }
 
-/** The card-button moves held for the next round join it, oldest first. */
+// The round the held moves last joined: they join a round once. Its opening
+// is heard twice (the closer's own open and the close's onRoundWritten), and
+// a second drain took again what the first one's round had handed back.
+let _heldJoinedRoundId = null;
+
+/**
+ * The card-button moves held for the next round join it, oldest first — the
+ * ones held as it opens. A move the round hands back (round.js
+ * offerForcedMove: a second owed roll beside an owed entry, or a card move
+ * an owed roll displaced) or a join the world refused is held again for the
+ * round after. Taken again in the same drain, a second owed roll looped
+ * forever, whispering "Held for the next round" and stopping the canonical
+ * GM's page (issue #345 AA08).
+ */
 async function joinHeldMoves() {
   const round = getStoredRound();
-  if (round?.phase !== ROUND_PHASE.COLLECTING) return;
-  while (_heldForRound.length) {
-    const id = _heldForRound.shift();
+  if (round?.phase !== ROUND_PHASE.COLLECTING || round.id === _heldJoinedRoundId) return;
+  _heldJoinedRoundId = round.id;
+  for (const id of [..._heldForRound]) {
+    // Each id leaves the list as it is taken, so a press meanwhile still sees
+    // the ones waiting (incitingSwearTaken); one gone meanwhile went free-flow
+    // with the mode turned off (turnedOff).
+    const at = _heldForRound.indexOf(id);
+    if (at === -1) continue;
+    _heldForRound.splice(at, 1);
     const message = game.messages?.get?.(id) ?? null;
     if (!message) continue;
     // An inciting swear sworn while it was held is not rolled again.
