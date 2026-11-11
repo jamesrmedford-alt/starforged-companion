@@ -343,6 +343,30 @@ function unpreparedMarksToClear(ptpReversals, refunded) {
   return [...ids];
 }
 
+/**
+ * The momentum to give back, by PC: what each mark the reversal just cleared
+ * (`clearedIds`) clamped away when the price made it — a supply receipt's
+ * `momentumClamped` (sufferExecutor markUnprepared, issue #345 AA46) — less
+ * `skipId`'s (a burn's burner, whose reset replaces it).
+ *
+ * @param {Object|null} ptpReversals
+ * @param {string[]} clearedIds
+ * @param {string|null} skipId
+ * @returns {Array<[string, number]>}
+ */
+function clampsToGiveBack(ptpReversals, clearedIds, skipId) {
+  const cleared = new Set(clearedIds);
+  const owed = new Map();
+  for (const d of sufferMeterDeltas(ptpReversals)) {
+    if (d.meterKey !== "supply" || !d.momentumClamped || typeof d.momentumClamped !== "object") continue;
+    for (const [id, n] of Object.entries(d.momentumClamped)) {
+      if (!cleared.has(id) || id === skipId || !Number.isInteger(n) || n <= 0) continue;
+      owed.set(id, (owed.get(id) ?? 0) + n);
+    }
+  }
+  return [...owed];
+}
+
 const REVERSAL_CARDS = {
   burn:    { title: "⏰ Burn reversal",    lead: "Momentum burned — the Price reverts:", flag: "burnReversal" },
   improve: { title: "⏰ Improve reversal", lead: "Result improved — the Price reverts:", flag: "improveReversal" },
@@ -351,8 +375,10 @@ const REVERSAL_CARDS = {
 /**
  * Revert the Pay the Price side effects of the superseded miss: rewind each
  * clock it advanced (tension clocks, vow countdown clocks) by one segment,
- * refund the PC-meter losses its route landed, and take the price out of
- * RECENT ORACLE RESULTS (forgetRevertedPrice — issue #342 Z11). A burn resets
+ * refund the PC-meter losses its route landed, clear the unprepared marks it
+ * made and give back the momentum they clamped (issue #342 D4, issue #345
+ * AA46), and take the price out of RECENT ORACLE RESULTS (forgetRevertedPrice
+ * — issue #342 Z11). A burn resets
  * momentum, which already undoes a momentum loss, so a burn refunds none; an
  * improvement keeps the momentum the PC has, so it refunds that too. Posts a
  * card listing what was unwound; a write the world refuses goes onto
@@ -436,12 +462,27 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // D4, ruling A narrowly). A refused clear is an upgrade step for the GMs'
   // Retry, as the refund is.
   const unmark = unpreparedMarksToClear(ptpReversals, refunded);
+  let clearedIds = [];
   if (unmark.length) {
     const at = failures.length;
     const ok = await applyUpgradeStep({ effect: "unprepared", pcIds: unmark }, failures);
     const owed = new Set(ok ? [] : (failures[at]?.pcIds ?? unmark));
-    const cleared = unmark.filter(id => !owed.has(id)).map(id => game.actors?.get?.(id)?.name ?? id);
+    clearedIds = unmark.filter(id => !owed.has(id));
+    const cleared = clearedIds.map(id => game.actors?.get?.(id)?.name ?? id);
     if (cleared.length) reverted.push(`${cleared.map(escapeHtml).join(", ")} no longer unprepared`);
+  }
+
+  // 4. The momentum each cleared mark's lowered maximum clamped away (the
+  // receipt's `momentumClamped`): the clear gave the maximum back, never the
+  // momentum — an ally at 10 stayed at 9 for a price never paid (issue #345
+  // AA46). After the clear, so it lands under the maximum the price never
+  // lowered. Not on a burn to the burner: the burn's reset replaces their
+  // momentum, as it does the price's momentum receipts. One meters step per
+  // PC, for the GMs' Retry.
+  for (const [pcId, amount] of clampsToGiveBack(ptpReversals, clearedIds, kind === "burn" ? (actor?.id ?? null) : null)) {
+    if (await applyUpgradeStep({ effect: "meters", pcId, changes: { momentum: amount } }, failures)) {
+      reverted.push(`${escapeHtml(game.actors?.get?.(pcId)?.name ?? pcId)}: momentum +${amount} given back`);
+    }
   }
 
   if (!reverted.length) return reverted;

@@ -6172,7 +6172,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
  *
  * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
  * @returns {Array<{ move: string, meterKey: string, amount: number, actorId: string|null, before: number, after: number,
- *   overflow?: true, unpreparedMarked?: true, alliesMarked?: string[] }>}
+ *   overflow?: true, unpreparedMarked?: true, alliesMarked?: string[], momentumClamped?: Object<string, number> }>}
  */
 function ptpMeterReceipts(landed) {
   const meterKey = SUFFER_METERS[landed?.move];
@@ -6183,10 +6183,14 @@ function ptpMeterReceipts(landed) {
     // A supply loss to 0 names whom it marked unprepared — the payer, the
     // allies sharing the supply — so an upgrade that reverts the price clears
     // those marks, and only those, once the refunded supply is above 0
-    // (resultUpgrade.js revertPayThePrice; issue #342 D4).
+    // (resultUpgrade.js revertPayThePrice; issue #342 D4), and the momentum
+    // each mark's lowered maximum clamped away, which it gives back (issue
+    // #345 AA46).
+    const clamped = meterKey === "supply" ? momentumClampedReceipt(landed.momentumClamped) : null;
     const marks = meterKey === "supply" ? {
       ...(landed.unpreparedMarked === true ? { unpreparedMarked: true } : {}),
       ...(Array.isArray(landed.alliesMarkedIds) && landed.alliesMarkedIds.length ? { alliesMarked: [...landed.alliesMarkedIds] } : {}),
+      ...(clamped ? { momentumClamped: clamped } : {}),
     } : {};
     receipts.push({ move: landed.move, meterKey, amount, actorId: landed.actorId ?? null, before: landed.before, after: landed.after, ...marks });
   }
@@ -6195,6 +6199,13 @@ function ptpMeterReceipts(landed) {
     receipts.push({ move: landed.move, meterKey: "momentum", amount: m.taken, actorId: landed.actorId ?? null, before: m.before, after: m.after, overflow: true });
   }
   return receipts;
+}
+
+/** markUnprepared's `momentumClamped` (PC id → momentum), its whole positive entries only; null when none. */
+function momentumClampedReceipt(clamped) {
+  if (!clamped || typeof clamped !== "object") return null;
+  const entries = Object.entries(clamped).filter(([id, n]) => typeof id === "string" && id && Number.isInteger(n) && n > 0);
+  return entries.length ? Object.fromEntries(entries) : null;
 }
 
 async function postForsakeVowCard(vowName) {

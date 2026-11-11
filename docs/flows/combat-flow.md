@@ -47,7 +47,10 @@ Two cross-cutting facts to hold onto:
   momentum receipt of its own (Q02), which an improvement refunds and a
   burn's reset replaces; a supply loss to 0 takes back the unprepared marks it
   made once the supply is refunded above 0 — for a burn, before its reset is
-  computed (issue #342 D4) — retires the
+  computed, for an improvement before its meter write (issue #342 D4) — and
+  gives back the momentum each mark's lowered maximum clamped (the receipt's
+  `momentumClamped`; a burn's burner spends it instead, issue #345 AA46) —
+  retires the
   move's pending choice card (bound by `resolutionId`) and posts the upgraded
   outcome's choice for the move's fight, vehicle and companion; a write that
   does not land goes to the GMs' payoff card with a Retry (issue #311 P03–P06).

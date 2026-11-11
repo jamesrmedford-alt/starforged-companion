@@ -196,22 +196,59 @@ function priceMomentumTaken(ptpReversals, actorId) {
 }
 
 /**
+ * The supply receipts on a card's `ptpReversals` (a list since issue #314; one
+ * `sufferMeterDelta` before).
+ */
+function priceSupplyReceipts(ptpReversals) {
+  const deltas = Array.isArray(ptpReversals?.sufferMeterDeltas) ? ptpReversals.sufferMeterDeltas
+    : ptpReversals?.sufferMeterDelta ? [ptpReversals.sufferMeterDelta] : [];
+  return deltas.filter(d => d?.meterKey === "supply");
+}
+
+/**
+ * What a Pay the Price's own unprepared mark did to this PC's momentum: the
+ * momentum its lowered maximum clamped away (a supply receipt's
+ * `momentumClamped`, sufferExecutor markUnprepared) and the impact it marked
+ * (the payer's `unpreparedMarked`, an ally's `alliesMarked`) — both part of
+ * what the PC had before the move (issue #345 AA46: at 10, the price's mark
+ * clamped Kira to 9 and capped the burn at 9, "9 → Weak Hit" against 8 and 9).
+ *
+ * @param {Object|null} ptpReversals
+ * @param {string|null} actorId
+ * @returns {{ clamped: number, impacts: number }}
+ */
+function priceMarkOnMomentum(ptpReversals, actorId) {
+  let clamped = 0, impacts = 0;
+  if (!actorId) return { clamped, impacts };
+  for (const d of priceSupplyReceipts(ptpReversals)) {
+    const n = d.momentumClamped?.[actorId];
+    if (Number.isInteger(n) && n > 0) clamped += n;
+    if ((d.unpreparedMarked && d.actorId === actorId) || (Array.isArray(d.alliesMarked) && d.alliesMarked.includes(actorId))) impacts = 1;
+  }
+  return { clamped, impacts };
+}
+
+/**
  * The momentum a burn spends: what the PC held before the move's effects.
  * "You must burn momentum before applying any other effects of the move" —
  * so the live value less the recorded outcome's momentum change as it landed
  * (`outcomeMomentum`), plus what a Pay the Price took. The burn was compared
  * at the live value: at momentum 5 against 3 and 5, a weak hit's own +1 made
  * the burn "6 → Strong Hit" (issue #322 V04; maintainer decision 2026-11-01).
- * Clamped to the PC's bounds.
+ * Clamped to the PC's bounds — from before the move: a price's unprepared
+ * mark gives back what its lowered maximum clamped, and the maximum it
+ * lowered (`priceMark`, issue #345 AA46).
  *
  * @param {{ value: number, min: number, max: number }} momentum — readMomentumState
  * @param {number} outcomeMomentum — the outcome's momentum change on the sheet
  * @param {number} priceTaken — momentum a Pay the Price took (priceMomentumTaken)
+ * @param {{ clamped?: number, impacts?: number }} [priceMark] — priceMarkOnMomentum
  * @returns {number}
  */
-function burnableMomentum(momentum, outcomeMomentum = 0, priceTaken = 0) {
-  const value = Number(momentum?.value ?? 0) - (Number(outcomeMomentum) || 0) + (Number(priceTaken) || 0);
-  return Math.min(Math.max(value, momentum?.min ?? -6), momentum?.max ?? 10);
+function burnableMomentum(momentum, outcomeMomentum = 0, priceTaken = 0, priceMark = {}) {
+  const value = Number(momentum?.value ?? 0) - (Number(outcomeMomentum) || 0) + (Number(priceTaken) || 0)
+    + (Number(priceMark?.clamped) || 0);
+  return Math.min(Math.max(value, momentum?.min ?? -6), (momentum?.max ?? 10) + (Number(priceMark?.impacts) || 0));
 }
 
 /**
@@ -251,7 +288,7 @@ export function buildBurnState(resolution, actor, ptpReversals = null, targets =
   const consequenceDelta   = Number(resolution.consequences?.momentumChange ?? 0);
   const postMomentum       = Math.min(Math.max(momentum.value + consequenceDelta, momentum.min), momentum.max);
   const outcomeMomentum    = postMomentum - momentum.value;
-  const burnable           = burnableMomentum(momentum, 0, priceMomentumTaken(ptpReversals, actor.id));
+  const burnable           = burnableMomentum(momentum, 0, priceMomentumTaken(ptpReversals, actor.id), priceMarkOnMomentum(ptpReversals, actor.id));
   const markedImpactCount  = momentum.impactCount;
 
   // A taken add that counts a weak hit as a miss (the Hoverbike's afterburner)
@@ -555,6 +592,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
     momentum,
     burn.outcomeMomentum ?? Number(burn.originalConsequences?.momentumChange ?? 0),
     priceMomentumTaken(burn.ptpReversals, actor.id),
+    priceMarkOnMomentum(burn.ptpReversals, actor.id),
   );
   if (!canBurnMomentum(burnable, burn.originalOutcome, burn.challengeDice, false, { weakHitAsMiss: !!burn.weakHitAsMiss })) {
     console.warn(`${MODULE_ID} | burnMomentum: momentum ${burnable} would not improve ${burn.originalOutcome}; ignoring`);

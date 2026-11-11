@@ -541,24 +541,27 @@ export async function endureStress(actor, amount, opts = {}) {
  * crew, as it is marked (clearUnprepared).
  *
  * @param {Actor} actor  whose supply is now 0
- * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesMarkedIds: string[], alliesNotMarked: string[] }>}
+ * @returns {Promise<{ unpreparedMarked: boolean, alliesMarked: string[], alliesMarkedIds: string[], alliesNotMarked: string[],
+ *   momentumClamped: Object<string, number> }>}
  *   `unpreparedMarked` is false when `actor` was already unprepared; the
  *   allies by name — marked now, or whose write was refused (warned, never
  *   thrown: the supply loss has landed either way) — and the ones marked now
  *   by id, so an upgrade that reverts the price clears exactly those
- *   (`alliesMarkedIds`, issue #342 D4)
+ *   (`alliesMarkedIds`, issue #342 D4); `momentumClamped`, by PC id, the
+ *   momentum each mark's lowered maximum clamped away, which that upgrade
+ *   gives back (issue #345 AA46)
  */
 export async function markUnprepared(actor) {
-  const marks = { unpreparedMarked: false, alliesMarked: [], alliesMarkedIds: [], alliesNotMarked: [] };
+  const marks = { unpreparedMarked: false, alliesMarked: [], alliesMarkedIds: [], alliesNotMarked: [], momentumClamped: {} };
   if (!actor) return marks;
   if (!actor.system?.debility?.unprepared) {
-    await setDebility(actor, "unprepared", true);
+    await markUnpreparedOne(actor, marks.momentumClamped);
     marks.unpreparedMarked = true;
   }
   for (const ally of supplyAllies(actor)) {
     if (ally.system?.debility?.unprepared) continue;
     try {
-      await setDebility(ally, "unprepared", true);
+      await markUnpreparedOne(ally, marks.momentumClamped);
       marks.alliesMarked.push(ally.name ?? ally.id);
       marks.alliesMarkedIds.push(ally.id);
     } catch (err) {
@@ -567,6 +570,20 @@ export async function markUnprepared(actor) {
     }
   }
   return marks;
+}
+
+/**
+ * Mark `pc` unprepared (actorBridge.setDebility, which clamps momentum to the
+ * maximum the impact lowers — recalculateMomentumBounds) and note in
+ * `clamped`, by id, the momentum that clamp took: a price "never actually
+ * paid" gives it back when an upgrade reverts it (issue #345 AA46 — the
+ * clear restored the maximum, never the momentum).
+ */
+async function markUnpreparedOne(pc, clamped) {
+  const before = readMeter(pc, "momentum");
+  await setDebility(pc, "unprepared", true);
+  const lost = before - readMeter(pc, "momentum");
+  if (lost > 0 && typeof pc.id === "string") clamped[pc.id] = lost;
 }
 
 /**
@@ -712,8 +729,10 @@ export async function sacrificeResources(actor, amount, opts = {}) {
   const marks = atZero ? await markUnprepared(actor) : null;
   const unpreparedMarked = !!marks?.unpreparedMarked;
   // Whom this loss marked unprepared, by id: an upgrade that reverts the
-  // price clears exactly those marks (issue #342 D4).
+  // price clears exactly those marks (issue #342 D4), and gives back the
+  // momentum each mark clamped (issue #345 AA46).
   const alliesMarkedIds = marks?.alliesMarkedIds ?? [];
+  const momentumClamped = marks?.momentumClamped ?? {};
 
   if (!opts.skipCard) {
     let body = `Supply: ${before} → ${after}`;
@@ -728,7 +747,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     });
   }
 
-  return { before, after, atZero, unpreparedMarked, alliesMarkedIds };
+  return { before, after, atZero, unpreparedMarked, alliesMarkedIds, momentumClamped };
 }
 
 /**
