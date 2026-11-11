@@ -55,7 +55,15 @@ export async function storeArtAsset(asset, campaignState) {
   if (existing) {
     await updateAssetEntry(existing, asset);
   } else {
-    await createAssetEntry(entryName, asset);
+    // An earlier portrait of this entity whose page the world refused left
+    // its "Art: …" entry page-less — no asset to read off it — and the next
+    // Generate made a second entry beside it, the first left empty in the Art
+    // Cache for good (issue #345 AA54). It is the entry this asset completes,
+    // as a page-less faction or Chronicle journal is (decisions.md "A
+    // page-less journal is completed, not duplicated").
+    const pageless = findPagelessAssetEntry(asset.entityType, asset.entityId);
+    if (pageless) await completeAssetEntry(pageless, entryName, asset);
+    else await createAssetEntry(entryName, asset);
   }
 
   // Register in campaign state asset index — on the caller's copy, and on
@@ -180,6 +188,9 @@ export async function deleteEntityArtAssets(entityType, entityId, { portraitId =
     if (entry?.flags?.[MODULE_ID]?.entityType !== "artAsset") return false;
     const asset = readAssetFromEntry(entry);
     if (asset?.entityType === entityType && asset?.entityId === entityId) return true;
+    // A page-less entry made for the entity — its portrait's page refused —
+    // goes with it too: nothing reads an asset off it (issue #345 AA54).
+    if (!asset && isPagelessEntryOf(entry, entityType, entityId)) return true;
     return !!portraitId && (asset?._id === portraitId || entry.flags[MODULE_ID].assetId === portraitId);
   };
   const entries = (game.journal?.contents ?? []).filter(owned);
@@ -244,22 +255,78 @@ async function createAssetEntry(entryName, asset) {
   const entry = await JournalEntry.create({
     name:   entryName,
     folder: folderId,
-    flags:  { [MODULE_ID]: { entityType: "artAsset", assetId: asset._id } },
+    flags:  { [MODULE_ID]: assetEntryFlags(asset) },
   });
 
-  await entry.createEmbeddedDocuments("JournalEntryPage", [{
-    name:  "Asset Data",
-    type:  "text",
-    text:  { content: buildPageContent(asset), format: 1 },
-    flags: { [MODULE_ID]: { [FLAG_KEY]: asset } },
-  }]);
+  await entry.createEmbeddedDocuments("JournalEntryPage", [assetPageData(asset)]);
 
   return entry;
 }
 
+/**
+ * Give a page-less "Art: …" entry `asset`'s page, under the asset's name and
+ * flags — the creation the world refused the page of, completed, never a
+ * second entry beside it (issue #345 AA54). Rejects when the rename or the
+ * page is refused: the entry stays page-less, for the next store to complete.
+ */
+async function completeAssetEntry(entry, entryName, asset) {
+  const own   = entry.flags?.[MODULE_ID] ?? {};
+  const flags = assetEntryFlags(asset);
+  if (entry.name !== entryName || Object.keys(flags).some(key => own[key] !== flags[key])) {
+    await entry.update({ name: entryName, flags: { [MODULE_ID]: { ...own, ...flags } } });
+  }
+  await entry.createEmbeddedDocuments("JournalEntryPage", [assetPageData(asset)]);
+  console.log(`${MODULE_ID} | art/storage: completed the page-less Art Cache entry "${entryName}" (${entry.id})`);
+  return entry;
+}
+
+/**
+ * An "Art: …" entry's flags: its asset, and the entity that asset was made
+ * for — what names a page-less entry's entity (isPagelessEntryOf) when no
+ * page holds the asset.
+ */
+function assetEntryFlags(asset) {
+  return {
+    entityType:      "artAsset",
+    assetId:         asset._id,
+    assetEntityType: asset.entityType ?? null,
+    assetEntityId:   asset.entityId ?? null,
+  };
+}
+
+function assetPageData(asset) {
+  return {
+    name:  "Asset Data",
+    type:  "text",
+    text:  { content: buildPageContent(asset), format: 1 },
+    flags: { [MODULE_ID]: { [FLAG_KEY]: asset } },
+  };
+}
+
+/** The page-less "Art: …" entry made for an entity (isPagelessEntryOf), or null. */
+function findPagelessAssetEntry(entityType, entityId) {
+  if (!entityType || !entityId) return null;
+  return (game.journal?.contents ?? []).find(entry => isPagelessEntryOf(entry, entityType, entityId)) ?? null;
+}
+
+/**
+ * Whether `entry` is an "Art: …" entry with no page, made for this entity:
+ * named by its `assetEntityType` / `assetEntityId` flags, else — an entry
+ * made before those flags — by the name its creator gave it
+ * ("Art: <entityType> <entityId> <assetId>", buildEntryName).
+ */
+function isPagelessEntryOf(entry, entityType, entityId) {
+  const flags = entry?.flags?.[MODULE_ID];
+  if (flags?.entityType !== "artAsset" || entry.pages?.contents?.length) return false;
+  if (flags.assetEntityId) return flags.assetEntityType === entityType && flags.assetEntityId === entityId;
+  return String(entry.name ?? "").startsWith(`Art: ${entityType} ${entityId} `);
+}
+
 async function updateAssetEntry(entry, asset) {
   const page = entry.pages?.contents?.[0];
-  if (!page) return createAssetEntry(buildEntryName(asset), asset);
+  // A page-less entry of this asset's own name is given its page — it made a
+  // second entry of that name beside it (issue #345 AA54).
+  if (!page) return completeAssetEntry(entry, buildEntryName(asset), asset);
   await page.setFlag(MODULE_ID, FLAG_KEY, asset);
   // Refresh the visible page body so opening the entry shows the image
   // rather than an empty "Asset Data" heading.
