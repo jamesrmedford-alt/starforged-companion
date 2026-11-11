@@ -6,6 +6,169 @@ rejected.
 
 ---
 
+## Issue #345 audit: one canonical store per fact, a name is its host's, a journal is found by its flag, a capture follows its narration (2026-11)
+
+**Decision:** (issue #345, the twelfth audit's 70 findings AA01–AA70, fixed
+at the maintainer's request in the v1.8.1 cycle. What the fixes established
+beyond each row; each row's ID in brackets. The seven decision rows have
+their own entries: D1 in "Batch Mode: opt-in rounds" ("A roll made on the
+character sheet is narrated with the round"), D2 in the issue #342 audit's
+"A round credits each roller, and asks when it cannot tell", D3–D7 the five
+entries below this one.)
+- **The command vehicle's integrity is its STARSHIP asset's track** [AA20]:
+  on a starship carrying the vendor STARSHIP (Command Vehicle) asset, that
+  asset's Integrity `system.track` is canonical — what the sheet shows, the
+  player marks and the system's own Withstand Damage rolls — and the ship
+  record's `flags.ship.integrity` / `integrityMax` is its write-through
+  mirror: `updateShip` writes the track first (within its min..max) and
+  brings the record to it on every write. Readers read the track
+  (`actorBridge.readCommandVehicleIntegrity`; `registry.withSheetNotes`
+  overlays it for `getShip`, the Entities panel, repair and the narrator's
+  COMMAND VEHICLE line; the +integrity roll). A starship with no STARSHIP
+  asset keeps its integrity on the record. *Rejected:* an `updateItem` hook
+  syncing the sheet into the flag — the battered decision's rejected option,
+  a second write path for a mirror no reader needs. The asset's own Battered
+  / Cursed conditions stay a further store (known-issues
+  STARSHIP-ASSET-CONDITIONS-UNSYNCED).
+- **An entity's name is its host document's** [AA18]: an Actor's name for
+  the Actor-hosted types, as before, and a faction's or creature's host
+  JournalEntry's name: a sidebar rename is written through to the record
+  (its page flag, the body re-rendered — V31's mirror) and to a faction's
+  World Journal Factions page (found by its `entityId` backlink), live on the
+  canonical GM (`updateJournalEntry`) and at world load
+  (`syncEntityRecordNames`); the renamed record's `updatedAt` is stamped. A
+  Factions page that already holds the new name is left alone, with a
+  console warning — no merge by a guess. `sector.faction` (the Sector
+  Creator's bare control-faction name) is a separate name-only store and is
+  not renamed. *Rejected:* naming the journal from the record — nothing
+  renames a record; the sidebar is where a GM renames.
+- **A name a record takes comes off the Dismissed list** [AA19, AA55]: the
+  name index still leaves out a record whose name is dismissed (unit-pinned),
+  so every hop that gives a record a name un-dismisses it
+  (`undismissRecordName`, on the GM's write chain): the identity reveal's
+  rename, the Actor and journal sidebar renames and the load-time repair —
+  and a Make a Connection hit with a known NPC: a dismissed connection row is
+  confirmed as the roller's, and a listed NPC whose name is dismissed gets the
+  bond and is un-dismissed. A hit whose narration names several NPCs the
+  table knows makes none, and the GMs are told. *Rejected:* indexing
+  dismissed names, and a load-time sweep un-dismissing every name a record
+  holds — both reverse the pinned index rule (a world already in that state
+  stays hidden until the GM's Undismiss).
+- **Journals are found by their flag; the name is a fallback** [AA62, AA63]:
+  the Progress Tracks journal is the one carrying the `tracks` flag
+  (`findTracksJournal`; the interpreter reads it the same way), and each
+  World Journal journal the one flagged with its `worldJournalCategory`
+  (`findJournal`, `findWorldJournal`). The name finds only a journal no track
+  was saved to yet, or one with no category flag — never one flagged as
+  another category — and such a journal is flagged by the GM's next write (a
+  World Journal one also by the canonical GM's load). Renaming them is fine
+  (rules/reachability.md §6, resolve by stable id). *Rejected:* a new id flag
+  — the flags these journals already carry are marks a rename leaves alone.
+- **A retired setting leaves whole** [AA65]: the "Require a sidecar on every
+  narrator response" box (`factContinuity.sidecarRequired`) is retired as
+  issue #342 D6 retired the Session gap setting — its key, registration,
+  getter, panel box and help row go, and a world's stored value stays,
+  unread. A narrator reply with no fact block is always warned about in the
+  console (NARR-SIDECAR-SILENT: the turn's scene frame and required emissions
+  are lost — "No silent failures"); "Enable fact continuity" is the switch
+  for the sidecar. *Rejected:* wiring the box to silence that warning — it
+  would hide a genuine failure.
+- **LAST SESSION is caught up at every mint** [AA21, AA57]: the mint
+  (`rollSessionIfDue`) brings every closing session's rolling summary up to
+  date (`finalizeSessionSummary`) — not only an ended one with no text (Z41)
+  — and makes no call when every card past the summary's coverage is End's
+  own closing vignette (Z41's trade-off, now judged by which cards are past
+  the coverage rather than a count). A regeneration is discarded when the
+  X-Card was played during its call or a card it was made from is one an
+  X-Card removed (W06's rule as written), no longer merely while an earlier
+  X-Card stands paused.
+- **A kept strike of a scene fact stands at its place; a Replace stays
+  replaced** [AA05, AA28]: a scene end keeps a Replace's original on the
+  session's unnamed blocks (never named, never lifted), beside the X-Card's.
+  A kept strike of a scene fact — and a Replace original on the blocks —
+  keeps the place it was asserted at, and the write block, the `!truth set`
+  lift and the CORRECTED block stand it only there (`keptStrikeStandsAt`:
+  either place unknown, or one's words naming the other, articles dropped),
+  so the three always agree. The X-Card's blocks keep no place — a removed
+  fact stays blocked anywhere. This narrows the 2026-07 rejection of
+  "scope-filtering the CORRECTED block" for earlier scenes' scene-fact
+  strikes only: the summary's leave-out list still names every strike, and
+  the active scene's own strikes stay place-blind.
+- **A capture runs where its narration ran** [AA34]: a move's or a Batch
+  Mode round's post-narration capture runs on the GM whose client narrated
+  (`game.user.isGM`) instead of re-checking `isCanonicalGM` when the reply
+  lands. The single emitter is the narration: the pipeline's lock claim chose
+  that GM and every `narrateResolution` caller narrates once, so after a
+  handover the capture's writes run on the GM no longer canonical, as the
+  pipeline's own persist already did; a player's client runs none. The
+  `@scene`, oracle and vignette captures keep their canonical check
+  (known-issues CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE). *Rejected:* handing
+  the capture to the new canonical GM — a relay for work the narrating GM
+  can run.
+- **Pinned Chronicle entries reach the narrator** [AA07]: `buildNarratorExtras`
+  reads each PC's pinned entries — the newest five, each on one line,
+  clipped at 300 characters — and every CHARACTER block ends with its own
+  PC's (a round's and the galley's too; not the campaign recap, which reads
+  the whole Chronicle). *Rejected:* retiring the pin (the help promised it,
+  and both refuters kept the finding), and bringing back the retired
+  recent-entries window — the ring and the summary already carry recent
+  play. The cap is a budget call (the old window's default was five).
+- **Forsake Your Vow acts only on the roller's own vows** [AA16, AA49]:
+  `selectForsakeVow` reads the roller's vows alone — the one their words name
+  (exact, then whole words, as Fulfill reads them) or, naming none, their only
+  open one (a shared vow counted once); several, or a name none of theirs
+  answers to, post "Forsake Your Vow — which vow?"; a crewmate's vow is never
+  forsaken, even named outright. The journal twin closes by the forsaken
+  vow's own name only. *Rejected:* Fulfill's fallback to the roller's sole
+  vow for an unmatched name — a forsake cannot be undone, so it asks.
+- **A victory card's buttons find their vow by id** [AA17]: ⚑ and 🏁 resolve
+  the card's `vowId` across every PC (`fightCardVow`) — the holder's open
+  copy, the winner's when they hold one; fulfilled by anyone or gone from
+  every sheet, both retire, titled why, and a stale press marks or rolls
+  nothing. A card with no vow id keeps the name path.
+- **Undoing a price gives back what its unprepared mark held down** [AA46]:
+  `markUnprepared` records the momentum each mark's clamp took
+  (`momentumClamped` on the price's supply receipt); `revertPayThePrice`
+  gives it back once the marks are cleared (not to a burn's burner, whose
+  reset replaces their momentum), the burnable momentum adds the burner's
+  back, capped at the maximum from before the mark, and Improve Result
+  reverts the price before its meter write, as a burn has since issue #342
+  D4.
+- **A held move refused again stays held** [AA48]: a handed-back held move
+  whose own claim is refused is held again at the front, the GMs are told,
+  and the held moves wait for the next campaignState write that lands — the
+  refused claim's immediate drain is suppressed meanwhile, as it would only
+  be refused again. A forced move's first refused claim keeps
+  LOCK-CLAIM-WEDGE's "could not start … Try again".
+- Smaller: the X-Card drops the oracle answers its narrations told from
+  RECENT ORACLE RESULTS, by card id and by a move's `resolutionId` [AA01];
+  a move's sidecar checks its re-assertions against the store's ledgers as
+  well as its own copy [AA04]; the narrator's roster leads a shared name
+  with the active sector's place [AA06]; a burn's or improve's supersede
+  empties a summary made from the replaced card [AA24]; the summary's
+  chained write re-checks the X-Card's play count [AA25]; clock vignettes run
+  the tier pass [AA33]; the Private Channel reads its player's Private Lines
+  from their client setting [AA03], and every client re-syncs its own entry
+  when a write misstates it [AA35]; a support vehicle is the one the move's
+  target names, a null target the command starship [AA14]; a Heal's patient
+  follows the interpreter's situation [AA13]; a companion roll reads the
+  companion the target or the line names [AA45]; an Aid Your Ally is
+  scanned as the move it is made as [AA11].
+
+**Reason:** each row's probe reproduced its defect, and most were the
+repo's standing families (rules/reachability.md): one fact in two stores
+with no canonical named (AA20's integrity, AA18's names), identity by a
+mutable name (AA16 / AA49, AA17, AA62, AA63), and a producer nothing read
+(AA07's pin, AA44's move text, AA63's category flag, AA65's setting).
+
+**Trade-offs accepted:** after a handover a capture writes from a GM that is
+no longer canonical (AA34); a support vehicle takes a hit only when the
+interpreter names it (AA14 — known-issues SUPPORT-VEHICLES-UNLISTED); the
+place match for a kept strike is loose by design (AA28); pinned entries are
+capped (AA07).
+
+---
+
 ## A help heading that a newer tag passed is renamed to the tag that shipped it (2026-11)
 
 **Decision:** when the in-game help Changelog's newest `<h3>v…</h3>` is below
@@ -240,7 +403,10 @@ fourteen found while fixing those — fixed at the maintainer's request on
   refused twice whispers the GMs (Z19's rule, free-flow too); a refused claim
   drains the held card moves and wakes a waiting round (`noteMoveLockFreed`);
   a round re-checks the lock after marking its wait (`moveLockFree`, the
-  driver's host).
+  driver's host). *(Since issue #345 AA48 a handed-back held move whose own
+  claim is refused is held again, the GMs told, and the held moves wait for
+  the next write that lands — the drain is not repeated into a claim the
+  world still refuses.)*
 - Smaller: a round's CHARACTER blocks are only for PCs that still exist
   [ROUND-CHARACTER-BLOCK-GONE-PC]; an unrolled round's detection reads as
   free narration [ROUND-DETECTION-NULL-MOVE]; a scene-challenge variant whose
@@ -298,7 +464,9 @@ option A; D4 option A, narrowly; D6 option B. Each row's ID in brackets.)
   momentum reset is computed without the cleared impact (the reversal card now
   posts before the burn's momentum write). Amends issue #313's trade-off
   ("impacts a suffer executor marked are still not reversed") for unprepared
-  alone. *Rejected:* keeping the trade-off and naming the crew on the reversal
+  alone. *(Since issue #345 AA46 Improve Result reverts the price before its
+  meter write too, and the reversal gives back the momentum each mark's
+  clamp took — `momentumClamped` on the supply receipt.)* *Rejected:* keeping the trade-off and naming the crew on the reversal
   card (option B) — since #338 D3 a stale mark redirects every supply loss
   the crew makes.
 - **A victory card's 🏁 is the vow holder's** [D5; option A]: Attempt to
@@ -306,7 +474,10 @@ option A; D4 option A, narrowly; D6 option B. Each row's ID in brackets.)
   they hold a copy (every case issue #329 X05's tests pin), else the PC who
   does — that PC's player or a GM may press it, and the miss's 🔁 recommit
   offer follows; a vow found nowhere keeps the card's roller (no first-PC
-  fallback). The card's three buttons now agree. *Rejected:* letting the
+  fallback). The card's three buttons now agree. *(Since issue #345 AA17 the
+  card's ⚑ and 🏁 find its vow by the card's vow id, not its name: a vow
+  fulfilled by anyone or on no sheet rolls and marks nothing, and both
+  buttons retire; a card with no vow id keeps the name path.)* *Rejected:* letting the
   winner fulfil a crewmate's vow from the card (option B) — #338 D1 exists to
   stop another player rolling a character's move.
 - **"Previously On" introduces the session the load minted; the gap setting
@@ -456,13 +627,16 @@ each row; each row's ID in brackets.)
   `!truth set` lifts it [Z42]; a strike keeps a promoted tier detail [Z43]; a
   Promote racing the X-Card takes its line back [Z44]; the Entities panel
   follows a sheet's Notes and pronouns [Z45]; the next session's mint
-  finalises an ended session whose summary the X-Card emptied [Z41];
+  finalises an ended session whose summary the X-Card emptied [Z41] (since
+  issue #345 AA21, every closing session whose summary is behind, End's own
+  closing vignette aside);
   FACTION LANDSCAPE ranks by recency [Z13]; a relisted faction's Confirm
   completes it [Z60]; a refused Begin clock trigger is narrated by its Retry
   [Z63]; End a Session pays the focus momentum before the summary call
   [Z64]; a renamed truths journal keeps its id link [Z16]; a sector's trouble
   threat is named per sector [Z65]; a Withstand Damage names its vehicle
-  [Z53].
+  [Z53] (by the move's target alone since issue #345 AA14 — a null target is
+  the command starship).
 
 ---
 
@@ -2066,7 +2240,8 @@ be fixed on 2026-10-29. Each finding's ID in brackets.)
   `combatTrackId`). `persistResolution`'s `targets` puts them on the suffer
   card's `executorOpts`, and its choices change exactly those: integrity on
   the ship record (`updateShip`; a raise refused while the ship's native
-  impact says battered), companion health on the asset's track
+  impact says battered — since issue #345 AA20 `updateShip` writes the
+  STARSHIP asset's Integrity track, the record its mirror), companion health on the asset's track
   (`actorBridge.applyCompanionHealthChange`), progress on that fight — gone or
   finished by click time, nothing. A card without the vehicle or companion
   falls back to the command vehicle / the PC's only companion; a card
@@ -2357,7 +2532,11 @@ finding's ID in brackets) — all instances of `rules/reachability.md` §6,
   exact-name vow (open before completed), and only then the global name
   ladder; shared copies are collected by `vowId` after that. Every caller —
   fulfil (native and pipeline), Forsake, the won-fight card, milestone
-  holder and fight reward — passes the roller.
+  holder and fight reward — passes the roller. *(Forsake no longer takes this
+  ladder — issue #345 AA16 / AA49: it reads the roller's own vows alone, by
+  name as Fulfill does, or their only open one, and asks which when that is
+  not one vow; a crewmate's vow is never forsaken. The won-fight card finds
+  its vow by id since AA17.)*
 - **A Chronicle is its actor's by the `chronicleActorId` flag** [B03]. The
   "Chronicle — {name}" title is a label, set on write to the actor's
   current name. Several journals flagged for one actor (a rename before the
@@ -2794,14 +2973,17 @@ the layout split, since today's prompt changes on every turn by design.
   notable NPC fact to the Session Log. Interaction-class moves run the
   detection pass, as paced narration (the same class) always has. Oracle
   follow-ups run detection and the tier pass. Session vignettes and vow scenes
-  run the tier pass for the recorded entities they name. New entities still
+  run the tier pass for the recorded entities they name, and so do clock
+  vignettes since issue #345 AA33. New entities still
   go to the GM's draft card; only make_a_connection auto-creates.
 
 **Rejected:**
 - *Detection after embellishment moves.* That class adds texture, not facts.
 - *Running detection after vignettes and vow scenes.* They run under
   embellishment and introduce no one new: the vow target is created by Swear
-  an Iron Vow.
+  an Iron Vow. (A clock vignette runs at interaction latitude since issue
+  #322 V23, so whether it should run detection is open — known-issues
+  CLOCK-VIGNETTE-NO-DETECTION.)
 - *Keeping oracle rolls over narrated values on a draft.* The narration is
   what the table read.
 
@@ -2963,8 +3145,10 @@ mirror-drift family (rules/reachability.md §5).
   copy.
 - *Scene-scoped CORRECTED only.* The ring and the summary's source outlive
   the scene.
-- *Propagating into the chronicle.* Its lines feed only the campaign recap;
-  left for a follow-up (known-issues.md).
+- *Propagating into the chronicle.* Its lines fed only the campaign recap
+  then — since issue #345 AA07 a pinned entry also reaches its PC's
+  CHARACTER block in every narration; left for a follow-up (known-issues
+  STRIKE-CHRONICLE).
 
 ## What every narration is told about the turn before (2026-10)
 
@@ -3689,6 +3873,10 @@ change goes through `changeIntegrity` (entities/ship.js), which reads
 `isShipBattered` — the asset path wrote integrity directly and raised a
 battered ship's.
 
+**Update (issue #345 AA20):** the same rule for integrity — the STARSHIP
+asset's Integrity track is canonical and the ship flag's `integrity` /
+`integrityMax` its write-through mirror ("Issue #345 audit").
+
 **Rejected:**
 - *Battered if either store says so* — a stale flag would override a sheet
   un-tick.
@@ -3710,7 +3898,10 @@ the client that builds it:
   canonical store; the campaignState copy is stale or missing when no GM was
   online to relay it to). One player's lines never go into another player's
   request.
-- **The Private Channel** is unchanged: its player's own lines only.
+- **The Private Channel** carries its player's own lines only, read from
+  their client setting as a player's client narration does (issue #345 AA03
+  — it read the campaignState copy, so a line added while no GM was online
+  was missing there).
 
 The section heading tells the narrator never to cross them and never to
 mention or hint at them — shared narration is read by the whole table.
@@ -3963,7 +4154,10 @@ memory architecture in four directions, all now load-bearing:
 still holds — fix instruction wording first); auto-correcting prose on a
 consistency-check hit (GM stays the authority); scope-filtering the
 CORRECTED block (retractions are rare and must hold even on turns that
-don't name the subject).
+don't name the subject). *(Narrowed by issue #345 AA28: an earlier scene's
+kept strike of a scene fact is about the place it was struck, so it is
+told — and blocks — only there; no other strike is filtered. "Issue #345
+audit".)*
 
 ## Consistency check defaults on, audits the full ledger block (2026-07)
 
@@ -4739,6 +4933,9 @@ on a player's — see "Private Lines in shared narration".)*
 
 **Decision:** All progress tracks stored in ONE JournalEntry named "Starforged
 Progress Tracks", as a flag directly on the JournalEntry (not on a page).
+*(Since issue #345 AA62 the journal is found by that `tracks` flag; the name
+only finds — and is given to — a journal no track was saved to yet, so a GM
+may rename it.)*
 
 **Confirmed storage (from live testing and progressTracks.js source):**
 ```js
@@ -5968,7 +6165,10 @@ the bounds. The click (`handleBurnClick`) burns the live value less
 nominal change), plus what the price took (`burnableMomentum`). Momentum
 changed by anything else since — another move, a sheet edit — still counts.
 The burn's write is unchanged: momentum goes to the reset plus the upgraded
-outcome's change.
+outcome's change. *(Since issue #345 AA46 "what the price took" includes the
+momentum its unprepared mark's clamp held down — `momentumClamped` on the
+supply receipt — and the burnable momentum is capped at the maximum from
+before that mark.)*
 
 **Reason:** BURN-COUNTS-OUTCOME-MOMENTUM — the burn compared the live value,
 after the outcome: at momentum 5 against 3 and 5 a weak hit's +1 made the
