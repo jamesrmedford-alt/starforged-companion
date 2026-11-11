@@ -62,27 +62,29 @@ recorded under its name promoted to it; its bond is §2's.
   `runPostNarrationPasses` → `runDiscoveryDetection` → `routeEntityDrafts` —
   then the silent portrait, started, §1 below).
   Its dedup — the detection prompt's ESTABLISHED list, the parse's and the
-  route's `entityExistsAnyType` / `entityExistsForName`, `connectKnownNpc`'s
-  listed NPCs — reads the store's entity id lists as well as the move's
-  copy (`withStoredEntityIds`): the move holds the copy it read before its
-  lock claim, and an NPC the GM confirmed from a draft card while the move
-  was confirmed or narrated was in no list it read, so the hit made a second
-  card with a second bond (issue #347 AB09).
-  When it creates none, a pending draft row the move's narration names
-  (`namingText`, whole words — the detection pass leaves a pending name out)
-  is confirmed as the roller's connection (`confirmNamedPendingConnection` →
-  `confirmDraft` with the roller's `actorId`; issue #325 W23 — the card said
-  "Connection made" and nothing was made, and a later Confirm bonded the old
-  narration's PC). When neither made anyone, the known NPC the narration
-  names (full name, whole words — and, in a round, a figure its own roller
-  met) becomes the roller's connection: an active listed NPC card — a
-  crewmate's contact — gets the roller's bond Item, no second card ("give
-  focus to an existing relationship"); a connection row the GM dismissed
-  is taken off `dismissedEntities` and confirmed as the roller's, as a
-  pending row is; naming several, none is guessed and the GMs are whispered
-  (`connectKnownNpc`, issue #345 AA19 — the detection pass leaves an
-  established or dismissed name out, so the card said "Connection made" and
-  nothing was made). A Batch Mode round's narration is several characters', so
+  route's `entityExistsAnyType` / `entityExistsForName`, the listed NPCs
+  `connectNamedFigure` matches — reads the store's entity id lists as well
+  as the move's copy (`withStoredEntityIds`): the move holds the copy it
+  read before its lock claim, and an NPC the GM confirmed from a draft card
+  while the move was confirmed or narrated was in no list it read, so the
+  hit made a second card with a second bond (issue #347 AB09).
+  When it creates none, an NPC the move names (`namingText`: the player's
+  line and the narration, full name, whole words — and, in a round, a
+  figure its own roller met) whom the detection pass leaves out becomes the
+  roller's connection (`connectNamedFigure`): a pending draft row is
+  confirmed (`confirmDraft` with the roller's `actorId`; issue #325 W23 —
+  the card said "Connection made" and nothing was made, and a later Confirm
+  bonded the old narration's PC); an active listed NPC card — a crewmate's
+  contact — gets the roller's bond Item, no second card ("give focus to an
+  existing relationship"); a connection row the GM dismissed is taken off
+  `dismissedEntities` and confirmed as the roller's, as a pending row is
+  (issue #345 AA19 — the detection pass leaves an established or dismissed
+  name out). Which one is the player's line's to say (`lineText`): the one
+  it names, else — naming none — the one the narration names; several, none
+  is guessed and the GMs are whispered which (issue #347 AB10 — the first
+  pending row named anywhere was confirmed, so a hit with Sable whose
+  narration had pending Dace at the bar bonded Dace, and the pending rows
+  outranked the known NPC the line named). A Batch Mode round's narration is several characters', so
   each Make a Connection hit in it creates one connection — the figure its
   own character met: the roller's own line names them, else their detected
   description and every clause of the narration naming them, taken

@@ -68,6 +68,15 @@ entries below this one.)
   dismissed names, and a load-time sweep un-dismissing every name a record
   holds — both reverse the pinned index rule (a world already in that state
   stays hidden until the GM's Undismiss).
+  **Update (issue #347 AB10): the player's line says which NPC.** Pending
+  draft rows (W23), listed NPCs and dismissed rows are one set of
+  candidates (`connectNamedFigure`): the one the player's line names, else —
+  the line naming none — the one the narration names; several, none is
+  guessed and the GMs are told which. The first pending row named anywhere
+  in the line or the narration used to be confirmed before any known NPC was
+  looked at, so a bystander the narration mentioned was bonded to the
+  roller, silently. "Several" now covers pending rows too, and a line naming
+  exactly one of several the narration names settles it.
 - **Journals are found by their flag; the name is a fallback** [AA62, AA63]:
   the Progress Tracks journal is the one carrying the `tracks` flag
   (`findTracksJournal`; the interpreter reads it the same way), and each

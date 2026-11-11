@@ -1575,8 +1575,10 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       sessionId:            campaignState?.currentSessionId ?? '',
       actorId:              options.actorId ?? null,
       // What names a Make a Connection's NPC — a pending draft's included
-      // (issue #325 W23).
+      // (issue #325 W23); the player's line says which when the narration
+      // names several (issue #347 AB10).
       namingText:           `${resolution?.playerNarration ?? ''}\n${narrationText ?? ''}`,
+      lineText:             resolution?.playerNarration ?? '',
       narrationId,
     });
   } catch (err) {

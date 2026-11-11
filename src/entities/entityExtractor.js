@@ -548,10 +548,14 @@ function detectionFromParsed(parsed, campaignState) {
  *   The paced-narrative detection path explicitly sets this to false
  *   so detected NPCs always go through GM review (suggestion-loop
  *   remediation §C — see docs/narrator/narrator-suggestion-loop-group-c-design-memo.md).
- *   When no connection was created, a pending draft row `namingText` names
- *   is confirmed as the roller's connection (issue #325 W23).
+ *   When no connection was created, a pending draft row or a known NPC
+ *   `namingText` names is made the roller's connection (issue #325 W23,
+ *   #345 AA19) — the one `lineText` names, when the narration names several
+ *   (connectNamedFigure; issue #347 AB10).
  * @param {string}  [options.namingText] — the move's narration (player's and
- *   narrator's), for the pending-draft fallback
+ *   narrator's), for the pending-draft and known-NPC fallback
+ * @param {string}  [options.lineText] — the player's line (a round's, its
+ *   lines): which of several named NPCs the move was with
  * @param {Array<{ actorId: string|null, connectionSeed?: Object|null, owns: (figure: Object) => boolean }>} [options.connectionRollers]
  *   — a Batch Mode round's Make a Connection hits, in confirm order, in place
  *   of `autoCreateConnection` (issue #342 Z09): each creates one connection,
@@ -671,38 +675,20 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
     queued.push(entity);
   }
 
-  // Make a Connection: the NPC its narration names may sit in a pending draft
-  // row the detection left out — confirm it as the roller's (issue #325 W23),
-  // stamped with the narration like an auto-created one. Each hit that made
-  // no one gets its own row (a round's — issue #342 Z09).
+  // Make a Connection that made no one, with an NPC the detection leaves out:
+  // one pending on a draft card (issue #325 W23) or one the table already
+  // knows — a listed card, or a row the GM dismissed (issue #345 AA19). The
+  // player's line says which (issue #347 AB10); naming several, none is
+  // guessed and the GMs are told. Each hit that made no one gets its own
+  // (a round's — issue #342 Z09).
   for (const slot of slots) {
     if (slot.done || !slot.names || removed()) continue;
-    const confirmed = await confirmNamedPendingConnection(slot.names, slot.actorId, narrationId)
-      .catch(err => {
-        console.warn(`${MODULE_ID} | routeEntityDrafts: confirming the pending connection failed:`, err?.message ?? err);
-        return null;
-      });
-    if (confirmed) {
-      slot.done = true;
-      created.push(confirmed);
-    }
-  }
-
-  // Make a Connection with an NPC the table already knows (issue #345 AA19):
-  // the move makes a connection of "an existing relationship" too, but the
-  // detection leaves an established NPC out (its prompt, the parse and the
-  // gate above) and a name the GM dismissed likewise — the move card said
-  // "Connection made" and nothing was made. The one known NPC the hit's
-  // narration names becomes the roller's connection: a listed NPC card gets
-  // their bond Item, and a connection row the GM dismissed is un-dismissed
-  // and confirmed as theirs. Naming several, none is guessed: the GMs are told.
-  for (const slot of slots) {
-    if (slot.done || !slot.names || removed()) continue;
-    const made = await connectKnownNpc(slot, campaignState, { namingText: options.namingText, narrationId })
-      .catch(err => {
-        console.warn(`${MODULE_ID} | routeEntityDrafts: connecting the known NPC failed:`, err?.message ?? err);
-        return null;
-      });
+    const made = await connectNamedFigure(slot, campaignState, {
+      namingText: options.namingText, lineText: options.lineText, narrationId,
+    }).catch(err => {
+      console.warn(`${MODULE_ID} | routeEntityDrafts: connecting the NPC the move names failed:`, err?.message ?? err);
+      return null;
+    });
     if (made) {
       slot.done = true;
       created.push(made);
@@ -2344,118 +2330,114 @@ async function completeListedEntity(draft, campaignState) {
 }
 
 /**
- * A Make a Connection hit on an NPC whose draft card is still pending (issue
- * #325 W23): the detection pass leaves a pending name out (its prompt says
- * not to return it, and the parse and routeEntityDrafts skip it), so the move
- * card said "Connection made" and nothing was made — and a later Confirm gave
- * the bond to the PC of the old narration. The pending connection row the
- * move's narration names (whole words, the full name) is confirmed now, with
- * the bond on the roller — stamped with the move's narration and the row, so
- * an X-Card on that narration removes the connection while unused and puts
- * the row back to pending (connection.retractNarrationConnections;
- * MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED).
+ * A Make a Connection hit that made no one, on an NPC the move names whom the
+ * detection pass leaves out, so the move card said "Connection made" and
+ * nothing was made:
+ *   - a connection row still pending on a draft card (issue #325 W23 — and a
+ *     later Confirm gave the bond to the PC of the old narration): the row is
+ *     confirmed with the bond on the roller, stamped with the move's narration
+ *     and the row, so an X-Card on that narration removes the connection while
+ *     unused and puts the row back to pending
+ *     (connection.retractNarrationConnections;
+ *     MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED);
+ *   - an NPC the table already knows (issue #345 AA19 — the move covers "an
+ *     existing relationship"): an active listed connection gets the roller's
+ *     bond Item (idempotent per PC and connection — known-issues
+ *     BOND-ITEM-AFTER-RELIST), no second card; a connection row the GM
+ *     dismissed is un-dismissed and confirmed as the roller's, with a pending
+ *     row's stamps. A name in both is the listed NPC, un-dismissed (a
+ *     dismissed name keeps a record out of the narrator's name index).
  *
- * @param {(draft: Object) => boolean} names — whether the move's narration
- *   names a row as its roller's: free-flow's, the row's full name in the
- *   player's narration and the narrator's; a round's hit, a row the round
- *   names so whose figure its roller met (connectionSlots — issue #342 Z09,
- *   #345 AA09)
- * @param {string|null} actorId — the roller
- * @param {string|null} [narrationId] — the Make a Connection's narration
+ * Which one is the player's line's to say (issue #347 AB10). The first
+ * pending row named anywhere in the line or the narration was confirmed: a
+ * hit with Sable whose narration had pending Dace watching from the bar
+ * bonded Dace, and the pending rows were tried before the known NPC the line
+ * named. Now the line decides when it names exactly one of them; a line that
+ * names none leaves it to the narration when that names exactly one;
+ * otherwise none is guessed and the GMs are told which were named.
+ *
+ * @param {{ actorId: string|null, names: Function }} slot — the hit
+ *   (connectionSlots): whether the move names a figure as its roller's —
+ *   free-flow's, its full name in the player's line or the narrator's; a
+ *   round's hit, one the round names whose figure its roller met (issue #342
+ *   Z09, #345 AA09)
+ * @param {Object} campaignState
+ * @param {{ namingText?: string, lineText?: string, narrationId?: string|null }} opts
+ *   — `namingText` the line and the narration; `lineText` the player's line
+ *   (a round's, its lines)
  * @returns {Promise<{ entity: Object, record: Object }|null>}
  */
-async function confirmNamedPendingConnection(names, actorId, narrationId = null) {
-  if (typeof names !== "function") return null;
-  const messages = [...(globalThis.game?.messages?.contents ?? [])].reverse();   // the newest card first
-  for (const message of messages) {
-    const f = message?.flags?.[MODULE_ID];
-    if (!f?.draftEntityCard) continue;
-    for (const draft of Array.isArray(f.drafts) ? f.drafts : []) {
-      if (draft?.type !== "connection" || (draft.status && draft.status !== "pending")) continue;
-      const name = typeof draft.name === "string" ? draft.name.trim() : "";
-      if (!name || !names(draft)) continue;
-      const record = await confirmDraft(message, draft.index, { actorId, narrationId });
-      return record ? { entity: draft, record } : null;
-    }
+async function connectNamedFigure(slot, campaignState, { namingText = "", lineText = "", narrationId = null } = {}) {
+  if (!String(namingText ?? "").trim() || typeof slot?.names !== "function") return null;
+  const store = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState ?? {};
+  const dismissed = new Set((store.dismissedEntities ?? []).filter(n => typeof n === "string").map(normalizeEntityName));
+  const candidates = namedConnectionCandidates(slot, campaignState, dismissed);
+  if (!candidates.length) return null;
+
+  const line = String(lineText ?? "");
+  const inLine = line.trim() ? candidates.filter(c => wholeWordPattern(c.name).test(line)) : [];
+  const pick = inLine.length === 1 ? inLine[0]
+    : inLine.length === 0 && candidates.length === 1 ? candidates[0]
+    : null;
+  if (!pick) {
+    const named = inLine.length ? inLine : candidates;
+    console.warn(`${MODULE_ID} | make a connection: the move names several NPCs (${named.map(c => c.name).join(", ")}) — none was made the roller's connection.`);
+    await postNamedNpcsNotice(named, slot.actorId);
+    return null;
   }
-  return null;
+
+  if (pick.kind === "pending") {
+    const record = await confirmDraft(pick.message, pick.draft.index, { actorId: slot.actorId, narrationId });
+    return record ? { entity: pick.draft, record } : null;
+  }
+  if (dismissed.has(pick.key)) {
+    await undismissEntityName(pick.key).catch(err =>
+      console.warn(`${MODULE_ID} | make a connection: un-dismissing the name failed:`, err?.message ?? err));
+  }
+  if (pick.kind === "listed") {
+    await registerConnectionOnActiveCharacter(pick.record, { actorId: slot.actorId });
+    return { entity: { type: "connection", name: pick.record.name }, record: pick.record };
+  }
+  const record = await confirmDraft(pick.message, pick.draft.index, { actorId: slot.actorId, narrationId, dismissed: true });
+  return record ? { entity: pick.draft, record } : null;
 }
 
 /**
- * A Make a Connection hit that made no one, on an NPC the table already knows
- * (issue #345 AA19). The move covers "an existing relationship" ("When you
- * search out a new relationship or give focus to an existing relationship"),
- * but the detection pass leaves an established NPC out, and a name the GM
- * dismissed too, so the move card said "Connection made" while nothing was
- * made. The known NPCs the hit's narration names (the full name, whole words,
- * and the slot's own rule — a round hit's figure its roller met) are:
- *   - an active listed connection — Kira's contact Vance, whom Ren now makes
- *     his own: the bond Item goes on the roller (idempotent per PC and
- *     connection, as a draft Confirm of an existing NPC — known-issues
- *     BOND-ITEM-AFTER-RELIST); no second card is made;
- *   - a connection row the GM dismissed from a draft card: the name is
- *     un-dismissed and the row confirmed as the roller's, as a pending row is
- *     (confirmNamedPendingConnection, W23's stamps — an X-Card on this
- *     narration puts the row back to pending).
- * A name in both is the listed NPC, un-dismissed (a dismissed name keeps a
- * record out of the narrator's name index). Several named: nothing is
- * guessed, and the GMs are whispered which.
+ * The NPCs a Make a Connection hit names that connectNamedFigure may connect,
+ * one per name: pending connection rows (the newest card first), then active
+ * listed connections — the store's list too (issue #347 AB09) — then the
+ * newest dismissed connection row of a name still dismissed.
  *
- * @param {{ actorId: string|null, names: Function }} slot — the hit (connectionSlots)
- * @param {Object} campaignState
- * @param {{ namingText?: string, narrationId?: string|null }} opts
- * @returns {Promise<{ entity: Object, record: Object }|null>}
+ * @returns {Array<{ kind: "pending"|"listed"|"dismissed", key: string, name: string, record?: Object, message?: Object, draft?: Object }>}
  */
-async function connectKnownNpc(slot, campaignState, { namingText = "", narrationId = null } = {}) {
-  const hay = String(namingText ?? "");
-  if (!hay.trim()) return null;
-  const named = (figure) => {
-    const name = String(figure?.name ?? "").trim();
-    return !!name && wholeWordPattern(name).test(hay) && slot.names(figure) === true;
+function namedConnectionCandidates(slot, campaignState, dismissed) {
+  const out = [];
+  const seen = new Set();
+  const add = (candidate) => {
+    if (!candidate.key || seen.has(candidate.key)) return;
+    seen.add(candidate.key);
+    out.push(candidate);
   };
-  const store = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? campaignState ?? {};
-  const dismissed = new Set((store.dismissedEntities ?? []).filter(n => typeof n === "string").map(normalizeEntityName));
+  const named = (figure) => !!String(figure?.name ?? "").trim() && slot.names(figure) === true;
+  const cards = [...(globalThis.game?.messages?.contents ?? [])].reverse()   // the newest card first
+    .filter(m => m?.flags?.[MODULE_ID]?.draftEntityCard);
+  const rows = (status) => cards.flatMap(message => (Array.isArray(message.flags[MODULE_ID].drafts) ? message.flags[MODULE_ID].drafts : [])
+    .filter(draft => draft?.type === "connection" && status(draft.status))
+    .map(draft => ({ message, draft })));
 
-  const listed = [];
-  // The store's list too: an NPC confirmed while the move ran (issue #347 AB09).
+  for (const { message, draft } of rows(status => !status || status === "pending")) {
+    if (named(draft)) add({ kind: "pending", key: normalizeEntityName(draft.name), name: draft.name.trim(), message, draft });
+  }
   for (const id of withStoredEntityIds(campaignState)?.connectionIds ?? []) {
     let rec = null;
     try { rec = getConnection(id); } catch { continue; }
-    if (rec?._id && rec.active !== false && named(rec)) listed.push(rec);
+    if (rec?._id && rec.active !== false && named(rec)) add({ kind: "listed", key: normalizeEntityName(rec.name), name: rec.name, record: rec });
   }
-  const rows = [];   // the newest dismissed connection row per name
-  for (const message of [...(globalThis.game?.messages?.contents ?? [])].reverse()) {
-    const f = message?.flags?.[MODULE_ID];
-    if (!f?.draftEntityCard) continue;
-    for (const draft of Array.isArray(f.drafts) ? f.drafts : []) {
-      if (draft?.type !== "connection" || draft.status !== "dismissed") continue;
-      const key = normalizeEntityName(draft.name);
-      if (!key || !dismissed.has(key) || rows.some(r => r.key === key) || !named(draft)) continue;
-      rows.push({ key, message, draft });
-    }
+  for (const { message, draft } of rows(status => status === "dismissed")) {
+    const key = normalizeEntityName(draft.name);
+    if (dismissed.has(key) && named(draft)) add({ kind: "dismissed", key, name: draft.name.trim(), message, draft });
   }
-
-  const keys = new Set([...listed.map(r => normalizeEntityName(r.name)), ...rows.map(r => r.key)]);
-  if (keys.size === 0) return null;
-  if (keys.size > 1) {
-    const names = [...new Set([...listed.map(r => r.name), ...rows.map(r => r.draft.name)])];
-    console.warn(`${MODULE_ID} | make a connection: the narration names several known NPCs (${names.join(", ")}) — none was made the roller's connection.`);
-    await postKnownNpcsNotice(names, slot.actorId);
-    return null;
-  }
-  const [key] = keys;
-  if (dismissed.has(key)) {
-    await undismissEntityName(key).catch(err =>
-      console.warn(`${MODULE_ID} | make a connection: un-dismissing the name failed:`, err?.message ?? err));
-  }
-  if (listed.length) {
-    const record = listed[0];
-    await registerConnectionOnActiveCharacter(record, { actorId: slot.actorId });
-    return { entity: { type: "connection", name: record.name }, record };
-  }
-  const { message, draft } = rows[0];
-  const record = await confirmDraft(message, draft.index, { actorId: slot.actorId, narrationId, dismissed: true });
-  return record ? { entity: draft, record } : null;
+  return out;
 }
 
 /** Take a name off the dismissed list (by normalizeEntityName), on the GM's campaignState write chain. */
@@ -2503,13 +2485,24 @@ export async function undismissRecordName(name, campaignState = null) {
   return true;
 }
 
-/** GM whisper: a Make a Connection hit named several known NPCs, so none was made the roller's (issue #345 AA19). */
-async function postKnownNpcsNotice(names, actorId) {
-  const who = (actorId ? globalThis.game?.actors?.get?.(actorId)?.name : null) ?? "the character";
-  const list = names.map(n => `<strong>${escapeHtml(n)}</strong>`).join(", ");
+/**
+ * GM whisper: a Make a Connection hit named several NPCs it could connect —
+ * the table's known ones (issue #345 AA19), rows pending on a draft card
+ * (issue #347 AB10) — and the player's line did not single one out, so none
+ * was made the roller's.
+ *
+ * @param {Array<{ kind: string, name: string }>} named — connectNamedFigure's candidates
+ * @param {string|null} actorId — the roller
+ */
+async function postNamedNpcsNotice(named, actorId) {
+  const who = escapeHtml((actorId ? globalThis.game?.actors?.get?.(actorId)?.name : null) ?? "the character");
+  const list = named.map(c => `<strong>${escapeHtml(c.name)}</strong>`).join(", ");
+  const pending = named.some(c => c.kind === "pending");
+  const text = pending
+    ? `The move names more than one NPC it could make ${who}'s connection (${list}), and ${who}'s line does not say which, so none was made. Confirm the right one on its New Entities card, or add them on ${who}'s sheet.`
+    : `The narration names more than one NPC the table already knows (${list}), so none was made ${who}'s connection. Add the right one on ${who}'s sheet.`;
   await globalThis.ChatMessage?.create?.({
-    content: `<div class="sf-ptp-card"><strong>Make a Connection — no connection made</strong>`
-      + `<p>The narration names more than one NPC the table already knows (${list}), so none was made ${escapeHtml(who)}'s connection. Add the right one on ${escapeHtml(who)}'s sheet.</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>Make a Connection — no connection made</strong><p>${text}</p></div>`,
     whisper: collectGmIds(),
     flags:   { [MODULE_ID]: { knownNpcsConnectionNotice: true } },
   }).catch(err => console.warn(`${MODULE_ID} | make a connection: the notice failed:`, err?.message ?? err));
