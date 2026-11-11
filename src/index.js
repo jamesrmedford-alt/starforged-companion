@@ -997,6 +997,9 @@ export function registerChatHook() {
         );
         return;
       }
+      // A held move handed back is held again until a write lands, not
+      // dropped (issue #345 AA48).
+      if (reholdRefusedForcedMove(message)) return;
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
       return;
     }
@@ -1116,7 +1119,10 @@ export function registerChatHook() {
   // W02) — or once the claim it was held behind is refused.
   _heldMovePipeline = onMessage;
   Hooks.on("updateSetting", (setting) => {
-    if (setting?.key === `${MODULE_ID}.campaignState`) drainDeferredForcedMoves();
+    if (setting?.key !== `${MODULE_ID}.campaignState`) return;
+    // A write landed: the world saves again, so a held move it refused goes (issue #345 AA48).
+    _heldMovesWaitForLandedWrite = false;
+    drainDeferredForcedMoves();
   });
   // A claim this client released, carried back by a write built from a cache
   // that had not seen the release, is put back by its claimant
@@ -1275,6 +1281,12 @@ const _deferredForcedMoves = [];
 // Ids of held moves already handed back to the pipeline once: one that meets
 // the lock again (another move claimed it first) keeps its place at the front.
 const _drainedForcedMoves = new Set();
+// Set when a held move handed back met a claim the world refused and was held
+// again: the held moves wait for a campaignState write that lands (the
+// updateSetting hook clears it). The drain's own re-ask — or another refused
+// claim's — would hand the move straight back into a claim the world still
+// refuses, again and again (the issue #342 Z25 shape). Issue #345 AA48.
+let _heldMovesWaitForLandedWrite = false;
 
 /**
  * Hold a forced move that met the move lock. A card button's GM handler
@@ -1288,15 +1300,37 @@ const _drainedForcedMoves = new Set();
  *
  * @param {ChatMessage} message — carries `flags[MODULE_ID].deferWhileBusy`
  */
-function deferForcedMove(message, { untilSession = false } = {}) {
+function deferForcedMove(message, { untilSession = false, refused = false } = {}) {
   const id = message?.id ?? null;
   if (!id || _deferredForcedMoves.includes(id)) return;
   if (_drainedForcedMoves.has(id)) _deferredForcedMoves.unshift(id);
   else _deferredForcedMoves.push(id);
   ui?.notifications?.info(untilSession
     ? "Starforged Companion: No session has begun — the move will be rolled once Begin a Session starts one."
-    : "Starforged Companion: A move is already being resolved — the next one will be rolled when it completes.",
+    : refused
+      ? "Starforged Companion: The held move could not start — the world did not save it. It stays held, and is rolled once the world saves again."
+      : "Starforged Companion: A move is already being resolved — the next one will be rolled when it completes.",
   { permanent: false });
+}
+
+/**
+ * A held move handed back (drainDeferredForcedMoves) whose own lock claim the
+ * world refused: held again, at the front, until a campaignState write lands.
+ * It was dropped with the "could not start" toast while its card stayed
+ * claimed — a refusal lasting the held-behind claim and the handed-back
+ * move's own lost the move for good (issue #345 AA48, a regression of
+ * FREE-FLOW-DEFERRED-AFTER-REFUSED-ROUND-CLAIM). A forced move whose first
+ * claim is refused is not held (LOCK-CLAIM-WEDGE's toast).
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean} whether it was held again
+ */
+function reholdRefusedForcedMove(message) {
+  const id = message?.id ?? null;
+  if (!id || message.flags?.[MODULE_ID]?.deferWhileBusy !== true || !_drainedForcedMoves.has(id)) return false;
+  _heldMovesWaitForLandedWrite = true;
+  deferForcedMove(message, { refused: true });
+  return true;
 }
 
 // Authors told — since a message last passed the session gate — that no
@@ -1410,6 +1444,8 @@ let _heldMovePipeline = null;
 function drainDeferredForcedMoves() {
   const runPipeline = _heldMovePipeline;
   if (!runPipeline || !_deferredForcedMoves.length || !isCanonicalGM()) return;
+  // A held move the world just refused waits for a write that lands (issue #345 AA48).
+  if (_heldMovesWaitForLandedWrite) return;
   const state = game.settings.get(MODULE_ID, "campaignState");
   // A round's claim still on its way holds the lock too: the move would only
   // be held again — and drained again, at once, forever (issue #342 Z25).
