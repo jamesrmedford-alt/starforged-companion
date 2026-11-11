@@ -56,7 +56,7 @@ vi.mock('../../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
-import { scriptClaude } from '../../helpers/faults.js';
+import { scriptClaude, traceTable } from '../../helpers/faults.js';
 import { CampaignStateSchema } from '../../../src/schemas.js';
 
 const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
@@ -116,6 +116,7 @@ describe('a round whose narrating GM drops off the server while its narration is
     const realError = console.error;
     console.error = (...args) => { errors.push(args.map(String).join(' ')); };
     try {
+      const trace = traceTable(table);
       const first = round();
       const held = claude.hold(c => c.model === NARRATION_MODEL && c.client === 'gm-1');
       await bothActAndConfirm();
@@ -123,6 +124,7 @@ describe('a round whose narrating GM drops off the server while its narration is
       expect(round(), 'gm-1 is narrating round 1 (setup)').toMatchObject({ id: first.id, phase: 'narrating' });
 
       // gm-1's connection to the server drops; its page — and its request to Anthropic — live on.
+      trace.mark("gm-1's connection drops");
       await table.leave('gm-1');
       await table.settle();
       for (let i = 0; i < 50 && round().id === first.id; i++) { await table.settle(); }
@@ -135,6 +137,7 @@ describe('a round whose narrating GM drops off the server while its narration is
       expect(round().entries['pl-1']?.text, "Kira's round-2 action is in (setup)").toBe('I pull Ren up after me.');
 
       // gm-1 is back (the same page), and its narration's reply arrives.
+      trace.mark('gm-1 is back; its reply arrives');
       await table.join('gm-1');
       held.release(REPLY('Gina'));
       await table.settle();
