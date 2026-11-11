@@ -171,17 +171,29 @@ export function readAssets(actor) {
   const list = Array.isArray(items) ? items : [];
   return list
     .filter(i => i?.type === 'asset')
-    .map(i => {
-      const abilities = (i.system?.abilities ?? [])
-        .filter(a => a?.enabled)
-        .map(a => stripHtml(linkLabels(a?.description ?? '')))
-        .filter(Boolean);
-      return {
-        name:        i.name ?? '',
-        description: stripHtml(i.system?.description ?? ''),
-        abilities,
-      };
-    });
+    .map(i => ({
+      name:        i.name ?? '',
+      description: stripHtml(i.system?.description ?? ''),
+      abilities:   readAssetAbilityTexts(i),
+    }));
+}
+
+/**
+ * An asset Item's enabled abilities as plain text — what the asset does
+ * (ASSET-ABILITY-TEXT: `abilities[].description`, HTML stripped and each
+ * document link reduced to its label). `system.description` is deprecated
+ * and empty on every canonical asset, so this is the text to describe one
+ * by: readAssets' abilities, and the deck plan's module pins (issue #345
+ * AA56).
+ *
+ * @param {Item} item — an `asset` Item (or its data)
+ * @returns {string[]}
+ */
+export function readAssetAbilityTexts(item) {
+  return (item?.system?.abilities ?? [])
+    .filter(a => a?.enabled)
+    .map(a => stripHtml(linkLabels(a?.description ?? '')))
+    .filter(Boolean);
 }
 
 function stripHtml(s) {
