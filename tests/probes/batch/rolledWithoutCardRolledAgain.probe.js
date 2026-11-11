@@ -51,7 +51,7 @@ vi.mock('../../../src/moves/resolver.js', async (importOriginal) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
-import { scriptClaude, holdWrites } from '../../helpers/faults.js';
+import { scriptClaude, holdWrites, failWrites } from '../../helpers/faults.js';
 import { CampaignStateSchema } from '../../../src/schemas.js';
 import { resolveMove } from '../../../src/moves/resolver.js';
 
@@ -59,11 +59,6 @@ const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
 let table;
 const round = () => table.world.getSetting('batchMode.round');
 const roundNarrations = () => table.claude.calls.filter(c => c.model === NARRATION_MODEL && /THIS ROUND/.test(c.userText ?? ''));
-const rollsFor = (actorId) => resolveMove.mock.results.filter(r => r.type === 'return').length
-  && resolveMove.mock.calls.filter((_args, i) => resolveMove.mock.results[i]?.type === 'return').length
-  ? table.cards(f => f.payThePriceCard).filter(m => (m.flags[MODULE_ID].actorId ?? m.speaker?.actor ?? null) === actorId || true).length
-  : 0;
-void rollsFor;
 const priceCards = () => table.cards(f => f.payThePriceCard);
 
 beforeAll(async () => {
@@ -120,6 +115,26 @@ describe('BATCH — the GM resolving a round goes away while a move is being rol
     held.release();
     await table.settle();
     await table.join('gm-1');
+  }, 30_000);
+
+  it('the world refuses Ren\'s result card: the round stops, and the Send now its notice asks for must not roll Ren again', async () => {
+    const refused = failWrites(table, w => w.kind === 'message.create' && w.client === 'gm-1'
+      && w.data?.flags?.[MODULE_ID]?.moveResolution === true && w.data?.flags?.[MODULE_ID]?.roundUserId === 'pl-2', { times: 1 });
+    await bothConfirm();
+    await table.drain();
+    expect(refused.refused).toBe(1);
+    expect(round()).toMatchObject({ phase: 'rolling' });
+    // The GMs are told the round stopped, and to press Send now.
+    expect(table.cards(f => f.batchRoundStoppedNotice)).toHaveLength(1);
+    const paidBefore = priceCards().length;
+    expect(resolveMove).toHaveBeenCalledTimes(2);
+
+    await relay('gm-1', 'batch.sendNow', { roundId: round().id });
+    await table.drain();
+
+    expect(round()).toMatchObject({ number: 2, phase: 'collecting' });   // the round went on
+    expect({ rolls: resolveMove.mock.calls.length, pricesPaid: priceCards().length })
+      .toEqual({ rolls: 2, pricesPaid: paidBefore });
   }, 30_000);
 
   it('gm-1 leaves after Ren\'s roll paid its price, before its result card — gm-2 must not roll Ren a second time', async () => {

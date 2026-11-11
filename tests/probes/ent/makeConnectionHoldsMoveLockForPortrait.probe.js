@@ -168,7 +168,8 @@ describe('ENT — a Make a Connection hit and the new NPC\'s portrait', () => {
     expect(world().pendingMove, 'the lock is released once the image returns (setup)').toBe(false);
     expect(bondNames('pc-kira'), 'the bond lands once the image returns (setup)').toEqual(['Sable Ortiz']);
 
-    expect(whileImageIsOut, 'the table can move, and the roller has the bond, while the image is generated')
-      .toEqual({ pendingMove: false, bonds: ['Sable Ortiz'] });
+    // The lock is the finding; the bond waiting behind the image is its second symptom.
+    expect.soft(whileImageIsOut.pendingMove, 'the move lock is free while the image is generated').toBe(false);
+    expect.soft(whileImageIsOut.bonds, 'the roller holds the bond while the image is generated').toEqual(['Sable Ortiz']);
   }, 60_000);
 });

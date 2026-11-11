@@ -148,6 +148,64 @@ describe('IDXA-2 — a held forced move and a canonical handover', () => {
       .toEqual({ whenLockFreed: 8, afterGm1Left: 8 });
   }, 60_000);
 
+  // The session gate holds a claimed card's move the same way ("until a
+  // session begins") — for minutes, while the table gathers.
+  async function pressWhichVowBeforeSession({ gm1Keyed }) {
+    table = await simulateTable({
+      users: [{ ...USERS.GM, active: false }, USERS.GM2, USERS.P1],
+      world: { settings: { ...SETTINGS, keyedGmUserIds: gm1Keyed ? ['gm-1', 'gm-2'] : ['gm-2'],
+        campaignState: { ...SETTINGS.campaignState, sessionActive: false, sessionActiveStartedAt: null } } },
+      clientSettings: gm1Keyed ? { 'gm-1': { claudeApiKey: 'sk-ant-gina' } } : {},
+    });
+    await table.setClaudeKey('gm-2', 'sk-ant-gus');
+    vow = makeVow();
+    table.addActor({ id: 'pc-1', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [vow] } });
+    scriptClaude(table);
+    const gm2 = table.client('gm-2');
+    const msg = await gm2.run(() => globalThis.ChatMessage.create({
+      content: `<div class="sf-ptp-card"><button type="button" data-action="sf-which-vow" data-item-id="vow-1">🏁 Find Chen</button>`
+        + `<button type="button" data-action="sf-which-vow" data-item-id="vow-2">🏁 Repay the Syndicate</button></div>`,
+      flags: { [MODULE_ID]: { whichVowCard: true, actorId: 'pc-1', narration: 'I end this.', resolved: false,
+        choices: [{ itemId: 'vow-1', name: 'Find Chen' }, { itemId: 'vow-2', name: 'Repay the Syndicate' }] } },
+    }));
+    await table.settle();
+    table.client('pl-1').click(msg.id, '[data-action="sf-which-vow"]');
+    await table.settle(); await table.drain();
+    // Claimed, posted, held until a session begins — nothing rolled.
+    expect(table.world.message(msg.id).flags[MODULE_ID].resolved).toBe(true);
+    expect(table.cards(f => f.forcedMoveId === 'fulfill_your_vow')).toHaveLength(1);
+    expect(table.cards(f => f.moveResolution)).toHaveLength(0);
+    return msg;
+  }
+
+  async function beginSession(byGm) {
+    await table.client(byGm).setSetting('campaignState', { ...world(), sessionActive: true, sessionActiveStartedAt: new Date().toISOString() });
+    await table.settle(); await table.drain();
+  }
+
+  it('a "Which vow?" pick held until a session begins is rolled at Begin, though gm-1 joined in between', async () => {
+    silenceConsoleErrors();
+    await pressWhichVowBeforeSession({ gm1Keyed: true });
+
+    await table.join('gm-1');                 // the table gathers: gm-1 is canonical from now on
+    await table.settle(); await table.drain();
+    await beginSession('gm-1');
+
+    expect(world().sessionActive).toBe(true);
+    expect(table.cards(f => f.moveResolution), 'the held fulfil is rolled once the session begins').toHaveLength(1);
+  }, 60_000);
+
+  it('control: the same pick with gm-2 still canonical is rolled at Begin', async () => {
+    silenceConsoleErrors();
+    await pressWhichVowBeforeSession({ gm1Keyed: false });
+
+    await table.join('gm-1');                 // keyless: gm-2 stays canonical
+    await table.settle(); await table.drain();
+    await beginSession('gm-2');
+
+    expect(table.cards(f => f.moveResolution)).toHaveLength(1);
+  }, 60_000);
+
   it('control: gm-1 keyless (gm-2 stays canonical) — the held milestone is marked when the lock frees', async () => {
     silenceConsoleErrors();
     const claude = await nightRunByGm2({ gm1Keyed: false });
