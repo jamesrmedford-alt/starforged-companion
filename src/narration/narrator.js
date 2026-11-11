@@ -2272,7 +2272,6 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     sessionId,
     updatedAt:    new Date().toISOString(),
   };
-  campaignState.sessionSummary = record;
 
   // Canonical-GM-gated persist (world-scoped write; single-emitter like every
   // other ledger write — a plain isGM gate raced in multi-GM worlds). Non-GM
@@ -2283,16 +2282,29 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   // write left the GM's client serving a summary the world never took, and
   // read inside an oracle capture's round trip it erased the answer
   // (CACHE-MUTATED-BEFORE-WRITE).
+  // The reply-time X-Card check runs again at that turn, on the play count
+  // (issue #345 AA25): an X-Card played while the write waited behind
+  // another jumps the chain and lands first, and its pause can only empty a
+  // summary already stored — this one, made from the narration it removed,
+  // was written over it. Discarded then, here and on the caller's copy.
   if (isCanonicalGM()) {
+    let kept = true;
     try {
-      await serialiseCampaignStateWrite(() => {
+      kept = await serialiseCampaignStateWrite(async () => {
+        if (xCardPlayCount() !== xCardPlaysAtStart) return false;
         const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
-        return game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
+        await game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
+        return true;
       }, 'rolling summary');
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary persist failed:`, err?.message ?? err);
     }
+    if (!kept) {
+      console.debug(`${MODULE_ID} | narrator: X-Card played while the rolling summary waited to be written — its summary is discarded.`);
+      return '';
+    }
   }
+  campaignState.sessionSummary = record;
   return record.text;
 }
 

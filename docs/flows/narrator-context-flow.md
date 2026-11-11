@@ -230,7 +230,10 @@ drops a rolling summary that covered them
 (text emptied, a regen due — stamped with a fresh `updatedAt` and
 `xCardedAt`, so a move in flight cannot merge its working copy's older
 summary back over it, and a regen whose Haiku call was out when the card was
-played discards its reply; issue #325 W06) and sets `xCardRedirect` — on
+played discards its reply; issue #325 W06 — checked again by the play count
+at the write's turn on the GM's write chain, so a card played while the
+write waited behind another, which jumps the chain and lands first, discards
+it too: issue #345 AA25) and sets `xCardRedirect` — on
 every play. A ship move the narration made is undone too: the sidecar's
 `ship / position` change is written to the command vehicle stamped with the
 narration's `narrationId` and the position before it (`previous`, up to

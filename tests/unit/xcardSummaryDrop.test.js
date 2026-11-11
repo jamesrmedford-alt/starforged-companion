@@ -32,6 +32,7 @@ import {
 } from '../../src/narration/narrator.js';
 import { suppressScene } from '../../src/context/safety.js';
 import { persistResolution } from '../../src/moves/persistResolution.js';
+import { serialiseCampaignStateWrite } from '../../src/multiplayer/campaignStateChain.js';
 
 const MODULE_ID = 'starforged-companion';
 const KEY = `${MODULE_ID}.campaignState`;
@@ -137,5 +138,53 @@ describe('control: a regen with no X-Card played meanwhile is stored', () => {
     apiPost.mockResolvedValueOnce(reply('Kira reached the docks.'));
     await getRollingSessionSummary(stored(), { forceRefresh: true });
     expect(stored().sessionSummary).toMatchObject({ text: 'Kira reached the docks.', coveredCount: 1 });
+  });
+});
+
+// Issue #345 AA25: the reply-time check ran before the summary's write waited
+// its turn on the GM's write chain, and the chained write never checked again
+// — an X-Card played meanwhile jumps the chain, lands first, and the summary
+// made from the narration it removed was written over the pause.
+describe('issue #345 AA25 — a regen whose write waits on the chain while the X-Card is played', () => {
+  const ticks = async (n = 10) => { for (let i = 0; i < n; i++) await new Promise(r => setTimeout(r, 0)); };
+
+  it("is stored nowhere: not over the pause, not on the caller's copy", async () => {
+    await narrate('nar-torch', 'The interrogator lifts the cutting torch.', TORCH);
+    syncChat();
+    let releaseAhead;
+    const ahead = serialiseCampaignStateWrite(() => new Promise((r) => { releaseAhead = r; }), 'a write ahead');
+    apiPost.mockResolvedValueOnce(reply("Kira watched the interrogator burn the prisoner's hand with a cutting torch."));
+
+    const copy = { ...stored() };
+    const pending = getRollingSessionSummary(copy, { forceRefresh: true });
+    await ticks();                                                      // the reply is in; its write waits behind the one ahead
+    expect(apiPost).toHaveBeenCalledTimes(1);
+
+    expect(await suppressScene({}, { local: true })).toBe(true);        // the pause jumps the chain
+    releaseAhead();
+    await ahead;
+
+    expect(await pending).toBe('');
+    expect(stored().xCardActive).toBe(true);
+    expect(stored().sessionSummary?.text ?? '').not.toContain('cutting torch');
+    expect(copy.sessionSummary?.text ?? '').not.toContain('cutting torch');
+  });
+
+  it('control: with no X-Card played while it waits, the write lands once the one ahead has', async () => {
+    await narrate('nar-docks', 'The dockmaster waves you in.', DOCKS);
+    syncChat();
+    let releaseAhead;
+    const ahead = serialiseCampaignStateWrite(() => new Promise((r) => { releaseAhead = r; }), 'a write ahead');
+    apiPost.mockResolvedValueOnce(reply('Kira reached the docks.'));
+
+    const copy = { ...stored() };
+    const pending = getRollingSessionSummary(copy, { forceRefresh: true });
+    await ticks();
+    releaseAhead();
+    await ahead;
+
+    expect(await pending).toBe('Kira reached the docks.');
+    expect(stored().sessionSummary).toMatchObject({ text: 'Kira reached the docks.', coveredCount: 1 });
+    expect(copy.sessionSummary?.text).toBe('Kira reached the docks.');
   });
 });
