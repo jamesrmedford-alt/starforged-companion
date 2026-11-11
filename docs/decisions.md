@@ -6,6 +6,40 @@ rejected.
 
 ---
 
+## A player's `!truth set` cannot set back what the X-Card removed (2026-11)
+
+**Decision:** `setTruth` (`src/factContinuity/ledgers.js`) refuses a
+non-GM `!truth set` whose subject and fact match a retraction the table
+cannot lift — the active scene's X-Card retraction, or one of the session's
+unnamed blocks an earlier scene end kept (`sessionRetractions.blocked`) —
+found by `findSessionBlock`, the fact compared as the narrator's re-assertion
+guard compares it (case, spacing, a trailing full stop aside — issue #345
+AA26). The card says "that fact was taken out of the story this session;
+only a GM can set it again", naming neither the fact nor who removed it.
+Since issue #345 AA05 the blocks hold a GM's Replace originals too, so a
+player's set of the wording the GM replaced is refused as well — in its own
+scene too (`isReplacedOriginal`), as a set over a GM's strike is (W60). A
+GM's own `!truth set` of the fact is still recorded (the GM's authority; it
+lifts nothing), and the next session may state it (issue #345 D4,
+PLAYER-TRUTH-SET-OVER-XCARD — the maintainer chose option A).
+
+**Reason:** a player's set of the fact the X-Card removed was recorded as a
+live binding truth — in its scene (`findBareStrike` passes over the X-Card's
+retraction) and in a later one (the lift reads no block) — so every prompt
+named it under TRUTHS again ("they are never named to it", help → Safety
+System), while a player's set over a GM's mere strike was refused. No player
+has that authority anywhere else in the correction model.
+
+**Rejected:** *allow it as a deliberate, visible act, and say so in the help*
+(option B) — one chat line undid the X-Card's promise for the table.
+
+**Trade-offs accepted:** a player cannot set back a fact even when the
+fiction has since made it true again; they ask the GM, whose set is
+recorded. A Replace made by a player (the correction dialog is reached from
+GM-only cards) is treated as the GM's.
+
+---
+
 ## The X-Card restores the scene frame its narration replaced (2026-11)
 
 **Decision:** a scene frame keeps the frames of its scene it replaced — a
@@ -113,7 +147,8 @@ fourteen found while fixing those — fixed at the maintainer's request on
   refuses a blocked fact's re-assertion (`findSessionStrike(…, { blocked:
   true })`), while CORRECTED, the summary's leave-out list and `!truth set`'s
   lift never read it. A GM's own `!truth set` of the fact is still recorded,
-  and the next session may state it.
+  and the next session may state it; a player's is refused (issue #345 D4 —
+  "A player's `!truth set` cannot set back what the X-Card removed").
 - **A scene end merges at its turn and checks before each migration write**
   [XCARD-DURING-SCENE-END-RACE, XCARD-DURING-SCENE-END-MIGRATES,
   STRIKE-DURING-SCENE-END-LOST]: `endScene`'s own chained write

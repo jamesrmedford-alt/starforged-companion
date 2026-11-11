@@ -778,7 +778,11 @@ ring, and the closing scene's truths keep the closing session's number.
   move's narration (issue #345 AA04); GM `!truth set` bypasses (GM authority) —
   and lifts the strike it re-establishes, linking it as a Replace does, so
   the fact is not binding and CORRECTED at once; a player's set over a GM's
-  strike is refused (issue #326 W60); the lore the lifted strike retracted
+  strike is refused (issue #326 W60), and so is a player's set of what the
+  X-Card removed or a Replace corrected — the active scene's retraction or a
+  kept block (`findSessionBlock`; issue #345 D4, the maintainer's option A:
+  it was recorded binding, named under TRUTHS again) — while a GM's is
+  recorded; the lore the lifted strike retracted
   is restored after the persist, only for a lift the store kept — a strike
   the X-Card took over is never lifted (XCARD-AFTER-STRIKE-STILL-NAMED). A truth already retracted — struck,
   replaced, or the X-Card's — is struck or replaced no further

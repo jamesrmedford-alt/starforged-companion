@@ -119,7 +119,8 @@ longer special-cases them).
   `factContinuity.command` → `applyFactContinuityCommand`), which resolves
   the subject against the full entity roster, applies the strike / set with
   the **requester's** permissions (`ctx.requesterIsGM` — a player cannot
-  strike a GM-asserted truth) to a copy of the store, persists only the
+  strike a GM-asserted truth, nor set back a GM's strike or Replace or what
+  the X-Card removed: W60, issue #345 D4) to a copy of the store, persists only the
   ledger field it changed onto the store as it is then
   (`persistSceneLedgerFields`; a Strike's summary regen mark in the same
   write) — it wrote its whole read back after a Strike's propagation awaits,

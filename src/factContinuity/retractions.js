@@ -38,7 +38,7 @@
 
 import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments, hasSheetNotes } from '../entities/registry.js';
 import { retractSessionLore, undoNarrationEntries } from '../world/worldJournal.js';
-import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey, withXCardBlocks, findEquivalentTruth, keptStrikeStandsAt } from './ledgers.js';
+import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey, withXCardBlocks, isReplacedOriginal, keptStrikeStandsAt } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -494,25 +494,6 @@ function isNamedStrike(t) {
 }
 
 /**
- * A Replace's struck original: a truth the table retracted with a correction
- * (`correctedTo`) that says something else — the replacement. A strike a
- * `!truth set` lifted is linked the same way (ledgers.js setTruth), to a truth
- * restating it: the fact stands again, so it is not one. Like the X-Card's,
- * it is never named — the replacement stands — and it blocks the narrator
- * restating it (issue #345 AA05).
- *
- * @param {Object} t
- * @param {Map<string, Object>} byId — the scene's truths by id
- * @returns {boolean}
- */
-function isReplacedOriginal(t, byId) {
-  if (!t?.retracted || !t.correctedTo || t.retractedBy === XCARD_RETRACTED_BY
-    || t.retractedBy === SUPERSEDED_RETRACTED_BY || !String(t.fact ?? '').trim()) return false;
-  const correction = byId.get(t.correctedTo);
-  return !(correction && findEquivalentTruth([correction], t.subject, t.fact));
-}
-
-/**
  * Where a kept strike of a scene fact stands: the place its truth was
  * asserted at (`sceneLocation`, issue #326 D2). A scene fact is its place's,
  * so the strike stands there only (ledgers.js keptStrikeStandsAt — issue #345
@@ -553,7 +534,7 @@ function keptPlaceOf(t) {
  * renders them — not CORRECTED, not the summary's leave-out list, no card.
  * Their block was the retracted ledger entry, which the scene end clears
  * (XCARD-RETRACTION-SCENE-SCOPED). So are a Replace's struck originals
- * (isReplacedOriginal): the replacement stands, so they are never named
+ * (ledgers.js isReplacedOriginal): the replacement stands, so they are never named
  * either, and the next scene's narration restating the old wording — the
  * ring still carries the prose that stated it — was recorded live and filed
  * as canon beside the replacement (issue #345 AA05); an X-Card on their

@@ -422,6 +422,26 @@ function isBareTableStrike(t) {
 }
 
 /**
+ * A Replace's struck original: a truth the table retracted with a correction
+ * (`correctedTo`) that says something else — the replacement. A strike a
+ * `!truth set` lifted is linked the same way (setTruth), to a truth restating
+ * it: the fact stands again, so it is not one. Like the X-Card's, it is never
+ * named — the replacement stands — never lifted, and a scene end keeps it on
+ * the session's unnamed blocks (retractions.js rememberSessionRetractions —
+ * issue #345 AA05).
+ *
+ * @param {Object} t
+ * @param {Map<string, Object>} byId — the scene's truths by id
+ * @returns {boolean}
+ */
+export function isReplacedOriginal(t, byId) {
+  if (!t?.retracted || !t.correctedTo || t.retractedBy === XCARD_RETRACTED_BY
+    || t.retractedBy === SUPERSEDED_RETRACTED_BY || !String(t.fact ?? '').trim()) return false;
+  const correction = byId?.get?.(t.correctedTo);
+  return !(correction && findEquivalentTruth([correction], t.subject, t.fact));
+}
+
+/**
  * Apply a normalised scene-frame snapshot (Cluster A4 — see
  * docs/narrator/narrator-memory-architecture.md) to the campaign state.
  * The frame is a full replacement snapshot, not a delta: the narrator emits
@@ -780,6 +800,11 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   const lifted = strike ?? kept;
   const isGM = ctx.isGM ?? true;
   if (lifted && !isGM && (lifted.retractedBy === 'gm' || lifted.asserter === 'gm')) return null;
+  // Nor what the X-Card removed or a Replace corrected — this scene's, or one
+  // a scene end kept unnamed: those are never lifted, and a player's set made
+  // the removed fact binding again (issue #345 D4, the maintainer's option A).
+  // A GM's own set is still recorded.
+  if (!isGM && findSessionBlock(campaignState, subjectRef, cleanFact, ctx.names ?? [])) return null;
 
   const entry = {
     id:          newTruthId(),
@@ -858,22 +883,68 @@ export function subjectNames(subject, subjectRef, entities = []) {
  * @returns {Object|null} the kept entry
  */
 export function findSessionStrike(campaignState, subject, fact, names = [], { blocked = false, place } = {}) {
-  const sessionId = campaignState?.currentSessionId ?? null;
-  const kept = campaignState?.sessionRetractions;
-  if (!sessionId || kept?.sessionId !== sessionId) return null;
+  const kept = sessionKept(campaignState);
+  if (!kept) return null;
   const list = [
     ...(Array.isArray(kept.facts) ? kept.facts : []),
     ...(blocked && Array.isArray(kept.blocked) ? kept.blocked : []),
   ];
+  const here = place !== undefined ? place : assertedLocation(campaignState);
+  return findKeptEntry(list, subject, fact, names, here);
+}
+
+/** This session's `sessionRetractions`, or null when they are another session's. */
+function sessionKept(campaignState) {
+  const sessionId = campaignState?.currentSessionId ?? null;
+  const kept = campaignState?.sessionRetractions;
+  return (sessionId && kept?.sessionId === sessionId) ? kept : null;
+}
+
+/**
+ * A kept entry (`{ label, fact, subjectKey, place? }`) of this subject and
+ * fact that stands at `here`: the subject by its key when the entry kept one,
+ * else by name; the fact compared as findEquivalentTruth compares; the place
+ * as keptStrikeStandsAt decides.
+ */
+function findKeptEntry(list, subject, fact, names, here) {
   const norm = normaliseFactText(fact);
-  if (!norm || !list.length) return null;
+  if (!norm || !Array.isArray(list) || !list.length) return null;
   const key = subjectKey(subject);
   const labels = new Set([...(Array.isArray(names) ? names : []), ...(subject?.kind === 'scene' ? ['scene'] : [])]
     .map(n => String(n ?? '').trim().toLowerCase()).filter(Boolean));
-  const here = place !== undefined ? place : assertedLocation(campaignState);
   return list.find(f => f && normaliseFactText(f.fact) === norm
     && ((!!f.subjectKey && f.subjectKey === key) || labels.has(String(f.label ?? '').trim().toLowerCase()))
     && keptStrikeStandsAt(f.place, here)) ?? null;
+}
+
+/**
+ * What a player's `!truth set` of this subject and fact may not re-establish
+ * (issue #345 D4, the maintainer's option A): a retraction the table cannot
+ * lift — the active scene's X-Card retraction or Replace original
+ * (isReplacedOriginal), or one an earlier scene of the session kept on the
+ * unnamed blocks (`sessionRetractions.blocked`, where it stands — a
+ * Replace's scene fact at its place, the X-Card's anywhere). A player's set
+ * of the fact the X-Card removed was recorded as binding — in its scene
+ * (findBareStrike passes over the X-Card's) and in a later one (the lift
+ * reads no block) — while a set over a GM's mere strike was refused (W60). A
+ * GM's set is the GM's authority, and is recorded (setTruth). Null when
+ * nothing blocks it.
+ *
+ * @param {Object} campaignState
+ * @param {Object} subject — resolved subject ({kind, ...})
+ * @param {string} fact
+ * @param {string[]} [names] — the names the subject goes by (subjectNames)
+ * @returns {Object|null} the active scene's truth, or the kept block
+ */
+export function findSessionBlock(campaignState, subject, fact, names = []) {
+  const truths = Array.isArray(campaignState?.sceneTruths) ? campaignState.sceneTruths : [];
+  const byId = new Map(truths.filter(t => t?.id).map(t => [t.id, t]));
+  const removed = truths.filter(t => t?.retracted
+    && (t.retractedBy === XCARD_RETRACTED_BY || isReplacedOriginal(t, byId)));
+  const active = findEquivalentTruth(removed, subject, fact);
+  if (active) return active;
+  const kept = sessionKept(campaignState);
+  return kept ? findKeptEntry(kept.blocked, subject, fact, names, assertedLocation(campaignState)) : null;
 }
 
 /** Articles a place's wording drops before two are compared ("the docks" ~ "docks"). */

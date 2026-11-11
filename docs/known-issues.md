@@ -189,7 +189,8 @@ confirm: the X-Card's pause jumps the write chain, so a chained write already
 sent when it is played lands first and the pause takes back that change (an
 oracle answer, a round claim in flight — a carried-back lock release is put
 back); an X-Card block lasts the session (the next session may state the
-fact) and a GM's own `!truth set` of the fact is still recorded;
+fact) — a GM's own `!truth set` of the fact is still recorded and a player's
+is refused, as the maintainer confirmed in issue #345 D4;
 FREE-FLOW-RELEASE-REFUSED-TWICE also retries once for a move stopped before
 its early release; the regeneration claim reuses `regenerationUsed` (a
 refused save keeps the earlier portrait, locked, the regeneration spent); a

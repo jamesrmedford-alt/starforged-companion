@@ -100,7 +100,9 @@ layers. This file is the never-break list.
    ledger block AND blocks narrator re-assertion at `applySidecar` (GM
    `!truth set` bypasses, and lifts the strike — `correctedTo`, as a Replace
    — so the two never render together; a player's set over a GM's strike is
-   refused, issue #326 W60; the lift also restores the lore that strike
+   refused, issue #326 W60, and so is a player's set of what the X-Card
+   removed or a Replace corrected — the active scene's, or a block a scene
+   end kept (`findSessionBlock`, issue #345 D4); the lift also restores the lore that strike
    retracted, `restoreStruckLore` by the lore entry's `retractedByTruth`, so
    the re-set fact is archived as canon — issue #331 X31 — save an entry
    another standing retraction still states: it stays out of canon, handed to
