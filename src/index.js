@@ -122,6 +122,7 @@ import {
   partitionRiders,
   applyMeterRiders,
   normaliseRider,
+  settlePreRollChoices,
 } from "./moves/consequenceRiders.js";
 import { promptRiders } from "./moves/riderDialog.js";
 
@@ -6811,13 +6812,19 @@ async function handleShipMapCommand(message) {
  * the world refused goes to the GMs, with a Retry for it alone (issue #315
  * S08). GM-gated by the caller.
  *
+ * A "choose one" an ability's add decided before the roll is settled by
+ * whether the confirm kept that ability checked: taken, its option's effects
+ * are the outcome's and the others are not offered again (issue #345 AA12).
+ *
  * @param {Object} resolution
- * @param {Object} interpretation — carries extractedRiders from the pre-roll pass
+ * @param {Object} interpretation — carries extractedRiders from the pre-roll pass,
+ *   the scan's applicableAbilities and the confirm's appliedAbilityKeys
  * @param {Object} campaignState
  * @param {Actor|null} characterActor
  */
 async function applyMoveConsequenceRiders(resolution, interpretation, campaignState, characterActor) {
-  const extracted = interpretation?.extractedRiders;
+  const extracted = settlePreRollChoices(interpretation?.extractedRiders,
+    interpretation?.applicableAbilities, interpretation?.appliedAbilityKeys);
   if (!Array.isArray(extracted) || !extracted.length) return;
 
   const firing = collectFiringRiders(extracted, resolution.outcome, resolution.isMatch);

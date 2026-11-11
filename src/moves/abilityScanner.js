@@ -133,6 +133,8 @@ function readAssetAbilities(actor, source) {
         hasClock:      !!ab.hasClock,
         clockTicks:    Number(ab.clockTicks ?? 0),
         clockMax:      Number(ab.clockMax ?? 4),
+        // A "choose one"'s options, by name (issue #345 AA12).
+        options:       choiceOptions(ab.description),
       });
     });
   }
@@ -144,6 +146,58 @@ function stripHtml(s) {
     .replace(/<[^>]*>/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * The options of an ability's "choose one": the items of the list after a
+ * "choose …" in its HTML ("choose one (before rolling)", "choose an
+ * approach"), each "Name: text" — Gunner's "Pin them down: Add +1 and take +1
+ * momentum on a hit." and "Make them hurt: Mark progress on a hit." Text is
+ * HTML-stripped with its move links kept. [] for an ability with none (a list
+ * of outcomes is no choice: Veteran's "On a strong hit with a match, …").
+ *
+ * @param {string} html — the ability's description
+ * @returns {Array<{ name: string, text: string }>}
+ */
+function choiceOptions(html) {
+  const s = String(html ?? "");
+  const at = s.search(/<ul\b/i);
+  if (at < 0 || !/\bchoose\b/i.test(stripHtml(s.slice(0, at)))) return [];
+  const end = s.indexOf("</ul>", at);
+  return [...s.slice(at, end < 0 ? undefined : end).matchAll(/<li\b[^>]*>([\s\S]*?)<\/li>/gi)]
+    .map(m => stripHtml(m[1]))
+    .map(item => {
+      const colon = item.indexOf(":");
+      return colon > 0 && colon <= 40 ? { name: item.slice(0, colon).trim(), text: item.slice(colon + 1).trim() } : null;
+    })
+    .filter(Boolean);
+}
+
+/**
+ * A "choose one" the ability's add settles before the roll (issue #345 AA12):
+ * the add is one option's — Gunner's "Pin them down: Add +1 and take +1
+ * momentum on a hit" against "Make them hurt: Mark progress on a hit";
+ * Navigator's "Follow the safest path: Add +1"; Service Pod's "Careful: Add +2
+ * and Lose Momentum (-1)". Taking the add is choosing that option: its other
+ * effects are the outcome's, and the other options are not offered again
+ * after the roll (consequenceRiders.settlePreRollChoices). Null when the add
+ * is not an option's — the ability's lead gives it (Bounty Hunter's "add +1
+ * … and choose one"), or no option, or more than one, carries an add.
+ *
+ * @param {Object} ab — a collectEnabledAbilities entry (`text`, `options`)
+ * @param {Object} values — heldValuesFor's
+ * @returns {{ option: string, options: string[] }|null}
+ */
+function preRollChoiceOf(ab, values) {
+  const options = Array.isArray(ab?.options) ? ab.options : [];
+  if (options.length < 2) return null;
+  const hasAdd = (text) => String(text ?? "").split(/(?<=[.!?])\s+/)
+    .some(sentence => clausesOf(sentence).some(c => firstAddIn(c.text, values).add > 0));
+  const text = String(ab.text ?? "");
+  const lead = text.slice(0, Math.max(0, text.indexOf(`${options[0].name}:`)));
+  if (hasAdd(lead)) return null;
+  const adding = options.filter(o => hasAdd(o.text));
+  return adding.length === 1 ? { option: adding[0].name, options: options.map(o => o.name) } : null;
 }
 
 
@@ -445,6 +499,10 @@ function annotate(detection, moveName = null, moveId = null, characterActor = nu
       // roll applies it when the ability is checked (resolveMove —
       // HOVERBIKE-WEAK-AS-MISS-UNAPPLIED).
       weakHitAsMiss:   !!found?.weakHitAsMiss,
+      // The add is one option of a "choose one": taking it (the ability
+      // checked) is that choice, made before the roll — its riders are
+      // settled by it (consequenceRiders.settlePreRollChoices, issue #345 AA12).
+      preRollChoice:   add > 0 ? preRollChoiceOf(ab, values) : null,
       // The Haiku path already populated statReplacement on its return shape;
       // the structured path lands here with no such field, so derive it from
       // the ability text via the regex fallback.
