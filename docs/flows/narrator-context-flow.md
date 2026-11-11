@@ -196,7 +196,13 @@ meanwhile is only visible in the store. Each gate runs twice — on entry and
 again the moment the Claude reply arrives (`watchXCard(…).interrupted`), before the
 sidecar is applied: a card played while the reply was generated discards it
 (no card, no audio, no ledger facts, no post-narration passes — issue #300
-F13), and the entry point stands down as it would have on entry. The watch
+F13), and the entry point stands down as it would have on entry. So does a
+narration whose client's connection to the server dropped while it was
+written (`connectionWatch.js` counts the drops): a pause recorded meanwhile
+never reached that client's cache, so the watch cannot see it — the paused
+notice says the connection dropped (issue #347 AB19). The move's own record
+and lock release, written from that cache afterwards, can still lift such a
+pause (left open — known-issues). The watch
 starts on entry with the live `campaignState.xCardPlays` count (each
 `suppressScene` adds one; resuming never lowers it), so a card played **and
 resumed** before the reply arrives still discards it (issue #306 R01) —

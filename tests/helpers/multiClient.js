@@ -1298,6 +1298,7 @@ class SimTable {
     const c = this.client(userId);
     c.user.active = false;
     c.connected = false;
+    // Its own socket sees the drop, as socket.io's `disconnect` (issue #347 AB17, AB19).
     c.emitOwnSocketEvent("disconnect", "transport close");
     for (const other of this.connectedClients) {
       other.run(() => other.hooks.call("userConnected", [c.user, false], false));

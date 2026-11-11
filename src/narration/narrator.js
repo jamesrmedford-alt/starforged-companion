@@ -20,6 +20,7 @@ import {
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
+import { connectionDrops } from '../multiplayer/connectionWatch.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
@@ -142,8 +143,19 @@ function xCardPlayCount() {
  */
 export function watchXCard(campaignState) {
   const playsAtStart = xCardPlayCount();
+  const dropsAtStart = connectionDrops();
   return {
     interrupted(label) {
+      // This client's connection dropped while the narration was written: a
+      // pause recorded meanwhile never reached its cache, so neither the
+      // count nor the flag can be trusted — the narration is discarded, its
+      // sidecar never applied (issue #347 AB19).
+      _discardedForDrop = false;
+      if (connectionDrops() !== dropsAtStart) {
+        console.warn(`${MODULE_ID} | ${label}: the connection to the server dropped while the narration was generated — discarded.`);
+        _discardedForDrop = true;
+        return true;
+      }
       if (!isXCardActive(campaignState) && xCardPlayCount() === playsAtStart) return false;
       console.debug(`${MODULE_ID} | ${label}: X-Card played while the narration was generated — discarded.`);
       return true;
@@ -166,8 +178,14 @@ function xCardDiscardReason(campaignState, what) {
       ? 'Narration paused — the X-Card is active. A GM can resume it from the X-Card card or with <code>!x clear</code>.'
       : 'Scene paused — X-Card is active.';
   }
+  if (_discardedForDrop) {
+    return `${what} discarded — this GM's connection to the server dropped while it was being written, so an X-Card played meanwhile could not be checked.`;
+  }
   return `${what} discarded — the X-Card was played while it was being written.`;
 }
+
+/** Whether the last narration a watch discarded was discarded for a dropped connection (xCardDiscardReason's wording). */
+let _discardedForDrop = false;
 
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const RETRY_DELAY_MS = 5000;

@@ -131,9 +131,11 @@ describe('issue #329 X08 — a pipeline whose lock was released while its GM was
     expect(table.cards(f => f.moveResolution)).toHaveLength(2);
 
     // Move A's narration returns at last: A finishes and "releases its lock".
+    // Its call straddled gm-1's dropped connection, so it is discarded — its
+    // paused notice posts instead (issue #347 AB19) — and A still finishes.
     gates[0].resolve(DEFAULT_REPLY);
     await table.settle();   // (drain would wait on B's held narration)
-    expect(table.cards(f => f.narratorCard && !f.narrationFallback).length).toBeGreaterThanOrEqual(1);   // A narrated
+    expect(table.cards(f => f.narrationPaused).length).toBeGreaterThanOrEqual(1);   // A finished, discarded
 
     // B is still narrating, so the lock is still B's (A's release used to clear it).
     expect(world()).toMatchObject({ pendingMove: true, pendingMoveBy: 'gm-1' });

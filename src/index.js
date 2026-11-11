@@ -201,6 +201,7 @@ import {
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing, onGmLoadChange } from "./multiplayer/gmGate.js";
 import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.js";
+import { registerConnectionWatch } from "./multiplayer/connectionWatch.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
@@ -8103,6 +8104,7 @@ Hooks.once("ready", () => {
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
   registerXCardRedirectHook();             // #321 U07: the X-Card's redirect is cleared once the first narration after it posts
   registerDeletedChatHook();               // #347 AB22: the X-Card's pick reads chat as it was, a deleted narration included
+  registerConnectionWatch();               // #347 AB19: a narration in flight across a dropped connection is discarded
   registerSessionActivityHook();          // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
