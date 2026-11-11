@@ -116,8 +116,13 @@ export async function initWorldJournals() {
   const folderId = folder?.id ?? null;
 
   for (const name of Object.values(JOURNAL_NAMES)) {
-    const existing = game.journal?.getName?.(name) ?? game.journal?.find?.(j => j.name === name);
-    if (existing) continue;
+    // By its category, so a journal the GM renamed is not made again beside
+    // it (issue #345 AA63).
+    const existing = findJournal(name);
+    if (existing) {
+      await stampJournalCategory(existing, name);
+      continue;
+    }
     try {
       await JournalEntry.create({
         name,
@@ -1413,16 +1418,73 @@ function nameToCategory(journalName) {
   return "unknown";
 }
 
+/** A journal's World Journal category flag (written at its creation), or null. */
+function journalCategory(journal) {
+  return journal?.flags?.[MODULE_ID]?.worldJournalCategory ?? null;
+}
+
+/**
+ * The journal of a World Journal category (`name` is its JOURNAL_NAMES
+ * title): the one flagged with that category — what a GM's rename in the
+ * sidebar leaves alone — else the journal of its name that carries no
+ * category flag (one made before the flag), never one flagged as another
+ * category. The flag was written and never read: every reader and writer
+ * found its journal by display name, so a renamed Lore journal took every
+ * confirmed fact out of the narrator's ESTABLISHED LORE, and the next lore
+ * recorded — or the next load — made a second one, splitting the record
+ * (issue #345 AA63; rules/reachability.md §1, §6).
+ *
+ * @param {string} name
+ * @returns {JournalEntry|null}
+ */
 function findJournal(name) {
   if (!globalThis.game?.journal) return null;
-  return game.journal.getName?.(name)
+  const category = nameToCategory(name);
+  if (category !== "unknown") {
+    const flagged = game.journal.find?.(j => journalCategory(j) === category);
+    if (flagged) return flagged;
+  }
+  const named = game.journal.getName?.(name)
       ?? game.journal.find?.(j => j.name === name)
       ?? null;
+  return named && !journalCategory(named) ? named : null;
+}
+
+/**
+ * The journal of a World Journal category, by its key ("lore", "threats",
+ * "factions", "locations", "sessionLog") — found as findJournal finds it. For
+ * the World Journal panel's journal buttons and its lore lookups.
+ *
+ * @param {string} category
+ * @returns {JournalEntry|null}
+ */
+export function findWorldJournal(category) {
+  const name = JOURNAL_NAMES[category];
+  return name ? findJournal(name) : null;
+}
+
+/**
+ * Give a journal found by its name — one made before the category flag —
+ * that flag, the key every lookup now uses (issue #345 AA63). GM only; a
+ * refused stamp is logged, the journal still used.
+ */
+async function stampJournalCategory(journal, name) {
+  const category = nameToCategory(name);
+  if (category === "unknown" || journalCategory(journal) === category) return;
+  if (!game.user?.isGM || typeof journal?.setFlag !== "function") return;
+  try {
+    await journal.setFlag(MODULE_ID, "worldJournalCategory", category);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | worldJournal: marking "${journal.name}" as the ${category} journal failed:`, err?.message ?? err);
+  }
 }
 
 async function getOrCreateJournal(name) {
   let journal = findJournal(name);
-  if (journal) return journal;
+  if (journal) {
+    await stampJournalCategory(journal, name);
+    return journal;
+  }
   if (!game.user?.isGM) return null;
   try {
     journal = await JournalEntry.create({

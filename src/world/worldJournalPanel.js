@@ -18,6 +18,7 @@ import {
   promoteLoreToConfirmed,
   updateThreatSeverity,
   writeEntryPage,
+  findWorldJournal,
 } from './worldJournal.js';
 import { openCorrectionDialog } from '../factContinuity/correctionDialog.js';
 
@@ -133,7 +134,8 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
 
   static async #onReviewContradiction(_event, target) {
     const messageId = target?.dataset?.messageId;
-    const journal   = game.journal?.getName?.(JOURNAL_NAMES.lore);
+    // By its category, whatever the GM named it (issue #345 AA63).
+    const journal   = findWorldJournal('lore');
     if (!journal) {
       ui?.notifications?.warn('Lore journal has not been created yet.');
       return;
@@ -218,7 +220,7 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
     const key  = target?.dataset?.journalKey;
     const name = JOURNAL_NAMES[key];
     if (!name) return;
-    const journal = game.journal?.getName?.(name);
+    const journal = findWorldJournal(key);
     if (!journal) {
       ui?.notifications?.warn(`${name} has not been created yet.`);
       return;
@@ -409,7 +411,7 @@ async function deleteChatMessage(messageId) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 async function clearNarratorAssertion(title) {
-  const journal = globalThis.game?.journal?.getName?.(JOURNAL_NAMES.lore);
+  const journal = findWorldJournal('lore');
   if (!journal) return null;
   const page = journal.pages?.contents?.find(p => p.name === title);
   if (!page) return null;
