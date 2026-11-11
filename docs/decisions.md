@@ -879,7 +879,12 @@ Each finding's ID in brackets.)
 - **The ready reset releases only a lock whose claimant is gone** [Y07] —
   held by nobody named, by this client's earlier page, or by a user who is
   not connected: W25's "the claimant's departure is the event that matters"
-  at load. *Rejected:* releasing unconditionally at ready.
+  at load. *Rejected:* releasing unconditionally at ready. *Update (issue #347
+  AB04):* "this client's earlier page" is released by that client's own
+  `ready` whether or not it is canonical (`releaseOwnStaleLockAtReady`): a
+  co-GM who loads alongside the canonical GM reads as connected to it, so
+  neither reset freed the co-GM's earlier page's lock, and every move was
+  refused until the co-GM left again.
 - **A forced move from a card is held, not dropped** [Y08] — the paced Roll
   and the "Which fight?" pick join W02 / X14's `deferWhileBusy`. **An
   unclaimed button the session gate drops is re-armed, not held** [Y36]: the

@@ -1217,6 +1217,37 @@ function staleMoveLockAtReady(state) {
   return { claim: state?.pendingMoveClaim ?? null };
 }
 
+/**
+ * A non-canonical GM's `ready`: release the move lock its own earlier page
+ * left (issue #347 AB04). Two GMs; gm-2 ran a night alone and the browser
+ * closed mid-move, leaving `pendingMoveBy: gm-2`. When both open the world in
+ * overlapping loads, the canonical gm-1's ready reset reads "held by gm-2, who
+ * is connected and resolving a move" (staleMoveLockAtReady, issue #335 Y07)
+ * and leaves it; gm-2's own ready was not canonical and skipped the reset; and
+ * the W25 handover acts only on a departure. Every move was refused until gm-2
+ * left again. The claimant's own fresh page knows its claim is dead: it
+ * releases the lock — on its write chain, and only while the store still holds
+ * that claim, by this user.
+ *
+ * @returns {Promise<boolean>} whether a lock was released
+ */
+async function releaseOwnStaleLockAtReady() {
+  const userId = game.user?.id ?? null;
+  const found = game.settings.get(MODULE_ID, "campaignState");
+  if (!userId || !found?.pendingMove || (found.pendingMoveBy ?? null) !== userId) return false;
+  const claim = found.pendingMoveClaim ?? null;
+  const released = await serialiseCampaignStateWrite(async () => {
+    const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    if (!latest.pendingMove || (latest.pendingMoveBy ?? null) !== userId || (latest.pendingMoveClaim ?? null) !== claim) return false;
+    await game.settings.set(MODULE_ID, "campaignState", { ...latest, pendingMove: false, pendingMoveBy: null, pendingMoveClaim: null });
+    return true;
+  }, "own earlier page's move lock");
+  if (!released) return false;
+  noteMoveLockClaimReleased(claim);
+  console.log(`${MODULE_ID} | Reset the move lock this GM's earlier page left, on ready`);
+  return true;
+}
+
 // ── A released claim a stale write carries back ─────────────────────────────
 // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE, found while fixing issue #335 Y07.)
 // Only the lock's own paths change the lock — this pipeline's claim and
@@ -7670,6 +7701,13 @@ Hooks.once("ready", () => {
     }).catch(err => {
       console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
     });
+  } else if (game.user.isGM) {
+    // This GM's own earlier page's move lock is stale whether or not this GM
+    // is the canonical one now — its page has no pipeline running. The
+    // canonical GM's reset above leaves a lock a connected co-GM holds (Y07),
+    // and this load is that co-GM (issue #347 AB04).
+    releaseOwnStaleLockAtReady().catch(err =>
+      console.warn(`${MODULE_ID} | releasing this GM's earlier page's move lock failed:`, err?.message ?? err));
   }
 
   if (game.user.isGM) {
