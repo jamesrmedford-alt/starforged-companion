@@ -18,7 +18,7 @@
  * See issue #228 (Entity → Actor Migration) §4 for the surface that uses this.
  */
 
-import { readSheetPronouns, readCommandVehicleIntegrity } from '../character/actorBridge.js';
+import { readSheetPronouns, readCommandVehicleIntegrity, unreconciledRecordIntegrity } from '../character/actorBridge.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -184,7 +184,10 @@ export function hasSheetNotes(typeKey) {
  * set the narration established, which a card has before its seed fills the
  * field. A command vehicle's integrity (and its max) is its STARSHIP asset's
  * Integrity track, which the starship sheet shows and the player marks (issue
- * #345 AA20; actorBridge readCommandVehicleIntegrity).
+ * #345 AA20; actorBridge readCommandVehicleIntegrity) — except that a record
+ * from before that, not yet reconciled, reads the lower of its own and the
+ * track's: the damage the module recorded there never reached the sheet
+ * (issue #347 AB08; actorBridge unreconciledRecordIntegrity).
  *
  * @param {string} typeKey
  * @param {ClientDocument|null} document
@@ -199,7 +202,10 @@ export function withSheetNotes(typeKey, document, data) {
   const pronouns = typeKey === 'connection' ? readSheetPronouns(document) : '';
   if (pronouns) sheet.pronouns = pronouns;
   const integrity = typeKey === 'ship' ? readCommandVehicleIntegrity(document) : null;
-  if (integrity) { sheet.integrity = integrity.value; sheet.integrityMax = integrity.max; }
+  if (integrity) {
+    sheet.integrity    = unreconciledRecordIntegrity(data, integrity) ?? integrity.value;
+    sheet.integrityMax = integrity.max;
+  }
   return Object.keys(sheet).length ? { ...data, ...sheet } : data;
 }
 

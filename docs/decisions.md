@@ -30,6 +30,20 @@ entries below this one.)
   a second write path for a mirror no reader needs. The asset's own Battered
   / Cursed conditions stay a further store (known-issues
   STARSHIP-ASSET-CONDITIONS-UNSYNCED).
+  **Update (issue #347 AB08): a record from before this is reconciled to the
+  lower value.** Up to v1.8.0 the module's losses went to the record alone,
+  so a world played then holds, say, record 2 beside an untouched sheet 5,
+  and mirroring the sheet erased the damage from both stores. A record
+  without `integritySheetReconciled` (every record written since carries it;
+  `ShipSchema` sets it on a new one) reads the lower of the two
+  (`actorBridge.unreconciledRecordIntegrity`, in `withSheetNotes` and the
+  +integrity roll), and its first `updateShip` writes that lower value to
+  both stores, stamps the record and whispers the GMs both values where they
+  differed; the canonical GM's world load makes that write first
+  (`migrator.reconcileCommandVehicleIntegrity`). *Rejected:* the sheet's
+  value (it never saw the module's damage) and the record's (a player may
+  have marked the sheet alone) — which was right cannot be known, so the
+  lower is taken and the GM told.
 - **An entity's name is its host document's** [AA18]: an Actor's name for
   the Actor-hosted types, as before, and a faction's or creature's host
   JournalEntry's name: a sidebar rename is written through to the record

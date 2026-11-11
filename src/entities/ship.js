@@ -51,7 +51,7 @@ import {
   warnEntityNotRegistered,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
-import { readCommandVehicleIntegrity, setCommandVehicleIntegrity } from "../character/actorBridge.js";
+import { readCommandVehicleIntegrity, setCommandVehicleIntegrity, unreconciledRecordIntegrity } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
@@ -74,6 +74,12 @@ export const ShipSchema = {
   // Condition meters
   integrity:    5,     // 0–5. Command vehicle and support vehicles.
   integrityMax: 5,
+  // The record's integrity has been reconciled with the STARSHIP asset's
+  // Integrity track since that track became canonical (issue #345 AA20). A
+  // record written by v1.8.0 or earlier carries no such field: its integrity
+  // holds the losses the module applied, which never reached the sheet, and
+  // the first write takes the lower of the two (updateShip; issue #347 AB08).
+  integritySheetReconciled: true,
 
   // Vehicle impacts
   battered: false,     // Cleared by Repair. Can't raise integrity until cleared.
@@ -346,17 +352,37 @@ export async function updateShip(actorId, updates) {
   // track and written there first; the record's `integrity` is its mirror,
   // brought to the sheet's value on every write. A starship with no such
   // asset keeps its integrity on the record alone.
+  //
+  // A record from before that (no `integritySheetReconciled`) is reconciled
+  // on its first write: up to v1.8.0 the module applied its losses to the
+  // record alone, so a record that says 2 beside a sheet that says 5 holds
+  // damage the sheet never saw — mirroring the sheet's 5 over it erased the
+  // damage from both stores (issue #347 AB08). The lower of the two is taken
+  // and written to the sheet too; the GM's world load does it first and says
+  // so (migrator.reconcileCommandVehicleIntegrity).
   const sheet = readCommandVehicleIntegrity(document);
+  let writeSheet = false;
+  let reconciledFrom = null;   // { record, sheet } when this write reconciles two values that differed
   if (sheet) {
     updated.integrityMax = sheet.max;
-    if (typeof updates.integrity !== "number") updated.integrity = sheet.value;
+    if (typeof updates.integrity === "number") {
+      writeSheet = true;
+    } else {
+      const reconciled = unreconciledRecordIntegrity(current, sheet);
+      updated.integrity = reconciled ?? sheet.value;
+      writeSheet = reconciled !== null && reconciled !== sheet.value;
+      if (reconciled !== null && Number(current.integrity) !== sheet.value) {
+        reconciledFrom = { record: Number(current.integrity), sheet: sheet.value };
+      }
+    }
+    updated.integritySheetReconciled = true;
   }
 
   // Enforce: integrity never exceeds max
   if (typeof updated.integrity === "number") {
     updated.integrity = Math.max(sheet?.min ?? 0, Math.min(updated.integrityMax ?? 5, updated.integrity));
   }
-  if (sheet && typeof updates.integrity === "number") {
+  if (writeSheet) {
     await setCommandVehicleIntegrity(document, updated.integrity);
   }
 
@@ -375,12 +401,34 @@ export async function updateShip(actorId, updates) {
   // is cleared (known-issues NOTES-PROMOTED-BEFORE; migrator.js
   // moveRecordNotesToSheets moves what only the record held).
   await writeEntityFlag("ship", document, updates.notes !== undefined ? { ...updated, notes: "" } : updated);
+  if (reconciledFrom) postIntegrityReconciledNotice(document.name ?? updated.name, reconciledFrom, updated);
 
   if (updates.name && updates.name !== document.name) {
     await document.update({ name: updates.name });
   }
 
   return updated;
+}
+
+/**
+ * GM whisper, once per ship: its first write since the STARSHIP asset's
+ * track became canonical found the record and the sheet disagreeing, and
+ * took the lower into both (issue #347 AB08). Which was right cannot be known
+ * — the module's own losses never reached the sheet, but a player may have
+ * marked the sheet alone — so the GM is told both. Never throws.
+ */
+function postIntegrityReconciledNotice(name, { record, sheet }, ship) {
+  const max = ship.integrityMax ?? 5;
+  const gmIds = globalThis.game?.users?.filter ? globalThis.game.users.filter(u => u.isGM).map(u => u.id) : [];
+  Promise.resolve(globalThis.ChatMessage?.create?.({
+    content: `<div class="sf-migrate-card"><div class="sf-migrate-label">◈ Ship integrity — the sheet now holds it</div>`
+      + `<p><strong>${escapeHtml(name ?? "The ship")}</strong>: the module had recorded integrity ${record}/${max}, `
+      + `but the Starship asset on its sheet showed ${sheet}/${max} — until this version the damage the module applied `
+      + `never reached the sheet. Its integrity is that asset's Integrity track now, set to the lower: `
+      + `<strong>${ship.integrity}/${max}</strong>. If the sheet was right, set the track on the ship's Starship asset.</p></div>`,
+    whisper: gmIds,
+    flags:   { [MODULE_ID]: { shipIntegrityReconciledNotice: true } },
+  })).catch(err => console.warn(`${MODULE_ID} | ship integrity: the GM notice failed:`, err?.message ?? err));
 }
 
 // UNWIRED: #216 Battle Stations Phase D (station play → ship integrity/battered),

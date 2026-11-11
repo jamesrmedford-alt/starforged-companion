@@ -7982,7 +7982,18 @@ Hooks.once("ready", () => {
     // These migrations write world documents: the canonical GM runs them —
     // two GMs whose clients reconnected together each ran them (issue #326
     // W54). The help journal, macros and World Journal gate themselves.
-    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames, moveRecordNotesToSheets, registerUnlistedEntityActors }) => {
+    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ reconcileCommandVehicleIntegrity, flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames, moveRecordNotesToSheets, registerUnlistedEntityActors }) => {
+      try {
+        // Issue #347 AB08 — first, before any ship write mirrors the sheet:
+        // a command vehicle's integrity recorded before its STARSHIP asset's
+        // track became canonical is reconciled to the lower of the two.
+        const ships = await reconcileCommandVehicleIntegrity();
+        if (ships.reconciled) {
+          console.log(`${MODULE_ID} | ship integrity: reconciled ${ships.reconciled} command vehicle record(s) with their sheet`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | ship integrity reconcile failed:`, err?.message ?? err);
+      }
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
