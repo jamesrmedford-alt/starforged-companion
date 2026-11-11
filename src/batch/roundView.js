@@ -37,6 +37,8 @@ export const ROUND_NOTICES = Object.freeze({
   // Nothing sends it on a GM's return: the window says what to do (issue #342 Z33).
   noGm:        "No GM is connected — your action is kept here; submit it once a GM has joined.",
   noKeyedGm:   "No GM with a Claude key is connected, so the round can't be read. Your action is kept; it is read once one joins.",
+  // A round rolled and waiting for its narration, which needs a key (issue #347 D3).
+  noKeyedNarrator: "No GM with a Claude key is connected, so the round can't be narrated yet — it is narrated once one joins.",
   xCard:       "The X-Card is in play — the round can't be resolved until a GM resumes.",
   resolving:   "The round is being resolved…",
   readFailed:  "Couldn't read your action — try again.",
@@ -79,7 +81,9 @@ export function buildRoundView(round, viewer, ctx = {}) {
   const banners = [];
   if (!ctx.sessionActive) banners.push({ level: "info", text: ROUND_NOTICES.noSession });
   else if (ctx.gmConnected === false) banners.push({ level: "warn", text: ROUND_NOTICES.noGm });
-  else if (ctx.keyedGm === false) banners.push({ level: "warn", text: ROUND_NOTICES.noKeyedGm });
+  else if (ctx.keyedGm === false) {
+    banners.push({ level: "warn", text: round?.phase === ROUND_PHASE.NARRATING ? ROUND_NOTICES.noKeyedNarrator : ROUND_NOTICES.noKeyedGm });
+  }
   if (ctx.xCardActive) banners.push({ level: "warn", text: ROUND_NOTICES.xCard });
 
   if (!roundIsOpen(round)) {

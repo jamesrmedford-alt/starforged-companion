@@ -788,6 +788,45 @@ unstructured.
 
 ---
 
+## Batch Mode: a keyless GM's takeover waits for a keyed GM to narrate the round (2026-11)
+
+**Decision:** ([#347](https://github.com/jamesrmedford-alt/starforged-companion/issues/347)
+D3, the maintainer's option A, 2026-11-11.) A Batch Mode round is narrated
+on a Claude key. A GM with none — a keyless assistant GM canonical for the
+seconds the keyed GM's page reloads — leaves a narrating round alone while
+the keyed-GM registry (`keyedGmUserIds`) lists a GM with a key, connected or
+not (`narrationWaitsForKey`, `src/batch/driver.js`):
+- it does not take the narration over: no `resolverId` stamp (issue #347
+  AB18's takeover stamp), and a round naming it as its resolver — a keyless
+  GM that took over the rolls — is handed back (`handBackResolution` clears
+  `resolverId`), so the keyed GM's own recovery resumes it;
+- the GMs are told once ("the round waits for a GM with a Claude key"), the
+  Round windows' banner says the round can't be narrated yet, and that GM's
+  Send now is refused, saying why (`narration-no-key`);
+- the keyed GM's recovery — their page's `ready`, or a keyed GM joining (the
+  registry's write) — narrates it on their key.
+The rolls, the records and the upgrade step still run on a keyless GM; only
+the narration waits, as the readings already did (`startReading`) and Send
+now did ("no-key"). A table with no keyed GM at all keeps the "narration
+unavailable" fallback (issue #345 D1); otherwise the fallback is the exit of
+a narration call that failed. Issue #340's round lifecycle listed the
+fallback among the narrating phase's exits without telling a missing key
+from a failed call; `src/batch/round.js`'s lifecycle now says which.
+
+**Reason:** the keyless takeover posted "narration unavailable" and closed
+the round — its narration gone for good, though the keyed GM was back
+within a page load.
+
+**Rejected:** *(B) accepting the fallback on any keyless canonical GM* —
+the round's narration lost to a reload; *waiting only while a keyed GM is
+connected* — the reloading GM is not connected for those seconds, which is
+the case at issue.
+
+**Files:** `src/batch/driver.js`, `src/batch/round.js`, `src/batch/relay.js`,
+`src/batch/roundView.js`. Tests: `tests/unit/roundNarrationWaitsForKeyedGm.test.js`.
+
+---
+
 ## The tenth audit's open items: a capture checks the X-Card before each write, the move lock is its own paths', a card button is its roller's, a taken add carries its cost (2026-11)
 
 **Decision:** (the items recorded as open while fixing issues #335–#338; the

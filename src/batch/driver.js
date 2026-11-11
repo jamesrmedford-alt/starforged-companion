@@ -93,6 +93,7 @@ import {
   readingsInFlight,
   beginResolution,
   takeOverResolution,
+  handBackResolution,
   fixActing,
   markRolled,
   markRecorded,
@@ -354,6 +355,28 @@ export function queueRoundWrite(transition) {
 }
 
 const isRefusal = (err) => err instanceof RoundRefusal || err?.name === "RoundRefusal";
+
+/** Whether this client holds a Claude key — the readings and the narration run on it. */
+function claudeKeyHere() {
+  try { return !!game.settings.get(MODULE_ID, "claudeApiKey"); } catch { return false; }
+}
+
+/**
+ * Whether a round's narration waits for a GM with a Claude key instead of
+ * running here: this GM has none, and the table has one — a GM the keyed-GM
+ * registry lists, connected or not (the keyed GM reloading, a keyless co-GM
+ * canonical for those seconds). A keyless takeover posted "narration
+ * unavailable" and closed the round, its narration gone for good though the
+ * keyed GM was back within a page load (issue #347 D3 — the maintainer's
+ * option A: it waits, as the readings and Send now do). With no keyed GM at
+ * all the narration falls back as before (issue #345 D1).
+ */
+function narrationWaitsForKey() {
+  if (claudeKeyHere()) return false;
+  let keyed = [];
+  try { keyed = game.settings.get(MODULE_ID, "keyedGmUserIds") ?? []; } catch { keyed = []; }
+  return Array.isArray(keyed) && keyed.some(id => id && id !== game.user?.id && game.users?.get?.(id)?.isGM === true);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Opening and closing rounds
@@ -716,6 +739,9 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
     advanceRound("send-now");
     return { ok: true };
   }
+  // A narration that waits for a GM with a Claude key is not sent from a
+  // keyless one: the key is what it waits for (issue #347 D3).
+  if (round.phase === ROUND_PHASE.NARRATING && narrationWaitsForKey()) return { ok: false, reason: "narration-no-key" };
   if (round.phase !== ROUND_PHASE.COLLECTING) {
     // Rolling or narrating: the round goes on — a pass a refused step stopped
     // runs again (a pass already running just goes round once more).
@@ -724,8 +750,7 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
   }
   if (isXCardActive(null)) return { ok: false, reason: "x-card" };
   const unread = readingsInFlight(round);
-  const keyed = (() => { try { return !!game.settings.get(MODULE_ID, "claudeApiKey"); } catch { return false; } })();
-  if (unread.length && !keyed) return { ok: false, reason: "no-key" };
+  if (unread.length && !claudeKeyHere()) return { ok: false, reason: "no-key" };
   if (modeOffAfter) await markRoundModeOffAfter(round.id);
   _sendNowRoundId = round.id;
   advanceRound("send-now");
@@ -1287,6 +1312,13 @@ async function narrateTheRound() {
   // (the lift runs the pass again). Played once the narration is written,
   // narrateRound discards the reply and posts the paused notice instead.
   if (isXCardActive(null)) return false;
+  // Not narrated without a Claude key while the table has a keyed GM: the
+  // round waits for them, handed back so their recovery (their load, a keyed
+  // GM joining) narrates it (issue #347 D3).
+  if (narrationWaitsForKey()) {
+    await waitForKeyedNarrator(round);
+    return false;
+  }
   const lock = await claimRoundLock();
   if (!lock.claim) {
     lockNotClaimed(lock);
@@ -1322,6 +1354,30 @@ function tellNarrationUnposted() {
   whisper(gmIds().filter(id => id !== game.user?.id), "Batch Mode — the round's narration was not posted",
     "The round's narration could not be posted to chat. Its moves' results were still applied — their result cards show them.",
     { batchNarrationUnpostedNotice: true });
+}
+
+// Round ids whose wait for a keyed narrator this client has told the GMs of.
+const _toldNarrationWaits = new Set();
+
+/**
+ * The round waits for a GM with a Claude key to narrate it (issue #347 D3):
+ * handed back when it names this GM as its resolver — a keyless GM that took
+ * over its rolls — so the keyed GM's recovery resumes it rather than leaving
+ * it to this one; the GMs told once. Never throws.
+ *
+ * @param {Object} round — narrating
+ */
+async function waitForKeyedNarrator(round) {
+  if (round.resolverId === game.user?.id) {
+    await queueRoundWrite(r => (r?.id === round.id ? handBackResolution(r, { resolverId: game.user.id }) : r))
+      .catch(err => console.warn(`${MODULE_ID} | Batch Mode: round ${round.number} could not be handed back for a keyed GM:`, err?.message ?? err));
+  }
+  if (_toldNarrationWaits.has(round.id)) return;
+  _toldNarrationWaits.add(round.id);
+  console.debug(`${MODULE_ID} | Batch Mode: no Claude key on this GM — round ${round.number} waits for a keyed GM to narrate it.`);
+  await tellGms("Batch Mode — the round waits for a GM with a Claude key",
+    "The round's moves are rolled and recorded. Its narration needs a GM with a Claude key: it is narrated as soon as one is connected.",
+    { batchNarrationWaitsNotice: true });
 }
 
 /** True once a round's narration — its card, fallback or paused notice — is in chat. */
@@ -1895,9 +1951,13 @@ export async function recoverRound(reason = "recovery") {
       // takeover kept the first GM's id, so that GM's recovery read the round
       // as its own and resumed it beside this one — both closed it, and every
       // asset rider paid twice (issue #347 AB18). A refused stamp still lets
-      // the round go on.
-      await queueRoundWrite(r => (r?.id === round.id ? takeOverResolution(r, { resolverId: game.user.id }) : r))
-        .catch(err => console.warn(`${MODULE_ID} | Batch Mode: the takeover of round ${round.number} was not saved:`, err?.message ?? err));
+      // the round go on. Not a narration this keyless GM leaves to a keyed
+      // one (issue #347 D3): the keyed GM's own recovery then finds no
+      // resolver to leave it to.
+      if (!(round.phase === ROUND_PHASE.NARRATING && narrationWaitsForKey())) {
+        await queueRoundWrite(r => (r?.id === round.id ? takeOverResolution(r, { resolverId: game.user.id }) : r))
+          .catch(err => console.warn(`${MODULE_ID} | Batch Mode: the takeover of round ${round.number} was not saved:`, err?.message ?? err));
+      }
       const plan = recoveryPlan(round);
       console.log(`${MODULE_ID} | Batch Mode: resuming round ${round.number} (${reason}) — ${plan.recorded.length} recorded, ${plan.unrecorded.length} unrecorded, ${plan.toRoll.length} to roll.`);
       advanceRound("recovery");

@@ -18,6 +18,12 @@
  *   upgrading ──(each offered roller chose; Send now = Keep; the roller left = Keep)──► narrating
  *   narrating ──(the round card, its fallback or the X-Card's paused notice posted)──► closed
  *
+ * A round is narrated on a Claude key: a GM with none, at a table whose
+ * keyed-GM registry lists one, leaves the narrating round waiting for that
+ * GM — handed back, its resolver cleared (handBackResolution) — instead of
+ * posting the "narration unavailable" fallback (issue #347 D3). The fallback
+ * is the exit of a failed narration call, and of a table with no keyed GM.
+ *
  * An entry goes waiting → submitted → read → ready, or passed — or straight
  * to ready with a move rolled on the character sheet (enterSheetRoll). One
  * that is not ready when the round resolves is left out of it, with no mark —
@@ -756,6 +762,21 @@ export function beginResolution(round, { resolverId, now, sendNow = false }) {
 export function takeOverResolution(round, { resolverId }) {
   if (!isResolving(round) || !resolverId || round.resolverId === resolverId) return round;
   return { ...round, resolverId };
+}
+
+/**
+ * A GM hands back a round it cannot finish: no GM resolves it until one who
+ * can resumes it (driver.js narrateTheRound — a GM without a Claude key
+ * leaves the narration to a keyed GM, issue #347 D3). Only the resolver it
+ * names hands it back.
+ *
+ * @param {Object} round
+ * @param {{ resolverId: string }} args
+ * @returns {Object}
+ */
+export function handBackResolution(round, { resolverId }) {
+  if (!isResolving(round) || !resolverId || round.resolverId !== resolverId) return round;
+  return { ...round, resolverId: null };
 }
 
 /**
