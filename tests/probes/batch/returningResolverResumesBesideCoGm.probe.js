@@ -40,7 +40,7 @@ vi.mock('../../../src/entities/entityExtractor.js', async (importOriginal) => ({
 }));
 
 import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
-import { scriptClaude, traceTable } from '../../helpers/faults.js';
+import { scriptClaude, holdWrites } from '../../helpers/faults.js';
 import { CampaignStateSchema } from '../../../src/schemas.js';
 import {
   createRound, submitEntry, recordReading, confirmEntry, passEntry, beginResolution, fixActing,
@@ -143,28 +143,31 @@ describe('BATCH — the GM who began a round reloads while the co-GM narrates it
   it('gm-1\'s page loads while gm-2\'s narration call is out — the round is still finished once (the rider pays +1, not +2)', async () => {
     const narration = await tableAfterGm1Died();
     const before = momentum('pc-kira');
-    const closes = [];
-    table.interceptWrites((w) => {
-      if (w.kind === 'setting' && w.key === `${MODULE_ID}.batchMode.round` && w.value?.id === 'round-7' && w.value?.phase === 'closed') closes.push(w.client);
-      if (w.kind === 'setting') console.log('WRITE', w.client, w.key.split('.').pop(), w.key.endsWith('round') ? `${w.value?.id} ${w.value?.phase} claim=${w.value?.narrationClaim}` : w.key.endsWith('campaignState') ? `pendingMove=${w.value?.pendingMove} by=${w.value?.pendingMoveBy}` : '');
-      return undefined;
-    });
 
-    const trace = traceTable(table); trace.mark('gm-1 joins');
-    await table.join('gm-1');            // a real page load: init → ready → recoverRound("ready")
-    trace.mark('gm-1 booted'); console.log('BOOTLOG', table.bootLog.filter(l => l.client === 'gm-1' && /Batch|round|lock/i.test(l.message)).map(l => l.message).join('\n'));
+    await table.join('gm-1');            // a real page load: init → ready → its recovery
     await table.settle();
-    expect(round()).toMatchObject({ id: 'round-7', phase: 'narrating' });   // gm-2's call is still out
+    expect(round()).toMatchObject({ id: 'round-7', phase: 'narrating', resolverId: 'gm-1' });   // gm-2's call is still out
+    // gm-1 is canonical again, and its recovery resumed the round gm-2 is narrating.
+    expect(table.bootLog.some(l => l.client === 'gm-1' && /resuming round 7/.test(l.message))).toBe(true);
 
+    // gm-2's lock release follows its card by a round trip; gm-1's persist of
+    // the sidecar gm-2 relayed to it (gm-1 is canonical) is one hop: it lands
+    // first. Hold the release until the table is quiet, then let it land.
+    const release = holdWrites(table, (w) => w.kind === 'setting' && w.key === `${MODULE_ID}.campaignState`
+      && w.client === 'gm-2' && w.value?.pendingMove === false);
     narration.release();
+    await release.arrived;
+    await table.settle();
+    expect(roundCards()).toHaveLength(1);            // gm-2's round card is up
+    release.release();
     await table.drain();
     await table.settle();
 
-    console.log(String(trace), closes, table.world.campaignState().pendingMoveBy);
     expect(roundCards()).toHaveLength(1);
     expect(roundNarrations()).toHaveLength(1);
-    // One close ends the round, and its riders run once.
-    expect({ closedBy: closes, riderMomentum: momentum('pc-kira') - before })
-      .toEqual({ closedBy: [expect.any(String)], riderMomentum: 1 });
+    expect(round()).toMatchObject({ number: 8, phase: 'collecting' });
+    // The round is finished once: Kira's "+1 momentum on a hit" pays once.
+    expect({ riderMomentum: momentum('pc-kira') - before, riderSummaries: table.cards(f => f.riderSummary).length })
+      .toEqual({ riderMomentum: 1, riderSummaries: 1 });
   }, 60_000);
 });

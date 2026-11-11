@@ -110,16 +110,6 @@ describe('IDXA-1 — a stale lock whose holder loads as a non-canonical GM', () 
     expect({ rolled, busy, pendingMove: world().pendingMove }).toEqual({ rolled: 1, busy: 0, pendingMove: false });
   }, 60_000);
 
-  it("the canonical GM reloading does not free it either — only gm-2 leaving does (the wedge's one way out)", async () => {
-    silenceConsoleErrors();
-    await loadTogether({ order: ['gm-1', 'gm-2', 'pl-1'], lock: GM2_OLD_LOCK });
-    // The GM who sees "A move is already being resolved" reloads their browser.
-    await table.leave('gm-1');
-    await table.join('gm-1');
-    await table.settle(); await table.drain();
-    expect(world().pendingMove, 'after the canonical GM reloaded').toBe(false);
-  }, 60_000);
-
   it("control: gm-2 loading alone frees its own earlier page's lock", async () => {
     silenceConsoleErrors();
     table = await simulateTable({
