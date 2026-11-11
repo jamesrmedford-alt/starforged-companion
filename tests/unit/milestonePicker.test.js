@@ -145,12 +145,15 @@ describe('applyMilestonePick (canonical GM handler)', () => {
     expect([vowB1.system.current, vowB2.system.current].filter(t => t > 0)).toHaveLength(1);
   });
 
-  it('warns and resolves the card when the offered vow is gone from the actor', async () => {
+  // Issue #345 AA53: a vow gone from the sheet is refused before the claim,
+  // as a fulfilled one is — the card stays open while it offers an open vow
+  // (here v-b1 and v-b2). It was resolved, closing the picker for good.
+  it('warns, marks nothing and leaves the card open for its open vows when the offered vow is gone from the actor', async () => {
     const warn = vi.spyOn(console, 'warn');
     const res = await applyMilestonePick({ messageId: 'msg-1', actorId: 'pc-b', vowId: 'v-missing' }, GM_CTX);
-    expect(res.marked).toBe(false);
+    expect(res).toEqual({ marked: false, reason: 'no-vow' });
     expect(warn.mock.calls.some(c => /not found on actor/.test(String(c[0])))).toBe(true);
-    expect(picker.flags[MODULE_ID].resolved).toBe(true);
+    expect(picker.flags[MODULE_ID].resolved).toBe(false);
   });
 
   it('warns when the picker card no longer exists', async () => {

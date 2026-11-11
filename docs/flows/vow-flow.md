@@ -177,7 +177,11 @@ All real progress lands on **item ticks** (`system.current`) via
   is refused (`vow-completed`, a short card — "was forsaken" for a vow
   forsaken since, issue #345 AA51; the picker stays open for its
   other vows), and `markVowProgress` never marks a fulfilled vow (issue
-  #331 X20). A click with no GM connected, a refusal,
+  #331 X20). A vow deleted since is refused the same way, before the claim
+  (`no-vow`, a short card "That vow is no longer on Kira's sheet"; the
+  picker resolved only once no vow it offers is open — issue #345 AA53:
+  found missing after the claim, it closed the picker for good, unsaid).
+  A click with no GM connected, a refusal,
   or a card still unresolved after `RELAY_RECOVERY_MS` (15 s) re-arms the
   buttons (`relayCardAction`, `src/moves/cardActions.js`). The move card's
   "⚑ Mark Progress on Vow" suggestion button leads to a forced
