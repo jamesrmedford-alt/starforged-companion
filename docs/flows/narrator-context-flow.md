@@ -936,9 +936,13 @@ Addressed:
   `oracleResultIds`, a field no code ever wrote). Oracle follow-up prose
   joined the flag family. Decision: decisions.md → "Raw oracle results are
   memory, not just chat".
-- **Scene-end tier migration dedups** with the same containment check as
-  live capture — a dedupe hit still marks the truth migrated (the fact IS in
-  the tier).
+- **Scene-end tier migration dedups** with the same check as live capture —
+  a dedupe hit still marks the truth migrated (the fact IS in the tier). The
+  check (`tierHasDetail`) is whole-word containment with no negating or
+  reversing word around the shared words: raw substring containment let
+  "Distrusts the crew" swallow the scene's "Trusts the crew" (and "Is
+  deadly…" swallow "Is dead"), so the new truth was counted migrated and
+  written nowhere (issue #347 AB11).
 
 Reaffirmed as deliberate (decisions.md → "Narrator-context reaffirmations"):
 - **Frame applies as an unvalidated full replacement** — the broadened

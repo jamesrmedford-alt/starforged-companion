@@ -1649,15 +1649,55 @@ export async function appendDetailToTier(entityRef, detail, sessionId, sessionNu
   return true;
 }
 
-/** Same detail already in the tier — the containment check both tier writers use. */
+/**
+ * Same detail already in the tier — the check both tier writers use (the live
+ * tier pass, persistGenerativeTier; the scene-end migration,
+ * appendMigratedTruthToTier). One detail restates another when it is the
+ * other's words, in order, as whole words, with nothing around them that
+ * negates or reverses them: "Vex runs the lower docks" restates the sidecar's
+ * "Runs the lower docks" (the duplicate this check exists for). It used to be
+ * raw substring containment, so "Distrusts the crew" on the card swallowed the
+ * scene's "Trusts the crew", "Is deadly with a blade" swallowed "Is dead", and
+ * "locker 71" swallowed "locker 7": each new truth was counted as migrated and
+ * written nowhere, and the card went on saying the opposite (issue #347 AB11).
+ * A negation around the shared words — "Has not paid the debt" beside "Paid
+ * the debt" — is never the same fact.
+ */
 function tierHasDetail(tier, detail) {
-  const lc = String(detail ?? "").trim().toLowerCase();
-  if (!lc) return false;
+  const words = detailWords(detail);
+  if (!words.length) return false;
   return tier.some(e => {
-    const existing = String(e?.detail ?? "").toLowerCase();
-    if (!existing) return false;
-    return existing === lc || existing.includes(lc) || lc.includes(existing);
+    const existing = detailWords(e?.detail);
+    if (!existing.length) return false;
+    return restatesDetail(existing, words) || restatesDetail(words, existing);
   });
+}
+
+// Words that, around a detail's own words, negate or reverse it ("has NOT paid
+// the debt", "NO LONGER trusts the crew", "FORMERLY the captain") — `n't`
+// arrives as "not" (detailWords).
+const REVERSING_WORDS = new Set([
+  "not", "no", "never", "nor", "none", "nobody", "nothing", "neither", "without", "cannot",
+  "longer", "anymore", "formerly", "former", "ex", "once", "stopped", "ceased", "lost",
+]);
+
+/** A detail's words: lowercased, `n't` spelled "not", punctuation dropped. */
+function detailWords(text) {
+  return String(text ?? "").toLowerCase()
+    .replace(/n['’]t\b/gu, " not")
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter(Boolean);
+}
+
+/** True when `inner`'s words appear in `outer` in order, as whole words, with no reversing word around them. */
+function restatesDetail(outer, inner) {
+  if (inner.length > outer.length) return false;
+  for (let i = 0; i + inner.length <= outer.length; i++) {
+    if (!inner.every((w, j) => outer[i + j] === w)) continue;
+    const around = [...outer.slice(0, i), ...outer.slice(i + inner.length)];
+    if (!around.some(w => REVERSING_WORDS.has(w))) return true;
+  }
+  return false;
 }
 
 function buildTierUpdatePrompt(narrationText, records) {
