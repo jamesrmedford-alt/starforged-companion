@@ -6655,8 +6655,13 @@ function escapeChatHtml(s) {
 
 /**
  * Resolve a name fragment to an entity record by scanning settlement, location,
- * and planet collections in that priority order. Case-insensitive prefix match
- * before falling back to substring match.
+ * and planet collections in that priority order. Case-insensitive: the exact
+ * name, then a name it begins ("Bleak" for Bleakhold), then one name inside
+ * the other as whole words, either way (wholeWordsFit — W30's rule for every
+ * selection ladder). The raw substring rung found "home" inside "Rockhome", so
+ * a Set a Course "for home" made Rockhome the current location and, since the
+ * arrival docks the ship by this pick, moved the ship and its token there
+ * (issue #345 AA23).
  *
  * On each rung a match in the active sector wins: generated site names repeat
  * across sectors (every derelict is "Derelict Starship" or "Derelict
@@ -6678,7 +6683,7 @@ export function resolveCurrentLocationName(name, campaignState) {
     ["planet",     campaignState?.planetIds     ?? []],
   ];
 
-  // Two-pass match — exact name first, then prefix, then substring.
+  // Exact name first, then prefix, then whole words either way.
   // Reads go through the entity registry: settlements/locations/planets are
   // Actor-hosted post-migration, and the original journal-page read here
   // never matched them — `!at <settlement>` reported "not found" for every
@@ -6704,7 +6709,7 @@ export function resolveCurrentLocationName(name, campaignState) {
   };
   return pick(c => c.lc === target)
       ?? pick(c => c.lc.startsWith(target))
-      ?? pick(c => c.lc.includes(target))
+      ?? pick(c => wholeWordsFit(c.lc, target))
       ?? null;
 }
 

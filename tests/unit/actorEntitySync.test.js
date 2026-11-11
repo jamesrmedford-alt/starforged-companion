@@ -135,6 +135,16 @@ describe('resolveCurrentLocationName — actor-hosted reads (finding #5)', () =>
     expect(resolveCurrentLocationName('Nerio', state)).toBeNull();
   });
 
+  it('issue #345 AA23 — the substring rung is whole words, either way: never a word inside a name', () => {
+    hostSettlement('actor-rock', 'Rockhome');
+    hostSettlement('actor-mudd', 'Mudd Orbital');
+    const state = { settlementIds: ['actor-rock', 'actor-mudd'] };
+    expect(resolveCurrentLocationName('home', state)).toBeNull();          // inside "Rockhome"
+    expect(resolveCurrentLocationName('rbital', state)).toBeNull();        // inside "Orbital"
+    expect(resolveCurrentLocationName('Rock', state)?.id).toBe('actor-rock');                    // the start of its name
+    expect(resolveCurrentLocationName('the docks of Mudd Orbital', state)?.id).toBe('actor-mudd'); // the name inside the words
+  });
+
   it('still resolves a journal-hosted location type through the registry', () => {
     // `location` is actor-hosted too post-migration; this pins that the
     // group list routes every type through the registry rather than journals.
