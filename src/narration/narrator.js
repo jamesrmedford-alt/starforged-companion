@@ -1651,6 +1651,10 @@ export async function postNarrationCard(narrationText, resolution, campaignState
         // Links the card to the ledger entries its sidecar wrote, which an
         // X-Card on it retracts (issue #321 U07).
         narrationId,
+        // A Burn Momentum / Improve Result re-narration: the resolution it
+        // upgraded, whose struck narrations an X-Card on this card takes too
+        // (issue #347 D2; xCardedNarrationCards).
+        ...(typeof resolution?.upgradeOf === 'string' && resolution.upgradeOf ? { upgradeOf: resolution.upgradeOf } : {}),
         timestamp:        new Date().toISOString(),
       },
     },
@@ -1954,7 +1958,40 @@ export function xCardedNarrationCards(sessionId) {
     if (newestAt !== null && at !== null && newestAt - at > XCARD_BEAT_WINDOW_MS) break;
     beat.unshift(m);
   }
-  return beat;
+  return withStruckByUpgrade(beat, messages, sessionId);
+}
+
+/**
+ * The beat's cards with the narrations its own upgrade struck (issue #347
+ * D2, the maintainer's option A). A Burn Momentum or Improve Result
+ * re-narration names the resolution it upgraded (`upgradeOf`); the upgrade
+ * struck that move's first narration (its `resolutionId`) and the trigger
+ * vignette of a clock it rewound (`supersededFor`), each flagged
+ * `burnSuperseded` — out of narrator memory, so the walk passes them, while
+ * #338 D8 left their World Journal and tier records standing beside the
+ * re-narration. The table's X-Card on the beat removes the beat it saw,
+ * the struck version included: these join the cards it removes, so their
+ * capture is undone and their facts blocked too. Oldest first, in chat order.
+ *
+ * @param {Object[]} beat — the cards the walk picked
+ * @param {Object[]} messages — the chat as it was
+ * @param {string} sessionId
+ * @returns {Object[]}
+ */
+function withStruckByUpgrade(beat, messages, sessionId) {
+  const upgraded = new Set(beat.map(m => m?.flags?.[MODULE_ID]?.upgradeOf).filter(id => typeof id === 'string' && id));
+  if (!upgraded.size) return beat;
+  const picked = new Set(beat);
+  const struck = messages.filter(m => {
+    if (picked.has(m)) return false;
+    const f = m?.flags?.[MODULE_ID];
+    return f?.narratorCard === true && f.burnSuperseded === true && f.xCarded !== true
+      && (f.sessionId ?? null) === sessionId
+      && (upgraded.has(f.resolutionId) || upgraded.has(f.supersededFor));
+  });
+  if (!struck.length) return beat;
+  const all = new Set([...struck, ...beat]);
+  return messages.filter(m => all.has(m));
 }
 
 /**

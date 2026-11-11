@@ -230,7 +230,7 @@ export async function retryUpgradeStep(s) {
     const untriggered = s.effect === "tensionClocks"
       ? (Array.isArray(report.untriggered) ? report.untriggered : [])
       : vowClocksUntriggered(s.entries, report.untriggered, landed ? [] : (failures[0]?.entries ?? s.entries));
-    await supersedeTriggerVignettes(untriggered, upgradeKind(s.kind));
+    await supersedeTriggerVignettes(untriggered, upgradeKind(s.kind), typeof s.resolutionId === "string" ? s.resolutionId : null);
   }
   return landed ? { ok: true } : { ok: false, ...failures[0] };
 }
@@ -238,17 +238,23 @@ export async function retryUpgradeStep(s) {
 /** An upgrade step's kind — its vignette note says which — "burn" unless it says "improve". */
 const upgradeKind = (kind) => (kind === "improve" ? "improve" : "burn");
 
+/** A clock step's resolution upgraded, when it names one (issue #347 D2). */
+const upgradedResolution = (f) => (typeof f.resolutionId === "string" && f.resolutionId ? { resolutionId: f.resolutionId } : {});
+
 /** What a Retry needs of a failed upgrade step. */
 export function upgradeStepRecord(f) {
   return {
     step: "upgrade", effect: f.effect,
     ...(f.effect === "meters"        ? { pcId: f.pcId ?? null, changes: f.changes ?? {} } : {}),
     // A clock step's kind and a vow copy's vow id: what its Retry supersedes the
-    // rewound clock's trigger vignette by (retryUpgradeStep).
-    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })), kind: upgradeKind(f.kind) } : {}),
+    // rewound clock's trigger vignette by (retryUpgradeStep), and the
+    // resolution upgraded, which the struck vignette is stamped with (issue
+    // #347 D2).
+    ...(f.effect === "tensionClocks" ? { clocks: (f.clocks ?? []).map(c => ({ _id: c._id, name: c.name ?? null })), kind: upgradeKind(f.kind),
+      ...upgradedResolution(f) } : {}),
     ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({
       actorId: e.actorId, itemId: e.itemId, vowId: typeof e.vowId === "string" && e.vowId ? e.vowId : null, name: e.name ?? null,
-    })), kind: upgradeKind(f.kind) } : {}),
+    })), kind: upgradeKind(f.kind), ...upgradedResolution(f) } : {}),
     ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string") } : {}),
     ...(f.effect === "choiceCard"    ? { pcId: f.pcId ?? null, sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {},
       moveId: f.moveId ?? null, resolutionId: f.resolutionId ?? null } : {}),
@@ -410,8 +416,10 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
   // full, the next price firing a second one (issue #342 Z46).
   const untriggered = [];
   const tensionReport = {};
-  // A step carries its kind, for its Retry's supersede (retryUpgradeStep).
-  if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension, kind }, failures, tensionReport)) {
+  // A step carries its kind, for its Retry's supersede (retryUpgradeStep),
+  // and the resolution upgraded — what the struck vignette is stamped with
+  // (issue #347 D2).
+  if (tension.length && await applyUpgradeStep({ effect: "tensionClocks", clocks: tension, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, tensionReport)) {
     for (const c of tension) reverted.push(`${c.name} clock rewound`);
     untriggered.push(...(tensionReport.untriggered ?? []));
   }
@@ -420,13 +428,13 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     // the GMs retry (issue #314 Q05).
     const at = failures.length;
     const vowReport = {};
-    const ok = await applyUpgradeStep({ effect: "vowClocks", entries, kind }, failures, vowReport);
+    const ok = await applyUpgradeStep({ effect: "vowClocks", entries, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, vowReport);
     const owed = ok ? [] : (failures[at]?.entries ?? entries);
     const owedIds = new Set(owed.map(e => e.itemId));
     for (const v of entries) if (!owedIds.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
     untriggered.push(...vowClocksUntriggered(entries, vowReport.untriggered, owed));
   }
-  await supersedeTriggerVignettes(untriggered, kind);
+  await supersedeTriggerVignettes(untriggered, kind, resolutionId);
 
   // 2. Refund the route's PC-meter losses — each receipt is what landed (the
   // move that ran, a meter's before and after), never the table's annotation
@@ -641,12 +649,15 @@ function vowClocksUntriggered(entries, emptied, owed) {
  * first — issue #345 AA24); and what its sidecar wrote is retracted by its
  * narration id (retractSupersededNarrations). It stood as live fiction with
  * binding truths, and the clock's next trigger fired a second vignette for
- * the same clock (issue #338 D8). Canonical GM. Never throws.
+ * the same clock (issue #338 D8). The struck card names the resolution
+ * whose upgrade struck it (`supersededFor`): an X-Card on that upgrade's
+ * re-narration takes it too (issue #347 D2). Canonical GM. Never throws.
  *
  * @param {Array<Object>} clocks — advanced-clock entries whose trigger the reversal undid
  * @param {"burn"|"improve"} kind
+ * @param {string|null} [resolutionId] — the resolution upgraded
  */
-async function supersedeTriggerVignettes(clocks, kind) {
+async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
   if (!clocks?.length) return;
   try {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
@@ -679,6 +690,7 @@ async function supersedeTriggerVignettes(clocks, kind) {
     for (const card of cards) {
       await card.update({
         [`flags.${MODULE_ID}.burnSuperseded`]: true,
+        ...(resolutionId ? { [`flags.${MODULE_ID}.supersededFor`]: resolutionId } : {}),
         content: supersededVignetteContent(card.content, kind),
       }).catch(err => console.warn(`${MODULE_ID} | ${kind}: the rewound clock's vignette ${card.id} could not be struck:`, err?.message ?? err));
       const narrationId = card.flags?.[MODULE_ID]?.narrationId;

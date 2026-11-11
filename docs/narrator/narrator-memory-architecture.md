@@ -188,7 +188,11 @@ CLAUDE.md "audit consumers" rule):
   and both narrations' ledger entries are retracted by their `narrationId`
   (§3). A vignette still being written then never posts: it is narrated only
   while its clock is still full when its reply comes in (`stillTriggered`,
-  TRIGGER-VIGNETTE-LATE-POST), so its sidecar is never applied
+  TRIGGER-VIGNETTE-LATE-POST), so its sidecar is never applied. The
+  re-narration names the resolution it upgraded (`upgradeOf`) and a struck
+  vignette names it too (`supersededFor`): an X-Card on the re-narration
+  takes the struck narrations with its beat — capture undone, superseded
+  truths relabelled `xcard` (issue #347 D2)
 - burn supersede never matches a round card: a round's upgrades are decided
   before it is narrated, and the card's `resolutionId` is empty (issue #340)
 - the Chronicle (`scheduleChronicleEntry`) writes one entry per round, kind

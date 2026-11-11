@@ -729,6 +729,10 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
     progressScore:   0,
     momentumBurned:  true,
     momentumBurnedFrom: burnedMomentum,
+    // The resolution this one upgrades: its re-narration card carries it, so
+    // an X-Card on that card also takes the narrations the burn struck
+    // (issue #347 D2).
+    upgradeOf:       burn.resolutionId ?? null,
     consequences:    newConsequences,
     oracleSeeds:     null,
     playerNarration: "[Player burned momentum to upgrade the outcome]",

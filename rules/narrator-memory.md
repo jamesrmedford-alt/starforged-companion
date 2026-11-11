@@ -155,7 +155,12 @@ layers. This file is the never-break list.
    store holds them (STRIKE-DURING-SCENE-END-LOST). A superseded narration's
    (`retractedBy: "superseded"` — what a Burn Momentum / Improve Result
    replaced, retracted by its `narrationId`, issue #338 D8) is never named
-   either, and blocks nothing: the re-narration may state the fact again. Anything a narration writes
+   either, and blocks nothing: the re-narration may state the fact again —
+   until an X-Card removes the beat: the re-narration names the resolution it
+   upgraded (`upgradeOf`), a struck vignette names it too (`supersededFor`),
+   and the X-Card takes the struck narrations with the beat — their capture
+   undone, their superseded truths relabelled `xcard`, blocked (issue #347
+   D2). Anything a narration writes
    outside the ledgers carries its `narrationId` so the X-Card can undo it
    too — the command vehicle's position does (issue #325 W07; every other
    position writer writes `narrationId: null`, as `setFlag` merges —

@@ -236,7 +236,13 @@ in their place by time (`chatAsItWas`) — so a narration whose card a GM
 deleted is still the newest one, and is what the X-Card removes, never the
 kept beat before it; a deleted person's line still ends a beat (issue #347
 AB22). A deletion alone changes nothing in narrator memory (Clear Chat Log
-deletes every card); a reload forgets the record. It retracts what their sidecars wrote
+deletes every card); a reload forgets the record. A Burn Momentum / Improve
+Result re-narration in the beat names the resolution it upgraded
+(`upgradeOf`): the narrations that upgrade struck — the move's first
+narration and the trigger vignette of a clock it rewound (`supersededFor`) —
+join the cards removed (`withStruckByUpgrade`), so their capture is undone
+and their superseded truths become the X-Card's, blocked (issue #347 D2 — the
+maintainer's option A; #338 D8 had left them standing). It retracts what their sidecars wrote
 (`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"` — a truth
 the table had struck is relabelled so, and the strike a scene end kept for
 the session (`sessionRetractions.facts`, with its truth's `narrationId`)

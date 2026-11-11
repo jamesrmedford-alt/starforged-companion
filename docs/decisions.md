@@ -1173,6 +1173,26 @@ D6 (i), D7, D8 and D10 option A; D3 option A with the crew-wide clear; D6
   covers every clock the rewind takes out of full — one another player's
   price filled included, vow clocks too — not only the burned receipt's own
   trigger. *Rejected:* keeping both as fiction that stands (option B).
+  **Update (issue #347 D2):** the records stand beside the re-narration only
+  while the beat does: an X-Card on the re-narration takes them too (next
+  entry).
+- **An X-Card on an upgraded beat takes what the upgrade struck** [issue #347
+  D2; the maintainer's option A]: a Burn Momentum or Improve Result
+  re-narration names the resolution it upgraded (`upgradeOf`, from the
+  upgraded resolution — burnMomentum.js / improveResult.js), and a trigger
+  vignette its reversal struck names it too (`supersededFor`, also carried by
+  a refused rewind's Retry step). The X-Card's pick adds to the beat it
+  removes the `burnSuperseded` narrations of that resolution — the move's
+  first narration and the rewound clocks' vignettes (narrator.js
+  `withStruckByUpgrade`) — so their World Journal and tier records are undone
+  by narration id like the beat's own, and their truths, retracted as
+  superseded, become the X-Card's (`retractNarrations` relabels them): blocked
+  for the session, where a superseded truth was no bar to a later narration
+  restating it. The struck cards are flagged `xCarded` too. An X-Card on a
+  later beat leaves them alone. *Rejected:* D8 standing for the X-Card
+  (option B) — the table removed the beat it saw, the struck version
+  included, and the struck narration's lore and NPC details went on reaching
+  every later prompt.
 - **Push-to-talk into a drafted chat box adds and waits** [D9; option B]: the
   transcript goes after the draft and the player presses Enter; an empty box
   auto-submits. *Rejected:* append and submit (option A) — it guesses whether

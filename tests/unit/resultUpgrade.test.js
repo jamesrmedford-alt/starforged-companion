@@ -501,7 +501,8 @@ describe("Q05 — a partial vow-clock rewind retries only the Items still owed",
     expect(table.cards(f => f.burnReversal).at(-1)?.content).not.toMatch(/vow-b clock rewound/);
     const failed = failureCards().at(-1);
     expect(failed.flags[MODULE_ID].steps).toEqual([
-      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", vowId: null, name: "vow-b" }], kind: "burn" },
+      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", vowId: null, name: "vow-b" }], kind: "burn",
+        resolutionId: expect.any(String) },   // the burn's resolution: its Retry stamps a struck vignette with it (issue #347 D2)
     ]);
     expect(failed.content).toContain("Rewind the vow-b clock one segment");
     expect(failed.content).not.toContain("vow-a");
@@ -540,7 +541,8 @@ describe("Q05 — a partial vow-clock rewind retries only the Items still owed",
     const second = failureCards().at(-1);
     expect(second._id).not.toBe(first._id);
     expect(second.flags[MODULE_ID].steps).toEqual([
-      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", vowId: null, name: "vow-b" }], kind: "burn" },
+      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", vowId: null, name: "vow-b" }], kind: "burn",
+        resolutionId: expect.any(String) },
     ]);
 
     await gmRetry(second);
