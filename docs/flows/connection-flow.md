@@ -56,10 +56,18 @@ recorded under its name promoted to it; its bond is §2's.
   saying "Connection made" with no one made (issue #345 AA34; a round's
   likewise): `runDiscoveryDetection` → `runCombinedDetectionPass` (Haiku) →
   `routeEntityDrafts` auto-creates the first connection draft
-  (`buildConnectionSeedData` → `createConnection` → silent portrait →
+  (`buildConnectionSeedData` → `createConnection` →
   `registerConnectionOnActiveCharacter`, which also creates the PC's bond
   Item — on the roller's PC: the narration's `actorId` rides
-  `runPostNarrationPasses` → `runDiscoveryDetection` → `routeEntityDrafts`).
+  `runPostNarrationPasses` → `runDiscoveryDetection` → `routeEntityDrafts` —
+  then the silent portrait, started, §1 below).
+  Its dedup — the detection prompt's ESTABLISHED list, the parse's and the
+  route's `entityExistsAnyType` / `entityExistsForName`, `connectKnownNpc`'s
+  listed NPCs — reads the store's entity id lists as well as the move's
+  copy (`withStoredEntityIds`): the move holds the copy it read before its
+  lock claim, and an NPC the GM confirmed from a draft card while the move
+  was confirmed or narrated was in no list it read, so the hit made a second
+  card with a second bond (issue #347 AB09).
   When it creates none, a pending draft row the move's narration names
   (`namingText`, whole words — the detection pass leaves a pending name out)
   is confirmed as the roller's connection (`confirmNamedPendingConnection` →

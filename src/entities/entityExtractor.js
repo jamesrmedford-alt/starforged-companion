@@ -31,7 +31,7 @@
  */
 
 import { apiPost } from "../api-proxy.js";
-import { getEntityDocument, readEntityFlag, writeEntityFlag } from "./registry.js";
+import { getEntityDocument, readEntityFlag, writeEntityFlag, ENTITY_ID_LISTS, unionIdList } from "./registry.js";
 
 import { getConnection, createConnection, updateConnection, roleTitleFromName } from "./connection.js";
 import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from "../character/actorBridge.js";
@@ -87,6 +87,33 @@ const ENTITY_ID_FIELDS = {
   location:   "locationIds",
   creature:   "creatureIds",
 };
+
+/**
+ * The caller's campaignState with each entity id list widened to the store's
+ * (issue #347 AB09). A move holds the copy it read before its lock claim for
+ * the whole move, and its capture deduped against that copy: an NPC the GM
+ * confirmed from a draft card while the move was confirmed or narrated is
+ * listed in the store only, so the detection prompt did not call them
+ * established, every route gate passed them, and the hit made a second card
+ * — with a second bond and portrait. A read-only view for the dedup gates
+ * (the established list, entityExistsForName / entityExistsAnyType, the
+ * known-NPC match); never written back.
+ *
+ * @param {Object|null} campaignState
+ * @returns {Object|null}
+ */
+function withStoredEntityIds(campaignState) {
+  let stored = null;
+  try { stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null; }
+  catch { stored = null; }
+  if (!stored || stored === campaignState) return campaignState;
+  const view = { ...(campaignState ?? {}) };
+  for (const field of ENTITY_ID_LISTS) {
+    const merged = unionIdList(stored[field], campaignState?.[field]);
+    if (merged) view[field] = merged;
+  }
+  return view;
+}
 
 /**
  * Reduce an entity name to a canonical form for dedup comparisons.
@@ -243,8 +270,10 @@ export const PACED_NARRATIVE_OUTCOME = "n/a";
  * confusing the model with a fake move id (suggestion-loop remediation §C).
  */
 export function buildCombinedDetectionPrompt(narrationText, moveId, outcome, campaignState) {
-  const established  = collectEstablishedEntityNames(campaignState);
-  const placeholders = collectPlaceholderConnectionNames(campaignState);
+  // The store's lists too: an NPC confirmed while the move ran is established (issue #347 AB09).
+  const listed       = withStoredEntityIds(campaignState);
+  const established  = collectEstablishedEntityNames(listed);
+  const placeholders = collectPlaceholderConnectionNames(listed);
   const dismissed    = (campaignState?.dismissedEntities ?? []).filter(Boolean);
   const pending      = collectPendingDraftNames();
 
@@ -443,7 +472,7 @@ function detectionFromParsed(parsed, campaignState) {
       .filter(Boolean),
   );
   const established = new Set(
-    collectEstablishedEntityNames(campaignState)
+    collectEstablishedEntityNames(withStoredEntityIds(campaignState))
       .map(normalizeEntityName)
       .filter(Boolean),
   );
@@ -1320,8 +1349,10 @@ export async function applyStateTransition(transition, campaignState, { narratio
  * routing layer to suppress duplicate WJ entries when the entity record is
  * authoritative.
  */
-export function entityExistsForName(name, type, campaignState) {
+export function entityExistsForName(name, type, callerState) {
   if (!name || !type) return false;
+  // The store's lists too (issue #347 AB09): the caller's copy may predate a record made meanwhile.
+  const campaignState = withStoredEntityIds(callerState);
   // A faction is one faction whatever article, case or spacing names it
   // (factionNameKey, issue #336 Y31) — besides the title-stripped match below.
   if (type === "faction" && findFactionByName(name, campaignState)) return true;
@@ -1394,9 +1425,12 @@ function listedConnectionNamed(name, campaignState) {
  * @param {Object} campaignState
  * @returns {boolean}
  */
-export function entityExistsAnyType(name, campaignState) {
+export function entityExistsAnyType(name, callerState) {
   const target = normalizeEntityName(name);
   if (!target) return false;
+  // The store's lists too (issue #347 AB09): the caller's copy may predate a
+  // record made meanwhile — a draft the GM confirmed while a move resolved.
+  const campaignState = withStoredEntityIds(callerState);
 
   // The detector's "what's known" set is built from several layers. Any
   // single layer missed creates the F14 defect class — we keep flagging
@@ -2383,7 +2417,8 @@ async function connectKnownNpc(slot, campaignState, { namingText = "", narration
   const dismissed = new Set((store.dismissedEntities ?? []).filter(n => typeof n === "string").map(normalizeEntityName));
 
   const listed = [];
-  for (const id of campaignState?.connectionIds ?? []) {
+  // The store's list too: an NPC confirmed while the move ran (issue #347 AB09).
+  for (const id of withStoredEntityIds(campaignState)?.connectionIds ?? []) {
     let rec = null;
     try { rec = getConnection(id); } catch { continue; }
     if (rec?._id && rec.active !== false && named(rec)) listed.push(rec);
