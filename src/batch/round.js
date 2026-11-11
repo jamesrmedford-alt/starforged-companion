@@ -332,8 +332,25 @@ export function submitEntry(round, { userId, text, submissionId, now, readAs = n
 }
 
 /**
+ * The offer an entry keeps when its player withdraws, edits or passes: the
+ * one already beside it, else the card's move that was the entry itself —
+ * its card is spent by the press, so only Keep mine drops it. Reset with
+ * `readAs`, a card's move pressed before the player wrote anything was
+ * neither rolled nor held for the next round (takeCardMoves never saw it),
+ * its card still claimed (issue #345 AA37).
+ *
+ * @param {Object} entry
+ * @returns {Object|null}
+ */
+function offerKept(entry) {
+  if (entry.offer || !entry.readAs?.messageId) return entry.offer ?? null;
+  return { text: entry.text, forced: entry.readAs.forced ?? null, messageId: entry.readAs.messageId, at: entry.submittedAt ?? null };
+}
+
+/**
  * A player withdraws their action: back to waiting. A card's move offered
- * beside it stays offered — withdrawing (or Edit) is not choosing to drop it.
+ * beside it stays offered — withdrawing (or Edit) is not choosing to drop it
+ * — and a card's move that was the action is offered now (offerKept).
  *
  * @param {Object} round
  * @param {{ userId: string }} args
@@ -346,14 +363,15 @@ export function withdrawEntry(round, { userId }) {
   if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.WAITING, submissionId: null, submittedAt: null, readyAt: null,
-    reading: null, choices: null, error: null, readAs: null,
+    reading: null, choices: null, error: null, readAs: null, offer: offerKept(entry),
   }, { order: withoutUser(round.order, userId) });
 }
 
 /**
  * A player passes this round. Silent: nothing names them anywhere. A card's
- * move offered beside their action stays offered (it joins the next round
- * when the round resolves without it — takeCardMoves).
+ * move offered beside their action stays offered, and a card's move that was
+ * the action is offered now (offerKept): it joins the next round when the
+ * round resolves without it (takeCardMoves).
  *
  * @param {Object} round
  * @param {{ userId: string }} args
@@ -366,7 +384,7 @@ export function passEntry(round, { userId }) {
   if (isOwedEntry(entry)) refuse("owed", OWED_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.PASSED, submissionId: null, readyAt: null, reading: null,
-    choices: null, error: null, readAs: null,
+    choices: null, error: null, readAs: null, offer: offerKept(entry),
   }, { order: withoutUser(round.order, userId) });
 }
 
