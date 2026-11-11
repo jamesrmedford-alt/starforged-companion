@@ -766,6 +766,21 @@ function waitForLock() {
 }
 
 /**
+ * A claim the advance pass made for a round already resolving — its rolls
+ * re-entered, or its narration — came back without the lock: a busy lock is
+ * waited for; one the world refused stops the round, and the GMs are told
+ * (Send now claims it again). Only a busy lock was handled: refused, the
+ * round sat rolling or narrating with no one told and nothing waiting to wake
+ * it, every window saying "The round is being resolved…" (issue #345 AA40).
+ *
+ * @param {{ busy?: boolean, refused?: boolean }} lock — claimRoundLock's answer, with no claim
+ */
+function lockNotClaimed(lock) {
+  if (lock.busy) waitForLock();
+  else tellRoundStopped();
+}
+
+/**
  * The move lock is free again with no campaignState write to say so: a claim
  * on its way was refused (index.js claimPendingMoveLock). A round waiting for
  * the lock goes on, as the write that frees it would let it — waiting behind
@@ -861,7 +876,7 @@ async function rollRound(claim) {
   if (!claim) {
     const lock = await claimRoundLock();
     if (!lock.claim) {
-      if (lock.busy) waitForLock();
+      lockNotClaimed(lock);
       return false;
     }
     own = lock.claim;
@@ -1242,7 +1257,7 @@ async function narrateTheRound() {
   }
   const lock = await claimRoundLock();
   if (!lock.claim) {
-    if (lock.busy) waitForLock();
+    lockNotClaimed(lock);
     return false;
   }
   _narratingRoundId = round.id;
