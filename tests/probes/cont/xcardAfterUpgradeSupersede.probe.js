@@ -30,7 +30,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.mock('../../../src/api-proxy.js', () => ({ apiPost: vi.fn(async () => ({ content: [{ type: 'text', text: '{"contradictions":[]}' }] })) }));
 
 import { applyNarratorSidecar, postNarrationCard } from '../../../src/narration/narrator.js';
-import { suppressScene } from '../../../src/context/safety.js';
+import { suppressScene, clearXCard } from '../../../src/context/safety.js';
 import { getConfirmedLore, JOURNAL_NAMES } from '../../../src/world/worldJournal.js';
 import { routeWorldJournalResults } from '../../../src/entities/entityExtractor.js';
 import { supersedeOriginalNarration } from '../../../src/moves/burnMomentum.js';
@@ -181,6 +181,14 @@ describe('CONT — the X-Card after a Burn Momentum / Improve Result', () => {
 
     expect.soft(stored().xCardedNarrationIds, 'the narrations the X-Card removed').toContain('nar-miss');
     expect.soft(loreTitles(), 'ESTABLISHED LORE after the X-Card').not.toContain(TORCH_LORE);
-    expect(vexDetails(), 'Narrator-added details on Vex\'s card after the X-Card').toEqual([]);
+    expect.soft(vexDetails(), 'Narrator-added details on Vex\'s card after the X-Card').toEqual([]);
+
+    // A GM resumes; a later narration, fed that lore, states the struck card's fact again:
+    // a fact of the beat the table removed is not recorded as binding.
+    expect(await clearXCard()).toBe(true);
+    await someoneSpeaks();
+    await narrate('nar-later', 'The prisoner cradles his burned hand.', { ...MISS, sceneFrame: null });
+    const live = stored().sceneTruths.filter(t => !t.retracted && /burned with a cutting torch/i.test(t.fact));
+    expect(live.map(t => t.narrationId), 'live truths restating the removed beat').toEqual([]);
   });
 });
