@@ -680,7 +680,11 @@ async function advanceOnce() {
  * round already resolving is only marked: it finishes as it would — a roller
  * deciding Burn / Improve / Keep still decides — and only a GM's own Send now
  * keeps for them (issue #342 Z04: the switch forced Keep on every roller
- * still deciding, and closed their card's Burn and Improve).
+ * still deciding, and closed their card's Burn and Improve). A collecting
+ * round is marked only once its send is accepted: one the X-Card (or no key
+ * for its readings) refused kept the mark, and resolving later the ordinary
+ * way it switched Batch Mode off — a change the GM was told had not happened
+ * (issue #345 AA39).
  *
  * @param {{ modeOffAfter?: boolean }} [opts]
  * @returns {Promise<{ ok: boolean, reason?: string }>}
@@ -689,8 +693,10 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
   if (!isCanonicalGM()) return { ok: false, reason: "not-canonical" };
   const round = getStoredRound();
   if (!roundIsOpen(round)) return { ok: false, reason: "no-round" };
-  if (modeOffAfter) await queueRoundWrite(r => markModeOffAfter(r)).catch(err => console.warn(`${MODULE_ID} | Batch Mode: mode-off-after not saved:`, err?.message ?? err));
-  if (modeOffAfter && isResolving(round)) return { ok: true, reason: "mode-off-after" };
+  if (modeOffAfter && isResolving(round)) {
+    await markRoundModeOffAfter(round.id);
+    return { ok: true, reason: "mode-off-after" };
+  }
   if (round.phase === ROUND_PHASE.UPGRADING) {
     await keepUpgrades(null);
     advanceRound("send-now");
@@ -706,9 +712,16 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
   const unread = readingsInFlight(round);
   const keyed = (() => { try { return !!game.settings.get(MODULE_ID, "claudeApiKey"); } catch { return false; } })();
   if (unread.length && !keyed) return { ok: false, reason: "no-key" };
+  if (modeOffAfter) await markRoundModeOffAfter(round.id);
   _sendNowRoundId = round.id;
   advanceRound("send-now");
   return { ok: true };
+}
+
+/** Mark the round a Send now was asked for to turn Batch Mode off once it is done. Never throws. */
+function markRoundModeOffAfter(roundId) {
+  return queueRoundWrite(r => (r?.id === roundId ? markModeOffAfter(r) : r))
+    .catch(err => console.warn(`${MODULE_ID} | Batch Mode: mode-off-after not saved:`, err?.message ?? err));
 }
 
 // Claims of this client's whose release the world refused, retry included:
