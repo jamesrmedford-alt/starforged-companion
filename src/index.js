@@ -95,7 +95,7 @@ import {
   updateTrackFields,
   getProgressTrack,
 } from "./ui/progressTracks.js";
-import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack } from "./moves/expedition.js";
+import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack, UNNAMED_EXPEDITION_LABEL } from "./moves/expedition.js";
 import { shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
@@ -1498,29 +1498,42 @@ function currentLocationForEntityId(id) {
 }
 
 /**
- * The location Actor id of the site a Finish an Expedition arrives at — the
- * site its track links, else the unexplored one its label names
- * (siteDiscovery.selectExpeditionSite: never a guess, so an expedition to a
- * settlement arrives there by name) — or null. The crew names an unexplored
- * site in their own words, so the arrival by the label alone resolved to no
- * place and left the ship, its token and CURRENT LOCATION at the settlement
- * they had left while the same move charted the site (issue #342 Z14).
+ * Where a Finish an Expedition arrives, from the expedition it completes (the
+ * track ladder's pick: by id, by the line's words, else the one open
+ * expedition):
+ *   - `siteActorId` — the location Actor of the site the expedition was for:
+ *     the site its track links, else the unexplored one its label names
+ *     (siteDiscovery.selectExpeditionSite: never a guess, so an expedition to
+ *     a settlement arrives there by name), or null. The crew names an
+ *     unexplored site in their own words, so the arrival by the label alone
+ *     resolved to no place and left the ship, its token and CURRENT LOCATION
+ *     at the settlement they had left while the same move charted the site
+ *     (issue #342 Z14).
+ *   - `label` — the expedition's label, the place an expedition for no site
+ *     is named after; null for one begun with no destination named. A line
+ *     that names no destination, or names it in words of its own, still
+ *     completes the expedition, and the arrival read its words alone — the
+ *     crew stayed where they set out (issue #345 AA22).
  *
  * @param {{ moveTarget?: string|null, moveTargetId?: string|null }|null} interpretation
  * @param {Object} campaignState
- * @returns {Promise<string|null>}
+ * @returns {Promise<{ siteActorId: string|null, label: string|null }>}
  */
-async function expeditionSiteActorId(interpretation, campaignState) {
+async function expeditionArrival(interpretation, campaignState) {
   try {
-    const label = interpretation?.moveTarget ?? null;
-    const track = selectExpeditionTrack(await listProgressTracks(), label,
+    const said  = interpretation?.moveTarget ?? null;
+    const track = selectExpeditionTrack(await listProgressTracks(), said,
       { trackId: interpretation?.moveTargetId ?? null });
     const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
-    const found = selectExpeditionSite(campaignState, track?.label ?? label, { siteId: track?.siteId ?? null });
-    return found?.site?.actorId ?? null;
+    const found = selectExpeditionSite(campaignState, track?.label ?? said, { siteId: track?.siteId ?? null });
+    const label = typeof track?.label === "string" ? track.label.trim() : "";
+    return {
+      siteActorId: found?.site?.actorId ?? null,
+      label:       label && label !== UNNAMED_EXPEDITION_LABEL ? label : null,
+    };
   } catch (err) {
     console.debug(`${MODULE_ID} | expedition arrival: the expedition's site could not be read:`, err?.message ?? err);
-    return null;
+    return { siteActorId: null, label: null };
   }
 }
 
@@ -1610,10 +1623,16 @@ async function applyOutcomeEffects({
     // rename leaves behind or a namesake in another sector matches first
     // (issue #321 U52). Finish an Expedition's moveTargetId is a track's: it
     // arrives at the site that expedition was for, by the site's location
-    // Actor (issue #342 Z14), else at the place its label names.
+    // Actor (issue #342 Z14), else at the place its label names — the label
+    // of the expedition the move completes, then the line's own words when
+    // the label names no tracked place (issue #345 AA22).
+    const expedition = resolution.moveId === "finish_an_expedition"
+      ? await expeditionArrival(interpretation, campaignState)
+      : null;
     const destinationId = resolution.moveId === "set_a_course"
       ? (interpretation?.moveTargetId ?? null)
-      : await expeditionSiteActorId(interpretation, campaignState);
+      : (expedition?.siteActorId ?? null);
+    const arrivalName = expedition?.label ?? moveTarget;
 
     // Keep the campaign's "current location" in step with the arrival —
     // previously only a manual !at wrote currentLocationId, so travelling
@@ -1627,9 +1646,10 @@ async function applyOutcomeEffects({
     // name part only, was the free text "Bleak" and its token stayed where
     // it was (known-issues ARRIVAL-FRAGMENT-SHIP-FREE-TEXT).
     const named = currentLocationForEntityId(destinationId)
+      ?? (expedition?.label ? resolveCurrentLocationName(expedition.label, campaignState) : null)
       ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
     const docked = await maybeUpdateShipPositionFromName(
-      moveTarget,
+      arrivalName,
       campaignState,
       tokenDragSetCourse ? "scene_token"
         : resolution.moveId === "finish_an_expedition" ? "expedition"
@@ -1656,10 +1676,10 @@ async function applyOutcomeEffects({
         await persistCampaignStateFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
       } else {
         noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
-          name: arrivedAt.entity?.name ?? moveTarget ?? null });
+          name: arrivedAt.entity?.name ?? arrivalName ?? null });
       }
-    } else if (moveTarget) {
-      console.debug(`${MODULE_ID} | arrival: "${moveTarget}" is not a tracked location — currentLocation unchanged.`);
+    } else if (arrivalName) {
+      console.debug(`${MODULE_ID} | arrival: "${arrivalName}" is not a tracked location — currentLocation unchanged.`);
     }
 
     // §20.4b — when the move was initiated by a Token drag and we
@@ -1689,7 +1709,7 @@ async function applyOutcomeEffects({
         resolution,
       ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
     }
-    applied.push(`arrived at ${moveTarget ?? "the destination"}`);
+    applied.push(`arrived at ${arrivalName ?? "the destination"}`);
   }
 
   // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)

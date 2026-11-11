@@ -203,7 +203,13 @@ pin, §1) and `currentLocationId` follow the site the same move charts; the
 crew names an unexplored site in their own words (its pin reads "Unexplored
 Site"), so the label alone resolved to no place and all three stayed on the
 settlement they had left (issue #342 Z14). An expedition for no site arrives
-at the place its label names; the Set a Course feedback card ("Course held cleanly (+1
+at the place its label names — the label of the expedition the move
+completes, the track ladder's pick (`expeditionArrival`), then the line's own
+words when the label names no tracked place (an expedition begun with no
+destination named, `UNNAMED_EXPEDITION_LABEL`, names none): a typed finish
+that named no destination, or named it in words of its own, completed the
+expedition and left the ship, its token and `currentLocationId` where the crew
+set out, read from `moveTarget` alone (issue #345 AA22); the Set a Course feedback card ("Course held cleanly (+1
 momentum)") is Set a Course's alone (issue #326 W46). Miss leaves the track open and posts the recommit offer
 (below, "Advisory-only branches"): its **🔁 Recommit** relays
 `expedition.recommit` to the canonical GM (`cardActions.applyRecommitOffer`),
