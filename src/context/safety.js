@@ -19,9 +19,10 @@
  * Private per-player Lines: the shared narrator prompt carries every
  * player's lines when a GM's client builds it, and only the building
  * player's own when a player's client does (formatNarratorSafetyContext);
- * the Private Channel carries its player's own. They are never shown to
- * another player or sent in another player's request — but they do sit in
- * the world-scoped campaignState, which every client receives.
+ * the Private Channel carries its player's own (formatOwnSafetyContext —
+ * from their client setting, as a player's shared narration does). They are
+ * never shown to another player or sent in another player's request — but
+ * they do sit in the world-scoped campaignState, which every client receives.
  */
 
 import { runCampaignStateWriteNow, serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
@@ -78,7 +79,7 @@ export function formatSafetyContext(campaignState, sessionState = null, currentU
 /**
  * The safety block for shared narration built on this client — the narrator
  * system prompt (buildNarratorSystemPrompt) uses it; the Private Channel
- * passes its player's id to formatSafetyContext instead.
+ * builds its player's block with formatOwnSafetyContext instead.
  *
  * Private Lines (decisions.md → "Private Lines in shared narration"):
  * - A GM's client builds for the whole table, so every player's lines go in,
@@ -96,13 +97,35 @@ export function formatNarratorSafetyContext(campaignState) {
   const user = globalThis.game?.user;
   if (user?.isGM) return formatSafetyContext(campaignState, null, "gm");
   if (!user?.id) return formatSafetyContext(campaignState);
+  return formatOwnSafetyContext(campaignState, user.id);
+}
 
+/**
+ * The safety block of a request built for one user alone: the campaign's
+ * Lines and Veils and that user's own Private Lines, never another user's —
+ * the Private Channel (buildPrivateContext, src/private-channel/context.js)
+ * and shared narration on a player's client (formatNarratorSafetyContext).
+ *
+ * On the user's own client their lines are read from their client setting,
+ * the canonical store: the campaignState copy holds them only once a GM has
+ * relayed them, so a line the player added while no GM was online was
+ * missing from their own Private Channel (issue #345 AA03). Another user's
+ * lines can only come from that copy.
+ *
+ * @param {Object} campaignState — CampaignStateSchema
+ * @param {string} userId        — the Foundry user the request is for
+ * @returns {string}             — Formatted safety context, always non-empty
+ */
+export function formatOwnSafetyContext(campaignState, userId) {
+  if (!userId || userId !== globalThis.game?.user?.id) {
+    return formatSafetyContext(campaignState, null, userId ?? null);
+  }
   const lines  = readOwnPrivateLines();
   const safety = {
     ...(campaignState?.safety ?? {}),
-    privateLines: lines.length ? [{ playerId: user.id, lines }] : [],
+    privateLines: lines.length ? [{ playerId: userId, lines }] : [],
   };
-  return formatSafetyContext({ ...(campaignState ?? {}), safety }, null, user.id);
+  return formatSafetyContext({ ...(campaignState ?? {}), safety }, null, userId);
 }
 
 /**

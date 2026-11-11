@@ -136,8 +136,12 @@ building client: on a GM's client every player's lines (deduplicated); on a
 player's client — narrating only with no keyed GM online — that player's own,
 read from their client setting, never another player's. Before 2026-10 the
 shared prompt passed no user id and carried no Private Line at all
-(SAFETY-PRIVATE-LINES-SHARED). The Private Channel passes its player's id
-(`src/private-channel/context.js` `buildPrivateContext`).
+(SAFETY-PRIVATE-LINES-SHARED). The Private Channel builds its player's block
+the way a player's client does (`formatOwnSafetyContext`, from
+`src/private-channel/context.js` `buildPrivateContext`): their own lines,
+read from their client setting. It read the campaignState copy, so a line
+added while no GM was online was missing from the player's own Private
+Channel (issue #345 AA03).
 
 **The Private Channel** (issue #286 D1) builds its own Haiku prompt but reads
 what the main narrator knows, rendered by the same section formatters

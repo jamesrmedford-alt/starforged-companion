@@ -13,6 +13,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   formatSafetyContext,
   formatNarratorSafetyContext,
+  formatOwnSafetyContext,
   suppressScene,
   clearXCard,
   playXCard,
@@ -174,6 +175,57 @@ describe("formatNarratorSafetyContext — Private Lines in shared narration", ()
       restore();
     }
     expect(state.safety.privateLines).toHaveLength(3);
+  });
+});
+
+// The Private Channel read its player's lines from the campaignState copy,
+// which holds them only once a GM has relayed them (issue #345 AA03).
+describe("issue #345 AA03 — formatOwnSafetyContext: one user's own Private Lines", () => {
+  const state = campaign({
+    lines: ["No harm to children"],
+    privateLines: [
+      { playerId: "test-user-player", lines: ["Stale copy of my line"] },
+      { playerId: "user-b", lines: ["No body horror"] },
+    ],
+  });
+
+  afterEach(() => {
+    game.settings._store.delete(`${MODULE_ID}.privateLines`);
+  });
+
+  it("on the user's own client carries their lines from the client setting — not the stored copy, never another user's", () => {
+    game.settings._store.set(`${MODULE_ID}.privateLines`, ["No needles", "  "]);
+    const restore = asPlayer();
+    try {
+      const out = formatOwnSafetyContext(state, "test-user-player");
+      expect(out).toContain("- No harm to children");
+      expect(out).toMatch(/### PRIVATE LINES[^\n]*\n- No needles$/);
+      expect(out).not.toContain("Stale copy of my line");
+      expect(out).not.toContain("No body horror");
+    } finally {
+      restore();
+    }
+  });
+
+  it("on a GM's own client too — a GM's Private Channel carries the GM's own lines only", () => {
+    game.settings._store.set(`${MODULE_ID}.privateLines`, ["No drowning"]);
+    const out = formatOwnSafetyContext(state, game.user.id);
+    expect(out).toContain("- No drowning");
+    expect(out).not.toContain("No body horror");
+    expect(out).not.toContain("Stale copy of my line");
+  });
+
+  it("for another user than this client's, carries that user's stored copy only", () => {
+    game.settings._store.set(`${MODULE_ID}.privateLines`, ["No needles"]);
+    const out = formatOwnSafetyContext(state, "user-b");
+    expect(out).toContain("- No body horror");
+    expect(out).not.toContain("No needles");
+    expect(out).not.toContain("Stale copy of my line");
+  });
+
+  it("with no user carries no Private Lines section", () => {
+    game.settings._store.set(`${MODULE_ID}.privateLines`, ["No needles"]);
+    expect(formatOwnSafetyContext(state, null)).not.toContain("PRIVATE LINES");
   });
 });
 
