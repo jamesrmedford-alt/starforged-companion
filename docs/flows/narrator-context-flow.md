@@ -187,7 +187,12 @@ resumed** before the reply arrives still discards it (issue #306 R01) —
 `persistResolution` keeps the store's count (store-owned). A move resolved under the X-Card still
 posts its result card, then a short "narration paused" notice
 (`narrationPaused` flag, outside the flag family) instead of narration — the
-move-path gate had been lost with the retired assembler (ASSEMBLER-003). When
+move-path gate had been lost with the retired assembler (ASSEMBLER-003). A
+typed line the pacing classifier reads as narrative (the classifier still
+runs — it is how a typed move is found) gets the same notice from
+`narratePacedInput` when the card is in play on entry: it posted nothing and
+told nobody, and the line was never narrated after the resume (issue #345
+AA29). When
 the card was played and resumed mid-call, the notice (and `@scene`'s card)
 says the narration was discarded instead.
 

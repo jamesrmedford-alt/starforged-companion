@@ -3248,7 +3248,10 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   if (!settings.narrationEnabled) return null;
 
   if (isXCardActive(campaignState)) {
-    // Don't run the narrator while the scene is paused.
+    // Don't run the narrator while the scene is paused — and say so, as a
+    // move's paused notice and @scene's card do: the line posted nothing,
+    // told nobody, and was never narrated after the resume (issue #345 AA29).
+    await postPacedNarrationPausedCard(campaignState);
     return null;
   }
   const xCard = watchXCard(campaignState);
@@ -4172,6 +4175,40 @@ async function postNarrationPausedCard(resolution, campaignState = null) {
       },
     },
   });
+}
+
+/**
+ * Short notice posted instead of a paced narration — a typed line the pacing
+ * classifier read as narrative — while the X-Card is active (issue #345
+ * AA29): a move gets postNarrationPausedCard, `@scene` its fallback card, and
+ * the line got nothing. Not a narrator card, so it never enters the
+ * recent-narration ring, the rolling summary or the chronicle; posted by the
+ * client that narrates the line (the chat pipeline's, the canonical GM).
+ *
+ * @param {Object|null} [campaignState]
+ * @returns {Promise<ChatMessage|null>}
+ */
+async function postPacedNarrationPausedCard(campaignState = null) {
+  try {
+    return await ChatMessage.create({
+      content: `
+        <div class="sf-narration-card sf-narration-fallback">
+          <div class="sf-narration-label">◈ Narrator</div>
+          <div class="sf-narration-prose">That line was not narrated &mdash; say it again once a GM resumes.</div>
+          <div class="sf-narration-error">${xCardDiscardReason(campaignState, 'Narration')}</div>
+        </div>
+      `.trim(),
+      flags: {
+        [MODULE_ID]: {
+          narrationPaused: true,
+          sessionId: campaignState?.currentSessionId ?? null,
+        },
+      },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narratePacedInput: the paused notice could not be posted:`, err?.message ?? err);
+    return null;
+  }
 }
 
 async function postFallbackCard(resolution, campaignState = null) {
