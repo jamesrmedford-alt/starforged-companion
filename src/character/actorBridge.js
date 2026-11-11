@@ -222,7 +222,7 @@ function readGrantedRewards(actor) {
  * convention explicit.
  *
  * @param {Actor} actor
- * @returns {Array<{ id, name, rank, progress, ticks, completed, isBackground }>}
+ * @returns {Array<{ id, name, rank, progress, ticks, completed, forsaken, isBackground }>}
  */
 export function readVows(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
@@ -250,6 +250,10 @@ export function readVows(actor) {
       ticks,
       progress:     Math.floor(ticks / 4),
       completed:    !!v.system?.completed,
+      // Closed by Forsake Your Vow, not fulfilled (the flag the forsake
+      // stamps on every copy) — a card refusing a closed vow words by it
+      // (issue #345 AA51).
+      forsaken:     v.flags?.[MODULE_ID]?.forsaken === true,
       isBackground: i === bgIdx,
       // Countdown clock (the deadline/threat running against the hero, e.g.
       // "Dani's captivity"), surfaced so the narrator can reference it and the

@@ -159,12 +159,16 @@ function openVowOnCard(choice) {
   return !!actor && readVows(actor).some(v => v.id === choice.vowId && !v.completed);
 }
 
-/** The short card a pick on a fulfilled vow gets: nothing was marked. */
+/**
+ * The short card a pick on a closed vow gets: nothing was marked. A forsaken
+ * vow is said to be forsaken, not fulfilled (issue #345 AA51).
+ */
 async function postVowFulfilledCard(vow) {
+  const closed = vow?.forsaken ? "was forsaken" : "is already fulfilled";
   try {
     await ChatMessage.create({
       content: `<div class="sf-ptp-card"><strong>⚑ Reach a Milestone</strong>`
-        + `<p><strong>${escapeHtml(vow?.name || "That vow")}</strong> is already fulfilled — no milestone was marked. Pick an open vow.</p></div>`,
+        + `<p><strong>${escapeHtml(vow?.name || "That vow")}</strong> ${closed} — no milestone was marked. Pick an open vow.</p></div>`,
       flags:   { [MODULE_ID]: { milestoneVowFulfilledCard: true } },
     });
   } catch (err) {

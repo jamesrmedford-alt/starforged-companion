@@ -4063,12 +4063,18 @@ async function postRecommittedCard(label, dice, plan, what, fromRank, flags) {
   }).catch(err => console.warn(`${MODULE_ID} | recommit card failed:`, err?.message ?? err));
 }
 
-/** The short card a recommit of a fulfilled vow gets: nothing was recommitted. */
-async function postVowRecommitFulfilledCard(vowName) {
+/**
+ * The short card a recommit of a closed vow gets: nothing was recommitted.
+ * A forsaken vow is said to be forsaken — the miss's offer itself invites
+ * "Forsake Your Vow, or recommit", and the card called the forsaken vow
+ * fulfilled (issue #345 AA51).
+ */
+async function postVowRecommitFulfilledCard(vowName, { forsaken = false } = {}) {
+  const closed = forsaken ? "was forsaken" : "is already fulfilled";
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>🔁 Recommit to the Vow</strong>`
-      + `<p><strong>${escapeChatHtml(vowName ?? "That vow")}</strong> is already fulfilled — nothing was recommitted.</p></div>`,
-    flags: { [MODULE_ID]: { vowRecommitFulfilledCard: true, vowName: vowName ?? null } },
+      + `<p><strong>${escapeChatHtml(vowName ?? "That vow")}</strong> ${closed} — nothing was recommitted.</p></div>`,
+    flags: { [MODULE_ID]: { vowRecommitFulfilledCard: true, vowName: vowName ?? null, forsaken: forsaken === true } },
   }).catch(err => console.warn(`${MODULE_ID} | vow recommit: the fulfilled-vow card failed:`, err?.message ?? err));
 }
 
@@ -4099,8 +4105,9 @@ export async function performVowRecommit({ vowName = null, itemId = null, actorI
   // its own ticks.
   const { primary, copies } = resolveVowItemCopies(vowName, { actorId, itemId, ownOnly: true });
   if (primary?.item?.system?.completed === true) {
-    console.warn(`${MODULE_ID} | vow recommit: "${primary.item.name ?? vowName ?? "?"}" is fulfilled — nothing recommitted.`);
-    await postVowRecommitFulfilledCard(primary.item.name ?? vowName);
+    const forsaken = primary.item.flags?.[MODULE_ID]?.forsaken === true;
+    console.warn(`${MODULE_ID} | vow recommit: "${primary.item.name ?? vowName ?? "?"}" is ${forsaken ? "forsaken" : "fulfilled"} — nothing recommitted.`);
+    await postVowRecommitFulfilledCard(primary.item.name ?? vowName, { forsaken });
     return { ok: false, reason: "vow-completed" };
   }
   let twin = null;

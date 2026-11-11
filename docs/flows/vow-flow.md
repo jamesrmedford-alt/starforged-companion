@@ -170,7 +170,8 @@ All real progress lands on **item ticks** (`system.current`) via
   (idempotent, in-flight guarded): a refused claim marks nothing and a
   refused mark releases the claim — it marked first, and a stamp the world
   refused left the picker live for a second mark (issue #336 Y24). A vow fulfilled since the picker posted
-  is refused (`vow-completed`, a short card; the picker stays open for its
+  is refused (`vow-completed`, a short card — "was forsaken" for a vow
+  forsaken since, issue #345 AA51; the picker stays open for its
   other vows), and `markVowProgress` never marks a fulfilled vow (issue
   #331 X20). A click with no GM connected, a refusal,
   or a card still unresolved after `RELAY_RECOVERY_MS` (15 s) re-arms the
@@ -326,7 +327,10 @@ the Item holds it (a vendor number or a name — `setVowItemTrack`). A vow
 fulfilled since the miss (a later roll, a crewmate's fulfilment, the sheet)
 is refused with a short card and the offer stays closed — a fulfilled vow's
 track never moves, and the press lowered it and raised its rank on every
-copy (issue #335 Y10); a completed copy is never written. A press that
+copy (issue #335 Y10); a completed copy is never written. A vow forsaken
+since (the offer itself invites "Forsake Your Vow, or recommit") is refused
+the same way, its card saying it "was forsaken" — it said "is already
+fulfilled" (issue #345 AA51). A press that
 changes nothing else is said too (`cardActions.tellRecommitOutcome`, issue
 #342 Z58 — a console line on the GM's): a refused write is whispered to the
 presser and the GMs ("could not be saved … press it again", X07's shape —

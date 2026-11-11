@@ -78,6 +78,20 @@ describe('X20 — a milestone pick on a vow fulfilled since the picker posted', 
     expect(picker.flags[MODULE_ID].resolved).toBe(true);
   });
 
+  // Issue #345 AA51: a vow forsaken since (Forsake Your Vow marks it
+  // completed + `forsaken`) is refused the same way, and the card says it was
+  // forsaken — it called the forsaken vow fulfilled.
+  it('a vow forsaken since is refused, and the card says it was forsaken — not fulfilled', async () => {
+    done.flags[MODULE_ID].forsaken = true;
+    const res = await applyMilestonePick({ messageId: 'picker-1', actorId: 'pc-b', vowId: 'v-done' }, GM_CTX);
+    expect(res).toEqual({ marked: false, reason: 'vow-completed' });
+    const told = ChatMessage._created.filter(m => m.flags?.[MODULE_ID]?.milestoneVowFulfilledCard);
+    expect(told).toHaveLength(1);
+    expect(told[0].content).not.toContain('already fulfilled');
+    expect(told[0].content).toContain('<strong>Find the archive</strong> was forsaken — no milestone was marked');
+    expect(picker.flags[MODULE_ID].resolved).toBe(false);
+  });
+
   it('a picker whose every vow is fulfilled is resolved with nothing marked', async () => {
     open.system.completed = true;
     const res = await applyMilestonePick({ messageId: 'picker-1', actorId: 'pc-b', vowId: 'v-done' }, GM_CTX);
