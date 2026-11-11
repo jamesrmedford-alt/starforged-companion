@@ -4375,6 +4375,11 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       asserter:  'narrator',
       entities,
       narrationId,
+      // The re-assertion checks read the store's ledgers too: the move
+      // pipeline's copy predates its confirm dialog, so a fact the X-Card or
+      // a strike removed while the move waited was recorded live again
+      // (issue #345 AA04 — W05's live read, for the write half).
+      storedLedger: liveSceneLedger(campaignState),
     });
 
     // Narrator-memory A4 — merge the scene-frame snapshot (full

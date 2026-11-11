@@ -753,7 +753,13 @@ ring, and the closing scene's truths keep the closing session's number.
   the 5 most recent, never dropped under budget; Replace-corrections are
   exempt — the replacement truth stands; an X-Card retraction is never named
   there, issue #321 U07). The write layer refuses narrator
-  re-assertions of retracted facts; GM `!truth set` bypasses (GM authority) —
+  re-assertions of retracted facts — checked against the store's ledgers as
+  well as the narration's copy (`applySidecar`'s `storedLedger`, read by
+  `liveSceneLedger` when the sidecar is applied): the move pipeline's copy
+  predates its confirm dialog, so a fact the X-Card or a strike removed while
+  the move waited — and an ended scene's truth the X-Card moved to the
+  session's blocks, in the store alone — was recorded live again by the
+  move's narration (issue #345 AA04); GM `!truth set` bypasses (GM authority) —
   and lifts the strike it re-establishes, linking it as a Replace does, so
   the fact is not binding and CORRECTED at once; a player's set over a GM's
   strike is refused (issue #326 W60); the lore the lifted strike retracted

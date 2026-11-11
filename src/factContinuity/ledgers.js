@@ -39,6 +39,13 @@ import { resolveEntityName } from '../context/relevanceResolver.js';
  * @param {string|null} [ctx.narrationId] — the narration this sidecar came
  *   with (its narrator card carries the same id); stamped on every truth and
  *   state value written, so an X-Card can retract them (retractNarrations)
+ * @param {Object|null} [ctx.storedLedger] — the store's scene ledgers as they
+ *   stand now (`{ currentSessionId, currentSceneId, sceneTruths,
+ *   sessionRetractions }` — narrator.js liveSceneLedger), which the
+ *   re-assertion checks read beside the caller's object: that may be the move
+ *   pipeline's working copy from before its confirm dialog, which never saw an
+ *   X-Card played (and resumed) or a strike made while the move waited
+ *   (issue #345 AA04). Its truths are read only while it is on this scene.
  * @returns {{ truthIds: string[], stateUpdates: Array<{ key: string, attribute: string }> }}
  */
 export function applySidecar(sidecar, ctx) {
@@ -61,6 +68,12 @@ export function applySidecar(sidecar, ctx) {
   // Where the scene stands as these truths are asserted — the narration's own
   // frame, else the frame in place (issue #326 D2).
   const sceneLocation = assertedLocation(campaignState, sidecar.sceneFrame);
+  // The store's ledgers, for the re-assertion checks (issue #345 AA04): a
+  // truth the X-Card or the table retracted, and a session block or strike,
+  // that landed after the caller's copy was read stop a restatement too.
+  const stored = (ctx.storedLedger && typeof ctx.storedLedger === 'object') ? ctx.storedLedger : null;
+  const storedTruths = (stored && (stored.currentSceneId ?? null) === sceneId && Array.isArray(stored.sceneTruths))
+    ? stored.sceneTruths : [];
 
   // Sync the state ledger's sanity tag to the active scene.
   campaignState.sceneState.sceneId = sceneId;
@@ -83,7 +96,9 @@ export function applySidecar(sidecar, ctx) {
     // exists. A RETRACTED match also blocks the append: a struck fact the
     // narrator re-asserts must not silently re-enter the ledger — the GM's
     // correction stands (manual `!truth set` bypasses this, GM authority).
-    const dupe = findEquivalentTruth(campaignState.sceneTruths, subject, fact);
+    // The store's truths too: the copy may predate them (issue #345 AA04).
+    const dupe = findEquivalentTruth(campaignState.sceneTruths, subject, fact)
+      ?? findEquivalentTruth(storedTruths, subject, fact);
     if (dupe) {
       if (dupe.retracted) {
         console.debug?.(
@@ -98,8 +113,12 @@ export function applySidecar(sidecar, ctx) {
     // still carries the prose that stated it (issue #342 Z42 — recorded live
     // beside CORRECTED, then archived as canon at the next scene end). So
     // does an earlier scene's X-Card retraction, kept unnamed
-    // (XCARD-RETRACTION-SCENE-SCOPED) — the log names neither.
-    if (findSessionStrike(campaignState, subject, fact, subjectNames(subject, subjectRef, entities), { blocked: true })) {
+    // (XCARD-RETRACTION-SCENE-SCOPED) — the log names neither. Read from the
+    // store as well: an X-Card on a narration whose scene has ended moves its
+    // truths to the blocks there alone (issue #345 AA04).
+    const names = subjectNames(subject, subjectRef, entities);
+    if (findSessionStrike(campaignState, subject, fact, names, { blocked: true })
+      || (stored && findSessionStrike(stored, subject, fact, names, { blocked: true }))) {
       console.debug?.('starforged-companion | factContinuity: narrator re-asserted a fact retracted earlier this session; append blocked.');
       continue;
     }
