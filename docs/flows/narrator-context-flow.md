@@ -476,7 +476,10 @@ prompted it (`PLAYER — <name> wrote: "…"`, B5): move and paced cards store
 `playerText` + `playerName`, @scene answers `sceneQuestion` + `playerName`. A
 paced line from a player with no character of their own at a table of several
 is narrated with no character — no CHARACTER block, no speaker, `playerName`
-null ("Player") — never as the campaign's first PC (issue #342 Z50).
+null ("Player") — never as the campaign's first PC (issue #342 Z50); so are
+their `@scene` question and their `!oracle` follow-up, whose captures carry no
+PC either (issue #345 AA30 — `interrogateScene` and `narrateOracleFollowup`
+took `getActiveCharacter`'s first-PC fallback).
 The rolling summary reads the same entries (`ringEntryText`), so what a
 player wrote reaches it too. Both read the session's cards through
 `sessionNarratorCards`, which leaves out a "narration unavailable" card

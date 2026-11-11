@@ -2605,9 +2605,13 @@ export async function interrogateScene(question, campaignState, options = {}) {
   const settings = getNarratorSettings();
   // Multiplayer speaker disambiguation — the @scene intercept passes the
   // resolved speaker (token selection / author binding / ownership).
-  // `actorId` is the legacy option name; both are honoured.
+  // `actorId` is the legacy option name; both are honoured. A player with no
+  // PC of their own at a table of several resolves to none, and is asked as
+  // no one — the paced path's rule (issue #342 Z50): getActiveCharacter's
+  // first-PC fallback made it Kira's CHARACTER block, "asked by Kira" and the
+  // ring's "Kira asked", and her actorId on the capture (issue #345 AA30).
   const speakerActorId = options?.speakerActorId ?? options?.actorId ?? null;
-  const character      = getActiveCharacter(campaignState, speakerActorId);
+  const character      = speakerActorId ? getActiveCharacter(campaignState, speakerActorId) : null;
   // @scene continues the scene in progress (issue #286 A4) — this starts one
   // only when none is active, so the answer is written against the frame,
   // truths, state and CORRECTED list it was asked about.
@@ -2740,8 +2744,10 @@ function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = n
  * @param {string}  args.rolledLine      — the structured roll line, e.g.
  *                                          "d100 = 47 → An ally is exposed to harm"
  * @param {string|null} [args.speakerActorId] — the PC of the player who rolled
- *                                          (credit the roller); falls back to
- *                                          the campaign's first PC
+ *                                          (credit the roller); none — a
+ *                                          player with no PC of their own —
+ *                                          narrates it as no one's (issue
+ *                                          #345 AA30, the Z50 rule)
  * @param {string|null} [args.oracleCardId] — the raw result card narrated: the
  *                                          narration's card names it, so an
  *                                          X-Card on it drops the card's result
@@ -2780,7 +2786,10 @@ export async function narrateOracleFollowup({
   // phantom scene, discarding the state and the frame.
   await ensureSceneStarted(campaignState, 'oracle_followup');
 
-  const character = getActiveCharacter(campaignState, speakerActorId);
+  // The roller's own PC, or no one: the router names none for a player with
+  // no PC of their own (oracleFollowup.js), and getActiveCharacter's first-PC
+  // fallback narrated their oracle as Kira's (issue #345 AA30, Z50's rule).
+  const character = speakerActorId ? getActiveCharacter(campaignState, speakerActorId) : null;
   const extras = await buildNarratorExtras('oracle_followup', campaignState, {
     playerNarration: question,
     character,
