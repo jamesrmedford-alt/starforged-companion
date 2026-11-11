@@ -313,6 +313,47 @@ async function dispatchSetACourseFromTokenDrag(scene, settlementNote, tokenDoc) 
 }
 
 /**
+ * A chat message's `tokenDragSetCourse` payload, checked against what the
+ * drop (dispatchSetACourseFromTokenDrag) can produce: a sector Scene, the
+ * command vehicle's Token on it (isCommandVehicleToken), and the coordinates
+ * of a settlement pin on that Scene. The payload rides a chat flag, so any
+ * user's hand-made message carried one, and the resolving GM's client moved
+ * whatever token it named on whatever Scene on a hit — beyond what the UI
+ * could have produced (issue #347 AB23; decisions.md bounds a forged request
+ * to that). Anything else is refused: the move goes on as an ordinary Set a
+ * Course, with no token moved by the payload. Never throws.
+ *
+ * @param {*} payload — `{ sceneId, tokenId, destX, destY }` from the message
+ * @returns {{ sceneId: string, tokenId: string, destX: number, destY: number }|null}
+ */
+export function checkedTokenDragCourse(payload) {
+  if (!payload || typeof payload !== "object") return null;
+  try {
+    const destX = Number(payload.destX);
+    const destY = Number(payload.destY);
+    if (!Number.isFinite(destX) || !Number.isFinite(destY)) return null;
+    const scene = game.scenes?.get?.(payload.sceneId) ?? null;
+    if (!scene?.flags?.[MODULE_ID]?.sectorScene) return refuse("its Scene is not a sector map");
+    const tokens = scene.tokens?.contents ?? scene.tokens ?? [];
+    const token  = Array.isArray(tokens) ? tokens.find(t => t?.id === payload.tokenId) : null;
+    if (!token || !isCommandVehicleToken(token)) return refuse("its token is not the command vehicle's");
+    const notes = scene.notes?.contents ?? scene.notes ?? [];
+    const onPin = Array.isArray(notes) && notes.some(n => isSettlementPin(n?.flags?.[MODULE_ID])
+      && Number(n.x ?? 0) === destX && Number(n.y ?? 0) === destY);
+    if (!onPin) return refuse("its destination is no settlement pin");
+    return { sceneId: scene.id, tokenId: token.id, destX, destY };
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | token-drag payload check failed:`, err?.message ?? err);
+    return null;
+  }
+
+  function refuse(why) {
+    console.warn(`${MODULE_ID} | Set a Course: the token-drag payload was refused — ${why}; no token is moved.`);
+    return null;
+  }
+}
+
+/**
  * Find a sector Scene's Note pin for a settlement id. Pure read — used by
  * the position→token sync so the map can follow fiction-side movement.
  * Excludes planet/stellar pins (same predicate family as

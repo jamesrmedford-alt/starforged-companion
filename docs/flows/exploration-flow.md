@@ -39,7 +39,12 @@ passage" drawing.
   the pin's settlement Actor (`flags.actorId`): its current name as
   `forcedMoveTarget`, its id as `forcedMoveTargetId` (a legacy pin with no
   linked Actor uses its label; the `tokenDragSetCourse` payload now carries
-  only the scene, token and pin coordinates). On a non-miss the arrival
+  only the scene, token and pin coordinates). The pipeline reads that payload
+  through `checkedTokenDragCourse`: a sector Scene, the command vehicle's
+  token on it and a settlement pin's coordinates, else it is dropped and the
+  move is an ordinary Set a Course — a chat flag any user can write, it made
+  the GM's client move any token on any Scene to any point (issue #347
+  AB23). On a non-miss the arrival
   records the ship position by that id (`inferShipPositionFromEntityId`,
   source `scene_token` → "docked at") and the current location by it, and the
   token snaps to the pin — the pin's label went stale on a rename, so the

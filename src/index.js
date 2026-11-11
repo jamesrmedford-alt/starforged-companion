@@ -196,6 +196,7 @@ import {
   registerSectorSceneHooks,
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
+  checkedTokenDragCourse,
 } from "./sectors/sectorSceneHooks.js";
 import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing, onGmLoadChange } from "./multiplayer/gmGate.js";
 import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.js";
@@ -939,7 +940,9 @@ export function registerChatHook() {
     const forcedMoveTargetId = typeof message.flags?.[MODULE_ID]?.forcedMoveTargetId === "string"
       ? message.flags[MODULE_ID].forcedMoveTargetId
       : null;
-    const tokenDragSetCourse = message.flags?.[MODULE_ID]?.tokenDragSetCourse ?? null;
+    // Only what a ship-token drop could have produced: a sector map, the
+    // command vehicle's token, a settlement pin (issue #347 AB23).
+    const tokenDragSetCourse = checkedTokenDragCourse(message.flags?.[MODULE_ID]?.tokenDragSetCourse ?? null);
     // The connection a forced Swear an Iron Vow is sworn to — its card's: the
     // inciting vow's target, or the one a sheet-made vow is linked to. +1, or
     // +2 when bonded (issue #325 W18).

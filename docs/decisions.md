@@ -3463,7 +3463,12 @@ and performed by a handler on the canonical GM:
   sender, so `requesterId` is client-asserted. Permission checks protect
   honest clients and the module's own UI; they don't stop a hand-crafted emit
   from a console or macro. Value validation bounds what even a forged request
-  can do to what the UI could have produced.
+  can do to what the UI could have produced. **Update (issue #347 AB23):** the
+  same bound holds for a chat message's flags, which any user can write too —
+  a ship-token drop's `tokenDragSetCourse` payload is checked against what
+  the drop produces (a sector Scene, the command vehicle's token, a
+  settlement pin's coordinates; `checkedTokenDragCourse`) before the GM's
+  client moves a token by it.
 
 Kinds today: `xcard.activate`, `safety.setFlag`, `session.takeBreak`,
 `safety.syncPrivateLines`, `session.begin`, `session.end`, `bond.apply`,
