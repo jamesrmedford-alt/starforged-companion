@@ -28,7 +28,10 @@ import { buildModuleFeatures, buildDeckFeatureNoteData } from '../../src/moves/s
 import { readAssets } from '../../src/character/actorBridge.js';
 
 const ASSETS_DIR = path.resolve(__dirname, '../../vendor/foundry-ironsworn/json-packs/starforged-assets');
-const vendored = fs.readdirSync(ASSETS_DIR)
+// The vendored system is a submodule — absent in a checkout without it (CI's,
+// the fix-sensitivity script's worktrees); every case builds on its Medbay, so all skip there.
+const HAVE_VENDOR = fs.existsSync(ASSETS_DIR) && fs.readdirSync(ASSETS_DIR).length > 0;
+const vendored = (HAVE_VENDOR ? fs.readdirSync(ASSETS_DIR) : [])
   .map(f => JSON.parse(fs.readFileSync(path.join(ASSETS_DIR, f), 'utf8')))
   .filter(d => d.system?.category === 'Module');
 const medbay = vendored.find(d => d.name === 'Medbay');
@@ -36,7 +39,7 @@ const medbay = vendored.find(d => d.name === 'Medbay');
 const shipWith = (...items) => ({ id: 'ship-1', name: 'Wayward', items });
 const describeModule = (item) => buildModuleFeatures(shipWith(item))[0]?.description;
 
-describe('issue #345 AA56 — a module pin says what the module does', () => {
+describe.skipIf(!HAVE_VENDOR)('issue #345 AA56 — a module pin says what the module does', () => {
   it('the vendored Medbay (as installed from the compendium) is described by its ability', () => {
     expect(medbay).toBeTruthy();
     const [feature] = buildModuleFeatures(shipWith(structuredClone(medbay)));
