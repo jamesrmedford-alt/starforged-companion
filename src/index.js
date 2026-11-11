@@ -992,7 +992,7 @@ export function registerChatHook() {
     // campaignState write chain. Set on the cache in place and written whole,
     // it was read inside the round trip of the write ahead and put that
     // write's fields back (CAMPSTATE-CHAIN-PARTIAL).
-    const lock = await claimPendingMoveLock();
+    const lock = await claimPendingMoveLock({ heldMove: isHandedBackHeldMove(message) });
     if (!lock.claim) {
       if (lock.busy) {
         // A claimed card's forced move is held, not dropped: its button reads
@@ -1416,11 +1416,23 @@ function deferForcedMove(message, { untilSession = false, refused = false } = {}
  * @returns {boolean} whether it was held again
  */
 function reholdRefusedForcedMove(message) {
-  const id = message?.id ?? null;
-  if (!id || message.flags?.[MODULE_ID]?.deferWhileBusy !== true || !_drainedForcedMoves.has(id)) return false;
+  if (!isHandedBackHeldMove(message)) return false;
   _heldMovesWaitForLandedWrite = true;
   deferForcedMove(message, { refused: true });
   return true;
+}
+
+/**
+ * A held forced move the drain handed back to the pipeline (its id is in
+ * `_drainedForcedMoves`): its refused claim holds it again (AA48), and wakes
+ * no other held move (issue #347 AB24).
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean}
+ */
+function isHandedBackHeldMove(message) {
+  const id = message?.id ?? null;
+  return !!id && message.flags?.[MODULE_ID]?.deferWhileBusy === true && _drainedForcedMoves.has(id);
 }
 
 // Authors told — since a message last passed the session gate — that no
@@ -2408,10 +2420,18 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * waiting for the lock goes on (driver.js noteMoveLockFreed —
  * ROUND-WAIT-AFTER-REFUSED-CLAIM).
  *
+ * A held move handed back whose own claim the world refuses (`heldMove`) wakes
+ * nothing: it is held again at the front (reholdRefusedForcedMove) and the
+ * held moves wait for a write that lands. Its refusal handed the move held
+ * behind it to the pipeline before it was held again, so the two rolled
+ * youngest-first — a ⚑ Mark Progress after the 🏁 Attempt to Fulfill pressed
+ * after it (issue #347 AB24).
+ *
+ * @param {{ heldMove?: boolean }} [opts]
  * @returns {Promise<{ claim: string|null, busy?: boolean, refused?: boolean }>}
  *   `busy`: another move holds the lock; `refused`: the world refused the write
  */
-export async function claimPendingMoveLock() {
+export async function claimPendingMoveLock({ heldMove = false } = {}) {
   if (!isMoveLockFreeHere()) return { claim: null, busy: true };
   const claim = foundry.utils.randomID();
   _moveLockClaimInFlight = claim;
@@ -2432,7 +2452,7 @@ export async function claimPendingMoveLock() {
     if (_moveLockClaimInFlight === claim) _moveLockClaimInFlight = null;
   }
   if (outcome === "refused") {
-    drainDeferredForcedMoves();
+    if (!heldMove) drainDeferredForcedMoves();
     noteMoveLockFreed();
     return { claim: null, refused: true };
   }

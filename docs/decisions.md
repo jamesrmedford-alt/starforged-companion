@@ -139,7 +139,11 @@ entries below this one.)
   and the held moves wait for the next campaignState write that lands — the
   refused claim's immediate drain is suppressed meanwhile, as it would only
   be refused again. A forced move's first refused claim keeps
-  LOCK-CLAIM-WEDGE's "could not start … Try again".
+  LOCK-CLAIM-WEDGE's "could not start … Try again". *Update (issue #347
+  AB24):* the drain made inside that held move's own refusal is suppressed
+  too (`claimPendingMoveLock({ heldMove })`): it handed the move held behind
+  it to the pipeline before the older one was held again, so they rolled
+  youngest-first.
 - Smaller: the X-Card drops the oracle answers its narrations told from
   RECENT ORACLE RESULTS, by card id and by a move's `resolutionId` [AA01];
   a move's sidecar checks its re-assertions against the store's ledgers as
