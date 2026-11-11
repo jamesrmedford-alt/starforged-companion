@@ -135,7 +135,11 @@ layers. This file is the never-break list.
    (XCARD-AFTER-STRIKE-STILL-NAMED). A narration whose scene has already
    ended is blocked the same way: a scene end keeps each live narration truth
    it closes, unnamed (`sessionRetractions.narrated`), and the X-Card moves
-   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). A scene
+   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). So is
+   a Replace's struck original: a scene end keeps it on the unnamed blocks
+   too — the replacement stands, so it is named nowhere, and a `!truth set`
+   lifts nothing (a strike a set lifted, linked by `correctedTo` to a truth
+   restating it, is no Replace) — issue #345 AA05. A scene
    end adds what it keeps onto the session's list as the store has it at its
    write's turn — never its copy's list whole — so an X-Card played during its
    awaits keeps what it wrote (XCARD-DURING-SCENE-END-RACE), and a strike or

@@ -602,8 +602,9 @@ export const CampaignStateSchema = {
   // (issue #342 Z42). Written by endScene (rememberSessionRetractions); read
   // by sessionRetractedFacts (src/factContinuity/retractions.js) and
   // findSessionStrike (ledgers.js). `blocked`: the ended scenes' X-Card
-  // retractions, unnamed — read only by findSessionStrike's write half
-  // (applySidecar) and loreRetractionHolder, rendered nowhere; an X-Card
+  // retractions and Replace originals (issue #345 AA05), unnamed — read only
+  // by findSessionStrike's write half (applySidecar) and
+  // loreRetractionHolder, rendered nowhere; an X-Card
   // moves the kept strikes of the narration it removes there, by
   // `narrationId` (ledgers.js retractNarrations — XCARD-RETRACTION-SCENE-SCOPED),
   // and its truths a scene end closed live (`narrated`: written by endScene —

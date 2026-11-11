@@ -748,7 +748,7 @@ onto the latest stored campaignState (`persistCampaignStateFields`;
 `endScene`'s own `persistEndedScene`, on the same write chain) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
 pipeline's stale snapshot. `endScene`'s write also keeps the scene's strikes,
-X-Card retractions and live narration truths for the session (B6;
+X-Card retractions, Replace originals and live narration truths for the session (B6;
 `sessionRetractions` — below), added at that write's turn onto the session's
 list as the store has it then, the scene's truths seen through the store's
 `xCardedNarrationIds` (`endedSceneRetractions` → `retractNarrations`): it
@@ -824,7 +824,12 @@ ring, and the closing scene's truths keep the closing session's number.
   the same way (`findSessionStrike(…, { blocked: true })`), a lift's lore
   restore counts them (`loreRetractionHolder`), and nothing names them or
   lifts them — their block was the scene's retracted entry, which the scene
-  end cleared (XCARD-RETRACTION-SCENE-SCOPED). Its live narration truths are
+  end cleared (XCARD-RETRACTION-SCENE-SCOPED). So are its Replace originals
+  (a retracted truth whose `correctedTo` says something else — a strike a
+  `!truth set` lifted points at a truth restating it, and is not one): the
+  replacement stands, so they are named nowhere, and the next scene's
+  narration restating the old wording was recorded live and archived as
+  canon beside the replacement (issue #345 AA05). Its live narration truths are
   kept too (`sessionRetractions.narrated`, unnamed, read only by the X-Card's
   `retractNarrations`), so an X-Card on a narration whose scene has ended
   blocks what it recorded (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).

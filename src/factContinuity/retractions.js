@@ -38,7 +38,7 @@
 
 import { getEntityDocument, readEntityFlag, writeEntityFlag, resolveEntityById, iterEntityDocuments, hasSheetNotes } from '../entities/registry.js';
 import { retractSessionLore, undoNarrationEntries } from '../world/worldJournal.js';
-import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey, withXCardBlocks } from './ledgers.js';
+import { XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, subjectKey, withXCardBlocks, findEquivalentTruth } from './ledgers.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -179,7 +179,8 @@ function loreStatesStrike(entry, subject, label, fact) {
  *   - the active scene's X-Card retractions (never lifted, U07) → `true`: the
  *     entry stays out of canon — and the earlier scenes' too, kept unnamed
  *     (`sessionRetractions.blocked`, XCARD-RETRACTION-SCENE-SCOPED: once its
- *     scene ended, a lift restored the X-carded fact to canon).
+ *     scene ended, a lift restored the X-carded fact to canon), with the
+ *     Replace originals kept beside them (issue #345 AA05).
  * The lifted strike itself is linked (`correctedTo`) on the lift's copy, or —
  * kept from an earlier scene — dropped from it, so it is not one of them.
  *
@@ -493,6 +494,25 @@ function isNamedStrike(t) {
 }
 
 /**
+ * A Replace's struck original: a truth the table retracted with a correction
+ * (`correctedTo`) that says something else — the replacement. A strike a
+ * `!truth set` lifted is linked the same way (ledgers.js setTruth), to a truth
+ * restating it: the fact stands again, so it is not one. Like the X-Card's,
+ * it is never named — the replacement stands — and it blocks the narrator
+ * restating it (issue #345 AA05).
+ *
+ * @param {Object} t
+ * @param {Map<string, Object>} byId — the scene's truths by id
+ * @returns {boolean}
+ */
+function isReplacedOriginal(t, byId) {
+  if (!t?.retracted || !t.correctedTo || t.retractedBy === XCARD_RETRACTED_BY
+    || t.retractedBy === SUPERSEDED_RETRACTED_BY || !String(t.fact ?? '').trim()) return false;
+  const correction = byId.get(t.correctedTo);
+  return !(correction && findEquivalentTruth([correction], t.subject, t.fact));
+}
+
+/**
  * At scene end, keep the scene's bare strikes (a Replace's replacement
  * stands, so it is not kept) on `campaignState.sessionRetractions` for the
  * rest of the session. Each keeps the `narrationId` of the narration that
@@ -513,7 +533,12 @@ function isNamedStrike(t) {
  * and holding their lore out of canon (loreRetractionHolder), and nothing
  * renders them — not CORRECTED, not the summary's leave-out list, no card.
  * Their block was the retracted ledger entry, which the scene end clears
- * (XCARD-RETRACTION-SCENE-SCOPED).
+ * (XCARD-RETRACTION-SCENE-SCOPED). So are a Replace's struck originals
+ * (isReplacedOriginal): the replacement stands, so they are never named
+ * either, and the next scene's narration restating the old wording — the
+ * ring still carries the prose that stated it — was recorded live and filed
+ * as canon beside the replacement (issue #345 AA05); an X-Card on their
+ * narration finds them blocked already.
  *
  * @param {Object} campaignState
  */
@@ -521,13 +546,15 @@ export function rememberSessionRetractions(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
   if (!sessionId) return;
   const truths = campaignState.sceneTruths ?? [];
+  const byId = new Map(truths.filter(t => t?.id).map(t => [t.id, t]));
   const struck = truths.filter(isNamedStrike);
   const removed = truths.filter(t => t?.retracted && t.retractedBy === XCARD_RETRACTED_BY && String(t.fact ?? '').trim());
-  if (!struck.length && !removed.length) return;
+  const replaced = truths.filter(t => isReplacedOriginal(t, byId));
+  if (!struck.length && !removed.length && !replaced.length) return;
 
   const same = campaignState.sessionRetractions?.sessionId === sessionId;
   const prior = same ? (campaignState.sessionRetractions.facts ?? []) : [];
-  const blocked = withXCardBlocks(same ? campaignState.sessionRetractions.blocked : [], removed.map(t => ({
+  const blocked = withXCardBlocks(same ? campaignState.sessionRetractions.blocked : [], [...removed, ...replaced].map(t => ({
     label:       subjectLabel(t.subject),
     fact:        String(t.fact).trim(),
     subjectKey:  subjectKey(t.subject) || null,
