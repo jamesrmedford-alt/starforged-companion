@@ -237,9 +237,18 @@ export async function enrichBondedDevelop(interpretation, { listConnections }) {
  *   most hurt — is `patientCompanionItemId`.
  * - Provide care for an ally: another player character named as the move's
  *   target — or, when it names none, the only other PC the narration names
- *   while the roll is +wits (the move's "Provide care") — is `patientActorId`.
+ *   (the move's "Provide care") — is `patientActorId`.
  * - Otherwise the roller tends their own wounds or receives treatment: no
  *   patient, and the card is the roller's.
+ *
+ * Which of these it is comes from the situation the interpreter read
+ * (`healSituation`: "companion", "ally", "self", "treated" — issue #330 D4).
+ * Only with none read does the stat stand in: +heart a companion's, +wits
+ * the move's Provide care. Read from the stat alone, a self-mend — which
+ * rolls the lower of iron and wits — rolled +wits by a roller whose wits is
+ * the lower, and whose line mentions a crewmate ("While Kira keeps watch, I
+ * stitch the gash on my own arm"), healed the crewmate and left the roller
+ * wounded (issue #345 AA13).
  *
  * Names match whole words (`wholeWordPattern`): a PC's full name or a first or
  * last name no other PC shares. The cost of a weak hit stays the roller's.
@@ -256,16 +265,20 @@ export function resolveHealPatient(interpretation, roller, { players = [] } = {}
   const out = { patientActorId: null, patientCompanionItemId: null };
   const target = typeof interpretation.moveTarget === "string" ? interpretation.moveTarget : "";
   const prose  = typeof interpretation.playerNarration === "string" ? interpretation.playerNarration : "";
+  const situation = typeof interpretation.healSituation === "string" && interpretation.healSituation
+    ? interpretation.healSituation : null;
 
-  if (interpretation.statUsed === "heart") {
+  if (situation === "self" || situation === "treated") {
+    // The roller's own wounds, or treatment they receive: no patient.
+  } else if (situation ? situation === "companion" : interpretation.statUsed === "heart") {
     const companions = listCompanionAssets(roller);
     const named = namedOnce(companions, target) ?? namedOnce(companions, prose);
     const hurt  = [...companions].sort((a, b) => (a.system?.track?.value ?? 0) - (b.system?.track?.value ?? 0))[0];
     out.patientCompanionItemId = (named ?? (companions.length === 1 ? companions[0] : hurt))?.id ?? null;
   } else {
     const others = (Array.isArray(players) ? players : []).filter(a => a?.id && a.id !== roller?.id);
-    const named  = namedOnce(others, target)
-      ?? (!target && interpretation.statUsed === "wits" ? namedOnce(others, prose) : null);
+    const care   = situation === "ally" || interpretation.statUsed === "wits";
+    const named  = namedOnce(others, target) ?? (!target && care ? namedOnce(others, prose) : null);
     out.patientActorId = named?.id ?? null;
   }
   interpretation.patientActorId         = out.patientActorId;
