@@ -1607,7 +1607,19 @@ class SimTable {
       type: "write", outcome: "applied", kind: "actor.update", id: actor.id, name: actor.name,
       client: currentClient()?.id ?? null, changes: Object.keys(changes ?? {}),
     });
+    // Foundry's preUpdateActor runs on the requesting client only, before the
+    // write, with the document still holding its old values; a handler that
+    // returns false cancels the update, and what a handler adds to the options
+    // travels with the update to every client's updateActor (a module stamps
+    // what it needs the other clients to know there). The change it is passed
+    // is a copy: edits to it do not reach the write here.
+    const preUpdate = (changes, options) => {
+      const caller = currentClient();
+      if (!caller) return true;
+      return caller.run(() => caller.hooks.call("preUpdateActor", [actor, expandUpdate(jsonClone(changes)), options, caller.id], true)) !== false;
+    };
     actor.update = async (changes = {}, options = {}) => {
+      if (!preUpdate(changes, options)) return undefined;
       await intercept(changes);
       await rawUpdate(changes, options);
       applied(changes);
@@ -1616,10 +1628,12 @@ class SimTable {
     };
     actor.setFlag = async (scope, key, value) => {
       const changes = { [`flags.${scope}.${key}`]: value };
+      const options = {};
+      if (!preUpdate(changes, options)) return undefined;
       await intercept(changes);
       await rawSetFlag(scope, key, value);
       applied(changes);
-      broadcast(changes);
+      broadcast(changes, options);
       return actor;
     };
   }

@@ -1482,6 +1482,15 @@ the recommended option. Each finding's ID in brackets.)
   (`awardXP` deleted); the earned-XP card stays and points at the Legacies
   tab. *Rejected:* a module panel showing the legacy and XP — the sheet is
   where XP is spent, so a second display would drift from it.
+  *Update (issue #347 AB07):* a sheet edit moves the shared track by what it
+  changed on that sheet, not to the sheet's value. The vendor ▸ / ◂ writes
+  the sheet's own value ± 1, so a sheet behind the crew's track — a PC made
+  since the GM's load, an imported export, a refused mirror write — set the
+  crew's 24 ticks to its own 1 on every sheet, for good. The client that
+  makes the edit stamps the sheet's values before it into the update's
+  options (`preUpdateActor`); an edit without the stamp still sets the track
+  to its value. A PC created mid-session is brought to the shared tracks at
+  once (the ready backfill, run at its creation).
 - **An upgrade closes after the roller's next move** [D4; maintainer]. A
   move card's Burn Momentum / Improve Result stayed live until used or its
   choice was picked: an old card's 🔥 burned momentum at its current value,

@@ -13,9 +13,15 @@
  *
  *   - after every saved legacy mark (index.js payLegacyMark → mirrorLegacyToSheets),
  *     each PC's sheet is set to the stored track's progress — ticks ever marked;
- *   - a sheet edit (the Legacies tab's ▸ / ◂) flows back as the shared supply
- *     does (sharedSupply.js): the canonical GM sets the shared track to it and
- *     mirrors it to the other PCs;
+ *   - a sheet edit (the Legacies tab's ▸ / ◂) flows back: the canonical GM
+ *     moves the shared track by what the edit changed on that sheet — the
+ *     sheet's value before the edit is stamped into the update's options by
+ *     the client that makes it — and mirrors it to every PC. A sheet that
+ *     lagged the shared track (a PC made since the GM's load, an imported
+ *     export, a refused mirror write) marks one tick with one ▸; it never sets
+ *     the crew's track to its own lower value (issue #347 AB07);
+ *   - a PC created mid-session is brought to the shared tracks at once, as the
+ *     ready backfill would bring it at the next load;
  *   - at ready, the canonical GM backfills the sheets: a track a sheet shows
  *     further along than the shared one (tracked on the sheet before the
  *     mirror) raises the shared track, and every sheet is set to it.
@@ -36,6 +42,15 @@ const MODULE_ID = "starforged-companion";
 // tell its own writes from a player's edit.
 const MIRROR_OPTION = "legacySheetMirror";
 const mirrorOptions = () => ({ [MODULE_ID]: { [MIRROR_OPTION]: true } });
+
+// A sheet edit's legacy values before it was made — `{ [track]: ticks }`. The
+// client that makes the edit stamps them into the update's options
+// (preUpdateActor runs there, while the document still holds the old value),
+// and the options reach the canonical GM's updateActor hook with the change.
+// The GM moves the shared track by the difference: the vendor ▸ writes the
+// sheet's own value + 1, so a sheet behind the crew's track would otherwise
+// set the track down to its own value (issue #347 AB07).
+const BEFORE_OPTION = "legacySheetBefore";
 
 /** The shared track's progress (ticks ever marked) as the world stores it now. */
 function storedProgress(track) {
@@ -72,12 +87,21 @@ export async function mirrorLegacyToSheets(track, { pcs = null } = {}) {
  * Save the shared track as `progress` (a copy of the stored state — the cached
  * value must stay as it was if the world refuses the write), then mirror it.
  * Read and written at its turn on the client's campaignState write chain
- * (CAMPSTATE-CHAIN-REST).
+ * (CAMPSTATE-CHAIN-REST). `progress` may be a function of the stored progress
+ * read at that turn — a sheet edit's change applied to the track as it is
+ * then (issue #347 AB07).
+ *
+ * @param {"quests"|"bonds"|"discoveries"} track
+ * @param {number|((stored: number) => number)} progressOrFn
+ * @returns {Promise<boolean>} whether a write was made
  */
-function setSharedProgress(track, progress) {
+function setSharedProgress(track, progressOrFn) {
   return serialiseCampaignStateWrite(async () => {
     const stored = game.settings.get(MODULE_ID, "campaignState") ?? {};
-    if (legacyProgress(stored.legacyTracks?.[track]) === progress) return false;
+    const current  = legacyProgress(stored.legacyTracks?.[track]);
+    const progress = Math.max(0, Math.floor(Number(
+      typeof progressOrFn === "function" ? progressOrFn(current) : progressOrFn) || 0));
+    if (current === progress) return false;
     await game.settings.set(MODULE_ID, "campaignState", {
       ...stored,
       legacyTracks: { ...(stored.legacyTracks ?? {}), [track]: legacyTrackFromProgress(progress) },
@@ -96,42 +120,101 @@ function legacyChange(change, track) {
   return expanded !== undefined ? expanded : change?.[`system.legacies.${track}`];
 }
 
-// One sync pass at a time; a sheet edit that lands mid-pass is the next pass
-// (newest wins), as the shared supply's queue does.
+// One sync pass at a time; a sheet edit that lands mid-pass joins the next
+// pass. Queued per track: an edit whose value before is known adds its change
+// to what is queued (two quick ▸ are two ticks), and one whose value before
+// is unknown sets the track to its value (the newest such wins), with any
+// change queued after it added on top.
 const _sync = { running: false, next: null };
 
 /**
+ * The shared-track edits a sheet update carries: `{ track, delta }` when the
+ * editing client stamped the sheet's value before the edit, else
+ * `{ track, absolute }` — an edit made where the module did not stamp it.
+ */
+function sheetEdits(change, options) {
+  const before = options?.[MODULE_ID]?.[BEFORE_OPTION] ?? null;
+  return SHEET_LEGACY_TRACKS
+    .map(t => ({ track: t, value: legacyChange(change, t) }))
+    .filter(e => e.value !== undefined)
+    .map(e => {
+      const value = Math.max(0, Math.floor(Number(e.value) || 0));
+      const was   = Number(before?.[e.track]);
+      return Number.isFinite(was)
+        ? { track: e.track, delta: value - Math.max(0, Math.floor(was)) }
+        : { track: e.track, absolute: value };
+    });
+}
+
+/** Fold newly arrived edits into the queued pass, per track. */
+function queueEdits(queued, edits) {
+  const next = new Map((queued ?? []).map(q => [q.track, q]));
+  for (const e of edits) {
+    const prev = next.get(e.track);
+    next.set(e.track, e.absolute !== undefined
+      ? { track: e.track, absolute: e.absolute, delta: 0 }
+      : { track: e.track, absolute: prev?.absolute ?? null, delta: (prev?.delta ?? 0) + e.delta });
+  }
+  return [...next.values()];
+}
+
+/**
  * Register the sheet → shared track flow. Single-writer via isCanonicalGM (the
- * GM may write every PC and the world). Register once on ready (all clients;
- * non-canonical no-op).
+ * GM may write every PC and the world). Register once on ready, on all
+ * clients: every client stamps the sheet's values before an edit it makes
+ * (preUpdateActor); only the canonical GM writes.
  */
 export function registerLegacySheetSyncHook() {
   if (registerLegacySheetSyncHook._installed) return;
   registerLegacySheetSyncHook._installed = true;
+  // Every client, where an update is requested: stamp the edited tracks'
+  // values before the edit into its options (BEFORE_OPTION). Never cancels.
+  Hooks.on("preUpdateActor", (actor, change, options) => {
+    try {
+      if (!options || !isPlayerCharacterActor(actor)) return;
+      if (options[MODULE_ID]?.[MIRROR_OPTION]) return;               // our own mirror write
+      const before = {};
+      for (const track of SHEET_LEGACY_TRACKS) {
+        if (legacyChange(change, track) !== undefined) before[track] = readSheetLegacy(actor, track);
+      }
+      if (!Object.keys(before).length) return;
+      options[MODULE_ID] = { ...(options[MODULE_ID] ?? {}), [BEFORE_OPTION]: before };
+    } catch (err) {
+      console.warn(`${MODULE_ID} | legacy sheet sync: could not note the sheet's legacies before an edit:`, err?.message ?? err);
+    }
+  });
+  // A PC made mid-session starts at the crew's tracks — its sheet would show
+  // 0 until the next GM load, and its first ▸ was taken as the crew's value.
+  Hooks.on("createActor", (actor) => {
+    try {
+      if (!isCanonicalGM() || !isPlayerCharacterActor(actor)) return;
+      backfillLegacySheets().catch(err =>
+        console.warn(`${MODULE_ID} | legacy sheet sync: a new character's legacies were not set:`, err?.message ?? err));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | legacy sheet sync: a new character's legacies were not set:`, err?.message ?? err);
+    }
+  });
   Hooks.on("updateActor", async (actor, change, options) => {
     try {
       if (!isCanonicalGM()) return;
       if (!isPlayerCharacterActor(actor)) return;
       if (options?.[MODULE_ID]?.[MIRROR_OPTION]) return;             // our own mirror write
-      const edits = SHEET_LEGACY_TRACKS
-        .map(t => ({ track: t, value: legacyChange(change, t) }))
-        .filter(e => e.value !== undefined)
-        .map(e => ({ track: e.track, progress: Math.max(0, Math.floor(Number(e.value) || 0)) }));
+      const edits = sheetEdits(change, options);
       if (!edits.length) return;
-      _sync.next = [...(_sync.next ?? []).filter(e => !edits.some(n => n.track === e.track)), ...edits];
+      _sync.next = queueEdits(_sync.next, edits);
       if (_sync.running) return;
       _sync.running = true;
       try {
         while (_sync.next) {
           const pass = _sync.next;
           _sync.next = null;
-          for (const { track, progress } of pass) {
+          for (const { track, absolute, delta } of pass) {
             // Each track stands alone (issue #331 X52's rule): a refused save
             // of the shared track is warned and named to the GM, and the pass
             // goes on to the other tracks and to an edit queued meanwhile — it
             // threw out of the pass, skipping both.
             try {
-              await setSharedProgress(track, progress);
+              await setSharedProgress(track, stored => (absolute ?? stored) + delta);
             } catch (err) {
               console.warn(`${MODULE_ID} | legacy sheet sync: the shared ${track} legacy was not saved:`, err?.message ?? err);
               globalThis.ui?.notifications?.warn?.(`Shared legacy: the crew's ${track} legacy could not be saved — mark it again.`);
