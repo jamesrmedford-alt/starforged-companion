@@ -161,6 +161,8 @@ function storedShape() {
   // What the driver hands the transitions to store.
   for (const k of literalKeys('src/batch/driver.js', /function rolledInfoFrom\(\{[^}]*\}\) \{\s*return \{/)) shape.rolled.add(k);
   for (const k of literalKeys('src/batch/driver.js', /offers\[userId\] = \{/)) shape.upgrade.add(k);
+  // An upgrade in flight, offered as such (issue #347 AB13).
+  for (const k of literalKeys('src/batch/driver.js', /function inFlightOffer\([^)]*\) \{\s*return \{/)) shape.upgrade.add(k);
   // What the reading's producer stores, and the driver adds.
   for (const k of literalKeys('src/moves/movePipeline.js', NARRATIVE_READING)) shape.reading.add(k);
   for (const k of literalKeys('src/moves/movePipeline.js', MOVE_READING)) shape.reading.add(k);
@@ -199,6 +201,7 @@ describe('every field a round stores is read (issue #342 Z37)', () => {
     expect([...shape.offer]).toEqual(expect.arrayContaining(['text', 'forced', 'messageId']));
     expect(literalKeys('src/batch/driver.js', /function rolledInfoFrom\(\{[^}]*\}\) \{\s*return \{/)).toEqual(['resolutionId', 'cardId', 'moveId', 'outcome', 'narrationInput']);
     expect(literalKeys('src/batch/driver.js', /offers\[userId\] = \{/)).toEqual(['burn', 'improve', 'cardId']);
+    expect(literalKeys('src/batch/driver.js', /function inFlightOffer\([^)]*\) \{\s*return \{/)).toEqual(['burn', 'improve', 'cardId', 'inFlight', 'inFlightSince']);
     expect(readsOf('round', 'resolverId').length).toBeGreaterThan(0);   // control: recovery leaves a connected resolver alone
     expect(readsOf('entry', 'submissionId').length).toBeGreaterThan(0); // control: a reading lands only on its own submission
     expect(literalKeys('src/moves/movePipeline.js', NARRATIVE_READING)).toEqual(expect.arrayContaining(['kind', 'suggestedMove', 'suggestedTargetId']));

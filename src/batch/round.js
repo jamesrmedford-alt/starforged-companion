@@ -80,6 +80,15 @@ const SETTLED_ENTRY = new Set([ENTRY_STATUS.RECORDED, ENTRY_STATUS.REFUSED]);
 // An entry holding an action of its own — written, or a card's move — not yet rolled.
 const OWN_ACTION = new Set([ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY]);
 
+/**
+ * How long an upgrade in flight — a Burn or Improve whose handler claimed its
+ * card but has not reached the round yet (driver.js upgradeOffers) — holds
+ * against a GM's Send now: within it the round waits for the upgrade, after
+ * it Send now keeps the result (a handler that died with its page). Issue
+ * #347 AB13.
+ */
+export const UPGRADE_IN_FLIGHT_GRACE_MS = 60_000;
+
 /** A transition refused — `reason` is a stable code, `message` what the requester is told. */
 export class RoundRefusal extends Error {
   constructor(reason, message) {
@@ -909,17 +918,24 @@ export function beginUpgrades(round, { offers = {} }) {
  * input replaces the original's), or "keep". While the round is still rolling
  * a recorded entry's card is already live, so a burn or an improvement can
  * land then too: it is recorded as decided, and the upgrade step skips it.
+ * One still on its way when the rolls end — its handler has claimed the card
+ * but not reached the round — is an upgrade in flight (`upgrade.inFlight`):
+ * the step waits for it, and Keep is refused for it unless `overrideInFlight`
+ * (a GM's Send now once its grace has passed — issue #347 AB13).
  *
  * @param {Object} round
- * @param {{ userId: string, decision: "burn"|"improve"|"keep", narrationInput?: Object, now: string }} args
+ * @param {{ userId: string, decision: "burn"|"improve"|"keep", narrationInput?: Object, now: string, overrideInFlight?: boolean }} args
  * @returns {Object}
  */
-export function decideUpgrade(round, { userId, decision, narrationInput = null, now }) {
+export function decideUpgrade(round, { userId, decision, narrationInput = null, now, overrideInFlight = false }) {
   const early = round?.phase === ROUND_PHASE.ROLLING && decision !== "keep";
   if (round?.phase !== ROUND_PHASE.UPGRADING && !early) refuse("not-upgrading", "The round isn't waiting for an upgrade.");
   const entry = entryFor(round, userId);
   if (!entry?.upgrade && !early) refuse("no-upgrade", "That entry was offered no upgrade.");
   if (entry?.upgrade?.decided) return round;
+  if (decision === "keep" && entry?.upgrade?.inFlight && !overrideInFlight) {
+    refuse("upgrade-in-flight", "Your upgrade is being applied — the round narrates its result.");
+  }
   if (early && !Array.isArray(round.acting)) refuse("not-acting", "That entry is not in this round.");
   if (!["burn", "improve", "keep"].includes(decision)) refuse("bad-decision", "Burn, Improve or Keep.");
   const rolled = narrationInput ? { ...(entry.rolled ?? {}), narrationInput, upgradedBy: decision } : entry.rolled;
@@ -928,7 +944,9 @@ export function decideUpgrade(round, { userId, decision, narrationInput = null, 
 
 /**
  * Every undecided upgrade kept — Send now during the upgrade step, or for
- * rollers who left (`userIds`).
+ * rollers who left (`userIds`). An upgrade in flight is kept only once it has
+ * been on its way longer than UPGRADE_IN_FLIGHT_GRACE_MS (its handler died):
+ * until then the round waits for it (issue #347 AB13).
  *
  * @param {Object} round
  * @param {{ now: string, userIds?: string[]|null }} args
@@ -940,9 +958,19 @@ export function keepUndecidedUpgrades(round, { now, userIds = null }) {
   for (const e of Object.values(round.entries)) {
     if (!e.upgrade || e.upgrade.decided) continue;
     if (userIds && !userIds.includes(e.userId)) continue;
-    next = decideUpgrade(next, { userId: e.userId, decision: "keep", now });
+    const overrideInFlight = !!e.upgrade.inFlight && inFlightLapsed(e.upgrade, now);
+    if (e.upgrade.inFlight && !overrideInFlight) continue;
+    next = decideUpgrade(next, { userId: e.userId, decision: "keep", now, overrideInFlight });
   }
   return next;
+}
+
+/** Whether an upgrade in flight has been on its way longer than its grace (or since an unknown time). */
+function inFlightLapsed(upgrade, now) {
+  const since = Date.parse(upgrade?.inFlightSince ?? "");
+  const at = Date.parse(now ?? "");
+  if (!Number.isFinite(since) || !Number.isFinite(at)) return true;
+  return at - since >= UPGRADE_IN_FLIGHT_GRACE_MS;
 }
 
 /** True once every offered roller has decided. */

@@ -1148,12 +1148,20 @@ async function postRefusedCard(round, entry, reading, reason) {
  * The Burn Momentum / Improve Result offers the round's result cards make —
  * by roller, with the upgraded outcome — for the rollers who have not
  * decided: only an upgrade its card would still take (upgradeOpen). A card
- * already burned or improved offers nothing, nor one whose consequence was
- * chosen on its choice card — the round waited on a Burn the card refused
- * (issue #342 Z27).
+ * whose consequence was chosen on its choice card offers nothing — the round
+ * waited on a Burn the card refused (issue #342 Z27).
+ *
+ * A card already burned or improved whose entry the upgrade has not decided
+ * is an upgrade in flight: pressed while the round still rolled, its GM
+ * handler claimed the card and has not yet handed the round the upgraded
+ * outcome (acceptRoundUpgrade). It is offered as such (`inFlight`, no
+ * buttons), so the upgrade step waits for it. It was skipped: the round went
+ * on to its narration — or refused the late upgrade "no-upgrade" while
+ * another roller decided — and told the result as rolled while the card said
+ * burned (issue #347 AB13).
  *
  * @param {Object} round
- * @returns {Object<string, { burn: Object|null, improve: Object|null, cardId: string }>}
+ * @returns {Object<string, { burn: Object|null, improve: Object|null, cardId: string, inFlight?: "burn"|"improve", inFlightSince?: string }>}
  */
 function upgradeOffers(round) {
   const offers = {};
@@ -1162,12 +1170,30 @@ function upgradeOffers(round) {
     if (e?.status !== ENTRY_STATUS.RECORDED || !e.rolled?.cardId || e.upgrade?.decided) continue;
     const card = game.messages?.get?.(e.rolled.cardId) ?? null;
     const f = card?.flags?.[MODULE_ID];
-    if (!f || f.burn?.consumed || f.improve?.consumed) continue;
+    if (!f) continue;
+    if (f.burn?.consumed || f.improve?.consumed) {
+      offers[userId] = inFlightOffer(e.rolled.cardId, f.burn?.consumed ? "burn" : "improve");
+      continue;
+    }
     const burn = upgradeOpen(card, "burn") ? { momentum: f.burn.momentum ?? null, previewOutcome: f.burn.previewOutcome ?? null } : null;
     const improve = upgradeOpen(card, "improve") ? { previewOutcome: f.improve.improveTo ?? "strong_hit", label: f.improve.assetName || null } : null;
     if (burn || improve) offers[userId] = { burn, improve, cardId: e.rolled.cardId };
   }
   return offers;
+}
+
+/**
+ * An upgrade in flight as the round stores it (upgradeOffers): no buttons,
+ * which upgrade is on its way, and since when — a GM's Send now keeps it only
+ * once its grace has passed (round.js UPGRADE_IN_FLIGHT_GRACE_MS, issue #347
+ * AB13).
+ *
+ * @param {string} cardId
+ * @param {"burn"|"improve"} kind
+ * @returns {{ burn: null, improve: null, cardId: string, inFlight: string, inFlightSince: string }}
+ */
+function inFlightOffer(cardId, kind) {
+  return { burn: null, improve: null, cardId, inFlight: kind, inFlightSince: nowIso() };
 }
 
 /**
@@ -1247,7 +1273,10 @@ async function keepUpgrades(userIds) {
  */
 async function keepUndecidable(round) {
   const connected = new Set(connectedUserIds());
-  const moot = undecidedUpgrades(round).filter(id => !connected.has(id) || !offerAnswerable(round.entries[id]));
+  // An upgrade in flight decides itself — its GM handler is applying it,
+  // whoever is connected (issue #347 AB13).
+  const moot = undecidedUpgrades(round).filter(id => !round.entries[id]?.upgrade?.inFlight
+    && (!connected.has(id) || !offerAnswerable(round.entries[id])));
   if (moot.length) await keepUpgrades(moot);
 }
 

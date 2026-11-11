@@ -696,7 +696,14 @@ Free-flow play stays the default and is unchanged while the mode is off.
   card's own relays: one action, one claim); the round waits for them, Send
   now counts as Keep, and the one narration tells the final outcomes — a round
   card is never struck through. The round's result cards' Burn / Improve close
-  (`roundClosed`) when it is narrated.
+  (`roundClosed`) when it is narrated. *Update (issue #347 AB13):* a Burn or
+  Improve pressed on a recorded entry's card while the round still rolls, its
+  GM handler still on its way to the round when the rolls end, is an upgrade
+  in flight: the upgrade step waits for it (no buttons — "Burning
+  momentum…"), its roller's Keep is refused, and Send now keeps it only after
+  a minute (`UPGRADE_IN_FLIGHT_GRACE_MS` — a handler that died with its page).
+  The step skipped it, and the round told the result as rolled while the card
+  said burned.
 - **Players see who is ready, and what they submitted;** the GM sees every
   reading. Entries stay editable until the round resolves.
 - **Chat is table talk while the mode is on.** A typed line is not narrated;

@@ -370,6 +370,10 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
   }
 
   #upgradeHtml(u) {
+    // Pressed and on its way: the round waits for it, and there is nothing to choose (issue #347 AB13).
+    if (u.inFlight) {
+      return `<div class="sf-round-upgrade"><p><strong>${escapeHtml(u.moveName ?? "Your move")}: ${escapeHtml(u.inFlight)}</strong> The round narrates the upgraded result once it is applied.</p></div>`;
+    }
     return `<div class="sf-round-upgrade"><p><strong>${escapeHtml(u.moveName ?? "Your move")}: ${escapeHtml(u.outcome ?? "")}.</strong> Decide before the round is narrated.</p>`
       + `<div class="sf-round-actions">`
       + (u.burn ? `<button type="button" data-action="burn" data-card-id="${escapeHtml(u.cardId)}">Burn momentum (${escapeHtml(String(u.burn.momentum ?? ""))}) → ${escapeHtml(u.burn.outcome ?? "")}</button>` : "")
