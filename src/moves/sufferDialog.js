@@ -17,7 +17,7 @@
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -327,20 +327,21 @@ async function runSufferCall(call, actor, opts) {
       // (issue #309 N02 / N03).
       // A support vehicle's roll changes its own Integrity track (issue #342
       // Z53); otherwise the vehicle the move was rolled against, else the
-      // command vehicle.
+      // command vehicle. A loss the track cannot take is momentum
+      // (lossPastZero, issue #345 AA15).
       if (call.meterKey === "integrity" && opts.vehicleItemId) {
         const { applyVehicleAssetIntegrityChange } = await import("../character/actorBridge.js");
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await applyVehicleAssetIntegrityChange(actor, call.delta, { itemId: opts.vehicleItemId })) };
+          ...(await lossPastZero(actor, call.delta, await applyVehicleAssetIntegrityChange(actor, call.delta, { itemId: opts.vehicleItemId }))) };
       }
       if (call.meterKey === "integrity") {
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta)) };
+          ...(await lossPastZero(actor, call.delta, await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta))) };
       }
       if (call.meterKey === "companionHealth") {
         const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null })) };
+          ...(await lossPastZero(actor, call.delta, await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null }))) };
       }
       await applyMeterChanges(actor, { [call.meterKey]: call.delta });
       return { kind: "meter", meterKey: call.meterKey, delta: call.delta };
@@ -558,6 +559,28 @@ function progressFight(tracks, opts) {
   if (!fight)              return { fight: null, reason: "fight-gone" };
   if (fight.completed)     return { fight: null, reason: "fight-over" };
   return { fight };
+}
+
+/**
+ * The damage a vehicle's integrity, or the harm a companion's health, could
+ * not take, as momentum: "If your integrity is 0, Lose Momentum equal to any
+ * remaining damage" (vendored Withstand Damage; Companion Takes a Hit reads
+ * the same for its health) — as the Endure Harm executor takes harm past 0
+ * health (issue #314 Q02). The miss's "-1 integrity" / "-1 companion health"
+ * was a clamped delta, free at 0, and the card said it was applied (issue
+ * #345 AA15). Only a loss whose write landed: a vehicle or companion that
+ * is not there, or a refused write, is reported as not applied.
+ *
+ * @param {Actor} actor — the roller, whose momentum it is
+ * @param {number} delta
+ * @param {Object} res — the write's result (`ok`, `before`, `after`)
+ * @returns {Promise<Object>} `res`, with `momentumLoss` when some overflowed
+ */
+async function lossPastZero(actor, delta, res) {
+  if (!(delta < 0) || res?.ok !== true || !Number.isFinite(res.before)) return res;
+  const taken = Math.max(0, res.before - (Number.isFinite(res.after) ? res.after : res.before));
+  const momentumLoss = await overflowToMomentum(actor, -delta - taken);
+  return momentumLoss ? { ...res, momentumLoss } : res;
 }
 
 /**

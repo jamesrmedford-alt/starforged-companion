@@ -167,14 +167,16 @@ function splitOverflow(amount, before) {
  * Take a loss's overflow as momentum (loseMomentum, no card of its own). What
  * the momentum minimum refuses is reported for the player to redirect —
  * loseMomentum's at-min rule (another suffer move, or progress cleared) is a
- * manual follow-up.
+ * manual follow-up. Also the damage a vehicle's integrity, or the harm a
+ * companion's health, cannot take (sufferDialog's integrity / companion health
+ * write — issue #345 AA15).
  *
  * @param {Actor} actor
  * @param {number} overflow
  * @returns {Promise<Object|null>} `amount` owed, `taken`, `remaining` (refused
  *   at the minimum), `before` / `after`, `atMin` — null when nothing overflowed
  */
-async function overflowToMomentum(actor, overflow) {
+export async function overflowToMomentum(actor, overflow) {
   if (overflow <= 0) return null;
   const m = await loseMomentum(actor, overflow, { skipCard: true });
   const taken = Math.max(0, m.before - m.after);

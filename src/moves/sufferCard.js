@@ -215,17 +215,23 @@ function renderResolvedCard(summary) {
 /**
  * Human-readable summary of the writes a set of resolved calls performed.
  * Only the directly-applied effects (meter/suffer/mark/clear/progress) — the
- * route/complication/next-bonus calls post their own deferred cards.
+ * route/complication/next-bonus calls post their own deferred cards. With
+ * `results` (runSufferResolution's, one per call), a vehicle's or companion's
+ * loss past 0 reads as what it cost: "integrity 0 → 0 — 1 more as momentum:
+ * 2 → 1" (issue #345 AA15).
  *
  * @param {Array<Object>} calls
+ * @param {Array<Object>} [results]
  * @returns {string}
  */
-export function summarizeSufferCalls(calls) {
+export function summarizeSufferCalls(calls, results = []) {
   const parts = [];
-  for (const c of calls ?? []) {
+  for (const [i, c] of (calls ?? []).entries()) {
     switch (c.kind) {
       case "suffer":              parts.push(`${labelForSuffer(c.sufferId)} (-${c.amount})`); break;
-      case "meter":               parts.push(`${meterLabel(c.meterKey)} ${c.delta >= 0 ? "+" : ""}${c.delta}`); break;
+      case "meter":               parts.push(results?.[i]?.momentumLoss
+        ? lossPastZeroLabel(c, results[i])
+        : `${meterLabel(c.meterKey)} ${c.delta >= 0 ? "+" : ""}${c.delta}`); break;
       case "mark":                parts.push(`marked ${localizeDebility(c.debility)}`); break;
       case "clear-impact":        parts.push(`cleared ${localizeDebility(c.debility)}`); break;
       case "combat-progress":     parts.push(`combat progress ×${c.count ?? 1}`); break;
@@ -242,6 +248,19 @@ export function summarizeSufferCalls(calls) {
     }
   }
   return parts.length ? parts.join(", ") : "no change";
+}
+
+/**
+ * A vehicle's or companion's loss its track could not take, taken as
+ * momentum (sufferDialog's `momentumLoss`) — the Endure Harm card's own words
+ * for harm past 0 health (sufferExecutor overflowLine, issue #314 Q02).
+ */
+function lossPastZeroLabel(call, result) {
+  const m = result.momentumLoss;
+  let text = `${meterLabel(call.meterKey)} ${result.before} → ${result.after ?? result.before}` +
+    ` — ${m.amount} more as momentum: ${m.before} → ${m.after}`;
+  if (m.remaining > 0) text += ` (at minimum; ${m.remaining} not taken — redirect it to another suffer move or clear progress)`;
+  return text;
 }
 
 // Why a call's write did not land (a runSufferResolution result with
@@ -283,9 +302,10 @@ function notAppliedLines(calls, results) {
  * @returns {string}
  */
 function summarizeSufferResults(calls, results) {
-  const landed = (calls ?? []).filter((_c, i) => results?.[i]?.ok !== false);
+  const landed = (calls ?? []).flatMap((c, i) => (results?.[i]?.ok !== false ? [i] : []));
   const missed = notAppliedLines(calls, results);
-  return withNotApplied(landed.length || !missed.length ? `Applied: ${summarizeSufferCalls(landed)}` : "", missed);
+  return withNotApplied(landed.length || !missed.length
+    ? `Applied: ${summarizeSufferCalls(landed.map(i => calls[i]), landed.map(i => results?.[i]))}` : "", missed);
 }
 
 /** `text`, then "Not applied: …" for `missed`. */
@@ -611,7 +631,10 @@ async function handleSufferPick(message, dataset) {
   await closeUpgrades();
   const results = await runSufferResolution(calls, actor, executorOpts);
   const missed  = notAppliedLines(calls, results);
-  if (missed.length) {
+  // A loss past a vehicle's or companion's 0 was taken as momentum: the
+  // resolved card says so, not the "-1" nothing took (issue #345 AA15).
+  const pastZero = done && !multi && results.some(r => r?.momentumLoss);
+  if (missed.length || pastZero) {
     // The card says what did not land; a write the world refused goes to the
     // GMs, with a Retry.
     const update = done
@@ -619,7 +642,7 @@ async function handleSufferPick(message, dataset) {
       : { [`flags.${MODULE_ID}.notApplied`]: [...notes, ...missed], content: renderSufferCard(prompt, actor, picked ?? [], ctx, [...notes, ...missed], madeAny) };
     await message.update(update).catch(err =>
       console.warn(`${MODULE_ID} | sufferCard: card ${message.id} note failed:`, err?.message ?? err));
-    await reportRefusedCalls(actor, calls, results, executorOpts);
+    if (missed.length) await reportRefusedCalls(actor, calls, results, executorOpts);
   }
   return { applied: true };
 }
