@@ -56,19 +56,47 @@ const MODULE_ID = "starforged-companion";
 // itself as loading: its own handlers are what asks.
 const _gmLoad = new Map();   // userId → "loading" | "ready"
 
+// Called when what this client knows of the GMs' loads changes — the
+// canonical GM may have changed with it (onGmLoadChange).
+const _loadChangeListeners = new Set();
+
+/**
+ * Run `fn()` whenever a GM's connect, page-ready announcement or departure is
+ * seen — moments when the canonical GM can change. The held forced moves use it
+ * to follow the canonical GM (index.js drainDeferredForcedMoves, issue #347
+ * AB06). A listener that throws is logged.
+ *
+ * @param {() => void} fn
+ */
+export function onGmLoadChange(fn) {
+  if (typeof fn === "function") _loadChangeListeners.add(fn);
+}
+
+function gmLoadChanged() {
+  for (const fn of _loadChangeListeners) {
+    try { fn(); }
+    catch (err) { console.warn(`${MODULE_ID} | a GM-load listener failed:`, err?.message ?? err); }
+  }
+}
+
 /** A GM's socket connected: its page is loading until it announces ready. */
 export function noteGmLoading(userId) {
-  if (typeof userId === "string" && userId && userId !== globalThis.game?.user?.id) _gmLoad.set(userId, "loading");
+  if (typeof userId !== "string" || !userId || userId === globalThis.game?.user?.id) return;
+  _gmLoad.set(userId, "loading");
+  gmLoadChanged();
 }
 
 /** A GM announced its page ready: its handlers are installed. */
 export function noteGmReady(userId) {
-  if (typeof userId === "string" && userId && userId !== globalThis.game?.user?.id) _gmLoad.set(userId, "ready");
+  if (typeof userId !== "string" || !userId || userId === globalThis.game?.user?.id) return;
+  _gmLoad.set(userId, "ready");
+  gmLoadChanged();
 }
 
 /** A GM left: what this client knew of its load no longer holds. */
 export function forgetGmLoad(userId) {
   _gmLoad.delete(userId);
+  gmLoadChanged();
 }
 
 /** Test seam — forget every GM's load state. */

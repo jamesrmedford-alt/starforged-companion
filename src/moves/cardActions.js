@@ -224,7 +224,8 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content(label),
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...target } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...target,
+          ...cardClaimFor(message, "resolved", true, false) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | connection pick: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -346,7 +347,10 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true,
+          // Not rolled, the ordinary reward's cards this press retires below come back too.
+          ...cardClaimFor(message, "waypointRewardClaimed", "alternative", null,
+            { reopenRetired: { resolutionId: f.resolutionId ?? null, kind: move.retired } }) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | waypoint oracle: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -442,6 +446,7 @@ export async function applyFulfilVowPick(payload = {}, ctx = {}) {
           bypassPacing: true, forcedMoveId: forsake ? "forsake_your_vow" : "fulfill_your_vow", deferWhileBusy: true,
           forcedMoveTargetId: choice.itemId,
           ...(choice.name ? { forcedMoveTarget: choice.name } : {}),
+          ...cardClaimFor(message, "resolved", true, false),
         } },
       });
     } catch (err) {
@@ -532,6 +537,7 @@ export async function applyLegacyTrackPick(payload = {}, ctx = {}) {
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: "continue_a_legacy", deferWhileBusy: true,
           forcedMoveTarget: choice.label ?? track,
+          ...cardClaimFor(message, `legacyRolled.${track}`, true, false),
         } },
       });
     } catch (err) {
@@ -614,7 +620,8 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: "Mark progress on your vow.",
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone", deferWhileBusy: true } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone", deferWhileBusy: true,
+          ...cardClaimFor(message, "milestoneMarked", true, false) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | milestone suggestion: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -750,6 +757,7 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
           bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true,
           ...(targetName ? { forcedMoveTarget: targetName } : {}),
           ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
+          ...cardClaimFor(message, "fulfilAttempted", true, false),
         } },
       });
     } catch (err) {
@@ -861,7 +869,8 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true } },
+        flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true,
+          ...cardClaimFor(message, claim, move.stamp ?? true, false) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | ${label}: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -1339,6 +1348,7 @@ export async function applyCombatTrackBattle(payload = {}, ctx = {}) {
           bypassPacing: true, forcedMoveId: "battle", deferWhileBusy: true,
           ...(trackId ? { forcedMoveTargetId: trackId } : {}),
           ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+          ...cardClaimFor(message, "battleClaimed", true, false),
         } },
       });
     } catch (err) {
@@ -1510,7 +1520,8 @@ export async function applyWayOutPick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.narration,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true,
+          ...cardClaimFor(message, "wayOutTaken", move.moveId, null) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | way out: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -1764,6 +1775,27 @@ export async function applyPayoffRetry(payload = {}, ctx = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /** A ChatMessage speaker for `actor` — Foundry's own builder when available. */
+/**
+ * The claim a card button's forced move carries (issue #347 AB06): the card,
+ * the flag its press set (a path under the module's flags) and the value it
+ * set, and the value that releases it. The claim was handed back only when the
+ * post itself failed; the move pipeline now hands it back when it does not
+ * roll the move — the GM closed its confirm, the move lock or the world refused
+ * its start, it failed before its dice — so the card is pressable again and
+ * the roller is told (index.js handBackUnrolledForcedMove → releaseCardClaim).
+ *
+ * @param {ChatMessage} card
+ * @param {string} flag
+ * @param {*} value
+ * @param {*} release
+ * @param {Object} [extra] — `reopenRetired: { resolutionId, kind }`: the
+ *   outcome choice cards the press retired come back too
+ * @returns {{ cardClaim: Object }}
+ */
+function cardClaimFor(card, flag, value, release, extra = {}) {
+  return { cardClaim: { messageId: card?.id ?? null, flag, value, release, ...extra } };
+}
+
 function speakerFor(actor) {
   try {
     const built = globalThis.ChatMessage?.getSpeaker?.({ actor });

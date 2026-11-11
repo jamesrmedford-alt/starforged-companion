@@ -384,7 +384,11 @@ async function runSufferCall(call, actor, opts) {
         await ChatMessage.create({
           content: `${actor?.name ?? "The character"} resists ${what}.`,
           ...(actor ? { speaker: { actor: actor.id, alias: actor.name } } : {}),
-          flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: call.moveId, deferWhileBusy: true, owedMove: true } },
+          flags: { [MODULE_ID]: { bypassPacing: true, forcedMoveId: call.moveId, deferWhileBusy: true, owedMove: true,
+            // The card whose press owes it: a roll the pipeline does not
+            // make reopens it (index.js releaseCardClaim — issue #347 AB06).
+            ...(typeof opts?.cardMessageId === "string" && opts.cardMessageId
+              ? { cardClaim: { messageId: opts.cardMessageId, sufferCard: true } } : {}) } },
         });
       } catch (err) {
         console.warn(`${MODULE_ID} | resist roll: the move could not be posted:`, err?.message ?? err);

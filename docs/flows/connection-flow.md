@@ -283,7 +283,9 @@ with it off, the creator generates it — both used to, billing OpenRouter twice
   refused left the picker live for a second Develop (issue #336 Y24). The forced move carries
   `deferWhileBusy`: met by the move lock, it is held on the canonical GM and
   rolled when the lock frees (issue #325 W02 — it was dropped, the card
-  already claimed). A forced move skips the
+  already claimed); not rolled — its confirm closed, its start refused — the
+  picker gets its press back from the `cardClaim` the move carries (issue
+  #347 AB06). A forced move skips the
   interpreter, so those flags are the only way the pick reaches the move: the
   chat pipeline carries them as `interpretation.moveTargetId` /
   `moveTarget`, and enrichment and the develop / forge branches resolve by

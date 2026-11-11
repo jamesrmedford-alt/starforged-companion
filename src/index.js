@@ -34,8 +34,8 @@ import {
   renderImproveButtonHtml,
   registerImproveResultHook,
 } from "./moves/improveResult.js";
-import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep } from "./moves/resultUpgrade.js";
-import { registerSufferCardHook, summarizeSufferCalls } from "./moves/sufferCard.js";
+import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep, reopenRetiredChoiceCards } from "./moves/resultUpgrade.js";
+import { registerSufferCardHook, summarizeSufferCalls, reopenSufferCard } from "./moves/sufferCard.js";
 import {
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
@@ -184,6 +184,7 @@ import {
 import { registerDraftCardHooks, undismissRecordName } from "./entities/entityExtractor.js";
 import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
+import { moveDisplayName }        from "./system/i18n.js";
 import {
   isMigrateEntitiesCommand,
   handleMigrateEntitiesCommand,
@@ -195,7 +196,7 @@ import {
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing } from "./multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing, onGmLoadChange } from "./multiplayer/gmGate.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
@@ -969,6 +970,8 @@ export function registerChatHook() {
     if (!speakerActorId && getPlayerActors().length >= 2) {
       await postNoCharacterNotice(message).catch(err =>
         console.warn(`${MODULE_ID} | no-character notice failed:`, err?.message ?? err));
+      // A card's press is handed back — the notice above says why (issue #347 AB06).
+      await handBackUnrolledForcedMove(message, null, { notify: false });
       return;
     }
 
@@ -1003,12 +1006,17 @@ export function registerChatHook() {
           "Please wait for the current narration to complete.",
           { permanent: false }
         );
+        // A button's forced move that is not held (the inciting ⚔ — Y36's
+        // rule) is not lost in silence: its presser is told, and their button
+        // re-arms (issue #347 AB06).
+        await handBackUnrolledForcedMove(message, "another move was being resolved");
         return;
       }
       // A held move handed back is held again until a write lands, not
       // dropped (issue #345 AA48).
       if (reholdRefusedForcedMove(message)) return;
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
+      await handBackUnrolledForcedMove(message, "the world did not save its start");
       return;
     }
     const lockClaim = lock.claim;
@@ -1023,6 +1031,9 @@ export function registerChatHook() {
 
     const apiKey = apiKeyForPacing;
     const dial   = getMischiefDial();
+    // Whether this move's dice were rolled: a forced move that leaves before
+    // them is handed back to its card (issue #347 AB06).
+    let diceRolled = false;
 
     try {
       // A `!roll` is spent by the line that runs — this one, now it holds the
@@ -1047,8 +1058,14 @@ export function registerChatHook() {
       const { interpretation } = read;
 
       // Stage 2 — the GM confirms the reading (its abilities, a stat swap).
+      // Closed — or "Re-interpret", which has nothing to re-word in a card
+      // button's move — a forced move's card gets its press back and its
+      // roller is told (issue #347 AB06).
       const accepted = await confirmInterpretation(interpretation);
-      if (!accepted) return;
+      if (!accepted) {
+        await handBackUnrolledForcedMove(message, "its confirmation was closed before the roll");
+        return;
+      }
 
       // Stage 3 — roll it, apply its outcome, post its result card.
       const rolled = await rollMove({
@@ -1056,6 +1073,7 @@ export function registerChatHook() {
         combatPosition: read.combatPosition,
         tokenDragSetCourse,
         incitingSwearMessageId: message.flags?.[MODULE_ID]?.incitingSwearMessageId ?? null,
+        onDiceRolled: () => { diceRolled = true; },
       });
       if (rolled.refused) return;
       const { resolution, relevance } = rolled;
@@ -1104,6 +1122,7 @@ export function registerChatHook() {
         "Starforged Companion: Move interpretation failed. " +
         "Check your API key in module settings and try again."
       );
+      if (!diceRolled) await handBackUnrolledForcedMove(message, "it failed before its roll");
     } finally {
       // Safety net: release the lock if the pipeline threw or the confirm
       // dialog was cancelled before the success-path release above ran, or
@@ -1137,6 +1156,10 @@ export function registerChatHook() {
   // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
   Hooks.on("updateSetting", (setting) => Promise.resolve(restoreLockOverCarriedBackClaim(setting)).catch(err =>
     console.warn(`${MODULE_ID} | putting the move lock back failed:`, err?.message ?? err)));
+  // When the canonical GM changes, held forced moves follow it: this GM's go
+  // to the new one (handOverHeldForcedMoves), or this GM drains its own once
+  // it is the canonical GM again (issue #347 AB06).
+  onGmLoadChange(() => drainDeferredForcedMoves());
   // A GM who leaves mid-move takes their lock with them (issue #325 W25).
   Hooks.on("userConnected", (user, connected) => {
     releaseLockOfDisconnectedGM(user, connected).catch(err =>
@@ -1510,7 +1533,10 @@ let _heldMovePipeline = null;
  */
 function drainDeferredForcedMoves() {
   const runPipeline = _heldMovePipeline;
-  if (!runPipeline || !_deferredForcedMoves.length || !isCanonicalGM()) return;
+  if (!runPipeline || !_deferredForcedMoves.length) return;
+  // Held here, but another GM is the canonical one now: its pipeline rolls
+  // them (issue #347 AB06).
+  if (!isCanonicalGM()) { handOverHeldForcedMoves(); return; }
   // A held move the world just refused waits for a write that lands (issue #345 AA48).
   if (_heldMovesWaitForLandedWrite) return;
   const state = game.settings.get(MODULE_ID, "campaignState");
@@ -1539,6 +1565,119 @@ function drainDeferredForcedMoves() {
     });
 }
 
+
+/**
+ * Hand this GM's held forced moves to the canonical GM (issue #347 AB06). A
+ * held move lives in the memory of the GM whose pipeline held it, and only the
+ * canonical GM drains: when another GM became canonical — a lower-id or keyed
+ * GM joined — the held moves stopped draining here and the new GM never held
+ * them. The cards stayed claimed, the moves not rolled, until this GM was
+ * canonical again — and then rolled out of the blue. Relayed to the canonical
+ * GM, which holds them (holdHandedOverForcedMoves) and rolls them when the
+ * lock frees, oldest first. Kept here if no GM is there to take them.
+ */
+function handOverHeldForcedMoves() {
+  if (!game.user?.isGM || isCanonicalGM() || !_deferredForcedMoves.length) return;
+  const messageIds = _deferredForcedMoves.splice(0);
+  for (const id of messageIds) _drainedForcedMoves.delete(id);
+  const keep = () => { for (const id of messageIds) if (!_deferredForcedMoves.includes(id)) _deferredForcedMoves.push(id); };
+  Promise.resolve(requestGmAction("forcedMove.hold", { messageIds }))
+    .then(res => { if (!res?.ok) keep(); })
+    .catch(err => {
+      console.warn(`${MODULE_ID} | handing the held moves to the canonical GM failed — kept here:`, err?.message ?? err);
+      keep();
+    });
+}
+
+/**
+ * gmRelay handler for "forcedMove.hold" — on the canonical GM (issue #347
+ * AB06): forced moves another GM held, handed over when this GM became
+ * canonical. Each is held here, after any already held, and rolled when the
+ * lock frees (drainDeferredForcedMoves). Only a GM may hand moves over, and
+ * only a card button's held forced move (`deferWhileBusy`) is taken.
+ *
+ * @param {{ messageIds?: string[] }} payload
+ * @param {{ requesterIsGM?: boolean }} [ctx]
+ * @returns {{ held: number }}
+ */
+export function holdHandedOverForcedMoves(payload = {}, ctx = {}) {
+  if (!ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | held moves handed over by a user who is not a GM — refused.`);
+    return { held: 0 };
+  }
+  const ids = Array.isArray(payload?.messageIds) ? payload.messageIds.filter(id => typeof id === "string" && id) : [];
+  let held = 0;
+  for (const id of ids) {
+    const f = game.messages?.get?.(id)?.flags?.[MODULE_ID];
+    if (f?.deferWhileBusy !== true || typeof f.forcedMoveId !== "string" || _deferredForcedMoves.includes(id)) continue;
+    _deferredForcedMoves.push(id);
+    held += 1;
+  }
+  if (held) console.debug(`${MODULE_ID} | ${held} held move(s) handed over by another GM — rolled when the lock frees.`);
+  drainDeferredForcedMoves();
+  return { held };
+}
+
+/**
+ * Hand a card button's claim back (issue #347 AB06): the `cardClaim` its
+ * forced move carries (cardActions.js cardClaimFor; a resist roll's card,
+ * sufferDialog.js). A flag claim is released only while the card still holds
+ * the value the press set; a suffer card is put back live
+ * (sufferCard.js reopenSufferCard); a waypoint alternative's press brings back
+ * the ordinary reward's cards it retired (resultUpgrade.js
+ * reopenRetiredChoiceCards). Never throws.
+ *
+ * @param {Object|null} claim
+ * @returns {Promise<boolean>} whether the card is pressable again
+ */
+async function releaseCardClaim(claim) {
+  const card = typeof claim?.messageId === "string" ? (game.messages?.get?.(claim.messageId) ?? null) : null;
+  if (!card) return false;
+  try {
+    if (claim.sufferCard === true) return await reopenSufferCard(card);
+    if (typeof claim.flag !== "string" || !claim.flag) return false;
+    const now = claim.flag.split(".").reduce((o, k) => (o == null ? undefined : o[k]), card.flags?.[MODULE_ID] ?? {});
+    if (now !== claim.value) return false;               // changed since the press
+    await card.update({ [`flags.${MODULE_ID}.${claim.flag}`]: claim.release ?? null });
+    if (claim.reopenRetired?.resolutionId && claim.reopenRetired?.kind) {
+      await reopenRetiredChoiceCards(claim.reopenRetired.resolutionId, claim.reopenRetired.kind);
+    }
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | handing back card ${claim?.messageId ?? "?"}'s press failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * A card button's forced move the pipeline did not roll (issue #347 AB06): the
+ * GM closed its confirm (or "Re-interpret"), the move lock was busy for a move
+ * that is not held, the world refused its start, it failed before its dice, or
+ * no character could roll it. The card's claim was released only when the post
+ * itself failed: the button read taken on every client, its effect never
+ * happened, and nobody was told. The claim is handed back (releaseCardClaim),
+ * and the line's author, the roller's players and the GMs are whispered — the
+ * notice names the post (`gatedMessageId`), so the inciting ⚔ that made it
+ * re-arms on its presser's client (swearVow.js). A typed line is untouched.
+ *
+ * @param {ChatMessage} message — the forced move
+ * @param {string|null} why — what stopped it (plain text)
+ * @param {{ notify?: boolean }} [opts] — false: hand the claim back only
+ * @returns {Promise<void>}
+ */
+async function handBackUnrolledForcedMove(message, why, { notify = true } = {}) {
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  if (typeof f.forcedMoveId !== "string" || !f.forcedMoveId) return;
+  const released = f.cardClaim ? await releaseCardClaim(f.cardClaim) : false;
+  if (!notify) return;
+  const move  = escapeChatHtml(moveDisplayName(f.forcedMoveId));
+  const again = released ? "Its card's button is live again — press it to roll." : "Press the button again to roll it.";
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Move not rolled</strong><p>${move} was not rolled: ${escapeChatHtml(why ?? "it did not start")}. ${again}</p></div>`,
+    whisper: [...new Set([messageAuthorId(message), ...speakerOwnerIds(message), ...gmUserIds()].filter(Boolean))],
+    flags:   { [MODULE_ID]: { forcedMoveNotRolled: true, gatedMessageId: message?.id ?? null } },
+  }).catch(err => console.warn(`${MODULE_ID} | the move-not-rolled notice failed:`, err?.message ?? err));
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OUTCOME EFFECTS — one applier for the pipeline and the result upgrades

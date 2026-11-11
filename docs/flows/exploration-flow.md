@@ -114,7 +114,9 @@ passage" drawing.
   the roller (`actorId`; `deferWhileBusy`, so it is held, not dropped, while
   another move holds the lock — issue #325 W02 — or before a session has
   begun, until one does — issue #329 X14) and retires the pending
-  ordinary choice card — or by
+  ordinary choice card (stamped `retiredBy`; when the alternative is then
+  not rolled, the card's claim is handed back and the ordinary cards come
+  back live — `resultUpgrade.reopenRetiredChoiceCards`, issue #347 AB06) — or by
   the ordinary pick, `resultUpgrade.closeUpgradesForChoice`; issue #316 T06).
   The follow-up is a no-roll move (`rollKind: "none"` — no dice, no outcome,
   no Burn / Improve; T05) whose `legacyMark` marks the discoveries legacy,

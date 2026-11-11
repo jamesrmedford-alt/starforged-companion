@@ -1579,6 +1579,17 @@ finding's ID in brackets.)
   one-shot button's forced move (`deferWhileBusy`) waits on the canonical GM
   and is replayed when the lock frees; a typed line that meets the lock is
   still refused. The hold is in memory (FORCED-MOVE-HOLD-RELOAD).
+  *Update (issue #347 AB06):* a held move follows the canonical GM — the GM
+  holding it hands it over (`forcedMove.hold`) when another GM becomes
+  canonical, which rolls it when the lock frees; it stopped draining and was
+  rolled out of the blue once the first GM was canonical again. And a claimed
+  button's forced move the pipeline does not roll — its confirm closed, the
+  lock busy for a move not held, its start refused, a failure before its dice
+  — hands the card its press back (`cardClaim`, released while the card still
+  holds the press's value; a resist card, and the ordinary reward cards a
+  waypoint alternative retired, put back live) and whispers the roller's
+  players and the GMs ("Move not rolled"); the inciting ⚔, unclaimed (Y36),
+  re-arms on its presser's client from that notice.
 - **The system's numbers are read as names** [W01]: a progress Item's
   ChallengeRank number goes through `rankName` wherever a rank is read or
   paid.

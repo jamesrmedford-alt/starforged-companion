@@ -431,13 +431,15 @@ function awaitSessionGate(cardId, rearm) {
  * post's author's client: the button disabled itself there alone. So does a
  * Batch Mode round's notice that the press was not rolled because the crew's
  * swear is already on its way (`swearPressDropped`, src/batch/driver.js —
- * issue #342 Z30).
+ * issue #342 Z30), and the pipeline's notice that the post was not rolled —
+ * the move lock was busy, or its confirm was closed (`forcedMoveNotRolled`,
+ * index.js handBackUnrolledForcedMove — issue #347 AB06).
  *
  * @param {ChatMessage} notice
  */
 function rearmSwearOnGateRefusal(notice) {
   const f = notice?.flags?.[MODULE_ID];
-  const postId = (f?.sessionGateNotice || f?.swearPressDropped) ? f.gatedMessageId : null;
+  const postId = (f?.sessionGateNotice || f?.swearPressDropped || f?.forcedMoveNotRolled) ? f.gatedMessageId : null;
   if (!postId || !_swearAwaitingGate.size) return;
   const post = globalThis.game?.messages?.get?.(postId) ?? null;
   const cardId = post?.flags?.[MODULE_ID]?.incitingSwearMessageId ?? null;

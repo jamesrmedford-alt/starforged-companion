@@ -629,7 +629,9 @@ async function handleSufferPick(message, dataset) {
   }
 
   await closeUpgrades();
-  const results = await runSufferResolution(calls, actor, executorOpts);
+  // The card rides along: a resist roll's forced move carries it, so a roll
+  // the pipeline does not make reopens this card (issue #347 AB06).
+  const results = await runSufferResolution(calls, actor, { ...executorOpts, cardMessageId: message.id });
   const missed  = notAppliedLines(calls, results);
   // A loss past a vehicle's or companion's 0 was taken as momentum: the
   // resolved card says so, not the "-1" nothing took (issue #345 AA15).
@@ -645,6 +647,33 @@ async function handleSufferPick(message, dataset) {
     if (missed.length) await reportRefusedCalls(actor, calls, results, executorOpts);
   }
   return { applied: true };
+}
+
+/**
+ * Put a suffer choice card back to live — not resolved, not superseded, its
+ * buttons rendered again with the picks it already has (issue #347 AB06): the
+ * resist roll its press posted was not rolled (the GM closed its confirm, the
+ * world refused its start), or the waypoint alternative that retired it was
+ * not. A card whose character is gone stays as it is.
+ *
+ * @param {ChatMessage} message
+ * @returns {Promise<boolean>} whether the card was put back
+ */
+export async function reopenSufferCard(message) {
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  if (!f.sufferCard || !f.sufferPrompt) return false;
+  const actor = cardActor(f);
+  if (!actor) return false;
+  const picked  = Array.isArray(f.pickedIndices) ? f.pickedIndices : [];
+  const madeAny = Array.isArray(f.pickedSuffers) ? f.pickedSuffers : [];
+  const notes   = Array.isArray(f.notApplied) ? f.notApplied : [];
+  await message.update({
+    [`flags.${MODULE_ID}.resolved`]:   false,
+    [`flags.${MODULE_ID}.superseded`]: false,
+    [`flags.${MODULE_ID}.retiredBy`]:  null,
+    content: renderSufferCard(f.sufferPrompt, actor, picked, optionContext(actor, f.executorOpts), notes, madeAny),
+  });
+  return true;
 }
 
 /**

@@ -702,7 +702,7 @@ async function aidMadeInFight(moveId) {
 export async function rollMove({
   interpretation, campaignState, speakerActorId, narration,
   combatPosition = undefined, tokenDragSetCourse = null, incitingSwearMessageId = null,
-  cardFlags = null,
+  cardFlags = null, onDiceRolled = null,
 }) {
   const {
     postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, postDevelopRelationshipCard, applyReachMilestone,
@@ -921,6 +921,9 @@ export async function rollMove({
   // Secure an Advantage (issue #325 W17).
   const inFight = await aidMadeInFight(interpretation.moveId);
   const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite, momentum, inFight });
+  // The dice are rolled: a failure from here on is not "not rolled" — a card
+  // button's press is not handed back (index.js, issue #347 AB06).
+  onDiceRolled?.();
   // resolveMove leaves the id to its caller. The move card's Burn / Improve
   // flags and the narration card both carry it, and superseding the
   // original narration after an upgrade finds that card by it — with no id

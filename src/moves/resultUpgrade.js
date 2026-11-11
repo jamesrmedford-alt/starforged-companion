@@ -864,10 +864,39 @@ export async function retireChoiceCard(message, kind) {
   await message.update({
     [`flags.${MODULE_ID}.resolved`]:   true,
     [`flags.${MODULE_ID}.superseded`]: true,
+    // What retired it: a waypoint's alternative that is then not rolled
+    // brings back the cards it retired (reopenRetiredChoiceCards).
+    [`flags.${MODULE_ID}.retiredBy`]:  kind,
     content: `<div class="sf-card sf-suffer-choice-card sf-suffer-resolved">`
       + `<div class="sf-card-header">◈ Consequence superseded</div>`
       + `<div class="sf-card-body"><p>${RETIRED_REASON[kind] ?? "The result changed — it was upgraded — so this choice no longer applies."} Nothing on it was applied.</p></div></div>`,
   }).catch(err => console.warn(`${MODULE_ID} | ${kind}: retiring choice card ${message.id} failed:`, err?.message ?? err));
+}
+
+/**
+ * Bring back the choice cards of a resolution's outcome that `kind` retired —
+ * live again, their buttons rendered (sufferCard.js reopenSufferCard). A
+ * waypoint match's alternative retires the ordinary reward's card when it is
+ * pressed; when the pipeline then does not roll the alternative, both rewards
+ * were lost (issue #347 AB06). Best effort.
+ *
+ * @param {string|null} resolutionId
+ * @param {"discovery"|"chaos"|"burn"|"improve"} kind
+ * @returns {Promise<number>} the cards brought back
+ */
+export async function reopenRetiredChoiceCards(resolutionId, kind) {
+  if (!resolutionId || !kind) return 0;
+  const { reopenSufferCard } = await import("./sufferCard.js");
+  let reopened = 0;
+  for (const card of allMessages()) {
+    const f = card?.flags?.[MODULE_ID];
+    if (f?.sufferCard !== true || f.resolutionId !== resolutionId || f.superseded !== true || f.retiredBy !== kind) continue;
+    if (await reopenSufferCard(card).catch(err => {
+      console.warn(`${MODULE_ID} | bringing back choice card ${card.id} failed:`, err?.message ?? err);
+      return false;
+    })) reopened += 1;
+  }
+  return reopened;
 }
 
 /**

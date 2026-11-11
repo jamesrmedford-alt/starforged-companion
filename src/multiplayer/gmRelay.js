@@ -186,6 +186,8 @@ export const GM_ACTIONS = Object.freeze({
   "repair.apply":              { load: () => import("../moves/repair.js"),                           fn: "applyRepairSpends" },
   "payThePrice.advanceClocks": { load: () => import("../clocks/payThePriceClocks.js"),               fn: "advanceClocksForPayThePriceRelay" },
   "payThePrice.suffer":        { load: () => import("../index.js"),                                  fn: "applyPayThePriceSufferFromRelay" },
+  // Issue #347 AB06 — forced moves a GM held, handed to the GM who became canonical
+  "forcedMove.hold":           { load: () => import("../index.js"),                                  fn: "holdHandedOverForcedMoves" },
   // Narration on a player's own key (no keyed GM online)
   "narrator.sidecar":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedNarratorSidecar" },
   // Chat-card buttons

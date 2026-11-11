@@ -781,6 +781,15 @@ class SimClient {
     if (this.booted) return;
     const restore = this.table._bufferConsole(this.id);
     try {
+      // A page load fetches the world's chat log, as Foundry's does: the
+      // messages posted before this client first connected are its replicas
+      // too, with no create hooks fired for them. A GM who joined could not
+      // find a message posted before it (issue #347 AB06 — a held move handed
+      // to it). A socket that drops and comes back keeps the page and its
+      // replicas, as before.
+      for (const source of this.table._serverMessages.values()) {
+        if (!this.messages.get(source._id)) this.messages._set(source._id, new SimChatMessageReplica(this, source));
+      }
       this._index = await this.run(() => import("../../src/index.js"));
       this.run(() => {
         this.hooks.call("init", [], false);
