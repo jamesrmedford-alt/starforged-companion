@@ -834,6 +834,9 @@ export async function syncEntityRecordNames(campaignState) {
   const state = campaignState
     ?? globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")
     ?? {};
+  // A name a record takes here that the GM once dismissed from a draft card
+  // comes off the Dismissed list, as the live rename sync's (issue #345 AA55).
+  const { undismissRecordName } = await import("./entityExtractor.js");
 
   for (const { typeKey, campaignField } of ACTOR_HOSTED_NAME_SYNC) {
     const ids = Array.isArray(state[campaignField]) ? state[campaignField] : [];
@@ -852,6 +855,7 @@ export async function syncEntityRecordNames(campaignState) {
           updatedAt: new Date().toISOString(),
         });
         summary.synced += 1;
+        await undismissRecordName(document.name);
       } catch (err) {
         console.warn(`${MODULE_ID} | syncEntityRecordNames: ${typeKey} ${id} failed:`, err?.message ?? err);
       }
@@ -863,7 +867,11 @@ export async function syncEntityRecordNames(campaignState) {
     const ids = Array.isArray(state[campaignField]) ? state[campaignField] : [];
     for (const id of ids) {
       try {
-        if (await followEntityJournalRename(typeKey, getEntityDocument(typeKey, id))) summary.synced += 1;
+        const journal = getEntityDocument(typeKey, id);
+        if (await followEntityJournalRename(typeKey, journal)) {
+          summary.synced += 1;
+          await undismissRecordName(journal.name);
+        }
       } catch (err) {
         console.warn(`${MODULE_ID} | syncEntityRecordNames: ${typeKey} ${id} failed:`, err?.message ?? err);
       }

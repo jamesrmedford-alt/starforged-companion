@@ -455,7 +455,8 @@ CORRECTED rules) · [10] audio markup.
 
 **Relevance** (`src/context/relevanceResolver.js`): Phase 1 is a lexical name
 index (full name + first/last word of multi-word names, lowercased,
-dismissed-list filtered; since issue #286 a name part is never an article,
+dismissed-list filtered — a name a record takes by a rename comes off that
+list, issue #345 AA55; since issue #286 a name part is never an article,
 title or other noise word, never a word two entities share, and never
 shadows another entity's full name); Phase 2 (Haiku) fires only for hybrid *moves*.
 Paced/@scene union the scene frame's `present` names into the match text; the

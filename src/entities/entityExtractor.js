@@ -792,6 +792,10 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
       console.warn(`${MODULE_ID} | applyEntityRenames: ${from} → ${to} failed:`, err?.message ?? err);
       continue;
     }
+    // A revealed name the GM once dismissed from a draft card is hers now:
+    // dismissed, it kept her card out of the narrator's name index for good
+    // (issue #345 AA55).
+    await undismissRecordName(to, campaignState);
     // The revealing narration recorded its facts under the new name as a
     // text subject (no card was named that yet): they join the renamed card,
     // as a new entity's do (issue #326 W68 — they neither rendered on the
@@ -2404,14 +2408,48 @@ async function connectKnownNpc(slot, campaignState, { namingText = "", narration
 }
 
 /** Take a name off the dismissed list (by normalizeEntityName), on the GM's campaignState write chain. */
-async function undismissEntityName(key) {
+async function undismissEntityName(key, label = "make a connection undismiss") {
   await serialiseCampaignStateWrite(() => {
     const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
     const list = Array.isArray(latest.dismissedEntities) ? latest.dismissedEntities : [];
     const kept = list.filter(n => normalizeEntityName(n) !== key);
     if (kept.length === list.length) return undefined;
     return globalThis.game.settings.set(MODULE_ID, "campaignState", { ...latest, dismissedEntities: kept });
-  }, "make a connection undismiss");
+  }, label);
+}
+
+/**
+ * A name a record has just taken comes off the Dismissed list (issue #345
+ * AA55). A draft card's Dismiss vetoes the detector's suggestion of a name,
+ * but the name index leaves out every record whose name is dismissed
+ * (relevanceResolver indexNames), so a placeholder renamed onto a name the GM
+ * once dismissed — an identity reveal, or the GM's own sidebar rename —
+ * vanished from the narrator: no card when she was named, her facts filed as
+ * text. A name a record holds is the table's again, as a Make a Connection's
+ * (AA19). Also off `campaignState` — the caller's copy — once the store took
+ * it. GM only; never throws (a refused write is logged).
+ *
+ * @param {string} name — the record's new name
+ * @param {Object} [campaignState] — the caller's copy
+ * @returns {Promise<boolean>} whether the name was dismissed
+ */
+export async function undismissRecordName(name, campaignState = null) {
+  const key = normalizeEntityName(name);
+  if (!key || !globalThis.game?.user?.isGM) return false;
+  const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+  const held = (list) => Array.isArray(list) && list.some(n => typeof n === "string" && normalizeEntityName(n) === key);
+  if (!held(stored.dismissedEntities) && !held(campaignState?.dismissedEntities)) return false;
+  try {
+    await undismissEntityName(key, "record name undismiss");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | un-dismissing "${name}" (a record now holds it) failed:`, err?.message ?? err);
+    return false;
+  }
+  if (held(campaignState?.dismissedEntities)) {
+    campaignState.dismissedEntities = campaignState.dismissedEntities.filter(n => normalizeEntityName(n) !== key);
+  }
+  console.log(`${MODULE_ID} | "${name}" is a record's name now — taken off the Dismissed list.`);
+  return true;
 }
 
 /** GM whisper: a Make a Connection hit named several known NPCs, so none was made the roller's (issue #345 AA19). */

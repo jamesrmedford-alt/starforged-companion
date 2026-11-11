@@ -139,7 +139,11 @@ recorded under its name promoted to it; its bond is §2's.
   U27). A rename carries its narration's id (`renamedBy`), and an X-Card on
   that narration puts the placeholder name back unless the card was renamed
   since; the card's still-pending rows are withdrawn (`xCarded`) — issue
-  #335 Y02, #338 D6(i).
+  #335 Y02, #338 D6(i). A revealed name the GM once dismissed from a draft
+  card comes off `dismissedEntities` with the rename — as a sidebar rename
+  the record follows does (`undismissRecordName`; issue #345 AA55): the name
+  index leaves out a record whose name is dismissed, so she vanished from the
+  narrator.
 - **Sector creation** — the canonical local connection, `canonicalLocked`,
   bond Item mirrored to every PC.
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates

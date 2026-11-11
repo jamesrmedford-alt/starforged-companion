@@ -181,7 +181,7 @@ import {
   parseEncounterCommand,
   spawnEncounter,
 } from "./system/encounterSpawn.js";
-import { registerDraftCardHooks } from "./entities/entityExtractor.js";
+import { registerDraftCardHooks, undismissRecordName } from "./entities/entityExtractor.js";
 import { registerSwearVowHandler, registerSharedVowSyncHook, registerRewardChoiceHook, registerPlayerVowHook, registerPlayerVowSwearHook, registerPlayerVowLinkHook } from "./session/swearVow.js";
 import { onChatMessageRender }    from "./system/chatHooks.js";
 import {
@@ -2457,8 +2457,12 @@ export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) 
     actor.update({
       [`flags.${MODULE_ID}.${entityType}.name`]:      newName,
       [`flags.${MODULE_ID}.${entityType}.updatedAt`]: new Date().toISOString(),
-    }).catch(err =>
-      console.warn(`${MODULE_ID} | rename sync: record update failed for ${actor.id}:`, err?.message ?? err));
+    })
+      // A name the GM once dismissed from a draft card is this record's now
+      // (issue #345 AA55): dismissed, it kept the card out of the narrator.
+      .then(() => undismissRecordName(newName))
+      .catch(err =>
+        console.warn(`${MODULE_ID} | rename sync: record update failed for ${actor.id}:`, err?.message ?? err));
   } catch (err) {
     console.warn(`${MODULE_ID} | rename sync hook threw:`, err?.message ?? err);
   }
@@ -2483,8 +2487,11 @@ function syncJournalEntityRecordNameOnUpdate(journal, changes) {
     if (!isCanonicalGM()) return;
     const entityType = journal?.flags?.[MODULE_ID]?.entityType;
     if (!JOURNAL_RENAME_SYNC_TYPES.has(entityType)) return;
-    followEntityJournalRename(entityType, journal).catch(err =>
-      console.warn(`${MODULE_ID} | rename sync: ${entityType} record update failed for ${journal?.id}:`, err?.message ?? err));
+    followEntityJournalRename(entityType, journal)
+      // A name once dismissed from a draft card is the record's now (issue #345 AA55).
+      .then(renamed => (renamed ? undismissRecordName(journal.name) : false))
+      .catch(err =>
+        console.warn(`${MODULE_ID} | rename sync: ${entityType} record update failed for ${journal?.id}:`, err?.message ?? err));
   } catch (err) {
     console.warn(`${MODULE_ID} | journal rename sync hook threw:`, err?.message ?? err);
   }
