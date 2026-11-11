@@ -210,7 +210,13 @@ runs — it is how a typed move is found) gets the same notice from
 told nobody, and the line was never narrated after the resume (issue #345
 AA29). When
 the card was played and resumed mid-call, the notice (and `@scene`'s card)
-says the narration was discarded instead.
+says the narration was discarded instead. A paced line whose narration call
+fails — overloaded, a server error, a timeout, a rate limit on the retry
+too — or whose reply has no prose gets a "That line was not narrated" notice
+the same way (`postPacedNarrationFailedCard`, issue #347 AB21): it logged to
+the GM's console only, and the line sat in chat with no answer. Neither
+notice is a narrator card, so neither reaches the ring, the summary or the
+chronicle.
 
 **The X-Card removes the narration it answers** (issue #321 U07 — full
 exclusion, a maintainer decision). In the same write as the pause,

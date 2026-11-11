@@ -3536,7 +3536,11 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
     });
 
-    if (!text?.trim()) return null;
+    if (!text?.trim()) {
+      console.warn(`${MODULE_ID} | narratePacedInput: the narrator's reply had no prose — nothing to post.`);
+      await postPacedNarrationFailedCard(campaignState);
+      return null;
+    }
 
     const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
     await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
@@ -3579,6 +3583,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       }
     }
     console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
+    await postPacedNarrationFailedCard(campaignState);
     return null;
   }
 }
@@ -4436,6 +4441,42 @@ async function postPacedNarrationPausedCard(campaignState = null) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | narratePacedInput: the paused notice could not be posted:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * Short notice posted when a paced narration — a typed line the pacing
+ * classifier read as narrative — could not be written: its Claude call failed
+ * (overloaded, a server error, a timeout, a rate limit on the retry too) or
+ * its reply had no prose (issue #347 AB21). A move's failed narration posts
+ * postFallbackCard and `@scene` its fallback card; the line posted nothing and
+ * told nobody, after a wait of up to four minutes, and just sat in chat. Not
+ * a narrator card, so it never enters the recent-narration ring, the rolling
+ * summary or the chronicle; posted by the client that narrates the line (the
+ * chat pipeline's, the canonical GM).
+ *
+ * @param {Object|null} [campaignState]
+ * @returns {Promise<ChatMessage|null>}
+ */
+async function postPacedNarrationFailedCard(campaignState = null) {
+  try {
+    return await ChatMessage.create({
+      content: `
+        <div class="sf-narration-card sf-narration-fallback">
+          <div class="sf-narration-label">◈ Narrator</div>
+          <div class="sf-narration-prose">That line was not narrated &mdash; say it again in a moment.</div>
+          <div class="sf-narration-error">Narration unavailable — the narrator could not be reached. If it keeps happening, check your API key and proxy.</div>
+        </div>
+      `.trim(),
+      flags: {
+        [MODULE_ID]: {
+          sessionId: campaignState?.currentSessionId ?? null,
+        },
+      },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narratePacedInput: the failure notice could not be posted:`, err?.message ?? err);
     return null;
   }
 }
