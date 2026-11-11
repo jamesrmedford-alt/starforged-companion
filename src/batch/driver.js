@@ -34,8 +34,10 @@
  *     pass, finishMove for each entry (a GM's rider prompt holds no round).
  *   - Recovery (rules/reachability.md §7): a round left rolling, upgrading or
  *     narrating is resumed on the canonical GM's `ready` and when the GM
- *     resolving it leaves. A recorded entry is never rolled again; one with a
- *     result card but no record is reported to the GMs as possibly incomplete.
+ *     resolving it leaves; a collecting round's lost readings are started
+ *     again then, and when a GM leaves it. A recorded entry is never rolled
+ *     again; one with a result card but no record is reported to the GMs as
+ *     possibly incomplete.
  *   - In the chat pipeline (handleBatchModeLine): a typed line is table talk;
  *     a card button's move becomes its roller's entry, or waits for the next
  *     round while one resolves.
@@ -1694,12 +1696,12 @@ const CLOSES_RESOLVING_ROUND = new Set(["ready", "resolver-left"]);
 
 /**
  * On the canonical GM's `ready`, when it becomes canonical (the resolving GM
- * left), when a user joins and when a keyed GM joins: a collecting round from
- * an ended session is closed, and a resolving one too on `ready` or when its
- * GM left (CLOSES_RESOLVING_ROUND) — otherwise it finishes first; one left
- * resolving whose GM is gone is resumed; a collecting one has its lost
- * readings started again and gains the participants who joined. Then a
- * round opens when one is due.
+ * left; a GM left while the round collects), when a user joins and when a
+ * keyed GM joins: a collecting round from an ended session is closed, and a
+ * resolving one too on `ready` or when its GM left (CLOSES_RESOLVING_ROUND) —
+ * otherwise it finishes first; one left resolving whose GM is gone is
+ * resumed; a collecting one has its lost readings started again and gains
+ * the participants who joined. Then a round opens when one is due.
  *
  * @param {string} [reason]
  * @returns {Promise<void>}
@@ -1857,6 +1859,15 @@ async function onUserConnected(user, connected) {
   }
   if (round?.resolverId === user?.id && isResolving(round)) {
     await recoverRound("resolver-left");
+    return;
+  }
+  // A GM leaving may leave this GM canonical: the readings that GM's game ran
+  // died with its browser, and nothing read them again — the player's window
+  // said "Reading your action…" for good and the round could not resolve by
+  // itself (issue #345 AA42). recoverRound starts them again here, as on a
+  // load or a keyed GM joining; a reading this client runs is left to run.
+  if (user?.isGM && roundIsOpen(round) && round.phase === ROUND_PHASE.COLLECTING) {
+    await recoverRound("gm-left");
     return;
   }
   advanceRound("user-left");
