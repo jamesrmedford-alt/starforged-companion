@@ -40,7 +40,10 @@
  *     possibly incomplete.
  *   - In the chat pipeline (handleBatchModeLine): a typed line is table talk;
  *     a card button's move becomes its roller's entry, or waits for the next
- *     round while one resolves.
+ *     round while one resolves. A participant's vow or bond progress roll
+ *     made on the system sheet (index.js registerNativeProgressRollHook) is
+ *     narrated with the round: its outcome becomes the roller's entry, ready
+ *     (takeSheetRoll), or waits for the next round the same way.
  */
 
 import { isCanonicalGM, hasKeyedActiveGM } from "../multiplayer/gmGate.js";
@@ -48,7 +51,7 @@ import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridg
 import { isSessionActive, sessionNeedsMint, touchSessionActivity } from "../session/lifecycle.js";
 import { messageAuthorId, resolveSpeakerActorId } from "../multiplayer/speaker.js";
 import { stripHtml } from "../narration/narratorPrompt.js";
-import { isXCardActive, narrateRound } from "../narration/narrator.js";
+import { isXCardActive, narrateRound, narrateResolution } from "../narration/narrator.js";
 import {
   readAction,
   interpretationForRoll,
@@ -61,6 +64,7 @@ import {
 import { resultUpgradeBlocker } from "../moves/burnMomentum.js";
 import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
+import { resolveRelevance } from "../context/relevanceResolver.js";
 import { selectSceneChallengeTrack, moveOutsideSceneChallenge, SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { getMischiefDial } from "../ui/settingsPanel.js";
@@ -80,6 +84,8 @@ import {
   closeRound,
   nextRoundNumber,
   offerForcedMove,
+  enterSheetRoll,
+  isSheetRollEntry,
   takeCardMoves,
   recordReading,
   readingFailed,
@@ -941,7 +947,8 @@ function roundResultCard(roundId, userId) {
 /**
  * Roll one acting entry and record it (rollMove → recordMove), as a typed
  * move is rolled — credited to its own PC — stamping `rolled` and its record
- * as it goes. A narrative entry is recorded as it is. An entry the roll
+ * as it goes. A narrative entry is recorded as it is, and a move rolled on
+ * the character sheet with the outcome it was rolled with. An entry the roll
  * stage cannot roll (its track ended earlier in the round, a vow already
  * fulfilled, no target picked) is refused: its card says why, and it is
  * narrated as an action with no roll.
@@ -965,6 +972,18 @@ async function rollEntry(round, entry) {
     await queueRoundWrite(r => markRecorded(rolledInfo ? markRolled(r, { userId, rolled: rolledInfo }) : r, {
       userId, recordedAt: nowIso(), narrationInput: rolledInfo?.narrationInput ?? entry.rolled?.narrationInput ?? { kind: "narrative" },
     }));
+    return;
+  }
+
+  // Rolled on the character sheet, and paid there (issue #345 D1): the round
+  // narrates it with that outcome and rolls nothing — so nothing is rolled as
+  // another PC either, whoever its character is now.
+  if (reading?.kind === READING_KIND.SHEET_ROLL) {
+    const input = reading.narrationInput ?? { kind: "narrative" };
+    await queueRoundWrite(r => markRecorded(markRolled(r, {
+      userId, rolled: { moveId: input.moveId ?? null, outcome: input.outcome ?? null, narrationInput: input },
+    }), { userId, recordedAt: nowIso() }));
+    _sheetRolls.delete(entry.readAs?.messageId);
     return;
   }
 
@@ -1398,10 +1417,12 @@ function runHeldMovesSoon() {
  * What finishMove takes for an entry: this client's own roll when it rolled
  * it, else one rebuilt from the round — the final outcome (after an upgrade)
  * and the reading's riders — so a round resumed after a reload still finishes
- * its moves.
+ * its moves. Not a move rolled on the character sheet: the round only
+ * narrates it, as the sheet's own narration ran no riders (issue #345 D1).
  */
 function rolledFor(roundId, entry) {
   if (entry?.status !== ENTRY_STATUS.RECORDED) return null;
+  if (entry.reading?.kind === READING_KIND.SHEET_ROLL) return null;
   const input = entry.rolled?.narrationInput;
   if (input?.kind !== "move") return null;
   const here = rolledHere(roundId, entry.userId);
@@ -1416,12 +1437,18 @@ function rolledFor(roundId, entry) {
 // Card-button moves, and lines typed while the mode is on
 // ─────────────────────────────────────────────────────────────────────────────
 
-// Message ids, oldest first: a participant's card-button move held for the
-// next round, and a non-participant's held until the resolving round closes.
+// Message ids, oldest first: a participant's card-button move (or sheet
+// roll) held for the next round, and a non-participant's held until the
+// resolving round closes.
 const _heldForRound = [];
 const _heldForFreeFlow = [];
 // Round ids whose table-talk notice this client's user has had.
 const _toldTableTalk = new Set();
+// The sheet rolls the round took or holds, by their roll card's id: the
+// parsed outcome as a resolution, and its roller — for the round's entry, or
+// its own narration when no round takes it after all (takeSheetRoll — issue
+// #345 D1).
+const _sheetRolls = new Map();
 
 /**
  * The chat pipeline's Batch Mode step (src/index.js onMessage), on every
@@ -1598,6 +1625,9 @@ function holdCardMoves(held, round) {
     const message = game.messages?.get?.(messageId) ?? null;
     if (!message) continue;
     const entry = round?.entries?.[userId] ?? null;
+    if (isSheetRollEntry(entry) && entry.readAs?.messageId === messageId && !_sheetRolls.has(messageId)) {
+      _sheetRolls.set(messageId, sheetRollFromEntry(entry));
+    }
     holdForNextRound(message, { userId, actorName: entry?.actorName ?? "" });
   }
 }
@@ -1606,9 +1636,135 @@ function holdForNextRound(message, participant) {
   if (!message?.id || _heldForRound.includes(message.id)) return;
   _heldForRound.push(message.id);
   const owners = Array.from(game.users ?? []).filter(u => !u.isGM && u.id === participant.userId).map(u => u.id);
+  const what = _sheetRolls.has(message.id) ? "roll on the character sheet is narrated with" : "move from the card joins";
   whisper([...owners, ...gmIds()], "Held for the next round",
-    `${escapeHtml(participant.actorName)}'s move from the card joins the next round, in the Round window.`,
+    `${escapeHtml(participant.actorName)}'s ${what} the next round, in the Round window.`,
     { batchHeldMoveNotice: true }).catch(err => console.warn(`${MODULE_ID} | Batch Mode: held-move notice failed:`, err?.message ?? err));
+}
+
+/**
+ * Whether a vow or bond progress roll made on the system sheet is narrated
+ * with a Batch Mode round (issue #345 D1): the mode on, a GM connected to run
+ * the round, and its roller — the roll card's speaker — a participant's
+ * character. Every client reaches the same answer from shared data, so the
+ * others stand down while the canonical GM takes it (takeSheetRoll). Anyone
+ * else's sheet roll is narrated at once, as a non-participant's card move
+ * runs as free-flow.
+ *
+ * @param {ChatMessage} message — a chat message (any: cheap when the mode is off)
+ * @returns {boolean}
+ */
+export function sheetRollJoinsRound(message) {
+  if (!isBatchModeEnabled()) return false;
+  if (!Array.from(game.users ?? []).some(u => u?.isGM && u?.active)) return false;
+  const actorId = typeof message?.speaker?.actor === "string" ? message.speaker.actor : null;
+  return !!actorId && currentParticipants().some(p => p.actorId === actorId);
+}
+
+/**
+ * A participant's vow or bond progress roll made on the system sheet, on the
+ * canonical GM (src/index.js registerNativeProgressRollHook; issue #345 D1 —
+ * the maintainer's option A). The system rolled it and the module's payoff
+ * hook paid it, as it always does — fulfilment, legacy, a miss's recommit
+ * offer; the round takes only its narration. While the round collects it
+ * becomes the roller's entry, ready, carrying the parsed outcome
+ * (joinSheetRoll); with no round collecting — one resolving, none open before
+ * a session, the roller not in it yet — it is held for the next round, as a
+ * card's move is, and with the mode turned off before one opens it gets its
+ * own narration (narrateSheetRoll), as before Batch Mode.
+ *
+ * @param {ChatMessage} message — the system's roll card
+ * @param {Object} resolution — its outcome, as the sheet's own narration takes it
+ * @returns {Promise<boolean>} true when the round took or holds it; false —
+ *   narrate it now (its roller is no participant)
+ */
+export async function takeSheetRoll(message, resolution) {
+  if (!isCanonicalGM() || !isBatchModeEnabled() || !message?.id || !resolution) return false;
+  const actorId = typeof message?.speaker?.actor === "string" ? message.speaker.actor : null;
+  const participant = currentParticipants().find(p => p.actorId === actorId) ?? null;
+  if (!participant) return false;
+  _sheetRolls.set(message.id, { resolution, actorId });
+  const round = getStoredRound();
+  if (!roundIsOpen(round) || round.phase !== ROUND_PHASE.COLLECTING || !entryFor(round, participant.userId)) {
+    holdForNextRound(message, participant);
+    return true;
+  }
+  await joinSheetRoll(message, participant.userId);
+  return true;
+}
+
+/**
+ * Make a sheet roll its roller's entry (round.js enterSheetRoll): ready, with
+ * the narration input its outcome gives — the relevance its narration would
+ * have resolved, as the sheet's own narration did. A card move it displaces,
+ * or the sheet roll itself beside an owed roll or another sheet roll, is held
+ * for the next round; a join the world refused is too.
+ */
+async function joinSheetRoll(message, userId) {
+  const sheet = _sheetRolls.get(message?.id);
+  if (!sheet) return;
+  const { resolution } = sheet;
+  const relevance = await resolveRelevance(resolution.playerNarration ?? "", resolution.moveId, resolution.outcome, workingCopy())
+    .catch((err) => {
+      console.warn(`${MODULE_ID} | Batch Mode: the sheet roll's relevance failed; narrated at embellishment:`, err?.message ?? err);
+      return null;
+    });
+  const narrationInput = narrationInputFrom(resolution, relevance);
+  let held = [];
+  let written = null;
+  try {
+    written = await queueRoundWrite((latest) => {
+      const res = enterSheetRoll(latest, {
+        userId, text: resolution.playerNarration ?? "", narrationInput, submissionId: randomId(), now: nowIso(),
+        messageId: message.id,
+      });
+      held = res.held;
+      return res.round;
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Batch Mode: a sheet roll could not join the round:`, err?.message ?? err);
+    const participant = currentParticipants().find(p => p.userId === userId);
+    if (participant) holdForNextRound(message, participant);
+    return;
+  }
+  holdCardMoves(held, written);
+  advanceRound("sheet-roll");
+}
+
+/**
+ * A sheet roll no round took, narrated on its own as before Batch Mode —
+ * the sheet narration's call (narrateResolution) on a working copy taken now,
+ * as its roller. Never throws.
+ */
+async function narrateSheetRoll(sheet) {
+  try {
+    await narrateResolution(sheet.resolution, workingCopy(), { speakerActorId: sheet.actorId ?? null });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Batch Mode: a held sheet roll's narration failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * A sheet roll as a stored entry keeps it — for one this client did not take
+ * (another GM's game took it before leaving, or this page reloaded since)
+ * that a round hands back: its outcome rebuilt from the entry's narration
+ * input, so it joins the next round as a sheet roll, never as a card's move
+ * to read and roll.
+ *
+ * @param {Object} entry — isSheetRollEntry
+ * @returns {{ resolution: Object, actorId: string|null }}
+ */
+function sheetRollFromEntry(entry) {
+  const input = entry.reading?.narrationInput ?? {};
+  return {
+    actorId: entry.actorId ?? null,
+    resolution: {
+      _id: input.resolutionId ?? null, moveId: input.moveId ?? null, moveName: input.moveName ?? null,
+      outcome: input.outcome ?? null, outcomeLabel: input.outcomeLabel ?? null, isMatch: input.isMatch === true,
+      isProgressMove: true, statUsed: null, loremasterContext: input.loremasterContext ?? "",
+      oracleSeeds: input.oracleSeeds ?? null, playerNarration: entry.text ?? "",
+    },
+  };
 }
 
 // The round the held moves last joined: they join a round once. Its opening
@@ -1651,14 +1807,19 @@ async function joinHeldMoves() {
       _heldForFreeFlow.push(id);
       continue;
     }
-    await joinRound(message, entry.userId);
+    if (_sheetRolls.has(id)) await joinSheetRoll(message, entry.userId);
+    else await joinRound(message, entry.userId);
   }
 }
 
 // True while runHeldFreeFlowMoves is draining: one drain at a time, oldest first.
 let _runningHeld = false;
 
-/** A non-participant's forced move a resolving round held runs now, as free-flow. */
+/**
+ * A non-participant's forced move a resolving round held runs now, as
+ * free-flow — and a sheet roll no round took gets the narration it had
+ * before Batch Mode (narrateSheetRoll).
+ */
 async function runHeldFreeFlowMoves() {
   if (_runningHeld || isResolving(getStoredRound())) return;
   _runningHeld = true;
@@ -1666,7 +1827,14 @@ async function runHeldFreeFlowMoves() {
     while (_heldForFreeFlow.length) {
       const id = _heldForFreeFlow.shift();
       const message = game.messages?.get?.(id) ?? null;
-      if (!message || !_freeFlowRunner) continue;
+      if (!message) continue;
+      const sheet = _sheetRolls.get(id);
+      if (sheet) {
+        _sheetRolls.delete(id);
+        await narrateSheetRoll(sheet);
+        continue;
+      }
+      if (!_freeFlowRunner) continue;
       await Promise.resolve(_freeFlowRunner(message)).catch(err =>
         console.warn(`${MODULE_ID} | Batch Mode: a held move failed:`, err?.message ?? err));
     }

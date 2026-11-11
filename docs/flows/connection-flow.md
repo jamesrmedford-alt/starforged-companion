@@ -294,7 +294,8 @@ BOND-NATIVE-FORGE fix) — on the connection the roller's bond Item names, by
 the record id it carries, else the one active connection of that exact name,
 never a fallback to another (`findSheetBondConnection`, issue #330 D5: a
 hand-made bond forged the crew's one connection) — and is narrated by the native progress-roll hook where
-a Claude key lives (`vow-flow.md` §4, issue #321 U11). On a **miss** the
+a Claude key lives (`vow-flow.md` §4, issue #321 U11), or with the Batch Mode
+round while the mode is on (issue #345 D1). On a **miss** the
 pipeline posts a recommit offer for the un-bonded connection it rolled
 (`postBondRecommitOfferCard`, issue #330 D1): **🔁 Recommit to the Bond**
 relays `bond.recommit` (`cardActions.applyBondRecommitOffer`, the roller's

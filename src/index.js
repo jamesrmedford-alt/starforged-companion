@@ -225,6 +225,8 @@ import {
   acceptRoundUpgrade,
   setBatchFreeFlowRunner,
   noteMoveLockFreed,
+  sheetRollJoinsRound,
+  takeSheetRoll,
 } from "./batch/driver.js";
 import { registerRoundWindowHooks } from "./ui/roundWindow.js";
 
@@ -2530,13 +2532,23 @@ function rolledByPlayerCharacter(message) {
  * progress, our own cards, unparseable shapes) is skipped with a debug
  * breadcrumb on the deciding client (decisions.md → "No silent failures"). See
  * nativeProgressRoll.js for the vendor-coupling note.
+ *
+ * While Batch Mode is on, a participant's roll is narrated with the round
+ * (issue #345 D1 — the maintainer's option A): the canonical GM, the round's
+ * one writer, hands its outcome to the driver (takeSheetRoll), which makes it
+ * the roller's entry or holds it for the next round; the round narrates it
+ * once, with the others' actions. Only the narration moves: the payoff hook
+ * (registerNativeFulfilConsequenceHook) pays it at once, as before.
  */
 function registerNativeProgressRollHook() {
   Hooks.on("createChatMessage", (message) => {
     try {
       // Every client reads the same keyed-GM registry and user list, so one
-      // decides it narrates and the others stand down — not a failure, so no log.
-      const narratesHere = nativeRollNarratesHere(message);
+      // decides it narrates and the others stand down — not a failure, so no
+      // log. A participant's roll in Batch Mode is the round's: decided on
+      // the canonical GM, whatever the keys.
+      const toRound = sheetRollJoinsRound(message);
+      const narratesHere = toRound ? isCanonicalGM() : nativeRollNarratesHere(message);
 
       const content = String(message?.content ?? "");
       const parsed  = narratesHere ? parseIronswornProgressRoll(content) : null;
@@ -2566,7 +2578,7 @@ function registerNativeProgressRollHook() {
       const outcomeLabel = parsed.outcome === "strong_hit" ? "Strong Hit"
         : parsed.outcome === "weak_hit" ? "Weak Hit" : "Miss";
 
-      import("./narration/narrator.js").then(({ narrateResolution }) => {
+      import("./narration/narrator.js").then(async ({ narrateResolution }) => {
         // A working copy: narrateResolution starts the scene and applies the
         // sidecar on it (issue #335 Y04, the X09 rule).
         const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
@@ -2596,7 +2608,8 @@ function registerNativeProgressRollHook() {
         resolution.consequences = mapConsequences(moveId, parsed.outcome, isMatch);
         resolution.loremasterContext = buildLoremasterContext({ ...resolution, rollKind: "progress" });
         // Narrate-only: the system already rolled; we do NOT re-roll or re-apply
-        // mechanics, just narrate the outcome.
+        // mechanics, just narrate the outcome — with the round, in Batch Mode.
+        if (toRound && await takeSheetRoll(message, resolution)) return null;
         return narrateResolution(resolution, campaignState, { speakerActorId });
       }).catch(err =>
         console.warn(`${MODULE_ID} | native progress-roll narration failed:`, err?.message ?? err));

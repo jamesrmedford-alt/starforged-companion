@@ -438,6 +438,24 @@ Free-flow play stays the default and is unchanged while the mode is off.
   its author is told once per round and the line becomes their window's draft
   when the box is empty. Commands run as usual; a card button's move becomes
   its roller's entry.
+- **A roll made on the character sheet is narrated with the round** (issue
+  #345 D1, the maintainer's option A, 2026-11): a participant's vow or bond
+  progress roll on the system sheet (Fulfill Your Vow, Forge a Bond) is rolled
+  by the system and paid by the payoff hook at once, as before — fulfilment,
+  legacy, a miss's 🔁 Recommit offer — and only its narration moves: the
+  canonical GM makes it the roller's entry, ready, carrying the parsed outcome
+  (`takeSheetRoll` → `enterSheetRoll`), never rolled again and its riders not
+  run (the sheet's own narration ran none). Like an owed roll it is the
+  roller's action as it stands — an action already written is set aside as
+  their draft for the next round, a card move it displaces joins the next
+  round, and it can't be withdrawn, passed or edited. With no round collecting
+  (one resolving, none open before a session), or beside an owed roll or
+  another sheet roll already the entry, it is held for the next round, as a
+  card's move is (in memory, as those are); with the mode turned off before
+  that round opens, it is narrated on its own, as before. A non-participant's
+  sheet roll is narrated at once, as a non-participant's card move runs as
+  free-flow. *Rejected:* keeping its own narration, at once, and recording it
+  (option B) — the one move narrated outside "one round, one narration".
 - **Opting out is silent** (2026-11-06): a player who passes or doesn't act
   is not marked, named or told — not in the windows, on the card, in the
   narration request, or when a GM sends the round.

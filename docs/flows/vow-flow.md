@@ -346,8 +346,13 @@ key lives (`registerNativeProgressRollHook` → `nativeRollNarratesHere`, the
 canonical GM when a keyed GM is connected, else the roller's own client with
 its own key — as the roller's PC (`resolveSpeakerActorId` on the roll card).
 Narrating only on the roller's client gave a keyless player "Narration
-unavailable" at a table whose GM holds the key (issue #321 U11). The canonical
-GM applies consequences
+unavailable" at a table whose GM holds the key (issue #321 U11). While Batch
+Mode is on, a participant's roll is narrated with the round instead (issue
+#345 D1): the canonical GM hands its outcome to the driver
+(`sheetRollJoinsRound` / `takeSheetRoll`), which makes it the roller's entry —
+ready, `READING_KIND.SHEET_ROLL` carrying the outcome's narration input
+(`round.enterSheetRoll`), never rolled again — or holds it for the next round;
+the round's one narration tells it. The canonical GM applies consequences
 (`registerNativeFulfilConsequenceHook` → `shouldPayFulfilledVow` → full
 `payFulfilledVowNative` with `actorId` = the roll card's speaker, which here
 also pays quests legacy — from the roller's vow's rank). Both hooks act only

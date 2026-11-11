@@ -97,7 +97,9 @@ function aRoundsLife() {
   r = keep(R.rereadEntry(r, { userId: 'pl-3', submissionId: 'c', newSubmissionId: 'c2', now: NOW, moveId: 'compel' }));
   r = keep(R.readingFailed(r, { userId: 'pl-3', submissionId: 'c2', error: 'overloaded' }));
   r = keep(R.passEntry(r, { userId: 'pl-4' }));
-  r = keep(R.takeCardMoves(r, { acting: ['pl-1', 'pl-2'] }).round);
+  // A move rolled on the character sheet (issue #345 D1).
+  r = keep(R.enterSheetRoll(r, { userId: 'pl-4', text: 'Resolving: Find Chen', narrationInput: { kind: 'move', moveId: 'fulfill_your_vow' }, submissionId: 's', now: NOW, messageId: 'sheet' }).round);
+  r = keep(R.takeCardMoves(r, { acting: ['pl-1', 'pl-2', 'pl-4'] }).round);
   r = keep(R.markModeOffAfter(r));
   r = keep(R.beginResolution(r, { resolverId: 'gm-1', now: NOW, sendNow: true }));
   r = keep(R.fixActing(r));
@@ -105,6 +107,8 @@ function aRoundsLife() {
   r = keep(R.markRolled(r, { userId: 'pl-1', rolled: { resolutionId: 'res', cardId: 'card', moveId: 'face_danger', outcome: 'weak_hit', narrationInput: { kind: 'move' } } }));
   r = keep(R.markRecorded(r, { userId: 'pl-1', recordedAt: NOW }));
   r = keep(R.markRefused(r, { userId: 'pl-2', reason: 'gone', narrationInput: { kind: 'refused' }, recordedAt: NOW }));
+  // As driver.js rollEntry records a sheet roll.
+  r = keep(R.markRecorded(R.markRolled(r, { userId: 'pl-4', rolled: { moveId: 'fulfill_your_vow', outcome: 'miss', narrationInput: { kind: 'move' } } }), { userId: 'pl-4', recordedAt: NOW }));
   r = keep(R.beginUpgrades(r, { offers: { 'pl-1': { burn: { momentum: 9, previewOutcome: 'strong_hit' }, improve: null, cardId: 'card' } } }));
   r = keep(R.decideUpgrade(r, { userId: 'pl-1', decision: 'burn', narrationInput: { kind: 'move' }, now: NOW }));
   r = keep(R.beginNarration(r));
@@ -144,9 +148,11 @@ function assignedReadingKeys(file) {
   return [...code.matchAll(/\breading\.([A-Za-z_$][\w$]*)\s*=(?![=>])/g)].map(m => m[1]);
 }
 
-// A stored reading's producer: readAction's reading with no roll, and readingFromMove's.
+// A stored reading's producer: readAction's reading with no roll, and readingFromMove's
+// — and round.js enterSheetRoll's, a move rolled on the character sheet (issue #345 D1).
 const NARRATIVE_READING = /return \{(?=\s*kind:\s*READING_KIND\.NARRATIVE,)/;
 const MOVE_READING = /return \{(?=\s*kind:\s*READING_KIND\.MOVE,)/;
+const SHEET_ROLL_READING = /reading:\s*\{(?=\s*kind:\s*READING_KIND\.SHEET_ROLL,)/;
 
 /** The stored shape: kind → the keys stored under it. */
 function storedShape() {
@@ -157,6 +163,7 @@ function storedShape() {
   // What the reading's producer stores, and the driver adds.
   for (const k of literalKeys('src/moves/movePipeline.js', NARRATIVE_READING)) shape.reading.add(k);
   for (const k of literalKeys('src/moves/movePipeline.js', MOVE_READING)) shape.reading.add(k);
+  for (const k of literalKeys('src/batch/round.js', SHEET_ROLL_READING)) shape.reading.add(k);
   for (const k of assignedReadingKeys('src/batch/driver.js')) shape.reading.add(k);
   for (const round of aRoundsLife()) {
     for (const k of Object.keys(round)) shape.round.add(k);
@@ -196,6 +203,7 @@ describe('every field a round stores is read (issue #342 Z37)', () => {
     expect(literalKeys('src/moves/movePipeline.js', NARRATIVE_READING)).toEqual(expect.arrayContaining(['kind', 'suggestedMove', 'suggestedTargetId']));
     expect(literalKeys('src/moves/movePipeline.js', MOVE_READING)).toEqual(expect.arrayContaining(['kind', 'moveId', 'abilities', 'targetChoices', 'blocked', 'forced', 'interpretation']));
     expect(assignedReadingKeys('src/batch/driver.js')).toEqual(expect.arrayContaining(['trackId', 'trackLabel', 'variantChallengeId']));
+    expect(literalKeys('src/batch/round.js', SHEET_ROLL_READING)).toEqual(['kind', 'narrationInput']);
     expect([...shape.choices]).toEqual(['abilityIds', 'statReplacement', 'targetId']);
     expect(readsOf('reading', 'interpretation').length).toBeGreaterThan(0); // control: the roll starts from the reading's interpretation
   });
