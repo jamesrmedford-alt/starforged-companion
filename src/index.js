@@ -3678,7 +3678,11 @@ function registerOracleMemoryCaptureHook() {
       if (!isCanonicalGM()) return;
       const entry = message?.flags?.[MODULE_ID]?.oracleMemory;
       if (!entry || typeof entry !== "object") return;
-      void serialiseCampaignStateWrite(() => captureOracleResult(entry), "oracle memory");
+      // Stamped with the card's own id (never a flag's): an X-Card on the
+      // follow-up narration that names this card takes the result out of the
+      // ring with it (issue #345 AA01).
+      const fromCard = { ...entry, cardId: typeof message?.id === "string" ? message.id : null };
+      void serialiseCampaignStateWrite(() => captureOracleResult(fromCard), "oracle memory");
     } catch (err) {
       console.warn(`${MODULE_ID} | oracle-memory capture failed:`, err?.message ?? err);
     }

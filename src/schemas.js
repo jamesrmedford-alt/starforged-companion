@@ -626,7 +626,9 @@ export const CampaignStateSchema = {
   // what the dice established (prompt section [3b]) instead of being free to
   // contradict a roll the table just made. Written by the canonical GM's
   // capture hook (src/index.js) via src/oracles/oracleMemory.js; capped at
-  // RECENT_ORACLE_CAP entries of { name, question, answer, sessionId, at }.
+  // RECENT_ORACLE_CAP entries of { name, question, answer, sessionId, at,
+  // cardId } — a move's own price also `resolutionId` (issue #342 Z11); the
+  // X-Card drops the entries its removed narrations told (issue #345 AA01).
   recentOracles:  [],
 };
 

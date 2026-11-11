@@ -26,7 +26,7 @@ import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
-import { readRecentOracleResults } from '../oracles/oracleMemory.js';
+import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
 import { narrationDisablesThinking } from './thinking.js';
 import { logNarratorUsage } from '../pacing/telemetry.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
@@ -1701,7 +1701,8 @@ function sessionNarratorCards(sessionId, { forRecap = false } = {}) {
 // Full exclusion (decisions.md → "X-Card: anyone plays it, a GM resumes it"):
 // the narration an X-Card answers leaves narrator memory — its cards are
 // flagged `xCarded` (out of the ring, the rolling summary and the session
-// recap's prose), the ledger entries its sidecar wrote are retracted, a
+// recap's prose), the ledger entries its sidecar wrote are retracted, the
+// oracle results it told leave RECENT ORACLE RESULTS (issue #345 AA01), a
 // rolling summary that covered it loses its text, and the first narration
 // after a GM resumes carries a redirect away from it.
 //
@@ -1789,6 +1790,11 @@ export function xCardedNarrationCards(sessionId) {
  *     frame they wrote cleared);
  *   - `xCardedNarrationIds`: their ids, so a stale writer's merge
  *     (mergeSceneLedgers) or a late relayed sidecar cannot bring them back;
+ *   - `recentOracles`: the oracle results they told — an oracle follow-up's
+ *     result card (its `oracleCardId`), a move narration's Pay the Price (its
+ *     `resolutionId`, a round card's entries' too) — out of RECENT ORACLE
+ *     RESULTS, which told every later narration the removed answer was
+ *     established (issue #345 AA01);
  *   - `sessionSummary`: its text dropped and a regen due, when it covered
  *     them (the summary is a droppable convenience; the next regen reads the
  *     remaining cards);
@@ -1809,6 +1815,7 @@ export function applyXCardToNarratorMemory(cs) {
     const prior = Array.isArray(cs.xCardedNarrationIds) ? cs.xCardedNarrationIds : [];
     cs.xCardedNarrationIds = [...prior.filter(id => !ids.includes(id)), ...ids].slice(-XCARD_NARRATION_ID_CAP);
   }
+  dropOracleResultsFor(cs, xCardedOracleResults(cards));
 
   const summary = cs.sessionSummary;
   if (cards.length && summary?.sessionId === sessionId) {
@@ -1828,6 +1835,29 @@ export function applyXCardToNarratorMemory(cs) {
 
   cs.xCardRedirect = { sessionId, at: new Date().toISOString() };
   return { cards, retracted };
+}
+
+/**
+ * The oracle results the X-carded cards told, as dropOracleResultsFor takes
+ * them: an oracle follow-up names its result card (`oracleCardId`); a move
+ * narration, its move's resolution (`resolutionId` — the Pay the Price its
+ * miss paid seeded it); a Batch Mode round card, each entry's.
+ *
+ * @param {Object[]} cards
+ * @returns {{ cardIds: string[], resolutionIds: string[] }}
+ */
+function xCardedOracleResults(cards) {
+  const cardIds = [];
+  const resolutionIds = [];
+  for (const m of cards ?? []) {
+    const f = m?.flags?.[MODULE_ID] ?? {};
+    if (f.oracleCardId) cardIds.push(f.oracleCardId);
+    if (f.resolutionId) resolutionIds.push(f.resolutionId);
+    for (const e of Array.isArray(f.roundEntries) ? f.roundEntries : []) {
+      if (e?.resolutionId) resolutionIds.push(e.resolutionId);
+    }
+  }
+  return { cardIds, resolutionIds };
 }
 
 /**
@@ -2607,11 +2637,16 @@ function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = n
  * @param {string|null} [args.speakerActorId] — the PC of the player who rolled
  *                                          (credit the roller); falls back to
  *                                          the campaign's first PC
+ * @param {string|null} [args.oracleCardId] — the raw result card narrated: the
+ *                                          narration's card names it, so an
+ *                                          X-Card on it drops the card's result
+ *                                          from RECENT ORACLE RESULTS (issue
+ *                                          #345 AA01)
  * @param {Object}  args.campaignState
  * @returns {Promise<string|null>} the rendered narration text or null on skip / failure
  */
 export async function narrateOracleFollowup({
-  kind, oracleName, question = '', rolledLine, campaignState, speakerActorId = null,
+  kind, oracleName, question = '', rolledLine, campaignState, speakerActorId = null, oracleCardId = null,
 }) {
   const sessionId = campaignState?.currentSessionId ?? null;
 
@@ -2669,7 +2704,7 @@ export async function narrateOracleFollowup({
 
     if (!text?.trim()) return null;
 
-    await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId });
+    await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
     // The narration of a roll the table made — discovery by nature (#286 D4).
     scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
     return text;
@@ -2686,7 +2721,7 @@ export async function narrateOracleFollowup({
         if (xCard.interrupted('narrateOracleFollowup')) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (text?.trim()) {
-          await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId });
+          await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
           scheduleNarrationCapture(text, campaignState, { detect: true, source: 'oracle_followup', actorId: character?.actorId ?? null, narrationId });
           return text;
         }
@@ -2722,7 +2757,7 @@ function buildOracleUserMessage({
   );
 }
 
-async function postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId = null }) {
+async function postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId = null, oracleCardId = null }) {
   const header = oracleName || (kind === 'pay_the_price' ? 'Pay the Price' : 'Oracle');
   // Flag family (narrator-context audit 2026-07): the oracle follow-up is
   // in-fiction prose anchored to the scene — without the family it never
@@ -2738,6 +2773,9 @@ async function postOracleNarrationCard({ text, kind, oracleName, sessionId, narr
         narratorCard:        true,
         narrationText:       text,
         narrationId:         narrationId ?? null,   // for the X-Card (issue #321 U07)
+        // The result card it narrates — an X-Card on this narration takes
+        // that card's result out of RECENT ORACLE RESULTS (issue #345 AA01).
+        oracleCardId:        typeof oracleCardId === 'string' && oracleCardId ? oracleCardId : null,
       },
     },
   });

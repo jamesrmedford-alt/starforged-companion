@@ -220,7 +220,13 @@ stopped the narrator re-asserting them (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED) — 
 values removed — each gives way to the value it superseded, kept on the entry
 as a bounded `previous` chain, so an earlier kept narration's value stands
 again (issue #326 W41) — a frame they wrote cleared), appends their `narrationId`s to
-`xCardedNarrationIds` (cap 50), drops a rolling summary that covered them
+`xCardedNarrationIds` (cap 50), takes the oracle results they told out of
+`recentOracles` (`dropOracleResultsFor`: an oracle follow-up's card names
+the result card it narrated, `oracleCardId`, and each ring entry carries
+its card's id; a move narration's — or a round card's entries' —
+`resolutionId` names its Pay the Price; RECENT ORACLE RESULTS told every
+later narration the removed answer was established — issue #345 AA01),
+drops a rolling summary that covered them
 (text emptied, a regen due — stamped with a fresh `updatedAt` and
 `xCardedAt`, so a move in flight cannot merge its working copy's older
 summary back over it, and a regen whose Haiku call was out when the card was
@@ -654,7 +660,9 @@ another kind — the Pay the Price's clock advance, the `!oracle` follow-up's
 scene start, which run on the same chain (issue #342 Z17); a move's own price
 carries the move's `resolutionId`, and a Burn Momentum or Improve Result that
 reverts the price drops it (`dropOracleResultsOf`, issue #342 Z11 — it told
-the strong hit's re-narration the undone price was established) — for section [3b]
+the strong hit's re-narration the undone price was established); every entry
+carries the id of its result card (`cardId`, the hook's own message id), so
+an X-Card on the narration that told it drops it too (issue #345 AA01) — for section [3b]
 (the retired assembler's RECENT ORACLES section went with the module, 2026-07
 — issue #271).
 

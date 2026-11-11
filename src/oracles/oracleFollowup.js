@@ -118,6 +118,7 @@ export async function narrateOracleFollowupOnGm(payload = {}, ctx = {}) {
     question:       String(spec.question ?? ""),
     rolledLine:     String(spec.rolledLine ?? ""),
     speakerActorId: speakerOk ? speaker.id : null,
+    messageId,
   });
 }
 
@@ -141,6 +142,10 @@ async function runOracleFollowup(args) {
       question:       args?.question ?? "",
       rolledLine:     args?.rolledLine,
       speakerActorId: typeof args?.speakerActorId === "string" ? args.speakerActorId : null,
+      // The raw card narrated: its follow-up card names it, so an X-Card on
+      // the narration takes the card's result out of RECENT ORACLE RESULTS
+      // (issue #345 AA01).
+      oracleCardId:   typeof args?.messageId === "string" && args.messageId ? args.messageId : null,
       campaignState,
     });
   } catch (err) {

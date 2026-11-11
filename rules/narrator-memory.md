@@ -172,7 +172,11 @@ layers. This file is the never-break list.
    a narration
    is built from the ledgers as they stand in the store, never a pre-dialog
    snapshot (W05), and a summary the X-Card emptied is stamped newer than any
-   working copy's (W06).
+   working copy's (W06). What a removed narration told from RECENT ORACLE
+   RESULTS leaves the ring in the pause's write — an oracle follow-up's
+   result by the card id its card names (`oracleCardId` ↔ the entry's
+   `cardId`), a move's Pay the Price by its `resolutionId` (issue #345
+   AA01).
 
 7. **Sidecar subjects resolve against the full roster, in its own shape.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so
