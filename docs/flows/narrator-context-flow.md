@@ -83,7 +83,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   whatever the class, each entry by its free-flow rule (Z10 — "Post-narration
   capture" below).
 - **Claude-calling chat commands** — `@scene`, `!recap`, `!ship envision`,
-  `!ship history`, `!incite` — route `RUN_ON.CLAUDE` (`CHAT_COMMAND_ROUTES`,
+  `!ship history`, `!incite` (the Session panel's ✦ Envision Inciting Incident
+  posts the presser's `!incite`, a GM's press too — issue #345 D6) — route `RUN_ON.CLAUDE` (`CHAT_COMMAND_ROUTES`,
   `src/index.js`; policy in `src/multiplayer/commandRouting.js`): the keyed canonical GM when `hasKeyedActiveGM()`, else the
   author's client with its own key (a keyed player at a keyless-GM table;
   keyless → the usual "key not configured" fallback). Every client reads the

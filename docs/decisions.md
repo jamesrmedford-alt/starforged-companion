@@ -6,6 +6,36 @@ rejected.
 
 ---
 
+## The Session panel's ✦ Envision Inciting Incident is `!incite` for a GM too (2026-11)
+
+**Decision:** every press of the Session panel's ✦ Envision Inciting
+Incident — a player's or a GM's — posts the presser's `!incite` line
+(`src/ui/sessionPanel.js`), which the chat-command router runs where a
+Claude key lives, exactly as typing it does: RUN_ON.CLAUDE — the keyed
+canonical GM when one is connected, else the presser's own client and key
+(decisions "Chat commands run once"). It reverses issue #330 D15's "a GM's
+press runs it on the GM's client as before" (issue #345 D6,
+SESSION-PANEL-INCITE-SKIPS-KEYED-GM — the maintainer chose option A).
+
+**Reason:** a keyless co-GM's press ran `runIncitingIncident` on their own
+client, where the narrator has no key: it posted the spark-only card — no
+opening narration, no suggested vow, no premise canon — with no word why,
+while the same GM typing `!incite` got the keyed GM's narrated incident.
+The help presents the button and `!incite` as one thing, and "Claude calls
+run where a key lives, exactly once" already routes the command. D15
+weighed only players. The same routing also covers a keyed GM who is not
+the canonical one: their press no longer saves the premise from a
+non-canonical client.
+
+**Rejected:** *keep D15's local run, and tell a keyless GM why the card has
+no narration* (option B) — the button would still do less than the
+command it stands for.
+
+**Trade-offs accepted:** a GM's press now posts the `!incite` line in chat,
+as a player's press and a typed command do.
+
+---
+
 ## A player's `!truth set` cannot set back what the X-Card removed (2026-11)
 
 **Decision:** `setTruth` (`src/factContinuity/ledgers.js`) refuses a
@@ -1146,8 +1176,10 @@ brackets.)
   disabled its button for every non-GM — the shape issue #326 W85 fixed for
   Begin / End. A player's press now posts their
   `!incite` line, which the router runs where a Claude key lives, exactly
-  as typing it does; a GM's press runs it on the GM's client as before. The
-  help's Toolbar row drops "(GM)". *Rejected:* gating `!incite` to GMs like
+  as typing it does; a GM's press runs it on the GM's client as before
+  (*superseded by issue #345 D6: a GM's press posts the `!incite` line too —
+  see "The Session panel's ✦ Envision Inciting Incident is `!incite` for a
+  GM too"*). The help's Toolbar row drops "(GM)". *Rejected:* gating `!incite` to GMs like
   `!at` (option B) — the inciting incident founds the crew's shared vow, and
   the command was already open to players.
 

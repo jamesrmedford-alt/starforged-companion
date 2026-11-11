@@ -8,7 +8,8 @@
  * every non-GM and its handler warned "GM-only" — the shape issue #326 W85
  * fixed for Begin / End. Decided (option A): the panel offers it to players
  * as the command does; a player's press posts their `!incite` line, which
- * the router runs where a key lives.
+ * the router runs where a key lives. Since issue #345 D6 a GM's press posts
+ * it too (tests/unit/sessionPanelInciteRunsWhereKeyLives.test.js).
  */
 
 import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from "vitest";
@@ -65,12 +66,15 @@ describe("issue #330 D15 — a player's ✦ Envision Inciting Incident in the Se
     expect(runIncitingIncident).not.toHaveBeenCalled();
   });
 
-  it("control: a GM's press runs the incident on the GM's own client, as before", async () => {
+  // issue #345 D6 (the maintainer's option A): a GM's press is routed like
+  // the typed command too — it ran on the GM's own client, so a keyless
+  // co-GM's press never reached the keyed GM.
+  it("a GM's press posts the `!incite` line too — routed where a key lives, not run on the GM's client", async () => {
     restore();
     restore = withUser({ isGM: true });
     await press();
-    expect(runIncitingIncident).toHaveBeenCalledTimes(1);
-    expect(ChatMessage._created.filter(m => m.content === "!incite")).toHaveLength(0);
+    expect(ChatMessage._created.filter(m => m.content === "!incite")).toHaveLength(1);
+    expect(runIncitingIncident).not.toHaveBeenCalled();
   });
 
   it("control: the GM's button reads the same as the player's", async () => {
