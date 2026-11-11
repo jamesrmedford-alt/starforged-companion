@@ -47,8 +47,10 @@ remains canonical.
 Safety configuration is always the first thing injected into every narration
 context — it is never overridden by any other setting.
 
-**Progress tracks** — vows, expeditions, combats, connections, and legacy
-tracks. Stored in a dedicated journal, displayed in a sidebar panel.
+**Progress tracks** — fights, expeditions, and scene challenges (each challenge
+with its paired danger clock) in the Progress Tracks panel, stored in a
+dedicated journal. Vows and legacy tracks live on each character's sheet, and a
+connection's relationship track on its card in the Entities panel.
 
 **Clocks** — campaign and tension clocks via `!clock`, with a dedicated panel.
 Campaign clocks can auto-advance against oracle odds at the start of a session.
@@ -272,18 +274,22 @@ A 2-hour session at the observed ~60-input rate burns roughly **170 K tokens**
 in aggregate across all calls — pacing classifier ~22 K, narrator ~90 K,
 paced detection ~29 K, chronicle writer ~17 K, move interpreter ~14 K.
 
-### Context packet size
+### Narrator prompt size
 
-Each narration call sends approximately **1,200 tokens** of context to the
-Claude API, regardless of move type. This covers safety configuration, narrator
-permissions, world truths, entity cards for entities present in the scene,
-active progress tracks, and character state.
+Each narration call sends the narrator a system prompt built for that call —
+safety configuration first, then narrator permissions, world truths, the cards
+of the entities in the scene, open progress tracks and clocks, character state,
+and the active-scene ledger — and a message with the player's text and the
+recent narration. There is no fixed budget for the whole prompt — narration
+models' context windows are far larger than it — but the parts that grow with
+play have their own caps: the scene ledger by *Max ledger tokens* (default 400)
+and the recent-narration memory by *Context cards* (default 20), both in
+Companion Settings.
 
-At current Sonnet pricing this is ~$0.0004 per narration input with caching.
-Output (the narration itself) adds ~$0.002–$0.005 depending on length setting.
-Total per narration: ~$0.003 on Sonnet, ~$0.0008 on Haiku.
-
-The budget is defined in `src/schemas.js` (`ContextPacketSchema.tokenBudget`).
+To see what narration costs at your table, open the *Pacing Telemetry* journal's
+"Narrator Usage" page: every narrator call a GM's client makes is logged there —
+its tokens (uncached input, cache reads and writes, output) and its time.
+`!narrator debug` (GM) shows what the last narration was sent.
 
 Audio narration is billed separately by ElevenLabs against your own key and is
 cached content-addressed, so repeated playback of the same prose is free.
@@ -293,11 +299,17 @@ cached content-addressed, so repeated playback of the same prose is free.
 ## Safety
 
 The safety system is always active. Safety configuration is injected first into
-every Claude context packet and is never overridden by any other setting.
+every narrator prompt and is never overridden by any other setting.
 
 - **Lines** — hard content limits, set by GM, never crossed
 - **Veils** — soft limits, set by GM, handled with care or faded to black
-- **Private Lines** — personal limits visible only to you and the GM
+- **Private Lines** — your own hard limits, set on your client; the narrator
+  never crosses or mentions them (narration the GM's game makes carries every
+  player's — with no GM with a Claude key online, a player's own browser
+  carries only theirs). The GM can see them; they are never shown in another
+  player's interface or sent in another player's narration request — but they
+  are stored in the world's shared data, which another player could read from
+  their browser's developer console
 - **X-Card** — type `!x` in chat at any time to immediately suppress the scene
 
 ---
