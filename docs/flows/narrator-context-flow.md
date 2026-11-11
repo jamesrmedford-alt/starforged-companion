@@ -493,11 +493,14 @@ from the GM's cache while a relayed X-Card's, flag's or End a Session's write
 was still in flight, it carried the old campaignState back over it (issue #342
 Z01). The next world load (`initSessionId`,
 ready hook) or Begin a Session, whichever comes first, runs `rollSessionIfDue`:
-an unended session's summary is brought up to date
-(`finalizeSessionSummary`) — an ended one's too when it has no text: End a
-Session finalises its own, but an X-Card on End's closing vignette empties a
-summary that covered the beat it removed, and nothing regenerated it (issue
-#342 Z41) — its scene closes under its own id, then
+the closing session's summary is brought up to date
+(`finalizeSessionSummary`, no call when it covers every card) — an ended
+one's too: End a Session refreshes its own, but that refresh can fail or
+never land, a Batch Mode round resolving at End or a move narrated while End
+runs posts into the ended session after it (issue #345 AA21), and an X-Card
+on End's closing vignette empties a summary that covered the beat it removed
+(issue #342 Z41); End's own closing vignette, posted after its refresh, is
+the one card that check leaves out — its scene closes under its own id, then
 `mintSession` keeps that summary as `previousSessionSummary` — a session
 nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as

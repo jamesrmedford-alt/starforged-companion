@@ -2439,12 +2439,17 @@ export function registerPublishedReflectionHook() {
 }
 
 /**
- * Bring the session's rolling summary up to date before the session closes
- * without End a Session (rollSessionIfDue, src/session/lifecycle.js), so the
- * summary carried into the next session covers all of it: the debounce can
- * leave up to K cards out, and a short session never reaches K. Makes no call
- * when the summary already covers every card. Updates campaignState's
- * `sessionSummary`; fail-open.
+ * Bring the session's rolling summary up to date as the session closes
+ * (rollSessionIfDue, src/session/lifecycle.js), so the summary carried into
+ * the next session covers all of it: the debounce can leave up to K cards out,
+ * and a short session never reaches K. An ended session's too: End a
+ * Session's own refresh can fail or never land, and a Batch Mode round
+ * resolving at End — or a move narrated while End runs — posts its card into
+ * the ended session after that refresh (issue #345 AA21). The summary covers
+ * the session's first `coveredCount` cards; makes no call when every card
+ * past them is End a Session's own closing vignette (End's refresh runs
+ * before it posts — not worth a second call), or there is none. Updates
+ * campaignState's `sessionSummary`; fail-open.
  *
  * @param {Object} campaignState
  * @returns {Promise<void>}
@@ -2458,8 +2463,11 @@ export async function finalizeSessionSummary(campaignState) {
   catch { stored = null; }
   const covered = (summary) => (summary?.sessionId === sessionId ? Number(summary.coveredCount) || 0 : -1);
   if (covered(stored) > covered(campaignState.sessionSummary)) campaignState.sessionSummary = stored;
-  const total = sessionNarratorCards(sessionId).length;
-  if (!total || covered(campaignState.sessionSummary) >= total) return;
+  const ended = campaignState.sessionEndedId === sessionId;
+  const uncovered = sessionNarratorCards(sessionId)
+    .slice(Math.max(0, covered(campaignState.sessionSummary)))
+    .filter(m => !(ended && m.flags?.[MODULE_ID]?.vignetteKind === 'npc_end'));
+  if (!uncovered.length) return;
   await getRollingSessionSummary(campaignState, { forceRefresh: true });
 }
 

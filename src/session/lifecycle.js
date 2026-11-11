@@ -306,16 +306,18 @@ export function mintSession(campaignState, now = Date.now()) {
 
 /**
  * At world load and Begin a Session, on the canonical GM: when the session is
- * over (sessionNeedsMint), close it out and mint the next one. A session
- * nobody ended first gets its rolling summary brought up to date — End a
- * Session refreshes its own — so the summary carried forward covers all of
- * it. An ended session's is brought up to date only when it has no text: an
- * X-Card played on End's closing vignette empties a summary that covered the
- * beat it removed ("the next regen reads the remaining cards"), and no
- * narration of the ended session follows to regenerate it (issue #342 Z41 —
- * the session just played went missing from LAST SESSION). One End left with
- * text is kept as it is — it lacks only End's own closing vignette, not worth
- * a second summary call. Its scene closes under its own id, so migrated
+ * over (sessionNeedsMint), close it out and mint the next one. The closing
+ * session first gets its rolling summary brought up to date
+ * (finalizeSessionSummary, no call when it covers every card), so the summary
+ * carried forward covers all of it — an ended session's too. End a Session
+ * refreshes its own, but that refresh can fail or never land; a Batch Mode
+ * round resolving at End, or a move narrated while End runs, posts into the
+ * ended session after it (issue #345 AA21 — the mint kept any ended summary
+ * with text, and LAST SESSION missed the session's last beats); and an X-Card
+ * played on End's closing vignette empties a summary that covered the beat it
+ * removed (issue #342 Z41). End's own closing vignette, which posts after its
+ * refresh, is the one card left out of that check — not worth a second
+ * summary call. Its scene closes under its own id, so migrated
  * truths, whereabouts and strikes keep that session's number. Mutates
  * campaignState; endScene persists the scene fields itself, the caller
  * persists SESSION_MINT_FIELDS.
@@ -329,9 +331,7 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
   if (!sessionNeedsMint(campaignState, now)) return false;
   const closing = campaignState.currentSessionId;
   const ended   = !!closing && campaignState.sessionEndedId === closing;
-  const summary = campaignState.sessionSummary;
-  const summarised = !!closing && summary?.sessionId === closing && typeof summary?.text === "string" && !!summary.text.trim();
-  if (closing && (!ended || !summarised)) {
+  if (closing) {
     try {
       const { finalizeSessionSummary } = await import("../narration/narrator.js");
       await finalizeSessionSummary(campaignState);
