@@ -241,9 +241,10 @@ export function sameStateAttribute(a, b) {
 }
 
 /**
- * How many superseded values a state entry keeps (`previous`, newest first).
- * An X-Card removes the latest beat's narrations, so a short chain covers it;
- * the bound keeps a long scene's repeated updates from growing the setting.
+ * How many superseded values a state entry keeps (`previous`, newest first) —
+ * and a scene frame the frames it superseded (issue #345 D3). An X-Card
+ * removes the latest beat's narrations, so a short chain covers it; the bound
+ * keeps a long scene's repeated updates from growing the setting.
  */
 const STATE_PREVIOUS_DEPTH = 4;
 
@@ -282,7 +283,8 @@ function relinkStateChain(chain) {
  * A state entry without the values the given narrations set: the newest value
  * left (the one a removed narration superseded, when the entry is its), with
  * the removed values gone from its `previous` chain too. null when every
- * value in the chain was theirs.
+ * value in the chain was theirs. A scene frame's chain the same way (issue
+ * #345 D3).
  *
  * @param {Object} entry
  * @param {Set<string>} ids — the removed narrations
@@ -303,8 +305,10 @@ function stateEntryWithout(entry, ids) {
  * CORRECTED — sessionRetractedFacts leaves it out), is never migrated at
  * scene end, and still blocks the narrator re-asserting it (applySidecar's
  * equivalence check). Each state value they set is removed — the value it
- * superseded, when it kept one (`previous`), is restored — and a scene frame
- * they wrote is cleared.
+ * superseded, when it kept one (`previous`), is restored — and so is a scene
+ * frame they wrote: the frame it replaced stands again, as its `previous`
+ * link kept it (issue #345 D3 — the maintainer's option A, W41's shape; it
+ * used to be cleared, and the redirect narration was built with no frame).
  *
  * The X-Card also takes over the table's strike of a truth they recorded
  * (XCARD-AFTER-STRIKE-STILL-NAMED): a bare strike — the GM's or a player's,
@@ -386,8 +390,16 @@ export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETR
     campaignState.sceneState = { ...campaignState.sceneState, bySubject: kept };
   }
 
-  if (campaignState.sceneFrame && ids.has(campaignState.sceneFrame.narrationId)) {
-    campaignState.sceneFrame = null;
+  // A frame they wrote gives way to the one it replaced — the newest in its
+  // `previous` chain no removed narration wrote — and no kept frame can later
+  // fall back to one of theirs (issue #345 D3).
+  const frame = campaignState.sceneFrame;
+  if (frame && typeof frame === 'object') {
+    let theirs = false;
+    for (let cur = frame; cur && typeof cur === 'object'; cur = cur.previous ?? null) {
+      if (ids.has(cur.narrationId)) { theirs = true; break; }
+    }
+    if (theirs) campaignState.sceneFrame = stateEntryWithout(frame, ids);
   }
   return retracted;
 }
@@ -409,9 +421,12 @@ function isBareTableStrike(t) {
  * docs/narrator/narrator-memory-architecture.md) to the campaign state.
  * The frame is a full replacement snapshot, not a delta: the narrator emits
  * the current scene's location / present subjects / one-line situation on
- * every response, and the latest emission wins. Mutates campaignState in
- * place; persistence is the caller's responsibility (same contract as
- * applySidecar).
+ * every response, and the latest emission wins. The frame it replaces — this
+ * scene's — rides on it as `previous` (a bounded chain, newest first), so an
+ * X-Card on this narration puts that frame back (retractNarrations — issue
+ * #345 D3, W41's shape for state values); nothing renders the chain. Mutates
+ * campaignState in place; persistence is the caller's responsibility (same
+ * contract as applySidecar).
  *
  * @param {Object|null} frame — { location, present[], situation } or null
  * @param {Object} campaignState
@@ -429,13 +444,18 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
     : [];
   if (!location && !situation && !present.length) return false;
 
+  const sceneId = campaignState.currentSceneId ?? null;
+  const prior   = campaignState.sceneFrame;
+  const previous = (prior && typeof prior === 'object' && (prior.sceneId ?? null) === sceneId)
+    ? supersededEntry(prior) : null;
   campaignState.sceneFrame = {
     location,
     present,
     situation,
-    sceneId:   campaignState.currentSceneId ?? null,
+    sceneId,
     updatedAt: Date.now(),
     ...narrationStamp(narrationId),
+    ...(previous ? { previous } : {}),
   };
   // A truth this narration asserted before any frame stood is where its frame
   // now says (issue #326 D2) — a caller may apply the sidecar's truths before

@@ -237,7 +237,8 @@ relabelled the X-Card's and its kept `sessionRetractions` entry moved to
 those blocks, so neither CORRECTED nor the summary's leave-out list names it
 and `!truth set` cannot lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — its state values removed (each restoring the value it
 superseded: a state entry keeps a bounded `previous` chain, issue #326 W41)
-and its frame cleared, in the same
+and its frame giving way to the frame it replaced (the frame keeps the same
+bounded chain — issue #345 D3; it used to be cleared), in the same
 write as the pause; the ids are kept on `xCardedNarrationIds`, so
 `mergeSceneLedgers` retracts them again from a stale writer's copy and a late
 relayed sidecar of that narration is dropped. What the narration's capture
@@ -336,8 +337,10 @@ position → (never) scene frame. Soft cap `factContinuity.maxLedgerTokens`.
 `campaignState.sceneFrame = { location, present[], situation, sceneId,
 updatedAt }`. The narrator emits a **full-replacement snapshot** in every
 sidecar (`sceneFrame` key); an omitted frame keeps the previous one. Applied
-by `applySceneFrame` (`ledgers.js`); cleared by `startScene`/`endScene`
-(`sceneLifecycle.js`). Rendered at the top of §6.5:
+by `applySceneFrame` (`ledgers.js`), which keeps the frames of the scene it
+replaces as a bounded `previous` chain (never rendered), so an X-Card on a
+narration puts back the frame its narration replaced (issue #345 D3);
+cleared by `startScene`/`endScene` (`sceneLifecycle.js`). Rendered at the top of §6.5:
 
 ```
 SCENE FRAME (the scene as it stands):

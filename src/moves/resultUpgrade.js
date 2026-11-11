@@ -540,7 +540,9 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
 function ledgersHold(cs, ids) {
   const theirs = (e) => !!e && typeof e === "object" && ids.has(e.narrationId);
   if ((Array.isArray(cs.sceneTruths) ? cs.sceneTruths : []).some(t => theirs(t) && !t.retracted)) return true;
-  if (theirs(cs.sceneFrame)) return true;
+  // A frame keeps the ones it replaced (issue #345 D3): one of theirs down the
+  // chain would come back if a later X-Card removed the frames above it.
+  for (let cur = cs.sceneFrame; cur && typeof cur === "object"; cur = cur.previous ?? null) if (theirs(cur)) return true;
   for (const list of Object.values(cs.sceneState?.bySubject ?? {})) {
     for (const entry of Array.isArray(list) ? list : []) {
       for (let cur = entry; cur && typeof cur === "object"; cur = cur.previous ?? null) if (theirs(cur)) return true;

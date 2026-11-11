@@ -8,7 +8,8 @@
 // resume, and his card's LAST KNOWN was not updated from A at scene end.
 // A state entry now keeps the value it superseded (`previous`, a bounded
 // chain) and the X-Card restores it. (The frame half — a frame the removed
-// narration wrote is cleared — is decided: tests/unit/xcardNarratorMemory.)
+// narration wrote gives way to the frame it replaced, the same chain — is
+// issue #345 D3: tests/unit/xcardRestoresKeptFrame.test.js.)
 
 import { describe, it, expect } from "vitest";
 import { applySidecar, applySceneFrame, retractNarrations } from "../../src/factContinuity/ledgers.js";

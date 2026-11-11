@@ -6,6 +6,42 @@ rejected.
 
 ---
 
+## The X-Card restores the scene frame its narration replaced (2026-11)
+
+**Decision:** a scene frame keeps the frames of its scene it replaced — a
+bounded `previous` chain, newest first, the one state entries keep since
+issue #326 W41 (`applySceneFrame`, `src/factContinuity/ledgers.js`) — and
+`retractNarrations` puts back the newest frame in the chain that no removed
+narration wrote, pruning the removed ones from the chain of a frame that
+stays (issue #345 D3, XCARD-CLEARS-KEPT-FRAME — the maintainer chose
+option A). So after an X-Card the kept narration's "Where / Present / Now" is
+the scene's again, and the redirect narration is built with it. It reaches a
+Burn Momentum / Improve Result's supersede too (the same `retractNarrations`,
+`by: "superseded"`; `resultUpgrade.js` `ledgersHold` walks the frame chain).
+Nothing renders the chain; a frame of another scene is never chained (a scene
+start or end still clears the frame). **Amends** U07's recorded choice ("its
+state and frame removed", "a frame they wrote cleared" — the X-Card entries
+below, and the pin in `tests/unit/xcardNarratorMemory.test.js`), which W41
+had already reversed for state values.
+
+**Reason:** the narrator emits a frame on nearly every response, so clearing
+the X-carded narration's left almost every X-Card with no frame at all — a
+never-dropped tier (rules/narrator-memory.md invariant 4) whose `present`
+cast keeps the conversation partner's card in scope (`addSceneFrameCast`) —
+for the one narration that most needs grounding: the redirect.
+
+**Rejected:** *keep clearing it* (option B, U07 as recorded) — the next
+sidecar re-emits a frame, but the redirect narration itself was built
+frameless, and resolveScenePlace's fallback at a scene end found no location.
+
+**Trade-offs accepted:** the restored frame is the kept narration's as it was
+written: a change since that no narration recorded (a GM's `!at`, a token
+move) is not in it — the redirect narration's sidecar writes a fresh frame,
+as every narration's does. The chain adds at most four frames to the stored
+setting.
+
+---
+
 ## The Private Lines sync runs unqueued, like the X-Card (2026-11)
 
 **Decision:** `safety.syncPrivateLines` — a player's Private Lines relayed to
@@ -1398,8 +1434,10 @@ Each finding's ID in brackets.)
   of the same beat — posted after the last message someone sent, within two
   minutes of the newest; an earlier X-Card's card bounds the beat, so a second
   play removes nothing more. Its truths are retracted (`retractedBy: "xcard"`,
-  never named under CORRECTED, re-assertion still blocked), its state and
-  frame removed, the summary reset when it covered them, the cards flagged
+  never named under CORRECTED, re-assertion still blocked), its state
+  removed and its frame with it — since issue #345 D3 the frame it replaced
+  stands again ("The X-Card restores the scene frame its narration
+  replaced"), the summary reset when it covered them, the cards flagged
   `xCarded` (out of the ring, the summary, the recap's prose and audio), and
   `xCardRedirect` set: the first narration after Resume renders "X-CARD —
   REDIRECT" without naming the beat, and `registerXCardRedirectHook` clears it
@@ -3223,7 +3261,8 @@ with the narrator cards of the same beat (posted after the last message
 someone sent, at most two minutes older; an earlier X-Card's card, its
 "cleared" card or a card it removed bounds the beat, so a repeat play removes
 nothing more), retracts what their sidecars wrote (truths `retractedBy:
-"xcard"`, state values removed, a frame they wrote cleared — by the
+"xcard"`, state values removed, a frame they wrote giving way to the frame
+it replaced — issue #345 D3; it was cleared — by the
 `narrationId` each card and ledger entry carries), records their ids on
 `xCardedNarrationIds`, empties a rolling summary that covered them and sets
 `xCardRedirect`; the pause is written even if that part fails. After the

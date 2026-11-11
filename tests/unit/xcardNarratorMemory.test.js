@@ -16,8 +16,9 @@
  *   - flags the narration's cards `xCarded` — out of the ring, the rolling
  *     summary and the session recap's prose;
  *   - retracts what their sidecars wrote (truths retracted `by: xcard` and
- *     named nowhere, state removed, a frame they wrote cleared) — and keeps it
- *     retracted against a stale writer's merge or a late relayed sidecar;
+ *     named nowhere, state removed, a frame they wrote giving way to the one
+ *     it replaced — issue #345 D3) — and keeps it retracted against a stale
+ *     writer's merge or a late relayed sidecar;
  *   - drops the rolling summary's text when it covered the narration;
  *   - leaves a redirect the first narration after a GM resumes carries,
  *     cleared once a narration has posted.
@@ -138,7 +139,12 @@ describe('the X-carded narration leaves narrator memory', () => {
     expect(byFact['Owes the crew a favour']).toMatchObject({ retracted: false });
     expect(cs.sceneState.bySubject['the prisoner']).toBeUndefined();
     expect(cs.sceneState.bySubject['the dockmaster']).toEqual([expect.objectContaining({ value: 'the cargo bay' })]);
-    expect(cs.sceneFrame).toBeNull();                            // the X-carded narration wrote it
+    // The X-carded narration wrote the frame: the one it replaced — the kept
+    // narration's — is the scene's again. Issue #345 D3 (the maintainer's
+    // option A, W41's shape): it was cleared, and the redirect narration was
+    // built with no SCENE FRAME (U07's recorded choice, reversed).
+    expect(cs.sceneFrame).toMatchObject({ location: 'the docking ring', situation: 'Haggling over berths', narrationId: 'nar-docks' });
+    expect(cs.sceneFrame.previous).toBeUndefined();
     expect(cs.xCardedNarrationIds).toEqual(['nar-torch']);
     expect(flags(ChatMessage._created.find(m => flags(m)?.narrationId === 'nar-docks')).xCarded).toBeUndefined();
   });

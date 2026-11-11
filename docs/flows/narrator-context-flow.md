@@ -219,7 +219,10 @@ moves to the blocks: the ledger it retracts holds none of them, and nothing
 stopped the narrator re-asserting them (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED) — state
 values removed — each gives way to the value it superseded, kept on the entry
 as a bounded `previous` chain, so an earlier kept narration's value stands
-again (issue #326 W41) — a frame they wrote cleared), appends their `narrationId`s to
+again (issue #326 W41) — and a frame they wrote giving way to the frame it
+replaced, the same bounded `previous` chain on the frame (issue #345 D3,
+the maintainer's option A: it was cleared, and the redirect narration was
+built with no SCENE FRAME)), appends their `narrationId`s to
 `xCardedNarrationIds` (cap 50), takes the oracle results they told out of
 `recentOracles` (`dropOracleResultsFor`: an oracle follow-up's card names
 the result card it narrated, `oracleCardId`, and each ring entry carries
@@ -532,7 +535,7 @@ built — the scene, its truths, state and frame, and the session's strikes
 `buildNarratorExtras`, which also reads the frame's cast, the lore query and
 the spotlight from it): the move pipeline narrates from a snapshot taken
 before its confirm dialog, and an X-Card played (and resumed) meanwhile had
-retracted the beat's truths, removed its state and cleared its frame only in
+retracted the beat's truths, removed its state and taken its frame back only in
 the store — the narration rendered them as binding beside the X-CARD —
 REDIRECT block; a `!truth strike` made during the dialog rendered as binding
 the same way (issue #325 W05). A store holding another session than the
