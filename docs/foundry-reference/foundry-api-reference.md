@@ -1207,6 +1207,13 @@ const path = await uploadBase64Image(
   the local Foundry server (not an external API — no proxy needed)
 - On The Forge, `source: "data"` still works but paths may differ — test on Forge
   if Forge support is needed
+- **No deadline.** `upload`, `createDirectory` and `browse` are Foundry's own
+  requests with no timeout: one the server never answers neither resolves nor
+  rejects, and whatever awaits it waits for good. The module wraps every
+  FilePicker request in `withFilePickerDeadline` (`src/net/uploadResult.js`,
+  120 s) so a stall reaches the caller's failure path (issue #347 AB02). Not
+  verified against Foundry source: recalled, and consistent with every
+  upload site having needed its own bound.
 
 ### Error handling
 

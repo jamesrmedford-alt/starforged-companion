@@ -19,7 +19,7 @@
  */
 
 import { generateOpenRouterImage } from "../art/openRouterImage.js";
-import { uploadedPath } from "../net/uploadResult.js";
+import { uploadedPath, withFilePickerDeadline } from "../net/uploadResult.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -206,8 +206,8 @@ async function uploadSectorImage(b64, sectorId) {
   // Ensure the upload directory exists. createDirectory() throws when the
   // directory already exists — that is the common case and can be ignored.
   try {
-    await foundry.applications.apps.FilePicker.implementation
-      .createDirectory("data", uploadDir, {});
+    await withFilePickerDeadline(foundry.applications.apps.FilePicker.implementation
+      .createDirectory("data", uploadDir, {}), { label: "Sector art: creating the scenes folder" });
   } catch (err) {
     const msg = err?.message ?? String(err);
     if (!/exists/i.test(msg)) {
@@ -227,9 +227,11 @@ async function uploadSectorImage(b64, sectorId) {
   // On The Forge, FilePicker.upload stores the file in the user's Assets
   // Library and returns its absolute https://assets.forge-vtt.com/... URL in
   // response.path; the constructed local path doesn't exist there (the
-  // AUDIO-002 bug). Prefer the response path.
-  const response = await foundry.applications.apps.FilePicker.implementation
-    .upload("data", uploadDir, file, {}, { notify: false });
+  // AUDIO-002 bug). Prefer the response path. Bounded: an upload the server
+  // never answers is a failed upload, so the sector is still built — with no
+  // background — rather than left "Creating sector…" (issue #347 AB02).
+  const response = await withFilePickerDeadline(foundry.applications.apps.FilePicker.implementation
+    .upload("data", uploadDir, file, {}, { notify: false }), { label: "Sector background upload" });
 
   // A failed upload resolves false / undefined / {} — no path, never a built
   // one for a file that was not written (issue #322 V26).
