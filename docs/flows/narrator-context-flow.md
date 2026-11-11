@@ -286,7 +286,12 @@ Promote appended with it (the entry keeps `promotedText` beside its
 of the record's notes (issue #338 D7); a Promote never promotes an X-carded
 narration's detail, and one whose Notes write the X-Card overtook takes its
 own line back off the tab (issue #342 Z44) — most of these restate no sidecar truth, so
-`propagateRetraction` never reached them. A capture still running when the
+`propagateRetraction` never reached them. Last, the summary End a Session
+wrote on the session's Session Log page (`retractSessionLogSummary`): its
+"Story so far" goes when the pause dropped the rolling summary it was
+written from, and "Lore this session" loses the titles whose lore the undo
+or the propagation retracted — an X-Card played after End left the page
+telling the removed beat (issue #345 AA27). A capture still running when the
 card is played writes nothing more (XCARD-LATE-CAPTURE — the undo reaches only
 what was written before it): every capture write checks the STORED
 `xCardedNarrationIds` first (`safety.js` `isNarrationXCarded`, never a

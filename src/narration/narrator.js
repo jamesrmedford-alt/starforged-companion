@@ -1803,7 +1803,10 @@ export function xCardedNarrationCards(sessionId) {
  * The caller then flags the returned cards `xCarded` (flagXCardedCards).
  *
  * @param {Object} cs — the copy to update (mutated; its ledger objects are replaced, never changed)
- * @returns {{ cards: Object[], retracted: Object[] }} the X-carded cards and the truths retracted
+ * @returns {{ cards: Object[], retracted: Object[], sessionId: string|null, summaryDropped: boolean }}
+ *   the X-carded cards, the truths retracted, their session, and whether the
+ *   session's summary was dropped — the Session Log's story End wrote from it
+ *   goes too (safety.js finishXCardRemoval, issue #345 AA27)
  */
 export function applyXCardToNarratorMemory(cs) {
   const sessionId = cs?.currentSessionId ?? null;
@@ -1818,6 +1821,7 @@ export function applyXCardToNarratorMemory(cs) {
   dropOracleResultsFor(cs, xCardedOracleResults(cards));
 
   const summary = cs.sessionSummary;
+  let summaryDropped = false;
   if (cards.length && summary?.sessionId === sessionId) {
     // The summary was made from the session's cards in memory, oldest first:
     // it covers the first `coveredCount` of them.
@@ -1830,11 +1834,12 @@ export function applyXCardToNarratorMemory(cs) {
       // off for another K cards (issue #325 W06).
       const now = new Date().toISOString();
       cs.sessionSummary = { ...summary, text: '', coveredCount: 0, updatedAt: now, xCardedAt: now };
+      summaryDropped = true;
     }
   }
 
   cs.xCardRedirect = { sessionId, at: new Date().toISOString() };
-  return { cards, retracted };
+  return { cards, retracted, sessionId, summaryDropped };
 }
 
 /**

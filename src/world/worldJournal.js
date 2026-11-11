@@ -959,6 +959,48 @@ export async function undoNarrationEntries(narrationIds) {
 }
 
 /**
+ * The Session Log page's End-a-Session summary after an X-Card on its session
+ * (issue #345 AA27). End writes the session's rolling summary and lore titles
+ * onto the page (writeSessionLog); the X-Card's undo takes only the page's
+ * beats off (undoNarrationEntries), so an X-Card played after End — its beat
+ * reaching back to the session's last narration — left "Story so far"
+ * telling what it removed, and "Lore this session" naming lore it retracted.
+ * `narrative`: the X-Card dropped the summary the story was written from (it
+ * covered the removed narration — applyXCardToNarratorMemory), so the story
+ * leaves the page too; nothing rebuilds it there. The lore list keeps a title
+ * unless every lore entry of the session by that title is now retracted. A
+ * page End has not summarised is left alone. A journal write: the canonical
+ * GM's, after the X-Card's undo. Never throws.
+ *
+ * @param {string|null} sessionId — the X-carded narrations' session
+ * @param {{ narrative?: boolean }} [opts]
+ * @returns {Promise<boolean>} whether the page was rewritten
+ */
+export async function retractSessionLogSummary(sessionId, { narrative = false } = {}) {
+  if (typeof sessionId !== "string" || !sessionId) return false;
+  try {
+    const page    = findSessionLogPage(findJournal(JOURNAL_NAMES.sessionLog), sessionId);
+    const flag    = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.sessionLogPage];
+    const summary = flag?.summary;
+    if (!summary?.writtenAt) return false;
+    const lore    = Array.isArray(summary.lore) ? summary.lore : [];
+    const entries = readEntries(findJournal(JOURNAL_NAMES.lore), FLAG_KEYS.lore).filter(e => e.sessionId === sessionId);
+    const gone    = (title) => {
+      const theirs = entries.filter(e => e.title === title);
+      return theirs.length > 0 && theirs.every(e => e.retracted === true);
+    };
+    const kept      = lore.filter(t => !gone(t));
+    const dropStory = narrative && typeof summary.narrative === "string" && summary.narrative.trim() !== "";
+    if (!dropStory && kept.length === lore.length) return false;
+    const next = { ...summary, lore: kept, ...(dropStory ? { narrative: "" } : {}) };
+    return !!(await persistSessionLogPage(page, { ...flag, summary: next }));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: the Session Log's summary could not be revised:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
  * Put back the stance X-carded narrations moved on faction records — the
  * canonical stance home (decisions.md → "Faction stance: the entity record is
  * canonical"): each version's `recordStance`, newest first, where the record

@@ -269,10 +269,13 @@ function removeXCardedNarration(narrator, cs) {
  * Journal entries, Session Log beats and tier details — issue #329 X01), and
  * carry their retracted facts to the stores that copied them — entity tier
  * details and this session's lore (rules/narrator-memory.md 6b: every
- * correction path calls propagateRetraction). Fail-open per step.
+ * correction path calls propagateRetraction). Last, the session's Session Log
+ * summary, which End a Session wrote: its story goes when the summary it was
+ * written from was dropped, and its lore list loses what was retracted
+ * (issue #345 AA27). Fail-open per step.
  *
  * @param {Object|null} narrator
- * @param {{ cards: Object[], retracted: Object[] }} removal
+ * @param {{ cards: Object[], retracted: Object[], sessionId?: string|null, summaryDropped?: boolean }} removal
  * @returns {Promise<void>}
  */
 async function finishXCardRemoval(narrator, removal) {
@@ -306,15 +309,25 @@ async function finishXCardRemoval(narrator, removal) {
       console.warn(`${MODULE_ID} | X-Card: removing the connections the narration created failed:`, err?.message ?? err);
     }
   }
-  if (!removal.retracted.length) return;
+  if (removal.retracted.length) {
+    try {
+      const { propagateRetraction } = await import("../factContinuity/retractions.js");
+      // propagateRetraction reads the session id and marks a copy's summary;
+      // the summary was settled in the pause's write.
+      const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+      for (const truth of removal.retracted) await propagateRetraction(truth, cs);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: carrying the retracted facts to entity details and lore failed:`, err?.message ?? err);
+    }
+  }
+  // An X-Card played after End a Session: the Session Log's "Story so far"
+  // End wrote kept telling the removed beat (issue #345 AA27). After the
+  // undo and the propagation, so the lore they retracted leaves its list.
   try {
-    const { propagateRetraction } = await import("../factContinuity/retractions.js");
-    // propagateRetraction reads the session id and marks a copy's summary;
-    // the summary was settled in the pause's write.
-    const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
-    for (const truth of removal.retracted) await propagateRetraction(truth, cs);
+    const { retractSessionLogSummary } = await import("../world/worldJournal.js");
+    await retractSessionLogSummary(removal.sessionId ?? null, { narrative: removal.summaryDropped === true });
   } catch (err) {
-    console.warn(`${MODULE_ID} | X-Card: carrying the retracted facts to entity details and lore failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | X-Card: revising the Session Log's summary failed:`, err?.message ?? err);
   }
 }
 
