@@ -1,5 +1,5 @@
 /**
- * PROBE SESS-5 (thirteenth audit, area "session / audio / private channel")
+ * PROBE SESS-3 (thirteenth audit, area "session / audio / private channel")
  * — a session that is closed out (minted over) on a client with no Claude key
  * never gets its rolling summary finalised: LAST SESSION is lost for good,
  * even though the table's keyed GM is there a moment later.
@@ -22,9 +22,13 @@
  * known-issues SUMMARY-KEYLESS-GM records a table with NO keyed GM; here the
  * table has one, and the loss is permanent after a single keyless mint.
  *
- * Correct behaviour asserted: once the GM's client holds a key, the session
- * that was closed without one is summarised for LAST SESSION by the time the
- * new session has been played and ended.
+ * The same holds when the mint's one summary call fails (an overloaded or
+ * rate-limited API at world load): the finalise is fail-open and never retried.
+ *
+ * Correct behaviour asserted: once the GM's client holds a key (or the API
+ * answers again), the session that was closed without its summary is
+ * summarised for LAST SESSION by the time the new session has been played and
+ * ended.
  *
  *   npx vitest run --config tests/probes/vitest.probes.config.js tests/probes/sess/keylessMintLosesLastSession.probe.js
  */
@@ -32,7 +36,7 @@
 /* global silenceConsoleErrors */
 import { describe, it, expect, afterEach } from 'vitest';
 import { simulateTable, USERS, MODULE_ID } from '../../helpers/multiClient.js';
-import { scriptClaude } from '../../helpers/faults.js';
+import { scriptClaude, claudeFault } from '../../helpers/faults.js';
 import { CampaignStateSchema } from '../../../src/schemas.js';
 
 const SUMMARY_TEXT = 'Kira crossed the flooded bay and found the medic alive behind the bulkhead.';
@@ -63,7 +67,7 @@ async function bootTable() {
     } },
   });
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 } });
-  scriptClaude(table, { fallback: (call) => (isScribe(call) ? SUMMARY_TEXT : '{}') });
+  return scriptClaude(table, { fallback: (call) => (isScribe(call) ? SUMMARY_TEXT : '{}') });
 }
 
 /** A narrator card of `sessionId`, as every narration path posts it. */
@@ -120,6 +124,18 @@ describe('a session closed out by a mint on a client with no Claude key', () => 
     expect(
       world().previousSessionSummary?.sessionId ?? null,
       'sess-7 was minted over with no summary and nothing finalises it afterwards — LAST SESSION is empty for good',
+    ).toBe('sess-7');
+  }, 60_000);
+
+  it("the mint's one summary call fails (Anthropic overloaded, once): the closed session is still summarised for LAST SESSION", async () => {
+    const claude = await bootTable();
+    silenceConsoleErrors();
+    claude.when(isScribe, claudeFault.overloaded(), { times: 1 });       // only the mint's own call fails
+    await playTonight({ keyAt: 'before-begin' });
+    expect(table.claude.calls.filter(isScribe).length, 'later summary calls were answered (setup)').toBeGreaterThanOrEqual(2);
+    expect(
+      world().previousSessionSummary?.sessionId ?? null,
+      'one failed call at the mint and sess-7 is never summarised: nothing retries a closed session',
     ).toBe('sess-7');
   }, 60_000);
 });

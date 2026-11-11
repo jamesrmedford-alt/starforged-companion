@@ -1,5 +1,5 @@
 /**
- * PROBE SESS-3 (thirteenth audit, area "session / audio / private channel")
+ * PROBE SESS-4 (thirteenth audit, area "session / audio / private channel")
  * — the inciting card's ⚔ Swear this vow, pressed while another move is being
  * resolved, is dropped at the move lock and leaves the presser's button dead.
  *

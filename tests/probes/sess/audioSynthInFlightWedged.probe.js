@@ -1,4 +1,4 @@
-// PROBE SESS-4 (thirteenth audit, area "session / audio / private channel")
+// PROBE SESS-5 (thirteenth audit, area "session / audio / private channel")
 // — a narrator-audio cache upload that never answers leaves its clip's entry in
 // `_synthInFlight` for the rest of the audio GM's page load: every later
 // request and every later Play of that clip joins the dead promise.
