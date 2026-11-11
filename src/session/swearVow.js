@@ -23,7 +23,7 @@
  */
 
 import { onChatMessageRender } from "../system/chatHooks.js";
-import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor, setVowLinkedConnection, isVowCopy } from "../character/actorBridge.js";
+import { getPlayerActors, createCharacterVowItem, setSharedVowReward, isPlayerCharacterActor, setVowLinkedConnection, isVowCopy, readVows } from "../character/actorBridge.js";
 import { entityExistsAnyType, postCreationEnrichment, registerConnectionOnActiveCharacter, promoteNewEntityLedgerSubjects }
   from "../entities/entityExtractor.js";
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
@@ -567,7 +567,10 @@ function vowHolderActorId(vowId) {
  * behind the in-flight guard. A vow whose reward was already granted or lost
  * (a won fight's grant, a forsaken vow) is never re-promised: the old card's
  * pick set it "promised" again and the next linked win or the fulfilment
- * granted a second reward. Any user may pick, as the card is the table's.
+ * granted a second reward. A vow fulfilled or forsaken on every copy with no
+ * reward chosen is refused too, the card closed and the presser told —
+ * nothing would ever grant it (issue #345 AA52). Any user may pick, as the
+ * card is the table's.
  *
  * @param {{ messageId?: string, idx?: number, own?: string }} payload
  * @param {Object} [_ctx]
@@ -598,6 +601,22 @@ export async function applyRewardPickFromRelay(payload = {}, _ctx = {}) {
       console.warn(`${MODULE_ID} | swearVow: the vow's reward is already ${settled} — not promised again.`);
       await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: settled }).catch(() => {});
       return { applied: false, reason: settled };
+    }
+    // A vow already fulfilled or forsaken on every copy can never pay a
+    // reward out — a fulfilment pays once, and the won-fight ladders skip a
+    // completed vow — so a pick on its old card is not "set": the card is
+    // closed and the presser told (issue #345 AA52 — it was promised on the
+    // finished vow and "🎁 Reward set" posted).
+    const closed = vowClosedEverywhere(f.vowId);
+    if (closed) {
+      console.warn(`${MODULE_ID} | swearVow: the vow is ${closed} — no reward promised.`);
+      await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: `vow-${closed}` })
+        .catch(err => console.warn(`${MODULE_ID} | swearVow: closing reward card ${messageId} failed:`, err?.message ?? err));
+      await postVowWriteRefusedNotice(_ctx, closed === "forsaken"
+        ? "This vow was forsaken — no reward can be promised on it; the card is closed."
+        : "This vow is already fulfilled — a reward chosen now would never be granted; the card is closed.",
+      { title: "Reward not set" });
+      return { applied: false, reason: `vow-${closed}` };
     }
     try {
       await message.update({ [`flags.${MODULE_ID}.rewardChosen`]: true });
@@ -656,6 +675,22 @@ async function postVowWriteRefusedNotice(ctx, text, { title = "Not saved" } = {}
     whisper,
     flags: { [MODULE_ID]: { vowWriteRefusedNotice: true } },
   }).catch(err => console.warn(`${MODULE_ID} | swearVow: the not-saved notice failed:`, err?.message ?? err));
+}
+
+/**
+ * Whether every copy of a vow (by its vowId, on every PC) is closed —
+ * "forsaken" when a closed copy carries the Forsake Your Vow flag, else
+ * "fulfilled" — or null while any copy is open, or no PC holds one (the
+ * pick's `no-copy` path says that). Issue #345 AA52.
+ *
+ * @param {string} vowId
+ * @returns {"fulfilled"|"forsaken"|null}
+ */
+function vowClosedEverywhere(vowId) {
+  // readVows names a copy by its vowId flag or its own Item id, as isVowCopy.
+  const copies = getPlayerActors().flatMap(a => readVows(a)).filter(v => v.vowId === vowId || v.id === vowId);
+  if (!copies.length || copies.some(v => !v.completed)) return null;
+  return copies.some(v => v.forsaken) ? "forsaken" : "fulfilled";
 }
 
 /**

@@ -117,7 +117,11 @@ on every copy (`setSharedVowReward`), on the canonical GM (`vow.reward`): the
 card is claimed once (`rewardChosen`), and a vow whose reward was already
 granted or lost is never promised again — an old card's pick re-promised a
 granted reward, so the next linked win or the fulfilment granted a second
-(issue #325 W11). A write that does not land posts no "🎁 Reward set", and
+(issue #325 W11). Nor is one fulfilled or forsaken on every copy with no
+reward chosen — nothing would ever grant it: the card is closed
+(`rewardChosen: "vow-fulfilled"` / `"vow-forsaken"`) and the presser and the
+GMs are whispered why (issue #345 AA52 — it was promised on the finished vow,
+"🎁 Reward set" posted). A write that does not land posts no "🎁 Reward set", and
 the presser and the GMs are whispered why (issue #329 X07):
 `setSharedVowReward` reports `{ ok, reason }` — `refused` releases the claim
 for another pick ("could not be saved … choose it again"); `no-copy`, a vow
