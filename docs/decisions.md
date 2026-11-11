@@ -6,6 +6,59 @@ rejected.
 
 ---
 
+## Issue #347 audit: no wait on a write of our own is unbounded, the election skips a loading GM, a press not rolled is handed back (2026-11)
+
+**Decision:** (issue #347, the thirteenth audit's 24 findings AB01–AB24 —
+serious bugs, stalls and locks — fixed at the maintainer's request in the
+v1.8.1 cycle. What the fixes established, each row's ID in brackets. The
+three decision rows, all option A, have their own entries: D1 "Who are you
+interacting with? is asked before the roll" (after the move-lock record),
+D2 beside #338 D8 in the issue #338 audit ("An X-Card on an upgraded beat
+takes what the upgrade struck"), D3 "Batch Mode: a keyless GM's takeover
+waits for a keyed GM to narrate the round". Most rows add an *Update* note to
+the entry they change.)
+- **No wait on a write of the module's own is unbounded** [AB05, AB02]: a
+  document or setting write lost with its connection never settles, so every
+  caller that awaits one — or a link of a chain that waits on the one before
+  it — waits through `multiplayer/settleWithin.js` and goes on, warned: the
+  move lock's claim and release (30 s), Begin / End a Session (five minutes),
+  the rolling summary, a Private Channel page write; every FilePicker request
+  through `withFilePickerDeadline` (120 s). U57's Progress Tracks and
+  Chronicle queues stay as accepted.
+- **The canonical GM is elected among GMs whose page is ready** [AB03]: a GM
+  whose connect a client saw is passed over until it announces its page
+  (`registerGmReadiness`); a GM connected before the client loaded is
+  presumed ready. Recorded as an update on "Claude calls run where a key
+  lives".
+- **A client's own earlier page's lock is its to free** [AB04], and a ready
+  reset that frees a lock tells the GMs [AB14] — updates on Y07 and W25.
+- **A press the pipeline does not roll is handed back** [AB06]: a claimed
+  card's forced move carries its claim (`cardClaim`) and gets it back, with
+  a "Move not rolled" whisper, when its confirm is closed, the lock refuses
+  it, or it fails before its dice; a held move follows the canonical GM
+  (`forcedMove.hold`); its order holds through a refused claim [AB24]. The
+  inciting ⚔ is still not held (Y36) — it re-arms from the notice.
+- **A shared track moves by what a sheet edit changed** [AB07] — an update
+  on #326 D3.
+- **A session closed out short is caught up** [AB15] — `unsummarisedSession`,
+  an update on AA21.
+- **A narration across a dropped connection is discarded** [AB19, partly] —
+  `multiplayer/connectionWatch.js`; a returning GM's stale writes are the
+  open part (known-issues).
+- **Batch Mode** [AB13, AB17, AB18, AB20]: an upgrade in flight is waited for
+  (Send now keeps it after 60 s); a late reply of a narration taken over posts
+  and closes nothing; a takeover names its resolver; an entry stamped rolling
+  before its effects is never rolled again.
+- **Smaller:** a Make a Connection's portrait is not awaited [AB01]; the
+  stored entity lists gate a capture's dedup [AB09]; the player's line names
+  the connection, and none is guessed among several [AB10]; a detail matches
+  whole words and a negation never dedupes [AB11]; a Safety ✕ removes by text
+  [AB12]; the default-named journal wins among flagged ones [AB16]; a failed
+  paced narration says so [AB21]; the X-Card reads chat as it was, deleted
+  narrations included [AB22]; a token-drag payload is checked against what a
+  drop can produce [AB23]; an old ship record reads the lower of record and
+  sheet [AB08].
+
 ## Issue #345 audit: one canonical store per fact, a name is its host's, a journal is found by its flag, a capture follows its narration (2026-11)
 
 **Decision:** (issue #345, the twelfth audit's 70 findings AA01–AA70, fixed
