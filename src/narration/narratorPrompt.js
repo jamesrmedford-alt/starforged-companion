@@ -8,7 +8,7 @@ import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
 import { sessionRetractedFacts } from '../factContinuity/retractions.js';
-import { resolveEntityById } from '../entities/registry.js';
+import { resolveEntityById, withSheetNotes } from '../entities/registry.js';
 import { isLoneShipCandidate } from '../entities/ship.js';
 import { PORTRAIT_BLOCK_RE } from '../art/notesPortrait.js';
 
@@ -471,6 +471,10 @@ export function buildShipPositionLine(campaignState) {
       }
     }
     if (!actor) return '';
+    // The record as getShip gives it: its integrity is the STARSHIP asset's
+    // Integrity track on the sheet (issue #345 AA20 — the record's copy was
+    // read, and drifted from what the player saw and marked).
+    payload = withSheetNotes('ship', actor, payload);
 
     const name  = actor?.name ?? payload?.name ?? '';
     const lines = [];

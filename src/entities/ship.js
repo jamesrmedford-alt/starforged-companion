@@ -23,6 +23,14 @@
  *                                           the flag copy is a write-through
  *                                           mirror kept by updateShip.
  *   actor.system.debility.cursed          ← ship.cursed (permanent, command vehicle only)
+ *   STARSHIP asset's system.track         ← ship.integrity / integrityMax. The command
+ *                                           vehicle's integrity is its STARSHIP asset's
+ *                                           Integrity track (canonical — what the sheet
+ *                                           shows and the player marks; issue #345 AA20):
+ *                                           getShip reads it (registry withSheetNotes),
+ *                                           updateShip writes it first; the flag copy is
+ *                                           a write-through mirror, the only store for a
+ *                                           starship with no STARSHIP asset.
  *   actor.flags[MODULE].ship              ← full Starforged payload (see ShipSchema)
  *   actor.flags[MODULE].entityType        ← "ship" (routing crumb)
  *   actor.flags[MODULE].entityId          ← the Ship _id (preserved across migrations)
@@ -43,6 +51,7 @@ import {
   warnEntityNotRegistered,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
+import { readCommandVehicleIntegrity, setCommandVehicleIntegrity } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { thinkingOffFor } from "../narration/thinking.js";
 
@@ -331,9 +340,24 @@ export async function updateShip(actorId, updates) {
     updated.cursed = true;
   }
 
+  // The command vehicle's integrity is its STARSHIP asset's Integrity track —
+  // canonical: the starship sheet shows it, the player marks it, the vendor's
+  // Withstand Damage rolls it (issue #345 AA20). A change is kept within that
+  // track and written there first; the record's `integrity` is its mirror,
+  // brought to the sheet's value on every write. A starship with no such
+  // asset keeps its integrity on the record alone.
+  const sheet = readCommandVehicleIntegrity(document);
+  if (sheet) {
+    updated.integrityMax = sheet.max;
+    if (typeof updates.integrity !== "number") updated.integrity = sheet.value;
+  }
+
   // Enforce: integrity never exceeds max
   if (typeof updated.integrity === "number") {
-    updated.integrity = Math.max(0, Math.min(updated.integrityMax ?? 5, updated.integrity));
+    updated.integrity = Math.max(sheet?.min ?? 0, Math.min(updated.integrityMax ?? 5, updated.integrity));
+  }
+  if (sheet && typeof updates.integrity === "number") {
+    await setCommandVehicleIntegrity(document, updated.integrity);
   }
 
   // Write battered/cursed onto the native debility fields (ImpactField) —

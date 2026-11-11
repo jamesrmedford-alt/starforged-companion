@@ -19,8 +19,9 @@
  * snapshot:
  *   - action stats   (edge/heart/iron/shadow/wits) → snapshot.stats[name]
  *   - player meters  (health/spirit/supply/momentum) → snapshot.meters[name]
- *   - vehicle stat   (integrity) → command-vehicle Actor's
- *                                  flags[MODULE_ID].ship.integrity — or,
+ *   - vehicle stat   (integrity) → the command vehicle's STARSHIP asset's
+ *                                  Integrity track (its ship record's copy
+ *                                  for a starship with none — AA20) — or,
  *                                  when the move's target names one of the
  *                                  roller's support vehicles (or that vehicle's
  *                                  ability swapped the stat for it), that
@@ -44,7 +45,7 @@
  */
 
 import { MOVES } from "../schemas.js";
-import { readCharacterSnapshot, listCompanionAssets, listSupportVehicleAssets, readAssetIntegrity } from "../character/actorBridge.js";
+import { readCharacterSnapshot, listCompanionAssets, listSupportVehicleAssets, readAssetIntegrity, readCommandVehicleIntegrity } from "../character/actorBridge.js";
 import { getCommandVehicleActor } from "./abilityScanner.js";
 import { selectCombatTrack, combatPositionFor } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
@@ -441,13 +442,14 @@ export function resolveStatValue(actor, statUsed, campaignState) {
   }
 
   // Vehicle integrity — withstand_damage rolls against the command
-  // vehicle's integrity meter (stored on the starship Actor's
-  // module flag, since foundry-ironsworn's starship schema has no
-  // native integrity field — see vendor/foundry-ironsworn/src/module/
-  // actor/subtypes/starship.ts which only carries notes + debility).
+  // vehicle's integrity: its STARSHIP asset's Integrity track, the meter the
+  // starship sheet shows and the player marks (the starship Actor's own
+  // schema has none — vendor starship.ts carries notes + debility). The ship
+  // record's copy is its mirror, read only for a starship with no STARSHIP
+  // asset (issue #345 AA20 — the record alone was rolled).
   if (statUsed === "integrity") {
     const vehicle = getCommandVehicleActor(campaignState);
-    const integrity = vehicle?.flags?.[MODULE_ID]?.ship?.integrity;
+    const integrity = readCommandVehicleIntegrity(vehicle)?.value ?? vehicle?.flags?.[MODULE_ID]?.ship?.integrity;
     if (integrity == null) {
       console.warn(
         `${MODULE_ID} | statEnrichment: withstand_damage rolled but no command vehicle integrity was readable. Defaulting to 0.`,

@@ -582,9 +582,9 @@ export function readAssetIntegrity(actor, itemId) {
  * The character's support vehicles: `asset` Items with an enabled condition
  * track named Integrity (readAssetIntegrity's test — the vendor's Hoverbike,
  * Rover, Skiff, Shuttle, Snub Fighter, Service Pod and Exosuit, all category
- * "Support Vehicle"). A Command Vehicle asset is not one: the command
- * vehicle's integrity is its ship record's (entities/ship.js), and that asset
- * rides on the starship Actor.
+ * "Support Vehicle"). A Command Vehicle asset is not one: it rides on the
+ * starship Actor, and the command vehicle's integrity is its track
+ * (readCommandVehicleIntegrity).
  *
  * @param {Actor|null} actor
  * @returns {Item[]}
@@ -594,6 +594,63 @@ export function listSupportVehicleAssets(actor) {
   return (Array.isArray(items) ? items : []).filter(i => i?.type === 'asset'
     && readAssetIntegrity(actor, i.id) !== null
     && !/command vehicle/i.test(String(i.system?.category ?? '')));
+}
+
+/**
+ * A starship's command vehicle asset — the vendor's STARSHIP asset (category
+ * "Command Vehicle") carrying its enabled condition track named Integrity —
+ * or null for a starship that carries none.
+ *
+ * @param {Actor|null} shipActor — a `starship` Actor
+ * @returns {Item|null}
+ */
+export function getCommandVehicleAsset(shipActor) {
+  if (shipActor?.type !== 'starship') return null;
+  const items = shipActor.items?.contents ?? shipActor.items ?? [];
+  return (Array.isArray(items) ? items : []).find(i => i?.type === 'asset'
+    && /command vehicle/i.test(String(i.system?.category ?? ''))
+    && readAssetIntegrity(shipActor, i.id) !== null) ?? null;
+}
+
+/**
+ * The command vehicle's integrity as its sheet holds it — the STARSHIP
+ * asset's Integrity track, which the starship sheet's Assets tab shows, the
+ * player marks and the vendor's own Withstand Damage rolls ("Vehicle
+ * Integrity") — `{ value, min, max }`, or null for a starship that carries no
+ * such asset. Canonical: the ship record's `integrity` is its write-through
+ * mirror (entities/ship.js updateShip), read only for a starship with no
+ * STARSHIP asset (issue #345 AA20 — the record alone was read and written, so
+ * a loss the module applied never reached the sheet, and integrity marked on
+ * the sheet was not what the next Withstand Damage rolled).
+ *
+ * @param {Actor|null} shipActor
+ * @returns {{ value: number, min: number, max: number }|null}
+ */
+export function readCommandVehicleIntegrity(shipActor) {
+  const asset = getCommandVehicleAsset(shipActor);
+  if (!asset) return null;
+  const track = asset.system.track;
+  return { value: Number(track.value ?? 0), min: Number(track.min ?? 0), max: Number(track.max ?? 5) };
+}
+
+/**
+ * Write the command vehicle's integrity onto its STARSHIP asset's Integrity
+ * track, kept within the track's min..max (readCommandVehicleIntegrity — the
+ * canonical store). Throws when the world refuses the write: the ship
+ * record's writer (entities/ship.js updateShip) reports it to its callers.
+ *
+ * @param {Actor} shipActor
+ * @param {number} value
+ * @returns {Promise<number|null>} the value now on the track, or null for a
+ *   starship with no STARSHIP asset
+ */
+export async function setCommandVehicleIntegrity(shipActor, value) {
+  const asset = getCommandVehicleAsset(shipActor);
+  if (!asset) return null;
+  const track = asset.system.track;
+  const after = clamp(Number(value), Number(track.min ?? 0), Number(track.max ?? 5));
+  if (after !== Number(track.value ?? 0)) await asset.update({ 'system.track.value': after });
+  return after;
 }
 
 /**
