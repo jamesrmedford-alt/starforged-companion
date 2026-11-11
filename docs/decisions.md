@@ -5104,6 +5104,17 @@ card (U29): with Auto-Seed NPC on, the `createActor` seed hook owns it (drawn
 from the creator's `portraitSourceDescription`) and the creator skips it; with it
 off, the creator generates it — both used to, billing OpenRouter twice.
 
+**Update (issue #347 AB01): the creator starts the portrait and does not wait
+for it.** A Make a Connection hit's capture runs inside its narration call,
+inside the table's move lock, and waited on the image, its download and its
+upload before the bond, the move's record and the lock's release — minutes,
+and for good behind a stalled upload. `postCreationEnrichment` now starts
+`generatePortrait` and returns, and the capture starts it after the bond; the
+draft Confirm and the inciting vow's target share the function. A portrait
+that finishes late is safe: `generatePortrait` stores nothing for an entity
+deleted meanwhile, keeps one linked meanwhile, and makes one image at a time
+per entity.
+
 ---
 
 ## `foundry-shim.js`: deleted

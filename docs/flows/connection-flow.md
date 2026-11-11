@@ -192,7 +192,15 @@ connection card's portrait (from the creator's `portraitSourceDescription`)
 and the creator's `postCreationEnrichment` skips it (`seedHookOwnsPortrait`);
 with it off, the creator generates it — both used to, billing OpenRouter twice
 (issue #321 U29). Portraits are generated on a GM's client only (`decisions.md`
-→ "Portrait generation").
+→ "Portrait generation"). `postCreationEnrichment` **starts** the portrait and
+does not wait for it, and a Make a Connection capture starts it last, after
+the bond Item and the ledger promotion: the capture runs inside the narration
+call, inside the table's move lock, and waiting on the image, its download and
+its upload held that lock, the move's record and the roller's bond for minutes
+— for good behind a stalled upload (issue #347 AB01; the upload is bounded
+too, AB02). A draft Confirm, a pending row a hit confirms and the inciting
+vow's target start it the same way; `generatePortrait` handles finishing late
+(an entity deleted meanwhile stores nothing; one image at a time per entity).
 
 ## 2. Develop (relationship progress)
 

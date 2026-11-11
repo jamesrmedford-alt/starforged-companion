@@ -597,8 +597,6 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
         // An X-Card landing while the card is made deletes it (the stamp
         // above); nothing more is added to it — no bond, portrait or facts.
         if (removed()) return { created, queued: [] };
-        await postCreationEnrichment("connection", record, campaignState);
-        if (removed()) return { created, queued: [] };
         await registerConnectionOnActiveCharacter(record, { actorId: slot.actorId }).catch(err =>
           console.warn(`${MODULE_ID} | entityExtractor: bond item registration failed:`, err));
         if (removed()) return { created, queued: [] };
@@ -607,6 +605,11 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
         await promoteNewEntityLedgerSubjects(entity.name, "connection", record, campaignState);
         slot.done = true;
         created.push({ entity, record });
+        // Last, and started rather than awaited: the move this capture is
+        // part of holds the table's move lock until the capture returns, and
+        // the portrait — the image, its download and upload — can take
+        // minutes (issue #347 AB01). The card and the bond exist now.
+        if (!removed()) await postCreationEnrichment("connection", record, campaignState);
       } catch (err) {
         console.error(`${MODULE_ID} | entityExtractor: auto-create connection failed:`, err);
         queued.push(entity);
@@ -1008,6 +1011,18 @@ function safeOracleRoll(tableId, options = {}) {
  *
  * Lives here (not in connection.js / ship.js) so the portrait-generation
  * policy is applied consistently regardless of which create path runs.
+ *
+ * The portrait is started, not awaited (issue #347 AB01): a Make a
+ * Connection hit's capture — the auto-create, a pending row it confirms —
+ * runs inside the narration call, inside the table's move lock, and waited
+ * on the image request, its retry, the download, the Art Cache write and the
+ * upload (which had no deadline, AB02). Until then no other move could start,
+ * the move's meters, record and Burn / Improve were not applied, and the
+ * roller held no bond. generatePortrait tolerates finishing late: it stores
+ * nothing for an entity deleted meanwhile (an X-Card on the narration), keeps
+ * a portrait linked meanwhile, and makes one image at a time per entity.
+ *
+ * @returns {Promise<void>} once the portrait is started (or skipped) — never its end
  */
 // Exported for the inciting-incident ⚔ Swear this vow flow (Cluster B),
 // which creates the vow-target connection through the exact same
@@ -1026,7 +1041,8 @@ export async function postCreationEnrichment(typeKey, record, campaignState) {
 
   try {
     const { generatePortrait } = await import("../art/generator.js");
-    await generatePortrait(hostId, typeKey, record, campaignState ?? {});
+    generatePortrait(hostId, typeKey, record, campaignState ?? {}).catch(err =>
+      console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err));
   } catch (err) {
     console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err);
   }
