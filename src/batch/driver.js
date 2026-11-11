@@ -565,8 +565,12 @@ async function noteReadTrack(reading) {
 let _advancing = null;
 let _advanceAgain = false;
 let _waitingForLock = false;
-// A GM's Send now, waiting for the advance pass to start the resolution.
-let _sendNowRequested = false;
+// A GM's Send now, waiting for the advance pass to start the resolution: the
+// id of the round it was pressed for. One that waited on a busy lock is not
+// the next round's when its own closed another way meanwhile (a Discard, End
+// a Session): it resolved that round at once, rolling a reading its player
+// had not confirmed (issue #345 AA38).
+let _sendNowRoundId = null;
 let _narratingRoundId = null;
 // The rolled stage results of the round this client rolls, by user id
 // (finishMove), and the users whose record (recordMove) ran here.
@@ -641,7 +645,8 @@ async function advanceOnce() {
   switch (round.phase) {
     case ROUND_PHASE.COLLECTING: {
       if (isXCardActive(null)) return false;
-      const sendNow = _sendNowRequested;
+      if (_sendNowRoundId !== null && _sendNowRoundId !== round.id) _sendNowRoundId = null;
+      const sendNow = _sendNowRoundId === round.id;
       if (!sendNow && !readyToResolve(round, { connectedUserIds: connectedUserIds() })) return false;
       return startResolution({ sendNow });
     }
@@ -667,7 +672,8 @@ async function advanceOnce() {
  * rolls or narrates it runs the advance pass again, for a round a refused
  * step stopped (issue #342 Z18). The resolution itself runs on the advance
  * pass, never inside the relay handler that asked (its rolls and narration
- * must not hold the GM relay queue).
+ * must not hold the GM relay queue). A Send now waiting on a busy move lock
+ * is this round's alone: a round closed meanwhile takes it with it.
  *
  * With `modeOffAfter` (the toolbar's switch, or its "Send now, then turn off"
  * for a collecting round), Batch Mode turns off once the round is done. A
@@ -700,7 +706,7 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
   const unread = readingsInFlight(round);
   const keyed = (() => { try { return !!game.settings.get(MODULE_ID, "claudeApiKey"); } catch { return false; } })();
   if (unread.length && !keyed) return { ok: false, reason: "no-key" };
-  _sendNowRequested = true;
+  _sendNowRoundId = round.id;
   advanceRound("send-now");
   return { ok: true };
 }
@@ -796,7 +802,7 @@ async function startResolution({ sendNow }) {
       console.debug(`${MODULE_ID} | Batch Mode: a move holds the lock — the round resolves once it is free.`);
       return false;
     }
-    _sendNowRequested = false;
+    _sendNowRoundId = null;
     await tellGms("Batch Mode — the round did not start",
       "The world did not save the move lock, so the round is still collecting. Press Send now to try again.");
     return false;
@@ -808,7 +814,7 @@ async function startResolution({ sendNow }) {
       await queueRoundWrite(r => beginResolution(r, { resolverId: game.user.id, now: nowIso(), sendNow }));
     } finally {
       // Begun, or refused: either way this Send now is spent (a busy lock above keeps it).
-      _sendNowRequested = false;
+      _sendNowRoundId = null;
     }
     begun = true;
     await rollRound(lock.claim);
