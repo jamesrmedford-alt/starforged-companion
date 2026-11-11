@@ -76,6 +76,15 @@ Hooks.on("renderSceneControls", (app, html) => {
 Cannot introspect registered hooks via `Hooks._hooks` — undefined in v13.
 Use `CONFIG.debug.hooks = true` in the console to trace hook firing.
 
+**A class that extends `ApplicationV2` directly implements `_replaceHTML`:**
+the base class inserts nothing into the window — `_renderHTML`'s result is
+put there only by the subclass's `_replaceHTML` (`content.innerHTML = ""` +
+`content.append(result)`, or `replaceKeepingInput` when the window re-renders
+under a user's typing). Without one the window opens empty: the Private
+Channel did, unnoticed, because the unit stub's `render()` is a no-op (issue
+#345 AA02). `tests/unit/privateChannelRendersContent.test.js` sweeps `src/`
+for a window without one.
+
 **Blocking ApplicationV2 dialogs must resolve their promise on close — not only from button handlers:**
 
 A dialog that hand-rolls a promise (`new Promise(resolve => { this.#resolve = resolve; })`)

@@ -8291,6 +8291,24 @@ function registerPrivateChannelTests(quench) {
         });
       });
 
+      describe("window", function () {
+        // Foundry's base ApplicationV2 inserts nothing into the window: a class
+        // with no _replaceHTML opened empty (issue #345 AA02).
+        it("opens with its transcript, text box and Send button in the window", async function () {
+          this.timeout(20000);
+          const { PrivateChannelApp } = await import(`${MODULE_PATH}/private-channel/app.js`);
+          const app = await PrivateChannelApp.open({ userId: game.user.id });
+          try {
+            const el = app.element;
+            assert.isOk(el?.querySelector?.("[data-pc-transcript]"), "the window shows the transcript");
+            assert.isOk(el?.querySelector?.("[data-pc-input]"), "the window shows its text box");
+            assert.isOk(el?.querySelector?.('[data-action="send"]'), "the window shows its Send button");
+          } finally {
+            await app.close();
+          }
+        });
+      });
+
       describe("transcript persistence", function () {
         it("writes a per-player journal (player OWNER) and reads the session page back", async function () {
           this.timeout(20000);

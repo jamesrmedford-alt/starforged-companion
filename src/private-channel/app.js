@@ -12,6 +12,7 @@ import { requestPrivateNarration } from "./narrate.js";
 import { publishToMainChat, XCARD_PUBLISH_REFUSED } from "./publish.js";
 import { isXCardActive } from "../narration/narrator.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
+import { replaceKeepingInput } from "../ui/keepTypedInput.js";
 import {
   appendToBuffer,
   scheduleDebouncedWrite,
@@ -86,6 +87,9 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       PrivateChannelApp.#instances.set(userId, app);
     } else if (initialMessage) {
       app.initialMessage = initialMessage;
+      // The re-render keeps what the box holds — so the box takes the message.
+      const box = app.element?.querySelector?.("[data-pc-input]");
+      if (box) box.value = initialMessage;
     }
     await app.render({ force: true });
     // Restore the last saved window position/size (client-scoped
@@ -137,7 +141,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       <div class="pc-error-banner pc-unsaved"${context.unsaved ? "" : " hidden"}>This conversation is not saved yet — it is kept in this browser until its journal can be written (a GM's game creates it). Don't reload before then.</div>
       <div class="pc-transcript" data-pc-transcript>${context.transcriptHtml || '<p class="pc-empty">A private aside. Nothing here reaches the table until you publish it.</p>'}</div>
       <div class="pc-input-row">
-        <textarea class="pc-input" data-pc-input rows="3" placeholder="Speak to the narrator privately… (Enter to send, Shift+Enter for a newline)"${context.busy ? " disabled" : ""}>${escapeHtml(context.initialMessage)}</textarea>
+        <textarea class="pc-input" name="pc-input" data-pc-input rows="3" placeholder="Speak to the narrator privately… (Enter to send, Shift+Enter for a newline)"${context.busy ? " disabled" : ""}>${escapeHtml(context.initialMessage)}</textarea>
         <div class="pc-actions">
           <button type="button" class="pc-send" data-action="send"${context.busy ? " disabled" : ""}>Send</button>
           <button type="button" class="pc-publish" data-action="publish">Publish…</button>
@@ -152,6 +156,17 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
       }
     });
     return el;
+  }
+
+  /**
+   * Put the rendered tree into the window (issue #345 AA02): Foundry's base
+   * ApplicationV2 inserts nothing itself, so without this the window opened
+   * with an empty content area. A re-render from outside the window — the
+   * "not saved yet" line a flush flips (issue #342 Z66) — keeps the line being
+   * typed (decisions.md "A panel's re-render keeps what the user is typing").
+   */
+  _replaceHTML(result, content, _options) {
+    replaceKeepingInput(content, result, { fields: "textarea[name='pc-input']" });
   }
 
   _onClose(_options) {
@@ -187,6 +202,9 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     if (this.busy) return;
     const message = this.#inputValue().trim();
     if (!message) return;
+    // The line is sent: empty the box, or the re-render's kept input carries it back.
+    const box = this.element?.querySelector("[data-pc-input]");
+    if (box) box.value = "";
 
     const actorId       = this.#resolveActorId();
     const characterName = (actorId ? game.actors?.get?.(actorId)?.name : null) ?? "You";
