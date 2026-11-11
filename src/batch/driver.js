@@ -657,6 +657,11 @@ async function advanceOnce() {
     case ROUND_PHASE.UPGRADING:
       await keepUndecidable(round);
       if (!upgradesSettled(getStoredRound())) return false;
+      // The X-Card stops a round resolving: decided, it waits for a GM to
+      // resume (the lift runs this pass again), as a collecting round does —
+      // it went on to its narration, and closed behind the paused notice,
+      // its moves never narrated (issue #345 AA43).
+      if (isXCardActive(null)) return false;
       await queueRoundWrite(r => beginNarration(r));
       return true;
     case ROUND_PHASE.NARRATING:
@@ -1243,9 +1248,10 @@ export async function acceptRoundUpgrade(upgradeOf, resolution, kind) {
 /**
  * Narrate the round once, under the move lock (claimed again here): close
  * the result cards' upgrades, claim the narration on the round, narrate
- * (narrateRound — its card, its fallback, or the X-Card's paused notice),
- * then finish the round. A claim a departed GM left, with no card posted, is
- * taken over.
+ * (narrateRound — its card, its fallback, or the X-Card's paused notice when
+ * the X-Card is played while it is written), then finish the round. While
+ * the X-Card is in play it is not begun. A claim a departed GM left, with no
+ * card posted, is taken over.
  *
  * @returns {Promise<boolean>}
  */
@@ -1257,6 +1263,10 @@ async function narrateTheRound() {
     await finishRound(round, "resolved");
     return true;
   }
+  // Not begun while the X-Card is in play: the round waits for a GM to resume
+  // (the lift runs the pass again). Played once the narration is written,
+  // narrateRound discards the reply and posts the paused notice instead.
+  if (isXCardActive(null)) return false;
   const lock = await claimRoundLock();
   if (!lock.claim) {
     lockNotClaimed(lock);
