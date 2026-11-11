@@ -363,7 +363,10 @@ export async function readMove({
   // abilities that apply to the chosen move. Surfaced on the
   // confirmation dialog as opt-in checkboxes — accepted abilities
   // add their +N to interpretation.adds before the dice are rolled.
+  // An Aid Your Ally's are also those of the move it is made as (issue #345
+  // AA11) — Gain Ground while a fight is open, as it is rolled.
   const commandShipForScan      = getCommandVehicleActor(campaignState);
+  const inFight = await aidMadeInFight(interpretation.moveId);
   const applicableAbilities = await scanForApplicableAbilities({
     moveId:           interpretation.moveId,
     moveName:         interpretation.moveName,
@@ -371,6 +374,7 @@ export async function readMove({
     characterActor:   rollerActor,
     commandShipActor: commandShipForScan,
     apiKey,
+    inFight,
   }).catch(err => {
     console.warn(`${MODULE_ID} | ability scan failed:`, err);
     return [];
@@ -387,6 +391,7 @@ export async function readMove({
           abilities: applicableAbilities,
           moveName:  interpretation.moveName,
           apiKey,
+          inFight,
         }).catch(err => {
           console.warn(`${MODULE_ID} | rider extraction failed:`, err?.message ?? err);
           return [];
@@ -635,6 +640,20 @@ function substitutingAssetId(interpretation, stat) {
   return ids.size === 1 ? [...ids][0] : null;
 }
 
+/**
+ * Is this move an Aid Your Ally made while a fight is open? It is then made as
+ * Gain Ground, else as Secure an Advantage (issue #325 W17) — how it is
+ * resolved, and the move whose asset abilities apply to it (issue #345 AA11).
+ * False for any other move (no track is read).
+ *
+ * @param {string|null} moveId
+ * @returns {Promise<boolean>}
+ */
+async function aidMadeInFight(moveId) {
+  if (moveId !== "aid_your_ally") return false;
+  return (await listProgressTracks().catch(() => [])).some(t => t.type === "combat" && !t.completed);
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Stage 3 — roll the move
 // ─────────────────────────────────────────────────────────────────────────────
@@ -854,8 +873,7 @@ export async function rollMove({
   const momentum = rollerActor ? readMomentumState(rollerActor).value : null;
   // Aid Your Ally resolves as Gain Ground while a fight is open, else as
   // Secure an Advantage (issue #325 W17).
-  const inFight = interpretation.moveId === "aid_your_ally"
-    && (await listProgressTracks().catch(() => [])).some(t => t.type === "combat" && !t.completed);
+  const inFight = await aidMadeInFight(interpretation.moveId);
   const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite, momentum, inFight });
   // resolveMove leaves the id to its caller. The move card's Burn / Improve
   // flags and the narration card both carry it, and superseding the

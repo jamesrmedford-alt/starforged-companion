@@ -243,12 +243,14 @@ function moveTarget(moveName) {
  * @param {string} moveName
  * @param {string} narration
  * @param {string} apiKey
+ * @param {{ _call?: Function, madeAs?: { moveId: string, moveName: string }|null }} [opts] — `madeAs`:
+ *   the move an Aid Your Ally is made as (sceneChallenge.assetMatchMove), named to the model
  * @returns {Promise<Array<{key, summary}>>}
  */
-export async function haikuFallback(abilities, moveId, moveName, narration, apiKey, { _call = callHaiku } = {}) {
+export async function haikuFallback(abilities, moveId, moveName, narration, apiKey, { _call = callHaiku, madeAs = null } = {}) {
   if (!apiKey || !abilities.length) return [];
 
-  const prompt = buildHaikuPrompt(abilities, moveId, moveName, narration);
+  const prompt = buildHaikuPrompt(abilities, moveId, moveName, narration, madeAs);
   let raw;
   try {
     raw = await _call(prompt, apiKey);
@@ -275,14 +277,14 @@ export async function haikuFallback(abilities, moveId, moveName, narration, apiK
     .filter(Boolean);
 }
 
-function buildHaikuPrompt(abilities, moveId, moveName, narration) {
+function buildHaikuPrompt(abilities, moveId, moveName, narration, madeAs = null) {
   const list = abilities.map(a => (
     `- key="${a.key}" asset="${a.assetName}" category="${a.category}" ability="${a.abilityName || "(unnamed)"}"\n  text: ${a.text}`
   )).join("\n");
   return [
     `You are scanning a Starforged player character's asset abilities to decide which (if any) apply to the move they are about to roll.`,
     ``,
-    `Chosen move: ${moveName} (id: ${moveId})`,
+    `Chosen move: ${moveName} (id: ${moveId})${madeAs ? `, made as ${madeAs.moveName} (id: ${madeAs.moveId}) — an ability for either move applies` : ""}`,
     `Player narration: "${narration}"`,
     ``,
     `Enabled abilities:`,
@@ -361,23 +363,35 @@ async function callHaiku(userPrompt, apiKey) {
  * @param {Actor}  args.characterActor
  * @param {Actor|null} args.commandShipActor
  * @param {string} args.apiKey
+ * @param {boolean} [args.inFight] — a fight is open: an Aid Your Ally is made as Gain Ground
  * @returns {Promise<Array<{ key, assetName, category, source, abilityName, summary, text, adds, detection }>>}
  */
 export async function scanForApplicableAbilities({
-  moveId, moveName, narration, characterActor, commandShipActor, apiKey,
+  moveId, moveName, narration, characterActor, commandShipActor, apiKey, inFight = false,
 }) {
   const all = collectEnabledAbilities(characterActor, commandShipActor);
   if (!all.length) return [];
 
   // A scene-challenge variant is scanned as the ordinary move it varies — its
   // links, its Haiku pass, its adds and stat (SCENE-VARIANT-ABILITIES-UNKEYED).
-  const move = assetMatchMove({ moveId, moveName });
-  const structured = structuredMatches(all, move.moveName);
-  if (structured.length > 0) {
-    return structured.map(annotate("structured", move.moveName, move.moveId, characterActor));
+  // Aid Your Ally is scanned as itself and as the move it is made as: an
+  // ability is matched, and its add and stat read, for the move its links
+  // name — Loyalist's for the aid, Veteran's for its Secure an Advantage
+  // (issue #345 AA11).
+  const move  = assetMatchMove({ moveId, moveName, inFight });
+  const moves = move.madeAs ? [move, move.madeAs] : [move];
+  const keyedTo = new Map();
+  for (const m of moves) {
+    for (const ab of structuredMatches(all, m.moveName)) if (!keyedTo.has(ab.key)) keyedTo.set(ab.key, m);
+  }
+  if (keyedTo.size > 0) {
+    return all.filter(ab => keyedTo.has(ab.key)).map(ab => {
+      const m = keyedTo.get(ab.key);
+      return annotate("structured", m.moveName, m.moveId, characterActor)(ab);
+    });
   }
 
-  const llm = await haikuFallback(all, move.moveId, move.moveName, narration, apiKey);
+  const llm = await haikuFallback(all, move.moveId, move.moveName, narration, apiKey, { madeAs: move.madeAs });
   return llm.map(annotate("haiku", move.moveName, move.moveId, characterActor));
 }
 

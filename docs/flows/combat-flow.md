@@ -488,6 +488,9 @@ it (`round.rereadEntry` → `readAs.moveTargetId` → `readAction`'s forced
 An asset ability linked to Face Danger / Secure an Advantage applies to its
 variant: the ability scanner and the rider extraction match a variant as its
 ordinary move (`sceneChallenge.assetMatchMove` — SCENE-VARIANT-ABILITIES-UNKEYED).
+They match an Aid Your Ally as itself and as the move it is made as —
+Gain Ground while a fight is open (`movePipeline.aidMadeInFight`, as the roll
+resolves it), else Secure an Advantage (`madeAs` — issue #345 AA11).
 Their consequences carry `sceneProgress` (marks) and `sceneSegments` (clock
 fills), and `applyOutcomeEffects` scores them against the challenge
 (`sceneChallenge.scoreSceneChallenge` → `markProgressById` on the track,

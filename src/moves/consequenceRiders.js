@@ -346,18 +346,22 @@ const EXTRACT_SYSTEM = [
  * @param {Array}  args.abilities — scanForApplicableAbilities output (key/assetName/abilityName/text)
  * @param {string} args.moveName
  * @param {string} args.apiKey
+ * @param {boolean} [args.inFight] — a fight is open: an Aid Your Ally is made as Gain Ground
  * @param {Function} [args._call] — injectable transport for tests
  * @returns {Promise<Array>}
  */
-export async function extractRiders({ abilities, moveName, apiKey, _call = callHaikuExtract }) {
+export async function extractRiders({ abilities, moveName, apiKey, inFight = false, _call = callHaikuExtract }) {
   if (!apiKey) return [];
   const list = (abilities ?? []).filter(a => a && a.text);
   if (!list.length) return [];
 
   // A scene-challenge variant's riders are its ordinary move's: "When you
   // Face Danger …" holds within the challenge (SCENE-VARIANT-ABILITIES-UNKEYED).
+  // Aid Your Ally's are its own and those of the move it is made as (issue
+  // #345 AA11).
+  const move = assetMatchMove({ moveName, inFight });
   const userPrompt =
-    `Move: ${assetMatchMove({ moveName }).moveName}\n\nAbilities:\n` +
+    `Move: ${move.moveName}${move.madeAs ? ` (made as ${move.madeAs.moveName})` : ""}\n\nAbilities:\n` +
     list.map(a => `[key:${a.key}] ${a.assetName}: ${a.text}`).join("\n");
 
   let raw;

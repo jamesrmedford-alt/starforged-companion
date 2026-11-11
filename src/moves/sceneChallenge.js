@@ -93,13 +93,25 @@ export const SCENE_CHALLENGE_VARIANTS = Object.freeze({
  * matched no ability linked to their twin, so a challenge's rolls lost them
  * (SCENE-VARIANT-ABILITIES-UNKEYED). Any other move is itself, as given.
  *
- * @param {{ moveId?: string|null, moveName?: string|null }} move
- * @returns {{ moveId: string|null, moveName: string|null }}
+ * Aid Your Ally is also the move it is made as (`madeAs`): "Then, Secure an
+ * Advantage or Gain Ground to take action" (vendored) — Gain Ground while a
+ * fight is open, else Secure an Advantage, as the roll resolves (issue #325
+ * W17). An ability linked to that move applies to the aid beside one linked
+ * to Aid Your Ally: Veteran's "When you Secure an Advantage or Gain Ground by
+ * recounting …, add +1" was never offered when aiding (issue #345 AA11).
+ *
+ * @param {{ moveId?: string|null, moveName?: string|null, inFight?: boolean }} move
+ * @returns {{ moveId: string|null, moveName: string|null, madeAs: { moveId: string, moveName: string }|null }}
  */
-export function assetMatchMove({ moveId = null, moveName = null } = {}) {
+export function assetMatchMove({ moveId = null, moveName = null, inFight = false } = {}) {
   const id = moveId ?? toMoveId(moveName);
   const twin = id && Object.prototype.hasOwnProperty.call(SCENE_CHALLENGE_VARIANTS, id) ? SCENE_CHALLENGE_VARIANTS[id] : null;
-  return twin ? { moveId: twin, moveName: moveDisplayName(twin) } : { moveId, moveName };
+  if (twin) return { moveId: twin, moveName: moveDisplayName(twin), madeAs: null };
+  if (id === "aid_your_ally") {
+    const as = inFight ? "gain_ground" : "secure_an_advantage";
+    return { moveId, moveName, madeAs: { moveId: as, moveName: moveDisplayName(as) } };
+  }
+  return { moveId, moveName, madeAs: null };
 }
 
 /**
