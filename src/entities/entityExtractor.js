@@ -1617,6 +1617,19 @@ export async function appendGenerativeTierUpdates(
     return [];
   }
 
+  // A reply that holds no complete JSON object — cut off at max_tokens, or
+  // malformed — drops every detail this narration gave its entities; only a
+  // console warning named a cut (known-issues TIER-PASS-TRUNC-SILENT). The
+  // GMs are told, as the detection pass's own loss is (issue #321 U15).
+  if (raw && !tierReplyReadable(raw)) {
+    const names = records.map(r => r.record?.name ?? r.name).filter(Boolean);
+    console.warn(
+      `${MODULE_ID} | entityExtractor: the generative-tier reply is not a complete JSON object — ` +
+      `new details for ${names.join(", ") || "this narration's entities"} were not recorded.`,
+    );
+    notifyTierFailure(names);
+  }
+
   const parsed = parseTierUpdateResponse(raw);
   const applied = [];
 
@@ -1830,6 +1843,37 @@ function buildTierUpdatePrompt(narrationText, records) {
     `Narration:`,
     narrationText ?? "",
   ].join("\n");
+}
+
+/** Whether a tier reply holds a complete JSON object (parseTierUpdateResponse reads it as none otherwise). */
+function tierReplyReadable(text) {
+  const slice = String(text ?? "").match(/\{[\s\S]*\}/)?.[0];
+  if (!slice) return false;
+  try {
+    const parsed = JSON.parse(slice);
+    return !!parsed && typeof parsed === "object";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Tell the GM a tier pass's reply could not be read (TIER-PASS-TRUNC-SILENT).
+ * GM-only, as notifyDetectionFailure; never throws.
+ *
+ * @param {string[]} names — the entities whose details were lost
+ */
+function notifyTierFailure(names) {
+  try {
+    if (!globalThis.game?.user?.isGM) return;
+    const whose = names.length ? ` for ${names.join(", ")}` : "";
+    globalThis.ui?.notifications?.warn?.(
+      `Starforged Companion: new details${whose} from this narration were not recorded — ` +
+      `the reply was cut off or malformed. See the console for details.`,
+    );
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | notifyTierFailure: notify failed:`, err?.message ?? err);
+  }
 }
 
 export function parseTierUpdateResponse(text) {

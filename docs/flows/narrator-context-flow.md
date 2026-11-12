@@ -69,7 +69,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   Perspective "auto" is third person whenever two or more PCs act, whoever is
   connected (`resolveNarrationPerspective`'s `actingCharacters`, from the
   CHARACTER blocks; issue #342 Z40 — a GM's PC beside one player's was
-  second person). Its
+  second person). Otherwise "auto" is the perspective the session recorded
+  when it began (`campaignState.sessionPerspective`, written by
+  `beginSession`, cleared by `mintSession`; read by `sessionPerspectiveOf`
+  for every mode — issue #348 PT03), not a per-call count of connected
+  users; a session not begun counts them per call. Its
   sidecar, X-Card gate, rate-limit retry, `!narrator debug` capture and
   fallback are every narration's; its capture (`runRoundNarrationPasses`) is
   one detection call, at the widest class among the entries it captures — a
@@ -112,7 +116,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   its block as a round's acting PCs have, third person for two or more, none
   when no PC is there; it took the first PC, so with that PC's player away
   its "you" was the crewmate it called absent (issue #345 AA31). The closing
-  vignette, about an NPC, keeps the first PC's.
+  vignette, about an NPC, takes the PCs at the table the same way — it took
+  the first PC, whoever was there (CLOSING-VIGNETTE-FIRST-PC).
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the

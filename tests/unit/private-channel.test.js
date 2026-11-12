@@ -610,7 +610,8 @@ describe("buildPrivateContext", () => {
     });
     const campaignState = { currentSessionId: "s1" };
     const { system, user } = await buildPrivateContext({ campaignState, userId: "u1", playerMessage: "Is Kael still angry?" });
-    expect(buildPrivateChannelStory).toHaveBeenCalledWith(campaignState, "Is Kael still angry?");
+    // …with the player's own PC, whose pinned Chronicle entries it returns (PRIVATE-CHANNEL-NO-PINS).
+    expect(buildPrivateChannelStory).toHaveBeenCalledWith(campaignState, "Is Kael still angry?", expect.objectContaining({ actorId: expect.any(String) }));
     expect(system).toContain("## CAMPAIGN PREMISE");
     expect(system).toContain("Never contradict them.");
     expect(system).not.toContain("ACTIVE SCENE");

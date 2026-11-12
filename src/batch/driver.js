@@ -1381,8 +1381,12 @@ async function narrateTheRound() {
   }
   // Not begun while the X-Card is in play: the round waits for a GM to resume
   // (the lift runs the pass again). Played once the narration is written,
-  // narrateRound discards the reply and posts the paused notice instead.
-  if (isXCardActive(null)) return false;
+  // narrateRound discards the reply and posts the paused notice instead. Once
+  // the session is over it waits for no resume: it closes with the paused
+  // notice, the GMs told — the next load's recovery closed it unseen
+  // (ROUND-CLOSED-UNNARRATED-WORDING).
+  const xCardHeld = isXCardActive(null);
+  if (xCardHeld && !roundSessionOver(round)) return false;
   // Not narrated without a Claude key while the table has a keyed GM: the
   // round waits for them, handed back so their recovery (their load, a keyed
   // GM joining) narrates it (issue #347 D3) — while its session lasts. Once
@@ -1390,7 +1394,7 @@ async function narrateTheRound() {
   // the "narration unavailable" card, the GMs told. It stayed narrating
   // until the next load's recovery closed it unseen (issue #347
   // ROUND-WAITS-FOR-ABSENT-KEYED-GM).
-  const closingUnnarrated = narrationWaitsForKey() && roundSessionOver(round);
+  const closingUnnarrated = (xCardHeld || narrationWaitsForKey()) && roundSessionOver(round);
   if (narrationWaitsForKey() && !closingUnnarrated) {
     await waitForKeyedNarrator(round);
     return false;
@@ -1413,6 +1417,9 @@ async function narrateTheRound() {
     const told = await narrateRound({
       round: narrated, campaignState: workingCopy(),
       stillNarrating: () => narrationStillOurs(narrated.id, lock.claim, dropsAtClaim),
+      // Its card says why it closed unnarrated, not "no key on this game"
+      // (ROUND-CLOSED-UNNARRATED-WORDING).
+      noKeyReason: closingUnnarrated ? ROUND_CLOSED_FOR_KEY_REASON : null,
     }).catch((err) => {
       console.error(`${MODULE_ID} | Batch Mode: the round's narration failed:`, err);
       tellNarrationUnposted();
@@ -1438,9 +1445,13 @@ async function narrateTheRound() {
     return false;
   }
   const finished = await finishRound(getStoredRound() ?? round, "resolved");
-  if (finished && closingUnnarrated) await tellClosedUnnarrated(round, posted);
+  if (finished && closingUnnarrated) await tellClosedUnnarrated(round, posted, { xCard: xCardHeld });
   return true;
 }
+
+/** The closed round's card, when it closed waiting for a keyed GM (ROUND-CLOSED-UNNARRATED-WORDING). */
+const ROUND_CLOSED_FOR_KEY_REASON =
+  "the session ended while the round waited for a GM with a Claude key to narrate it";
 
 /**
  * The session ended while the round waited for a GM with a Claude key, and
@@ -1450,9 +1461,11 @@ async function narrateTheRound() {
  * @param {Object} round
  * @param {string|null} posted — what narrateRound posted ("fallback" when its card is up)
  */
-async function tellClosedUnnarrated(round, posted) {
+async function tellClosedUnnarrated(round, posted, { xCard = false } = {}) {
+  const waited = xCard ? "was held by the X-Card" : "waited for a GM with a Claude key to narrate it";
+  const listed = posted === "fallback" || posted === "paused";
   await tellGms("Batch Mode — the round closed without its narration",
-    `The session ended while round ${round.number} waited for a GM with a Claude key to narrate it, so it closed without its narration. Its moves stand${posted === "fallback" ? ", and its card lists each result" : ""}.`,
+    `The session ended while round ${round.number} ${waited}, so it closed without its narration. Its moves stand${listed ? ", and its card lists each result" : ""}.`,
     { batchRoundUnnarratedNotice: true });
 }
 
@@ -2157,9 +2170,11 @@ function onCampaignStateChanged(setting) {
       if (roundIsOpen(round) && round.phase === ROUND_PHASE.COLLECTING && (!active || round.sessionId !== sessionId)) {
         await closeCollectingRound("session-ended");
       }
-      // A round whose narration waits for a keyed GM: the session ending
-      // closes it, unnarrated (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM).
-      if (roundIsOpen(round) && round.phase === ROUND_PHASE.NARRATING && narrationWaitsForKey() && roundSessionOver(round, cs)) {
+      // A round whose narration waits for a keyed GM, or for a GM to resume
+      // from the X-Card: the session ending closes it, unnarrated
+      // (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM,
+      // ROUND-CLOSED-UNNARRATED-WORDING).
+      if (roundIsOpen(round) && round.phase === ROUND_PHASE.NARRATING && (narrationWaitsForKey() || xCard) && roundSessionOver(round, cs)) {
         await advanceRound("session-ended");
       }
       if (active && (!roundIsOpen(getStoredRound()) || getStoredRound()?.sessionId !== sessionId)) {

@@ -8,6 +8,13 @@
  *
  * Source: Ironsworn: Starforged Rulebook pp.84-98
  *
+ * Structure per category: { name, description, inspiration, entries }.
+ * `inspiration` opens the category's character-inspiration text ("What do you
+ * swear vows upon?…") — the paragraph the system's World Truths dialog writes
+ * after each chosen truth (Datasworn `your_character`); the dialog-save parser
+ * (generator.js) uses it to tell a custom truth from that text
+ * (known-issues TRUTHS-CUSTOM-PARSE).
+ *
  * Structure per entry:
  *   { min, max, title, description, questStarter, subTableId? }
  *
@@ -38,6 +45,7 @@ export const TRUTH_TABLES = {
   cataclysm: {
     name: "Cataclysm",
     description: "What catastrophe forced humanity to abandon its home galaxy?",
+    inspiration: "Do you possess a keepsake or artifact of pre-cataclysm society",
     entries: [
       {
         min: 1, max: 33,
@@ -70,6 +78,7 @@ export const TRUTH_TABLES = {
   exodus: {
     name: "Exodus",
     description: "How did humanity travel to the Forge?",
+    inspiration: "Does your family or cultural history offer any stories of the Exodus",
     entries: [
       {
         min: 1, max: 33,
@@ -96,6 +105,7 @@ export const TRUTH_TABLES = {
   communities: {
     name: "Communities",
     description: "How are human settlements organised in the Forge?",
+    inspiration: "If you are skilled at negotiation and resolving disputes",
     entries: [
       {
         min: 1, max: 33,
@@ -122,6 +132,7 @@ export const TRUTH_TABLES = {
   iron: {
     name: "Iron",
     description: "What do the Ironsworn swear their vows upon?",
+    inspiration: "What do you swear vows upon",
     entries: [
       {
         min: 1, max: 33,
@@ -148,6 +159,7 @@ export const TRUTH_TABLES = {
   laws: {
     name: "Laws",
     description: "What authority governs settled space?",
+    inspiration: "If you chase down outlaws",
     entries: [
       {
         min: 1, max: 33,
@@ -174,6 +186,7 @@ export const TRUTH_TABLES = {
   religion: {
     name: "Religion",
     description: "What role does faith play in the Forge?",
+    inspiration: "What is your relationship to religion",
     entries: [
       {
         min: 1, max: 33,
@@ -200,6 +213,7 @@ export const TRUTH_TABLES = {
   magic: {
     name: "Magic",
     description: "Does supernatural power exist in the Forge?",
+    inspiration: "If magic is an aspect of your setting",
     entries: [
       {
         min: 1, max: 33,
@@ -228,6 +242,7 @@ export const TRUTH_TABLES = {
   communication: {
     name: "Communication and Data",
     description: "How does information travel across the Forge?",
+    inspiration: "If you are an expert at subverting or manipulating digital information",
     entries: [
       {
         min: 1, max: 33,
@@ -254,6 +269,7 @@ export const TRUTH_TABLES = {
   medicine: {
     name: "Medicine",
     description: "What is the state of medical knowledge in the Forge?",
+    inspiration: "Do you bear any notable scars or prosthetics",
     entries: [
       {
         min: 1, max: 33,
@@ -280,6 +296,7 @@ export const TRUTH_TABLES = {
   ai: {
     name: "Artificial Intelligence",
     description: "What is the role of machine intelligence in the Forge?",
+    inspiration: "If you are accompanied by machine intelligence",
     entries: [
       {
         min: 1, max: 33,
@@ -308,6 +325,7 @@ export const TRUTH_TABLES = {
   war: {
     name: "War",
     description: "What is the nature of conflict in the Forge?",
+    inspiration: "Have you fought in any wars",
     entries: [
       {
         min: 1, max: 33,
@@ -334,6 +352,7 @@ export const TRUTH_TABLES = {
   lifeforms: {
     name: "Lifeforms",
     description: "What creatures inhabit the Forge?",
+    inspiration: "If you have an expertise in lifeforms",
     entries: [
       {
         min: 1, max: 33,
@@ -360,6 +379,7 @@ export const TRUTH_TABLES = {
   precursors: {
     name: "Precursors",
     description: "Who came before us in the Forge?",
+    inspiration: "Have you had any notable encounters with precursor",
     entries: [
       {
         min: 1, max: 33,
@@ -386,6 +406,7 @@ export const TRUTH_TABLES = {
   horrors: {
     name: "Horrors",
     description: "What supernatural threats haunt the Forge?",
+    inspiration: "Have you experienced any supernatural encounters",
     entries: [
       {
         min: 1, max: 33,

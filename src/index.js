@@ -79,6 +79,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
+import { claudeFailureReason } from "./narration/failureReason.js";
 import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
@@ -1138,10 +1139,9 @@ export function registerChatHook() {
 
     } catch (err) {
       console.error(`${MODULE_ID} | Move interpretation failed:`, err);
-      ui.notifications.error(
-        "Starforged Companion: Move interpretation failed. " +
-        "Check your API key in module settings and try again."
-      );
+      // Worded by cause: only a refused key is about the key
+      // (ERROR-TEXT-BLAMES-KEY).
+      ui.notifications.error(`Starforged Companion: Move interpretation failed — ${claudeFailureReason(err)}.`);
       // Failed before its dice were rolled (rollMove's onDiceRolled): hand a
       // card's button back and tell its player, as a cancelled confirm does.
       if (!diceRolled) await moveNotRolled(message, "failed", null);
