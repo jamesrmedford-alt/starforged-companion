@@ -183,14 +183,17 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
 
   // Where each recorded character was and what shape they were in outlives
   // the scene on their card (issue #286 C1) — scene state is discarded next.
-  await keepLastKnownWhereabouts(campaignState);
+  // Each record's LAST KNOWN as this end found it, for a re-keep after a
+  // state correction landed meanwhile (STATE-CORRECTION-DURING-SCENE-END-LOST).
+  const keep = { sceneId, bases: new Map() };
+  await keepLastKnownWhereabouts(campaignState, keep);
 
   // What reached the scene while the awaits above ran — a narration's sidecar
   // persisted into the still-current scene — is migrated too. The final write
   // below clears the scene on the latest store: such a fact was never
   // migrated, archived or kept as LAST KNOWN, and was in no store afterwards
   // (issue #325 W24). A few passes; each re-reads the store.
-  await migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts, closed);
+  await migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts, closed, keep);
 
   // Discard active ledgers regardless of per-entry migration outcomes — the
   // truths array is preserved-with-retraction-and-migration markers but the
@@ -220,7 +223,11 @@ export async function endScene(campaignState, { reason = 'unknown' } = {}) {
  * (endedSceneRetractions). It wrote its copy's list whole, so an X-Card
  * played during its awaits lost what it wrote there
  * (XCARD-DURING-SCENE-END-RACE). The caller's copy takes the list written.
- * Failures are logged, never thrown.
+ * A scene the store holds that is not the one ended — started on another
+ * client during this end's awaits — is that scene's: its scene fields and
+ * pacing stand, and only the session's kept retractions are written; the
+ * clear closed it with the old one (END-SCENE-NEXT-SCENE). Failures are
+ * logged, never thrown.
  *
  * @param {Object}   campaignState — endScene's copy
  * @param {string[]} fields        — its scene fields (and pacing)
@@ -235,7 +242,10 @@ async function persistEndedScene(campaignState, fields, label, closed, sceneId) 
     await serialiseCampaignStateWrite(async () => {
       let stored = null;
       try { stored = game.settings.get(MODULE_ID, 'campaignState'); } catch { stored = null; }
-      const target = { ...mergeOwnedFields(campaignState, fields, label) };
+      const storedScene = (stored && stored !== campaignState) ? (stored.currentSceneId ?? null) : null;
+      const another = !!storedScene && storedScene !== sceneId;
+      if (another) console.debug(`${MODULE_ID} | sceneLifecycle: ${label} — scene ${storedScene} started meanwhile; it is left open.`);
+      const target = { ...mergeOwnedFields(campaignState, another ? [] : fields, label) };
       target.sessionRetractions = endedSceneRetractions(campaignState, stored ?? target, closed, sceneId);
       await game.settings.set(MODULE_ID, 'campaignState', target);
       campaignState.sessionRetractions = target.sessionRetractions;
@@ -429,8 +439,9 @@ const LATE_FACT_PASSES = 3;
  * @param {{ place: Object|null|undefined }} placeOf
  * @param {{ migrated: number, archived: number, skipped: number }} counts — mutated
  * @param {Object[]} [closed] — the truths the end closes; the late ones are added
+ * @param {{ sceneId: string|null, bases: Map<string, Object> }} [keep] — keepLastKnownWhereabouts' state
  */
-async function migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts, closed = []) {
+async function migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, counts, closed = [], keep = undefined) {
   if (!sceneId) return;
   for (let pass = 0; pass < LATE_FACT_PASSES; pass++) {
     let latest = null;
@@ -446,6 +457,12 @@ async function migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, c
     for (const [key, entries] of Object.entries(latestBySubject)) {
       if (JSON.stringify(entries) !== JSON.stringify(ownBySubject[key])) changedState[key] = entries;
     }
+    // A subject whose every value a state strike took meanwhile is gone from
+    // the store: its LAST KNOWN is kept again too, without them
+    // (STATE-CORRECTION-DURING-SCENE-END-LOST).
+    for (const [key, entries] of Object.entries(ownBySubject)) {
+      if (!(key in latestBySubject) && Array.isArray(entries) && entries.length) changedState[key] = [];
+    }
     if (!fresh.length && !Object.keys(changedState).length) return;
 
     for (const truth of fresh) {
@@ -454,11 +471,10 @@ async function migrateLateSceneFacts(campaignState, sceneId, handled, placeOf, c
       counts[await migrateSceneTruth(truth, campaignState, placeOf, sceneId)] += 1;
     }
     if (Object.keys(changedState).length) {
-      await keepLastKnownWhereabouts({ ...campaignState, sceneState: { bySubject: changedState } });
-      campaignState.sceneState = {
-        ...(campaignState.sceneState ?? {}),
-        bySubject: { ...ownBySubject, ...changedState },
-      };
+      await keepLastKnownWhereabouts({ ...campaignState, sceneState: { bySubject: changedState } }, keep);
+      const bySubject = { ...ownBySubject, ...changedState };
+      for (const [key, entries] of Object.entries(changedState)) if (!entries.length) delete bySubject[key];
+      campaignState.sceneState = { ...(campaignState.sceneState ?? {}), bySubject };
     }
   }
 }
@@ -700,43 +716,85 @@ function escapeRegExp(s) {
  * predate the card. A value written as the card landed is taken back
  * (XCARD-DURING-SCENE-END-MIGRATES).
  *
+ * The values are the store's while it still holds the scene being ended
+ * (`keep.sceneId`), else the copy's — the store's entry is what a state
+ * correction (`!state strike` / `!state set`, the correction dialog) changed,
+ * and endScene's copy predates it — and a record is written again, from its
+ * LAST KNOWN as this end found it (`keep.bases`), when the store's values
+ * changed while it was written: a location struck meanwhile stayed LAST
+ * KNOWN on the card (STATE-CORRECTION-DURING-SCENE-END-LOST). The late pass
+ * re-keeps from the same bases.
+ *
  * @param {Object} campaignState
+ * @param {{ sceneId?: string|null, bases?: Map<string, Object> }} [keep]
  * @returns {Promise<number>} entities updated
  */
-async function keepLastKnownWhereabouts(campaignState) {
+async function keepLastKnownWhereabouts(campaignState, { sceneId = null, bases = new Map() } = {}) {
   const bySubject = campaignState.sceneState?.bySubject;
   if (!bySubject || typeof bySubject !== 'object') return 0;
   const sessionNum = Number(campaignState.sessionNumber) > 0 ? Number(campaignState.sessionNumber) : null;
   let updated = 0;
-  for (const [key, entries] of Object.entries(bySubject)) {
+  for (const [key, own] of Object.entries(bySubject)) {
     const subject = subjectFromStateKey(key);
-    if (subject.kind !== 'entity' || !Array.isArray(entries)) continue;
-    const kept = withoutXCardedValues(key, entries).filter(e =>
-      WHEREABOUTS_ATTRIBUTES.includes(String(e?.attribute ?? '').trim().toLowerCase())
-      && String(e?.value ?? '').trim());
-    if (!kept.length) continue;
+    if (subject.kind !== 'entity' || !Array.isArray(own)) continue;
     try {
-      const resolved = resolveEntityById(subject.entityId);
-      if (!resolved) continue;
-      const lastKnown = { ...(resolved.data.lastKnown ?? {}) };
-      const written = [];
-      for (const e of kept) {
-        const attr = String(e.attribute).trim().toLowerCase();
-        lastKnown[attr] = lastKnownValue(e, sessionNum, lastKnown[attr]);
-        written.push(lastKnown[attr]);
+      for (let pass = 0; pass < LAST_KNOWN_REKEEP_PASSES; pass++) {
+        const entries = storedStateEntries(key, sceneId) ?? own;
+        const read = JSON.stringify(entries);
+        const kept = withoutXCardedValues(key, entries).filter(e =>
+          WHEREABOUTS_ATTRIBUTES.includes(String(e?.attribute ?? '').trim().toLowerCase())
+          && String(e?.value ?? '').trim());
+        const resolved = resolveEntityById(subject.entityId);
+        if (!resolved) break;
+        if (!bases.has(subject.entityId)) bases.set(subject.entityId, { ...(resolved.data.lastKnown ?? {}) });
+        const lastKnown = { ...bases.get(subject.entityId) };
+        const written = [];
+        for (const e of kept) {
+          const attr = String(e.attribute).trim().toLowerCase();
+          lastKnown[attr] = lastKnownValue(e, sessionNum, lastKnown[attr]);
+          written.push(lastKnown[attr]);
+        }
+        // Nothing to keep, and nothing this end wrote to take back.
+        if (!kept.length && JSON.stringify(lastKnown) === JSON.stringify(resolved.data.lastKnown ?? {})) break;
+        await writeEntityFlag(resolved.typeKey, resolved.document, {
+          ...resolved.data,
+          lastKnown,
+          updatedAt: new Date().toISOString(),
+        });
+        if (pass === 0) updated += 1;
+        await takeBackXCarded(written.flatMap(v => [v.narrationId, ...(v.previous ?? []).map(p => p?.narrationId)]));
+        // A correction that landed while it was written: written again —
+        // while the store still holds the scene (its values are the ones read).
+        const after = storedStateEntries(key, sceneId);
+        if (after === null || JSON.stringify(after) === read) break;
       }
-      await writeEntityFlag(resolved.typeKey, resolved.document, {
-        ...resolved.data,
-        lastKnown,
-        updatedAt: new Date().toISOString(),
-      });
-      updated += 1;
-      await takeBackXCarded(written.flatMap(v => [v.narrationId, ...(v.previous ?? []).map(p => p?.narrationId)]));
     } catch (err) {
       console.warn(`${MODULE_ID} | sceneLifecycle: keeping ${subject.entityId}'s last known whereabouts failed:`, err?.message ?? err);
     }
   }
   return updated;
+}
+
+/** How many times a record's LAST KNOWN is written, a correction landing during each write. */
+const LAST_KNOWN_REKEEP_PASSES = 3;
+
+/**
+ * A subject's state values in the store while the store still holds the scene
+ * being ended (`[]` when a state strike took them all), else null — the
+ * caller's copy then stands (STATE-CORRECTION-DURING-SCENE-END-LOST; as
+ * storedSceneTruth reads a truth).
+ *
+ * @param {string} key — the subject's state key
+ * @param {string|null} sceneId
+ * @returns {Object[]|null}
+ */
+function storedStateEntries(key, sceneId) {
+  if (!sceneId) return null;
+  let latest = null;
+  try { latest = game.settings.get(MODULE_ID, 'campaignState'); } catch { latest = null; }
+  if (!latest || (latest.currentSceneId ?? null) !== sceneId) return null;
+  const entries = latest.sceneState?.bySubject?.[key];
+  return Array.isArray(entries) ? entries : [];
 }
 
 /**

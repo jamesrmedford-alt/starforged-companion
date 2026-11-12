@@ -830,7 +830,12 @@ on where it was filed (a superseded narration's records stand, issue #338
 D8) — and the write that ends the scene keeps the scene's truths as the store
 holds them, so the strike is kept and named for the session
 (STRIKE-DURING-SCENE-END-LOST: the struck fact was archived as confirmed lore
-and kept as a live truth). It discards state and clears the frame.
+and kept as a live truth). The whereabouts it keeps are the store's while the
+store still holds the scene, and a record is written again — from its LAST
+KNOWN as the end found it — when they changed while it was written, so a
+`!state strike` / `!state set` made meanwhile sticks too
+(STATE-CORRECTION-DURING-SCENE-END-LOST: a struck location stayed LAST
+KNOWN). It discards state and clears the frame.
 Before that final write it re-reads the store and, while the store is
 still this scene, migrates the truths and keeps the whereabouts that a
 narration persisted during its awaits (`migrateLateSceneFacts`, a few
@@ -838,7 +843,9 @@ passes) — the final write used to clear them unmigrated (issue #325 W24).
 Both persist only their scene fields
 (`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`)
 onto the latest stored campaignState (`persistCampaignStateFields`;
-`endScene`'s own `persistEndedScene`, on the same write chain) — when
+`endScene`'s own `persistEndedScene`, on the same write chain; a scene the
+store holds that is not the one ended — started on another client during its
+awaits — is left open, its fields and pacing standing: END-SCENE-NEXT-SCENE) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
 pipeline's stale snapshot. `endScene`'s write also keeps the scene's strikes,
 X-Card retractions, Replace originals and live narration truths for the session (B6;
