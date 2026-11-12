@@ -5277,15 +5277,19 @@ async function postDeepenAlreadyPaidCard(connectionName, vowName) {
   }
 }
 
-// The campaign's connection a name resolves to (selectConnection's ladder),
-// as its record plus `__hostId`; null when none does.
+// The campaign's open connection a vow's link names (selectConnection's
+// `strict` ladder), as its record plus `__hostId`; null when none does. A link
+// whose connection was severed or renamed names nothing — never the sole
+// bonded or active connection in its place (DEEPEN-LINK-FALLBACK: that one
+// was deepened); the deepen reports it not found, on the GMs' card.
 async function findOpenConnection(connectionName) {
   const conn = await import("./entities/connection.js");
   const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
   const connections = (campaignState.connectionIds ?? [])
     .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
     .filter(Boolean);
-  return selectConnection(connections, connectionName ?? null);
+  if (!connectionName) return null;
+  return selectConnection(connections, connectionName, { strict: true });
 }
 
 async function postDeepenBondCard(name, marks) {

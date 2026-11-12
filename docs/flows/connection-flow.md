@@ -249,10 +249,12 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 - **`!bond [rank] [name]`** — the bonded develop roll
   (`src/moves/bondCommand.js`). `handleBondCommand` runs once, on the
   typist's client (chat routing `RUN_ON.AUTHOR`): it resolves the **named**
-  bonded connection (`selectConnection` over active bonded records), else the
-  **sole** bonded one, and that connection's rank drives the adds
-  (`BOND_ROLL_ADDS`, shared with the pipeline's bonded roll; a bare rank arg
-  is the untargeted fallback; a name that matches nothing warns).
+  bonded connection (`selectConnection` over active bonded records, `strict`:
+  a name matches by itself alone — never the table's one bond in its place,
+  BOND-COMMAND-FALLBACK), else, with no name, the **sole** bonded one, and
+  that connection's rank drives the adds (`BOND_ROLL_ADDS`, shared with the
+  pipeline's bonded roll; a bare rank arg is the untargeted fallback; a name
+  that matches nothing warns).
   It rolls, posts the card, and relays the roll's result to the canonical
   GM (`requestGmAction("bond.apply", { outcome, isMatch, … })` →
   `applyBondEffects`), which pays it from the pipeline's table
