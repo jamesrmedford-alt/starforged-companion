@@ -1024,7 +1024,10 @@ function restatesRetraction(t, retractedInStore, latest) {
   if (!t || t.retracted || (t.asserter ?? 'narrator') !== 'narrator' || !t.subject) return false;
   const fact = String(t.fact ?? '').trim();
   if (!fact) return false;
-  if (findEquivalentTruth(retractedInStore, t.subject, fact)) return true;
+  // At its place: a strike of a scene fact stands where it was asserted, an
+  // X-Card retraction everywhere (ACTIVE-SCENE-STRIKE-PLACE-BLIND, merged with
+  // XCARD-PERSIST-WINDOW).
+  if (findEquivalentTruth(retractedInStore, t.subject, fact, { place: t.sceneLocation ?? null })) return true;
   const names = [t.subject.text, t.subject.name].filter(n => typeof n === 'string' && n.trim());
   return !!findSessionStrike(latest, t.subject, fact, names, { blocked: true, place: t.sceneLocation ?? null });
 }
