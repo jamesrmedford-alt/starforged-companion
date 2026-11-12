@@ -19,6 +19,7 @@ import { requestGmAction } from '../multiplayer/gmRelay.js';
 import { isTrackPosition, combatPositionFor } from '../moves/combat.js';
 import { resolveUserActorId } from '../multiplayer/speaker.js';
 import { replaceKeepingInput } from './keepTypedInput.js';
+import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 
 /**
  * A track's label (or any text) for HTML: a name holding markup — a player can
@@ -186,18 +187,41 @@ let _writeTail = Promise.resolve();
  * write that fails does not hold up the next. `change` must not call another
  * track writer: it would wait for itself.
  *
+ * Bounded (issue #347 TRACK-QUEUE-UNBOUNDED-IN-LOCK): the write ahead is
+ * waited on, and each of this write's own world writes (the journal's
+ * creation, the save), for at most WORLD_WRITE_WAIT_MS. The queue is awaited
+ * inside the move lock — a move's progress mark, a fight's position — and a
+ * write whose answer was lost with the connection never settled: the table's
+ * lock was held for good. A save not answered in time rejects, as a refused
+ * one does; if it lands later, the cache takes it then.
+ *
  * @param {(tracks: object[]) => (object[]|null|Promise<object[]|null>)} change
  * @returns {Promise<void>}
  */
 function writeTracks(change) {
-  const run = _writeTail.then(async () => {
-    const journal = await getOrCreateJournal();
+  const run = settledWithin(_writeTail, WORLD_WRITE_WAIT_MS, 'a Progress Tracks write ahead of this one').then(async () => {
+    const journal = await answeredWithin(getOrCreateJournal(), "the Progress Tracks journal's creation");
     const tracks  = foundry.utils.deepClone(journal.getFlag(MODULE_ID, FLAG_KEY) ?? []);
     const next    = await change(tracks);
-    if (Array.isArray(next)) await journal.setFlag(MODULE_ID, FLAG_KEY, next);
+    if (Array.isArray(next)) await answeredWithin(journal.setFlag(MODULE_ID, FLAG_KEY, next), 'a Progress Tracks save');
   });
   _writeTail = run.catch(() => {});
   return run;
+}
+
+/**
+ * `promise`'s value once it settles within WORLD_WRITE_WAIT_MS — a world write
+ * of writeTracks'; one not answered by then throws, as a refused write does.
+ *
+ * @param {Promise<*>} promise
+ * @param {string} label
+ * @returns {Promise<*>}
+ */
+async function answeredWithin(promise, label) {
+  if (!(await settledWithin(promise, WORLD_WRITE_WAIT_MS, label))) {
+    throw new Error(`${label} was not answered — it may not have been saved`);
+  }
+  return promise;
 }
 
 /**
