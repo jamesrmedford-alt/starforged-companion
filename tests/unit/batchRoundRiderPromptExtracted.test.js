@@ -86,7 +86,9 @@ async function act(text, submissionId) {
   await relay('pl-1', 'batch.submit', { roundId: round().id, text, submissionId });
   await table.settle();
   const r = round();
-  await relay('pl-1', 'batch.confirm', { roundId: r.id, submissionId: r.entries['pl-1'].submissionId, choices: {} });
+  // The Round window's confirm as it opens: the ability with an effect on the
+  // outcome pre-checked (RIDERS-IGNORE-UNCHECKED).
+  await relay('pl-1', 'batch.confirm', { roundId: r.id, submissionId: r.entries['pl-1'].submissionId, choices: { abilityIds: ['kit:0'] } });
   await table.settle();
 }
 
