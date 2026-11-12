@@ -187,7 +187,8 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
   // 2026-06-12; issue #321 U53), as do the narrator sidecar, a manual entry
   // and an unknown source. (SHIP-TRANSIT-LINE fix — set_a_course used to
   // render "in transit to" after the ship had already arrived.)
-  const docked = source === "set_a_course" || source === "scene_token"
+  const docked = source === "set_a_course"
+    || (source === "scene_token" && !isLegacyTokenPlacement(position))
     || source === "at_command" || source === "expedition";
 
   const parts = [];
@@ -208,6 +209,25 @@ export function formatShipPositionLine(position, campaignState, shipName = "") {
   const scopeStr = scope.length ? ` (${scope.join(", ")})` : "";
 
   return `SHIP POSITION: ${ship} ${parts.join(" ")}${scopeStr}`.trim();
+}
+
+/**
+ * A token's own place on the map recorded before issue #321 U53, which gave
+ * it the `token_placement` source: it was written `scene_token`, the source a
+ * Set a Course started by dropping the token on a pin writes, so the ship
+ * read "docked at" a settlement it was only parked near until the token moved
+ * again (known-issues OLD-SCENE-TOKEN-DOCKED). Such a record carries its pin's
+ * label as free text beside the settlement id; an arrival never does — the
+ * record a settlement arrival builds (inferShipPositionFromEntityId, or
+ * inferShipPosition by name) leaves a settlement's free text empty. Pure.
+ *
+ * @param {Object|null} position
+ * @returns {boolean}
+ */
+function isLegacyTokenPlacement(position) {
+  return position?.updatedBy === "scene_token"
+    && !!position.nearestSettlementId
+    && typeof position.freeText === "string" && position.freeText.trim() !== "";
 }
 
 /**

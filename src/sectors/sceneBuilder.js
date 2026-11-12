@@ -21,7 +21,7 @@ import {
   iconForStellarObject,
   pickStarshipIcon,
 } from "../system/ironswornAssets.js";
-import { POSITION_SYNC_OPTION } from "./sectorSceneHooks.js";
+import { POSITION_SYNC_OPTION, findSettlementNoteById } from "./sectorSceneHooks.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -449,21 +449,34 @@ export async function placeCommandVehicleTokenIfPresent(scene, sector) {
   }
   if (!commandActorId) return null;             // No command vehicle yet — skip.
 
-  // Anchor coordinates: the matching settlement pin, or scene centre.
-  const mapSettlements   = sector?.mapData?.settlements ?? [];
-  const anchorSettlement = commandPayload?.position?.nearestSettlementId
-    ? mapSettlements.find(s => s.id === commandPayload.position.nearestSettlementId)
+  // Anchor coordinates: the pin the ship's position names, or scene centre.
+  // A position record names its place by the settlement's — or a site's
+  // location — Actor id (inferShipPositionFromEntityId, the token's own
+  // placement, `!at`); only a record from before those carries the
+  // generator's settlement id. The anchor was matched against the generator
+  // ids alone, so a ship whose record named its settlement's Actor was placed
+  // at the map's centre (known-issues TOKEN-ANCHOR-GENERATOR-IDS). The pin on
+  // the scene carries both ids (settlementId, actorId); the map data the
+  // generator id, and a site's its Actor's.
+  const position         = commandPayload?.position ?? null;
+  const anchorId         = position?.nearestSettlementId || position?.nearestLocationId || null;
+  const anchorNote       = anchorId ? findSettlementNoteById(scene, anchorId) : null;
+  const anchorCell       = anchorId && !anchorNote
+    ? ((sector?.mapData?.settlements ?? []).find(s => s.id === anchorId)
+      ?? (sector?.mapData?.discoveries ?? []).find(d => d.actorId === anchorId)
+      ?? null)
     : null;
 
   const { gridCellSize, sceneWidth, sceneHeight } = SCENE_CONFIG;
   // Same scene-rect inset as the settlement Notes (PLAYTEST-1712 A) so the
   // Token lands on its anchor pin, not (sceneX, sceneY) px up-and-left of it.
+  // A pin's own coordinates already carry it.
   const offset = sceneRectOffset(scene, SCENE_CONFIG);
-  const tokenX = offset.x + (anchorSettlement
-    ? anchorSettlement.gridX * gridCellSize
+  const tokenX = anchorNote ? Number(anchorNote.x ?? 0) : offset.x + (anchorCell
+    ? anchorCell.gridX * gridCellSize
     : Math.floor(sceneWidth  / 2 / gridCellSize) * gridCellSize);
-  const tokenY = offset.y + (anchorSettlement
-    ? anchorSettlement.gridY * gridCellSize
+  const tokenY = anchorNote ? Number(anchorNote.y ?? 0) : offset.y + (anchorCell
+    ? anchorCell.gridY * gridCellSize
     : Math.floor(sceneHeight / 2 / gridCellSize) * gridCellSize);
 
   const cvActor = game.actors?.get?.(commandActorId);
