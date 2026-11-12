@@ -2216,8 +2216,10 @@ async function applyOutcomeEffects({
       // combat moves just mark progress on it. Enter the Fray's own outcome
       // position rides the card so it lands on the track at creation. An
       // upgrade posts none: the original outcome's card is waiting, and its
-      // position is changed below.
-      const existing = selectCombatTrack(await listProgressTracks(), moveTarget);
+      // position is changed below. The foe is matched by name alone: the one
+      // open fight is not a new foe's (ENTER-FRAY-SOLE-FIGHT — it resumed that
+      // fight, so no card was posted and no second fight begun).
+      const existing = selectCombatTrack(await listProgressTracks(), moveTarget, { soleFallback: false });
       if (!existing || existing.completed) {
         const vowNames = (readVows(speakerActor) ?? [])
           .filter(v => v && !v.completed).map(v => v.name).filter(Boolean);
@@ -2310,11 +2312,16 @@ async function applyOutcomeEffects({
       else {
         const tracks  = await listProgressTracks();
         const trackId = interpretation?.moveTargetId ?? null;
+        // Enter the Fray's fight is its foe's by name, or the one its
+        // threshold card is to begin — never another open fight
+        // (ENTER-FRAY-SOLE-FIGHT: its opening position landed on the one
+        // open fight).
+        const fray = next.enterCombat === true;
         // Two fights open and no foe named: the roller's own fight — the one
         // recording their position (issue #326 W45; the position was written
         // nowhere and their next Strike steered by the stale one).
-        out.moveFight = selectCombatTrack(tracks, moveTarget, { trackId })
-          ?? (!moveTarget && !trackId ? selectRollerFight(tracks, speakerActor?.id ?? rollerActor?.id ?? null) : null);
+        out.moveFight = selectCombatTrack(tracks, moveTarget, { trackId, soleFallback: !fray })
+          ?? (!fray && !moveTarget && !trackId ? selectRollerFight(tracks, speakerActor?.id ?? rollerActor?.id ?? null) : null);
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | combat fight lookup failed:`, err?.message ?? err);

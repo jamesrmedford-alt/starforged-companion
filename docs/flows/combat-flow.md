@@ -115,8 +115,11 @@ begin in a bad spot — a `chain` of `momentum` and `combatPosition: "bad_spot"`
 position at all, issue #321 U18); miss → `bad_spot`.
 
 The pipeline's `enterCombat` branch (`applyOutcomeEffects`, `src/index.js`)
-does **not** create a track. If no matching open combat track exists (`selectCombatTrack`,
-`src/moves/combat.js`), it posts the **threshold decision card**
+does **not** create a track. If no open combat track is the foe by name
+(`selectCombatTrack`, `src/moves/combat.js`, with `soleFallback: false` — the
+one open fight is not a new foe's: it resumed that fight, posted no card and
+took the opening position, ENTER-FRAY-SOLE-FIGHT), it posts the **threshold
+decision card**
 (`buildCombatThresholdHtml`, `src/moves/combatThreshold.js`):
 
 - header "⚔ A fight looms — <foe>" with the foe from `interpretation.moveTarget`;
@@ -139,8 +142,9 @@ a won fight again. An effect that does not land releases the claim.
 offers) and objective, with the card's own label, carried position and
 roller, and creates the track (the card keeps only its `thresholdTaken`
 claim). `createCombatTrackFromThreshold` → `applyCombatProgress`
-(`beginsFight: true` — a new foe is a new fight however many are open, issue
-#321 U16) → `addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
+(`beginsFight: true` — a new foe is a new fight however many are open, one
+included: matched by name only, issue #321 U16 / ENTER-FRAY-SOLE-FIGHT) →
+`addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
 `linkedVowName`, and gets its `combatState` set from the carried position via
 `applyCombatPositionToTrack` (`src/moves/combatTracker.js` — writes the track,
 the actor's sheet field, and the combatant badge). A combat-track card posts

@@ -68,7 +68,10 @@ passage" drawing.
   `applyExpeditionProgress` resolve-or-creates the expedition track (label =
   destination, rank = interpreter's `expeditionRank`, default dangerous) and
   marks one rank-step. A new track is begun only when no expedition is open
-  or the move names a destination none of the open ones matches; naming none
+  or the move names a destination none of the open ones matches — by name
+  alone: the one open expedition is not taken for a new destination
+  (`selectExpeditionTrack`'s `soleFallback: false`; FRAY-SOLE-FIGHT-FALLBACK
+  — it was marked instead); naming none
   while two or more are open, the pipeline posts a **Which expedition?** card
   before rolling (`postWhichFightCard` with `trackType: "expedition"`, whose
   pick relays `whichFight.pick` — one of the card's tracks, the roller's

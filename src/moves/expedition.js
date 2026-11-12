@@ -60,12 +60,16 @@ function normalizeLabel(s) {
  * the track's id (a Progress Tracks panel row, an expedition card) gets that
  * open track or null — never a same-named sibling (issue #306 R06).
  *
+ * `soleFallback: false` skips the single-open rung: Undertake an Expedition
+ * naming a destination none of the open ones matches begins a new one
+ * (FRAY-SOLE-FIGHT-FALLBACK — it marked the one open expedition).
+ *
  * @param {Array<{id,label,type,rank,ticks,completed}>} allTracks
  * @param {string|null} label  — the move's destination (interpretation.moveTarget)
- * @param {{ trackId?: string|null }} [opts]
+ * @param {{ trackId?: string|null, soleFallback?: boolean }} [opts]
  * @returns {Object|null}
  */
-export function selectExpeditionTrack(allTracks, label, { trackId = null } = {}) {
+export function selectExpeditionTrack(allTracks, label, { trackId = null, soleFallback = true } = {}) {
   const expeditions = (allTracks ?? []).filter(t => t?.type === "expedition" && !t.completed);
   if (typeof trackId === "string" && trackId) return expeditions.find(t => t.id === trackId) ?? null;
   if (!expeditions.length) return null;
@@ -77,7 +81,7 @@ export function selectExpeditionTrack(allTracks, label, { trackId = null } = {})
     const fuzzy = expeditions.find(t => wholeWordsFit(normalizeLabel(t.label), want));
     if (fuzzy) return fuzzy;
   }
-  return expeditions.length === 1 ? expeditions[0] : null;
+  return soleFallback && expeditions.length === 1 ? expeditions[0] : null;
 }
 
 /**
@@ -104,11 +108,13 @@ export async function applyExpeditionProgress({ moveTarget, moveTargetId = null,
   if (!deps?.listTracks || !deps?.createTrack || !deps?.markProgress) return null;
 
   const all = await deps.listTracks();
-  let track   = selectExpeditionTrack(all, moveTarget, { trackId: moveTargetId });
+  // A named destination is its own expedition, or a new one — the one open
+  // expedition is not taken for it (FRAY-SOLE-FIGHT-FALLBACK).
+  const named = !!(moveTarget && String(moveTarget).trim());
+  let track   = selectExpeditionTrack(all, moveTarget, { trackId: moveTargetId, soleFallback: !named });
   let created = false;
 
   if (!track && moveTargetId) return { track: null, created: false, reason: "gone" };
-  const named = !!(moveTarget && String(moveTarget).trim());
   if (!track && !named && (all ?? []).some(t => t?.type === "expedition" && !t.completed)) {
     return { track: null, created: false, reason: "ambiguous" };
   }
