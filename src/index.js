@@ -107,7 +107,7 @@ import {
   registerShipMapSceneHooks,
 } from "./moves/shipMapScene.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack, selectRollerFight } from "./moves/combat.js";
-import { buildCombatThresholdHtml, WAY_OUT_MOVES, thresholdPositionLine } from "./moves/combatThreshold.js";
+import { buildCombatThresholdHtml, WAY_OUT_MOVES, stashPositionOnThresholdCard } from "./moves/combatThreshold.js";
 import { moveDisplayName } from "./system/i18n.js";
 import {
   enterCombatTracker,
@@ -1892,10 +1892,11 @@ async function expeditionArrival(interpretation, campaignState) {
  * @param {{ combatTrackId?: string|null }|null} [args.targets] — the fight the original's card
  *   named, for an upgrade
  * @param {Object|null} [args.tokenDragSetCourse] — the pipeline's token-drag payload
- * @returns {Promise<{ moveFight: Object|null, applied: string[], notApplied: string[] }>}
+ * @returns {Promise<{ moveFight: Object|null, thresholdResolutionId: string|null, applied: string[], notApplied: string[] }>}
  *   moveFight — the fight the move was about: the one its progress marked (or created),
- *   else the stamped or selected open fight, else the one it ended; applied / notApplied —
- *   what the effects did, in words, for an upgrade's card
+ *   else the stamped or selected open fight, else the one it ended; thresholdResolutionId —
+ *   the resolution whose threshold card this posted (Enter the Fray against a new foe);
+ *   applied / notApplied — what the effects did, in words, for an upgrade's card
  */
 async function applyOutcomeEffects({
   resolution, interpretation, campaignState, rollerActor, speakerActor,
@@ -1903,7 +1904,7 @@ async function applyOutcomeEffects({
 }) {
   const applied    = [];
   const notApplied = [];
-  const out = { moveFight: null, sceneChallenge: null, applied, notApplied };
+  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, applied, notApplied };
   if (!game.user?.isGM) return out;
 
   const next       = resolution.consequences ?? {};
@@ -2233,6 +2234,10 @@ async function applyOutcomeEffects({
         }).catch(err =>
           console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err));
         thresholdPosted = true;
+        // The move's choice card names this card, by the resolution that
+        // posted it: its weak hit's "You are in control" lands on the fight
+        // the card begins, or waits on it (DELAYED-CHOICE-IDENTITY).
+        out.thresholdResolutionId = resolution._id ?? null;
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | combat threshold failed:`, err?.message ?? err);
@@ -2473,34 +2478,6 @@ async function applyWonFightPayoff(track, outcome, rollerActor) {
     }).catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
   }
 }
-
-/**
- * An Enter the Fray upgraded while its threshold card still waits: put the
- * upgraded opening position on the card — its flag, which
- * createCombatTrackFromThreshold applies at track creation (as the weak hit's
- * "You are in control" choice does), and its line — in place of the recorded
- * outcome's. The card is the one the original resolution posted
- * (`resolutionId`); a card from before cards carried it is not found.
- *
- * @param {string|null} resolutionId — the original resolution's
- * @param {"in_control"|"bad_spot"} position
- * @returns {Promise<boolean>} whether a card was updated
- */
-async function stashPositionOnThresholdCard(resolutionId, position) {
-  if (!resolutionId) return false;
-  const card = (game.messages?.contents ?? []).find(m =>
-    m?.flags?.[MODULE_ID]?.combatThresholdCard === true && m.flags[MODULE_ID].resolutionId === resolutionId);
-  if (!card) return false;
-  const line    = thresholdPositionLine(position);
-  const content = String(card.content ?? "");
-  const current = /<p>⚑ [^<]*<strong>[^<]*<\/strong>\.<\/p>/;
-  const updated = current.test(content)
-    ? content.replace(current, line)
-    : content.replace("</p>", `</p>${line}`);
-  await card.update({ [`flags.${MODULE_ID}.position`]: position, content: updated });
-  return true;
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS

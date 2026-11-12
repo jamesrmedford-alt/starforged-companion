@@ -18,6 +18,7 @@
  */
 
 import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum } from "./sufferExecutor.js";
+import { findThresholdCard, stashPositionOnThresholdCard as stashOnOwnThresholdCard } from "./combatThreshold.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -416,6 +417,20 @@ async function runSufferCall(call, actor, opts) {
     case "expedition-progress": {
       const { listProgressTracks, markProgressById, addProgressTrack } = await import("../ui/progressTracks.js");
       const allTracks = await listProgressTracks();
+      // The expedition the move explored, resolved when it was rolled
+      // (Explore a Waypoint's targets): that one or nothing — never the sole
+      // open one at click time (DELAYED-CHOICE-IDENTITY, N04's rule). A card
+      // that names none keeps the click-time reading below.
+      if (typeof opts.expeditionTrackId === "string" && opts.expeditionTrackId) {
+        const own = allTracks.find(t => t.id === opts.expeditionTrackId && t.type === "expedition") ?? null;
+        if (!own || own.completed) {
+          const reason = own ? "expedition-over" : "expedition-gone";
+          console.warn(`${MODULE_ID} | expedition-progress executor: the move's expedition ${opts.expeditionTrackId} is ${own ? "over" : "gone"} — progress not marked.`);
+          return { kind: "expedition-progress", count: call.count, skipped: true, ok: false, reason };
+        }
+        for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(own.id);
+        return { kind: "expedition-progress", count: call.count, trackId: own.id };
+      }
       const open = allTracks.filter(t => t.type === 'expedition' && !t.completed);
       if (open.length === 1) {
         for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(open[0].id);
@@ -436,6 +451,26 @@ async function runSufferCall(call, actor, opts) {
     case "combat-position": {
       const { listProgressTracks } = await import("../ui/progressTracks.js");
       const allTracks = await listProgressTracks();
+      // The fight the move was about, resolved when it was rolled
+      // (DELAYED-CHOICE-IDENTITY, N04's rule): the open fight its foe named,
+      // or the fight its threshold card begins — never the sole open fight
+      // or the newest threshold card at click time. A card that names
+      // neither keeps the click-time reading below.
+      const own = ownCombatPositionTarget(allTracks, opts);
+      if (own) {
+        if (own.stash) {
+          const stashed = await stashOnOwnThresholdCard(opts.thresholdResolutionId, call.position);
+          if (stashed) return { kind: "combat-position", position: call.position, stashed, skipped: false };
+          return { kind: "combat-position", position: call.position, skipped: true, ok: false, reason: "fight-gone" };
+        }
+        if (!own.fight) {
+          console.warn(`${MODULE_ID} | combat-position executor: ${own.reason} — position "${call.position}" not applied.`);
+          return { kind: "combat-position", position: call.position, skipped: true, ok: false, reason: own.reason };
+        }
+        const { applyCombatPositionToTrack } = await import("./combatTracker.js");
+        await applyCombatPositionToTrack(own.fight.id, call.position, actor);
+        return { kind: "combat-position", position: call.position, trackId: own.fight.id };
+      }
       const open = allTracks.filter(t => t.type === 'combat' && !t.completed);
       if (open.length === 1) {
         const { applyCombatPositionToTrack } = await import("./combatTracker.js");
@@ -537,6 +572,32 @@ async function healPatientActor(opts) {
   const { isPlayerCharacterActor } = await import("../character/actorBridge.js");
   const actor = globalThis.game?.actors?.get?.(id) ?? null;
   return isPlayerCharacterActor(actor) ? actor : null;
+}
+
+/**
+ * The fight a combat-position choice is about, as its card names it
+ * (DELAYED-CHOICE-IDENTITY): null when the card names none (a card posted
+ * before it carried them — the caller's click-time reading). Enter the Fray
+ * against a new foe names its threshold card (`thresholdResolutionId`):
+ * still waiting, the position is stashed on it (`stash`); entered, the fight
+ * it began (its `frayTrackId`); a way out taken, no fight. A move whose foe an
+ * open fight was names that fight (`combatTrackId`, progressFight's ladder).
+ *
+ * @param {Array<Object>} tracks
+ * @param {Object} opts — the card's executor opts
+ * @returns {{ stash?: boolean, fight?: Object|null, reason?: string }|null}
+ */
+function ownCombatPositionTarget(tracks, opts) {
+  if (typeof opts?.thresholdResolutionId === "string" && opts.thresholdResolutionId) {
+    const tf = findThresholdCard(opts.thresholdResolutionId)?.flags?.[MODULE_ID] ?? null;
+    if (!tf) return { fight: null, reason: "fight-gone" };
+    if (!tf.thresholdTaken) return { stash: true };
+    if (tf.thresholdTaken !== "fray") return { fight: null, reason: "way-out" };
+    if (typeof tf.frayTrackId !== "string" || !tf.frayTrackId) return { fight: null, reason: "fight-gone" };
+    return progressFight(tracks, { combatTrackId: tf.frayTrackId });
+  }
+  if (typeof opts?.combatTrackId === "string" && opts.combatTrackId) return progressFight(tracks, opts);
+  return null;
 }
 
 /**

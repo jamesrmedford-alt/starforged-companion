@@ -1555,6 +1555,12 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
       await release();
       return { applied: false, reason: "not-created" };
     }
+    // The fight this card began, for its Enter the Fray's weak-hit choice
+    // clicked after it (sufferDialog's combat-position executor): that fight,
+    // never the sole open one (DELAYED-CHOICE-IDENTITY). Its read is the
+    // choice card's; a refused stamp leaves that choice unapplied and says so.
+    await message.update({ [`flags.${MODULE_ID}.frayTrackId`]: result.track.id })
+      .catch(err => console.warn(`${MODULE_ID} | fight threshold: the fight's id could not be recorded on card ${messageId}:`, err?.message ?? err));
     return { applied: true };
   } finally {
     _inFlight.delete(key);

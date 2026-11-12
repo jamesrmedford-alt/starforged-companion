@@ -943,7 +943,7 @@ export async function rollMove({
   // the one applier Burn Momentum and Improve Result also run, for what
   // their upgraded outcome adds over this one (UPGRADE-PIPELINE-EFFECTS).
   // The fight the move was about comes back for its cards.
-  const { moveFight, sceneChallenge } = await applyOutcomeEffects({
+  const { moveFight, sceneChallenge, thresholdResolutionId } = await applyOutcomeEffects({
     resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse,
   });
 
@@ -1426,6 +1426,15 @@ export async function rollMove({
     // an upgrade scores that challenge and takes back no more than this
     // filled (issue #338 D2).
     ...(sceneChallenge ? { sceneChallenge } : {}),
+    // Enter the Fray against a new foe: the threshold card it posted, by its
+    // resolution — the weak hit's "You are in control" lands on the fight
+    // that card begins, not on whichever is open when it is clicked
+    // (DELAYED-CHOICE-IDENTITY).
+    ...(thresholdResolutionId ? { thresholdResolutionId } : {}),
+    // Explore a Waypoint: the expedition it explored, resolved now — its
+    // "Mark expedition progress" marks that one, not the sole open one at
+    // click time (DELAYED-CHOICE-IDENTITY).
+    ...(resolution.moveId === "explore_a_waypoint" ? await waypointExpedition(interpretation) : {}),
   };
   // What an upgrade of this result needs to apply the upgraded outcome's
   // other effects as this pipeline applied the original's — the move's
@@ -1474,6 +1483,28 @@ export async function rollMove({
     resolution, interpretation, relevance, moveTargets, burnState, improveState,
     moveResultMessage: moveResultMessage ?? null, rollerActor, speakerActorId,
   };
+}
+
+/**
+ * The expedition an Explore a Waypoint explored, as its move targets carry
+ * it: `{ expeditionTrackId }` — the open expedition its target names, else
+ * the sole open one — or nothing when none resolves (none open, or several
+ * and none named), so its choice card resolves as before. The card's "Mark
+ * expedition progress" then marks this one, gone or over or not
+ * (DELAYED-CHOICE-IDENTITY).
+ *
+ * @param {{ moveTarget?: string|null, moveTargetId?: string|null }} interpretation
+ * @returns {Promise<{ expeditionTrackId?: string }>}
+ */
+async function waypointExpedition(interpretation) {
+  try {
+    const track = selectExpeditionTrack(await listProgressTracks(), interpretation?.moveTarget ?? null,
+      { trackId: interpretation?.moveTargetId ?? null });
+    return track?.id ? { expeditionTrackId: track.id } : {};
+  } catch (err) {
+    console.warn(`${MODULE_ID} | explore a waypoint: its expedition could not be read:`, err?.message ?? err);
+    return {};
+  }
 }
 
 /**

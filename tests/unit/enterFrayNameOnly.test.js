@@ -58,11 +58,8 @@ import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const REPLY = 'Steel rings down the corridor.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
-// d10 challenge dice: 0.25 → 3, 0.35 → 4; d6 action die: 0.9 → 6, 0.1 → 1.
-const CHALLENGE_3_4 = [0.25, 0.35];
 
 let table, journal;
-const world = () => table.world.campaignState();
 // The moves narrated this session, as each move narration's flags (moveId,
 // outcome), oldest first — it read the session move log, retired with issue
 // #326 W58.
@@ -77,7 +74,7 @@ function makeTracksJournal() {
     id:      'tracks-journal',
     name:    'Starforged Progress Tracks',
     getFlag: (mod, key) => flags[`${mod}.${key}`],
-    setFlag: async (mod, key, value) => { flags[`${mod}.${key}`] = structuredClone(value); },
+    setFlag: async (mod, key, value) => { flags[`${mod}.${key}`] = JSON.parse(JSON.stringify(value)); },
   };
 }
 
@@ -90,15 +87,6 @@ async function openTrack(label, { type = 'combat', rank = 'dangerous', ...fields
     await store.updateTrackFields(created.id, fields);
     return created;
   });
-}
-
-/** The GM clicks Roll on a Progress Tracks panel row (the panel's own handler). */
-async function panelRoll(trackId) {
-  const gm = table.client('gm-1');
-  const { ProgressTrackApp } = await gm.import('../../src/ui/progressTracks.js');
-  await gm.run(() => ProgressTrackApp.DEFAULT_OPTIONS.actions.rollProgress.call({}, null, { dataset: { trackId } }));
-  await table.settle();
-  await table.drain();
 }
 
 /** A player types a combat move; the canonical GM's pipeline runs it. */
@@ -132,13 +120,6 @@ beforeEach(async () => {
   table.journal._set(journal);
   scriptClaude(table, { fallback: () => REPLY });
 });
-
-/** A player (or the GM) clicks a card's button; the pipeline it starts runs to the end. */
-async function clickCard(userId, cardId, selector) {
-  table.client(userId).click(cardId, selector);
-  await table.settle();
-  await table.drain();
-}
 
 // Strike +iron: challenge 2 and 3, action 6 + iron 3 = 9 — a strong hit (in control), marked twice.
 const STRIKE_STRONG = [0.15, 0.25, 0.9];

@@ -241,9 +241,16 @@ value per fight used to apply to every roller: one PC's bad spot remapped
 another's Strike to Clash and downgraded their Take Decisive Action (V03).
 The weak-hit Enter-the-Fray choice ("You
 are in control", or the momentum option's bad spot — issue #321 U18) is a
-`combat-position` suffer call (`src/moves/sufferDialog.js`)
-that writes the open track — or stashes onto the pending threshold card when
-clicked before Enter the Fray.
+`combat-position` suffer call (`src/moves/sufferDialog.js`) on the fight the
+move was about, as its choice card names it (DELAYED-CHOICE-IDENTITY, N04's
+rule): the open fight its foe named (`combatTrackId`), or the threshold card
+its move posted (`thresholdResolutionId`, the pipeline's moveTargets) —
+still waiting, the position is stashed on that card
+(`combatThreshold.stashPositionOnThresholdCard`); entered, it lands on the
+fight that card began (the card's `frayTrackId`, stamped by
+`applyCombatThresholdChoice` once the track exists); a way out taken, on
+none, and the card says so. It resolved the sole open fight, or the newest
+threshold card, at click time; a card naming neither still does.
 
 **Narrator awareness:** every prose narration carries [4j] OPEN PROGRESS
 TRACKS (`buildNarratorExtras` → `listOpenProgressTracks`,
