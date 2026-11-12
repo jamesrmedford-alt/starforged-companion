@@ -12,11 +12,13 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("../../src/moves/expedition.js", () => ({
+vi.mock("../../src/moves/expedition.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   UNNAMED_EXPEDITION_LABEL: "Unnamed Journey",
 }));
 
-vi.mock("../../src/moves/sufferExecutor.js", () => ({
+vi.mock("../../src/moves/sufferExecutor.js", async (importOriginal) => ({
+  ...(await importOriginal()),
   executeSuffer:              vi.fn(async () => ({})),
   SUFFER_EXECUTORS:           {},
   rollImpactTable:            vi.fn(async () => null),
