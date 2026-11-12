@@ -4072,157 +4072,157 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
  * @returns {Promise<string|null>}   — narration text, or null on failure/disabled
  */
 export async function narratePacedInput(playerText, campaignState, options = {}) {
+  options = options ?? {};
+  // One function, its failure caught inline: the paced narration's Claude
+  // call keeps narratePacedInput as its caller (PACED-ROUTER-THROW's guard
+  // must not add a named frame — the playthrough harness names a call by it).
   try {
-    return await narratePacedInputGuarded(playerText, campaignState, options ?? {});
-  } catch (err) {
-    console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
-    await postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
-    return null;
-  }
-}
+    const sessionId = campaignState?.currentSessionId ?? null;
 
-async function narratePacedInputGuarded(playerText, campaignState, options) {
-  const sessionId = campaignState?.currentSessionId ?? null;
+    const settings = getNarratorSettings();
+    if (!settings.narrationEnabled) return null;
 
-  const settings = getNarratorSettings();
-  if (!settings.narrationEnabled) return null;
-
-  if (isXCardActive(campaignState)) {
-    // Don't run the narrator while the scene is paused — and say so, as a
-    // move's paused notice and @scene's card do: the line posted nothing,
-    // told nobody, and was never narrated after the resume (issue #345 AA29).
-    await postPacedNarrationPausedCard(campaignState);
-    return null;
-  }
-  const xCard = watchXCard(campaignState);
-  const narrationId = newNarrationId();
-
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    console.warn(`${MODULE_ID} | narratePacedInput: Claude API key not configured`);
-    return null;
-  }
-
-  // The speaker's own character. A player with no PC of their own at a table
-  // of several resolves to none (resolveSpeakerActorId gives the first PC
-  // only to a GM or in solo play — issue #321 U23): the line is still
-  // narrated (#326 D8) but with no character — getActiveCharacter's
-  // first-PC fallback made it Kira's CHARACTER block, Kira speaking, and the
-  // ring's "Kira wrote" (issue #342 Z50).
-  const character    = options?.speakerActorId ? getActiveCharacter(campaignState, options.speakerActorId) : null;
-
-  // The prompt is built before the call. A throw here — a store read, an
-  // entity card, the scene start — escaped to the pacing router's catch,
-  // which only logged it: the line sat in chat, narrated by nothing and told
-  // to nobody, as a failed call's line did before AB21 (issue #347 residual
-  // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
-  let suggestedMove, extras, systemPrompt, userMessage;
-  try {
-    await ensureSceneStarted(campaignState, 'first_narration_paced');
-
-    // Don't suggest a social move against a fellow player character (finding G):
-    // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
-    // the nomination before it reaches the narrator (so no hint is written) and
-    // the card (so no Roll button appears).
-    suggestedMove = suppressPcDirectedSocialMove(
-      options.suggestedMove ?? null, playerText, character?.name ?? null,
-    );
-
-    extras = await buildNarratorExtras('paced_narrative', campaignState, {
-      playerNarration: playerText,
-      character,
-    });
-
-    systemPrompt = buildNarratorSystemPrompt(
-      campaignState, settings, character, '', extras,
-    );
-
-    const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
-    const sentenceTarget = settings.narrationLength ?? 3;
-    userMessage = buildPacedNarrativeUserMessage(
-      playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
-    );
-  } catch (err) {
-    console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
-    await postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
-    return null;
-  }
-
-  try {
-    const raw = await callNarratorAPI({
-      label: 'narratePacedInput',
-      apiKey, systemPrompt, userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-    });
-    if (xCard.interrupted('narratePacedInput')) {
-      // Discarded because the X-Card was played while it was written: said
-      // so, as a move's and @scene's are (PACED-DISCARD-UNDER-XCARD-SILENT).
+    if (isXCardActive(campaignState)) {
+      // Don't run the narrator while the scene is paused — and say so, as a
+      // move's paused notice and @scene's card do: the line posted nothing,
+      // told nobody, and was never narrated after the resume (issue #345 AA29).
       await postPacedNarrationPausedCard(campaignState);
       return null;
     }
-    const text = applyNarratorSidecar(raw, campaignState, {
-      moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-    });
+    const xCard = watchXCard(campaignState);
+    const narrationId = newNarrationId();
 
-    if (!text?.trim()) {
-      console.warn(`${MODULE_ID} | narratePacedInput: the narrator's reply had no prose — nothing to post.`);
-      await postPacedNarrationFailedCard(campaignState, EMPTY_REPLY_REASON);
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      console.warn(`${MODULE_ID} | narratePacedInput: Claude API key not configured`);
       return null;
     }
 
-    const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
-    schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
-    schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
-    scheduleChronicleEntry({
-      narrationText: text,
-      campaignState,
-      kind:          'paced',
-      actorId:       character?.actorId ?? null,   // the speaker's chronicle (CHRONICLE-FIRST-PC)
-      narrationId,
-    });
-    return text;
-  } catch (err) {
-    let failure = claudeFailureReason(err);   // the notice's cause (ERROR-TEXT-BLAMES-KEY)
-    if (isRateLimit(err)) {
-      try {
-        await delay(RETRY_DELAY_MS);
-        const raw = await callNarratorAPI({
-      label: 'narratePacedInput',
-          apiKey, systemPrompt, userMessage,
-          model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-        });
-        if (xCard.interrupted('narratePacedInput')) {
-          await postPacedNarrationPausedCard(campaignState);
-          return null;
-        }
-        const text = applyNarratorSidecar(raw, campaignState, {
-          moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-        });
-        if (text?.trim()) {
-          const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
-          schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
-          schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
-          scheduleChronicleEntry({
-            narrationText: text,
-            campaignState,
-            kind:          'paced',
-            actorId:       character?.actorId ?? null,
-            narrationId,
-          });
-          return text;
-        }
-        failure = EMPTY_REPLY_REASON;
-      } catch (retryErr) {
-        console.error(`${MODULE_ID} | narratePacedInput retry failed:`, retryErr);
-        failure = claudeFailureReason(retryErr);
-      }
+    // The speaker's own character. A player with no PC of their own at a table
+    // of several resolves to none (resolveSpeakerActorId gives the first PC
+    // only to a GM or in solo play — issue #321 U23): the line is still
+    // narrated (#326 D8) but with no character — getActiveCharacter's
+    // first-PC fallback made it Kira's CHARACTER block, Kira speaking, and the
+    // ring's "Kira wrote" (issue #342 Z50).
+    const character    = options?.speakerActorId ? getActiveCharacter(campaignState, options.speakerActorId) : null;
+
+    // The prompt is built before the call. A throw here — a store read, an
+    // entity card, the scene start — escaped to the pacing router's catch,
+    // which only logged it: the line sat in chat, narrated by nothing and told
+    // to nobody, as a failed call's line did before AB21 (issue #347 residual
+    // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
+    let suggestedMove, extras, systemPrompt, userMessage;
+    try {
+      await ensureSceneStarted(campaignState, 'first_narration_paced');
+
+      // Don't suggest a social move against a fellow player character (finding G):
+      // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
+      // the nomination before it reaches the narrator (so no hint is written) and
+      // the card (so no Roll button appears).
+      suggestedMove = suppressPcDirectedSocialMove(
+        options.suggestedMove ?? null, playerText, character?.name ?? null,
+      );
+
+      extras = await buildNarratorExtras('paced_narrative', campaignState, {
+        playerNarration: playerText,
+        character,
+      });
+
+      systemPrompt = buildNarratorSystemPrompt(
+        campaignState, settings, character, '', extras,
+      );
+
+      const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
+      const sentenceTarget = settings.narrationLength ?? 3;
+      userMessage = buildPacedNarrativeUserMessage(
+        playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
+      );
+    } catch (err) {
+      console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
+      await postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
+      return null;
     }
+
+    try {
+      const raw = await callNarratorAPI({
+        label: 'narratePacedInput',
+        apiKey, systemPrompt, userMessage,
+        model:     settings.narrationModel,
+        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+      });
+      if (xCard.interrupted('narratePacedInput')) {
+        // Discarded because the X-Card was played while it was written: said
+        // so, as a move's and @scene's are (PACED-DISCARD-UNDER-XCARD-SILENT).
+        await postPacedNarrationPausedCard(campaignState);
+        return null;
+      }
+      const text = applyNarratorSidecar(raw, campaignState, {
+        moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
+      });
+
+      if (!text?.trim()) {
+        console.warn(`${MODULE_ID} | narratePacedInput: the narrator's reply had no prose — nothing to post.`);
+        await postPacedNarrationFailedCard(campaignState, EMPTY_REPLY_REASON);
+        return null;
+      }
+
+      const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
+      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
+      schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
+      schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
+      scheduleChronicleEntry({
+        narrationText: text,
+        campaignState,
+        kind:          'paced',
+        actorId:       character?.actorId ?? null,   // the speaker's chronicle (CHRONICLE-FIRST-PC)
+        narrationId,
+      });
+      return text;
+    } catch (err) {
+      let failure = claudeFailureReason(err);   // the notice's cause (ERROR-TEXT-BLAMES-KEY)
+      if (isRateLimit(err)) {
+        try {
+          await delay(RETRY_DELAY_MS);
+          const raw = await callNarratorAPI({
+        label: 'narratePacedInput',
+            apiKey, systemPrompt, userMessage,
+            model:     settings.narrationModel,
+            maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+          });
+          if (xCard.interrupted('narratePacedInput')) {
+            await postPacedNarrationPausedCard(campaignState);
+            return null;
+          }
+          const text = applyNarratorSidecar(raw, campaignState, {
+            moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
+          });
+          if (text?.trim()) {
+            const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
+            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
+            schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
+            schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
+            scheduleChronicleEntry({
+              narrationText: text,
+              campaignState,
+              kind:          'paced',
+              actorId:       character?.actorId ?? null,
+              narrationId,
+            });
+            return text;
+          }
+          failure = EMPTY_REPLY_REASON;
+        } catch (retryErr) {
+          console.error(`${MODULE_ID} | narratePacedInput retry failed:`, retryErr);
+          failure = claudeFailureReason(retryErr);
+        }
+      }
+      console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
+      await postPacedNarrationFailedCard(campaignState, failure);
+      return null;
+    }
+  } catch (err) {
     console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
-    await postPacedNarrationFailedCard(campaignState, failure);
+    await postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
     return null;
   }
 }
