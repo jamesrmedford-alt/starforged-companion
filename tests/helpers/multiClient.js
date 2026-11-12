@@ -1208,12 +1208,14 @@ class SimTable {
       c._dialogResponder = null;
       for (const off of c._testListeners.splice(0)) off();
       this.#seedClientSettings(c);
-      // A fresh page per test: no dropped connection standing it down, and no
-      // GM remembered as still loading (issue #347 AB19, AB03).
+      // A fresh page per test: no dropped connection standing it down, no GM
+      // remembered as still loading (issue #347 AB19, AB03), and no shared-
+      // supply pass remembered (SUPPLY-LAGGING-SHEET).
       if (c.booted) {
-        const watch = await c.import("../../src/multiplayer/connectionWatch.js");
-        const gate  = await c.import("../../src/multiplayer/gmGate.js");
-        c.run(() => { watch._resetConnectionWatchForTests?.(); gate._resetGmLoadForTests?.(); });
+        const watch  = await c.import("../../src/multiplayer/connectionWatch.js");
+        const gate   = await c.import("../../src/multiplayer/gmGate.js");
+        const supply = await c.import("../../src/multiplayer/sharedSupply.js");
+        c.run(() => { watch._resetConnectionWatchForTests?.(); gate._resetGmLoadForTests?.(); supply._resetSharedSupplyForTests?.(); });
       }
     }
   }

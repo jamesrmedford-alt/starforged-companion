@@ -2825,7 +2825,16 @@ finding's ID in brackets):
   passes `{ "starforged-companion": { sharedSupplyMirror: true } }` in its
   options and the hook skips marked updates, instead of a global in-flight
   flag that also dropped real edits; a change during a sync is coalesced and
-  synced after it.
+  synced after it. *Update (issue #347 SUPPLY-LAGGING-SHEET):* a sheet edit
+  moves the crew's supply by what it changed on that sheet, as a legacy edit
+  moves the shared track (AB07) — the editing client stamps the sheet's
+  supply before the edit into the update's options (`preUpdateActor`). There
+  is no canonical store for supply, so the change is applied to the supply
+  the GM's last pass set when the sheet was in step with that pass (two
+  players spending one at once spend two), else to the value most of the
+  crew's sheets hold, a tie going to the edited sheet's. An edit without the
+  stamp still sets the crew to its value. A PC created mid-session starts at
+  the crew's supply.
 - **Private Channel turns stay buffered until their write succeeds** [F01];
   writes per player are chained, and a failed batch goes back to the front
   and is retried (5 s × attempt, three automatic retries).
