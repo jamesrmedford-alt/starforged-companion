@@ -2159,16 +2159,21 @@ function withStruckByUpgrade(beat, messages, sessionId) {
  *   - `xCardRedirect`: the redirect the first narration after a GM resumes
  *     carries — set on every play, X-carded cards or not.
  * The caller then flags the returned cards `xCarded` (flagXCardedCards).
+ * `opts.cards` names the cards to remove instead of the pick: a narration
+ * whose card posted after the pause (safety.js, XCARD-POST-RACE).
  *
  * @param {Object} cs — the copy to update (mutated; its ledger objects are replaced, never changed)
+ * @param {{ cards?: Object[]|null }} [opts]
  * @returns {{ cards: Object[], retracted: Object[], sessionId: string|null, summaryDropped: boolean }}
  *   the X-carded cards, the truths retracted, their session, and whether the
  *   session's summary was dropped — the Session Log's story End wrote from it
  *   goes too (safety.js finishXCardRemoval, issue #345 AA27)
  */
-export function applyXCardToNarratorMemory(cs) {
+export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   const sessionId = cs?.currentSessionId ?? null;
-  const cards = xCardedNarrationCards(sessionId);
+  // `cards`: a narration that posted after the pause (XCARD-POST-RACE) —
+  // removed the same way, in place of the pick.
+  const cards = Array.isArray(given) ? given.filter(Boolean) : xCardedNarrationCards(sessionId);
   const ids = [...new Set(cards.map(m => m.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === 'string' && id))];
 
   const retracted = retractNarrations(cs, ids);
