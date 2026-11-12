@@ -60,6 +60,7 @@ import {
 } from "../character/actorBridge.js";
 import { getActiveCombatPosition, listProgressTracks, completeProgressTrack } from "../ui/progressTracks.js";
 import { finishExpedition, legacyRewardTicks, selectExpeditionTrack } from "./expedition.js";
+import { rerouteUnchartedCourse, sceneDestination, readForcedTravelDestination } from "./travel.js";
 import { finishVow } from "./vow.js";
 import { selectCombatTrack } from "./combat.js";
 import { selectConnection, planDevelopRelationship, buildConnectionSuggestion } from "./developRelationship.js";
@@ -100,6 +101,9 @@ const HOST_HELPERS = Object.freeze([
   "postForsakeVowCard", "postDecisiveActionCostCard", "postMovePayThePriceCard", "postMoveResult",
   // recordMove / finishMove
   "reportUnsavedMoveRecord", "applyMoveConsequenceRiders",
+  // readMove — whether a travel move's destination is a charted place (the
+  // arrival's own name resolver; travel.js, issue #348 PT06)
+  "resolveCurrentLocationName",
 ]);
 
 /**
@@ -195,6 +199,23 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget 
 }
 
 /**
+ * Whether a forced travel move with no destination reads one from its line
+ * (readMove, issue #348 PT05): a Set a Course always; an Undertake an
+ * Expedition only with no expedition open — with one open it continues that
+ * one, and with several it asks which.
+ *
+ * @param {string} moveId
+ * @returns {Promise<boolean>}
+ */
+async function travelDestinationUnread(moveId) {
+  if (moveId === "set_a_course") return true;
+  if (moveId !== "undertake_an_expedition") return false;
+  const tracks = await listProgressTracks().catch(() => null);
+  if (!Array.isArray(tracks)) return false;
+  return !tracks.some(t => t?.type === "expedition" && !t.completed);
+}
+
+/**
  * Read a line as a move — what free-flow does once it holds the move lock,
  * and what a round's reading does on Submit (readAction). The interpretation
  * (the forced move's, or interpretMove's), its stat, the scene-challenge
@@ -254,12 +275,40 @@ export async function readMove({
   // A forced move whose stat is a choice rolls the one its narration's
   // approach fits — a stat-only interpretation — not its first listed
   // stat (issue #321 U04). No key keeps the listed stat.
-  if (forcedMoveId) {
-    await enrichForcedMoveStat(interpretation, {
-      interpret: apiKey
-        ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId })
-        : null,
+  const readStat = apiKey
+    ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId })
+    : null;
+  // A forced travel move that names no destination — a paced card's "Roll
+  // Undertake an Expedition" after the scene set one up — reads it, with its
+  // stat, from the line and the scene it follows: unread, the expedition was
+  // "Expedition", for no place, and nothing charted or arrived anywhere
+  // (issue #348 PT05, PT07). An Undertake an Expedition with one open
+  // continues it, as it always has.
+  const readsDestination = !!(forcedMoveId && apiKey && !interpretation.moveTarget && !interpretation.moveTargetId
+    && await travelDestinationUnread(interpretation.moveId));
+  if (readsDestination) {
+    await readForcedTravelDestination(interpretation, {
+      interpret: (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId,
+        recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null) }),
     });
+  } else if (forcedMoveId) {
+    await enrichForcedMoveStat(interpretation, { interpret: readStat });
+  }
+
+  // Travel (issue #348 PT06, PT08). A Set a Course that names no destination
+  // ("please set a course") goes to the one the scene established — the
+  // uncharted destination recorded last (travel.js sceneDestination). One
+  // whose destination is not a charted, known place is Undertake an
+  // Expedition, on every Mischief setting: the confirm dialog and the move
+  // card say why, and Cancel lets the player re-word it. Its stat is read
+  // from the line, as a forced move's is.
+  if (interpretation.moveId === "set_a_course" && !interpretation.moveTarget && !interpretation.moveTargetId) {
+    const established = sceneDestination(campaignState);
+    if (established) interpretation.moveTarget = established;
+  }
+  const { resolveCurrentLocationName } = pipelineHost();
+  if (rerouteUnchartedCourse(interpretation, campaignState, { resolvePlace: resolveCurrentLocationName })) {
+    await enrichForcedMoveStat(interpretation, { interpret: readStat });
   }
 
   // A scene-challenge move (Face Danger / Secure an Advantage within a
@@ -936,6 +985,9 @@ export async function rollMove({
   // the narrator's recent-narration ring (issue #300 F02).
   // A Batch Mode round names it before the roll begins (issue #347 AB20).
   resolution._id = resolutionId ?? foundry.utils.randomID();
+  // A Set a Course read as Undertake an Expedition: the move card says why
+  // (issue #348 PT06; readMove).
+  if (interpretation.courseRerouted) resolution.courseRerouted = interpretation.courseRerouted;
 
   // The outcome's effects beyond the roller's meters and its choice card —
   // an arrival, the expedition's progress, a legacy mark, the companion's
@@ -943,7 +995,7 @@ export async function rollMove({
   // the one applier Burn Momentum and Improve Result also run, for what
   // their upgraded outcome adds over this one (UPGRADE-PIPELINE-EFFECTS).
   // The fight the move was about comes back for its cards.
-  const { moveFight, sceneChallenge } = await applyOutcomeEffects({
+  const { moveFight, sceneChallenge, afterMoveCard } = await applyOutcomeEffects({
     resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse,
   });
 
@@ -1468,6 +1520,11 @@ export async function rollMove({
     rollerActor?.id ?? null,
     cardFlags,
   );
+
+  // The cards that summarize the roll card — the Set a Course card — follow
+  // it: posted by the effects above, the summary came before the roll it
+  // summarized (issue #348 PT10). Each posts its own failure.
+  for (const post of afterMoveCard ?? []) await post();
 
   return {
     refused: null,

@@ -187,20 +187,34 @@ const SITE_SLOTS = [
  * @returns {Array} mapData.discoveries entries
  */
 function layoutSites(sites, mapSettlements) {
+  return (sites ?? []).map((s, i) => layoutDiscovery(s, i, mapSettlements));
+}
+
+/**
+ * One site's map discovery record: the periphery slot for the sector's
+ * `index`-th site, its undiscovered passage anchored to the rightmost
+ * (frontier-facing) settlement. Shared by the generator's sites and an
+ * uncharted destination recorded in play (siteDiscovery
+ * recordUnchartedDestination, issue #348 PT07), which takes the next slot.
+ *
+ * @param {{ id: string, type: string, name: string }} site
+ * @param {number} index — the site's place among the sector's discoveries
+ * @param {Array} mapSettlements — mapData.settlements (with gridX/gridY)
+ * @returns {Object} a mapData.discoveries entry
+ */
+export function layoutDiscovery(site, index, mapSettlements) {
   const jumpOff = [...(mapSettlements ?? [])].sort((a, b) => b.gridX - a.gridX)[0] ?? null;
-  return (sites ?? []).map((s, i) => {
-    const slot = SITE_SLOTS[i % SITE_SLOTS.length];
-    return {
-      id:                  s.id,
-      type:                s.type,
-      name:                s.name,
-      discovered:          false,
-      gridX:               slot.gridX,
-      gridY:               slot.gridY,
-      nearestSettlementId: jumpOff?.id ?? null,
-      actorId:             null,   // backfilled by createEntityJournals
-    };
-  });
+  const slot = SITE_SLOTS[Math.max(0, Number(index) || 0) % SITE_SLOTS.length];
+  return {
+    id:                  site.id,
+    type:                site.type,
+    name:                site.name,
+    discovered:          false,
+    gridX:               slot.gridX,
+    gridY:               slot.gridY,
+    nearestSettlementId: jumpOff?.id ?? null,
+    actorId:             null,   // backfilled by createEntityJournals
+  };
 }
 
 /**

@@ -155,11 +155,26 @@ MOVEMENT WITH STAKES — if the input expresses movement or travel intent
 (setting out, picking a route, closing on a destination) AND there is an
 established hazard or explicit time pressure — in the input itself OR the
 scene context below — then "if there's a risk, there's a move": classify at
-minimum NARRATIVE_WITH_MOVE_AVAILABLE, nominating set_a_course (known route
-or named destination), undertake_an_expedition (perilous or unknown space),
-or face_danger (crossing an immediate hazard). At dial 6+ with clear
-commitment, classify MOVE. The journey must never resolve for free when the
-fiction says failure costs something.
+minimum NARRATIVE_WITH_MOVE_AVAILABLE, nominating set_a_course (a known route
+to a charted place), undertake_an_expedition (perilous or unknown space, or a
+destination that is not charted), or face_danger (crossing an immediate
+hazard). At dial 6+ with clear commitment, classify MOVE. The journey must
+never resolve for free when the fiction says failure costs something.
+
+TRAVEL TO AN UNCHARTED DESTINATION — a journey toward a destination that is
+not one of the CHARTED PLACES below (coordinates someone gave, a rumoured or
+unnamed place, the far side of charted space, somewhere the crew has never
+been) is an expedition by the rules, hazard or not. When the input sets out,
+agrees to go, or skips ahead toward such a destination, classify at minimum
+NARRATIVE_WITH_MOVE_AVAILABLE with suggestedMove undertake_an_expedition (MOVE
+at dial 6+ with clear commitment) — even when the player says "set a course".
+Category: exploration.
+
+A TIME SKIP IS NOT DOWNTIME — "wake me when we get there", "we fly through
+the night", "skip to when we arrive" across a journey that has not been made
+yet is travel (category exploration), never downtime: the journey still has
+to be made. Nominate undertake_an_expedition for an uncharted destination,
+set_a_course for a charted one.
 Example: "Let's pick the fastest path. Getting there in time is crucial"
 through an established debris field → NARRATIVE_WITH_MOVE_AVAILABLE,
 suggestedMove set_a_course (or MOVE at dial 6+). NOT plain NARRATIVE.
@@ -182,7 +197,8 @@ Pick the category from the SITUATION, not the apparatus being used:
                  through or survey space.
 - social:        conversation, persuasion, relationships, negotiation.
 - downtime:      ONLY when there are no immediate stakes — rest, repair,
-                 resupply, reflection in genuine safety. An activity carried
+                 resupply, reflection in genuine safety. Never a journey
+                 still to be made, however it is skipped over. An activity carried
                  out under an active hazard, deadline, or pursuit is NEVER
                  downtime: classify it by the situation (working the nav
                  computer mid-crisis to thread a debris field = exploration;
@@ -209,9 +225,9 @@ CONNECTION
 - test_your_relationship: connection strained or tested
 
 EXPLORATION
-- undertake_an_expedition: travel through perilous or unknown space
+- undertake_an_expedition: travel through perilous or unknown space, or toward a destination that is not charted
 - explore_a_waypoint: examine a notable location during an expedition
-- set_a_course: follow a known route
+- set_a_course: follow a known route to a charted place
 
 SCENE CHALLENGE (only while the CURRENT SCENE reports an open scene challenge)
 - face_danger_scene_challenge: face_danger as part of the scene challenge
@@ -284,6 +300,7 @@ export function buildClassifierContext({
 
   const connectionLine = formatConnections(campaignState, character);
   const sceneLine      = formatScene(campaignState);
+  const chartedLine    = formatChartedPlaces(campaignState);
   const combatLine     = combatActive
     ? "COMBAT STATUS: ACTIVE — a fight is underway. Apply the COMBAT IS ACTIVE rule: any input describing a character action is a MOVE; the player's words are a suggested outcome, not an established fact."
     : null;
@@ -318,6 +335,7 @@ export function buildClassifierContext({
     ...(combatLine ? [combatLine] : []),
     ...(challengeLine ? [challengeLine] : []),
     sceneLine || "(no scene context available)",
+    chartedLine,
     "",
     ...(typeof recentScene === "string" && recentScene.trim()
       ? ["## RECENT SCENE (what the input follows — context only; classify the PLAYER INPUT)", recentScene.trim(), ""]
@@ -523,6 +541,44 @@ function formatConnections(campaignState, _character) {
     names.push(status ? `${data.name} (${status})` : data.name);
   }
   return `Connections: ${names.length ? names.join(", ") : `${ids.length} active (names unavailable)`}`;
+}
+
+// The most charted places the classifier is told of.
+const CHARTED_PLACES_CAP = 12;
+
+/**
+ * The charted, known places — the TRAVEL TO AN UNCHARTED DESTINATION rule
+ * tells travel to one of them (Set a Course) from travel anywhere else (an
+ * expedition) by this list (issue #348 PT05). The tracked settlements,
+ * planets and locations, the active sector's first, without the sites still
+ * unexplored (on the map only as "Unexplored Site"). Read through each
+ * place's host Actor, as the current location is. Never throws.
+ *
+ * @param {Object} campaignState
+ * @returns {string}
+ */
+function formatChartedPlaces(campaignState) {
+  const places = [];
+  try {
+    const activeSectorId = campaignState?.activeSectorId ?? null;
+    for (const [type, ids] of [["settlement", campaignState?.settlementIds], ["planet", campaignState?.planetIds], ["location", campaignState?.locationIds]]) {
+      for (const id of Array.isArray(ids) ? ids : []) {
+        const actor = globalThis.game?.actors?.get?.(id);
+        const data  = actor?.flags?.["starforged-companion"]?.[type];
+        const name  = data?.name ?? actor?.name;
+        if (!name) continue;
+        if (type === "location" && String(data?.status ?? "").toLowerCase() === "unexplored") continue;
+        places.push({ name: String(name).replace(/[\r\n]+/g, " ").trim(), here: !!activeSectorId && data?.sectorId === activeSectorId });
+      }
+    }
+  } catch (err) {
+    console.warn(`starforged-companion | pacing classifier: charted-place read failed:`, err?.message ?? err);
+  }
+  const names = [...places.filter(p => p.here), ...places.filter(p => !p.here)].map(p => p.name).filter(Boolean);
+  const unique = [...new Set(names)];
+  if (!unique.length) return "Charted places: (none recorded)";
+  const shown = unique.slice(0, CHARTED_PLACES_CAP);
+  return `Charted places: ${shown.join(", ")}${unique.length > shown.length ? `, +${unique.length - shown.length} more` : ""}`;
 }
 
 function formatScene(campaignState) {

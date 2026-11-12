@@ -71,10 +71,14 @@ beforeEach(async () => {
   await table.reset({ world: { settings: {
     chronicleAutoEntry: false,
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: "probe-s1", sessionNumber: 1,
-      currentSceneId: "probe-scene", sceneTruths: [], clocks: [] },
+      currentSceneId: "probe-scene", sceneTruths: [], clocks: [], settlementIds: ["actor-outpost"] },
   } } });
   await table.setClaudeKey("gm-1", "sk-ant-test");
   pc = table.addActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 }, system: { momentum: { value: 2 } } });
+  // The outpost is a charted settlement: a course to a place no chart shows is
+  // read as Undertake an Expedition (issue #348 PT06).
+  table.addActor({ id: "actor-outpost", type: "location", name: "The Outpost",
+    flags: { [MODULE_ID]: { entityType: "settlement", settlement: { _id: "rec-outpost", name: "The Outpost" } } } });
   scriptClaude(table, { fallback: () => 'The route bends.\n```json\n{"newTruths":[],"stateChanges":[]}\n```' });
 });
 

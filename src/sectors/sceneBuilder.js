@@ -300,45 +300,9 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
     const siteNotes    = [];
     const sitePassages = [];
     for (const site of discoveries) {
-      const sx = offset.x + (site.gridX * gridCellSize);
-      const sy = offset.y + (site.gridY * gridCellSize);
-      const discovered = !!site.discovered;
-      siteNotes.push({
-        x:          sx,
-        y:          sy,
-        texture:    { src: iconPathForSite(site.type, discovered), tint: tintForSite(site.type, discovered) },
-        iconSize:   40,
-        text:       discovered ? site.name : "Unexplored Site",
-        fontSize:   20,
-        textColor:  discovered ? "#FFFFFF" : "#9A9AB0",
-        textAnchor: 1,    // BOTTOM
-        global:     true,
-        flags: {
-          [MODULE_ID]: {
-            sectorNote: true,
-            siteNote:   true,
-            siteId:     site.id,
-            actorId:    site.actorId ?? null,
-            siteType:   site.type,
-            discovered,
-          },
-        },
-      });
-
-      const from = mapSettlements.find(s => s.id === site.nearestSettlementId)
-        ?? mapSettlements[0] ?? null;
-      if (from) {
-        const fromX = from.gridX * gridCellSize;
-        const fromY = from.gridY * gridCellSize;
-        const toX   = site.gridX * gridCellSize;
-        const toY   = site.gridY * gridCellSize;
-        sitePassages.push(makeDrawingData({
-          x: offset.x + fromX, y: offset.y + fromY, dx: toX - fromX, dy: toY - fromY,
-          strokeAlpha: discovered ? 0.8 : 0.3,
-          strokeColor: discovered ? "#7EB8F7" : "#9B7ECF",
-          flags: { sitePassage: true, discovered, siteId: site.id, fromId: from.id },
-        }));
-      }
+      siteNotes.push(siteNoteData(site, offset));
+      const passage = sitePassageData(site, mapSettlements, offset);
+      if (passage) sitePassages.push(passage);
     }
 
     try {
@@ -519,6 +483,102 @@ export async function placeCommandVehicleTokenIfPresent(scene, sector) {
 
 
 /**
+ * A site's Note pin on the sector Scene: a generic unknown marker labelled
+ * "Unexplored Site" until it is charted, then its name and type icon. Linked
+ * to the site's location Actor by `flags.actorId`.
+ *
+ * @param {Object} site — a mapData.discoveries record
+ * @param {{ x: number, y: number }} offset — the scene rectangle's inset (sceneRectOffset)
+ * @returns {Object} NoteDocument data
+ */
+function siteNoteData(site, offset) {
+  const { gridCellSize } = SCENE_CONFIG;
+  const discovered = !!site.discovered;
+  return {
+    x:          offset.x + (site.gridX * gridCellSize),
+    y:          offset.y + (site.gridY * gridCellSize),
+    texture:    { src: iconPathForSite(site.type, discovered), tint: tintForSite(site.type, discovered) },
+    iconSize:   40,
+    text:       discovered ? site.name : "Unexplored Site",
+    fontSize:   20,
+    textColor:  discovered ? "#FFFFFF" : "#9A9AB0",
+    textAnchor: 1,    // BOTTOM
+    global:     true,
+    flags: {
+      [MODULE_ID]: {
+        sectorNote: true,
+        siteNote:   true,
+        siteId:     site.id,
+        actorId:    site.actorId ?? null,
+        siteType:   site.type,
+        discovered,
+      },
+    },
+  };
+}
+
+/**
+ * A site's passage on the sector Scene, from its anchor settlement (else the
+ * map's first): dim until the site is charted. null with no settlement to
+ * run from.
+ *
+ * @param {Object} site — a mapData.discoveries record
+ * @param {Array} mapSettlements — mapData.settlements
+ * @param {{ x: number, y: number }} offset — the scene rectangle's inset
+ * @returns {Object|null} DrawingDocument data
+ */
+function sitePassageData(site, mapSettlements, offset) {
+  const { gridCellSize } = SCENE_CONFIG;
+  const settlements = Array.isArray(mapSettlements) ? mapSettlements : [];
+  const from = settlements.find(s => s.id === site.nearestSettlementId) ?? settlements[0] ?? null;
+  if (!from) return null;
+  const discovered = !!site.discovered;
+  const fromX = from.gridX * gridCellSize;
+  const fromY = from.gridY * gridCellSize;
+  const toX   = site.gridX * gridCellSize;
+  const toY   = site.gridY * gridCellSize;
+  return makeDrawingData({
+    x: offset.x + fromX, y: offset.y + fromY, dx: toX - fromX, dy: toY - fromY,
+    strokeAlpha: discovered ? 0.8 : 0.3,
+    strokeColor: discovered ? "#7EB8F7" : "#9B7ECF",
+    flags: { sitePassage: true, discovered, siteId: site.id, fromId: from.id },
+  });
+}
+
+/**
+ * Pin a site recorded after its sector's Scene was built — an uncharted
+ * destination the crew set out for (siteDiscovery.recordUnchartedDestination,
+ * issue #348 PT07): its Note and passage, as createSectorScene places the
+ * generated sites', so the reveal that charts it restyles them. Idempotent —
+ * a Scene that already pins the site gets nothing. Never throws.
+ *
+ * @param {Scene|null} scene — the sector's Scene
+ * @param {Object} site — the site's mapData.discoveries record
+ * @param {Array} mapSettlements — the sector's mapData.settlements
+ * @returns {Promise<boolean>} whether the pin was placed
+ */
+export async function addSiteToScene(scene, site, mapSettlements) {
+  if (!scene || !site?.id) return false;
+  const notes = scene.notes?.contents ?? scene.notes ?? [];
+  if ((Array.isArray(notes) ? notes : []).some(n => n?.flags?.[MODULE_ID]?.siteNote && n.flags[MODULE_ID].siteId === site.id)) {
+    return false;
+  }
+  const offset = sceneRectOffset(scene, SCENE_CONFIG);
+  try {
+    await scene.createEmbeddedDocuments("Note", [siteNoteData(site, offset)], { render: false });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | addSiteToScene: the site's Note could not be placed:`, err?.message ?? err);
+    return false;
+  }
+  const passage = sitePassageData(site, mapSettlements, offset);
+  if (passage) {
+    await scene.createEmbeddedDocuments("Drawing", [passage], { render: false }).catch(err =>
+      console.warn(`${MODULE_ID} | addSiteToScene: the site's passage could not be drawn:`, err?.message ?? err));
+  }
+  return true;
+}
+
+/**
  * Re-style a site's Note pin and undiscovered passage to their DISCOVERED
  * appearance: real name + type icon on the pin, solid blue passage line.
  * Matches by the `siteId` flag; idempotent. Used by the reveal flow
@@ -695,11 +755,13 @@ function tintForLocationType(locationType) {
  */
 function iconPathForSite(type, discovered) {
   if (!discovered) return "icons/svg/hazard.svg";
+  if (type === "uncharted") return "icons/svg/star.svg";
   return type === "vault" ? "icons/svg/temple.svg" : "icons/svg/ruins.svg";
 }
 
 function tintForSite(type, discovered) {
   if (!discovered) return "#9B7ECF";                       // dim violet — unknown signal
+  if (type === "uncharted") return "#7EB8F7";              // a charted destination — route blue
   return type === "vault" ? "#C9A0FF" : "#D98A6A";         // vault violet · derelict rust
 }
 
