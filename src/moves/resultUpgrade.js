@@ -75,7 +75,13 @@ function escapeHtml(s) {
  */
 export async function claimUpgradeCard(message, kind) {
   try {
-    await message.update({ [`flags.${MODULE_ID}.${kind}.consumed`]: true });
+    // `consumedBy`: the GM whose page applies it — a Batch Mode round's Send
+    // now waits for it while that GM is connected, whichever GM resolves the
+    // round (driver.js keepUpgrades; UPGRADE-WAIT-OTHER-GM).
+    await message.update({
+      [`flags.${MODULE_ID}.${kind}.consumed`]:   true,
+      [`flags.${MODULE_ID}.${kind}.consumedBy`]: globalThis.game?.user?.id ?? null,
+    });
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | ${kind}: card ${message?.id ?? "?"} could not be claimed — nothing applied:`, err?.message ?? err);

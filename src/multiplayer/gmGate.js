@@ -258,8 +258,14 @@ export function hasKeyedActiveGM() {
   }
   if (!Array.isArray(keyed) || !keyed.length) return false;
   const keyedSet = new Set(keyed);
-  // A keyed GM still loading cannot answer yet (issue #347 AB03).
-  return electableGMs().some(u => keyedSet.has(u.id));
+  // A keyed GM still loading cannot answer yet (issue #347 AB03). Nor can one
+  // whose page stood down after its connection dropped: electableGMs keeps it
+  // when every GM is stood down or loading, and it runs nothing until it
+  // reloads — a sole keyed GM's stale page counted as keyed, so a
+  // `RUN_ON.CLAUDE` command ran on no client and its author was not told
+  // (STALE-PAGE-CLAUDE-COMMANDS). Without it, the author's client runs the
+  // command on its own key, or says the key is missing.
+  return electableGMs().some(u => keyedSet.has(u.id) && gmPageCanAct(u.id));
 }
 
 /**

@@ -20,7 +20,7 @@ import {
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
-import { connectionDrops } from '../multiplayer/connectionWatch.js';
+import { connectionDrops, pageIsStale } from '../multiplayer/connectionWatch.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
@@ -150,9 +150,20 @@ export function watchXCard(campaignState) {
       // count nor the flag can be trusted — the narration is discarded, its
       // sidecar never applied (issue #347 AB19).
       _discardedForDrop = false;
+      _discardedForStale = false;
       if (connectionDrops() !== dropsAtStart) {
         console.warn(`${MODULE_ID} | ${label}: the connection to the server dropped while the narration was generated — discarded.`);
         _discardedForDrop = true;
+        return true;
+      }
+      // Nor can a narration started on a page whose connection had already
+      // dropped: its cache may lack an X-Card played during the drop — a
+      // player's page, which keeps narrating on the player's own key (the
+      // Private Channel; a command or follow-up at a table with no keyed GM),
+      // is not reloaded for it (STALE-PLAYER-PAGE).
+      if (pageIsStale()) {
+        console.warn(`${MODULE_ID} | ${label}: this page's connection to the server dropped earlier and it has not reloaded — discarded.`);
+        _discardedForStale = true;
         return true;
       }
       if (!isXCardActive(campaignState) && xCardPlayCount() === playsAtStart) return false;
@@ -180,11 +191,16 @@ function xCardDiscardReason(campaignState, what) {
   if (_discardedForDrop) {
     return `${what} discarded — this GM's connection to the server dropped while it was being written, so an X-Card played meanwhile could not be checked.`;
   }
+  if (_discardedForStale) {
+    return `${what} discarded — this browser's connection to the server dropped earlier, so an X-Card played meanwhile could not be checked. Reload it (F5).`;
+  }
   return `${what} discarded — the X-Card was played while it was being written.`;
 }
 
 /** Whether the last narration a watch discarded was discarded for a dropped connection (xCardDiscardReason's wording). */
 let _discardedForDrop = false;
+/** Whether it was discarded because its page was already stale (STALE-PLAYER-PAGE). */
+let _discardedForStale = false;
 
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const RETRY_DELAY_MS = 5000;
@@ -1615,6 +1631,9 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       // names several (issue #347 AB10).
       namingText:           `${resolution?.playerNarration ?? ''}\n${narrationText ?? ''}`,
       lineText:             resolution?.playerNarration ?? '',
+      // The narration alone: a round's hit is named by its own line and this,
+      // not another player's line (ROUND-CONNECTION-OTHER-LINE-CANDIDATE).
+      narrationText:        narrationText ?? '',
       narrationId,
     });
   } catch (err) {

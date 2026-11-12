@@ -23,6 +23,13 @@
 // with a persistent notice and a Reload button. Another GM runs the table
 // meanwhile; with none, the table waits for the reload.
 //
+// A player's page whose connection dropped is stale too (STALE-PLAYER-PAGE):
+// it writes no actor (character/actorBridge.js), a narration it runs on the
+// player's own key — the Private Channel, a command or follow-up narrated on
+// the author's key — is not posted (narrator.js watchXCard; the Private
+// Channel refuses up front), as an X-Card played meanwhile may be missing from
+// its cache; and it is asked to reload too.
+//
 // `disconnect` and `connect` are the socket.io client's own events
 // (`game.socket` is its Socket): `disconnect` fires on every drop, `connect`
 // on the reconnect after it.
@@ -89,24 +96,33 @@ export function registerConnectionWatch() {
     }
     if (_toldStale) return;
     _toldStale = true;
-    if (globalThis.game?.user?.isGM) askToReload();
+    askToReload(!!globalThis.game?.user?.isGM);
   });
 }
 
 /**
- * The stood-down GM is asked to reload: a persistent notification, and a
- * dialog with a Reload button. Not awaited by anything; closing it changes
- * nothing — the page stays stood down until it reloads.
+ * The stale page is asked to reload: a persistent notification, and a dialog
+ * with a Reload button — a stood-down GM's page, and a player's
+ * (STALE-PLAYER-PAGE). Not awaited by anything; closing it changes nothing —
+ * the page stays stale until it reloads.
+ *
+ * @param {boolean} isGM
  */
-function askToReload() {
-  const why = "Your connection to the server dropped. This page may have missed what changed meanwhile — "
-    + "an X-Card, a move, a GM's edit — so it no longer runs the table or saves world data. Reload it (F5).";
+function askToReload(isGM) {
+  const why = isGM
+    ? "Your connection to the server dropped. This page may have missed what changed meanwhile — "
+      + "an X-Card, a move, a GM's edit — so it no longer runs the table or saves world data. Reload it (F5)."
+    : "Your connection to the server dropped. This page may have missed what changed meanwhile — "
+      + "an X-Card, a move, a GM's edit — so it saves no change to your character and the narrator does not answer it. Reload it (F5).";
+  const more = isGM
+    ? "<p>Another GM runs the table meanwhile; with none, the table waits for your reload.</p>"
+    : "<p>What you type in chat still reaches the table.</p>";
   globalThis.ui?.notifications?.error?.(`Starforged Companion: ${why}`, { permanent: true });
   const DialogV2 = globalThis.foundry?.applications?.api?.DialogV2;
   if (typeof DialogV2?.prompt !== "function") return;
   Promise.resolve(DialogV2.prompt({
     window:  { title: "Reload this page" },
-    content: `<p>${why}</p><p>Another GM runs the table meanwhile; with none, the table waits for your reload.</p>`,
+    content: `<p>${why}</p>${more}`,
     ok: {
       label:    "Reload",
       callback: () => { globalThis.location?.reload?.(); },

@@ -556,6 +556,9 @@ function detectionFromParsed(parsed, campaignState) {
  *   narrator's), for the pending-draft and known-NPC fallback
  * @param {string}  [options.lineText] — the player's line: which of several
  *   named NPCs the move was with (a round's hit reads its own, below)
+ * @param {string}  [options.narrationText] — the narration alone: a round's
+ *   hit's candidates are the NPCs its own line or this names
+ *   (ROUND-CONNECTION-OTHER-LINE-CANDIDATE)
  * @param {Array<{ actorId: string|null, connectionSeed?: Object|null, owns: (figure: Object) => boolean, lineText?: string }>} [options.connectionRollers]
  *   — a Batch Mode round's Make a Connection hits, in confirm order, in place
  *   of `autoCreateConnection` (issue #342 Z09): each creates one connection,
@@ -726,18 +729,33 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
  */
 function connectionSlots(options) {
   const hay = String(options.namingText ?? "");
-  const named = hay.trim() ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(hay) : null;
+  const namedIn = (text) => (String(text ?? "").trim()
+    ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(String(text))
+    : null);
+  const named = namedIn(hay);
   if (Array.isArray(options.connectionRollers)) {
+    // A round's hit is named by its own line and the narration — not by
+    // another player's line: an NPC only that line named counted as the
+    // hit's candidate, so a hit whose own line named nobody got "several
+    // named, none chosen" rather than the narration's one NPC
+    // (ROUND-CONNECTION-OTHER-LINE-CANDIDATE). Without the narration's own
+    // text (`options.narrationText`), the round's `namingText` as before.
+    const narration = typeof options.narrationText === "string" ? options.narrationText : null;
     return options.connectionRollers
       .filter(r => r && typeof r.owns === "function")
-      .map(r => ({
-        actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
-        connectionSeed: r.connectionSeed ?? null,
-        takes:          (entity) => r.owns(entity) === true,
-        names:          named ? (draft) => named(draft) && r.owns(draft) === true : null,
-        lineText:       typeof r.lineText === "string" ? r.lineText : null,
-        done:           false,
-      }));
+      .map(r => {
+        const ownNamed = narration == null || typeof r.lineText !== "string"
+          ? named
+          : namedIn(`${r.lineText}\n${narration}`);
+        return {
+          actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
+          connectionSeed: r.connectionSeed ?? null,
+          takes:          (entity) => r.owns(entity) === true,
+          names:          ownNamed ? (draft) => ownNamed(draft) && r.owns(draft) === true : null,
+          lineText:       typeof r.lineText === "string" ? r.lineText : null,
+          done:           false,
+        };
+      });
   }
   if (!options.autoCreateConnection) return [];
   return [{

@@ -5,8 +5,32 @@
 // updates in one place.
 
 import { rankName } from "../schemas.js";
+import { pageIsStale } from "../multiplayer/connectionWatch.js";
 
 const MODULE_ID = "starforged-companion";
+
+/**
+ * A page whose connection to the server dropped writes no actor until it
+ * reloads (STALE-PAGE-ACTOR-WRITES, the actor side of issue #347
+ * AB19-STALE-CACHE-WRITES). A meter change is applied to the value this
+ * client caches, and a stale cache may lack a change made meanwhile — a move
+ * in flight on the page wrote its roller's sheet from it. Thrown where the
+ * write would be made, so each writer's own refused-write path takes it
+ * (persistResolution's meter failures and their Retry, a `{ ok: false,
+ * reason: "refused" }`, a warned count).
+ *
+ * @param {string} label — the writer, for the error
+ */
+function refuseStaleActorWrite(label) {
+  if (!pageIsStale()) return;
+  throw new Error(`actorBridge | ${label}: not written — this page lost its connection to the server and may have missed what changed meanwhile; reload it to save changes`);
+}
+
+/** Run `write()` unless this page is stale — then a rejection (refuseStaleActorWrite). */
+async function staleChecked(label, write) {
+  refuseStaleActorWrite(label);
+  return write();
+}
 
 // Hard floor for momentum during regular play. Matches the Starforged play kit
 // ("MOMENTUM: -6 TO +10") and the vendor system's `MomentumField.MIN`. Note
@@ -422,6 +446,7 @@ export async function applyMeterChanges(actor, meterChanges) {
   }
 
   if (Object.keys(updates).length) {
+    refuseStaleActorWrite('applyMeterChanges');
     console.log(`actorBridge | applyMeterChanges update:`, updates);
     await actor.update(updates);
     invalidateActorCache(actor.id);
@@ -440,6 +465,7 @@ export async function applyMeterChanges(actor, meterChanges) {
 export async function setDebility(actor, debilityKey, value) {
   if (!actor) return;
 
+  refuseStaleActorWrite('setDebility');
   await actor.update({ [`system.debility.${debilityKey}`]: value });
   invalidateActorCache(actor.id);
 
@@ -460,6 +486,7 @@ export async function setCombatPosition(actor, position) {
   if (!actor) return;
   const VALID = ['inControl', 'inABadSpot', 'none', ''];
   const value = VALID.includes(position) ? position : 'none';
+  refuseStaleActorWrite('setCombatPosition');
   await actor.update({ 'system.combatPosition': value });
   invalidateActorCache(actor.id);
 }
@@ -504,6 +531,7 @@ export async function writeSheetLegacy(actor, track, progress, options = {}) {
   if (!actor || !SHEET_LEGACY_TRACKS.includes(track)) return false;
   const value = Math.max(0, Math.floor(Number(progress) || 0));
   if (readSheetLegacy(actor, track) === value) return false;
+  refuseStaleActorWrite('writeSheetLegacy');
   await actor.update({ [`system.legacies.${track}`]: value }, options);
   invalidateActorCache(actor.id);
   return true;
@@ -685,7 +713,7 @@ export async function setCommandVehicleIntegrity(shipActor, value) {
   if (!asset) return null;
   const track = asset.system.track;
   const after = clamp(Number(value), Number(track.min ?? 0), Number(track.max ?? 5));
-  if (after !== Number(track.value ?? 0)) await asset.update({ 'system.track.value': after });
+  if (after !== Number(track.value ?? 0)) await staleChecked('setCommandVehicleIntegrity', () => asset.update({ 'system.track.value': after }));
   return after;
 }
 
@@ -732,6 +760,7 @@ export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = 
   const after  = clamp(before + delta, Number(track.min ?? 0), Number(track.max ?? 5));
   if (after === before) return { ok: true, ...at, after };
   try {
+    refuseStaleActorWrite('vehicle integrity');
     await asset.update({ 'system.track.value': after });
   } catch (err) {
     console.warn(`actorBridge | vehicle integrity: ${asset.name ?? asset.id} update failed:`, err?.message ?? err);
@@ -763,6 +792,7 @@ export async function applyCompanionHealthChange(actor, delta, { itemId = null }
   const at     = { itemId: companion.id, name: companion.name ?? null, before };
   if (after === before) return { ok: true, ...at, after };
   try {
+    refuseStaleActorWrite('companion health');
     await companion.update({ 'system.track.value': after });
   } catch (err) {
     console.warn(`actorBridge | companion health: ${companion.name ?? companion.id} update failed:`, err?.message ?? err);
@@ -803,6 +833,7 @@ export async function markVowProgress(actor, vowItemId, ticks) {
   const next     = Math.min(current + ticks, 40);
 
   if (next !== current) {
+    refuseStaleActorWrite('markVowProgress');
     await item.update({ 'system.current': next });
     invalidateActorCache(actor.id);
   }
@@ -832,6 +863,7 @@ export async function setVowItemTrack(actor, vowItemId, { ticks, rank }) {
   const patch   = { "system.current": Math.max(0, Math.min(Number(ticks) || 0, 40)) };
   if (rankIdx >= 0) patch["system.rank"] = numeric ? rankIdx + 1 : rank;
   try {
+    refuseStaleActorWrite('setVowItemTrack');
     await item.update(patch);
   } catch (err) {
     console.warn(`actorBridge | setVowItemTrack: the write was refused:`, err?.message ?? err);
@@ -861,6 +893,7 @@ export async function completeVowItem(actor, vowItemId) {
   }
   if (item.system?.completed === true) return false; // already closed
 
+  refuseStaleActorWrite('completeVowItem');
   await item.update({ 'system.completed': true });
   invalidateActorCache(actor.id);
   return true;
@@ -920,7 +953,7 @@ export async function setSharedVowReward(vowId, reward) {
     for (const item of items) {
       if (isVowCopy(item, vowId) && item.setFlag) {
         copies += 1;
-        await item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward }).catch(err => {
+        await staleChecked('setSharedVowReward', () => item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward })).catch(err => {
           refused = true;
           console.warn(`${MODULE_ID} | setSharedVowReward failed:`, err?.message ?? err);
         });
@@ -955,7 +988,7 @@ export async function setVowLinkedConnection(vowId, connectionName) {
     for (const item of items) {
       if (isVowCopy(item, vowId) && item.setFlag) {
         copies += 1;
-        await item.setFlag(MODULE_ID, "linkedConnectionName", connectionName).catch(err => {
+        await staleChecked('setVowLinkedConnection', () => item.setFlag(MODULE_ID, "linkedConnectionName", connectionName)).catch(err => {
           refused = true;
           console.warn(`${MODULE_ID} | setVowLinkedConnection failed:`, err?.message ?? err);
         });
@@ -981,6 +1014,7 @@ export async function recordGrantedReward(actor, reward) {
   if (!actor?.setFlag || !reward?.description) return false;
   const list = actor.flags?.[MODULE_ID]?.grantedRewards ?? [];
   try {
+    refuseStaleActorWrite('recordGrantedReward');
     await actor.setFlag(MODULE_ID, "grantedRewards", [
       ...list,
       { description: reward.description, form: reward.form ?? "gear" },
@@ -1078,7 +1112,7 @@ export async function setBondItemTicks(keys = {}, ticks) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if (Number(item.system?.current ?? 0) === next) continue;
-    await item.update({ "system.current": next }).catch(err =>
+    await staleChecked('setBondItemTicks', () => item.update({ "system.current": next })).catch(err =>
       console.warn(`actorBridge | setBondItemTicks failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1103,7 +1137,7 @@ export async function setBondItemLost(keys = {}, lost = true) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if ((item.flags?.[MODULE_ID]?.lost === true) === lost) continue;
-    await item.update({ [`flags.${MODULE_ID}.lost`]: lost }).catch(err =>
+    await staleChecked('setBondItemLost', () => item.update({ [`flags.${MODULE_ID}.lost`]: lost })).catch(err =>
       console.warn(`actorBridge | setBondItemLost failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1127,7 +1161,7 @@ export async function setBondItemForged(keys = {}, forged = true) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if ((item.system?.completed === true) === forged) continue;
-    await item.update({ "system.completed": forged }).catch(err =>
+    await staleChecked('setBondItemForged', () => item.update({ "system.completed": forged })).catch(err =>
       console.warn(`actorBridge | setBondItemForged failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1154,6 +1188,7 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
   if (marked) return { marked: true, deleted: 0 };
   let deleted = 0;
   for (const { actor, item } of items) {
+    refuseStaleActorWrite('deleteUnmarkedBondItems');
     await item.delete();
     invalidateActorCache(actor.id);
     deleted++;
@@ -1178,7 +1213,7 @@ export async function setBondItemRank(keys = {}, rank) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if (item.system?.rank === rank) continue;
-    await item.update({ "system.rank": rank }).catch(err =>
+    await staleChecked('setBondItemRank', () => item.update({ "system.rank": rank })).catch(err =>
       console.warn(`actorBridge | setBondItemRank failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1257,6 +1292,7 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
   };
 
   try {
+    refuseStaleActorWrite(`create ${subtype} item`);
     const item = await ItemCls.create(
       {
         name,
@@ -1322,7 +1358,7 @@ export async function advanceVowClocks(actor, { by = 1, lockstep = null } = {}) 
       next = Math.min(cur + by, max);
     }
     try {
-      if (next !== cur) await v.update({ "system.clockTicks": next }, { suppressLog: true });
+      if (next !== cur) await staleChecked('advanceVowClocks', () => v.update({ "system.clockTicks": next }, { suppressLog: true }));
       if (vowId && target === undefined) lockstep?.set(vowId, next);
       advanced.push({ name: v.name ?? "Vow", ticks: next, max, triggered: next >= max, itemId: v.id, actorId: actor.id, vowId });
     } catch (err) {
@@ -1361,6 +1397,7 @@ export async function revertVowClocksForBurn(entries, { untriggered = null } = {
     if (cur <= 0) continue;
     const max = Number(item.system?.clockMax ?? 0);
     try {
+      refuseStaleActorWrite('revertVowClocksForBurn');
       await item.update({ "system.clockTicks": Math.max(0, cur - 1) });
       invalidateActorCache(actorId);
       if (Array.isArray(untriggered) && max > 0 && cur >= max) untriggered.push(entry);
@@ -1409,6 +1446,7 @@ export async function recalculateMomentumBounds(actor) {
   const clamped   = clamp(current, MOMENTUM_MIN, maxMom);
   if (clamped === current) return;
 
+  refuseStaleActorWrite('recalculateMomentumBounds');
   await actor.update({ 'system.momentum.value': clamped });
   invalidateActorCache(actor.id);
 }

@@ -261,6 +261,8 @@ export const GM_ACTIONS = Object.freeze({
   "batch.keep":                { load: () => import("../batch/relay.js"),                           fn: "applyBatchKeep" },
   "batch.sendNow":             { load: () => import("../batch/relay.js"),                           fn: "applyBatchSendNow" },
   "batch.discard":             { load: () => import("../batch/relay.js"),                           fn: "applyBatchDiscard" },
+  // The toolbar switch's "Discard the round", decided on the canonical GM's round chain.
+  "batch.discardThenOff":      { load: () => import("../batch/relay.js"),                           fn: "applyBatchDiscardThenOff" },
 });
 
 /**

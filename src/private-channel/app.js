@@ -9,7 +9,7 @@
  */
 
 import { requestPrivateNarration } from "./narrate.js";
-import { publishToMainChat, XCARD_PUBLISH_REFUSED } from "./publish.js";
+import { publishToMainChat, XCARD_PUBLISH_REFUSED, STALE_PAGE_REFUSED } from "./publish.js";
 import { isXCardActive } from "../narration/narrator.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { replaceKeepingInput } from "../ui/keepTypedInput.js";
@@ -240,6 +240,7 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
           "no-character": "Set up your character first.",
           "empty":        "The narrator had nothing to say — try rephrasing.",
           "error":        "The narrator call failed. Your message is preserved; try again.",
+          "stale":        STALE_PAGE_REFUSED,
         }[result.reason] ?? "Something went wrong. Try again.";
       }
     } finally {

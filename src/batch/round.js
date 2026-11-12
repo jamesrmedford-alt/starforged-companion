@@ -960,10 +960,10 @@ export function decideUpgrade(round, { userId, decision, narrationInput = null, 
  * rollers who left (`userIds`). An upgrade in flight is kept only once it has
  * been on its way longer than UPGRADE_IN_FLIGHT_GRACE_MS (its handler died):
  * until then the round waits for it (issue #347 AB13). One whose card's
- * handler is still running on the resolving GM's page (`runningHere`, card
- * ids) is waited for up to UPGRADE_IN_FLIGHT_MAX_MS — a live handler slower
- * than the grace lost its upgrade from the narration
- * (UPGRADE-IN-FLIGHT-GRACE).
+ * handler is still running — on the resolving GM's page, or a connected GM's
+ * its card's claim names (`runningHere`, card ids; UPGRADE-WAIT-OTHER-GM) — is
+ * waited for up to UPGRADE_IN_FLIGHT_MAX_MS — a live handler slower than the
+ * grace lost its upgrade from the narration (UPGRADE-IN-FLIGHT-GRACE).
  *
  * @param {Object} round
  * @param {{ now: string, userIds?: string[]|null, runningHere?: string[] }} args
