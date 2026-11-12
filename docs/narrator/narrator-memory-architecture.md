@@ -168,7 +168,10 @@ CLAUDE.md "audit consumers" rule):
   beat), and `registerXCardRedirectHook` (canonical GM) clears
   `xCardRedirect` when the first narrator card with `narrationText` posts
   with the X-Card lifted — not a fallback, a published reflection or an
-  X-carded card. A round card is one beat: the walk back from the newest card
+  X-carded card. A narration card created while the X-Card is active — its
+  reply passed its check just before the play, its card on the way while the
+  pause's pick ran — is removed as the X-Card removes one, on the canonical
+  GM (`registerXCardLatePostHook`, XCARD-POST-RACE). A round card is one beat: the walk back from the newest card
   stops at a card of another round — round submissions are not chat messages,
   so without that stop it took the previous round's card within the beat's
   two minutes (issue #340). The pick reads the chat as it was — the messages
