@@ -283,6 +283,9 @@ export function resolveEntityById(id) {
  * resolves true): each list keeps a writer the source scan sees
  * (tests/unit/campaignStateFields.test.js).
  *
+ * The new record's name comes off the Dismissed list once it is registered
+ * (undismissRegisteredName) — every creator registers here.
+ *
  * @param {Object|null} campaignState — the caller's copy (its list made an array)
  * @param {string} listKey — e.g. "connectionIds"
  * @param {string} id — the host document id
@@ -292,10 +295,40 @@ export function resolveEntityById(id) {
  */
 export async function registerEntityId(campaignState, listKey, id, { label = listKey, persist = true } = {}) {
   if (!id || !campaignState || typeof campaignState !== 'object') return false;
-  if (!Array.isArray(campaignState[listKey])) campaignState[listKey] = [];
-  if (campaignState[listKey].includes(id)) return false;
+  if (Array.isArray(campaignState[listKey]) && campaignState[listKey].includes(id)) return false;
   if (persist) await registerEntityIdInStore(listKey, id, label);
+  // The caller's list made an array only once the world took the id.
+  if (!Array.isArray(campaignState[listKey])) campaignState[listKey] = [];
+  await undismissRegisteredName(id, campaignState);
   return !campaignState[listKey].includes(id);
+}
+
+/**
+ * A record just registered takes its name off the Dismissed list
+ * (entityExtractor.undismissRecordName — issue #345 AA55's rule, at the one
+ * hop every creator shares). The name index leaves out a record whose name a
+ * draft card's Dismiss once vetoed, so a record created onto that name by a
+ * path other than the reveal's rename or Make a Connection — a vow's target
+ * NPC from Swear an Iron Vow, a sector's generated settlement or connection,
+ * a draft Confirm — was hidden from the narrator (CREATED-ONTO-DISMISSED-NAME).
+ * Its host document's name (an Actor's or a JournalEntry's). GM only, never
+ * throws; the caller's copy is updated once the store took it.
+ *
+ * @param {string} id — the host document id
+ * @param {Object} campaignState — the caller's copy
+ * @returns {Promise<void>}
+ */
+async function undismissRegisteredName(id, campaignState) {
+  const name = globalThis.game?.actors?.get?.(id)?.name ?? globalThis.game?.journal?.get?.(id)?.name;
+  if (typeof name !== 'string' || !name.trim()) return;
+  let undismiss = null;
+  try {
+    ({ undismissRecordName: undismiss } = await import('./entityExtractor.js'));
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | registry: un-dismissing "${name}" skipped:`, err?.message ?? err);
+    return;
+  }
+  if (typeof undismiss === 'function') await undismiss(name, campaignState);
 }
 
 /**
@@ -445,10 +478,10 @@ export function warnEntityNotRegistered(kind, name) {
 }
 
 export async function registerEntityIdInStore(listKey, id, label = listKey) {
-  // Always written: the caller's copy is often the setting's cached object,
-  // which already holds the id the creator pushed onto it — a "registered
-  // already" check would read that copy, not what is stored. Read and written
-  // at its turn on the client's campaignState write chain (CAMPSTATE-CHAIN-REST).
+  // Read and written at its turn on the client's campaignState write chain
+  // (CAMPSTATE-CHAIN-REST), on a copy of the store: nothing is set on the
+  // caller's object — often the setting's cached one — until the world took
+  // it (registerEntityId; issue #331 X35, ENTITY-ID-PUSHED-ON-CACHE).
   try {
     await serialiseCampaignStateWrite(() => {
       const latest = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState') ?? {};
