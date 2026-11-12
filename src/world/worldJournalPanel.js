@@ -9,6 +9,7 @@
 //   3. Active Threats     — change severity inline
 //   4. Journal Links      — open the underlying JournalEntries
 
+import { decodeHtmlEntities } from '../system/htmlEntities.js';
 import {
   JOURNAL_NAMES,
   FLAG_KEYS,
@@ -391,12 +392,9 @@ function parseContradictionMessage(msg) {
   };
 }
 
+// The shared one-pass decoder (CHARACTER-STATE-ENTITY-UNDECODED).
 function decodeEntities(s) {
-  return String(s ?? '')
-    .replace(/&quot;/g, '"')
-    .replace(/&gt;/g, '>')
-    .replace(/&lt;/g, '<')
-    .replace(/&amp;/g, '&');
+  return decodeHtmlEntities(s);
 }
 
 async function deleteChatMessage(messageId) {

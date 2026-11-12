@@ -6,6 +6,7 @@
 
 import { rankName } from "../schemas.js";
 import { pageIsStale } from "../multiplayer/connectionWatch.js";
+import { decodeHtmlEntities } from "../system/htmlEntities.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -309,7 +310,9 @@ export function readAssetAbilityTexts(item) {
 }
 
 function stripHtml(s) {
-  return String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  // Entities decoded (CHARACTER-STATE-ENTITY-UNDECODED): "&amp;" and "&middot;"
+  // reached CHARACTER STATE as written.
+  return decodeHtmlEntities(String(s ?? '').replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
 }
 
 /** Reduce Foundry document links (`@Compendium[…]{Face Danger}`, `@UUID[…]{…}`) to their labels. */

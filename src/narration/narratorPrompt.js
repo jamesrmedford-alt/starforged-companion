@@ -4,6 +4,7 @@
 // exception: the safety block reads the building client's user and that user's
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
+import { decodeHtmlEntities } from '../system/htmlEntities.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -746,29 +747,6 @@ const ENTITY_TYPE_LABELS = {
 // ("<signal lost>") is kept as text (the issue #322 V18 class).
 const NOTES_HTML_TAG_RE = /<\/?(?:p|div|span|br|hr|h[1-6]|img|ul|ol|li|strong|em|b|i|u|s|a|blockquote|section|article|table|thead|tbody|tr|td|th|figure|figcaption|code|pre|sup|sub|small|mark)\b[^>]*>/gi;
 
-// The named entities a Notes tab holds: the markup escapes, the seeds' fact
-// line (`&middot;` — connection.js, ship.js, `!ship envision`) and the
-// typography a rich-text editor writes.
-const NOTES_NAMED_ENTITIES = Object.freeze({
-  nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
-  middot: '·', bull: '•',
-  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
-  ndash: '–', mdash: '—', hellip: '…',
-});
-
-/**
- * Decode HTML entities — the named ones above and numeric ones (`&#183;`,
- * `&#x2014;`) — in one pass, so an escaped entity ("&amp;middot;") stays
- * text. An unknown name or an impossible code point is left as written.
- */
-function decodeNotesEntities(text) {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
-    if (code[0] !== '#') return NOTES_NAMED_ENTITIES[code.toLowerCase()] ?? whole;
-    const n = /^#x/i.test(code) ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-    return Number.isInteger(n) && n > 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : whole;
-  });
-}
-
 /**
  * An entity record's Notes as card text. A ship's and an NPC's Notes tab is
  * HTML — the embedded portrait block (`<div class="sf-ship-portrait"><img
@@ -784,7 +762,7 @@ function decodeNotesEntities(text) {
  */
 export function notesAsCardText(notes) {
   if (notes === undefined || notes === null) return '';
-  return decodeNotesEntities(String(notes)
+  return decodeHtmlEntities(String(notes)
     .replace(new RegExp(PORTRAIT_BLOCK_RE.source, 'g'), ' ')
     .replace(/<img\b[^>]*>/gi, ' ')
     .replace(NOTES_HTML_TAG_RE, ' '))
@@ -2063,12 +2041,9 @@ export function stripHtml(text) {
   if (typeof text !== 'string') return '';
   return text
     .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
+    // One pass, shared (CHARACTER-STATE-ENTITY-UNDECODED): "&amp;lt;" stays
+    // "&lt;" — decoding &amp; first made it "<".
+    .replace(/&[#a-z0-9]+;/gi, (e) => decodeHtmlEntities(e))
     // Collapse runs of horizontal whitespace, but keep newlines so
     // paragraph structure survives.
     .replace(/[ \t\f\v]+/g, ' ')

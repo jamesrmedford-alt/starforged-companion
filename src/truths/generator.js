@@ -39,6 +39,7 @@
 
 import { TRUTH_CATEGORIES, TRUTH_TABLES, SUB_TABLES } from "./tables.js";
 import { apiPost } from "../api-proxy.js";
+import { decodeHtmlEntities } from "../system/htmlEntities.js";
 import { writeOwnedFields } from "../factContinuity/sceneLifecycle.js";
 import { proseToHtml } from "../audio/segments.js";
 
@@ -548,21 +549,11 @@ function introducingSentence(text) {
   return text.split(/(?<=[.!?]["'\u2019\u201D]?)\s+/).at(-1) || null;
 }
 
-const NAMED_ENTITIES = Object.freeze({
-  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'",
-  lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201C", rdquo: "\u201D",
-  ndash: "\u2013", mdash: "\u2014", hellip: "\u2026",
-});
-
 /** An HTML fragment's text: tags dropped, entities decoded, whitespace folded. */
 function htmlText(fragment) {
   return String(fragment ?? "")
     .replace(/<[^>]*>/g, " ")
-    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
-      if (code[0] !== "#") return NAMED_ENTITIES[code.toLowerCase()] ?? whole;
-      const n = /^#x/i.test(code) ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-      return Number.isInteger(n) && n > 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : whole;
-    })
+    .replace(/&[#a-z0-9]+;/gi, (e) => decodeHtmlEntities(e))   // the shared decoder (CHARACTER-STATE-ENTITY-UNDECODED)
     .replace(/\s+/g, " ")
     .trim();
 }
