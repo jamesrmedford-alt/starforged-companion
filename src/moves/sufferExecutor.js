@@ -42,8 +42,10 @@
  *          the supply with the PC); a loss while unprepared, at any
  *          supply, goes to a picker of the other suffer moves (issue #325
  *          W16; issue #338 D3).
- *        - Lose Momentum at min (-6) → recurse into the dialog with
- *          the "redirect or clear progress" two-branch prompt (Q3).
+ *        - Lose Momentum at min (-6) → the loss the minimum refuses posts
+ *          the "make a suffer move" picker for it, Lose Momentum excepted,
+ *          with a "clear progress" button per open track
+ *          (MOMENTUM-MIN-REDIRECT-MANUAL).
  *        - Companion Takes a Hit at 0 + miss + match → companion
  *          destroyed; surface a Q2 manual-discard prompt (v1 does NOT
  *          delete the asset Item).
@@ -119,33 +121,88 @@ async function postSufferCard({ title, body, flags = {} }) {
 
 /**
  * Lose Momentum executor.
+ *
+ * At the minimum (-6) the loss the momentum cannot take is not lost: "If
+ * your momentum is at its minimum (-6), apply the cost to another suffer
+ * move or clear progress" (play kit). Its remainder posts the "make a suffer
+ * move" picker for that amount — Lose Momentum excepted — with a "clear
+ * progress" button per open progress track (`clearProgress`), bound to the
+ * move whose cost it is (MOMENTUM-MIN-REDIRECT-MANUAL: the card said to
+ * redirect it, and no card offered the choice). The remainder of a harm's
+ * overflow (overflowToMomentum) is redirected the same way.
+ *
  * @param {Actor} actor  active character actor
  * @param {number} amount  1, 2, or 3 (rulebook: minor/serious/major)
- * @param {Object} [opts]
+ * @param {Object} [opts]  the move's executor opts (the picker's), and:
  * @param {boolean} [opts.skipCard]  caller will post its own card
- * @returns {Promise<{ before:number, after:number, atMin:boolean }>}
+ * @returns {Promise<{ before:number, after:number, atMin:boolean, remaining:number, redirected?:boolean }>}
+ *   `remaining`: the loss the minimum refused; `redirected`: its picker posted
  */
 export async function loseMomentum(actor, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
-    return { before: 0, after: 0, atMin: false, skipped: true };
+    return { before: 0, after: 0, atMin: false, remaining: 0, skipped: true };
   }
   const before = readMeter(actor, "momentum");
   await applyMeterChanges(actor, { momentum: -amount });
   const after = readMeter(actor, "momentum");
   const atMin = after <= -6;
+  const remaining = Math.max(0, amount - Math.max(0, before - after));
+  const redirect = remaining > 0 ? await postMinimumRedirect(actor, remaining, opts) : null;
 
   if (!opts.skipCard) {
     await postSufferCard({
       title: `Lose Momentum (-${amount})`,
-      body: `Momentum: ${before} → ${after}${atMin ? " (at minimum; pick a redirect or clear progress)" : ""}`,
-      flags: { suffer: "lose_momentum", amount, before, after, atMin },
+      body: `Momentum: ${before} → ${after}${remaining > 0 ? minimumLine(remaining, !!redirect) : ""}`,
+      flags: { suffer: "lose_momentum", amount, before, after, atMin, remaining },
     });
   }
 
-  // Q3: at-min triggers a follow-up SufferChoiceDialog with both
-  // branches. The dialog (Phase D) listens for `atMin: true` on the
-  // executor return and recurses with a synthetic enumerated prompt.
-  return { before, after, atMin };
+  return { before, after, atMin, remaining, ...(remaining > 0 ? { redirected: !!redirect } : {}) };
+}
+
+/** The card's line for a loss the momentum minimum refused, and where it went. */
+function minimumLine(remaining, posted) {
+  return ` (at minimum; ${remaining} not taken — ${posted
+    ? "make another suffer move or clear progress: choose it on its card"
+    : "make another suffer move or clear progress on the sheet"})`;
+}
+
+/**
+ * The picker for a momentum loss the minimum refused (MOMENTUM-MIN-REDIRECT-
+ * MANUAL): "make a suffer move (-N)" without Lose Momentum, and a "clear
+ * progress" button per open progress track (`clearTracks`, one rank's mark
+ * each — sufferDialog's `clear-progress`), bound to the move whose cost it is
+ * (`opts.resolutionId`), as Sacrifice Resources' redirect is (issue #331
+ * X15). While that move still offers a burn or an improvement, it says to
+ * take it first. Never throws: null when it could not be posted.
+ *
+ * @param {Actor} actor
+ * @param {number} amount
+ * @param {Object} opts — the executor's
+ * @returns {Promise<ChatMessage|null>}
+ */
+async function postMinimumRedirect(actor, amount, opts = {}) {
+  try {
+    const { postSufferChoiceCard } = await import("./sufferCard.js");
+    const { listProgressTracks } = await import("../ui/progressTracks.js");
+    const clearTracks = (await listProgressTracks().catch(() => []))
+      .filter(t => t && !t.completed && Number(t.ticks ?? 0) > 0)
+      .map(t => ({ id: t.id, label: t.label ?? "a track" }));
+    const executorOpts = Object.fromEntries(Object.entries(opts ?? {})
+      .filter(([key]) => !["skipCard", "amount", "itemId", "fixedRoll", "sufferCardId", "resistMiss"].includes(key)));
+    const upgradeFirst = await upgradeFirstOwed(opts);
+    return await postSufferChoiceCard({
+      sufferPrompt: { kind: "any", amount, count: 1, exclude: ["lose_momentum"],
+        ...(clearTracks.length ? { clearTracks } : {}),
+        ...(upgradeFirst ? { hint: REDIRECT_UPGRADE_FIRST } : {}) },
+      actor,
+      executorOpts,
+      resolutionId: typeof opts.resolutionId === "string" && opts.resolutionId ? opts.resolutionId : null,
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferExecutor: the momentum minimum's picker could not be posted:`, err?.message ?? err);
+    return null;
+  }
 }
 
 /**
@@ -176,11 +233,14 @@ function splitOverflow(amount, before) {
  * @returns {Promise<Object|null>} `amount` owed, `taken`, `remaining` (refused
  *   at the minimum), `before` / `after`, `atMin` — null when nothing overflowed
  */
-export async function overflowToMomentum(actor, overflow) {
+export async function overflowToMomentum(actor, overflow, opts = {}) {
   if (overflow <= 0) return null;
-  const m = await loseMomentum(actor, overflow, { skipCard: true });
+  // The executor's opts: what the minimum refuses posts its picker bound to
+  // the same move (MOMENTUM-MIN-REDIRECT-MANUAL).
+  const m = await loseMomentum(actor, overflow, { ...(opts ?? {}), skipCard: true });
   const taken = Math.max(0, m.before - m.after);
-  return { amount: overflow, taken, remaining: overflow - taken, before: m.before, after: m.after, atMin: m.atMin };
+  return { amount: overflow, taken, remaining: overflow - taken, before: m.before, after: m.after, atMin: m.atMin,
+    ...(m.redirected !== undefined ? { redirected: m.redirected } : {}) };
 }
 
 /**
@@ -216,9 +276,7 @@ function overflowRefusedLine(overflow) {
 function overflowLine(momentumLoss) {
   if (!momentumLoss) return "";
   let line = ` — ${momentumLoss.amount} more as momentum: ${momentumLoss.before} → ${momentumLoss.after}`;
-  if (momentumLoss.remaining > 0) {
-    line += ` (at minimum; ${momentumLoss.remaining} not taken — redirect it to another suffer move or clear progress)`;
-  }
+  if (momentumLoss.remaining > 0) line += minimumLine(momentumLoss.remaining, momentumLoss.redirected === true);
   return line;
 }
 
@@ -492,7 +550,7 @@ export async function endureHarm(actor, amount, opts = {}) {
   if (absorbed > 0) await applyMeterChanges(actor, { health: -absorbed });
   const after = readMeter(actor, "health");
   const atZero = after <= 0;
-  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow),
+  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
     { kind: "meter", meterKey: "momentum", delta: -overflow }, "the harm past 0 health, as momentum");
 
   const woundedMarked = false;
@@ -539,7 +597,7 @@ export async function endureStress(actor, amount, opts = {}) {
   if (absorbed > 0) await applyMeterChanges(actor, { spirit: -absorbed });
   const after = readMeter(actor, "spirit");
   const atZero = after <= 0;
-  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow),
+  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
     { kind: "meter", meterKey: "momentum", delta: -overflow }, "the stress past 0 spirit, as momentum");
 
   const shakenMarked = false;
@@ -849,7 +907,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
 
   const { before, after } = res;
   const overflow = amount - Math.max(0, before - after);
-  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow),
+  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
     { kind: "meter", meterKey: "momentum", delta: -overflow }, "the companion's harm past 0 health, as momentum");
   const atZero = after <= 0;
   const destroyed = atZero && opts.isMissWithMatch === true;
@@ -936,7 +994,7 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   const { before, after } = res;
   const isCommandVehicle = !support;
   const overflow = amount - Math.max(0, before - after);
-  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow),
+  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow, opts),
     { kind: "meter", meterKey: "momentum", delta: -overflow }, "the vehicle's damage past 0 integrity, as momentum");
   const atZero = after <= 0;
   const vehicleDamage = atZero ? rollD100Table(VEHICLE_DAMAGE, opts) : null;

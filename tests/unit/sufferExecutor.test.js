@@ -263,13 +263,17 @@ describe("endureHarm", () => {
       expect(chatCalls[0].content).toContain("Health: 0 → 0 — 2 more as momentum: 1 → -1");
     });
 
-    it("at the momentum minimum, what cannot be taken is said on the card, not lost in silence", async () => {
+    it("at the momentum minimum, what cannot be taken goes to a picker of another suffer move, and the card says so", async () => {
       const a = withMomentum(1, -5);
       const r = await endureHarm(a, 3);
       expect(a.system.momentum.value).toBe(-6);
-      expect(r.momentumLoss).toMatchObject({ amount: 2, taken: 1, remaining: 1, before: -5, after: -6, atMin: true });
-      expect(chatCalls[0].content).toContain(
-        "Health: 1 → 0 — 2 more as momentum: -5 → -6 (at minimum; 1 not taken — redirect it to another suffer move or clear progress)");
+      expect(r.momentumLoss).toMatchObject({ amount: 2, taken: 1, remaining: 1, before: -5, after: -6, atMin: true, redirected: true });
+      // MOMENTUM-MIN-REDIRECT-MANUAL: the remainder's picker — any suffer move but Lose Momentum.
+      const picker = chatCalls.find(c => c.flags?.["starforged-companion"]?.sufferPrompt);
+      expect(picker.flags["starforged-companion"].sufferPrompt).toMatchObject({ kind: "any", amount: 1, exclude: ["lose_momentum"] });
+      const card = chatCalls.find(c => c.flags?.["starforged-companion"]?.suffer === "endure_harm");
+      expect(card.content).toContain(
+        "Health: 1 → 0 — 2 more as momentum: -5 → -6 (at minimum; 1 not taken — make another suffer move or clear progress: choose it on its card)");
     });
   });
 });

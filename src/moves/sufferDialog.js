@@ -60,6 +60,12 @@ export function resolveSufferSelection(sufferPrompt, selection = {}) {
   // chosen move used to be repeated `count` times, so the player could never
   // take two different suffer moves (issue #325 W15).
   if (sufferPrompt.kind === "any") {
+    // A momentum loss the minimum refused may clear progress instead: one
+    // rank's mark on a track the card offers (MOMENTUM-MIN-REDIRECT-MANUAL).
+    if (selection.clearTrackId) {
+      const track = (sufferPrompt.clearTracks ?? []).find(t => t?.id === selection.clearTrackId);
+      return track ? [{ kind: "clear-progress", trackId: track.id, label: track.label ?? null }] : [];
+    }
     const sufferId = selection.anyChoice;
     if (!sufferId) return [];
     return [{ kind: "suffer", sufferId, amount: sufferPrompt.amount ?? 1, itemId: selection.itemId ?? null }];
@@ -225,6 +231,8 @@ export function isRetryableSufferCall(call) {
     case "combat-progress":
     case "expedition-progress":
       return smallInt(call.count ?? 1, 4);
+    case "clear-progress":
+      return typeof call.trackId === "string" && call.trackId.length > 0 && call.trackId.length <= 64;
     case "next-bonus":
       return smallInt(call.amount, 2);
     default:
@@ -336,16 +344,16 @@ async function runSufferCall(call, actor, opts) {
       if (call.meterKey === "integrity" && opts.vehicleItemId) {
         const { applyVehicleAssetIntegrityChange } = await import("../character/actorBridge.js");
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await lossPastZero(actor, call.delta, await applyVehicleAssetIntegrityChange(actor, call.delta, { itemId: opts.vehicleItemId }))) };
+          ...(await lossPastZero(actor, call.delta, await applyVehicleAssetIntegrityChange(actor, call.delta, { itemId: opts.vehicleItemId }), opts)) };
       }
       if (call.meterKey === "integrity") {
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await lossPastZero(actor, call.delta, await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta))) };
+          ...(await lossPastZero(actor, call.delta, await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta), opts)) };
       }
       if (call.meterKey === "companionHealth") {
         const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await lossPastZero(actor, call.delta, await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null }))) };
+          ...(await lossPastZero(actor, call.delta, await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null }), opts)) };
       }
       await applyMeterChanges(actor, { [call.meterKey]: call.delta });
       return { kind: "meter", meterKey: call.meterKey, delta: call.delta };
@@ -413,6 +421,17 @@ async function runSufferCall(call, actor, opts) {
       return rolled
         ? { kind: "roll-table", table: call.table, ...rolled }
         : { kind: "roll-table", table: call.table, skipped: true, ok: false, reason: "no-table" };
+    }
+    case "clear-progress": {
+      // A momentum loss the minimum refused, taken as progress: one rank's
+      // mark cleared on the track picked (MOMENTUM-MIN-REDIRECT-MANUAL).
+      const { getProgressTrack, adjustProgressById } = await import("../ui/progressTracks.js");
+      const track = await getProgressTrack(call.trackId);
+      if (!track) return { kind: "clear-progress", trackId: call.trackId, ok: false, reason: "track-gone" };
+      if (track.completed) return { kind: "clear-progress", trackId: call.trackId, ok: false, reason: "track-done" };
+      const cleared = await adjustProgressById(call.trackId, -1);
+      if (!cleared) return { kind: "clear-progress", trackId: call.trackId, ok: false, reason: "track-gone" };
+      return { kind: "clear-progress", trackId: call.trackId, before: Number(track.ticks ?? 0), after: Number(cleared.ticks ?? 0) };
     }
     case "combat-progress": {
       const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
@@ -601,10 +620,10 @@ function progressFight(tracks, opts) {
  * @param {Object} res — the write's result (`ok`, `before`, `after`)
  * @returns {Promise<Object>} `res`, with `momentumLoss` when some overflowed
  */
-async function lossPastZero(actor, delta, res) {
+async function lossPastZero(actor, delta, res, opts = {}) {
   if (!(delta < 0) || res?.ok !== true || !Number.isFinite(res.before)) return res;
   const taken = Math.max(0, res.before - (Number.isFinite(res.after) ? res.after : res.before));
-  const momentumLoss = await overflowToMomentum(actor, -delta - taken);
+  const momentumLoss = await overflowToMomentum(actor, -delta - taken, opts);
   return momentumLoss ? { ...res, momentumLoss } : res;
 }
 
