@@ -64,6 +64,10 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     // the saved turns, read once on the first render, then this window's.
     this.turns          = [];
     this.loaded         = false;
+    // The session those turns are of: a window kept open across a session
+    // change kept showing — and sending the narrator — the previous
+    // session's turns (PRIVATE-WINDOW-SESSION-CHANGE).
+    this.sessionId      = null;
     this.errorBanner    = "";
     this.busy           = false;
   }
@@ -113,16 +117,26 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
 
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
+  /**
+   * The turns are the current session's: read the saved session once — and
+   * again only when the session has changed since (PRIVATE-WINDOW-SESSION-
+   * CHANGE), dropping the previous session's turns, which its page keeps.
+   * Re-reading on every render — whenever the first read was empty — loaded
+   * this window's own turns back from the page once the debounced save
+   * landed, and showed them twice.
+   */
+  async #syncSession() {
+    const sessionId = game.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? "";
+    if (this.loaded && this.sessionId === sessionId) return;
+    const kept = this.loaded ? [] : this.turns;
+    this.loaded    = true;
+    this.sessionId = sessionId;
+    const saved = await loadCurrentSessionTranscript(this.userId, sessionId).catch(() => "");
+    this.turns = [...parseTurnsHtml(saved), ...kept];
+  }
+
   async _prepareContext(_options) {
-    // Read the saved session once. Re-reading on every render — whenever the
-    // first read was empty — loaded this window's own turns back from the page
-    // once the debounced save landed, and showed them twice.
-    if (!this.loaded) {
-      this.loaded = true;
-      const sessionId = game.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? "";
-      const saved = await loadCurrentSessionTranscript(this.userId, sessionId).catch(() => "");
-      this.turns = [...parseTurnsHtml(saved), ...this.turns];
-    }
+    await this.#syncSession();
     return {
       transcriptHtml: renderTurnsHtml(this.turns),
       initialMessage: this.initialMessage,
@@ -202,6 +216,9 @@ export class PrivateChannelApp extends foundry.applications.api.ApplicationV2 {
     if (this.busy) return;
     const message = this.#inputValue().trim();
     if (!message) return;
+    // A session changed since the window last rendered: this turn starts the
+    // new session's conversation, not the old one's.
+    await this.#syncSession();
     // The line is sent: empty the box, or the re-render's kept input carries it back.
     const box = this.element?.querySelector("[data-pc-input]");
     if (box) box.value = "";

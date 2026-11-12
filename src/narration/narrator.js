@@ -526,20 +526,32 @@ async function readPinnedChronicle(character = null) {
   if (character?.actorId) ids.add(character.actorId);
   const pinned = {};
   for (const actorId of ids) {
-    try {
-      const texts = ((await getChronicleEntries(actorId)) ?? [])
-        .filter(e => e?.pinned === true && typeof e.text === 'string' && e.text.trim())
-        .slice(-PINNED_CHRONICLE_ENTRIES)
-        .map(e => {
-          const text = e.text.replace(/\s+/g, ' ').trim();
-          return text.length > PINNED_CHRONICLE_CHARS ? `${text.slice(0, PINNED_CHRONICLE_CHARS - 1)}…` : text;
-        });
-      if (texts.length) pinned[actorId] = texts;
-    } catch (err) {
-      console.warn(`${MODULE_ID} | narrator: reading ${actorId}'s pinned Chronicle entries failed:`, err?.message ?? err);
-    }
+    const texts = await readPinnedEntriesOf(actorId);
+    if (texts.length) pinned[actorId] = texts;
   }
   return pinned;
+}
+
+/**
+ * One PC's pinned Chronicle entries: the newest PINNED_CHRONICLE_ENTRIES,
+ * oldest first, each on one line, clipped. Fail-open: none.
+ *
+ * @param {string} actorId
+ * @returns {Promise<string[]>}
+ */
+async function readPinnedEntriesOf(actorId) {
+  try {
+    return ((await getChronicleEntries(actorId)) ?? [])
+      .filter(e => e?.pinned === true && typeof e.text === 'string' && e.text.trim())
+      .slice(-PINNED_CHRONICLE_ENTRIES)
+      .map(e => {
+        const text = e.text.replace(/\s+/g, ' ').trim();
+        return text.length > PINNED_CHRONICLE_CHARS ? `${text.slice(0, PINNED_CHRONICLE_CHARS - 1)}…` : text;
+      });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: reading ${actorId}'s pinned Chronicle entries failed:`, err?.message ?? err);
+    return [];
+  }
 }
 
 /** The stored campaignState, or null when it cannot be read. */
@@ -659,13 +671,17 @@ async function sessionStartRecap(campaignState) {
  * `scene` (last and this session's summaries, the cards of the recorded
  * entities the player's message or the scene frame names, the scene ledger).
  * Relevance is lexical, as on every non-move path: no API call and no side
- * effects (no spotlight advance, no recap generation).
+ * effects (no spotlight advance, no recap generation). With `actorId`, also
+ * `pinned` — that PC's pinned Chronicle entries, as its CHARACTER block on the
+ * main path carries them (issue #345 AA07; the Private Channel builds its
+ * block outside the shared assembly and saw none — PRIVATE-CHANNEL-NO-PINS).
  *
  * @param {Object} campaignState
  * @param {string} playerMessage
- * @returns {Promise<{ canon: string, scene: string }>}
+ * @param {{ actorId?: string|null }} [opts] — the player's own PC
+ * @returns {Promise<{ canon: string, scene: string, pinned: string[] }>}
  */
-export async function buildPrivateChannelStory(campaignState, playerMessage) {
+export async function buildPrivateChannelStory(campaignState, playerMessage, { actorId = null } = {}) {
   const lexical = await resolvePathRelevance(playerMessage, campaignState);
   const extras = {
     entityCards:            lexical.entityCards,
@@ -676,7 +692,9 @@ export async function buildPrivateChannelStory(campaignState, playerMessage) {
     previousSessionSummary: previousSessionSummaryFor(campaignState),
   };
   addSceneFrameCast(extras, campaignState);
-  return buildSharedStorySections(campaignState, getNarratorSettings(), extras);
+  const sections = buildSharedStorySections(campaignState, getNarratorSettings(), extras);
+  const pinned = actorId ? await readPinnedEntriesOf(actorId) : [];
+  return { ...sections, pinned };
 }
 
 /** What this turn is about, as text for lore selection: player text, scene frame, entity names, current location. */

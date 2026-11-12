@@ -41,7 +41,7 @@ const ROLE = [
   "established in play. Never contradict them.",
 ].join("\n");
 
-function formatCharacterBlock(character) {
+function formatCharacterBlock(character, pinned = []) {
   // getActiveCharacter now returns the full snapshot (CHAR-PC-BLOCK-STARVED
   // fix) — render the identity fields directly. The old `description` field
   // never existed on the vendor schema, and narratorNotes no longer falls
@@ -63,6 +63,13 @@ function formatCharacterBlock(character) {
     if (bits.length) lines.push(`Meters: ${bits.join(", ")}`);
   }
   if (character.narratorNotes) lines.push(`Notes: ${character.narratorNotes}`);
+  // The player's pinned Chronicle entries, worded as the main CHARACTER
+  // block words them (PRIVATE-CHANNEL-NO-PINS).
+  const pins = (Array.isArray(pinned) ? pinned : []).filter(t => typeof t === "string" && t.trim());
+  if (pins.length) {
+    lines.push("Pinned in their Chronicle (moments the player wants kept in mind):");
+    for (const text of pins) lines.push(`  - ${text.trim()}`);
+  }
   return lines.join("\n");
 }
 
@@ -109,9 +116,9 @@ export async function buildPrivateContext({ campaignState, userId, actorId, tran
   // campaignState copy a GM has to relay them into (issue #345 AA03).
   const safety = formatOwnSafetyContext(campaignState, userId);
   const truths = await buildCampaignTruthsBlock(campaignState);
-  const story  = await buildPrivateChannelStory(campaignState, playerMessage ?? "");
+  const story  = await buildPrivateChannelStory(campaignState, playerMessage ?? "", { actorId: character.actorId ?? ownId });
 
-  const system = [safety, ROLE, truths, story.canon, formatCharacterBlock(character)]
+  const system = [safety, ROLE, truths, story.canon, formatCharacterBlock(character, story.pinned)]
     .filter(Boolean)
     .join("\n\n");
 
