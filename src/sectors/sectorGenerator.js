@@ -747,24 +747,26 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
  * (the sheet body) and the module flag (`flags.settlement.description`). The
  * pre-migration code wrote to a JournalEntry page that no longer exists, so the
  * stub was silently dropped and sector-born settlements rendered with an empty
- * body (finding F3). Safe to call when stubs are missing — those settlements
- * are left untouched.
+ * body (finding F3). A settlement with no stub — narrator stubs off, no key,
+ * or the call failed — still gets its rolled-details line: it was written
+ * only beside a stub, so the sheet showed nothing the wizard rolled
+ * (known-issues SECTOR-CARD-GAPS).
  *
  * @param {Object} settlements — { sourceSettlementGenId: Actor|null }
  * @param {{ settlements?: Object }} stubs — output from generateNarratorStubs()
  * @returns {Promise<void>}
  */
 export async function applyStubsToSettlementEntities(settlements, stubs) {
-  if (!stubs?.settlements) return;
   for (const [sourceId, actor] of Object.entries(settlements ?? {})) {
-    const stub = stubs.settlements[sourceId];
-    if (!stub || !actor?.id) continue;
+    if (!actor?.id) continue;
+    const stub = stubs?.settlements?.[sourceId] ?? null;
     try {
       // F17: combine the narrator prose with a structured rolled-detail block
       // so the sheet displays both the atmospheric description AND the
       // Population/Authority/Projects/Trouble that the wizard rolled.
       const data = actor.flags?.[MODULE_ID]?.settlement ?? {};
       const description = composeSettlementDescription(stub, data);
+      if (!description) continue;
       await updateSettlement(actor.id, { description });
     } catch (err) {
       console.warn(`${MODULE_ID} | Sector: could not write stub to settlement Actor:`, err.message);

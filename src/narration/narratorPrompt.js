@@ -803,6 +803,11 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['location',   'Location'],
     ['population', 'Population'],
     ['authority',  'Authority'],
+    // What the settlement is working on and the trouble it faces — rolled by
+    // the sector generator (and the trouble by the zoom-in), stored, and
+    // shown on the sheet, but missing here (known-issues SECTOR-CARD-GAPS).
+    ['projects',   'Projects'],
+    ['trouble',    'Trouble'],
     ['firstLook',  'First look'],
     ['initialContact', 'Initial contact'],
     // The world and star the sector generator rolled and pinned beside the
