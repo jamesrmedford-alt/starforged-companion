@@ -41,7 +41,8 @@
 import { apiPost } from "../api-proxy.js";
 import { moveRollKind } from "../schemas.js";
 import { listShips, isLoneShipCandidate } from "../entities/ship.js";
-import { readCharacterSnapshot, readCompanionHealth, readAssetIntegrity } from "../character/actorBridge.js";
+import { readCharacterSnapshot, readCompanionHealth, readAssetIntegrity, listCompanionAssets, companionGivenName } from "../character/actorBridge.js";
+import { wholeWordPattern } from "../context/relevanceResolver.js";
 import { assetMatchMove } from "./sceneChallenge.js";
 
 const MODULE_ID    = "starforged-companion";
@@ -438,15 +439,59 @@ export async function scanForApplicableAbilities({
   for (const m of moves) {
     for (const ab of structuredMatches(all, m.moveName)) if (!keyedTo.has(ab.key)) keyedTo.set(ab.key, m);
   }
+
+  // A companion's general trigger — "When you make a move by sending the
+  // rockhorn …, roll +its health" (Rockhorn, Utility Bot, Voidglider) — names
+  // no move, so only the model's pass offered it (and not at all beside a
+  // linked ability): it applies to an action move whose line names that
+  // companion (COMPANION-TRIGGER-SWAP-UNCUED).
+  const sent = moveRollKind(move.moveId) === "action"
+    ? companionTriggerMatches(all, narration, characterActor).filter(ab => !keyedTo.has(ab.key))
+    : [];
   if (keyedTo.size > 0) {
-    return all.filter(ab => keyedTo.has(ab.key)).map(ab => {
-      const m = keyedTo.get(ab.key);
-      return annotate("structured", m.moveName, m.moveId, characterActor)(ab);
-    });
+    return [
+      ...all.filter(ab => keyedTo.has(ab.key)).map(ab => {
+        const m = keyedTo.get(ab.key);
+        return annotate("structured", m.moveName, m.moveId, characterActor)(ab);
+      }),
+      ...sent.map(annotate("structured", move.moveName, move.moveId, characterActor)),
+    ];
   }
 
   const llm = await haikuFallback(all, move.moveId, move.moveName, narration, apiKey, { madeAs: move.madeAs });
-  return llm.map(annotate("haiku", move.moveName, move.moveId, characterActor));
+  const found = llm.map(annotate("haiku", move.moveName, move.moveId, characterActor));
+  const seen = new Set(found.map(a => a.key));
+  return [...found, ...sent.filter(ab => !seen.has(ab.key)).map(annotate("structured", move.moveName, move.moveId, characterActor))];
+}
+
+// "When you make a move by sending / commanding … <the companion>": a
+// companion's general trigger (no move link).
+const COMPANION_TRIGGER = /\bwhen you make a move\b[^.]*?\bby\s+(?:sending|commanding|directing|ordering|having|asking)\b/i;
+
+/**
+ * The companion abilities a general trigger applies to this line
+ * (COMPANION-TRIGGER-SWAP-UNCUED): an enabled ability of one of the roller's
+ * Companion assets whose text is "When you make a move by sending /
+ * commanding … <it>", when the line names that companion — by its asset's
+ * name or the name the player gave it (whole words).
+ *
+ * @param {Array} abilities — collectEnabledAbilities
+ * @param {string} narration
+ * @param {Actor|null} characterActor
+ * @returns {Array}
+ */
+export function companionTriggerMatches(abilities, narration, characterActor) {
+  const line = String(narration ?? "");
+  if (!line.trim() || !characterActor) return [];
+  const companions = new Map(listCompanionAssets(characterActor).map(c => [c.id, c]));
+  return (abilities ?? []).filter(ab => {
+    if (ab?.source !== "character" || !COMPANION_TRIGGER.test(String(ab.text ?? ""))) return false;
+    const companion = companions.get(ab.assetId ?? (typeof ab.key === "string" ? ab.key.split(":")[0] : null));
+    if (!companion) return false;
+    return [companion.name, companionGivenName(companion)]
+      .filter(n => typeof n === "string" && n.trim())
+      .some(n => wholeWordPattern(n.trim()).test(line));
+  });
 }
 
 /**
@@ -605,7 +650,9 @@ export function extractStatReplacement(text, moveName = null) {
       continue;
     }
     if (!own) continue;
-    const hit = cued(sentence, explicit);
+    // A general trigger's own roll — "When you make a move by sending the
+    // rockhorn …, roll +its health" — is the swap (COMPANION-TRIGGER-SWAP-UNCUED).
+    const hit = cued(sentence, explicit) ?? (COMPANION_TRIGGER.test(sentence) ? cued(sentence, bare) : null);
     if (hit) return hit;
   }
   return null;

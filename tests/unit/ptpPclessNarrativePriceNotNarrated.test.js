@@ -15,6 +15,10 @@
  * narrator's character falling back to the campaign's first PC — and
  * remembered in RECENT ORACLE RESULTS as "the dice established" it. The payer
  * alone now decides: no follow-up, no memory, and Quinn and the GMs are told.
+ *
+ * PTP-PCLESS-CLOCKS-ADVANCE: the refused price still relayed the countdown
+ * clock advance, which could fill a tension clock and fire its trigger
+ * vignette for a price that is not part of the story. It turns no clock now.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -30,7 +34,8 @@ afterAll(() => table?.teardown());
 beforeEach(async () => {
   await table.reset({ world: { settings: {
     narratorSessionSummary: false, chronicleAutoEntry: false,
-    campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'ptp-s1', currentSceneId: 'ptp-scene', sceneTruths: [], clocks: [] },
+    campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'ptp-s1', currentSceneId: 'ptp-scene', sceneTruths: [],
+      clocks: [{ _id: 'clk-breach', name: 'Reactor Breach', type: 'tension', segments: 4, filled: 3, active: true, triggered: false }] },
   } } });
   // Two PCs, both Pat's: Quinn (pl-2) owns none, so at a table of several they resolve to no PC.
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, system: { health: { value: 5, max: 5 } } });
@@ -56,6 +61,8 @@ async function narrativePrice(userId) {
 }
 
 const followUps = () => table.cards(f => f.oracleNarrationCard);
+const breach = () => (table.world.campaignState()?.clocks ?? []).find(c => c._id === 'clk-breach');
+const clockCards = () => table.cards(f => f.payThePriceAdvance);
 const remembered = () => (table.world.campaignState()?.recentOracles ?? []).filter(o => o.name === 'Pay the Price');
 const narrationCalls = () => table.claude.calls.filter(c => /Pay the Price/.test(c.userText ?? ''));
 
@@ -79,5 +86,18 @@ describe('Z49 — a PC-less player\'s narrative price', () => {
     const notice = table.cards(f => f.noCharacterNotice).at(-1);
     expect(notice?.content ?? '').toMatch(/No character to pay the price/);
     expect(notice?.whisper ?? []).toContain('pl-2');
+  }, 30_000);
+
+  it('control: a player with a character of their own turns the tension clock', async () => {
+    await narrativePrice('pl-1');
+    expect(breach().filled).toBe(4);
+    expect(clockCards()).toHaveLength(1);
+  }, 30_000);
+
+  it('turns no clock — the tension clock stays at 3/4, no clock card (PTP-PCLESS-CLOCKS-ADVANCE)', async () => {
+    await narrativePrice('pl-2');
+    expect(breach().filled).toBe(3);
+    expect(breach().triggered).toBe(false);
+    expect(clockCards()).toEqual([]);
   }, 30_000);
 });

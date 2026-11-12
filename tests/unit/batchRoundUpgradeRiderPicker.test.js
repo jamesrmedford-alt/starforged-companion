@@ -111,7 +111,10 @@ async function weakHitRound() {
   control.dice = [WEAK];
   await relay('pl-1', 'batch.submit', { roundId: round().id, text: 'I burn the rig\'s reserves to force the hatch.', submissionId: 'sub-1' });
   const r = round();
-  await relay('pl-1', 'batch.confirm', { roundId: r.id, submissionId: r.entries['pl-1'].submissionId, choices: {} });
+  // The Round window's confirm as it opens: the rig's ability, which carries
+  // an effect on the outcome, pre-checked (RIDERS-IGNORE-UNCHECKED — an
+  // unchecked ability's riders do not fire).
+  await relay('pl-1', 'batch.confirm', { roundId: r.id, submissionId: r.entries['pl-1'].submissionId, choices: { abilityIds: ['kit:0'] } });
   await table.drain();
   expect(round()).toMatchObject({ phase: 'upgrading' });
   return round().entries['pl-1'].rolled;

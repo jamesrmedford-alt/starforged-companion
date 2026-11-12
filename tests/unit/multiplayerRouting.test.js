@@ -49,6 +49,7 @@ const SAMPLES = {
   '!pay-the-price':    '!ptp',
   '!bond':             '!bond dangerous Kira',
   '!sever':            '!sever Kira',
+  '!reset-momentum':   '!reset-momentum Kira',
   '!flag':             '!flag',
   '!fate':             '!fate',
   '!break':            '!break',

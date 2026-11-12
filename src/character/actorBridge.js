@@ -647,6 +647,24 @@ export function getCompanionAsset(actor, itemId = null) {
 }
 
 /**
+ * A companion asset's given name — the vendor asset's "Name" field
+ * (`system.fields`: the name the player gives their Glowcat or Survey Bot) —
+ * or null when it has none (COMPANION-GIVEN-NAME-UNREAD: a line naming the
+ * companion by it matched nothing). Reads an array of `{ name, value }`, or
+ * an object of them.
+ *
+ * @param {Item|null} item — a companion asset (listCompanionAssets)
+ * @returns {string|null}
+ */
+export function companionGivenName(item) {
+  const raw = item?.system?.fields;
+  const fields = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? Object.values(raw) : []);
+  const field = fields.find(f => String(f?.name ?? f?.label ?? '').trim().toLowerCase() === 'name');
+  const value = typeof field?.value === 'string' ? field.value.trim() : '';
+  return value || null;
+}
+
+/**
  * A companion's health (getCompanionAsset), or null when there is no such
  * companion.
  *
@@ -775,6 +793,53 @@ export async function setCommandVehicleIntegrity(shipActor, value) {
   const after = clamp(Number(value), Number(track.min ?? 0), Number(track.max ?? 5));
   if (after !== Number(track.value ?? 0)) await moduleUpdate(asset, { 'system.track.value': after });
   return after;
+}
+
+/**
+ * The STARSHIP asset's own Battered / Cursed conditions (`system.conditions`,
+ * vendor asset.ts) — `{ battered, cursed }`, or null for a starship that
+ * carries no STARSHIP asset. A mirror: the starship's native impacts
+ * (`system.debility.battered` / `cursed`) are canonical (decisions.md →
+ * "Starship battered: the native sheet field is canonical"), and the asset's
+ * conditions follow them (STARSHIP-ASSET-CONDITIONS-UNSYNCED).
+ *
+ * @param {Actor|null} shipActor
+ * @returns {{ battered: boolean, cursed: boolean }|null}
+ */
+export function readCommandVehicleConditions(shipActor) {
+  const asset = getCommandVehicleAsset(shipActor);
+  if (!asset) return null;
+  const ticked = (name) => (asset.system?.conditions ?? [])
+    .some(c => String(c?.name ?? '').trim().toLowerCase() === name && c?.ticked === true);
+  return { battered: ticked('battered'), cursed: ticked('cursed') };
+}
+
+/**
+ * Mirror the starship's impacts onto its STARSHIP asset's Battered / Cursed
+ * conditions (readCommandVehicleConditions) — the write-through of the
+ * canonical native impacts (STARSHIP-ASSET-CONDITIONS-UNSYNCED). Only the
+ * conditions the asset carries, only when they differ; the write is marked
+ * (`options[MODULE].conditionMirror`) so the asset → impact sync hook skips
+ * it. Throws when the world refuses the write.
+ *
+ * @param {Actor} shipActor
+ * @param {{ battered?: boolean, cursed?: boolean }} impacts
+ * @returns {Promise<boolean>} whether the asset was written
+ */
+export async function setCommandVehicleConditions(shipActor, impacts = {}) {
+  const asset = getCommandVehicleAsset(shipActor);
+  const conditions = Array.isArray(asset?.system?.conditions) ? asset.system.conditions : null;
+  if (!conditions) return false;
+  let changed = false;
+  const next = conditions.map(c => {
+    const key = String(c?.name ?? '').trim().toLowerCase();
+    if (!(key in impacts) || typeof impacts[key] !== 'boolean' || (c?.ticked === true) === impacts[key]) return c;
+    changed = true;
+    return { ...c, ticked: impacts[key] };
+  });
+  if (!changed) return false;
+  await asset.update({ 'system.conditions': next }, { [MODULE_ID]: { conditionMirror: true } });
+  return true;
 }
 
 /**
@@ -1544,4 +1609,34 @@ function momentumBounds(sys, impactCount) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Put a character's momentum bases back to the rulebook's: base maximum 10
+ * and reset +2 (`system.momentum.max` / `resetValue` — the sheet's fields the
+ * vendor deducts each marked impact from). A world that played under the old
+ * write-back (issue #316 T01) has bases it lowered, and nothing tells a base
+ * the write-back lowered from one a GM set on purpose — so this is the `!reset-
+ * momentum` command's explicit repair, never automatic (MOMENTUM-BASE-DRIFTED).
+ * Only the fields that differ are written; momentum itself is left alone (the
+ * maximum only rises). A refused write throws.
+ *
+ * @param {Actor} actor
+ * @returns {Promise<{ changed: boolean, before: { max: number, reset: number }, after: { max: number, reset: number } }>}
+ */
+export async function resetMomentumBases(actor) {
+  const m = actor?.system?.momentum ?? {};
+  const before = {
+    max:   Number.isFinite(m.max)        ? m.max        : MOMENTUM_BASE_MAX,
+    reset: Number.isFinite(m.resetValue) ? m.resetValue : MOMENTUM_BASE_RESET,
+  };
+  const after = { max: MOMENTUM_BASE_MAX, reset: MOMENTUM_BASE_RESET };
+  const patch = {
+    ...(before.max   !== after.max   ? { 'system.momentum.max':        after.max }   : {}),
+    ...(before.reset !== after.reset ? { 'system.momentum.resetValue': after.reset } : {}),
+  };
+  if (!Object.keys(patch).length) return { changed: false, before, after };
+  await actor.update(patch);
+  invalidateActorCache(actor.id);
+  return { changed: true, before, after };
 }

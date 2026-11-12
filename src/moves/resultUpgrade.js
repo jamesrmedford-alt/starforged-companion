@@ -98,7 +98,7 @@ export async function claimUpgradeCard(message, kind) {
  * @param {{ effect: "meters", pcId: string, changes: Object }
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string }> }
  *   | { effect: "vowClocks", entries: Array<{ actorId: string, itemId: string, name?: string }> }
- *   | { effect: "unprepared", pcIds: string[] }
+ *   | { effect: "unprepared", pcIds: string[], momentumBack?: Object<string, number> }
  *   | { effect: "choiceCard", pcId: string, sufferPrompt: Object, executorOpts: Object, moveId: string|null, resolutionId: string|null }} step
  * @param {Array<Object>} failures
  * @param {{ untriggered?: Array<Object> }|null} [report] — filled in by a clock rewind
@@ -112,7 +112,7 @@ export async function applyUpgradeStep(step, failures, report = null) {
     failures.push({
       ...step,
       ...(res.entries ? { entries: res.entries } : {}),
-      ...(res.pcIds ? { pcIds: res.pcIds } : {}),
+      ...(res.pcIds ? { pcIds: res.pcIds, momentumBack: res.momentumBack ?? undefined } : {}),
       step: "upgrade", reason: res.reason ?? "refused",
     });
   } catch (err) {
@@ -148,19 +148,39 @@ async function runUpgradeStep(step) {
     case "unprepared": {
       // The marks a reverted price made, each its own write: the refused ones
       // are the step still owed (the vowClocks shape). A PC gone, or no
-      // longer unprepared (cleared since), needs nothing.
+      // longer unprepared (cleared since), needs no clear. A Retry's step
+      // also gives back the momentum each mark held down (`momentumBack` —
+      // the receipt's `momentumClamped`, issue #345 AA46), once the PC is no
+      // longer unprepared: the first pass gives it with its own meters step
+      // after the clear, and the Retry of a refused clear gave none
+      // (UNPREPARED-RETRY-NO-MOMENTUM). A refused momentum write keeps the PC
+      // owed, its clear done.
+      const back = step.momentumBack && typeof step.momentumBack === "object" ? step.momentumBack : {};
       const failed = [];
       for (const id of step.pcIds ?? []) {
         const pc = globalThis.game?.actors?.get?.(id) ?? null;
-        if (!pc || !isUnprepared(pc)) continue;
+        if (!pc) continue;
+        if (isUnprepared(pc)) {
+          try {
+            await setDebility(pc, "unprepared", false);
+          } catch (err) {
+            console.warn(`${MODULE_ID} | upgrade: clearing ${pc.name ?? id}'s unprepared failed:`, err?.message ?? err);
+            failed.push(id);
+            continue;
+          }
+        }
+        const n = back[id];
+        if (!Number.isInteger(n) || n <= 0) continue;
         try {
-          await setDebility(pc, "unprepared", false);
+          await applyMeterChanges(pc, { momentum: n });
         } catch (err) {
-          console.warn(`${MODULE_ID} | upgrade: clearing ${pc.name ?? id}'s unprepared failed:`, err?.message ?? err);
+          console.warn(`${MODULE_ID} | upgrade: giving back ${pc.name ?? id}'s momentum failed:`, err?.message ?? err);
           failed.push(id);
         }
       }
-      return failed.length ? { ok: false, reason: "refused", pcIds: failed } : { ok: true };
+      if (!failed.length) return { ok: true };
+      const owed = Object.fromEntries(Object.entries(back).filter(([id]) => failed.includes(id)));
+      return { ok: false, reason: "refused", pcIds: failed, ...(Object.keys(owed).length ? { momentumBack: owed } : {}) };
     }
     case "choiceCard": {
       const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
@@ -209,6 +229,12 @@ export async function retryUpgradeStep(s) {
         || !s.pcIds.every(id => typeof id === "string" && isPlayerCharacterActor(globalThis.game?.actors?.get?.(id) ?? null))) {
         return { ok: false, reason: "invalid step" };
       }
+      // The momentum it gives back: only to its own PCs, at most the
+      // momentum range (a mark lowers the maximum by 1 — issue #345 AA46).
+      if (s.momentumBack != null && (typeof s.momentumBack !== "object"
+        || !Object.entries(s.momentumBack).every(([id, n]) => s.pcIds.includes(id) && Number.isInteger(n) && n > 0 && n <= 16))) {
+        return { ok: false, reason: "invalid step" };
+      }
       break;
     case "choiceCard": {
       const pc = s.pcId ? (globalThis.game?.actors?.get?.(s.pcId) ?? null) : null;
@@ -255,7 +281,8 @@ export function upgradeStepRecord(f) {
     ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({
       actorId: e.actorId, itemId: e.itemId, vowId: typeof e.vowId === "string" && e.vowId ? e.vowId : null, name: e.name ?? null,
     })), kind: upgradeKind(f.kind), ...upgradedResolution(f) } : {}),
-    ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string") } : {}),
+    ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string"),
+      ...(f.momentumBack && typeof f.momentumBack === "object" && Object.keys(f.momentumBack).length ? { momentumBack: { ...f.momentumBack } } : {}) } : {}),
     ...(f.effect === "choiceCard"    ? { pcId: f.pcId ?? null, sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {},
       moveId: f.moveId ?? null, resolutionId: f.resolutionId ?? null } : {}),
   };
@@ -292,7 +319,10 @@ export function describeUpgradeStep(f, why) {
       return (f.entries ?? []).map(e => `Rewind the ${escapeHtml(e.name ?? "vow")} clock one segment — ${why}.`).join("<br>");
     case "unprepared": {
       const names = (f.pcIds ?? []).map(id => escapeHtml(globalThis.game?.actors?.get?.(id)?.name ?? "a character")).join(", ");
-      return `Clear unprepared for ${names || "the crew"} — the reverted price marked it, and its supply was refunded — ${why}.`;
+      const back  = Object.entries(f.momentumBack && typeof f.momentumBack === "object" ? f.momentumBack : {})
+        .map(([id, n]) => `${escapeHtml(globalThis.game?.actors?.get?.(id)?.name ?? "a character")} +${n}`).join(", ");
+      return `Clear unprepared for ${names || "the crew"} — the reverted price marked it, and its supply was refunded — ${why}.`
+        + (back ? ` The Retry also gives back the momentum the mark held down (${back}).` : "");
     }
     case "choiceCard": {
       const pc = f.pcId ? (globalThis.game?.actors?.get?.(f.pcId) ?? null) : null;
@@ -476,6 +506,13 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     const ok = await applyUpgradeStep({ effect: "unprepared", pcIds: unmark }, failures);
     const owed = new Set(ok ? [] : (failures[at]?.pcIds ?? unmark));
     clearedIds = unmark.filter(id => !owed.has(id));
+    // A refused clear's Retry gives back what that mark clamped, too
+    // (UNPREPARED-RETRY-NO-MOMENTUM) — step 4 gives it only for the marks
+    // cleared here. Not to a burn's burner, whose reset replaces it.
+    if (!ok && failures[at]) {
+      const owedBack = clampsToGiveBack(ptpReversals, [...owed], kind === "burn" ? (actor?.id ?? null) : null);
+      if (owedBack.length) failures[at].momentumBack = Object.fromEntries(owedBack);
+    }
     const cleared = clearedIds.map(id => game.actors?.get?.(id)?.name ?? id);
     if (cleared.length) reverted.push(`${cleared.map(escapeHtml).join(", ")} no longer unprepared`);
   }
@@ -830,9 +867,56 @@ export async function closeUpgradesForChoice(resolutionId) {
     .filter(k => f[k] && !f[k].consumed && !f[k].choiceMade)
     .map(k => [`flags.${MODULE_ID}.${k}.choiceMade`, true]));
   if (f.waypointOracleCard && !f.waypointRewardClaimed) update[`flags.${MODULE_ID}.waypointRewardClaimed`] = "ordinary";
+  // The move's other open choice cards no longer say to burn or improve
+  // first: that is closed now (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
+  await dropUpgradeHints(resolutionId);
   if (!Object.keys(update).length) return;
   await card.update(update)
     .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
+}
+
+/**
+ * A choice card's update that takes its "burn or improve first" hint away —
+ * its prompt's `hint` and the card re-rendered without it — or {} when it
+ * carries none, or cannot be re-rendered (the hint stays). Best effort.
+ *
+ * @param {ChatMessage} card
+ * @returns {Promise<Object>}
+ */
+async function withoutHint(card) {
+  const f = card?.flags?.[MODULE_ID];
+  if (!f?.sufferPrompt?.hint) return {};
+  try {
+    const { renderSufferCard } = await import("./sufferCard.js");
+    const actor = f.actorId ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
+    return {
+      [`flags.${MODULE_ID}.sufferPrompt.hint`]: null,
+      content: renderSufferCard({ ...f.sufferPrompt, hint: null }, actor, f.pickedIndices ?? [], undefined, f.notApplied ?? [], f.pickedSuffers ?? []),
+    };
+  } catch (err) {
+    console.debug(`${MODULE_ID} | choice card ${card?.id ?? "?"}: its hint stays —`, err?.message ?? err);
+    return {};
+  }
+}
+
+/**
+ * The "burn or improve first" hint comes off a move's still-open choice
+ * cards once its upgrade has closed another way — a choice made on another
+ * of its cards, or the roller's later move (OUTCOME-CHOICE-CARD-NO-UPGRADE-
+ * HINT: the hint was static, and said to burn a result no longer burnable).
+ * Canonical GM, where the closes run. Best effort.
+ *
+ * @param {string|null} resolutionId
+ */
+export async function dropUpgradeHints(resolutionId) {
+  for (const card of outcomeChoiceCards(resolutionId)) {
+    const f = card.flags[MODULE_ID];
+    if (f.resolved === true || !f.sufferPrompt?.hint) continue;
+    const update = await withoutHint(card);
+    if (!Object.keys(update).length) continue;
+    await card.update(update)
+      .catch(err => console.warn(`${MODULE_ID} | choice card ${card.id}: its "burn or improve first" hint could not be taken off:`, err?.message ?? err));
+  }
 }
 
 /**
@@ -887,6 +971,9 @@ export async function closeUpgradesForLaterMove(actorId, resolutionId) {
     if (!Object.keys(update).length) continue;
     await card.update(update)
       .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades after a later move failed:`, err?.message ?? err));
+    // Its choice cards no longer say to burn or improve first
+    // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
+    await dropUpgradeHints(f.resolutionId ?? null);
   }
 }
 
@@ -1014,21 +1101,11 @@ export async function retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCa
  * @returns {Promise<boolean>} whether the card was kept
  */
 async function keepPriceCard(card) {
-  const f = card.flags[MODULE_ID];
   const update = {
     [`flags.${MODULE_ID}.upgraded`]:              true,
     [`flags.${MODULE_ID}.executorOpts.upgraded`]: true,
+    ...(await withoutHint(card)),
   };
-  if (f.sufferPrompt?.hint) {
-    update[`flags.${MODULE_ID}.sufferPrompt.hint`] = null;
-    try {
-      const { renderSufferCard } = await import("./sufferCard.js");
-      const actor = f.actorId ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
-      update.content = renderSufferCard({ ...f.sufferPrompt, hint: null }, actor, f.pickedIndices ?? [], undefined, f.notApplied ?? [], f.pickedSuffers ?? []);
-    } catch (err) {
-      console.debug(`${MODULE_ID} | kept price card ${card.id}: its hint stays —`, err?.message ?? err);
-    }
-  }
   try {
     await card.update(update);
     return true;

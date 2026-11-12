@@ -80,7 +80,7 @@ import {
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
 import { claudeFailureReason } from "./narration/failureReason.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution, resetMomentumBases } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
@@ -127,6 +127,7 @@ import {
   applyMeterRiders,
   normaliseRider,
   settlePreRollChoices,
+  dropUncheckedRiders,
 } from "./moves/consequenceRiders.js";
 import { promptRiders } from "./moves/riderDialog.js";
 
@@ -209,6 +210,7 @@ import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
+import { registerStarshipConditionSync } from "./entities/ship.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
   DEFAULT_NPC_VOICE_ID,
@@ -672,6 +674,7 @@ export const CHAT_COMMAND_ROUTES = [
   { name: "!pay-the-price",    match: isPayThePriceCommand,      runOn: RUN_ON.AUTHOR,       run: handlePayThePriceCommand },
   { name: "!bond",             match: isBondCommand,             runOn: RUN_ON.AUTHOR,       run: handleBondCommand },
   { name: "!sever",            match: isSeverCommand,            runOn: RUN_ON.AUTHOR,       run: handleSeverCommand },
+  { name: "!reset-momentum",   match: isResetMomentumCommand,    runOn: RUN_ON.AUTHOR,       run: handleResetMomentumCommand },
   // Session safety / lifecycle — DialogV2 surfaces on the typist's screen;
   // their world writes relay to the GM from the dialogs' own apply paths.
   { name: "!flag",             match: isFlagCommand,             runOn: RUN_ON.AUTHOR,       run: () => openSetFlagDialog() },
@@ -4118,9 +4121,14 @@ async function handlePayThePriceCommand(message) {
   }
 
   // Countdown clocks advance on the canonical GM (world/actor writes) — run
-  // locally there, relayed from a player's client.
-  await requestGmAction("payThePrice.advanceClocks", {}).catch(err =>
-    console.warn(`${MODULE_ID} | !pay-the-price: clock advance failed:`, err?.message ?? err));
+  // locally there, relayed from a player's client. Not for a price nobody
+  // pays: it is not part of the story, so it turns no clock and fires no
+  // trigger vignette (PTP-PCLESS-CLOCKS-ADVANCE — a narrative price with no
+  // payer too, since issue #342 Z49).
+  if (!noPayer) {
+    await requestGmAction("payThePrice.advanceClocks", {}).catch(err =>
+      console.warn(`${MODULE_ID} | !pay-the-price: clock advance failed:`, err?.message ?? err));
+  }
 
   // Narration follow-up — once, where a Claude key lives (oracleFollowup.js).
   // Not for a price nobody pays: the card says it was not applied, and with
@@ -6814,6 +6822,58 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
  * The Pay the Price card's footer: "Routes to endure_harm (-1), endure_stress (-1)." — nothing for none.
  * `notApplied` (markup, escaped by the caller) says why the routes were not applied (issue #337 Y43).
  */
+/**
+ * Pay the price a move's choice held (SOJOURN-PTP-ADVISORY): Sojourn's "No
+ * relief — Pay the Price" carries the d100 its narration was seeded with
+ * (resolver rollChoicePrice), and its pick pays that price — the card, its
+ * suffer routes on the roller, the countdown clocks — as a routed price is
+ * paid (postMovePayThePriceCard). It only posted a reminder to roll one, which
+ * differed from the narrated price. The result is read from the table by the
+ * roll, never from the card's text. No follow-up narration: the move's own
+ * depicted it. Runs where the pick is applied — the canonical GM (sufferCard
+ * "suffer.pick"); elsewhere its world writes are relayed. A card the world
+ * refuses is logged: the price is paid all the same (the pick is claimed).
+ *
+ * @param {{ roll: number, moveName?: string|null }} price
+ * @param {Actor} actor — the card's PC, the roller
+ * @returns {Promise<{ ok: boolean, reason?: string, price?: string }>}
+ */
+export async function payChosenPrice(price, actor) {
+  if (!isPlayerCharacterActor(actor)) return { ok: false, reason: "no-pc" };
+  const { rollOracle } = await import("./oracles/roller.js");
+  let result;
+  try {
+    result = Number.isInteger(price?.roll) && price.roll >= 1 && price.roll <= 100 ? rollOracle("pay_the_price", { roll: price.roll }) : null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the chosen Pay the Price could not be read:`, err?.message ?? err);
+    result = null;
+  }
+  if (!result?.result) return { ok: false, reason: "invalid" };
+  const paidFor = typeof price.moveName === "string" && price.moveName.trim() ? price.moveName.trim() : "";
+  const qBlock  = paidFor ? `<p><em>${escapeChatHtml(paidFor)}</em></p>` : "";
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+    flags:   { [MODULE_ID]: {
+      payThePriceCard: true,
+      sufferRoutes:    result.sufferRoutes,
+      oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result },
+    } },
+  }).catch(err => console.warn(`${MODULE_ID} | the chosen Pay the Price's card failed — the price is paid all the same:`, err?.message ?? err));
+
+  if (result.sufferRoutes?.length) {
+    if (game.user?.isGM) await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actor.id, `${paidFor || "move"} PtP (chosen)`);
+    else await requestGmAction("payThePrice.suffer", { routes: result.sufferRoutes, actorId: actor.id });
+  }
+  if (game.user?.isGM) {
+    await advanceClocksOnPayThePrice().catch(err =>
+      console.warn(`${MODULE_ID} | the chosen Pay the Price's clock advance failed:`, err?.message ?? err));
+  } else {
+    await requestGmAction("payThePrice.advanceClocks", {}).catch(err =>
+      console.warn(`${MODULE_ID} | the chosen Pay the Price's clock advance failed:`, err?.message ?? err));
+  }
+  return { ok: true, price: result.result };
+}
+
 function sufferRoutesFooter(routes, { notApplied = null } = {}) {
   if (!routes?.length) return "";
   const list = routes.map(r => `${escapeChatHtml(r.move)} (-${r.amount})`).join(", ");
@@ -6913,14 +6973,22 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
   }
 
   // "any" means "player chooses which suffer move" — post the non-blocking B1
-  // picker card (never a blocking dialog; see sufferCard.js).
+  // picker card (never a blocking dialog; see sufferCard.js). A picker the
+  // world refuses is the price lost in silence: it goes to the GMs' card as a
+  // `choiceCard` step, whose Retry posts it (PTP-ANY-ROUTE-PICKER-REFUSED-SILENT,
+  // the persistResolution rule — ERROR-TEXT-BLAMES-KEY).
   if (route.move === "any") {
     const { postSufferChoiceCard } = await import("./moves/sufferCard.js");
-    await postSufferChoiceCard({
-      sufferPrompt: { kind: "any", amount: route.amount ?? 2, count: 1 },
-      actor,
-      executorOpts: { isMiss: true },
-    });
+    const sufferPrompt = { kind: "any", amount: route.amount ?? 2, count: 1 };
+    const executorOpts = { isMiss: true };
+    const card = await postSufferChoiceCard({ sufferPrompt, actor, executorOpts });
+    if (!card) {
+      console.error(`${MODULE_ID} | the world did not save ${actor.name ?? "the roller"}'s Pay the Price picker (make a suffer move -${sufferPrompt.amount}).`);
+      await postPayoffFailureCard({ source: "suffer", actorId: actor.id, failures: [{
+        step: "choiceCard", pcId: actor.id, moveId: null, moveName: "Pay the Price",
+        sufferPrompt, executorOpts, resolutionId: null, reason: "refused",
+      }] }).catch(err => console.warn(`${MODULE_ID} | the refused picker's failure card failed:`, err?.message ?? err));
+    }
     return;
   }
 
@@ -6950,6 +7018,68 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
     ...(upgradeOffered ? { upgradeOffered: true } : {}),
   });
   return { ...landed, move, actorId: actor.id };
+}
+
+/**
+ * `!reset-momentum [name | all]` — put a character's momentum bases back to
+ * 10 / +2 (actorBridge.resetMomentumBases; MOMENTUM-BASE-DRIFTED). A world that
+ * played under the old write-back has sheet bases it lowered (7 / 0 in the
+ * audit's run), which issue #316 T01 stopped but did not repair: nothing tells
+ * a lowered base from one a GM set on purpose, so the repair is asked for.
+ * The typist's own character with no name; a named one; `all` every player
+ * character. A player resets only a character they own (it is their sheet);
+ * a GM any. Runs where it was typed (the sheet write is the owner's or the
+ * GM's own).
+ */
+export function isResetMomentumCommand(message) {
+  if (message.flags?.[MODULE_ID]?.resetMomentumCard) return false;
+  return /^!reset-momentum(\s|$)/i.test(message.content?.trim() ?? "");
+}
+
+async function handleResetMomentumCommand(message) {
+  const arg = (message.content?.trim() ?? "").slice("!reset-momentum".length).trim();
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const pcs = getPlayerActors();
+  const owns = (a) => game.user?.isGM || a?.isOwner === true || a?.testUserPermission?.(game.user, "OWNER") === true;
+  let targets;
+  if (/^all$/i.test(arg)) {
+    targets = pcs.filter(owns);
+  } else if (arg) {
+    const lc = arg.toLowerCase();
+    const named = pcs.filter(a => String(a.name ?? "").toLowerCase() === lc);
+    targets = named.length ? named : pcs.filter(a => wholeWordsFit(String(a.name ?? "").toLowerCase(), lc));
+  } else {
+    const own = resolveSpeakerActorId(message, campaignState);
+    targets = own ? pcs.filter(a => a.id === own) : [];
+  }
+  if (!targets.length) {
+    ui.notifications?.warn?.(`Starforged Companion: no character to reset${arg ? ` named "${arg}"` : " — name one, or type !reset-momentum all"}.`);
+    return;
+  }
+  const refused = targets.filter(a => !owns(a));
+  if (refused.length) {
+    ui.notifications?.warn?.(`Starforged Companion: you do not own ${refused.map(a => a.name).join(", ")} — only their owner or a GM can reset their momentum base.`);
+    return;
+  }
+  const lines = [];
+  for (const actor of targets) {
+    const who = escapeChatHtml(actor.name ?? "A character");
+    try {
+      const { changed, before } = await resetMomentumBases(actor);
+      lines.push(changed
+        ? `${who}: base maximum ${before.max} → 10, reset ${before.reset >= 0 ? "+" : ""}${before.reset} → +2`
+        : `${who}: already 10 / +2 — nothing changed`);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | !reset-momentum: ${actor.name ?? actor.id}'s sheet was not saved:`, err?.message ?? err);
+      lines.push(`${who}: <strong>not saved</strong> — the world refused the sheet write; try again`);
+    }
+  }
+  await ChatMessage.create({
+    content: `<div class="sf-card sf-reset-momentum-card"><div class="sf-card-header">Momentum base reset</div><div class="sf-card-body">`
+      + `<ul>${lines.map(l => `<li>${l}</li>`).join("")}</ul>`
+      + `<p class="sf-card-hint">The bases each marked impact is taken from: the maximum and reset shown on the sheet are these, less one per impact.</p></div></div>`,
+    flags: { [MODULE_ID]: { resetMomentumCard: true } },
+  });
 }
 
 /** !sever <name> — GM-only: mark a connection lost/severed (kept inactive). */
@@ -7381,6 +7511,8 @@ async function handleShipMapCommand(message) {
  * A "choose one" an ability's add decided before the roll is settled by
  * whether the confirm kept that ability checked: taken, its option's effects
  * are the outcome's and the others are not offered again (issue #345 AA12).
+ * Any other ability the confirm unchecked applies no effect
+ * (RIDERS-IGNORE-UNCHECKED).
  *
  * @param {Object} resolution
  * @param {Object} interpretation — carries extractedRiders from the pre-roll pass,
@@ -7389,7 +7521,12 @@ async function handleShipMapCommand(message) {
  * @param {Actor|null} characterActor
  */
 async function applyMoveConsequenceRiders(resolution, interpretation, campaignState, characterActor) {
-  const extracted = settlePreRollChoices(interpretation?.extractedRiders,
+  // An ability the confirm unchecked does not apply: its riders do not fire
+  // (RIDERS-IGNORE-UNCHECKED) — but a "choose one (before rolling)" unchecked
+  // chose another of its options, which stay offered.
+  const checked = dropUncheckedRiders(interpretation?.extractedRiders,
+    interpretation?.applicableAbilities, interpretation?.appliedAbilityKeys);
+  const extracted = settlePreRollChoices(checked,
     interpretation?.applicableAbilities, interpretation?.appliedAbilityKeys);
   if (!Array.isArray(extracted) || !extracted.length) return;
 
@@ -8202,6 +8339,10 @@ Hooks.once("ready", () => {
   registerRoundWindowHooks();
   registerActorHook();
   registerSharedSupplyHook();   // crew-shared supply track (co-op/guided rule)
+  // A starship's impacts and its STARSHIP asset's Battered / Cursed conditions
+  // are one fact: the native impacts canonical, the asset's conditions their
+  // mirror (STARSHIP-ASSET-CONDITIONS-UNSYNCED).
+  registerStarshipConditionSync();
   // #326 D3: the shared legacy tracks on every PC's sheet — a sheet edit flows
   // back; the canonical GM backfills the sheets once the world is ready.
   registerLegacySheetSyncHook();

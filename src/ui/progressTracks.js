@@ -1164,7 +1164,19 @@ export async function addProgressTrack(data) {
     }
   }
 
-  await writeTracks(tracks => [...tracks, track]);
+  try {
+    await writeTracks(tracks => [...tracks, track]);
+  } catch (err) {
+    // A refused track write leaves the clock created for it with no track,
+    // and each retry would add another (SCENE-CHALLENGE-ADD-ORPHAN-CLOCK):
+    // remove it, then reject as before. A refused removal is logged — the
+    // orphan stays, as it did — and the track's own refusal still rejects.
+    if (track.tensionClockId) {
+      await removeClock(track.tensionClockId).catch(clockErr =>
+        console.warn(`${MODULE_ID} | addProgressTrack: the scene challenge's tension clock could not be removed after its track was refused:`, clockErr?.message ?? clockErr));
+    }
+    throw err;
+  }
 
   // NOTE: journal `vow` tracks deliberately get NO item mirror. Vows live as
   // actor progress Items (the live store — swearVow.js creates them); the

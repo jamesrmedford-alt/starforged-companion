@@ -17,7 +17,7 @@
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum, markUnprepared } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -44,7 +44,8 @@ const MODULE_ID = "starforged-companion";
  *     { kind: "meter",        meterKey, delta }
  *     { kind: "noop" }
  *     { kind: "complication", scope }
- *     { kind: "route",        route, rank?, mark? }
+ *     { kind: "route",        route, rank?, mark?, price? } — `price` ({ roll, moveName }):
+ *                                         a Pay the Price the move rolled (SOJOURN-PTP-ADVISORY)
  *     { kind: "mark",         debility }
  *     { kind: "roll-table",   table }   — Endure Harm / Stress at 0 on a miss (issue #329 X03)
  *     { kind: "at-zero-choice", which } — the at-0 choice after a miss's
@@ -59,6 +60,12 @@ export function resolveSufferSelection(sufferPrompt, selection = {}) {
   // chosen move used to be repeated `count` times, so the player could never
   // take two different suffer moves (issue #325 W15).
   if (sufferPrompt.kind === "any") {
+    // A momentum loss the minimum refused may clear progress instead: one
+    // rank's mark on a track the card offers (MOMENTUM-MIN-REDIRECT-MANUAL).
+    if (selection.clearTrackId) {
+      const track = (sufferPrompt.clearTracks ?? []).find(t => t?.id === selection.clearTrackId);
+      return track ? [{ kind: "clear-progress", trackId: track.id, label: track.label ?? null }] : [];
+    }
     const sufferId = selection.anyChoice;
     if (!sufferId) return [];
     return [{ kind: "suffer", sufferId, amount: sufferPrompt.amount ?? 1, itemId: selection.itemId ?? null }];
@@ -106,7 +113,10 @@ function optionToCalls(opt, selection) {
 
   // Route to another move (e.g. "Pay the Price", "Swear an Iron Vow").
   if (opt.route) {
-    return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}) }];
+    // A priced Pay the Price option (Sojourn's miss — resolver rollChoicePrice)
+    // carries the roll its narration depicted, for the pick to pay.
+    const price = opt.route === "pay_the_price" && Number.isInteger(opt.price?.roll) ? { roll: opt.price.roll, moveName: opt.price.moveName ?? null } : null;
+    return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}), ...(price ? { price } : {}) }];
   }
 
   // Combat progress mark — marks the active combat track N times.
@@ -221,6 +231,8 @@ export function isRetryableSufferCall(call) {
     case "combat-progress":
     case "expedition-progress":
       return smallInt(call.count ?? 1, 4);
+    case "clear-progress":
+      return typeof call.trackId === "string" && call.trackId.length > 0 && call.trackId.length <= 64;
     case "next-bonus":
       return smallInt(call.amount, 2);
     default:
@@ -332,21 +344,28 @@ async function runSufferCall(call, actor, opts) {
       if (call.meterKey === "integrity" && opts.vehicleItemId) {
         const { applyVehicleAssetIntegrityChange } = await import("../character/actorBridge.js");
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await lossPastZero(actor, call.delta, await applyVehicleAssetIntegrityChange(actor, call.delta, { itemId: opts.vehicleItemId }))) };
+          ...(await lossPastZero(actor, call.delta, await applyVehicleAssetIntegrityChange(actor, call.delta, { itemId: opts.vehicleItemId }), opts)) };
       }
       if (call.meterKey === "integrity") {
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await lossPastZero(actor, call.delta, await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta))) };
+          ...(await lossPastZero(actor, call.delta, await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta), opts)) };
       }
       if (call.meterKey === "companionHealth") {
         const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await lossPastZero(actor, call.delta, await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null }))) };
+          ...(await lossPastZero(actor, call.delta, await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null }), opts)) };
       }
       await applyMeterChanges(actor, { [call.meterKey]: call.delta });
       return { kind: "meter", meterKey: call.meterKey, delta: call.delta };
     }
     case "mark":
+      // Unprepared is the crew's: its one writer marks every PC sharing the
+      // supply (markUnprepared) — a Sacrifice Resources' refused mark, retried
+      // alone (SUFFER-RETRY-WHOLE-AFTER-METER).
+      if (call.debility === "unprepared") {
+        const marks = await markUnprepared(actor);
+        return { kind: "mark", debility: call.debility, ...marks };
+      }
       await setDebility(actor, call.debility, true);
       return { kind: "mark", debility: call.debility };
     case "clear-impact": {
@@ -402,6 +421,17 @@ async function runSufferCall(call, actor, opts) {
       return rolled
         ? { kind: "roll-table", table: call.table, ...rolled }
         : { kind: "roll-table", table: call.table, skipped: true, ok: false, reason: "no-table" };
+    }
+    case "clear-progress": {
+      // A momentum loss the minimum refused, taken as progress: one rank's
+      // mark cleared on the track picked (MOMENTUM-MIN-REDIRECT-MANUAL).
+      const { getProgressTrack, adjustProgressById } = await import("../ui/progressTracks.js");
+      const track = await getProgressTrack(call.trackId);
+      if (!track) return { kind: "clear-progress", trackId: call.trackId, ok: false, reason: "track-gone" };
+      if (track.completed) return { kind: "clear-progress", trackId: call.trackId, ok: false, reason: "track-done" };
+      const cleared = await adjustProgressById(call.trackId, -1);
+      if (!cleared) return { kind: "clear-progress", trackId: call.trackId, ok: false, reason: "track-gone" };
+      return { kind: "clear-progress", trackId: call.trackId, before: Number(track.ticks ?? 0), after: Number(cleared.ticks ?? 0) };
     }
     case "combat-progress": {
       const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
@@ -484,6 +514,15 @@ async function runSufferCall(call, actor, opts) {
       );
       return { kind: "complication", scope: call.scope };
     case "route":
+      // A priced Pay the Price (Sojourn's "No relief"): the price the move's
+      // narration depicted is paid — its card, its suffer routes and the
+      // countdown clocks — never a reminder to roll another, which differed
+      // from the narrated one (SOJOURN-PTP-ADVISORY).
+      if (call.route === "pay_the_price" && call.price) {
+        const { payChosenPrice } = await import("../index.js");
+        const paid = await payChosenPrice(call.price, actor);
+        return { kind: "route", route: call.route, ...paid };
+      }
       // Surface a chat card prompting the player/GM to trigger the
       // follow-up move themselves. Auto-firing Swear an Iron Vow /
       // Pay the Price from here would lose the player's narration.
@@ -581,10 +620,10 @@ function progressFight(tracks, opts) {
  * @param {Object} res — the write's result (`ok`, `before`, `after`)
  * @returns {Promise<Object>} `res`, with `momentumLoss` when some overflowed
  */
-async function lossPastZero(actor, delta, res) {
+async function lossPastZero(actor, delta, res, opts = {}) {
   if (!(delta < 0) || res?.ok !== true || !Number.isFinite(res.before)) return res;
   const taken = Math.max(0, res.before - (Number.isFinite(res.after) ? res.after : res.before));
-  const momentumLoss = await overflowToMomentum(actor, -delta - taken);
+  const momentumLoss = await overflowToMomentum(actor, -delta - taken, opts);
   return momentumLoss ? { ...res, momentumLoss } : res;
 }
 

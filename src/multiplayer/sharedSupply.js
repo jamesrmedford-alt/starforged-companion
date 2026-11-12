@@ -18,6 +18,13 @@
  * an imported one, a mirror write refused — set every PC to its own value
  * (issue #347 SUPPLY-LAGGING-SHEET). A PC created mid-session starts at the
  * crew's supply.
+ *
+ * The crew's supply each pass sets is kept on campaignState (`crewSupply`):
+ * with two PCs and one sheet a refused mirror write left behind, the two
+ * values tie, and the edited sheet's took it — an edit on the lagging sheet
+ * set the crew from it. A tie now goes to the stored crew's supply while a
+ * sheet still holds it (SUPPLY-TWO-PC-TIE); this GM's in-memory last pass
+ * (`_lastPass`) did so only until a reload.
  */
 
 import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
@@ -90,7 +97,36 @@ function mostHeld(values, preferred) {
  */
 function crewSupplyBefore(source, before, allActors) {
   const others = supplyAllies(source, allActors).map(supplyOf).filter(v => v !== null);
-  return mostHeld([before, ...others], before);
+  const held = [before, ...others];
+  // A tie goes to the crew's supply as the last pass stored it, while a sheet
+  // still holds it (SUPPLY-TWO-PC-TIE); else to the edited sheet's.
+  const stored = storedCrewSupply();
+  return mostHeld(held, stored !== null && held.includes(stored) ? stored : before);
+}
+
+/** The crew's supply the last sync pass stored on campaignState (`crewSupply`), or null. */
+function storedCrewSupply() {
+  const v = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.crewSupply;
+  return Number.isInteger(v) ? v : null;
+}
+
+/**
+ * Store the crew's supply a pass set (`crewSupply`) — on the GM's campaignState
+ * write chain, on a copy of the stored state. Best effort: a refused write is
+ * logged, and the tie it settles falls back to the edited sheet's, as before.
+ */
+async function persistCrewSupply(target) {
+  try {
+    const { serialiseCampaignStateWrite } = await import("./campaignStateChain.js");
+    await serialiseCampaignStateWrite(async () => {
+      const campaignState = { ...(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {}) };
+      if (campaignState.crewSupply === target) return;
+      campaignState.crewSupply = target;
+      await globalThis.game.settings.set(MODULE_ID, "campaignState", campaignState);
+    }, "crew supply");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | shared-supply sync: the crew's supply (${target}) was not stored:`, err?.message ?? err);
+  }
 }
 
 // The last pass this GM ran: the crew's supply it started from and the one it
@@ -248,6 +284,10 @@ export function registerSharedSupplyHook() {
               globalThis.ui?.notifications?.warn?.(`Shared supply: ${name}'s supply could not be set to ${u.value} — set it on their sheet.`);
             }
           }
+          // The crew's supply this pass set, stored: a sheet a refused write
+          // left behind ties no later edit (SUPPLY-TWO-PC-TIE). Solo play has
+          // no crew to keep in step.
+          if (supplyAllies(source, getPlayerActors()).length) await persistCrewSupply(target);
         }
       } finally {
         _sync.running = false;

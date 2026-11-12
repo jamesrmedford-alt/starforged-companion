@@ -1377,8 +1377,16 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   // pipeline routes to Pay the Price rolls no price here: the pipeline rolls
   // the one its card shows and the table pays, and seeds the narration with
   // it (withPayThePriceSeed — issue #321 U03).
-  const oracleSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
-    { routesPayThePrice: consequences.routePayThePrice === true });
+  //
+  // A miss whose Pay the Price is one of its choices (Sojourn's "No relief")
+  // rolls its price once: the narration is seeded with that roll, and the
+  // choice's option carries it, so picking it pays the price the narration
+  // depicted — not a reminder to roll another (SOJOURN-PTP-ADVISORY).
+  const choicePrice = rollChoicePrice(moveId, outcome, consequences);
+  if (choicePrice) consequences.sufferPrompt = withChoicePrice(consequences.sufferPrompt, choicePrice, moveName);
+  const builtSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
+    { routesPayThePrice: consequences.routePayThePrice === true || !!choicePrice });
+  const oracleSeeds = choicePrice ? withPayThePriceSeed(builtSeeds, moveId, choicePrice.result) : builtSeeds;
 
   return {
     playerNarration,
@@ -1463,8 +1471,11 @@ function weakHitAsMissSource(interpretation) {
  */
 // Moves whose miss outcome says "Pay the Price" per the play kit. A miss the
 // pipeline routes (routePayThePrice) is seeded with its card's price by the
-// pipeline; only a miss that routes none — Sojourn's, where Pay the Price is
-// one of its choices — gets an advisory roll here.
+// pipeline; a miss whose price is one of its choices (Sojourn's) is seeded by
+// resolveMove with the price its option carries (rollChoicePrice —
+// SOJOURN-PTP-ADVISORY); only a miss that routes none and offers none (Explore
+// a Waypoint's match, which may Confront Chaos instead) gets an advisory roll
+// here.
 const PAY_THE_PRICE_ON_MISS = new Set([
   "face_danger", "secure_an_advantage", "aid_your_ally", "gather_information", "compel",
   "check_your_gear", "set_a_course", "gain_ground", "react_under_fire",
@@ -1646,6 +1657,48 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
  * @param {string|null} price — the card's Pay the Price result
  * @returns {Object|null}
  */
+/**
+ * The Pay the Price a miss's choice holds, rolled once (SOJOURN-PTP-ADVISORY):
+ * a miss whose play-kit text says Pay the Price (PAY_THE_PRICE_ON_MISS) but
+ * that routes none — the price is one of its choices, an enumerated option
+ * routing `pay_the_price`. Null for any other result, or when the roll fails.
+ *
+ * @param {string} moveId
+ * @param {string|null} outcome
+ * @param {Object} consequences
+ * @returns {{ roll: number, result: string }|null}
+ */
+export function rollChoicePrice(moveId, outcome, consequences) {
+  if (outcome !== "miss" || !PAY_THE_PRICE_ON_MISS.has(moveId) || consequences?.routePayThePrice === true) return null;
+  const prompt = consequences?.sufferPrompt;
+  if (prompt?.kind !== "enumerated" || !(prompt.options ?? []).some(o => o?.route === "pay_the_price")) return null;
+  try {
+    const r = rollOracle("pay_the_price");
+    return Number.isInteger(r?.roll) && r.result && r.result !== "—" ? { roll: r.roll, result: r.result } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A choice prompt whose `pay_the_price` option carries the rolled price (and
+ * the move that owes it), for the pick to pay (sufferDialog's "route"). A new
+ * prompt; `prompt` is not changed.
+ *
+ * @param {Object} prompt — an enumerated sufferPrompt
+ * @param {{ roll: number, result: string }} price
+ * @param {string|null} moveName
+ * @returns {Object}
+ */
+export function withChoicePrice(prompt, price, moveName = null) {
+  return {
+    ...prompt,
+    options: (prompt.options ?? []).map(o => (o?.route === "pay_the_price"
+      ? { ...o, price: { roll: price.roll, result: price.result, ...(moveName ? { moveName } : {}) } }
+      : o)),
+  };
+}
+
 export function withPayThePriceSeed(seeds, moveId, price) {
   if (!price) return seeds ?? null;
   const base = seeds ?? { results: [], names: [], context: moveId };

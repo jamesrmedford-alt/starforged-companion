@@ -64,7 +64,9 @@ function kira(companions) {
     },
     items: { contents: companions.map(c => ({
       id: c.id, name: c.name, type: 'asset',
-      system: { category: 'Companion', abilities: [], track: { enabled: true, name: 'Health', value: c.health, min: 0, max: 5 } },
+      system: { category: 'Companion', abilities: [], track: { enabled: true, name: 'Health', value: c.health, min: 0, max: 5 },
+        // The vendor asset's "Name" field: the name the player gives it.
+        fields: [{ name: 'Name', value: c.given ?? '' }] },
     })) },
     getFlag: () => undefined,
   };
@@ -114,6 +116,47 @@ describe('issue #345 AA45 — the companion the move or its line names is the on
     const interp = { moveId: 'heal', statUsed: 'heart', moveTarget: 'the glowcat', playerNarration: 'I get the glowcat to a vet' };
     resolveHealPatient(interp, actor, { players: [actor] });
     expect(interp.patientCompanionItemId).toBe('c-glowcat');
+  });
+});
+
+describe("COMPANION-GIVEN-NAME-UNREAD — a companion named by the name the player gave it", () => {
+  beforeEach(() => {
+    global.ui.notifications.info = vi.fn();
+  });
+  const pair = () => kira([
+    { id: 'c-glowcat',  name: 'Glowcat',  health: 2, given: 'Pip' },
+    { id: 'c-rockhorn', name: 'Rockhorn', health: 5, given: 'Old Tusk' },
+  ]);
+
+  it("Companion Takes a Hit for \"Pip\" rolls the Glowcat's health and targets it", () => {
+    const actor = pair();
+    const interp = { moveId: 'companion_takes_a_hit', statUsed: 'companion_health', moveTarget: null,
+      playerNarration: 'Pip is clipped by a ricochet' };
+    enrichInterpretationStatValue(actor, interp, {});
+    expect({ statValue: interp.statValue, companionItemId: interp.companionItemId })
+      .toEqual({ statValue: 2, companionItemId: 'c-glowcat' });
+    expect(global.ui.notifications.info).not.toHaveBeenCalled();
+  });
+
+  it('the given name as the move target, and a Heal for it, pick it too', () => {
+    const actor = pair();
+    // Each is the one the fallback would not pick: the healthiest is rolled,
+    // the most hurt is healed.
+    const hit = { moveId: 'companion_takes_a_hit', statUsed: 'companion_health', moveTarget: 'Pip', playerNarration: 'x' };
+    enrichInterpretationStatValue(actor, hit, {});
+    expect(hit.companionItemId).toBe('c-glowcat');
+    const heal = { moveId: 'heal', statUsed: 'heart', moveTarget: 'Old Tusk', playerNarration: 'I patch up Old Tusk' };
+    resolveHealPatient(heal, actor, { players: [actor] });
+    expect(heal.patientCompanionItemId).toBe('c-rockhorn');
+  });
+
+  it('control: a line naming both companions picks neither — the healthiest is rolled, with the notice', () => {
+    const actor = pair();
+    const interp = { moveId: 'companion_takes_a_hit', statUsed: 'companion_health', moveTarget: null,
+      playerNarration: 'Pip and the rockhorn are caught in the blast' };
+    enrichInterpretationStatValue(actor, interp, {});
+    expect(interp.statValue).toBe(5);
+    expect(global.ui.notifications.info).toHaveBeenCalled();
   });
 });
 
