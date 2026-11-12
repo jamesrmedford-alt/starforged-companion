@@ -17,6 +17,8 @@
 
 import { playXCard, resumeNarrationAfterXCard, bindXCardCard } from '../context/safety.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
+import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
+import { pageIsStale } from '../multiplayer/connectionWatch.js';
 import { sessionLastSeenAt } from '../session/lifecycle.js';
 import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
@@ -718,12 +720,26 @@ async function setDial(val) {
   // Dial doesn't live in campaignState.safety — no sync needed
 }
 
+/**
+ * The table's Lines and Veils are world settings, written whole from this
+ * client's copy. A page whose connection dropped may hold a list without a
+ * co-GM's edit made meanwhile and would write it away, so it saves none until
+ * it reloads (issue #347 AB19-STALE-CACHE-WRITES).
+ */
+function refuseSafetyWriteIfStale() {
+  if (pageIsStale()) {
+    throw new Error("this browser lost its connection to the server and may have missed changes made meanwhile. Reload it (F5), then make the change again.");
+  }
+}
+
 async function setGlobalLines(arr) {
+  refuseSafetyWriteIfStale();
   await game.settings.set(MODULE_ID, SETTING.GLOBAL_LINES, arr);
   await syncSafetyToCampaignState();
 }
 
 async function setGlobalVeils(arr) {
+  refuseSafetyWriteIfStale();
   await game.settings.set(MODULE_ID, SETTING.GLOBAL_VEILS, arr);
   await syncSafetyToCampaignState();
 }
@@ -733,17 +749,61 @@ async function setPrivateLines(arr) {
   await syncSafetyToCampaignState();
 }
 
+// This client's Safety-list edits — Lines, Veils and Private Lines — run one
+// at a time, each reading its list as stored when its turn comes, once the
+// edit ahead of it has landed: its list write and its campaignState sync.
+// Two ✕ — or two Adds — inside one round trip each read the list as it was
+// before either, and the second write put back the item the first had removed,
+// or dropped the one it had added (issue #347 SAFETY-LIST-EDITS-ONE-ROUND-TRIP).
+// An edit whose write is never answered is waited on for at most
+// WORLD_WRITE_WAIT_MS, then warned past.
+let _safetyEdits = Promise.resolve();
+
+/**
+ * Run a Safety-list edit after this client's edits ahead of it. `edit` reads
+ * its list itself, at its turn. A refused or failed edit is reported to its
+ * user — the list stays as it was — and rejects, as the edit did before; the
+ * next edit runs either way.
+ *
+ * @param {() => Promise<void>} edit
+ * @returns {Promise<void>}
+ */
+function queueSafetyEdit(edit) {
+  const run = settledWithin(_safetyEdits, WORLD_WRITE_WAIT_MS, 'a Safety list edit ahead of this one')
+    .then(() => edit())
+    .catch((err) => {
+      ui.notifications?.error?.(`Starforged Companion: the Safety list change was not saved — ${err?.message ?? err}`);
+      throw err;
+    });
+  _safetyEdits = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+/**
+ * Add a Line, Veil or Private Line — appended to the list as stored at the
+ * edit's turn (queueSafetyEdit).
+ * @param {() => string[]} read — the list as stored
+ * @param {(arr: string[]) => Promise<void>} write — its writer (sync included)
+ * @param {string} text
+ * @returns {Promise<void>}
+ */
+function addSafetyItem(read, write, text) {
+  // A new array: `get` returns the cached setting, which a refused write
+  // must leave as it was (issue #321 U58).
+  return queueSafetyEdit(() => write([...read(), text]));
+}
+
 /**
  * The ✕ beside a Line, Veil or Private Line: remove the item its row shows —
  * the text the button carries (`data-item`), looked up in the list as stored
- * now — never the item at the row's position when the pane was drawn. The
- * pane re-renders only once its own writes have landed, and never for another
- * GM's edit, so a position goes stale under a drawn row: a second press on the
- * same ✕ before the re-render, or a co-GM's pane drawn before another
- * removal, deleted a hard limit nobody chose (issue #347 AB12). An item that
- * is gone already removes nothing, and the pane is redrawn to show the list as
- * it is. The pressed ✕ is disabled while its write is out; a refused write
- * re-enables it, so the press can be retried.
+ * at the edit's turn — never the item at the row's position when the pane was
+ * drawn. The pane re-renders only once its own writes have landed, and never
+ * for another GM's edit, so a position goes stale under a drawn row: a second
+ * press on the same ✕ before the re-render, or a co-GM's pane drawn before
+ * another removal, deleted a hard limit nobody chose (issue #347 AB12). An
+ * item that is gone already removes nothing. Either way the pane is redrawn to
+ * show the list as it is. The pressed ✕ is disabled while its edit waits and
+ * writes; a refused write re-enables it, so the press can be retried.
  * @param {{ render: Function }} app — the panel
  * @param {HTMLElement|{ dataset: object }} target — the pressed ✕
  * @param {() => string[]} read — the list as stored
@@ -752,14 +812,16 @@ async function setPrivateLines(arr) {
 async function removeSafetyItem(app, target, read, write) {
   const text = target?.dataset?.item;
   if (typeof text !== 'string' || target.disabled) return;
-  const list = read();
-  const at = list.indexOf(text);
-  if (at < 0) { app.render(); return; }
   target.disabled = true;
   try {
-    // A new array: `get` returns the cached setting, which a refused write
-    // must leave as it was (issue #321 U58).
-    await write(list.filter((_, i) => i !== at));
+    await queueSafetyEdit(async () => {
+      const list = read();
+      const at = list.indexOf(text);
+      if (at < 0) return;
+      // A new array: `get` returns the cached setting, which a refused write
+      // must leave as it was (issue #321 U58).
+      await write(list.filter((_, i) => i !== at));
+    });
   } finally {
     target.disabled = false;
   }
@@ -1912,9 +1974,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const input = this.element.querySelector('[name="newLine"]');
       const text = input?.value.trim();
       if (!text) return;
-      // A new array: `get` returns the cached setting, which a refused
-      // write must leave as it was (issue #321 U58).
-      await setGlobalLines([...getGlobalLines(), text]);   // sync included
+      await addSafetyItem(getGlobalLines, setGlobalLines, text);   // sync included
       this.render();
     })();
     this._lastAction = work;
@@ -1936,7 +1996,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const input = this.element.querySelector('[name="newVeil"]');
       const text = input?.value.trim();
       if (!text) return;
-      await setGlobalVeils([...getGlobalVeils(), text]);   // sync included
+      await addSafetyItem(getGlobalVeils, setGlobalVeils, text);   // sync included
       this.render();
     })();
     this._lastAction = work;
@@ -1957,7 +2017,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const input = this.element.querySelector('[name="newPrivateLine"]');
       const text = input?.value.trim();
       if (!text) return;
-      await setPrivateLines([...getPrivateLines(), text]);  // sync included
+      await addSafetyItem(getPrivateLines, setPrivateLines, text);  // sync included
       this.render();
     })();
     this._lastAction = work;
