@@ -189,6 +189,7 @@ export const GM_ACTIONS = Object.freeze({
   "bond.apply":                { load: () => import("../moves/bondCommand.js"),                      fn: "applyBondEffects" },
   "factContinuity.command":    { load: () => import("../factContinuity/chatCommands.js"),            fn: "applyFactContinuityCommand" },
   "oracle.narrate":            { load: () => import("../oracles/oracleFollowup.js"),                 fn: "narrateOracleFollowupOnGm", claude: true },
+  "oracle.forgetResult":       { load: () => import("../oracles/oracleFollowup.js"),                 fn: "forgetOracleResultFromRelay" },
   "repair.apply":              { load: () => import("../moves/repair.js"),                           fn: "applyRepairSpends" },
   "payThePrice.advanceClocks": { load: () => import("../clocks/payThePriceClocks.js"),               fn: "advanceClocksForPayThePriceRelay" },
   "payThePrice.suffer":        { load: () => import("../index.js"),                                  fn: "applyPayThePriceSufferFromRelay" },

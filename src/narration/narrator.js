@@ -3302,7 +3302,7 @@ export async function narrateOracleFollowup({
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
-    if (xCard.interrupted('narrateOracleFollowup')) return null;
+    if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
 
     if (!text?.trim()) return null;
@@ -3321,7 +3321,7 @@ export async function narrateOracleFollowup({
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
-        if (xCard.interrupted('narrateOracleFollowup')) return null;
+        if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -3335,6 +3335,27 @@ export async function narrateOracleFollowup({
     console.error(`${MODULE_ID} | narrateOracleFollowup failed:`, err);
     return null;
   }
+}
+
+/**
+ * An oracle follow-up the X-Card interrupted posts no card, so nothing names
+ * its raw result card for the X-Card's drop: the result leaves RECENT ORACLE
+ * RESULTS here instead (oracleFollowup.js forgetOracleResultUnderXCard —
+ * XCARD-ORACLE-FOLLOWUP-UNWRITTEN). Resolves null, the follow-up's skip value.
+ *
+ * @param {string|null} oracleCardId
+ * @returns {Promise<null>}
+ */
+async function forgetInterruptedOracleResult(oracleCardId) {
+  if (typeof oracleCardId === 'string' && oracleCardId) {
+    try {
+      const { forgetOracleResultUnderXCard } = await import('../oracles/oracleFollowup.js');
+      await forgetOracleResultUnderXCard(oracleCardId);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrateOracleFollowup: forgetting the interrupted result failed:`, err?.message ?? err);
+    }
+  }
+  return null;
 }
 
 function buildOracleUserMessage({
