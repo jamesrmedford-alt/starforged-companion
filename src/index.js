@@ -126,6 +126,7 @@ import {
   applyMeterRiders,
   normaliseRider,
   settlePreRollChoices,
+  dropUncheckedRiders,
 } from "./moves/consequenceRiders.js";
 import { promptRiders } from "./moves/riderDialog.js";
 
@@ -7364,6 +7365,8 @@ async function handleShipMapCommand(message) {
  * A "choose one" an ability's add decided before the roll is settled by
  * whether the confirm kept that ability checked: taken, its option's effects
  * are the outcome's and the others are not offered again (issue #345 AA12).
+ * Any other ability the confirm unchecked applies no effect
+ * (RIDERS-IGNORE-UNCHECKED).
  *
  * @param {Object} resolution
  * @param {Object} interpretation — carries extractedRiders from the pre-roll pass,
@@ -7372,7 +7375,12 @@ async function handleShipMapCommand(message) {
  * @param {Actor|null} characterActor
  */
 async function applyMoveConsequenceRiders(resolution, interpretation, campaignState, characterActor) {
-  const extracted = settlePreRollChoices(interpretation?.extractedRiders,
+  // An ability the confirm unchecked does not apply: its riders do not fire
+  // (RIDERS-IGNORE-UNCHECKED) — but a "choose one (before rolling)" unchecked
+  // chose another of its options, which stay offered.
+  const checked = dropUncheckedRiders(interpretation?.extractedRiders,
+    interpretation?.applicableAbilities, interpretation?.appliedAbilityKeys);
+  const extracted = settlePreRollChoices(checked,
     interpretation?.applicableAbilities, interpretation?.appliedAbilityKeys);
   if (!Array.isArray(extracted) || !extracted.length) return;
 

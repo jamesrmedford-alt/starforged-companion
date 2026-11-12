@@ -2502,10 +2502,12 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
   const items = abilities.map(a => {
     const adds      = Number(a.adds ?? 0);
     const stat      = typeof a.statReplacement === 'string' ? a.statReplacement : '';
-    // Pre-check when there's a numeric add OR a stat substitution — both
-    // are concrete mechanical effects the player will almost always want
-    // to apply when the ability fires.
-    const checked   = (adds > 0 || stat) ? 'checked' : '';
+    // Pre-check when there's a numeric add, a stat substitution or an effect
+    // on the outcome (the pre-roll pass's riders) — concrete mechanical
+    // effects the player will almost always want to apply when the ability
+    // fires. Unchecked, none of them applies: an unchecked ability's riders
+    // do not fire (RIDERS-IGNORE-UNCHECKED).
+    const checked   = (adds > 0 || stat || a.hasRiders === true) ? 'checked' : '';
     // An add the text names as a value the sheet holds ("add +heart", "add
     // +its health") shows the number the scanner read for it, and what it is
     // (issue #336 Y22) — there is no adds input to type one (issue #322 V02).
@@ -2571,7 +2573,7 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
     <div class="confirm-applicable-abilities">
       <span class="confirm-field-label">Applicable abilities</span>
       <div class="sf-ability-list">${items}</div>
-      <p class="sf-ability-hint">Uncheck any that don't apply this turn. Checked items add to your roll.</p>
+      <p class="sf-ability-hint">Uncheck any that don't apply this turn. Checked items add to your roll and apply their effects on the outcome.</p>
       ${statSubBlock}
     </div>`;
 }

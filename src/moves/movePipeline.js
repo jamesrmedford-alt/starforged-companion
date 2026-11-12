@@ -419,6 +419,13 @@ export async function readMove({
           return [];
         })
       : [];
+  // An ability with effects on the outcome is pre-checked on the confirm, as
+  // one with an add is: its box is whether it applies this turn, and an
+  // unchecked one's riders do not fire (RIDERS-IGNORE-UNCHECKED).
+  const withRiders = new Set((interpretation.extractedRiders ?? []).filter(e => e?.riders?.length).map(e => e.key));
+  if (withRiders.size) {
+    interpretation.applicableAbilities = applicableAbilities.map(a => (withRiders.has(a?.key) ? { ...a, hasRiders: true } : a));
+  }
 
   return { interpretation, combatPosition, targetChoice, speakerActor, rollerActor };
 }
@@ -594,8 +601,8 @@ function targetOptionsFrom(choice) {
 /**
  * The choices a reading not yet confirmed is rolled with ("used as read",
  * when a GM sends the round now): what the confirm dialog pre-checks — the
- * abilities that add to the roll or swap its stat — the listed stat kept, and
- * no target.
+ * abilities that add to the roll, swap its stat or carry effects on the
+ * outcome (`hasRiders`) — the listed stat kept, and no target.
  *
  * @param {Object} reading
  * @returns {{ abilityIds: string[], statReplacement: null, targetId: null }}
@@ -603,7 +610,7 @@ function targetOptionsFrom(choice) {
 export function defaultChoices(reading) {
   const abilities = Array.isArray(reading?.abilities) ? reading.abilities : [];
   return {
-    abilityIds: abilities.filter(a => Number(a.adds ?? 0) > 0 || (typeof a.statReplacement === "string" && a.statReplacement)).map(a => a.key),
+    abilityIds: abilities.filter(a => Number(a.adds ?? 0) > 0 || (typeof a.statReplacement === "string" && a.statReplacement) || a.hasRiders === true).map(a => a.key),
     statReplacement: null,
     targetId: null,
   };

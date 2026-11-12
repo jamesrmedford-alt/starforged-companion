@@ -148,6 +148,37 @@ export function settlePreRollChoices(extracted, abilities, appliedKeys) {
   });
 }
 
+/**
+ * Keep only the riders of the abilities the confirm kept checked
+ * (RIDERS-IGNORE-UNCHECKED). A box the player unchecks says the ability does
+ * not apply this turn — its effects on the outcome included: the Hoverbike's
+ * "+2 momentum on a strong hit" fired with its add left unchecked. The
+ * confirm pre-checks an ability that carries riders (`hasRiders`, stamped by
+ * the pre-roll pass), so leaving the box alone keeps them.
+ *
+ * An ability whose "choose one (before rolling)" its add decides
+ * (`preRollChoice`) stays whatever its box: unchecked, it chose another
+ * option, which settlePreRollChoices still offers (issue #345 AA12).
+ *
+ * With no confirm read (`appliedKeys` not an array — a round rebuilt after a
+ * reload, a confirm whose form could not be read) every rider stands, as
+ * before.
+ *
+ * @param {Array} extracted — extractRiders' [{ key, assetName, riders }]
+ * @param {Array} abilities — the scan's applicable abilities (`key`, `preRollChoice`)
+ * @param {string[]|undefined} appliedKeys — the abilities the confirm kept checked
+ * @returns {Array} the extracted entries whose ability applies
+ */
+export function dropUncheckedRiders(extracted, abilities, appliedKeys) {
+  if (!Array.isArray(extracted)) return [];
+  if (!Array.isArray(appliedKeys)) return extracted;
+  const taken = new Set(appliedKeys);
+  const choosing = new Set((Array.isArray(abilities) ? abilities : [])
+    .filter(a => a?.key && a.preRollChoice?.option)
+    .map(a => a.key));
+  return extracted.filter(entry => taken.has(entry?.key) || choosing.has(entry?.key));
+}
+
 function defaultLabel(resource, amount) {
   const sign = amount > 0 ? `+${amount}` : `${amount}`;
   return resource === "progress" ? `mark progress (${amount})` : `${sign} ${resource}`;
