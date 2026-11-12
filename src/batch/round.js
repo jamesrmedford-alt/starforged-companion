@@ -385,14 +385,32 @@ export function submitEntry(round, { userId, text, submissionId, now, readAs = n
  * its card is spent by the press, so only Keep mine drops it. Reset with
  * `readAs`, a card's move pressed before the player wrote anything was
  * neither rolled nor held for the next round (takeCardMoves never saw it),
- * its card still claimed (issue #345 AA37).
+ * its card still claimed (issue #345 AA37). With both — an offer beside a
+ * card's move that was the entry — the offer stays offered and the entry's
+ * card move is parked (`parked`): one offer slot kept the first and dropped
+ * the second (ROUND-ONE-OFFER-SLOT).
  *
  * @param {Object} entry
- * @returns {Object|null}
+ * @returns {{ offer: Object|null, parked?: Array<Object> }} the entry's changes
  */
 function offerKept(entry) {
-  if (entry.offer || !entry.readAs?.messageId) return entry.offer ?? null;
-  return { text: entry.text, forced: entry.readAs.forced ?? null, messageId: entry.readAs.messageId, at: entry.submittedAt ?? null };
+  const card = entry.readAs?.messageId
+    ? { text: entry.text, forced: entry.readAs.forced ?? null, messageId: entry.readAs.messageId, at: entry.submittedAt ?? null }
+    : null;
+  if (!card) return { offer: entry.offer ?? null };
+  if (!entry.offer) return { offer: card };
+  return { offer: entry.offer, parked: [...parkedOf(entry), card] };
+}
+
+/**
+ * The card buttons' moves parked on an entry beyond its one offer slot — each
+ * joins the next round, handed back by takeCardMoves (ROUND-ONE-OFFER-SLOT).
+ *
+ * @param {Object} entry
+ * @returns {Array<{ text: string, forced: Object|null, messageId: string|null, at: string|null }>}
+ */
+function parkedOf(entry) {
+  return Array.isArray(entry?.parked) ? entry.parked : [];
 }
 
 /**
@@ -412,7 +430,7 @@ export function withdrawEntry(round, { userId }) {
   if (isSheetRollEntry(entry)) refuse("sheet-roll", SHEET_ROLL_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.WAITING, submissionId: null, submittedAt: null, readyAt: null,
-    reading: null, choices: null, error: null, readAs: null, offer: offerKept(entry),
+    reading: null, choices: null, error: null, readAs: null, ...offerKept(entry),
   }, { order: withoutUser(round.order, userId) });
 }
 
@@ -434,7 +452,7 @@ export function passEntry(round, { userId }) {
   if (isSheetRollEntry(entry)) refuse("sheet-roll", SHEET_ROLL_MESSAGE);
   return withEntry(round, userId, {
     status: ENTRY_STATUS.PASSED, submissionId: null, readyAt: null, reading: null,
-    choices: null, error: null, readAs: null, offer: offerKept(entry),
+    choices: null, error: null, readAs: null, ...offerKept(entry),
   }, { order: withoutUser(round.order, userId) });
 }
 
@@ -576,7 +594,11 @@ export function offerForcedMove(round, { userId, text, forced, submissionId, now
     return { round, read: false, held: messageId ? [{ userId, messageId }] : [] };
   }
   if (own && !owed) {
-    return { round: withEntry(round, userId, { offer: { text: clean, forced, messageId, at: now } }), read: false, held: [] };
+    // A second card move beside an offer still undecided: the newer is
+    // offered, the earlier parked — it joins the next round, never replaced
+    // and dropped with its card claimed (ROUND-ONE-OFFER-SLOT).
+    const parked = entry.offer ? { parked: [...parkedOf(entry), entry.offer] } : {};
+    return { round: withEntry(round, userId, { offer: { text: clean, forced, messageId, at: now }, ...parked }), read: false, held: [] };
   }
   // The entry now: a written action it displaces is set aside for the next
   // round; a card move it displaces is held for it.
@@ -642,7 +664,8 @@ export function enterSheetRoll(round, { userId, text, narrationInput, submission
 /**
  * The card buttons' moves a round leaves behind as it stops collecting: every
  * offer still undecided — the round resolved, or closed, before its player
- * chose — and every card move (or sheet roll — enterSheetRoll) that was an
+ * chose — every card move parked beside one (ROUND-ONE-OFFER-SLOT), and
+ * every card move (or sheet roll — enterSheetRoll) that was an
  * entry the round does not roll (not in `acting`: its player left before
  * confirming, its reading failed; or every one when the round closes
  * unresolved). Their cards are claimed, so
@@ -659,10 +682,16 @@ export function takeCardMoves(round, { acting = [] } = {}) {
   let entries = null;
   for (const e of Object.values(round?.entries ?? {})) {
     if (e.offer?.messageId) held.push({ userId: e.userId, messageId: e.offer.messageId });
+    // The card moves parked beyond the offer slot (ROUND-ONE-OFFER-SLOT).
+    for (const p of parkedOf(e)) if (p?.messageId) held.push({ userId: e.userId, messageId: p.messageId });
     if (OWN_ACTION.has(e.status) && e.readAs?.messageId && !acting.includes(e.userId)) {
       held.push({ userId: e.userId, messageId: e.readAs.messageId });
     }
-    if (e.offer) (entries ??= { ...round.entries })[e.userId] = { ...e, offer: null };
+    if (e.offer || parkedOf(e).length) {
+      const taken = { ...e, offer: null };
+      delete taken.parked;
+      (entries ??= { ...round.entries })[e.userId] = taken;
+    }
   }
   return { round: entries ? { ...round, entries } : round, held };
 }

@@ -1707,6 +1707,13 @@ function runHeldMovesSoon() {
  * and the reading's riders — so a round resumed after a reload still finishes
  * its moves. Not a move rolled on the character sheet: the round only
  * narrates it, as the sheet's own narration ran no riders (issue #345 D1).
+ *
+ * Rebuilt, it is the interpretation the roll took (interpretationForRoll):
+ * the reading's riders and abilities with the abilities the entry's choices
+ * checked — the confirm's, or the defaults a Send now rolled an unconfirmed
+ * reading with (rollEntry). With the riders alone, a "choose one (before
+ * rolling)" an ability's add decided was not settled after a reload, and its
+ * options were offered again (CHOICE-UNSETTLED-AFTER-RELOAD; issue #345 AA12).
  */
 function rolledFor(roundId, entry) {
   if (entry?.status !== ENTRY_STATUS.RECORDED) return null;
@@ -1716,9 +1723,18 @@ function rolledFor(roundId, entry) {
   const here = rolledHere(roundId, entry.userId);
   const resolution = { ...(here?.resolution ?? {}), _id: entry.rolled.resolutionId ?? here?.resolution?._id ?? null,
     moveId: input.moveId, outcome: input.outcome, isMatch: input.isMatch === true };
-  const interpretation = here?.interpretation ?? { extractedRiders: entry.reading?.interpretation?.extractedRiders ?? [] };
+  const interpretation = here?.interpretation ?? rebuiltInterpretation(entry);
   const rollerActor = game.actors?.get?.(entry.actorId) ?? null;
   return { resolution, interpretation, rollerActor };
+}
+
+/** The interpretation a recorded entry was rolled with, from what the round stores (rolledFor). */
+function rebuiltInterpretation(entry) {
+  const reading = entry?.reading ?? null;
+  if (reading?.kind !== READING_KIND.MOVE) return { extractedRiders: reading?.interpretation?.extractedRiders ?? [] };
+  const interpretation = interpretationForRoll(reading, entry.choices ?? defaultChoices(reading));
+  if (!Array.isArray(interpretation.extractedRiders)) interpretation.extractedRiders = [];
+  return interpretation;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1828,8 +1844,12 @@ function incitingSwearTaken(message) {
   const round = getStoredRound();
   if (roundIsOpen(round)) {
     for (const e of Object.values(round.entries ?? {})) {
-      if (e.readAs?.messageId === message.id || e.offer?.messageId === message.id) continue;   // this very post again
-      if ((SWEARING.has(e.status) && swears(e.readAs?.forced)) || swears(e.offer?.forced)) return { by: e.actorName ?? "" };
+      // The card moves parked beside an offer count as offers (ROUND-ONE-OFFER-SLOT).
+      const parked = Array.isArray(e.parked) ? e.parked : [];
+      if (e.readAs?.messageId === message.id || e.offer?.messageId === message.id
+        || parked.some(p => p?.messageId === message.id)) continue;   // this very post again
+      if ((SWEARING.has(e.status) && swears(e.readAs?.forced)) || swears(e.offer?.forced)
+        || parked.some(p => swears(p?.forced))) return { by: e.actorName ?? "" };
     }
   }
   for (const id of _heldForRound) {
@@ -1932,19 +1952,23 @@ function holdForNextRound(message, participant) {
 
 /**
  * Whether a vow or bond progress roll made on the system sheet is narrated
- * with a Batch Mode round (issue #345 D1): the mode on, a GM connected to run
- * the round, and its roller — the roll card's speaker — a participant's
- * character. Every client reaches the same answer from shared data, so the
- * others stand down while the canonical GM takes it (takeSheetRoll). Anyone
- * else's sheet roll is narrated at once, as a non-participant's card move
- * runs as free-flow.
+ * with a Batch Mode round (issue #345 D1): the mode on, a GM with a Claude key
+ * connected to narrate the round, and its roller — the roll card's speaker — a
+ * participant's character. Every client reaches the same answer from shared
+ * data, so the others stand down while the canonical GM takes it
+ * (takeSheetRoll). Anyone else's sheet roll is narrated at once, as a
+ * non-participant's card move runs as free-flow — and so is every sheet roll
+ * while no keyed GM is connected: the round could not narrate it until one
+ * joins (it waits for a listed keyed GM — issue #347 D3), so it is narrated
+ * where a key lives, the roller's own, as before Batch Mode
+ * (SHEET-ROLL-KEYLESS-ROUND).
  *
  * @param {ChatMessage} message — a chat message (any: cheap when the mode is off)
  * @returns {boolean}
  */
 export function sheetRollJoinsRound(message) {
   if (!isBatchModeEnabled()) return false;
-  if (!Array.from(game.users ?? []).some(u => u?.isGM && u?.active)) return false;
+  if (!batchModeKeyedGm()) return false;
   const actorId = typeof message?.speaker?.actor === "string" ? message.speaker.actor : null;
   return !!actorId && currentParticipants().some(p => p.actorId === actorId);
 }

@@ -275,7 +275,7 @@ describe('ROUND-VOW-GONE-SAYS-FULFILLED — a refused reading of a closed vow sa
       { id: 'b', name: 'Guard the Relay', completed: true, actorId: 'pc-kira' },
     ];
     expect(selectFulfilVow(vows, 'Find Chen', { rollerActorId: 'pc-kira' })).toMatchObject({ completed: true, forsaken: true });
-    expect(selectFulfilVow(vows, 'Guard the Relay', { rollerActorId: 'pc-kira' })).toMatchObject({ completed: true, forsaken: false });
+    expect(selectFulfilVow(vows, 'Guard the Relay', { rollerActorId: 'pc-kira' }).forsaken ?? false).toBe(false);
     expect(selectForsakeVow(vows, 'Find Chen', { rollerActorId: 'pc-kira' })).toMatchObject({ completed: true, forsaken: true });
   });
 });

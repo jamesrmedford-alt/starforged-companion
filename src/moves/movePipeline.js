@@ -536,6 +536,9 @@ function readingFromMove(read, { forced = null } = {}) {
   const statOptions = [...new Set(abilities
     .map(a => (typeof a.statReplacement === "string" ? a.statReplacement : ""))
     .filter(Boolean))];
+  // `blocked`: a closed vow it names — "vow-forsaken" when that vow was
+  // forsaken, so the refusal does not say it was fulfilled
+  // (ROUND-VOW-GONE-SAYS-FULFILLED).
   return {
     kind:           READING_KIND.MOVE,
     moveId:         interpretation.moveId ?? null,
@@ -546,8 +549,6 @@ function readingFromMove(read, { forced = null } = {}) {
     abilities,
     statOptions,
     targetChoices:  targetOptionsFrom(read.targetChoice),
-    // A closed vow it names: "vow-forsaken" when that vow was forsaken, so the
-    // refusal does not say it was fulfilled (ROUND-VOW-GONE-SAYS-FULFILLED).
     blocked:        read.targetChoice?.kind === "vow-gone" ? (read.targetChoice.forsaken ? "vow-forsaken" : "vow-gone") : null,
     forced: forced ? {
       tokenDragSetCourse:     forced.tokenDragSetCourse ?? null,

@@ -107,7 +107,7 @@ function completedVowNamed(vows, target) {
  * (ROUND-VOW-GONE-SAYS-FULFILLED).
  */
 function closedVowAnswer(vow) {
-  return { vow: null, choices: [], completed: true, forsaken: vow?.forsaken === true };
+  return { vow: null, choices: [], completed: true, ...(vow?.forsaken === true ? { forsaken: true } : {}) };
 }
 
 /**
