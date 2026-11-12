@@ -163,8 +163,11 @@ describe("selectConnection", () => {
       expect(selectConnection(more, null, { unbonded: true })).toBeNull();
     });
 
-    it("a named bonded connection still resolves to itself (the forge then pays nothing)", () => {
-      expect(selectConnection(list, "Kira", { unbonded: true })?._id).toBe("a");
+    // Known-issues FORGE-NAMED-BONDED-SCORED: it resolved to itself, so a typed
+    // forge naming a bond already forged was scored on that bond's track and the
+    // forge then paid nothing. The name rungs take `unbonded`, as the id rung does.
+    it("a named bonded connection resolves nothing for a forge — not itself, nor the sole un-bonded one", () => {
+      expect(selectConnection(list, "Kira", { unbonded: true })).toBeNull();
     });
   });
 });
