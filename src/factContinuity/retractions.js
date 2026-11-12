@@ -605,6 +605,10 @@ export function rememberSessionRetractions(campaignState) {
 /**
  * How many of its ended scenes' narration truths a session keeps for a later
  * X-Card — the newest: the X-Card answers only the session's newest beat.
+ * Live and superseded truths are counted apart: the superseded ones shared
+ * the live ones' fifty, so a scene with many live truths after an upgrade
+ * pushed out the struck narration's, which an X-Card on the upgraded beat
+ * then left unblocked (SUPERSEDED-TRUTHS-SHARE-LIMIT).
  */
 const SESSION_NARRATED_CAP = 50;
 
@@ -647,9 +651,14 @@ export function rememberNarratedTruths(campaignState, truths) {
     narrated.push({
       label: subjectLabel(t.subject), fact: String(t.fact).trim(),
       subjectKey: subjectKey(t.subject) || null, narrationId: t.narrationId, truthId,
+      ...(t.retracted ? { superseded: true } : {}),
     });
   }
-  campaignState.sessionRetractions = { ...base, sessionId, narrated: narrated.slice(-SESSION_NARRATED_CAP) };
+  const kept = new Set([
+    ...narrated.filter(n => !n?.superseded).slice(-SESSION_NARRATED_CAP),
+    ...narrated.filter(n => n?.superseded).slice(-SESSION_NARRATED_CAP),
+  ]);
+  campaignState.sessionRetractions = { ...base, sessionId, narrated: narrated.filter(n => kept.has(n)) };
 }
 
 /**

@@ -395,6 +395,24 @@ describe('the session\'s X-Card blocks (sessionRetractions.blocked)', () => {
     expect(sessionRetractedFacts({ ...state, sceneTruths: [] }).map(f => f.label)).toEqual(['Kira']);   // never named
   });
 
+  // SUPERSEDED-TRUTHS-SHARE-LIMIT: superseded truths shared the live ones'
+  // cap of fifty, so a scene with many live narration truths after them
+  // pushed the struck narration's out — and an X-Card on the upgraded beat
+  // then had nothing to block.
+  it('rememberNarratedTruths keeps the newest fifty live and the newest fifty superseded truths apart', () => {
+    const truth = (id, fact, extra = {}) => ({ id, fact, subject: { kind: 'text', text: 'Vance' }, narrationId: 'nar-1', retracted: false, ...extra });
+    const state = { currentSessionId: SESSION, sessionRetractions: { sessionId: SESSION, facts: [], blocked: [] } };
+    rememberNarratedTruths(state, [
+      truth('tr-s1', BODY, { narrationId: 'nar-miss', retracted: true, retractedBy: 'superseded' }),
+      ...Array.from({ length: 60 }, (_, i) => truth(`tr-${i}`, `Fact ${i}`, { narrationId: 'nar-hit' })),
+    ]);
+    const narrated = state.sessionRetractions.narrated;
+    expect(narrated.filter(n => !n.superseded)).toHaveLength(50);
+    expect(narrated.filter(n => !n.superseded).at(-1).fact).toBe('Fact 59');
+    expect(narrated.find(n => n.truthId === 'tr-s1')).toMatchObject({ fact: BODY, narrationId: 'nar-miss', superseded: true });
+    expect(narrated[0].truthId).toBe('tr-s1');                       // order kept
+  });
+
   it('withXCardBlocks keeps each subject and fact once, and the newest fifty', () => {
     const once = withXCardBlocks([], [
       { label: 'Vance', fact: DEAD, subjectKey: 'vance', narrationId: 'nar-1', truthId: 'tr-1' },
