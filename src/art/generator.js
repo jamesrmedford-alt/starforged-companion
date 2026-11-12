@@ -33,7 +33,7 @@
  */
 
 import { buildPrompt, buildRegenerationPrompt, buildNeutralPortraitPrompt } from "./promptBuilder.js";
-import { storeArtAsset, loadArtAsset, findEntityPortrait } from "./storage.js";
+import { storeArtAsset, loadArtAsset, findEntityPortrait, discardPagelessAssetEntry } from "./storage.js";
 import { generateOpenRouterImage }                from "./openRouterImage.js";
 import {
   getEntityDocument,
@@ -46,9 +46,10 @@ import { PORTRAIT_BLOCK_RE } from "./notesPortrait.js";
 const MODULE_ID = "starforged-companion";
 
 // This client's first-portrait generations in flight, by entity
-// (`<type>:<host id>` → the generation's promise): one image at a time per
-// entity, claimed before the image call and released in a `finally`
-// (known-issues PORTRAIT-LATE-FIRST-GENERATION).
+// (`<type>:<host id>` → { run: the generation's promise, report: its told
+// flag }): one image at a time per entity, claimed before the image call and
+// released in a `finally` (known-issues PORTRAIT-LATE-FIRST-GENERATION).
+// Across clients the claim is on the record (claimFirstPortrait).
 const _portraitsInFlight = new Map();
 
 
@@ -64,13 +65,20 @@ const _portraitsInFlight = new Map();
  *   - Has a portrait already been generated? (if so, is regeneration permitted?)
  *   - Is the portrait locked? (if so, bail silently)
  *
+ * `report` (optional) is the caller's: `report.told` is set when the
+ * generator showed the user its own reason for returning nothing (no key, a
+ * refused save, the content filter, another GM making the portrait), so the
+ * Entities panel adds no generic "failed" of its own beside it (known-issues
+ * ENTITY-PANEL-PORTRAIT-FAILED-TOAST).
+ *
  * @param {string} journalEntryId — Foundry JournalEntry ID of the entity
  * @param {string} entityType     — "connection" | "settlement" | "ship" | "faction" | "planet"
  * @param {Object} entity         — Entity record from the entity management layer
  * @param {Object} campaignState
+ * @param {{ told?: boolean }} [report]
  * @returns {Promise<ArtAsset|null>}
  */
-export async function generatePortrait(journalEntryId, entityType, entity, campaignState) {
+export async function generatePortrait(journalEntryId, entityType, entity, campaignState, report = {}) {
   if (!canKeepPortrait()) return null;
   if (!entity.portraitSourceDescription) {
     console.warn(`${MODULE_ID} | Art: no source description for ${entityType} ${entity._id}`);
@@ -104,19 +112,24 @@ export async function generatePortrait(journalEntryId, entityType, entity, campa
   const inFlight = _portraitsInFlight.get(slot);
   if (inFlight) {
     console.debug(`${MODULE_ID} | Art: a portrait for ${entityType} ${entity._id} is already being made — waiting for it.`);
-    return inFlight;
+    const out = await inFlight.run;
+    if (inFlight.report.told) report.told = true;
+    return out;
   }
-  const run = makeFirstPortrait(journalEntryId, entityType, entity, campaignState);
-  _portraitsInFlight.set(slot, run);
+  const own = { told: false };
+  const run = makeFirstPortrait(journalEntryId, entityType, entity, campaignState, own);
+  const entry = { run, report: own };
+  _portraitsInFlight.set(slot, entry);
   try {
     return await run;
   } finally {
-    if (_portraitsInFlight.get(slot) === run) _portraitsInFlight.delete(slot);
+    if (_portraitsInFlight.get(slot) === entry) _portraitsInFlight.delete(slot);
+    if (own.told) report.told = true;
   }
 }
 
 /** generatePortrait's image call and its writes, once its slot is claimed. */
-async function makeFirstPortrait(journalEntryId, entityType, entity, campaignState) {
+async function makeFirstPortrait(journalEntryId, entityType, entity, campaignState, report) {
   // A portrait already made for this entity that no record names — stored,
   // its link refused — is the one to save: no second image is bought (known-
   // issues FIRST-PORTRAIT-LINK-REFUSED; the next press of Generate, the card's
@@ -125,12 +138,27 @@ async function makeFirstPortrait(journalEntryId, entityType, entity, campaignSta
   if (made) {
     if (!getEntityDocument(entityType, journalEntryId)) return null;
     console.debug(`${MODULE_ID} | Art: ${entityType} ${entity._id} has a portrait made but not saved — saving it, no new image.`);
-    return linkFirstPortrait(journalEntryId, entityType, entity, made);
+    return linkFirstPortrait(journalEntryId, entityType, entity, made, report);
   }
 
+  // The image is claimed on the record before it is bought: another GM's
+  // generation of it, on another client, finds the claim and buys nothing
+  // (known-issues PORTRAIT-TWO-GM-FIRST-GENERATION — this client's in-flight
+  // slot is its own, so two GMs each bought the image, and the later link won).
+  const claim = await claimFirstPortrait(journalEntryId, entityType, entity, report);
+  if (!claim.ok) return claim.result;
+  try {
+    return await buyFirstPortrait(journalEntryId, entityType, entity, campaignState, report);
+  } finally {
+    await releaseFirstPortraitClaim(journalEntryId, entityType, claim.token);
+  }
+}
+
+/** The first portrait's image, bought once its claim stands, and its writes. */
+async function buyFirstPortrait(journalEntryId, entityType, entity, campaignState, report) {
   const { prompt, size } = buildPrompt(entityType, entity.portraitSourceDescription, entity);
   const neutralPrompt = buildNeutralPortraitPrompt(entityType, entity).prompt;
-  const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt);
+  const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt, report);
 
   if (!asset) return null;
   // The entity may be gone when the image comes back — a connection the
@@ -154,7 +182,92 @@ async function makeFirstPortrait(journalEntryId, entityType, entity, campaignSta
   }
 
   await storeArtAsset(asset, campaignState);
-  return linkFirstPortrait(journalEntryId, entityType, entity, asset);
+  return linkFirstPortrait(journalEntryId, entityType, entity, asset, report);
+}
+
+// How long a first-portrait claim stands: the image request and its download
+// are each bounded at two minutes (fetchWithTimeout), so a claim older than
+// this is one its GM's page dropped (a reload mid-call) — never a wait for good.
+const PORTRAIT_CLAIM_TTL_MS = 5 * 60 * 1000;
+
+/** A record's first-portrait claim, when another user's still stands — else null. */
+function standingClaimOfAnother(claim) {
+  if (!claim || typeof claim !== "object") return null;
+  const by = typeof claim.by === "string" ? claim.by : null;
+  const at = Number(claim.at);
+  // This user's own claim with no generation in flight here (generatePortrait's
+  // slot is this one) is one a reload left: it does not stand.
+  if (!by || by === (globalThis.game?.user?.id ?? null)) return null;
+  if (!Number.isFinite(at) || Date.now() - at > PORTRAIT_CLAIM_TTL_MS) return null;
+  // A claimant who left the game is making nothing.
+  if (globalThis.game?.users?.get?.(by)?.active === false) return null;
+  return { by, at };
+}
+
+/**
+ * Claim an entity's first portrait on its record (`portraitClaim: { by, at,
+ * token }`) before its image is bought. Another GM's standing claim — or a
+ * portrait linked since the caller read the record — is the entity's: nothing
+ * is bought, and the GM is told another GM is making it. A refused claim write
+ * buys the image as before (the claim only spares a second image).
+ *
+ * @returns {Promise<{ ok: true, token: string|null } | { ok: false, result: ArtAsset|null }>}
+ */
+async function claimFirstPortrait(journalEntryId, entityType, entity, report) {
+  const document = getEntityDocument(entityType, journalEntryId);
+  if (!document) return { ok: false, result: null };
+  const current = readEntityFlag(entityType, document) ?? {};
+  const linked  = current.portraitId ?? null;
+  if (linked && linked !== (entity.portraitId ?? null)) {
+    const asset = await loadArtAsset(linked);
+    if (asset) {
+      console.debug(`${MODULE_ID} | Art: ${entityType} ${entity._id} has a portrait linked since it was read — no new image.`);
+      return { ok: false, result: asset };
+    }
+  }
+  if (standingClaimOfAnother(current.portraitClaim)) return otherGmMakesIt(entity, report);
+
+  const token = generateId();
+  try {
+    // Read and written with no await between: the record as it stands now.
+    const latest = readEntityFlag(entityType, document) ?? {};
+    await writeEntityFlag(entityType, document, {
+      ...latest,
+      portraitClaim: { by: globalThis.game?.user?.id ?? null, at: Date.now(), token },
+    });
+  } catch (err) {
+    console.debug(`${MODULE_ID} | Art: the portrait claim for ${entityType} ${entity._id} was refused — generating unclaimed:`, err?.message ?? err);
+    return { ok: true, token: null };
+  }
+  // Two GMs' claims written at once: the one that landed last stands, and the
+  // other GM stands down here.
+  const after = readEntityFlag(entityType, getEntityDocument(entityType, journalEntryId))?.portraitClaim ?? null;
+  if (after?.token && after.token !== token && standingClaimOfAnother(after)) return otherGmMakesIt(entity, report);
+  return { ok: true, token };
+}
+
+/** Another GM is making this portrait: buy nothing, and say so. */
+function otherGmMakesIt(entity, report) {
+  console.debug(`${MODULE_ID} | Art: another GM is generating the portrait for ${entity._id} — no second image.`);
+  tell(report, "info", `Starforged Companion: Another GM is already generating the portrait for ${entity.name ?? "this entity"} — it appears when theirs is done.`);
+  return { ok: false, result: null };
+}
+
+/**
+ * Release this generation's claim — when the record still holds it (a linked
+ * portrait's write already cleared it). A refused release is logged: the
+ * claim lapses on its own (PORTRAIT_CLAIM_TTL_MS).
+ */
+async function releaseFirstPortraitClaim(journalEntryId, entityType, token) {
+  if (!token) return;
+  try {
+    const document = getEntityDocument(entityType, journalEntryId);
+    const latest   = readEntityFlag(entityType, document);
+    if (!latest || latest.portraitClaim?.token !== token) return;
+    await writeEntityFlag(entityType, document, { ...latest, portraitClaim: null });
+  } catch (err) {
+    console.debug(`${MODULE_ID} | Art: releasing the portrait claim on ${entityType} ${journalEntryId} failed — it lapses on its own:`, err?.message ?? err);
+  }
 }
 
 /**
@@ -167,11 +280,11 @@ async function makeFirstPortrait(journalEntryId, entityType, entity, campaignSta
  *
  * @returns {Promise<ArtAsset|null>} the portrait, once the record names it
  */
-async function linkFirstPortrait(journalEntryId, entityType, entity, asset) {
+async function linkFirstPortrait(journalEntryId, entityType, entity, asset, report) {
   if (!(await linkPortraitToEntity(journalEntryId, entityType, asset._id))) {
     // A host gone meanwhile is not the world refusing a save.
-    if (getEntityDocument(entityType, journalEntryId) && typeof ui !== "undefined") {
-      ui.notifications?.warn(`Starforged Companion: The portrait for ${entity.name ?? "this entity"} could not be saved — the world refused it. Generate portrait saves it again, without making a new image.`);
+    if (getEntityDocument(entityType, journalEntryId)) {
+      tell(report, "warn", `Starforged Companion: The portrait for ${entity.name ?? "this entity"} could not be saved — the world refused it. Generate portrait saves it again, without making a new image.`);
     }
     return null;
   }
@@ -199,9 +312,10 @@ async function linkFirstPortrait(journalEntryId, entityType, entity, asset) {
  * @param {string} entityType
  * @param {Object} entity
  * @param {Object} campaignState
+ * @param {{ told?: boolean }} [report] — `told` set when the generator showed its own reason (generatePortrait)
  * @returns {Promise<ArtAsset|null>} the new portrait, once the record names it
  */
-export async function regeneratePortrait(journalEntryId, entityType, entity, campaignState) {
+export async function regeneratePortrait(journalEntryId, entityType, entity, campaignState, report = {}) {
   if (!canKeepPortrait()) return null;
   if (!entity.portraitId) {
     console.warn(`${MODULE_ID} | Art: no existing portrait to regenerate for ${entity._id}`);
@@ -212,17 +326,13 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
 
   if (existing?.locked) {
     console.warn(`${MODULE_ID} | Art: portrait locked — regeneration not permitted`);
-    if (typeof ui !== "undefined") {
-      ui.notifications?.warn("Starforged Companion: This portrait is locked and cannot be regenerated.");
-    }
+    tell(report, "warn", "Starforged Companion: This portrait is locked and cannot be regenerated.");
     return null;
   }
 
   if (existing?.regenerationUsed) {
     console.warn(`${MODULE_ID} | Art: regeneration already used for ${entity._id}`);
-    if (typeof ui !== "undefined") {
-      ui.notifications?.warn("Starforged Companion: One regeneration has already been used for this portrait. It is now locked.");
-    }
+    tell(report, "warn", "Starforged Companion: One regeneration has already been used for this portrait. It is now locked.");
     // Lock it now so this check is fast next time
     await storeArtAsset({ ...existing, locked: true }, campaignState);
     return null;
@@ -241,7 +351,18 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
 
   const { prompt, size } = buildRegenerationPrompt(entityType, entity.portraitSourceDescription, entity);
   const neutralPrompt = buildNeutralPortraitPrompt(entityType, entity).prompt;
-  const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt);
+  const asset = await callOpenRouter(prompt, size, entity._id, entityType, neutralPrompt, report);
+
+  // The entity may be gone when the image comes back — the X-Card took the
+  // connection back with its narration, or the GM deleted the card, while the
+  // call was out — as generatePortrait checks (known-issues
+  // REGENERATE-PORTRAIT-ORPHAN): stored, the portrait was an Art Cache entry
+  // nothing links to. Its claim is not given back either: the earlier
+  // portrait's entry went with the entity, and re-storing it made it again.
+  if (!getEntityDocument(entityType, journalEntryId)) {
+    console.debug(`${MODULE_ID} | Art: ${entityType} ${journalEntryId} was deleted before its regenerated portrait came back — not stored.`);
+    return null;
+  }
 
   if (!asset) {
     await releaseRegeneration(claimed, campaignState);
@@ -257,7 +378,12 @@ export async function regeneratePortrait(journalEntryId, entityType, entity, cam
     console.warn(`${MODULE_ID} | Art: the regenerated portrait for ${entity._id} could not be stored:`, err?.message ?? err);
   }
   if (!linked) {
-    await keepRegenerationSpent(claimed, entity, campaignState);
+    await keepRegenerationSpent(claimed, entity, campaignState, report);
+    // Its page refused, the regenerated portrait's "Art: …" entry holds
+    // nothing, and no later Generate completes it — the entity is locked
+    // (known-issues ART-REGEN-PAGELESS-ENTRY): it goes now, not only with
+    // the entity.
+    await discardPagelessAssetEntry(lockedAsset._id);
     return null;
   }
 
@@ -300,15 +426,13 @@ async function releaseRegeneration(claimed, campaignState) {
  * @param {Object} entity
  * @param {Object} campaignState
  */
-async function keepRegenerationSpent(claimed, entity, campaignState) {
+async function keepRegenerationSpent(claimed, entity, campaignState, report) {
   if (claimed) {
     const current = (await loadArtAsset(claimed._id)) ?? claimed;
     await storeArtAsset({ ...current, regenerationUsed: true, locked: true }, campaignState).catch(err =>
       console.warn(`${MODULE_ID} | Art: locking the earlier portrait of ${entity._id} failed — its regeneration stays spent:`, err?.message ?? err));
   }
-  if (typeof ui !== "undefined") {
-    ui.notifications?.warn(`Starforged Companion: The regenerated portrait for ${entity.name ?? "this entity"} could not be saved — the world refused it. The earlier portrait stays, now locked: the one regeneration is spent.`);
-  }
+  tell(report, "warn", `Starforged Companion: The regenerated portrait for ${entity.name ?? "this entity"} could not be saved — the world refused it. The earlier portrait stays, now locked: the one regeneration is spent.`);
 }
 
 
@@ -316,10 +440,10 @@ async function keepRegenerationSpent(claimed, entity, campaignState) {
 // OpenRouter call
 // ─────────────────────────────────────────────────────────────────────────────
 
-async function callOpenRouter(prompt, size, entityId, entityType, fallbackPrompt = null) {
+async function callOpenRouter(prompt, size, entityId, entityType, fallbackPrompt = null, report = null) {
   const apiKey = readOpenRouterKey();
   if (!apiKey) {
-    notifyMissingOpenRouterKey();
+    notifyMissingOpenRouterKey(report);
     return null;
   }
 
@@ -334,7 +458,7 @@ async function callOpenRouter(prompt, size, entityId, entityType, fallbackPrompt
     });
   } catch (err) {
     if (err.message?.includes("401") || err.message?.includes("403")) {
-      notifyAuthError(err.message);
+      notifyAuthError(err.message, report);
       return null;
     }
 
@@ -353,11 +477,11 @@ async function callOpenRouter(prompt, size, entityId, entityType, fallbackPrompt
         usedPrompt = fallbackPrompt;
       } catch (err2) {
         console.error(`${MODULE_ID} | Art: neutral-prompt retry failed:`, err2.message);
-        if (/content moderated|moderation/i.test(err2.message ?? "")) notifyModeration(entityType);
+        if (/content moderated|moderation/i.test(err2.message ?? "")) notifyModeration(entityType, report);
         return null;
       }
     } else {
-      if (moderated) notifyModeration(entityType);
+      if (moderated) notifyModeration(entityType, report);
       else console.error(`${MODULE_ID} | Art: OpenRouter call failed:`, err.message);
       return null;
     }
@@ -415,6 +539,9 @@ async function linkPortraitToEntity(journalEntryId, entityType, artAssetId) {
       ...existing,
       portraitId: artAssetId,
       updatedAt:  new Date().toISOString(),
+      // A linked portrait ends any first-portrait claim: nothing is left to
+      // make (claimFirstPortrait).
+      ...(existing.portraitClaim ? { portraitClaim: null } : {}),
     });
 
     console.log(`${MODULE_ID} | Art: linked portrait ${artAssetId} to ${entityType} ${journalEntryId}`);
@@ -570,36 +697,44 @@ function readOpenRouterModel() {
   }
 }
 
-function notifyMissingOpenRouterKey() {
+/**
+ * Show the user the generator's own reason it returned nothing, and mark the
+ * caller's report: the Entities panel then adds no generic "failed — check
+ * the console" beside it (known-issues ENTITY-PANEL-PORTRAIT-FAILED-TOAST).
+ *
+ * @param {{ told?: boolean }|null} report
+ * @param {"info"|"warn"|"error"} level
+ * @param {string} message
+ * @param {Object} [options]
+ */
+function tell(report, level, message, options) {
+  if (report && typeof report === "object") report.told = true;
+  if (typeof ui === "undefined") return;
+  if (options) ui.notifications?.[level]?.(message, options);
+  else ui.notifications?.[level]?.(message);
+}
+
+function notifyMissingOpenRouterKey(report) {
   console.warn(`${MODULE_ID} | Art: no OpenRouter API key configured`);
-  if (typeof ui !== "undefined") {
-    ui.notifications?.warn(
-      "Starforged Companion: No OpenRouter API key is configured. " +
-      "Add your key in Companion Settings → About to enable portrait generation."
-    );
-  }
+  tell(report, "warn",
+    "Starforged Companion: No OpenRouter API key is configured. " +
+    "Add your key in Companion Settings → About to enable portrait generation.");
 }
 
-function notifyAuthError(code) {
+function notifyAuthError(code, report) {
   console.error(`${MODULE_ID} | Art: OpenRouter auth/billing error: ${code}`);
-  if (typeof ui !== "undefined") {
-    ui.notifications?.error(
-      `Starforged Companion: OpenRouter API error (${code}). ` +
-      "Check your API key and account balance in module settings.",
-      { permanent: true }
-    );
-  }
+  tell(report, "error",
+    `Starforged Companion: OpenRouter API error (${code}). ` +
+    "Check your API key and account balance in module settings.",
+    { permanent: true });
 }
 
-function notifyModeration(entityType) {
+function notifyModeration(entityType, report) {
   console.warn(`${MODULE_ID} | Art: portrait blocked by image-provider content moderation (${entityType ?? "entity"}).`);
-  if (typeof ui !== "undefined") {
-    ui.notifications?.warn(
-      "Starforged Companion: The portrait was blocked by the image provider's content filter, " +
-      "even after softening the prompt. The entity is fine — only its art was skipped. " +
-      "You can retry from the Entities panel once the surrounding fiction is less graphic."
-    );
-  }
+  tell(report, "warn",
+    "Starforged Companion: The portrait was blocked by the image provider's content filter, " +
+    "even after softening the prompt. The entity is fine — only its art was skipped. " +
+    "You can retry from the Entities panel once the surrounding fiction is less graphic.");
 }
 
 function generateId() {

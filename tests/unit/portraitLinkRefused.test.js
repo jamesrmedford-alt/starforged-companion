@@ -111,9 +111,11 @@ async function generate() {
   return out;
 }
 
-// The record write a portrait's link makes.
+// The record write a portrait's link makes — the one naming a portrait (the
+// first-portrait claim written before the image is a record write too:
+// PORTRAIT-TWO-GM-FIRST-GENERATION).
 const linkWrite = (w) => w.kind === 'actor.update' && w.id === 'npc-vance'
-  && Object.keys(w.changes ?? {}).some(k => k === `flags.${MODULE_ID}.connection`);
+  && !!w.changes?.[`flags.${MODULE_ID}.connection`]?.portraitId;
 
 describe('a first portrait whose record write the world refused (FIRST-PORTRAIT-LINK-REFUSED)', () => {
   it('is not put on the card, and the GM is told', async () => {
