@@ -1068,7 +1068,6 @@ export async function retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCa
  * @returns {Promise<boolean>} whether the card was kept
  */
 async function keepPriceCard(card) {
-  const f = card.flags[MODULE_ID];
   const update = {
     [`flags.${MODULE_ID}.upgraded`]:              true,
     [`flags.${MODULE_ID}.executorOpts.upgraded`]: true,
