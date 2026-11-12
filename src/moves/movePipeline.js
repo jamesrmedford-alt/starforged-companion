@@ -1448,8 +1448,10 @@ export async function rollMove({
     ...(interpretation.patientActorId ? { patientActorId: interpretation.patientActorId } : {}),
     ...(interpretation.patientCompanionItemId ? { patientCompanionItemId: interpretation.patientCompanionItemId } : {}),
     // Aid Your Ally's ally: a hit's benefits — the choice card's too —
-    // are theirs (issue #325 W17).
-    ...(interpretation.allyActorId && resolution.consequences?.beneficiary === "ally"
+    // are theirs (issue #325 W17). Carried on a miss too: a Burn Momentum
+    // or Improve Result that makes it a hit pays the ally, not the roller
+    // (AID-ALLY-UPGRADE). Every reader gates on the outcome's beneficiary.
+    ...(interpretation.allyActorId && (resolution.consequences?.beneficiary === "ally" || resolution.moveId === "aid_your_ally")
       ? { allyActorId: interpretation.allyActorId } : {}),
     // A scene-challenge move's challenge and what it filled of its clock:
     // an upgrade scores that challenge and takes back no more than this

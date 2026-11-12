@@ -1086,7 +1086,10 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
         consequences: state.originalConsequences ?? {},
         resolutionId: state.resolutionId ?? null,
       },
-      interpretation: { ...(state.move ?? {}), companionItemId: state.targets?.companionItemId ?? null },
+      // Aid Your Ally's ally: the upgraded hit's +1 next move and position
+      // are theirs, as the pipeline's (AID-ALLY-UPGRADE).
+      interpretation: { ...(state.move ?? {}), companionItemId: state.targets?.companionItemId ?? null,
+        allyActorId: state.targets?.allyActorId ?? null },
       targets: state.targets ?? {},
     });
     return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [] };
@@ -1094,6 +1097,38 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
     console.warn(`${MODULE_ID} | ${kind}: the upgraded outcome's effects failed:`, err?.message ?? err);
     return { applied: [], notApplied: ["the upgraded result's other effects"] };
   }
+}
+
+/**
+ * Aid Your Ally's ally, as an upgrade's card carries it (`targets.allyActorId`,
+ * the pipeline's moveTargets): the PC a hit's benefits go to — "they (instead
+ * of you) take the benefits of the move" (issue #325 W17). Null when the move
+ * named none, or named the roller.
+ *
+ * @param {Object|null} state — the card's `burn` / `improve` flag (or the targets' holder)
+ * @param {string|null} rollerId
+ * @returns {string|null}
+ */
+export function upgradeAllyId(state, rollerId) {
+  const id = state?.targets?.allyActorId;
+  return typeof id === "string" && id && id !== rollerId ? id : null;
+}
+
+/**
+ * An outcome's momentum change, split between the roller and Aid Your Ally's
+ * ally: a hit's (`beneficiary: "ally"`) is the ally's when the move named one,
+ * the roller's otherwise. A Burn Momentum or Improve Result that upgrades an
+ * Aid Your Ally gave the upgraded hit's momentum to the roller — the first
+ * resolution had paid its hit to the ally (persistResolution), the upgrade
+ * paths knew only the roller (AID-ALLY-UPGRADE).
+ *
+ * @param {Object|null} consequences
+ * @param {string|null} allyId — upgradeAllyId's
+ * @returns {{ roller: number, ally: number }}
+ */
+export function momentumShares(consequences, allyId) {
+  const m = Number(consequences?.momentumChange ?? 0);
+  return allyId && consequences?.beneficiary === "ally" ? { roller: 0, ally: m } : { roller: m, ally: 0 };
 }
 
 /**

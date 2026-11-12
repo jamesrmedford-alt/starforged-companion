@@ -56,6 +56,8 @@ import {
   applyUpgradedOutcomeEffects,
   renarrateUpgrade,
   effectsNoteHtml,
+  upgradeAllyId,
+  momentumShares,
 } from "./resultUpgrade.js";
 import {
   supersedeOriginalNarration,
@@ -356,7 +358,14 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
       console.warn(`${MODULE_ID} | improveResult: PtP reversal failed:`, err));
   }
 
-  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: improveMeterChanges(improve, newConsequences) }, failures);
+  const allyId = upgradeAllyId(improve, actor.id);
+  await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: improveMeterChanges(improve, newConsequences, allyId) }, failures);
+  // Aid Your Ally: the strong hit's momentum is the ally's, less what the
+  // recorded hit already paid them (AID-ALLY-UPGRADE).
+  const allyMomentum = momentumShares(newConsequences, allyId).ally - momentumShares(improve.originalConsequences, allyId).ally;
+  if (allyId && allyMomentum) {
+    await applyUpgradeStep({ effect: "meters", pcId: allyId, changes: { momentum: allyMomentum } }, failures);
+  }
 
   // The original outcome's pending choice is retired and the strong hit's
   // offered once (issue #311 P03); a price that stands keeps its cards, as
@@ -398,11 +407,12 @@ async function handleImproveClick(message, { narrate, applyEffects }) {
  * once the original is on the sheet). No momentum reset — unlike burn, the
  * dice don't change; only the outcome does.
  */
-function improveMeterChanges(improve, newConsequences) {
+function improveMeterChanges(improve, newConsequences, allyId = null) {
   const orig  = improve.originalConsequences ?? {};
   const delta = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
   return {
-    momentum: delta("momentumChange"),
+    // The improver's share — none of an Aid Your Ally hit's (AID-ALLY-UPGRADE).
+    momentum: momentumShares(newConsequences, allyId).roller - momentumShares(orig, allyId).roller,
     health:   delta("healthChange"),
     spirit:   delta("spiritChange"),
     supply:   delta("supplyChange"),
