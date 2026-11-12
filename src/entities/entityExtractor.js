@@ -2387,8 +2387,11 @@ async function reconcileConfirmedFaction(name, campaignState) {
     if (wjEntry?.attitude && wjEntry.attitude !== "unknown") {
       await applyAttitudeToFactionRecord(name, wjEntry.attitude, campaignState);
     }
-    if (wjEntry?.entityId !== hit.id) {
-      await recordFactionIntelligence(name, { entityId: hit.id }, campaignState);
+    // A backlink only: the Confirm met the faction nowhere in the fiction, so
+    // it logs no encounter (FACTION-CONFIRM-TWO-ENCOUNTERS). An entry not
+    // there yet is the mirror's to start (mirrorConfirmedFaction).
+    if (wjEntry && wjEntry.entityId !== hit.id) {
+      await recordFactionIntelligence(name, { entityId: hit.id, encounter: false }, campaignState);
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | draft confirm: faction reconcile/seed failed:`, err?.message ?? err);
@@ -2403,8 +2406,11 @@ async function reconcileConfirmedFaction(name, campaignState) {
  * (playtest finding). No attitude: the entry keeps the one the narration
  * established (a new entry starts "unknown"); the backlink is the host id, as
  * the reconcile writes it. Passing attitude "unknown" overwrote a known
- * attitude, and record._id re-pointed the backlink (issue #321 U28). Never
- * throws.
+ * attitude, and record._id re-pointed the backlink (issue #321 U28). The
+ * description is the page's first encounter only when the mirror starts the
+ * page: an entry the narration surfaced has its encounter, and the Confirm's
+ * backlink and mirror each appended another (FACTION-CONFIRM-TWO-ENCOUNTERS).
+ * Never throws.
  *
  * @param {Object} draft — the confirmed row (`name`, `description`)
  * @param {Object} campaignState
@@ -2415,6 +2421,7 @@ async function mirrorConfirmedFaction(draft, campaignState) {
     await recordFactionIntelligence(draft.name, {
       summary:  draft.description ?? "",
       entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
+      ...(getFactionEntry(draft.name) ? { encounter: false } : {}),
     }, campaignState);
   } catch (err) {
     console.warn(`${MODULE_ID} | draft confirm: faction World Journal mirror failed:`, err?.message ?? err);

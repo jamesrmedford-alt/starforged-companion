@@ -350,7 +350,9 @@ export async function recordThreat(name, entry, campaignState) {
 /**
  * Record faction intelligence. Creates a page named after the faction; on
  * duplicate names the existing entry is updated. Each call appends an entry
- * to the encounters array.
+ * to the encounters array — save one with `entry.encounter === false`, a
+ * bookkeeping write that met the faction nowhere in the fiction (a draft
+ * Confirm's backlink and mirror: FACTION-CONFIRM-TWO-ENCOUNTERS).
  *
  * One faction is one page whatever article, case or spacing names it
  * (factionNameKey — issue #336 Y31): a mention matching a page by key
@@ -359,7 +361,7 @@ export async function recordThreat(name, entry, campaignState) {
  * "Iron Syndicate".
  *
  * @param {string} name
- * @param {Object} entry — { attitude, summary, knownGoal, entityId, ... }
+ * @param {Object} entry — { attitude, summary, knownGoal, entityId, encounter, ... }
  * @param {Object} campaignState
  * @returns {Promise<Object|null>} — the entry data enriched with {pageId, journalId}, or null on failure
  */
@@ -380,11 +382,13 @@ export async function recordFactionIntelligence(name, entry, campaignState) {
   const attitude  = entry?.attitude ?? existing?.attitude ?? "unknown";
 
   const encounters = Array.isArray(existing?.encounters) ? [...existing.encounters] : [];
-  encounters.push({
-    sessionId,
-    summary:        entry?.summary ?? "",
-    attitudeAtTime: attitude,
-  });
+  if (entry?.encounter !== false) {
+    encounters.push({
+      sessionId,
+      summary:        entry?.summary ?? "",
+      attitudeAtTime: attitude,
+    });
+  }
 
   // Entity-record sync (FACTION-ATTITUDE-SPLIT-BRAIN / FACTION-DUAL-STORE,
   // 2026-07): when a faction entity record exists, it is the canonical
