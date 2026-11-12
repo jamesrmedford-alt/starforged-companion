@@ -68,7 +68,10 @@ passage" drawing.
   `applyExpeditionProgress` resolve-or-creates the expedition track (label =
   destination, rank = interpreter's `expeditionRank`, default dangerous) and
   marks one rank-step. A new track is begun only when no expedition is open
-  or the move names a destination none of the open ones matches; naming none
+  or the move names a destination none of the open ones matches — by name
+  alone: the one open expedition is not taken for a new destination
+  (`selectExpeditionTrack`'s `soleFallback: false`; FRAY-SOLE-FIGHT-FALLBACK
+  — it was marked instead); naming none
   while two or more are open, the pipeline posts a **Which expedition?** card
   before rolling (`postWhichFightCard` with `trackType: "expedition"`, whose
   pick relays `whichFight.pick` — one of the card's tracks, the roller's
@@ -99,10 +102,15 @@ passage" drawing.
 ## 2. En route
 
 - **`explore_a_waypoint`**: strong hit → a one-pick choice between "mark
-  expedition progress" and "+2 momentum" (executed by the suffer executor —
-  which resolve-or-creates: with no open expedition it begins a default
-  dangerous one and marks it, WAYPOINT-PROGRESS-NOOP fix; several open →
-  visible warn); weak hit +1 momentum; miss routes Pay the Price
+  expedition progress" and "+2 momentum" (executed by the suffer executor on
+  the expedition the move explored, resolved at the roll — the open one its
+  target names, else the sole open one — and carried on the choice card as
+  `expeditionTrackId` (`movePipeline` `waypointExpedition`): that one, or
+  nothing once it is over or gone, never the sole open one at click time
+  (DELAYED-CHOICE-IDENTITY); a card that names none resolve-or-creates at
+  click time: with no open expedition it begins a default dangerous one and
+  marks it, WAYPOINT-PROGRESS-NOOP fix; several open → visible warn); weak
+  hit +1 momentum; miss routes Pay the Price
   (`routePayThePrice` — the card, its suffer route, the tension clocks; it
   said so in text only until issue #321 U17, WAYPOINT-MISS-NO-PTP) — except
   a miss with a match, where the player may instead Confront Chaos, so the

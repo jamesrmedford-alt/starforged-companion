@@ -40,7 +40,7 @@ import {
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
-import { markLegacyTrack, legacyProgress, deferLegacyXp, payDeferredLegacyXp } from "./moves/legacyTracks.js";
+import { markLegacyOnCopy, legacyProgress, deferLegacyXp, payDeferredLegacyXp } from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
 import {
   openSetFlagDialog,
@@ -108,7 +108,7 @@ import {
   registerShipMapSceneHooks,
 } from "./moves/shipMapScene.js";
 import { applyCombatProgress, finishCombat as finishCombatTrack, selectCombatTrack, selectRollerFight } from "./moves/combat.js";
-import { buildCombatThresholdHtml, WAY_OUT_MOVES, thresholdPositionLine } from "./moves/combatThreshold.js";
+import { buildCombatThresholdHtml, WAY_OUT_MOVES, stashPositionOnThresholdCard } from "./moves/combatThreshold.js";
 import { moveDisplayName } from "./system/i18n.js";
 import {
   enterCombatTracker,
@@ -226,6 +226,7 @@ import {
   rollMove,
   recordMove,
   finishMove,
+  applyDevelopRelationship,
 } from "./moves/movePipeline.js";
 import {
   configureBatchDriver,
@@ -1912,10 +1913,11 @@ async function expeditionArrival(interpretation, campaignState) {
  * @param {{ combatTrackId?: string|null }|null} [args.targets] — the fight the original's card
  *   named, for an upgrade
  * @param {Object|null} [args.tokenDragSetCourse] — the pipeline's token-drag payload
- * @returns {Promise<{ moveFight: Object|null, applied: string[], notApplied: string[] }>}
+ * @returns {Promise<{ moveFight: Object|null, thresholdResolutionId: string|null, applied: string[], notApplied: string[] }>}
  *   moveFight — the fight the move was about: the one its progress marked (or created),
- *   else the stamped or selected open fight, else the one it ended; applied / notApplied —
- *   what the effects did, in words, for an upgrade's card
+ *   else the stamped or selected open fight, else the one it ended; thresholdResolutionId —
+ *   the resolution whose threshold card this posted (Enter the Fray against a new foe);
+ *   applied / notApplied — what the effects did, in words, for an upgrade's card
  */
 async function applyOutcomeEffects({
   resolution, interpretation, campaignState, rollerActor, speakerActor,
@@ -1923,7 +1925,7 @@ async function applyOutcomeEffects({
 }) {
   const applied    = [];
   const notApplied = [];
-  const out = { moveFight: null, sceneChallenge: null, applied, notApplied };
+  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, applied, notApplied };
   if (!game.user?.isGM) return out;
 
   const next       = resolution.consequences ?? {};
@@ -2129,6 +2131,32 @@ async function applyOutcomeEffects({
     }
   }
 
+  // A bonded Develop Your Relationship (or a Test Your Relationship from a
+  // miss) upgraded: what the upgraded outcome adds to the development the
+  // pipeline's develop branch paid for the recorded one — the bonds ticks,
+  // saved now with their box XP, and a match's rank raise
+  // (BOND-DEVELOP-UPGRADE: the branch was not re-run).
+  if (upgrade && next.developRelationship) {
+    try {
+      const plan = await applyDevelopRelationship({
+        resolution, interpretation, campaignState, rollerActor, against,
+        markBonds: async (ticks) => {
+          const failed = await writeLegacyTicks("bonds", ticks);
+          if (failed.length) {
+            await postPayoffFailureCard({ source: "legacyXp", failures: failed }).catch(err =>
+              console.warn(`${MODULE_ID} | legacy XP failure card failed:`, err?.message ?? err));
+          }
+        },
+      });
+      if (plan?.ticks > 0) applied.push(`${plan.ticks} tick${plan.ticks === 1 ? "" : "s"} on the bonds legacy`);
+      if (plan?.raiseRank && plan.newRank) applied.push(`${plan.connection?.name ?? "the connection"}'s rank raised to ${plan.newRank}`);
+      if (plan?.action === "connection-progress") applied.push(`progress on your relationship with ${plan.connection?.name ?? "the connection"}`);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | upgraded development failed:`, err?.message ?? err);
+      notApplied.push("the relationship's development");
+    }
+  }
+
   // Companion Takes a Hit strong hit — direct +1 health to the companion
   // the roll was made for (its asset's track). It went to the PC's meters,
   // which have no companion health, and was dropped (issue #309 N03). An
@@ -2236,8 +2264,10 @@ async function applyOutcomeEffects({
       // combat moves just mark progress on it. Enter the Fray's own outcome
       // position rides the card so it lands on the track at creation. An
       // upgrade posts none: the original outcome's card is waiting, and its
-      // position is changed below.
-      const existing = selectCombatTrack(await listProgressTracks(), moveTarget);
+      // position is changed below. The foe is matched by name alone: the one
+      // open fight is not a new foe's (ENTER-FRAY-SOLE-FIGHT — it resumed that
+      // fight, so no card was posted and no second fight begun).
+      const existing = selectCombatTrack(await listProgressTracks(), moveTarget, { soleFallback: false });
       if (!existing || existing.completed) {
         const vowNames = (readVows(speakerActor) ?? [])
           .filter(v => v && !v.completed).map(v => v.name).filter(Boolean);
@@ -2251,6 +2281,10 @@ async function applyOutcomeEffects({
         }).catch(err =>
           console.warn(`${MODULE_ID} | combat threshold card failed:`, err?.message ?? err));
         thresholdPosted = true;
+        // The move's choice card names this card, by the resolution that
+        // posted it: its weak hit's "You are in control" lands on the fight
+        // the card begins, or waits on it (DELAYED-CHOICE-IDENTITY).
+        out.thresholdResolutionId = resolution._id ?? null;
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | combat threshold failed:`, err?.message ?? err);
@@ -2330,11 +2364,16 @@ async function applyOutcomeEffects({
       else {
         const tracks  = await listProgressTracks();
         const trackId = interpretation?.moveTargetId ?? null;
+        // Enter the Fray's fight is its foe's by name, or the one its
+        // threshold card is to begin — never another open fight
+        // (ENTER-FRAY-SOLE-FIGHT: its opening position landed on the one
+        // open fight).
+        const fray = next.enterCombat === true;
         // Two fights open and no foe named: the roller's own fight — the one
         // recording their position (issue #326 W45; the position was written
         // nowhere and their next Strike steered by the stale one).
-        out.moveFight = selectCombatTrack(tracks, moveTarget, { trackId })
-          ?? (!moveTarget && !trackId ? selectRollerFight(tracks, speakerActor?.id ?? rollerActor?.id ?? null) : null);
+        out.moveFight = selectCombatTrack(tracks, moveTarget, { trackId, soleFallback: !fray })
+          ?? (!fray && !moveTarget && !trackId ? selectRollerFight(tracks, speakerActor?.id ?? rollerActor?.id ?? null) : null);
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | combat fight lookup failed:`, err?.message ?? err);
@@ -2486,34 +2525,6 @@ async function applyWonFightPayoff(track, outcome, rollerActor) {
     }).catch(err => console.warn(`${MODULE_ID} | fight reward failure card failed:`, err?.message ?? err));
   }
 }
-
-/**
- * An Enter the Fray upgraded while its threshold card still waits: put the
- * upgraded opening position on the card — its flag, which
- * createCombatTrackFromThreshold applies at track creation (as the weak hit's
- * "You are in control" choice does), and its line — in place of the recorded
- * outcome's. The card is the one the original resolution posted
- * (`resolutionId`); a card from before cards carried it is not found.
- *
- * @param {string|null} resolutionId — the original resolution's
- * @param {"in_control"|"bad_spot"} position
- * @returns {Promise<boolean>} whether a card was updated
- */
-async function stashPositionOnThresholdCard(resolutionId, position) {
-  if (!resolutionId) return false;
-  const card = (game.messages?.contents ?? []).find(m =>
-    m?.flags?.[MODULE_ID]?.combatThresholdCard === true && m.flags[MODULE_ID].resolutionId === resolutionId);
-  if (!card) return false;
-  const line    = thresholdPositionLine(position);
-  const content = String(card.content ?? "");
-  const current = /<p>⚑ [^<]*<strong>[^<]*<\/strong>\.<\/p>/;
-  const updated = current.test(content)
-    ? content.replace(current, line)
-    : content.replace("</p>", `</p>${line}`);
-  await card.update({ [`flags.${MODULE_ID}.position`]: position, content: updated });
-  return true;
-}
-
 
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -2826,6 +2837,10 @@ export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) 
       // A name the GM once dismissed from a draft card is this record's now
       // (issue #345 AA55): dismissed, it kept the card out of the narrator.
       .then(() => undismissRecordName(newName))
+      // A connection's PCs' bond Items take the new name too
+      // (BOND-ITEM-NAME-STALE), found as it was named.
+      .then(() => (entityType === "connection"
+        ? import("./entities/connection.js").then(m => m.renameBondItems(record, newName)) : null))
       .catch(err =>
         console.warn(`${MODULE_ID} | rename sync: record update failed for ${actor.id}:`, err?.message ?? err));
   } catch (err) {
@@ -4262,14 +4277,17 @@ async function postExpeditionProgressCard({ track, created, actorId = null }) {
  *
  * @param {{ moveName?: string, moveTarget?: string|null }} interpretation
  */
-async function postTrackGoneCard(interpretation) {
+async function postTrackGoneCard(interpretation, { alreadyBonded = false } = {}) {
   const label = escapeChatHtml(interpretation?.moveTarget ?? "That track");
   const move  = escapeChatHtml(interpretation?.moveName ?? "The roll");
   // A forge's track is a connection: severed, removed or bonded since its
-  // picker was posted (issue #345 AA50).
-  const why = interpretation?.moveId === "forge_a_bond"
-    ? "is no longer a connection to forge a bond with: they were severed, removed or bonded before the roll."
-    : "is no longer open: it was deleted or finished before the roll.";
+  // picker was posted (issue #345 AA50) — or one a typed forge named that is
+  // already bonded (FORGE-NAMED-BONDED-SCORED).
+  const why = alreadyBonded
+    ? "is already bonded: there is no bond to forge — Develop Your Relationship instead."
+    : interpretation?.moveId === "forge_a_bond"
+      ? "is no longer a connection to forge a bond with: they were severed, removed or bonded before the roll."
+      : "is no longer open: it was deleted or finished before the roll.";
   await ChatMessage.create({
     content: `<div class="sf-ptp-card"><strong>${move} — not rolled</strong>`
       + `<p><strong>${label}</strong> ${why} Nothing was rolled.</p></div>`,
@@ -4697,8 +4715,9 @@ const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bo
 export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {}) {
   campaignState.legacyTracks ??= {};
   const before = legacyProgress(campaignState.legacyTracks[key]);
-  const marked = markLegacyTrack(campaignState.legacyTracks[key], ticks);
-  campaignState.legacyTracks[key] = marked.track;
+  // Recorded by the copy: its persist applies the marks to the stored track
+  // (LEGACY-SHEET-DECREASE).
+  const marked = markLegacyOnCopy(campaignState, key, ticks);
   noteUnsavedOnCopy(campaignState, { step: "legacy", track: key, ticks });
   if (awardXp && legacyProgress(marked.track) > before) {
     // Once the copy is saved, every PC's sheet shows the mark — and the XP a
@@ -5318,15 +5337,19 @@ async function postDeepenAlreadyPaidCard(connectionName, vowName) {
   }
 }
 
-// The campaign's connection a name resolves to (selectConnection's ladder),
-// as its record plus `__hostId`; null when none does.
+// The campaign's open connection a vow's link names (selectConnection's
+// `strict` ladder), as its record plus `__hostId`; null when none does. A link
+// whose connection was severed or renamed names nothing — never the sole
+// bonded or active connection in its place (DEEPEN-LINK-FALLBACK: that one
+// was deepened); the deepen reports it not found, on the GMs' card.
 async function findOpenConnection(connectionName) {
   const conn = await import("./entities/connection.js");
   const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
   const connections = (campaignState.connectionIds ?? [])
     .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
     .filter(Boolean);
-  return selectConnection(connections, connectionName ?? null);
+  if (!connectionName) return null;
+  return selectConnection(connections, connectionName, { strict: true });
 }
 
 async function postDeepenBondCard(name, marks) {
@@ -6455,9 +6478,17 @@ async function postDevelopRelationshipCard(plan) {
   } else {
     body = `Marked progress on your relationship with <strong>${name}</strong>.`;
   }
+  // A Test Your Relationship hit's own Develop Your Relationship roll, +rank
+  // (TEST-RELATIONSHIP-DEVELOP-ROLL).
+  const roll = plan?.roll;
+  const rollLine = roll
+    ? `<p>Develop Your Relationship (+${escapeChatHtml(plan.connection?.rank ?? "rank")}): `
+      + `${roll.cancelled ? `<s>${roll.actionDie}</s> (cancelled by momentum)` : roll.actionDie} + ${roll.adds} = <strong>${roll.actionScore}</strong>`
+      + ` vs ${roll.challengeDice[0]}, ${roll.challengeDice[1]} — ${escapeChatHtml(String(roll.outcome).replace("_", " "))}${roll.isMatch ? " ✦ match" : ""}.</p>`
+    : "";
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Develop Your Relationship</strong><p>${body}</p></div>`,
+      content: `<div class="sf-ptp-card"><strong>Develop Your Relationship</strong>${rollLine}<p>${body}</p></div>`,
       flags:   { [MODULE_ID]: { developRelationshipCard: true, action: plan.action } },
     });
   } catch (err) {
@@ -6616,6 +6647,15 @@ async function postCombatFinishCard({ track }) {
   }
 }
 
+/**
+ * A Take Decisive Action weak hit's cost: roll the table once, post its card,
+ * land its suffer routes on the roller. The cost seeds the move's own
+ * narration (the pipeline's withDecisiveActionCostSeed), so the narration
+ * depicts the cost the card shows (TDA-COST-DOUBLE-ROLL).
+ *
+ * @param {string|null} [actorId] — the roller
+ * @returns {Promise<{ cost: string }|null>} the rolled result's text; null when nothing was rolled
+ */
 async function postDecisiveActionCostCard(actorId = null) {
   const { rollOracle } = await import("./oracles/roller.js");
   let result;
@@ -6623,7 +6663,7 @@ async function postDecisiveActionCostCard(actorId = null) {
     result = rollOracle("decisive_action_cost");
   } catch (err) {
     console.warn(`${MODULE_ID} | decisive_action_cost roll failed:`, err);
-    return;
+    return null;
   }
   void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
   const routeFooter = result.sufferRoutes.length
@@ -6636,9 +6676,10 @@ async function postDecisiveActionCostCard(actorId = null) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postDecisiveActionCostCard: chat post failed:`, err?.message ?? err);
-    return;
+    return null;
   }
   await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, "decisive action cost");
+  return result.result && result.result !== "—" ? { cost: result.result } : null;
 }
 
 /**

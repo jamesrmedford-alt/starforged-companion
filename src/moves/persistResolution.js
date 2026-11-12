@@ -40,7 +40,7 @@ import {
 import { postSufferChoiceCard } from './sufferCard.js';
 import { mergeSceneLedgers } from '../factContinuity/sceneLifecycle.js';
 import { ENTITY_ID_LISTS, unionIdList } from '../entities/registry.js';
-import { mergeLegacyTrack, payDeferredLegacyXp } from './legacyTracks.js';
+import { legacyTracksWithCopyMarks, payDeferredLegacyXp } from './legacyTracks.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 
 const MODULE_ID  = 'starforged-companion';
@@ -136,6 +136,7 @@ export async function persistResolution(resolution, campaignState, speakerActorI
     const merged = mergeWithLatestState(
       foundry.utils.deepClone(campaignState ?? {}),
       game.settings.get(MODULE_ID, 'campaignState'),
+      campaignState,
     );
     merged.updatedAt = new Date().toISOString();
     try {
@@ -251,12 +252,13 @@ async function applyMetersOrNote(actor, changes, failures, opts = null) {
 //   artAssetIds — the art index (asset id → journal entry name), a map both
 //     sides add to (a portrait stored during the move): every entry kept.
 //   sessionSummary — whichever record has the newer updatedAt.
-//   legacyTracks — both sides add ticks (pipeline addLegacyTicks; `!bond`, the
-//     native-sheet vow hook): per track the record further along — by its
-//     progress, cleared cycles included (legacyTracks.js mergeLegacyTrack),
-//     not its raw tick count, which a clear resets to the overflow (issue
-//     #316 T02). Ticks only ever increase, so no writer's ticks are reverted;
-//     two simultaneous adds to the SAME track keep the larger one only.
+//   legacyTracks — the store's, with the ticks the working copy marked
+//     (pipeline addLegacyTicks, recorded by the copy) applied to it
+//     (legacyTracks.js legacyTracksWithCopyMarks): a concurrent `!bond` or
+//     native-sheet mark is kept beside the copy's, cleared cycles counted
+//     (issue #316 T02), and a track lowered on a sheet meanwhile stays
+//     lowered — the merge kept the record further along, so the copy's stale
+//     one raised it again (LEGACY-SHEET-DECREASE).
 //   Scene ledgers (currentSceneId, sceneTruths, sceneState, sceneFrame,
 //     spotlight) — if the store is on a different scene (a `!scene`, End a
 //     Session or other lifecycle write landed mid-pipeline) the store's scene
@@ -313,9 +315,11 @@ const STORE_OWNED_FIELDS = Object.freeze([
  *
  * @param {Object} working  deep clone of the pipeline's campaignState
  * @param {Object|null|undefined} latestRaw  game.settings.get(…, 'campaignState')
+ * @param {Object|null} [markedCopy]  the pipeline's campaignState itself — the
+ *   copy its legacy marks were recorded by (legacyTracks.js markLegacyOnCopy)
  * @returns {Object}
  */
-function mergeWithLatestState(working, latestRaw) {
+function mergeWithLatestState(working, latestRaw, markedCopy = null) {
   if (!latestRaw || typeof latestRaw !== 'object') return working;
   const latest = foundry.utils.deepClone(latestRaw);
 
@@ -339,7 +343,7 @@ function mergeWithLatestState(working, latestRaw) {
     working.sessionSummary = latest.sessionSummary;
   }
 
-  const legacy = mergeLegacyTracks(latest.legacyTracks, working.legacyTracks);
+  const legacy = legacyTracksWithCopyMarks(latest.legacyTracks, working.legacyTracks, markedCopy);
   if (legacy) working.legacyTracks = legacy;
 
   if (!mergeSceneLedgers(working, latest)) {
@@ -381,18 +385,6 @@ function isNewerRecord(storeRec, workingRec) {
   if (!storeRec) return false;
   if (!workingRec) return true;
   return String(storeRec.updatedAt ?? '') > String(workingRec.updatedAt ?? '');
-}
-
-function mergeLegacyTracks(store, working) {
-  const s = (store   && typeof store   === 'object') ? store   : null;
-  const w = (working && typeof working === 'object') ? working : null;
-  if (!s && !w) return null;
-  const out = {};
-  for (const key of new Set([...Object.keys(s ?? {}), ...Object.keys(w ?? {})])) {
-    const merged = mergeLegacyTrack(s?.[key], w?.[key]);
-    if (merged) out[key] = merged;
-  }
-  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

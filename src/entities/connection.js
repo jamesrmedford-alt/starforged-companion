@@ -188,7 +188,35 @@ export async function updateConnection(actorId, updates) {
     await document.update({ name: updates.name });
   }
 
+  // …and every PC's bond Item for it (BOND-ITEM-NAME-STALE: the vendor
+  // Connections tab and CHARACTER STATE kept the old name). Found as the
+  // connection was named — its id, else its old name for an unkeyed Item.
+  // Best-effort, as the ticks and rank mirrors: the record stays the source
+  // of truth. Dynamic import avoids an actorBridge cycle.
+  if (typeof updates.name === "string" && updates.name && updates.name !== current.name) {
+    await renameBondItems(current, updates.name);
+  }
+
   return updated;
+}
+
+/**
+ * Rename the PCs' bond Items mirroring a connection from its old record
+ * (`_id`, `name`) to `name` (BOND-ITEM-NAME-STALE). Never throws. Exported
+ * for the NPC card's sidebar rename (index.js syncEntityRecordNameOnUpdate),
+ * which writes the record's name without updateConnection.
+ *
+ * @param {{ _id?: string, name?: string }} record — the connection as it was named
+ * @param {string} name — its new name
+ * @returns {Promise<void>}
+ */
+export async function renameBondItems(record, name) {
+  try {
+    const { setBondItemName } = await import("../character/actorBridge.js");
+    await setBondItemName({ connectionId: record?._id ?? null, name: record?.name ?? null }, name);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | bond item rename mirror failed:`, err?.message ?? err);
+  }
 }
 
 

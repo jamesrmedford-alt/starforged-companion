@@ -145,7 +145,11 @@ export function nextRank(rank) {
  *     said a legacy reward was marked)
  *  1. Exact name match (case-insensitive, ignoring a leading "the")
  *  2. One name inside the other, as whole words, either way (`wholeWordsFit`:
- *     "Captain Ren" is Ren; "Lorenzo" is not — issue #325 W30)
+ *     "Captain Ren" is Ren; "Lorenzo" is not — issue #325 W30). With
+ *     `unbonded`, a name that matches a bonded connection resolves nothing,
+ *     as its id does at rung 0 — not the sole un-bonded one below: a typed
+ *     Forge a Bond naming a bond already forged was scored on that bond's
+ *     track and then skipped (FORGE-NAMED-BONDED-SCORED)
  *  3. Fallback: the sole bonded connection, else the sole active connection —
  *     with `unbonded` (Forge a Bond), the sole un-bonded one instead: a bonded
  *     connection is never what a forge with no matching target meant
@@ -177,14 +181,15 @@ export function selectConnection(connections, target, { hostId = null, unbonded 
   if (target) {
     const needle = normConnectionName(target);
     if (needle) {
+      const named = (c) => (unbonded && c.bonded ? null : c);
       const exact = active.find(c => normConnectionName(c.name) === needle);
-      if (exact) return exact;
+      if (exact) return named(exact);
       if (strict) {
         const fits = connectionsNamedByFragment(active, needle);
-        return fits.length === 1 ? fits[0] : null;
+        return fits.length === 1 ? named(fits[0]) : null;
       }
       const sub = active.find(c => wholeWordsFit(normConnectionName(c.name), needle));
-      if (sub) return sub;
+      if (sub) return named(sub);
     }
   }
 
@@ -258,4 +263,26 @@ export function planDevelopRelationship(connection, outcome, isMatch) {
 
   // Un-bonded: "no roll, mark progress" — one mark on the connection's own track.
   return { action: "connection-progress", connection, marks: 1 };
+}
+
+/**
+ * What a bonded development adds over another of the same connection — a
+ * Burn Momentum's or Improve Result's upgraded outcome over the recorded one
+ * (movePipeline.applyDevelopRelationship, BOND-DEVELOP-UPGRADE): the bonds
+ * ticks beyond the recorded ones and a rank raise the recorded outcome did not
+ * make. The momentum is no part of it: the move's own, it is swapped with
+ * the outcome's other meters. Null when it adds nothing.
+ *
+ * @param {Object} next — planDevelopRelationship's, for the upgraded outcome
+ * @param {Object} was  — planDevelopRelationship's, for the recorded one ({ action: "none" } when it developed nothing)
+ * @returns {Object|null}
+ */
+export function developmentAdded(next, was) {
+  if (next?.action === "connection-progress") return was?.action === "connection-progress" ? null : next;
+  if (next?.action !== "bond-legacy") return null;
+  const prior     = was?.action === "bond-legacy" ? was : { ticks: 0, raiseRank: false };
+  const ticks     = Math.max(0, Number(next.ticks ?? 0) - Number(prior.ticks ?? 0));
+  const raiseRank = !!next.raiseRank && !prior.raiseRank;
+  if (!ticks && !raiseRank) return null;
+  return { ...next, ticks, momentum: 0, raiseRank, newRank: raiseRank ? next.newRank : null };
 }

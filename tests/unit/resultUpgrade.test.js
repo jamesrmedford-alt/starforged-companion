@@ -501,7 +501,7 @@ describe("Q05 — a partial vow-clock rewind retries only the Items still owed",
     expect(table.cards(f => f.burnReversal).at(-1)?.content).not.toMatch(/vow-b clock rewound/);
     const failed = failureCards().at(-1);
     expect(failed.flags[MODULE_ID].steps).toEqual([
-      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", vowId: null, name: "vow-b" }], kind: "burn",
+      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", vowId: null, name: "vow-b", target: 2 }], kind: "burn",   // target: the value its Retry sets (VOW-CLOCK-REWIND-PER-COPY)
         resolutionId: expect.any(String) },   // the burn's resolution: its Retry stamps a struck vignette with it (issue #347 D2)
     ]);
     expect(failed.content).toContain("Rewind the vow-b clock one segment");
@@ -541,7 +541,7 @@ describe("Q05 — a partial vow-clock rewind retries only the Items still owed",
     const second = failureCards().at(-1);
     expect(second._id).not.toBe(first._id);
     expect(second.flags[MODULE_ID].steps).toEqual([
-      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", vowId: null, name: "vow-b" }], kind: "burn",
+      { step: "upgrade", effect: "vowClocks", entries: [{ actorId: pc.id, itemId: "vow-b", vowId: null, name: "vow-b", target: 2 }], kind: "burn",   // target: the value its Retry sets (VOW-CLOCK-REWIND-PER-COPY)
         resolutionId: expect.any(String) },
     ]);
 
@@ -558,5 +558,20 @@ describe("Q05 — a partial vow-clock rewind retries only the Items still owed",
     expect(ticks(a, b)).toEqual([2, 2]);
     expect(failureCards()).toHaveLength(0);
     expect(table.cards(f => f.burnReversal).at(-1)?.content).toMatch(/vow-a clock rewound[\s\S]*vow-b clock rewound/);
+  });
+
+  // Known-issues VOW-CLOCK-REWIND-PER-COPY: a shared vow's copies (one vowId)
+  // are one clock — rewound once, in lockstep, and said once on the card.
+  it("a shared vow's two copies: one clock rewound once, and the card says so once", async () => {
+    const a = clockVow("vow-a"), b = clockVow("vow-b");
+    a.name = b.name = "Save Dani";
+    a.flags[MODULE_ID].vowId = b.flags[MODULE_ID].vowId = "vow-dani";
+    const card = await missAdvancingBoth(a, b);
+
+    await click(card, BURN);
+
+    expect(ticks(a, b)).toEqual([2, 2]);
+    const said = table.cards(f => f.burnReversal).at(-1)?.content ?? "";
+    expect(said.match(/Save Dani clock rewound/g)).toHaveLength(1);
   });
 });

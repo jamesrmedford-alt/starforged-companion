@@ -220,7 +220,8 @@ export async function retryUpgradeStep(s) {
       break;
     case "vowClocks":
       if (!Array.isArray(s.entries) || !s.entries.every(e => typeof e?.actorId === "string" && typeof e?.itemId === "string"
-        && (e.vowId == null || typeof e.vowId === "string"))) {
+        && (e.vowId == null || typeof e.vowId === "string")
+        && (e.target == null || (Number.isInteger(e.target) && e.target >= 0)))) {
         return { ok: false, reason: "invalid step" };
       }
       break;
@@ -280,6 +281,8 @@ export function upgradeStepRecord(f) {
       ...upgradedResolution(f) } : {}),
     ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({
       actorId: e.actorId, itemId: e.itemId, vowId: typeof e.vowId === "string" && e.vowId ? e.vowId : null, name: e.name ?? null,
+      // The value the copy is owed, for its Retry (VOW-CLOCK-REWIND-PER-COPY).
+      ...(Number.isInteger(e.target) && e.target >= 0 ? { target: e.target } : {}),
     })), kind: upgradeKind(f.kind), ...upgradedResolution(f) } : {}),
     ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string"),
       ...(f.momentumBack && typeof f.momentumBack === "object" && Object.keys(f.momentumBack).length ? { momentumBack: { ...f.momentumBack } } : {}) } : {}),
@@ -461,7 +464,17 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     const ok = await applyUpgradeStep({ effect: "vowClocks", entries, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, vowReport);
     const owed = ok ? [] : (failures[at]?.entries ?? entries);
     const owedIds = new Set(owed.map(e => e.itemId));
-    for (const v of entries) if (!owedIds.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
+    // One line per vow — a shared vow's copies are one clock — once none of
+    // its copies is still owed (VOW-CLOCK-REWIND-PER-COPY: "rewound" once per
+    // copy).
+    const vowOf = (e) => e.vowId ?? e.itemId;
+    const owedVows = new Set(entries.filter(e => owedIds.has(e.itemId)).map(vowOf));
+    const said = new Set();
+    for (const v of entries) {
+      if (owedVows.has(vowOf(v)) || said.has(vowOf(v))) continue;
+      said.add(vowOf(v));
+      reverted.push(`${v.name} clock rewound`);
+    }
     untriggered.push(...vowClocksUntriggered(entries, vowReport.untriggered, owed));
   }
   await supersedeTriggerVignettes(untriggered, kind, resolutionId);
@@ -1183,7 +1196,10 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
         consequences: state.originalConsequences ?? {},
         resolutionId: state.resolutionId ?? null,
       },
-      interpretation: { ...(state.move ?? {}), companionItemId: state.targets?.companionItemId ?? null },
+      // Aid Your Ally's ally: the upgraded hit's +1 next move and position
+      // are theirs, as the pipeline's (AID-ALLY-UPGRADE).
+      interpretation: { ...(state.move ?? {}), companionItemId: state.targets?.companionItemId ?? null,
+        allyActorId: state.targets?.allyActorId ?? null },
       targets: state.targets ?? {},
     });
     return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [] };
@@ -1191,6 +1207,38 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
     console.warn(`${MODULE_ID} | ${kind}: the upgraded outcome's effects failed:`, err?.message ?? err);
     return { applied: [], notApplied: ["the upgraded result's other effects"] };
   }
+}
+
+/**
+ * Aid Your Ally's ally, as an upgrade's card carries it (`targets.allyActorId`,
+ * the pipeline's moveTargets): the PC a hit's benefits go to — "they (instead
+ * of you) take the benefits of the move" (issue #325 W17). Null when the move
+ * named none, or named the roller.
+ *
+ * @param {Object|null} state — the card's `burn` / `improve` flag (or the targets' holder)
+ * @param {string|null} rollerId
+ * @returns {string|null}
+ */
+export function upgradeAllyId(state, rollerId) {
+  const id = state?.targets?.allyActorId;
+  return typeof id === "string" && id && id !== rollerId ? id : null;
+}
+
+/**
+ * An outcome's momentum change, split between the roller and Aid Your Ally's
+ * ally: a hit's (`beneficiary: "ally"`) is the ally's when the move named one,
+ * the roller's otherwise. A Burn Momentum or Improve Result that upgrades an
+ * Aid Your Ally gave the upgraded hit's momentum to the roller — the first
+ * resolution had paid its hit to the ally (persistResolution), the upgrade
+ * paths knew only the roller (AID-ALLY-UPGRADE).
+ *
+ * @param {Object|null} consequences
+ * @param {string|null} allyId — upgradeAllyId's
+ * @returns {{ roller: number, ally: number }}
+ */
+export function momentumShares(consequences, allyId) {
+  const m = Number(consequences?.momentumChange ?? 0);
+  return allyId && consequences?.beneficiary === "ally" ? { roller: 0, ally: m } : { roller: m, ally: 0 };
 }
 
 /**

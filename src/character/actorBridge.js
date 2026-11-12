@@ -1315,6 +1315,31 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
 }
 
 /**
+ * Mirror a connection's rename onto each PC's bond Item (BOND-ITEM-NAME-STALE):
+ * the record and its NPC card took the new name, but the Items kept the old
+ * one, so the vendor Connections tab and CHARACTER STATE (readConnections)
+ * still showed it. `keys` are the connection as it was named — the record's
+ * `_id`, and its OLD name for an unkeyed Item (bondItemsFor's fallback).
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys — the old name
+ * @param {string} name — the new name
+ * @returns {Promise<number>} how many items were updated
+ */
+export async function setBondItemName(keys = {}, name) {
+  const next = typeof name === "string" ? name.trim() : "";
+  if (!next) return 0;
+  let updated = 0;
+  for (const { actor, item } of bondItemsFor(keys)) {
+    if (item.name === next) continue;
+    await item.update({ name: next }).catch(err =>
+      console.warn(`actorBridge | setBondItemName failed:`, err?.message ?? err));
+    invalidateActorCache(actor.id);
+    updated++;
+  }
+  return updated;
+}
+
+/**
  * Mirror a connection's rank onto each PC's bond Item (NARR-BOND-RANK-STALE,
  * narrator-context audit 2026-07): the item's rank was seeded at creation and
  * never updated when the connection record's rank rose (develop-match /
@@ -1498,28 +1523,50 @@ export async function advanceVowClocks(actor, { by = 1, lockstep = null } = {}) 
  * filled it (issue #342 Z46): the upgrade supersedes that clock's trigger
  * vignette (issue #338 D8).
  *
- * @param {Array<{actorId:string, itemId:string}>} entries
+ * Copies of one vow (the same `vowId` — a shared vow's, one per PC, kept in
+ * lockstep by the sync hook) are one clock, rewound once, as
+ * advanceVowClocks advances it (issue #321 U55): the first copy is rewound a
+ * segment and the value it is rewound to is the vow's; each later copy is set
+ * to that value — one the sync hook already moved there is left alone. They
+ * were each rewound a segment from what they read, so a copy the hook had
+ * already rewound went back a second segment (VOW-CLOCK-REWIND-PER-COPY). A
+ * refused entry carries the value it is owed (`target`), and its Retry sets
+ * that value rather than rewinding again from wherever the clock stands.
+ *
+ * @param {Array<{actorId:string, itemId:string, vowId?:string|null, target?:number}>} entries
  * @param {{ untriggered?: Array<Object>|null }} [opts]
- * @returns {Promise<Array<Object>>} the entries whose write was refused — the
- *   upgrade reports them to the GMs with a Retry (issue #311 P06)
+ * @returns {Promise<Array<Object>>} the entries whose write was refused, each
+ *   with its `target` — the upgrade reports them to the GMs with a Retry
+ *   (issue #311 P06)
  */
 export async function revertVowClocksForBurn(entries, { untriggered = null } = {}) {
-  const failed = [];
+  const failed   = [];
+  const lockstep = new Map();   // vowId → the value the vow's clock is rewound to
   for (const entry of entries ?? []) {
     const { actorId, itemId } = entry;
     const actor = globalThis.game?.actors?.get?.(actorId);
     const item  = actor?.items?.find?.(i => i.id === itemId);
     if (!item) continue;
-    const cur = Number(item.system?.clockTicks ?? 0);
-    if (cur <= 0) continue;
-    const max = Number(item.system?.clockMax ?? 0);
+    const cur   = Number(item.system?.clockTicks ?? 0);
+    const max   = Number(item.system?.clockMax ?? 0);
+    const vowId = entry.vowId ?? item.flags?.[MODULE_ID]?.vowId ?? null;
+    const owed  = Number.isInteger(entry.target) ? entry.target : (vowId ? lockstep.get(vowId) : undefined);
+    let next;
+    if (owed !== undefined) {
+      if (cur <= owed) continue;   // already there — the sync hook moved it — or behind it
+      next = owed;
+    } else {
+      if (cur <= 0) continue;
+      next = cur - 1;
+      if (vowId) lockstep.set(vowId, next);
+    }
     try {
-      await moduleUpdate(item, { "system.clockTicks": Math.max(0, cur - 1) });
+      await moduleUpdate(item, { "system.clockTicks": next });
       invalidateActorCache(actorId);
-      if (Array.isArray(untriggered) && max > 0 && cur >= max) untriggered.push(entry);
+      if (Array.isArray(untriggered) && max > 0 && cur >= max && next < max) untriggered.push(entry);
     } catch (err) {
       console.warn(`actorBridge | revertVowClocksForBurn failed for item ${itemId}:`, err?.message ?? err);
-      failed.push(entry);
+      failed.push({ ...entry, target: next });
     }
   }
   return failed;

@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { persistResolution } from "../../src/moves/persistResolution.js";
 import { runGmAction } from "../../src/multiplayer/gmRelay.js";
+import { markLegacyOnCopy } from "../../src/moves/legacyTracks.js";
 
 const MODULE_ID = "starforged-companion";
 const KEY       = `${MODULE_ID}.campaignState`;
@@ -200,9 +201,11 @@ describe("persistResolution — concurrent writes survive the stale working copy
   // resets — a track the pipeline rolled over from 38 to 2 (cleared) read as
   // behind the store's 38, and the clear was undone.
   it("a legacy track the pipeline cleared is not reverted by the store's higher pre-clear count", async () => {
-    const snapshot = pipelineSnapshot();
-    snapshot.legacyTracks.discoveries = { ticks: 2, cleared: true, cycles: 1 };   // 38 + 4: cleared, 2 over
     stored().legacyTracks = { discoveries: { ticks: 38, cleared: false } };
+    const snapshot = pipelineSnapshot();
+    // The pipeline's mark (index.js addLegacyTicks): 38 + 4 — cleared, 2 over.
+    markLegacyOnCopy(snapshot, "discoveries", 4);
+    expect(snapshot.legacyTracks.discoveries).toEqual({ ticks: 2, cleared: true, cycles: 1 });
     await persistResolution(resolution(), snapshot);
     expect(stored().legacyTracks.discoveries).toEqual({ ticks: 2, cleared: true, cycles: 1 });
   });
@@ -213,6 +216,22 @@ describe("persistResolution — concurrent writes survive the stale working copy
     stored().legacyTracks = { discoveries: { ticks: 1, cleared: true, cycles: 1 } };   // cleared meanwhile
     await persistResolution(resolution(), snapshot);
     expect(stored().legacyTracks.discoveries).toEqual({ ticks: 1, cleared: true, cycles: 1 });
+  });
+
+  // Known-issues LEGACY-SHEET-DECREASE: a legacy lowered on a sheet (the
+  // Legacies tab's ◂) flows back to the shared track; the merge kept the
+  // record further along, so a move whose copy was read before it raised the
+  // track again. The copy's own marks are applied to the stored track now.
+  it("a legacy track lowered on a sheet mid-pipeline stays lowered — the pipeline's own mark lands on it", async () => {
+    stored().legacyTracks = { bonds: { ticks: 20, cleared: false }, quests: { ticks: 12, cleared: false } };
+    const snapshot = pipelineSnapshot();
+    markLegacyOnCopy(snapshot, "quests", 4);                          // the pipeline: a vow fulfilled
+    stored().legacyTracks = { bonds: { ticks: 8, cleared: false }, quests: { ticks: 4, cleared: false } };   // lowered on a sheet meanwhile
+    await persistResolution(resolution(), snapshot);
+    expect(stored().legacyTracks).toEqual({
+      bonds:  { ticks: 8, cleared: false, cycles: 0 },
+      quests: { ticks: 8, cleared: false, cycles: 0 },
+    });
   });
 
   it("merges scene truths: the pipeline's new truths and a concurrent `!truth` retraction both land", async () => {

@@ -61,8 +61,11 @@ export async function handleBondCommand(message) {
   const bondedConnections = (campaignState.connectionIds ?? [])
     .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
     .filter(c => c && c.active !== false && c.bonded === true);
+  // A typed name is that bond or none — never the table's one bond in its
+  // place (`strict`, issue #321 U14's rung; BOND-COMMAND-FALLBACK: `!bond
+  // Vexx` at a one-bond table rolled with that bond, its warning never fired).
   const target = nameArg
-    ? selectConnection(bondedConnections, nameArg)
+    ? selectConnection(bondedConnections, nameArg, { strict: true })
     : (bondedConnections.length === 1 ? bondedConnections[0] : null);
   if (nameArg && !target) {
     ui.notifications?.warn(`Starforged Companion: no bonded connection matched "${nameArg}".`);

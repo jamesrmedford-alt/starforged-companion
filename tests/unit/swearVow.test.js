@@ -21,7 +21,7 @@ const META = {
   target: { name: 'Vance', description: 'Estranged mentor, wounded aboard his shuttle.' },
 };
 
-const CTX = { isGM: true, hasActor: true, targetExists: false, alreadySworn: false };
+const CTX = { hasActor: true, targetExists: false, alreadySworn: false };
 
 describe('buildSwearVowPlan', () => {
   it('plans vow + clock + target creation for a GM with a PC', () => {
@@ -49,24 +49,11 @@ describe('buildSwearVowPlan', () => {
     expect(plan.targetNotice).toMatch(/already established/);
   });
 
-  it('queues a GM-actionable target draft for non-GM clickers instead of a dead advisory (finding C)', () => {
-    const plan = buildSwearVowPlan(META, { ...CTX, isGM: false });
-    expect(plan.ok).toBe(true);              // the vow itself still lands
-    expect(plan.createTarget).toBe(false);   // world-write stays GM-only
-    expect(plan.queueTargetDraft).toBe(true);
-    expect(plan.targetNotice).toMatch(/queued as a connection for your GM/);
-  });
-
-  it('does not queue a draft when the target already exists', () => {
-    const plan = buildSwearVowPlan(META, { ...CTX, isGM: false, targetExists: true });
-    expect(plan.queueTargetDraft).toBeFalsy();
-    expect(plan.targetNotice).toMatch(/already established/);
-  });
-
-  it('does not queue a draft for a GM (it creates directly)', () => {
-    const plan = buildSwearVowPlan(META, { ...CTX, isGM: true });
-    expect(plan.queueTargetDraft).toBeFalsy();
+  it('plans the target on the canonical GM it is built on — no player-side draft branch (SWEAR-PLAN-DEAD-BRANCH)', () => {
+    const plan = buildSwearVowPlan(META, { hasActor: true, targetExists: false, alreadySworn: false });
     expect(plan.createTarget).toBe(true);
+    expect(plan).not.toHaveProperty('queueTargetDraft');
+    expect(plan.targetNotice).toBeUndefined();
   });
 
   it('plans no target work when the narrator named none', () => {

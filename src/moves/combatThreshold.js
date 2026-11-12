@@ -9,9 +9,10 @@
  * it serves, with an objective) or a way out (flee / talk down / buy your way
  * clear). The combat track is created only on Enter the Fray.
  *
- * This module is the pure card builder + constants; the click wiring and the
- * GM-gated track creation live in index.js, where the combat-track/tracker
- * helpers already are.
+ * This module is the pure card builder + constants, and the finder for a
+ * posted card (by the Enter the Fray's resolution id) with its position
+ * stash; the click wiring and the GM-gated track creation live in index.js,
+ * where the combat-track/tracker helpers already are.
  */
 
 import { COMBAT_RANKS, normalizeCombatRank } from "./combat.js";
@@ -61,7 +62,7 @@ function esc(s) {
  * The threshold card's opening-position line — Enter the Fray's own outcome
  * position, applied to the track at creation; "" when none. Rebuilt on a
  * waiting card when an upgrade of that Enter the Fray changes the position
- * (index.js stashPositionOnThresholdCard).
+ * (stashPositionOnThresholdCard, below).
  *
  * @param {('in_control'|'bad_spot'|null)} position
  * @returns {string}
@@ -72,6 +73,48 @@ export function thresholdPositionLine(position) {
     : position === "bad_spot"
       ? `<p>⚑ If you enter this fight, you begin <strong>in a bad spot</strong>.</p>`
       : "";
+}
+
+const MODULE_ID = "starforged-companion";
+
+/**
+ * The threshold card an Enter the Fray posted, found by that resolution's id
+ * (the card's `resolutionId`); null when none — a card from before cards
+ * carried it, or a deleted one.
+ *
+ * @param {string|null} resolutionId
+ * @returns {ChatMessage|null}
+ */
+export function findThresholdCard(resolutionId) {
+  if (!resolutionId) return null;
+  return (globalThis.game?.messages?.contents ?? []).find(m =>
+    m?.flags?.[MODULE_ID]?.combatThresholdCard === true && m.flags[MODULE_ID].resolutionId === resolutionId) ?? null;
+}
+
+/**
+ * Put an opening position on the threshold card an Enter the Fray posted
+ * while it still waits — its flag, which createCombatTrackFromThreshold
+ * applies at track creation, and its line — in place of the one it carries:
+ * an upgrade of that Enter the Fray's result (index.js applyOutcomeEffects),
+ * or its weak hit's choice (sufferDialog's combat-position executor —
+ * DELAYED-CHOICE-IDENTITY). The card is the one the resolution posted
+ * (`resolutionId`); a card from before cards carried it is not found.
+ *
+ * @param {string|null} resolutionId — the Enter the Fray's (the original's, for an upgrade)
+ * @param {"in_control"|"bad_spot"} position
+ * @returns {Promise<boolean>} whether a card was updated
+ */
+export async function stashPositionOnThresholdCard(resolutionId, position) {
+  const card = findThresholdCard(resolutionId);
+  if (!card) return false;
+  const line    = thresholdPositionLine(position);
+  const content = String(card.content ?? "");
+  const current = /<p>⚑ [^<]*<strong>[^<]*<\/strong>\.<\/p>/;
+  const updated = current.test(content)
+    ? content.replace(current, line)
+    : content.replace("</p>", `</p>${line}`);
+  await card.update({ [`flags.${MODULE_ID}.position`]: position, content: updated });
+  return true;
 }
 
 /**

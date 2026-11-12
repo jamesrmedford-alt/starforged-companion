@@ -42,6 +42,7 @@ import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank } from "./milestone.js";
+import { toMoveId } from "../schemas.js";
 import { consequenceChosen, retireOutcomeChoiceCards, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -1062,12 +1063,20 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
     // The card's line is the player's: with no PC to speak it, it keeps the
     // speaker it was typed under (PT14).
     lineSpeaker: (f, card) => speakerOfLine(f.playerText, card),
-    build: (f) => ({ content: f.playerText, flags: {
-      forcedMoveId: f.suggestedMove,
-      // A scene-challenge Roll's challenge, as the Finish an Expedition
-      // button forwards its track (PACED-VARIANT-NO-TARGET).
-      ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
-    } }),
+    build: (f) => {
+      // A card posted before issue #321 U45 may hold the classifier's display
+      // name ("Gather Information"), which the pipeline throws on as an
+      // unknown move: map it to its key here, and roll nothing for a name
+      // that is no move (PACED-CARD-OLD-MOVE-NAME).
+      const moveId = toMoveId(f.suggestedMove);
+      if (!moveId) return null;
+      return { content: f.playerText, flags: {
+        forcedMoveId: moveId,
+        // A scene-challenge Roll's challenge, as the Finish an Expedition
+        // button forwards its track (PACED-VARIANT-NO-TARGET).
+        ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
+      } };
+    },
   });
 }
 
@@ -1554,6 +1563,12 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
       await release();
       return { applied: false, reason: "not-created" };
     }
+    // The fight this card began, for its Enter the Fray's weak-hit choice
+    // clicked after it (sufferDialog's combat-position executor): that fight,
+    // never the sole open one (DELAYED-CHOICE-IDENTITY). Its read is the
+    // choice card's; a refused stamp leaves that choice unapplied and says so.
+    await message.update({ [`flags.${MODULE_ID}.frayTrackId`]: result.track.id })
+      .catch(err => console.warn(`${MODULE_ID} | fight threshold: the fight's id could not be recorded on card ${messageId}:`, err?.message ?? err));
     return { applied: true };
   } finally {
     _inFlight.delete(key);
