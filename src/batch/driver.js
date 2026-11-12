@@ -1073,18 +1073,23 @@ async function rollEntry(round, entry) {
       interpretation.moveName = moveDisplayName(ordinary);
     }
   }
-  // The round says the roll has begun before anything is applied, under the
-  // id it will carry: a recovery — or Send now after a result card the world
-  // refused — reports it rather than rolling it again (issue #347 AB20). A
-  // refused stamp stops the round before the roll: Send now tries again.
+  // The round says the roll has begun once its dice are rolled — before
+  // anything is applied — under the id it will carry: a recovery, or Send now
+  // after a result card the world refused, reports it rather than rolling it
+  // again (issue #347 AB20). Stamped from rollMove's `onDiceRolled`, which it
+  // awaits: a roll that fails before its dice (an enrichment, a +1's claim)
+  // has rolled nothing and applied nothing, and is rolled again on recovery —
+  // stamped before the call, it was reported "may be incomplete" and narrated
+  // as an action with no roll (ROUND-ENTRY-THROW-BEFORE-DICE). A refused
+  // stamp stops the move there, with nothing applied: Send now tries again.
   const resolutionId = foundry.utils.randomID();
-  await queueRoundWrite(r => markRolling(r, { userId, resolutionId, now: nowIso() }));
   const rolled = await rollMove({
     interpretation, campaignState, speakerActorId: entry.actorId, narration: entry.text,
     tokenDragSetCourse:     reading.forced?.tokenDragSetCourse ?? null,
     incitingSwearMessageId: reading.forced?.incitingSwearMessageId ?? null,
     cardFlags: { roundId: round.id, roundNumber: round.number, roundUserId: userId },
     resolutionId,
+    onDiceRolled: () => queueRoundWrite(r => markRolling(r, { userId, resolutionId, now: nowIso() })),
   });
   if (rolled.refused) {
     // rollMove posted the track-gone card ("not rolled — it was deleted or finished").

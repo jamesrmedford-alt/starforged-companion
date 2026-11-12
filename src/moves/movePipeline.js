@@ -922,8 +922,11 @@ export async function rollMove({
   const inFight = await aidMadeInFight(interpretation.moveId);
   const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite, momentum, inFight });
   // The dice are rolled: a failure from here on is not "not rolled" — a card
-  // button's press is not handed back (index.js, issue #347 AB06).
-  onDiceRolled?.();
+  // button's press is not handed back (index.js, issue #347 AB06), and a
+  // Batch Mode round stamps its entry rolling (driver.js rollEntry). Awaited
+  // before anything is applied: a refused stamp stops the move here, with
+  // nothing applied (ROUND-ENTRY-THROW-BEFORE-DICE).
+  await onDiceRolled?.();
   // resolveMove leaves the id to its caller. The move card's Burn / Improve
   // flags and the narration card both carry it, and superseding the
   // original narration after an upgrade finds that card by it — with no id

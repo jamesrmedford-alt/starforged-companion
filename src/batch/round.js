@@ -825,14 +825,17 @@ function requireActing(round, userId) {
 }
 
 /**
- * An acting entry's roll begins: stamped before rollMove applies anything —
- * a Take a Break +1 claimed, the dice, the outcome's effects, a miss's Pay
- * the Price — with the resolution id the roll will carry (`rolled.resolutionId`,
+ * An acting entry's roll begins: stamped once its dice are rolled, before
+ * rollMove applies anything — the outcome's effects, a miss's Pay the Price
+ * (driver.js passes it as rollMove's awaited `onDiceRolled`) — with the
+ * resolution id the roll will carry (`rolled.resolutionId`,
  * `rolled.rollingAt`). The round knew of a roll only from its result card
  * on, the last thing rollMove posts: a resolver whose page died in between,
  * or a result card the world refused, left the entry to be rolled again —
  * new dice, a second price (issue #347 AB20). A begun entry is never rolled
- * again: recovery and Send now report it (recoveryPlan's `unrecorded`).
+ * again: recovery and Send now report it (recoveryPlan's `unrecorded`). A
+ * roll that fails before its dice is not stamped, and is rolled when the
+ * round goes on (ROUND-ENTRY-THROW-BEFORE-DICE).
  *
  * @param {Object} round
  * @param {{ userId: string, resolutionId: string, now: string }} args
