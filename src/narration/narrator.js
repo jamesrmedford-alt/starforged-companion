@@ -893,6 +893,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
       moveId:        resolution.moveId,
       outcome:       resolution.outcome,
       kind:          'move',
+      actorId:       character?.actorId ?? null,   // the roller's chronicle (CHRONICLE-FIRST-PC)
     });
     return narration;
 
@@ -925,6 +926,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
             moveId:        resolution.moveId,
             outcome:       resolution.outcome,
             kind:          'move',
+            actorId:       character?.actorId ?? null,
           });
           return narration;
         }
@@ -1113,7 +1115,11 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       await runRoundNarrationPasses(narration, entries, campaignState, {
         narrationId, matchedEntityIds: extras.matchedEntityIds ?? [], matchedEntityTypes: extras.matchedEntityTypes ?? [],
       });
-      scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round' });
+      // The acting character the beat is about (CHRONICLE-FIRST-PC).
+      scheduleChronicleEntry({
+        narrationText: narration, campaignState, kind: 'round',
+        characters: entries.map(e => ({ actorId: e.actorId, name: e.actorName })),
+      });
       return { posted: 'card', narrationId, card };
     } catch (err) {
       if (!tries && isRateLimit(err)) continue;
@@ -3855,6 +3861,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       narrationText: text,
       campaignState,
       kind:          'paced',
+      actorId:       character?.actorId ?? null,   // the speaker's chronicle (CHRONICLE-FIRST-PC)
     });
     return text;
   } catch (err) {
@@ -3880,6 +3887,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
             narrationText: text,
             campaignState,
             kind:          'paced',
+            actorId:       character?.actorId ?? null,
           });
           return text;
         }
