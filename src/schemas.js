@@ -485,6 +485,12 @@ export const CampaignStateSchema = {
   // entity panel's dismiss action.
   dismissedEntities:   [],
 
+  // The crew's shared supply as the canonical GM's last sync pass set it
+  // (multiplayer/sharedSupply.js): the sheets hold it in lockstep, and this
+  // settles which of two disagreeing sheets is the crew's when a refused
+  // mirror write left one behind (SUPPLY-TWO-PC-TIE). Null until a pass ran.
+  crewSupply: null,
+
   // Concurrency lock — true while the move interpretation pipeline is running.
   // Prevents two narration messages from kicking off parallel pipelines that
   // would race on campaignState writes. Cleared on ready if left stuck. These
