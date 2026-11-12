@@ -66,7 +66,7 @@ import { passesSalience, getSalienceThreshold, SALIENCE_ORDER } from "../world/s
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const HAIKU_MODEL   = "claude-haiku-4-5-20251001";
+const HAIKU_MODEL   = "claude-haiku-5-5";
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -2786,8 +2786,9 @@ function collectGmIds() {
 // threat, faction, location and state transition of one narration; a busy one
 // (an inciting incident) runs ~900 tokens. At 600 it was cut off mid-JSON and
 // the whole detection dropped (issue #321 U15). The tier reply is one short list.
-const DETECTION_MAX_TOKENS = 1500;
-const TIER_MAX_TOKENS      = 600;
+// Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5: 1500 / 600 before.
+const DETECTION_MAX_TOKENS = 2000;
+const TIER_MAX_TOKENS      = 800;
 
 async function defaultCallDetectionAPI(prompt) {
   return callHaiku(prompt, "Return only the JSON object — no prose.", DETECTION_MAX_TOKENS);

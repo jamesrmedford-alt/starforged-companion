@@ -59,7 +59,7 @@ import { CampaignStateSchema } from '../../src/schemas.js';
 import { buildRoundView } from '../../src/batch/roundView.js';
 
 const REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 
 let table;
 const round = () => table.world.getSetting('batchMode.round');

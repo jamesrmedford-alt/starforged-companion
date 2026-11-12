@@ -67,7 +67,7 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { campaignStateWrite, deferred, scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const REPLY = 'Kira slips through the vent.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const STRONG = [0.25, 0.35, 0.9];
 

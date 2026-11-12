@@ -105,7 +105,7 @@ describe('a claimed card button whose forced move the GM does not confirm (issue
     const claimed = table.world.message(card._id).flags[MODULE_ID].milestoneMarked === true;
     expect(claimed, 'the card\'s claim is released when its forced move is not rolled').toBe(false);
     // …and the roller's player is told.
-    const told = table.cards(f => f.forcedMoveNotRolled === true);
+    const told = table.cards(f => !!f.moveNotRolledNotice);
     expect(told).toHaveLength(1);
     expect(table.world.message(told[0]._id).whisper).toContain('pl-1');
 
@@ -132,7 +132,7 @@ describe('a claimed card button whose forced move the GM does not confirm (issue
 
     expect(vow.system.current).toBe(0);
     expect(table.world.message(card._id).flags[MODULE_ID].milestoneMarked).toBe(false);
-    expect(table.cards(f => f.forcedMoveNotRolled === true)).toHaveLength(1);
+    expect(table.cards(f => !!f.moveNotRolledNotice)).toHaveLength(1);
   }, 30_000);
 
   it('a forced move that fails before its dice gives the card its press back', async () => {

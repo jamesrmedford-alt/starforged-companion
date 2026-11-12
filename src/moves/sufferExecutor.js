@@ -706,7 +706,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     // The move's context (miss, the vehicle / companion it was made against),
     // without this call's own arguments.
     const executorOpts = Object.fromEntries(Object.entries(opts ?? {})
-      .filter(([key]) => !["skipCard", "amount", "itemId", "fixedRoll", "cardMessageId"].includes(key)));
+      .filter(([key]) => !["skipCard", "amount", "itemId", "fixedRoll", "sufferCardId"].includes(key)));
     // The redirected loss is the price of the move that paid it: the picker
     // is bound to that move's resolution, so a Burn Momentum or Improve
     // Result that undoes the price retires it and refuses a late pick, as it

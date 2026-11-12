@@ -34,9 +34,10 @@ the entry they change.)
 - **A client's own earlier page's lock is its to free** [AB04], and a ready
   reset that frees a lock tells the GMs [AB14] — updates on Y07 and W25.
 - **A press the pipeline does not roll is handed back** [AB06]: a claimed
-  card's forced move carries its claim (`cardClaim`) and gets it back, with
-  a "Move not rolled" whisper, when its confirm is closed, the lock refuses
-  it, or it fails before its dice; a held move follows the canonical GM
+  card's forced move carries its claim (`sourceCard` — the path main's issue
+  #348 PT11 fix built for the same case, merged into one) and gets it back,
+  with a "Not rolled" whisper, when its confirm is cancelled, the lock or the
+  world refuses its start, or it fails before its dice; a held move follows the canonical GM
   (`forcedMove.hold`); its order holds through a refused claim [AB24]. The
   inciting ⚔ is still not held (Y36) — it re-arms from the notice.
 - **A shared track moves by what a sheet edit changed** [AB07] — an update
@@ -75,6 +76,127 @@ the entry they change.)
   narrations included [AB22]; a token-drag payload is checked against what a
   drop can produce [AB23]; an old ship record reads the lower of record and
   sheet [AB08].
+
+## Haiku 5.5 and Sonnet 5.5 are the defaults; a line is read with its scene (2026-11)
+
+**Decision:** (the maintainer's request after the alpha 23 playtest.)
+- **The default models are `claude-haiku-5-5` and `claude-sonnet-5-5`.**
+  Every quick call runs on Haiku 5.5. Narration defaults to Sonnet 5.5,
+  Haiku 5.5 is offered beside it, and Sonnet 5, Sonnet 4.5 and Haiku 4.5
+  stay offered: a world that chose a narration model keeps it (a stored
+  choice is the GM's, not migrated).
+- **The interpreter's and classifier's model is their own constant.** A
+  world stored `campaignState.api.model` (and `maxTokens`, `fallbackModel`)
+  at creation; nothing wrote them again, and the interpreter and classifier
+  read the stored model before their own, so a newer default never reached
+  an existing world. Those three schema fields are gone and any stored copy
+  is ignored; `api.promptCachingEnabled` stays.
+- **No call asks for extended thinking, and `api-proxy.js` is the one place
+  that says so.** A body that sets no `thinking` is sent with its model's
+  thinking-off form (`narration/thinking.js`): `disabled` for Haiku 5.5
+  (accepted at its default effort, `medium`), Sonnet 5 and Opus 4.7/4.8;
+  `between_tools` for Sonnet 5.5, which rejects `disabled`; nothing for the
+  4.5 models. The per-call spreads (W27) are gone — the Haiku calls never
+  had one, and Haiku 5.5 thinks by default.
+- **The Haiku calls' small caps are about a third larger** (Haiku 5.5 counts
+  the same text as about 30% more tokens): relevance 110, classifier 330,
+  truths 400, rewards 520, ability scan 800, riders 920, Private Channel 800,
+  detection 2000 / tier 800, consistency 1300, interpreter 1300, rolling
+  summary 420; the chronicle (260) and the entity flavour (310), which run on
+  the narration model, too.
+- **A refusal is logged** (`stop_reason: "refusal"`, with its category) in
+  `apiPost`; every caller already treats a reply with no text as a failure.
+- **The interpreter and the classifier read the recent scene**
+  (`narrator.getRecentSceneForReading`: the last 3 ring entries, newest
+  2,400 characters), as context before the player's line. The interpreter
+  names a target the line only refers to ("her coordinates", "there") from
+  it; the classifier reads a short line ("we're on our way") as what it
+  follows.
+
+**Reason:** the 5.5 models are the current generation. Haiku 5.5 and Sonnet
+5.5 think by default, and thinking shares `max_tokens`: the short structured
+replies would come back empty (the W27 failure, on every Haiku call). In the
+alpha 23 playtest "We're on our way" after an NPC sent coordinates was read
+with no destination — the interpreter saw the line alone.
+
+**Rejected:**
+- *Adaptive thinking at `low` effort* (the migration guide's first choice) —
+  it can still think on a request, and every call here is a short reply
+  parsed as text or JSON under a small cap; it would need measuring per
+  call. Thinking off keeps today's behaviour.
+- *Server-side refusal fallback* (`fallbacks: "default"`) — it retries only
+  `cyber` and `frontier_llm` declines; a game narrator's would be
+  `general_harms`, and Haiku 5.5 has none.
+- *Migrate a world's stored narration model to Sonnet 5.5* — the setting is
+  the GM's choice.
+- *Pass the whole ring (`narratorContextCards`, default 20)* to the
+  interpreter and classifier — they run on every line and are uncached
+  there; three entries carry the set-up a short line refers to.
+
+---
+
+## A move the pipeline does not roll is told, and its card handed back (2026-11)
+
+**Decision:** (alpha 23 playtest, issue #348 PT11; the thirteenth audit's
+AB06 in issue #347.) The confirm dialog's cancel still cancels — nothing is
+rolled, and the player re-words their line ("Re-interpret cancels the move so
+the player can re-word it", U04, stands) — but a move the free-flow pipeline
+does not roll is no longer dropped in silence:
+- **The cancel is named for what it does.** "Cancel — re-word" for a typed
+  line, "Cancel" for a forced move (a card button's), which has no line to
+  re-word. Closing the dialog is the same cancel.
+- **The table is told.** A cancelled confirm, a reading that failed before the
+  roll, and a line or non-held forced post refused at the move lock whisper a
+  "Not rolled" notice (`moveNotRolledNotice`: `cancelled` / `failed` /
+  `busy`) to the line's author, the roller's players and the GMs — the
+  pipeline runs on the canonical GM, so its toasts told only that screen
+  (known-issues MOVE-BUSY-NOTICE, proposed fix taken).
+- **A typed line goes back in its author's chat box** (`restoreLineFor` /
+  `restoreLine`, applied on the author's client only, and only into an empty
+  box — a draft is theirs).
+- **A card button's forced move names the card it claimed** (`sourceCard`:
+  `{ messageId, claim, release }`, built by `cardActions.sourceCardFlag` at
+  every claim-then-post site and in `applyCardRollerFollowup`). Not rolled,
+  the claim is written back to the value the button's own failed-post path
+  writes (`releaseSourceCard`), so the button is pressable again. A resist
+  roll a suffer card owes names that card (`kind: "suffer"`) and re-opens it
+  (`reopenSufferCard`). Only a post a GM made is trusted (every card button's
+  move is posted by the canonical GM's relay handler).
+- **A forced post is named on the notice** (`gatedMessageId`), so the inciting
+  ⚔ — not claimed, re-armed by its presser's client — re-arms as it does for
+  the session gate's notice (issue #337 Y36).
+
+**Reason:** "Re-interpret" did nothing visible in play, and the same silent
+drop left card buttons reading "Rolled" for a move never made and an owed
+resist roll's card saying it was rolled. Handing back with the value each
+site's failed-post path already writes reuses a release that site already
+trusts.
+
+**Rejected:**
+- *Make Re-interpret re-read the line* (excluding the rejected move, or
+  offering a short list) — a change to U04's decision; left for the
+  maintainer.
+- *Hide the cancel on an owed roll* — the ✕ still closes the dialog; the
+  card re-opens instead, as Batch Mode keeps an owed roll the roller's.
+- *Re-post an owed roll after a cancel* — it re-opens the dialog at once,
+  and a dialog that cannot render would loop.
+- *Hand back on a GM handover* (a held move lost when the canonical GM
+  changes, #347 AB06's fourth case) — the in-memory hold is issue #344's.
+
+*Update (issue #347 AB06, merged onto this path):* issue #347's own AB06 fix
+built the same hand-back beside this one (`cardClaim`, a "Move not rolled"
+whisper); the merge keeps this path and these names, with what AB06 added.
+`sourceCard` also carries the value the press set — the claim is written back
+only while the card still holds it — and, on a waypoint alternative, the
+ordinary reward's cards it retired, which come back with it (`reopenRetired`).
+The notice gains `refused` (the world did not save the move's start). The
+boundary is the dice (`rollMove`'s `onDiceRolled`), not the confirm: a
+failure after the confirm but before the dice hands the card back too. A
+handed-back resist roll also re-opens its move's Burn Momentum / Improve
+Result (RESIST-BURN-STAYS-CLOSED). And the GM-handover case is no longer
+rejected: a held move follows the canonical GM (`forcedMove.hold`, AB06).
+
+---
 
 ## Issue #345 audit: one canonical store per fact, a name is its host's, a journal is found by its flag, a capture follows its narration (2026-11)
 
@@ -1808,11 +1930,12 @@ finding's ID in brackets.)
   rolled out of the blue once the first GM was canonical again. And a claimed
   button's forced move the pipeline does not roll — its confirm closed, the
   lock busy for a move not held, its start refused, a failure before its dice
-  — hands the card its press back (`cardClaim`, released while the card still
-  holds the press's value; a resist card, and the ordinary reward cards a
-  waypoint alternative retired, put back live) and whispers the roller's
-  players and the GMs ("Move not rolled"); the inciting ⚔, unclaimed (Y36),
-  re-arms on its presser's client from that notice.
+  — hands the card its press back (`sourceCard`, released while the card
+  still holds the press's value; a resist card, and the ordinary reward cards
+  a waypoint alternative retired, put back live) and whispers the roller's
+  players and the GMs ("Not rolled" — the issue #348 PT11 path, merged into
+  one); the inciting ⚔, unclaimed (Y36), re-arms on its presser's client from
+  that notice.
 - **The system's numbers are read as names** [W01]: a progress Item's
   ChallengeRank number goes through `rankName` wherever a rank is read or
   paid.
@@ -1847,7 +1970,8 @@ finding's ID in brackets.)
   reset in silence, its move's record and Burn / Improve never landing.
 - **Short calls follow narration's thinking rule** [W27]:
   `narration/thinking.js` is the one rule, for narration and every short
-  structured call on the narration model.
+  structured call on the narration model. (Since the 5.5 upgrade,
+  `api-proxy.js` applies it to every call, the Haiku ones included.)
 - **A save holds truths when one category does** [W35]; **a fact-continuity
   catch keeps its remedy** [W34] (Correct… in the World Journal panel, never
   the lore actions); **the Roll button is the move the hint invites, guarded
@@ -3237,6 +3361,8 @@ main narrator at once (its card had no flag family).
   `claude-sonnet-5-5`, which rejects `thinking: {type: "disabled"}` with a
   400; its thinking-off form is `between_tools`. Neither it nor the Fable
   tier or Opus 5.5 (which also reject "disabled") is offered for narration.
+  (Since the 5.5 upgrade, Sonnet 5.5 is offered and is sent `between_tools`
+  — see "Haiku 5.5 and Sonnet 5.5 are the defaults".)
 
 **Rejected:** a byte-stability test for the cached tiers now. It belongs with
 the layout split, since today's prompt changes on every turn by design.
@@ -4898,8 +5024,11 @@ untouched.
 - *Reject/error on a wrong-position move* — remapping preserves intent (an
   attack stays an attack, just the correct variant) and keeps the pipeline
   flowing; the confirm dialog shows the move and stat (with any ability's
-  stat swap), and its Re-interpret cancels the move so the player can
-  re-word it (issue #321 U04 — it offers no override of the move).
+  stat swap), and its cancel (once "Re-interpret", now "Cancel — re-word")
+  cancels the move so the player can re-word it (issue #321 U04 — it offers
+  no override of the move); the cancel is told and hands a card's button
+  back (see "A move the pipeline does not roll is told, and its card handed
+  back").
 - *Force every move to be a combat move while in combat* — rejected; non-combat
   moves (Ask the Oracle, Face Danger for the environment, etc.) remain valid
   mid-fight, so only the four position-locked combat moves are remapped.

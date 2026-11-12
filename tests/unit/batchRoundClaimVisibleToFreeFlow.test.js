@@ -65,7 +65,7 @@ import { scriptClaude, holdWrites, campaignStateWrite, traceTable } from '../hel
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const KEY = `${MODULE_ID}.campaignState`;
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const REPLY = 'The corridor holds.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const STRONG = [0.25, 0.35, 0.9];
 

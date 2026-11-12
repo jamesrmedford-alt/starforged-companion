@@ -46,7 +46,7 @@ import { assetMatchMove } from "./sceneChallenge.js";
 
 const MODULE_ID    = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const HAIKU_MODEL  = "claude-haiku-4-5-20251001";
+const HAIKU_MODEL  = "claude-haiku-5-5";
 
 // Categories surfaced from the character actor. The system uses these
 // (capitalised) on asset.system.category. We accept any non-empty
@@ -385,7 +385,7 @@ export function parseHaikuResponse(raw) {
 async function callHaiku(userPrompt, apiKey) {
   const body = {
     model:      HAIKU_MODEL,
-    max_tokens: 600,
+    max_tokens: 800,   // was 600 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
     messages:   [{ role: "user", content: userPrompt }],
   };
   const headers = {

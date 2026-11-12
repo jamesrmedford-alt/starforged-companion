@@ -130,10 +130,15 @@ const SALIENCE_CHOICES = {
 const NARRATION_MAX_TOKENS_MIN = 300;
 const NARRATION_MAX_TOKENS_MAX = 64000;
 
+// The 5.5 models lead; the earlier ones stay offered, so a world that chose
+// one keeps a valid choice. Every call's thinking-off form is per model
+// (narration/thinking.js, applied in api-proxy.js).
 const NARRATION_MODELS = {
-  'claude-haiku-4-5-20251001':  'Haiku 4.5 (fast, economical)',
-  'claude-sonnet-4-5-20250929': 'Sonnet 4.5 (richer narration, recommended)',
-  'claude-sonnet-5':            'Sonnet 5 (latest, most capable)',
+  'claude-sonnet-5-5':          'Sonnet 5.5 (richer narration, recommended)',
+  'claude-haiku-5-5':           'Haiku 5.5 (fast, economical)',
+  'claude-sonnet-5':            'Sonnet 5',
+  'claude-sonnet-4-5-20250929': 'Sonnet 4.5 (previous default)',
+  'claude-haiku-4-5-20251001':  'Haiku 4.5',
 };
 
 const NARRATION_PERSPECTIVES = {
@@ -223,7 +228,7 @@ export function registerSettings() {
     config:  false,
     type:    String,
     choices: NARRATION_MODELS,
-    default: 'claude-sonnet-4-5-20250929',
+    default: 'claude-sonnet-5-5',
   });
 
   game.settings.register(MODULE_ID, SETTING.NARRATION_PERSPECTIVE, {
@@ -651,7 +656,7 @@ function getPrivateLines() { return game.settings.get(MODULE_ID, SETTING.PRIVATE
 // ---------------------------------------------------------------------------
 
 function getNarrationEnabled()      { return game.settings.get(MODULE_ID, SETTING.NARRATION_ENABLED)      ?? true; }
-function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-4-5-20250929'; }
+function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-5-5'; }
 function getNarrationPerspective()  { return game.settings.get(MODULE_ID, SETTING.NARRATION_PERSPECTIVE)  ?? 'auto'; }
 function getNarrationTone()         { return game.settings.get(MODULE_ID, SETTING.NARRATION_TONE)         ?? 'wry'; }
 function getNarrationLevity()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LEVITY)       ?? 'default'; }
@@ -1859,11 +1864,11 @@ export class SettingsPanelApp extends ApplicationV2 {
           </div>
           <div class="about-field">
             <dt>Move AI</dt>
-            <dd>claude-haiku-4-5-20251001 · system prompt cached</dd>
+            <dd>claude-haiku-5-5 (Haiku 5.5) · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Narration AI</dt>
-            <dd>claude-sonnet-4-5-20250929 default · configurable in Narrator tab · system prompt cached</dd>
+            <dd>claude-sonnet-5-5 (Sonnet 5.5) default · configurable in Narrator tab · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Art generation</dt>
@@ -2038,7 +2043,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const el = this.element;
 
       const enabled      = el.querySelector('[name="narrationEnabled"]')?.checked ?? true;
-      const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20250929';
+      const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-5-5';
       const perspective  = el.querySelector('[name="narrationPerspective"]')?.value   ?? 'auto';
       const tone         = el.querySelector('[name="narrationTone"]')?.value           ?? 'wry';
       const levity       = el.querySelector('[name="narrationLevity"]')?.value          ?? 'default';
@@ -2289,6 +2294,9 @@ export class MoveConfirmDialog extends ApplicationV2 {
   #resolve = null;
   #interp  = null;
   #decided = false;
+  // A card button's move (or another forced move): there is no line to
+  // re-word, so its cancel button reads "Cancel".
+  #forced  = false;
 
   // Most-recently-prompted instance, exposed so callers (and Quench tests)
   // can locate the in-flight dialog without scanning foundry.applications.instances
@@ -2321,13 +2329,15 @@ export class MoveConfirmDialog extends ApplicationV2 {
    * Awaits the inner render so the instance is fully wired (DOM in place,
    * action handlers bound) before the returned promise can be observed.
    * @param {object} interpretation
+   * @param {{ forced?: boolean }} [opts] — a forced move (a card button's)
    * @returns {Promise<boolean>}
    */
-  static async prompt(interpretation) {
+  static async prompt(interpretation, { forced = false } = {}) {
     const dialog = new MoveConfirmDialog({
       id: `${MODULE_ID}-move-confirm-${foundry.utils.randomID()}`,
     });
     dialog.#interp = interpretation;
+    dialog.#forced = forced === true;
     const result = new Promise((resolve) => { dialog.#resolve = resolve; });
     MoveConfirmDialog.#pending = dialog;
     await dialog.render({ force: true });
@@ -2345,6 +2355,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
       mischiefAside:   interp._mischiefAside ?? '',
       applicableAbilities: Array.isArray(interp.applicableAbilities) ? interp.applicableAbilities : [],
       dialLabel,
+      forced:          this.#forced,
     };
   }
 
@@ -2376,7 +2387,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
         ${abilitiesBlock}
         <div class="confirm-actions">
           <button class="settings-btn btn-accept" data-action="accept">Accept — Roll</button>
-          <button class="settings-btn btn-reject" data-action="reject">Re-interpret</button>
+          <button class="settings-btn btn-reject" data-action="reject" title="${context.forced ? 'Nothing is rolled; the button that made this move can be pressed again.' : 'Nothing is rolled; your line goes back in your chat box to re-word and send again.'}">${context.forced ? 'Cancel' : 'Cancel — re-word'}</button>
         </div>
       </div>
     `;
@@ -2610,8 +2621,17 @@ export function openSettingsPanel() {
   return SettingsPanelApp.open();
 }
 
-export async function confirmInterpretation(interpretation) {
-  return MoveConfirmDialog.prompt(interpretation);
+/**
+ * Show the move confirm dialog and await the choice: true to roll, false when
+ * it is cancelled or closed (nothing is rolled — index.js tells the table and
+ * hands a card's button back).
+ *
+ * @param {object} interpretation
+ * @param {{ forced?: boolean }} [opts] — a forced move: its cancel reads "Cancel"
+ * @returns {Promise<boolean>}
+ */
+export async function confirmInterpretation(interpretation, opts = {}) {
+  return MoveConfirmDialog.prompt(interpretation, opts);
 }
 
 /**

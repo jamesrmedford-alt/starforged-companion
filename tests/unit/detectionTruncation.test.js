@@ -74,13 +74,13 @@ describe('combined detection: a reply cut off at max_tokens', () => {
 
   it('is not dropped silently: the console names the cut and the GM is told', async () => {
     expect(FULL.length).toBeGreaterThan(CUT.length);
-    reply = { content: [{ type: 'text', text: CUT }], stop_reason: 'max_tokens', usage: { output_tokens: 1500 } };
+    reply = { content: [{ type: 'text', text: CUT }], stop_reason: 'max_tokens', usage: { output_tokens: 2000 } };
     const toast = vi.spyOn(global.ui.notifications, 'warn');
 
     const detection = await detect();
 
     expect(detection.entities).toEqual([]);
-    expect(getCapturedWarns().some(l => /max_tokens \(1500\)/.test(l))).toBe(true);
+    expect(getCapturedWarns().some(l => /max_tokens \(2000\)/.test(l))).toBe(true);   // the cap (1500 before Haiku 5.5's larger token counts)
     expect(getCapturedWarns().some(l => /not a complete JSON object/.test(l))).toBe(true);
     expect(toast).toHaveBeenCalledTimes(1);
     expect(toast.mock.calls[0][0]).toMatch(/entity detection failed/);

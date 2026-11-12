@@ -804,8 +804,8 @@ export async function closeUpgradesForChoice(resolutionId) {
 
 /**
  * A choice that closed a move card's upgrades was handed back: a resist roll's
- * press the pipeline did not roll puts its card back live (index.js
- * releaseCardClaim, issue #347 AB06), so no consequence of the move is chosen
+ * press the pipeline did not roll puts its card back live (cardActions.js
+ * releaseSourceCard, issue #347 AB06), so no consequence of the move is chosen
  * now — its Burn Momentum / Improve Result open again (`choiceMade` cleared;
  * issue #347 RESIST-BURN-STAYS-CLOSED). Not while another choice card of the
  * move is chosen, nor once an upgrade was used; a later move's close

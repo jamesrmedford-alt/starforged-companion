@@ -67,7 +67,7 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude, traceTable } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[{"subject":"scene","fact":"The breach is sealed."}],"stateChanges":[]}\n```';
 const isNarration = (call) => call.model === NARRATION_MODEL;
 

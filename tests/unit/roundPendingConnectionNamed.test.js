@@ -56,7 +56,7 @@ import { narrateRound, runPostNarrationPasses } from '../../src/narration/narrat
 import { invalidateActorCache } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const reply = (text) => ({ content: [{ type: 'text', text }], usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: 'end_turn' });
 
 /** Kira's hit: she finds Orla Teague, whose row an earlier narration left pending. */

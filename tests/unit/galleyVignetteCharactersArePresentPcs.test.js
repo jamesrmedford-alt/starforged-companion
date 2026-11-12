@@ -32,7 +32,7 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const GALLEY = 'The galley smells of burnt caf.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const SECOND_PERSON = /Perspective: Address the player character directly as "you"/;
 

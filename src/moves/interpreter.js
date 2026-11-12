@@ -26,7 +26,10 @@ const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
 // Heal's four situations (vendored Heal): each rolls its own stat.
 const HEAL_SITUATIONS = new Set(["self", "treated", "companion", "ally"]);
-const MODEL         = "claude-haiku-4-5-20251001";
+const MODEL         = "claude-haiku-5-5";
+// Room for the JSON reading: Haiku 5.5 counts the same text as about 30% more
+// tokens than Haiku 4.5, whose cap was 1000.
+const MAX_TOKENS    = 1300;
 
 // Combat moves that are only legal in one position. When the interpreter
 // proposes a move for the wrong position, it is remapped to the same-intent
@@ -177,7 +180,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
 confidence: "high" | "medium" | "low" — your certainty in the interpretation.
 statValue: ALWAYS leave as 0 — filled in by the calling code (from the character sheet for action moves, from the live progress track / vow / connection data for progress moves — see enrichInterpretationStatValue and enrichProgressTicks in src/moves/statEnrichment.js). Module data is ground truth; never estimate a value.
 progressTicks: ALWAYS leave as 0 — for progress moves the module fills the score from the live track / vow / connection data. Never estimate a tick count.
-moveTarget: the named thing the move acts on, taken from the player's narration. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone / forsake_your_vow → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; finish_the_scene and the scene-challenge moves → the scene challenge's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided; companion_takes_a_hit → the companion taking the hit, by its name ("Glowcat", "Rockhorn"); withstand_damage → the vehicle taking the damage when it is one of the character's support vehicles, by its name ("Hoverbike", "Rover", "Skiff") — null for the command starship, whatever other vehicle the line mentions. null when nothing is named or implied.
+moveTarget: the named thing the move acts on, taken from the player's narration — or, when the narration refers to it without naming it ("her coordinates", "there", "the station", "him"), as the RECENT SCENE names it. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone / forsake_your_vow → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; finish_the_scene and the scene-challenge moves → the scene challenge's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided; companion_takes_a_hit → the companion taking the hit, by its name ("Glowcat", "Rockhorn"); withstand_damage → the vehicle taking the damage when it is one of the character's support vehicles, by its name ("Hoverbike", "Rover", "Skiff") — null for the command starship, whatever other vehicle the line mentions. null when nothing is named or implied.
 expeditionRank: only for undertake_an_expedition. When the narration implies the journey's scope, infer its rank — "troublesome" (a short, easy hop), "dangerous" (default), "formidable" (a long or hostile crossing), "extreme", or "epic" (a vast, perilous undertaking). null otherwise; the player can re-rank the track later.
 healSituation: only for heal — "self" (the character mends their own wounds), "treated" (they receive treatment from someone who is not an ally), "companion" (they obtain treatment for a companion) or "ally" (they provide care to someone else). null for every other move.
 combatRank: only for enter_the_fray. When the narration implies the foe’s danger level, infer its rank — "troublesome" (minor, easy to defeat), "dangerous" (default), "formidable" (a tough, seasoned opponent), "extreme" (an overwhelming threat), or "epic" (near-impossible odds). null otherwise; the player can re-rank the combat track later.`;
@@ -397,10 +400,13 @@ export async function buildCanonicalMoveBlock(slug) {
  *   combat track's position (from getActiveCombatPosition()). When set, the
  *   interpreter is steered to a position-appropriate combat move and the result
  *   is forced legal via constrainMoveToPosition(). null = no constraint.
+ * @param {string} [options.recentScene] — the last few narration cards
+ *   (narrator.js getRecentSceneForReading): what the line follows, so a
+ *   reference ("her coordinates") is read — and named as moveTarget — from it
  * @returns {Promise<Object>}      — partial MoveResolutionSchema (no dice yet)
  */
 export async function interpretMove(narration, {
-  campaignState, mischiefLevel, apiKey, expectedMoveSlug, combatPosition = null,
+  campaignState, mischiefLevel, apiKey, expectedMoveSlug, combatPosition = null, recentScene = "",
 }) {
   if (!apiKey) throw new Error("Claude API key not configured. Set it in module settings.");
   if (!narration?.trim()) throw new Error("No narration to interpret.");
@@ -421,12 +427,20 @@ export async function interpretMove(narration, {
   // invisible to the player — it shapes how the model reads the input. The
   // combat directive (empty out of combat) restricts the candidate combat
   // moves to the current position.
+  // The recent scene (narrator.js getRecentSceneForReading) goes just before
+  // the line it explains: "we're on our way" is Set a Course to the
+  // coordinates an NPC just gave only to a reader who saw them (alpha 23
+  // playtest).
+  const sceneBlock = typeof recentScene === "string" && recentScene.trim()
+    ? `RECENT SCENE (what the player's line follows — context only; interpret the player narration):\n${recentScene.trim()}`
+    : "";
   const userMessage = [
     contextSummary,
     mischiefFraming,
     combatDirective,
     expectedDirective,
     canonicalBlock,
+    sceneBlock,
     `Player narration: "${narration}"`,
   ].filter(Boolean).join("\n\n");
 
@@ -434,8 +448,10 @@ export async function interpretMove(narration, {
     apiKey,
     systemPrompt,
     userMessage,
-    model: campaignState.api?.model ?? MODEL,
-    maxTokens: campaignState.api?.maxTokens ?? 1000,
+    // The interpreter's own model and cap — never the copy a world stored at
+    // creation (schemas.js `api`), which pinned it to that day's model.
+    model: MODEL,
+    maxTokens: MAX_TOKENS,
     promptCachingEnabled: campaignState.api?.promptCachingEnabled ?? true,
   });
 

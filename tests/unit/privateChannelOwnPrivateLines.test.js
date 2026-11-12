@@ -38,7 +38,7 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { parseHTML } from '../helpers/cardDom.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const HAIKU = 'claude-haiku-4-5-20251001';   // the Private Channel's model (narrate.js)
+const HAIKU = 'claude-haiku-5-5';   // the Private Channel's model (narrate.js)
 let table;
 
 beforeAll(async () => {

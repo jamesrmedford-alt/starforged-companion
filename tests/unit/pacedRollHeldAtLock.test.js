@@ -49,7 +49,7 @@ import { simulateTable, USERS, MODULE_ID } from "../helpers/multiClient.js";
 import { deferred } from "../helpers/faults.js";
 import { CampaignStateSchema } from "../../src/schemas.js";
 
-const NARRATION_MODEL = "claude-sonnet-4-5-20250929";
+const NARRATION_MODEL = "claude-sonnet-5-5";
 const REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const STRONG_ACTION = [0.0, 0.15, 0.99];   // challenge 1, 2; action die 6
 

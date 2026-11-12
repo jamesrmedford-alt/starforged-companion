@@ -11,6 +11,15 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Alpha 23 playtest (issue #348) — PT11 fixed in the v1.8.1 cycle
+
+| ID | Kind | Fix |
+|---|---|---|
+| PT11 REINTERPRET-SILENT | UX / LOSE-STATE | The confirm dialog's "Re-interpret" settled it false and the pipeline returned: no re-reading, no card, no notice — and a card button's move left its card claimed ("Rolled") for a move never made → the cancel reads "Cancel — re-word" ("Cancel" for a forced move); a "Not rolled" notice is whispered to the author, the roller's players and the GMs; a typed line goes back in its author's chat box; a card's claim is written back (`sourceCard` / `releaseSourceCard`) |
+| AB06 (part) CLAIMED-CARD-FORCED-MOVE-DROPPED | LOCK (dead card) | Issue #347's confirm-closed, owed-resist and inciting-⚔-at-the-lock cases: the card is handed back (the suffer card re-opened, the ⚔ re-armed) and the table told. The rest — a refused start, a failure before the dice, the GM-handover case — is fixed by issue #347's own AB06 (below), merged onto the same path: `sourceCard`, `releaseSourceCard`, the "Not rolled" notice |
+| PT05 (part) CLASSIFIER-NO-RECENT-SCENE | UX | The pacing classifier saw a one-line scene frame and the interpreter the line alone, so "We're on our way" after an NPC sent coordinates was offered no travel move and named no destination → both read the last three narration cards (`getRecentSceneForReading`). Issue #348 PT05's other halves — an unknown destination as Undertake an Expedition, a time skip as travel — stay open |
+| MOVE-BUSY-NOTICE | UX | A line typed while another move was narrated was refused with a toast on the canonical GM's screen only → a "Not rolled" notice is whispered to its author, and the line goes back in their chat box. Free-flow only: in Batch Mode a typed line is table talk |
+
 ### Thirteenth bug audit (issue #347) — all twenty-four fixed and the three decisions built in the v1.8.1 cycle
 
 Found by the thirteenth bug audit (2026-11-11) of `53b4150` (the merge of PR
@@ -62,9 +71,9 @@ a GM whose page just became ready and the GM it replaces both count
 themselves canonical, and two GMs whose loads overlap presume each other
 ready; AB05's bounds (30 s for a write of the module's own, five minutes for
 Begin / End and a summary refresh) — an End or Begin that resumes after its
-bound runs beside the one that went ahead; AB06 leaves a move's Burn closed
-when the resist roll its press posted is handed back (the consequence was
-chosen), and the inciting ⚔ is re-armed, not held (Y36); AB07 moves the
+bound runs beside the one that went ahead; AB06's inciting ⚔ is re-armed, not
+held (Y36) — and a handed-back resist roll now opens its move's Burn again
+(RESIST-BURN-STAYS-CLOSED, below); AB07 moves the
 shared track by a sheet edit's change — an edit without the stamp still sets
 it; AB08 takes the lower of record and sheet; AB10 connects no one when the
 narration names several NPCs and the line names none; AB13's 60 s grace
@@ -80,7 +89,7 @@ waiting for a keyed GM; AB24's held moves wait for the next write that lands.
 | AB03 READY-GM-STANDS-DOWN-FOR-LOADING-GM | STALL | `isCanonicalGM` elected among active GMs, and a GM is active before its `ready` → a GM whose connect a client saw is passed over until it announces its page (`registerGmReadiness`) |
 | AB04 STALE-LOCK-HOLDER-RELOADED-NOT-CANONICAL | LOCK | a co-GM's earlier page's lock was freed by neither reset when it loaded beside the canonical GM → a non-canonical GM's `ready` releases its own earlier page's lock (`releaseOwnStaleLockAtReady`) |
 | AB05 WRITE-NEVER-ANSWERED-WEDGES | LOCK | four waits on a write of the module's own had no bound → `multiplayer/settleWithin.js`: the lock's claim and release (30 s), Begin / End (5 min), the rolling summary, a Private Channel page write |
-| AB06 CLAIMED-CARD-FORCED-MOVE-DROPPED | LOCK (dead card) | a claimed button's forced move the pipeline did not roll left its card claimed; a held move was stranded on a GM handover → `cardClaim` handed back with a "Move not rolled" whisper; held moves follow the canonical GM (`forcedMove.hold`) |
+| AB06 CLAIMED-CARD-FORCED-MOVE-DROPPED | LOCK (dead card) | a claimed button's forced move the pipeline did not roll left its card claimed; a held move was stranded on a GM handover → handed back (`sourceCard`, the path issue #348 PT11 built too — merged into one) with a "Not rolled" whisper; held moves follow the canonical GM (`forcedMove.hold`) |
 | AB07 LEGACY-TRACK-RESET-BY-LAGGING-SHEET | LOST-UPDATE | a sheet edit set the crew's track to the sheet's value → the editing client stamps the value before (`preUpdateActor`), the track moves by the change; a new PC gets the crew's tracks |
 | AB08 SHIP-INTEGRITY-UPGRADE-LOSS | DATA-LOSS | AA20's mirror erased integrity recorded before it → an unreconciled record reads the lower of record and sheet, written to both at the canonical GM's load, the GM told |
 | AB09 MAKE-CONNECTION-DUPLICATE-NPC | DUPLICATE | the capture's dedup read the move's campaignState copy → it reads the stored entity lists |
@@ -2269,15 +2278,6 @@ been checked in a live Foundry world yet.
 
 Open — pinned or described, not fixed (each needs a decision first):
 
-- **MOVE-BUSY-NOTICE** (UX). A line typed while another player's move is
-  narrated runs no move, and the "a move is already being resolved" notice
-  shows on the canonical GM's screen (the pipeline runs there), not the
-  typist's — who sees nothing. A KNOWN ISSUE row in `faultMatrix.test.js`
-  pins it and fails once it is fixed. Proposed: whisper the notice to the
-  message's author. Free-flow only: in Batch Mode (issue #340) a typed line
-  is table talk kept as its author's draft, and a round drops no action (the
-  eleventh audit found three ways it did — Z18, Z29, Z31 — all fixed in the
-  v1.8.0).
 - **DRAFT-CONFIRM-TWO-GMS** (DUPLICATE). Two GMs clicking Confirm on the same
   draft at the same moment can still create it twice: the in-flight guard is
   per client. Proposed: relay draft Confirm / Dismiss to the canonical GM

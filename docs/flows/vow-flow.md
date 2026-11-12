@@ -17,8 +17,8 @@ their card and post the forced move once for the pipeline — flagged
 GM and rolled when the lock frees, never dropped with its card claimed:
 issue #325 W02 — and handed to the next canonical GM if another takes over;
 one the pipeline does not roll (its confirm closed, its start refused, a
-failure before its dice) hands its card the press back, the `cardClaim` it
-carries, and whispers its roller — issue #347 AB06; since issue #338 D1 also a new vow's ⚔ Swear it (roll),
+failure before its dice) hands its card the press back, the `sourceCard` it
+carries, and whispers its roller "Not rolled" — issue #347 AB06; since issue #338 D1 also a new vow's ⚔ Swear it (roll),
 `vow.swearRoll`), and since issue #325 W11 the swear cards' reward pick
 and link (`vow.reward`, `vow.link` — `src/session/swearVow.js`
 `applyRewardPickFromRelay` / `applyPlayerVowLinkFromRelay`, each claiming its

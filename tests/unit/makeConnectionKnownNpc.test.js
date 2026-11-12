@@ -67,7 +67,7 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const VANCE = { type: 'connection', name: 'Vance Oduya', description: 'The dockmaster of the Hollow Spire.',
   pronouns: 'he/him', role: 'dockmaster', goal: null, confidence: 'high' };
 const SABLE = { type: 'connection', name: 'Sable Ortiz', description: 'A scarred salvage broker.',

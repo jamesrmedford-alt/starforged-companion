@@ -24,8 +24,8 @@ import { isXCardActive, watchXCard } from "../narration/narrator.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const HAIKU_MODEL   = "claude-haiku-4-5-20251001";
-const MAX_TOKENS    = 600;
+const HAIKU_MODEL   = "claude-haiku-5-5";
+const MAX_TOKENS    = 800;   // was 600 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
 
 function readApiKey() {
   try { return game.settings?.get?.(MODULE_ID, "claudeApiKey") || null; }

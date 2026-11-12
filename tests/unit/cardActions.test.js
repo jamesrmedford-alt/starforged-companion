@@ -124,7 +124,8 @@ describe('applyConnectionPick', () => {
     expect(posted.flags[MODULE_ID]).toEqual({
       bypassPacing: true, forcedMoveId: 'forge_a_bond', deferWhileBusy: true,
       forcedMoveTarget: 'Kira', forcedMoveTargetId: 'conn-1',
-      cardClaim: { messageId: picker.id, flag: 'resolved', value: true, release: false },
+      // The card it claimed, handed back if the move is not rolled (issue #347 AB06).
+      sourceCard: { messageId: 'pick-1', claim: 'resolved', value: true, release: false },
     });
     expect(picker.flags[MODULE_ID].resolved).toBe(true);
   });
@@ -447,7 +448,7 @@ describe('applyWaypointOraclePick', () => {
       speaker: { actor: 'pc-b' },
     });
     expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'make_a_discovery', deferWhileBusy: true,
-      cardClaim: { messageId: 'wp-1', flag: 'waypointRewardClaimed', value: 'alternative', release: null,
+      sourceCard: { messageId: 'wp-1', claim: 'waypointRewardClaimed', value: 'alternative', release: null,
         reopenRetired: { resolutionId: waypoint.flags[MODULE_ID].resolutionId ?? null, kind: 'discovery' } } });
     expect(waypoint.flags[MODULE_ID].waypointRewardClaimed).toBe('alternative');
     // Retired: resolved and superseded (the card double applies flag paths only;
@@ -551,7 +552,7 @@ describe('applyFulfilVowPick (issue #321 U02)', () => {
     expect(forcedMoves()[0]).toMatchObject({ content: 'I keep my oath at last.', speaker: { actor: 'pc-b' } });
     expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({
       bypassPacing: true, forcedMoveId: 'fulfill_your_vow', deferWhileBusy: true, forcedMoveTargetId: 'v-inc', forcedMoveTarget: 'Rescue Dani',
-      cardClaim: { messageId: 'wv-1', flag: 'resolved', value: true, release: false },
+      sourceCard: { messageId: 'wv-1', claim: 'resolved', value: true, release: false },
     });
     expect(await applyFulfilVowPick({ messageId: 'wv-1', itemId: 'v-bg' }, GM_CTX)).toEqual({ posted: false, reason: 'already-resolved' });
     expect(forcedMoves()).toHaveLength(1);
@@ -621,7 +622,7 @@ describe('applyMilestoneSuggestion (issue #321 U20)', () => {
     expect(forcedMoves()).toHaveLength(1);
     expect(forcedMoves()[0]).toMatchObject({ content: 'Mark progress on your vow.', speaker: { actor: 'pc-b' } });
     expect(forcedMoves()[0].flags[MODULE_ID]).toEqual({ bypassPacing: true, forcedMoveId: 'reach_a_milestone', deferWhileBusy: true,
-      cardClaim: { messageId: 'mv-1', flag: 'milestoneMarked', value: true, release: false } });
+      sourceCard: { messageId: 'mv-1', claim: 'milestoneMarked', value: true, release: false } });
     expect(await applyMilestoneSuggestion({ messageId: 'mv-1' }, GM_CTX)).toEqual({ posted: false, reason: 'already-marked' });
     expect(forcedMoves()).toHaveLength(1);
   });

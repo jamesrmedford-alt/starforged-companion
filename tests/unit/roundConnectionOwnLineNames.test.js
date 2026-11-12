@@ -38,7 +38,7 @@ import { narrateRound } from '../../src/narration/narrator.js';
 import { invalidateActorCache } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const reply = (text) => ({ content: [{ type: 'text', text }], usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: 'end_turn' });
 const SIDECAR = '\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 /** The detection leaves pending names out of its reply (its prompt says so). */

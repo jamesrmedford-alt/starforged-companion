@@ -48,7 +48,7 @@ import {
   legacyTrackNamed,
   legacyTrackScores,
 } from "./statEnrichment.js";
-import { narrateAndPostVowSwearing, suppressPcDirectedSocialMove } from "../narration/narrator.js";
+import { narrateAndPostVowSwearing, suppressPcDirectedSocialMove, getRecentSceneForReading } from "../narration/narrator.js";
 import {
   getPlayerActors,
   readVows,
@@ -245,6 +245,8 @@ export async function readMove({
         mischiefLevel: dial,
         apiKey,
         combatPosition,
+        // What the line follows — its destination, its target (alpha 23 playtest).
+        recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
       });
   if (swearToConnection && interpretation?.moveId === "swear_an_iron_vow") {
     interpretation.swearToConnection = swearToConnection;

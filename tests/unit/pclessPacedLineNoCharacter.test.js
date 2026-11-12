@@ -24,7 +24,7 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const NARRATIVE = JSON.stringify({
   decision: 'NARRATIVE', suggestedMove: null, sceneChallenge: null,
   category: 'social', confidence: 0.9, reasoning: 'chat, no move',

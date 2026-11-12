@@ -114,7 +114,7 @@ describe("resolveStationCoordsFromImage()", () => {
       content: [{ type: "text", text: JSON.stringify(goodCoords()) }],
     });
 
-    const result = await resolveStationCoordsFromImage("BASE64BYTES", { apiKey: "k", model: "claude-sonnet-4-5-20250929" });
+    const result = await resolveStationCoordsFromImage("BASE64BYTES", { apiKey: "k", model: "claude-sonnet-5-5" });
     expect(result).not.toBeNull();
     expect(Object.keys(result)).toHaveLength(ALL_IDS.length);
 

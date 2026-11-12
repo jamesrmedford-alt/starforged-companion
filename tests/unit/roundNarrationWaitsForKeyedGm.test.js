@@ -63,7 +63,7 @@ import {
 } from '../../src/batch/round.js';
 
 const REPLY = 'The round turns.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const WAITS = /round waits for a GM with a Claude key/;
 
 describe('issue #347 D3 — the keyed GM reloads while narrating a round; the co-GM has no Claude key', () => {

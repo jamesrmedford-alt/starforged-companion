@@ -60,7 +60,7 @@ import { holdWrites, scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const REPLY = 'Kira slips through.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 
 let table;
 const round = () => table.world.getSetting('batchMode.round');

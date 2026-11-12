@@ -34,7 +34,7 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const FENCE = (truths = []) => `\n\`\`\`json\n${JSON.stringify({ newTruths: truths, stateChanges: [] })}\n\`\`\``;
 const REVEAL = 'The hooded figure lowers her hood: it is Sable Ortiz, the salvage broker everyone talks about.';
 const LATER  = 'Sable Ortiz counts her credits at the bar, one eye on the door.';

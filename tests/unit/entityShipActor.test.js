@@ -488,7 +488,7 @@ describe("seedStarshipActor", () => {
     global.game.settings.get = (_mod, key) => {
       if (key === "claudeApiKey")     return "sk-ant-test";
       if (key === "autoSeedStarship") return true;
-      if (key === "narrationModel")   return "claude-sonnet-4-5-20250929";
+      if (key === "narrationModel")   return "claude-sonnet-5-5";
       if (key === "narrationTone")    return "wry";
       if (key === "openRouterApiKey") return "";
       return undefined;
@@ -560,7 +560,7 @@ describe("seedStarshipActor — the Notes prose is grounded in the ship's module
     }));
     global.game.settings.get = (_mod, key) => {
       if (key === "claudeApiKey")   return "sk-ant-test";
-      if (key === "narrationModel") return "claude-sonnet-4-5-20250929";
+      if (key === "narrationModel") return "claude-sonnet-5-5";
       if (key === "narrationTone")  return "wry";
       return undefined;
     };

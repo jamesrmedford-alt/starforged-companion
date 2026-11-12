@@ -53,7 +53,7 @@ import { invalidateActorCache } from '../../src/character/actorBridge.js';
 import { parseHTML } from '../helpers/cardDom.js';
 
 const MODULE_ID = 'starforged-companion';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const reply = (text) => ({ content: [{ type: 'text', text }], usage: { input_tokens: 1, output_tokens: 1 }, stop_reason: 'end_turn' });
 const SIDECAR = '\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 

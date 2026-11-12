@@ -58,7 +58,7 @@ import { scriptClaude, holdWrites, failWrites } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { resolveMove } from '../../src/moves/resolver.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 let table;
 const round = () => table.world.getSetting('batchMode.round');
 const roundNarrations = () => table.claude.calls.filter(c => c.model === NARRATION_MODEL && /THIS ROUND/.test(c.userText ?? ''));

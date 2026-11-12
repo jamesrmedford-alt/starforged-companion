@@ -71,7 +71,7 @@ import { parseHTML } from '../helpers/cardDom.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const MOVE_TEXT = 'I brace against the hull and push through the breach.';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';   // narrationModel default
+const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
 const ORACLE_Q  = 'is the hatch sealed';
 let table;
 let releaseOracle = null;

@@ -38,7 +38,7 @@ import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const KEY = `${MODULE_ID}.campaignState`;
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 
 const SIDECAR = {
   newTruths:    [{ subject: 'the dockmaster', fact: 'Owes the crew a favour' }],

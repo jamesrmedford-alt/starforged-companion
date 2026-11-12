@@ -60,7 +60,7 @@ import { campaignStateWrite, failWrites, scriptClaude } from '../helpers/faults.
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const KEY = `${MODULE_ID}.campaignState`;
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const REPLY = 'Kira slips through the vent.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 // challenge 3 and 4, action die 6 (+edge 2 = 8): a strong hit.
 const STRONG = [0.25, 0.35, 0.9];

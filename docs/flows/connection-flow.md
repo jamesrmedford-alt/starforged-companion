@@ -305,7 +305,7 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   `deferWhileBusy`: met by the move lock, it is held on the canonical GM and
   rolled when the lock frees (issue #325 W02 — it was dropped, the card
   already claimed); not rolled — its confirm closed, its start refused — the
-  picker gets its press back from the `cardClaim` the move carries (issue
+  picker gets its press back from the `sourceCard` the move carries (issue
   #347 AB06). A forced move skips the
   interpreter, so those flags are the only way the pick reaches the move: the
   chat pipeline carries them as `interpretation.moveTargetId` /

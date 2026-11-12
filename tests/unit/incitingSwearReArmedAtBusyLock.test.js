@@ -46,7 +46,7 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';   // narrationModel default
+const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
 const REPLY = 'Steel rings.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const INCITING_TEXT = [
   'The relay at Paradox Station goes dark; a distress code older than the Forge repeats on every band.',
@@ -121,7 +121,7 @@ describe('the inciting ⚔ pressed while another move holds the move lock (issue
     expect(moveCards().filter(c => /Face Danger/i.test(c.content)), "Kira's move resolved (setup)").toHaveLength(1);
 
     const toldPresser = table.world.messages().some(m => (m.whisper ?? []).includes('pl-2')
-      && m.flags?.[MODULE_ID]?.forcedMoveNotRolled === true);
+      && !!m.flags?.[MODULE_ID]?.moveNotRolledNotice);
     expect({ sworn: sworn(card._id), buttonLive: swearButton('pl-2', card._id)?.disabled === false, toldPresser })
       .toEqual({ sworn: false, buttonLive: true, toldPresser: true });
 

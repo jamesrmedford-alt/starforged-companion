@@ -150,7 +150,7 @@ describe("the owed resist roll and the GM's confirm dialog (issue #347 AB06)", (
     // Not rolled — the card is live again, its buttons back, and the table is told.
     const rolled   = table.cards(f => f.moveResolution).length > 0;
     const reopened = flags(resist._id).resolved !== true;
-    const told     = fresh.some(text => /was not rolled/i.test(text));
+    const told     = fresh.some(text => /not rolled/i.test(text));
     expect({ rolled, reopened, told }).toEqual({ rolled: false, reopened: true, told: true });
     expect(String(table.world.message(resist._id).content)).toMatch(/data-action="sf-suffer-pick"/);
 
