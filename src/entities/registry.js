@@ -299,8 +299,28 @@ export async function registerEntityId(campaignState, listKey, id, { label = lis
   if (persist) await registerEntityIdInStore(listKey, id, label);
   // The caller's list made an array only once the world took the id.
   if (!Array.isArray(campaignState[listKey])) campaignState[listKey] = [];
-  await undismissRegisteredName(id, campaignState);
+  const dismissedName = registeredNameToUndismiss(id, campaignState);
+  if (dismissedName) await undismissRegisteredName(dismissedName, campaignState);
   return !campaignState[listKey].includes(id);
+}
+
+/**
+ * The name of the record just registered when a name is dismissed anywhere
+ * (the store's list or the caller's copy's), else null — checked without an
+ * await, so the common case (nothing dismissed) adds none to the creator's
+ * path (CREATED-ONTO-DISMISSED-NAME).
+ *
+ * @param {string} id — the host document id
+ * @param {Object} campaignState — the caller's copy
+ * @returns {string|null}
+ */
+function registeredNameToUndismiss(id, campaignState) {
+  const anyDismissed = (cs) => Array.isArray(cs?.dismissedEntities) && cs.dismissedEntities.length > 0;
+  let stored = null;
+  try { stored = globalThis.game?.settings?.get?.(MODULE_ID, 'campaignState') ?? null; } catch { stored = null; }
+  if (!anyDismissed(stored) && !anyDismissed(campaignState)) return null;
+  const name = globalThis.game?.actors?.get?.(id)?.name ?? globalThis.game?.journal?.get?.(id)?.name;
+  return typeof name === 'string' && name.trim() ? name : null;
 }
 
 /**
@@ -311,16 +331,14 @@ export async function registerEntityId(campaignState, listKey, id, { label = lis
  * path other than the reveal's rename or Make a Connection — a vow's target
  * NPC from Swear an Iron Vow, a sector's generated settlement or connection,
  * a draft Confirm — was hidden from the narrator (CREATED-ONTO-DISMISSED-NAME).
- * Its host document's name (an Actor's or a JournalEntry's). GM only, never
- * throws; the caller's copy is updated once the store took it.
+ * The name is its host document's (an Actor's or a JournalEntry's). GM only,
+ * never throws; the caller's copy is updated once the store took it.
  *
- * @param {string} id — the host document id
+ * @param {string} name — the registered record's name (registeredNameToUndismiss)
  * @param {Object} campaignState — the caller's copy
  * @returns {Promise<void>}
  */
-async function undismissRegisteredName(id, campaignState) {
-  const name = globalThis.game?.actors?.get?.(id)?.name ?? globalThis.game?.journal?.get?.(id)?.name;
-  if (typeof name !== 'string' || !name.trim()) return;
+async function undismissRegisteredName(name, campaignState) {
   let undismiss = null;
   try {
     ({ undismissRecordName: undismiss } = await import('./entityExtractor.js'));
