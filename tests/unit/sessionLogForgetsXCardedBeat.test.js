@@ -42,7 +42,8 @@ vi.mock('../../src/api-proxy.js', () => ({
 import { applyNarratorSidecar, postNarrationCard } from '../../src/narration/narrator.js';
 import { suppressScene } from '../../src/context/safety.js';
 import { applyEndSession } from '../../src/safety/sessionLifecycleDialogs.js';
-import { JOURNAL_NAMES, recordLoreDiscovery } from '../../src/world/worldJournal.js';
+import { JOURNAL_NAMES, recordLoreDiscovery, restoreSessionLogStory } from '../../src/world/worldJournal.js';
+import { rollSessionIfDue } from '../../src/session/lifecycle.js';
 import { installJournalMock } from '../helpers/fullStateFixture.js';
 
 const MODULE_ID = 'starforged-companion';
@@ -147,5 +148,60 @@ describe("issue #345 AA27 — an X-Card played after End a Session takes the rem
     expect(stored().sessionSummary?.text).toMatch(/small body/);       // the summary did not cover the vignette: kept
 
     expect(sessionLogSummary()?.narrative).toMatch(/small body/);
+  });
+});
+
+/**
+ * SESSION-LOG-STORY-NOT-REBUILT (AA27's residual, the maintainer's proposal):
+ * the story the X-Card took off the page stayed gone — the next mint
+ * regenerated the ended session's summary for LAST SESSION from what
+ * remained, and nothing wrote it back to the page. The mint's catch-up now
+ * does (restoreSessionLogStory), and only for a story the X-Card emptied.
+ */
+describe('SESSION-LOG-STORY-NOT-REBUILT — the next mint writes the story of what remains back onto the page', () => {
+  async function earlierNarration() {
+    const text = applyNarratorSidecar(
+      'Kira dug through the rubble of the Bleakhold mine.\n```json\n{"newTruths":[],"stateChanges":[]}\n```',
+      stored(), { narrationId: 'nar-early' },
+    );
+    syncChat();
+    await postNarrationCard(text, { moveId: 'undertake_an_expedition', outcome: 'weak_hit', _id: 'res-early' },
+      stored(), { playerText: 'We go into the mine.', playerName: 'Kira', narrationId: 'nar-early' });
+    await ChatMessage.create({ content: 'I dig through the rubble.', flags: {} });   // someone speaks: a beat of its own
+    syncChat();
+  }
+
+  it('after an X-Card emptied the story at End, the mint rebuilds it without the removed beat', async () => {
+    await earlierNarration();
+    await lastNarration();
+    await applyEndSession({}, { local: true });
+    await until(() => ChatMessage._created.some(m => m.flags?.[MODULE_ID]?.sessionVignetteCard));
+    await ticks();
+    syncChat();
+    expect(await suppressScene({}, { local: true })).toBe(true);
+    await ticks();
+    expect(sessionLogSummary()?.narrative ?? '', 'setup: the X-Card emptied the story').toBe('');
+
+    // The next world load's mint: the summary is regenerated from the cards that remain.
+    replies.summary = 'Kira dug through the rubble of the Bleakhold mine.';
+    const cs = { ...stored(), sessionEndedId: SESSION };
+    expect(await rollSessionIfDue(cs)).toBe(true);
+    await ticks();
+
+    expect(cs.previousSessionSummary?.text).toBe('Kira dug through the rubble of the Bleakhold mine.');
+    expect(sessionLogSummary()?.narrative).toBe('Kira dug through the rubble of the Bleakhold mine.');
+    expect(sessionLogSummary()?.narrativeXCarded).toBeUndefined();
+  });
+
+  it('control: a story End wrote empty (no summary) is not written by the mint', async () => {
+    await lastNarration();
+    await applyEndSession({}, { local: true });
+    await until(() => ChatMessage._created.some(m => m.flags?.[MODULE_ID]?.sessionVignetteCard));
+    await ticks();
+    const page = journals.journals.get(JOURNAL_NAMES.sessionLog)?.pages.contents[0];
+    const flag = page.flags[MODULE_ID].sessionLogPage;
+    await page.setFlag(MODULE_ID, 'sessionLogPage', { ...flag, summary: { ...flag.summary, narrative: '' } });
+    expect(await restoreSessionLogStory(SESSION, 'Something else entirely.')).toBe(false);
+    expect(sessionLogSummary()?.narrative).toBe('');
   });
 });

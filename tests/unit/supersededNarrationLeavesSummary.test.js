@@ -186,3 +186,50 @@ describe("issue #345 AA24 — a rewound clock's trigger vignette leaves STORY SO
     expect(stored().sessionSummary).toMatchObject({ text: 'Kira crossed the market.', coveredCount: 1 });
   });
 });
+
+// UPGRADE-REGEN-IN-FLIGHT (AA24's residual): a regen whose call is out when a
+// Burn Momentum or Improve Result supersedes a card of its source was stored
+// after the supersede — the summary of the replaced outcome, covering the
+// re-narration's place in the count. The X-Card has a play count for this
+// race (AA25); a supersede now marks the cards it has begun on, and the
+// regen's reply and its chained write compare its source against them.
+describe('UPGRADE-REGEN-IN-FLIGHT — a summary whose call is out when its source is superseded is not stored', () => {
+  async function regenHeldWhile(during) {
+    let release;
+    const held = new Promise((r) => { release = r; });
+    apiPost.mockImplementation(async (_url, _headers, body) => {
+      if (!isSummaryCall(body)) return reply('The narrator answers.');
+      await held;
+      return reply(/dragged off to the cells/.test(JSON.stringify(body?.messages ?? '')) ? SUMMARY_MISS : SUMMARY_HIT);
+    });
+    const pending = getRollingSessionSummary({ ...stored() }, { forceRefresh: true });
+    await new Promise(r => setTimeout(r, 0));
+    await during();
+    release();
+    return pending;
+  }
+
+  it('the burn supersedes the miss while the regen\'s call is out: the summary of the miss is not stored', async () => {
+    await narrated(1, 'Kira threads the crowded market.');
+    await narrated(2, 'The clerk pockets the bribe and looks away.');
+    await narrated(3, 'The guards seize Kira and she is dragged off to the cells.', 'miss');
+
+    const text = await regenHeldWhile(async () => {
+      await supersedeOriginalNarration({ resolutionId: 'res-3' }, { kind: 'burn' });
+      syncChat();
+    });
+
+    expect(text).toBe('');
+    expect(stored().sessionSummary?.text ?? '').not.toMatch(/dragged off to the cells/);
+  });
+
+  it('control: with no supersede during the call, the summary is stored', async () => {
+    await narrated(1, 'Kira threads the crowded market.');
+    await narrated(2, 'The clerk pockets the bribe and looks away.');
+    await narrated(3, 'The guards seize Kira and she is dragged off to the cells.', 'miss');
+
+    const text = await regenHeldWhile(async () => {});
+    expect(text).toBe(SUMMARY_MISS);
+    expect(stored().sessionSummary).toMatchObject({ text: SUMMARY_MISS, coveredCount: 3 });
+  });
+});

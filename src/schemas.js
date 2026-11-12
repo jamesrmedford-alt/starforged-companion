@@ -311,7 +311,6 @@ export const ConnectionSchema = {
                                 // createConnection data win; seedConnectionActor rolls only
                                 // when still blank (finding E; CHAR-NPC-PRONOUN-ROLL-BLIND).
                                 // Anchors portrait prompt, entity card, seeded Notes, audio voice.
-  background: "",               // Known history
   motivation: "",               // What drives them (may be blank — unknown)
   goal: "",                     // The driving objective: the goal the narration gave them
                                 // (detection / the Make a Connection seed the narration was
@@ -319,7 +318,11 @@ export const ConnectionSchema = {
                                 // oracle result (sector wizard, seedConnectionActor).
                                 // F3: rolled by sector creator and passed to createConnection
                                 // but had no schema home, so it never reached the journal body.
-  secrets: "",                  // Information hidden from the player character (GM only)
+  // `background` (known history) and `secrets` (GM-only) are retired: no
+  // production code ever wrote or read either, so neither reached the card or
+  // the narrator (CONN-BACKGROUND-UNWRITTEN). History is `history` and the
+  // generative tier; GM-only notes are the sheet's Notes. Stored records keep
+  // the empty fields, which do no harm.
 
   // Append-only relationship history log
   history: [
@@ -478,12 +481,23 @@ export const CampaignStateSchema = {
   // premise (who / where / stakes / deadline) cannot age out of the recent-
   // narration ring or be cleared by a scene transition (PLAYTEST-1712 S; the
   // narrator-memory "never-dropped" tier). null until the incident is composed.
-  // Shape: { prose, spark:{action,theme}, vow, clock, target, sessionId, establishedAt }
+  // Shape: { prose, spark:{action,theme}, vow, clock, target, sessionId, establishedAt, narrationId }
   incitingIncident: null,
 
   // Entity names suppressed from narrator extraction. Populated by the
   // entity panel's dismiss action.
   dismissedEntities:   [],
+
+  // The names narrations took off dismissedEntities — a Make a Connection on
+  // a dismissed NPC, an identity reveal onto a dismissed name — as
+  // { name, narrationId }, newest last (cap 50), so an X-Card on the
+  // narration dismisses the name again (XCARD-KEEPS-UNDISMISS).
+  undismissedByNarration: [],
+  // The crew's shared supply as the canonical GM's last sync pass set it
+  // (multiplayer/sharedSupply.js): the sheets hold it in lockstep, and this
+  // settles which of two disagreeing sheets is the crew's when a refused
+  // mirror write left one behind (SUPPLY-TWO-PC-TIE). Null until a pass ran.
+  crewSupply: null,
 
   // Concurrency lock — true while the move interpretation pipeline is running.
   // Prevents two narration messages from kicking off parallel pipelines that
@@ -566,6 +580,15 @@ export const CampaignStateSchema = {
   // galley vignette) Begin a Session already applied — they run once per
   // session (issue #300 F11). Written and read by applyBeginSession.
   sessionStartedId:     null,
+  // The narration perspective Auto resolved to for this session (issue #348
+  // PT03): decided once, at Begin a Session (lifecycle.js beginSession, from
+  // the connected non-GM users then), cleared at the mint, and read by every
+  // narration of that session (narratorPrompt.js sessionPerspectiveOf) — it
+  // was recomputed per call, so a second window or player connecting
+  // mid-session flipped "you" to names. A session with none (not begun)
+  // resolves per call as before.
+  //   { sessionId, perspective: "second_person"|"third_person" } | null
+  sessionPerspective:   null,
 
   // End a Session spotlights: the vow and connection the
   // table wants to focus on next time. Written by applyEndSession, surfaced
@@ -605,7 +628,9 @@ export const CampaignStateSchema = {
   //                      moveId, source, asserter, createdAt, retracted,
   //                      retractedBy, retractedAt, correctedTo, migratedTo }
   //   sceneState     — supersede-on-attribute state ledger
-  //                    { bySubject: { [subjectKey]: [{ attribute, value, updatedAt }] }, sceneId }
+  //                    { bySubject: { [subjectKey]: [{ attribute, value, updatedAt, subjectText? }] }, sceneId }
+  //                    (subjectText: a text subject as the narrator wrote it — its key is lowercased;
+  //                    the CURRENT STATE label reads it, TEXT-SUBJECT-LOWERCASE)
   currentSceneId: null,
   sceneTruths:    [],
   sceneState:     { bySubject: {}, sceneId: null },

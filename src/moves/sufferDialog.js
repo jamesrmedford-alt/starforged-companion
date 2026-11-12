@@ -17,7 +17,9 @@
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum, markUnprepared } from "./sufferExecutor.js";
+import { findThresholdCard, stashPositionOnThresholdCard as stashOnOwnThresholdCard } from "./combatThreshold.js";
+import { UNNAMED_EXPEDITION_LABEL } from "./expedition.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -44,7 +46,8 @@ const MODULE_ID = "starforged-companion";
  *     { kind: "meter",        meterKey, delta }
  *     { kind: "noop" }
  *     { kind: "complication", scope }
- *     { kind: "route",        route, rank?, mark? }
+ *     { kind: "route",        route, rank?, mark?, price? } — `price` ({ roll, moveName }):
+ *                                         a Pay the Price the move rolled (SOJOURN-PTP-ADVISORY)
  *     { kind: "mark",         debility }
  *     { kind: "roll-table",   table }   — Endure Harm / Stress at 0 on a miss (issue #329 X03)
  *     { kind: "at-zero-choice", which } — the at-0 choice after a miss's
@@ -59,6 +62,12 @@ export function resolveSufferSelection(sufferPrompt, selection = {}) {
   // chosen move used to be repeated `count` times, so the player could never
   // take two different suffer moves (issue #325 W15).
   if (sufferPrompt.kind === "any") {
+    // A momentum loss the minimum refused may clear progress instead: one
+    // rank's mark on a track the card offers (MOMENTUM-MIN-REDIRECT-MANUAL).
+    if (selection.clearTrackId) {
+      const track = (sufferPrompt.clearTracks ?? []).find(t => t?.id === selection.clearTrackId);
+      return track ? [{ kind: "clear-progress", trackId: track.id, label: track.label ?? null }] : [];
+    }
     const sufferId = selection.anyChoice;
     if (!sufferId) return [];
     return [{ kind: "suffer", sufferId, amount: sufferPrompt.amount ?? 1, itemId: selection.itemId ?? null }];
@@ -106,7 +115,10 @@ function optionToCalls(opt, selection) {
 
   // Route to another move (e.g. "Pay the Price", "Swear an Iron Vow").
   if (opt.route) {
-    return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}) }];
+    // A priced Pay the Price option (Sojourn's miss — resolver rollChoicePrice)
+    // carries the roll its narration depicted, for the pick to pay.
+    const price = opt.route === "pay_the_price" && Number.isInteger(opt.price?.roll) ? { roll: opt.price.roll, moveName: opt.price.moveName ?? null } : null;
+    return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}), ...(price ? { price } : {}) }];
   }
 
   // Combat progress mark — marks the active combat track N times.
@@ -221,6 +233,8 @@ export function isRetryableSufferCall(call) {
     case "combat-progress":
     case "expedition-progress":
       return smallInt(call.count ?? 1, 4);
+    case "clear-progress":
+      return typeof call.trackId === "string" && call.trackId.length > 0 && call.trackId.length <= 64;
     case "next-bonus":
       return smallInt(call.amount, 2);
     default:
@@ -332,21 +346,28 @@ async function runSufferCall(call, actor, opts) {
       if (call.meterKey === "integrity" && opts.vehicleItemId) {
         const { applyVehicleAssetIntegrityChange } = await import("../character/actorBridge.js");
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await lossPastZero(actor, call.delta, await applyVehicleAssetIntegrityChange(actor, call.delta, { itemId: opts.vehicleItemId }))) };
+          ...(await lossPastZero(actor, call.delta, await applyVehicleAssetIntegrityChange(actor, call.delta, { itemId: opts.vehicleItemId }), opts)) };
       }
       if (call.meterKey === "integrity") {
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await lossPastZero(actor, call.delta, await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta))) };
+          ...(await lossPastZero(actor, call.delta, await applyVehicleIntegrity(opts.vehicleActorId ?? null, call.delta), opts)) };
       }
       if (call.meterKey === "companionHealth") {
         const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
         return { kind: "meter", meterKey: call.meterKey, delta: call.delta,
-          ...(await lossPastZero(actor, call.delta, await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null }))) };
+          ...(await lossPastZero(actor, call.delta, await applyCompanionHealthChange(actor, call.delta, { itemId: opts.companionItemId ?? null }), opts)) };
       }
       await applyMeterChanges(actor, { [call.meterKey]: call.delta });
       return { kind: "meter", meterKey: call.meterKey, delta: call.delta };
     }
     case "mark":
+      // Unprepared is the crew's: its one writer marks every PC sharing the
+      // supply (markUnprepared) — a Sacrifice Resources' refused mark, retried
+      // alone (SUFFER-RETRY-WHOLE-AFTER-METER).
+      if (call.debility === "unprepared") {
+        const marks = await markUnprepared(actor);
+        return { kind: "mark", debility: call.debility, ...marks };
+      }
       await setDebility(actor, call.debility, true);
       return { kind: "mark", debility: call.debility };
     case "clear-impact": {
@@ -403,6 +424,17 @@ async function runSufferCall(call, actor, opts) {
         ? { kind: "roll-table", table: call.table, ...rolled }
         : { kind: "roll-table", table: call.table, skipped: true, ok: false, reason: "no-table" };
     }
+    case "clear-progress": {
+      // A momentum loss the minimum refused, taken as progress: one rank's
+      // mark cleared on the track picked (MOMENTUM-MIN-REDIRECT-MANUAL).
+      const { getProgressTrack, adjustProgressById } = await import("../ui/progressTracks.js");
+      const track = await getProgressTrack(call.trackId);
+      if (!track) return { kind: "clear-progress", trackId: call.trackId, ok: false, reason: "track-gone" };
+      if (track.completed) return { kind: "clear-progress", trackId: call.trackId, ok: false, reason: "track-done" };
+      const cleared = await adjustProgressById(call.trackId, -1);
+      if (!cleared) return { kind: "clear-progress", trackId: call.trackId, ok: false, reason: "track-gone" };
+      return { kind: "clear-progress", trackId: call.trackId, before: Number(track.ticks ?? 0), after: Number(cleared.ticks ?? 0) };
+    }
     case "combat-progress": {
       const { listProgressTracks, markProgressById } = await import("../ui/progressTracks.js");
       const { fight, reason } = progressFight(await listProgressTracks(), opts);
@@ -416,6 +448,20 @@ async function runSufferCall(call, actor, opts) {
     case "expedition-progress": {
       const { listProgressTracks, markProgressById, addProgressTrack } = await import("../ui/progressTracks.js");
       const allTracks = await listProgressTracks();
+      // The expedition the move explored, resolved when it was rolled
+      // (Explore a Waypoint's targets): that one or nothing — never the sole
+      // open one at click time (DELAYED-CHOICE-IDENTITY, N04's rule). A card
+      // that names none keeps the click-time reading below.
+      if (typeof opts.expeditionTrackId === "string" && opts.expeditionTrackId) {
+        const own = allTracks.find(t => t.id === opts.expeditionTrackId && t.type === "expedition") ?? null;
+        if (!own || own.completed) {
+          const reason = own ? "expedition-over" : "expedition-gone";
+          console.warn(`${MODULE_ID} | expedition-progress executor: the move's expedition ${opts.expeditionTrackId} is ${own ? "over" : "gone"} — progress not marked.`);
+          return { kind: "expedition-progress", count: call.count, skipped: true, ok: false, reason };
+        }
+        for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(own.id);
+        return { kind: "expedition-progress", count: call.count, trackId: own.id };
+      }
       const open = allTracks.filter(t => t.type === 'expedition' && !t.completed);
       if (open.length === 1) {
         for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(open[0].id);
@@ -425,8 +471,10 @@ async function runSufferCall(call, actor, opts) {
         // Explore a Waypoint's "mark progress" pick used to silently skip
         // when no expedition was open (WAYPOINT-PROGRESS-NOOP). Mirror
         // applyExpeditionProgress's resolve-or-create: begin a default
-        // expedition and mark it, so the chosen reward always lands.
-        const created = await addProgressTrack({ label: "Expedition", type: "expedition", rank: "dangerous" });
+        // expedition and mark it, so the chosen reward always lands. Its label
+        // is the one every unnamed expedition has — the arrival and the finish
+        // read it as "no destination named" (WAYPOINT-PLACEHOLDER-LITERAL).
+        const created = await addProgressTrack({ label: UNNAMED_EXPEDITION_LABEL, type: "expedition", rank: "dangerous" });
         for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(created.id);
         return { kind: "expedition-progress", count: call.count, trackId: created.id, created: true };
       }
@@ -436,6 +484,26 @@ async function runSufferCall(call, actor, opts) {
     case "combat-position": {
       const { listProgressTracks } = await import("../ui/progressTracks.js");
       const allTracks = await listProgressTracks();
+      // The fight the move was about, resolved when it was rolled
+      // (DELAYED-CHOICE-IDENTITY, N04's rule): the open fight its foe named,
+      // or the fight its threshold card begins — never the sole open fight
+      // or the newest threshold card at click time. A card that names
+      // neither keeps the click-time reading below.
+      const own = ownCombatPositionTarget(allTracks, opts);
+      if (own) {
+        if (own.stash) {
+          const stashed = await stashOnOwnThresholdCard(opts.thresholdResolutionId, call.position);
+          if (stashed) return { kind: "combat-position", position: call.position, stashed, skipped: false };
+          return { kind: "combat-position", position: call.position, skipped: true, ok: false, reason: "fight-gone" };
+        }
+        if (!own.fight) {
+          console.warn(`${MODULE_ID} | combat-position executor: ${own.reason} — position "${call.position}" not applied.`);
+          return { kind: "combat-position", position: call.position, skipped: true, ok: false, reason: own.reason };
+        }
+        const { applyCombatPositionToTrack } = await import("./combatTracker.js");
+        await applyCombatPositionToTrack(own.fight.id, call.position, actor);
+        return { kind: "combat-position", position: call.position, trackId: own.fight.id };
+      }
       const open = allTracks.filter(t => t.type === 'combat' && !t.completed);
       if (open.length === 1) {
         const { applyCombatPositionToTrack } = await import("./combatTracker.js");
@@ -484,6 +552,15 @@ async function runSufferCall(call, actor, opts) {
       );
       return { kind: "complication", scope: call.scope };
     case "route":
+      // A priced Pay the Price (Sojourn's "No relief"): the price the move's
+      // narration depicted is paid — its card, its suffer routes and the
+      // countdown clocks — never a reminder to roll another, which differed
+      // from the narrated one (SOJOURN-PTP-ADVISORY).
+      if (call.route === "pay_the_price" && call.price) {
+        const { payChosenPrice } = await import("../index.js");
+        const paid = await payChosenPrice(call.price, actor);
+        return { kind: "route", route: call.route, ...paid };
+      }
       // Surface a chat card prompting the player/GM to trigger the
       // follow-up move themselves. Auto-firing Swear an Iron Vow /
       // Pay the Price from here would lose the player's narration.
@@ -540,6 +617,32 @@ async function healPatientActor(opts) {
 }
 
 /**
+ * The fight a combat-position choice is about, as its card names it
+ * (DELAYED-CHOICE-IDENTITY): null when the card names none (a card posted
+ * before it carried them — the caller's click-time reading). Enter the Fray
+ * against a new foe names its threshold card (`thresholdResolutionId`):
+ * still waiting, the position is stashed on it (`stash`); entered, the fight
+ * it began (its `frayTrackId`); a way out taken, no fight. A move whose foe an
+ * open fight was names that fight (`combatTrackId`, progressFight's ladder).
+ *
+ * @param {Array<Object>} tracks
+ * @param {Object} opts — the card's executor opts
+ * @returns {{ stash?: boolean, fight?: Object|null, reason?: string }|null}
+ */
+function ownCombatPositionTarget(tracks, opts) {
+  if (typeof opts?.thresholdResolutionId === "string" && opts.thresholdResolutionId) {
+    const tf = findThresholdCard(opts.thresholdResolutionId)?.flags?.[MODULE_ID] ?? null;
+    if (!tf) return { fight: null, reason: "fight-gone" };
+    if (!tf.thresholdTaken) return { stash: true };
+    if (tf.thresholdTaken !== "fray") return { fight: null, reason: "way-out" };
+    if (typeof tf.frayTrackId !== "string" || !tf.frayTrackId) return { fight: null, reason: "fight-gone" };
+    return progressFight(tracks, { combatTrackId: tf.frayTrackId });
+  }
+  if (typeof opts?.combatTrackId === "string" && opts.combatTrackId) return progressFight(tracks, opts);
+  return null;
+}
+
+/**
  * The fight a delayed "mark progress" choice (Gain Ground's) marks: the fight
  * the move was about — the pipeline's `moveFight`, carried on the card as
  * `opts.combatTrackId` — checked when the choice is made. Gone or finished by
@@ -581,10 +684,10 @@ function progressFight(tracks, opts) {
  * @param {Object} res — the write's result (`ok`, `before`, `after`)
  * @returns {Promise<Object>} `res`, with `momentumLoss` when some overflowed
  */
-async function lossPastZero(actor, delta, res) {
+async function lossPastZero(actor, delta, res, opts = {}) {
   if (!(delta < 0) || res?.ok !== true || !Number.isFinite(res.before)) return res;
   const taken = Math.max(0, res.before - (Number.isFinite(res.after) ? res.after : res.before));
-  const momentumLoss = await overflowToMomentum(actor, -delta - taken);
+  const momentumLoss = await overflowToMomentum(actor, -delta - taken, opts);
   return momentumLoss ? { ...res, momentumLoss } : res;
 }
 

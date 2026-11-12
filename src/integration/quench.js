@@ -2697,16 +2697,6 @@ function registerSystemAssetTests(quench) {
       const { describe, it, assert } = context;
 
       describe("ironswornAssets — runtime path resolution", function () {
-        it("isIronswornAvailable resolves to true when the system is installed", async function () {
-          const { isIronswornAvailable, _resetIronswornAvailabilityCache } =
-            await import(`${MODULE_PATH}/system/ironswornAssets.js`);
-          _resetIronswornAvailabilityCache();
-          const available = await isIronswornAvailable();
-          // Skip when running in a world without foundry-ironsworn
-          if (!available) { this.skip(); return; }
-          assert.isTrue(available, "system should be detected as installed");
-        });
-
         it("pickStarshipIcon returns a path under the starships asset folder", async function () {
           const { pickStarshipIcon, IS_PATHS } =
             await import(`${MODULE_PATH}/system/ironswornAssets.js`);
@@ -2742,17 +2732,6 @@ function registerSystemAssetTests(quench) {
           assert.include(block, "<canonical_move>", "the Face Danger document's text should build the block");
           assert.match(block, /something risky/i, "the block should hold Face Danger's own text");
           assert.notInclude(block, "@Compendium", "move links should be reduced to their labels");
-        });
-
-        it("listCanonicalEncounters returns at least one encounter when the pack is installed", async function () {
-          this.timeout(15000);
-          const { listCanonicalEncounters, _clearPackCache } =
-            await import(`${MODULE_PATH}/system/ironswornPacks.js`);
-          _clearPackCache();
-          if (!game.packs?.get?.("foundry-ironsworn.foeactorssf")) { this.skip(); return; }
-          const list = await listCanonicalEncounters();
-          assert.isArray(list);
-          assert.isAtLeast(list.length, 1, "at least one encounter should be indexed");
         });
       });
 
@@ -12215,6 +12194,11 @@ function registerPromptContractTests(quench) {
       /** Settings each section depends on, pinned for the batch (defaults may change). */
       const PINNED = {
         claudeApiKey:                      "sk-ant-contract-stub",
+        // The table's global Lines and Veils are the world settings; the
+        // copy on campaignState.safety is written through from them
+        // (SAFETY-GLOBAL-LISTS-CROSS-WRITE), so the seeded Line is set here.
+        globalSafetyLines:                 ["No harm to children"],
+        globalSafetyVeils:                 [],
         narrationEnabled:                  true,
         narratorSessionSummary:            true,
         vowSwearingNarration:              true,

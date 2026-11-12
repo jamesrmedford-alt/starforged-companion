@@ -15,6 +15,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { persistResolution } from "../../src/moves/persistResolution.js";
 import { runGmAction } from "../../src/multiplayer/gmRelay.js";
+import { markLegacyOnCopy } from "../../src/moves/legacyTracks.js";
 
 const MODULE_ID = "starforged-companion";
 const KEY       = `${MODULE_ID}.campaignState`;
@@ -142,11 +143,44 @@ describe("persistResolution — concurrent writes survive the stale working copy
     const snapshot = pipelineSnapshot();
     snapshot.artAssetIds = { "a-pipeline": "Art: connection c-1 a-pipeline" };
     stored().artAssetIds = { "a-gm": "Art: ship s-1 a-gm" };
-    await persistResolution(resolution(), snapshot);
+    // The pipeline's portrait is in the Art Cache: its journal entry holds it.
+    const savedGetName = game.journal.getName;
+    game.journal.getName = (name) => (name === "Art: connection c-1 a-pipeline" ? { name } : null);
+    try {
+      await persistResolution(resolution(), snapshot);
+    } finally {
+      game.journal.getName = savedGetName;
+    }
     expect(stored().artAssetIds).toEqual({
       "a-pipeline": "Art: connection c-1 a-pipeline",
       "a-gm":       "Art: ship s-1 a-gm",
     });
+  });
+
+  // Known-issues ART-INDEX-RESURRECTED: the X-Card's deleteEntityArtAssets
+  // dropped a deleted portrait's index entry from the store while a move was
+  // in flight, and the union wrote it back from the pipeline's copy.
+  it("does not write back an art index entry the store dropped when its journal entry is gone", async () => {
+    stored().artAssetIds = { "a-gone": "Art: connection c-1 a-gone", "a-kept": "Art: ship s-1 a-kept" };
+    const snapshot = pipelineSnapshot();
+    // Meanwhile the X-Card deleted a-gone's journal entry and its index entry.
+    stored().artAssetIds = { "a-kept": "Art: ship s-1 a-kept" };
+    await persistResolution(resolution(), snapshot);
+    expect(stored().artAssetIds).toEqual({ "a-kept": "Art: ship s-1 a-kept" });
+  });
+
+  it("control: a pipeline-only entry whose journal was renamed is kept (found by its asset flag)", async () => {
+    const snapshot = pipelineSnapshot();
+    snapshot.artAssetIds = { "a-renamed": "Art: connection c-1 a-renamed" };
+    const savedContents = game.journal.contents;
+    game.journal.contents = [{ name: "Vance's portrait", flags: { [MODULE_ID]: { entityType: "artAsset", assetId: "a-renamed" } } }];
+    try {
+      await persistResolution(resolution(), snapshot);
+    } finally {
+      if (savedContents === undefined) delete game.journal.contents;
+      else game.journal.contents = savedContents;
+    }
+    expect(stored().artAssetIds).toEqual({ "a-renamed": "Art: connection c-1 a-renamed" });
   });
 
   it("legacy ticks from a concurrent `!bond` are not reverted", async () => {
@@ -167,9 +201,11 @@ describe("persistResolution — concurrent writes survive the stale working copy
   // resets — a track the pipeline rolled over from 38 to 2 (cleared) read as
   // behind the store's 38, and the clear was undone.
   it("a legacy track the pipeline cleared is not reverted by the store's higher pre-clear count", async () => {
-    const snapshot = pipelineSnapshot();
-    snapshot.legacyTracks.discoveries = { ticks: 2, cleared: true, cycles: 1 };   // 38 + 4: cleared, 2 over
     stored().legacyTracks = { discoveries: { ticks: 38, cleared: false } };
+    const snapshot = pipelineSnapshot();
+    // The pipeline's mark (index.js addLegacyTicks): 38 + 4 — cleared, 2 over.
+    markLegacyOnCopy(snapshot, "discoveries", 4);
+    expect(snapshot.legacyTracks.discoveries).toEqual({ ticks: 2, cleared: true, cycles: 1 });
     await persistResolution(resolution(), snapshot);
     expect(stored().legacyTracks.discoveries).toEqual({ ticks: 2, cleared: true, cycles: 1 });
   });
@@ -180,6 +216,22 @@ describe("persistResolution — concurrent writes survive the stale working copy
     stored().legacyTracks = { discoveries: { ticks: 1, cleared: true, cycles: 1 } };   // cleared meanwhile
     await persistResolution(resolution(), snapshot);
     expect(stored().legacyTracks.discoveries).toEqual({ ticks: 1, cleared: true, cycles: 1 });
+  });
+
+  // Known-issues LEGACY-SHEET-DECREASE: a legacy lowered on a sheet (the
+  // Legacies tab's ◂) flows back to the shared track; the merge kept the
+  // record further along, so a move whose copy was read before it raised the
+  // track again. The copy's own marks are applied to the stored track now.
+  it("a legacy track lowered on a sheet mid-pipeline stays lowered — the pipeline's own mark lands on it", async () => {
+    stored().legacyTracks = { bonds: { ticks: 20, cleared: false }, quests: { ticks: 12, cleared: false } };
+    const snapshot = pipelineSnapshot();
+    markLegacyOnCopy(snapshot, "quests", 4);                          // the pipeline: a vow fulfilled
+    stored().legacyTracks = { bonds: { ticks: 8, cleared: false }, quests: { ticks: 4, cleared: false } };   // lowered on a sheet meanwhile
+    await persistResolution(resolution(), snapshot);
+    expect(stored().legacyTracks).toEqual({
+      bonds:  { ticks: 8, cleared: false, cycles: 0 },
+      quests: { ticks: 8, cleared: false, cycles: 0 },
+    });
   });
 
   it("merges scene truths: the pipeline's new truths and a concurrent `!truth` retraction both land", async () => {

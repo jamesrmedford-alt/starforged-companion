@@ -16,7 +16,7 @@
  */
 
 import { rollOracle } from "../oracles/roller.js";
-import { stripMarkup } from "../audio/segments.js";
+import { proseToHtml } from "../audio/segments.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
 import { isNarrationXCarded } from "../context/safety.js";
 
@@ -330,7 +330,7 @@ export function renderIncitingIncidentCard({ spark, text, fallback = false, swor
       .split(/\n{2,}/)
       .map(p => p.trim())
       .filter(Boolean)
-      .map(p => `<p>${escapeHtml(stripMarkup(p)).replace(/\n+/g, " ")}</p>`)
+      .map(p => `<p>${proseToHtml(p).replace(/\n+/g, " ")}</p>`)
       .join("");
     const vowHtml = vow
       ? `<p class="sf-incite-vow"><strong>Suggested vow:</strong> ${escapeHtml(vow.statement)}` +
@@ -464,6 +464,9 @@ export async function runIncitingIncident(campaignState, { authorId = null } = {
         target:          meta.target,
         sessionId:       campaignState?.currentSessionId ?? null,
         establishedAt:   new Date().toISOString(),
+        // Its card carries the same id: an X-Card on the card takes the
+        // premise out of every prompt with it (XCARD-INCITING-PREMISE).
+        narrationId,
       };
       const { persistSceneLedgerFields } = await import("../factContinuity/sceneLifecycle.js");
       const written = await persistSceneLedgerFields(campaignState, ["sceneTruths", "sceneState", "sceneFrame"], "inciting premise", {

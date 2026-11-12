@@ -26,7 +26,9 @@
  * The sidecar's fence is recognised however the model tags it: ```json (the
  * instructed form), "``` json", or a bare ``` whose body is a JSON object
  * (issue #321 U41 — a bare fence used to post the raw JSON on the card and
- * drop the turn's facts). Raw sidecar JSON never reaches the prose.
+ * drop the turn's facts). Raw sidecar JSON never reaches the prose — nor
+ * does one written with no fence at all, after the prose on its own line
+ * (SIDECAR-UNFENCED).
  *
  * This module is pure — no I/O, no globals.
  */
@@ -90,6 +92,15 @@ export function extractSidecar(rawText) {
     }
   }
 
+  // No fence at all: a sidecar object the model wrote bare after the prose
+  // showed on the card as prose, and its facts were lost (known-issues
+  // SIDECAR-UNFENCED). A trailing object on its own line that opens with a
+  // sidecar key is the sidecar — complete, or cut off (a parseError).
+  if (!blocks.length) {
+    const bare = trailingBareSidecar(rawText);
+    if (bare) blocks.push(bare);
+  }
+
   if (!blocks.length) return { prose: rawText, sidecar: null, parseError: null };
 
   // Take the last block in the response. Strip every block from the prose so
@@ -108,6 +119,37 @@ export function extractSidecar(rawText) {
   }
 
   return { prose, sidecar, parseError };
+}
+
+// A line that opens a bare sidecar object: `{` and, first, one of its keys.
+const BARE_SIDECAR_START = /(^|\n)[ \t]*\{\s*"(?:newTruths|stateChanges|sceneFrame)"\s*:/g;
+
+/**
+ * The sidecar object written with no fence: the first line, from the end of
+ * the text back, that opens with a sidecar key and runs to the end of the
+ * reply. `closed` when it parses whole; otherwise it was cut off.
+ *
+ * @param {string} rawText
+ * @returns {{ start: number, end: number, body: string, closed: boolean }|null}
+ */
+function trailingBareSidecar(rawText) {
+  const starts = [...rawText.matchAll(BARE_SIDECAR_START)].map(m => m.index + m[1].length);
+  for (const start of starts) {
+    const body = rawText.slice(start).trim();
+    let parsed = null;
+    try {
+      parsed = JSON.parse(body);
+    } catch {
+      parsed = null;   // not this line — or cut off, below
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return { start, end: rawText.length, body, closed: true };
+    }
+  }
+  // None parses to the end: the last one is a sidecar cut off mid-object.
+  if (!starts.length) return null;
+  const start = starts[starts.length - 1];
+  return { start, end: rawText.length, body: rawText.slice(start).trim(), closed: false };
 }
 
 /** True when a fence body is a JSON object (parsed or not). */

@@ -34,7 +34,7 @@ import {
   openBeginSessionDialog,
   openEndSessionDialog,
 } from "../safety/sessionLifecycleDialogs.js";
-import { isSessionActive, sessionMinutesActive, sessionNeedsMint } from "../session/lifecycle.js";
+import { isSessionActive, sessionMinutesActive, sessionNeedsMint, sessionLastSeenAt, SESSION_IDLE_HOURS } from "../session/lifecycle.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -122,7 +122,42 @@ export class SessionPanelApp extends ApplicationV2 {
     const over          = active && sessionNeedsMint(campaignState);
     const minutes       = sessionMinutesActive(campaignState);
     const sessionNumber = Number(campaignState?.sessionNumber ?? 0);
+    this.#scheduleIdleRerender(active && !over ? campaignState : null);
     return { active, over, minutes, sessionNumber };
+  }
+
+  // The re-render due when the open session reaches its four idle hours.
+  #idleTimer = null;
+
+  /**
+   * An open panel re-renders on campaignState writes and on open, not when
+   * the four-hour mark passes: it kept "Active" (and Begin disabled) for a
+   * session that went over while it stayed open (SESSION-PANEL-OVER-STALE).
+   * Re-render at the mark — the later of the session's mint and its last
+   * chat-activity stamp, plus SESSION_IDLE_HOURS (sessionLastSeenAt). A
+   * render before it schedules afresh; chat since then moves the mark, and
+   * the re-render it brings schedules the next one.
+   *
+   * @param {Object|null} campaignState — a live session's, or null for none
+   */
+  #scheduleIdleRerender(campaignState) {
+    if (this.#idleTimer) clearTimeout(this.#idleTimer);
+    this.#idleTimer = null;
+    if (!campaignState) return;
+    const seen = Date.parse(sessionLastSeenAt(campaignState) ?? "");
+    if (!Number.isFinite(seen)) return;
+    const wait = Math.max(0, seen + SESSION_IDLE_HOURS * 3_600_000 - Date.now()) + 1_000;
+    this.#idleTimer = setTimeout(() => {
+      this.#idleTimer = null;
+      SessionPanelApp.rerenderIfOpen();
+    }, wait);
+  }
+
+  /** @override */
+  _onClose(options) {
+    if (this.#idleTimer) clearTimeout(this.#idleTimer);
+    this.#idleTimer = null;
+    super._onClose?.(options);
   }
 
   /** @override */

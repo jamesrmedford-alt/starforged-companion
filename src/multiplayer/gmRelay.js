@@ -189,6 +189,7 @@ export const GM_ACTIONS = Object.freeze({
   "bond.apply":                { load: () => import("../moves/bondCommand.js"),                      fn: "applyBondEffects" },
   "factContinuity.command":    { load: () => import("../factContinuity/chatCommands.js"),            fn: "applyFactContinuityCommand" },
   "oracle.narrate":            { load: () => import("../oracles/oracleFollowup.js"),                 fn: "narrateOracleFollowupOnGm", claude: true },
+  "oracle.forgetResult":       { load: () => import("../oracles/oracleFollowup.js"),                 fn: "forgetOracleResultFromRelay" },
   "repair.apply":              { load: () => import("../moves/repair.js"),                           fn: "applyRepairSpends" },
   "payThePrice.advanceClocks": { load: () => import("../clocks/payThePriceClocks.js"),               fn: "advanceClocksForPayThePriceRelay" },
   "payThePrice.suffer":        { load: () => import("../index.js"),                                  fn: "applyPayThePriceSufferFromRelay" },
@@ -196,6 +197,11 @@ export const GM_ACTIONS = Object.freeze({
   "forcedMove.hold":           { load: () => import("../index.js"),                                  fn: "holdHandedOverForcedMoves" },
   // Narration on a player's own key (no keyed GM online)
   "narrator.sidecar":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedNarratorSidecar" },
+  // Known-issues SUMMARY-KEYLESS-GM — the rolling summary a keyed player's client made, for a keyless GM to store
+  "narrator.summary":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedSessionSummary" },
+  // Known-issues DRAFT-CONFIRM-TWO-GMS — a "New Entities Detected" card's Confirm / Dismiss, one press at a time
+  "draft.confirm":             { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftConfirmFromRelay" },
+  "draft.dismiss":             { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftDismissFromRelay" },
   // Chat-card buttons
   "move.burnMomentum":         { load: () => import("../moves/burnMomentum.js"),                     fn: "applyBurnFromRelay",    claude: true },
   "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay", claude: true },
@@ -261,6 +267,8 @@ export const GM_ACTIONS = Object.freeze({
   "batch.keep":                { load: () => import("../batch/relay.js"),                           fn: "applyBatchKeep" },
   "batch.sendNow":             { load: () => import("../batch/relay.js"),                           fn: "applyBatchSendNow" },
   "batch.discard":             { load: () => import("../batch/relay.js"),                           fn: "applyBatchDiscard" },
+  // The toolbar switch's "Discard the round", decided on the canonical GM's round chain.
+  "batch.discardThenOff":      { load: () => import("../batch/relay.js"),                           fn: "applyBatchDiscardThenOff" },
 });
 
 /**

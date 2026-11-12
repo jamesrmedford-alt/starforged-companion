@@ -42,6 +42,7 @@ import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank } from "./milestone.js";
+import { toMoveId } from "../schemas.js";
 import { consequenceChosen, retireOutcomeChoiceCards, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -415,6 +416,16 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
 
   _inFlight.add(key);
   try {
+    // The outcome the match belonged to was burned or improved away: the
+    // alternative went with it (WAYPOINT-ALT-AFTER-UPGRADE). The upgrade
+    // stamps it closed; a card whose stamp did not land is closed here.
+    const upgraded = f.burn?.consumed ? "burn" : f.improve?.consumed ? "improve" : null;
+    if (upgraded) {
+      console.debug(`${MODULE_ID} | waypoint oracle: card ${messageId} — the result was upgraded (${upgraded}); the alternative is closed.`);
+      await message.update({ [`flags.${MODULE_ID}.waypointRewardClaimed`]: upgraded })
+        .catch(err => console.warn(`${MODULE_ID} | waypoint oracle: closing the alternative failed:`, err?.message ?? err));
+      return { posted: false, reason: "upgraded" };
+    }
     // The ordinary reward is already chosen: the alternative is "instead",
     // not as well. Closed on the card, so its button says so everywhere.
     if (consequenceChosen(f.resolutionId)) {
@@ -897,6 +908,10 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
  * @param {(f: Object) => boolean} [spec.offers] — a pick: the press names one
  *   of the card's own choices (the payload is client-asserted); false refuses
  *   it, `not-on-card`
+ * @param {(f: Object, card: ChatMessage) => Object|null} [spec.lineSpeaker] —
+ *   who the forced move speaks as when no PC rolls it (a player's own line
+ *   posted again): it spoke as the presser — a GM's press put the player's
+ *   words under the GM's name (issue #348 PT14)
  * @returns {Promise<{ posted: boolean, reason?: string }>}
  */
 export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
@@ -950,10 +965,11 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
       console.warn(`${MODULE_ID} | ${label}: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    const lineSpeaker = actor ? null : (spec.lineSpeaker?.(f, message) ?? null);
     try {
       await ChatMessage.create({
         content: move.content,
-        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        ...(actor ? { speaker: speakerFor(actor) } : lineSpeaker ? { speaker: lineSpeaker } : {}),
         flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true,
           ...sourceCardFlag(messageId, claim, false, { value: move.stamp ?? true }) } },
       });
@@ -1054,12 +1070,23 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
     isCard: (f) => f.pacedNarrative === true
       && typeof f.suggestedMove === "string" && !!f.suggestedMove
       && typeof f.playerText === "string" && !!f.playerText,
-    build: (f) => ({ content: f.playerText, flags: {
-      forcedMoveId: f.suggestedMove,
-      // A scene-challenge Roll's challenge, as the Finish an Expedition
-      // button forwards its track (PACED-VARIANT-NO-TARGET).
-      ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
-    } }),
+    // The card's line is the player's: with no PC to speak it, it keeps the
+    // speaker it was typed under (PT14).
+    lineSpeaker: (f, card) => speakerOfLine(f.playerText, card),
+    build: (f) => {
+      // A card posted before issue #321 U45 may hold the classifier's display
+      // name ("Gather Information"), which the pipeline throws on as an
+      // unknown move: map it to its key here, and roll nothing for a name
+      // that is no move (PACED-CARD-OLD-MOVE-NAME).
+      const moveId = toMoveId(f.suggestedMove);
+      if (!moveId) return null;
+      return { content: f.playerText, flags: {
+        forcedMoveId: moveId,
+        // A scene-challenge Roll's challenge, as the Finish an Expedition
+        // button forwards its track (PACED-VARIANT-NO-TARGET).
+        ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
+      } };
+    },
   });
 }
 
@@ -1546,6 +1573,12 @@ export async function applyCombatThresholdChoice(payload = {}, _ctx = {}) {
       await release();
       return { applied: false, reason: "not-created" };
     }
+    // The fight this card began, for its Enter the Fray's weak-hit choice
+    // clicked after it (sufferDialog's combat-position executor): that fight,
+    // never the sole open one (DELAYED-CHOICE-IDENTITY). Its read is the
+    // choice card's; a refused stamp leaves that choice unapplied and says so.
+    await message.update({ [`flags.${MODULE_ID}.frayTrackId`]: result.track.id })
+      .catch(err => console.warn(`${MODULE_ID} | fight threshold: the fight's id could not be recorded on card ${messageId}:`, err?.message ?? err));
     return { applied: true };
   } finally {
     _inFlight.delete(key);
@@ -1858,6 +1891,31 @@ export async function applyPayoffRetry(payload = {}, ctx = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The speaker a player's line was typed under: the newest chat message before
+ * `card` with exactly that text and none of the module's flags — the line the
+ * paced card answered — as its alias (the player's name with no PC of their
+ * own). Null when it is not in chat any more.
+ *
+ * @param {string} text
+ * @param {ChatMessage} card
+ * @returns {{ alias: string }|null}
+ */
+function speakerOfLine(text, card) {
+  if (typeof text !== "string" || !text) return null;
+  const all = Array.from(globalThis.game?.messages?.contents ?? []);
+  const at  = all.findIndex(m => m?.id === card?.id);
+  for (let i = (at >= 0 ? at : all.length) - 1; i >= 0; i--) {
+    const m = all[i];
+    if (m?.flags?.[MODULE_ID] || String(m?.content ?? "") !== text) continue;
+    const author = m.author;
+    const authorName = typeof author === "object" ? author?.name : globalThis.game?.users?.get?.(author)?.name;
+    const alias = m.speaker?.alias || authorName || null;
+    return alias ? { alias } : null;
+  }
+  return null;
+}
 
 /** A ChatMessage speaker for `actor` — Foundry's own builder when available. */
 function speakerFor(actor) {

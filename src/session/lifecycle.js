@@ -9,10 +9,11 @@
  *      / move-pipeline interception. Defaults to false (a fresh world
  *      with no campaignState mutation is treated as "not started").
  *
- *   - `beginSession(campaignState)`     — flips the gate ON and stamps
- *      `sessionActiveStartedAt`. GM-only — `campaignState` is a world-
- *      scoped game.settings document, so non-GM callers would hit a
- *      permissions error on the write. The caller persists; this
+ *   - `beginSession(campaignState)`     — flips the gate ON, stamps
+ *      `sessionActiveStartedAt` and records the session's Auto narration
+ *      perspective (`sessionPerspective`, issue #348 PT03). GM-only —
+ *      `campaignState` is a world-scoped game.settings document, so
+ *      non-GM callers would hit a permissions error on the write. The caller persists; this
  *      function only mutates the in-memory packet.
  *
  *   - `endSession(campaignState)`       — flips the gate OFF and clears
@@ -50,6 +51,8 @@
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { resolveNarrationPerspective } from "../narration/narratorPrompt.js";
+import { settledWithin } from "../multiplayer/settleWithin.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -74,6 +77,13 @@ export function isSessionActive(campaignState) {
  */
 export function beginSession(campaignState) {
   if (!campaignState) throw new Error("beginSession requires a campaignState");
+  // Auto perspective is decided here, once per session, from the table as it
+  // sits down (issue #348 PT03), and kept until the next mint clears it;
+  // every narration of the session reads it (sessionPerspectiveOf).
+  const sessionId = campaignState.currentSessionId || null;
+  if (sessionId && campaignState.sessionPerspective?.sessionId !== sessionId) {
+    campaignState.sessionPerspective = { sessionId, perspective: resolveNarrationPerspective("auto") };
+  }
   if (campaignState.sessionActive === true) return campaignState;
 
   campaignState.sessionActive = true;
@@ -164,6 +174,10 @@ export const SESSION_MINT_FIELDS = Object.freeze([
   "unsummarisedSession",
   "sessionActive",
   "sessionActiveStartedAt",
+  "deletedChatMessages",
+  // Cleared by the mint, decided by Begin (beginSession) — every Begin path
+  // persists this list (issue #348 PT03).
+  "sessionPerspective",
 ]);
 
 /** Epoch ms of the activity stamp for `sessionId`; NaN when there is none for it. */
@@ -244,17 +258,64 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
 let _sessionBeingReplaced = null;
 
 /**
- * At the canonical GM's world load, before its mint starts: when the stored
- * session is over (sessionNeedsMint), it is the one this load replaces.
+ * At the canonical GM's world load, before its mint starts — and at any mint's
+ * start (rollSessionIfDue: Begin a Session's too, BEGIN-MINT-LINE-WINDOW):
+ * when the stored session is over (sessionNeedsMint), it is the one being
+ * replaced.
  *
- * @param {Object} campaignState — as the load read it
+ * @param {Object} campaignState — as the load (or the mint) read it
+ * @param {number} [now] — epoch ms
  */
-export function noteSessionBeingReplaced(campaignState) {
-  _sessionBeingReplaced = sessionNeedsMint(campaignState) ? (campaignState?.currentSessionId ?? "") : null;
+export function noteSessionBeingReplaced(campaignState, now = Date.now()) {
+  _sessionBeingReplaced = sessionNeedsMint(campaignState, now) ? (campaignState?.currentSessionId ?? "") : null;
+}
+
+// The world load's session mint on this client, until it is persisted
+// (serialiseSessionMint); a Begin a Session waits for it (sessionMintsSettled).
+let _mintChain = Promise.resolve();
+
+/**
+ * How long a Begin waits for the load's mint: as long as a Begin waits for
+ * the Begin ahead (sessionLifecycleDialogs.js SESSION_CHAIN_WAIT_MS) — a mint
+ * whose write the server never answers must not hold every later Begin (issue
+ * #347 AB05).
+ */
+const SESSION_MINT_WAIT_MS = 5 * 60_000;
+
+/**
+ * Run the world load's session mint — rollSessionIfDue and the persist of
+ * what it minted — as the mint a Begin a Session waits for
+ * (sessionMintsSettled). The load's mint and a Begin landing during its
+ * summary call both read the closing session as over and both minted; the
+ * load's write then overwrote Begin's session id and its open gate
+ * (SESSION-MINT-RACE). Behind the load's, Begin reads the session the load
+ * minted, which needs no mint, and begins it. (Begins wait for each other on
+ * their own chain; the load's mint starts at `ready`, before a Begin can be
+ * relayed to this page.) The caller gets the task's own result or rejection.
+ *
+ * @template T
+ * @param {() => Promise<T>} task
+ * @returns {Promise<T>}
+ */
+export function serialiseSessionMint(task) {
+  const run = _mintChain.then(() => task());
+  _mintChain = run.then(() => undefined, () => undefined);
+  return run;
 }
 
 /**
- * The load's mint has landed: the session it replaced is no longer current.
+ * Settles once the world load's mint on this client has been persisted (or
+ * failed) — at most SESSION_MINT_WAIT_MS, warned. Begin a Session and the
+ * Campaign Start's begin read campaignState only after it (SESSION-MINT-RACE).
+ *
+ * @returns {Promise<boolean>} whether it settled in time
+ */
+export function sessionMintsSettled() {
+  return settledWithin(_mintChain, SESSION_MINT_WAIT_MS, "the world load's session mint");
+}
+
+/**
+ * A mint has landed — the load's, or Begin a Session's: the session it replaced is no longer current.
  * (A refused mint leaves the note: the stored session stays over until the
  * next mint — a Begin a Session — changes its id.)
  */
@@ -355,6 +416,12 @@ export function mintSession(campaignState, now = Date.now()) {
   campaignState.sessionEndedId         = null;
   campaignState.sessionActive          = false;
   campaignState.sessionActiveStartedAt = null;
+  // The deleted chat messages the X-Card's pick reads after a reload belong
+  // to the session closing out: its pick reads the new session's alone, so
+  // they are let go (DELETED-MESSAGES-KEPT).
+  campaignState.deletedChatMessages    = [];
+  // The new session's perspective is decided when it begins (issue #348 PT03).
+  campaignState.sessionPerspective     = null;
   return campaignState;
 }
 
@@ -383,6 +450,13 @@ export function mintSession(campaignState, now = Date.now()) {
  */
 export async function rollSessionIfDue(campaignState, { now = Date.now() } = {}) {
   if (!sessionNeedsMint(campaignState, now)) return false;
+  // The closing session is over at once, for every caller — the world load and
+  // Begin a Session alike: no typed line is narrated into it, and no Batch
+  // Mode round reads, resolves or opens in it, while its summary call and
+  // scene close run (issue #345 AA58's window, at Begin's own mint —
+  // BEGIN-MINT-LINE-WINDOW). The note clears itself once the minted session is
+  // stored (sessionBeingReplaced).
+  noteSessionBeingReplaced(campaignState, now);
   const closing = campaignState.currentSessionId;
   const ended   = !!closing && campaignState.sessionEndedId === closing;
   // Whether the closing session's summary covers it now. The finalise is
@@ -399,6 +473,18 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
     } catch (err) {
       caughtUp = false;
       console.warn(`${MODULE_ID} | session roll: summary finalise failed:`, err?.message ?? err);
+    }
+  }
+  // Its Session Log page's story, when an X-Card after End emptied it, is
+  // rebuilt from the summary just brought up to date
+  // (SESSION-LOG-STORY-NOT-REBUILT). Fail-open.
+  const closingSummary = campaignState.sessionSummary;
+  if (closing && caughtUp && closingSummary?.sessionId === closing && closingSummary.text?.trim()) {
+    try {
+      const { restoreSessionLogStory } = await import("../world/worldJournal.js");
+      await restoreSessionLogStory(closing, closingSummary.text);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | session roll: rebuilding the Session Log's story failed:`, err?.message ?? err);
     }
   }
   // A session nobody began is folded into the one before it (X65): not marked.

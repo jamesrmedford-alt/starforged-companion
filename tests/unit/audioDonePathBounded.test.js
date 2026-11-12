@@ -131,12 +131,32 @@ describe('a keyless player plays only a path the GM\'s cache could name (issue #
     expect(play.getAttribute('data-state')).toBe('loading');
   });
 
-  it('control: The Forge\'s Assets Library URL for the clip plays', async () => {
-    const play = await pressPlay('msg-forge');
+  it('control: in a world on The Forge, its Assets Library URL for the clip plays', async () => {
+    globalThis.ForgeVTT = { usingTheForge: true };
+    try {
+      const play = await pressPlay('msg-forge');
+      const forge = `https://assets.forge-vtt.com/5f1a2b3c4d/worlds/test-world/audio/${hash.slice(0, 2)}/${hash}.mp3`;
+      await deliver({ kind: 'audio.synth.done', hash, path: forge });
+      await vi.waitFor(() => expect(play.getAttribute('data-state')).toBe('playing'));
+      expect(playedSources()).toContain(forge);
+    } finally {
+      delete globalThis.ForgeVTT;
+    }
+  });
+
+  // Known-issues AUDIO-FORGE-ANY-WORLD: the Assets Library branch was taken in
+  // every world, a self-hosted one included, where the GM's cache can never
+  // name such a URL — any user's own Forge-hosted file stood in for the clip.
+  it('in a world not on The Forge, an Assets Library URL is no answer: the player keeps waiting for the GM\'s', async () => {
+    const play = await pressPlay('msg-forge-elsewhere');
     const forge = `https://assets.forge-vtt.com/5f1a2b3c4d/worlds/test-world/audio/${hash.slice(0, 2)}/${hash}.mp3`;
     await deliver({ kind: 'audio.synth.done', hash, path: forge });
+    expect(playedSources()).toEqual([]);
+    expect(play.getAttribute('data-state')).toBe('loading');
+    // The GM's honest answer still plays.
+    await deliver({ kind: 'audio.synth.done', hash, path: cachePath() });
     await vi.waitFor(() => expect(play.getAttribute('data-state')).toBe('playing'));
-    expect(playedSources()).toContain(forge);
+    expect(playedSources()).toEqual([cachePath()]);
   });
 
   it('control: the GM\'s "no clip" (path null) still releases the wait at once', async () => {
@@ -166,9 +186,17 @@ describe('a keyless player plays only a path the GM\'s cache could name (issue #
 });
 
 describe('isCachePathFor — the paths the audio cache can name for a clip', () => {
-  it('the world\'s own slot for the clip, and a Forge Assets Library URL ending in its file name', () => {
+  it('the world\'s own slot for the clip, and — in a world on The Forge — an Assets Library URL ending in its file name', () => {
+    const forge = `https://assets.forge-vtt.com/u1/worlds/test-world/audio/${hash.slice(0, 2)}/${hash}.mp3`;
     expect(isCachePathFor(hash, cachePath())).toBe(true);
-    expect(isCachePathFor(hash, `https://assets.forge-vtt.com/u1/worlds/test-world/audio/${hash.slice(0, 2)}/${hash}.mp3`)).toBe(true);
+    expect(isCachePathFor(hash, forge), 'not on The Forge').toBe(false);
+    globalThis.ForgeVTT = { usingTheForge: true };
+    try {
+      expect(isCachePathFor(hash, forge)).toBe(true);
+      expect(isCachePathFor(hash, cachePath())).toBe(true);
+    } finally {
+      delete globalThis.ForgeVTT;
+    }
   });
 
   it('nothing else', () => {

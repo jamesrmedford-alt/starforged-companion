@@ -10,7 +10,8 @@
  *
  * Returns a result object — never throws — so the window can show a precise
  * error banner: { ok:true, text } | { ok:false, reason: "x-card"|"no-key"|
- * "no-character"|"empty"|"error", error? }.
+ * "no-character"|"empty"|"error"|"stale", error? } — "stale": this page lost
+ * its connection to the server and has not reloaded (STALE-PLAYER-PAGE).
  *
  * While the X-Card is in play the private narrator stands down like every
  * narrator entry point (decisions.md "X-Card: anyone plays it, a GM resumes
@@ -21,6 +22,7 @@
 import { apiPost } from "../api-proxy.js";
 import { buildPrivateContext } from "./context.js";
 import { isXCardActive, watchXCard } from "../narration/narrator.js";
+import { pageIsStale } from "../multiplayer/connectionWatch.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -40,6 +42,10 @@ function readApiKey() {
  */
 export async function requestPrivateNarration(args) {
   if (isXCardActive(args?.campaignState)) return { ok: false, reason: "x-card" };
+  // A page whose connection dropped may lack an X-Card played meanwhile: no
+  // turn until it reloads (STALE-PLAYER-PAGE) — refused before the call,
+  // which the X-Card watch would discard anyway.
+  if (pageIsStale()) return { ok: false, reason: "stale" };
   const xCard = watchXCard(args?.campaignState);
 
   const apiKey = readApiKey();

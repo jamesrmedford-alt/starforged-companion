@@ -9,6 +9,7 @@
 //   3. Active Threats     — change severity inline
 //   4. Journal Links      — open the underlying JournalEntries
 
+import { decodeHtmlEntities } from '../system/htmlEntities.js';
 import {
   JOURNAL_NAMES,
   FLAG_KEYS,
@@ -19,6 +20,7 @@ import {
   updateThreatSeverity,
   writeEntryPage,
   findWorldJournal,
+  findEntryPage,
 } from './worldJournal.js';
 import { openCorrectionDialog } from '../factContinuity/correctionDialog.js';
 
@@ -141,9 +143,8 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
       return;
     }
     const title = readContradictionMessage(messageId)?.name;
-    const page  = title
-      ? journal.pages?.contents?.find(p => p.name === title)
-      : null;
+    // By the entry its flag names, whatever the GM titled the page (WJ-PAGE-BY-TITLE).
+    const page  = title ? findEntryPage(journal, title) : null;
     journal.sheet?.render(true, page ? { pageId: page.id } : undefined);
   }
 
@@ -391,12 +392,9 @@ function parseContradictionMessage(msg) {
   };
 }
 
+// The shared one-pass decoder (CHARACTER-STATE-ENTITY-UNDECODED).
 function decodeEntities(s) {
-  return String(s ?? '')
-    .replace(/&quot;/g, '"')
-    .replace(/&gt;/g, '>')
-    .replace(/&lt;/g, '<')
-    .replace(/&amp;/g, '&');
+  return decodeHtmlEntities(s);
 }
 
 async function deleteChatMessage(messageId) {
@@ -413,7 +411,7 @@ async function deleteChatMessage(messageId) {
 async function clearNarratorAssertion(title) {
   const journal = findWorldJournal('lore');
   if (!journal) return null;
-  const page = journal.pages?.contents?.find(p => p.name === title);
+  const page = findEntryPage(journal, title);   // the renamed page too (WJ-PAGE-BY-TITLE)
   if (!page) return null;
   const existing = page.flags?.[MODULE_ID]?.[FLAG_KEYS.lore];
   if (!existing) return null;

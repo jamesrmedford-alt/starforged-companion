@@ -38,15 +38,20 @@ export function normalizeCombatRank(rank) {
  *  1. Exact label match (case-insensitive, ignoring leading "the")
  *  2. One label inside the other, as whole words, either direction (issue
  *     #325 W30 — raw containment matched a short name inside another word)
- *  3. Fallback: single open combat track regardless of label
+ *  3. Fallback: single open combat track regardless of label — meant for a
+ *     combat move whose foe the interpreter named loosely; `soleFallback:
+ *     false` skips it for Enter the Fray, whose foe begins a fight unless an
+ *     open one is that foe by name (ENTER-FRAY-SOLE-FIGHT: a new foe resumed
+ *     the one open fight — no threshold card, no second track, and later
+ *     moves against the new foe marked the old one)
  *  4. null when ambiguous (multiple open, no match)
  *
  * @param {Array<{id,label,type,completed}>} allTracks
  * @param {string|null} label
- * @param {{ trackId?: string|null }} [opts]
+ * @param {{ trackId?: string|null, soleFallback?: boolean }} [opts]
  * @returns {object|null}
  */
-export function selectCombatTrack(allTracks, label, { trackId = null } = {}) {
+export function selectCombatTrack(allTracks, label, { trackId = null, soleFallback = true } = {}) {
   const open = allTracks.filter(t => t.type === 'combat' && !t.completed);
   if (typeof trackId === 'string' && trackId) return open.find(t => t.id === trackId) ?? null;
   if (!open.length) return null;
@@ -60,7 +65,7 @@ export function selectCombatTrack(allTracks, label, { trackId = null } = {}) {
     if (sub) return sub;
   }
 
-  return open.length === 1 ? open[0] : null;
+  return soleFallback && open.length === 1 ? open[0] : null;
 }
 
 /**
@@ -94,7 +99,8 @@ export function selectRollerFight(allTracks, actorId) {
  * re-created. Nothing is marked then: `track` is null and `reason` says why
  * ("ambiguous" | "gone"); the pipeline asks which fight before rolling.
  * Entering the fray (`beginsFight`, the threshold card) begins a fight: a foe
- * no open fight matches is a new one, however many are open.
+ * no open fight matches by name is a new one, however many are open — one
+ * open fight is not taken for it (ENTER-FRAY-SOLE-FIGHT).
  *
  * @param {{ moveTarget?: string|null, moveTargetId?: string|null, combatRank?: string|null,
  *   markCount?: number, beginsFight?: boolean }} opts
@@ -108,7 +114,7 @@ export async function applyCombatProgress(
   const { listTracks, createTrack, markProgress } = deps;
 
   const allTracks = await listTracks();
-  let track   = selectCombatTrack(allTracks, moveTarget ?? null, { trackId: moveTargetId });
+  let track   = selectCombatTrack(allTracks, moveTarget ?? null, { trackId: moveTargetId, soleFallback: !beginsFight });
   let created = false;
 
   if (!track && moveTargetId) {

@@ -149,6 +149,37 @@ describe('handleBondCommand — author client', () => {
     expect(ChatMessage._created[0].content).toMatch(/Usage/);
     expect(game.socket._emitted ?? []).toHaveLength(0);
   });
+
+  // Known-issues BOND-COMMAND-FALLBACK: a typed name matched by none of the
+  // bonds fell to selectConnection's sole-bond rung — `!bond Vexx` at a
+  // one-bond table rolled with Sable and the warning never fired. The name
+  // is matched by itself alone (`strict`, issue #321 U14's rung).
+  it('a name no bond matches warns and rolls nothing with the table\'s one bond', async () => {
+    setUsers([GM, P1], 'pl-1');
+    const warn = vi.spyOn(ui.notifications, 'warn');
+    try {
+      await handleBondCommand({ content: '!bond Vexx', author: { id: 'pl-1' } });
+
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('no bonded connection matched "Vexx"'));
+      expect(ChatMessage._created[0].content).toMatch(/Usage/);
+      expect(ChatMessage._created.find(m => /Strong hit|Weak hit|Miss/.test(m.content ?? ''))).toBeUndefined();
+      expect(game.socket._emitted ?? []).toHaveLength(0);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it('control: a name part of the bond\'s own still finds it', async () => {
+    setUsers([GM, P1], 'pl-1');
+    getConnection.mockImplementation((hostId) => hostId === 'conn-1'
+      ? { _id: 'rec-sable', name: 'Captain Sable', rank: 'dangerous', bonded: true, active: true }
+      : null);
+    await handleBondCommand({ content: '!bond Sable', author: { id: 'pl-1' } });
+
+    const card = ChatMessage._created.find(m => m.flags?.[MODULE_ID]?.bondCommandCard);
+    expect(card.content).toContain('bonded: Captain Sable, dangerous');
+    expect(game.socket._emitted[0].payload.payload).toMatchObject({ outcome: 'strong_hit' });
+  });
 });
 
 describe('applyBondEffects — canonical GM handler', () => {

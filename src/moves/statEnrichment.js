@@ -45,7 +45,7 @@
  */
 
 import { MOVES } from "../schemas.js";
-import { readCharacterSnapshot, listCompanionAssets, listSupportVehicleAssets, readAssetIntegrity, readCommandVehicleIntegrity, unreconciledRecordIntegrity } from "../character/actorBridge.js";
+import { readCharacterSnapshot, listCompanionAssets, listSupportVehicleAssets, readAssetIntegrity, readCommandVehicleIntegrity, unreconciledRecordIntegrity, companionGivenName } from "../character/actorBridge.js";
 import { getCommandVehicleActor } from "./abilityScanner.js";
 import { selectCombatTrack, combatPositionFor } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
@@ -277,7 +277,7 @@ export function resolveHealPatient(interpretation, roller, { players = [] } = {}
     // The roller's own wounds, or treatment they receive: no patient.
   } else if (situation ? situation === "companion" : interpretation.statUsed === "heart") {
     const companions = listCompanionAssets(roller);
-    const named = namedOnce(companions, target) ?? namedOnce(companions, prose);
+    const named = namedOnce(companions, target, companionNames) ?? namedOnce(companions, prose, companionNames);
     const hurt  = [...companions].sort((a, b) => (a.system?.track?.value ?? 0) - (b.system?.track?.value ?? 0))[0];
     out.patientCompanionItemId = (named ?? (companions.length === 1 ? companions[0] : hurt))?.id ?? null;
   } else {
@@ -356,23 +356,27 @@ export function resolveAidedAlly(interpretation, roller, { players = [] } = {}) 
 }
 
 /** The one document of `docs` whose name `text` names (whole words: the full name, or a first / last name no other shares) — null for none or several. */
-function namedOnce(docs, text) {
+function namedOnce(docs, text, namesOf = (d) => [d?.name]) {
   const hay = String(text ?? "");
   if (!hay.trim() || !docs.length) return null;
-  const tokensOf = (d) => {
-    const name  = String(d?.name ?? "").trim();
+  const tokensOf = (raw) => {
+    const name  = String(raw ?? "").trim();
     const parts = name.split(/\s+/).filter(p => p.length >= 2);
     return { name, first: parts[0] ?? null, last: parts.length > 1 ? parts.at(-1) : null };
   };
-  const all = docs.map(d => ({ d, ...tokensOf(d) })).filter(e => e.name);
-  const shared = (tok) => tok && all.filter(e => e.first?.toLowerCase() === tok.toLowerCase()
-    || e.last?.toLowerCase() === tok.toLowerCase()).length > 1;
-  const hits = all.filter(e =>
+  // Each document by each of its names (a companion's asset name and given name).
+  const all = docs.flatMap(d => namesOf(d).map(n => ({ d, ...tokensOf(n) }))).filter(e => e.name);
+  const shared = (tok) => tok && new Set(all.filter(e => e.first?.toLowerCase() === tok.toLowerCase()
+    || e.last?.toLowerCase() === tok.toLowerCase()).map(e => e.d)).size > 1;
+  const hits = new Set(all.filter(e =>
     wholeWordPattern(e.name).test(hay)
     || (e.first && !shared(e.first) && wholeWordPattern(e.first).test(hay))
-    || (e.last && !shared(e.last) && wholeWordPattern(e.last).test(hay)));
-  return hits.length === 1 ? hits[0].d : null;
+    || (e.last && !shared(e.last) && wholeWordPattern(e.last).test(hay))).map(e => e.d));
+  return hits.size === 1 ? [...hits][0] : null;
 }
+
+/** A companion's names: its asset's ("Glowcat") and the one the player gave it (COMPANION-GIVEN-NAME-UNREAD). */
+const companionNames = (c) => [c?.name, companionGivenName(c)];
 
 /**
  * A forced move's stat, read from its narration (issue #321 U04). A move a
@@ -554,8 +558,9 @@ function selectNamedVehicleAsset(actor, interpretation) {
 /**
  * The companion a companion_health roll names: the one the move's target
  * names, else the one its narration names, as whole words (`namedOnce` — the
- * full name, or a first / last name no other companion shares) — null for
- * none, or several (issue #345 AA45). Heal's companion is read the same way
+ * full name, or a first / last name no other companion shares) — by its
+ * asset's name or the one the player gave it (`companionGivenName`,
+ * COMPANION-GIVEN-NAME-UNREAD) — null for none, or several (issue #345 AA45). Heal's companion is read the same way
  * (resolveHealPatient).
  *
  * @param {Item[]} companions — listCompanionAssets
@@ -565,7 +570,7 @@ function selectNamedVehicleAsset(actor, interpretation) {
 function namedCompanion(companions, interpretation) {
   const target = typeof interpretation?.moveTarget === "string" ? interpretation.moveTarget : "";
   const prose  = typeof interpretation?.playerNarration === "string" ? interpretation.playerNarration : "";
-  return namedOnce(companions, target) ?? namedOnce(companions, prose);
+  return namedOnce(companions, target, companionNames) ?? namedOnce(companions, prose, companionNames);
 }
 
 /**
@@ -768,10 +773,8 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
     // it wasn't asked for (issue #301 B01 — with the id dropped, it scored the
     // sole bonded one's full track), nor one a stale picker names (AA50).
     const connections = (await deps.listConnections?.()) ?? [];
-    const conn = selectConnection(connections, target, {
-      hostId:   interpretation?.moveTargetId ?? null,
-      unbonded: moveId === "forge_a_bond",
-    });
+    const hostId = interpretation?.moveTargetId ?? null;
+    const conn = selectConnection(connections, target, { hostId, unbonded: moveId === "forge_a_bond" });
     if (conn) {
       // Always an id once resolved — rollMove's "not rolled" guard reads a
       // null trackId as "the picked connection is gone" (issue #345 AA50).
@@ -779,6 +782,18 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
         ticks: Number(conn.relationshipTicks ?? 0), label: conn.name ?? null,
         trackId: conn._id ?? conn.id ?? conn.__hostId ?? null, combatState: null,
       };
+    } else if (moveId === "forge_a_bond" && (hostId || target)) {
+      // A forge naming a connection already bonded (by its picker's id or by
+      // name) resolves nothing: rollMove's "not rolled" card says it was
+      // bonded (FORGE-NAMED-BONDED-SCORED — a typed name scored the bond's
+      // own track, then the forge skipped it).
+      const named = selectConnection(connections, target, { hostId, strict: true });
+      if (named?.bonded) {
+        console.warn(`${MODULE_ID} | enrichProgressTicks: ${named.name ?? "that connection"} is already bonded — Forge a Bond scores nothing.`);
+        interpretation.statValue     = 0;
+        interpretation.progressTicks = 0;
+        return { ticks: 0, source, label: named.name ?? null, trackId: null, combatState: null, alreadyBonded: true };
+      }
     }
   }
 

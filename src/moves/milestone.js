@@ -86,10 +86,28 @@ export function selectMilestoneVow(vows, target) {
 
 /** True when `target` names a completed vow among `vows` and no open one. */
 export function namesCompletedVow(vows, target) {
+  return !!completedVowNamed(vows, target);
+}
+
+/**
+ * The completed vow `target` names among `vows` when it names no open one, or
+ * null — its `forsaken` says whether it was forsaken rather than fulfilled.
+ */
+function completedVowNamed(vows, target) {
   const all = (vows ?? []).filter(Boolean);
-  if (!String(target ?? "").trim()) return false;
-  return !vowByName(all.filter(v => !v.completed), target)
-    && !!vowByName(all.filter(v => v.completed), target);
+  if (!String(target ?? "").trim()) return null;
+  if (vowByName(all.filter(v => !v.completed), target)) return null;
+  return vowByName(all.filter(v => v.completed), target);
+}
+
+/**
+ * selectFulfilVow / selectForsakeVow's answer for a name that answers to a
+ * closed vow: nothing scored, nothing offered — and whether that vow was
+ * forsaken, so the refusal words it by the flag, as AA51's cards do
+ * (ROUND-VOW-GONE-SAYS-FULFILLED).
+ */
+function closedVowAnswer(vow) {
+  return { vow: null, choices: [], completed: true, ...(vow?.forsaken === true ? { forsaken: true } : {}) };
 }
 
 /**
@@ -125,7 +143,8 @@ export function selectFulfilVow(vows, target, { itemId = null, rollerActorId = n
   // A name that matches a completed vow scores nothing and offers nothing —
   // the won-fight card's 🏁 for a fulfilled vow scored, completed and paid
   // the PC's other vow (issue #325 W29).
-  if (namesCompletedVow(vows, target)) return { vow: null, choices: [], completed: true };
+  const closed = completedVowNamed(vows, target);
+  if (closed) return closedVowAnswer(closed);
 
   for (const pool of [mine, open]) {
     const distinct = distinctVows(pool, rollerActorId);
@@ -157,14 +176,15 @@ export function selectFulfilVow(vows, target, { itemId = null, rollerActorId = n
  * @param {Array<{ id, name, rank, ticks, completed, actorId?, vowId? }>} vows — every PC's (readAllVows)
  * @param {string|null} target — interpretation.moveTarget
  * @param {{ rollerActorId?: string|null }} [opts]
- * @returns {{ vow: Object|null, choices: Object[], completed?: true }}
+ * @returns {{ vow: Object|null, choices: Object[], completed?: true, forsaken?: boolean }}
  */
 export function selectForsakeVow(vows, target, { rollerActorId = null } = {}) {
   const mine = rollerActorId ? (vows ?? []).filter(v => v && v.actorId === rollerActorId) : [];
   const open = mine.filter(v => !v.completed);
   const named = vowByName(open, target);
   if (named) return { vow: named, choices: [] };
-  if (namesCompletedVow(mine, target)) return { vow: null, choices: [], completed: true };
+  const closed = completedVowNamed(mine, target);
+  if (closed) return closedVowAnswer(closed);
   const distinct = distinctVows(open, rollerActorId);
   if (distinct.length === 1 && !String(target ?? "").trim()) return { vow: distinct[0], choices: [] };
   return { vow: null, choices: distinct };

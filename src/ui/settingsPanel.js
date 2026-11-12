@@ -19,6 +19,7 @@ import { playXCard, resumeNarrationAfterXCard, bindXCardCard } from '../context/
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { pageIsStale } from '../multiplayer/connectionWatch.js';
+import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { sessionLastSeenAt } from '../session/lifecycle.js';
 import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
@@ -29,6 +30,20 @@ import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
 // ---------------------------------------------------------------------------
 
 const MODULE_ID = 'starforged-companion';
+
+// The About tab's per-browser API keys, by setting (KEYS-NOT-CLEARABLE).
+const API_KEY_LABELS = Object.freeze({
+  claudeApiKey:     'Claude',
+  openRouterApiKey: 'OpenRouter',
+  elevenLabsApiKey: 'ElevenLabs',
+});
+
+/** The About tab's Clear beside a key field — shown only while a key is stored. */
+function clearKeyButton(key, isSet) {
+  if (!isSet) return '';
+  return `<button type="button" class="settings-btn btn-clear-key" data-action="clearApiKey" data-key="${key}"
+                  title="Remove the ${API_KEY_LABELS[key]} API key stored in this browser">Clear</button>`;
+}
 
 const DIAL_POSITIONS = [
   {
@@ -1010,6 +1025,9 @@ function holdsOwnPrivateLines(campaignState, userId) {
 function registerPrivateLinesHealing() {
   Hooks.on('updateSetting', onCampaignStateWritten);
   Hooks.on('createSetting', onCampaignStateWritten);
+  // And the global Lines / Veils copy beside them (SAFETY-GLOBAL-LISTS-CROSS-WRITE).
+  Hooks.on('updateSetting', onSafetyListsWritten);
+  Hooks.on('createSetting', onSafetyListsWritten);
 }
 
 /** A world setting landed: when it is campaignState and misstates this user's Private Lines, re-sync them. */
@@ -1041,6 +1059,59 @@ function restoreOwnPrivateLines(userId) {
     safety.privateLines = withPrivateLinesEntry(safety.privateLines, userId, storedFormOfPrivateLines(getPrivateLines()));
     return game.settings.set(MODULE_ID, 'campaignState', { ...stored, safety });
   }, 'Private Lines restore');
+}
+
+/**
+ * The global Lines and Veils in campaignState.safety, kept as the world
+ * settings have them (SAFETY-GLOBAL-LISTS-CROSS-WRITE — AA35's heal for these
+ * lists). Every GM writes them from the settings at `ready` and on each
+ * Safety edit (syncSafetyToCampaignState), from its cached campaignState, so a
+ * co-GM's write built before a GM's edit landed after it, carrying the old
+ * lists, and the narrator read them until the next sync. The settings are
+ * the canonical store and every GM shares them; the canonical GM — the one
+ * writer, so two GMs never trade writes — puts the stored copy back when a
+ * campaignState write, or a list's own setting landing, leaves them apart.
+ * Not from a page whose connection dropped: its settings may be stale
+ * (issue #347 AB19-STALE-CACHE-WRITES). Fire-and-forget; never throws.
+ *
+ * @param {Object} setting — the Setting document written
+ */
+function onSafetyListsWritten(setting) {
+  const key = setting?.key;
+  if (key !== `${MODULE_ID}.campaignState` && key !== `${MODULE_ID}.${SETTING.GLOBAL_LINES}`
+      && key !== `${MODULE_ID}.${SETTING.GLOBAL_VEILS}`) return;
+  try {
+    if (!game.user?.isGM || !isCanonicalGM() || pageIsStale()) return;
+    if (holdsGlobalSafetyLists(game.settings.get(MODULE_ID, 'campaignState'))) return;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Lines and Veils: could not check the stored copy:`, err?.message ?? err);
+    return;
+  }
+  serialiseCampaignStateWrite(() => {
+    // Only when it is still wrong at this write's turn (a sync may have been on its way).
+    const stored = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    if (holdsGlobalSafetyLists(stored)) return undefined;
+    const safety = { ...(stored.safety ?? {}), lines: getGlobalLines(), veils: getGlobalVeils() };
+    return game.settings.set(MODULE_ID, 'campaignState', { ...stored, safety });
+  }, 'Lines and Veils restore').catch(err =>
+    console.warn(`${MODULE_ID} | Lines and Veils: re-sync after a write that misstated them failed:`, err?.message ?? err));
+}
+
+/**
+ * True when campaignState.safety holds the world's global Lines and Veils
+ * exactly as their settings do — or holds no safety copy at all: a state
+ * never synced is the ready-time sync's (syncSafetyToCampaignState), and a
+ * stale write carries the copy its GM had synced.
+ */
+function holdsGlobalSafetyLists(campaignState) {
+  const same = (a, b) => {
+    const x = Array.isArray(a) ? a : [];
+    const y = Array.isArray(b) ? b : [];
+    return x.length === y.length && x.every((v, i) => v === y[i]);
+  };
+  const safety = campaignState?.safety;
+  if (!safety || typeof safety !== 'object') return true;
+  return same(safety.lines, getGlobalLines()) && same(safety.veils, getGlobalVeils());
 }
 
 // ---------------------------------------------------------------------------
@@ -1114,6 +1185,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       savePacingSettings:          SettingsPanelApp.#onSavePacingSettings,
       saveFactContinuitySettings:  SettingsPanelApp.#onSaveFactContinuitySettings,
       saveApiKeys:                 SettingsPanelApp.#onSaveApiKeys,
+      clearApiKey:                 SettingsPanelApp.#onClearApiKey,
       saveAudioSettings:           SettingsPanelApp.#onSaveAudioSettings,
       refreshAudioBudget:          SettingsPanelApp.#onRefreshAudioBudget,
     },
@@ -1901,6 +1973,7 @@ export class SettingsPanelApp extends ApplicationV2 {
                    id="sf-claude-key" name="claudeApiKey"
                    placeholder="sk-ant-..."
                    autocomplete="off" spellcheck="false">
+            ${clearKeyButton('claudeApiKey', ctx.apiKeys.claudeKeySet)}
           </div>
           ${ctx.isGM ? `
             <div class="api-key-field">
@@ -1914,6 +1987,7 @@ export class SettingsPanelApp extends ApplicationV2 {
                      id="sf-openrouter-key" name="openRouterApiKey"
                      placeholder="sk-or-v1-..."
                      autocomplete="off" spellcheck="false">
+              ${clearKeyButton('openRouterApiKey', ctx.apiKeys.openRouterKeySet)}
             </div>
           ` : ''}
           <div class="api-key-field">
@@ -1927,13 +2001,14 @@ export class SettingsPanelApp extends ApplicationV2 {
                    id="sf-elevenlabs-key" name="elevenLabsApiKey"
                    placeholder="sk_..."
                    autocomplete="off" spellcheck="false">
+            ${clearKeyButton('elevenLabsApiKey', ctx.apiKeys.elevenLabsKeySet)}
           </div>
           <div class="api-key-actions">
             <button class="settings-btn btn-save-keys" data-action="saveApiKeys">
               Save Keys
             </button>
             <span class="api-key-save-note">
-              Leave a field blank to keep the existing value.
+              Leave a field blank to keep the existing value; Clear removes a stored key.
             </span>
           </div>
         </div>
@@ -2184,6 +2259,37 @@ export class SettingsPanelApp extends ApplicationV2 {
     return work;
   }
 
+  /**
+   * The About tab's Clear beside a stored key (known-issues
+   * KEYS-NOT-CLEARABLE): the fields render empty and Save Keys writes only a
+   * non-empty one, so no module UI could remove a stored Claude, OpenRouter
+   * or ElevenLabs key — Y40's "cleared key" branch was reachable only from
+   * the console. Clearing writes the empty key, so its `onChange` takes a
+   * GM out of the matching key registry as entering one put them in.
+   */
+  static #onClearApiKey(_event, target) {
+    const work = (async () => {
+      const key   = target?.dataset?.key;
+      const label = API_KEY_LABELS[key];
+      if (!label) return;
+      // The OpenRouter field is a GM's (it renders for GMs only).
+      if (key === 'openRouterApiKey' && !game.user?.isGM) return;
+      const confirm = foundry.applications?.api?.DialogV2?.confirm;
+      if (typeof confirm === 'function') {
+        const ok = await confirm({
+          window:  { title: `Clear ${label} API key` },
+          content: `<p>Remove the ${label} API key stored in this browser? Enter it again to use it.</p>`,
+        });
+        if (!ok) return;
+      }
+      await game.settings.set(MODULE_ID, key, '');
+      ui.notifications?.info?.(`Starforged Companion: ${label} API key cleared.`);
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
   static #onSaveApiKeys(_event, _target) {
     const work = (async () => {
       // No GM gate — all three keys are client-scoped (per-browser BYOK), so a
@@ -2426,11 +2532,14 @@ export class MoveConfirmDialog extends ApplicationV2 {
     // pipeline can apply them to interpretation.adds. The interpretation
     // object is shared by reference with the caller.
     try {
-      const { total, applied, pickedStat } = readMoveAbilitiesForm(this.element ?? document);
+      const { total, applied, pickedStat, pickedStatAssetId } = readMoveAbilitiesForm(this.element ?? document);
       if (this.#interp) {
         this.#interp.appliedAbilityAdds  = total;
         this.#interp.appliedAbilityKeys  = applied;
         this.#interp.appliedStatReplacement = pickedStat || null;
+        // Whose "+its health" / "+integrity" was picked, when two assets
+        // offered it (COMPANION-TRIGGER-SWAP-UNCUED).
+        this.#interp.appliedStatAssetId = pickedStatAssetId || null;
       }
     } catch (err) {
       console.warn(`${MODULE_ID} | MoveConfirmDialog: failed to read ability checkboxes:`, err.message);
@@ -2452,30 +2561,45 @@ export class MoveConfirmDialog extends ApplicationV2 {
  * keys, and a stat substitution only when the picked radio is one a checked
  * ability offers (unchecking the gating ability turns it off).
  *
+ * A radio for one asset's own meter (`stat@assetId` — two companions'
+ * "+its health") picks that asset too (`pickedStatAssetId`,
+ * COMPANION-TRIGGER-SWAP-UNCUED), only while its ability is checked.
+ *
  * @param {ParentNode} root — the element holding the form
- * @returns {{ total: number, applied: string[], pickedStat: string }}
+ * @returns {{ total: number, applied: string[], pickedStat: string, pickedStatAssetId: string }}
  */
 export function readMoveAbilitiesForm(root) {
   const checked = root?.querySelectorAll?.('.sf-applicable-ability-cb:checked') ?? [];
   let total = 0;
   const applied = [];
   const offeredStats = new Set();
+  const offeredByAsset = new Set();
   checked.forEach(cb => {
     const n = Number(cb.dataset.adds ?? 0);
     if (Number.isFinite(n) && n > 0) total += n;
     if (cb.dataset.key) applied.push(cb.dataset.key);
     const stat = cb.dataset.statReplacement;
     if (stat) offeredStats.add(stat);
+    if (stat && cb.dataset.assetId) offeredByAsset.add(`${stat}@${cb.dataset.assetId}`);
   });
   // Stat substitution — apply only when the selected radio matches one
   // of the offered stats and at least one ability advertising that
   // substitution is currently checked. Otherwise the user has
   // unchecked the gating ability and the substitution must not fire.
   let pickedStat = '';
+  let pickedStatAssetId = '';
   const picked = root?.querySelector?.('input[name="sf-stat-sub"]:checked');
   const candidate = String(picked?.value ?? '').trim();
-  if (candidate && offeredStats.has(candidate)) pickedStat = candidate;
-  return { total, applied, pickedStat };
+  const at = candidate.indexOf('@');
+  if (at > 0) {
+    if (offeredByAsset.has(candidate)) {
+      pickedStat = candidate.slice(0, at);
+      pickedStatAssetId = candidate.slice(at + 1);
+    }
+  } else if (candidate && offeredStats.has(candidate)) {
+    pickedStat = candidate;
+  }
+  return { total, applied, pickedStat, pickedStatAssetId };
 }
 
 /**
@@ -2502,10 +2626,12 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
   const items = abilities.map(a => {
     const adds      = Number(a.adds ?? 0);
     const stat      = typeof a.statReplacement === 'string' ? a.statReplacement : '';
-    // Pre-check when there's a numeric add OR a stat substitution — both
-    // are concrete mechanical effects the player will almost always want
-    // to apply when the ability fires.
-    const checked   = (adds > 0 || stat) ? 'checked' : '';
+    // Pre-check when there's a numeric add, a stat substitution or an effect
+    // on the outcome (the pre-roll pass's riders) — concrete mechanical
+    // effects the player will almost always want to apply when the ability
+    // fires. Unchecked, none of them applies: an unchecked ability's riders
+    // do not fire (RIDERS-IGNORE-UNCHECKED).
+    const checked   = (adds > 0 || stat || a.hasRiders === true) ? 'checked' : '';
     // An add the text names as a value the sheet holds ("add +heart", "add
     // +its health") shows the number the scanner read for it, and what it is
     // (issue #336 Y22) — there is no adds input to type one (issue #322 V02).
@@ -2532,6 +2658,7 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
                data-key="${escapeAttr(a.key)}"
                data-adds="${adds}"
                data-stat-replacement="${escapeAttr(stat)}"
+               data-asset-id="${escapeAttr(a.source === 'character' && a.assetId ? a.assetId : '')}"
                ${checked}>
         <span class="sf-ability-name">${escapeAttr(a.assetName)}${a.abilityName ? ` — ${escapeAttr(a.abilityName)}` : ''}</span>
         <span class="sf-ability-tag">[${escapeAttr(tag)}]</span>
@@ -2544,12 +2671,29 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
   }).join('');
 
   // Build the stat-override block — one radio per unique replacement stat
-  // advertised by the ability list, plus a "Keep listed stat" default.
+  // advertised by the ability list, plus a "Keep listed stat" default. A
+  // stat two of the character's assets offer as their own meter (two
+  // companions' "+its health") gets a radio per asset, naming it: the roll
+  // is that one's — with one radio the healthiest was rolled
+  // (COMPANION-TRIGGER-SWAP-UNCUED).
   const uniqueStats = Array.from(new Set(
     abilities
       .map(a => (typeof a.statReplacement === 'string' ? a.statReplacement : ''))
       .filter(Boolean),
   ));
+  const ownersOf = (stat) => {
+    const byAsset = new Map();
+    for (const a of abilities) {
+      if (a.statReplacement === stat && a.source === 'character' && a.assetId && !byAsset.has(a.assetId)) byAsset.set(a.assetId, a.assetName ?? 'asset');
+    }
+    return byAsset;
+  };
+  const statRadios = uniqueStats.flatMap(stat => {
+    const owners = ownersOf(stat);
+    return owners.size > 1
+      ? [...owners].map(([assetId, assetName]) => ({ value: `${stat}@${assetId}`, label: `Substitute +${statLabel(stat)} (${assetName})` }))
+      : [{ value: stat, label: `Substitute +${statLabel(stat)}` }];
+  });
   const statSubBlock = uniqueStats.length ? `
     <div class="confirm-stat-substitution" data-current-stat="${escapeAttr(currentStat || '')}">
       <span class="confirm-field-label">Stat substitution</span>
@@ -2558,10 +2702,10 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
           <input type="radio" name="sf-stat-sub" value="" checked>
           Keep listed (+${escapeAttr(currentStat ? statLabel(currentStat) : '?')})
         </label>
-        ${uniqueStats.map(stat => `
+        ${statRadios.map(r => `
           <label class="sf-stat-sub-option">
-            <input type="radio" name="sf-stat-sub" value="${escapeAttr(stat)}">
-            Substitute +${escapeAttr(statLabel(stat))}
+            <input type="radio" name="sf-stat-sub" value="${escapeAttr(r.value)}">
+            ${escapeAttr(r.label)}
           </label>`).join('')}
       </div>
       <p class="sf-ability-hint">Only available when a checked ability allows a stat swap.</p>
@@ -2571,7 +2715,7 @@ function renderApplicableAbilitiesBlock(abilities, currentStat) {
     <div class="confirm-applicable-abilities">
       <span class="confirm-field-label">Applicable abilities</span>
       <div class="sf-ability-list">${items}</div>
-      <p class="sf-ability-hint">Uncheck any that don't apply this turn. Checked items add to your roll.</p>
+      <p class="sf-ability-hint">Uncheck any that don't apply this turn. Checked items add to your roll and apply their effects on the outcome.</p>
       ${statSubBlock}
     </div>`;
 }

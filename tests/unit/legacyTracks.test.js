@@ -5,14 +5,17 @@
  * The legacy tracks' arithmetic (src/moves/legacyTracks.js — issue #316 T02):
  * filling the tenth box clears the track, which starts again with the
  * overflow; a box earns 2 XP, or 1 once the track has been cleared, at the
- * rate of the cycle it filled in; two copies of a track merge by progress,
- * so a clear is never undone by a higher pre-clear tick count.
+ * rate of the cycle it filled in; a working copy's marks are applied to the
+ * stored track on its persist, so a clear is never undone by a higher
+ * pre-clear tick count, and a track lowered on a sheet meanwhile stays
+ * lowered (LEGACY-SHEET-DECREASE — the merge kept the record further along).
  */
 
 import { describe, it, expect } from "vitest";
 import {
   markLegacyTrack,
-  mergeLegacyTrack,
+  markLegacyOnCopy,
+  legacyTracksWithCopyMarks,
   legacyProgress,
   normaliseLegacyTrack,
   LEGACY_CYCLE_TICKS,
@@ -78,7 +81,7 @@ describe("markLegacyTrack", () => {
   });
 });
 
-describe("legacyProgress and mergeLegacyTrack", () => {
+describe("legacyProgress and legacyTracksWithCopyMarks", () => {
   it("progress counts the cleared cycles with the current ticks", () => {
     expect(legacyProgress(undefined)).toBe(0);
     expect(legacyProgress({ ticks: 38, cleared: false })).toBe(38);
@@ -86,24 +89,35 @@ describe("legacyProgress and mergeLegacyTrack", () => {
     expect(legacyProgress({ ticks: 0, cleared: true })).toBe(LEGACY_CYCLE_TICKS);
   });
 
-  it("the cleared record wins over a higher pre-clear tick count", () => {
-    const store   = { ticks: 38, cleared: false };
-    const working = { ticks: 2, cleared: true, cycles: 1 };
-    expect(mergeLegacyTrack(store, working)).toEqual(working);
-    expect(mergeLegacyTrack(working, store)).toEqual(working);
+  it("a copy's marks applied to the store clear the track past 40 — the clear is never undone", () => {
+    const store = { discoveries: { ticks: 38, cleared: false } };
+    const copy  = { legacyTracks: { discoveries: { ticks: 38, cleared: false } } };
+    markLegacyOnCopy(copy, "discoveries", 4);
+    expect(copy.legacyTracks.discoveries).toEqual({ ticks: 2, cleared: true, cycles: 1 });
+    expect(legacyTracksWithCopyMarks(store, copy.legacyTracks, copy).discoveries)
+      .toEqual({ ticks: 2, cleared: true, cycles: 1 });
   });
 
-  it("within one cycle the higher tick count wins; a frozen 40 and its clear to 0 are the clear", () => {
-    expect(mergeLegacyTrack({ ticks: 3, cleared: false }, { ticks: 5, cleared: false }))
-      .toEqual({ ticks: 5, cleared: false, cycles: 0 });
-    expect(mergeLegacyTrack({ ticks: 40, cleared: false }, { ticks: 0, cleared: true, cycles: 1 }))
-      .toEqual({ ticks: 0, cleared: true, cycles: 1 });
+  it("a track lowered on a sheet since the copy was read stays lowered — the copy's marks land on it", () => {
+    const copy = { legacyTracks: { bonds: { ticks: 20, cleared: false }, quests: { ticks: 12, cleared: false } } };
+    markLegacyOnCopy(copy, "bonds", 2);                               // the copy's own mark: 22
+    const store = { bonds: { ticks: 8, cleared: false }, quests: { ticks: 4, cleared: false } };   // both lowered meanwhile
+    expect(legacyTracksWithCopyMarks(store, copy.legacyTracks, copy)).toEqual({
+      bonds:  { ticks: 10, cleared: false, cycles: 0 },               // was 22: the stale 20, raised again
+      quests: { ticks: 4, cleared: false, cycles: 0 },                // was 12
+    });
   });
 
-  it("a record on one side only is kept as it is; none on either is null", () => {
+  it("a concurrent mark in the store is kept beside the copy's", () => {
+    const copy = { legacyTracks: { bonds: { ticks: 2, cleared: false } } };
+    markLegacyOnCopy(copy, "bonds", 2);
+    const store = { bonds: { ticks: 4, cleared: false } };             // `!bond` +2 meanwhile
+    expect(legacyTracksWithCopyMarks(store, copy.legacyTracks, copy).bonds).toEqual({ ticks: 6, cleared: false, cycles: 0 });
+  });
+
+  it("a track the store does not hold is the copy's; none on either is null", () => {
     const only = { ticks: 3, cleared: false };
-    expect(mergeLegacyTrack(only, undefined)).toBe(only);
-    expect(mergeLegacyTrack(null, only)).toBe(only);
-    expect(mergeLegacyTrack(null, undefined)).toBeNull();
+    expect(legacyTracksWithCopyMarks({}, { quests: only }, null).quests).toBe(only);
+    expect(legacyTracksWithCopyMarks(null, undefined, null)).toBeNull();
   });
 });

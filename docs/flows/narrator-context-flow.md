@@ -69,7 +69,11 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   Perspective "auto" is third person whenever two or more PCs act, whoever is
   connected (`resolveNarrationPerspective`'s `actingCharacters`, from the
   CHARACTER blocks; issue #342 Z40 — a GM's PC beside one player's was
-  second person). Its
+  second person). Otherwise "auto" is the perspective the session recorded
+  when it began (`campaignState.sessionPerspective`, written by
+  `beginSession`, cleared by `mintSession`; read by `sessionPerspectiveOf`
+  for every mode — issue #348 PT03), not a per-call count of connected
+  users; a session not begun counts them per call. Its
   sidecar, X-Card gate, rate-limit retry, `!narrator debug` capture and
   fallback are every narration's; its capture (`runRoundNarrationPasses`) is
   one detection call, at the widest class among the entries it captures — a
@@ -112,7 +116,8 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   its block as a round's acting PCs have, third person for two or more, none
   when no PC is there; it took the first PC, so with that PC's player away
   its "you" was the crewmate it called absent (issue #345 AA31). The closing
-  vignette, about an NPC, keeps the first PC's.
+  vignette, about an NPC, takes the PCs at the table the same way — it took
+  the first PC, whoever was there (CLOSING-VIGNETTE-FIRST-PC).
 - **Native sheet rolls** (a vow or bond progress roll on the vendor sheet,
   `registerNativeProgressRollHook`) take the same ladder, decided by the
   `createChatMessage` hook on every client (`nativeRollNarratesHere`): the
@@ -150,7 +155,9 @@ early on player clients, so only the GM's own lines were ever stored. Every
 client, GM or player, also puts its own entry back when a campaignState write
 leaves it wrong (`registerPrivateLinesHealing`): two writes of the list inside
 one round trip — two GMs loading at once — dropped one user's lines from every
-GM-built prompt until their next load (issue #345 AA35). [1] is
+GM-built prompt until their next load (issue #345 AA35). The global Lines /
+Veils copy is healed the same way by the canonical GM, from the world
+settings (`onSafetyListsWritten`, SAFETY-GLOBAL-LISTS-CROSS-WRITE). [1] is
 built by `formatNarratorSafetyContext`, which scopes Private Lines to the
 building client: on a GM's client every player's lines (deduplicated); on a
 player's client — narrating only with no keyed GM online — that player's own,
@@ -204,8 +211,11 @@ notice says the connection dropped (issue #347 AB19). The page itself is
 stale from the drop until it reloads, and stands down: it is never the
 canonical GM and writes no campaignState or Batch Mode round, so the move's
 own record and lock release — written from that cache afterwards — are
-refused instead of lifting such a pause; another GM takes over what it held
-(issue #347 AB19-STALE-CACHE-WRITES). The watch
+refused instead of lifting such a pause, and so are its actor writes
+(`actorBridge.js`, STALE-PAGE-ACTOR-WRITES); another GM takes over what it held
+(issue #347 AB19-STALE-CACHE-WRITES). A narration started on a page already
+stale — a player's, narrating on the player's own key — is discarded by the
+same watch, and the Private Channel refuses a turn there (STALE-PLAYER-PAGE). The watch
 starts on entry with the live `campaignState.xCardPlays` count (each
 `suppressScene` adds one; resuming never lowers it), so a card played **and
 resumed** before the reply arrives still discards it (issue #306 R01) —
@@ -358,7 +368,10 @@ wrote on the session's Session Log page (`retractSessionLogSummary`): its
 "Story so far" goes when the pause dropped the rolling summary it was
 written from, and "Lore this session" loses the titles whose lore the undo
 or the propagation retracted — an X-Card played after End left the page
-telling the removed beat (issue #345 AA27). A capture still running when the
+telling the removed beat (issue #345 AA27); the story is rebuilt from the
+summary the next mint regenerates without the beat (`restoreSessionLogStory`
+at `rollSessionIfDue`'s finalize, or `catchUpUnsummarisedSession` —
+SESSION-LOG-STORY-NOT-REBUILT). A capture still running when the
 card is played writes nothing more (XCARD-LATE-CAPTURE — the undo reaches only
 what was written before it): every capture write checks the STORED
 `xCardedNarrationIds` first (`safety.js` `isNarrationXCarded`, never a
@@ -396,7 +409,8 @@ XCARD-CAPTURE-TRANSITIONS). If that part fails the pause is still written. After
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
 `propagateRetraction`. Readers: the ring and the rolling summary skip
 `xCarded` cards (`sessionNarratorCards`), the session recap keeps the move
-but quotes none of its prose, the audio hook shows no Play button, the
+but quotes none of its prose, the audio hook shows no Play button and
+stops the card's narration where it is playing or loading (XCARD-AUDIO-PLAYING), the
 CORRECTED block and the summary's leave-out list never name an X-Card
 retraction (it still blocks re-assertion in the ledger),
 `mergeSceneLedgers` strips an X-carded narration's entries from a stale
@@ -547,8 +561,12 @@ player wrote reaches it too. Both read the session's cards through
 counts the move, but was fed back as story and counted as the session's first
 narration, cancelling the campaign recap; issue #321 U35) and a card the
 X-Card removed (`xCarded`, U07). Its regen runs after a narrator card posts, on
-the canonical GM (`registerRollingSummaryRefreshHook`, B7); prompts read the
-cached text.
+the canonical GM (`registerRollingSummaryRefreshHook`, B7) — at a table whose
+GMs hold no Claude key, on the keyed client that wrote the card, which relays
+the summary to the canonical GM to store (`narrator.summary` →
+`applyRelayedSessionSummary`: this session's, covering more than the stored
+one, none of its narrations X-Carded since — SUMMARY-KEYLESS-GM); prompts read
+the cached text.
 
 **Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
 the rolling summary and recent oracles are scoped to `currentSessionId`. A
@@ -588,6 +606,10 @@ a session nobody ended handed its open gate to the next, so Begin did nothing
 reads, resolves or opens in it (issue #342 Z24), and the chat gate tells a
 line's author no session has begun: narrated, it went into the closing
 session after its summary was taken, under its old id (issue #345 AA58).
+`rollSessionIfDue` notes it too, so Begin a Session's own mint has the same
+rule (BEGIN-MINT-LINE-WINDOW); and mints run one at a time on a client
+(`serialiseSessionMint`), so a Begin landing during the load's summary call
+begins the session the load minted (SESSION-MINT-RACE).
 Begin a Session's start effects (Spotlight momentum, campaign clocks, the
 galley vignette) run once per session id: `applyBeginSession` stamps
 `sessionStartedId`, and a second Begin on that session posts a note instead
@@ -685,13 +707,17 @@ threats, new-entity drafts — and the generative-tier pass): discovery-class
 moves run detection (make_a_connection auto-creates on a hit); interaction-
 class moves run the tier pass and, since issue #286 D4, detection too, as
 paced narration (the same class) always has; embellishment moves run
-neither. Oracle follow-ups run detection and the tier pass; session
-vignettes, vow scenes and clock vignettes run the tier pass for the recorded
+neither. Oracle follow-ups and clock vignettes run detection and the tier
+pass; session vignettes and vow scenes run the tier pass for the recorded
 entities they name (`scheduleNarrationCapture`; a clock vignette's from
 `narrateClockAdvancement` itself, so all three post sites, and only once its
-"still triggered" check stands — issue #345 AA33: it ran none). `@scene` answers run detection and the
-tier pass too, on the canonical GM only (`scheduleSceneAnswerCapture`, issue
-#321 U36). A Batch Mode round runs one detection, at the widest class among
+"still triggered" check stands — issue #345 AA33: it ran none; its detection —
+it is written at interaction latitude, issue #322 V23 —
+CLOCK-VIGNETTE-NO-DETECTION). `@scene` answers run detection and the
+tier pass too, on a GM's client only (`scheduleSceneAnswerCapture`, issue
+#321 U36). These captures run on the GM whose client narrated them — not
+whoever is canonical when the reply lands, which dropped them when a lower-id
+keyed GM joined meanwhile (AA34's gate, CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE). A Batch Mode round runs one detection, at the widest class among
 the entries it captures, and a tier pass whatever that class is, over what
 each interaction-class entry was about, by that entry's free-flow rule — an
 unrolled action the prompt's matched set (paced), a rolled interaction move
@@ -830,7 +856,12 @@ on where it was filed (a superseded narration's records stand, issue #338
 D8) — and the write that ends the scene keeps the scene's truths as the store
 holds them, so the strike is kept and named for the session
 (STRIKE-DURING-SCENE-END-LOST: the struck fact was archived as confirmed lore
-and kept as a live truth). It discards state and clears the frame.
+and kept as a live truth). The whereabouts it keeps are the store's while the
+store still holds the scene, and a record is written again — from its LAST
+KNOWN as the end found it — when they changed while it was written, so a
+`!state strike` / `!state set` made meanwhile sticks too
+(STATE-CORRECTION-DURING-SCENE-END-LOST: a struck location stayed LAST
+KNOWN). It discards state and clears the frame.
 Before that final write it re-reads the store and, while the store is
 still this scene, migrates the truths and keeps the whereabouts that a
 narration persisted during its awaits (`migrateLateSceneFacts`, a few
@@ -838,7 +869,9 @@ passes) — the final write used to clear them unmigrated (issue #325 W24).
 Both persist only their scene fields
 (`currentSceneId`, `sceneTruths`, `sceneState`, `sceneFrame`, `spotlight`)
 onto the latest stored campaignState (`persistCampaignStateFields`;
-`endScene`'s own `persistEndedScene`, on the same write chain) — when
+`endScene`'s own `persistEndedScene`, on the same write chain; a scene the
+store holds that is not the one ended — started on another client during its
+awaits — is left open, its fields and pacing standing: END-SCENE-NEXT-SCENE) — when
 `ensureSceneStarted` runs inside `narrateResolution` the object it holds is the
 pipeline's stale snapshot. `endScene`'s write also keeps the scene's strikes,
 X-Card retractions, Replace originals and live narration truths for the session (B6;
@@ -890,7 +923,9 @@ ring, and the closing scene's truths keep the closing session's number.
   the entry is the link the X-Card's D7 undo follows to take that line off:
   issue #342 Z43), same-session lore that states it **about the struck subject** goes
   `retracted` + unconfirmed (an archived scene truth must carry the subject's
-  label, other lore must name the text subject or the entity as whole words,
+  label, other lore must name the text subject or the entity as whole words
+  — not as a possessive, "Mira's husband", unless the struck fact is about
+  something of the subject's, RETRACTION-POSSESSIVE —
   a scene truth's fact alone decides; issue #321 U39 — sidecar facts are
   subject-less phrases, so striking "Vance — Is dead" took another
   character's death out of canon; `factsOverlap` containment now counts only
@@ -915,7 +950,9 @@ ring, and the closing scene's truths keep the closing session's number.
   that place, or where either place is unknown (`keptStrikeStandsAt`; issue
   #345 AA28 — struck at Bleakhold, it blocked Vantage Station's own fact of
   the same words, and a set there lifted Bleakhold's strike; the summary's
-  leave-out list still names it, and the X-Card's blocks keep no place) —
+  leave-out list still names it, and the X-Card's blocks keep no place; the
+  active scene's own strikes and Replace originals stand at their place the
+  same way — a scene travels — ACTIVE-SCENE-STRIKE-PLACE-BLIND) —
   and stays a strike, not just text: `applySidecar` blocks a later scene's
   re-assertion of it (`findSessionStrike` — by subject key, else name), and a
   GM's `!truth set` lifts it (a player's is refused over a GM's, W60) —

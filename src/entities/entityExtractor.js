@@ -38,7 +38,7 @@ import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
 import { getFaction,    createFaction, findFactionByName, applyAttitudeToFactionRecord, seedFactionRecord } from "./faction.js";
-import { getShip,       createShip, resolveActiveRegion } from "./ship.js";
+import { getShip,       createShip, resolveActiveRegion, rollSingleShipType } from "./ship.js";
 import { getPlanet,     createPlanet }     from "./planet.js";
 import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
@@ -556,6 +556,12 @@ function detectionFromParsed(parsed, campaignState) {
  *   narrator's), for the pending-draft and known-NPC fallback
  * @param {string}  [options.lineText] — the player's line: which of several
  *   named NPCs the move was with (a round's hit reads its own, below)
+ * @param {string|null} [options.targetName] — the interpreter's target for a
+ *   free-flow Make a Connection: which of several named NPCs it was with when
+ *   the line does not say (KNOWN-NPC-CONNECTION-NO-TARGET)
+ * @param {string}  [options.narrationText] — the narration alone: a round's
+ *   hit's candidates are the NPCs its own line or this names
+ *   (ROUND-CONNECTION-OTHER-LINE-CANDIDATE)
  * @param {Array<{ actorId: string|null, connectionSeed?: Object|null, owns: (figure: Object) => boolean, lineText?: string }>} [options.connectionRollers]
  *   — a Batch Mode round's Make a Connection hits, in confirm order, in place
  *   of `autoCreateConnection` (issue #342 Z09): each creates one connection,
@@ -726,18 +732,33 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
  */
 function connectionSlots(options) {
   const hay = String(options.namingText ?? "");
-  const named = hay.trim() ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(hay) : null;
+  const namedIn = (text) => (String(text ?? "").trim()
+    ? (draft) => wholeWordPattern(String(draft?.name ?? "").trim()).test(String(text))
+    : null);
+  const named = namedIn(hay);
   if (Array.isArray(options.connectionRollers)) {
+    // A round's hit is named by its own line and the narration — not by
+    // another player's line: an NPC only that line named counted as the
+    // hit's candidate, so a hit whose own line named nobody got "several
+    // named, none chosen" rather than the narration's one NPC
+    // (ROUND-CONNECTION-OTHER-LINE-CANDIDATE). Without the narration's own
+    // text (`options.narrationText`), the round's `namingText` as before.
+    const narration = typeof options.narrationText === "string" ? options.narrationText : null;
     return options.connectionRollers
       .filter(r => r && typeof r.owns === "function")
-      .map(r => ({
-        actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
-        connectionSeed: r.connectionSeed ?? null,
-        takes:          (entity) => r.owns(entity) === true,
-        names:          named ? (draft) => named(draft) && r.owns(draft) === true : null,
-        lineText:       typeof r.lineText === "string" ? r.lineText : null,
-        done:           false,
-      }));
+      .map(r => {
+        const ownNamed = narration == null || typeof r.lineText !== "string"
+          ? named
+          : namedIn(`${r.lineText}\n${narration}`);
+        return {
+          actorId:        typeof r.actorId === "string" && r.actorId ? r.actorId : null,
+          connectionSeed: r.connectionSeed ?? null,
+          takes:          (entity) => r.owns(entity) === true,
+          names:          ownNamed ? (draft) => ownNamed(draft) && r.owns(draft) === true : null,
+          lineText:       typeof r.lineText === "string" ? r.lineText : null,
+          done:           false,
+        };
+      });
   }
   if (!options.autoCreateConnection) return [];
   return [{
@@ -746,6 +767,7 @@ function connectionSlots(options) {
     takes:          () => true,
     names:          named,
     lineText:       null,
+    targetName:     typeof options.targetName === "string" && options.targetName.trim() ? options.targetName.trim() : null,
     done:           false,
   }];
 }
@@ -817,7 +839,7 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     // A revealed name the GM once dismissed from a draft card is hers now:
     // dismissed, it kept her card out of the narrator's name index for good
     // (issue #345 AA55).
-    await undismissRecordName(to, campaignState);
+    await undismissRecordName(to, campaignState, { narrationId });
     // The revealing narration recorded its facts under the new name as a
     // text subject (no card was named that yet): they join the renamed card,
     // as a new entity's do (issue #326 W68 — they neither rendered on the
@@ -1001,7 +1023,8 @@ function rollFreshConnectionSeed() {
  */
 function rollFreshShipSeed(campaignState) {
   return {
-    type:      safeOracleRoll("starship_type", { region: resolveActiveRegion(campaignState) }),
+    // One ship's type — never "Ships in conflict" (SHIP-TYPE-IN-CONFLICT).
+    type:      rollSingleShipType(rollOracle, { region: resolveActiveRegion(campaignState) }),
     firstLook: safeOracleRoll("starship_first_look"),
     name:      safeOracleRoll("starship_name"),
   };
@@ -1048,7 +1071,6 @@ function safeOracleRoll(tableId, options = {}) {
 // pipeline as the make_a_connection auto-create above.
 export async function postCreationEnrichment(typeKey, record, campaignState) {
   if (!record || !record.portraitSourceDescription) return;
-  if (!hasOpenRouterKey()) return;
   // One portrait owner per creation (issue #321 U29): with Auto-Seed NPC on,
   // the createActor seed hook seeds every new connection card — its portrait
   // included, drawn from the portrait source set here — so generating here
@@ -1059,8 +1081,10 @@ export async function postCreationEnrichment(typeKey, record, campaignState) {
   if (!hostId) return;
 
   try {
-    const { generatePortrait } = await import("../art/generator.js");
-    generatePortrait(hostId, typeKey, record, campaignState ?? {}).catch(err =>
+    // Made where an OpenRouter key lives: here, else asked of the GM holding
+    // one (AUTOSEED-KEYLESS-CANONICAL); with none, nothing.
+    const { generatePortraitWhereKeyLives } = await import("../art/portraitRouting.js");
+    generatePortraitWhereKeyLives(hostId, typeKey, record, campaignState ?? {}).catch(err =>
       console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err));
   } catch (err) {
     console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err);
@@ -1095,8 +1119,13 @@ function seedHookOwnsPortrait(record) {
  *
  * Promotes the caller's copy too: the move pipeline holds one across its
  * awaits and writes its scene ledgers back at the end of the move. The write
- * is the stored campaignState, read just before it, with only the two ledger
- * fields changed. Fail-open; never throws.
+ * is the stored campaignState, read at its turn on the write chain, with
+ * only the two ledger fields changed — promoted on a deep copy of the
+ * store's, never on the cached setting itself: a refused write left the
+ * re-key on the GM's cache, which the world never took
+ * (PROMOTE-SUBJECTS-CACHED-MUTATE). A caller's copy that IS the cached
+ * setting (a draft card's Confirm hands it over) is not promoted in place —
+ * the write sets the store. Fail-open; never throws.
  *
  * @param {string} name     — the name the facts were recorded under
  * @param {string} typeKey  — the entity type
@@ -1123,14 +1152,19 @@ export async function promoteNewEntityLedgerSubjects(name, typeKey, record, camp
       return promoteTextSubject(text, ref, cs) > 0 || hadState;
     };
 
-    const callerChanged = promote(campaignState);
+    const cached = () => globalThis.game?.settings?.get(MODULE_ID, "campaignState");
+    if (campaignState !== cached()) promote(campaignState);
     // Read and written at its turn on the client's campaignState write chain
-    // (CAMPSTATE-CHAIN-REST).
+    // (CAMPSTATE-CHAIN-REST), on a copy of the store's two ledgers.
     await serialiseCampaignStateWrite(async () => {
-      const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState");
+      const latest = cached();
       if (!latest) return;
-      const changed = latest === campaignState ? callerChanged : promote(latest);
-      if (changed) await globalThis.game.settings.set(MODULE_ID, "campaignState", latest);
+      const target = {
+        ...latest,
+        sceneTruths: foundry.utils.deepClone(latest.sceneTruths ?? []),
+        sceneState:  foundry.utils.deepClone(latest.sceneState ?? { bySubject: {}, sceneId: null }),
+      };
+      if (promote(target)) await globalThis.game.settings.set(MODULE_ID, "campaignState", target);
     }, "promote ledger subjects");
   } catch (err) {
     console.warn(`${MODULE_ID} | promote ledger subjects for "${text}" failed:`, err?.message ?? err);
@@ -1149,14 +1183,6 @@ function findHostDocumentId(typeKey, recordId, campaignState) {
     if (rec?._id === recordId) return hostId;
   }
   return null;
-}
-
-function hasOpenRouterKey() {
-  try {
-    return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey");
-  } catch {
-    return false;
-  }
 }
 
 
@@ -1603,6 +1629,19 @@ export async function appendGenerativeTierUpdates(
     return [];
   }
 
+  // A reply that holds no complete JSON object — cut off at max_tokens, or
+  // malformed — drops every detail this narration gave its entities; only a
+  // console warning named a cut (known-issues TIER-PASS-TRUNC-SILENT). The
+  // GMs are told, as the detection pass's own loss is (issue #321 U15).
+  if (raw && !tierReplyReadable(raw)) {
+    const names = records.map(r => r.record?.name ?? r.name).filter(Boolean);
+    console.warn(
+      `${MODULE_ID} | entityExtractor: the generative-tier reply is not a complete JSON object — ` +
+      `new details for ${names.join(", ") || "this narration's entities"} were not recorded.`,
+    );
+    notifyTierFailure(names);
+  }
+
   const parsed = parseTierUpdateResponse(raw);
   const applied = [];
 
@@ -1665,16 +1704,40 @@ export async function appendDetailToTier(entityRef, detail, sessionId, sessionNu
  * "locker 71" swallowed "locker 7": each new truth was counted as migrated and
  * written nowhere, and the card went on saying the opposite (issue #347 AB11).
  * A negation around the shared words — "Has not paid the debt" beside "Paid
- * the debt" — is never the same fact.
+ * the debt" — is never the same fact. Nor is a detail led by any word but the
+ * entity's own name or role, a pronoun or filler (`subjectWords`,
+ * LEADING_NEUTRAL_WORDS): a reversal is mostly worded ahead of the fact —
+ * "Used to run the lower docks", "Feigned loyalty to the Compact" — and a
+ * word list cannot hold every one, so one past it read as a repeat and the
+ * new fact was written nowhere (TIER-DETAIL-NEGATION-WORDS). A duplicate kept
+ * is the safer miss.
  */
-function tierHasDetail(tier, detail) {
+function tierHasDetail(tier, detail, subjectWords = new Set()) {
   const words = detailWords(detail);
   if (!words.length) return false;
+  const neutral = new Set([...LEADING_NEUTRAL_WORDS, ...subjectWords]);
   return tier.some(e => {
     const existing = detailWords(e?.detail);
     if (!existing.length) return false;
-    return restatesDetail(existing, words) || restatesDetail(words, existing);
+    return restatesDetail(existing, words, neutral) || restatesDetail(words, existing, neutral);
   });
+}
+
+/**
+ * Words that may lead a restatement of a detail without changing it: an
+ * article, a pronoun, "is", "also", "still", "now" — and the possessive's
+ * "s" ("Vex's ship" → "vex s ship"). With the entity's own name and role
+ * words (detailSubjectWords) — "Vex runs the lower docks" restates "Runs the
+ * lower docks" — they are all a restatement may lead with.
+ */
+const LEADING_NEUTRAL_WORDS = new Set([
+  "a", "an", "the", "s", "and", "also", "still", "now", "currently", "indeed",
+  "he", "she", "they", "it", "his", "her", "their", "its", "who", "is", "are",
+]);
+
+/** The entity's name and role words, lowercased (detailWords) — what may lead a restatement of its detail. */
+function detailSubjectWords(record, document) {
+  return new Set([record?.name, document?.name, record?.role].flatMap(detailWords));
 }
 
 // Words that, around a detail's own words, negate or reverse it ("has NOT paid
@@ -1692,6 +1755,7 @@ const REVERSING_WORDS = new Set([
   "renounced", "renounces", "renouncing", "forsook", "forsaken", "forsakes", "abandon", "renounce",
   "refused", "refuses", "refusing", "denied", "denies", "denying", "failed", "fails", "failing",
   "undid", "undoes", "undone", "reversed", "reverses", "revoked", "revokes", "withdrew", "withdrawn",
+  "until", "till",
 ]);
 
 // Two-word reversals: "GAVE UP running the docks", "TURNED AGAINST the crew".
@@ -1736,12 +1800,18 @@ function detailWords(text) {
     .filter(Boolean);
 }
 
-/** True when `inner`'s words appear in `outer` in order, as whole words, with no reversing word around them. */
-function restatesDetail(outer, inner) {
+/**
+ * True when `inner`'s words appear in `outer` in order, as whole words, led
+ * only by `neutral` words (tierHasDetail) and with no reversing word around
+ * them.
+ */
+function restatesDetail(outer, inner, neutral = LEADING_NEUTRAL_WORDS) {
   if (inner.length > outer.length) return false;
   for (let i = 0; i + inner.length <= outer.length; i++) {
     if (!inner.every((w, j) => outer[i + j] === w)) continue;
-    const around = [...outer.slice(0, i), ...outer.slice(i + inner.length)];
+    const before = outer.slice(0, i);
+    if (before.some(w => !neutral.has(w))) continue;
+    const around = [...before, ...outer.slice(i + inner.length)];
     if (!reversesAround(around, inner)) return true;
   }
   return false;
@@ -1787,6 +1857,37 @@ function buildTierUpdatePrompt(narrationText, records) {
   ].join("\n");
 }
 
+/** Whether a tier reply holds a complete JSON object (parseTierUpdateResponse reads it as none otherwise). */
+function tierReplyReadable(text) {
+  const slice = String(text ?? "").match(/\{[\s\S]*\}/)?.[0];
+  if (!slice) return false;
+  try {
+    const parsed = JSON.parse(slice);
+    return !!parsed && typeof parsed === "object";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Tell the GM a tier pass's reply could not be read (TIER-PASS-TRUNC-SILENT).
+ * GM-only, as notifyDetectionFailure; never throws.
+ *
+ * @param {string[]} names — the entities whose details were lost
+ */
+function notifyTierFailure(names) {
+  try {
+    if (!globalThis.game?.user?.isGM) return;
+    const whose = names.length ? ` for ${names.join(", ")}` : "";
+    globalThis.ui?.notifications?.warn?.(
+      `Starforged Companion: new details${whose} from this narration were not recorded — ` +
+      `the reply was cut off or malformed. See the console for details.`,
+    );
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | notifyTierFailure: notify failed:`, err?.message ?? err);
+  }
+}
+
 export function parseTierUpdateResponse(text) {
   if (!text || typeof text !== "string") return { updates: [] };
   const slice = (text.match(/\{[\s\S]*\}/) ?? [text])[0];
@@ -1819,7 +1920,7 @@ async function persistGenerativeTier(entityRef, entry) {
     }
     const existingFlags = readEntityFlag(entityRef.type, document) ?? {};
     const tier = Array.isArray(existingFlags.generativeTier) ? existingFlags.generativeTier : [];
-    if (tierHasDetail(tier, entry.detail)) return null;
+    if (tierHasDetail(tier, entry.detail, detailSubjectWords(existingFlags, document))) return null;
     const updated = [...tier, entry];
     await writeEntityFlag(entityRef.type, document, {
       ...existingFlags,
@@ -1867,7 +1968,7 @@ export async function appendMigratedTruthToTier(journalId, type, entry) {
       ? existingFlags.generativeTier
       : [];
 
-    if (tierHasDetail(tier, entry.detail)) return true;
+    if (tierHasDetail(tier, entry.detail, detailSubjectWords(existingFlags, document))) return true;
 
     const updated = {
       ...existingFlags,
@@ -2060,6 +2161,13 @@ const ENTITY_CREATORS = {
  * Wire Confirm/Dismiss button clicks on draft entity chat cards. Idempotent:
  * registers a single chat-render hook that re-attaches listeners every
  * render. Call once at module ready.
+ *
+ * A press is relayed to the canonical GM (`draft.confirm` / `draft.dismiss`,
+ * relayCardAction — the suffer card's shape), where the relay queue runs one
+ * at a time: two GMs pressing Confirm on one row at the same moment each ran
+ * it on their own client, past the per-client in-flight guard, and both
+ * created the NPC (DRAFT-CONFIRM-TWO-GMS). The second press now runs after the
+ * first, finds the row confirmed, and does nothing.
  */
 export function registerDraftCardHooks() {
   onChatMessageRender((message, root) => {
@@ -2073,27 +2181,91 @@ export function registerDraftCardHooks() {
       return;
     }
 
-    root.querySelectorAll('[data-action="sf-draft-confirm"]').forEach(btn => {
-      btn.addEventListener("click", (ev) => {
+    const wire = (action, kind) => root.querySelectorAll(`[data-action="${action}"]`).forEach(btn => {
+      btn.addEventListener("click", async (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
+        if (btn.disabled) return;
+        btn.disabled = true;
         const idx = Number(btn.dataset.index);
-        // A round's connection row: whose connection the GM picked ("" — no one).
-        handleDraftConfirm(message, idx, btn.dataset.actorId).catch(err =>
-          console.error(`${MODULE_ID} | draft confirm failed:`, err));
+        const { relayCardAction } = await import("../moves/cardActions.js");
+        await relayCardAction({
+          kind,
+          // A round's connection row: whose connection the GM picked ("" — no one).
+          payload:    { messageId: message?.id ?? null, draftIndex: idx, pick: btn.dataset.actorId },
+          isResolved: () => draftRowSettled(message?.id, idx),
+          restore:    () => { btn.disabled = false; },
+        });
       });
     });
-
-    root.querySelectorAll('[data-action="sf-draft-dismiss"]').forEach(btn => {
-      btn.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const idx = Number(btn.dataset.index);
-        handleDraftDismiss(message, idx).catch(err =>
-          console.error(`${MODULE_ID} | draft dismiss failed:`, err));
-      });
-    });
+    wire("sf-draft-confirm", "draft.confirm");
+    wire("sf-draft-dismiss", "draft.dismiss");
   });
+}
+
+/** True when the live card's row is no longer pending (confirmed or dismissed). */
+function draftRowSettled(messageId, draftIndex) {
+  const message = globalThis.game?.messages?.get?.(messageId);
+  const drafts = message?.flags?.[MODULE_ID]?.drafts;
+  const row = Array.isArray(drafts) ? drafts.find(d => d?.index === draftIndex) : null;
+  return !!row && !!row.status && row.status !== "pending";
+}
+
+/**
+ * The relayed press's card and row (applyDraftConfirmFromRelay /
+ * applyDraftDismissFromRelay): a GM's press on a draft card's row, or null —
+ * refused, with the presser told, for anyone else (the buttons are a GM's).
+ *
+ * @param {{ messageId?: string, draftIndex?: number|string }} payload
+ * @param {Object} ctx — the relay context
+ * @returns {{ message: ChatMessage, draftIndex: number }|null}
+ */
+async function relayedDraftPress(payload, ctx) {
+  if (!ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | draft card: user ${ctx?.requesterId ?? "?"} is not a GM — press refused.`);
+    const { refusePress } = await import("../multiplayer/gmRelay.js");
+    refusePress(ctx, "not-owner");
+    return null;
+  }
+  const messageId = typeof payload?.messageId === "string" ? payload.messageId : null;
+  const message = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  const draftIndex = Number(payload?.draftIndex);
+  if (!message?.flags?.[MODULE_ID]?.draftEntityCard || !Number.isInteger(draftIndex)) {
+    console.warn(`${MODULE_ID} | draft card: card ${messageId ?? "?"} row ${payload?.draftIndex ?? "?"} not found — press ignored.`);
+    return null;
+  }
+  return { message, draftIndex };
+}
+
+/**
+ * gmRelay handler for "draft.confirm" — runs on the canonical GM, one press
+ * at a time (DRAFT-CONFIRM-TWO-GMS): confirmDraft creates the row's entity
+ * unless the row is no longer pending.
+ *
+ * @param {{ messageId?: string, draftIndex?: number, pick?: string }} payload
+ * @param {Object} ctx — the relay context
+ * @returns {Promise<{ applied: boolean }>}
+ */
+export async function applyDraftConfirmFromRelay(payload = {}, ctx = {}) {
+  const press = await relayedDraftPress(payload, ctx);
+  if (!press) return { applied: false };
+  await handleDraftConfirm(press.message, press.draftIndex, typeof payload.pick === "string" ? payload.pick : undefined);
+  return { applied: true };
+}
+
+/**
+ * gmRelay handler for "draft.dismiss" — runs on the canonical GM, behind any
+ * Confirm of the same row (DRAFT-CONFIRM-TWO-GMS).
+ *
+ * @param {{ messageId?: string, draftIndex?: number }} payload
+ * @param {Object} ctx — the relay context
+ * @returns {Promise<{ applied: boolean }>}
+ */
+export async function applyDraftDismissFromRelay(payload = {}, ctx = {}) {
+  const press = await relayedDraftPress(payload, ctx);
+  if (!press) return { applied: false };
+  await handleDraftDismiss(press.message, press.draftIndex);
+  return { applied: true };
 }
 
 // "<messageId>:<draftIndex>" drafts this client is confirming. The card says
@@ -2248,7 +2420,8 @@ async function confirmDraft(message, draftIndex, opts = {}) {
         // A Make a Connection's narration made it (confirmNamedPendingConnection).
         ...(opts.narrationId ? {
           createdFromNarrationId: opts.narrationId,
-          createdFromDraft:       { messageId: message?.id ?? null, index: draftIndex },
+          // A row the GM had dismissed goes back to dismissed (XCARD-KEEPS-UNDISMISS).
+          createdFromDraft:       { messageId: message?.id ?? null, index: draftIndex, ...(draft.status === "dismissed" ? { status: "dismissed" } : {}) },
         } : {}),
       }, campaignState);
       // An X-Card on that narration meanwhile takes the stamped card back:
@@ -2346,8 +2519,11 @@ async function reconcileConfirmedFaction(name, campaignState) {
     if (wjEntry?.attitude && wjEntry.attitude !== "unknown") {
       await applyAttitudeToFactionRecord(name, wjEntry.attitude, campaignState);
     }
-    if (wjEntry?.entityId !== hit.id) {
-      await recordFactionIntelligence(name, { entityId: hit.id }, campaignState);
+    // A backlink only: the Confirm met the faction nowhere in the fiction, so
+    // it logs no encounter (FACTION-CONFIRM-TWO-ENCOUNTERS). An entry not
+    // there yet is the mirror's to start (mirrorConfirmedFaction).
+    if (wjEntry && wjEntry.entityId !== hit.id) {
+      await recordFactionIntelligence(name, { entityId: hit.id, encounter: false }, campaignState);
     }
   } catch (err) {
     console.warn(`${MODULE_ID} | draft confirm: faction reconcile/seed failed:`, err?.message ?? err);
@@ -2362,8 +2538,11 @@ async function reconcileConfirmedFaction(name, campaignState) {
  * (playtest finding). No attitude: the entry keeps the one the narration
  * established (a new entry starts "unknown"); the backlink is the host id, as
  * the reconcile writes it. Passing attitude "unknown" overwrote a known
- * attitude, and record._id re-pointed the backlink (issue #321 U28). Never
- * throws.
+ * attitude, and record._id re-pointed the backlink (issue #321 U28). The
+ * description is the page's first encounter only when the mirror starts the
+ * page: an entry the narration surfaced has its encounter, and the Confirm's
+ * backlink and mirror each appended another (FACTION-CONFIRM-TWO-ENCOUNTERS).
+ * Never throws.
  *
  * @param {Object} draft — the confirmed row (`name`, `description`)
  * @param {Object} campaignState
@@ -2374,6 +2553,7 @@ async function mirrorConfirmedFaction(draft, campaignState) {
     await recordFactionIntelligence(draft.name, {
       summary:  draft.description ?? "",
       entityId: findFactionByName(draft.name, campaignState)?.id ?? null,
+      ...(getFactionEntry(draft.name) ? { encounter: false } : {}),
     }, campaignState);
   } catch (err) {
     console.warn(`${MODULE_ID} | draft confirm: faction World Journal mirror failed:`, err?.message ?? err);
@@ -2440,8 +2620,12 @@ async function completeListedEntity(draft, campaignState) {
  * hit with Sable whose narration had pending Dace watching from the bar
  * bonded Dace, and the pending rows were tried before the known NPC the line
  * named. Now the line decides when it names exactly one of them; a line that
- * names none leaves it to the narration when that names exactly one;
- * otherwise none is guessed and the GMs are told which were named.
+ * names none leaves it to the narration when that names exactly one; else
+ * the interpreter's target for the move (`slot.targetName`) picks the one it
+ * names, when it names exactly one of them (KNOWN-NPC-CONNECTION-NO-TARGET:
+ * no target reached the capture, so "I win him over" with two known NPCs in
+ * the narration got the GMs' notice); otherwise none is guessed and the GMs
+ * are told which were named.
  *
  * @param {{ actorId: string|null, names: Function }} slot — the hit
  *   (connectionSlots): whether the move names a figure as its roller's —
@@ -2463,8 +2647,13 @@ async function connectNamedFigure(slot, campaignState, { namingText = "", lineTe
 
   const line = String(lineText ?? "");
   const inLine = line.trim() ? candidates.filter(c => wholeWordPattern(c.name).test(line)) : [];
+  const target = String(slot.targetName ?? "").trim();
+  const byTarget = target
+    ? (inLine.length ? inLine : candidates).filter(c => wholeWordPattern(c.name).test(target) || wholeWordPattern(target).test(c.name))
+    : [];
   const pick = inLine.length === 1 ? inLine[0]
     : inLine.length === 0 && candidates.length === 1 ? candidates[0]
+    : byTarget.length === 1 ? byTarget[0]
     : null;
   if (!pick) {
     const named = inLine.length ? inLine : candidates;
@@ -2478,7 +2667,7 @@ async function connectNamedFigure(slot, campaignState, { namingText = "", lineTe
     return record ? { entity: pick.draft, record } : null;
   }
   if (dismissed.has(pick.key)) {
-    await undismissEntityName(pick.key).catch(err =>
+    await undismissEntityName(pick.key, "make a connection undismiss", { narrationId }).catch(err =>
       console.warn(`${MODULE_ID} | make a connection: un-dismissing the name failed:`, err?.message ?? err));
   }
   if (pick.kind === "listed") {
@@ -2527,15 +2716,88 @@ function namedConnectionCandidates(slot, campaignState, dismissed) {
   return out;
 }
 
-/** Take a name off the dismissed list (by normalizeEntityName), on the GM's campaignState write chain. */
-async function undismissEntityName(key, label = "make a connection undismiss") {
+/** Narrations' un-dismissals kept on campaignState for the X-Card, newest last (as `xCardedNarrationIds` keeps). */
+const UNDISMISS_LOG_CAP = 50;
+
+/**
+ * Take a name off the dismissed list (by normalizeEntityName), on the GM's
+ * campaignState write chain. A narration's un-dismissal — a Make a
+ * Connection that named the dismissed NPC, an identity reveal onto a
+ * dismissed name — is logged with its narration id
+ * (`undismissedByNarration`), so an X-Card on that narration dismisses the
+ * name again (restoreNarrationDismissals, XCARD-KEEPS-UNDISMISS); one the
+ * X-Card has already removed un-dismisses nothing.
+ *
+ * @param {string} key — the normalised name
+ * @param {string} [label]
+ * @param {{ narrationId?: string|null }} [opts]
+ */
+async function undismissEntityName(key, label = "make a connection undismiss", { narrationId = null } = {}) {
   await serialiseCampaignStateWrite(() => {
     const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+    const byNarration = typeof narrationId === "string" && narrationId ? narrationId : null;
+    if (byNarration && (latest.xCardedNarrationIds ?? []).includes(byNarration)) return undefined;
     const list = Array.isArray(latest.dismissedEntities) ? latest.dismissedEntities : [];
     const kept = list.filter(n => normalizeEntityName(n) !== key);
     if (kept.length === list.length) return undefined;
-    return globalThis.game.settings.set(MODULE_ID, "campaignState", { ...latest, dismissedEntities: kept });
+    const cs = { ...latest, dismissedEntities: kept };
+    if (byNarration) {
+      const name = list.find(n => normalizeEntityName(n) === key);
+      const log = Array.isArray(latest.undismissedByNarration) ? latest.undismissedByNarration : [];
+      cs.undismissedByNarration = [...log, { name, narrationId: byNarration }].slice(-UNDISMISS_LOG_CAP);
+    }
+    return globalThis.game.settings.set(MODULE_ID, "campaignState", cs);
   }, label);
+}
+
+/**
+ * Dismiss again the names X-carded narrations took off the Dismissed list
+ * (XCARD-KEEPS-UNDISMISS): a Make a Connection hit on a dismissed NPC, or an
+ * identity reveal onto a dismissed name. The X-Card's finish already put the
+ * row back and the placeholder's name back (retractNarrationConnections,
+ * revertNarrationRenames), but the name stayed off the list. A name a record
+ * still holds — the connection the table had used, a GM's rename onto it —
+ * stays off: dismissed, it would hide that record from the narrator (issue
+ * #345 AA55). Canonical GM (the X-Card's finish), on the write chain, after
+ * the connections are settled. Never throws.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<string[]>} the names dismissed again
+ */
+export async function restoreNarrationDismissals(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  if (!removed.size) return [];
+  // Nothing logged for them: no write, and no wait on the write chain.
+  const logged = (cs) => (Array.isArray(cs?.undismissedByNarration) ? cs.undismissedByNarration : [])
+    .some(e => removed.has(e?.narrationId));
+  if (!logged(globalThis.game?.settings?.get(MODULE_ID, "campaignState"))) return [];
+  let restored = [];
+  try {
+    await serialiseCampaignStateWrite(() => {
+      const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+      const log = Array.isArray(latest.undismissedByNarration) ? latest.undismissedByNarration : [];
+      const theirs = log.filter(e => removed.has(e?.narrationId));
+      if (!theirs.length) return undefined;
+      const list = Array.isArray(latest.dismissedEntities) ? latest.dismissedEntities : [];
+      const held = new Set(list.map(normalizeEntityName));
+      restored = [];
+      for (const { name } of theirs) {
+        const key = normalizeEntityName(name);
+        if (!key || held.has(key) || entityExistsAnyType(name, latest)) continue;
+        held.add(key);
+        restored.push(name);
+      }
+      return globalThis.game.settings.set(MODULE_ID, "campaignState", {
+        ...latest,
+        dismissedEntities:      [...list, ...restored],
+        undismissedByNarration: log.filter(e => !removed.has(e?.narrationId)),
+      });
+    }, "X-Card: dismissals restored");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: dismissing again the names the removed narration un-dismissed failed:`, err?.message ?? err);
+    return [];
+  }
+  return restored;
 }
 
 /**
@@ -2551,16 +2813,18 @@ async function undismissEntityName(key, label = "make a connection undismiss") {
  *
  * @param {string} name — the record's new name
  * @param {Object} [campaignState] — the caller's copy
+ * @param {{ narrationId?: string|null }} [opts] — the narration that gave the
+ *   record the name (an identity reveal): logged, for its X-Card
  * @returns {Promise<boolean>} whether the name was dismissed
  */
-export async function undismissRecordName(name, campaignState = null) {
+export async function undismissRecordName(name, campaignState = null, { narrationId = null } = {}) {
   const key = normalizeEntityName(name);
   if (!key || !globalThis.game?.user?.isGM) return false;
   const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
   const held = (list) => Array.isArray(list) && list.some(n => typeof n === "string" && normalizeEntityName(n) === key);
   if (!held(stored.dismissedEntities) && !held(campaignState?.dismissedEntities)) return false;
   try {
-    await undismissEntityName(key, "record name undismiss");
+    await undismissEntityName(key, "record name undismiss", { narrationId });
   } catch (err) {
     console.warn(`${MODULE_ID} | un-dismissing "${name}" (a record now holds it) failed:`, err?.message ?? err);
     return false;
@@ -2716,10 +2980,12 @@ export async function withdrawNarrationDrafts(narrationIds) {
  * MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED): the NPC was the earlier
  * narration's, which the X-Card kept, so the row is pending again — Confirm
  * and Dismiss back on the card. A row whose own narration an X-Card removed
- * is withdrawn instead (`xCarded`, issue #338 D6(i)). A row no longer
- * confirmed is left as it is. Canonical GM (the X-Card's finish).
+ * is withdrawn instead (`xCarded`, issue #338 D6(i)); a row the GM had
+ * dismissed before the hit confirmed it is dismissed again (its link's
+ * `status`, XCARD-KEEPS-UNDISMISS). A row no longer confirmed is left as it
+ * is. Canonical GM (the X-Card's finish).
  *
- * @param {{ messageId?: string|null, index?: number }} link — the connection's `createdFromDraft`
+ * @param {{ messageId?: string|null, index?: number, status?: "dismissed" }} link — the connection's `createdFromDraft`
  * @returns {Promise<string|null>} the row's new status, or null when nothing changed
  */
 export async function reopenConfirmedDraftRow(link) {
@@ -2727,7 +2993,8 @@ export async function reopenConfirmedDraftRow(link) {
   const f = message?.flags?.[MODULE_ID];
   if (!f?.draftEntityCard) return null;
   const removed = globalThis.game?.settings?.get(MODULE_ID, "campaignState")?.xCardedNarrationIds ?? [];
-  const status = f.narrationId && removed.includes(f.narrationId) ? DRAFT_XCARDED : "pending";
+  const status = link?.status === "dismissed" ? "dismissed"
+    : f.narrationId && removed.includes(f.narrationId) ? DRAFT_XCARDED : "pending";
   const rows = await changeDraftRows(message, (drafts) => {
     const at = drafts.findIndex(d => d?.index === link.index);
     if (at < 0 || drafts[at].status !== "confirmed") return null;

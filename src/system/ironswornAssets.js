@@ -30,51 +30,6 @@ export const IS_PATHS = Object.freeze({
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// AVAILABILITY PROBE
-// ─────────────────────────────────────────────────────────────────────────────
-
-let _availabilityCache = null;
-
-/**
- * Probe whether the foundry-ironsworn system is installed and active.
- * Cached after first call. Used by every consumer to decide whether to
- * use a system asset or fall back to module-bundled placeholders.
- *
- * Detection is intentionally lightweight — checks game.system.id, then
- * game.systems for the ironsworn id. We do not perform a network probe
- * because Foundry's filesystem layer rejects HEAD requests on assets
- * paths in some configurations.
- *
- * @returns {Promise<boolean>}
- */
-export async function isIronswornAvailable() {
-  if (_availabilityCache !== null) return _availabilityCache;
-
-  try {
-    const sysId = globalThis.game?.system?.id;
-    if (sysId === IS_SYSTEM_ID) {
-      _availabilityCache = true;
-      return true;
-    }
-    const known = globalThis.game?.systems;
-    if (known?.get?.(IS_SYSTEM_ID)) {
-      _availabilityCache = true;
-      return true;
-    }
-  } catch (err) {
-    console.warn(`starforged-companion | isIronswornAvailable probe failed:`, err);
-  }
-
-  _availabilityCache = false;
-  return false;
-}
-
-/** Reset the availability cache. Test-only. */
-export function _resetIronswornAvailabilityCache() {
-  _availabilityCache = null;
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // STARSHIP ICON PICKER (Phase 3)
 // ─────────────────────────────────────────────────────────────────────────────
 

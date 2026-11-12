@@ -7,7 +7,8 @@
  * - Merge campaign-level and session-level safety config
  * - Always produce output — never returns null or empty string
  * - X-Card: suppressScene() (the canonical-GM "xcard.activate" relay
- *   handler), playXCard() / postXCardCard() (play + card, any client),
+ *   handler), registerXCardLatePostHook() (a narration posted after the
+ *   pause — XCARD-POST-RACE), playXCard() / postXCardCard() (play + card, any client),
  *   resumeNarrationAfterXCard() / clearXCard() and the card's GM-only
  *   resume button binder bindXCardCard(); isNarrationXCarded() — the live
  *   check every capture write makes (XCARD-LATE-CAPTURE)
@@ -26,6 +27,7 @@
  */
 
 import { runCampaignStateWriteNow, serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -220,6 +222,56 @@ export async function suppressScene(_payload, ctx) {
 const NO_REMOVAL = Object.freeze({ cards: [], retracted: [] });
 
 /**
+ * A narration that posts its card after the X-Card's pause landed
+ * (XCARD-POST-RACE — the #300 F13 shape). Its reply passed its interrupted
+ * check (narrator.js watchXCard) just before the play, its sidecar was
+ * applied, and its card's creation was on its way while the pause's pick ran:
+ * the pick answered the beat the table could see, and this card then posted
+ * unflagged, its facts live, into a paused scene. Every narrator path stands
+ * down while the X-Card is active, so a narration card created while it is
+ * active is one of these: it is removed as an X-Card removes one — flagged
+ * `xCarded`, its ledger entries retracted and its id kept on
+ * `xCardedNarrationIds` (its capture, a relayed sidecar and a stale merge then
+ * write nothing), its oracle results dropped, its capture undone. Canonical
+ * GM, on its campaignState write chain. Registered at `ready` (index.js).
+ */
+export function registerXCardLatePostHook() {
+  Hooks.on("createChatMessage", onNarrationPostedDuringPause);
+}
+
+function onNarrationPostedDuringPause(message) {
+  try {
+    if (!isCanonicalGM()) return undefined;
+    const f = message?.flags?.[MODULE_ID];
+    if (!f?.narratorCard || typeof f.narrationText !== "string" || !f.narrationText.trim()) return undefined;
+    if (f.narrationFallback || f.publishedReflection || f.xCarded || f.burnSuperseded) return undefined;
+    // The cards that co-mark the family but are no narration (narrator memory's defensive excludes).
+    if (f.worldJournalContradiction || f.worldJournalCard || f.recapCard || f.draftEntityCard) return undefined;
+    const cs = game.settings.get(MODULE_ID, "campaignState");
+    if (!cs?.xCardActive || (f.sessionId ?? null) !== (cs.currentSessionId ?? null)) return undefined;
+    return removeNarrationPostedDuringPause(message).catch(err =>
+      console.warn(`${MODULE_ID} | X-Card: removing a narration that posted after the pause failed:`, err?.message ?? err));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: checking a narration posted during the pause failed:`, err?.message ?? err);
+    return undefined;
+  }
+}
+
+async function removeNarrationPostedDuringPause(message) {
+  const narrator = await import("../narration/narrator.js");
+  let removal = NO_REMOVAL;
+  await serialiseCampaignStateWrite(() => {
+    // A copy, as the pause's own write (#302).
+    const cs = { ...(game.settings.get(MODULE_ID, "campaignState") ?? {}) };
+    removal = narrator.applyXCardToNarratorMemory(cs, { cards: [message] });
+    if (!removal.cards.length) return undefined;
+    return game.settings.set(MODULE_ID, "campaignState", cs);
+  }, "X-Card: a narration posted after the pause");
+  console.info(`${MODULE_ID} | X-Card: a narration whose card posted after the pause was removed with it.`);
+  await finishXCardRemoval(narrator, removal);
+}
+
+/**
  * True when an X-Card removed this narration: its id is on the STORED
  * campaignState's `xCardedNarrationIds`, which the pause's own write sets
  * (applyXCardToNarratorMemory). Read live, never from a caller's copy — a
@@ -297,6 +349,14 @@ async function finishXCardRemoval(narrator, removal) {
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: undoing what the narration's capture recorded failed:`, err?.message ?? err);
     }
+    // The Chronicle entries the scribe wrote from it — the Chronicle feeds
+    // the campaign recap and, pinned, every CHARACTER block (XCARD-CHRONICLE).
+    try {
+      const { retractNarrationChronicle } = await import("../character/chronicle.js");
+      await retractNarrationChronicle(ids);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: removing the narration's Chronicle entries failed:`, err?.message ?? err);
+    }
     // A connection the narration created (a Make a Connection hit) goes with
     // it while nobody has used it; one the table has used stays, and the GMs
     // are told so (issue #338 D6(ii)). After the capture undo, which takes
@@ -307,6 +367,16 @@ async function finishXCardRemoval(narrator, removal) {
       if (kept.length) await postKeptConnectionsNotice(kept);
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: removing the connections the narration created failed:`, err?.message ?? err);
+    }
+    // A name it took off the Dismissed list — a Make a Connection on a
+    // dismissed NPC, an identity reveal onto a dismissed name — is dismissed
+    // again, once the connection and the rename are settled above
+    // (XCARD-KEEPS-UNDISMISS). Fail-open inside.
+    try {
+      const { restoreNarrationDismissals } = await import("../entities/entityExtractor.js");
+      await restoreNarrationDismissals(ids);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: dismissing again the names the narration un-dismissed failed:`, err?.message ?? err);
     }
   }
   if (removal.retracted.length) {

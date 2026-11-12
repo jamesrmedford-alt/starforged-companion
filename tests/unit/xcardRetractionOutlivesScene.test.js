@@ -336,6 +336,24 @@ describe('XCARD-DURING-SCENE-END-RACE — an X-Card played while a scene ends ke
     expect(liveTruths(DEAD)).toEqual([]);
   });
 
+  // XCARD-STRIKE-ENDSCENE-RACE: the GM struck this scene's narration truth,
+  // and the X-Card on that narration lands while the scene ends — the end's
+  // copy still holds the GM's strike, which used to be kept and named again.
+  it('a strike made in this scene, X-carded while the scene ends: kept unnamed, still blocking', async () => {
+    // The second truth is archived — the page creation the end is held at.
+    await narrate('nar-1', [{ subject: 'Vance', fact: DEAD }, { subject: 'Kira', fact: 'Took the shuttle' }]);
+    await strike(DEAD);
+    expect(corrected()).toContain(DEAD);                            // control: the GM's strike is named
+
+    await endSceneWhile(async () => { await playXCard(); resume(); });
+
+    expect(named()).toEqual([]);
+    expect(corrected()).not.toContain(DEAD);
+    await someoneSpeaks();
+    await narrate('nar-2', [{ subject: 'Vance', fact: DEAD }]);
+    expect(liveTruths(DEAD)).toEqual([]);
+  });
+
   it("control: with no X-Card meanwhile, the end keeps the scene's strike named and its live narration truth for a later X-Card", async () => {
     await narrate('nar-1', [{ subject: 'Vance', fact: DEAD }, { subject: 'Kira', fact: 'Took the shuttle' }]);
     await strike(DEAD);
@@ -375,6 +393,24 @@ describe('the session\'s X-Card blocks (sessionRetractions.blocked)', () => {
     ]);
     expect(state.sessionRetractions.facts).toEqual([{ label: 'Kira', fact: DEAD }]);   // the session's strikes kept
     expect(sessionRetractedFacts({ ...state, sceneTruths: [] }).map(f => f.label)).toEqual(['Kira']);   // never named
+  });
+
+  // SUPERSEDED-TRUTHS-SHARE-LIMIT: superseded truths shared the live ones'
+  // cap of fifty, so a scene with many live narration truths after them
+  // pushed the struck narration's out — and an X-Card on the upgraded beat
+  // then had nothing to block.
+  it('rememberNarratedTruths keeps the newest fifty live and the newest fifty superseded truths apart', () => {
+    const truth = (id, fact, extra = {}) => ({ id, fact, subject: { kind: 'text', text: 'Vance' }, narrationId: 'nar-1', retracted: false, ...extra });
+    const state = { currentSessionId: SESSION, sessionRetractions: { sessionId: SESSION, facts: [], blocked: [] } };
+    rememberNarratedTruths(state, [
+      truth('tr-s1', BODY, { narrationId: 'nar-miss', retracted: true, retractedBy: 'superseded' }),
+      ...Array.from({ length: 60 }, (_, i) => truth(`tr-${i}`, `Fact ${i}`, { narrationId: 'nar-hit' })),
+    ]);
+    const narrated = state.sessionRetractions.narrated;
+    expect(narrated.filter(n => !n.superseded)).toHaveLength(50);
+    expect(narrated.filter(n => !n.superseded).at(-1).fact).toBe('Fact 59');
+    expect(narrated.find(n => n.truthId === 'tr-s1')).toMatchObject({ fact: BODY, narrationId: 'nar-miss', superseded: true });
+    expect(narrated[0].truthId).toBe('tr-s1');                       // order kept
   });
 
   it('withXCardBlocks keeps each subject and fact once, and the newest fifty', () => {

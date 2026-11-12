@@ -290,9 +290,10 @@ describe('buildLedgerBlock — maxTokens', () => {
       { subject: 'scene', attribute: 'lighting', value: 'flickering red emergency strips' },
     ] });
     const out = buildLedgerBlock(cs, { maxTokens: budget });
-    // (A text subject's state key is lowercased, so is its label.)
-    expect(out.state).toContain('vance — location: aboard his shuttle');
-    expect(out.state).toContain('vance — condition: bleeding from the shoulder');
+    // (A text subject's state key is lowercased; its label keeps the case
+    // the narrator wrote — TEXT-SUBJECT-LOWERCASE.)
+    expect(out.state).toContain('Vance — location: aboard his shuttle');
+    expect(out.state).toContain('Vance — condition: bleeding from the shoulder');
     expect(out.state).not.toContain('mood');
     expect(out.state).not.toContain('lighting');
     expect(out.truths.split('\n')).toHaveLength(8);

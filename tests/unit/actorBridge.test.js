@@ -1096,7 +1096,51 @@ describe('revertVowClocksForBurn', () => {
     const failed = await revertVowClocksForBurn([{ actorId: actor.id, itemId: 'v1' }, { actorId: actor.id, itemId: 'v2', name: 'B' }]);
 
     expect(ok.system.clockTicks).toBe(1);
-    expect(failed).toEqual([{ actorId: actor.id, itemId: 'v2', name: 'B' }]);
+    // Each carries the value it is owed, for its Retry (VOW-CLOCK-REWIND-PER-COPY).
+    expect(failed).toEqual([{ actorId: actor.id, itemId: 'v2', name: 'B', target: 1 }]);
+  });
+
+  // Known-issues VOW-CLOCK-REWIND-PER-COPY: a shared vow's copies (one per PC,
+  // one vowId) are one clock. Each was rewound a segment from what it read,
+  // independently — a copy the sync hook had already moved down with the
+  // first went back a second segment. They are rewound in lockstep now, as
+  // advanceVowClocks advances them (issue #321 U55).
+  it('rewinds a shared vow\'s copies in lockstep — one segment, whatever the sync hook already moved', async () => {
+    const kiras = clockVow({ id: 'v-kira', name: 'Save Dani', ticks: 4 });
+    const rens  = clockVow({ id: 'v-ren',  name: 'Save Dani', ticks: 4 });
+    // The sync hook mirrors the first copy's write onto the second before it is read.
+    kiras.update = async (changes) => { kiras.system.clockTicks = changes['system.clockTicks']; rens.system.clockTicks = changes['system.clockTicks']; };
+    const kira = freshActor({ id: 'pc-kira', items: { contents: [kiras] } });
+    const ren  = freshActor({ id: 'pc-ren',  items: { contents: [rens] } });
+    game.actors._set(kira.id, kira);
+    game.actors._set(ren.id, ren);
+
+    await revertVowClocksForBurn([
+      { actorId: kira.id, itemId: 'v-kira', vowId: 'vow-dani' },
+      { actorId: ren.id,  itemId: 'v-ren',  vowId: 'vow-dani' },
+    ]);
+
+    expect(kiras.system.clockTicks).toBe(3);
+    expect(rens.system.clockTicks).toBe(3);               // was 2: rewound again from the mirrored 3
+  });
+
+  it('a later copy the hook has not reached is set to the vow\'s value, and a Retry sets the value it is owed', async () => {
+    const kiras = clockVow({ id: 'v-kira', ticks: 4 });
+    const rens  = clockVow({ id: 'v-ren',  ticks: 4 });
+    const kira = freshActor({ id: 'pc-kira', items: { contents: [kiras] } });
+    const ren  = freshActor({ id: 'pc-ren',  items: { contents: [rens] } });
+    game.actors._set(kira.id, kira);
+    game.actors._set(ren.id, ren);
+
+    await revertVowClocksForBurn([
+      { actorId: kira.id, itemId: 'v-kira', vowId: 'vow-dani' },
+      { actorId: ren.id,  itemId: 'v-ren',  vowId: 'vow-dani' },
+    ]);
+    expect([kiras.system.clockTicks, rens.system.clockTicks]).toEqual([3, 3]);
+
+    // A Retry of an entry owed 3 on a copy the hook already brought to 3 writes nothing more.
+    await revertVowClocksForBurn([{ actorId: ren.id, itemId: 'v-ren', vowId: 'vow-dani', target: 3 }]);
+    expect(rens.system.clockTicks).toBe(3);
   });
 });
 

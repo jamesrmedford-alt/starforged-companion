@@ -85,6 +85,8 @@ import {
   renarrateUpgrade,
   effectsNoteHtml,
   retractSupersededNarrations,
+  upgradeAllyId,
+  momentumShares,
 } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -298,7 +300,9 @@ export function buildBurnState(resolution, actor, ptpReversals = null, targets =
   if (resolution.isProgressMove || resolution.rollKind === "none") return null;
 
   const momentum           = readMomentumState(actor);
-  const consequenceDelta   = Number(resolution.consequences?.momentumChange ?? 0);
+  // The roller's share: Aid Your Ally's hit paid its momentum to the ally
+  // (AID-ALLY-UPGRADE).
+  const consequenceDelta   = momentumShares(resolution.consequences, upgradeAllyId({ targets }, actor.id)).roller;
   const postMomentum       = Math.min(Math.max(momentum.value + consequenceDelta, momentum.min), momentum.max);
   const outcomeMomentum    = postMomentum - momentum.value;
   const burnable           = burnableMomentum(momentum, 0, priceMomentumTaken(ptpReversals, actor.id), priceMarkOnMomentum(ptpReversals, actor.id));
@@ -642,6 +646,7 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
       console.warn(`${MODULE_ID} | burnMomentum: PtP reversal failed:`, err));
   }
 
+  const allyId = upgradeAllyId(burn, actor.id);
   await applyUpgradeStep({ effect: "meters", pcId: actor.id, changes: burnMeterChanges({
     burnState:        burn,
     currentMomentum:  momentum.value,
@@ -650,7 +655,14 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
     // The price that stands is the burned outcome's: its momentum loss lands
     // after the reset (issue #342 Z51).
     keptPriceMomentum: priceStands ? priceMomentumTaken(burn.ptpReversals, actor.id) : 0,
+    allyId,
   }) }, failures);
+  // Aid Your Ally: the burned hit's momentum is the ally's, less what the
+  // recorded hit already paid them (AID-ALLY-UPGRADE).
+  const allyMomentum = momentumShares(newConsequences, allyId).ally - momentumShares(burn.originalConsequences, allyId).ally;
+  if (allyId && allyMomentum) {
+    await applyUpgradeStep({ effect: "meters", pcId: allyId, changes: { momentum: allyMomentum } }, failures);
+  }
 
   // The original outcome's pending choice is retired and the burned outcome's
   // offered once (issue #311 P03). A price that stands keeps the cards it
@@ -707,9 +719,11 @@ async function handleBurnClick(message, { narrate, applyEffects }) {
  * is no part of the burned outcome: its momentum loss is replaced by the
  * reset, as before. applyMeterChanges clamps the result to the PC's bounds.
  */
-function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newConsequences, keptPriceMomentum = 0 }) {
+function burnMeterChanges({ burnState, currentMomentum, newMomentumReset, newConsequences, keptPriceMomentum = 0, allyId = null }) {
   const orig = burnState.originalConsequences ?? {};
-  const targetMomentum = newMomentumReset + Number(newConsequences.momentumChange ?? 0) - (Number(keptPriceMomentum) || 0);
+  // The burner's share of the burned outcome's momentum — none of an Aid Your
+  // Ally hit's, which is the ally's (AID-ALLY-UPGRADE).
+  const targetMomentum = newMomentumReset + momentumShares(newConsequences, allyId).roller - (Number(keptPriceMomentum) || 0);
   const swap = (k) => Number(newConsequences[k] ?? 0) - Number(orig[k] ?? 0);
   return {
     momentum: targetMomentum - currentMomentum,

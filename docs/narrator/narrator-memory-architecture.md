@@ -117,7 +117,7 @@ should remember* must carry all three flags:
 | inciting incident (`postIncitingIncidentCard`) | Cluster A1 | `narrationText` is prose only (vow line stripped); fallback cards excluded |
 | galley / end-session vignettes | 2026-06-15 | |
 | vow-swearing scene (`narrateAndPostVowSwearing`) | 2026-07 | NARR-RING-VOWSCENE fix |
-| clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix; a trigger vignette also names its clock (`clockId`, issue #338 D8); its narration runs the canonical GM's tier pass for the recorded entities it names (`narrateClockAdvancement` → `scheduleNarrationCapture`, issue #345 AA33) |
+| clock vignettes (PtP / Begin Session / manual — all three post sites) | 2026-07 | NARR-RING-CLOCKVIG fix; a trigger vignette also names its clock (`clockId`, issue #338 D8); its narration runs the tier pass for the recorded entities it names (`narrateClockAdvancement` → `scheduleNarrationCapture`, issue #345 AA33) and the detection pass (CLOCK-VIGNETTE-NO-DETECTION), on the GM whose client narrated it (CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE) |
 | oracle follow-up narration (`postOracleNarrationCard`) | 2026-07 | raw results additionally ledger via the `oracleMemory` flag → `campaignState.recentOracles` |
 | Batch Mode round card (`postRoundNarrationCard`) | 2026-11 (#340) | `roundId`, `roundNumber`, `roundEntries: [{ userId, actorId, playerName, playerText, moveId, outcome, isMatch, resolutionId }]` — the players who acted and no one else; its own `moveId` / `outcome` / `resolutionId` stay empty. The round's result cards carry `roundId` too. Its fallback (`postRoundFallbackCard`) keeps the family with `narrationFallback`; the X-Card's paused notice (`narrationPaused`) is not a narrator card |
 | published Private Channel reflection (`publishToMainChat`) | 2026-10 (#286 D1) | the published text only; `publishedReflection` also triggers the canonical GM's tier pass (`registerPublishedReflectionHook`), which stamps the card's `narrationId` on the details it records (issue #335 Y03). No sidecar, so no ledger facts |
@@ -140,7 +140,9 @@ CLAUDE.md "audit consumers" rule):
   not the last N
 - rolling-summary refresh hook (`registerRollingSummaryRefreshHook`, issue
   #286 B7) — on the canonical GM, a new `narratorCard` with `narrationText`
-  triggers the debounced regen after the card posts
+  triggers the debounced regen after the card posts; at a table whose GMs hold
+  no key, the keyed client that wrote the card makes it and relays it to the
+  GM to store (`applyRelayedSessionSummary`, SUMMARY-KEYLESS-GM)
 - session recap (`postSessionRecap`) — inclusion intended; reads
   `sessionNarratorCards(sessionId, { forRecap: true })`: the narrator's
   excludes (a burned move's superseded prose among them) except that a
@@ -168,7 +170,10 @@ CLAUDE.md "audit consumers" rule):
   beat), and `registerXCardRedirectHook` (canonical GM) clears
   `xCardRedirect` when the first narrator card with `narrationText` posts
   with the X-Card lifted — not a fallback, a published reflection or an
-  X-carded card. A round card is one beat: the walk back from the newest card
+  X-carded card. A narration card created while the X-Card is active — its
+  reply passed its check just before the play, its card on the way while the
+  pause's pick ran — is removed as the X-Card removes one, on the canonical
+  GM (`registerXCardLatePostHook`, XCARD-POST-RACE). A round card is one beat: the walk back from the newest card
   stops at a card of another round — round submissions are not chat messages,
   so without that stop it took the previous round's card within the beat's
   two minutes (issue #340). The pick reads the chat as it was — the messages
@@ -177,7 +182,8 @@ CLAUDE.md "audit consumers" rule):
   still the one an X-Card removes, with what it wrote, and the kept beat
   before it is left alone (issue #347 AB22); the canonical GM keeps the
   newest twenty of those the pick reads on campaignState
-  (`deletedChatMessages`, no text kept), so the pick survives a reload, and a
+  (`deletedChatMessages`, no text kept — a session mint lets them go,
+  DELETED-MESSAGES-KEPT), so the pick survives a reload, and a
   deleted card an X-Card removed is marked there (issue #347 residual
   DELETED-NARRATION-MEMORY-PAGE-ONLY); a deletion alone forgets nothing
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
@@ -200,7 +206,12 @@ CLAUDE.md "audit consumers" rule):
 - burn supersede never matches a round card: a round's upgrades are decided
   before it is narrated, and the card's `resolutionId` is empty (issue #340)
 - the Chronicle (`scheduleChronicleEntry`) writes one entry per round, kind
-  `round`, which the writer's prompt knows (issue #340)
+  `round`, which the writer's prompt knows (issue #340); every entry the
+  scribe writes carries its narration's `narrationId`, so the X-Card's finish
+  removes it (`retractNarrationChronicle`) and a scribe still running when
+  the card lands writes nothing (XCARD-CHRONICLE); a strike deletes the
+  session's automatic entries that state the struck fact
+  (`propagateRetraction` → `retractStruckChronicle`, STRIKE-CHRONICLE)
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
@@ -238,7 +249,9 @@ the opening premise survivable. The premise (`campaignState.incitingIncident`)
 is written with the narration's scene ledgers onto the store as it is then
 (`persistSceneLedgerFields(…, { onto })`), never the pre-call snapshot whole —
 that reverted Private Lines, a safety flag or an X-Card relayed during the
-call (issue #321 U06d).
+call (issue #321 U06d). The premise carries its narration's `narrationId`, so
+an X-Card on the inciting card drops it in the pause's write
+(XCARD-INCITING-PREMISE).
 
 **Narration ids and the X-Card (issue #321 U07).** Every truth and state value
 a sidecar writes, and the frame, carries the narration's `narrationId` (its

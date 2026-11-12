@@ -18,7 +18,7 @@ import { MOVES, STATS, toMoveId } from "../schemas.js";
 import { buildMischiefFraming } from "./mischief.js";
 import { apiPost } from "../api-proxy.js";
 import { getCanonicalMove } from "../system/ironswornPacks.js";
-import { getPlayerActors, readVows } from "../character/actorBridge.js";
+import { getPlayerActors, readVows, listSupportVehicleAssets, listCompanionAssets, companionGivenName, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { moveDisplayName } from "../system/i18n.js";
 
 const MODULE_ID     = "starforged-companion";
@@ -91,10 +91,10 @@ Given player narration, return a JSON object identifying:
 - **forge_a_bond** — Progress move. When you cement a bond, compare progress to challenge dice.
 
 ### EXPLORATION MOVES
-- **undertake_an_expedition** — When you travel through perilous or unknown space/terrain. Roll +edge (speed), +shadow (stealth), or +wits (vigilance).
+- **undertake_an_expedition** — When you travel through perilous or unknown space/terrain — including any journey toward a destination that is not a charted, known place (coordinates someone gave, a rumoured or unnamed place, the far side of the gap), even when the player says "set a course". Roll +edge (speed), +shadow (stealth), or +wits (vigilance).
 - **explore_a_waypoint** — When you examine a notable location during an expedition. Roll +wits.
 - **finish_an_expedition** — Progress move. When an expedition concludes.
-- **set_a_course** — When you follow a known route. Roll +supply.
+- **set_a_course** — When you follow a known route to a charted, known place (a settlement or other place already on the map), or return to a familiar location. Roll +supply.
 - **make_a_discovery** — Triggered by strong hit with match on explore_a_waypoint (no roll).
 - **confront_chaos** — Triggered by miss with match on explore_a_waypoint (no roll).
 
@@ -180,7 +180,7 @@ Respond with ONLY a valid JSON object. No preamble, no markdown, no explanation 
 confidence: "high" | "medium" | "low" — your certainty in the interpretation.
 statValue: ALWAYS leave as 0 — filled in by the calling code (from the character sheet for action moves, from the live progress track / vow / connection data for progress moves — see enrichInterpretationStatValue and enrichProgressTicks in src/moves/statEnrichment.js). Module data is ground truth; never estimate a value.
 progressTicks: ALWAYS leave as 0 — for progress moves the module fills the score from the live track / vow / connection data. Never estimate a tick count.
-moveTarget: the named thing the move acts on, taken from the player's narration — or, when the narration refers to it without naming it ("her coordinates", "there", "the station", "him"), as the RECENT SCENE names it. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"). For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone / forsake_your_vow → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; finish_the_scene and the scene-challenge moves → the scene challenge's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided; companion_takes_a_hit → the companion taking the hit, by its name ("Glowcat", "Rockhorn"); withstand_damage → the vehicle taking the damage when it is one of the character's support vehicles, by its name ("Hoverbike", "Rover", "Skiff") — null for the command starship, whatever other vehicle the line mentions. null when nothing is named or implied.
+moveTarget: the named thing the move acts on, taken from the player's narration — or, when the narration refers to it without naming it ("her coordinates", "there", "the station", "him"), as the RECENT SCENE names it. For movement moves (set_a_course, undertake_an_expedition, finish_an_expedition): the named destination ("Bleakhold Station", "the Vault of Tears"); a destination the story refers to without a proper name gets a short working label saying whose or what it is and how the scene refers to it ("Archer's rendezvous — the gap"), never a bare pronoun or "there". For progress and quest moves: take_decisive_action → the foe or fight named, fulfill_your_vow / reach_a_milestone / forsake_your_vow → the vow's name, forge_a_bond / develop_your_relationship → the connection's name; finish_the_scene and the scene-challenge moves → the scene challenge's name; continue_a_legacy → the legacy track rolled: "quests", "bonds" or "discoveries"; heal → the ally or companion receiving the care (null when the character tends their own wounds or is treated by someone else); aid_your_ally → the ally aided; companion_takes_a_hit → the companion taking the hit, by its name ("Glowcat", "Rockhorn"); withstand_damage → the vehicle taking the damage when it is one of the character's support vehicles, by its name ("Hoverbike", "Rover", "Skiff") — null for the command starship, whatever other vehicle the line mentions. null when nothing is named or implied.
 expeditionRank: only for undertake_an_expedition. When the narration implies the journey's scope, infer its rank — "troublesome" (a short, easy hop), "dangerous" (default), "formidable" (a long or hostile crossing), "extreme", or "epic" (a vast, perilous undertaking). null otherwise; the player can re-rank the track later.
 healSituation: only for heal — "self" (the character mends their own wounds), "treated" (they receive treatment from someone who is not an ally), "companion" (they obtain treatment for a companion) or "ally" (they provide care to someone else). null for every other move.
 combatRank: only for enter_the_fray. When the narration implies the foe’s danger level, infer its rank — "troublesome" (minor, easy to defeat), "dangerous" (default), "formidable" (a tough, seasoned opponent), "extreme" (an overwhelming threat), or "epic" (near-impossible odds). null otherwise; the player can re-rank the combat track later.`;
@@ -199,7 +199,7 @@ combatRank: only for enter_the_fray. When the narration implies the foe’s dang
  * Kept short by design — the system prompt already has the full move reference.
  * This just gives the interpreter enough context to make good choices.
  */
-export function buildContextSummary(campaignState) {
+export function buildContextSummary(campaignState, { roller = null } = {}) {
   const lines = [];
 
   // Open vows + other open tracks — helps identify reach_a_milestone,
@@ -219,8 +219,42 @@ export function buildContextSummary(campaignState) {
     lines.push(`Session active.`);
   }
 
+  // The roller's own vehicles and companions, by name: withstand_damage names
+  // the support vehicle taking the damage in moveTarget (null for the command
+  // starship), companion_takes_a_hit the companion — and the interpreter was
+  // told neither, so "The hoverbike skids across the scree" was the
+  // starship's (SUPPORT-VEHICLES-UNLISTED).
+  lines.push(...rollerAssetLines(roller));
+
   if (!vows.length && !tracks.length) lines.unshift("No active tracks yet.");
   return lines.join(" ");
+}
+
+/**
+ * The context lines naming the roller's support vehicles and companions (a
+ * companion's given name beside its asset's) — none for no roller, or one
+ * with neither. Never throws.
+ *
+ * @param {Actor|null} roller
+ * @returns {string[]}
+ */
+function rollerAssetLines(roller) {
+  try {
+    if (!isPlayerCharacterActor(roller)) return [];
+    const who = roller.name ?? "The character";
+    const out = [];
+    const vehicles = listSupportVehicleAssets(roller).map(i => `"${i.name}"`);
+    if (vehicles.length) out.push(`${who}'s support vehicles: ${formatList(vehicles)} (withstand_damage to one names it in moveTarget; the command starship is null).`);
+    const companions = listCompanionAssets(roller).map(c => {
+      const given = companionGivenName(c);
+      return given ? `"${c.name}" (named "${given}")` : `"${c.name}"`;
+    });
+    if (companions.length) out.push(`${who}'s companions: ${formatList(companions)}.`);
+    return out;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | interpreter: the roller's vehicles and companions could not be read:`, err?.message ?? err);
+    return [];
+  }
 }
 
 const CONTEXT_LIST_CAP = 8;
@@ -257,10 +291,12 @@ function readOpenTrackLabels() {
   try {
     // Of two flagged journals (a pre-fix rename split), the default-named one
     // — what the sessions since wrote (issue #347 AB16).
-    const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY));
+    // Never a copy a split's merge retired (JOURNAL-MERGE-DIFFERING-ENTRY).
+    const retired = (j) => !!j?.getFlag?.(MODULE_ID, "journalMerged");
+    const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY)) && !retired(j);
     const journal = game.journal?.find?.(j => flagged(j) && j?.name === PROGRESS_JOURNAL_NAME)
                  ?? game.journal?.find?.(flagged)
-                 ?? game.journal?.find?.(j => j?.name === PROGRESS_JOURNAL_NAME);
+                 ?? game.journal?.find?.(j => j?.name === PROGRESS_JOURNAL_NAME && !retired(j));
     if (!journal) return [];
     const tracks = journal.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY) ?? [];
     return (Array.isArray(tracks) ? tracks : [])
@@ -406,7 +442,7 @@ export async function buildCanonicalMoveBlock(slug) {
  * @returns {Promise<Object>}      — partial MoveResolutionSchema (no dice yet)
  */
 export async function interpretMove(narration, {
-  campaignState, mischiefLevel, apiKey, expectedMoveSlug, combatPosition = null, recentScene = "",
+  campaignState, mischiefLevel, apiKey, expectedMoveSlug, combatPosition = null, recentScene = "", roller = null,
 }) {
   if (!apiKey) throw new Error("Claude API key not configured. Set it in module settings.");
   if (!narration?.trim()) throw new Error("No narration to interpret.");
@@ -415,7 +451,7 @@ export async function interpretMove(narration, {
   const position        = expectedMove ? null : combatPosition;
   const systemPrompt = buildSystemPrompt();
   const mischiefFraming = expectedMove ? null : buildMischiefFraming(mischiefLevel, narration);
-  const contextSummary  = buildContextSummary(campaignState);
+  const contextSummary  = buildContextSummary(campaignState, { roller });
   const combatDirective = buildCombatPositionDirective(position);
   const expectedDirective = buildExpectedMoveDirective(expectedMove);
   const canonicalBlock  = expectedMove

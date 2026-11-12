@@ -126,16 +126,18 @@ describe("issue #347 ROUND-CONNECTION-LINE-JOINED — a round's Make a Connectio
     expect(bondsOf(kira), "Kira's bonds").toEqual(['Orla Teague']);
   });
 
-  it("the hit's line names no one, the other player's names Dace Mirren: Dace is not made Kira's connection", async () => {
+  it("the hit's line names no one, the other player's names Dace Mirren: Dace is not made Kira's connection — the narration's one NPC is", async () => {
     const card = installPendingCard([DACE, ORLA]);
     script('Kira finds Orla Teague mending nets by the airlock.');
     expect((await narrate(sharedPcRound('I look for someone who knows the docks.', 'I ask Dace Mirren about the cargo.'))).posted).toBe('card');
     // The joined lines named Dace alone, so the other player's NPC was bonded
-    // to the hit's roller. Naming no one, the hit's line now settles nothing:
-    // the round names two NPCs Kira met, and none is guessed.
-    expect.soft(statuses(card), 'the rows after the round').toEqual({ 'Dace Mirren': 'pending', 'Orla Teague': 'pending' });
-    expect.soft(severalNotices(), 'the GMs are told').toHaveLength(1);
-    expect(bondsOf(kira), "Kira's bonds").toEqual([]);
+    // to the hit's roller. Then an NPC only the other line named still counted
+    // as the hit's candidate, so none was chosen and the GMs were told
+    // (ROUND-CONNECTION-OTHER-LINE-CANDIDATE). The hit's candidates are now
+    // what its own line and the narration name: the narration's one NPC.
+    expect.soft(statuses(card), 'the rows after the round').toEqual({ 'Dace Mirren': 'pending', 'Orla Teague': 'confirmed' });
+    expect.soft(severalNotices(), 'no "several NPCs" notice').toHaveLength(0);
+    expect(bondsOf(kira), "Kira's bonds").toEqual(['Orla Teague']);
   });
 
   it("control: a hit whose own line names both — none is guessed, and the GMs are told", async () => {

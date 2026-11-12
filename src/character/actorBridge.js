@@ -5,8 +5,33 @@
 // updates in one place.
 
 import { rankName } from "../schemas.js";
+import { pageIsStale } from "../multiplayer/connectionWatch.js";
+import { decodeHtmlEntities } from "../system/htmlEntities.js";
 
 const MODULE_ID = "starforged-companion";
+
+/**
+ * A page whose connection to the server dropped writes no actor until it
+ * reloads (STALE-PAGE-ACTOR-WRITES, the actor side of issue #347
+ * AB19-STALE-CACHE-WRITES). A meter change is applied to the value this
+ * client caches, and a stale cache may lack a change made meanwhile — a move
+ * in flight on the page wrote its roller's sheet from it. Thrown where the
+ * write would be made, so each writer's own refused-write path takes it
+ * (persistResolution's meter failures and their Retry, a `{ ok: false,
+ * reason: "refused" }`, a warned count).
+ *
+ * @param {string} label — the writer, for the error
+ */
+function refuseStaleActorWrite(label) {
+  if (!pageIsStale()) return;
+  throw new Error(`actorBridge | ${label}: not written — this page lost its connection to the server and may have missed what changed meanwhile; reload it to save changes`);
+}
+
+/** Run `write()` unless this page is stale — then a rejection (refuseStaleActorWrite). */
+async function staleChecked(label, write) {
+  refuseStaleActorWrite(label);
+  return write();
+}
 
 // Hard floor for momentum during regular play. Matches the Starforged play kit
 // ("MOMENTUM: -6 TO +10") and the vendor system's `MomentumField.MIN`. Note
@@ -34,6 +59,98 @@ const IMPACT_KEYS = [
 
 // In-memory cache of character snapshots, invalidated by the updateActor hook.
 const _snapshotCache = new Map();
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MODULE WRITES — said by the system, not the PC
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The Actors this client is writing to right now through this bridge (id →
+// writes in flight). The ironsworn system's change log ("log-changes": its
+// preUpdateActor / preUpdateItem hooks post "+1 momentum (now 5)" as an emote
+// spoken by the Actor) is created while the write that caused it is in
+// flight, on the writing client: one posted for an Actor here is the module's
+// change, not the player speaking (issue #348 PT14).
+const _moduleWritesInFlight = new Map();
+let _systemNoteAttributionRegistered = false;
+
+/**
+ * Write a document through the bridge: `doc.update(changes, options)`, with
+ * the Actor it belongs to (itself, or an Item's parent) marked as written by
+ * the module until the write settles (reattributeSystemNote).
+ *
+ * @param {ClientDocument} doc — an Actor, or an Item owned by one
+ * @param {Object} changes
+ * @param {Object} [options]
+ * @returns {Promise<*>}
+ */
+async function moduleUpdate(doc, changes, options) {
+  const owner = doc?.documentName === "Actor" ? doc : (doc?.parent ?? doc);
+  const id    = typeof owner?.id === "string" ? owner.id : null;
+  if (id) _moduleWritesInFlight.set(id, (_moduleWritesInFlight.get(id) ?? 0) + 1);
+  try {
+    return await (options === undefined ? doc.update(changes) : doc.update(changes, options));
+  } finally {
+    if (id) {
+      const left = (_moduleWritesInFlight.get(id) ?? 1) - 1;
+      if (left > 0) _moduleWritesInFlight.set(id, left);
+      else _moduleWritesInFlight.delete(id);
+    }
+  }
+}
+
+/**
+ * Register the hook that has the ironsworn system's change log, for a change
+ * the module made, said by the system rather than the PC: the emote "+1
+ * momentum (now 5)" spoken by the PC read as the player speaking (issue #348
+ * PT14). Once, at load (index.js).
+ */
+export function registerSystemNoteAttribution() {
+  if (_systemNoteAttributionRegistered || typeof Hooks === "undefined") return;
+  _systemNoteAttributionRegistered = true;
+  Hooks.on("preCreateChatMessage", (message, data) => { reattributeSystemNote(message, data); });
+}
+
+/**
+ * The ironsworn system's change-log line (an emote whose whole content is one
+ * `<em>` line, spoken by an Actor) posted while this client's bridge is
+ * writing that Actor: re-spoken by no Actor — the author's (the writing
+ * client's user) — with the Actor's name leading the line, so the chat reads
+ * "Isaac Sutton: +1 momentum (now 5)" as a note, not as Isaac speaking. The
+ * module's own cards (they carry its flags) and a player's own sheet edit
+ * (no module write in flight) are left alone.
+ *
+ * @param {ChatMessage} message — the document about to be created
+ * @param {Object} data — its creation data
+ * @returns {boolean} whether it was re-spoken
+ */
+function reattributeSystemNote(message, data) {
+  const actorId = data?.speaker?.actor;
+  if (typeof actorId !== "string" || !_moduleWritesInFlight.has(actorId)) return false;
+  if (data?.flags?.[MODULE_ID]) return false;
+  const emote = globalThis.CONST?.CHAT_MESSAGE_STYLES?.EMOTE ?? 3;
+  if (Number(data?.style) !== emote) return false;
+  const content = String(data?.content ?? "").trim();
+  const line = /^<em>([\s\S]*)<\/em>$/.exec(content);
+  if (!line) return false;
+  const name = globalThis.game?.actors?.get?.(actorId)?.name ?? data.speaker.alias ?? "";
+  const escaped = String(name).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  try {
+    message?.updateSource?.({
+      content: `<em>${escaped ? `${escaped}: ` : ""}${line[1].trim()}</em>`,
+      style:   globalThis.CONST?.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
+      speaker: { actor: null, token: null, scene: null, alias: null },
+      // A module flag: no longer an emote, the note would otherwise read as a
+      // player's line to the move pipeline (index.js isPlayerNarration skips
+      // any module-flagged message) and run a move of its own.
+      flags:   { [MODULE_ID]: { systemNote: true } },
+    });
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | actorBridge: re-speaking the system's change note failed:`, err?.message ?? err);
+    return false;
+  }
+}
 
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -197,7 +314,9 @@ export function readAssetAbilityTexts(item) {
 }
 
 function stripHtml(s) {
-  return String(s ?? '').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  // Entities decoded (CHARACTER-STATE-ENTITY-UNDECODED): "&amp;" and "&middot;"
+  // reached CHARACTER STATE as written.
+  return decodeHtmlEntities(String(s ?? '').replace(/<[^>]*>/g, '')).replace(/\s+/g, ' ').trim();
 }
 
 /** Reduce Foundry document links (`@Compendium[…]{Face Danger}`, `@UUID[…]{…}`) to their labels. */
@@ -422,8 +541,9 @@ export async function applyMeterChanges(actor, meterChanges) {
   }
 
   if (Object.keys(updates).length) {
+    refuseStaleActorWrite('applyMeterChanges');
     console.log(`actorBridge | applyMeterChanges update:`, updates);
-    await actor.update(updates);
+    await moduleUpdate(actor, updates);
     invalidateActorCache(actor.id);
   }
 }
@@ -440,7 +560,8 @@ export async function applyMeterChanges(actor, meterChanges) {
 export async function setDebility(actor, debilityKey, value) {
   if (!actor) return;
 
-  await actor.update({ [`system.debility.${debilityKey}`]: value });
+  refuseStaleActorWrite('setDebility');
+  await moduleUpdate(actor, { [`system.debility.${debilityKey}`]: value });
   invalidateActorCache(actor.id);
 
   if (IMPACT_KEYS.includes(debilityKey)) {
@@ -460,7 +581,8 @@ export async function setCombatPosition(actor, position) {
   if (!actor) return;
   const VALID = ['inControl', 'inABadSpot', 'none', ''];
   const value = VALID.includes(position) ? position : 'none';
-  await actor.update({ 'system.combatPosition': value });
+  refuseStaleActorWrite('setCombatPosition');
+  await moduleUpdate(actor, { 'system.combatPosition': value });
   invalidateActorCache(actor.id);
 }
 
@@ -504,7 +626,8 @@ export async function writeSheetLegacy(actor, track, progress, options = {}) {
   if (!actor || !SHEET_LEGACY_TRACKS.includes(track)) return false;
   const value = Math.max(0, Math.floor(Number(progress) || 0));
   if (readSheetLegacy(actor, track) === value) return false;
-  await actor.update({ [`system.legacies.${track}`]: value }, options);
+  refuseStaleActorWrite('writeSheetLegacy');
+  await moduleUpdate(actor, { [`system.legacies.${track}`]: value }, options);
   invalidateActorCache(actor.id);
   return true;
 }
@@ -556,6 +679,24 @@ export function getCompanionAsset(actor, itemId = null) {
   const companions = listCompanionAssets(actor);
   if (itemId) return companions.find(i => i.id === itemId) ?? null;
   return companions.length === 1 ? companions[0] : null;
+}
+
+/**
+ * A companion asset's given name — the vendor asset's "Name" field
+ * (`system.fields`: the name the player gives their Glowcat or Survey Bot) —
+ * or null when it has none (COMPANION-GIVEN-NAME-UNREAD: a line naming the
+ * companion by it matched nothing). Reads an array of `{ name, value }`, or
+ * an object of them.
+ *
+ * @param {Item|null} item — a companion asset (listCompanionAssets)
+ * @returns {string|null}
+ */
+export function companionGivenName(item) {
+  const raw = item?.system?.fields;
+  const fields = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? Object.values(raw) : []);
+  const field = fields.find(f => String(f?.name ?? f?.label ?? '').trim().toLowerCase() === 'name');
+  const value = typeof field?.value === 'string' ? field.value.trim() : '';
+  return value || null;
 }
 
 /**
@@ -685,8 +826,56 @@ export async function setCommandVehicleIntegrity(shipActor, value) {
   if (!asset) return null;
   const track = asset.system.track;
   const after = clamp(Number(value), Number(track.min ?? 0), Number(track.max ?? 5));
-  if (after !== Number(track.value ?? 0)) await asset.update({ 'system.track.value': after });
+  if (after !== Number(track.value ?? 0)) await staleChecked('setCommandVehicleIntegrity', () => moduleUpdate(asset, { 'system.track.value': after }));
   return after;
+}
+
+/**
+ * The STARSHIP asset's own Battered / Cursed conditions (`system.conditions`,
+ * vendor asset.ts) — `{ battered, cursed }`, or null for a starship that
+ * carries no STARSHIP asset. A mirror: the starship's native impacts
+ * (`system.debility.battered` / `cursed`) are canonical (decisions.md →
+ * "Starship battered: the native sheet field is canonical"), and the asset's
+ * conditions follow them (STARSHIP-ASSET-CONDITIONS-UNSYNCED).
+ *
+ * @param {Actor|null} shipActor
+ * @returns {{ battered: boolean, cursed: boolean }|null}
+ */
+export function readCommandVehicleConditions(shipActor) {
+  const asset = getCommandVehicleAsset(shipActor);
+  if (!asset) return null;
+  const ticked = (name) => (asset.system?.conditions ?? [])
+    .some(c => String(c?.name ?? '').trim().toLowerCase() === name && c?.ticked === true);
+  return { battered: ticked('battered'), cursed: ticked('cursed') };
+}
+
+/**
+ * Mirror the starship's impacts onto its STARSHIP asset's Battered / Cursed
+ * conditions (readCommandVehicleConditions) — the write-through of the
+ * canonical native impacts (STARSHIP-ASSET-CONDITIONS-UNSYNCED). Only the
+ * conditions the asset carries, only when they differ; the write is marked
+ * (`options[MODULE].conditionMirror`) so the asset → impact sync hook skips
+ * it. Throws when the world refuses the write.
+ *
+ * @param {Actor} shipActor
+ * @param {{ battered?: boolean, cursed?: boolean }} impacts
+ * @returns {Promise<boolean>} whether the asset was written
+ */
+export async function setCommandVehicleConditions(shipActor, impacts = {}) {
+  const asset = getCommandVehicleAsset(shipActor);
+  const conditions = Array.isArray(asset?.system?.conditions) ? asset.system.conditions : null;
+  if (!conditions) return false;
+  let changed = false;
+  const next = conditions.map(c => {
+    const key = String(c?.name ?? '').trim().toLowerCase();
+    if (!(key in impacts) || typeof impacts[key] !== 'boolean' || (c?.ticked === true) === impacts[key]) return c;
+    changed = true;
+    return { ...c, ticked: impacts[key] };
+  });
+  if (!changed) return false;
+  refuseStaleActorWrite('mirrorStarshipConditions');
+  await moduleUpdate(asset, { 'system.conditions': next }, { [MODULE_ID]: { conditionMirror: true } });
+  return true;
 }
 
 /**
@@ -732,7 +921,8 @@ export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = 
   const after  = clamp(before + delta, Number(track.min ?? 0), Number(track.max ?? 5));
   if (after === before) return { ok: true, ...at, after };
   try {
-    await asset.update({ 'system.track.value': after });
+    refuseStaleActorWrite('vehicle integrity');
+    await moduleUpdate(asset, { 'system.track.value': after });
   } catch (err) {
     console.warn(`actorBridge | vehicle integrity: ${asset.name ?? asset.id} update failed:`, err?.message ?? err);
     return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
@@ -763,7 +953,8 @@ export async function applyCompanionHealthChange(actor, delta, { itemId = null }
   const at     = { itemId: companion.id, name: companion.name ?? null, before };
   if (after === before) return { ok: true, ...at, after };
   try {
-    await companion.update({ 'system.track.value': after });
+    refuseStaleActorWrite('companion health');
+    await moduleUpdate(companion, { 'system.track.value': after });
   } catch (err) {
     console.warn(`actorBridge | companion health: ${companion.name ?? companion.id} update failed:`, err?.message ?? err);
     return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
@@ -803,7 +994,8 @@ export async function markVowProgress(actor, vowItemId, ticks) {
   const next     = Math.min(current + ticks, 40);
 
   if (next !== current) {
-    await item.update({ 'system.current': next });
+    refuseStaleActorWrite('markVowProgress');
+    await moduleUpdate(item, { 'system.current': next });
     invalidateActorCache(actor.id);
   }
 }
@@ -832,7 +1024,8 @@ export async function setVowItemTrack(actor, vowItemId, { ticks, rank }) {
   const patch   = { "system.current": Math.max(0, Math.min(Number(ticks) || 0, 40)) };
   if (rankIdx >= 0) patch["system.rank"] = numeric ? rankIdx + 1 : rank;
   try {
-    await item.update(patch);
+    refuseStaleActorWrite('setVowItemTrack');
+    await moduleUpdate(item, patch);
   } catch (err) {
     console.warn(`actorBridge | setVowItemTrack: the write was refused:`, err?.message ?? err);
     return { ok: false, reason: "refused", error: String(err?.message ?? err) };
@@ -861,7 +1054,8 @@ export async function completeVowItem(actor, vowItemId) {
   }
   if (item.system?.completed === true) return false; // already closed
 
-  await item.update({ 'system.completed': true });
+  refuseStaleActorWrite('completeVowItem');
+  await moduleUpdate(item, { 'system.completed': true });
   invalidateActorCache(actor.id);
   return true;
 }
@@ -920,7 +1114,7 @@ export async function setSharedVowReward(vowId, reward) {
     for (const item of items) {
       if (isVowCopy(item, vowId) && item.setFlag) {
         copies += 1;
-        await item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward }).catch(err => {
+        await staleChecked('setSharedVowReward', () => item.setFlag(MODULE_ID, "reward", { status: "promised", ...reward })).catch(err => {
           refused = true;
           console.warn(`${MODULE_ID} | setSharedVowReward failed:`, err?.message ?? err);
         });
@@ -955,7 +1149,7 @@ export async function setVowLinkedConnection(vowId, connectionName) {
     for (const item of items) {
       if (isVowCopy(item, vowId) && item.setFlag) {
         copies += 1;
-        await item.setFlag(MODULE_ID, "linkedConnectionName", connectionName).catch(err => {
+        await staleChecked('setVowLinkedConnection', () => item.setFlag(MODULE_ID, "linkedConnectionName", connectionName)).catch(err => {
           refused = true;
           console.warn(`${MODULE_ID} | setVowLinkedConnection failed:`, err?.message ?? err);
         });
@@ -981,6 +1175,7 @@ export async function recordGrantedReward(actor, reward) {
   if (!actor?.setFlag || !reward?.description) return false;
   const list = actor.flags?.[MODULE_ID]?.grantedRewards ?? [];
   try {
+    refuseStaleActorWrite('recordGrantedReward');
     await actor.setFlag(MODULE_ID, "grantedRewards", [
       ...list,
       { description: reward.description, form: reward.form ?? "gear" },
@@ -1078,7 +1273,7 @@ export async function setBondItemTicks(keys = {}, ticks) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if (Number(item.system?.current ?? 0) === next) continue;
-    await item.update({ "system.current": next }).catch(err =>
+    await staleChecked('setBondItemTicks', () => moduleUpdate(item, { "system.current": next })).catch(err =>
       console.warn(`actorBridge | setBondItemTicks failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1103,7 +1298,7 @@ export async function setBondItemLost(keys = {}, lost = true) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if ((item.flags?.[MODULE_ID]?.lost === true) === lost) continue;
-    await item.update({ [`flags.${MODULE_ID}.lost`]: lost }).catch(err =>
+    await staleChecked('setBondItemLost', () => moduleUpdate(item, { [`flags.${MODULE_ID}.lost`]: lost })).catch(err =>
       console.warn(`actorBridge | setBondItemLost failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1127,7 +1322,7 @@ export async function setBondItemForged(keys = {}, forged = true) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if ((item.system?.completed === true) === forged) continue;
-    await item.update({ "system.completed": forged }).catch(err =>
+    await staleChecked('setBondItemForged', () => moduleUpdate(item, { "system.completed": forged })).catch(err =>
       console.warn(`actorBridge | setBondItemForged failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1154,11 +1349,37 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
   if (marked) return { marked: true, deleted: 0 };
   let deleted = 0;
   for (const { actor, item } of items) {
+    refuseStaleActorWrite('deleteUnmarkedBondItems');
     await item.delete();
     invalidateActorCache(actor.id);
     deleted++;
   }
   return { marked: false, deleted };
+}
+
+/**
+ * Mirror a connection's rename onto each PC's bond Item (BOND-ITEM-NAME-STALE):
+ * the record and its NPC card took the new name, but the Items kept the old
+ * one, so the vendor Connections tab and CHARACTER STATE (readConnections)
+ * still showed it. `keys` are the connection as it was named — the record's
+ * `_id`, and its OLD name for an unkeyed Item (bondItemsFor's fallback).
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys — the old name
+ * @param {string} name — the new name
+ * @returns {Promise<number>} how many items were updated
+ */
+export async function setBondItemName(keys = {}, name) {
+  const next = typeof name === "string" ? name.trim() : "";
+  if (!next) return 0;
+  let updated = 0;
+  for (const { actor, item } of bondItemsFor(keys)) {
+    if (item.name === next) continue;
+    await staleChecked('setBondItemName', () => moduleUpdate(item, { name: next })).catch(err =>
+      console.warn(`actorBridge | setBondItemName failed:`, err?.message ?? err));
+    invalidateActorCache(actor.id);
+    updated++;
+  }
+  return updated;
 }
 
 /**
@@ -1178,7 +1399,7 @@ export async function setBondItemRank(keys = {}, rank) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if (item.system?.rank === rank) continue;
-    await item.update({ "system.rank": rank }).catch(err =>
+    await staleChecked('setBondItemRank', () => moduleUpdate(item, { "system.rank": rank })).catch(err =>
       console.warn(`actorBridge | setBondItemRank failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1257,6 +1478,7 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
   };
 
   try {
+    refuseStaleActorWrite(`create ${subtype} item`);
     const item = await ItemCls.create(
       {
         name,
@@ -1322,7 +1544,7 @@ export async function advanceVowClocks(actor, { by = 1, lockstep = null } = {}) 
       next = Math.min(cur + by, max);
     }
     try {
-      if (next !== cur) await v.update({ "system.clockTicks": next }, { suppressLog: true });
+      if (next !== cur) await staleChecked('advanceVowClocks', () => moduleUpdate(v, { "system.clockTicks": next }, { suppressLog: true }));
       if (vowId && target === undefined) lockstep?.set(vowId, next);
       advanced.push({ name: v.name ?? "Vow", ticks: next, max, triggered: next >= max, itemId: v.id, actorId: actor.id, vowId });
     } catch (err) {
@@ -1345,28 +1567,51 @@ export async function advanceVowClocks(actor, { by = 1, lockstep = null } = {}) 
  * filled it (issue #342 Z46): the upgrade supersedes that clock's trigger
  * vignette (issue #338 D8).
  *
- * @param {Array<{actorId:string, itemId:string}>} entries
+ * Copies of one vow (the same `vowId` — a shared vow's, one per PC, kept in
+ * lockstep by the sync hook) are one clock, rewound once, as
+ * advanceVowClocks advances it (issue #321 U55): the first copy is rewound a
+ * segment and the value it is rewound to is the vow's; each later copy is set
+ * to that value — one the sync hook already moved there is left alone. They
+ * were each rewound a segment from what they read, so a copy the hook had
+ * already rewound went back a second segment (VOW-CLOCK-REWIND-PER-COPY). A
+ * refused entry carries the value it is owed (`target`), and its Retry sets
+ * that value rather than rewinding again from wherever the clock stands.
+ *
+ * @param {Array<{actorId:string, itemId:string, vowId?:string|null, target?:number}>} entries
  * @param {{ untriggered?: Array<Object>|null }} [opts]
- * @returns {Promise<Array<Object>>} the entries whose write was refused — the
- *   upgrade reports them to the GMs with a Retry (issue #311 P06)
+ * @returns {Promise<Array<Object>>} the entries whose write was refused, each
+ *   with its `target` — the upgrade reports them to the GMs with a Retry
+ *   (issue #311 P06)
  */
 export async function revertVowClocksForBurn(entries, { untriggered = null } = {}) {
-  const failed = [];
+  const failed   = [];
+  const lockstep = new Map();   // vowId → the value the vow's clock is rewound to
   for (const entry of entries ?? []) {
     const { actorId, itemId } = entry;
     const actor = globalThis.game?.actors?.get?.(actorId);
     const item  = actor?.items?.find?.(i => i.id === itemId);
     if (!item) continue;
-    const cur = Number(item.system?.clockTicks ?? 0);
-    if (cur <= 0) continue;
-    const max = Number(item.system?.clockMax ?? 0);
+    const cur   = Number(item.system?.clockTicks ?? 0);
+    const max   = Number(item.system?.clockMax ?? 0);
+    const vowId = entry.vowId ?? item.flags?.[MODULE_ID]?.vowId ?? null;
+    const owed  = Number.isInteger(entry.target) ? entry.target : (vowId ? lockstep.get(vowId) : undefined);
+    let next;
+    if (owed !== undefined) {
+      if (cur <= owed) continue;   // already there — the sync hook moved it — or behind it
+      next = owed;
+    } else {
+      if (cur <= 0) continue;
+      next = cur - 1;
+      if (vowId) lockstep.set(vowId, next);
+    }
     try {
-      await item.update({ "system.clockTicks": Math.max(0, cur - 1) });
+      refuseStaleActorWrite('revertVowClocksForBurn');
+      await moduleUpdate(item, { "system.clockTicks": next });
       invalidateActorCache(actorId);
-      if (Array.isArray(untriggered) && max > 0 && cur >= max) untriggered.push(entry);
+      if (Array.isArray(untriggered) && max > 0 && cur >= max && next < max) untriggered.push(entry);
     } catch (err) {
       console.warn(`actorBridge | revertVowClocksForBurn failed for item ${itemId}:`, err?.message ?? err);
-      failed.push(entry);
+      failed.push({ ...entry, target: next });
     }
   }
   return failed;
@@ -1409,7 +1654,8 @@ export async function recalculateMomentumBounds(actor) {
   const clamped   = clamp(current, MOMENTUM_MIN, maxMom);
   if (clamped === current) return;
 
-  await actor.update({ 'system.momentum.value': clamped });
+  refuseStaleActorWrite('recalculateMomentumBounds');
+  await moduleUpdate(actor, { 'system.momentum.value': clamped });
   invalidateActorCache(actor.id);
 }
 
@@ -1456,4 +1702,35 @@ function momentumBounds(sys, impactCount) {
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Put a character's momentum bases back to the rulebook's: base maximum 10
+ * and reset +2 (`system.momentum.max` / `resetValue` — the sheet's fields the
+ * vendor deducts each marked impact from). A world that played under the old
+ * write-back (issue #316 T01) has bases it lowered, and nothing tells a base
+ * the write-back lowered from one a GM set on purpose — so this is the `!reset-
+ * momentum` command's explicit repair, never automatic (MOMENTUM-BASE-DRIFTED).
+ * Only the fields that differ are written; momentum itself is left alone (the
+ * maximum only rises). A refused write throws.
+ *
+ * @param {Actor} actor
+ * @returns {Promise<{ changed: boolean, before: { max: number, reset: number }, after: { max: number, reset: number } }>}
+ */
+export async function resetMomentumBases(actor) {
+  const m = actor?.system?.momentum ?? {};
+  const before = {
+    max:   Number.isFinite(m.max)        ? m.max        : MOMENTUM_BASE_MAX,
+    reset: Number.isFinite(m.resetValue) ? m.resetValue : MOMENTUM_BASE_RESET,
+  };
+  const after = { max: MOMENTUM_BASE_MAX, reset: MOMENTUM_BASE_RESET };
+  const patch = {
+    ...(before.max   !== after.max   ? { 'system.momentum.max':        after.max }   : {}),
+    ...(before.reset !== after.reset ? { 'system.momentum.resetValue': after.reset } : {}),
+  };
+  if (!Object.keys(patch).length) return { changed: false, before, after };
+  refuseStaleActorWrite('resetMomentumBases');
+  await moduleUpdate(actor, patch);
+  invalidateActorCache(actor.id);
+  return { changed: true, before, after };
 }

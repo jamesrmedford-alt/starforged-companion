@@ -67,6 +67,7 @@ const LOCAL_ONLY = {
   'src/ui/entityPanel.js createActor inline#1': 're-renders this client\'s Entity Panel',
   'src/ui/entityPanel.js updateActor inline#1': 're-renders this client\'s Entity Panel',
   'src/ui/entityPanel.js deleteActor inline#1': 're-renders this client\'s Entity Panel',
+  'src/ui/entityPanel.js updateItem inline#1': 're-renders this client\'s Entity Panel when a recorded ship\'s STARSHIP asset track changes',
   'src/ui/entityPanel.js updateSetting EntityPanelApp.onSettingChanged': 're-renders this client\'s Entity Panel when the current location or dismissed names it shows changed',
   'src/ui/entityPanel.js createSetting EntityPanelApp.onSettingChanged': 'same, first write of the setting',
   'src/ui/progressTracks.js updateJournalEntry inline#1': 're-renders this client\'s Progress Tracks panel',
@@ -105,6 +106,8 @@ const OWN_ENTRY = {
   // issue #345 AA35
   'src/ui/settingsPanel.js updateSetting onCampaignStateWritten': 'puts this user\'s own Private Lines entry back when another client\'s concurrent write dropped or misstated it — a GM writes it, a player relays it to the canonical GM (issue #345 AA35)',
   'src/ui/settingsPanel.js createSetting onCampaignStateWritten': 'same, first write of the setting',
+  // LOCK-LOST-BY-COGM-STALE-WRITE
+  'src/index.js updateSetting onLockFreedUnderLiveClaim': 'puts this client\'s own live move-lock claim back when a co-GM\'s stale write freed it — only the client whose move holds the claim knows it is live, and only it writes (issue #347 residual)',
 };
 
 const NOT_CALLS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'new', 'import', 'super']);

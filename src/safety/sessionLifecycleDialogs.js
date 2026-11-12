@@ -32,7 +32,7 @@ import { settledWithin } from "../multiplayer/settleWithin.js";
 import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
-import { stripMarkup } from "../audio/segments.js";
+import { proseToHtml } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -214,8 +214,13 @@ async function beginSessionOnce(payload) {
   let begun = false;
   let sessionId = null;
   try {
-    const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS } = await import("../session/lifecycle.js");
+    const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS, sessionMintsSettled, noteSessionReplaced } = await import("../session/lifecycle.js");
     const { writeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
+    // Read once the world load's mint on this client has landed — this Begin
+    // may arrive during its summary call: both minted, and the load's write
+    // overwrote Begin's session id and open gate (SESSION-MINT-RACE). After
+    // it, Begin reads the session the load minted.
+    await sessionMintsSettled();
     const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
     await rollSessionIfDue(cs);
     if (cs.currentSessionId && cs.sessionStartedId === cs.currentSessionId) {
@@ -235,6 +240,9 @@ async function beginSessionOnce(payload) {
     // On the client's campaignState write chain, merged onto the store as
     // the write ahead left it (CAMPSTATE-CHAIN-PARTIAL).
     await writeOwnedFields(cs, BEGIN_SESSION_FIELDS.concat(SESSION_MINT_FIELDS), "begin session");
+    // Its mint (if any) has landed: the session it replaced is no longer current
+    // (rollSessionIfDue noted it — BEGIN-MINT-LINE-WINDOW).
+    noteSessionReplaced();
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     begun = true;
   } catch (err) {
@@ -311,7 +319,7 @@ async function beginSessionOnce(payload) {
                 // narrationId: what an X-Card on it retracts (issue #321 U07).
                 await ChatMessage.create({
                   // NPC dialogue markup stripped, as on every fiction card (issue #331 X27).
-                  content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${escapeHtml(stripMarkup(text))}</em></div>`,
+                  content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${proseToHtml(text)}</em></div>`,
                   flags:   {
                     [MODULE_ID]: {
                       clockCard:         true,
@@ -682,7 +690,12 @@ async function endSessionOnce(payload, ctx = {}) {
       const npc = selectEndSessionNPC(cs);
       const userMessage = buildEndSessionVignetteUserMessage(npc, cs);
       const narrationId = newNarrationId();
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId });
+      // Its CHARACTER blocks are the PCs at the table, as the galley's — it
+      // took the campaign's first PC, whoever was there (known-issues
+      // CLOSING-VIGNETTE-FIRST-PC); none present gives none.
+      const { collectGalleyParticipants } = await import("../session/galleyVignette.js");
+      const actorIds = collectGalleyParticipants(cs).active.map(p => p.actor?.id).filter(Boolean);
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds });
       if (text) {
         await postEndSessionVignetteCard({ text, npcName: npc.name, sessionId: cs.currentSessionId ?? "", narrationId });
       }

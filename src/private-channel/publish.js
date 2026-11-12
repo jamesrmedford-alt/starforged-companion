@@ -20,12 +20,17 @@
 import { getActiveCharacter, isXCardActive } from "../narration/narrator.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
+import { pageIsStale } from "../multiplayer/connectionWatch.js";
 
 const MODULE_ID = "starforged-companion";
 
 /** What a player is told when Publish is refused during an X-Card pause. */
 export const XCARD_PUBLISH_REFUSED =
   "The X-Card is in play — nothing is published to the table until a GM resumes the scene.";
+
+/** What a player is told when Publish is refused on a page whose connection dropped (STALE-PLAYER-PAGE). */
+export const STALE_PAGE_REFUSED =
+  "Your connection to the server dropped, so an X-Card played meanwhile may not have reached this page — reload it (F5), then try again.";
 
 function escapeHtml(s) {
   return String(s ?? "")
@@ -54,6 +59,11 @@ export async function publishToMainChat({ userId, content }) {
   if (!text) return null;
   if (isXCardActive(null)) {
     globalThis.ui?.notifications?.warn?.(XCARD_PUBLISH_REFUSED);
+    return null;
+  }
+  // This page's cache cannot vouch that no X-Card was played meanwhile.
+  if (pageIsStale()) {
+    globalThis.ui?.notifications?.warn?.(STALE_PAGE_REFUSED);
     return null;
   }
 

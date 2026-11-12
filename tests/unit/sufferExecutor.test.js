@@ -23,7 +23,12 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const bridgeCalls = { applyMeterChanges: [], setDebility: [] };
 // The player characters the shared-supply crew is drawn from (sharedSupply.js).
 const roster = vi.hoisted(() => ({ actors: [] }));
-vi.mock("../../src/character/actorBridge.js", () => ({
+vi.mock("../../src/character/actorBridge.js", async (importOriginal) => ({
+  // The companion's and the support vehicle's track writers are the real
+  // ones (SUFFER-EXECUTOR-ASSET-SCHEMA): they read and write the vendor
+  // asset's `system.track`.
+  ...(({ applyCompanionHealthChange, applyVehicleAssetIntegrityChange, listSupportVehicleAssets }) =>
+    ({ applyCompanionHealthChange, applyVehicleAssetIntegrityChange, listSupportVehicleAssets }))(await importOriginal()),
   // The at-0 choice card (sufferCard.js, issue #329 X03) reads these.
   getActor:            vi.fn(() => null),
   readCompanionHealth: vi.fn(() => null),
@@ -47,6 +52,20 @@ vi.mock("../../src/character/actorBridge.js", () => ({
     bridgeCalls.setDebility.push({ actor, key, value });
     actor.system = actor.system ?? {};
     actor.system.debility = { ...(actor.system.debility ?? {}), [key]: value };
+  }),
+}));
+
+// The command vehicle — its integrity through the ship record's writer
+// (entities/ship.js changeIntegrity).
+const ship = vi.hoisted(() => ({ id: "ship-1", name: "Kobayashi V", integrity: 5, refuse: false }));
+vi.mock("../../src/entities/ship.js", () => ({
+  getCommandVehicleActorId: vi.fn(() => ship.id),
+  changeIntegrity: vi.fn(async (id, delta) => {
+    if (id !== ship.id) return { ok: false, reason: "no-vehicle" };
+    const before = ship.integrity;
+    if (ship.refuse) return { ok: false, reason: "refused", error: "test: refused", name: ship.name, before };
+    ship.integrity = Math.max(0, Math.min(5, before + delta));
+    return { ok: true, name: ship.name, before, after: ship.integrity };
   }),
 }));
 
@@ -244,13 +263,17 @@ describe("endureHarm", () => {
       expect(chatCalls[0].content).toContain("Health: 0 → 0 — 2 more as momentum: 1 → -1");
     });
 
-    it("at the momentum minimum, what cannot be taken is said on the card, not lost in silence", async () => {
+    it("at the momentum minimum, what cannot be taken goes to a picker of another suffer move, and the card says so", async () => {
       const a = withMomentum(1, -5);
       const r = await endureHarm(a, 3);
       expect(a.system.momentum.value).toBe(-6);
-      expect(r.momentumLoss).toMatchObject({ amount: 2, taken: 1, remaining: 1, before: -5, after: -6, atMin: true });
-      expect(chatCalls[0].content).toContain(
-        "Health: 1 → 0 — 2 more as momentum: -5 → -6 (at minimum; 1 not taken — redirect it to another suffer move or clear progress)");
+      expect(r.momentumLoss).toMatchObject({ amount: 2, taken: 1, remaining: 1, before: -5, after: -6, atMin: true, redirected: true });
+      // MOMENTUM-MIN-REDIRECT-MANUAL: the remainder's picker — any suffer move but Lose Momentum.
+      const picker = chatCalls.find(c => c.flags?.["starforged-companion"]?.sufferPrompt);
+      expect(picker.flags["starforged-companion"].sufferPrompt).toMatchObject({ kind: "any", amount: 1, exclude: ["lose_momentum"] });
+      const card = chatCalls.find(c => c.flags?.["starforged-companion"]?.suffer === "endure_harm");
+      expect(card.content).toContain(
+        "Health: 1 → 0 — 2 more as momentum: -5 → -6 (at minimum; 1 not taken — make another suffer move or clear progress: choose it on its card)");
     });
   });
 });
@@ -427,33 +450,49 @@ describe("sacrificeResources", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("companionTakesAHit", () => {
-  function actor(condition = 3) {
+  // The vendor's companion asset: its health is the condition track
+  // (`system.track`) — SUFFER-EXECUTOR-ASSET-SCHEMA: the executor wrote
+  // `system.condition` / `system.health`, which it has not.
+  function companion(id, health = 3, name = "Loyal Hound") {
     const item = {
-      id: "comp-1",
-      name: "Loyal Hound",
-      system: { condition: { value: condition, max: 3 } },
+      id, name, type: "asset",
+      system: { category: "Companion", track: { enabled: true, name: "Health", value: health, min: 0, max: 5 } },
       update: vi.fn(async function (patch) {
-        if (patch["system.condition.value"] != null) {
-          this.system.condition.value = patch["system.condition.value"];
-        }
+        if (patch["system.track.value"] != null) this.system.track.value = patch["system.track.value"];
       }),
     };
-    return {
-      id: "a1",
-      items: {
-        get: (id) => (id === item.id ? item : null),
-        find: (fn) => (fn(item) ? item : null),
-      },
-      __item: item,
-    };
+    return item;
+  }
+  function actor(health = 3, extra = []) {
+    const item = companion("comp-1", health);
+    const items = [item, ...extra];
+    return { id: "a1", name: "Kira", system: { momentum: { value: 2, max: 10, min: -6 } },
+      items: { contents: items, get: (id) => items.find(i => i.id === id) ?? null, find: (fn) => items.find(fn) ?? null },
+      __item: item };
   }
 
-  it("decrements the companion's condition meter", async () => {
+  it("decrements the companion's health track", async () => {
     const a = actor(3);
     const r = await companionTakesAHit(a, "comp-1", 1);
     expect(r.before).toBe(3);
     expect(r.after).toBe(2);
-    expect(a.__item.system.condition.value).toBe(2);
+    expect(a.__item.system.track.value).toBe(2);
+    expect(a.__item.update).toHaveBeenCalledWith({ "system.track.value": 2 });
+  });
+
+  it("with no item id (the any-picker's button), the only companion takes it", async () => {
+    const a = actor(3);
+    const r = await companionTakesAHit(a, null, 2);
+    expect(r).toMatchObject({ before: 3, after: 1, itemId: "comp-1" });
+    expect(chatCalls[0].content).toMatch(/Loyal Hound: 3 → 1/);
+  });
+
+  it("harm past 0 health is momentum", async () => {
+    const a = actor(1);
+    const r = await companionTakesAHit(a, "comp-1", 3);
+    expect(r).toMatchObject({ before: 1, after: 0, atZero: true });
+    expect(r.momentumLoss).toMatchObject({ amount: 2, taken: 2, before: 2, after: 0 });
+    expect(chatCalls[0].content).toMatch(/2 more as momentum: 2 → 0/);
   });
 
   it("flags destroyed on miss-with-match at 0", async () => {
@@ -473,11 +512,23 @@ describe("companionTakesAHit", () => {
     expect(chatCalls[0].content).toMatch(/out of action/i);
   });
 
-  it("surfaces a not-found warning when the companion id is bogus", async () => {
-    const a = actor(3);
-    const r = await companionTakesAHit(a, "doesnt-exist", 1);
-    expect(r.skipped).toBe(true);
+  it("surfaces a not-found warning when the companion id is bogus, or no companion is named among several", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const r = await companionTakesAHit(actor(3), "doesnt-exist", 1);
+    expect(r).toMatchObject({ skipped: true, ok: false, reason: "no-companion" });
     expect(chatCalls[0].content).toMatch(/not found/i);
+    const two = actor(3, [companion("comp-2", 4, "Glowcat")]);
+    expect(await companionTakesAHit(two, null, 1)).toMatchObject({ skipped: true, reason: "no-companion" });
+    expect(two.__item.system.track.value).toBe(3);
+    warn.mockRestore();
+  });
+
+  it("a refused write throws (the card reports it, with a Retry)", async () => {
+    const a = actor(3);
+    a.__item.update = vi.fn(async () => { throw new Error("test: refused"); });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    await expect(companionTakesAHit(a, "comp-1", 1)).rejects.toThrow(/refused/);
+    warn.mockRestore();
   });
 });
 
@@ -487,45 +538,69 @@ describe("companionTakesAHit", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe("withstandDamage", () => {
+  // A support vehicle: the vendor asset's Integrity track. With no item id,
+  // the command vehicle: the ship record's integrity writer.
   function actor(integrity = 5) {
     const item = {
-      id: "veh-1",
-      name: "Kobayashi V",
-      system: { condition: { value: integrity, max: 5 } },
+      id: "veh-1", type: "asset",
+      name: "Hoverbike",
+      system: { category: "Support Vehicle", track: { enabled: true, name: "Integrity", value: integrity, min: 0, max: 5 }, conditions: [] },
       update: vi.fn(async function (patch) {
-        if (patch["system.condition.value"] != null) {
-          this.system.condition.value = patch["system.condition.value"];
-        }
+        if (patch["system.track.value"] != null) this.system.track.value = patch["system.track.value"];
       }),
     };
+    const items = [item];
     return {
-      id: "a1",
-      items: {
-        get: (id) => (id === item.id ? item : null),
-        find: (fn) => (fn(item) ? item : null),
-      },
+      id: "a1", name: "Kira", system: { momentum: { value: 2, max: 10, min: -6 } },
+      items: { contents: items, get: (id) => items.find(i => i.id === id) ?? null, find: (fn) => items.find(fn) ?? null },
       __item: item,
     };
   }
+  beforeEach(() => { ship.integrity = 5; ship.refuse = false; });
 
-  it("decrements vehicle integrity", async () => {
-    const r = await withstandDamage(actor(4), "veh-1", 1);
+  it("decrements a support vehicle's Integrity track", async () => {
+    const a = actor(4);
+    const r = await withstandDamage(a, "veh-1", 1);
     expect(r.before).toBe(4);
     expect(r.after).toBe(3);
+    expect(a.__item.system.track.value).toBe(3);
+    expect(r.isCommandVehicle).toBe(false);
   });
 
-  it("rolls vehicle-damage d100 at 0 integrity", async () => {
-    const r = await withstandDamage(actor(1), "veh-1", 1, { fixedRoll: 5 });
+  it("with no item id (the any-picker's button, a Pay the Price route), the command vehicle takes it", async () => {
+    const a = actor(4);
+    const r = await withstandDamage(a, null, 2);
+    expect(r).toMatchObject({ before: 5, after: 3, isCommandVehicle: true, vehicleActorId: "ship-1" });
+    expect(ship.integrity).toBe(3);
+    expect(a.__item.system.track.value).toBe(4);
+    expect(chatCalls[0].content).toMatch(/Kobayashi V: 5 → 3/);
+  });
+
+  it("rolls vehicle-damage d100 at 0 integrity, and damage past 0 is momentum", async () => {
+    const r = await withstandDamage(actor(1), "veh-1", 2, { fixedRoll: 5 });
     expect(r.atZero).toBe(true);
     expect(r.vehicleDamage).toEqual({ roll: 5, result: expect.stringMatching(/catastrophic/i) });
+    expect(r.momentumLoss).toMatchObject({ amount: 1, taken: 1 });
     expect(chatCalls[0].content).toMatch(/Vehicle Damage \(d100 5\)/);
+    // A support vehicle's catastrophic result is no command vehicle's destruction.
+    expect(chatCalls[0].content).not.toMatch(/Command vehicle destruction/i);
   });
 
   it("surfaces Overcome Destruction prompt for command vehicle on catastrophic result", async () => {
-    const r = await withstandDamage(actor(1), "veh-1", 1, { fixedRoll: 5, isCommandVehicle: true });
+    ship.integrity = 1;
+    const r = await withstandDamage(actor(5), null, 1, { fixedRoll: 5 });
     expect(r.atZero).toBe(true);
     expect(chatCalls[0].content).toMatch(/Command vehicle destruction/i);
     expect(chatCalls[0].content).toMatch(/Overcome Destruction/i);
+  });
+
+  it("a bogus vehicle id posts not-found; a refused write throws", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    expect(await withstandDamage(actor(4), "nope", 1)).toMatchObject({ skipped: true, ok: false, reason: "no-vehicle" });
+    expect(chatCalls[0].content).toMatch(/not found/i);
+    ship.refuse = true;
+    await expect(withstandDamage(actor(4), null, 1)).rejects.toThrow(/refused/);
+    warn.mockRestore();
   });
 });
 
@@ -550,12 +625,12 @@ describe("executeSuffer dispatch", () => {
 
   it("forwards itemId to companion/vehicle executors", async () => {
     const item = {
-      id: "comp-1",
+      id: "comp-1", type: "asset",
       name: "Drone",
-      system: { condition: { value: 2 } },
-      update: vi.fn(async () => {}),
+      system: { category: "Companion", track: { enabled: true, value: 2, min: 0, max: 5 } },
+      update: vi.fn(async function (patch) { this.system.track.value = patch["system.track.value"]; }),
     };
-    const a = { id: "a1", items: { get: id => id === "comp-1" ? item : null, find: fn => fn(item) ? item : null } };
+    const a = { id: "a1", items: { contents: [item], get: id => id === "comp-1" ? item : null, find: fn => fn(item) ? item : null } };
     const r = await executeSuffer("companion_takes_a_hit", a, { itemId: "comp-1", amount: 1, skipCard: true });
     expect(r.before).toBe(2);
     expect(r.after).toBe(1);

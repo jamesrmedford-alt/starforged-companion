@@ -4,6 +4,7 @@
 // exception: the safety block reads the building client's user and that user's
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
+import { decodeHtmlEntities } from '../system/htmlEntities.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -309,7 +310,10 @@ export function buildLedgerBlock(campaignState, options = {}) {
     if (!Array.isArray(entries) || !entries.length) continue;
     const subjectForKey = subjectFromStateKey(key);
     if (!isSubjectInScope(subjectForKey, matchedIds)) continue;
-    const label = formatSubjectLabel(subjectForKey, nameLookup);
+    // A text subject as the narrator last wrote it — its key is lowercased
+    // (TEXT-SUBJECT-LOWERCASE); an entry from before the label was kept has none.
+    const written = subjectForKey.kind === 'text' ? textSubjectAsWritten(entries, key) : '';
+    const label = written || formatSubjectLabel(subjectForKey, nameLookup);
     for (const e of entries) {
       const attr  = String(e?.attribute ?? '').trim();
       const value = e?.value;
@@ -537,6 +541,17 @@ function estimateTokens(s) {
  *   scene  → "scene"
  *   text   → the original text
  */
+/** The newest `subjectText` among a text subject's state entries that still names its key, or ''. */
+function textSubjectAsWritten(entries, key) {
+  let best = null;
+  for (const e of entries) {
+    const text = typeof e?.subjectText === 'string' ? e.subjectText.trim() : '';
+    if (!text || text.toLowerCase() !== String(key).toLowerCase()) continue;
+    if (!best || (Number(e.updatedAt) || 0) >= (Number(best.updatedAt) || 0)) best = { text, updatedAt: e.updatedAt };
+  }
+  return best?.text ?? '';
+}
+
 function formatSubjectLabel(subject, nameLookup) {
   if (!subject || typeof subject !== 'object') return 'unknown';
   switch (subject.kind) {
@@ -732,29 +747,6 @@ const ENTITY_TYPE_LABELS = {
 // ("<signal lost>") is kept as text (the issue #322 V18 class).
 const NOTES_HTML_TAG_RE = /<\/?(?:p|div|span|br|hr|h[1-6]|img|ul|ol|li|strong|em|b|i|u|s|a|blockquote|section|article|table|thead|tbody|tr|td|th|figure|figcaption|code|pre|sup|sub|small|mark)\b[^>]*>/gi;
 
-// The named entities a Notes tab holds: the markup escapes, the seeds' fact
-// line (`&middot;` — connection.js, ship.js, `!ship envision`) and the
-// typography a rich-text editor writes.
-const NOTES_NAMED_ENTITIES = Object.freeze({
-  nbsp: ' ', amp: '&', lt: '<', gt: '>', quot: '"', apos: "'",
-  middot: '·', bull: '•',
-  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”',
-  ndash: '–', mdash: '—', hellip: '…',
-});
-
-/**
- * Decode HTML entities — the named ones above and numeric ones (`&#183;`,
- * `&#x2014;`) — in one pass, so an escaped entity ("&amp;middot;") stays
- * text. An unknown name or an impossible code point is left as written.
- */
-function decodeNotesEntities(text) {
-  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
-    if (code[0] !== '#') return NOTES_NAMED_ENTITIES[code.toLowerCase()] ?? whole;
-    const n = /^#x/i.test(code) ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-    return Number.isInteger(n) && n > 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : whole;
-  });
-}
-
 /**
  * An entity record's Notes as card text. A ship's and an NPC's Notes tab is
  * HTML — the embedded portrait block (`<div class="sf-ship-portrait"><img
@@ -770,7 +762,7 @@ function decodeNotesEntities(text) {
  */
 export function notesAsCardText(notes) {
   if (notes === undefined || notes === null) return '';
-  return decodeNotesEntities(String(notes)
+  return decodeHtmlEntities(String(notes)
     .replace(new RegExp(PORTRAIT_BLOCK_RE.source, 'g'), ' ')
     .replace(/<img\b[^>]*>/gi, ' ')
     .replace(NOTES_HTML_TAG_RE, ' '))
@@ -803,6 +795,11 @@ const CANONICAL_FIELDS_BY_TYPE = {
     ['location',   'Location'],
     ['population', 'Population'],
     ['authority',  'Authority'],
+    // What the settlement is working on and the trouble it faces — rolled by
+    // the sector generator (and the trouble by the zoom-in), stored, and
+    // shown on the sheet, but missing here (known-issues SECTOR-CARD-GAPS).
+    ['projects',   'Projects'],
+    ['trouble',    'Trouble'],
     ['firstLook',  'First look'],
     ['initialContact', 'Initial contact'],
     // The world and star the sector generator rolled and pinned beside the
@@ -1196,6 +1193,31 @@ const ANTI_SUGGESTION_CLAUSE =
   `happening, not through suggestions about what could happen next.`;
 
 /**
+ * How an everyday beat ends (issue #348 PT02). The move, paced and round
+ * modes asked only for "vivid, atmospheric prose", so beats closed on a mood
+ * line or a quip with nothing for the player to pick up, and a recurring
+ * image repeated unchanged beat after beat. The clock and inciting modes
+ * already end "poised to respond"; these three get the same kind of rule.
+ * The hook is an event in the story, so "depict, do not offer" stands.
+ */
+const BEAT_ENDING_MODES = new Set(['move_resolution', 'paced_narrative', 'round_resolution']);
+const BEAT_ENDING_RULE =
+  `Each beat changes something: new information, a present character acting on their ` +
+  `own goal, a threat or an obstacle, or a recurring detail that shifts. Restating the ` +
+  `mood does not count.\n` +
+  `Each beat ends on something unresolved inside the story: a question a character ` +
+  `asks, an imminent danger, a demand or an offer, something unexplained. Never end on ` +
+  `a reflective or atmospheric line.\n` +
+  `A recurring motif must change, or be dropped: do not repeat an image from the recent ` +
+  `scene as it was.\n` +
+  `The hook is something that happens in the story, never a menu of options — it ` +
+  `follows "depict, do not offer". Keep it within the narrator permissions in this ` +
+  `prompt: where only embellishment is allowed, the change is small and immediate (a ` +
+  `present character's next word or act, a detail already in the scene that shifts), ` +
+  `not a new plot element. Where a closing italic move-hint is asked for, it comes ` +
+  `after this final story beat.`;
+
+/**
  * The redirect the first narration after an X-Card carries (issue #321 U07,
  * section [1b]). The removed beat is already out of every memory the narrator
  * reads; this tells it to move the story away without saying what it was.
@@ -1269,13 +1291,21 @@ const PERSPECTIVE_DESCRIPTIONS = {
  * Ash beside one player's Kira counted one non-GM user, so the round was
  * second person over two CHARACTER blocks).
  *
+ * Auto is decided once per session (issue #348 PT03): `sessionPerspective`,
+ * the one Begin a Session recorded (sessionPerspectiveOf), wins over the
+ * count. Recomputed on every call, a second window or player connecting
+ * mid-session flipped "you" to names between beats. Without one — a session
+ * not begun — the connected users are counted, as before.
+ *
  * @param {string} setting — "auto" | "second_person" | "third_person"
- * @param {{ actingCharacters?: number }} [narration] — how many PCs the narration speaks for
+ * @param {{ actingCharacters?: number, sessionPerspective?: string|null }} [narration] —
+ *   how many PCs the narration speaks for; the session's recorded perspective
  * @returns {"second_person"|"third_person"}
  */
-export function resolveNarrationPerspective(setting, { actingCharacters = 0 } = {}) {
+export function resolveNarrationPerspective(setting, { actingCharacters = 0, sessionPerspective = null } = {}) {
   if (setting !== 'auto') return setting;
   if (actingCharacters > 1) return 'third_person';
+  if (sessionPerspective === 'second_person' || sessionPerspective === 'third_person') return sessionPerspective;
   try {
     // Active NON-GM users (decisions.md "Narrator tone and perspective"): the
     // GM counted too, so a GM running one player's character — or a solo GM
@@ -1286,6 +1316,21 @@ export function resolveNarrationPerspective(setting, { actingCharacters = 0 } = 
   } catch {
     return 'second_person';
   }
+}
+
+/**
+ * The perspective Auto resolved to when the current session began (issue
+ * #348 PT03; `campaignState.sessionPerspective`, written by lifecycle.js
+ * beginSession) — null when this session recorded none.
+ *
+ * @param {Object|null} campaignState
+ * @returns {"second_person"|"third_person"|null}
+ */
+export function sessionPerspectiveOf(campaignState) {
+  const rec = campaignState?.sessionPerspective;
+  const id  = campaignState?.currentSessionId;
+  if (!rec || !id || rec.sessionId !== id) return null;
+  return rec.perspective === 'second_person' || rec.perspective === 'third_person' ? rec.perspective : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1486,8 +1531,10 @@ export function buildNarratorSystemPrompt(
   const isMetaMode      = META_MODES.has(resolvedMode);
 
   // A round speaks for every acting PC at once (its CHARACTER blocks, issue #342 Z40).
+  // Auto keeps the perspective the session began with (issue #348 PT03).
   const resolvedPerspective = resolveNarrationPerspective(narrationPerspective, {
     actingCharacters: Array.isArray(extras?.roundCharacters) ? extras.roundCharacters.filter(Boolean).length : 0,
+    sessionPerspective: sessionPerspectiveOf(campaignState),
   });
   const toneDesc        = TONE_DESCRIPTIONS[narrationTone]          ?? TONE_DESCRIPTIONS.wry;
   const perspectiveDesc = PERSPECTIVE_DESCRIPTIONS[resolvedPerspective] ?? PERSPECTIVE_DESCRIPTIONS.second_person;
@@ -1521,6 +1568,7 @@ export function buildNarratorSystemPrompt(
     `${roleDescription}\n\n` +
     `### DEPICT, DO NOT OFFER\n\n` +
     `${ANTI_SUGGESTION_CLAUSE}\n\n` +
+    (BEAT_ENDING_MODES.has(resolvedMode) ? `### HOW A BEAT ENDS\n\n${BEAT_ENDING_RULE}\n\n` : '') +
     `### STYLE\n\n` +
     styleLines.join('\n') + `\n\n` +
     levitySection +
@@ -1993,12 +2041,9 @@ export function stripHtml(text) {
   if (typeof text !== 'string') return '';
   return text
     .replace(/<\/?[a-zA-Z][^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#0?39;/g, "'")
+    // One pass, shared (CHARACTER-STATE-ENTITY-UNDECODED): "&amp;lt;" stays
+    // "&lt;" — decoding &amp; first made it "<".
+    .replace(/&[#a-z0-9]+;/gi, (e) => decodeHtmlEntities(e))
     // Collapse runs of horizontal whitespace, but keep newlines so
     // paragraph structure survives.
     .replace(/[ \t\f\v]+/g, ' ')
@@ -2119,10 +2164,17 @@ export function buildPacedNarrativeUserMessage(playerText, recentContext, senten
   }
 
   const target = Math.max(1, Number(sentenceTarget) || 3);
+  // Issue #348 PT01: "continuing the scene, not advancing it" held the story
+  // still — "not yet", "twenty minutes out", an arrival pushed back on every
+  // ask. What a move decides stays undecided; the rest may move.
   parts.push(
     `Continue the fiction from this input in ${target} sentence${target !== 1 ? 's' : ''}. ` +
-    `No move was rolled — stay in narration. Do not announce mechanics. Do not introduce ` +
-    `unestablished plot elements. The narrator is continuing the scene, not advancing it.`
+    `No move was rolled — stay in narration. Do not announce mechanics. Do not decide ` +
+    `what a move would decide: no risky action succeeds or fails, no fight is won, no ` +
+    `danger is escaped. Within that, let the scene move: small developments, and the ` +
+    `time the player's line implies passing, are yours to narrate. When the player skips ` +
+    `time ("wake me when we get there", "we wait for nightfall"), cut to the next moment ` +
+    `that needs them, not to the middle of the wait.`
   );
 
   return parts.join('\n\n');

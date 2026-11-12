@@ -849,13 +849,17 @@ export async function syncEntityRecordNames(campaignState) {
         if (!document) continue;
         const record = readEntityFlag(typeKey, document);
         if (!record || !document.name) continue;
-        if (record.name === document.name) continue;
-        await writeEntityFlag(typeKey, document, {
-          ...record,
-          name:      document.name,
-          updatedAt: new Date().toISOString(),
-        });
-        summary.synced += 1;
+        if (record.name !== document.name) {
+          await writeEntityFlag(typeKey, document, {
+            ...record,
+            name:      document.name,
+            updatedAt: new Date().toISOString(),
+          });
+          summary.synced += 1;
+        }
+        // Every listed record's name — a world where one was created onto a
+        // dismissed name before its creator un-dismissed it, too
+        // (CREATED-ONTO-DISMISSED-NAME). A no-op when the name is not dismissed.
         await undismissRecordName(document.name);
       } catch (err) {
         console.warn(`${MODULE_ID} | syncEntityRecordNames: ${typeKey} ${id} failed:`, err?.message ?? err);
@@ -869,10 +873,8 @@ export async function syncEntityRecordNames(campaignState) {
     for (const id of ids) {
       try {
         const journal = getEntityDocument(typeKey, id);
-        if (await followEntityJournalRename(typeKey, journal)) {
-          summary.synced += 1;
-          await undismissRecordName(journal.name);
-        }
+        if (await followEntityJournalRename(typeKey, journal)) summary.synced += 1;
+        if (journal?.name) await undismissRecordName(journal.name);   // CREATED-ONTO-DISMISSED-NAME
       } catch (err) {
         console.warn(`${MODULE_ID} | syncEntityRecordNames: ${typeKey} ${id} failed:`, err?.message ?? err);
       }
@@ -904,7 +906,8 @@ const UNLISTED_ENTITY_TYPES = [
  * sidebar's Duplicate, or a card whose journal the connection migration has
  * yet to swap — the same record id), and the leftovers of a sector creation
  * whose sector the campaign never stored (known-issues SECTOR-CREATE-PARTIAL
- * — a retry of that creation adopts them). GM-only; one write, onto the
+ * — a failed run takes its own back; one cut short by a closed page leaves
+ * them, and a retry of that creation adopts them). GM-only; one write, onto the
  * latest store; idempotent.
  *
  * @returns {Promise<{ listed: number }>}

@@ -61,7 +61,7 @@ vi.mock('../../src/oracles/roller.js', async (original) => {
 });
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { scriptClaude } from '../helpers/faults.js';
+import { scriptClaude, failWrites } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 let table, kira, ren;
@@ -184,5 +184,30 @@ describe('issue #345 AA46 (b) — the undone price\'s mark gives back the moment
     const card = await missed();
     await press(card, '[data-action="sf-burn-momentum"]');
     expect({ unprepared: ren.system.debility.unprepared, momentum: ren.system.momentum.value }).toEqual({ unprepared: true, momentum: 9 });
+  }, 60_000);
+});
+
+describe('UNPREPARED-RETRY-NO-MOMENTUM — the Retry of a refused clear gives back what the mark clamped', () => {
+  const renClear = (w) => w.kind === 'actor.update' && w.id === 'pc-ren'
+    && w.changes?.['system.debility.unprepared'] === false;
+  const failCards = () => table.cards(f => f.payoffFailureCard);
+
+  it("Ren's clear is refused on the burn: the GMs' step owes the clear and his momentum; its Retry gives both", async () => {
+    const card = await missed();
+    expect(ren.system.momentum.value).toBe(9);
+    const refused = failWrites(table, renClear);
+    await press(card, '[data-action="sf-burn-momentum"]');
+    expect(refused.refused).toBe(1);
+    expect(flags(card._id).burn.consumed).toBe(true);
+    expect({ unprepared: ren.system.debility.unprepared, momentum: ren.system.momentum.value }).toEqual({ unprepared: true, momentum: 9 });
+
+    const failure = failCards().at(-1);
+    expect(failure.flags[MODULE_ID].steps).toMatchObject([{ step: 'upgrade', effect: 'unprepared', pcIds: ['pc-ren'], momentumBack: { 'pc-ren': 1 } }]);
+    expect(failure.content).toMatch(/gives back the momentum the mark held down \(Ren \+1\)/);
+
+    await table.client('gm-1').click(failure._id, '[data-action="sf-payoff-retry"]');
+    await table.settle(); await table.drain();
+    expect({ unprepared: ren.system.debility.unprepared, momentum: ren.system.momentum.value }).toEqual({ unprepared: false, momentum: 10 });
+    expect(kira.system.momentum.value, "the burner's reset stands").toBe(3);
   }, 60_000);
 });

@@ -77,3 +77,41 @@ describe('Aid Your Ally — the ally takes the benefits', () => {
     expect(ash.system.momentum.value).toBe(2);
   }, 30_000);
 });
+
+// Known-issues AID-ALLY-UPGRADE: a Burn Momentum (or Improve Result) that
+// upgrades an Aid Your Ally applied the upgraded hit's momentum to the roller
+// — the first resolution paid its hit to the ally, but the upgrade paths knew
+// only the roller, and a miss's card did not carry the ally at all.
+describe('Aid Your Ally — a burned result\'s benefits are the ally\'s too (AID-ALLY-UPGRADE)', () => {
+  const BURN = '[data-action="sf-burn-momentum"]';
+  const MISS = [0.65, 0.75, 0.6];   // challenge 7, 8; die 4 — edge 2 → 6: a miss (momentum 9 beats both)
+
+  async function ashBurns() {
+    const card = table.cards(f => f.moveResolution).at(-1);
+    expect(card.flags[MODULE_ID].burn?.canBurn, 'Ash can burn').toBe(true);
+    await table.client('pl-1').click(card._id, BURN);
+    await table.settle(); await table.drain();
+  }
+
+  it('a weak hit burned to a strong hit: Kira takes the +2 momentum and the +1; Ash\'s momentum resets', async () => {
+    ash.system.momentum.value = 9;
+    await ashAidsKira(WEAK);
+    await ashBurns();
+
+    expect(kira.system.momentum.value).toBe(4);
+    expect(ash.system.momentum.value).toBe(2);                         // reset, no +2 of the ally's
+    expect(table.world.campaignState().nextMoveBonuses?.['pc-kira']?.value).toBe(1);
+    expect(table.world.campaignState().nextMoveBonuses?.['pc-ash']).toBeUndefined();
+  }, 30_000);
+
+  it('a miss burned to a strong hit: the miss\'s card carried the ally, so Kira takes the benefits', async () => {
+    ash.system.momentum.value = 9;
+    await ashAidsKira(MISS);
+    expect(table.cards(f => f.moveResolution).at(-1).flags[MODULE_ID].burn?.targets?.allyActorId).toBe('pc-kira');
+    await ashBurns();
+
+    expect(kira.system.momentum.value).toBe(4);
+    expect(ash.system.momentum.value).toBe(2);
+    expect(table.world.campaignState().nextMoveBonuses?.['pc-kira']?.value).toBe(1);
+  }, 30_000);
+});

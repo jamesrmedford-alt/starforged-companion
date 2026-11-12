@@ -140,6 +140,11 @@ function optionContext(actor, executorOpts = {}) {
  * Sacrifice Resources while the PC is unprepared, at any supply, whose loss
  * goes to a different suffer move (issue #325 W16; issue #338 D3).
  */
+/** The tracks an "any" card offers to clear progress on (a momentum loss at the minimum). */
+function clearTracksOf(prompt) {
+  return (Array.isArray(prompt?.clearTracks) ? prompt.clearTracks : []).filter(t => typeof t?.id === "string" && t.id);
+}
+
 function anySufferBlocked(prompt, sufferId, ctx) {
   if (Array.isArray(prompt?.exclude) && prompt.exclude.includes(sufferId)) return true;
   return sufferId === "sacrifice_resources" && isUnprepared(ctx?.actor ?? null);
@@ -174,7 +179,12 @@ export function renderSufferCard(prompt, actor, pickedIndices = [], ctx = option
       return `<button type="button" class="sf-suffer-card-btn" data-action="sf-suffer-pick" ` +
         `data-pick-kind="any" data-suffer-id="${s.id}" ${blocked ? "disabled" : ""}>` +
         `${escapeHtml(s.label)} (-${amt})${blocked ? " (unavailable)" : ""}</button>`;
-    }).join("");
+    }).join("")
+      // A momentum loss the minimum refused may clear progress instead — one
+      // rank's mark on an open track (MOMENTUM-MIN-REDIRECT-MANUAL).
+      + clearTracksOf(prompt).map(t =>
+        `<button type="button" class="sf-suffer-card-btn" data-action="sf-suffer-pick" ` +
+        `data-pick-kind="clear" data-track-id="${escapeHtml(t.id)}">Clear progress: ${escapeHtml(t.label ?? "a track")}</button>`).join("");
   } else {
     const cap = sufferMultiCap(prompt);
     header = cap > 1
@@ -235,6 +245,7 @@ export function summarizeSufferCalls(calls, results = []) {
       case "mark":                parts.push(`marked ${localizeDebility(c.debility)}`); break;
       case "clear-impact":        parts.push(`cleared ${localizeDebility(c.debility)}`); break;
       case "combat-progress":     parts.push(`combat progress ×${c.count ?? 1}`); break;
+      case "clear-progress":      parts.push(`cleared progress on ${c.label ?? "a track"}`); break;
       case "expedition-progress": parts.push(`expedition progress ×${c.count ?? 1}`); break;
       case "combat-position":     parts.push(c.skipped
         ? "combat position not applied"
@@ -242,7 +253,9 @@ export function summarizeSufferCalls(calls, results = []) {
       case "next-bonus":          parts.push(`+${c.amount} next move`); break;
       case "roll-table":          parts.push(`rolled the ${c.table === "desolation" ? "desolation" : "mortal-wound"} table`); break;
       case "resist":              parts.push(`${labelForSuffer(c.moveId)} rolled to resist`); break;
-      case "route":               parts.push(`see "Trigger: ${c.route}"`); break;
+      case "route":               parts.push(c.route === "pay_the_price" && c.price
+        ? "the price paid (see its card)"
+        : `see "Trigger: ${c.route}"`); break;
       case "complication":        parts.push("complication pending"); break;
       default: break;
     }
@@ -259,7 +272,9 @@ function lossPastZeroLabel(call, result) {
   const m = result.momentumLoss;
   let text = `${meterLabel(call.meterKey)} ${result.before} → ${result.after ?? result.before}` +
     ` — ${m.amount} more as momentum: ${m.before} → ${m.after}`;
-  if (m.remaining > 0) text += ` (at minimum; ${m.remaining} not taken — redirect it to another suffer move or clear progress)`;
+  if (m.remaining > 0) text += ` (at minimum; ${m.remaining} not taken — ${m.redirected === true
+    ? "make another suffer move or clear progress: choose it on its card"
+    : "redirect it to another suffer move or clear progress"})`;
   return text;
 }
 
@@ -272,9 +287,14 @@ const NOT_APPLIED = {
   "no-fight":     "no open fight was named",
   "fight-gone":   "its fight is gone",
   "fight-over":   "its fight is over",
+  "way-out":      "you found another way — no fight was begun",
+  "expedition-gone": "its expedition is gone",
+  "expedition-over": "its expedition is over",
   "ambiguous":    "more than one is open — mark it in the Progress Tracks panel",
   "refused":      "the world did not save it",
   "no-table":     "no such table",
+  "track-gone":   "its track is gone",
+  "track-done":   "its track is finished",
 };
 
 /**
@@ -288,7 +308,9 @@ const NOT_APPLIED = {
 function notAppliedLines(calls, results) {
   return (calls ?? []).flatMap((c, i) => {
     const r = results?.[i];
-    return r?.ok === false ? [`${summarizeSufferCalls([c])} — ${NOT_APPLIED[r.reason] ?? r.reason ?? "it failed"}`] : [];
+    // A call whose meter landed and whose second write did not names that
+    // write alone (`retryCall` — SUFFER-RETRY-WHOLE-AFTER-METER).
+    return r?.ok === false ? [`${summarizeSufferCalls([r.retryCall ?? c])} — ${NOT_APPLIED[r.reason] ?? r.reason ?? "it failed"}`] : [];
   });
 }
 
@@ -302,7 +324,9 @@ function notAppliedLines(calls, results) {
  * @returns {string}
  */
 function summarizeSufferResults(calls, results) {
-  const landed = (calls ?? []).flatMap((c, i) => (results?.[i]?.ok !== false ? [i] : []));
+  // A call whose meter landed before its second write was refused
+  // (`retryCall`) is applied, and that write listed as not.
+  const landed = (calls ?? []).flatMap((c, i) => (results?.[i]?.ok !== false || results?.[i]?.retryCall ? [i] : []));
   const missed = notAppliedLines(calls, results);
   return withNotApplied(landed.length || !missed.length
     ? `Applied: ${summarizeSufferCalls(landed.map(i => calls[i]), landed.map(i => results?.[i]))}` : "", missed);
@@ -410,6 +434,7 @@ export function registerSufferCardHook() {
             pickKind:    btn.dataset.pickKind ?? null,
             sufferId:    btn.dataset.sufferId ?? null,
             optionIndex: btn.dataset.optionIndex ?? null,
+            trackId:     btn.dataset.trackId ?? null,
           },
           isResolved: () => !!(globalThis.game?.messages?.get?.(message?.id) ?? message)?.flags?.[MODULE_ID]?.resolved,
           restore:    () => { for (const b of enabled) b.disabled = false; },
@@ -526,6 +551,11 @@ function offeredPick(flags, payload, actor) {
       ? { pickKind: "any", sufferId: payload.sufferId }
       : null;
   }
+  if (payload.pickKind === "clear") {
+    return prompt.kind === "any" && clearTracksOf(prompt).some(t => t.id === payload.trackId)
+      ? { pickKind: "clear", trackId: payload.trackId }
+      : null;
+  }
   if (payload.pickKind === "enum" && prompt.kind !== "any") {
     const raw    = payload.optionIndex;
     const i      = raw === null || raw === undefined || raw === "" ? NaN : Number(raw);
@@ -555,7 +585,9 @@ async function handleSufferPick(message, dataset) {
   // defensively so an enumerated option that is itself a nested "any" sub-prompt
   // resolves rather than emitting needs-any.
   let selection, idx = null;
-  if (dataset.pickKind === "any") {
+  if (dataset.pickKind === "clear") {
+    selection = { clearTrackId: dataset.trackId };
+  } else if (dataset.pickKind === "any") {
     selection = { anyChoice: dataset.sufferId };
   } else {
     idx = Number(dataset.optionIndex);
@@ -700,8 +732,12 @@ export async function reopenSufferCard(messageOrId) {
 async function reportRefusedCalls(actor, calls, results, executorOpts) {
   const failures = calls.flatMap((call, i) => {
     const r = results[i];
-    return r?.ok === false && r.reason === "refused" && isRetryableSufferCall(call)
-      ? [{ step: "suffer", call, opts: executorOpts, reason: "refused", error: r.error ?? null }]
+    // The Retry applies what was refused: a call's second write alone when
+    // its meter landed (`retryCall` — SUFFER-RETRY-WHOLE-AFTER-METER: the
+    // whole call's Retry took the meter again).
+    const owed = r?.retryCall ?? call;
+    return r?.ok === false && r.reason === "refused" && isRetryableSufferCall(owed)
+      ? [{ step: "suffer", call: owed, opts: executorOpts, reason: "refused", error: r.error ?? null }]
       : [];
   });
   if (!failures.length) return;

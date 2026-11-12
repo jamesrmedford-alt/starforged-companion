@@ -106,7 +106,9 @@ async function relay(userId, kind, payload) {
 async function kiraActs(text) {
   const sub = `k${++seq}`;
   await relay('pl-1', 'batch.submit', { roundId: round().id, text, submissionId: sub });
-  await relay('pl-1', 'batch.confirm', { roundId: round().id, submissionId: sub, choices: {} });
+  // The Round window's confirm as it opens: the ability with an effect on the
+  // outcome pre-checked (RIDERS-IGNORE-UNCHECKED).
+  await relay('pl-1', 'batch.confirm', { roundId: round().id, submissionId: sub, choices: { abilityIds: ['ace:0'] } });
 }
 
 async function kiraActsRenPasses(text) {

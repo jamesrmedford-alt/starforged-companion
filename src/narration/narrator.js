@@ -19,12 +19,13 @@ import {
   SCENE_LEDGER_FIELDS,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
-import { isCanonicalGM } from '../multiplayer/gmGate.js';
-import { connectionDrops } from '../multiplayer/connectionWatch.js';
+import { isCanonicalGM, hasKeyedActiveGM } from '../multiplayer/gmGate.js';
+import { connectionDrops, pageIsStale } from '../multiplayer/connectionWatch.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
-import { stripMarkup } from '../audio/segments.js';
+import { stripMarkup, proseToHtml } from '../audio/segments.js';
+import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
@@ -150,9 +151,20 @@ export function watchXCard(campaignState) {
       // count nor the flag can be trusted — the narration is discarded, its
       // sidecar never applied (issue #347 AB19).
       _discardedForDrop = false;
+      _discardedForStale = false;
       if (connectionDrops() !== dropsAtStart) {
         console.warn(`${MODULE_ID} | ${label}: the connection to the server dropped while the narration was generated — discarded.`);
         _discardedForDrop = true;
+        return true;
+      }
+      // Nor can a narration started on a page whose connection had already
+      // dropped: its cache may lack an X-Card played during the drop — a
+      // player's page, which keeps narrating on the player's own key (the
+      // Private Channel; a command or follow-up at a table with no keyed GM),
+      // is not reloaded for it (STALE-PLAYER-PAGE).
+      if (pageIsStale()) {
+        console.warn(`${MODULE_ID} | ${label}: this page's connection to the server dropped earlier and it has not reloaded — discarded.`);
+        _discardedForStale = true;
         return true;
       }
       if (!isXCardActive(campaignState) && xCardPlayCount() === playsAtStart) return false;
@@ -180,11 +192,16 @@ function xCardDiscardReason(campaignState, what) {
   if (_discardedForDrop) {
     return `${what} discarded — this GM's connection to the server dropped while it was being written, so an X-Card played meanwhile could not be checked.`;
   }
+  if (_discardedForStale) {
+    return `${what} discarded — this browser's connection to the server dropped earlier, so an X-Card played meanwhile could not be checked. Reload it (F5).`;
+  }
   return `${what} discarded — the X-Card was played while it was being written.`;
 }
 
 /** Whether the last narration a watch discarded was discarded for a dropped connection (xCardDiscardReason's wording). */
 let _discardedForDrop = false;
+/** Whether it was discarded because its page was already stale (STALE-PLAYER-PAGE). */
+let _discardedForStale = false;
 
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const RETRY_DELAY_MS = 5000;
@@ -525,20 +542,32 @@ async function readPinnedChronicle(character = null) {
   if (character?.actorId) ids.add(character.actorId);
   const pinned = {};
   for (const actorId of ids) {
-    try {
-      const texts = ((await getChronicleEntries(actorId)) ?? [])
-        .filter(e => e?.pinned === true && typeof e.text === 'string' && e.text.trim())
-        .slice(-PINNED_CHRONICLE_ENTRIES)
-        .map(e => {
-          const text = e.text.replace(/\s+/g, ' ').trim();
-          return text.length > PINNED_CHRONICLE_CHARS ? `${text.slice(0, PINNED_CHRONICLE_CHARS - 1)}…` : text;
-        });
-      if (texts.length) pinned[actorId] = texts;
-    } catch (err) {
-      console.warn(`${MODULE_ID} | narrator: reading ${actorId}'s pinned Chronicle entries failed:`, err?.message ?? err);
-    }
+    const texts = await readPinnedEntriesOf(actorId);
+    if (texts.length) pinned[actorId] = texts;
   }
   return pinned;
+}
+
+/**
+ * One PC's pinned Chronicle entries: the newest PINNED_CHRONICLE_ENTRIES,
+ * oldest first, each on one line, clipped. Fail-open: none.
+ *
+ * @param {string} actorId
+ * @returns {Promise<string[]>}
+ */
+async function readPinnedEntriesOf(actorId) {
+  try {
+    return ((await getChronicleEntries(actorId)) ?? [])
+      .filter(e => e?.pinned === true && typeof e.text === 'string' && e.text.trim())
+      .slice(-PINNED_CHRONICLE_ENTRIES)
+      .map(e => {
+        const text = e.text.replace(/\s+/g, ' ').trim();
+        return text.length > PINNED_CHRONICLE_CHARS ? `${text.slice(0, PINNED_CHRONICLE_CHARS - 1)}…` : text;
+      });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: reading ${actorId}'s pinned Chronicle entries failed:`, err?.message ?? err);
+    return [];
+  }
 }
 
 /** The stored campaignState, or null when it cannot be read. */
@@ -658,13 +687,17 @@ async function sessionStartRecap(campaignState) {
  * `scene` (last and this session's summaries, the cards of the recorded
  * entities the player's message or the scene frame names, the scene ledger).
  * Relevance is lexical, as on every non-move path: no API call and no side
- * effects (no spotlight advance, no recap generation).
+ * effects (no spotlight advance, no recap generation). With `actorId`, also
+ * `pinned` — that PC's pinned Chronicle entries, as its CHARACTER block on the
+ * main path carries them (issue #345 AA07; the Private Channel builds its
+ * block outside the shared assembly and saw none — PRIVATE-CHANNEL-NO-PINS).
  *
  * @param {Object} campaignState
  * @param {string} playerMessage
- * @returns {Promise<{ canon: string, scene: string }>}
+ * @param {{ actorId?: string|null }} [opts] — the player's own PC
+ * @returns {Promise<{ canon: string, scene: string, pinned: string[] }>}
  */
-export async function buildPrivateChannelStory(campaignState, playerMessage) {
+export async function buildPrivateChannelStory(campaignState, playerMessage, { actorId = null } = {}) {
   const lexical = await resolvePathRelevance(playerMessage, campaignState);
   const extras = {
     entityCards:            lexical.entityCards,
@@ -675,7 +708,9 @@ export async function buildPrivateChannelStory(campaignState, playerMessage) {
     previousSessionSummary: previousSessionSummaryFor(campaignState),
   };
   addSceneFrameCast(extras, campaignState);
-  return buildSharedStorySections(campaignState, getNarratorSettings(), extras);
+  const sections = buildSharedStorySections(campaignState, getNarratorSettings(), extras);
+  const pinned = actorId ? await readPinnedEntriesOf(actorId) : [];
+  return { ...sections, pinned };
 }
 
 /** What this turn is about, as text for lore selection: player text, scene frame, entity names, current location. */
@@ -768,6 +803,8 @@ function sceneFrameEnabledFromSettings() {
  *   the createChatMessage pipeline (lets the caller insert a clarification
  *   dialog between resolveRelevance and narration). If omitted, resolveRelevance
  *   is called internally.
+ * @param {string|null} [options.moveTarget] — the interpreter's target for the
+ *   move, for its capture (runPostNarrationPasses — KNOWN-NPC-CONNECTION-NO-TARGET)
  * @returns {Promise<string|null>} narration text, or null on failure/disabled
  */
 export async function narrateResolution(resolution, campaignState, options = {}) {
@@ -788,7 +825,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
   const apiKey = getApiKey();
   if (!apiKey) {
     console.warn(`${MODULE_ID} | narrateResolution: Claude API key not configured`);
-    await postFallbackCard(resolution, campaignState);
+    await postFallbackCard(resolution, campaignState, NO_CLAUDE_KEY_REASON);
     return null;
   }
 
@@ -881,22 +918,27 @@ export async function narrateResolution(resolution, campaignState, options = {})
     });
 
     if (!narration?.trim()) {
-      await postFallbackCard(resolution, campaignState);
+      await postFallbackCard(resolution, campaignState, EMPTY_REPLY_REASON);
       return null;
     }
 
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
-    await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId });
+    await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
     scheduleChronicleEntry({
       narrationText: narration,
       campaignState,
       moveId:        resolution.moveId,
       outcome:       resolution.outcome,
       kind:          'move',
+      actorId:       character?.actorId ?? null,   // the roller's chronicle (CHRONICLE-FIRST-PC)
+      narrationId,
     });
     return narration;
 
   } catch (err) {
+    // What the fallback card names as the cause (ERROR-TEXT-BLAMES-KEY): the
+    // last failure — the retry's, when there was one.
+    let failure = claudeFailureReason(err);
     // Rate limit — retry once after 5 s
     if (isRateLimit(err)) {
       try {
@@ -918,23 +960,27 @@ export async function narrateResolution(resolution, campaignState, options = {})
         });
         if (narration?.trim()) {
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
-          await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId });
+          await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
           scheduleChronicleEntry({
             narrationText: narration,
             campaignState,
             moveId:        resolution.moveId,
             outcome:       resolution.outcome,
             kind:          'move',
+            actorId:       character?.actorId ?? null,
+            narrationId,
           });
           return narration;
         }
+        failure = EMPTY_REPLY_REASON;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateResolution retry failed:`, retryErr);
+        failure = claudeFailureReason(retryErr);
       }
     }
 
     console.error(`${MODULE_ID} | narrateResolution failed:`, err);
-    await postFallbackCard(resolution, campaignState);
+    await postFallbackCard(resolution, campaignState, failure);
     return null;
   }
 }
@@ -1019,7 +1065,7 @@ export function roundNarrationEntries(round) {
  * @param {{ round: Object, campaignState: Object, stillNarrating?: (() => boolean)|null }} args — a working copy of campaignState
  * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object, superseded?: boolean }>}
  */
-export async function narrateRound({ round, campaignState, stillNarrating = null }) {
+export async function narrateRound({ round, campaignState, stillNarrating = null, noKeyReason = null }) {
   const entries = roundNarrationEntries(round);
   if (!entries.length) return { posted: null };
   const settings = getNarratorSettings();
@@ -1035,7 +1081,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   const apiKey = getApiKey();
   if (!apiKey) {
     console.warn(`${MODULE_ID} | narrateRound: Claude API key not configured`);
-    return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState) };
+    return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState, noKeyReason || NO_CLAUDE_KEY_REASON) };
   }
 
   await ensureSceneStarted(campaignState, 'first_narration_round_resolution');
@@ -1093,6 +1139,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   // One call, and one retry after a rate limit. The call is made here, not in
   // a helper, so its caller is narrateRound (the playthrough harness files a
   // call under the two module functions above the proxy).
+  let failure = claudeFailureReason(null);   // the fallback card's cause (ERROR-TEXT-BLAMES-KEY)
   for (let tries = 0; tries < 2; tries += 1) {
     try {
       if (tries) await delay(RETRY_DELAY_MS);
@@ -1106,23 +1153,31 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       const narration = applyNarratorSidecar(raw, campaignState, {
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
       });
-      if (!narration?.trim()) break;
+      if (!narration?.trim()) {
+        failure = EMPTY_REPLY_REASON;
+        break;
+      }
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
         matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
       });
       await runRoundNarrationPasses(narration, entries, campaignState, {
         narrationId, matchedEntityIds: extras.matchedEntityIds ?? [], matchedEntityTypes: extras.matchedEntityTypes ?? [],
       });
-      scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round' });
+      // The acting character the beat is about (CHRONICLE-FIRST-PC).
+      scheduleChronicleEntry({
+        narrationText: narration, campaignState, kind: 'round', narrationId,
+        characters: entries.map(e => ({ actorId: e.actorId, name: e.actorName })),
+      });
       return { posted: 'card', narrationId, card };
     } catch (err) {
+      failure = claudeFailureReason(err);
       if (!tries && isRateLimit(err)) continue;
       console.error(`${MODULE_ID} | narrateRound ${tries ? 'retry ' : ''}failed:`, err);
       break;
     }
   }
   if (superseded()) return { posted: null, superseded: true };
-  return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState) };
+  return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState, failure) };
 }
 
 /**
@@ -1362,7 +1417,7 @@ export async function postRoundNarrationCard(narrationText, round, entries, camp
       <div class="sf-narration-card sf-round-card">
         <div class="sf-narration-label">◈ Round ${escapeHtml(String(round?.number ?? ''))}</div>
         <ul class="sf-round-entries">${entries.map(roundEntryHtml).join('')}</ul>
-        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
+        <div class="sf-narration-prose">${proseToHtml(narrationText)}</div>
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
             <i class="fas fa-play"></i> Play
@@ -1403,7 +1458,7 @@ export async function postRoundNarrationCard(narrationText, round, entries, camp
  * session recap counts the moves and every narrator-memory read leaves it out
  * (rules/narrator-memory.md invariant 1). No narrationId: no sidecar ran.
  */
-async function postRoundFallbackCard(round, entries, campaignState = null) {
+async function postRoundFallbackCard(round, entries, campaignState = null, reason = claudeFailureReason(null)) {
   const lines = entries.map(e => {
     const input = e.input ?? {};
     const what = input.kind === 'move'
@@ -1416,7 +1471,7 @@ async function postRoundFallbackCard(round, entries, campaignState = null) {
       <div class="sf-narration-card sf-narration-fallback sf-round-card">
         <div class="sf-narration-label">◈ Round ${escapeHtml(String(round?.number ?? ''))}</div>
         <div class="sf-narration-prose">${lines.map(escapeHtml).join('<br>')}</div>
-        <div class="sf-narration-error">Narration unavailable — check your API key and proxy.</div>
+        <div class="sf-narration-error">Narration unavailable — ${escapeHtml(reason)}.</div>
       </div>
     `.trim(),
     flags: {
@@ -1493,10 +1548,13 @@ const ASYNC_DETECTION_DELAY_MS = 2000;
  * creates — or a draft card's Confirm — puts the bond Item on their sheet,
  * not the first PC's (issue #321 U23). `narrationId` is the narration's id,
  * stamped on what the passes record — lore, threats, Session Log beats, tier
- * details — so an X-Card on it undoes them (issue #329 X01).
+ * details — so an X-Card on it undoes them (issue #329 X01). `moveTarget` is
+ * the interpreter's target for the move: a Make a Connection hit whose
+ * narration names several NPCs the table knows connects the one it names when
+ * the player's line does not say (KNOWN-NPC-CONNECTION-NO-TARGET).
  */
 export function runPostNarrationPasses(
-  narrationText, resolution, relevance, campaignState, { actorId = null, narrationId = null } = {},
+  narrationText, resolution, relevance, campaignState, { actorId = null, narrationId = null, moveTarget = null } = {},
 ) {
   if (!resolution || !relevance) return Promise.resolve();
 
@@ -1536,6 +1594,7 @@ export function runPostNarrationPasses(
           connectionSeed:       resolution.oracleSeeds?.connectionSeed ?? null,
           actorId,
           narrationId,
+          moveTarget,
         },
       );
     }
@@ -1615,6 +1674,12 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       // names several (issue #347 AB10).
       namingText:           `${resolution?.playerNarration ?? ''}\n${narrationText ?? ''}`,
       lineText:             resolution?.playerNarration ?? '',
+      // …and, when the line does not, the interpreter's target for the move
+      // (KNOWN-NPC-CONNECTION-NO-TARGET).
+      targetName:           typeof options.moveTarget === 'string' ? options.moveTarget : null,
+      // The narration alone: a round's hit is named by its own line and this,
+      // not another player's line (ROUND-CONNECTION-OTHER-LINE-CANDIDATE).
+      narrationText:        narrationText ?? '',
       narrationId,
     });
   } catch (err) {
@@ -1640,7 +1705,7 @@ export async function postNarrationCard(narrationText, resolution, campaignState
     content: `
       <div class="sf-narration-card">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
+        <div class="sf-narration-prose">${proseToHtml(narrationText)}</div>
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
             <i class="fas fa-play"></i> Play
@@ -2149,22 +2214,29 @@ function withStruckByUpgrade(beat, messages, sessionId) {
  *     `resolutionId`, a round card's entries' too) — out of RECENT ORACLE
  *     RESULTS, which told every later narration the removed answer was
  *     established (issue #345 AA01);
+ *   - `incitingIncident`: the campaign premise, when they include the
+ *     inciting narration it was written from (XCARD-INCITING-PREMISE);
  *   - `sessionSummary`: its text dropped and a regen due, when it covered
  *     them (the summary is a droppable convenience; the next regen reads the
  *     remaining cards);
  *   - `xCardRedirect`: the redirect the first narration after a GM resumes
  *     carries — set on every play, X-carded cards or not.
  * The caller then flags the returned cards `xCarded` (flagXCardedCards).
+ * `opts.cards` names the cards to remove instead of the pick: a narration
+ * whose card posted after the pause (safety.js, XCARD-POST-RACE).
  *
  * @param {Object} cs — the copy to update (mutated; its ledger objects are replaced, never changed)
+ * @param {{ cards?: Object[]|null }} [opts]
  * @returns {{ cards: Object[], retracted: Object[], sessionId: string|null, summaryDropped: boolean }}
  *   the X-carded cards, the truths retracted, their session, and whether the
  *   session's summary was dropped — the Session Log's story End wrote from it
  *   goes too (safety.js finishXCardRemoval, issue #345 AA27)
  */
-export function applyXCardToNarratorMemory(cs) {
+export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   const sessionId = cs?.currentSessionId ?? null;
-  const cards = xCardedNarrationCards(sessionId);
+  // `cards`: a narration that posted after the pause (XCARD-POST-RACE) —
+  // removed the same way, in place of the pick.
+  const cards = Array.isArray(given) ? given.filter(Boolean) : xCardedNarrationCards(sessionId);
   const ids = [...new Set(cards.map(m => m.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === 'string' && id))];
 
   const retracted = retractNarrations(cs, ids);
@@ -2173,6 +2245,7 @@ export function applyXCardToNarratorMemory(cs) {
     cs.xCardedNarrationIds = [...prior.filter(id => !ids.includes(id)), ...ids].slice(-XCARD_NARRATION_ID_CAP);
   }
   dropOracleResultsFor(cs, xCardedOracleResults(cards));
+  dropXCardedPremise(cs, cards, ids);
 
   const summary = cs.sessionSummary;
   let summaryDropped = false;
@@ -2191,6 +2264,34 @@ export function applyXCardToNarratorMemory(cs) {
 
   cs.xCardRedirect = { sessionId, at: new Date().toISOString() };
   return { cards, retracted, sessionId, summaryDropped };
+}
+
+/**
+ * Take the campaign premise out of `cs` when the X-Card removed the inciting
+ * narration it was written from (XCARD-INCITING-PREMISE). The premise
+ * (`campaignState.incitingIncident`, runIncitingIncident) renders as
+ * CAMPAIGN PREMISE — canon — in every narrator prompt, so its prose kept
+ * telling the removed beat after its card, ledger entries, lore and capture
+ * were gone. Found by the narration id it carries; a premise saved before it
+ * carried one, by an X-carded inciting card of its session. Mutates `cs`.
+ *
+ * @param {Object} cs
+ * @param {Object[]} cards — the X-carded cards
+ * @param {string[]} ids — their narration ids
+ * @returns {boolean} whether the premise was dropped
+ */
+function dropXCardedPremise(cs, cards, ids) {
+  const premise = cs?.incitingIncident;
+  if (!premise || typeof premise !== 'object') return false;
+  const byId = typeof premise.narrationId === 'string' && premise.narrationId
+    ? ids.includes(premise.narrationId)
+    : (cards ?? []).some(m => {
+      const f = m?.flags?.[MODULE_ID];
+      return f?.incitingIncidentCard === true && (f.sessionId ?? null) === (premise.sessionId ?? null);
+    });
+  if (!byId) return false;
+  cs.incitingIncident = null;
+  return true;
 }
 
 /**
@@ -2220,6 +2321,33 @@ function summaryCoversCards(summary, sessionId, cards) {
 }
 
 /**
+ * The narration cards a Burn Momentum or Improve Result has begun to
+ * supersede on this page — their ids, newest last, capped. A rolling summary
+ * whose call (or write) is out when one is superseded compares its source
+ * against them (UPGRADE-REGEN-IN-FLIGHT — AA25's play count for the X-Card):
+ * the card's `burnSuperseded` flag lands only after the supersede's own
+ * awaits, and the summary made from it was stored after the supersede.
+ */
+const SUPERSEDING_CARD_CAP = 100;
+/** How long a begun supersede counts without its flag (a strike whose card write failed stops counting). */
+const SUPERSEDING_WINDOW_MS = 2 * 60 * 1000;
+const _supersedingCards = new Map();   // card id → when its supersede began
+
+/** Note cards a supersede has begun on (dropSummaryOfSupersededCards). */
+function noteSupersedingCards(cards) {
+  const now = Date.now();
+  for (const c of cards) if (typeof c?.id === 'string' && c.id) _supersedingCards.set(c.id, now);
+  while (_supersedingCards.size > SUPERSEDING_CARD_CAP) _supersedingCards.delete(_supersedingCards.keys().next().value);
+}
+
+/** True when a supersede has begun on (recently), or struck, one of `cards`. */
+function anySuperseded(cards) {
+  const now = Date.now();
+  return (cards ?? []).some(m => m?.flags?.[MODULE_ID]?.burnSuperseded === true
+    || (typeof m?.id === 'string' && now - (_supersedingCards.get(m.id) ?? -Infinity) < SUPERSEDING_WINDOW_MS));
+}
+
+/**
  * Drop the session's rolling summary when it was made from narrations a Burn
  * Momentum or Improve Result is about to supersede — the move narration it
  * replaces, the trigger vignette of a clock it rewinds (issue #345 AA24).
@@ -2239,6 +2367,8 @@ function summaryCoversCards(summary, sessionId, cards) {
 export async function dropSummaryOfSupersededCards(cards) {
   const list = (Array.isArray(cards) ? cards : []).filter(Boolean);
   if (!list.length) return false;
+  // A summary still being made from them is not stored (UPGRADE-REGEN-IN-FLIGHT).
+  noteSupersedingCards(list);
   try {
     if (!isCanonicalGM()) return false;
     const stored = storedCampaignState();
@@ -2642,6 +2772,9 @@ function rollingSummaryEnabled() {
  * @param {boolean} [options.forceRefresh] — regenerate regardless of debounce
  * @param {boolean} [options.persist] — false: return the text, store nothing
  *   (a closed session's catch-up — catchUpUnsummarisedSession)
+ * @param {boolean} [options.relay] — true: a keyed client at a table whose
+ *   GMs hold no key — the summary is sent to the canonical GM to store
+ *   (`narrator.summary`, applyRelayedSessionSummary — SUMMARY-KEYLESS-GM)
  * @returns {Promise<string>}
  */
 export async function getRollingSessionSummary(campaignState, options = {}) {
@@ -2714,6 +2847,13 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     console.debug(`${MODULE_ID} | narrator: X-Card played during the rolling summary's call — its summary is discarded.`);
     return '';
   }
+  // A Burn Momentum or Improve Result that superseded a card of its source
+  // while the call was out (UPGRADE-REGEN-IN-FLIGHT): the next card — the
+  // re-narration — regenerates it without the replaced outcome.
+  if (anySuperseded(cards)) {
+    console.debug(`${MODULE_ID} | narrator: a narration the rolling summary was made from was superseded during its call — its summary is discarded.`);
+    return '';
+  }
 
   const record = {
     text:         text.trim(),
@@ -2737,11 +2877,18 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   // summary already stored — this one, made from the narration it removed,
   // was written over it. Discarded then, here and on the caller's copy.
   if (options.persist === false) return record.text;
+  if (options.relay === true) {
+    // Made on a player's key: the canonical GM — who has none — stores it,
+    // checked again there against the X-Card (SUMMARY-KEYLESS-GM).
+    await relaySessionSummary(record, cards);
+    campaignState.sessionSummary = record;
+    return record.text;
+  }
   if (isCanonicalGM()) {
     let kept = true;
     try {
       const write = serialiseCampaignStateWrite(async () => {
-        if (xCardPlayCount() !== xCardPlaysAtStart) return false;
+        if (xCardPlayCount() !== xCardPlaysAtStart || anySuperseded(cards)) return false;
         const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
         await game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
         return true;
@@ -2755,7 +2902,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
       console.warn(`${MODULE_ID} | narrator: rolling summary persist failed:`, err?.message ?? err);
     }
     if (!kept) {
-      console.debug(`${MODULE_ID} | narrator: X-Card played while the rolling summary waited to be written — its summary is discarded.`);
+      console.debug(`${MODULE_ID} | narrator: X-Card played, or a source narration superseded, while the rolling summary waited to be written — its summary is discarded.`);
       return '';
     }
   }
@@ -2807,14 +2954,120 @@ const SUMMARY_REFRESH_WAIT_MS = 5 * 60_000;
  */
 export function registerRollingSummaryRefreshHook() {
   Hooks.on('createChatMessage', (message) => {
-    if (!isCanonicalGM()) return;
     const f = message?.flags?.[MODULE_ID];
     if (!f?.narratorCard || !f.narrationText) return;
+    if (!isCanonicalGM()) {
+      // A table whose GMs hold no Claude key: the canonical GM can make no
+      // summary, so narration on a player's key had no STORY SO FAR. The
+      // keyed client whose card this is makes it and sends it to the GM to
+      // store (SUMMARY-KEYLESS-GM) — one client per card, its author.
+      if (summaryFallsToThisClient(message)) refreshRollingSessionSummary({ relay: true });
+      return;
+    }
     refreshRollingSessionSummary();
     // A session the mint closed out short gets its LAST SESSION now, if a key
     // is here (issue #347 AB15).
     catchUpUnsummarisedSession();
   });
+}
+
+/**
+ * Whether this client makes the rolling summary for a narrator card the
+ * canonical GM cannot (SUMMARY-KEYLESS-GM): it wrote the card, it holds a
+ * Claude key, a GM is connected to store it, and no connected GM holds a key
+ * (one that does makes its own — isCanonicalGM prefers it).
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean}
+ */
+function summaryFallsToThisClient(message) {
+  const me = game.user?.id ?? null;
+  const author = message?.author?.id ?? message?._source?.author ?? null;
+  if (!me || author !== me || !getApiKey()) return false;
+  try {
+    return Array.from(game.users ?? []).some(u => u?.isGM && u?.active) && !hasKeyedActiveGM();
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: keyed-GM lookup failed — no relayed summary:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/** The longest rolling summary a client may relay (4-8 sentences, with headroom). */
+const RELAYED_SUMMARY_MAX_CHARS = 6000;
+
+/**
+ * Send a rolling summary made on this client's key to the canonical GM
+ * (GM relay `"narrator.summary"`), with the narrations it was made from — the
+ * GM stores it only while none of them has been X-Carded (W06's rule, from
+ * across the socket). Fire-and-forget; a refusal is logged.
+ *
+ * @param {{ text: string, coveredCount: number, sessionId: string }} record
+ * @param {Array<ChatMessage>} cards — the session's narrator cards it was made from
+ * @returns {Promise<void>}
+ */
+async function relaySessionSummary(record, cards) {
+  try {
+    const { requestGmAction } = await import('../multiplayer/gmRelay.js');
+    await requestGmAction('narrator.summary', {
+      sessionId:    record.sessionId,
+      text:         record.text,
+      coveredCount: record.coveredCount,
+      narrationIds: cards.map(m => m?.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === 'string' && id),
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the rolling summary could not be sent to the GM:`, err?.message ?? err);
+  }
+}
+
+/**
+ * GM-relay handler for `"narrator.summary"` (GM_ACTIONS in
+ * src/multiplayer/gmRelay.js): store a rolling session summary a keyed
+ * player's client made at a table whose GMs hold no key (SUMMARY-KEYLESS-GM —
+ * it was never generated there). On a copy of the latest store, at its turn on
+ * the write chain, and only when it is this session's, covers more of it than
+ * the stored one, and none of the narrations it was made from has been
+ * X-Carded since — the reply-time X-Card rule of getRollingSessionSummary
+ * (W06), checked here because the X-Card lands on the GM. A GM with a key of
+ * its own makes its own summary and ignores relayed ones. Bounded: it crossed
+ * the socket from a client.
+ *
+ * @param {{ sessionId?: string, text?: string, coveredCount?: number, narrationIds?: string[] }} payload
+ * @param {Object} [_ctx]
+ * @returns {Promise<{ stored: boolean, reason?: string }>}
+ */
+export async function applyRelayedSessionSummary(payload = {}, _ctx = {}) {
+  if (!rollingSummaryEnabled()) return { stored: false, reason: 'disabled' };
+  if (getApiKey()) return { stored: false, reason: 'keyed-gm' };
+  const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : null;
+  const text = typeof payload.text === 'string' ? payload.text.trim().slice(0, RELAYED_SUMMARY_MAX_CHARS) : '';
+  const covered = Math.floor(Number(payload.coveredCount));
+  const narrationIds = (Array.isArray(payload.narrationIds) ? payload.narrationIds : [])
+    .filter(id => typeof id === 'string' && /^[\w-]{1,64}$/.test(id));
+  if (!sessionId || !text || !Number.isFinite(covered) || covered < 1) return { stored: false, reason: 'malformed' };
+  // No more cards than the session has.
+  if (covered > sessionNarratorCards(sessionId).length) return { stored: false, reason: 'malformed' };
+  if (narrationIds.some(id => isNarrationXCarded(id))) {
+    console.debug(`${MODULE_ID} | narrator: a relayed rolling summary was made from a narration the X-Card removed — discarded.`);
+    return { stored: false, reason: 'xcarded' };
+  }
+  let stored = false;
+  try {
+    stored = await serialiseCampaignStateWrite(async () => {
+      const latest = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+      if ((latest.currentSessionId ?? null) !== sessionId) return false;
+      const prior = latest.sessionSummary?.sessionId === sessionId ? Number(latest.sessionSummary.coveredCount) || 0 : 0;
+      if (covered <= prior) return false;
+      if (narrationIds.some(id => (latest.xCardedNarrationIds ?? []).includes(id))) return false;
+      await game.settings.set(MODULE_ID, 'campaignState', { ...latest, sessionSummary: {
+        text, coveredCount: covered, sessionId, updatedAt: new Date().toISOString(),
+      } });
+      return true;
+    }, 'relayed rolling summary');
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: a relayed rolling summary could not be stored:`, err?.message ?? err);
+    return { stored: false, reason: 'refused' };
+  }
+  return stored ? { stored: true } : { stored: false, reason: 'stale' };
 }
 
 /**
@@ -2926,6 +3179,16 @@ export function catchUpUnsummarisedSession() {
       if (!await settledWithin(write, WORLD_WRITE_WAIT_MS, 'last session catch-up write')) return false;
       const done = await write;
       if (done) console.info(`${MODULE_ID} | narrator: LAST SESSION caught up for the session closed without its summary.`);
+      // Its Session Log page's story, when an X-Card emptied it, too
+      // (SESSION-LOG-STORY-NOT-REBUILT).
+      if (done && text?.trim()) {
+        try {
+          const { restoreSessionLogStory } = await import('../world/worldJournal.js');
+          await restoreSessionLogStory(pending.sessionId, text);
+        } catch (err) {
+          console.warn(`${MODULE_ID} | narrator: rebuilding the Session Log's story failed:`, err?.message ?? err);
+        }
+      }
       return !!done;
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: LAST SESSION catch-up failed:`, err?.message ?? err);
@@ -2937,7 +3200,7 @@ export function catchUpUnsummarisedSession() {
   return _sessionCatchUp;
 }
 
-function refreshRollingSessionSummary() {
+function refreshRollingSessionSummary({ relay = false } = {}) {
   // A refresh still running past its bound never settled — a write the
   // server never answered: passed, so this card refreshes the summary (issue
   // #347 AB05). It was joined for the rest of the page load.
@@ -2954,7 +3217,7 @@ function refreshRollingSessionSummary() {
         // A copy: getRollingSessionSummary sets the summary on the object it
         // is given — the cached setting itself, before a write the world can
         // refuse (CACHE-MUTATED-BEFORE-WRITE).
-        await getRollingSessionSummary({ ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) });
+        await getRollingSessionSummary({ ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) }, { relay });
       } while (_summaryRefreshAgain && _summaryRefresh === mine);
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary refresh failed:`, err?.message ?? err);
@@ -3005,7 +3268,7 @@ export async function postCampaignRecap(campaignState, options = {}) {
     // The model's text (and any GM-edited chronicle entry it quotes) is
     // prose, escaped as the narrator card's own sink is: "<signal lost>"
     // vanished as an unknown tag and live markup rendered (issue #331 X24).
-    const paragraphs = text.split(/\n\n+/).map(p => `<p>${escapeHtml(stripMarkup(p.trim()))}</p>`).join('');
+    const paragraphs = text.split(/\n\n+/).map(p => `<p>${proseToHtml(p.trim())}</p>`).join('');
     await ChatMessage.create({
       content: `
         <div class="sf-recap-campaign-card">
@@ -3115,6 +3378,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
     return response;
 
   } catch (err) {
+    let failure = claudeFailureReason(err);   // the card's cause (ERROR-TEXT-BLAMES-KEY)
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
@@ -3136,12 +3400,14 @@ export async function interrogateScene(question, campaignState, options = {}) {
           scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null, narrationId);
           return response;
         }
+        failure = EMPTY_REPLY_REASON;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | interrogateScene retry failed:`, retryErr);
+        failure = claudeFailureReason(retryErr);
       }
     }
     console.error(`${MODULE_ID} | interrogateScene failed:`, err);
-    await postSceneFallbackCard(question, 'Scene query failed — check your API key and proxy.', sessionId);
+    await postSceneFallbackCard(question, `Scene query failed — ${failure}.`, sessionId);
     return null;
   }
 }
@@ -3154,12 +3420,16 @@ export async function interrogateScene(question, campaignState, options = {}) {
  * recent-narration ring but never the World Journal or entity records
  * (playtest v1.7.22).
  *
- * Canonical GM only, like scheduleNarrationCapture: both passes write the
+ * A GM's client only, like scheduleNarrationCapture: both passes write the
  * world (World Journal pages, session-log beats, entity cards, the GM's draft
  * card). @scene runs RUN_ON.CLAUDE, so at a table with no keyed GM it answers
  * on the asking player's client, where those writes are refused (issue #321
  * U36). There the answer's ledger facts still reach the GM through the
- * sidecar relay (applyNarratorSidecar); the passes are skipped.
+ * sidecar relay (applyNarratorSidecar); the passes are skipped. On a GM the
+ * capture runs where the answer was narrated — the single emitter its routing
+ * chose — not on whoever is canonical when the reply lands: a lower-id keyed
+ * GM joining meanwhile dropped it (AA34's gate —
+ * CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE).
  *
  * @param {string} response — the answer's prose
  * @param {{ matchedEntityIds?: string[], matchedEntityTypes?: string[] }} extras
@@ -3168,7 +3438,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
  * @param {string|null} [narrationId] — the answer's id, stamped on what the passes record (issue #329 X01)
  */
 function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = null, narrationId = null) {
-  if (!isCanonicalGM()) return;
+  if (!game.user?.isGM) return;
   schedulePacedDetection(response, campaignState, { actorId, narrationId });
   schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
 }
@@ -3269,7 +3539,7 @@ export async function narrateOracleFollowup({
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
-    if (xCard.interrupted('narrateOracleFollowup')) return null;
+    if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
 
     if (!text?.trim()) return null;
@@ -3288,7 +3558,7 @@ export async function narrateOracleFollowup({
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
-        if (xCard.interrupted('narrateOracleFollowup')) return null;
+        if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -3302,6 +3572,27 @@ export async function narrateOracleFollowup({
     console.error(`${MODULE_ID} | narrateOracleFollowup failed:`, err);
     return null;
   }
+}
+
+/**
+ * An oracle follow-up the X-Card interrupted posts no card, so nothing names
+ * its raw result card for the X-Card's drop: the result leaves RECENT ORACLE
+ * RESULTS here instead (oracleFollowup.js forgetOracleResultUnderXCard —
+ * XCARD-ORACLE-FOLLOWUP-UNWRITTEN). Resolves null, the follow-up's skip value.
+ *
+ * @param {string|null} oracleCardId
+ * @returns {Promise<null>}
+ */
+async function forgetInterruptedOracleResult(oracleCardId) {
+  if (typeof oracleCardId === 'string' && oracleCardId) {
+    try {
+      const { forgetOracleResultUnderXCard } = await import('../oracles/oracleFollowup.js');
+      await forgetOracleResultUnderXCard(oracleCardId);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrateOracleFollowup: forgetting the interrupted result failed:`, err?.message ?? err);
+    }
+  }
+  return null;
 }
 
 function buildOracleUserMessage({
@@ -3334,7 +3625,7 @@ async function postOracleNarrationCard({ text, kind, oracleName, sessionId, narr
   // entered the ring or rolling summary, so the narrator forgot how an
   // oracle result landed the moment it posted it.
   await ChatMessage.create({
-    content: `<div class="sf-oracle-narration-card"><strong>${escapeHtml(header)} — narration</strong><p>${escapeHtml(stripMarkup(text))}</p></div>`,
+    content: `<div class="sf-oracle-narration-card"><strong>${escapeHtml(header)} — narration</strong><p>${proseToHtml(text)}</p></div>`,
     flags:   {
       [MODULE_ID]: {
         oracleNarrationCard: true,
@@ -3378,8 +3669,9 @@ function escapeHtml(s) {
  * (issue #342 Z40's rule) — and a vignette with none present gets none. It
  * took the campaign's first PC, so with that PC's player away the vignette's
  * "you" was the crewmate its own user message called absent, and the PC in
- * the galley had no block (issue #345 AA31). Without `actorIds` (the closing
- * vignette, about an NPC) the block is the first PC's, as before.
+ * the galley had no block (issue #345 AA31). End a Session's closing
+ * vignette, about an NPC, passes the PCs at the table too (known-issues
+ * CLOSING-VIGNETTE-FIRST-PC). Without `actorIds` the block is the first PC's.
  *
  * @param {Object} args
  * @param {string} args.userMessage    — pre-built vignette prompt body
@@ -3466,7 +3758,8 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
  * the narration is written (its ledger persist, a relay of it from a co-GM's
  * client, a ship move, the consistency audit, the tier pass), so there is
  * nothing to retract. A narration that stands runs the tier pass for the
- * recorded entities it names, as a session vignette does (issue #345 AA33).
+ * recorded entities it names, as a session vignette does (issue #345 AA33),
+ * and the detection pass (CLOCK-VIGNETTE-NO-DETECTION).
  *
  * @param {{ clock: { name:string, type:string, filled:number, segments:number, triggered:boolean }, campaignState: Object,
  *           narrationId?: string, stillTriggered?: (() => boolean|Promise<boolean>)|null }} args
@@ -3525,8 +3818,12 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     if (!text?.trim()) return null;
     // The developments of the recorded NPCs it names → their cards, as a
     // session vignette's (#286 D4) — every post site goes through here
-    // (issue #345 AA33).
-    scheduleNarrationCapture(text, campaignState, { narrationId });
+    // (issue #345 AA33) — and the detection pass: a clock vignette is written
+    // at interaction latitude (issue #322 V23), so the figures, lore and
+    // threats it introduces are captured as a move's are
+    // (CLOCK-VIGNETTE-NO-DETECTION; D4 rejected detection after vignettes
+    // only for their embellishment latitude).
+    scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -3542,7 +3839,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
         if (!(await triggerStands())) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (!text?.trim()) return null;
-        scheduleNarrationCapture(text, campaignState, { narrationId });
+        scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
         return text;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
@@ -3567,8 +3864,13 @@ export function buildVowSwearingUserMessage(vow, ironTruth) {
   const rank      = vow?.rank ? ` (${vow.rank})` : "";
   // A custom Iron truth chosen in the World Truths dialog is its title alone
   // (issue #322 V34).
+  // A title that ends its own sentence ("…to the Forge.") is followed by the
+  // description, not by ": " (known-issues IRON-TRUTH-COLON — every truth
+  // source titles a truth with its first sentence).
+  const title = String(ironTruth?.title ?? "").trim();
+  const lead  = !title ? "" : /[.!?…]["'”’)]?$/u.test(title) ? `${title} ` : `${title}: `;
   const truthLine = ironTruth?.description
-    ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title ? `${ironTruth.title}: ` : ""}${ironTruth.description}`
+    ? `In this world, the Ironsworn bind their oaths thus — ${lead}${ironTruth.description}`
     : ironTruth?.title
       ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title}`
       : `In this world, vows are sworn upon iron.`;
@@ -3760,135 +4062,167 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
  * @param {Object} [options]
  * @param {string|null} [options.suggestedMove] — when set, the narrator is
  *   instructed to end with an italicized inline hint nominating this move
+ * Never throws: a throw outside its own guarded steps — before the prompt
+ * is built (the X-Card watch, the key, the speaker's character) — told
+ * nobody; the pacing router only logged it (known-issues PACED-ROUTER-THROW).
+ * The table is told the line was not narrated, as a failed call's line is
+ * (issue #347 AB21). A reply the X-Card discards posts the paused notice
+ * (PACED-DISCARD-UNDER-XCARD-SILENT).
+ *
  * @returns {Promise<string|null>}   — narration text, or null on failure/disabled
  */
 export async function narratePacedInput(playerText, campaignState, options = {}) {
-  const sessionId = campaignState?.currentSessionId ?? null;
-
-  const settings = getNarratorSettings();
-  if (!settings.narrationEnabled) return null;
-
-  if (isXCardActive(campaignState)) {
-    // Don't run the narrator while the scene is paused — and say so, as a
-    // move's paused notice and @scene's card do: the line posted nothing,
-    // told nobody, and was never narrated after the resume (issue #345 AA29).
-    await postPacedNarrationPausedCard(campaignState);
-    return null;
-  }
-  const xCard = watchXCard(campaignState);
-  const narrationId = newNarrationId();
-
-  const apiKey = getApiKey();
-  if (!apiKey) {
-    console.warn(`${MODULE_ID} | narratePacedInput: Claude API key not configured`);
-    return null;
-  }
-
-  // The speaker's own character. A player with no PC of their own at a table
-  // of several resolves to none (resolveSpeakerActorId gives the first PC
-  // only to a GM or in solo play — issue #321 U23): the line is still
-  // narrated (#326 D8) but with no character — getActiveCharacter's
-  // first-PC fallback made it Kira's CHARACTER block, Kira speaking, and the
-  // ring's "Kira wrote" (issue #342 Z50).
-  const character    = options?.speakerActorId ? getActiveCharacter(campaignState, options.speakerActorId) : null;
-
-  // The prompt is built before the call. A throw here — a store read, an
-  // entity card, the scene start — escaped to the pacing router's catch,
-  // which only logged it: the line sat in chat, narrated by nothing and told
-  // to nobody, as a failed call's line did before AB21 (issue #347 residual
-  // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
-  let suggestedMove, extras, systemPrompt, userMessage;
+  options = options ?? {};
+  // One function, its failure caught inline: the paced narration's Claude
+  // call keeps narratePacedInput as its caller (PACED-ROUTER-THROW's guard
+  // must not add a named frame — the playthrough harness names a call by it).
   try {
-    await ensureSceneStarted(campaignState, 'first_narration_paced');
+    const sessionId = campaignState?.currentSessionId ?? null;
 
-    // Don't suggest a social move against a fellow player character (finding G):
-    // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
-    // the nomination before it reaches the narrator (so no hint is written) and
-    // the card (so no Roll button appears).
-    suggestedMove = suppressPcDirectedSocialMove(
-      options.suggestedMove ?? null, playerText, character?.name ?? null,
-    );
+    const settings = getNarratorSettings();
+    if (!settings.narrationEnabled) return null;
 
-    extras = await buildNarratorExtras('paced_narrative', campaignState, {
-      playerNarration: playerText,
-      character,
-    });
+    if (isXCardActive(campaignState)) {
+      // Don't run the narrator while the scene is paused — and say so, as a
+      // move's paused notice and @scene's card do: the line posted nothing,
+      // told nobody, and was never narrated after the resume (issue #345 AA29).
+      await postPacedNarrationPausedCard(campaignState);
+      return null;
+    }
+    const xCard = watchXCard(campaignState);
+    const narrationId = newNarrationId();
 
-    systemPrompt = buildNarratorSystemPrompt(
-      campaignState, settings, character, '', extras,
-    );
-
-    const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
-    const sentenceTarget = settings.narrationLength ?? 3;
-    userMessage = buildPacedNarrativeUserMessage(
-      playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
-    );
-  } catch (err) {
-    console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
-    await postPacedNarrationFailedCard(campaignState);
-    return null;
-  }
-
-  try {
-    const raw = await callNarratorAPI({
-      label: 'narratePacedInput',
-      apiKey, systemPrompt, userMessage,
-      model:     settings.narrationModel,
-      maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-    });
-    if (xCard.interrupted('narratePacedInput')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, {
-      moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-    });
-
-    if (!text?.trim()) {
-      console.warn(`${MODULE_ID} | narratePacedInput: the narrator's reply had no prose — nothing to post.`);
-      await postPacedNarrationFailedCard(campaignState);
+    const apiKey = getApiKey();
+    if (!apiKey) {
+      console.warn(`${MODULE_ID} | narratePacedInput: Claude API key not configured`);
       return null;
     }
 
-    const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-    await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
-    schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
-    schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
-    scheduleChronicleEntry({
-      narrationText: text,
-      campaignState,
-      kind:          'paced',
-    });
-    return text;
-  } catch (err) {
-    if (isRateLimit(err)) {
-      try {
-        await delay(RETRY_DELAY_MS);
-        const raw = await callNarratorAPI({
-      label: 'narratePacedInput',
-          apiKey, systemPrompt, userMessage,
-          model:     settings.narrationModel,
-          maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
-        });
-        if (xCard.interrupted('narratePacedInput')) return null;
-        const text = applyNarratorSidecar(raw, campaignState, {
-          moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
-        });
-        if (text?.trim()) {
-          const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
-          await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
-          schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
-          schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
-          scheduleChronicleEntry({
-            narrationText: text,
-            campaignState,
-            kind:          'paced',
-          });
-          return text;
-        }
-      } catch (retryErr) {
-        console.error(`${MODULE_ID} | narratePacedInput retry failed:`, retryErr);
-      }
+    // The speaker's own character. A player with no PC of their own at a table
+    // of several resolves to none (resolveSpeakerActorId gives the first PC
+    // only to a GM or in solo play — issue #321 U23): the line is still
+    // narrated (#326 D8) but with no character — getActiveCharacter's
+    // first-PC fallback made it Kira's CHARACTER block, Kira speaking, and the
+    // ring's "Kira wrote" (issue #342 Z50).
+    const character    = options?.speakerActorId ? getActiveCharacter(campaignState, options.speakerActorId) : null;
+
+    // The prompt is built before the call. A throw here — a store read, an
+    // entity card, the scene start — escaped to the pacing router's catch,
+    // which only logged it: the line sat in chat, narrated by nothing and told
+    // to nobody, as a failed call's line did before AB21 (issue #347 residual
+    // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
+    let suggestedMove, extras, systemPrompt, userMessage;
+    try {
+      await ensureSceneStarted(campaignState, 'first_narration_paced');
+
+      // Don't suggest a social move against a fellow player character (finding G):
+      // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
+      // the nomination before it reaches the narrator (so no hint is written) and
+      // the card (so no Roll button appears).
+      suggestedMove = suppressPcDirectedSocialMove(
+        options.suggestedMove ?? null, playerText, character?.name ?? null,
+      );
+
+      extras = await buildNarratorExtras('paced_narrative', campaignState, {
+        playerNarration: playerText,
+        character,
+      });
+
+      systemPrompt = buildNarratorSystemPrompt(
+        campaignState, settings, character, '', extras,
+      );
+
+      const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
+      const sentenceTarget = settings.narrationLength ?? 3;
+      userMessage = buildPacedNarrativeUserMessage(
+        playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
+      );
+    } catch (err) {
+      console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
+      await postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
+      return null;
     }
+
+    try {
+      const raw = await callNarratorAPI({
+        label: 'narratePacedInput',
+        apiKey, systemPrompt, userMessage,
+        model:     settings.narrationModel,
+        maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+      });
+      if (xCard.interrupted('narratePacedInput')) {
+        // Discarded because the X-Card was played while it was written: said
+        // so, as a move's and @scene's are (PACED-DISCARD-UNDER-XCARD-SILENT).
+        await postPacedNarrationPausedCard(campaignState);
+        return null;
+      }
+      const text = applyNarratorSidecar(raw, campaignState, {
+        moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
+      });
+
+      if (!text?.trim()) {
+        console.warn(`${MODULE_ID} | narratePacedInput: the narrator's reply had no prose — nothing to post.`);
+        await postPacedNarrationFailedCard(campaignState, EMPTY_REPLY_REASON);
+        return null;
+      }
+
+      const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
+      await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
+      schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
+      schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
+      scheduleChronicleEntry({
+        narrationText: text,
+        campaignState,
+        kind:          'paced',
+        actorId:       character?.actorId ?? null,   // the speaker's chronicle (CHRONICLE-FIRST-PC)
+        narrationId,
+      });
+      return text;
+    } catch (err) {
+      let failure = claudeFailureReason(err);   // the notice's cause (ERROR-TEXT-BLAMES-KEY)
+      if (isRateLimit(err)) {
+        try {
+          await delay(RETRY_DELAY_MS);
+          const raw = await callNarratorAPI({
+        label: 'narratePacedInput',
+            apiKey, systemPrompt, userMessage,
+            model:     settings.narrationModel,
+            maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
+          });
+          if (xCard.interrupted('narratePacedInput')) {
+            await postPacedNarrationPausedCard(campaignState);
+            return null;
+          }
+          const text = applyNarratorSidecar(raw, campaignState, {
+            moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
+          });
+          if (text?.trim()) {
+            const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
+            await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
+            schedulePacedDetection(text, campaignState, { actorId: character?.actorId ?? null, narrationId });
+            schedulePacedTierUpdate(text, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
+            scheduleChronicleEntry({
+              narrationText: text,
+              campaignState,
+              kind:          'paced',
+              actorId:       character?.actorId ?? null,
+              narrationId,
+            });
+            return text;
+          }
+          failure = EMPTY_REPLY_REASON;
+        } catch (retryErr) {
+          console.error(`${MODULE_ID} | narratePacedInput retry failed:`, retryErr);
+          failure = claudeFailureReason(retryErr);
+        }
+      }
+      console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
+      await postPacedNarrationFailedCard(campaignState, failure);
+      return null;
+    }
+  } catch (err) {
     console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
-    await postPacedNarrationFailedCard(campaignState);
+    await postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
     return null;
   }
 }
@@ -4001,7 +4335,11 @@ export async function runPacedDetection(narrationText, campaignState, options = 
  * and the inciting incident): developments of the recorded entities it names
  * go to their cards (runNarrationTierUpdate), and with `detect` the detection
  * pass records world lore and threats and queues new entities on the GM's
- * review card. Canonical GM only (world writes); after the same short delay
+ * review card. On the GM whose client narrated it (world writes; a player's
+ * client runs none) — the single emitter its caller chose: it re-checked
+ * isCanonicalGM when the reply landed, so a lower-id keyed GM joining
+ * meanwhile dropped an oracle follow-up's or a vignette's capture (AA34's
+ * gate — CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE). After the same short delay
  * as the paced passes, so the card settles first. Both passes catch their own
  * errors.
  *
@@ -4011,7 +4349,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
  *   `narrationId`: stamped on what both passes record, for the X-Card (issue #329 X01)
  */
 function scheduleNarrationCapture(narrationText, campaignState, { detect = false, source, actorId = null, narrationId = null } = {}) {
-  if (!narrationText?.trim() || !isCanonicalGM()) return;
+  if (!narrationText?.trim() || !game.user?.isGM) return;
   setTimeout(() => {
     if (detect) runPacedDetection(narrationText, campaignState, { source, actorId, narrationId });
     runNarrationTierUpdate(narrationText, campaignState, { narrationId });
@@ -4064,7 +4402,7 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
     content: `
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
+        <div class="sf-narration-prose">${proseToHtml(narrationText)}</div>
         ${buttonRow}
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
@@ -4645,7 +4983,7 @@ async function postSceneCard(question, responseText, sessionId, playerName = nul
       <div class="sf-scene-card">
         <div class="sf-scene-label">◈ Scene</div>
         <div class="sf-scene-question">${escapeHtml(question)}</div>
-        <div class="sf-scene-prose">${escapeHtml(stripMarkup(responseText))}</div>
+        <div class="sf-scene-prose">${proseToHtml(responseText)}</div>
       </div>
     `.trim(),
     flags: {
@@ -4765,14 +5103,27 @@ async function postPacedNarrationPausedCard(campaignState = null) {
  * @param {Object|null} [campaignState]
  * @returns {Promise<ChatMessage|null>}
  */
-async function postPacedNarrationFailedCard(campaignState = null) {
+/**
+ * The pacing router's way to tell the table a line it read as narrative was
+ * not narrated — a throw before narratePacedInput began (known-issues
+ * PACED-ROUTER-THROW). Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @param {unknown} err — the cause, worded by claudeFailureReason
+ * @returns {Promise<ChatMessage|null>}
+ */
+export function tellPacedLineNotNarrated(campaignState, err) {
+  return postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
+}
+
+async function postPacedNarrationFailedCard(campaignState = null, reason = claudeFailureReason(null)) {
   try {
     return await ChatMessage.create({
       content: `
         <div class="sf-narration-card sf-narration-fallback">
           <div class="sf-narration-label">◈ Narrator</div>
           <div class="sf-narration-prose">That line was not narrated &mdash; say it again in a moment.</div>
-          <div class="sf-narration-error">Narration unavailable — the narrator could not be reached. If it keeps happening, check your API key and proxy.</div>
+          <div class="sf-narration-error">Narration unavailable — ${escapeHtml(reason)}.</div>
         </div>
       `.trim(),
       flags: {
@@ -4787,7 +5138,16 @@ async function postPacedNarrationFailedCard(campaignState = null) {
   }
 }
 
-async function postFallbackCard(resolution, campaignState = null) {
+/**
+ * A move's card when its narration failed: the move and outcome, and why —
+ * by cause (ERROR-TEXT-BLAMES-KEY: every failure said "check your API key and
+ * proxy").
+ *
+ * @param {Object} resolution
+ * @param {Object|null} [campaignState]
+ * @param {string} [reason] — failureReason.js clause
+ */
+async function postFallbackCard(resolution, campaignState = null, reason = claudeFailureReason(null)) {
   const moveInfo = resolution?.moveName && resolution?.outcomeLabel
     ? `${resolution.moveName}: ${resolution.outcomeLabel}`
     : 'Move resolved.';
@@ -4798,7 +5158,7 @@ async function postFallbackCard(resolution, campaignState = null) {
       <div class="sf-narration-card sf-narration-fallback">
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${moveInfo}</div>
-        <div class="sf-narration-error">Narration unavailable — check your API key and proxy.</div>
+        <div class="sf-narration-error">Narration unavailable — ${escapeHtml(reason)}.</div>
       </div>
     `.trim(),
     flags: {
@@ -4938,6 +5298,7 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     runConsistencyCheck(prose, auditCampaignState(campaignState), {
       matchedEntityIds:  ctx.matchedEntityIds ?? [],
       currentLocationId: campaignState.currentLocationId ?? null,
+      narrationId:       typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
     }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
     );

@@ -13,8 +13,9 @@
  *   - propagateRetraction(truth, campaignState) — on Strike / Replace: drop
  *     the subject entity's same-session tier details that state the fact,
  *     take same-session lore that states it about the same subject out of
- *     confirmed canon, and mark the rolling summary for a regen
- *     (markSummaryForRegen).
+ *     confirmed canon, drop the same-session Chronicle entries the scribe
+ *     wrote stating it (STRIKE-CHRONICLE), and mark the rolling summary for
+ *     a regen (markSummaryForRegen).
  *   - rememberSessionRetractions(campaignState) — at scene end: keep the
  *     scene's bare strikes for the rest of the session, so the CORRECTED
  *     block and the summary prompt still name them.
@@ -105,10 +106,10 @@ export function factsOverlap(a, b) {
  *
  * @param {Object} truth          — the struck sceneTruths entry
  * @param {Object} campaignState
- * @returns {Promise<{ tierDetails: number, lore: number }>}
+ * @returns {Promise<{ tierDetails: number, lore: number, chronicle: number }>}
  */
 export async function propagateRetraction(truth, campaignState) {
-  const out = { tierDetails: 0, lore: 0 };
+  const out = { tierDetails: 0, lore: 0, chronicle: 0 };
   const fact = String(truth?.fact ?? '').trim();
   if (!fact) return out;
   const sessionId = truth.sessionId ?? campaignState?.currentSessionId ?? null;
@@ -128,6 +129,18 @@ export async function propagateRetraction(truth, campaignState) {
         { truthId: typeof truth.id === "string" ? truth.id : null });
     } catch (err) {
       console.warn(`${MODULE_ID} | retraction: lore propagation failed:`, err?.message ?? err);
+    }
+    // The session's Chronicle entries the scribe wrote stating it: the
+    // Chronicle feeds the campaign recap and, pinned, the CHARACTER block
+    // (STRIKE-CHRONICLE). Matched as lore is; a pinned or player-edited
+    // entry stays.
+    try {
+      const { retractStruckChronicle } = await import('../character/chronicle.js');
+      const label = subjectLabel(truth.subject);
+      out.chronicle = await retractStruckChronicle(sessionId,
+        (entry) => loreStatesStrike({ text: entry?.text ?? '' }, truth.subject, label, fact));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | retraction: Chronicle propagation failed:`, err?.message ?? err);
     }
   }
 
@@ -158,8 +171,34 @@ function loreStatesStrike(entry, subject, label, fact) {
     return wordSequence(entry.subject) === wordSequence(label) && factsOverlap(entry.fact, fact);
   }
   const named = subject?.kind === 'text' || subject?.kind === 'entity';
-  if (named && !containsWords(entry.title, label) && !containsWords(entry.text, label)) return false;
+  if (named && !mentionsSubject(entry.title, label, fact) && !mentionsSubject(entry.text, label, fact)) return false;
   return factsOverlap(entry.fact ?? entry.text ?? '', fact) || factsOverlap(entry.title ?? '', fact);
+}
+
+/** A possessive pronoun: a fact about something of the subject's ("Her husband is dead"). */
+const POSSESSIVE_FACT_RE = /(?<![\p{L}\p{N}])(?:his|her|hers|its|their|theirs)(?![\p{L}\p{N}])/iu;
+
+/**
+ * True when `text` mentions the struck subject `label` as whole words — other
+ * than as a possessive, unless the struck fact is itself about something of
+ * the subject's. "Mira — Is dead" retracted lore saying "Mira's husband is
+ * dead": the possessive was taken for a mention of Mira, and "is dead"
+ * overlapped (RETRACTION-POSSESSIVE). "Mira — Her husband is dead" still
+ * reaches it.
+ *
+ * @param {string|undefined} text
+ * @param {string} label
+ * @param {string} fact — the struck fact
+ * @returns {boolean}
+ */
+function mentionsSubject(text, label, fact) {
+  if (!containsWords(text, label)) return false;
+  if (POSSESSIVE_FACT_RE.test(String(fact ?? ''))) return true;
+  const words = String(label ?? '').split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+    .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!words.length) return false;
+  const mention = new RegExp(`(?<![\\p{L}\\p{N}])${words.join('[^\\p{L}\\p{N}]+')}(?![\\p{L}\\p{N}])(?!['’]s?(?![\\p{L}\\p{N}]))`, 'iu');
+  return mention.test(String(text ?? ''));
 }
 
 /**
@@ -592,6 +631,10 @@ export function rememberSessionRetractions(campaignState) {
 /**
  * How many of its ended scenes' narration truths a session keeps for a later
  * X-Card — the newest: the X-Card answers only the session's newest beat.
+ * Live and superseded truths are counted apart: the superseded ones shared
+ * the live ones' fifty, so a scene with many live truths after an upgrade
+ * pushed out the struck narration's, which an X-Card on the upgraded beat
+ * then left unblocked (SUPERSEDED-TRUTHS-SHARE-LIMIT).
  */
 const SESSION_NARRATED_CAP = 50;
 
@@ -634,9 +677,14 @@ export function rememberNarratedTruths(campaignState, truths) {
     narrated.push({
       label: subjectLabel(t.subject), fact: String(t.fact).trim(),
       subjectKey: subjectKey(t.subject) || null, narrationId: t.narrationId, truthId,
+      ...(t.retracted ? { superseded: true } : {}),
     });
   }
-  campaignState.sessionRetractions = { ...base, sessionId, narrated: narrated.slice(-SESSION_NARRATED_CAP) };
+  const kept = new Set([
+    ...narrated.filter(n => !n?.superseded).slice(-SESSION_NARRATED_CAP),
+    ...narrated.filter(n => n?.superseded).slice(-SESSION_NARRATED_CAP),
+  ]);
+  campaignState.sessionRetractions = { ...base, sessionId, narrated: narrated.filter(n => kept.has(n)) };
 }
 
 /**
@@ -659,8 +707,10 @@ function sameStrike(a, b) {
  * (ledgers.js keptStrikeStandsAt) — as the narrator is blocked from
  * re-asserting it, and a `!truth set` lifts it, there only; named elsewhere,
  * the place's own fact of those words read binding and "do NOT re-assert" at
- * once (W60). Left out — the summary's leave-out list, which covers the whole
- * session's prose — every strike is named.
+ * once (W60). So is the active scene's own: a scene travels, and its strike
+ * at Bleakhold was named beside Vantage Station's own fact
+ * (ACTIVE-SCENE-STRIKE-PLACE-BLIND). Left out — the summary's leave-out list,
+ * which covers the whole session's prose — every strike is named.
  *
  * @param {Object} campaignState
  * @param {{ here?: string|null }} [opts]
@@ -673,7 +723,7 @@ export function sessionRetractedFacts(campaignState, { here } = {}) {
       .map(f => ({ label: f.label, fact: f.fact }))
     : [];
   const current = (campaignState?.sceneTruths ?? [])
-    .filter(isNamedStrike)
+    .filter(t => isNamedStrike(t) && keptStrikeStandsAt(keptPlaceOf(t), here))
     .map(t => ({ label: subjectLabel(t.subject), fact: String(t.fact).trim() }));
   const out = [];
   for (const f of [...earlier, ...current]) {

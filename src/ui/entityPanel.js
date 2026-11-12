@@ -32,6 +32,7 @@ import {
   withSheetNotes,
 } from '../entities/registry.js';
 import { notesAsCardText } from '../narration/narratorPrompt.js';
+import { getCommandVehicleAsset } from '../character/actorBridge.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { withoutPromotedParagraphs } from '../factContinuity/retractions.js';
 
@@ -437,7 +438,11 @@ export class EntityPanelApp extends ApplicationV2 {
     // FOLDER-002); settlement/planet/location run the generic flavour pass.
     // Single-sourced from entities/finalize.js (2026-07 test-suite review —
     // this was a hardcoded twin of supportsFinalize's GETTERS list).
-    const supportsFinalizeType = supportsFinalize(entity.typeKey);
+    // A GM's to press, as the portrait buttons are (known-issues
+    // FINALISE-PLAYER-KEY): Finalise writes the entity's record and starts its
+    // portrait — both GM-only — so a player's press billed the description to
+    // their own Claude key and then lost it at the refused record write.
+    const supportsFinalizeType = supportsFinalize(entity.typeKey) && !!game.user?.isGM;
     const isFinalizing = this.#generatingIds.has(`flavor:${entity.journalId}`);
     const finalizeBtnHtml = !supportsFinalizeType
       ? ''
@@ -725,16 +730,22 @@ export class EntityPanelApp extends ApplicationV2 {
 
       const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
 
+      // The generator's own reason, when it gave one (a refused save, no key,
+      // another GM making it), stands alone: a generic "failed" beside it
+      // said less, and pointed at the console (known-issues
+      // ENTITY-PANEL-PORTRAIT-FAILED-TOAST).
+      const report = { told: false };
       const asset = await generatePortrait(
         journalId,
         entity.typeKey,
         entity.data,
         campaignState,
+        report,
       );
 
       if (asset) {
         ui.notifications.info(`Portrait generated for ${entity.name}.`);
-      } else {
+      } else if (!report.told) {
         ui.notifications.warn(`Portrait generation failed for ${entity.name}. Check console for details.`);
       }
     } catch (err) {
@@ -770,16 +781,18 @@ export class EntityPanelApp extends ApplicationV2 {
 
       const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
 
+      const report = { told: false };   // as #onGeneratePortrait's
       const asset = await regeneratePortrait(
         journalId,
         entity.typeKey,
         entity.data,
         campaignState,
+        report,
       );
 
       if (asset) {
         ui.notifications.info(`Portrait regenerated and locked for ${entity.name}.`);
-      } else {
+      } else if (!report.told) {
         ui.notifications.warn(`Portrait regeneration failed for ${entity.name}. Check console for details.`);
       }
     } catch (err) {
@@ -809,6 +822,12 @@ export class EntityPanelApp extends ApplicationV2 {
   static async #finalizeFlow(app, target, force) {
     const journalId = target.dataset.journalId;
     if (!journalId) return;
+    // A player's click on a button left from before: nothing is billed
+    // (FINALISE-PLAYER-KEY — the buttons render for GMs only).
+    if (!game.user?.isGM) {
+      ui.notifications?.info?.('Starforged Companion: entities are finalised by the GM.');
+      return;
+    }
 
     const key = `flavor:${journalId}`;
     if (app.#generatingIds.has(key)) return;
@@ -1160,6 +1179,16 @@ export class EntityPanelApp extends ApplicationV2 {
       if (wasSelected || isEntityActor(actor)) instance.render();
     });
 
+    // A command vehicle's integrity is its STARSHIP asset's Integrity track
+    // (issue #345 AA20) — an embedded Item, so marking it on the sheet fires
+    // updateItem, which none of the hooks above see: the panel showed the
+    // old value until its next render (ENTITY-PANEL-ASSET-TRACK-STALE).
+    Hooks.on('updateItem', (item, change) => {
+      const instance = EntityPanelApp.#instance;
+      if (!instance?.rendered || !itemUpdateShowsInPanel(item, change)) return;
+      instance.render();
+    });
+
     Hooks.on('updateSetting', EntityPanelApp.onSettingChanged);
     Hooks.on('createSetting', EntityPanelApp.onSettingChanged);
   }
@@ -1229,6 +1258,19 @@ function actorUpdateShowsInPanel(actor, change) {
   if (touchesRecord) return true;
   if (!isEntityActor(actor)) return false;
   return has('name') || has('system.debility') || has('system.notes') || has('system.pronouns');
+}
+
+/**
+ * Whether an embedded Item update changes what the panel shows: the track of
+ * a recorded ship's STARSHIP (command vehicle) asset — the integrity the
+ * panel reads (registry withSheetNotes → readCommandVehicleIntegrity).
+ */
+function itemUpdateShowsInPanel(item, change) {
+  if (!change || typeof change !== 'object' || item?.type !== 'asset') return false;
+  if (!foundry.utils.hasProperty(change, 'system.track')) return false;
+  const actor = item.parent ?? null;
+  if (!actor || !isEntityActor(actor)) return false;
+  return getCommandVehicleAsset(actor)?.id === item.id;
 }
 
 /**

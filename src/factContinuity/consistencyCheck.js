@@ -27,6 +27,7 @@ import { logConsistencyDecision } from '../pacing/telemetry.js';
 import { getPlayerActors, readCharacterSnapshot } from '../character/actorBridge.js';
 import { getConnection } from '../entities/connection.js';
 import { resolveEntityById } from '../entities/registry.js';
+import { isNarrationXCarded } from '../context/safety.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -50,6 +51,10 @@ const MAX_TOKENS    = 1300;   // was 1000 — Haiku 5.5 counts the same text as 
  * @param {Object} [options]
  * @param {string[]} [options.matchedEntityIds]
  * @param {string|null} [options.currentLocationId]
+ * @param {string|null} [options.narrationId] — the audited narration's id: an
+ *   X-Card that removed it while the audit's call was out gets no review card
+ *   and no telemetry line, both of which quote the removed prose
+ *   (XCARD-LATE-REVIEW)
  * @returns {Promise<{ contradictions: Array<Object>, dispatched: boolean }>}
  */
 export async function runConsistencyCheck(prose, campaignState, options = {}) {
@@ -103,6 +108,13 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
     contradictions = [];
   }
 
+  // The X-Card may have removed the narration while the call was out: the
+  // review card and the telemetry line both quote its prose, so neither is
+  // written (XCARD-LATE-REVIEW — the capture's XCARD-LATE-CAPTURE rule).
+  if (isNarrationXCarded(options.narrationId)) {
+    return { contradictions: [], dispatched: false };
+  }
+
   const elapsedMs = Date.now() - startedAt;
 
   let dispatched = false;
@@ -115,6 +127,8 @@ export async function runConsistencyCheck(prose, campaignState, options = {}) {
     // audit. In-memory by design: a reload re-arms the reminder once.
     const dedupKey = contradictionDedupKey(campaignState.currentSceneId, c);
     if (_dispatchedContradictions.has(dedupKey)) continue;
+    // Each card is awaited: one played during an earlier card's post stops the rest.
+    if (isNarrationXCarded(options.narrationId)) return { contradictions: [], dispatched };
     try {
       await applyStateTransition({
         entryType:        'factContinuity',

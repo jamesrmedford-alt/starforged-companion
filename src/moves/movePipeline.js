@@ -30,7 +30,10 @@
 
 import { MOVES, rankName } from "../schemas.js";
 import { interpretMove } from "./interpreter.js";
-import { resolveMove, withPayThePriceSeed } from "./resolver.js";
+import {
+  resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed,
+  rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie,
+} from "./resolver.js";
 import { buildMischiefAside } from "./mischief.js";
 import { persistResolution } from "./persistResolution.js";
 import { buildBurnState } from "./burnMomentum.js";
@@ -60,9 +63,10 @@ import {
 } from "../character/actorBridge.js";
 import { getActiveCombatPosition, listProgressTracks, completeProgressTrack } from "../ui/progressTracks.js";
 import { finishExpedition, legacyRewardTicks, selectExpeditionTrack } from "./expedition.js";
+import { rerouteUnchartedCourse, sceneDestination, readForcedTravelDestination } from "./travel.js";
 import { finishVow } from "./vow.js";
 import { selectCombatTrack } from "./combat.js";
-import { selectConnection, planDevelopRelationship, buildConnectionSuggestion } from "./developRelationship.js";
+import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, bondedDevelopRoll, developmentAdded } from "./developRelationship.js";
 import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "./sceneChallenge.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { buildMilestoneSuggestion, selectFulfilVow, selectForsakeVow } from "./milestone.js";
@@ -100,6 +104,9 @@ const HOST_HELPERS = Object.freeze([
   "postForsakeVowCard", "postDecisiveActionCostCard", "postMovePayThePriceCard", "postMoveResult",
   // recordMove / finishMove
   "reportUnsavedMoveRecord", "applyMoveConsequenceRiders",
+  // readMove — whether a travel move's destination is a charted place (the
+  // arrival's own name resolver; travel.js, issue #348 PT06)
+  "resolveCurrentLocationName",
 ]);
 
 /**
@@ -195,6 +202,23 @@ function buildForcedInterpretation(moveId, narration, mischiefLevel, moveTarget 
 }
 
 /**
+ * Whether a forced travel move with no destination reads one from its line
+ * (readMove, issue #348 PT05): a Set a Course always; an Undertake an
+ * Expedition only with no expedition open — with one open it continues that
+ * one, and with several it asks which.
+ *
+ * @param {string} moveId
+ * @returns {Promise<boolean>}
+ */
+async function travelDestinationUnread(moveId) {
+  if (moveId === "set_a_course") return true;
+  if (moveId !== "undertake_an_expedition") return false;
+  const tracks = await listProgressTracks().catch(() => null);
+  if (!Array.isArray(tracks)) return false;
+  return !tracks.some(t => t?.type === "expedition" && !t.completed);
+}
+
+/**
  * Read a line as a move — what free-flow does once it holds the move lock,
  * and what a round's reading does on Submit (readAction). The interpretation
  * (the forced move's, or interpretMove's), its stat, the scene-challenge
@@ -245,6 +269,8 @@ export async function readMove({
         mischiefLevel: dial,
         apiKey,
         combatPosition,
+        // The roller's support vehicles and companions, by name (SUPPORT-VEHICLES-UNLISTED).
+        roller: speakerActorId ? (game.actors?.get?.(speakerActorId) ?? null) : null,
         // What the line follows — its destination, its target (alpha 23 playtest).
         recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
       });
@@ -254,12 +280,40 @@ export async function readMove({
   // A forced move whose stat is a choice rolls the one its narration's
   // approach fits — a stat-only interpretation — not its first listed
   // stat (issue #321 U04). No key keeps the listed stat.
-  if (forcedMoveId) {
-    await enrichForcedMoveStat(interpretation, {
-      interpret: apiKey
-        ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId })
-        : null,
+  const readStat = apiKey
+    ? (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId })
+    : null;
+  // A forced travel move that names no destination — a paced card's "Roll
+  // Undertake an Expedition" after the scene set one up — reads it, with its
+  // stat, from the line and the scene it follows: unread, the expedition was
+  // "Expedition", for no place, and nothing charted or arrived anywhere
+  // (issue #348 PT05, PT07). An Undertake an Expedition with one open
+  // continues it, as it always has.
+  const readsDestination = !!(forcedMoveId && apiKey && !interpretation.moveTarget && !interpretation.moveTargetId
+    && await travelDestinationUnread(interpretation.moveId));
+  if (readsDestination) {
+    await readForcedTravelDestination(interpretation, {
+      interpret: (text, moveId) => interpretMove(text, { campaignState, mischiefLevel: dial, apiKey, expectedMoveSlug: moveId,
+        recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null) }),
     });
+  } else if (forcedMoveId) {
+    await enrichForcedMoveStat(interpretation, { interpret: readStat });
+  }
+
+  // Travel (issue #348 PT06, PT08). A Set a Course that names no destination
+  // ("please set a course") goes to the one the scene established — the
+  // uncharted destination recorded last (travel.js sceneDestination). One
+  // whose destination is not a charted, known place is Undertake an
+  // Expedition, on every Mischief setting: the confirm dialog and the move
+  // card say why, and Cancel lets the player re-word it. Its stat is read
+  // from the line, as a forced move's is.
+  if (interpretation.moveId === "set_a_course" && !interpretation.moveTarget && !interpretation.moveTargetId) {
+    const established = sceneDestination(campaignState);
+    if (established) interpretation.moveTarget = established;
+  }
+  const { resolveCurrentLocationName } = pipelineHost();
+  if (rerouteUnchartedCourse(interpretation, campaignState, { resolvePlace: resolveCurrentLocationName })) {
+    await enrichForcedMoveStat(interpretation, { interpret: readStat });
   }
 
   // A scene-challenge move (Face Danger / Secure an Advantage within a
@@ -334,12 +388,12 @@ export async function readMove({
   // posts the move again with that vow's copy, as the roller (issue #321
   // U02). A shared vow's copies are one vow (selectFulfilVow).
   if (interpretation.moveId === "fulfill_your_vow" && !interpretation.moveTargetId) {
-    const { vow, choices, completed } = selectFulfilVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
+    const { vow, choices, completed, forsaken } = selectFulfilVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
       { rollerActorId: rollerActor?.id ?? null });
     // It names a vow that is already fulfilled: nothing is rolled, and no
     // other vow is scored in its place (issue #325 W29).
     if (!vow && completed) {
-      targetChoice = { kind: "vow-gone" };
+      targetChoice = { kind: "vow-gone", forsaken: forsaken === true };
     } else if (!vow && choices.length >= 2) {
       targetChoice = { kind: "vow", vows: choices };
     }
@@ -353,13 +407,13 @@ export async function readMove({
   // AA16: two open copies table-wide cleared nothing behind "Vow cleared.";
   // AA49: a crewmate's exact-name vow beat the roller's whole-word one).
   if (interpretation.moveId === "forsake_your_vow" && !interpretation.moveTargetId) {
-    const { vow, choices, completed } = selectForsakeVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
+    const { vow, choices, completed, forsaken } = selectForsakeVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
       { rollerActorId: rollerActor?.id ?? null });
     if (vow) {
       interpretation.moveTargetId = vow.id;
       interpretation.moveTarget   = vow.name || (interpretation.moveTarget ?? null);
     } else if (completed) {
-      targetChoice = { kind: "vow-gone" };
+      targetChoice = { kind: "vow-gone", forsaken: forsaken === true };
     } else if (choices.length) {
       targetChoice = { kind: "vow", vows: choices, moveId: "forsake_your_vow" };
     }
@@ -419,6 +473,13 @@ export async function readMove({
           return [];
         })
       : [];
+  // An ability with effects on the outcome is pre-checked on the confirm, as
+  // one with an add is: its box is whether it applies this turn, and an
+  // unchecked one's riders do not fire (RIDERS-IGNORE-UNCHECKED).
+  const withRiders = new Set((interpretation.extractedRiders ?? []).filter(e => e?.riders?.length).map(e => e.key));
+  if (withRiders.size) {
+    interpretation.applicableAbilities = applicableAbilities.map(a => (withRiders.has(a?.key) ? { ...a, hasRiders: true } : a));
+  }
 
   return { interpretation, combatPosition, targetChoice, speakerActor, rollerActor };
 }
@@ -536,6 +597,9 @@ function readingFromMove(read, { forced = null } = {}) {
   const statOptions = [...new Set(abilities
     .map(a => (typeof a.statReplacement === "string" ? a.statReplacement : ""))
     .filter(Boolean))];
+  // `blocked`: a closed vow it names — "vow-forsaken" when that vow was
+  // forsaken, so the refusal does not say it was fulfilled
+  // (ROUND-VOW-GONE-SAYS-FULFILLED).
   return {
     kind:           READING_KIND.MOVE,
     moveId:         interpretation.moveId ?? null,
@@ -546,7 +610,7 @@ function readingFromMove(read, { forced = null } = {}) {
     abilities,
     statOptions,
     targetChoices:  targetOptionsFrom(read.targetChoice),
-    blocked:        read.targetChoice?.kind === "vow-gone" ? "vow-gone" : null,
+    blocked:        read.targetChoice?.kind === "vow-gone" ? (read.targetChoice.forsaken ? "vow-forsaken" : "vow-gone") : null,
     forced: forced ? {
       tokenDragSetCourse:     forced.tokenDragSetCourse ?? null,
       incitingSwearMessageId: forced.incitingSwearMessageId ?? null,
@@ -594,8 +658,8 @@ function targetOptionsFrom(choice) {
 /**
  * The choices a reading not yet confirmed is rolled with ("used as read",
  * when a GM sends the round now): what the confirm dialog pre-checks — the
- * abilities that add to the roll or swap its stat — the listed stat kept, and
- * no target.
+ * abilities that add to the roll, swap its stat or carry effects on the
+ * outcome (`hasRiders`) — the listed stat kept, and no target.
  *
  * @param {Object} reading
  * @returns {{ abilityIds: string[], statReplacement: null, targetId: null }}
@@ -603,7 +667,7 @@ function targetOptionsFrom(choice) {
 export function defaultChoices(reading) {
   const abilities = Array.isArray(reading?.abilities) ? reading.abilities : [];
   return {
-    abilityIds: abilities.filter(a => Number(a.adds ?? 0) > 0 || (typeof a.statReplacement === "string" && a.statReplacement)).map(a => a.key),
+    abilityIds: abilities.filter(a => Number(a.adds ?? 0) > 0 || (typeof a.statReplacement === "string" && a.statReplacement) || a.hasRiders === true).map(a => a.key),
     statReplacement: null,
     targetId: null,
   };
@@ -659,6 +723,9 @@ function substitutingAssetId(interpretation, stat) {
   const ids = new Set((Array.isArray(interpretation?.applicableAbilities) ? interpretation.applicableAbilities : [])
     .filter(a => keys.has(a?.key) && a.statReplacement === stat && a.source === "character" && a.assetId)
     .map(a => a.assetId));
+  // Two offered it: the one the confirm's radio named (COMPANION-TRIGGER-SWAP-UNCUED).
+  const picked = typeof interpretation?.appliedStatAssetId === "string" ? interpretation.appliedStatAssetId : null;
+  if (picked && ids.has(picked)) return picked;
   return ids.size === 1 ? [...ids][0] : null;
 }
 
@@ -681,6 +748,24 @@ async function aidMadeInFight(moveId) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Why a move that names a track was not rolled, in a sentence — a Batch Mode
+ * round's refused reading (batch/driver.js); the "not rolled" card says the
+ * same (index.js postTrackGoneCard). A forge's track is a connection:
+ * severed, removed or bonded since its picker was posted (issue #345 AA50),
+ * or one a typed forge named that is already bonded (FORGE-NAMED-BONDED-SCORED).
+ *
+ * @param {Object} interpretation
+ * @param {{ alreadyBonded?: boolean }} [opts]
+ * @returns {string}
+ */
+function trackGoneReason(interpretation, { alreadyBonded = false } = {}) {
+  if (alreadyBonded) return `${interpretation?.moveTarget ?? "That connection"} is already bonded — there is no bond to forge.`;
+  return interpretation?.moveId === "forge_a_bond"
+    ? "The connection it named was severed, removed or bonded before the roll."
+    : "The track it named was deleted or finished before the roll.";
+}
+
+/**
  * Roll a confirmed move and apply its outcome: the confirm's ability adds and
  * stat substitution, the stat and progress enrichment, the "not rolled"
  * guards, the adds owed (Take a Break, the roller's +1, a bond), the dice,
@@ -697,7 +782,7 @@ async function aidMadeInFight(moveId) {
  * @param {Object|null} [args.tokenDragSetCourse]
  * @param {string|null} [args.incitingSwearMessageId] — an inciting "⚔ Swear this vow" card
  * @param {Object|null} [args.cardFlags] — more flags for the result card (a round's entry: its round and player)
- * @returns {Promise<{ refused: string }|{ refused: null, resolution: Object, interpretation: Object,
+ * @returns {Promise<{ refused: string, refusedReason?: string }|{ refused: null, resolution: Object, interpretation: Object,
  *   relevance: Object, moveTargets: Object, burnState: Object|null, improveState: Object|null,
  *   moveResultMessage: ChatMessage|null, rollerActor: Actor|null, speakerActorId: string|null }>}
  */
@@ -707,7 +792,7 @@ export async function rollMove({
   cardFlags = null, onDiceRolled = null, resolutionId = null,
 }) {
   const {
-    postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, postDevelopRelationshipCard, applyReachMilestone,
+    postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, applyReachMilestone,
     postForgeABondCard, postExpeditionFinishCard, noteUnsavedOnCopy, postSceneFinishCard,
     postRecommitOfferCard, postVowRecommitOfferCard, postBondRecommitOfferCard,
     resolveVowItemCopies, completeVowItemByName, postFulfillVowCard, payFulfilledVowNative,
@@ -824,13 +909,19 @@ export async function rollMove({
   // since was rolled at 0, and one bonded since (its id resolves nothing
   // for a forge — selectConnection `unbonded`) said "Legacy reward marked"
   // over a forge that marked nothing (issue #345 AA50).
-  if (interpretation.moveTargetId
+  // A typed Forge a Bond naming a connection already bonded is not rolled
+  // either, and its card says it was bonded (FORGE-NAMED-BONDED-SCORED: it
+  // was scored on the bond's own track, then the forge skipped it). The
+  // refusal carries its reason for a Batch Mode round's reading, which said
+  // "deleted or finished" for a forge too.
+  const alreadyBonded = tickInfo?.source === "connection" && tickInfo.alreadyBonded === true;
+  if (alreadyBonded || (interpretation.moveTargetId
       && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow"
         || tickInfo?.source === "scene_challenge" || tickInfo?.source === "connection")
-      && !tickInfo.trackId) {
-    await postTrackGoneCard(interpretation).catch(err =>
+      && !tickInfo.trackId)) {
+    await postTrackGoneCard(interpretation, { alreadyBonded }).catch(err =>
       console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
-    return { refused: "track-gone" };
+    return { refused: "track-gone", refusedReason: trackGoneReason(interpretation, { alreadyBonded }) };
   }
   // Battle is an action roll, so the guard above (progress moves) let a
   // Battle naming a finished fight by id roll in full — its +2 momentum
@@ -936,6 +1027,9 @@ export async function rollMove({
   // the narrator's recent-narration ring (issue #300 F02).
   // A Batch Mode round names it before the roll begins (issue #347 AB20).
   resolution._id = resolutionId ?? foundry.utils.randomID();
+  // A Set a Course read as Undertake an Expedition: the move card says why
+  // (issue #348 PT06; readMove).
+  if (interpretation.courseRerouted) resolution.courseRerouted = interpretation.courseRerouted;
 
   // The outcome's effects beyond the roller's meters and its choice card —
   // an arrival, the expedition's progress, a legacy mark, the companion's
@@ -943,7 +1037,7 @@ export async function rollMove({
   // the one applier Burn Momentum and Improve Result also run, for what
   // their upgraded outcome adds over this one (UPGRADE-PIPELINE-EFFECTS).
   // The fight the move was about comes back for its cards.
-  const { moveFight, sceneChallenge } = await applyOutcomeEffects({
+  const { moveFight, sceneChallenge, thresholdResolutionId, afterMoveCard } = await applyOutcomeEffects({
     resolution, interpretation, campaignState, rollerActor, speakerActor, tokenDragSetCourse,
   });
 
@@ -952,61 +1046,16 @@ export async function rollMove({
   // a bonded connection pays the rolled outcome (§3.3.5,
   // BONDED_DEVELOP_OUTCOMES: strong 2 bonds-legacy ticks / weak +2
   // momentum / miss nothing), and a strong hit with a match raises its rank
-  // by one (issue #322 V01).
+  // by one (issue #322 V01). A Test Your Relationship hit develops too — a
+  // bonded connection with a Develop Your Relationship roll of its own
+  // (TEST-RELATIONSHIP-DEVELOP-ROLL). Shared with Burn Momentum / Improve
+  // Result, which apply what their upgraded outcome adds
+  // (applyDevelopRelationship — BOND-DEVELOP-UPGRADE).
   if (resolution.consequences?.developRelationship && game.user.isGM) {
-    try {
-      const conn = await import("../entities/connection.js");
-      // Preserve each connection's host actor id (the value stored in
-      // connectionIds); connection._id is a separate generated id that the
-      // write helpers (getEntityDocument → game.actors.get) do not accept.
-      const connections = (campaignState.connectionIds ?? [])
-        .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
-        .filter(Boolean);
-      // A picker's host id first — without it, a picked un-bonded
-      // connection fell back to the sole bonded one (issue #301 B01).
-      const target = selectConnection(connections, interpretation.moveTarget ?? null,
-        { hostId: interpretation.moveTargetId ?? null });
-      const plan   = planDevelopRelationship(target, resolution.outcome, resolution.isMatch);
-
-      if (plan.action === "bond-legacy") {
-        if (plan.ticks > 0) addLegacyTicks(campaignState, "bonds", plan.ticks);
-        // A Test Your Relationship hit develops with the test's own roll,
-        // whose consequences cannot know the connection is bonded: its weak
-        // hit's +2 momentum joins them here, before the card and the
-        // persist, so it is credited to the roller with the move's other
-        // meters. Develop Your Relationship's roll carries it from the
-        // resolver already.
-        if (plan.momentum > 0 && resolution.moveId !== "develop_your_relationship" && resolution.consequences) {
-          resolution.consequences.momentumChange =
-            Number(resolution.consequences.momentumChange ?? 0) + plan.momentum;
-        }
-        if (plan.raiseRank && plan.newRank && plan.connection.__hostId) {
-          await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
-            console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
-          // Mirror onto the PCs' bond Items so CHARACTER STATE shows the
-          // raised rank (NARR-BOND-RANK-STALE). The Items are keyed by the
-          // record's `_id`, not the host Actor id (issue #314 Q04 — the
-          // host id matched nothing, and the name fallback hid it until a
-          // rename).
-          await setBondItemRank(
-            { connectionId: plan.connection._id, name: plan.connection.name },
-            plan.newRank,
-          ).catch(err =>
-            console.warn(`${MODULE_ID} | develop: bond rank mirror failed:`, err?.message ?? err));
-        }
-        await postDevelopRelationshipCard(plan).catch(err =>
-          console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
-      } else if (plan.action === "connection-progress" && plan.connection.__hostId) {
-        await conn.markRelationshipProgress(plan.connection.__hostId, plan.marks).catch(err =>
-          console.warn(`${MODULE_ID} | develop: progress mark failed:`, err?.message ?? err));
-        await postDevelopRelationshipCard(plan).catch(err =>
-          console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
-      }
-      // action "none" → no resolvable connection; the move card's otherEffect
-      // already tells the player to develop a relationship.
-    } catch (err) {
-      console.warn(`${MODULE_ID} | develop relationship failed:`, err?.message ?? err);
-    }
+    await applyDevelopRelationship({
+      resolution, interpretation, campaignState, rollerActor,
+      markBonds: (ticks) => addLegacyTicks(campaignState, "bonds", ticks),
+    }).catch(err => console.warn(`${MODULE_ID} | develop relationship failed:`, err?.message ?? err));
   }
 
   // Reach a Milestone (no-roll quest move) — mark progress on the target vow
@@ -1337,9 +1386,14 @@ export async function rollMove({
   // TDA weak hit — roll decisive_action_cost d100 and post a visible card.
   // Entry 1-40 carries sufferRoute {move:"any", amount:2} which opens the
   // B1 generic suffer picker so the player can choose which move takes -2.
+  // The move's narration depicts this card's cost — the one the table
+  // pays; the resolver rolled none for it (TDA-COST-DOUBLE-ROLL).
   if (resolution.consequences?.rollDecisiveActionCost && game.user.isGM) {
-    await postDecisiveActionCostCard(rollerActor?.id ?? null).catch(err =>
-      console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err));
+    const cost = await postDecisiveActionCostCard(rollerActor?.id ?? null).catch(err => {
+      console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err);
+      return null;
+    });
+    resolution.oracleSeeds = withDecisiveActionCostSeed(resolution.oracleSeeds, resolution.moveId, cost?.cost ?? null);
   }
 
   // A result that routes Pay the Price (a Face Danger / Strike / Set a
@@ -1419,13 +1473,24 @@ export async function rollMove({
     ...(interpretation.patientActorId ? { patientActorId: interpretation.patientActorId } : {}),
     ...(interpretation.patientCompanionItemId ? { patientCompanionItemId: interpretation.patientCompanionItemId } : {}),
     // Aid Your Ally's ally: a hit's benefits — the choice card's too —
-    // are theirs (issue #325 W17).
-    ...(interpretation.allyActorId && resolution.consequences?.beneficiary === "ally"
+    // are theirs (issue #325 W17). Carried on a miss too: a Burn Momentum
+    // or Improve Result that makes it a hit pays the ally, not the roller
+    // (AID-ALLY-UPGRADE). Every reader gates on the outcome's beneficiary.
+    ...(interpretation.allyActorId && (resolution.consequences?.beneficiary === "ally" || resolution.moveId === "aid_your_ally")
       ? { allyActorId: interpretation.allyActorId } : {}),
     // A scene-challenge move's challenge and what it filled of its clock:
     // an upgrade scores that challenge and takes back no more than this
     // filled (issue #338 D2).
     ...(sceneChallenge ? { sceneChallenge } : {}),
+    // Enter the Fray against a new foe: the threshold card it posted, by its
+    // resolution — the weak hit's "You are in control" lands on the fight
+    // that card begins, not on whichever is open when it is clicked
+    // (DELAYED-CHOICE-IDENTITY).
+    ...(thresholdResolutionId ? { thresholdResolutionId } : {}),
+    // Explore a Waypoint: the expedition it explored, resolved now — its
+    // "Mark expedition progress" marks that one, not the sole open one at
+    // click time (DELAYED-CHOICE-IDENTITY).
+    ...(resolution.moveId === "explore_a_waypoint" ? await waypointExpedition(interpretation) : {}),
   };
   // What an upgrade of this result needs to apply the upgraded outcome's
   // other effects as this pipeline applied the original's — the move's
@@ -1469,11 +1534,156 @@ export async function rollMove({
     cardFlags,
   );
 
+  // The cards that summarize the roll card — the Set a Course card — follow
+  // it: posted by the effects above, the summary came before the roll it
+  // summarized (issue #348 PT10). Each posts its own failure.
+  for (const post of afterMoveCard ?? []) await post();
+
   return {
     refused: null,
     resolution, interpretation, relevance, moveTargets, burnState, improveState,
     moveResultMessage: moveResultMessage ?? null, rollerActor, speakerActorId,
   };
+}
+
+/**
+ * A Develop Your Relationship roll of its own, +the bonded connection's rank:
+ * what a Test Your Relationship hit's "Develop Your Relationship" makes for a
+ * bonded connection (TEST-RELATIONSHIP-DEVELOP-ROLL — it developed with the
+ * test's own +heart roll). Rolled as `!bond` rolls it: the roller's negative
+ * momentum cancels a matching action die (issue #311 P01).
+ *
+ * @param {Object} connection — a bonded connection record
+ * @param {Actor|null} rollerActor
+ * @returns {{ outcome: string, isMatch: boolean, actionDie: number, adds: number,
+ *   actionScore: number, challengeDice: number[], cancelled: boolean }|null}
+ */
+function rollBondedDevelop(connection, rollerActor) {
+  const roll = bondedDevelopRoll(connection);
+  if (!roll) return null;
+  const actionDie     = rollActionDie();
+  const challengeDice = rollChallengeDice();
+  const cancelled     = cancelsActionDie(actionDie, rollerActor ? readMomentumState(rollerActor).value : null);
+  const actionScore   = calcActionScore(cancelled ? 0 : actionDie, 0, roll.statValue);
+  const { outcome, isMatch } = calcOutcome(actionScore, challengeDice);
+  return { outcome, isMatch, actionDie, adds: roll.statValue, actionScore, challengeDice, cancelled };
+}
+
+/**
+ * Develop the connection a Develop Your Relationship — or a Test Your
+ * Relationship hit — was made for, on the canonical GM. An un-bonded
+ * connection marks its own relationship track; a bonded one pays its roll's
+ * outcome (BONDED_DEVELOP_OUTCOMES): the bonds legacy ticks, a weak hit's +2
+ * momentum, a strong hit's match raising its rank. Develop Your
+ * Relationship's roll is the move's own; a Test Your Relationship hit makes a
+ * Develop Your Relationship roll of its own for a bonded connection, +rank
+ * (TEST-RELATIONSHIP-DEVELOP-ROLL), whose +2 momentum joins the move's
+ * consequences — credited to the roller with its other meters.
+ *
+ * A Burn Momentum or Improve Result (`against`, the recorded outcome) applies
+ * what the upgraded outcome adds: the development ran in the pipeline's
+ * branch alone, which an upgrade did not re-run, so a bonded Develop Your
+ * Relationship upgraded to a strong hit marked no ticks and raised no rank on
+ * a match (BOND-DEVELOP-UPGRADE). A Test Your Relationship the recorded hit
+ * already developed adds nothing; one upgraded from a miss develops now, its
+ * +2 momentum to the roller. The upgrade's ticks are saved by its own
+ * `markBonds` (index.js writeLegacyTicks); the pipeline's land on its
+ * working copy, which persistResolution writes.
+ *
+ * @param {Object} args
+ * @param {Object} args.resolution — the outcome developed (the upgraded one, for an upgrade)
+ * @param {Object} args.interpretation — its target (`moveTarget`, `moveTargetId`: the host id)
+ * @param {Object} args.campaignState — the working copy (its `connectionIds`)
+ * @param {Actor|null} args.rollerActor
+ * @param {{ outcome: string, consequences: Object }|null} [args.against] — the recorded outcome an upgrade replaces
+ * @param {Function} args.markBonds — (ticks) => void|Promise: marks the bonds legacy
+ * @returns {Promise<Object|null>} the plan applied; null when nothing was
+ */
+export async function applyDevelopRelationship({ resolution, interpretation, campaignState, rollerActor, against = null, markBonds }) {
+  const { postDevelopRelationshipCard } = pipelineHost();
+  const isTest = resolution.moveId === "test_your_relationship";
+  if (against && isTest && against.consequences?.developRelationship) return null;   // developed by the recorded hit
+  const conn = await import("../entities/connection.js");
+  // Preserve each connection's host actor id (the value stored in
+  // connectionIds); connection._id is a separate generated id that the
+  // write helpers (getEntityDocument → game.actors.get) do not accept.
+  const connections = (campaignState?.connectionIds ?? [])
+    .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+    .filter(Boolean);
+  // A picker's host id first — without it, a picked un-bonded
+  // connection fell back to the sole bonded one (issue #301 B01).
+  const target = selectConnection(connections, interpretation?.moveTarget ?? null,
+    { hostId: interpretation?.moveTargetId ?? null });
+  const roll = isTest && target?.bonded ? rollBondedDevelop(target, rollerActor) : null;
+  let plan = roll
+    ? planDevelopRelationship(target, roll.outcome, roll.isMatch)
+    : planDevelopRelationship(target, resolution.outcome, resolution.isMatch);
+  if (against && !isTest) {
+    // The recorded outcome's development stands; the upgrade adds the rest.
+    // (Its +2 momentum is the outcome's own, swapped with its other meters.)
+    const was = against.consequences?.developRelationship
+      ? planDevelopRelationship(target, against.outcome, resolution.isMatch) : { action: "none" };
+    plan = developmentAdded(plan, was);
+  }
+  if (!plan || plan.action === "none") return null;   // no resolvable connection: the card's text says to develop one
+
+  if (plan.action === "bond-legacy") {
+    if (plan.ticks > 0) await markBonds(plan.ticks);
+    if (plan.momentum > 0 && roll) {
+      if (against) {
+        // An upgrade's meters are written: the test's consequences carry none of it.
+        const { applyMeterChanges } = await import("../character/actorBridge.js");
+        if (rollerActor) await applyMeterChanges(rollerActor, { momentum: plan.momentum });
+      } else if (resolution.consequences) {
+        resolution.consequences.momentumChange =
+          Number(resolution.consequences.momentumChange ?? 0) + plan.momentum;
+      }
+    }
+    if (plan.raiseRank && plan.newRank && plan.connection.__hostId) {
+      await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
+        console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
+      // Mirror onto the PCs' bond Items so CHARACTER STATE shows the
+      // raised rank (NARR-BOND-RANK-STALE). The Items are keyed by the
+      // record's `_id`, not the host Actor id (issue #314 Q04 — the
+      // host id matched nothing, and the name fallback hid it until a
+      // rename).
+      await setBondItemRank(
+        { connectionId: plan.connection._id, name: plan.connection.name },
+        plan.newRank,
+      ).catch(err =>
+        console.warn(`${MODULE_ID} | develop: bond rank mirror failed:`, err?.message ?? err));
+    }
+  } else if (plan.action === "connection-progress" && plan.connection.__hostId) {
+    await conn.markRelationshipProgress(plan.connection.__hostId, plan.marks).catch(err =>
+      console.warn(`${MODULE_ID} | develop: progress mark failed:`, err?.message ?? err));
+  } else {
+    return null;
+  }
+  await postDevelopRelationshipCard(roll ? { ...plan, roll } : plan).catch(err =>
+    console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
+  return plan;
+}
+
+/**
+ * The expedition an Explore a Waypoint explored, as its move targets carry
+ * it: `{ expeditionTrackId }` — the open expedition its target names, else
+ * the sole open one — or nothing when none resolves (none open, or several
+ * and none named), so its choice card resolves as before. The card's "Mark
+ * expedition progress" then marks this one, gone or over or not
+ * (DELAYED-CHOICE-IDENTITY).
+ *
+ * @param {{ moveTarget?: string|null, moveTargetId?: string|null }} interpretation
+ * @returns {Promise<{ expeditionTrackId?: string }>}
+ */
+async function waypointExpedition(interpretation) {
+  try {
+    const track = selectExpeditionTrack(await listProgressTracks(), interpretation?.moveTarget ?? null,
+      { trackId: interpretation?.moveTargetId ?? null });
+    return track?.id ? { expeditionTrackId: track.id } : {};
+  } catch (err) {
+    console.warn(`${MODULE_ID} | explore a waypoint: its expedition could not be read:`, err?.message ?? err);
+    return {};
+  }
 }
 
 /**

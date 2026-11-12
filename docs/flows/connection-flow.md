@@ -22,7 +22,11 @@ two stay in step; `loseConnection` (`!sever`) writes the record's
 #330 D10; a module flag, not the vendor's `completed`, which the sheet shows
 as a forged bond); and `forgeBond` writes `bonded: true` through as that
 `completed` (`setBondItemForged` — issue #342 Z57: the forge reached the
-record only, so the sheet and CHARACTER STATE never showed the bond). The Items are keyed by the record's `_id`
+record only, so the sheet and CHARACTER STATE never showed the bond); and a
+rename — `updateConnection`'s, or the NPC card's in the sidebar
+(`syncEntityRecordNameOnUpdate`) — renames them (`connection.renameBondItems`
+→ `setBondItemName`, found as the connection was named: BOND-ITEM-NAME-STALE,
+the Connections tab and CHARACTER STATE kept the old name). The Items are keyed by the record's `_id`
 (`flags[MODULE].connectionId`, written by every creator) and matched by it
 alone (`actorBridge.bondItemsFor`); the name reaches only an Item with no
 key, and only the PC's one of that name — a same-named sibling's Item is
@@ -83,6 +87,14 @@ recorded under its name promoted to it; its bond is §2's.
   Mode round's hit, its own entry's line — `connectionRollers[].lineText`,
   issue #347 ROUND-CONNECTION-LINE-JOINED: the round's lines joined named
   another player's NPC as the roller's): the one
+  it names, else — naming none — the one the narration names, else the one
+  the interpreter's target for the move names (free-flow: `narrateResolution`'s
+  `moveTarget` → `runPostNarrationPasses` → `routeEntityDrafts`' `targetName`;
+  KNOWN-NPC-CONNECTION-NO-TARGET — "I win her over" with two known NPCs in the
+  narration got the GMs' notice); several, none
+  another player's NPC as the roller's; and its candidates are only the NPCs
+  its own line or the narration names — `narrationText` —
+  ROUND-CONNECTION-OTHER-LINE-CANDIDATE): the one
   it names, else — naming none — the one the narration names; several, none
   is guessed and the GMs are whispered which (issue #347 AB10 — the first
   pending row named anywhere was confirmed, so a hit with Sable whose
@@ -120,7 +132,8 @@ recorded under its name promoted to it; its bond is §2's.
   way, with the row it confirmed (`confirmDraft`'s `narrationId` →
   `createdFromNarrationId` + `createdFromDraft`): deleted by the X-Card, the
   row goes back to pending (`entityExtractor.reopenConfirmedDraftRow`;
-  withdrawn instead when the X-Card removed the row's own narration too) —
+  withdrawn instead when the X-Card removed the row's own narration too; a
+  row the GM had dismissed goes back to dismissed — the link's `status`) —
   the NPC came from the earlier narration's draft, which the X-Card kept
   (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). Either delete hands the
   scene-ledger facts promoted to the card back to its name
@@ -140,7 +153,10 @@ recorded under its name promoted to it; its bond is §2's.
   maintainer's ruling A — it was the first entry's PC): a connection row's
   Confirm is a button per acting PC and **No one**, the pick checked against
   the card's own `actorIds` (`draftConfirmPick`), and the bond goes on the PC
-  picked, or on no sheet (`draftBondHolder`). Each Confirm / Dismiss writes its
+  picked, or on no sheet (`draftBondHolder`). Each Confirm / Dismiss is a GM's
+  press relayed to the canonical GM (`draft.confirm` / `draft.dismiss`), run
+  one at a time there — two GMs' simultaneous Confirms each ran on their own
+  client and made the NPC twice (DRAFT-CONFIRM-TWO-GMS) — and writes its
   own row's status, one write at a time per card, on the live card
   (`setDraftStatus`) — a whole-card copy written back reverted a row resolved
   meanwhile — and Confirm creates nothing when an entity of that name and
@@ -159,7 +175,12 @@ recorded under its name promoted to it; its bond is §2's.
   card comes off `dismissedEntities` with the rename — as a sidebar rename
   the record follows does (`undismissRecordName`; issue #345 AA55): the name
   index leaves out a record whose name is dismissed, so she vanished from the
-  narrator.
+  narrator. A narration's un-dismissal — this reveal's, or a Make a
+  Connection's on a dismissed NPC (AA19) — is logged with its narration id
+  (`campaignState.undismissedByNarration`), and the X-Card's finish
+  dismisses the name again once the connection and the rename are settled,
+  unless a record still holds it (`restoreNarrationDismissals`,
+  XCARD-KEEPS-UNDISMISS).
 - **Sector creation** — the canonical local connection, `canonicalLocked`,
   bond Item mirrored to every PC.
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates
@@ -170,7 +191,10 @@ The `createActor` seed hook (canonical GM, `autoSeedConnection` on) is not a
 fifth path: it populates a card one of the four made (`connectionNeedsSeed`:
 the module's connection record present, not yet `seeded`) —
 `seedConnectionActor` rolls role/goal/first-look/disposition, writes
-biography/notes/pronouns and fires a silent portrait. A character Actor made by
+biography/notes/pronouns and fires a silent portrait — made where an
+OpenRouter key lives: on the canonical GM when it holds one, else asked of
+the GM who does (`art/portraitRouting.js`, `gmGate.isArtGM` —
+AUTOSEED-KEYLESS-CANONICAL). A character Actor made by
 hand in the Actors sidebar carries no module flag: it is never seeded, never
 listed in `connectionIds`, and the module takes it for a **player character**
 (`isPlayerCharacterActor` — no `entityType`), so it joins the PARTY roster and
@@ -233,10 +257,20 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   paid a weak hit 1 tick): strong → 2 bonds-legacy ticks (`addLegacyTicks` on
   the working copy, persisted with the move), weak → +2 momentum (the
   resolver's `momentumChange`, credited to the roller by `persistResolution`;
-  a Test Your Relationship hit's branch adds the plan's momentum to that move's
+  a Test Your Relationship hit develops a bonded connection with a Develop
+  Your Relationship roll of its own, +rank (`rollBondedDevelop`, `!bond`'s
+  dice; its card shows the roll — TEST-RELATIONSHIP-DEVELOP-ROLL: it was paid
+  on the test's own +heart roll), whose momentum joins that move's
   consequences), miss → nothing; a strong hit with a match raises the
   connection's rank (`nextRank`, never past epic), mirrored onto the bond
-  Items by the record's `_id` (`setBondItemRank` — Q04). Ambiguous target (several active, none named)
+  Items by the record's `_id` (`setBondItemRank` — Q04). The branch is
+  `movePipeline.applyDevelopRelationship`; a Burn Momentum or Improve Result
+  runs it too, from its `applyOutcomeEffects`, for what the upgraded outcome
+  adds (`developmentAdded`: the ticks beyond the recorded outcome's — saved
+  with their box XP, `writeLegacyTicks` — and a match's rank raise; a Test
+  Your Relationship from a miss develops then): the upgrade did not re-run
+  the branch, so a bonded development burned to a strong hit marked nothing
+  (BOND-DEVELOP-UPGRADE). Ambiguous target (several active, none named)
   silently no-ops. `selectConnection`'s `strict` option is for an
   irreversible write (`!sever`): a name resolves the connection it names
   exactly, else the one connection whose name holds it as whole words (the
@@ -249,10 +283,12 @@ vow's target start it the same way; `generatePortrait` handles finishing late
 - **`!bond [rank] [name]`** — the bonded develop roll
   (`src/moves/bondCommand.js`). `handleBondCommand` runs once, on the
   typist's client (chat routing `RUN_ON.AUTHOR`): it resolves the **named**
-  bonded connection (`selectConnection` over active bonded records), else the
-  **sole** bonded one, and that connection's rank drives the adds
-  (`BOND_ROLL_ADDS`, shared with the pipeline's bonded roll; a bare rank arg
-  is the untargeted fallback; a name that matches nothing warns).
+  bonded connection (`selectConnection` over active bonded records, `strict`:
+  a name matches by itself alone — never the table's one bond in its place,
+  BOND-COMMAND-FALLBACK), else, with no name, the **sole** bonded one, and
+  that connection's rank drives the adds (`BOND_ROLL_ADDS`, shared with the
+  pipeline's bonded roll; a bare rank arg is the untargeted fallback; a name
+  that matches nothing warns).
   It rolls, posts the card, and relays the roll's result to the canonical
   GM (`requestGmAction("bond.apply", { outcome, isMatch, … })` →
   `applyBondEffects`), which pays it from the pipeline's table
@@ -317,7 +353,12 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   card says so, as for a gone fight or vow (rollMove's track-gone guard; for
   a forge the id rung resolves no bonded connection — issue #345 AA50: it
   was rolled at 0, or its card said "Legacy reward marked" over a forge that
-  marked nothing). A click with
+  marked nothing). So is a typed forge that names a bonded connection: the
+  name rungs take `unbonded` too, `enrichProgressTicks` marks the result
+  `alreadyBonded`, and the card — and a Batch Mode round's refusal, from
+  rollMove's `refusedReason` — say it is already bonded
+  (FORGE-NAMED-BONDED-SCORED: it was scored on the bond's own track, then
+  the forge skipped it). A click with
   no GM connected, a refusal, or a card still unresolved after
   `RELAY_RECOVERY_MS` (15 s) re-arms the buttons. (The picker used to be
   GM-only; the first 2026-10 fix let any click post the move but only the
@@ -406,8 +447,9 @@ rank through `rankName` — issue #321 U62), a forged one as "bonded" (the
 Item's `completed`, issue #342 Z57 — it read "fulfilled", a vow's word), and a severed one apart, under
 "Connections lost" (`readConnections`' `lost` — issue #330 D10). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
-bond's Item as history. `background` and `secrets` have no production writer, so neither
-renders. The legacy count-only "ACTIVE CONNECTIONS" block
+bond's Item as history. `background` and `secrets`, which had no production
+writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN).
+The legacy count-only "ACTIVE CONNECTIONS" block
 (`buildConnectionsSummary`, "N active connection(s)" from `connectionIds`)
 is retired: it counted a lost connection as active beside the roster that
 lists it apart (issue #331 X29).

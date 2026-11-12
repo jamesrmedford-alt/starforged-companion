@@ -26,7 +26,7 @@
 
 import { readCharacterSnapshot, getPlayerActors } from "../character/actorBridge.js";
 import { resolveUserActorId } from "../multiplayer/speaker.js";
-import { stripMarkup } from "../audio/segments.js";
+import { proseToHtml } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -208,7 +208,7 @@ export async function postGalleyVignetteCard({ text, kind, sessionId = null, nar
   await globalThis.ChatMessage?.create?.({
     content:
       `<div class="sf-session-vignette-card"><strong>Opening — Ship's Galley</strong>` +
-      `<p class="sf-narration-prose">${escapeHtml(stripMarkup(text))}</p>` +
+      `<p class="sf-narration-prose">${proseToHtml(text)}</p>` +
       `<div class="sf-narration-footer">` +
       `<button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden><i class="fas fa-play"></i> Play</button>` +
       `<button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden><i class="fas fa-stop"></i> Stop</button>` +
@@ -232,10 +232,3 @@ export async function postGalleyVignetteCard({ text, kind, sessionId = null, nar
   });
 }
 
-function escapeHtml(s) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}

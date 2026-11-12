@@ -100,7 +100,9 @@ async function relay(userId, kind, payload) {
 
 async function kiraActsRenPasses() {
   await relay('pl-1', 'batch.submit', { roundId: round().id, text: 'I brace against the hull and push through.', submissionId: 'k1' });
-  await relay('pl-1', 'batch.confirm', { roundId: round().id, submissionId: 'k1', choices: {} });
+  // The Round window's confirm as it opens: the ability with an effect on the
+  // outcome pre-checked (RIDERS-IGNORE-UNCHECKED).
+  await relay('pl-1', 'batch.confirm', { roundId: round().id, submissionId: 'k1', choices: { abilityIds: ['ace:0'] } });
   await relay('pl-2', 'batch.pass', { roundId: round().id });
   await table.drain();
 }

@@ -39,8 +39,9 @@
 
 import { TRUTH_CATEGORIES, TRUTH_TABLES, SUB_TABLES } from "./tables.js";
 import { apiPost } from "../api-proxy.js";
+import { decodeHtmlEntities } from "../system/htmlEntities.js";
 import { writeOwnedFields } from "../factContinuity/sceneLifecycle.js";
-import { stripMarkup } from "../audio/segments.js";
+import { proseToHtml } from "../audio/segments.js";
 
 const MODULE_ID      = "starforged-companion";
 const JOURNAL_NAME   = "World Truths";
@@ -450,9 +451,18 @@ const ITALIC_RE = /^<(em|i)\b[^>]*>([\s\S]*?)<\/\1>$/i;
  * category: `<h2>{category}</h2>`, the option's title in bold, its text — a
  * sub-table's result blockquoted after the line that introduces it ("In this
  * final war, we were set upon by:") — the quest starter in italics, then the
- * category's inspiration text. A custom truth is the GM's own text, whose
- * first paragraph says it. A category named as none of TRUTH_TABLES' (another
- * language) keeps its own name as the key.
+ * category's inspiration text. A custom truth is the GM's own text — every
+ * paragraph of it, its first as the title — then the inspiration text (vendor
+ * truth-category.vue appends the category's other pages), known by its
+ * opening (TRUTH_TABLES' `inspiration`): a custom truth left empty is that
+ * text alone, and holds no truth (known-issues TRUTHS-CUSTOM-PARSE — it was
+ * read as the truth, and a custom truth reached the narrator as its first
+ * paragraph). A last paragraph that is not the inspiration text (a GM's
+ * edit, another language) is the GM's. A category named as none of TRUTH_TABLES' (another language)
+ * is keyed by its place when the save holds every category — the dialog
+ * writes them in TRUTH_CATEGORIES' order (Datasworn's) — so the vow scene
+ * finds the Iron truth; in a save that skips categories it keeps its own name
+ * as the key.
  *
  * @param {string} html
  * @returns {Object} truthSet — {} when nothing reads
@@ -461,18 +471,20 @@ function parseSystemTruthsHtml(html) {
   const source = typeof html === "string" ? html : "";
   const heads  = [...source.matchAll(H2_RE)];
   const truthSet = {};
+  const everyCategory = heads.length === TRUTH_CATEGORIES.length;
   heads.forEach((head, i) => {
     const categoryName = htmlText(head[1]);
-    const categoryId   = truthCategoryId(categoryName);
+    const categoryId   = knownTruthCategoryId(categoryName)
+      ?? (everyCategory ? TRUTH_CATEGORIES[i] : truthCategoryId(categoryName));
     const end   = i + 1 < heads.length ? heads[i + 1].index : source.length;
-    const truth = categoryId ? parseTruthSection(source.slice(head.index + head[0].length, end)) : null;
+    const truth = categoryId ? parseTruthSection(source.slice(head.index + head[0].length, end), categoryId) : null;
     if (truth) truthSet[categoryId] = { categoryId, categoryName, ...truth };
   });
   return truthSet;
 }
 
 /** One category's section → the TruthResult fields, or null when it holds no text. */
-function parseTruthSection(body) {
+function parseTruthSection(body, categoryId = null) {
   let blocks = [...body.matchAll(BLOCK_RE)]
     .map(m => ({ tag: m[1].toLowerCase(), inner: m[2].trim(), text: htmlText(m[2]) }))
     .filter(b => b.text);
@@ -483,7 +495,13 @@ function parseTruthSection(body) {
   }
 
   const bold = blocks[0].tag === "p" ? blocks[0].inner.match(BOLD_RE) : null;
-  if (!bold) return truthFields({ title: blocks[0].text });    // a custom truth
+  if (!bold) {
+    // A custom truth: the GM's paragraphs, then the inspiration text — none
+    // but that when the GM left it empty.
+    const own = isInspirationText(blocks.at(-1).text, categoryId) ? blocks.slice(0, -1) : blocks;
+    if (!own.length) return null;
+    return truthFields({ title: own[0].text, description: own.slice(1).map(b => b.text).join(" ") });
+  }
 
   const rest  = blocks.slice(1);
   const quest = rest.findIndex(b => b.tag === "p" && ITALIC_RE.test(b.inner));
@@ -502,12 +520,27 @@ function truthFields({ title, description = "", questStarter = "", subTableLabel
   return { roll: null, title, description, questStarter, subTableId: null, subTableLabel, subRoll: null, subResult };
 }
 
+/** Whether `text` is the category's character-inspiration paragraph (TRUTH_TABLES' `inspiration` opens it). */
+function isInspirationText(text, categoryId) {
+  const opening = TRUTH_TABLES[categoryId]?.inspiration;
+  if (!opening) return false;
+  const fold = (t) => String(t ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  return fold(text).startsWith(fold(opening));
+}
+
+/** The TRUTH_TABLES category a dialog heading names (in English), or null. */
+function knownTruthCategoryId(name) {
+  const lower = String(name ?? "").trim().toLowerCase();
+  if (!lower) return null;
+  return TRUTH_CATEGORIES.find(id => TRUTH_TABLES[id]?.name?.toLowerCase() === lower) ?? null;
+}
+
 /** The category id for a dialog heading — TRUTH_TABLES' by name, else the heading's own. */
 function truthCategoryId(name) {
   const lower = String(name ?? "").trim().toLowerCase();
   if (!lower) return null;
-  const known = TRUTH_CATEGORIES.find(id => TRUTH_TABLES[id]?.name?.toLowerCase() === lower);
-  return known ?? (lower.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || String(name).trim());
+  return knownTruthCategoryId(name)
+    ?? (lower.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || String(name).trim());
 }
 
 /** The sentence a paragraph ends with when it introduces what follows ("This is because:"), else null. */
@@ -516,21 +549,11 @@ function introducingSentence(text) {
   return text.split(/(?<=[.!?]["'\u2019\u201D]?)\s+/).at(-1) || null;
 }
 
-const NAMED_ENTITIES = Object.freeze({
-  nbsp: " ", amp: "&", lt: "<", gt: ">", quot: "\"", apos: "'",
-  lsquo: "\u2018", rsquo: "\u2019", ldquo: "\u201C", rdquo: "\u201D",
-  ndash: "\u2013", mdash: "\u2014", hellip: "\u2026",
-});
-
 /** An HTML fragment's text: tags dropped, entities decoded, whitespace folded. */
 function htmlText(fragment) {
   return String(fragment ?? "")
     .replace(/<[^>]*>/g, " ")
-    .replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (whole, code) => {
-      if (code[0] !== "#") return NAMED_ENTITIES[code.toLowerCase()] ?? whole;
-      const n = /^#x/i.test(code) ? parseInt(code.slice(2), 16) : parseInt(code.slice(1), 10);
-      return Number.isInteger(n) && n > 0 && n <= 0x10FFFF ? String.fromCodePoint(n) : whole;
-    })
+    .replace(/&[#a-z0-9]+;/gi, (e) => decodeHtmlEntities(e))   // the shared decoder (CHARACTER-STATE-ENTITY-UNDECODED)
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -614,20 +637,19 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
   let truthsContent = "";
 
   // Resolve the world-truths journal. Prefer the stored id, but tolerate stale
-  // or missing ids by searching for the system "Setting Truths" journal (i18n
-  // key TypeTruth) and the module's own "World Truths" journal as fallbacks.
-  // When the dialog is re-run or the original journal is deleted/recreated,
-  // worldTruthsJournalId can point at a document that no longer exists.
-  let entry = campaignState.worldTruthsJournalId
-    ? (game.journal?.get(campaignState.worldTruthsJournalId) ?? null)
-    : null;
+  // or missing ids by searching for the system "Setting Truths" journals (i18n
+  // key TypeTruth) and the module's own truths journal (by its flag) as
+  // fallbacks. When the dialog is re-run or the original journal is
+  // deleted/recreated, worldTruthsJournalId can point at a document that no
+  // longer exists — or, linked by name before LORE-JOURNAL-BY-NAME, at a GM's
+  // own notes, which is not used.
+  let entry = linkedLoreTruthsJournal(campaignState);
 
   if (!entry) {
-    // Newest first (issue #321 U65 — the first match was the oldest).
-    const candidates = journalsNewestFirst([systemTruthsTitle() || "Setting Truths", JOURNAL_NAME]);
-    // Prefer a candidate whose first page holds truths (holdsTruths — the
-    // same test the createJournalEntryPage hook makes).
-    entry = candidates.find(j => holdsTruths(j.pages?.contents?.[0]?.text?.content ?? "")) ?? candidates[0] ?? null;
+    // A truths journal by what it is, never by the name "World Truths"
+    // (LORE-JOURNAL-BY-NAME): a GM's own notes of that name were read as the
+    // truths, linked as the campaign's, and given "The Story So Far".
+    entry = findLoreTruthsJournal();
 
     if (entry && entry.id !== campaignState.worldTruthsJournalId) {
       // Linked with the truths it holds, so the narrator reads the truths this
@@ -731,12 +753,7 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
 function loreParagraphs(recap) {
   return String(recap ?? "").split(/\n\n+/)
     .map(p => p.trim()).filter(Boolean)
-    .map(p => `<p>${escapeLoreHtml(stripMarkup(p))}</p>`);
-}
-
-function escapeLoreHtml(s) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    .map(p => `<p>${proseToHtml(p)}</p>`);
 }
 
 async function writeLoreRecapToJournal(recap, campaignState) {
@@ -756,17 +773,53 @@ async function writeLoreRecapToJournal(recap, campaignState) {
     }
   }
 
-  // Prefer the journal we already know about (system-created or ours)
-  if (campaignState.worldTruthsJournalId) {
-    const je = game.journal?.get(campaignState.worldTruthsJournalId);
-    if (je) { await upsertPage(je); return; }
-  }
-
-  // Fallback by name — accept the system's localized "Setting Truths" too,
-  // not only the module's own "World Truths" journal.
-  const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "Setting Truths";
-  const je = game.journal?.getName(systemTitle) ?? game.journal?.getName(JOURNAL_NAME);
+  // The journal the campaign links (a dialog save or ours), else a truths
+  // journal found by what it is. It fell back by name, so a GM's own "World
+  // Truths" notes took the page (LORE-JOURNAL-BY-NAME).
+  const je = linkedLoreTruthsJournal(campaignState) ?? findLoreTruthsJournal();
   if (je) await upsertPage(je);
+}
+
+/**
+ * Whether `journal` is a truths journal: the module's own (its flag), one
+ * holding saved truths, or one the system's dialog titled ("Setting
+ * Truths" — a save whose page the dialog left empty is still one).
+ */
+function isLoreTruthsJournal(journal) {
+  if (!journal) return false;
+  if (isModuleTruthsJournal(journal) || truthsPageHtml(journal)) return true;
+  const title = systemTruthsTitle() || "Setting Truths";
+  return journal.name === title;
+}
+
+/** The campaign's linked truths journal (`worldTruthsJournalId`) when it is one (isLoreTruthsJournal), else null. */
+function linkedLoreTruthsJournal(campaignState) {
+  const id = campaignState?.worldTruthsJournalId;
+  const linked = id ? (game.journal?.get(id) ?? null) : null;
+  return isLoreTruthsJournal(linked) ? linked : null;
+}
+
+/**
+ * A truths journal for `!lore` when the campaign links none: the newest of
+ * the module's own (by its flag) and the system dialog's saves (by the
+ * system's title), one holding truths first (issue #321 U65 — newest first).
+ * Never a journal found by the name "World Truths" alone — a GM's own notes
+ * of that name (LORE-JOURNAL-BY-NAME).
+ *
+ * @returns {JournalEntry|null}
+ */
+function findLoreTruthsJournal() {
+  const title = systemTruthsTitle() || "Setting Truths";
+  const candidates = (game.journal?.contents ?? [])
+    .map((j, order) => ({ j, order }))
+    .filter(({ j }) => isModuleTruthsJournal(j) || j?.name === title)
+    .sort((a, b) => (createdTime(b.j) - createdTime(a.j)) || (b.order - a.order))
+    .map(({ j }) => j);
+  const holds = (j) => {
+    const truths = truthsFromJournal(j);
+    return !!truths && Object.keys(truths).length > 0;
+  };
+  return candidates.find(holds) ?? candidates.find(j => !isModuleTruthsJournal(j)) ?? candidates[0] ?? null;
 }
 
 

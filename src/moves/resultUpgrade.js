@@ -75,7 +75,13 @@ function escapeHtml(s) {
  */
 export async function claimUpgradeCard(message, kind) {
   try {
-    await message.update({ [`flags.${MODULE_ID}.${kind}.consumed`]: true });
+    // `consumedBy`: the GM whose page applies it — a Batch Mode round's Send
+    // now waits for it while that GM is connected, whichever GM resolves the
+    // round (driver.js keepUpgrades; UPGRADE-WAIT-OTHER-GM).
+    await message.update({
+      [`flags.${MODULE_ID}.${kind}.consumed`]:   true,
+      [`flags.${MODULE_ID}.${kind}.consumedBy`]: globalThis.game?.user?.id ?? null,
+    });
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | ${kind}: card ${message?.id ?? "?"} could not be claimed — nothing applied:`, err?.message ?? err);
@@ -98,7 +104,7 @@ export async function claimUpgradeCard(message, kind) {
  * @param {{ effect: "meters", pcId: string, changes: Object }
  *   | { effect: "tensionClocks", clocks: Array<{ _id: string, name?: string }> }
  *   | { effect: "vowClocks", entries: Array<{ actorId: string, itemId: string, name?: string }> }
- *   | { effect: "unprepared", pcIds: string[] }
+ *   | { effect: "unprepared", pcIds: string[], momentumBack?: Object<string, number> }
  *   | { effect: "choiceCard", pcId: string, sufferPrompt: Object, executorOpts: Object, moveId: string|null, resolutionId: string|null }} step
  * @param {Array<Object>} failures
  * @param {{ untriggered?: Array<Object> }|null} [report] — filled in by a clock rewind
@@ -112,7 +118,7 @@ export async function applyUpgradeStep(step, failures, report = null) {
     failures.push({
       ...step,
       ...(res.entries ? { entries: res.entries } : {}),
-      ...(res.pcIds ? { pcIds: res.pcIds } : {}),
+      ...(res.pcIds ? { pcIds: res.pcIds, momentumBack: res.momentumBack ?? undefined } : {}),
       step: "upgrade", reason: res.reason ?? "refused",
     });
   } catch (err) {
@@ -148,19 +154,39 @@ async function runUpgradeStep(step) {
     case "unprepared": {
       // The marks a reverted price made, each its own write: the refused ones
       // are the step still owed (the vowClocks shape). A PC gone, or no
-      // longer unprepared (cleared since), needs nothing.
+      // longer unprepared (cleared since), needs no clear. A Retry's step
+      // also gives back the momentum each mark held down (`momentumBack` —
+      // the receipt's `momentumClamped`, issue #345 AA46), once the PC is no
+      // longer unprepared: the first pass gives it with its own meters step
+      // after the clear, and the Retry of a refused clear gave none
+      // (UNPREPARED-RETRY-NO-MOMENTUM). A refused momentum write keeps the PC
+      // owed, its clear done.
+      const back = step.momentumBack && typeof step.momentumBack === "object" ? step.momentumBack : {};
       const failed = [];
       for (const id of step.pcIds ?? []) {
         const pc = globalThis.game?.actors?.get?.(id) ?? null;
-        if (!pc || !isUnprepared(pc)) continue;
+        if (!pc) continue;
+        if (isUnprepared(pc)) {
+          try {
+            await setDebility(pc, "unprepared", false);
+          } catch (err) {
+            console.warn(`${MODULE_ID} | upgrade: clearing ${pc.name ?? id}'s unprepared failed:`, err?.message ?? err);
+            failed.push(id);
+            continue;
+          }
+        }
+        const n = back[id];
+        if (!Number.isInteger(n) || n <= 0) continue;
         try {
-          await setDebility(pc, "unprepared", false);
+          await applyMeterChanges(pc, { momentum: n });
         } catch (err) {
-          console.warn(`${MODULE_ID} | upgrade: clearing ${pc.name ?? id}'s unprepared failed:`, err?.message ?? err);
+          console.warn(`${MODULE_ID} | upgrade: giving back ${pc.name ?? id}'s momentum failed:`, err?.message ?? err);
           failed.push(id);
         }
       }
-      return failed.length ? { ok: false, reason: "refused", pcIds: failed } : { ok: true };
+      if (!failed.length) return { ok: true };
+      const owed = Object.fromEntries(Object.entries(back).filter(([id]) => failed.includes(id)));
+      return { ok: false, reason: "refused", pcIds: failed, ...(Object.keys(owed).length ? { momentumBack: owed } : {}) };
     }
     case "choiceCard": {
       const pc = globalThis.game?.actors?.get?.(step.pcId) ?? null;
@@ -200,13 +226,20 @@ export async function retryUpgradeStep(s) {
       break;
     case "vowClocks":
       if (!Array.isArray(s.entries) || !s.entries.every(e => typeof e?.actorId === "string" && typeof e?.itemId === "string"
-        && (e.vowId == null || typeof e.vowId === "string"))) {
+        && (e.vowId == null || typeof e.vowId === "string")
+        && (e.target == null || (Number.isInteger(e.target) && e.target >= 0)))) {
         return { ok: false, reason: "invalid step" };
       }
       break;
     case "unprepared":
       if (!Array.isArray(s.pcIds) || !s.pcIds.length
         || !s.pcIds.every(id => typeof id === "string" && isPlayerCharacterActor(globalThis.game?.actors?.get?.(id) ?? null))) {
+        return { ok: false, reason: "invalid step" };
+      }
+      // The momentum it gives back: only to its own PCs, at most the
+      // momentum range (a mark lowers the maximum by 1 — issue #345 AA46).
+      if (s.momentumBack != null && (typeof s.momentumBack !== "object"
+        || !Object.entries(s.momentumBack).every(([id, n]) => s.pcIds.includes(id) && Number.isInteger(n) && n > 0 && n <= 16))) {
         return { ok: false, reason: "invalid step" };
       }
       break;
@@ -254,8 +287,11 @@ export function upgradeStepRecord(f) {
       ...upgradedResolution(f) } : {}),
     ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({
       actorId: e.actorId, itemId: e.itemId, vowId: typeof e.vowId === "string" && e.vowId ? e.vowId : null, name: e.name ?? null,
+      // The value the copy is owed, for its Retry (VOW-CLOCK-REWIND-PER-COPY).
+      ...(Number.isInteger(e.target) && e.target >= 0 ? { target: e.target } : {}),
     })), kind: upgradeKind(f.kind), ...upgradedResolution(f) } : {}),
-    ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string") } : {}),
+    ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string"),
+      ...(f.momentumBack && typeof f.momentumBack === "object" && Object.keys(f.momentumBack).length ? { momentumBack: { ...f.momentumBack } } : {}) } : {}),
     ...(f.effect === "choiceCard"    ? { pcId: f.pcId ?? null, sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {},
       moveId: f.moveId ?? null, resolutionId: f.resolutionId ?? null } : {}),
   };
@@ -292,7 +328,10 @@ export function describeUpgradeStep(f, why) {
       return (f.entries ?? []).map(e => `Rewind the ${escapeHtml(e.name ?? "vow")} clock one segment — ${why}.`).join("<br>");
     case "unprepared": {
       const names = (f.pcIds ?? []).map(id => escapeHtml(globalThis.game?.actors?.get?.(id)?.name ?? "a character")).join(", ");
-      return `Clear unprepared for ${names || "the crew"} — the reverted price marked it, and its supply was refunded — ${why}.`;
+      const back  = Object.entries(f.momentumBack && typeof f.momentumBack === "object" ? f.momentumBack : {})
+        .map(([id, n]) => `${escapeHtml(globalThis.game?.actors?.get?.(id)?.name ?? "a character")} +${n}`).join(", ");
+      return `Clear unprepared for ${names || "the crew"} — the reverted price marked it, and its supply was refunded — ${why}.`
+        + (back ? ` The Retry also gives back the momentum the mark held down (${back}).` : "");
     }
     case "choiceCard": {
       const pc = f.pcId ? (globalThis.game?.actors?.get?.(f.pcId) ?? null) : null;
@@ -431,7 +470,17 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     const ok = await applyUpgradeStep({ effect: "vowClocks", entries, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, vowReport);
     const owed = ok ? [] : (failures[at]?.entries ?? entries);
     const owedIds = new Set(owed.map(e => e.itemId));
-    for (const v of entries) if (!owedIds.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
+    // One line per vow — a shared vow's copies are one clock — once none of
+    // its copies is still owed (VOW-CLOCK-REWIND-PER-COPY: "rewound" once per
+    // copy).
+    const vowOf = (e) => e.vowId ?? e.itemId;
+    const owedVows = new Set(entries.filter(e => owedIds.has(e.itemId)).map(vowOf));
+    const said = new Set();
+    for (const v of entries) {
+      if (owedVows.has(vowOf(v)) || said.has(vowOf(v))) continue;
+      said.add(vowOf(v));
+      reverted.push(`${v.name} clock rewound`);
+    }
     untriggered.push(...vowClocksUntriggered(entries, vowReport.untriggered, owed));
   }
   await supersedeTriggerVignettes(untriggered, kind, resolutionId);
@@ -476,6 +525,13 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     const ok = await applyUpgradeStep({ effect: "unprepared", pcIds: unmark }, failures);
     const owed = new Set(ok ? [] : (failures[at]?.pcIds ?? unmark));
     clearedIds = unmark.filter(id => !owed.has(id));
+    // A refused clear's Retry gives back what that mark clamped, too
+    // (UNPREPARED-RETRY-NO-MOMENTUM) — step 4 gives it only for the marks
+    // cleared here. Not to a burn's burner, whose reset replaces it.
+    if (!ok && failures[at]) {
+      const owedBack = clampsToGiveBack(ptpReversals, [...owed], kind === "burn" ? (actor?.id ?? null) : null);
+      if (owedBack.length) failures[at].momentumBack = Object.fromEntries(owedBack);
+    }
     const cleared = clearedIds.map(id => game.actors?.get?.(id)?.name ?? id);
     if (cleared.length) reverted.push(`${cleared.map(escapeHtml).join(", ")} no longer unprepared`);
   }
@@ -662,7 +718,7 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
   try {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
     if (!isCanonicalGM()) return;
-    const { vignetteClockId, triggerVignetteInFlight } = await import("../clocks/payThePriceClocks.js");
+    const { vignetteClockId, triggerVignetteInFlight, noteRewindDuringVignette } = await import("../clocks/payThePriceClocks.js");
     const clockIds = new Set(clocks.map(vignetteClockId).filter(Boolean));
     if (!clockIds.size) return;
     const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
@@ -672,25 +728,58 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
       // Its vignette is still being written: it is narrated only while the
       // clock is full, so it drops itself — and the newest card of the clock
       // is an earlier trigger's, which happened (TRIGGER-VIGNETTE-LATE-POST).
-      if (triggerVignetteInFlight(clockId)) continue;
+      // One whose card is on its way strikes itself once posted, with this
+      // upgrade's note (TRIGGER-VIGNETTE-POST-WINDOW).
+      if (triggerVignetteInFlight(clockId)) {
+        noteRewindDuringVignette(clockId, { kind, resolutionId });
+        continue;
+      }
       const card = newestFirst.find(m => {
         const f = m?.flags?.[MODULE_ID];
-        return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId
-          && (f.sessionId ?? null) === sessionId && f.burnSuperseded !== true && f.xCarded !== true;
+        if (f?.clockVignetteCard !== true || f.narratorCard !== true || f.clockId !== clockId
+          || (f.sessionId ?? null) !== sessionId || f.xCarded === true) return false;
+        // Live — or struck by its own post-time check before this upgrade's
+        // name reached it: it takes the name (supersededFor, issue #347 D2).
+        return f.burnSuperseded !== true || (f.lateStruck === true && !f.supersededFor);
       });
       if (card) cards.push(card);
     }
-    if (!cards.length) return;
+    await strikeTriggerVignetteCards(cards, kind, resolutionId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${kind}: superseding a rewound clock's vignette failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Strike trigger vignette cards a rewind undid — supersedeTriggerVignettes'
+ * strike, and the vignette post site's own after a rewind landed during its
+ * card's creation (payThePriceClocks.js, TRIGGER-VIGNETTE-POST-WINDOW): a
+ * rolling summary made from them dropped first (issue #345 AA24), each card
+ * flagged `burnSuperseded` (naming the upgraded resolution, `supersededFor`,
+ * when known — else marked `lateStruck` for the upgrade to name), its prose
+ * struck, and what its sidecar wrote retracted. Canonical GM. Never throws.
+ *
+ * @param {Object[]} cards — ChatMessage documents
+ * @param {"burn"|"improve"} kind
+ * @param {string|null} [resolutionId] — the resolution upgraded, when known
+ * @returns {Promise<void>}
+ */
+export async function strikeTriggerVignetteCards(cards, kind, resolutionId = null) {
+  const list = (Array.isArray(cards) ? cards : []).filter(Boolean);
+  if (!list.length) return;
+  try {
+    const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
+    if (!isCanonicalGM()) return;
     // A rolling summary made from them goes first, while they are still in
     // memory (issue #345 AA24 — the move narration's supersede does the same).
     await import("../narration/narrator.js")
-      .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards(cards))
+      .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards(list))
       .catch(err => console.warn(`${MODULE_ID} | ${kind}: the rolling summary of a rewound clock's vignette could not be dropped:`, err?.message ?? err));
     const narrationIds = [];
-    for (const card of cards) {
+    for (const card of list) {
       await card.update({
         [`flags.${MODULE_ID}.burnSuperseded`]: true,
-        ...(resolutionId ? { [`flags.${MODULE_ID}.supersededFor`]: resolutionId } : {}),
+        ...(resolutionId ? { [`flags.${MODULE_ID}.supersededFor`]: resolutionId } : { [`flags.${MODULE_ID}.lateStruck`]: true }),
         content: supersededVignetteContent(card.content, kind),
       }).catch(err => console.warn(`${MODULE_ID} | ${kind}: the rewound clock's vignette ${card.id} could not be struck:`, err?.message ?? err));
       const narrationId = card.flags?.[MODULE_ID]?.narrationId;
@@ -698,7 +787,7 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
     }
     await retractSupersededNarrations(narrationIds, { label: `${kind}: a rewound clock's vignette` });
   } catch (err) {
-    console.warn(`${MODULE_ID} | ${kind}: superseding a rewound clock's vignette failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | ${kind}: striking a rewound clock's vignette failed:`, err?.message ?? err);
   }
 }
 
@@ -797,9 +886,56 @@ export async function closeUpgradesForChoice(resolutionId) {
     .filter(k => f[k] && !f[k].consumed && !f[k].choiceMade)
     .map(k => [`flags.${MODULE_ID}.${k}.choiceMade`, true]));
   if (f.waypointOracleCard && !f.waypointRewardClaimed) update[`flags.${MODULE_ID}.waypointRewardClaimed`] = "ordinary";
+  // The move's other open choice cards no longer say to burn or improve
+  // first: that is closed now (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
+  await dropUpgradeHints(resolutionId);
   if (!Object.keys(update).length) return;
   await card.update(update)
     .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
+}
+
+/**
+ * A choice card's update that takes its "burn or improve first" hint away —
+ * its prompt's `hint` and the card re-rendered without it — or {} when it
+ * carries none, or cannot be re-rendered (the hint stays). Best effort.
+ *
+ * @param {ChatMessage} card
+ * @returns {Promise<Object>}
+ */
+async function withoutHint(card) {
+  const f = card?.flags?.[MODULE_ID];
+  if (!f?.sufferPrompt?.hint) return {};
+  try {
+    const { renderSufferCard } = await import("./sufferCard.js");
+    const actor = f.actorId ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
+    return {
+      [`flags.${MODULE_ID}.sufferPrompt.hint`]: null,
+      content: renderSufferCard({ ...f.sufferPrompt, hint: null }, actor, f.pickedIndices ?? [], undefined, f.notApplied ?? [], f.pickedSuffers ?? []),
+    };
+  } catch (err) {
+    console.debug(`${MODULE_ID} | choice card ${card?.id ?? "?"}: its hint stays —`, err?.message ?? err);
+    return {};
+  }
+}
+
+/**
+ * The "burn or improve first" hint comes off a move's still-open choice
+ * cards once its upgrade has closed another way — a choice made on another
+ * of its cards, or the roller's later move (OUTCOME-CHOICE-CARD-NO-UPGRADE-
+ * HINT: the hint was static, and said to burn a result no longer burnable).
+ * Canonical GM, where the closes run. Best effort.
+ *
+ * @param {string|null} resolutionId
+ */
+export async function dropUpgradeHints(resolutionId) {
+  for (const card of outcomeChoiceCards(resolutionId)) {
+    const f = card.flags[MODULE_ID];
+    if (f.resolved === true || !f.sufferPrompt?.hint) continue;
+    const update = await withoutHint(card);
+    if (!Object.keys(update).length) continue;
+    await card.update(update)
+      .catch(err => console.warn(`${MODULE_ID} | choice card ${card.id}: its "burn or improve first" hint could not be taken off:`, err?.message ?? err));
+  }
 }
 
 /**
@@ -854,6 +990,9 @@ export async function closeUpgradesForLaterMove(actorId, resolutionId) {
     if (!Object.keys(update).length) continue;
     await card.update(update)
       .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades after a later move failed:`, err?.message ?? err));
+    // Its choice cards no longer say to burn or improve first
+    // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
+    await dropUpgradeHints(f.resolutionId ?? null);
   }
 }
 
@@ -981,21 +1120,11 @@ export async function retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCa
  * @returns {Promise<boolean>} whether the card was kept
  */
 async function keepPriceCard(card) {
-  const f = card.flags[MODULE_ID];
   const update = {
     [`flags.${MODULE_ID}.upgraded`]:              true,
     [`flags.${MODULE_ID}.executorOpts.upgraded`]: true,
+    ...(await withoutHint(card)),
   };
-  if (f.sufferPrompt?.hint) {
-    update[`flags.${MODULE_ID}.sufferPrompt.hint`] = null;
-    try {
-      const { renderSufferCard } = await import("./sufferCard.js");
-      const actor = f.actorId ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
-      update.content = renderSufferCard({ ...f.sufferPrompt, hint: null }, actor, f.pickedIndices ?? [], undefined, f.notApplied ?? [], f.pickedSuffers ?? []);
-    } catch (err) {
-      console.debug(`${MODULE_ID} | kept price card ${card.id}: its hint stays —`, err?.message ?? err);
-    }
-  }
   try {
     await card.update(update);
     return true;
@@ -1003,6 +1132,27 @@ async function keepPriceCard(card) {
     console.warn(`${MODULE_ID} | the kept price's card ${card.id} could not be kept for the upgraded result:`, err?.message ?? err);
     return false;
   }
+}
+
+/**
+ * An upgrade replaced the outcome an Explore a Waypoint match's alternative
+ * belonged to: a miss with a match offers Confront Chaos instead of its price,
+ * and a miss burned or improved to a hit kept that button live on the
+ * superseded card — only a claim closed it (known-issues
+ * WAYPOINT-ALT-AFTER-UPGRADE). The upgrade stamps it closed
+ * (`waypointRewardClaimed`: the upgrade's kind) with the choice cards it
+ * retires. Best effort: the alternative's handler also refuses an upgraded
+ * card (cardActions.js applyWaypointOraclePick).
+ *
+ * @param {string|null} resolutionId
+ * @param {"burn"|"improve"} kind
+ */
+async function closeWaypointAlternativeForUpgrade(resolutionId, kind) {
+  const card = moveCardFor(resolutionId);
+  const f    = card?.flags?.[MODULE_ID];
+  if (!f?.waypointOracleCard || f.waypointRewardClaimed) return;
+  await card.update({ [`flags.${MODULE_ID}.waypointRewardClaimed`]: kind })
+    .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing the waypoint's alternative after the ${kind} failed:`, err?.message ?? err));
 }
 
 /**
@@ -1027,6 +1177,7 @@ async function keepPriceCard(card) {
  */
 export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt, moveId, targets = {}, failures, priceStands = false }) {
   const kept = await retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCards: priceStands });
+  await closeWaypointAlternativeForUpgrade(resolutionId, kind);
   if (sufferPrompt && actor) {
     await applyUpgradeStep({
       effect: "choiceCard", pcId: actor.id, sufferPrompt, moveId: moveId ?? null, resolutionId: resolutionId ?? null,
@@ -1073,7 +1224,10 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
         consequences: state.originalConsequences ?? {},
         resolutionId: state.resolutionId ?? null,
       },
-      interpretation: { ...(state.move ?? {}), companionItemId: state.targets?.companionItemId ?? null },
+      // Aid Your Ally's ally: the upgraded hit's +1 next move and position
+      // are theirs, as the pipeline's (AID-ALLY-UPGRADE).
+      interpretation: { ...(state.move ?? {}), companionItemId: state.targets?.companionItemId ?? null,
+        allyActorId: state.targets?.allyActorId ?? null },
       targets: state.targets ?? {},
     });
     return { applied: res?.applied ?? [], notApplied: res?.notApplied ?? [] };
@@ -1081,6 +1235,38 @@ export async function applyUpgradedOutcomeEffects({ applyEffects, resolution, st
     console.warn(`${MODULE_ID} | ${kind}: the upgraded outcome's effects failed:`, err?.message ?? err);
     return { applied: [], notApplied: ["the upgraded result's other effects"] };
   }
+}
+
+/**
+ * Aid Your Ally's ally, as an upgrade's card carries it (`targets.allyActorId`,
+ * the pipeline's moveTargets): the PC a hit's benefits go to — "they (instead
+ * of you) take the benefits of the move" (issue #325 W17). Null when the move
+ * named none, or named the roller.
+ *
+ * @param {Object|null} state — the card's `burn` / `improve` flag (or the targets' holder)
+ * @param {string|null} rollerId
+ * @returns {string|null}
+ */
+export function upgradeAllyId(state, rollerId) {
+  const id = state?.targets?.allyActorId;
+  return typeof id === "string" && id && id !== rollerId ? id : null;
+}
+
+/**
+ * An outcome's momentum change, split between the roller and Aid Your Ally's
+ * ally: a hit's (`beneficiary: "ally"`) is the ally's when the move named one,
+ * the roller's otherwise. A Burn Momentum or Improve Result that upgrades an
+ * Aid Your Ally gave the upgraded hit's momentum to the roller — the first
+ * resolution had paid its hit to the ally (persistResolution), the upgrade
+ * paths knew only the roller (AID-ALLY-UPGRADE).
+ *
+ * @param {Object|null} consequences
+ * @param {string|null} allyId — upgradeAllyId's
+ * @returns {{ roller: number, ally: number }}
+ */
+export function momentumShares(consequences, allyId) {
+  const m = Number(consequences?.momentumChange ?? 0);
+  return allyId && consequences?.beneficiary === "ally" ? { roller: 0, ally: m } : { roller: m, ally: 0 };
 }
 
 /**

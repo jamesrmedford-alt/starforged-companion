@@ -245,7 +245,8 @@ All real progress lands on **item ticks** (`system.current`) via
   `payThePrice.suffer` (`applyPayThePriceSufferFromRelay`, the typist's PC as
   the roller), so the allies a Sacrifice Resources marks unprepared are
   written where that is allowed (issue #325 W10). A player with no PC of
-  their own at a table of several relays no route: the card says the price
+  their own at a table of several relays no route — and no clock advance
+  (PTP-PCLESS-CLOCKS-ADVANCE): the card says the price
   was not applied and the typist is whispered why (issue #337 Y43). A shared vow's copies are one clock
   (issue #321 U55): one `lockstep` map rides every PC's call of an advance,
   so the first copy advances and each later copy is set to the value it
@@ -254,10 +255,15 @@ All real progress lands on **item ticks** (`system.current`) via
   (`onePerClock`, by `vowId`). The returned entries keep every copy, each
   with its `vowId`, for the reversal below. A Burn Momentum or Improve Result
   that upgrades the miss reverts them via `revertVowClocksForBurn`
-  (`resultUpgrade.js` `revertPayThePrice` — issue #311 P05). A rewind that
-  lands in part leaves only the refused Items on the GMs' payoff card; its
-  Retry rewinds those alone (issue #314 Q05 — the whole step was queued and
-  the landed clocks were rewound again).
+  (`resultUpgrade.js` `revertPayThePrice` — issue #311 P05) — in the same
+  lockstep: the first copy is rewound a segment and each later copy set to
+  the value it reached, one the sync hook already moved left alone, and the
+  reversal card says "rewound" once per vow (VOW-CLOCK-REWIND-PER-COPY: each
+  copy was rewound from what it read, a second segment off one the hook had
+  moved, and said once per copy). A rewind that lands in part leaves only
+  the refused Items on the GMs' payoff card, each with the value it is owed
+  (`target`); its Retry sets those alone to it (issue #314 Q05 — the whole
+  step was queued and the landed clocks were rewound again).
 
 ## 3. Narrator awareness
 
@@ -306,9 +312,12 @@ closes **every open item copy** across PCs of the roller's vow — the Item
 the roll scored (`tickInfo.trackId`), else the roller's exact-name vow;
 payoff via `payFulfilledVowNative` with `skipLegacy:true`, `actorId` = the
 roller and the same `itemId` (quests legacy is paid on
-the pipeline's own campaignState object, which `persistResolution` merges
-onto the stored state keeping the higher tick count) — connection
-deepen (`deepenLinkedConnection`, scaled by `marksForSourceRank(rank)`) +
+the pipeline's own campaignState object, whose marks `persistResolution`
+applies to the stored track — `legacyTracksWithCopyMarks`, LEGACY-SHEET-DECREASE) — connection
+deepen (`deepenLinkedConnection`, scaled by `marksForSourceRank(rank)`; the
+vow's linked connection by name alone, `strict` — a link severed or renamed
+deepens nothing and goes on the GMs' payoff card, where it deepened the sole
+bonded or active connection, DEEPEN-LINK-FALLBACK) +
 promised reward (`grantLinkedVowReward` → `planRewardGrant`: strong = full,
 weak = reduced/with-a-string, miss = lost; one-time via `reward.status`).
 Because the copies are already completed when the payoff runs,
@@ -363,7 +372,8 @@ its own key — as the roller's PC (`resolveSpeakerActorId` on the roll card).
 Narrating only on the roller's client gave a keyless player "Narration
 unavailable" at a table whose GM holds the key (issue #321 U11). While Batch
 Mode is on, a participant's roll is narrated with the round instead (issue
-#345 D1): the canonical GM hands its outcome to the driver
+#345 D1) — while a keyed GM is connected to narrate it; with none, at once
+as above (SHEET-ROLL-KEYLESS-ROUND): the canonical GM hands its outcome to the driver
 (`sheetRollJoinsRound` / `takeSheetRoll`), which makes it the roller's entry —
 ready, `READING_KIND.SHEET_ROLL` carrying the outcome's narration input
 (`round.enterSheetRoll`), never rolled again — or holds it for the next round;

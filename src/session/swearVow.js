@@ -54,8 +54,12 @@ const _vowSync = new Map();
 /**
  * Decide what a swear-vow click should do. Pure — unit-tested.
  *
+ * Built only by `swearSharedVowForAll`, on the canonical GM, which writes the
+ * target connection itself — there is no player-side branch (its unreachable
+ * `!isGM` draft-queue branch is gone, SWEAR-PLAN-DEAD-BRANCH).
+ *
  * @param {{ vow, clock, target }|null} meta — message flags incitingMeta
- * @param {{ isGM: boolean, hasActor: boolean, targetExists: boolean,
+ * @param {{ hasActor: boolean, targetExists: boolean,
  *           alreadySworn: boolean }} ctx
  * @returns {{ ok: boolean, reason?: string,
  *             vow?: { name: string, rank: string|null, clock: {max:number}|null },
@@ -84,13 +88,6 @@ export function buildSwearVowPlan(meta, ctx = {}) {
   } else if (meta.target?.name) {
     if (ctx.targetExists) {
       plan.targetNotice = `${meta.target.name} is already established — no new record created.`;
-    } else if (!ctx.isGM) {
-      // Non-GM can't write the connection (world-scoped), but instead of a dead
-      // "ask your GM" advisory (finding C) we queue a GM-actionable draft —
-      // same pipeline as narration-detected entities, so it lands in the
-      // Entities review with a one-click Confirm.
-      plan.queueTargetDraft = true;
-      plan.targetNotice = `${meta.target.name} has been queued as a connection for your GM to confirm.`;
     } else {
       plan.createTarget = true;
     }
@@ -197,7 +194,6 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
 
   const actors = getPlayerActors() ?? [];
   const plan   = buildSwearVowPlan(meta, {
-    isGM:         true,
     hasActor:     actors.length > 0,
     targetExists: meta?.target?.name
       ? entityExistsAnyType(meta.target.name, campaignState ?? {})

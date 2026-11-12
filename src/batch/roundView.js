@@ -36,6 +36,9 @@ export const ROUND_NOTICES = Object.freeze({
   noSession:   "No session has begun — the round opens once Begin a Session starts one.",
   // Nothing sends it on a GM's return: the window says what to do (issue #342 Z33).
   noGm:        "No GM is connected — your action is kept here; submit it once a GM has joined.",
+  // Every connected GM's page stood down after its connection dropped and
+  // waits to be reloaded (STALE-BANNER-WORDING; issue #347 AB19).
+  gmReload:    "The GM's browser lost its connection to the server and must be reloaded — your action is kept here; submit it once it has.",
   noKeyedGm:   "No GM with a Claude key is connected, so the round can't be read. Your action is kept; it is read once one joins.",
   // A round rolled and waiting for its narration, which needs a key (issue #347 D3).
   noKeyedNarrator: "No GM with a Claude key is connected, so the round can't be narrated yet — it is narrated once one joins.",
@@ -63,6 +66,7 @@ const humanise = (slug) => String(slug ?? "")
  * @param {boolean} ctx.sessionActive
  * @param {boolean} [ctx.xCardActive]
  * @param {boolean} [ctx.gmConnected]
+ * @param {boolean} [ctx.gmReload] — GMs are connected, but every one's page waits to be reloaded
  * @param {boolean} [ctx.keyedGm] — a GM with a Claude key is connected (the readings run there)
  * @param {Iterable<string>} [ctx.connectedUserIds]
  * @param {(moveId: string) => string} [ctx.moveLabel]
@@ -80,7 +84,7 @@ export function buildRoundView(round, viewer, ctx = {}) {
 
   const banners = [];
   if (!ctx.sessionActive) banners.push({ level: "info", text: ROUND_NOTICES.noSession });
-  else if (ctx.gmConnected === false) banners.push({ level: "warn", text: ROUND_NOTICES.noGm });
+  else if (ctx.gmConnected === false) banners.push({ level: "warn", text: ctx.gmReload ? ROUND_NOTICES.gmReload : ROUND_NOTICES.noGm });
   else if (ctx.keyedGm === false) {
     banners.push({ level: "warn", text: round?.phase === ROUND_PHASE.NARRATING ? ROUND_NOTICES.noKeyedNarrator : ROUND_NOTICES.noKeyedGm });
   }

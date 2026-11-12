@@ -302,7 +302,9 @@ export async function saveCustomOracle(tableId, name, entries, { unparsed = [] }
 // A range's dash: the hyphen, and the dashes a pasted rulebook table brings —
 // hyphen, non-breaking hyphen, figure, en and em dashes, the horizontal bar
 // and the minus sign. "5–6 Hostile" (en dash) was dropped (issue #322 V28).
-const ENTRY_LINE_RE = /^(\d+)(?:\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*(\d+))?\s+(.+)$/;
+// Or the word "to" ("3 to 4 Wary"): it read as the single row 3, "to 4 Wary"
+// (CUSTOM-ORACLE-TO-RANGES).
+const ENTRY_LINE_RE = /^(\d+)(?:(?:\s*[-\u2010\u2011\u2012\u2013\u2014\u2015\u2212]\s*|\s+to\s+)(\d+))?\s+(.+)$/i;
 
 /** A row number: "00" is a percentile table's 100 ("96-00 Roll twice"). */
 const entryNumber = (token) => (token === "00" ? 100 : Number(token));
@@ -327,6 +329,7 @@ function entryLines(raw) {
  *   1-30 Triumph
  *   31–60 Stalemate      (an en dash, or another dash, as pasted)
  *   96-00 Roll twice     ("00" is 100)
+ *   3 to 4 Wary          (a range written with "to")
  *   7 Critical
  * Whitespace between range and result is required. Lines starting with #
  * are treated as comments and ignored. A line that does not read as an entry

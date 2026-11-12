@@ -1,14 +1,12 @@
 // tests/unit/ironswornAssets.test.js
 // System asset integration — Phase 1, 3, 4, 9.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import {
   IS_BASE,
   IS_PATHS,
   IS_SYSTEM_ID,
-  isIronswornAvailable,
-  _resetIronswornAvailabilityCache,
   pickStarshipIcon,
   iconForPlanetType,
   iconForStellarObject,
@@ -34,53 +32,6 @@ describe('Phase 1 — IS_PATHS constants', () => {
                        'ASSETS', 'ORACLES', 'SECTORS', 'ICONS', 'DICE', 'MISC']) {
       expect(IS_PATHS[key]).toMatch(/^systems\/foundry-ironsworn\/assets\//);
     }
-  });
-});
-
-describe('Phase 1 — isIronswornAvailable', () => {
-  beforeEach(() => {
-    _resetIronswornAvailabilityCache();
-  });
-
-  it('returns true when game.system.id matches', async () => {
-    const original = global.game.system;
-    global.game.system = { id: 'foundry-ironsworn' };
-    try {
-      expect(await isIronswornAvailable()).toBe(true);
-    } finally {
-      global.game.system = original;
-    }
-  });
-
-  it('returns true when game.systems has foundry-ironsworn entry', async () => {
-    const originalSystems = global.game.systems;
-    global.game.systems = { get: (id) => id === 'foundry-ironsworn' ? { id } : null };
-    try {
-      expect(await isIronswornAvailable()).toBe(true);
-    } finally {
-      global.game.systems = originalSystems;
-    }
-  });
-
-  it('returns false when neither system match nor registered system is found', async () => {
-    const origSystem = global.game.system;
-    const origSystems = global.game.systems;
-    global.game.system = { id: 'other' };
-    global.game.systems = { get: () => null };
-    try {
-      expect(await isIronswornAvailable()).toBe(false);
-    } finally {
-      global.game.system = origSystem;
-      global.game.systems = origSystems;
-    }
-  });
-
-  it('caches the result so repeat probes do not re-read game state', async () => {
-    global.game.system = { id: 'foundry-ironsworn' };
-    expect(await isIronswornAvailable()).toBe(true);
-    global.game.system = { id: 'changed-after-cache' };
-    // Still true because cached
-    expect(await isIronswornAvailable()).toBe(true);
   });
 });
 

@@ -51,8 +51,9 @@ import {
   warnEntityNotRegistered,
 } from "./registry.js";
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
-import { readCommandVehicleIntegrity, setCommandVehicleIntegrity, unreconciledRecordIntegrity } from "../character/actorBridge.js";
+import { readCommandVehicleIntegrity, setCommandVehicleIntegrity, unreconciledRecordIntegrity, readCommandVehicleConditions, setCommandVehicleConditions } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "ship";
@@ -394,6 +395,14 @@ export async function updateShip(actorId, updates) {
   if (updates.battered !== undefined) systemPatch["system.debility.battered"] = !!updated.battered;
   if (current.cursed !== updated.cursed) systemPatch["system.debility.cursed"]   = !!updated.cursed;
   if (Object.keys(systemPatch).length) await document.update(systemPatch);
+  // The STARSHIP asset's own Battered / Cursed conditions mirror the native
+  // impacts written above (STARSHIP-ASSET-CONDITIONS-UNSYNCED).
+  if (updates.battered !== undefined || current.cursed !== updated.cursed) {
+    await setCommandVehicleConditions(document, {
+      ...(updates.battered !== undefined ? { battered: !!updated.battered } : {}),
+      ...(current.cursed !== updated.cursed ? { cursed: !!updated.cursed } : {}),
+    });
+  }
 
   // The notes go to the sheet's Notes tab only — the ship's notes (issue #329
   // X12). The record's copy was a second store nothing read; one left there
@@ -500,6 +509,57 @@ export async function changeIntegrity(actorId, delta) {
   } catch (err) {
     return { ok: false, reason: "refused", error: String(err?.message ?? err), ...at };
   }
+}
+
+/**
+ * Keep a starship's STARSHIP asset conditions and its native impacts one fact
+ * (STARSHIP-ASSET-CONDITIONS-UNSYNCED). The native `system.debility.battered`
+ * / `cursed` are canonical (decisions.md → "Starship battered: the native
+ * sheet field is canonical"); the asset's Battered / Cursed conditions are
+ * their mirror, and both are marked on the sheet:
+ *   - the starship sheet's impact toggle (an `updateActor` touching the
+ *     debility) → the asset's conditions follow it;
+ *   - the asset card's condition box (an `updateItem` of a Command Vehicle
+ *     asset touching its conditions, not the mirror's own write) → the
+ *     native impacts are written through updateShip (cursed only set, never
+ *     cleared), whose write-through puts the asset back in step.
+ * Canonical GM only. Never throws.
+ */
+export function registerStarshipConditionSync() {
+  Hooks.on("updateActor", async (actor, change) => {
+    try {
+      if (!isCanonicalGM() || actor?.type !== "starship") return;
+      const debility = change?.system?.debility;
+      const flat = Object.keys(change ?? {}).some(k => k.startsWith("system.debility."));
+      if (!debility && !flat) return;
+      const native = actor.system?.debility ?? {};
+      await setCommandVehicleConditions(actor, { battered: !!native.battered, cursed: !!native.cursed });
+    } catch (err) {
+      console.warn(`${MODULE_ID} | starship conditions: mirroring ${actor?.name ?? "a starship"}'s impacts onto its STARSHIP asset failed:`, err?.message ?? err);
+    }
+  });
+  Hooks.on("updateItem", async (item, change, options) => {
+    try {
+      if (!isCanonicalGM() || options?.[MODULE_ID]?.conditionMirror) return;
+      const ship = item?.parent ?? null;
+      if (ship?.type !== "starship" || !/command vehicle/i.test(String(item?.system?.category ?? ""))) return;
+      if (change?.system?.conditions === undefined && !("system.conditions" in (change ?? {}))) return;
+      const marked = readCommandVehicleConditions(ship);
+      if (!marked) return;
+      const native = ship.system?.debility ?? {};
+      const updates = {};
+      if (marked.battered !== !!native.battered) updates.battered = marked.battered;
+      if (marked.cursed !== !!native.cursed) updates.cursed = marked.cursed;
+      if (!Object.keys(updates).length) return;
+      if (getShip(ship.id)) {
+        await updateShip(ship.id, updates);
+      } else {
+        await ship.update(Object.fromEntries(Object.entries(updates).map(([k, v]) => [`system.debility.${k}`, v])));
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | starship conditions: the STARSHIP asset's condition could not be written to ${item?.parent?.name ?? "its starship"}'s impacts:`, err?.message ?? err);
+    }
+  });
 }
 
 /**
@@ -640,7 +700,7 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
   // Mission") rolls this region's mission table, as the seed's own mission
   // does — it rolled the Terminus one in every region (issue #338 D5's rule;
   // known-issues SHIP-SEED-MISSION-REGION).
-  const rolledType      = safeRoll(rollOracle, "starship_type", { region });
+  const rolledType      = rollSingleShipType(rollOracle, { region });
   const rolledFirstLook = safeRoll(rollOracle, "starship_first_look");
   const rolledMission   = safeRoll(rollOracle, missionTable);
 
@@ -753,11 +813,12 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
   });
   if (listed) campaignState.shipIds.push(actor.id);
 
-  // Silent portrait — gated on OpenRouter key. Failures stay silent.
-  if (portraitSource && hasOpenRouterKey()) {
+  // Silent portrait — made where an OpenRouter key lives: here, else asked of
+  // the GM holding one (AUTOSEED-KEYLESS-CANONICAL). Failures stay silent.
+  if (portraitSource) {
     try {
-      const { generatePortrait } = await import("../art/generator.js");
-      await generatePortrait(actor.id, "ship", ship, campaignState ?? {});
+      const { generatePortraitWhereKeyLives } = await import("../art/portraitRouting.js");
+      await generatePortraitWhereKeyLives(actor.id, "ship", ship, campaignState ?? {});
     } catch (err) {
       console.warn(`${MODULE_ID} | seedStarshipActor: portrait generation failed:`, err);
     }
@@ -845,6 +906,31 @@ function safeRoll(rollOracle, tableId, options = {}) {
   } catch {
     return "";
   }
+}
+
+// Starship Type's 95–100 row, "Ships in conflict (roll twice)", as the roller
+// resolves it ("Ships in conflict: A / B").
+const SHIPS_IN_CONFLICT = /^Ships in conflict\b/i;
+const SHIP_TYPE_REROLLS = 6;
+
+/**
+ * One ship's own type, rolled on Starship Type. The table is an encounter
+ * table: its 95–100 "Ships in conflict" is two ships met fighting, not a type
+ * one ship can have — a new ship got "Ships in conflict: A / B" as its single
+ * type (known-issues SHIP-TYPE-IN-CONFLICT). That row is rolled again, a few
+ * times at most ("" when every roll landed on it, as a refused roll is).
+ * The ship seed and a detected ship's draft Confirm both roll by it.
+ *
+ * @param {Function} rollOracle — roller.js rollOracle
+ * @param {{ region?: string }} [options] — passed to each roll
+ * @returns {string}
+ */
+export function rollSingleShipType(rollOracle, options = {}) {
+  for (let i = 0; i < SHIP_TYPE_REROLLS; i++) {
+    const type = safeRoll(rollOracle, "starship_type", options);
+    if (!SHIPS_IN_CONFLICT.test(type)) return type;
+  }
+  return "";
 }
 
 /**
@@ -986,13 +1072,6 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-function hasOpenRouterKey() {
-  try {
-    return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey");
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Inspect a freshly-created starship Actor and return true when it looks

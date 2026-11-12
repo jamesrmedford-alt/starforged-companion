@@ -302,7 +302,76 @@ async function createSector(sector) {
   // refused — the GM's cached setting must then still say what the world
   // says, or the retry finds the sector "already stored" (issue #329 X11).
   const campaignState = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
+  const listedBefore  = snapshotEntityLists(campaignState);
 
+  // A run that fails partway takes back what it made — its Actors, its Sector
+  // Record and its Scene: they were left in the world, unlisted, and a retry
+  // made a second Scene and a second Sector Record beside them (known-issues
+  // SECTOR-CREATE-PARTIAL). The world is as it was before the run, so the
+  // retry — or a re-generated sector — makes one set.
+  try {
+    return await buildAndStoreSector(sector, campaignState);
+  } catch (err) {
+    await rollBackSectorCreation(sector, campaignState, listedBefore).catch(rollbackErr =>
+      console.warn(`${MODULE_ID} | sector creation: taking back the failed run's documents failed:`, rollbackErr?.message ?? rollbackErr));
+    throw err;
+  }
+}
+
+// The id lists sector creation adds the Actors it makes to (createEntityJournals).
+const SECTOR_ENTITY_LISTS = ["settlementIds", "connectionIds", "locationIds"];
+
+/** The ids each list names before a run — what the run's own additions are told apart from. */
+function snapshotEntityLists(campaignState) {
+  return Object.fromEntries(SECTOR_ENTITY_LISTS.map(key =>
+    [key, new Set(Array.isArray(campaignState?.[key]) ? campaignState[key] : [])]));
+}
+
+/**
+ * Delete what a failed creation of `sector` made: the Actors its run added to
+ * the working copy's id lists (and the PCs' unmarked bond Items its
+ * connection made), and the Sector Record journals and Scenes flagged with
+ * its id — the sector is not stored (runSectorCreationPipeline runs only for
+ * a sector the campaign does not hold), so every one of them is a failed
+ * run's. Best effort: each delete is tried, a refused one is logged.
+ *
+ * @param {Object} sector
+ * @param {Object} campaignState — the failed run's working copy
+ * @param {Object<string, Set<string>>} listedBefore — snapshotEntityLists before the run
+ */
+async function rollBackSectorCreation(sector, campaignState, listedBefore) {
+  const tryDelete = async (doc, what) => {
+    try { await doc?.delete?.(); }
+    catch (err) { console.warn(`${MODULE_ID} | sector creation: ${what} "${doc?.name ?? doc?.id}" could not be removed:`, err?.message ?? err); }
+  };
+  for (const key of SECTOR_ENTITY_LISTS) {
+    const added = (Array.isArray(campaignState?.[key]) ? campaignState[key] : []).filter(id => !listedBefore[key]?.has(id));
+    for (const id of added) {
+      const actor = game.actors?.get?.(id) ?? null;
+      if (!actor) continue;
+      if (key === "connectionIds") {
+        const recordId = actor.flags?.[MODULE_ID]?.connection?._id ?? null;
+        if (recordId) {
+          const { deleteUnmarkedBondItems } = await import("../character/actorBridge.js");
+          await deleteUnmarkedBondItems({ connectionId: recordId }).catch(err =>
+            console.warn(`${MODULE_ID} | sector creation: the connection's bond Items could not be removed:`, err?.message ?? err));
+        }
+      }
+      await tryDelete(actor, "Actor");
+    }
+  }
+  const sectorId = sector?.id ?? null;
+  if (!sectorId) return;
+  const ofSector = (doc, flag) => doc?.flags?.[MODULE_ID]?.[flag] === true && doc.flags[MODULE_ID].sectorId === sectorId;
+  for (const journal of [...(game.journal?.contents ?? [])].filter(j => ofSector(j, "sectorRecord"))) {
+    await tryDelete(journal, "Sector Record");
+  }
+  for (const scene of [...(game.scenes?.contents ?? [])].filter(s => ofSector(s, "sectorScene"))) {
+    await tryDelete(scene, "Scene");
+  }
+}
+
+async function buildAndStoreSector(sector, campaignState) {
   const artEnabled   = getSetting("sectorArtEnabled",            true);
   const stubsEnabled = getSetting("sectorNarratorStubsEnabled",  true);
   const narratorSettings = getNarratorSettings();

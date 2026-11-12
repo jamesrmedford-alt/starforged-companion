@@ -97,8 +97,12 @@ export function applySidecar(sidecar, ctx) {
     // narrator re-asserts must not silently re-enter the ledger — the GM's
     // correction stands (manual `!truth set` bypasses this, GM authority).
     // The store's truths too: the copy may predate them (issue #345 AA04).
-    const dupe = findEquivalentTruth(campaignState.sceneTruths, subject, fact)
-      ?? findEquivalentTruth(storedTruths, subject, fact);
+    // A scene fact this scene struck at another place does not block it
+    // here — a scene travels, and that strike is that place's
+    // (ACTIVE-SCENE-STRIKE-PLACE-BLIND, AA28's in-scene half).
+    const here = { place: sceneLocation };
+    const dupe = findEquivalentTruth(campaignState.sceneTruths, subject, fact, here)
+      ?? findEquivalentTruth(storedTruths, subject, fact, here);
     if (dupe) {
       if (dupe.retracted) {
         console.debug?.(
@@ -167,7 +171,11 @@ export function applySidecar(sidecar, ctx) {
     // location left the dockmaster none, though narration A — kept — had
     // put him in the cargo bay).
     const previous = idx >= 0 ? supersededEntry(list[idx]) : null;
-    const entry   = { attribute, value, updatedAt: now, ...stamp, ...(previous ? { previous } : {}) };
+    // A text subject's key is lowercased (subjectKey): the entry keeps the
+    // subject as the narrator wrote it, for the CURRENT STATE label
+    // (known-issues TEXT-SUBJECT-LOWERCASE).
+    const shown   = subject.kind === 'text' && subject.text ? { subjectText: subject.text } : {};
+    const entry   = { attribute, value, updatedAt: now, ...shown, ...stamp, ...(previous ? { previous } : {}) };
     if (idx >= 0) list[idx] = entry;
     else list.push(entry);
     stateUpdates.push({ key, attribute });
@@ -575,7 +583,10 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
   const newKey = subjectKey({ kind: 'entity', entityId: entityRef.entityId });
   if (oldKey !== newKey && campaignState.sceneState.bySubject[oldKey]) {
     const merged = campaignState.sceneState.bySubject[newKey] ?? [];
-    for (const e of campaignState.sceneState.bySubject[oldKey]) {
+    for (const old of campaignState.sceneState.bySubject[oldKey]) {
+      // An entity subject's label is its card's name: the text's is dropped.
+      const e = { ...(old ?? {}) };
+      delete e.subjectText;
       const idx = merged.findIndex(m => sameStateAttribute(m.attribute, e.attribute));
       if (idx >= 0) merged[idx] = e; else merged.push(e);
     }
@@ -623,7 +634,9 @@ export function demoteEntitySubject(entityId, name, campaignState) {
   if (bySubject && typeof bySubject === 'object' && Array.isArray(bySubject[oldKey])) {
     const newKey = subjectKey({ kind: 'text', text });
     const merged = [...(Array.isArray(bySubject[newKey]) ? bySubject[newKey] : [])];
-    for (const e of bySubject[oldKey]) {
+    for (const old of bySubject[oldKey]) {
+      // Labelled with the name as the card had it (TEXT-SUBJECT-LOWERCASE).
+      const e = old && typeof old === 'object' ? { ...old, subjectText: text } : old;
       const idx = merged.findIndex(m => sameStateAttribute(m?.attribute, e?.attribute));
       if (idx >= 0) merged[idx] = e; else merged.push(e);
     }
@@ -803,8 +816,11 @@ export function setTruth(subjectRef, fact, campaignState, ctx = {}) {
   // same way — dropped from `sessionRetractions` on this copy; the caller
   // writes the drop onto the store (dropSessionStrike — issue #342 Z42) —
   // where it stands: a scene fact struck at another place is that place's,
-  // and this set is this place's own (findSessionStrike, issue #345 AA28).
-  const strike = findBareStrike(campaignState.sceneTruths, subjectRef, cleanFact);
+  // and this set is this place's own (findSessionStrike, issue #345 AA28) —
+  // this scene's strike too, when the scene has travelled since
+  // (ACTIVE-SCENE-STRIKE-PLACE-BLIND).
+  const strike = findBareStrike(campaignState.sceneTruths, subjectRef, cleanFact,
+    { place: assertedLocation(campaignState) });
   const kept   = strike ? null : findSessionStrike(campaignState, subjectRef, cleanFact, ctx.names ?? []);
   const lifted = strike ?? kept;
   const isGM = ctx.isGM ?? true;
@@ -950,7 +966,9 @@ export function findSessionBlock(campaignState, subject, fact, names = []) {
   const byId = new Map(truths.filter(t => t?.id).map(t => [t.id, t]));
   const removed = truths.filter(t => t?.retracted
     && (t.retractedBy === XCARD_RETRACTED_BY || isReplacedOriginal(t, byId)));
-  const active = findEquivalentTruth(removed, subject, fact);
+  // A Replace's scene fact at its place, as its kept block (AA28) — the
+  // X-Card's anywhere (truthStandsAt).
+  const active = findEquivalentTruth(removed, subject, fact, { place: assertedLocation(campaignState) });
   if (active) return active;
   const kept = sessionKept(campaignState);
   return kept ? findKeptEntry(kept.blocked, subject, fact, names, assertedLocation(campaignState)) : null;
@@ -1058,19 +1076,47 @@ export function dropSessionStrike(campaignState, strike) {
  * nothing) — or null. setTruth lifts it; the `!truth set` card names a
  * player's set refused over a GM's strike.
  *
+ * `place`: where the fact is set now — a scene fact struck at another place
+ * in this scene is not this one's strike (truthStandsAt —
+ * ACTIVE-SCENE-STRIKE-PLACE-BLIND). Omitted, place-blind.
+ *
  * @param {Object[]} truths
  * @param {Object} subjectRef
  * @param {string} fact
+ * @param {{ place?: string|null }} [opts]
  * @returns {Object|null}
  */
-export function findBareStrike(truths, subjectRef, fact) {
+export function findBareStrike(truths, subjectRef, fact, { place } = {}) {
   const key = subjectKey(subjectRef);
   const norm = normaliseFactText(fact);
   if (!norm) return null;
   return (Array.isArray(truths) ? truths : []).find(t =>
     t?.retracted && isBareTableStrike(t)
     && subjectKey(t.subject) === key
-    && normaliseFactText(t.fact) === norm) ?? null;
+    && normaliseFactText(t.fact) === norm
+    && truthStandsAt(t, place)) ?? null;
+}
+
+/**
+ * Whether one of the active scene's truths answers for a fact asserted at
+ * `place`, for the re-assertion block, the lift and the CORRECTED block: a
+ * struck or replaced scene fact stands only at the place it was asserted at
+ * (its `sceneLocation`, keptStrikeStandsAt) — a scene travels, and the strike
+ * at Bleakhold blocked, was lifted by and was named beside Vantage Station's
+ * own fact of the same words until the scene ended
+ * (ACTIVE-SCENE-STRIKE-PLACE-BLIND, AA28's in-scene half). The X-Card's
+ * retraction stands anywhere, as its kept block does; so does a live truth, a
+ * truth about any other subject, and any truth when `place` is undefined (a
+ * caller that asks place-blind).
+ *
+ * @param {Object} t — a sceneTruths entry
+ * @param {string|null|undefined} place
+ * @returns {boolean}
+ */
+function truthStandsAt(t, place) {
+  if (place === undefined || !t?.retracted || t.retractedBy === XCARD_RETRACTED_BY) return true;
+  if (t.subject?.kind !== 'scene') return true;
+  return keptStrikeStandsAt(t.sceneLocation, place);
 }
 
 /**
@@ -1138,22 +1184,27 @@ export function canCorrectTruth(truth, ctx = {}) {
  * the same fact text after normalisation. Includes retracted entries so a
  * struck fact blocks narrator re-assertion (see applySidecar) — but not one
  * a superseded narration wrote (SUPERSEDED_RETRACTED_BY, issue #338 D8): the
- * narration of the upgraded outcome may state it again. Exported for unit
+ * narration of the upgraded outcome may state it again. `place`: where the
+ * fact is asserted now — a scene fact struck or replaced at another place in
+ * this scene is not its equivalent (truthStandsAt,
+ * ACTIVE-SCENE-STRIKE-PLACE-BLIND); omitted, place-blind. Exported for unit
  * testing.
  *
  * @param {Array} truths
  * @param {Object} subject — resolved subject ({kind, ...})
  * @param {string} fact
+ * @param {{ place?: string|null }} [opts]
  * @returns {Object|null}
  */
-export function findEquivalentTruth(truths, subject, fact) {
+export function findEquivalentTruth(truths, subject, fact, { place } = {}) {
   if (!Array.isArray(truths) || !truths.length) return null;
   const key  = subjectKey(subject);
   const norm = normaliseFactText(fact);
   if (!norm) return null;
   return truths.find(t =>
     t && t.retractedBy !== SUPERSEDED_RETRACTED_BY
-    && subjectKey(t.subject) === key && normaliseFactText(t.fact) === norm,
+    && subjectKey(t.subject) === key && normaliseFactText(t.fact) === norm
+    && truthStandsAt(t, place),
   ) ?? null;
 }
 

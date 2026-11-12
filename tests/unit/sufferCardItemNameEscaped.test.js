@@ -19,9 +19,12 @@ import { companionTakesAHit, withstandDamage, crewUnpreparedNote } from "../../s
 const MODULE_ID = "starforged-companion";
 const NAME = 'Rover <img src=x onerror="alert(1)">';
 
-function asset(id, category) {
-  const item = { id, name: NAME, type: "asset", system: { category, condition: { value: 3 } },
-    async update(changes) { for (const [k, v] of Object.entries(changes)) if (k === "system.condition.value") item.system.condition.value = v; return item; } };
+// The vendor's asset: its condition track (`system.track`) — a companion's
+// health, a support vehicle's Integrity (SUFFER-EXECUTOR-ASSET-SCHEMA).
+function asset(id, category, trackName) {
+  const item = { id, name: NAME, type: "asset",
+    system: { category, track: { enabled: true, name: trackName, value: 3, min: 0, max: 5 }, conditions: [] },
+    async update(changes) { for (const [k, v] of Object.entries(changes)) if (k === "system.track.value") item.system.track.value = v; return item; } };
   return item;
 }
 
@@ -30,7 +33,7 @@ beforeEach(() => {
   ChatMessage._reset();
   game.actors._reset();
   pc = makeTestActor({ id: "pc-kira", name: "Kira", ownership: { "pl-1": 3 },
-    items: { contents: [asset("comp-1", "Companion"), asset("veh-1", "Vehicle")] } });
+    items: { contents: [asset("comp-1", "Companion", "Health"), asset("veh-1", "Support Vehicle", "Integrity")] } });
   game.actors._set(pc.id, pc);
 });
 

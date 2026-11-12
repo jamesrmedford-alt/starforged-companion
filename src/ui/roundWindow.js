@@ -40,7 +40,7 @@ import {
   onRoundDraftChanged,
   batchModeKeyedGm,
 } from "../batch/driver.js";
-import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
+import { requestGmAction, hasActiveGM, onlyStoodDownGMs } from "../multiplayer/gmRelay.js";
 import { onGmLoadChange } from "../multiplayer/gmGate.js";
 import { relayCardButtonClick, RELAY_RECOVERY_MS } from "../moves/burnMomentum.js";
 import { renderMoveAbilitiesForm, readMoveAbilitiesForm } from "./settingsPanel.js";
@@ -62,6 +62,10 @@ const escapeHtml = (s) => String(s ?? "")
 const RELAY_FAILURES = {
   "no-gm": "No GM is connected, so this wasn't saved. Your action is kept here — try again once a GM has joined.",
 };
+
+/** The "no-gm" refusal when GMs are connected but every one's page waits to be reloaded (STALE-BANNER-WORDING). */
+const RELAY_FAILURE_GM_RELOAD =
+  "The GM's browser lost its connection to the server and must be reloaded, so this wasn't saved. Your action is kept here — try again once it has.";
 
 /**
  * The newest narration of this session (the window shows it, collapsible) —
@@ -163,6 +167,7 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       sessionActive:    isSessionActive(campaignState),
       xCardActive:      isXCardActive(campaignState),
       gmConnected:      hasActiveGM(),
+      gmReload:         onlyStoodDownGMs(),
       keyedGm:          batchModeKeyedGm(),
       connectedUserIds: users.filter(u => u?.active).map(u => u.id),
       moveLabel:        moveDisplayName,
@@ -351,7 +356,8 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
     if (r.statName) parts.push(`<div class="sf-round-row"><span class="sf-round-label">Stat</span> ${escapeHtml(r.statName)}</div>`);
     if (r.rationale) parts.push(`<p class="sf-round-rationale">${escapeHtml(r.rationale)}</p>`);
     if (r.mischiefAside) parts.push(`<div class="sf-round-mischief"><span class="sf-round-label">Mischief</span> ${escapeHtml(r.mischiefAside)}</div>`);
-    if (r.blocked) parts.push(`<p class="sf-round-hint">This can't be rolled as read — the vow it names is already fulfilled. Edit your action, or pass.</p>`);
+    // Worded by the closed vow's forsaken flag (ROUND-VOW-GONE-SAYS-FULFILLED).
+    if (r.blocked) parts.push(`<p class="sf-round-hint">This can't be rolled as read — the vow it names ${r.blocked === "vow-forsaken" ? "was forsaken" : "is already fulfilled"}. Edit your action, or pass.</p>`);
     if (!ready && r.targetChoices?.options?.length) {
       const chosen = own.choices?.targetId ?? null;
       parts.push(`<fieldset class="sf-round-targets"><legend>${escapeHtml(r.targetChoices.prompt)}</legend>`
@@ -492,7 +498,8 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       res = { ok: false, reason: "error" };
     }
     if (!res?.ok) {
-      this.#failure = RELAY_FAILURES[res?.reason] ?? "That wasn't saved — try again.";
+      this.#failure = (res?.reason === "no-gm" && onlyStoodDownGMs() ? RELAY_FAILURE_GM_RELOAD : null)
+        ?? RELAY_FAILURES[res?.reason] ?? "That wasn't saved — try again.";
       this.#failureReason = res?.reason ?? null;
     }
     return res;
@@ -809,12 +816,12 @@ export async function toggleBatchMode() {
     // The players kept playing while the dialog was open: a round the last
     // confirm started resolving meanwhile is not discarded — switched off
     // under it, every Round window closed and its upgrade step was stranded
-    // (issue #345 AA36). It finishes, then the mode turns off (Z04).
-    const now = getStoredRound();
-    if (isResolving(now)) {
-      await turnOffAfterRound(now);
-      return;
-    }
+    // (issue #345 AA36). It finishes, then the mode turns off (Z04). Which it
+    // is, the canonical GM decides on its own round chain — this GM's cached
+    // round can lag a resolution begun within the mode-off write's round trip
+    // (BATCH-OFF-DIALOG-HANDOVER-WINDOW).
+    await requestGmAction("batch.discardThenOff", { roundId: round.id });
+    return;
   }
   // Off: the canonical GM closes a collecting round (its authors keep their drafts).
   await game.settings.set(MODULE_ID, BATCH_ENABLED_SETTING, false).catch(err => {

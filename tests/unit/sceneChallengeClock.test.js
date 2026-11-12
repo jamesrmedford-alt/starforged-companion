@@ -28,13 +28,19 @@ const clock = (id) => world().clocks.find(c => c._id === id) ?? null;
 const tracks = () => journal.getFlag(MODULE_ID, "tracks") ?? [];
 const ptpCards = () => table.cards(f => f.payThePriceAdvance).map(m => m.content);
 
-/** The "Starforged Progress Tracks" journal: a document-level flag store, as progressTracks.js writes it. */
+/**
+ * The "Starforged Progress Tracks" journal: a document-level flag store, as
+ * progressTracks.js writes it. `refuse` counts saves still to refuse.
+ */
 function makeTracksJournal() {
   const flags = {};
   return {
-    id: "tracks-journal", name: "Starforged Progress Tracks",
+    id: "tracks-journal", name: "Starforged Progress Tracks", refuse: 0,
     getFlag: (scope, key) => flags[`${scope}.${key}`],
-    setFlag: async (scope, key, value) => { flags[`${scope}.${key}`] = structuredClone(value); },
+    async setFlag(scope, key, value) {
+      if (this.refuse > 0) { this.refuse -= 1; throw new Error("test: the server refused the track save"); }
+      flags[`${scope}.${key}`] = structuredClone(value);
+    },
   };
 }
 
@@ -157,5 +163,21 @@ describe("T03 — a completed scene challenge's danger clock stops advancing", (
     await table.settle();
     expect(tracks()[0].completed).toBe(true);
     expect(clock(reactor._id)).toMatchObject({ active: true, filled: 0 });
+  });
+});
+
+describe("SCENE-CHALLENGE-ADD-ORPHAN-CLOCK — a refused challenge leaves no clock behind", () => {
+  it("a refused track write removes the clock created for it; the retry makes one challenge and one clock", async () => {
+    journal.refuse = 1;
+    await expect(gm().run(() => store.addProgressTrack({ type: "scene_challenge", label: "Escape the flooding chamber", rank: "dangerous" })))
+      .rejects.toThrow(/refused the track save/);
+    await table.settle();
+    expect(tracks()).toEqual([]);
+    expect(world().clocks).toEqual([]);
+
+    const challenge = await addChallenge();
+    expect(tracks()).toHaveLength(1);
+    expect(world().clocks).toHaveLength(1);
+    expect(world().clocks[0]._id).toBe(challenge.tensionClockId);
   });
 });

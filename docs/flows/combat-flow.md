@@ -115,8 +115,11 @@ begin in a bad spot — a `chain` of `momentum` and `combatPosition: "bad_spot"`
 position at all, issue #321 U18); miss → `bad_spot`.
 
 The pipeline's `enterCombat` branch (`applyOutcomeEffects`, `src/index.js`)
-does **not** create a track. If no matching open combat track exists (`selectCombatTrack`,
-`src/moves/combat.js`), it posts the **threshold decision card**
+does **not** create a track. If no open combat track is the foe by name
+(`selectCombatTrack`, `src/moves/combat.js`, with `soleFallback: false` — the
+one open fight is not a new foe's: it resumed that fight, posted no card and
+took the opening position, ENTER-FRAY-SOLE-FIGHT), it posts the **threshold
+decision card**
 (`buildCombatThresholdHtml`, `src/moves/combatThreshold.js`):
 
 - header "⚔ A fight looms — <foe>" with the foe from `interpretation.moveTarget`;
@@ -139,8 +142,9 @@ a won fight again. An effect that does not land releases the claim.
 offers) and objective, with the card's own label, carried position and
 roller, and creates the track (the card keeps only its `thresholdTaken`
 claim). `createCombatTrackFromThreshold` → `applyCombatProgress`
-(`beginsFight: true` — a new foe is a new fight however many are open, issue
-#321 U16) → `addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
+(`beginsFight: true` — a new foe is a new fight however many are open, one
+included: matched by name only, issue #321 U16 / ENTER-FRAY-SOLE-FIGHT) →
+`addProgressTrack`; the track carries `label`, `rank`, `ticks`, `objective`,
 `linkedVowName`, and gets its `combatState` set from the carried position via
 `applyCombatPositionToTrack` (`src/moves/combatTracker.js` — writes the track,
 the actor's sheet field, and the combatant badge). A combat-track card posts
@@ -216,7 +220,10 @@ and mirrored to that PC when they own it; it read `game.user.character`, null
 for a solo GM, and cycled the fight's position while the PC's own steered the
 next move, issue #326 W56; its badge shows that same position — the viewer's
 own, the fight's when they have none — where it showed the fight's last-set
-one, a crewmate's in a two-character fight, issue #345 AA64) included; the
+one, a crewmate's in a two-character fight, issue #345 AA64; one badge per
+character the viewer plays — a GM's every PC, each press naming its own
+character (`data-actor-id`) — where a GM running several PCs saw and set only
+the first's, POSITION-BADGE-GM-FIRST-PC) included; the
 badge wrote only the two mirrors and the toggle only the track, so the
 interpreter, TDA, the narrator, the sheet and the badge disagreed (issue #321
 U19). The pipeline
@@ -237,9 +244,16 @@ value per fight used to apply to every roller: one PC's bad spot remapped
 another's Strike to Clash and downgraded their Take Decisive Action (V03).
 The weak-hit Enter-the-Fray choice ("You
 are in control", or the momentum option's bad spot — issue #321 U18) is a
-`combat-position` suffer call (`src/moves/sufferDialog.js`)
-that writes the open track — or stashes onto the pending threshold card when
-clicked before Enter the Fray.
+`combat-position` suffer call (`src/moves/sufferDialog.js`) on the fight the
+move was about, as its choice card names it (DELAYED-CHOICE-IDENTITY, N04's
+rule): the open fight its foe named (`combatTrackId`), or the threshold card
+its move posted (`thresholdResolutionId`, the pipeline's moveTargets) —
+still waiting, the position is stashed on that card
+(`combatThreshold.stashPositionOnThresholdCard`); entered, it lands on the
+fight that card began (the card's `frayTrackId`, stamped by
+`applyCombatThresholdChoice` once the track exists); a way out taken, on
+none, and the card says so. It resolved the sole open fight, or the newest
+threshold card, at click time; a card naming neither still does.
 
 **Narrator awareness:** every prose narration carries [4j] OPEN PROGRESS
 TRACKS (`buildNarratorExtras` → `listOpenProgressTracks`,
@@ -305,7 +319,10 @@ open expeditions a "Which expedition?" one — `trackType: "expedition"`, see
 `exploration-flow.md` §1). A TDA
 **weak hit** also rolls
 the `decisive_action_cost` oracle (a d100 card whose 1–40 band routes a suffer
-pick). A TDA **miss** does not end the fight — it routes Pay the Price.
+pick) — once: the card's cost seeds the move's narration
+(`withDecisiveActionCostSeed`), and `buildOracleSeeds` rolls none of its own
+(`rollsDecisiveActionCost`; the narration depicted one cost and the card
+another — TDA-COST-DOUBLE-ROLL, the U03 shape). A TDA **miss** does not end the fight — it routes Pay the Price.
 
 **Battle** (the "⚔ Battle instead" button) is the one-roll alternative: an
 action move that ends the fight on every outcome. The button forwards its
@@ -427,8 +444,9 @@ it lives — journal track *and* actor items (`completeVowItemByName` /
 `completeVowItem`) — and pays quests legacy + connection deepen + reward
 exactly once (`fulfilPaid` item flag; the pipeline path passes
 `skipLegacy: true` to `payFulfilledVowNative` and pays legacy on its own
-campaignState object, which `persistResolution` merges onto the stored state
-keeping the higher legacy tick count). See `vow-flow.md` §4 for how the
+campaignState object, whose marks `persistResolution` applies to the stored
+track — `legacyTracksWithCopyMarks`; it kept the higher record, so a track
+lowered on a sheet meanwhile was raised again, LEGACY-SHEET-DECREASE). See `vow-flow.md` §4 for how the
 reward finds the roller's copy once every copy is already completed.
 
 Winning a fight grants **no direct XP or legacy** — quests-legacy ticks come
