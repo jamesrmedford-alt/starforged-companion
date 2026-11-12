@@ -1452,8 +1452,12 @@ function findJournal(name) {
   if (!globalThis.game?.journal) return null;
   const category = nameToCategory(name);
   if (category !== "unknown") {
-    const flagged = game.journal.find?.(j => journalCategory(j) === category && j.name === name)
-                 ?? game.journal.find?.(j => journalCategory(j) === category);
+    // A copy a split's merge retired (`journalMerged` — merged, or kept
+    // separate) is never the live journal: with the live one deleted, the
+    // lookup fell back to it (JOURNAL-MERGE-DIFFERING-ENTRY).
+    const live = (j) => journalCategory(j) === category && !j?.flags?.[MODULE_ID]?.journalMerged;
+    const flagged = game.journal.find?.(j => live(j) && j.name === name)
+                 ?? game.journal.find?.(live);
     if (flagged) return flagged;
   }
   const named = game.journal.getName?.(name)
@@ -1495,9 +1499,36 @@ export function worldJournalCopies(category) {
 }
 
 /**
- * Whether `journal` already holds the entry `page` is — found as the writers
- * find an entry: by its page name; a Factions page also by its faction's
- * entity id or name key (findFactionPage, renameFactionEntry).
+ * The page of `journal` that is the entry `page` is — found as the writers
+ * find an entry: by its page name, or the entry its flag names; a Factions
+ * page also by its faction's entity id or name key (findFactionPage,
+ * renameFactionEntry). Null when `journal` does not hold it.
+ *
+ * @param {JournalEntry|null} journal
+ * @param {JournalEntryPage} page
+ * @param {string} category — a JOURNAL_NAMES key
+ * @returns {JournalEntryPage|null}
+ */
+export function journalEntryMatch(journal, page, category) {
+  const pages = journal?.pages?.contents ?? [];
+  const byName = pages.find(p => p?.name === page?.name);
+  if (byName) return byName;
+  // By the entry its flag names too: a page renamed in either copy is still
+  // the same entry (WJ-PAGE-BY-TITLE).
+  const title = entryTitle(page);
+  const byTitle = title ? pages.find(p => entryTitle(p) === title) : null;
+  if (byTitle) return byTitle;
+  if (category !== "factions") return null;
+  const entryOf = (p) => p?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
+  const entityId = entryOf(page)?.entityId ?? null;
+  const byEntity = entityId ? pages.find(p => entryOf(p)?.entityId === entityId) : null;
+  if (byEntity) return byEntity;
+  const key = factionNameKey(page?.name);
+  return key ? (pages.find(p => factionNameKey(p?.name) === key) ?? null) : null;
+}
+
+/**
+ * Whether `journal` already holds the entry `page` is (journalEntryMatch).
  *
  * @param {JournalEntry|null} journal
  * @param {JournalEntryPage} page
@@ -1505,18 +1536,7 @@ export function worldJournalCopies(category) {
  * @returns {boolean}
  */
 export function journalHoldsEntry(journal, page, category) {
-  const pages = journal?.pages?.contents ?? [];
-  if (pages.some(p => p?.name === page?.name)) return true;
-  // By the entry its flag names too: a page renamed in either copy is still
-  // the same entry (WJ-PAGE-BY-TITLE).
-  const title = entryTitle(page);
-  if (title && pages.some(p => entryTitle(p) === title)) return true;
-  if (category !== "factions") return false;
-  const entryOf = (p) => p?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
-  const entityId = entryOf(page)?.entityId ?? null;
-  if (entityId && pages.some(p => entryOf(p)?.entityId === entityId)) return true;
-  const key = factionNameKey(page?.name);
-  return !!key && pages.some(p => factionNameKey(p?.name) === key);
+  return !!journalEntryMatch(journal, page, category);
 }
 
 /**

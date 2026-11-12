@@ -132,10 +132,14 @@ function createTrack({ label, type, rank, entityId = null, objective = null, lin
  * @returns {JournalEntry|null}
  */
 function findTracksJournal() {
-  const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY));
+  // A copy a split's merge retired (`journalMerged` — merged, or kept
+  // separate) is never the live journal: with the live one deleted, the
+  // lookup fell back to it (JOURNAL-MERGE-DIFFERING-ENTRY).
+  const retired = (j) => !!j?.getFlag?.(MODULE_ID, 'journalMerged');
+  const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY)) && !retired(j);
   return game.journal?.find?.(j => flagged(j) && j?.name === JOURNAL_NAME)
       ?? game.journal?.find?.(flagged)
-      ?? game.journal?.find?.(j => j?.name === JOURNAL_NAME)
+      ?? game.journal?.find?.(j => j?.name === JOURNAL_NAME && !retired(j))
       ?? null;
 }
 
