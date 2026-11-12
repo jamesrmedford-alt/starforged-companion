@@ -30,7 +30,7 @@
 
 import { MOVES, rankName } from "../schemas.js";
 import { interpretMove } from "./interpreter.js";
-import { resolveMove, withPayThePriceSeed } from "./resolver.js";
+import { resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed } from "./resolver.js";
 import { buildMischiefAside } from "./mischief.js";
 import { persistResolution } from "./persistResolution.js";
 import { buildBurnState } from "./burnMomentum.js";
@@ -1337,9 +1337,14 @@ export async function rollMove({
   // TDA weak hit — roll decisive_action_cost d100 and post a visible card.
   // Entry 1-40 carries sufferRoute {move:"any", amount:2} which opens the
   // B1 generic suffer picker so the player can choose which move takes -2.
+  // The move's narration depicts this card's cost — the one the table
+  // pays; the resolver rolled none for it (TDA-COST-DOUBLE-ROLL).
   if (resolution.consequences?.rollDecisiveActionCost && game.user.isGM) {
-    await postDecisiveActionCostCard(rollerActor?.id ?? null).catch(err =>
-      console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err));
+    const cost = await postDecisiveActionCostCard(rollerActor?.id ?? null).catch(err => {
+      console.warn(`${MODULE_ID} | decisive action cost card failed:`, err?.message ?? err);
+      return null;
+    });
+    resolution.oracleSeeds = withDecisiveActionCostSeed(resolution.oracleSeeds, resolution.moveId, cost?.cost ?? null);
   }
 
   // A result that routes Pay the Price (a Face Danger / Strike / Set a

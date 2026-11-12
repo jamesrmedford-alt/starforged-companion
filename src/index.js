@@ -6575,6 +6575,15 @@ async function postCombatFinishCard({ track }) {
   }
 }
 
+/**
+ * A Take Decisive Action weak hit's cost: roll the table once, post its card,
+ * land its suffer routes on the roller. The cost seeds the move's own
+ * narration (the pipeline's withDecisiveActionCostSeed), so the narration
+ * depicts the cost the card shows (TDA-COST-DOUBLE-ROLL).
+ *
+ * @param {string|null} [actorId] — the roller
+ * @returns {Promise<{ cost: string }|null>} the rolled result's text; null when nothing was rolled
+ */
 async function postDecisiveActionCostCard(actorId = null) {
   const { rollOracle } = await import("./oracles/roller.js");
   let result;
@@ -6582,7 +6591,7 @@ async function postDecisiveActionCostCard(actorId = null) {
     result = rollOracle("decisive_action_cost");
   } catch (err) {
     console.warn(`${MODULE_ID} | decisive_action_cost roll failed:`, err);
-    return;
+    return null;
   }
   void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
   const routeFooter = result.sufferRoutes.length
@@ -6595,9 +6604,10 @@ async function postDecisiveActionCostCard(actorId = null) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postDecisiveActionCostCard: chat post failed:`, err?.message ?? err);
-    return;
+    return null;
   }
   await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, "decisive action cost");
+  return result.result && result.result !== "—" ? { cost: result.result } : null;
 }
 
 /**

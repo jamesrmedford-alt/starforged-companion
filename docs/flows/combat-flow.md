@@ -316,7 +316,10 @@ open expeditions a "Which expedition?" one — `trackType: "expedition"`, see
 `exploration-flow.md` §1). A TDA
 **weak hit** also rolls
 the `decisive_action_cost` oracle (a d100 card whose 1–40 band routes a suffer
-pick). A TDA **miss** does not end the fight — it routes Pay the Price.
+pick) — once: the card's cost seeds the move's narration
+(`withDecisiveActionCostSeed`), and `buildOracleSeeds` rolls none of its own
+(`rollsDecisiveActionCost`; the narration depicted one cost and the card
+another — TDA-COST-DOUBLE-ROLL, the U03 shape). A TDA **miss** does not end the fight — it routes Pay the Price.
 
 **Battle** (the "⚔ Battle instead" button) is the one-roll alternative: an
 action move that ends the fight on every outcome. The button forwards its

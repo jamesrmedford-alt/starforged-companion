@@ -1377,8 +1377,12 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   // pipeline routes to Pay the Price rolls no price here: the pipeline rolls
   // the one its card shows and the table pays, and seeds the narration with
   // it (withPayThePriceSeed — issue #321 U03).
+  // So is a Take Decisive Action weak hit's cost (`rollDecisiveActionCost`):
+  // the pipeline's cost card rolls it and seeds the narration with that one
+  // (withDecisiveActionCostSeed — TDA-COST-DOUBLE-ROLL).
   const oracleSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
-    { routesPayThePrice: consequences.routePayThePrice === true });
+    { routesPayThePrice: consequences.routePayThePrice === true,
+      rollsDecisiveActionCost: consequences.rollDecisiveActionCost === true });
 
   return {
     playerNarration,
@@ -1459,6 +1463,10 @@ function weakHitAsMissSource(interpretation) {
  *   Pay the Price (`routePayThePrice`): the pipeline rolls the price for its
  *   card and seeds the narration with that one, so none is rolled here
  *   (issue #321 U03)
+ * @param {boolean} [opts.rollsDecisiveActionCost] — the result's consequences
+ *   roll Take Decisive Action's weak-hit cost (`rollDecisiveActionCost`): the
+ *   pipeline's cost card rolls it and seeds the narration with that one, so
+ *   none is rolled here (TDA-COST-DOUBLE-ROLL — the U03 shape)
  * @returns {Object|null}
  */
 // Moves whose miss outcome says "Pay the Price" per the play kit. A miss the
@@ -1473,7 +1481,7 @@ const PAY_THE_PRICE_ON_MISS = new Set([
   "explore_a_waypoint",
 ]);
 
-export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, { routesPayThePrice = false } = {}) {
+export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, { routesPayThePrice = false, rollsDecisiveActionCost = false } = {}) {
   try {
     const results = [];
     const names   = [];
@@ -1595,7 +1603,7 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
       }
 
       case "take_decisive_action": {
-        if (outcome === "weak_hit") {
+        if (outcome === "weak_hit" && !rollsDecisiveActionCost) {
           const cost = safeRoll("decisive_action_cost");
           if (cost) results.push(`Decisive-action cost: ${cost}`);
         }
@@ -1650,6 +1658,24 @@ export function withPayThePriceSeed(seeds, moveId, price) {
   if (!price) return seeds ?? null;
   const base = seeds ?? { results: [], names: [], context: moveId };
   return { ...base, results: [...(base.results ?? []), `Pay the Price: ${price}`] };
+}
+
+/**
+ * A Take Decisive Action weak hit's oracle seeds with the cost its pipeline
+ * rolled for the cost card (index.js postDecisiveActionCostCard): the
+ * narration depicts the cost the card shows and the table pays. The seed was
+ * rolled again here, so the narration told one cost and the card another
+ * (TDA-COST-DOUBLE-ROLL — the issue #321 U03 shape, withPayThePriceSeed).
+ *
+ * @param {Object|null} seeds — the resolution's oracleSeeds
+ * @param {string} moveId
+ * @param {string|null} cost — the card's result text; null when none was rolled
+ * @returns {Object|null}
+ */
+export function withDecisiveActionCostSeed(seeds, moveId, cost) {
+  if (!cost) return seeds ?? null;
+  const base = seeds ?? { results: [], names: [], context: moveId };
+  return { ...base, results: [...(base.results ?? []), `Decisive-action cost: ${cost}`] };
 }
 
 function safeRoll(tableId) {
