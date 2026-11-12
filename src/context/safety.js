@@ -245,6 +245,8 @@ function onNarrationPostedDuringPause(message) {
     const f = message?.flags?.[MODULE_ID];
     if (!f?.narratorCard || typeof f.narrationText !== "string" || !f.narrationText.trim()) return undefined;
     if (f.narrationFallback || f.publishedReflection || f.xCarded || f.burnSuperseded) return undefined;
+    // The cards that co-mark the family but are no narration (narrator memory's defensive excludes).
+    if (f.worldJournalContradiction || f.worldJournalCard || f.recapCard || f.draftEntityCard) return undefined;
     const cs = game.settings.get(MODULE_ID, "campaignState");
     if (!cs?.xCardActive || (f.sessionId ?? null) !== (cs.currentSessionId ?? null)) return undefined;
     return removeNarrationPostedDuringPause(message).catch(err =>
