@@ -15,12 +15,13 @@
 // AB19-STALE-CACHE-WRITES): the move it was resolving still saved its record
 // and freed the lock from that cache, which could undo a pause it missed — and
 // any other change it missed. So a GM's stale page stands down: it is never
-// the canonical GM (gmGate.js), answers no page-ready question (gmRelay.js),
-// and writes no campaignState (campaignStateChain.js refuses it); when its
+// the canonical GM (gmGate.js), announces no page ready (gmRelay.js), and
+// writes no campaignState (campaignStateChain.js refuses it), Batch Mode round
+// (batch/driver.js) or Lines and Veils (ui/settingsPanel.js); each time its
 // connection comes back it tells the table it is stale, so the other clients
-// pass it over too, and asks its GM to reload, with a persistent notice and a
-// Reload button. Another GM runs the table meanwhile; with none, the table
-// waits for the reload.
+// pass it over too and take over what it held, and it asks its GM to reload,
+// with a persistent notice and a Reload button. Another GM runs the table
+// meanwhile; with none, the table waits for the reload.
 //
 // `disconnect` and `connect` are the socket.io client's own events
 // (`game.socket` is its Socket): `disconnect` fires on every drop, `connect`

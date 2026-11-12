@@ -23,8 +23,9 @@ the entry they change.)
   it — waits through `multiplayer/settleWithin.js` and goes on, warned: the
   move lock's claim and release (30 s), Begin / End a Session (five minutes),
   the rolling summary, a Private Channel page write; every FilePicker request
-  through `withFilePickerDeadline` (120 s). U57's Progress Tracks and
-  Chronicle queues stay as accepted.
+  through `withFilePickerDeadline` (120 s); U57's Progress Tracks queue (30 s,
+  TRACK-QUEUE-UNBOUNDED-IN-LOCK) and this client's Safety-list edits (30 s,
+  SAFETY-LIST-EDITS-ONE-ROUND-TRIP). The Chronicle queue stays as accepted.
 - **The canonical GM is elected among GMs whose page is ready** [AB03]: a GM
   whose connect a client saw is passed over until it announces its page
   (`registerGmReadiness`); a GM connected before the client loaded is
@@ -42,9 +43,24 @@ the entry they change.)
   on #326 D3.
 - **A session closed out short is caught up** [AB15] — `unsummarisedSession`,
   an update on AA21.
-- **A narration across a dropped connection is discarded** [AB19, partly] —
-  `multiplayer/connectionWatch.js`; a returning GM's stale writes are the
-  open part (known-issues).
+- **A GM page whose connection dropped stands down until it reloads**
+  [AB19, AB19-STALE-CACHE-WRITES; the maintainer's choice, 2026-11-12]. A
+  world write that lands while a socket is down never reaches that client's
+  cache, and a reconnect replays nothing. Its narration in flight is
+  discarded (`multiplayer/connectionWatch.js` counts the drops); from the
+  drop until the page reloads it is never the canonical GM and writes no
+  campaignState, Batch Mode round, Lines or Veils; once its connection is
+  back it tells the table (`GM_PAGE_STALE_KIND`) and asks its GM to reload —
+  a permanent notice and a Reload button. Another GM takes over what it held
+  (its move lock, its round — `noteGmStoodDown`), also for a drop the server
+  never saw; with no other GM the table waits for the reload, and relays say
+  so: a player's X-Card says it was not recorded. A round narrated beside a
+  keyless co-GM therefore waits for the keyed GM's reload
+  (ROUND-DROP-CHECK-KEYLESS-COGM), not counting keyed co-GMs only, which
+  would post a reply from the stale cache. *Not chosen:* reloading the page by
+  itself on reconnect; re-reading the world's settings before the next write.
+  Its sheet and chat-card writes are not refused yet (known-issues
+  STALE-PAGE-ACTOR-WRITES).
 - **Batch Mode** [AB13, AB17, AB18, AB20]: an upgrade in flight is waited for
   (Send now keeps it after 60 s — after five minutes while its handler still runs on the resolving GM's page, UPGRADE-IN-FLIGHT-GRACE); a late reply of a narration taken over posts
   and closes nothing; a takeover names its resolver; an entry stamped rolling
@@ -4102,16 +4118,20 @@ still loading. A user is `active` from its socket's connect — the start of its
 page load — but this module's handlers exist on that client only from its
 `ready`; electing it stood the connected, ready GM down for the whole load (a
 player's X-Card, typed moves and card presses reached no handler, and nobody
-was told). Each client marks a GM whose connect it saw as loading, asks it
-whether its page is ready (a socket that came back on a loaded page answers at
-once), and counts it again from its page-ready announcement
+was told). Each client marks a GM whose connect it saw as loading and counts
+it again from its page-ready announcement
 (`gmRelay.js` `registerGmReadiness`, first thing in `ready`); a GM already
 connected when the client loaded is presumed ready, as before. When every
 active GM is loading, the election runs over all of them. `hasKeyedActiveGM`
 and `isAudioGM` pass over a loading GM the same way. *Trade-off accepted:* at
 the moment a lower-id GM's page reaches `ready` it counts itself canonical one
 socket hop before the GM it replaces stands down; and two GMs whose loads
-overlap each presume the other ready.
+overlap each presume the other ready. The maintainer left that window as it
+is (GM-ELECTION-HOP-WINDOW, 2026-11-12). *Update (issue #347
+AB19-STALE-CACHE-WRITES):* a GM whose socket came back on a loaded page used
+to answer an "is your page ready?" question at once; such a page is stale now
+and stands down until it reloads, so the question is gone — its page passed
+over (`noteGmStoodDown`) until the reload announces ready.
 
 ## An NPC card's or ship's notes are its sheet's Notes tab (2026-11)
 

@@ -103,78 +103,47 @@ waiting for a keyed GM; AB24's held moves wait for the next write that lands.
 | D2 XCARD-AFTER-BURN-KEEPS-STRUCK-CAPTURE | SAFETY; option A | an X-Card after a burn removed the re-narration only → it takes the struck narration's capture too, and its facts are blocked |
 | D3 KEYLESS-TAKEOVER-NARRATES-FALLBACK | LOSE-PLOT; option A | a keyless co-GM's takeover closed the round behind the fallback → it waits for a keyed GM, the GMs told |
 
-### Found while fixing issue #347 — open
+### The thirteenth audit's open items — fixed in the v1.8.1 cycle, with those found while fixing them
 
-Left open by the fixes above, each with a proposed fix (none filed as an
-issue yet).
+The items found while fixing issue #347 and left open were fixed at the
+maintainer's request on 2026-11-12 ("Please fix residuals"), each in its own
+commit with a regression test (`docs/testing/fix-sensitivity.md`). The
+maintainer chose: for AB19-STALE-CACHE-WRITES, a page that dropped stands
+down and asks to reload; for TRACKS-JOURNAL-SPLIT-NOT-MERGED, a GM-confirmed
+merge at load; GM-ELECTION-HOP-WINDOW is left as it is (below).
+ROUND-DROP-CHECK-KEYLESS-COGM needed no code: the stand-down makes its wait
+for the reload the design (a test pins that the reload narrates the round).
+None has been checked in a live Foundry world yet. The ones to try first: a
+GM's network dropped for a few seconds mid-narration with a co-GM connected,
+then with none — the reload prompt, the co-GM taking over, a player's X-Card
+saying it was not recorded; two Safety-list ✕ in quick succession; a supply
+◂ on a character made mid-session; a journal split merge card's Merge.
 
-- **AB19-STALE-CACHE-WRITES** (SAFETY, medium; AB19's and AB17's residual).
-  A GM whose socket dropped and came back on the same page keeps a cache that
-  missed the writes made meanwhile: its narration is now discarded, but the
-  move's own record and its lock release, built from that cache, can still
-  undo an X-Card pause it missed — and revert any other write it missed. AB17
-  asks such a GM to reload; nothing makes it. *Proposed:* reload a GM page on
-  reconnect (a UX change — the maintainer's call), or have it re-read the
-  world's settings before its next write.
-- **ROUND-WAITS-FOR-ABSENT-KEYED-GM** (STALL, low; D3's residual). A round
-  waiting for a keyed GM who does not come back that session stays in its
-  narrating phase; End a Session does not close it, the next load's recovery
-  does ("session-ended"). *Proposed:* let End a Session close a round waiting
-  for a keyed GM. SHEET-ROLL-KEYLESS-ROUND's wording is stale: the fallback
-  now needs a keyed-GM list that names no GM.
-- **ROUND-DROP-CHECK-KEYLESS-COGM** (STALL, low; AB17). The drop check counts
-  any connected co-GM; with only a keyless one — who no longer takes the
-  narration over (D3) — the dropped keyed GM's reply is discarded and the
-  round waits for that GM's reload. *Proposed:* count keyed co-GMs only.
-- **ROUND-ENTRY-THROW-BEFORE-DICE** (WRONG-DETAIL, low; AB20). An entry whose
-  roll throws before its dice is reported, not rolled again, so it is
-  narrated as an action with no roll. *Proposed:* stamp it rolling from
-  `rollMove`'s `onDiceRolled` (AB06's hook) instead of before the call.
-- **UPGRADE-IN-FLIGHT-GRACE** (WRONG-DETAIL, low; AB13). Send now keeps an
-  upgrade still in flight once it has waited 60 s from the rolls' end; a
-  handler slower than that (a write never answered) loses its upgrade from
-  the narration. The maintainer's call on the 60 s.
-- **ROUND-CONNECTION-LINE-JOINED** (WRONG-TARGET, low; AB10). A round's line
-  text is all of its lines joined, so a roller's own line is not told apart.
-  *Proposed:* pass each entry's `lineText` to `connectionRollers`.
-- **TIER-DETAIL-NEGATION-LIST** (LOST-UPDATE, low; AB11). The negating words
-  are a fixed list; a reversal phrased another way ("gave up trusting") can
-  still dedupe when the words line up. *Proposed:* extend the list as
-  playtests show.
-- **SAFETY-LIST-EDITS-ONE-ROUND-TRIP** (LOST-UPDATE, low; AB12). Two
-  different ✕ — or two Adds — within one round trip can still lose one edit.
-  *Proposed:* serialise safety-list edits per client, bounded.
-- **TRACKS-JOURNAL-SPLIT-NOT-MERGED** (now covering the World Journal's five
-  journals too; AB16). The default-named copy is read; the two are still not
-  merged. *Proposed:* a GM-confirmed merge at load.
-- **PACED-NARRATION-THROW-BEFORE-CALL** (UX, low; AB21). An exception while
-  the prompt is built still only logs. *Proposed:* the same notice from the
-  router's `.catch`.
-- **DELETED-NARRATION-MEMORY-PAGE-ONLY** (WRONG-TARGET, low; AB22). The
-  deleted-message memory lasts the page; after a reload the X-Card answers
-  the newest card again. *Proposed:* keep the last few deleted narration ids
-  in campaignState.
-- **XCARD-STRUCK-FACTS-AFTER-SCENE-END** (SAFETY, low; D2). When the scene
-  ended between the burn and the X-Card, the struck narration's facts cannot
-  be blocked: superseded truths are dropped at scene end. *Proposed:* keep
-  superseded truths' ids on the session list.
-- **SUPPLY-LAGGING-SHEET** (LOST-UPDATE, low; AB07's twin). The shared supply
-  takes a sheet edit's value as the crew's, as legacies did. *Proposed:* the
-  same before-value stamp for supply edits (`sharedSupply.js`).
-- **TRACK-QUEUE-UNBOUNDED-IN-LOCK** (LOCK, low; AB05). The Progress Tracks
-  write queue, awaited inside the move lock, still has no bound (U57); a
-  track write never answered holds the table's lock. *Proposed:* bound the
-  queue's waits with `settledWithin`.
-- **HELD-MOVES-WAIT-FOR-WRITE** (STALL, low; AB24). After a held move's claim
-  is refused, the held moves wait for the next campaignState write that
-  lands; at a quiet table that can be a while (AA48's decision). *Proposed:*
-  a bounded retry of the drain.
-- **RESIST-BURN-STAYS-CLOSED** (UX, low; AB06). A resist press closes its
-  move's Burn; when the roll is handed back the card is live again but the
-  Burn stays closed. Accepted: the consequence was chosen.
+| Code | Class | Defect → fix |
+|---|---|---|
+| AB19-STALE-CACHE-WRITES | SAFETY | a GM page back from a dropped connection saved its move's record and freed its lock from a cache that missed the writes made meanwhile — an X-Card pause was written away → the page is stale until it reloads (connectionWatch.js pageIsStale): never the canonical GM, writes no campaignState or round, tells the table (GM_PAGE_STALE_KIND) and asks its GM to reload; the canonical GM takes over its lock and round (noteGmStoodDown), also for a drop the server never saw; relays to a stood-down sole GM are refused honestly (hasActiveGM / gmPageCanAct), the X-Card's card saying it was not recorded |
+| ROUND-DROP-CHECK-KEYLESS-COGM | STALL | with only a keyless co-GM the dropped keyed GM's round reply was discarded and the round waited for its reload → settled by the stand-down: the stale page posts nothing and is asked to reload, and its reload narrates the round once (roundDropBesideKeylessCoGm.test.js) |
+| ROUND-WAITS-FOR-ABSENT-KEYED-GM | STALL | a round waiting for a keyed GM who did not come back stayed narrating; End a Session did not close it → End a Session closes it, its card listing each result, the GMs told why |
+| ROUND-ENTRY-THROW-BEFORE-DICE | WRONG-DETAIL | an entry whose roll threw before its dice was reported, not rolled again → stamped rolling from rollMove's awaited onDiceRolled, after the dice; a refused stamp stops the move with nothing applied |
+| UPGRADE-IN-FLIGHT-GRACE | WRONG-DETAIL | Send now kept an upgrade still in flight for 60 s from the rolls' end → waits up to five minutes while it runs on the resolving GM's page |
+| ROUND-CONNECTION-LINE-JOINED | WRONG-TARGET | a round's connection hit was settled by all its lines joined → by the roller's own line |
+| TIER-DETAIL-NEGATION-LIST | LOST-UPDATE | a reversal phrased past the fixed negating words deduped as the same NPC detail → the list takes gave up / quit / broke with / turned against and dis- / un- forms |
+| SAFETY-LIST-EDITS-ONE-ROUND-TRIP | LOST-UPDATE | two ✕ — or two Adds — inside one round trip lost one edit → this client's Safety-list edits run one at a time, each reading its list once the one ahead has landed (bounded at 30 s); a stale GM page writes no Lines or Veils |
+| TRACKS-JOURNAL-SPLIT-NOT-MERGED | LOSE-STATE | a World Journal or tracks journal split in two copies read one, the other never merged → a GM card at load lists what the unused copy holds; Merge (gmRelay journal.merge) copies it into the live journal and renames the copy "(merged)" |
+| PACED-NARRATION-THROW-BEFORE-CALL | UX | an exception while a paced narration's prompt was built only logged → the same "That line was not narrated" notice |
+| DELETED-NARRATION-MEMORY-PAGE-ONLY | WRONG-TARGET | the deleted-message memory lasted the page; after a reload the X-Card answered the newest card again → kept in campaignState (deletedChatMessages, the newest 20) |
+| XCARD-STRUCK-FACTS-AFTER-SCENE-END | SAFETY | a struck narration's facts could not be blocked once the scene had ended → superseded truths' ids go on the session list at scene end |
+| SUPPLY-LAGGING-SHEET | LOST-UPDATE | a sheet edit's supply value was taken as the crew's, so a lagging sheet set everyone to its own → the editing client stamps the sheet's value before the edit (preUpdateActor) and the GM moves the crew's supply by the change; a PC created mid-session starts at the crew's supply |
+| TRACK-QUEUE-UNBOUNDED-IN-LOCK | LOCK | the Progress Tracks write queue, awaited inside the move lock, had no bound → the write ahead and each write's own journal creation and save are waited on for at most 30 s; a save not answered is refused |
+| HELD-MOVES-WAIT-FOR-WRITE | STALL | after a held move's claim was refused the held moves waited for the next write that landed → also retried after 10 s × the attempt, five times |
+| RESIST-BURN-STAYS-CLOSED | UX | a resist press closed its move's Burn and Improve; handed back unrolled, they stayed closed → reopened (reopenUpgradesForUndoneChoice) while no consequence of the move is chosen |
+
+Accepted, the maintainer's call:
+
 - **GM-ELECTION-HOP-WINDOW** (DUPLICATE, low; AB03). For one socket hop at a
   lower-id GM's `ready`, both GMs count themselves canonical; two GMs whose
-  loads overlap presume each other ready.
+  loads overlap presume each other ready. Left as it is (maintainer,
+  2026-11-12).
 - **PORTRAIT-UPLOAD-LATE-ANSWER** (cosmetic; AB02). Foundry's upload cannot
   be aborted, so one answered after its deadline may still store its file
   (same path, overwritten).
@@ -182,12 +151,79 @@ issue yet).
   written by a non-canonical client before the canonical GM's load finishes
   is reconciled the same way, but that client posts the whisper.
 
+### Found while fixing the thirteenth audit's open items — open
+
+Each with a proposed fix (none filed as an issue yet).
+
+- **STALE-PAGE-ACTOR-WRITES** (SAFETY, low; AB19-STALE-CACHE-WRITES). The
+  stand-down refuses campaignState, round and Lines / Veils writes; a move
+  in flight on the page can still write its roller's sheet and chat cards
+  from the stale page. A move's meters are applied before its narration, so
+  a drop during the narration writes none; a drop earlier in the move can.
+  *Proposed:* refuse actor writes from a stale page in actorBridge.js.
+- **STALE-PAGE-CLAUDE-COMMANDS** (UX, low; AB19-STALE-CACHE-WRITES). With a
+  sole keyed GM whose page stood down, a command that runs where a Claude key
+  lives runs nowhere and its author is not told (the routing still counts
+  that GM as keyed). *Proposed:* count only GMs whose page can act in
+  hasKeyedActiveGM, or tell the author.
+- **STALE-PLAYER-PAGE** (SAFETY, low; AB19-STALE-CACHE-WRITES). The
+  stand-down is a GM page's (the maintainer's choice). A player's page back
+  from a drop is not asked to reload: a narration it starts later on the
+  player's own key (the Private Channel) reads an X-Card state from a cache
+  that may lack a card played meanwhile — one in flight across the drop is
+  still discarded (AB19). *Proposed:* ask a player's page to reload too, or
+  re-read campaignState before its narration's X-Card check.
+- **STALE-BANNER-WORDING** (cosmetic; AB19-STALE-CACHE-WRITES). The Round
+  window says "No GM is connected" while the only GM's page waits to be
+  reloaded.
+- **SUPPLY-TWO-PC-TIE** (LOST-UPDATE, low; SUPPLY-LAGGING-SHEET). With two
+  PCs and one sheet a refused mirror write left behind, the two values tie
+  and an edit on the lagging sheet sets the crew from it. The refused write
+  is named to the GM. *Proposed:* accept, or keep the crew's supply in
+  campaignState.
+- **TRACK-SAVE-ANSWERED-LATE** (LOST-UPDATE, low; TRACK-QUEUE-UNBOUNDED-IN-
+  LOCK). A save answered after its 30 s bound lands after the next write
+  read the list without it; the later save puts the list back without it.
+  *Proposed:* accept (AB05's bounds share it).
+- **HELD-MOVE-RETRIES-SPENT** (STALL, low; HELD-MOVES-WAIT-FOR-WRITE). After
+  five refused retries the held move waits for a write that lands, as
+  before. *Proposed:* accept.
+- **ROUND-CONNECTION-OTHER-LINE-CANDIDATE** (WRONG-TARGET, low;
+  ROUND-CONNECTION-LINE-JOINED). An NPC named only in another player's line
+  still counts as a candidate, so a hit whose own line names nobody gets
+  "none chosen, GMs told" rather than the narration's one NPC.
+- **UPGRADE-WAIT-OTHER-GM** (WRONG-DETAIL, low; UPGRADE-IN-FLIGHT-GRACE). The
+  five-minute wait applies only to an upgrade running on the resolving GM's
+  page; on another GM's page Send now keeps the rolled result after 60 s
+  (the relay queue usually makes Send now wait behind it anyway).
+- **ROUND-CLOSED-UNNARRATED-WORDING** (cosmetic; ROUND-WAITS-FOR-ABSENT-
+  KEYED-GM). The closed round's fallback card still says "check your API key
+  and proxy"; only the GM notice gives the reason. A round End a Session
+  leaves while the X-Card is in play is still closed by the next load's
+  recovery.
+- **TIER-DETAIL-NEGATION-WORDS** (LOST-UPDATE, low; TIER-DETAIL-NEGATION-
+  LIST). Still a word list: a reversal worded without a listed word reads as
+  a repeat.
+- **PACED-ROUTER-THROW** (UX, low; PACED-NARRATION-THROW-BEFORE-CALL). An
+  error in the router before the narration starts still only logs.
+- **DELETED-MESSAGES-KEPT** (cosmetic; DELETED-NARRATION-MEMORY-PAGE-ONLY).
+  The newest 20 deleted messages are kept and not cleared at session end
+  (the pick filters by session, so old ones do nothing).
+- **SUPERSEDED-TRUTHS-SHARE-LIMIT** (SAFETY, low; XCARD-STRUCK-FACTS-AFTER-
+  SCENE-END). Superseded truths share the session list's limit of 50.
+- **JOURNAL-MERGE-DIFFERING-ENTRY** (LOSE-STATE, low;
+  TRACKS-JOURNAL-SPLIT-NOT-MERGED). An entry both copies hold with different
+  text is left as the live journal has it and not listed on the card; with
+  no "keep separate", the card returns every load until merged; a merged
+  copy keeps its flag, so the lookup falls back to it if the live journal is
+  deleted.
+
 Existing entries the fixes touch: "Accepted limitations → No ack channel"
 — AB03 removes the two-GM case (a ready GM no longer stands down; the
 one-GM case, the only GM loading, stands); FORCED-MOVE-HOLD-RELOAD stays
 open (a reload still loses a hold; AB06 covers a GM joining);
 KNOWN-NPC-CONNECTION-NO-TARGET now goes through AB10's `connectNamedFigure`;
-SHEET-ROLL-KEYLESS-ROUND needs D3's rewording (above).
+SHEET-ROLL-KEYLESS-ROUND is reworded for D3 (below).
 
 ### Twelfth bug audit (issue #345) — all seventy fixed and the seven decisions built in the v1.8.1 cycle
 
@@ -429,10 +465,13 @@ issue yet). Existing open items the fixes touched are noted after the list.
   its X-Card check; the window's Send now is disabled under the X-Card, so
   only a stale or forged relay reaches it. Proposed: check the X-Card first.
 - **SHEET-ROLL-KEYLESS-ROUND** (UX, low; D1's residual). With no keyed GM
-  connected, a participant's sheet roll now joins the round, whose narration
-  falls back to "narration unavailable" — before, a keyed player narrated
-  their own roll. A round needs a keyed GM anyway. Proposed: narrate a sheet
-  roll at once while no keyed GM is connected, or accept.
+  connected, a participant's sheet roll now joins the round. Since issue #347
+  D3 the round's narration falls back to "narration unavailable" only when
+  the keyed-GM list names no GM; with one listed but away, the round waits
+  for that GM (End a Session closes it — ROUND-WAITS-FOR-ABSENT-KEYED-GM).
+  Before, a keyed player narrated their own roll. A round needs a keyed GM
+  anyway. Proposed: narrate a sheet roll at once while no keyed GM is
+  connected, or accept.
 - **BEGIN-MINT-LINE-WINDOW** (RACE, low; AA58's residual). Begin a Session's
   own mint, for a session that went idle with its gate open, has AA58's
   window: a line typed during Begin's summary call is narrated into the
