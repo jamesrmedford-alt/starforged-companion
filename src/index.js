@@ -6902,14 +6902,22 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
   }
 
   // "any" means "player chooses which suffer move" — post the non-blocking B1
-  // picker card (never a blocking dialog; see sufferCard.js).
+  // picker card (never a blocking dialog; see sufferCard.js). A picker the
+  // world refuses is the price lost in silence: it goes to the GMs' card as a
+  // `choiceCard` step, whose Retry posts it (PTP-ANY-ROUTE-PICKER-REFUSED-SILENT,
+  // the persistResolution rule — ERROR-TEXT-BLAMES-KEY).
   if (route.move === "any") {
     const { postSufferChoiceCard } = await import("./moves/sufferCard.js");
-    await postSufferChoiceCard({
-      sufferPrompt: { kind: "any", amount: route.amount ?? 2, count: 1 },
-      actor,
-      executorOpts: { isMiss: true },
-    });
+    const sufferPrompt = { kind: "any", amount: route.amount ?? 2, count: 1 };
+    const executorOpts = { isMiss: true };
+    const card = await postSufferChoiceCard({ sufferPrompt, actor, executorOpts });
+    if (!card) {
+      console.error(`${MODULE_ID} | the world did not save ${actor.name ?? "the roller"}'s Pay the Price picker (make a suffer move -${sufferPrompt.amount}).`);
+      await postPayoffFailureCard({ source: "suffer", actorId: actor.id, failures: [{
+        step: "choiceCard", pcId: actor.id, moveId: null, moveName: "Pay the Price",
+        sufferPrompt, executorOpts, resolutionId: null, reason: "refused",
+      }] }).catch(err => console.warn(`${MODULE_ID} | the refused picker's failure card failed:`, err?.message ?? err));
+    }
     return;
   }
 
