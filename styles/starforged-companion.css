@@ -434,6 +434,20 @@
   color: var(--color-text-light-secondary, #666);
 }
 
+/* A fight's position badges — one per character the viewer plays
+   (POSITION-BADGE-GM-FIRST-PC); each named when there are several. */
+.track-footer .combat-positions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+}
+
+.track-footer .combat-position {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 /* --- Section headings & empty state --- */
 
 .tracks-section {
