@@ -1675,16 +1675,40 @@ export async function appendDetailToTier(entityRef, detail, sessionId, sessionNu
  * "locker 71" swallowed "locker 7": each new truth was counted as migrated and
  * written nowhere, and the card went on saying the opposite (issue #347 AB11).
  * A negation around the shared words — "Has not paid the debt" beside "Paid
- * the debt" — is never the same fact.
+ * the debt" — is never the same fact. Nor is a detail led by any word but the
+ * entity's own name or role, a pronoun or filler (`subjectWords`,
+ * LEADING_NEUTRAL_WORDS): a reversal is mostly worded ahead of the fact —
+ * "Used to run the lower docks", "Feigned loyalty to the Compact" — and a
+ * word list cannot hold every one, so one past it read as a repeat and the
+ * new fact was written nowhere (TIER-DETAIL-NEGATION-WORDS). A duplicate kept
+ * is the safer miss.
  */
-function tierHasDetail(tier, detail) {
+function tierHasDetail(tier, detail, subjectWords = new Set()) {
   const words = detailWords(detail);
   if (!words.length) return false;
+  const neutral = new Set([...LEADING_NEUTRAL_WORDS, ...subjectWords]);
   return tier.some(e => {
     const existing = detailWords(e?.detail);
     if (!existing.length) return false;
-    return restatesDetail(existing, words) || restatesDetail(words, existing);
+    return restatesDetail(existing, words, neutral) || restatesDetail(words, existing, neutral);
   });
+}
+
+/**
+ * Words that may lead a restatement of a detail without changing it: an
+ * article, a pronoun, "is", "also", "still", "now" — and the possessive's
+ * "s" ("Vex's ship" → "vex s ship"). With the entity's own name and role
+ * words (detailSubjectWords) — "Vex runs the lower docks" restates "Runs the
+ * lower docks" — they are all a restatement may lead with.
+ */
+const LEADING_NEUTRAL_WORDS = new Set([
+  "a", "an", "the", "s", "and", "also", "still", "now", "currently", "indeed",
+  "he", "she", "they", "it", "his", "her", "their", "its", "who", "is", "are",
+]);
+
+/** The entity's name and role words, lowercased (detailWords) — what may lead a restatement of its detail. */
+function detailSubjectWords(record, document) {
+  return new Set([record?.name, document?.name, record?.role].flatMap(detailWords));
 }
 
 // Words that, around a detail's own words, negate or reverse it ("has NOT paid
@@ -1702,6 +1726,7 @@ const REVERSING_WORDS = new Set([
   "renounced", "renounces", "renouncing", "forsook", "forsaken", "forsakes", "abandon", "renounce",
   "refused", "refuses", "refusing", "denied", "denies", "denying", "failed", "fails", "failing",
   "undid", "undoes", "undone", "reversed", "reverses", "revoked", "revokes", "withdrew", "withdrawn",
+  "until", "till",
 ]);
 
 // Two-word reversals: "GAVE UP running the docks", "TURNED AGAINST the crew".
@@ -1746,12 +1771,18 @@ function detailWords(text) {
     .filter(Boolean);
 }
 
-/** True when `inner`'s words appear in `outer` in order, as whole words, with no reversing word around them. */
-function restatesDetail(outer, inner) {
+/**
+ * True when `inner`'s words appear in `outer` in order, as whole words, led
+ * only by `neutral` words (tierHasDetail) and with no reversing word around
+ * them.
+ */
+function restatesDetail(outer, inner, neutral = LEADING_NEUTRAL_WORDS) {
   if (inner.length > outer.length) return false;
   for (let i = 0; i + inner.length <= outer.length; i++) {
     if (!inner.every((w, j) => outer[i + j] === w)) continue;
-    const around = [...outer.slice(0, i), ...outer.slice(i + inner.length)];
+    const before = outer.slice(0, i);
+    if (before.some(w => !neutral.has(w))) continue;
+    const around = [...before, ...outer.slice(i + inner.length)];
     if (!reversesAround(around, inner)) return true;
   }
   return false;
@@ -1829,7 +1860,7 @@ async function persistGenerativeTier(entityRef, entry) {
     }
     const existingFlags = readEntityFlag(entityRef.type, document) ?? {};
     const tier = Array.isArray(existingFlags.generativeTier) ? existingFlags.generativeTier : [];
-    if (tierHasDetail(tier, entry.detail)) return null;
+    if (tierHasDetail(tier, entry.detail, detailSubjectWords(existingFlags, document))) return null;
     const updated = [...tier, entry];
     await writeEntityFlag(entityRef.type, document, {
       ...existingFlags,
@@ -1877,7 +1908,7 @@ export async function appendMigratedTruthToTier(journalId, type, entry) {
       ? existingFlags.generativeTier
       : [];
 
-    if (tierHasDetail(tier, entry.detail)) return true;
+    if (tierHasDetail(tier, entry.detail, detailSubjectWords(existingFlags, document))) return true;
 
     const updated = {
       ...existingFlags,
