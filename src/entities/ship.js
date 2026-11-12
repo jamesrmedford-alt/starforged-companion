@@ -53,7 +53,6 @@ import {
 import { pickStarshipIcon } from "../system/ironswornAssets.js";
 import { readCommandVehicleIntegrity, setCommandVehicleIntegrity } from "../character/actorBridge.js";
 import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
-import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID = "starforged-companion";
 const FLAG_KEY  = "ship";
@@ -866,7 +865,7 @@ async function generateStarshipIntroProse({ type, firstLook, mission, name, modu
   if (!apiKey) return null;
 
   const { apiPost } = await import("../api-proxy.js");
-  const model = readModuleSetting("narrationModel") || "claude-sonnet-4-5-20250929";
+  const model = readModuleSetting("narrationModel") || "claude-sonnet-5-5";
   const tone  = readModuleSetting("narrationTone")  || "wry";
 
   const system =
@@ -892,7 +891,6 @@ async function generateStarshipIntroProse({ type, firstLook, mission, name, modu
   const body = {
     model,
     max_tokens: 220,
-    ...thinkingOffFor(model),   // its 220-token seed on the narration model (issue #325 W27)
     system:   [{ type: "text", text: system }],
     messages: [{ role: "user", content: userMsg }],
   };

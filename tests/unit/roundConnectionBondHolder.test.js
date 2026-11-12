@@ -37,7 +37,7 @@ import { narrateRound } from '../../src/narration/narrator.js';
 import { invalidateActorCache } from '../../src/character/actorBridge.js';
 
 const MODULE_ID = 'starforged-companion';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 
 const NARRATION =
   'Kira finds Orla Teague mending nets by the airlock; across the concourse Vex shares a drink with Dace Mirren, a courier who owes nobody.'

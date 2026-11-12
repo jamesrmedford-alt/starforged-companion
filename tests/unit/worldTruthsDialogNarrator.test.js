@@ -50,7 +50,7 @@ import { rollCategory } from "../../src/truths/generator.js";
 
 const MODULE_ID = "starforged-companion";
 const TITLE = "Setting Truths";
-const NARRATION_MODEL = "claude-sonnet-4-5-20250929";
+const NARRATION_MODEL = "claude-sonnet-5-5";
 
 // ─── what the dialog saves ───────────────────────────────────────────────────
 

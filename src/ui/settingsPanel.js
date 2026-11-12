@@ -128,10 +128,15 @@ const SALIENCE_CHOICES = {
 const NARRATION_MAX_TOKENS_MIN = 300;
 const NARRATION_MAX_TOKENS_MAX = 64000;
 
+// The 5.5 models lead; the earlier ones stay offered, so a world that chose
+// one keeps a valid choice. Every call's thinking-off form is per model
+// (narration/thinking.js, applied in api-proxy.js).
 const NARRATION_MODELS = {
-  'claude-haiku-4-5-20251001':  'Haiku 4.5 (fast, economical)',
-  'claude-sonnet-4-5-20250929': 'Sonnet 4.5 (richer narration, recommended)',
-  'claude-sonnet-5':            'Sonnet 5 (latest, most capable)',
+  'claude-sonnet-5-5':          'Sonnet 5.5 (richer narration, recommended)',
+  'claude-haiku-5-5':           'Haiku 5.5 (fast, economical)',
+  'claude-sonnet-5':            'Sonnet 5',
+  'claude-sonnet-4-5-20250929': 'Sonnet 4.5 (previous default)',
+  'claude-haiku-4-5-20251001':  'Haiku 4.5',
 };
 
 const NARRATION_PERSPECTIVES = {
@@ -221,7 +226,7 @@ export function registerSettings() {
     config:  false,
     type:    String,
     choices: NARRATION_MODELS,
-    default: 'claude-sonnet-4-5-20250929',
+    default: 'claude-sonnet-5-5',
   });
 
   game.settings.register(MODULE_ID, SETTING.NARRATION_PERSPECTIVE, {
@@ -649,7 +654,7 @@ function getPrivateLines() { return game.settings.get(MODULE_ID, SETTING.PRIVATE
 // ---------------------------------------------------------------------------
 
 function getNarrationEnabled()      { return game.settings.get(MODULE_ID, SETTING.NARRATION_ENABLED)      ?? true; }
-function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-4-5-20250929'; }
+function getNarrationModel()        { return game.settings.get(MODULE_ID, SETTING.NARRATION_MODEL)        ?? 'claude-sonnet-5-5'; }
 function getNarrationPerspective()  { return game.settings.get(MODULE_ID, SETTING.NARRATION_PERSPECTIVE)  ?? 'auto'; }
 function getNarrationTone()         { return game.settings.get(MODULE_ID, SETTING.NARRATION_TONE)         ?? 'wry'; }
 function getNarrationLevity()       { return game.settings.get(MODULE_ID, SETTING.NARRATION_LEVITY)       ?? 'default'; }
@@ -1764,11 +1769,11 @@ export class SettingsPanelApp extends ApplicationV2 {
           </div>
           <div class="about-field">
             <dt>Move AI</dt>
-            <dd>claude-haiku-4-5-20251001 · system prompt cached</dd>
+            <dd>claude-haiku-5-5 (Haiku 5.5) · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Narration AI</dt>
-            <dd>claude-sonnet-4-5-20250929 default · configurable in Narrator tab · system prompt cached</dd>
+            <dd>claude-sonnet-5-5 (Sonnet 5.5) default · configurable in Narrator tab · system prompt cached</dd>
           </div>
           <div class="about-field">
             <dt>Art generation</dt>
@@ -1951,7 +1956,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const el = this.element;
 
       const enabled      = el.querySelector('[name="narrationEnabled"]')?.checked ?? true;
-      const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-4-5-20250929';
+      const model        = el.querySelector('[name="narrationModel"]')?.value         ?? 'claude-sonnet-5-5';
       const perspective  = el.querySelector('[name="narrationPerspective"]')?.value   ?? 'auto';
       const tone         = el.querySelector('[name="narrationTone"]')?.value           ?? 'wry';
       const levity       = el.querySelector('[name="narrationLevity"]')?.value          ?? 'default';

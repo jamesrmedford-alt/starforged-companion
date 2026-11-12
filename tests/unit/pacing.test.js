@@ -31,6 +31,7 @@ vi.mock('../../src/api-proxy.js', () => ({
 
 vi.mock('../../src/narration/narrator.js', () => ({
   narratePacedInput: vi.fn(async () => 'mocked narration'),
+  getRecentSceneForReading: vi.fn(() => ''),
 }));
 
 vi.mock('../../src/pacing/telemetry.js', () => ({
@@ -43,7 +44,7 @@ vi.mock('../../src/ui/progressTracks.js', () => ({
 
 import { addConnectionEntity } from '../helpers/fullStateFixture.js';
 import { apiPost } from '../../src/api-proxy.js';
-import { narratePacedInput } from '../../src/narration/narrator.js';
+import { narratePacedInput, getRecentSceneForReading } from '../../src/narration/narrator.js';
 import { logPacingDecision } from '../../src/pacing/telemetry.js';
 import { listProgressTracks } from '../../src/ui/progressTracks.js';
 
@@ -1040,5 +1041,57 @@ describe('buildClassifierContext — connection names', () => {
     expect(connectionsLine({ connectionIds: [kael.journalId, 'actor-gone'] })).toBe('Connections: Kael Dros (Helpful)');
     expect(connectionsLine({ connectionIds: ['actor-gone'] })).toBe('Connections: 1 active (names unavailable)');
     expect(connectionsLine({ connectionIds: [] })).toBe('Connections: (none recorded)');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The recent scene (alpha 23 playtest): "we're on our way" is travel only to
+// a reader who saw the destination being discussed.
+// ---------------------------------------------------------------------------
+
+describe('the classifier reads the line against the recent scene', () => {
+  const SCENE = 'Isaac: "Tell Vuldar we\'re in."\n\nA data packet chirps through: coordinates for the gap at the edge of charted space.';
+
+  it('buildClassifierContext puts the recent scene before the player input, marked as context', () => {
+    const { userMessage } = buildClassifierContext({
+      playerText: "We're on our way", campaignState: { ...BASE_STATE }, character: { name: 'Isaac' },
+      recentMoveDensity: { count: 0, window: 5 }, pacingConfig: BASE_PACING_CFG, recentScene: SCENE,
+    });
+    const scene = userMessage.indexOf('## RECENT SCENE');
+    expect(scene).toBeGreaterThan(-1);
+    expect(userMessage).toContain('coordinates for the gap');
+    expect(scene).toBeLessThan(userMessage.indexOf('## PLAYER INPUT'));
+  });
+
+  it('control: no recent scene, no section', () => {
+    const { userMessage } = buildClassifierContext({
+      playerText: "We're on our way", campaignState: { ...BASE_STATE }, character: null,
+      recentMoveDensity: { count: 0, window: 5 }, pacingConfig: BASE_PACING_CFG,
+    });
+    expect(userMessage).not.toContain('## RECENT SCENE');
+  });
+
+  it('the system prompt says a short line takes its meaning from what it follows', () => {
+    const { systemPrompt } = buildClassifierContext({
+      playerText: 'x', campaignState: { ...BASE_STATE }, character: null,
+      recentMoveDensity: { count: 0, window: 5 }, pacingConfig: BASE_PACING_CFG,
+    });
+    expect(systemPrompt).toMatch(/READ THE INPUT AGAINST THE RECENT SCENE/);
+  });
+
+  it("decidePacing sends the session's recent scene to the classifier", async () => {
+    apiPost.mockReset();
+    apiPost.mockResolvedValue(makeApiResponse({
+      decision: 'MOVE', suggestedMove: 'set_a_course', category: 'exploration', confidence: 0.9, reasoning: 'travel to the coordinates',
+    }));
+    getRecentSceneForReading.mockReturnValueOnce(SCENE);
+    game.settings._store.clear();
+    await decidePacing({
+      playerText: "We're on our way",
+      campaignState: { ...BASE_STATE, currentSessionId: 'sess-a23', pacing: { sceneOverride: null, forceNextAsMove: false } },
+      character: { name: 'Isaac' }, apiKey: 'sk-ant-test',
+    });
+    expect(getRecentSceneForReading).toHaveBeenCalledWith('sess-a23');
+    expect(apiPost.mock.calls[0][2].messages[0].content).toContain('coordinates for the gap');
   });
 });

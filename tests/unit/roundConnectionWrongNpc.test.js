@@ -60,7 +60,7 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const ROUND_REPLY = 'Ren leans on Kade until the smuggler gives up the shipment. Across the bay, Kira wins over Ilsa Marr, the dockmaster, with a share of the cargo.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 // challenge 3 and 4, action die 6 (+2 = 8): a strong hit.
 const STRONG = [0.25, 0.35, 0.9];

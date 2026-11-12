@@ -47,7 +47,7 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';   // narrationModel default
+const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
 const REPLY = 'Steel rings.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const INCITING_TEXT = [
   'The relay at Paradox Station goes dark; a distress code older than the Forge repeats on every band.',

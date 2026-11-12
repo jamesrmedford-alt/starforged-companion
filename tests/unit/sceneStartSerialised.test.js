@@ -117,7 +117,7 @@ describe('issue #335 Y05 — startScene runs one start at a time', () => {
 });
 
 describe('issue #335 Y05 — `!pay-the-price` filling a tension clock: one scene for the vignette and the follow-up', () => {
-  const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+  const NARRATION_MODEL = 'claude-sonnet-5-5';
   const VIGNETTE_FACT = 'The reactor shielding has failed';
   const FOLLOWUP_FACT = 'The coolant lines are frosting over';
   const VIGNETTE = 'Klaxons scream as the shielding gives way.\n```json\n' + JSON.stringify({

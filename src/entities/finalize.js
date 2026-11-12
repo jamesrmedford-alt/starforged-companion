@@ -33,12 +33,11 @@ import { getSettlement, updateSettlement } from "./settlement.js";
 import { getPlanet,     updatePlanet }     from "./planet.js";
 import { getLocation,   updateLocation }   from "./location.js";
 import { getConnection }                   from "./connection.js";
-import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const DEFAULT_MODEL = "claude-sonnet-4-5-20250929";
-const MAX_TOKENS    = 240;
+const DEFAULT_MODEL = "claude-sonnet-5-5";
+const MAX_TOKENS    = 310;   // was 240 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5 (the narration model may be Haiku)
 
 const GETTERS = {
   ship:       getShip,
@@ -337,7 +336,6 @@ async function generateEntityFlavor(typeKey, record) {
   const body = {
     model,
     max_tokens: MAX_TOKENS,
-    ...thinkingOffFor(model),   // a short reply on the narration model (issue #325 W27)
     system:   [{ type: "text", text: system }],
     messages: [{ role: "user", content: user }],
   };

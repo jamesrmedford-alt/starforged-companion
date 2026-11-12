@@ -23,7 +23,7 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { scriptClaude, campaignStateWrite } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 
 const SIDECAR = {
   newTruths:    [{ subject: 'the dockmaster', fact: 'Owes the crew a favour' }],

@@ -63,7 +63,7 @@ import { parseHTML } from '../helpers/cardDom.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const MODULE_ID = 'starforged-companion';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 
 let table;
 const world = () => table.world.campaignState();

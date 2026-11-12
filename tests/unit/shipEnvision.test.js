@@ -74,7 +74,7 @@ beforeEach(() => {
   global.game.user.isGM = true;
   global.game.settings._store.clear();
   global.game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-test');
-  global.game.settings._store.set(`${MODULE_ID}.narrationModel`, 'claude-sonnet-4-5-20250929');
+  global.game.settings._store.set(`${MODULE_ID}.narrationModel`, 'claude-sonnet-5-5');
   global.game.settings._store.set(`${MODULE_ID}.narrationTone`, 'wry');
   apiPost.mockClear();
   rollOracle.mockClear();

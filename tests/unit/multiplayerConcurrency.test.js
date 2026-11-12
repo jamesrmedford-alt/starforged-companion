@@ -69,7 +69,7 @@ import { CampaignStateSchema } from '../../src/schemas.js';
 import { GM_ACTION_TIMEOUT_MS } from '../../src/multiplayer/gmRelay.js';
 import { DEFAULT_TIMEOUT_MS } from '../../src/net/fetchWithTimeout.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';   // narrationModel default
+const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
 const DEFAULT_REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
 function deferred() {

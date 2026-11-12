@@ -6,6 +6,64 @@ rejected.
 
 ---
 
+## Haiku 5.5 and Sonnet 5.5 are the defaults; a line is read with its scene (2026-11)
+
+**Decision:** (the maintainer's request after the alpha 23 playtest.)
+- **The default models are `claude-haiku-5-5` and `claude-sonnet-5-5`.**
+  Every quick call runs on Haiku 5.5. Narration defaults to Sonnet 5.5,
+  Haiku 5.5 is offered beside it, and Sonnet 5, Sonnet 4.5 and Haiku 4.5
+  stay offered: a world that chose a narration model keeps it (a stored
+  choice is the GM's, not migrated).
+- **The interpreter's and classifier's model is their own constant.** A
+  world stored `campaignState.api.model` (and `maxTokens`, `fallbackModel`)
+  at creation; nothing wrote them again, and the interpreter and classifier
+  read the stored model before their own, so a newer default never reached
+  an existing world. Those three schema fields are gone and any stored copy
+  is ignored; `api.promptCachingEnabled` stays.
+- **No call asks for extended thinking, and `api-proxy.js` is the one place
+  that says so.** A body that sets no `thinking` is sent with its model's
+  thinking-off form (`narration/thinking.js`): `disabled` for Haiku 5.5
+  (accepted at its default effort, `medium`), Sonnet 5 and Opus 4.7/4.8;
+  `between_tools` for Sonnet 5.5, which rejects `disabled`; nothing for the
+  4.5 models. The per-call spreads (W27) are gone — the Haiku calls never
+  had one, and Haiku 5.5 thinks by default.
+- **The Haiku calls' small caps are about a third larger** (Haiku 5.5 counts
+  the same text as about 30% more tokens): relevance 110, classifier 330,
+  truths 400, rewards 520, ability scan 800, riders 920, Private Channel 800,
+  detection 2000 / tier 800, consistency 1300, interpreter 1300, rolling
+  summary 420; the chronicle (260) and the entity flavour (310), which run on
+  the narration model, too.
+- **A refusal is logged** (`stop_reason: "refusal"`, with its category) in
+  `apiPost`; every caller already treats a reply with no text as a failure.
+- **The interpreter and the classifier read the recent scene**
+  (`narrator.getRecentSceneForReading`: the last 3 ring entries, newest
+  2,400 characters), as context before the player's line. The interpreter
+  names a target the line only refers to ("her coordinates", "there") from
+  it; the classifier reads a short line ("we're on our way") as what it
+  follows.
+
+**Reason:** the 5.5 models are the current generation. Haiku 5.5 and Sonnet
+5.5 think by default, and thinking shares `max_tokens`: the short structured
+replies would come back empty (the W27 failure, on every Haiku call). In the
+alpha 23 playtest "We're on our way" after an NPC sent coordinates was read
+with no destination — the interpreter saw the line alone.
+
+**Rejected:**
+- *Adaptive thinking at `low` effort* (the migration guide's first choice) —
+  it can still think on a request, and every call here is a short reply
+  parsed as text or JSON under a small cap; it would need measuring per
+  call. Thinking off keeps today's behaviour.
+- *Server-side refusal fallback* (`fallbacks: "default"`) — it retries only
+  `cyber` and `frontier_llm` declines; a game narrator's would be
+  `general_harms`, and Haiku 5.5 has none.
+- *Migrate a world's stored narration model to Sonnet 5.5* — the setting is
+  the GM's choice.
+- *Pass the whole ring (`narratorContextCards`, default 20)* to the
+  interpreter and classifier — they run on every line and are uncached
+  there; three entries carry the set-up a short line refers to.
+
+---
+
 ## A move the pipeline does not roll is told, and its card handed back (2026-11)
 
 **Decision:** (alpha 23 playtest, issue #348 PT11; the thirteenth audit's
@@ -1647,7 +1705,8 @@ finding's ID in brackets.)
   and whispers the GMs.
 - **Short calls follow narration's thinking rule** [W27]:
   `narration/thinking.js` is the one rule, for narration and every short
-  structured call on the narration model.
+  structured call on the narration model. (Since the 5.5 upgrade,
+  `api-proxy.js` applies it to every call, the Haiku ones included.)
 - **A save holds truths when one category does** [W35]; **a fact-continuity
   catch keeps its remedy** [W34] (Correct… in the World Journal panel, never
   the lore actions); **the Roll button is the move the hint invites, guarded
@@ -3000,6 +3059,8 @@ main narrator at once (its card had no flag family).
   `claude-sonnet-5-5`, which rejects `thinking: {type: "disabled"}` with a
   400; its thinking-off form is `between_tools`. Neither it nor the Fable
   tier or Opus 5.5 (which also reject "disabled") is offered for narration.
+  (Since the 5.5 upgrade, Sonnet 5.5 is offered and is sent `between_tools`
+  — see "Haiku 5.5 and Sonnet 5.5 are the defaults".)
 
 **Rejected:** a byte-stability test for the cached tiers now. It belongs with
 the layout split, since today's prompt changes on every turn by design.

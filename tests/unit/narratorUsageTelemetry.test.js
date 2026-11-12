@@ -62,11 +62,11 @@ afterEach(() => {
 describe('logNarratorUsage', () => {
   it('appends each call\'s tokens and time, and summarises the cache-read share', async () => {
     await logNarratorUsage({
-      label: 'narrateResolution', model: 'claude-sonnet-4-5-20250929', elapsedMs: 2400, sessionId: 's1',
+      label: 'narrateResolution', model: 'claude-sonnet-5-5', elapsedMs: 2400, sessionId: 's1',
       usage: { input_tokens: 6000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 300 },
     });
     await logNarratorUsage({
-      label: 'narratePacedInput', model: 'claude-sonnet-4-5-20250929', elapsedMs: 1800, sessionId: 's1',
+      label: 'narratePacedInput', model: 'claude-sonnet-5-5', elapsedMs: 1800, sessionId: 's1',
       usage: { input_tokens: 2000, cache_read_input_tokens: 6000, cache_creation_input_tokens: 0, output_tokens: 250 },
     });
 
@@ -113,7 +113,7 @@ describe('every narrator call logs its usage', () => {
       await getRollingSessionSummary({ currentSessionId: 'sess-1' }, { forceRefresh: true });
       await vi.waitFor(() => expect(usageEntries()).toHaveLength(1));
       expect(usageEntries()[0]).toMatchObject({
-        label: 'getRollingSessionSummary', model: 'claude-haiku-4-5-20251001', inputTokens: 420, outputTokens: 60,
+        label: 'getRollingSessionSummary', model: 'claude-haiku-5-5', inputTokens: 420, outputTokens: 60,
       });
       expect(usageEntries()[0].elapsedMs).toBeGreaterThanOrEqual(0);
     } finally {

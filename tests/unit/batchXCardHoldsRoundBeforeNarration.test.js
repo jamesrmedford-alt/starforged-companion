@@ -75,7 +75,7 @@ import { CampaignStateSchema } from '../../src/schemas.js';
 
 const REPLY = 'Kira slips through the vent, scraped and late.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const ACTION = 'I slip through the vent before the drones turn.';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 // challenge 4 and 8, action die 3 (+edge 2 = 5): a weak hit a burn of 9 raises.
 const WEAK = [0.35, 0.75, 0.4];
 // challenge 3 and 4, action die 6 (+edge 2 = 8): a strong hit — no upgrade to wait for.

@@ -58,7 +58,7 @@ import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { ROUND_NOTICES } from '../../src/batch/roundView.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const REPLY = 'The round turns.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 let table;
 const world = () => table.world.campaignState();
