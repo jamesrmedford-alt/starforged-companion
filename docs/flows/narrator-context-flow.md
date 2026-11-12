@@ -890,7 +890,9 @@ ring, and the closing scene's truths keep the closing session's number.
   the entry is the link the X-Card's D7 undo follows to take that line off:
   issue #342 Z43), same-session lore that states it **about the struck subject** goes
   `retracted` + unconfirmed (an archived scene truth must carry the subject's
-  label, other lore must name the text subject or the entity as whole words,
+  label, other lore must name the text subject or the entity as whole words
+  — not as a possessive, "Mira's husband", unless the struck fact is about
+  something of the subject's, RETRACTION-POSSESSIVE —
   a scene truth's fact alone decides; issue #321 U39 — sidecar facts are
   subject-less phrases, so striking "Vance — Is dead" took another
   character's death out of canon; `factsOverlap` containment now counts only
@@ -915,7 +917,9 @@ ring, and the closing scene's truths keep the closing session's number.
   that place, or where either place is unknown (`keptStrikeStandsAt`; issue
   #345 AA28 — struck at Bleakhold, it blocked Vantage Station's own fact of
   the same words, and a set there lifted Bleakhold's strike; the summary's
-  leave-out list still names it, and the X-Card's blocks keep no place) —
+  leave-out list still names it, and the X-Card's blocks keep no place; the
+  active scene's own strikes and Replace originals stand at their place the
+  same way — a scene travels — ACTIVE-SCENE-STRIKE-PLACE-BLIND) —
   and stays a strike, not just text: `applySidecar` blocks a later scene's
   re-assertion of it (`findSessionStrike` — by subject key, else name), and a
   GM's `!truth set` lifts it (a player's is refused over a GM's, W60) —

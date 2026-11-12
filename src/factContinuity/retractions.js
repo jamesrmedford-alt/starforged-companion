@@ -158,8 +158,34 @@ function loreStatesStrike(entry, subject, label, fact) {
     return wordSequence(entry.subject) === wordSequence(label) && factsOverlap(entry.fact, fact);
   }
   const named = subject?.kind === 'text' || subject?.kind === 'entity';
-  if (named && !containsWords(entry.title, label) && !containsWords(entry.text, label)) return false;
+  if (named && !mentionsSubject(entry.title, label, fact) && !mentionsSubject(entry.text, label, fact)) return false;
   return factsOverlap(entry.fact ?? entry.text ?? '', fact) || factsOverlap(entry.title ?? '', fact);
+}
+
+/** A possessive pronoun: a fact about something of the subject's ("Her husband is dead"). */
+const POSSESSIVE_FACT_RE = /(?<![\p{L}\p{N}])(?:his|her|hers|its|their|theirs)(?![\p{L}\p{N}])/iu;
+
+/**
+ * True when `text` mentions the struck subject `label` as whole words — other
+ * than as a possessive, unless the struck fact is itself about something of
+ * the subject's. "Mira — Is dead" retracted lore saying "Mira's husband is
+ * dead": the possessive was taken for a mention of Mira, and "is dead"
+ * overlapped (RETRACTION-POSSESSIVE). "Mira — Her husband is dead" still
+ * reaches it.
+ *
+ * @param {string|undefined} text
+ * @param {string} label
+ * @param {string} fact — the struck fact
+ * @returns {boolean}
+ */
+function mentionsSubject(text, label, fact) {
+  if (!containsWords(text, label)) return false;
+  if (POSSESSIVE_FACT_RE.test(String(fact ?? ''))) return true;
+  const words = String(label ?? '').split(/[^\p{L}\p{N}]+/u).filter(Boolean)
+    .map(w => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  if (!words.length) return false;
+  const mention = new RegExp(`(?<![\\p{L}\\p{N}])${words.join('[^\\p{L}\\p{N}]+')}(?![\\p{L}\\p{N}])(?!['’]s?(?![\\p{L}\\p{N}]))`, 'iu');
+  return mention.test(String(text ?? ''));
 }
 
 /**
@@ -659,8 +685,10 @@ function sameStrike(a, b) {
  * (ledgers.js keptStrikeStandsAt) — as the narrator is blocked from
  * re-asserting it, and a `!truth set` lifts it, there only; named elsewhere,
  * the place's own fact of those words read binding and "do NOT re-assert" at
- * once (W60). Left out — the summary's leave-out list, which covers the whole
- * session's prose — every strike is named.
+ * once (W60). So is the active scene's own: a scene travels, and its strike
+ * at Bleakhold was named beside Vantage Station's own fact
+ * (ACTIVE-SCENE-STRIKE-PLACE-BLIND). Left out — the summary's leave-out list,
+ * which covers the whole session's prose — every strike is named.
  *
  * @param {Object} campaignState
  * @param {{ here?: string|null }} [opts]
@@ -673,7 +701,7 @@ export function sessionRetractedFacts(campaignState, { here } = {}) {
       .map(f => ({ label: f.label, fact: f.fact }))
     : [];
   const current = (campaignState?.sceneTruths ?? [])
-    .filter(isNamedStrike)
+    .filter(t => isNamedStrike(t) && keptStrikeStandsAt(keptPlaceOf(t), here))
     .map(t => ({ label: subjectLabel(t.subject), fact: String(t.fact).trim() }));
   const out = [];
   for (const f of [...earlier, ...current]) {
