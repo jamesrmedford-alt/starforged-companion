@@ -30,7 +30,10 @@
 
 import { MOVES, rankName } from "../schemas.js";
 import { interpretMove } from "./interpreter.js";
-import { resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed } from "./resolver.js";
+import {
+  resolveMove, withPayThePriceSeed, withDecisiveActionCostSeed,
+  rollActionDie, rollChallengeDice, calcActionScore, calcOutcome, cancelsActionDie,
+} from "./resolver.js";
 import { buildMischiefAside } from "./mischief.js";
 import { persistResolution } from "./persistResolution.js";
 import { buildBurnState } from "./burnMomentum.js";
@@ -62,7 +65,7 @@ import { getActiveCombatPosition, listProgressTracks, completeProgressTrack } fr
 import { finishExpedition, legacyRewardTicks, selectExpeditionTrack } from "./expedition.js";
 import { finishVow } from "./vow.js";
 import { selectCombatTrack } from "./combat.js";
-import { selectConnection, planDevelopRelationship, buildConnectionSuggestion } from "./developRelationship.js";
+import { selectConnection, planDevelopRelationship, buildConnectionSuggestion, bondedDevelopRoll, developmentAdded } from "./developRelationship.js";
 import { SCENE_CHALLENGE_VARIANTS, moveOutsideSceneChallenge } from "./sceneChallenge.js";
 import { moveDisplayName } from "../system/i18n.js";
 import { buildMilestoneSuggestion, selectFulfilVow, selectForsakeVow } from "./milestone.js";
@@ -725,7 +728,7 @@ export async function rollMove({
   cardFlags = null, onDiceRolled = null, resolutionId = null,
 }) {
   const {
-    postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, postDevelopRelationshipCard, applyReachMilestone,
+    postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, applyReachMilestone,
     postForgeABondCard, postExpeditionFinishCard, noteUnsavedOnCopy, postSceneFinishCard,
     postRecommitOfferCard, postVowRecommitOfferCard, postBondRecommitOfferCard,
     resolveVowItemCopies, completeVowItemByName, postFulfillVowCard, payFulfilledVowNative,
@@ -976,61 +979,16 @@ export async function rollMove({
   // a bonded connection pays the rolled outcome (§3.3.5,
   // BONDED_DEVELOP_OUTCOMES: strong 2 bonds-legacy ticks / weak +2
   // momentum / miss nothing), and a strong hit with a match raises its rank
-  // by one (issue #322 V01).
+  // by one (issue #322 V01). A Test Your Relationship hit develops too — a
+  // bonded connection with a Develop Your Relationship roll of its own
+  // (TEST-RELATIONSHIP-DEVELOP-ROLL). Shared with Burn Momentum / Improve
+  // Result, which apply what their upgraded outcome adds
+  // (applyDevelopRelationship — BOND-DEVELOP-UPGRADE).
   if (resolution.consequences?.developRelationship && game.user.isGM) {
-    try {
-      const conn = await import("../entities/connection.js");
-      // Preserve each connection's host actor id (the value stored in
-      // connectionIds); connection._id is a separate generated id that the
-      // write helpers (getEntityDocument → game.actors.get) do not accept.
-      const connections = (campaignState.connectionIds ?? [])
-        .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
-        .filter(Boolean);
-      // A picker's host id first — without it, a picked un-bonded
-      // connection fell back to the sole bonded one (issue #301 B01).
-      const target = selectConnection(connections, interpretation.moveTarget ?? null,
-        { hostId: interpretation.moveTargetId ?? null });
-      const plan   = planDevelopRelationship(target, resolution.outcome, resolution.isMatch);
-
-      if (plan.action === "bond-legacy") {
-        if (plan.ticks > 0) addLegacyTicks(campaignState, "bonds", plan.ticks);
-        // A Test Your Relationship hit develops with the test's own roll,
-        // whose consequences cannot know the connection is bonded: its weak
-        // hit's +2 momentum joins them here, before the card and the
-        // persist, so it is credited to the roller with the move's other
-        // meters. Develop Your Relationship's roll carries it from the
-        // resolver already.
-        if (plan.momentum > 0 && resolution.moveId !== "develop_your_relationship" && resolution.consequences) {
-          resolution.consequences.momentumChange =
-            Number(resolution.consequences.momentumChange ?? 0) + plan.momentum;
-        }
-        if (plan.raiseRank && plan.newRank && plan.connection.__hostId) {
-          await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
-            console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
-          // Mirror onto the PCs' bond Items so CHARACTER STATE shows the
-          // raised rank (NARR-BOND-RANK-STALE). The Items are keyed by the
-          // record's `_id`, not the host Actor id (issue #314 Q04 — the
-          // host id matched nothing, and the name fallback hid it until a
-          // rename).
-          await setBondItemRank(
-            { connectionId: plan.connection._id, name: plan.connection.name },
-            plan.newRank,
-          ).catch(err =>
-            console.warn(`${MODULE_ID} | develop: bond rank mirror failed:`, err?.message ?? err));
-        }
-        await postDevelopRelationshipCard(plan).catch(err =>
-          console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
-      } else if (plan.action === "connection-progress" && plan.connection.__hostId) {
-        await conn.markRelationshipProgress(plan.connection.__hostId, plan.marks).catch(err =>
-          console.warn(`${MODULE_ID} | develop: progress mark failed:`, err?.message ?? err));
-        await postDevelopRelationshipCard(plan).catch(err =>
-          console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
-      }
-      // action "none" → no resolvable connection; the move card's otherEffect
-      // already tells the player to develop a relationship.
-    } catch (err) {
-      console.warn(`${MODULE_ID} | develop relationship failed:`, err?.message ?? err);
-    }
+    await applyDevelopRelationship({
+      resolution, interpretation, campaignState, rollerActor,
+      markBonds: (ticks) => addLegacyTicks(campaignState, "bonds", ticks),
+    }).catch(err => console.warn(`${MODULE_ID} | develop relationship failed:`, err?.message ?? err));
   }
 
   // Reach a Milestone (no-roll quest move) — mark progress on the target vow
@@ -1514,6 +1472,124 @@ export async function rollMove({
     resolution, interpretation, relevance, moveTargets, burnState, improveState,
     moveResultMessage: moveResultMessage ?? null, rollerActor, speakerActorId,
   };
+}
+
+/**
+ * A Develop Your Relationship roll of its own, +the bonded connection's rank:
+ * what a Test Your Relationship hit's "Develop Your Relationship" makes for a
+ * bonded connection (TEST-RELATIONSHIP-DEVELOP-ROLL — it developed with the
+ * test's own +heart roll). Rolled as `!bond` rolls it: the roller's negative
+ * momentum cancels a matching action die (issue #311 P01).
+ *
+ * @param {Object} connection — a bonded connection record
+ * @param {Actor|null} rollerActor
+ * @returns {{ outcome: string, isMatch: boolean, actionDie: number, adds: number,
+ *   actionScore: number, challengeDice: number[], cancelled: boolean }|null}
+ */
+function rollBondedDevelop(connection, rollerActor) {
+  const roll = bondedDevelopRoll(connection);
+  if (!roll) return null;
+  const actionDie     = rollActionDie();
+  const challengeDice = rollChallengeDice();
+  const cancelled     = cancelsActionDie(actionDie, rollerActor ? readMomentumState(rollerActor).value : null);
+  const actionScore   = calcActionScore(cancelled ? 0 : actionDie, 0, roll.statValue);
+  const { outcome, isMatch } = calcOutcome(actionScore, challengeDice);
+  return { outcome, isMatch, actionDie, adds: roll.statValue, actionScore, challengeDice, cancelled };
+}
+
+/**
+ * Develop the connection a Develop Your Relationship — or a Test Your
+ * Relationship hit — was made for, on the canonical GM. An un-bonded
+ * connection marks its own relationship track; a bonded one pays its roll's
+ * outcome (BONDED_DEVELOP_OUTCOMES): the bonds legacy ticks, a weak hit's +2
+ * momentum, a strong hit's match raising its rank. Develop Your
+ * Relationship's roll is the move's own; a Test Your Relationship hit makes a
+ * Develop Your Relationship roll of its own for a bonded connection, +rank
+ * (TEST-RELATIONSHIP-DEVELOP-ROLL), whose +2 momentum joins the move's
+ * consequences — credited to the roller with its other meters.
+ *
+ * A Burn Momentum or Improve Result (`against`, the recorded outcome) applies
+ * what the upgraded outcome adds: the development ran in the pipeline's
+ * branch alone, which an upgrade did not re-run, so a bonded Develop Your
+ * Relationship upgraded to a strong hit marked no ticks and raised no rank on
+ * a match (BOND-DEVELOP-UPGRADE). A Test Your Relationship the recorded hit
+ * already developed adds nothing; one upgraded from a miss develops now, its
+ * +2 momentum to the roller. The upgrade's ticks are saved by its own
+ * `markBonds` (index.js writeLegacyTicks); the pipeline's land on its
+ * working copy, which persistResolution writes.
+ *
+ * @param {Object} args
+ * @param {Object} args.resolution — the outcome developed (the upgraded one, for an upgrade)
+ * @param {Object} args.interpretation — its target (`moveTarget`, `moveTargetId`: the host id)
+ * @param {Object} args.campaignState — the working copy (its `connectionIds`)
+ * @param {Actor|null} args.rollerActor
+ * @param {{ outcome: string, consequences: Object }|null} [args.against] — the recorded outcome an upgrade replaces
+ * @param {Function} args.markBonds — (ticks) => void|Promise: marks the bonds legacy
+ * @returns {Promise<Object|null>} the plan applied; null when nothing was
+ */
+export async function applyDevelopRelationship({ resolution, interpretation, campaignState, rollerActor, against = null, markBonds }) {
+  const { postDevelopRelationshipCard } = pipelineHost();
+  const isTest = resolution.moveId === "test_your_relationship";
+  if (against && isTest && against.consequences?.developRelationship) return null;   // developed by the recorded hit
+  const conn = await import("../entities/connection.js");
+  // Preserve each connection's host actor id (the value stored in
+  // connectionIds); connection._id is a separate generated id that the
+  // write helpers (getEntityDocument → game.actors.get) do not accept.
+  const connections = (campaignState?.connectionIds ?? [])
+    .map(hostId => { const c = conn.getConnection(hostId); return c ? { ...c, __hostId: hostId } : null; })
+    .filter(Boolean);
+  // A picker's host id first — without it, a picked un-bonded
+  // connection fell back to the sole bonded one (issue #301 B01).
+  const target = selectConnection(connections, interpretation?.moveTarget ?? null,
+    { hostId: interpretation?.moveTargetId ?? null });
+  const roll = isTest && target?.bonded ? rollBondedDevelop(target, rollerActor) : null;
+  let plan = roll
+    ? planDevelopRelationship(target, roll.outcome, roll.isMatch)
+    : planDevelopRelationship(target, resolution.outcome, resolution.isMatch);
+  if (against && !isTest) {
+    // The recorded outcome's development stands; the upgrade adds the rest.
+    // (Its +2 momentum is the outcome's own, swapped with its other meters.)
+    const was = against.consequences?.developRelationship
+      ? planDevelopRelationship(target, against.outcome, resolution.isMatch) : { action: "none" };
+    plan = developmentAdded(plan, was);
+  }
+  if (!plan || plan.action === "none") return null;   // no resolvable connection: the card's text says to develop one
+
+  if (plan.action === "bond-legacy") {
+    if (plan.ticks > 0) await markBonds(plan.ticks);
+    if (plan.momentum > 0 && roll) {
+      if (against) {
+        // An upgrade's meters are written: the test's consequences carry none of it.
+        const { applyMeterChanges } = await import("../character/actorBridge.js");
+        if (rollerActor) await applyMeterChanges(rollerActor, { momentum: plan.momentum });
+      } else if (resolution.consequences) {
+        resolution.consequences.momentumChange =
+          Number(resolution.consequences.momentumChange ?? 0) + plan.momentum;
+      }
+    }
+    if (plan.raiseRank && plan.newRank && plan.connection.__hostId) {
+      await conn.updateConnection(plan.connection.__hostId, { rank: plan.newRank }).catch(err =>
+        console.warn(`${MODULE_ID} | develop: rank raise failed:`, err?.message ?? err));
+      // Mirror onto the PCs' bond Items so CHARACTER STATE shows the
+      // raised rank (NARR-BOND-RANK-STALE). The Items are keyed by the
+      // record's `_id`, not the host Actor id (issue #314 Q04 — the
+      // host id matched nothing, and the name fallback hid it until a
+      // rename).
+      await setBondItemRank(
+        { connectionId: plan.connection._id, name: plan.connection.name },
+        plan.newRank,
+      ).catch(err =>
+        console.warn(`${MODULE_ID} | develop: bond rank mirror failed:`, err?.message ?? err));
+    }
+  } else if (plan.action === "connection-progress" && plan.connection.__hostId) {
+    await conn.markRelationshipProgress(plan.connection.__hostId, plan.marks).catch(err =>
+      console.warn(`${MODULE_ID} | develop: progress mark failed:`, err?.message ?? err));
+  } else {
+    return null;
+  }
+  await postDevelopRelationshipCard(roll ? { ...plan, roll } : plan).catch(err =>
+    console.warn(`${MODULE_ID} | develop card failed:`, err?.message ?? err));
+  return plan;
 }
 
 /**

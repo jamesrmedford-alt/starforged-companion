@@ -223,6 +223,7 @@ import {
   rollMove,
   recordMove,
   finishMove,
+  applyDevelopRelationship,
 } from "./moves/movePipeline.js";
 import {
   configureBatchDriver,
@@ -2107,6 +2108,32 @@ async function applyOutcomeEffects({
     } catch (err) {
       console.warn(`${MODULE_ID} | legacy mark failed:`, err?.message ?? err);
       notApplied.push(`the ${label} legacy mark`);
+    }
+  }
+
+  // A bonded Develop Your Relationship (or a Test Your Relationship from a
+  // miss) upgraded: what the upgraded outcome adds to the development the
+  // pipeline's develop branch paid for the recorded one — the bonds ticks,
+  // saved now with their box XP, and a match's rank raise
+  // (BOND-DEVELOP-UPGRADE: the branch was not re-run).
+  if (upgrade && next.developRelationship) {
+    try {
+      const plan = await applyDevelopRelationship({
+        resolution, interpretation, campaignState, rollerActor, against,
+        markBonds: async (ticks) => {
+          const failed = await writeLegacyTicks("bonds", ticks);
+          if (failed.length) {
+            await postPayoffFailureCard({ source: "legacyXp", failures: failed }).catch(err =>
+              console.warn(`${MODULE_ID} | legacy XP failure card failed:`, err?.message ?? err));
+          }
+        },
+      });
+      if (plan?.ticks > 0) applied.push(`${plan.ticks} tick${plan.ticks === 1 ? "" : "s"} on the bonds legacy`);
+      if (plan?.raiseRank && plan.newRank) applied.push(`${plan.connection?.name ?? "the connection"}'s rank raised to ${plan.newRank}`);
+      if (plan?.action === "connection-progress") applied.push(`progress on your relationship with ${plan.connection?.name ?? "the connection"}`);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | upgraded development failed:`, err?.message ?? err);
+      notApplied.push("the relationship's development");
     }
   }
 
@@ -6425,9 +6452,17 @@ async function postDevelopRelationshipCard(plan) {
   } else {
     body = `Marked progress on your relationship with <strong>${name}</strong>.`;
   }
+  // A Test Your Relationship hit's own Develop Your Relationship roll, +rank
+  // (TEST-RELATIONSHIP-DEVELOP-ROLL).
+  const roll = plan?.roll;
+  const rollLine = roll
+    ? `<p>Develop Your Relationship (+${escapeChatHtml(plan.connection?.rank ?? "rank")}): `
+      + `${roll.cancelled ? `<s>${roll.actionDie}</s> (cancelled by momentum)` : roll.actionDie} + ${roll.adds} = <strong>${roll.actionScore}</strong>`
+      + ` vs ${roll.challengeDice[0]}, ${roll.challengeDice[1]} — ${escapeChatHtml(String(roll.outcome).replace("_", " "))}${roll.isMatch ? " ✦ match" : ""}.</p>`
+    : "";
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Develop Your Relationship</strong><p>${body}</p></div>`,
+      content: `<div class="sf-ptp-card"><strong>Develop Your Relationship</strong>${rollLine}<p>${body}</p></div>`,
       flags:   { [MODULE_ID]: { developRelationshipCard: true, action: plan.action } },
     });
   } catch (err) {

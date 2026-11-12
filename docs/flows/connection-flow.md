@@ -237,10 +237,20 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   paid a weak hit 1 tick): strong → 2 bonds-legacy ticks (`addLegacyTicks` on
   the working copy, persisted with the move), weak → +2 momentum (the
   resolver's `momentumChange`, credited to the roller by `persistResolution`;
-  a Test Your Relationship hit's branch adds the plan's momentum to that move's
+  a Test Your Relationship hit develops a bonded connection with a Develop
+  Your Relationship roll of its own, +rank (`rollBondedDevelop`, `!bond`'s
+  dice; its card shows the roll — TEST-RELATIONSHIP-DEVELOP-ROLL: it was paid
+  on the test's own +heart roll), whose momentum joins that move's
   consequences), miss → nothing; a strong hit with a match raises the
   connection's rank (`nextRank`, never past epic), mirrored onto the bond
-  Items by the record's `_id` (`setBondItemRank` — Q04). Ambiguous target (several active, none named)
+  Items by the record's `_id` (`setBondItemRank` — Q04). The branch is
+  `movePipeline.applyDevelopRelationship`; a Burn Momentum or Improve Result
+  runs it too, from its `applyOutcomeEffects`, for what the upgraded outcome
+  adds (`developmentAdded`: the ticks beyond the recorded outcome's — saved
+  with their box XP, `writeLegacyTicks` — and a match's rank raise; a Test
+  Your Relationship from a miss develops then): the upgrade did not re-run
+  the branch, so a bonded development burned to a strong hit marked nothing
+  (BOND-DEVELOP-UPGRADE). Ambiguous target (several active, none named)
   silently no-ops. `selectConnection`'s `strict` option is for an
   irreversible write (`!sever`): a name resolves the connection it names
   exactly, else the one connection whose name holds it as whole words (the

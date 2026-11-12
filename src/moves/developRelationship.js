@@ -264,3 +264,25 @@ export function planDevelopRelationship(connection, outcome, isMatch) {
   // Un-bonded: "no roll, mark progress" — one mark on the connection's own track.
   return { action: "connection-progress", connection, marks: 1 };
 }
+
+/**
+ * What a bonded development adds over another of the same connection — a
+ * Burn Momentum's or Improve Result's upgraded outcome over the recorded one
+ * (movePipeline.applyDevelopRelationship, BOND-DEVELOP-UPGRADE): the bonds
+ * ticks beyond the recorded ones and a rank raise the recorded outcome did not
+ * make. The momentum is no part of it: the move's own, it is swapped with
+ * the outcome's other meters. Null when it adds nothing.
+ *
+ * @param {Object} next — planDevelopRelationship's, for the upgraded outcome
+ * @param {Object} was  — planDevelopRelationship's, for the recorded one ({ action: "none" } when it developed nothing)
+ * @returns {Object|null}
+ */
+export function developmentAdded(next, was) {
+  if (next?.action === "connection-progress") return was?.action === "connection-progress" ? null : next;
+  if (next?.action !== "bond-legacy") return null;
+  const prior     = was?.action === "bond-legacy" ? was : { ticks: 0, raiseRank: false };
+  const ticks     = Math.max(0, Number(next.ticks ?? 0) - Number(prior.ticks ?? 0));
+  const raiseRank = !!next.raiseRank && !prior.raiseRank;
+  if (!ticks && !raiseRank) return null;
+  return { ...next, ticks, momentum: 0, raiseRank, newRank: raiseRank ? next.newRank : null };
+}

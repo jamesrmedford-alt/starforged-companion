@@ -276,16 +276,22 @@ describe('Develop Your Relationship with a bonded connection rolls +rank (issue 
     expect(bondsTicks()).toBe(4);
   });
 
-  // Issue #322 V01: a Test Your Relationship hit develops a bonded connection
-  // with the test's own roll, whose consequences cannot know the bond — the
-  // develop branch adds the weak hit's +2 momentum to them, for the roller.
-  it("Test Your Relationship's weak hit with a bonded connection: +2 momentum to the roller, no tick", async () => {
+  // Issue #322 V01: a Test Your Relationship hit develops a bonded connection,
+  // whose consequences cannot know the bond — the develop branch adds the
+  // development's +2 momentum to them, for the roller. Known-issues
+  // TEST-RELATIONSHIP-DEVELOP-ROLL: the development is a Develop Your
+  // Relationship roll of its own, +the connection's rank (`bondDice`) — it
+  // was paid on the test's own +heart roll.
+  const typedTest = () => ({
+    moveId: 'test_your_relationship', moveName: 'Test Your Relationship', statUsed: 'heart', adds: 0,
+    moveTarget: 'Vega', rationale: 'test', mischiefApplied: false,
+  });
+
+  it("Test Your Relationship's hit with a bonded connection: its own develop roll's weak hit — +2 momentum to the roller, no tick", async () => {
     await seed([{ id: 'conn-vega', name: 'Vega', ticks: 40, bonded: true, rank: 'formidable' }]);
-    control.dice = DICE;                       // 3 + heart 2 = 5 against 4 and 7
-    control.interpret = {
-      moveId: 'test_your_relationship', moveName: 'Test Your Relationship', statUsed: 'heart', adds: 0,
-      moveTarget: 'Vega', rationale: 'test', mischiefApplied: false,
-    };
+    control.dice = DICE;                       // the test: 3 + heart 2 = 5 against 4 and 7
+    control.bondDice = [3, 4, 7];              // the develop roll: 3 + formidable 3 = 6 against 4 and 7
+    control.interpret = typedTest();
     await table.client('pl-1').chat('Vega asks whether I still trust her.', { speaker: { actor: 'pc-bex' } });
     await table.settle();
 
@@ -294,6 +300,21 @@ describe('Develop Your Relationship with a bonded connection rolls +rank (issue 
     expect(actors.bex.system.momentum.value).toBe(4);
     // On the resolution the card and the persist read.
     expect(resolveMove.mock.results[0].value.consequences.momentumChange).toBe(2);
+    expect(table.cards(f => f.developRelationshipCard).at(-1).content)
+      .toContain('Develop Your Relationship (+formidable): 3 + 3 = <strong>6</strong> vs 4, 7 — weak hit');
+  });
+
+  it("Test Your Relationship's weak hit, its develop roll a strong hit: the bond's 2 ticks, not the test's +2 momentum", async () => {
+    await seed([{ id: 'conn-vega', name: 'Vega', ticks: 40, bonded: true, rank: 'formidable' }]);
+    control.dice = DICE;                       // the test: a weak hit
+    control.bondDice = [6, 2, 3];              // the develop roll: 6 + 3 = 9 beats 2 and 3 — a strong hit
+    control.interpret = typedTest();
+    await table.client('pl-1').chat('Vega asks whether I still trust her.', { speaker: { actor: 'pc-bex' } });
+    await table.settle();
+
+    expect(resolveMove.mock.results[0].value).toMatchObject({ outcome: 'weak_hit' });
+    expect(bondsTicks()).toBe(2);
+    expect(actors.bex.system.momentum.value).toBe(2);
   });
 
   // Issue #322 V01 (the audit's bondWeakHit probe): the same weak hit paid 1
@@ -314,5 +335,46 @@ describe('Develop Your Relationship with a bonded connection rolls +rank (issue 
     expect(table.cards(f => f.bondCommandCard).at(-1).content).toMatch(/Weak hit\.<\/strong> Take \+2 momentum/);
     expect(bondsTicks()).toBe(0);
     expect(actors.bex.system.momentum.value).toBe(6);
+  });
+});
+
+// Known-issues BOND-DEVELOP-UPGRADE: a Burn Momentum (or Improve Result) that
+// upgraded a bonded Develop Your Relationship to a strong hit marked no bonds
+// ticks and raised no rank on a match — the development ran in the
+// pipeline's develop branch alone, which an upgrade did not re-run. The
+// upgrade now applies what its outcome adds (movePipeline
+// applyDevelopRelationship, from the upgrade's applyOutcomeEffects).
+describe('a bonded Develop Your Relationship upgraded by Burn Momentum (BOND-DEVELOP-UPGRADE)', () => {
+  const BURN = '[data-action="sf-burn-momentum"]';
+
+  async function developVega(dice) {
+    await seed([{ id: 'conn-vega', name: 'Vega', ticks: 40, bonded: true, rank: 'formidable' }]);
+    actors.bex.system.momentum.value = 9;
+    control.dice = dice;
+    control.interpret = {
+      moveId: 'develop_your_relationship', moveName: 'Develop Your Relationship', statUsed: null, adds: 0,
+      moveTarget: 'Vega', rationale: 'test', mischiefApplied: false,
+    };
+    await table.client('pl-1').chat('I open up to Vega about the Archive.', { speaker: { actor: 'pc-bex' } });
+    await table.settle(); await table.drain();
+    const card = table.cards(f => f.moveResolution).at(-1);
+    expect(card.flags[MODULE_ID].burn?.canBurn, 'Bex can burn').toBe(true);
+    table.client('pl-1').click(card._id, BURN);
+    await table.settle(); await table.drain();
+  }
+
+  it('a weak hit burned to a strong hit marks the bond\'s 2 ticks', async () => {
+    await developVega([0.35, 0.65, 0.4]);           // 3 + 3 = 6 against 4 and 7: a weak hit; momentum 9 beats both
+
+    expect(bondsTicks()).toBe(2);
+    expect(actors.bex.system.momentum.value).toBe(2);                   // reset; the strong hit takes no momentum
+    expect(record('conn-vega').rank).toBe('formidable');
+  });
+
+  it('a miss with a match burned to a strong hit marks 2 ticks and raises the rank', async () => {
+    await developVega([0.65, 0.65, 0.4]);           // 6 against 7 and 7: a miss with a match
+
+    expect(bondsTicks()).toBe(2);
+    expect(record('conn-vega').rank).toBe('extreme');
   });
 });
