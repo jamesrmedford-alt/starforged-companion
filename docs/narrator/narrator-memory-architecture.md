@@ -177,7 +177,8 @@ CLAUDE.md "audit consumers" rule):
   still the one an X-Card removes, with what it wrote, and the kept beat
   before it is left alone (issue #347 AB22); the canonical GM keeps the
   newest twenty of those the pick reads on campaignState
-  (`deletedChatMessages`, no text kept), so the pick survives a reload, and a
+  (`deletedChatMessages`, no text kept — a session mint lets them go,
+  DELETED-MESSAGES-KEPT), so the pick survives a reload, and a
   deleted card an X-Card removed is marked there (issue #347 residual
   DELETED-NARRATION-MEMORY-PAGE-ONLY); a deletion alone forgets nothing
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching

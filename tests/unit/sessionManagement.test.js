@@ -191,6 +191,20 @@ describe('session boundaries (issue #286 C3, C4)', () => {
     expect(SESSION_MINT_FIELDS).toEqual(expect.arrayContaining(['sessionActive', 'sessionActiveStartedAt']));
   });
 
+  // DELETED-MESSAGES-KEPT: the deleted chat messages the X-Card's pick reads
+  // after a reload (issue #347 DELETED-NARRATION-MEMORY-PAGE-ONLY) are the
+  // closing session's — the new session's pick reads its own alone. They
+  // were kept for good.
+  it('a new session lets go of the closing session\'s deleted chat messages, and its caller persists that', () => {
+    const state = makeState({
+      currentSessionId: 's1', sessionNumber: 4, sessionStartedId: 's1', lastSessionTimestamp: hoursAgo(170),
+      deletedChatMessages: [{ id: 'm-1', deleted: true, flags: { [MODULE_ID]: { narratorCard: true, sessionId: 's1', narrationId: 'nar-1' } } }],
+    });
+    mintSession(state);
+    expect(state.deletedChatMessages).toEqual([]);
+    expect(SESSION_MINT_FIELDS).toContain('deletedChatMessages');
+  });
+
   it('a closing session with no summary of its own leaves the older one in place', () => {
     const older = { sessionId: 's0', sessionNumber: 3, text: 'Earlier.', updatedAt: null };
     const state = makeState({

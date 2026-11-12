@@ -164,6 +164,7 @@ export const SESSION_MINT_FIELDS = Object.freeze([
   "unsummarisedSession",
   "sessionActive",
   "sessionActiveStartedAt",
+  "deletedChatMessages",
 ]);
 
 /** Epoch ms of the activity stamp for `sessionId`; NaN when there is none for it. */
@@ -355,6 +356,10 @@ export function mintSession(campaignState, now = Date.now()) {
   campaignState.sessionEndedId         = null;
   campaignState.sessionActive          = false;
   campaignState.sessionActiveStartedAt = null;
+  // The deleted chat messages the X-Card's pick reads after a reload belong
+  // to the session closing out: its pick reads the new session's alone, so
+  // they are let go (DELETED-MESSAGES-KEPT).
+  campaignState.deletedChatMessages    = [];
   return campaignState;
 }
 
