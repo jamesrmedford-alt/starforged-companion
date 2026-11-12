@@ -4102,9 +4102,14 @@ async function handlePayThePriceCommand(message) {
   }
 
   // Countdown clocks advance on the canonical GM (world/actor writes) — run
-  // locally there, relayed from a player's client.
-  await requestGmAction("payThePrice.advanceClocks", {}).catch(err =>
-    console.warn(`${MODULE_ID} | !pay-the-price: clock advance failed:`, err?.message ?? err));
+  // locally there, relayed from a player's client. Not for a price nobody
+  // pays: it is not part of the story, so it turns no clock and fires no
+  // trigger vignette (PTP-PCLESS-CLOCKS-ADVANCE — a narrative price with no
+  // payer too, since issue #342 Z49).
+  if (!noPayer) {
+    await requestGmAction("payThePrice.advanceClocks", {}).catch(err =>
+      console.warn(`${MODULE_ID} | !pay-the-price: clock advance failed:`, err?.message ?? err));
+  }
 
   // Narration follow-up — once, where a Claude key lives (oracleFollowup.js).
   // Not for a price nobody pays: the card says it was not applied, and with

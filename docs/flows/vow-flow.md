@@ -245,7 +245,8 @@ All real progress lands on **item ticks** (`system.current`) via
   `payThePrice.suffer` (`applyPayThePriceSufferFromRelay`, the typist's PC as
   the roller), so the allies a Sacrifice Resources marks unprepared are
   written where that is allowed (issue #325 W10). A player with no PC of
-  their own at a table of several relays no route: the card says the price
+  their own at a table of several relays no route — and no clock advance
+  (PTP-PCLESS-CLOCKS-ADVANCE): the card says the price
   was not applied and the typist is whispered why (issue #337 Y43). A shared vow's copies are one clock
   (issue #321 U55): one `lockstep` map rides every PC's call of an advance,
   so the first copy advances and each later copy is set to the value it
