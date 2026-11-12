@@ -84,7 +84,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import {
-  campaignStateWrite, claudeFault, expectKnownIssue, failWrites, scriptClaude, traceTable,
+  campaignStateWrite, claudeFault, failWrites, scriptClaude, traceTable,
 } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 import { DEFAULT_TIMEOUT_MS } from '../../src/net/fetchWithTimeout.js';
@@ -239,7 +239,7 @@ describe('Claude fails while a move is narrated: the result stands, the narratio
     await expectNextMoveNarrates();
   });
 
-  it('KNOWN ISSUE MOVE-BUSY-NOTICE: a line typed while another move is narrated is dropped — the player who typed it is told', async () => {
+  it('MOVE-BUSY-NOTICE: a line typed while another move is narrated is dropped — the player who typed it is told', async () => {
     const trace = traceTable(table);
     const narration = scriptClaude(table, { fallback: () => REPLY }).hold(isNarration);
     await move();
@@ -251,9 +251,13 @@ describe('Claude fails while a move is narrated: the result stands, the narratio
 
     expect(table.cards(f => f.moveResolution)).toHaveLength(1);   // Ren's line ran no move …
     expect(notices('gm-1')).toContainEqual(expect.stringMatching(/already being resolved/));   // … and the GM was told
-    await expectKnownIssue('MOVE-BUSY-NOTICE', /already being resolved/, async () => {
-      expect(notices('pl-2').join(' | ')).toMatch(/already being resolved/);   // the player who typed is not
-    });
+    // … and so is the player who typed it: a "Not rolled" notice whispered to them,
+    // their line back in their chat box (the toast showed on the GM's screen only).
+    const told = table.cards(f => f.moveNotRolledNotice === 'busy');
+    expect(told).toHaveLength(1);
+    expect(table.world.message(told[0]._id).whisper).toContain('pl-2');
+    expect(String(table.world.message(told[0]._id).content)).toMatch(/Another move was being resolved/);
+    expect(table.world.message(told[0]._id).flags[MODULE_ID]).toMatchObject({ restoreLineFor: 'pl-2', restoreLine: 'I follow her through.' });
   });
 });
 

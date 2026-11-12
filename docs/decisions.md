@@ -6,6 +6,56 @@ rejected.
 
 ---
 
+## A move the pipeline does not roll is told, and its card handed back (2026-11)
+
+**Decision:** (alpha 23 playtest, issue #348 PT11; the thirteenth audit's
+AB06 in issue #347.) The confirm dialog's cancel still cancels — nothing is
+rolled, and the player re-words their line ("Re-interpret cancels the move so
+the player can re-word it", U04, stands) — but a move the free-flow pipeline
+does not roll is no longer dropped in silence:
+- **The cancel is named for what it does.** "Cancel — re-word" for a typed
+  line, "Cancel" for a forced move (a card button's), which has no line to
+  re-word. Closing the dialog is the same cancel.
+- **The table is told.** A cancelled confirm, a reading that failed before the
+  roll, and a line or non-held forced post refused at the move lock whisper a
+  "Not rolled" notice (`moveNotRolledNotice`: `cancelled` / `failed` /
+  `busy`) to the line's author, the roller's players and the GMs — the
+  pipeline runs on the canonical GM, so its toasts told only that screen
+  (known-issues MOVE-BUSY-NOTICE, proposed fix taken).
+- **A typed line goes back in its author's chat box** (`restoreLineFor` /
+  `restoreLine`, applied on the author's client only, and only into an empty
+  box — a draft is theirs).
+- **A card button's forced move names the card it claimed** (`sourceCard`:
+  `{ messageId, claim, release }`, built by `cardActions.sourceCardFlag` at
+  every claim-then-post site and in `applyCardRollerFollowup`). Not rolled,
+  the claim is written back to the value the button's own failed-post path
+  writes (`releaseSourceCard`), so the button is pressable again. A resist
+  roll a suffer card owes names that card (`kind: "suffer"`) and re-opens it
+  (`reopenSufferCard`). Only a post a GM made is trusted (every card button's
+  move is posted by the canonical GM's relay handler).
+- **A forced post is named on the notice** (`gatedMessageId`), so the inciting
+  ⚔ — not claimed, re-armed by its presser's client — re-arms as it does for
+  the session gate's notice (issue #337 Y36).
+
+**Reason:** "Re-interpret" did nothing visible in play, and the same silent
+drop left card buttons reading "Rolled" for a move never made and an owed
+resist roll's card saying it was rolled. Handing back with the value each
+site's failed-post path already writes reuses a release that site already
+trusts.
+
+**Rejected:**
+- *Make Re-interpret re-read the line* (excluding the rejected move, or
+  offering a short list) — a change to U04's decision; left for the
+  maintainer.
+- *Hide the cancel on an owed roll* — the ✕ still closes the dialog; the
+  card re-opens instead, as Batch Mode keeps an owed roll the roller's.
+- *Re-post an owed roll after a cancel* — it re-opens the dialog at once,
+  and a dialog that cannot render would loop.
+- *Hand back on a GM handover* (a held move lost when the canonical GM
+  changes, #347 AB06's fourth case) — the in-memory hold is issue #344's.
+
+---
+
 ## Issue #345 audit: one canonical store per fact, a name is its host's, a journal is found by its flag, a capture follows its narration (2026-11)
 
 **Decision:** (issue #345, the twelfth audit's 70 findings AA01–AA70, fixed
@@ -4586,8 +4636,11 @@ untouched.
 - *Reject/error on a wrong-position move* — remapping preserves intent (an
   attack stays an attack, just the correct variant) and keeps the pipeline
   flowing; the confirm dialog shows the move and stat (with any ability's
-  stat swap), and its Re-interpret cancels the move so the player can
-  re-word it (issue #321 U04 — it offers no override of the move).
+  stat swap), and its cancel (once "Re-interpret", now "Cancel — re-word")
+  cancels the move so the player can re-word it (issue #321 U04 — it offers
+  no override of the move); the cancel is told and hands a card's button
+  back (see "A move the pipeline does not roll is told, and its card handed
+  back").
 - *Force every move to be a combat move while in combat* — rejected; non-combat
   moves (Ask the Oracle, Face Danger for the environment, etc.) remain valid
   mid-fight, so only the four position-locked combat moves are remapped.
