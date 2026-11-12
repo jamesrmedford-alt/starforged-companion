@@ -3163,12 +3163,16 @@ export async function interrogateScene(question, campaignState, options = {}) {
  * recent-narration ring but never the World Journal or entity records
  * (playtest v1.7.22).
  *
- * Canonical GM only, like scheduleNarrationCapture: both passes write the
+ * A GM's client only, like scheduleNarrationCapture: both passes write the
  * world (World Journal pages, session-log beats, entity cards, the GM's draft
  * card). @scene runs RUN_ON.CLAUDE, so at a table with no keyed GM it answers
  * on the asking player's client, where those writes are refused (issue #321
  * U36). There the answer's ledger facts still reach the GM through the
- * sidecar relay (applyNarratorSidecar); the passes are skipped.
+ * sidecar relay (applyNarratorSidecar); the passes are skipped. On a GM the
+ * capture runs where the answer was narrated — the single emitter its routing
+ * chose — not on whoever is canonical when the reply lands: a lower-id keyed
+ * GM joining meanwhile dropped it (AA34's gate —
+ * CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE).
  *
  * @param {string} response — the answer's prose
  * @param {{ matchedEntityIds?: string[], matchedEntityTypes?: string[] }} extras
@@ -3177,7 +3181,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
  * @param {string|null} [narrationId] — the answer's id, stamped on what the passes record (issue #329 X01)
  */
 function scheduleSceneAnswerCapture(response, extras, campaignState, actorId = null, narrationId = null) {
-  if (!isCanonicalGM()) return;
+  if (!game.user?.isGM) return;
   schedulePacedDetection(response, campaignState, { actorId, narrationId });
   schedulePacedTierUpdate(response, extras.matchedEntityIds, extras.matchedEntityTypes, campaignState, { narrationId });
 }
@@ -3475,7 +3479,8 @@ export async function narrateSessionVignette({ userMessage, campaignState, narra
  * the narration is written (its ledger persist, a relay of it from a co-GM's
  * client, a ship move, the consistency audit, the tier pass), so there is
  * nothing to retract. A narration that stands runs the tier pass for the
- * recorded entities it names, as a session vignette does (issue #345 AA33).
+ * recorded entities it names, as a session vignette does (issue #345 AA33),
+ * and the detection pass (CLOCK-VIGNETTE-NO-DETECTION).
  *
  * @param {{ clock: { name:string, type:string, filled:number, segments:number, triggered:boolean }, campaignState: Object,
  *           narrationId?: string, stillTriggered?: (() => boolean|Promise<boolean>)|null }} args
@@ -3534,8 +3539,12 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
     if (!text?.trim()) return null;
     // The developments of the recorded NPCs it names → their cards, as a
     // session vignette's (#286 D4) — every post site goes through here
-    // (issue #345 AA33).
-    scheduleNarrationCapture(text, campaignState, { narrationId });
+    // (issue #345 AA33) — and the detection pass: a clock vignette is written
+    // at interaction latitude (issue #322 V23), so the figures, lore and
+    // threats it introduces are captured as a move's are
+    // (CLOCK-VIGNETTE-NO-DETECTION; D4 rejected detection after vignettes
+    // only for their embellishment latitude).
+    scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
     return text;
   } catch (err) {
     if (isRateLimit(err)) {
@@ -3551,7 +3560,7 @@ export async function narrateClockAdvancement({ clock, campaignState, narrationI
         if (!(await triggerStands())) return null;
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (!text?.trim()) return null;
-        scheduleNarrationCapture(text, campaignState, { narrationId });
+        scheduleNarrationCapture(text, campaignState, { detect: true, source: 'clock_vignette', narrationId });
         return text;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateClockAdvancement retry failed:`, retryErr);
@@ -4010,7 +4019,11 @@ export async function runPacedDetection(narrationText, campaignState, options = 
  * and the inciting incident): developments of the recorded entities it names
  * go to their cards (runNarrationTierUpdate), and with `detect` the detection
  * pass records world lore and threats and queues new entities on the GM's
- * review card. Canonical GM only (world writes); after the same short delay
+ * review card. On the GM whose client narrated it (world writes; a player's
+ * client runs none) — the single emitter its caller chose: it re-checked
+ * isCanonicalGM when the reply landed, so a lower-id keyed GM joining
+ * meanwhile dropped an oracle follow-up's or a vignette's capture (AA34's
+ * gate — CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE). After the same short delay
  * as the paced passes, so the card settles first. Both passes catch their own
  * errors.
  *
@@ -4020,7 +4033,7 @@ export async function runPacedDetection(narrationText, campaignState, options = 
  *   `narrationId`: stamped on what both passes record, for the X-Card (issue #329 X01)
  */
 function scheduleNarrationCapture(narrationText, campaignState, { detect = false, source, actorId = null, narrationId = null } = {}) {
-  if (!narrationText?.trim() || !isCanonicalGM()) return;
+  if (!narrationText?.trim() || !game.user?.isGM) return;
   setTimeout(() => {
     if (detect) runPacedDetection(narrationText, campaignState, { source, actorId, narrationId });
     runNarrationTierUpdate(narrationText, campaignState, { narrationId });

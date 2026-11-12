@@ -685,13 +685,17 @@ threats, new-entity drafts — and the generative-tier pass): discovery-class
 moves run detection (make_a_connection auto-creates on a hit); interaction-
 class moves run the tier pass and, since issue #286 D4, detection too, as
 paced narration (the same class) always has; embellishment moves run
-neither. Oracle follow-ups run detection and the tier pass; session
-vignettes, vow scenes and clock vignettes run the tier pass for the recorded
+neither. Oracle follow-ups and clock vignettes run detection and the tier
+pass; session vignettes and vow scenes run the tier pass for the recorded
 entities they name (`scheduleNarrationCapture`; a clock vignette's from
 `narrateClockAdvancement` itself, so all three post sites, and only once its
-"still triggered" check stands — issue #345 AA33: it ran none). `@scene` answers run detection and the
-tier pass too, on the canonical GM only (`scheduleSceneAnswerCapture`, issue
-#321 U36). A Batch Mode round runs one detection, at the widest class among
+"still triggered" check stands — issue #345 AA33: it ran none; its detection —
+it is written at interaction latitude, issue #322 V23 —
+CLOCK-VIGNETTE-NO-DETECTION). `@scene` answers run detection and the
+tier pass too, on a GM's client only (`scheduleSceneAnswerCapture`, issue
+#321 U36). These captures run on the GM whose client narrated them — not
+whoever is canonical when the reply lands, which dropped them when a lower-id
+keyed GM joined meanwhile (AA34's gate, CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE). A Batch Mode round runs one detection, at the widest class among
 the entries it captures, and a tier pass whatever that class is, over what
 each interaction-class entry was about, by that entry's free-flow rule — an
 unrolled action the prompt's matched set (paced), a rolled interaction move
