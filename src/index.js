@@ -79,7 +79,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy, registerSystemNoteAttribution } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
@@ -8414,6 +8414,10 @@ onChatMessageRender((message, root) => {
     );
   }).catch(err => console.warn(`${MODULE_ID} | audio module load failed:`, err));
 });
+
+// The ironsworn system's change log for a change the module made ("+1
+// momentum (now 5)") is said by the system, not the PC (issue #348 PT14).
+registerSystemNoteAttribution();
 
 // Wire the "⚔ Swear this vow" button on inciting-incident cards
 // (Cluster B — src/session/swearVow.js owns the handler + execution).

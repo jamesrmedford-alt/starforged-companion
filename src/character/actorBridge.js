@@ -37,6 +37,94 @@ const _snapshotCache = new Map();
 
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MODULE WRITES — said by the system, not the PC
+// ─────────────────────────────────────────────────────────────────────────────
+
+// The Actors this client is writing to right now through this bridge (id →
+// writes in flight). The ironsworn system's change log ("log-changes": its
+// preUpdateActor / preUpdateItem hooks post "+1 momentum (now 5)" as an emote
+// spoken by the Actor) is created while the write that caused it is in
+// flight, on the writing client: one posted for an Actor here is the module's
+// change, not the player speaking (issue #348 PT14).
+const _moduleWritesInFlight = new Map();
+let _systemNoteAttributionRegistered = false;
+
+/**
+ * Write a document through the bridge: `doc.update(changes, options)`, with
+ * the Actor it belongs to (itself, or an Item's parent) marked as written by
+ * the module until the write settles (reattributeSystemNote).
+ *
+ * @param {ClientDocument} doc — an Actor, or an Item owned by one
+ * @param {Object} changes
+ * @param {Object} [options]
+ * @returns {Promise<*>}
+ */
+async function moduleUpdate(doc, changes, options) {
+  const owner = doc?.documentName === "Actor" ? doc : (doc?.parent ?? doc);
+  const id    = typeof owner?.id === "string" ? owner.id : null;
+  if (id) _moduleWritesInFlight.set(id, (_moduleWritesInFlight.get(id) ?? 0) + 1);
+  try {
+    return await (options === undefined ? doc.update(changes) : doc.update(changes, options));
+  } finally {
+    if (id) {
+      const left = (_moduleWritesInFlight.get(id) ?? 1) - 1;
+      if (left > 0) _moduleWritesInFlight.set(id, left);
+      else _moduleWritesInFlight.delete(id);
+    }
+  }
+}
+
+/**
+ * Register the hook that has the ironsworn system's change log, for a change
+ * the module made, said by the system rather than the PC: the emote "+1
+ * momentum (now 5)" spoken by the PC read as the player speaking (issue #348
+ * PT14). Once, at load (index.js).
+ */
+export function registerSystemNoteAttribution() {
+  if (_systemNoteAttributionRegistered || typeof Hooks === "undefined") return;
+  _systemNoteAttributionRegistered = true;
+  Hooks.on("preCreateChatMessage", (message, data) => { reattributeSystemNote(message, data); });
+}
+
+/**
+ * The ironsworn system's change-log line (an emote whose whole content is one
+ * `<em>` line, spoken by an Actor) posted while this client's bridge is
+ * writing that Actor: re-spoken by no Actor — the author's (the writing
+ * client's user) — with the Actor's name leading the line, so the chat reads
+ * "Isaac Sutton: +1 momentum (now 5)" as a note, not as Isaac speaking. The
+ * module's own cards (they carry its flags) and a player's own sheet edit
+ * (no module write in flight) are left alone.
+ *
+ * @param {ChatMessage} message — the document about to be created
+ * @param {Object} data — its creation data
+ * @returns {boolean} whether it was re-spoken
+ */
+function reattributeSystemNote(message, data) {
+  const actorId = data?.speaker?.actor;
+  if (typeof actorId !== "string" || !_moduleWritesInFlight.has(actorId)) return false;
+  if (data?.flags?.[MODULE_ID]) return false;
+  const emote = globalThis.CONST?.CHAT_MESSAGE_STYLES?.EMOTE ?? 3;
+  if (Number(data?.style) !== emote) return false;
+  const content = String(data?.content ?? "").trim();
+  const line = /^<em>([\s\S]*)<\/em>$/.exec(content);
+  if (!line) return false;
+  const name = globalThis.game?.actors?.get?.(actorId)?.name ?? data.speaker.alias ?? "";
+  const escaped = String(name).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  try {
+    message?.updateSource?.({
+      content: `<em>${escaped ? `${escaped}: ` : ""}${line[1].trim()}</em>`,
+      style:   globalThis.CONST?.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
+      speaker: { actor: null, token: null, scene: null, alias: null },
+    });
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | actorBridge: re-speaking the system's change note failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
 // READ
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -423,7 +511,7 @@ export async function applyMeterChanges(actor, meterChanges) {
 
   if (Object.keys(updates).length) {
     console.log(`actorBridge | applyMeterChanges update:`, updates);
-    await actor.update(updates);
+    await moduleUpdate(actor, updates);
     invalidateActorCache(actor.id);
   }
 }
@@ -440,7 +528,7 @@ export async function applyMeterChanges(actor, meterChanges) {
 export async function setDebility(actor, debilityKey, value) {
   if (!actor) return;
 
-  await actor.update({ [`system.debility.${debilityKey}`]: value });
+  await moduleUpdate(actor, { [`system.debility.${debilityKey}`]: value });
   invalidateActorCache(actor.id);
 
   if (IMPACT_KEYS.includes(debilityKey)) {
@@ -460,7 +548,7 @@ export async function setCombatPosition(actor, position) {
   if (!actor) return;
   const VALID = ['inControl', 'inABadSpot', 'none', ''];
   const value = VALID.includes(position) ? position : 'none';
-  await actor.update({ 'system.combatPosition': value });
+  await moduleUpdate(actor, { 'system.combatPosition': value });
   invalidateActorCache(actor.id);
 }
 
@@ -504,7 +592,7 @@ export async function writeSheetLegacy(actor, track, progress, options = {}) {
   if (!actor || !SHEET_LEGACY_TRACKS.includes(track)) return false;
   const value = Math.max(0, Math.floor(Number(progress) || 0));
   if (readSheetLegacy(actor, track) === value) return false;
-  await actor.update({ [`system.legacies.${track}`]: value }, options);
+  await moduleUpdate(actor, { [`system.legacies.${track}`]: value }, options);
   invalidateActorCache(actor.id);
   return true;
 }
@@ -685,7 +773,7 @@ export async function setCommandVehicleIntegrity(shipActor, value) {
   if (!asset) return null;
   const track = asset.system.track;
   const after = clamp(Number(value), Number(track.min ?? 0), Number(track.max ?? 5));
-  if (after !== Number(track.value ?? 0)) await asset.update({ 'system.track.value': after });
+  if (after !== Number(track.value ?? 0)) await moduleUpdate(asset, { 'system.track.value': after });
   return after;
 }
 
@@ -732,7 +820,7 @@ export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = 
   const after  = clamp(before + delta, Number(track.min ?? 0), Number(track.max ?? 5));
   if (after === before) return { ok: true, ...at, after };
   try {
-    await asset.update({ 'system.track.value': after });
+    await moduleUpdate(asset, { 'system.track.value': after });
   } catch (err) {
     console.warn(`actorBridge | vehicle integrity: ${asset.name ?? asset.id} update failed:`, err?.message ?? err);
     return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
@@ -763,7 +851,7 @@ export async function applyCompanionHealthChange(actor, delta, { itemId = null }
   const at     = { itemId: companion.id, name: companion.name ?? null, before };
   if (after === before) return { ok: true, ...at, after };
   try {
-    await companion.update({ 'system.track.value': after });
+    await moduleUpdate(companion, { 'system.track.value': after });
   } catch (err) {
     console.warn(`actorBridge | companion health: ${companion.name ?? companion.id} update failed:`, err?.message ?? err);
     return { ok: false, reason: 'refused', error: String(err?.message ?? err), ...at };
@@ -803,7 +891,7 @@ export async function markVowProgress(actor, vowItemId, ticks) {
   const next     = Math.min(current + ticks, 40);
 
   if (next !== current) {
-    await item.update({ 'system.current': next });
+    await moduleUpdate(item, { 'system.current': next });
     invalidateActorCache(actor.id);
   }
 }
@@ -832,7 +920,7 @@ export async function setVowItemTrack(actor, vowItemId, { ticks, rank }) {
   const patch   = { "system.current": Math.max(0, Math.min(Number(ticks) || 0, 40)) };
   if (rankIdx >= 0) patch["system.rank"] = numeric ? rankIdx + 1 : rank;
   try {
-    await item.update(patch);
+    await moduleUpdate(item, patch);
   } catch (err) {
     console.warn(`actorBridge | setVowItemTrack: the write was refused:`, err?.message ?? err);
     return { ok: false, reason: "refused", error: String(err?.message ?? err) };
@@ -861,7 +949,7 @@ export async function completeVowItem(actor, vowItemId) {
   }
   if (item.system?.completed === true) return false; // already closed
 
-  await item.update({ 'system.completed': true });
+  await moduleUpdate(item, { 'system.completed': true });
   invalidateActorCache(actor.id);
   return true;
 }
@@ -1078,7 +1166,7 @@ export async function setBondItemTicks(keys = {}, ticks) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if (Number(item.system?.current ?? 0) === next) continue;
-    await item.update({ "system.current": next }).catch(err =>
+    await moduleUpdate(item, { "system.current": next }).catch(err =>
       console.warn(`actorBridge | setBondItemTicks failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1103,7 +1191,7 @@ export async function setBondItemLost(keys = {}, lost = true) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if ((item.flags?.[MODULE_ID]?.lost === true) === lost) continue;
-    await item.update({ [`flags.${MODULE_ID}.lost`]: lost }).catch(err =>
+    await moduleUpdate(item, { [`flags.${MODULE_ID}.lost`]: lost }).catch(err =>
       console.warn(`actorBridge | setBondItemLost failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1127,7 +1215,7 @@ export async function setBondItemForged(keys = {}, forged = true) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if ((item.system?.completed === true) === forged) continue;
-    await item.update({ "system.completed": forged }).catch(err =>
+    await moduleUpdate(item, { "system.completed": forged }).catch(err =>
       console.warn(`actorBridge | setBondItemForged failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1178,7 +1266,7 @@ export async function setBondItemRank(keys = {}, rank) {
   let updated = 0;
   for (const { actor, item } of bondItemsFor(keys)) {
     if (item.system?.rank === rank) continue;
-    await item.update({ "system.rank": rank }).catch(err =>
+    await moduleUpdate(item, { "system.rank": rank }).catch(err =>
       console.warn(`actorBridge | setBondItemRank failed:`, err?.message ?? err));
     invalidateActorCache(actor.id);
     updated++;
@@ -1322,7 +1410,7 @@ export async function advanceVowClocks(actor, { by = 1, lockstep = null } = {}) 
       next = Math.min(cur + by, max);
     }
     try {
-      if (next !== cur) await v.update({ "system.clockTicks": next }, { suppressLog: true });
+      if (next !== cur) await moduleUpdate(v, { "system.clockTicks": next }, { suppressLog: true });
       if (vowId && target === undefined) lockstep?.set(vowId, next);
       advanced.push({ name: v.name ?? "Vow", ticks: next, max, triggered: next >= max, itemId: v.id, actorId: actor.id, vowId });
     } catch (err) {
@@ -1361,7 +1449,7 @@ export async function revertVowClocksForBurn(entries, { untriggered = null } = {
     if (cur <= 0) continue;
     const max = Number(item.system?.clockMax ?? 0);
     try {
-      await item.update({ "system.clockTicks": Math.max(0, cur - 1) });
+      await moduleUpdate(item, { "system.clockTicks": Math.max(0, cur - 1) });
       invalidateActorCache(actorId);
       if (Array.isArray(untriggered) && max > 0 && cur >= max) untriggered.push(entry);
     } catch (err) {
@@ -1409,7 +1497,7 @@ export async function recalculateMomentumBounds(actor) {
   const clamped   = clamp(current, MOMENTUM_MIN, maxMom);
   if (clamped === current) return;
 
-  await actor.update({ 'system.momentum.value': clamped });
+  await moduleUpdate(actor, { 'system.momentum.value': clamped });
   invalidateActorCache(actor.id);
 }
 
