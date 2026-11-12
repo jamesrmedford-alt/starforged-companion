@@ -34,7 +34,8 @@ afterAll(() => { table?.teardown(); globalThis.document = savedDocument; });
 beforeEach(async () => {
   await table.reset({ world: { settings: {
     chronicleAutoEntry: false, narratorSessionSummary: false, combatTrackerEnabled: false,
-    campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1, currentSceneId: 'sc-1', sceneTruths: [] },
+    // A live session: a GM's page that loads mid-session keeps it.
+    campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1, currentSceneId: 'sc-1', sceneTruths: [], lastSessionTimestamp: new Date().toISOString() },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] } });
@@ -80,8 +81,9 @@ async function submitWhileNoGm() {
   expect(app.draft).toBe('I slip through the vent before the drones turn.');
   const promised = /is sent once a GM joins/.test(text());
 
-  // The GM comes back.
-  await table.join('gm-1');
+  // The GM comes back: their page loads (one back from a dropped connection
+  // stands down until it reloads — issue #347 AB19-STALE-CACHE-WRITES).
+  await table.reload('gm-1');
   await table.settle();
   await table.drain();
   return { text, promised };

@@ -13,8 +13,9 @@
  * were dropped, and nobody was told.
  *
  * Each client now passes over a GM whose connect it saw until that GM
- * announces its page ready; a GM whose socket came back on a page already
- * loaded answers the "is your page ready?" question at once.
+ * announces its page ready. A GM whose socket came back on a page already
+ * loaded is stale, and stands down until it reloads (issue #347
+ * AB19-STALE-CACHE-WRITES).
  */
 /* global silenceConsoleErrors */
 import { describe, it, expect, afterEach, vi } from 'vitest';
@@ -121,7 +122,7 @@ describe('a ready GM keeps the table while another GM loads (issue #347 AB03)', 
     expect(await canonical('gm-2')).toBe(false);
   }, 60_000);
 
-  it("control: gm-1's connection drops and comes back on the same page — it answers at once and is the canonical GM again", async () => {
+  it("control: gm-1's connection drops and comes back on the same page — it stands down until it reloads, then is the canonical GM again", async () => {
     silenceConsoleErrors();
     await tableRunByGm2({ gm1Listed: true });
     gm1StartsLoading();
@@ -130,7 +131,12 @@ describe('a ready GM keeps the table while another GM loads (issue #347 AB03)', 
 
     await table.leave('gm-1');
     expect(await canonical('gm-2')).toBe(true);
-    await table.join('gm-1');                    // no reload: the page — and its listener — stayed
+    await table.join('gm-1');                    // no reload: the page stayed, stale (issue #347 AB19-STALE-CACHE-WRITES)
+    await table.settle();
+    expect(await canonical('gm-1')).toBe(false);
+    expect(await canonical('gm-2')).toBe(true);
+
+    await table.reload('gm-1');                  // its reload announces a fresh page ready
     await table.settle();
     expect(await canonical('gm-1')).toBe(true);
     expect(await canonical('gm-2')).toBe(false);

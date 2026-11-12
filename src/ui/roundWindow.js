@@ -40,7 +40,8 @@ import {
   onRoundDraftChanged,
   batchModeKeyedGm,
 } from "../batch/driver.js";
-import { requestGmAction } from "../multiplayer/gmRelay.js";
+import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
+import { onGmLoadChange } from "../multiplayer/gmGate.js";
 import { relayCardButtonClick, RELAY_RECOVERY_MS } from "../moves/burnMomentum.js";
 import { renderMoveAbilitiesForm, readMoveAbilitiesForm } from "./settingsPanel.js";
 import { isXCardActive } from "../narration/narrator.js";
@@ -161,7 +162,7 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       enabled:          isBatchModeEnabled(),
       sessionActive:    isSessionActive(campaignState),
       xCardActive:      isXCardActive(campaignState),
-      gmConnected:      users.some(u => u?.isGM && u?.active),
+      gmConnected:      hasActiveGM(),
       keyedGm:          batchModeKeyedGm(),
       connectedUserIds: users.filter(u => u?.active).map(u => u.id),
       moveLabel:        moveDisplayName,
@@ -503,7 +504,7 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
    * it. A "no GM is connected" refusal is stale once one is (issue #342 Z33).
    */
   async onConnectionChange() {
-    if (this.#failureReason === "no-gm" && Array.from(game.users ?? []).some(u => u?.isGM && u?.active)) {
+    if (this.#failureReason === "no-gm" && hasActiveGM()) {
       this.#failure = "";
       this.#failureReason = null;
     }
@@ -884,8 +885,14 @@ export function registerRoundWindowHooks() {
   // setting's first write is a createSetting (the keyed-GM registry's is).
   Hooks.on("updateSetting", onSettingForWindow);
   Hooks.on("createSetting", onSettingForWindow);
-  // Whether a GM is connected (issue #342 Z33).
+  // Whether a GM is connected (issue #342 Z33) — and whether its page can act:
+  // one that stood down after its connection dropped cannot until it reloads
+  // (gmGate.js; issue #347 AB19-STALE-CACHE-WRITES).
   Hooks.on("userConnected", () => {
+    RoundWindowApp.instance?.onConnectionChange()
+      .catch(err => console.debug?.(`${MODULE_ID} | Round window refresh failed:`, err?.message ?? err));
+  });
+  onGmLoadChange(() => {
     RoundWindowApp.instance?.onConnectionChange()
       .catch(err => console.debug?.(`${MODULE_ID} | Round window refresh failed:`, err?.message ?? err));
   });

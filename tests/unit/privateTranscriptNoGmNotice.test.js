@@ -91,7 +91,8 @@ afterAll(() => {
 
 beforeEach(async () => {
   created = [];
-  await table.reset({ world: { settings: { campaignState: { ...CampaignStateSchema, currentSessionId: 'sess-1' } } } });
+  // A session seen live just now: a GM's page that loads keeps it (rollSessionIfDue).
+  await table.reset({ world: { settings: { campaignState: { ...CampaignStateSchema, currentSessionId: 'sess-1', lastSessionTimestamp: new Date().toISOString() } } } });
 });
 
 // The transcript module keeps a retry timer per player; clear it so a refused
@@ -165,7 +166,9 @@ describe("issue #337 Y41 — a default Player's Private Channel with no GM conne
     await table.leave('gm-1');
     await sayAndFlush('pl-1', 'I never told anyone about the ring.');
     expect(notices('pl-1', NOT_SAVED)).toHaveLength(1);
-    await table.join('gm-1');
+    // The GM's page loads (a page back from a dropped connection writes
+    // nothing until it reloads — issue #347 AB19-STALE-CACHE-WRITES).
+    await table.reload('gm-1');
 
     const { read } = await sayAndFlush('pl-1', 'Or about the debt.');
 
@@ -219,7 +222,7 @@ describe('issue #342 Z66 — the open window\'s "not saved" line follows the con
     await table.leave('gm-1');
     const { app, renders } = await openWindow();
     await sayAndFlush('pl-1', 'I never told anyone about the ring.');
-    await table.join('gm-1');
+    await table.reload('gm-1');   // the GM's page loads (issue #347 AB19-STALE-CACHE-WRITES)
     // A send renders the window — the line is shown (still unsaved) …
     await app.render();
     expect(renders.at(-1).unsaved).toBe(true);

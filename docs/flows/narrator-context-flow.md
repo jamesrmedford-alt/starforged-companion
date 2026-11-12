@@ -200,9 +200,12 @@ F13), and the entry point stands down as it would have on entry. So does a
 narration whose client's connection to the server dropped while it was
 written (`connectionWatch.js` counts the drops): a pause recorded meanwhile
 never reached that client's cache, so the watch cannot see it — the paused
-notice says the connection dropped (issue #347 AB19). The move's own record
-and lock release, written from that cache afterwards, can still lift such a
-pause (left open — known-issues). The watch
+notice says the connection dropped (issue #347 AB19). The page itself is
+stale from the drop until it reloads, and stands down: it is never the
+canonical GM and writes no campaignState or Batch Mode round, so the move's
+own record and lock release — written from that cache afterwards — are
+refused instead of lifting such a pause; another GM takes over what it held
+(issue #347 AB19-STALE-CACHE-WRITES). The watch
 starts on entry with the live `campaignState.xCardPlays` count (each
 `suppressScene` adds one; resuming never lowers it), so a card played **and
 resumed** before the reply arrives still discards it (issue #306 R01) —

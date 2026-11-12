@@ -536,6 +536,11 @@ class SimChatMessageReplica {
   toObject() { return jsonClone(this._source); }
 }
 
+/** A page `table.reload` replaced writes nothing more — its tab is closed. */
+function refuseFromUnloadedPage(client, what) {
+  if (client?.unloaded) throw new Error(`multiClient: ${what} from ${client.id}'s unloaded page — refused (the page was reloaded)`);
+}
+
 function requireClient(what) {
   const client = currentClient();
   if (!client) {
@@ -1203,6 +1208,13 @@ class SimTable {
       c._dialogResponder = null;
       for (const off of c._testListeners.splice(0)) off();
       this.#seedClientSettings(c);
+      // A fresh page per test: no dropped connection standing it down, and no
+      // GM remembered as still loading (issue #347 AB19, AB03).
+      if (c.booted) {
+        const watch = await c.import("../../src/multiplayer/connectionWatch.js");
+        const gate  = await c.import("../../src/multiplayer/gmGate.js");
+        c.run(() => { watch._resetConnectionWatchForTests?.(); gate._resetGmLoadForTests?.(); });
+      }
     }
   }
 
@@ -1284,8 +1296,42 @@ class SimTable {
     }
     // A page that lived through the drop hears its own socket reconnect
     // (socket.io's "connect" on game.socket); a fresh page boots instead.
-    if (c.booted) c.emitOwnSocketEvent("connect");
+    if (c.booted) {
+      c.emitOwnSocketEvent("connect");
+      // reset() seats each test's users as the table began, so a GM page
+      // booted in an earlier test can be away without having dropped — no
+      // real page is. It comes back as loaded: it announces itself ready, as
+      // a loading page does at its `ready` (gmRelay.js registerGmReadiness).
+      // A page that saw its connection drop is stale and stands down instead
+      // (issue #347 AB19-STALE-CACHE-WRITES).
+      if (c.user.isGM) {
+        const watch = await c.import("../../src/multiplayer/connectionWatch.js");
+        const relay = await c.import("../../src/multiplayer/gmRelay.js");
+        c.run(() => {
+          if (!watch.pageIsStale()) c.game.socket.emit(relay.GM_RELAY_SOCKET, { kind: relay.GM_PAGE_READY_KIND, userId: c.id });
+        });
+      }
+    }
     await c.boot();
+  }
+
+  /**
+   * A page reload: the user's page goes (`leave`) — what it still has in
+   * flight is cut off, its later world writes refused as a closed tab's are —
+   * and a fresh page loads: a new client for the same user, with its own
+   * module copies and the browser's client settings, booted (`join`). A socket
+   * that drops and comes back on the same page is `leave` then `join` (issue
+   * #347 AB19: that page is stale and stands down; this one is not).
+   */
+  async reload(userId) {
+    const old = this.client(userId);
+    if (old.connected) await this.leave(userId);
+    old.unloaded = true;
+    const fresh = new SimClient(this, old.user);
+    for (const [key, value] of old.clientSettings) fresh.clientSettings.set(key, value);
+    this.clients[this.clients.indexOf(old)] = fresh;
+    await this.join(userId);
+    return fresh;
   }
 
   /**
@@ -1452,6 +1498,7 @@ class SimTable {
   }
 
   async _setWorldSetting(writer, k, value, options) {
+    refuseFromUnloadedPage(writer, `setting ${k}`);
     const json = JSON.stringify(value ?? null);
     const existed = this._worldSettings.has(k);
     if (existed && this._worldSettings.get(k) === json) return;   // Foundry: unchanged → no update
@@ -1477,6 +1524,7 @@ class SimTable {
   // ── messages ──────────────────────────────────────────────────────────────
 
   async _createMessage(creator, data, options) {
+    refuseFromUnloadedPage(creator, "ChatMessage create");
     const user = creator.user;
     const named = typeof data.author === "string" ? data.author
       : (data.author?.id ?? (typeof data.user === "string" ? data.user : data.user?.id) ?? null);
@@ -1515,6 +1563,7 @@ class SimTable {
   }
 
   async _updateMessage(caller, id, changes, options) {
+    refuseFromUnloadedPage(caller, `ChatMessage ${id} update`);
     if (!this._serverMessages.get(id)) throw new Error(`ChatMessage ${id} does not exist (deleted?)`);
     if (this._writeInterceptors.length) {
       await this._interceptWrite({ kind: "message.update", id, client: caller.user.id, changes: jsonClone(changes) });
@@ -1539,6 +1588,7 @@ class SimTable {
   }
 
   async _deleteMessage(caller, id, options) {
+    refuseFromUnloadedPage(caller, `ChatMessage ${id} delete`);
     if (!this._serverMessages.has(id)) return undefined;
     this._serverMessages.delete(id);
     const userId = caller.user.id;
@@ -1656,6 +1706,7 @@ class SimTable {
       return caller.run(() => caller.hooks.call("preUpdateActor", [actor, expandUpdate(jsonClone(changes)), options, caller.id], true)) !== false;
     };
     actor.update = async (changes = {}, options = {}) => {
+      refuseFromUnloadedPage(currentClient(), `Actor ${actor.id} update`);
       if (!preUpdate(changes, options)) return undefined;
       await intercept(changes);
       await rawUpdate(changes, options);
@@ -1664,6 +1715,7 @@ class SimTable {
       return actor;
     };
     actor.setFlag = async (scope, key, value) => {
+      refuseFromUnloadedPage(currentClient(), `Actor ${actor.id} setFlag`);
       const changes = { [`flags.${scope}.${key}`]: value };
       const options = {};
       if (!preUpdate(changes, options)) return undefined;

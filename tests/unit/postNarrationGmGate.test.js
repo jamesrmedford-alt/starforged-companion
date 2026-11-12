@@ -25,6 +25,8 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 vi.mock('../../src/multiplayer/gmGate.js', () => ({
   isCanonicalGM: vi.fn().mockReturnValue(true),
+  // gmRelay.js hasActiveGM: no GM's page here has stood down (issue #347 AB19-STALE-CACHE-WRITES).
+  gmPageCanAct:  () => true,
 }));
 
 vi.mock('../../src/entities/entityExtractor.js', () => ({

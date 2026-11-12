@@ -18,12 +18,14 @@
  * The watch now counts this client's connection drops (socket.io's
  * `disconnect`, src/multiplayer/connectionWatch.js): a narration whose call
  * straddled one is discarded — nothing posted but the paused notice, saying
- * why; its sidecar never applied. Left open: the move's own record and the
- * lock release, written from the same stale cache, still lift the pause the
- * cache missed (the wider stale-cache case; known-issues).
+ * why; its sidecar never applied. The move's own record and the lock
+ * release, written from the same stale cache, would still have lifted the
+ * pause the cache missed: the page back from the drop now writes nothing
+ * until it reloads (issue #347 AB19-STALE-CACHE-WRITES).
  *
  * The harness models the reconnect with leave / join, as the X08 rows do; a
- * client that leaves sees `disconnect` on its own socket.
+ * client that leaves sees `disconnect` on its own socket. A reload is
+ * table.reload.
  */
 
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from 'vitest';
@@ -87,6 +89,8 @@ beforeEach(async () => {
     campaignState: {
       ...CampaignStateSchema,
       sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1, currentSceneId: 'sc-1', sceneTruths: [],
+      // A live session: a GM's page that loads mid-session keeps it.
+      lastSessionTimestamp: new Date().toISOString(),
     },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
@@ -164,9 +168,9 @@ describe('the X-Card and a narration in flight on a GM whose socket drops', () =
     expect(world().pendingMove).toBe(false);
   }, 30_000);
 
-  it('control: the next move after the GM is back is narrated as usual', async () => {
+  it('control: the next move after the GM has reloaded is narrated as usual', async () => {
     await table.leave('gm-1');
-    await table.join('gm-1');
+    await table.reload('gm-1');
     scriptClaude(table, { fallback: () => REPLY });
     await move();
     await table.settle(); await table.drain();

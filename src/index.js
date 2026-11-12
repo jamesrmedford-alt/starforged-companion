@@ -199,9 +199,9 @@ import {
   syncCommandVehicleTokenToPosition,
   checkedTokenDragCourse,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing, onGmLoadChange } from "./multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing, onGmLoadChange, onGmStoodDown } from "./multiplayer/gmGate.js";
 import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.js";
-import { registerConnectionWatch } from "./multiplayer/connectionWatch.js";
+import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWatch.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
@@ -1146,7 +1146,11 @@ export function registerChatHook() {
       // dropped in silence (FREE-FLOW-RELEASE-REFUSED-TWICE).
       if (!lockReleased) lockReleased = await releasePendingMoveLock(lockClaim);
       if (!lockReleased && !releaseTried) lockReleased = await releasePendingMoveLock(lockClaim);
-      if (!lockReleased) await postMoveLockNotReleasedCard();
+      // A page whose connection dropped saves nothing until it reloads: its
+      // lock is released by the GM who saw it leave (W25), or by its own
+      // reload (AB04) — not a refused release to report (issue #347
+      // AB19-STALE-CACHE-WRITES).
+      if (!lockReleased && !pageIsStale()) await postMoveLockNotReleasedCard();
     }
   };
   Hooks.on("createChatMessage", onMessage);
@@ -1172,11 +1176,15 @@ export function registerChatHook() {
   // to the new one (handOverHeldForcedMoves), or this GM drains its own once
   // it is the canonical GM again (issue #347 AB06).
   onGmLoadChange(() => drainDeferredForcedMoves());
-  // A GM who leaves mid-move takes their lock with them (issue #325 W25).
+  // A GM who leaves mid-move takes their lock with them (issue #325 W25) —
+  // and so does a GM whose page stood down: its connection dropped and came
+  // back, perhaps before the server saw the old one go, and it writes nothing
+  // more until it reloads (issue #347 AB19-STALE-CACHE-WRITES).
   Hooks.on("userConnected", (user, connected) => {
     releaseLockOfDisconnectedGM(user, connected).catch(err =>
       console.warn(`${MODULE_ID} | releasing a departed GM's move lock failed:`, err?.message ?? err));
   });
+  onGmStoodDown(user => releaseLockOfDisconnectedGM(user, false));
 }
 
 // ── A move lock whose GM is gone (issue #325 W25) ──────────────────────────
@@ -2561,8 +2569,13 @@ export function releasePendingMoveLock(claim = null) {
   // A release the server never answers reads as refused after a bound, so
   // the caller's retry — and the GMs' notice when that is refused too — runs;
   // it waited forever, the pipeline's `finally` with it (issue #347 AB05).
+  // A release refused before it ran (this page went stale — connectionWatch.js)
+  // is refused like any other.
   return settledWithin(release, MOVE_LOCK_CLAIM_WAIT_MS, "move lock release")
-    .then(settled => (settled ? release : false));
+    .then(settled => (settled ? release.catch(err => {
+      console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err?.message ?? err);
+      return false;
+    }) : false));
 }
 
 /**

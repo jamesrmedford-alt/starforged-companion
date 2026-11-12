@@ -46,7 +46,8 @@ afterAll(() => table?.teardown());
 beforeEach(async () => {
   await table.reset({ world: { settings: {
     chronicleAutoEntry: false, narratorSessionSummary: false, combatTrackerEnabled: false,
-    campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1, currentSceneId: 'sc-1', sceneTruths: [] },
+    // A live session: a GM's page that loads mid-session keeps it.
+    campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1, currentSceneId: 'sc-1', sceneTruths: [], lastSessionTimestamp: new Date().toISOString() },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, items: { contents: [] } });
@@ -101,7 +102,9 @@ describe('the Round window\'s GM banners follow the GMs (issue #342 Z33)', () =>
     await table.leave('gm-1');
     await app.render();
     expect(banners.at(-1)).toContain(ROUND_NOTICES.noGm);
-    await table.join('gm-1');
+    // The GM's page loads (one back from a dropped connection stands down
+    // until it reloads — issue #347 AB19-STALE-CACHE-WRITES).
+    await table.reload('gm-1');
     await table.settle();
     await table.drain();
     // The window re-renders without it.

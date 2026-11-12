@@ -20,8 +20,9 @@
  *     - On the canonical GM: runs the action locally (no socket round-trip).
  *     - Elsewhere: emits `{ kind: "gmRelay.<kind>", payload, requesterId }` on
  *       the module socket; the canonical GM runs it.
- *     - No active GM: warns the requester (no silent failures) and returns
- *       `{ ok: false, reason: "no-gm" }`.
+ *     - No active GM — or none whose page can act, every one having stood
+ *       down after its connection dropped (hasActiveGM): warns the requester
+ *       (no silent failures) and returns `{ ok: false, reason: "no-gm" }`.
  *   registerGmRelaySocket()
  *     - Installed once on every client from the `ready` hook; only the
  *       canonical GM acts on a relay.
@@ -114,7 +115,8 @@
  * is (known-issues RELAY-REFUSED-PRESS-UNTOLD).
  */
 
-import { isCanonicalGM, noteGmLoading, noteGmReady, forgetGmLoad, _resetGmLoadForTests } from "./gmGate.js";
+import { isCanonicalGM, noteGmLoading, noteGmReady, noteGmStoodDown, forgetGmLoad, gmPageCanAct, _resetGmLoadForTests } from "./gmGate.js";
+import { pageIsStale, onPageStale } from "./connectionWatch.js";
 import { DEFAULT_TIMEOUT_MS } from "../net/fetchWithTimeout.js";
 
 const MODULE_ID = "starforged-companion";
@@ -141,12 +143,16 @@ export const GM_RELAY_READY_KIND = `${GM_RELAY_KIND_PREFIX}ready`;
 export const GM_PAGE_READY_KIND = `${GM_RELAY_KIND_PREFIX}gm-page-ready`;
 
 /**
- * "Is your page ready?" — `{ kind, userId }`, sent when a client sees that GM
- * connect. A GM whose page is already loaded (a socket that dropped and came
- * back on the same page) answers with GM_PAGE_READY_KIND; a page still loading
- * has no listener yet and answers at its own `ready` (issue #347 AB03).
+ * A GM page whose connection dropped and came back, `{ kind, userId }`: its
+ * cache may lack what changed meanwhile, so it stands down until it reloads
+ * (connectionWatch.js) — every client passes it over in the election, as a
+ * page still loading, and the canonical GM takes over what it held (gmGate.js
+ * noteGmStoodDown; issue #347 AB19-STALE-CACHE-WRITES). Its reload's
+ * page-ready announcement counts it again. Not an action. (A GM whose socket
+ * came back on a loaded page used to answer an "is your page ready?" question
+ * at once — issue #347 AB03; every such page is stale now, so nothing asks.)
  */
-export const GM_PAGE_READY_QUERY_KIND = `${GM_RELAY_KIND_PREFIX}gm-page-ready-query`;
+export const GM_PAGE_STALE_KIND = `${GM_RELAY_KIND_PREFIX}gm-page-stale`;
 
 /**
  * How long a queued action waits for the action ahead of it — counted from
@@ -256,14 +262,32 @@ export const GM_ACTIONS = Object.freeze({
 });
 
 /**
- * True when at least one GM is connected.
+ * True when at least one GM is connected whose page can act for the table —
+ * not one that stood down after its connection dropped, until it reloads
+ * (gmGate.js gmPageCanAct; issue #347 AB19-STALE-CACHE-WRITES). A relay to a
+ * stood-down page is dropped there: an X-Card relayed to a sole GM's stale
+ * page said "Scene paused" and was never recorded.
  * @returns {boolean}
  */
 export function hasActiveGM() {
   try {
-    return Array.from(globalThis.game?.users ?? []).some(u => u?.isGM && u?.active);
+    return Array.from(globalThis.game?.users ?? []).some(u => u?.isGM && u?.active && gmPageCanAct(u.id));
   } catch (err) {
     console.warn(`${MODULE_ID} | gmRelay: active-GM lookup failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * True when every connected GM's page has stood down after its connection
+ * dropped (none can act until one reloads) — and at least one is connected.
+ * @returns {boolean}
+ */
+export function onlyStoodDownGMs() {
+  try {
+    const active = Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM && u?.active);
+    return active.length > 0 && !active.some(u => gmPageCanAct(u.id));
+  } catch {
     return false;
   }
 }
@@ -465,11 +489,13 @@ export async function requestGmAction(kind, payload = {}) {
   }
 
   if (!hasActiveGM()) {
-    console.warn(`${MODULE_ID} | gmRelay: "${kind}" not applied — no GM is connected.`);
-    globalThis.ui?.notifications?.warn?.(
-      "Starforged Companion: no GM is connected, so this change could not be saved. " +
-      "Try again once a GM has joined.",
-    );
+    // Connected, but every GM's page stood down after its connection dropped
+    // (issue #347 AB19-STALE-CACHE-WRITES): the same refusal, saying why.
+    const reloadFirst = onlyStoodDownGMs();
+    console.warn(`${MODULE_ID} | gmRelay: "${kind}" not applied — ${reloadFirst ? "the GM's browser must be reloaded first (its connection dropped)" : "no GM is connected"}.`);
+    globalThis.ui?.notifications?.warn?.(reloadFirst
+      ? "Starforged Companion: the GM's browser lost its connection to the server and must be reloaded, so this change could not be saved. Try again once it has."
+      : "Starforged Companion: no GM is connected, so this change could not be saved. Try again once a GM has joined.");
     return { ok: false, reason: "no-gm" };
   }
 
@@ -500,7 +526,7 @@ export function registerGmRelaySocket() {
     // The GM-ready broadcast shares the prefix but is not an action — players'
     // onGmRelayReady listeners handle it — nor is a GM's page-ready
     // announcement (registerGmReadiness).
-    if (rawKind === GM_RELAY_READY_KIND || rawKind === GM_PAGE_READY_KIND || rawKind === GM_PAGE_READY_QUERY_KIND) return;
+    if (rawKind === GM_RELAY_READY_KIND || rawKind === GM_PAGE_READY_KIND || rawKind === GM_PAGE_STALE_KIND) return;
     const kind = rawKind.slice(GM_RELAY_KIND_PREFIX.length);
 
     if (!isCanonicalGM()) {
@@ -535,33 +561,40 @@ export function registerGmRelaySocket() {
  * Track the other GMs' page loads for the canonical-GM election, and announce
  * this GM's own. A GM is `active` from its socket's connect, at the start of
  * its page load; its handlers exist only from its `ready`. Every client: a
- * GM's connect marks it loading and asks it whether its page is ready (a
- * socket that dropped and came back on a loaded page answers at once), its
- * announcement marks it ready, its departure is forgotten (gmGate.js
- * noteGmLoading / noteGmReady / forgetGmLoad). A GM client announces its own
- * page ready to the table — call this early in `ready`, before any
- * canonical-gated work. Idempotent.
+ * GM's connect marks it loading, its announcement marks it ready, its
+ * departure is forgotten (gmGate.js noteGmLoading / noteGmReady /
+ * forgetGmLoad), and its page standing down — its connection dropped — marks
+ * it loading again until its reload announces ready (noteGmStoodDown). A GM
+ * client announces its own page ready to the table — call this early in
+ * `ready`, before any canonical-gated work — and, should its connection drop,
+ * that it stood down. Idempotent.
  */
 export function registerGmReadiness() {
   if (registerGmReadiness._installed) return;
   registerGmReadiness._installed = true;
   const socket = globalThis.game?.socket ?? null;
+  // A stale page — its connection dropped — is not ready: it announces
+  // nothing until it reloads (issue #347 AB19-STALE-CACHE-WRITES).
   const announce = () => {
-    if (globalThis.game?.user?.isGM && socket?.emit) {
+    if (globalThis.game?.user?.isGM && socket?.emit && !pageIsStale()) {
       socket.emit(GM_RELAY_SOCKET, { kind: GM_PAGE_READY_KIND, userId: globalThis.game.user.id });
     }
   };
+  onPageStale(() => {
+    if (globalThis.game?.user?.isGM && socket?.emit) {
+      socket.emit(GM_RELAY_SOCKET, { kind: GM_PAGE_STALE_KIND, userId: globalThis.game.user.id });
+    }
+  });
   globalThis.Hooks?.on?.("userConnected", (user, connected) => {
     if (!user?.isGM || user.id === globalThis.game?.user?.id) return;
     if (!connected) { forgetGmLoad(user.id); return; }
     noteGmLoading(user.id);
-    socket?.emit?.(GM_RELAY_SOCKET, { kind: GM_PAGE_READY_QUERY_KIND, userId: user.id });
   });
   if (socket?.on) {
     socket.on(GM_RELAY_SOCKET, (message) => {
       const userId = typeof message?.userId === "string" ? message.userId : null;
-      if (message?.kind === GM_PAGE_READY_QUERY_KIND) {
-        if (userId && userId === globalThis.game?.user?.id) announce();
+      if (message?.kind === GM_PAGE_STALE_KIND) {
+        if (userId) noteGmStoodDown(userId);
         return;
       }
       if (message?.kind !== GM_PAGE_READY_KIND) return;

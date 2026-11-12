@@ -36,6 +36,8 @@
  * the tiebreak runs over keyed GMs first. See advertiseClaudeKeyPresence().
  */
 
+import { pageIsStale } from "./connectionWatch.js";
+
 const MODULE_ID = "starforged-companion";
 
 // ── GMs whose page is still loading (issue #347 AB03) ──────────────────────
@@ -54,7 +56,7 @@ const MODULE_ID = "starforged-companion";
 // The election runs over the active GMs not known to be loading; when every
 // active GM is loading, over all of them, as before. This client never counts
 // itself as loading: its own handlers are what asks.
-const _gmLoad = new Map();   // userId → "loading" | "ready"
+const _gmLoad = new Map();   // userId → "loading" | "ready" | "stale"
 
 // Called when what this client knows of the GMs' loads changes — the
 // canonical GM may have changed with it (onGmLoadChange).
@@ -99,6 +101,59 @@ export function forgetGmLoad(userId) {
   gmLoadChanged();
 }
 
+// Called when a GM's page says it stood down (onGmStoodDown).
+const _standDownListeners = new Set();
+
+/**
+ * Run `fn(user)` when another GM's page says it stood down — its connection
+ * dropped and came back, so its cache may lack what changed meanwhile
+ * (connectionWatch.js; gmRelay.js GM_PAGE_STALE_KIND). What that GM was
+ * running is taken over as a departed GM's is: a socket that drops for a
+ * moment can come back before the server sees the old one go, and then no
+ * `userConnected` fires anywhere (issue #347 AB19-STALE-CACHE-WRITES). A
+ * listener that throws or rejects is logged.
+ *
+ * @param {(user: User) => (void|Promise<void>)} fn
+ */
+export function onGmStoodDown(fn) {
+  if (typeof fn === "function") _standDownListeners.add(fn);
+}
+
+/**
+ * A GM's page stood down: it is passed over in the election, as a page still
+ * loading is, and handles nothing relayed to it (gmPageCanAct) — its reload's
+ * page-ready announcement counts it again — and what it held is taken over
+ * (onGmStoodDown).
+ *
+ * @param {string} userId
+ */
+export function noteGmStoodDown(userId) {
+  const user = typeof userId === "string" ? globalThis.game?.users?.get?.(userId) : null;
+  if (!user?.isGM || userId === globalThis.game?.user?.id) return;
+  _gmLoad.set(userId, "stale");
+  gmLoadChanged();
+  for (const fn of _standDownListeners) {
+    Promise.resolve()
+      .then(() => fn(user))
+      .catch(err => console.warn(`${MODULE_ID} | taking over from a GM whose page stood down failed:`, err?.message ?? err));
+  }
+}
+
+/**
+ * Whether a GM's page can act for the table — handle what is relayed to it —
+ * as far as this client knows: not a page that stood down after its
+ * connection dropped (this page: connectionWatch.js pageIsStale; another GM's:
+ * its GM_PAGE_STALE_KIND announcement) until it reloads (issue #347
+ * AB19-STALE-CACHE-WRITES). A page still loading is not excluded here.
+ *
+ * @param {string} userId
+ * @returns {boolean}
+ */
+export function gmPageCanAct(userId) {
+  if (userId === globalThis.game?.user?.id) return !pageIsStale();
+  return _gmLoad.get(userId) !== "stale";
+}
+
 /** Test seam — forget every GM's load state. */
 export function _resetGmLoadForTests() {
   _gmLoad.clear();
@@ -113,8 +168,11 @@ export function _resetGmLoadForTests() {
  */
 function settledGMs(activeGMs) {
   const selfId = globalThis.game?.user?.id ?? null;
-  const settled = activeGMs.filter(u => u.id === selfId || _gmLoad.get(u.id) !== "loading");
-  return settled.length ? settled : activeGMs;
+  // This page, stale since its connection dropped, stands down: it is never
+  // elected, whoever else is there (issue #347 AB19-STALE-CACHE-WRITES).
+  const pool = pageIsStale() ? activeGMs.filter(u => u.id !== selfId) : activeGMs;
+  const settled = pool.filter(u => u.id === selfId || (_gmLoad.get(u.id) !== "loading" && _gmLoad.get(u.id) !== "stale"));
+  return settled.length ? settled : pool;
 }
 
 /** The active GMs, less any still loading (settledGMs). */
@@ -141,6 +199,10 @@ function electableGMs() {
  */
 export function isCanonicalGM() {
   if (!globalThis.game?.user?.isGM) return false;
+  // A page whose connection dropped has a cache that may lack writes made
+  // meanwhile: it runs nothing for the table until it reloads (issue #347
+  // AB19-STALE-CACHE-WRITES).
+  if (pageIsStale()) return false;
 
   const activeGMs = electableGMs();
 

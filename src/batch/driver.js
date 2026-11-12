@@ -46,7 +46,8 @@
  *     (takeSheetRoll), or waits for the next round the same way.
  */
 
-import { isCanonicalGM, hasKeyedActiveGM } from "../multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, onGmStoodDown } from "../multiplayer/gmGate.js";
+import { pageIsStale, connectionDrops } from "../multiplayer/connectionWatch.js";
 import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { isSessionActive, sessionBeingReplaced, touchSessionActivity } from "../session/lifecycle.js";
 import { messageAuthorId, resolveSpeakerActorId } from "../multiplayer/speaker.js";
@@ -325,7 +326,12 @@ async function whisper(userIds, title, body, flags = {}) {
   }
 }
 
-const tellGms = (title, body, flags) => whisper(gmIds(), title, body, flags);
+// A page whose connection dropped has been told to reload and stands down:
+// what it would say about a round another GM has taken over is stale too
+// (issue #347 AB19-STALE-CACHE-WRITES).
+const tellGms = (title, body, flags) => (pageIsStale()
+  ? Promise.resolve(console.debug(`${MODULE_ID} | Batch Mode: this page lost its connection — "${title}" not posted.`))
+  : whisper(gmIds(), title, body, flags));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One writer, one chain
@@ -346,6 +352,9 @@ let _roundWrites = Promise.resolve();
  */
 export function queueRoundWrite(transition) {
   const run = _roundWrites.then(async () => {
+    // A page whose connection dropped writes no round: its copy may lack
+    // what another GM wrote meanwhile (issue #347 AB19-STALE-CACHE-WRITES).
+    if (pageIsStale()) throw new Error("the round was not written — this page lost its connection to the server; reload it");
     const latest = getStoredRound();
     const next = transition(latest);
     if (next === undefined || next === latest) return latest;
@@ -1367,7 +1376,7 @@ async function narrateTheRound() {
     return false;
   }
   _narratingRoundId = round.id;
-  const dropsAtClaim = _socketDrops;
+  const dropsAtClaim = connectionDrops();
   let superseded = false;
   try {
     round = await queueRoundWrite(r => claimNarration(r, {
@@ -1405,10 +1414,6 @@ async function narrateTheRound() {
   return true;
 }
 
-// Times this page's socket has lost its connection to the server (socket.io's
-// "disconnect" on game.socket — registerBatchModeDriver).
-let _socketDrops = 0;
-
 /** Whether another GM is connected — one who may have taken a round over while this page was away. */
 function otherGmConnected() {
   return Array.from(game.users ?? []).some(u => u?.isGM && u.active && u.id !== game.user?.id);
@@ -1416,7 +1421,7 @@ function otherGmConnected() {
 
 /** Whether this page has lost its connection since `drops` was read, with another GM connected now. */
 function droppedSince(drops) {
-  return _socketDrops !== drops && otherGmConnected();
+  return connectionDrops() !== drops && otherGmConnected();
 }
 
 /**
@@ -2226,10 +2231,6 @@ async function onUserConnected(user, connected) {
  */
 export function registerBatchModeDriver() {
   _xCardWas = !!campaignStateNow().xCardActive;
-  // socket.io's own event on this page's socket: a drop this page lives
-  // through reloads nothing, so its later writes may rest on a stale world
-  // (narrationStillOurs — issue #347 AB17).
-  game.socket?.on?.("disconnect", () => { _socketDrops += 1; });
   // A setting's first write is a createSetting, every later one an updateSetting.
   Hooks.on("createSetting", onBatchSettingWrite);
   Hooks.on("updateSetting", onBatchSettingWrite);
@@ -2238,6 +2239,10 @@ export function registerBatchModeDriver() {
     onUserConnected(user, connected).catch(err =>
       console.warn(`${MODULE_ID} | Batch Mode: a connection change:`, err?.message ?? err));
   });
+  // A GM whose page stood down — its connection dropped, and it writes no
+  // round until it reloads — is taken over as a GM who left (issue #347
+  // AB19-STALE-CACHE-WRITES).
+  onGmStoodDown(user => onUserConnected(user, false));
   if (isCanonicalGM() && isBatchModeEnabled()) {
     recoverRound("ready").catch(err => console.warn(`${MODULE_ID} | Batch Mode: recovery on ready:`, err?.message ?? err));
   }

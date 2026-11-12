@@ -18,6 +18,11 @@
  * it without a token — each only a lock whose claimant is gone (the ready
  * reset since issue #335 Y07: readyResetLiveLock.test.js).
  *
+ * Since issue #347 AB19-STALE-CACHE-WRITES the page back from the drop is
+ * stale and stands down until it reloads: gm-2 stays canonical and claims B,
+ * and A's release is refused before it is written — the claim token is the
+ * second guard, on a write the page no longer makes.
+ *
  * (Foundry) the blip semantics — `userConnected(user, false)` then
  * `(user, true)` without a reload — are modelled with table.leave / join.
  *
@@ -117,16 +122,15 @@ describe('issue #329 X08 — a pipeline whose lock was released while its GM was
     expect(table.cards(f => f.moveLockReleasedCard)).toHaveLength(1);              // control: the GMs are told
 
     // gm-1 reconnects — the same page, move A's pipeline still waiting on its
-    // narration — and is canonical again. A world write landing after the
-    // reconnect brings gm-1's cached campaignState up to date.
+    // narration. The page is stale and stands down (issue #347
+    // AB19-STALE-CACHE-WRITES): gm-2 stays the canonical GM.
     await table.join('gm-1');
-    await table.client('gm-2').setSetting('campaignState', { ...world(), lastSessionTimestamp: new Date(Date.now() + 1000).toISOString() });
     await table.settle();
 
-    // Move B: gm-1 claims the lock for it; B's narration is out.
+    // Move B: gm-2 claims the lock for it; B's narration is out.
     await table.client('pl-1').chat('I slip through the hatch before it seals.', { speaker: { actor: 'pc-pat' } });
     await table.settle();
-    expect(world()).toMatchObject({ pendingMove: true, pendingMoveBy: 'gm-1' });   // control: B holds the lock
+    expect(world()).toMatchObject({ pendingMove: true, pendingMoveBy: 'gm-2' });   // control: B holds the lock
     expect(narrations).toBe(2);
     expect(table.cards(f => f.moveResolution)).toHaveLength(2);
 
@@ -138,7 +142,7 @@ describe('issue #329 X08 — a pipeline whose lock was released while its GM was
     expect(table.cards(f => f.narrationPaused).length).toBeGreaterThanOrEqual(1);   // A finished, discarded
 
     // B is still narrating, so the lock is still B's (A's release used to clear it).
-    expect(world()).toMatchObject({ pendingMove: true, pendingMoveBy: 'gm-1' });
+    expect(world()).toMatchObject({ pendingMove: true, pendingMoveBy: 'gm-2' });
 
     gates[1].resolve(DEFAULT_REPLY);
     await table.settle();
