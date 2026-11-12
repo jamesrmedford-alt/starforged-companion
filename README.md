@@ -167,6 +167,7 @@ configuration.
 | `!bond [rank] [name]` | Bonded Develop Your Relationship (rank: troublesome…epic); name a bonded connection to use their own rank — with one bonded connection, a bare `!bond` targets them |
 | `!sever <name>` | Mark a connection lost — the record is kept as history, and each character's bond with them is marked lost (GM) |
 | `!repair` | Open the Repair point-spend dialog |
+| `!reset-momentum [name \| all]` | Put a character's momentum base maximum and reset back to 10 / +2 (repairs bases an older version lowered as impacts were marked) — your own character, a named one, or every one; a player resets only a character they own |
 | `!sfc encounter <name>` | Spawn a canonical foundry-ironsworn encounter |
 | `!oracle-add [id]` | Register a custom oracle table (GM) |
 

@@ -1522,3 +1522,33 @@ function momentumBounds(sys, impactCount) {
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
+
+/**
+ * Put a character's momentum bases back to the rulebook's: base maximum 10
+ * and reset +2 (`system.momentum.max` / `resetValue` — the sheet's fields the
+ * vendor deducts each marked impact from). A world that played under the old
+ * write-back (issue #316 T01) has bases it lowered, and nothing tells a base
+ * the write-back lowered from one a GM set on purpose — so this is the `!reset-
+ * momentum` command's explicit repair, never automatic (MOMENTUM-BASE-DRIFTED).
+ * Only the fields that differ are written; momentum itself is left alone (the
+ * maximum only rises). A refused write throws.
+ *
+ * @param {Actor} actor
+ * @returns {Promise<{ changed: boolean, before: { max: number, reset: number }, after: { max: number, reset: number } }>}
+ */
+export async function resetMomentumBases(actor) {
+  const m = actor?.system?.momentum ?? {};
+  const before = {
+    max:   Number.isFinite(m.max)        ? m.max        : MOMENTUM_BASE_MAX,
+    reset: Number.isFinite(m.resetValue) ? m.resetValue : MOMENTUM_BASE_RESET,
+  };
+  const after = { max: MOMENTUM_BASE_MAX, reset: MOMENTUM_BASE_RESET };
+  const patch = {
+    ...(before.max   !== after.max   ? { 'system.momentum.max':        after.max }   : {}),
+    ...(before.reset !== after.reset ? { 'system.momentum.resetValue': after.reset } : {}),
+  };
+  if (!Object.keys(patch).length) return { changed: false, before, after };
+  await actor.update(patch);
+  invalidateActorCache(actor.id);
+  return { changed: true, before, after };
+}

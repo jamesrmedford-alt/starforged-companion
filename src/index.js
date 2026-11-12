@@ -79,7 +79,7 @@ import {
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
-import { invalidateActorCache, recalculateMomentumBounds, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy } from "./character/actorBridge.js";
+import { invalidateActorCache, recalculateMomentumBounds, resetMomentumBases, getPlayerActors, isPlayerCharacterActor, readVows, readCharacterSnapshot, markVowProgress, completeVowItem, applyMeterChanges, applyCompanionHealthChange, readSheetLegacy, recordGrantedReward, setSharedVowReward, setBondItemRank, setBondItemTicks, setVowItemTrack, vowCopyId, isVowCopy } from "./character/actorBridge.js";
 import { mirrorLegacyToSheets, registerLegacySheetSyncHook, backfillLegacySheets } from "./multiplayer/sharedLegacies.js";
 import { registerPrivateChannelSettings } from "./private-channel/index.js";
 import { ensureHelpJournal } from "./help/helpJournal.js";
@@ -659,6 +659,7 @@ export const CHAT_COMMAND_ROUTES = [
   { name: "!pay-the-price",    match: isPayThePriceCommand,      runOn: RUN_ON.AUTHOR,       run: handlePayThePriceCommand },
   { name: "!bond",             match: isBondCommand,             runOn: RUN_ON.AUTHOR,       run: handleBondCommand },
   { name: "!sever",            match: isSeverCommand,            runOn: RUN_ON.AUTHOR,       run: handleSeverCommand },
+  { name: "!reset-momentum",   match: isResetMomentumCommand,    runOn: RUN_ON.AUTHOR,       run: handleResetMomentumCommand },
   // Session safety / lifecycle — DialogV2 surfaces on the typist's screen;
   // their world writes relay to the GM from the dialogs' own apply paths.
   { name: "!flag",             match: isFlagCommand,             runOn: RUN_ON.AUTHOR,       run: () => openSetFlagDialog() },
@@ -7000,6 +7001,68 @@ async function dispatchPayThePriceSufferRoute(route, actorId = null, { resolutio
     ...(upgradeOffered ? { upgradeOffered: true } : {}),
   });
   return { ...landed, move, actorId: actor.id };
+}
+
+/**
+ * `!reset-momentum [name | all]` — put a character's momentum bases back to
+ * 10 / +2 (actorBridge.resetMomentumBases; MOMENTUM-BASE-DRIFTED). A world that
+ * played under the old write-back has sheet bases it lowered (7 / 0 in the
+ * audit's run), which issue #316 T01 stopped but did not repair: nothing tells
+ * a lowered base from one a GM set on purpose, so the repair is asked for.
+ * The typist's own character with no name; a named one; `all` every player
+ * character. A player resets only a character they own (it is their sheet);
+ * a GM any. Runs where it was typed (the sheet write is the owner's or the
+ * GM's own).
+ */
+export function isResetMomentumCommand(message) {
+  if (message.flags?.[MODULE_ID]?.resetMomentumCard) return false;
+  return /^!reset-momentum(\s|$)/i.test(message.content?.trim() ?? "");
+}
+
+async function handleResetMomentumCommand(message) {
+  const arg = (message.content?.trim() ?? "").slice("!reset-momentum".length).trim();
+  const campaignState = game.settings.get(MODULE_ID, "campaignState") ?? {};
+  const pcs = getPlayerActors();
+  const owns = (a) => game.user?.isGM || a?.isOwner === true || a?.testUserPermission?.(game.user, "OWNER") === true;
+  let targets;
+  if (/^all$/i.test(arg)) {
+    targets = pcs.filter(owns);
+  } else if (arg) {
+    const lc = arg.toLowerCase();
+    const named = pcs.filter(a => String(a.name ?? "").toLowerCase() === lc);
+    targets = named.length ? named : pcs.filter(a => wholeWordsFit(String(a.name ?? "").toLowerCase(), lc));
+  } else {
+    const own = resolveSpeakerActorId(message, campaignState);
+    targets = own ? pcs.filter(a => a.id === own) : [];
+  }
+  if (!targets.length) {
+    ui.notifications?.warn?.(`Starforged Companion: no character to reset${arg ? ` named "${arg}"` : " — name one, or type !reset-momentum all"}.`);
+    return;
+  }
+  const refused = targets.filter(a => !owns(a));
+  if (refused.length) {
+    ui.notifications?.warn?.(`Starforged Companion: you do not own ${refused.map(a => a.name).join(", ")} — only their owner or a GM can reset their momentum base.`);
+    return;
+  }
+  const lines = [];
+  for (const actor of targets) {
+    const who = escapeChatHtml(actor.name ?? "A character");
+    try {
+      const { changed, before } = await resetMomentumBases(actor);
+      lines.push(changed
+        ? `${who}: base maximum ${before.max} → 10, reset ${before.reset >= 0 ? "+" : ""}${before.reset} → +2`
+        : `${who}: already 10 / +2 — nothing changed`);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | !reset-momentum: ${actor.name ?? actor.id}'s sheet was not saved:`, err?.message ?? err);
+      lines.push(`${who}: <strong>not saved</strong> — the world refused the sheet write; try again`);
+    }
+  }
+  await ChatMessage.create({
+    content: `<div class="sf-card sf-reset-momentum-card"><div class="sf-card-header">Momentum base reset</div><div class="sf-card-body">`
+      + `<ul>${lines.map(l => `<li>${l}</li>`).join("")}</ul>`
+      + `<p class="sf-card-hint">The bases each marked impact is taken from: the maximum and reset shown on the sheet are these, less one per impact.</p></div></div>`,
+    flags: { [MODULE_ID]: { resetMomentumCard: true } },
+  });
 }
 
 /** !sever <name> — GM-only: mark a connection lost/severed (kept inactive). */
