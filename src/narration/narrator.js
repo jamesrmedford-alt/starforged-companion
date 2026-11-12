@@ -3600,8 +3600,13 @@ export function buildVowSwearingUserMessage(vow, ironTruth) {
   const rank      = vow?.rank ? ` (${vow.rank})` : "";
   // A custom Iron truth chosen in the World Truths dialog is its title alone
   // (issue #322 V34).
+  // A title that ends its own sentence ("…to the Forge.") is followed by the
+  // description, not by ": " (known-issues IRON-TRUTH-COLON — every truth
+  // source titles a truth with its first sentence).
+  const title = String(ironTruth?.title ?? "").trim();
+  const lead  = !title ? "" : /[.!?…]["'”’)]?$/u.test(title) ? `${title} ` : `${title}: `;
   const truthLine = ironTruth?.description
-    ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title ? `${ironTruth.title}: ` : ""}${ironTruth.description}`
+    ? `In this world, the Ironsworn bind their oaths thus — ${lead}${ironTruth.description}`
     : ironTruth?.title
       ? `In this world, the Ironsworn bind their oaths thus — ${ironTruth.title}`
       : `In this world, vows are sworn upon iron.`;

@@ -450,9 +450,18 @@ const ITALIC_RE = /^<(em|i)\b[^>]*>([\s\S]*?)<\/\1>$/i;
  * category: `<h2>{category}</h2>`, the option's title in bold, its text — a
  * sub-table's result blockquoted after the line that introduces it ("In this
  * final war, we were set upon by:") — the quest starter in italics, then the
- * category's inspiration text. A custom truth is the GM's own text, whose
- * first paragraph says it. A category named as none of TRUTH_TABLES' (another
- * language) keeps its own name as the key.
+ * category's inspiration text. A custom truth is the GM's own text — every
+ * paragraph of it, its first as the title — then the inspiration text (vendor
+ * truth-category.vue appends the category's other pages), known by its
+ * opening (TRUTH_TABLES' `inspiration`): a custom truth left empty is that
+ * text alone, and holds no truth (known-issues TRUTHS-CUSTOM-PARSE — it was
+ * read as the truth, and a custom truth reached the narrator as its first
+ * paragraph). A last paragraph that is not the inspiration text (a GM's
+ * edit, another language) is the GM's. A category named as none of TRUTH_TABLES' (another language)
+ * is keyed by its place when the save holds every category — the dialog
+ * writes them in TRUTH_CATEGORIES' order (Datasworn's) — so the vow scene
+ * finds the Iron truth; in a save that skips categories it keeps its own name
+ * as the key.
  *
  * @param {string} html
  * @returns {Object} truthSet — {} when nothing reads
@@ -461,18 +470,20 @@ function parseSystemTruthsHtml(html) {
   const source = typeof html === "string" ? html : "";
   const heads  = [...source.matchAll(H2_RE)];
   const truthSet = {};
+  const everyCategory = heads.length === TRUTH_CATEGORIES.length;
   heads.forEach((head, i) => {
     const categoryName = htmlText(head[1]);
-    const categoryId   = truthCategoryId(categoryName);
+    const categoryId   = knownTruthCategoryId(categoryName)
+      ?? (everyCategory ? TRUTH_CATEGORIES[i] : truthCategoryId(categoryName));
     const end   = i + 1 < heads.length ? heads[i + 1].index : source.length;
-    const truth = categoryId ? parseTruthSection(source.slice(head.index + head[0].length, end)) : null;
+    const truth = categoryId ? parseTruthSection(source.slice(head.index + head[0].length, end), categoryId) : null;
     if (truth) truthSet[categoryId] = { categoryId, categoryName, ...truth };
   });
   return truthSet;
 }
 
 /** One category's section → the TruthResult fields, or null when it holds no text. */
-function parseTruthSection(body) {
+function parseTruthSection(body, categoryId = null) {
   let blocks = [...body.matchAll(BLOCK_RE)]
     .map(m => ({ tag: m[1].toLowerCase(), inner: m[2].trim(), text: htmlText(m[2]) }))
     .filter(b => b.text);
@@ -483,7 +494,13 @@ function parseTruthSection(body) {
   }
 
   const bold = blocks[0].tag === "p" ? blocks[0].inner.match(BOLD_RE) : null;
-  if (!bold) return truthFields({ title: blocks[0].text });    // a custom truth
+  if (!bold) {
+    // A custom truth: the GM's paragraphs, then the inspiration text — none
+    // but that when the GM left it empty.
+    const own = isInspirationText(blocks.at(-1).text, categoryId) ? blocks.slice(0, -1) : blocks;
+    if (!own.length) return null;
+    return truthFields({ title: own[0].text, description: own.slice(1).map(b => b.text).join(" ") });
+  }
 
   const rest  = blocks.slice(1);
   const quest = rest.findIndex(b => b.tag === "p" && ITALIC_RE.test(b.inner));
@@ -502,12 +519,27 @@ function truthFields({ title, description = "", questStarter = "", subTableLabel
   return { roll: null, title, description, questStarter, subTableId: null, subTableLabel, subRoll: null, subResult };
 }
 
+/** Whether `text` is the category's character-inspiration paragraph (TRUTH_TABLES' `inspiration` opens it). */
+function isInspirationText(text, categoryId) {
+  const opening = TRUTH_TABLES[categoryId]?.inspiration;
+  if (!opening) return false;
+  const fold = (t) => String(t ?? "").replace(/\s+/g, " ").trim().toLowerCase();
+  return fold(text).startsWith(fold(opening));
+}
+
+/** The TRUTH_TABLES category a dialog heading names (in English), or null. */
+function knownTruthCategoryId(name) {
+  const lower = String(name ?? "").trim().toLowerCase();
+  if (!lower) return null;
+  return TRUTH_CATEGORIES.find(id => TRUTH_TABLES[id]?.name?.toLowerCase() === lower) ?? null;
+}
+
 /** The category id for a dialog heading — TRUTH_TABLES' by name, else the heading's own. */
 function truthCategoryId(name) {
   const lower = String(name ?? "").trim().toLowerCase();
   if (!lower) return null;
-  const known = TRUTH_CATEGORIES.find(id => TRUTH_TABLES[id]?.name?.toLowerCase() === lower);
-  return known ?? (lower.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || String(name).trim());
+  return knownTruthCategoryId(name)
+    ?? (lower.replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || String(name).trim());
 }
 
 /** The sentence a paragraph ends with when it introduces what follows ("This is because:"), else null. */
