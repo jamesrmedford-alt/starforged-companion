@@ -2959,6 +2959,16 @@ export function catchUpUnsummarisedSession() {
       if (!await settledWithin(write, WORLD_WRITE_WAIT_MS, 'last session catch-up write')) return false;
       const done = await write;
       if (done) console.info(`${MODULE_ID} | narrator: LAST SESSION caught up for the session closed without its summary.`);
+      // Its Session Log page's story, when an X-Card emptied it, too
+      // (SESSION-LOG-STORY-NOT-REBUILT).
+      if (done && text?.trim()) {
+        try {
+          const { restoreSessionLogStory } = await import('../world/worldJournal.js');
+          await restoreSessionLogStory(pending.sessionId, text);
+        } catch (err) {
+          console.warn(`${MODULE_ID} | narrator: rebuilding the Session Log's story failed:`, err?.message ?? err);
+        }
+      }
       return !!done;
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: LAST SESSION catch-up failed:`, err?.message ?? err);

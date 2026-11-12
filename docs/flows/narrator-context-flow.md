@@ -360,7 +360,10 @@ wrote on the session's Session Log page (`retractSessionLogSummary`): its
 "Story so far" goes when the pause dropped the rolling summary it was
 written from, and "Lore this session" loses the titles whose lore the undo
 or the propagation retracted — an X-Card played after End left the page
-telling the removed beat (issue #345 AA27). A capture still running when the
+telling the removed beat (issue #345 AA27); the story is rebuilt from the
+summary the next mint regenerates without the beat (`restoreSessionLogStory`
+at `rollSessionIfDue`'s finalize, or `catchUpUnsummarisedSession` —
+SESSION-LOG-STORY-NOT-REBUILT). A capture still running when the
 card is played writes nothing more (XCARD-LATE-CAPTURE — the undo reaches only
 what was written before it): every capture write checks the STORED
 `xCardedNarrationIds` first (`safety.js` `isNarrationXCarded`, never a
