@@ -559,6 +559,24 @@ export function getCompanionAsset(actor, itemId = null) {
 }
 
 /**
+ * A companion asset's given name — the vendor asset's "Name" field
+ * (`system.fields`: the name the player gives their Glowcat or Survey Bot) —
+ * or null when it has none (COMPANION-GIVEN-NAME-UNREAD: a line naming the
+ * companion by it matched nothing). Reads an array of `{ name, value }`, or
+ * an object of them.
+ *
+ * @param {Item|null} item — a companion asset (listCompanionAssets)
+ * @returns {string|null}
+ */
+export function companionGivenName(item) {
+  const raw = item?.system?.fields;
+  const fields = Array.isArray(raw) ? raw : (raw && typeof raw === 'object' ? Object.values(raw) : []);
+  const field = fields.find(f => String(f?.name ?? f?.label ?? '').trim().toLowerCase() === 'name');
+  const value = typeof field?.value === 'string' ? field.value.trim() : '';
+  return value || null;
+}
+
+/**
  * A companion's health (getCompanionAsset), or null when there is no such
  * companion.
  *
