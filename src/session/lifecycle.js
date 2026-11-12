@@ -9,10 +9,11 @@
  *      / move-pipeline interception. Defaults to false (a fresh world
  *      with no campaignState mutation is treated as "not started").
  *
- *   - `beginSession(campaignState)`     — flips the gate ON and stamps
- *      `sessionActiveStartedAt`. GM-only — `campaignState` is a world-
- *      scoped game.settings document, so non-GM callers would hit a
- *      permissions error on the write. The caller persists; this
+ *   - `beginSession(campaignState)`     — flips the gate ON, stamps
+ *      `sessionActiveStartedAt` and records the session's Auto narration
+ *      perspective (`sessionPerspective`, issue #348 PT03). GM-only —
+ *      `campaignState` is a world-scoped game.settings document, so
+ *      non-GM callers would hit a permissions error on the write. The caller persists; this
  *      function only mutates the in-memory packet.
  *
  *   - `endSession(campaignState)`       — flips the gate OFF and clears
@@ -50,6 +51,7 @@
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { resolveNarrationPerspective } from "../narration/narratorPrompt.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -74,6 +76,13 @@ export function isSessionActive(campaignState) {
  */
 export function beginSession(campaignState) {
   if (!campaignState) throw new Error("beginSession requires a campaignState");
+  // Auto perspective is decided here, once per session, from the table as it
+  // sits down (issue #348 PT03), and kept until the next mint clears it;
+  // every narration of the session reads it (sessionPerspectiveOf).
+  const sessionId = campaignState.currentSessionId || null;
+  if (sessionId && campaignState.sessionPerspective?.sessionId !== sessionId) {
+    campaignState.sessionPerspective = { sessionId, perspective: resolveNarrationPerspective("auto") };
+  }
   if (campaignState.sessionActive === true) return campaignState;
 
   campaignState.sessionActive = true;
@@ -164,6 +173,9 @@ export const SESSION_MINT_FIELDS = Object.freeze([
   "unsummarisedSession",
   "sessionActive",
   "sessionActiveStartedAt",
+  // Cleared by the mint, decided by Begin (beginSession) — every Begin path
+  // persists this list (issue #348 PT03).
+  "sessionPerspective",
 ]);
 
 /** Epoch ms of the activity stamp for `sessionId`; NaN when there is none for it. */
@@ -355,6 +367,8 @@ export function mintSession(campaignState, now = Date.now()) {
   campaignState.sessionEndedId         = null;
   campaignState.sessionActive          = false;
   campaignState.sessionActiveStartedAt = null;
+  // The new session's perspective is decided when it begins (issue #348 PT03).
+  campaignState.sessionPerspective     = null;
   return campaignState;
 }
 

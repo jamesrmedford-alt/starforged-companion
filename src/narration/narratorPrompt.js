@@ -1294,13 +1294,21 @@ const PERSPECTIVE_DESCRIPTIONS = {
  * Ash beside one player's Kira counted one non-GM user, so the round was
  * second person over two CHARACTER blocks).
  *
+ * Auto is decided once per session (issue #348 PT03): `sessionPerspective`,
+ * the one Begin a Session recorded (sessionPerspectiveOf), wins over the
+ * count. Recomputed on every call, a second window or player connecting
+ * mid-session flipped "you" to names between beats. Without one — a session
+ * not begun — the connected users are counted, as before.
+ *
  * @param {string} setting — "auto" | "second_person" | "third_person"
- * @param {{ actingCharacters?: number }} [narration] — how many PCs the narration speaks for
+ * @param {{ actingCharacters?: number, sessionPerspective?: string|null }} [narration] —
+ *   how many PCs the narration speaks for; the session's recorded perspective
  * @returns {"second_person"|"third_person"}
  */
-export function resolveNarrationPerspective(setting, { actingCharacters = 0 } = {}) {
+export function resolveNarrationPerspective(setting, { actingCharacters = 0, sessionPerspective = null } = {}) {
   if (setting !== 'auto') return setting;
   if (actingCharacters > 1) return 'third_person';
+  if (sessionPerspective === 'second_person' || sessionPerspective === 'third_person') return sessionPerspective;
   try {
     // Active NON-GM users (decisions.md "Narrator tone and perspective"): the
     // GM counted too, so a GM running one player's character — or a solo GM
@@ -1311,6 +1319,21 @@ export function resolveNarrationPerspective(setting, { actingCharacters = 0 } = 
   } catch {
     return 'second_person';
   }
+}
+
+/**
+ * The perspective Auto resolved to when the current session began (issue
+ * #348 PT03; `campaignState.sessionPerspective`, written by lifecycle.js
+ * beginSession) — null when this session recorded none.
+ *
+ * @param {Object|null} campaignState
+ * @returns {"second_person"|"third_person"|null}
+ */
+export function sessionPerspectiveOf(campaignState) {
+  const rec = campaignState?.sessionPerspective;
+  const id  = campaignState?.currentSessionId;
+  if (!rec || !id || rec.sessionId !== id) return null;
+  return rec.perspective === 'second_person' || rec.perspective === 'third_person' ? rec.perspective : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -1511,8 +1534,10 @@ export function buildNarratorSystemPrompt(
   const isMetaMode      = META_MODES.has(resolvedMode);
 
   // A round speaks for every acting PC at once (its CHARACTER blocks, issue #342 Z40).
+  // Auto keeps the perspective the session began with (issue #348 PT03).
   const resolvedPerspective = resolveNarrationPerspective(narrationPerspective, {
     actingCharacters: Array.isArray(extras?.roundCharacters) ? extras.roundCharacters.filter(Boolean).length : 0,
+    sessionPerspective: sessionPerspectiveOf(campaignState),
   });
   const toneDesc        = TONE_DESCRIPTIONS[narrationTone]          ?? TONE_DESCRIPTIONS.wry;
   const perspectiveDesc = PERSPECTIVE_DESCRIPTIONS[resolvedPerspective] ?? PERSPECTIVE_DESCRIPTIONS.second_person;

@@ -566,6 +566,15 @@ export const CampaignStateSchema = {
   // galley vignette) Begin a Session already applied — they run once per
   // session (issue #300 F11). Written and read by applyBeginSession.
   sessionStartedId:     null,
+  // The narration perspective Auto resolved to for this session (issue #348
+  // PT03): decided once, at Begin a Session (lifecycle.js beginSession, from
+  // the connected non-GM users then), cleared at the mint, and read by every
+  // narration of that session (narratorPrompt.js sessionPerspectiveOf) — it
+  // was recomputed per call, so a second window or player connecting
+  // mid-session flipped "you" to names. A session with none (not begun)
+  // resolves per call as before.
+  //   { sessionId, perspective: "second_person"|"third_person" } | null
+  sessionPerspective:   null,
 
   // End a Session spotlights: the vow and connection the
   // table wants to focus on next time. Written by applyEndSession, surfaced
