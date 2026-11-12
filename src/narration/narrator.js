@@ -2253,6 +2253,33 @@ function summaryCoversCards(summary, sessionId, cards) {
 }
 
 /**
+ * The narration cards a Burn Momentum or Improve Result has begun to
+ * supersede on this page — their ids, newest last, capped. A rolling summary
+ * whose call (or write) is out when one is superseded compares its source
+ * against them (UPGRADE-REGEN-IN-FLIGHT — AA25's play count for the X-Card):
+ * the card's `burnSuperseded` flag lands only after the supersede's own
+ * awaits, and the summary made from it was stored after the supersede.
+ */
+const SUPERSEDING_CARD_CAP = 100;
+/** How long a begun supersede counts without its flag (a strike whose card write failed stops counting). */
+const SUPERSEDING_WINDOW_MS = 2 * 60 * 1000;
+const _supersedingCards = new Map();   // card id → when its supersede began
+
+/** Note cards a supersede has begun on (dropSummaryOfSupersededCards). */
+function noteSupersedingCards(cards) {
+  const now = Date.now();
+  for (const c of cards) if (typeof c?.id === 'string' && c.id) _supersedingCards.set(c.id, now);
+  while (_supersedingCards.size > SUPERSEDING_CARD_CAP) _supersedingCards.delete(_supersedingCards.keys().next().value);
+}
+
+/** True when a supersede has begun on (recently), or struck, one of `cards`. */
+function anySuperseded(cards) {
+  const now = Date.now();
+  return (cards ?? []).some(m => m?.flags?.[MODULE_ID]?.burnSuperseded === true
+    || (typeof m?.id === 'string' && now - (_supersedingCards.get(m.id) ?? -Infinity) < SUPERSEDING_WINDOW_MS));
+}
+
+/**
  * Drop the session's rolling summary when it was made from narrations a Burn
  * Momentum or Improve Result is about to supersede — the move narration it
  * replaces, the trigger vignette of a clock it rewinds (issue #345 AA24).
@@ -2272,6 +2299,8 @@ function summaryCoversCards(summary, sessionId, cards) {
 export async function dropSummaryOfSupersededCards(cards) {
   const list = (Array.isArray(cards) ? cards : []).filter(Boolean);
   if (!list.length) return false;
+  // A summary still being made from them is not stored (UPGRADE-REGEN-IN-FLIGHT).
+  noteSupersedingCards(list);
   try {
     if (!isCanonicalGM()) return false;
     const stored = storedCampaignState();
@@ -2747,6 +2776,13 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     console.debug(`${MODULE_ID} | narrator: X-Card played during the rolling summary's call — its summary is discarded.`);
     return '';
   }
+  // A Burn Momentum or Improve Result that superseded a card of its source
+  // while the call was out (UPGRADE-REGEN-IN-FLIGHT): the next card — the
+  // re-narration — regenerates it without the replaced outcome.
+  if (anySuperseded(cards)) {
+    console.debug(`${MODULE_ID} | narrator: a narration the rolling summary was made from was superseded during its call — its summary is discarded.`);
+    return '';
+  }
 
   const record = {
     text:         text.trim(),
@@ -2774,7 +2810,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     let kept = true;
     try {
       const write = serialiseCampaignStateWrite(async () => {
-        if (xCardPlayCount() !== xCardPlaysAtStart) return false;
+        if (xCardPlayCount() !== xCardPlaysAtStart || anySuperseded(cards)) return false;
         const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
         await game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
         return true;
@@ -2788,7 +2824,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
       console.warn(`${MODULE_ID} | narrator: rolling summary persist failed:`, err?.message ?? err);
     }
     if (!kept) {
-      console.debug(`${MODULE_ID} | narrator: X-Card played while the rolling summary waited to be written — its summary is discarded.`);
+      console.debug(`${MODULE_ID} | narrator: X-Card played, or a source narration superseded, while the rolling summary waited to be written — its summary is discarded.`);
       return '';
     }
   }
