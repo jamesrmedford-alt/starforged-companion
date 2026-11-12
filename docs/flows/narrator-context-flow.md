@@ -974,7 +974,12 @@ Addressed:
   reversing word around the shared words: raw substring containment let
   "Distrusts the crew" swallow the scene's "Trusts the crew" (and "Is
   deadly…" swallow "Is dead"), so the new truth was counted migrated and
-  written nowhere (issue #347 AB11).
+  written nowhere (issue #347 AB11). The reversing words are a list
+  (quit / stopped / ceased, lost, broke, betrayed, abandoned, refused …), two-word
+  reversals ("gave up", "turned against", "fell out") and a dis- / un- /
+  mis- / non- form of one of the detail's own words around them ("Trusted
+  the crew, then distrusted them"); an exact restatement still dedupes
+  (issue #347 residual TIER-DETAIL-NEGATION-LIST).
 
 Reaffirmed as deliberate (decisions.md → "Narrator-context reaffirmations"):
 - **Frame applies as an unvalidated full replacement** — the broadened

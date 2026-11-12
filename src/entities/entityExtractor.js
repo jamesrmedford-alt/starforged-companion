@@ -1678,12 +1678,55 @@ function tierHasDetail(tier, detail) {
 }
 
 // Words that, around a detail's own words, negate or reverse it ("has NOT paid
-// the debt", "NO LONGER trusts the crew", "FORMERLY the captain") — `n't`
-// arrives as "not" (detailWords).
+// the debt", "NO LONGER trusts the crew", "FORMERLY the captain", "BROKE her
+// oath to the crew") — `n't` arrives as "not" (detailWords). A fixed list:
+// it grew from the first one AB11 shipped with (issue #347 residual
+// TIER-DETAIL-NEGATION-LIST) — a reversal phrased past it can still dedupe
+// when the words line up, a duplicate kept is the safer miss.
 const REVERSING_WORDS = new Set([
   "not", "no", "never", "nor", "none", "nobody", "nothing", "neither", "without", "cannot",
-  "longer", "anymore", "formerly", "former", "ex", "once", "stopped", "ceased", "lost",
+  "longer", "anymore", "formerly", "former", "ex", "once",
+  "stopped", "stops", "stopping", "ceased", "ceases", "ceasing", "quit", "quits", "quitting", "quitted",
+  "lost", "loses", "losing", "broke", "broken", "breaks", "breaking",
+  "betrayed", "betrays", "betraying", "betrayal", "abandoned", "abandons", "abandoning",
+  "renounced", "renounces", "renouncing", "forsook", "forsaken", "forsakes", "abandon", "renounce",
+  "refused", "refuses", "refusing", "denied", "denies", "denying", "failed", "fails", "failing",
+  "undid", "undoes", "undone", "reversed", "reverses", "revoked", "revokes", "withdrew", "withdrawn",
 ]);
+
+// Two-word reversals: "GAVE UP running the docks", "TURNED AGAINST the crew".
+const REVERSING_PAIRS = [
+  [["gave", "give", "gives", "giving", "given"], ["up"]],
+  [["turned", "turns", "turning"], ["against", "on"]],
+  [["fell", "falls", "falling", "fallen"], ["out"]],
+  [["backed", "backs", "backing"], ["out"]],
+];
+
+// A prefix that reverses the word it is on — "DIStrusted", "UNhappy",
+// "MISled": around a detail's words, the prefixed form of one of them
+// reverses it ("Trusted the crew, then distrusted them" is no restatement of
+// "Trusted the crew"). On different words, whole-word matching already
+// keeps "Distrusts the crew" from restating "Trusts the crew".
+const REVERSING_PREFIXES = ["dis", "un", "mis", "non"];
+
+/** A word's rough stem: a plural, past or -ing ending off, for the same-root check. */
+function rootOf(word) {
+  for (const end of ["ing", "ed", "es", "s", "d"]) {
+    if (word.length - end.length >= 3 && word.endsWith(end)) return word.slice(0, -end.length);
+  }
+  return word;
+}
+
+/** True when the words around a detail's own reverse them (REVERSING_WORDS / _PAIRS / _PREFIXES). */
+function reversesAround(around, inner) {
+  if (around.some(w => REVERSING_WORDS.has(w))) return true;
+  for (let i = 0; i + 1 < around.length; i++) {
+    if (REVERSING_PAIRS.some(([first, second]) => first.includes(around[i]) && second.includes(around[i + 1]))) return true;
+  }
+  const roots = new Set(inner.map(rootOf));
+  return around.some(w => REVERSING_PREFIXES.some(p => w.length > p.length + 2 && w.startsWith(p)
+    && roots.has(rootOf(w.slice(p.length)))));
+}
 
 /** A detail's words: lowercased, `n't` spelled "not", punctuation dropped. */
 function detailWords(text) {
@@ -1699,7 +1742,7 @@ function restatesDetail(outer, inner) {
   for (let i = 0; i + inner.length <= outer.length; i++) {
     if (!inner.every((w, j) => outer[i + j] === w)) continue;
     const around = [...outer.slice(0, i), ...outer.slice(i + inner.length)];
-    if (!around.some(w => REVERSING_WORDS.has(w))) return true;
+    if (!reversesAround(around, inner)) return true;
   }
   return false;
 }
