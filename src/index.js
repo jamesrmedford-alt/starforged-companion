@@ -1165,6 +1165,7 @@ export function registerChatHook() {
     if (setting?.key !== `${MODULE_ID}.campaignState`) return;
     // A write landed: the world saves again, so a held move it refused goes (issue #345 AA48).
     _heldMovesWaitForLandedWrite = false;
+    resetHeldMoveRetry();
     drainDeferredForcedMoves();
   });
   // A claim this client released, carried back by a write built from a cache
@@ -1393,10 +1394,37 @@ const _deferredForcedMoves = [];
 const _drainedForcedMoves = new Set();
 // Set when a held move handed back met a claim the world refused and was held
 // again: the held moves wait for a campaignState write that lands (the
-// updateSetting hook clears it). The drain's own re-ask — or another refused
+// updateSetting hook clears it), or for their retry (scheduleHeldMoveRetry). The drain's own re-ask — or another refused
 // claim's — would hand the move straight back into a claim the world still
 // refuses, again and again (the issue #342 Z25 shape). Issue #345 AA48.
 let _heldMovesWaitForLandedWrite = false;
+
+// …or for a retry (issue #347 HELD-MOVES-WAIT-FOR-WRITE): at a quiet table no
+// campaignState write may land for a long while, and the held move — its card
+// claimed, its button read taken — waited for one. Tried again after
+// HELD_MOVE_RETRY_MS × the attempt, HELD_MOVE_RETRIES times (10 s … 50 s,
+// two and a half minutes in all), then left for a write that lands; a write
+// that lands starts the count again.
+const HELD_MOVE_RETRY_MS = 10_000;
+const HELD_MOVE_RETRIES  = 5;
+let _heldMoveRetry = { timer: null, attempts: 0 };
+
+/** Try the held moves again after a bounded wait, once the refused one is held (reholdRefusedForcedMove). */
+function scheduleHeldMoveRetry() {
+  if (_heldMoveRetry.timer || _heldMoveRetry.attempts >= HELD_MOVE_RETRIES) return;
+  _heldMoveRetry.attempts += 1;
+  _heldMoveRetry.timer = setTimeout(() => {
+    _heldMoveRetry.timer = null;
+    _heldMovesWaitForLandedWrite = false;
+    drainDeferredForcedMoves();
+  }, HELD_MOVE_RETRY_MS * _heldMoveRetry.attempts);
+}
+
+/** A campaignState write landed: the held moves go now, and a later refusal's retries count from one. */
+function resetHeldMoveRetry() {
+  if (_heldMoveRetry.timer) clearTimeout(_heldMoveRetry.timer);
+  _heldMoveRetry = { timer: null, attempts: 0 };
+}
 
 /**
  * Hold a forced move that met the move lock. A card button's GM handler
@@ -1439,6 +1467,7 @@ function reholdRefusedForcedMove(message) {
   if (!isHandedBackHeldMove(message)) return false;
   _heldMovesWaitForLandedWrite = true;
   deferForcedMove(message, { refused: true });
+  scheduleHeldMoveRetry();
   return true;
 }
 
