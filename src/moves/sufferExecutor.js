@@ -764,55 +764,60 @@ export async function sacrificeResources(actor, amount, opts = {}) {
 }
 
 /**
- * Companion Takes a Hit executor.
+ * Companion Takes a Hit executor — the "any" suffer picker's button and Pay
+ * the Price's "companion in harm's way" route.
  *
- * The "companion" is a foundry-ironsworn `asset` Item embedded on the
- * character actor. v1 surfaces the destruction prompt as a chat card
- * (Q2) — the actual asset-Item deletion is its own follow-up scope.
+ * The companion's health is its asset's condition track (`system.track`),
+ * written through actorBridge.applyCompanionHealthChange — the write the
+ * consequence card's choices use (issue #309 N03). This executor read and
+ * wrote `system.condition` / `system.health`, which the vendor's asset has
+ * not, and the picker passes no item id: it posted "Companion not found"
+ * (SUFFER-EXECUTOR-ASSET-SCHEMA). With no id, the character's only
+ * companion. Harm past 0 health is momentum (overflowToMomentum — the card's
+ * rule, issue #345 AA15). At 0 on a miss with a match the companion is
+ * destroyed: a prompt to discard it (Q2 — the asset is not deleted).
  *
  * @param {Actor} actor
- * @param {string} companionItemId  the asset Item id (caller resolves)
+ * @param {string|null} companionItemId  the asset Item id (null: the move's
+ *   companion, `opts.companionItemId`, else the only companion)
  * @param {number} amount
  * @param {Object} [opts]
  * @param {boolean} [opts.isMissWithMatch]  miss + match → destruction prompt
  * @param {boolean} [opts.skipCard]
+ * @returns {Promise<Object>} `before`, `after`, `atZero`, `destroyed`, the
+ *   companion (`itemId`, `name`) and `momentumLoss` past 0; `skipped` with
+ *   `ok: false` and the reason when there is no such companion. A write the
+ *   world refuses throws (runSufferResolution reports it, with a Retry).
  */
 export async function companionTakesAHit(actor, companionItemId, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
     return { before: 0, after: 0, destroyed: false, skipped: true };
   }
-  const item = actor.items?.get?.(companionItemId) ?? actor.items?.find?.(i => i.id === companionItemId);
-  if (!item) {
-    // Surface to chat — companion not found is a user-visible failure
-    // mode worth flagging rather than silently no-oping.
+  // The companion the move was about (the card's targets), when the pick names none.
+  companionItemId = companionItemId ?? opts.companionItemId ?? null;
+  const { applyCompanionHealthChange } = await import("../character/actorBridge.js");
+  const res = await applyCompanionHealthChange(actor, -amount, { itemId: companionItemId });
+  if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the companion's health");
+  if (!res.ok) {
+    // No such companion (or several, none named) — a user-visible failure
+    // worth flagging rather than silently no-oping.
     await postSufferCard({
       title: `Companion Takes a Hit (-${amount})`,
-      body: `Companion not found (id ${companionItemId}). Apply the damage manually.`,
+      body: companionItemId
+        ? `Companion not found (id ${escapeHtml(companionItemId)}). Apply the damage manually.`
+        : `No companion to take it — ${escapeHtml(actor.name ?? "the character")} has none, or several (apply it on the sheet).`,
       flags: { suffer: "companion_takes_a_hit", error: "companion-not-found" },
     });
-    return { before: 0, after: 0, destroyed: false, skipped: true };
+    return { before: 0, after: 0, destroyed: false, skipped: true, ok: false, reason: "no-companion" };
   }
 
-  // The companion's health lives on the asset's condition meter. The
-  // exact schema path varies by foundry-ironsworn version; read+write
-  // through the item.system shape we know about.
-  const before = item.system?.condition?.value ?? item.system?.health ?? 0;
-  const after  = Math.max(0, before - amount);
-  try {
-    if (item.system?.condition != null) {
-      await item.update({ "system.condition.value": after });
-    } else {
-      await item.update({ "system.health": after });
-    }
-  } catch (err) {
-    console.warn(`${MODULE_ID} | companionTakesAHit: item.update failed:`, err);
-  }
-
+  const { before, after } = res;
+  const momentumLoss = await overflowToMomentum(actor, amount - Math.max(0, before - after));
   const atZero = after <= 0;
   const destroyed = atZero && opts.isMissWithMatch === true;
 
   if (!opts.skipCard) {
-    let body = `${escapeHtml(item.name)}: ${before} → ${after}`;   // the player names the asset (issue #336 Y28)
+    let body = `${escapeHtml(res.name ?? "Companion")}: ${before} → ${after}${overflowLine(momentumLoss)}`;   // the player names the asset (issue #336 Y28)
     if (destroyed) {
       body += `<br/><strong>Companion destroyed.</strong> Open the character sheet → Assets and discard this companion.`;
     } else if (atZero) {
@@ -821,72 +826,99 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
     await postSufferCard({
       title: `Companion Takes a Hit (-${amount})`,
       body,
-      flags: { suffer: "companion_takes_a_hit", amount, before, after, atZero, destroyed, companionItemId },
+      flags: { suffer: "companion_takes_a_hit", amount, before, after, atZero, destroyed, companionItemId: res.itemId ?? null },
     });
   }
 
-  return { before, after, atZero, destroyed };
+  return { before, after, atZero, destroyed, itemId: res.itemId ?? null, name: res.name ?? null, ...(momentumLoss ? { momentumLoss } : {}) };
 }
 
 /**
- * Withstand Damage executor.
+ * Withstand Damage executor — the "any" suffer picker's button and Pay the
+ * Price's "your vehicle suffers damage" route.
  *
- * The vehicle is also a foundry-ironsworn `asset` Item (the command
- * vehicle on the character). Integrity is its condition meter.
+ * The vehicle is the support vehicle `vehicleItemId` names on the character
+ * (its Integrity track — actorBridge.applyVehicleAssetIntegrityChange), else
+ * the vehicle the move was rolled against (`opts.vehicleActorId`), else the
+ * command vehicle — its integrity through the ship record's one writer
+ * (entities/ship.js changeIntegrity: the STARSHIP asset's track, issue #345
+ * AA20). These are the writes the consequence card's choices use
+ * (sufferDialog's integrity meter). This executor read and wrote
+ * `system.condition` / `system.integrity` on an asset Item, which neither
+ * store is, and posted "Vehicle not found" for the picker's id-less call
+ * (SUFFER-EXECUTOR-ASSET-SCHEMA). Damage past 0 is momentum (issue #345
+ * AA15). At 0 the VEHICLE_DAMAGE d100 is rolled; for the command vehicle a
+ * catastrophic result surfaces an Overcome Destruction prompt (Q2 — prompt
+ * only, the GM adjudicates).
  *
- * At 0 integrity → roll VEHICLE_DAMAGE d100. If the vehicle is the
- * command vehicle, the result may include catastrophic destruction —
- * surface an Overcome Destruction prompt (Q2: prompt only, GM
- * adjudicates the actual move trigger).
+ * @param {Actor} actor
+ * @param {string|null} vehicleItemId  a support vehicle asset's id (null: the
+ *   move's, `opts.vehicleItemId`, else the command vehicle)
+ * @param {number} amount
+ * @param {Object} [opts]
+ * @param {string|null} [opts.vehicleActorId]  the vehicle the move was rolled against
+ * @param {boolean} [opts.skipCard]
+ * @param {number} [opts.fixedRoll]  the vehicle-damage d100, for tests
+ * @returns {Promise<Object>} `before`, `after`, `atZero`, `vehicleDamage`,
+ *   `isCommandVehicle`, `momentumLoss` past 0; `skipped` with `ok: false` and
+ *   the reason when there is no such vehicle. A write the world refuses throws.
  */
 export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   if (!actor || !Number.isFinite(amount) || amount <= 0) {
     return { before: 0, after: 0, atZero: false, skipped: true };
   }
-  const item = actor.items?.get?.(vehicleItemId) ?? actor.items?.find?.(i => i.id === vehicleItemId);
-  if (!item) {
+  // The support vehicle the move was rolled for (the card's targets), when the pick names none.
+  vehicleItemId = vehicleItemId ?? opts.vehicleItemId ?? null;
+  const { applyVehicleAssetIntegrityChange, listSupportVehicleAssets } = await import("../character/actorBridge.js");
+  const support = vehicleItemId ? listSupportVehicleAssets(actor).some(i => i.id === vehicleItemId) : false;
+  let res;
+  let vehicleActorId = null;
+  if (support) {
+    res = await applyVehicleAssetIntegrityChange(actor, -amount, { itemId: vehicleItemId });
+  } else if (vehicleItemId) {
+    res = { ok: false, reason: "no-vehicle" };
+  } else {
+    const { getCommandVehicleActorId, changeIntegrity } = await import("../entities/ship.js");
+    vehicleActorId = opts.vehicleActorId
+      ?? getCommandVehicleActorId(globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {}) ?? null;
+    res = await changeIntegrity(vehicleActorId, -amount);
+  }
+  if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the vehicle's integrity");
+  if (!res.ok) {
     await postSufferCard({
       title: `Withstand Damage (-${amount})`,
-      body: `Vehicle not found (id ${vehicleItemId}). Apply the damage manually.`,
+      body: vehicleItemId
+        ? `Vehicle not found (id ${escapeHtml(vehicleItemId)}). Apply the damage manually.`
+        : `No vehicle to take it — there is no command vehicle (apply it on the sheet).`,
       flags: { suffer: "withstand_damage", error: "vehicle-not-found" },
     });
-    return { before: 0, after: 0, atZero: false, skipped: true };
+    return { before: 0, after: 0, atZero: false, skipped: true, ok: false, reason: "no-vehicle" };
   }
 
-  const before = item.system?.condition?.value ?? item.system?.integrity ?? 0;
-  const after  = Math.max(0, before - amount);
-  try {
-    if (item.system?.condition != null) {
-      await item.update({ "system.condition.value": after });
-    } else {
-      await item.update({ "system.integrity": after });
-    }
-  } catch (err) {
-    console.warn(`${MODULE_ID} | withstandDamage: item.update failed:`, err);
-  }
-
+  const { before, after } = res;
+  const isCommandVehicle = !support;
+  const momentumLoss = await overflowToMomentum(actor, amount - Math.max(0, before - after));
   const atZero = after <= 0;
-  let vehicleDamage = null;
-  if (atZero) {
-    vehicleDamage = rollD100Table(VEHICLE_DAMAGE, opts);
-  }
+  const vehicleDamage = atZero ? rollD100Table(VEHICLE_DAMAGE, opts) : null;
 
   if (!opts.skipCard) {
-    let body = `${escapeHtml(item.name)}: ${before} → ${after}`;   // the player names the asset (issue #336 Y28)
+    let body = `${escapeHtml(res.name ?? "The vehicle")}: ${before} → ${after}${overflowLine(momentumLoss)}`;   // the player names the asset (issue #336 Y28)
     if (vehicleDamage) {
       body += `<br/>Vehicle Damage (d100 ${vehicleDamage.roll}): <em>${vehicleDamage.result}</em>`;
-      if (opts.isCommandVehicle && /catastrophic|destruction/i.test(vehicleDamage.result)) {
+      if (isCommandVehicle && /catastrophic|destruction/i.test(vehicleDamage.result)) {
         body += `<br/><strong>Command vehicle destruction.</strong> Trigger Overcome Destruction when ready.`;
       }
     }
     await postSufferCard({
       title: `Withstand Damage (-${amount})`,
       body,
-      flags: { suffer: "withstand_damage", amount, before, after, atZero, vehicleDamage, vehicleItemId },
+      flags: { suffer: "withstand_damage", amount, before, after, atZero, vehicleDamage,
+        vehicleItemId: support ? vehicleItemId : null, vehicleActorId },
     });
   }
 
-  return { before, after, atZero, vehicleDamage };
+  return { before, after, atZero, vehicleDamage, isCommandVehicle, name: res.name ?? null,
+    ...(support ? { itemId: vehicleItemId } : { vehicleActorId }), ...(momentumLoss ? { momentumLoss } : {}) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
