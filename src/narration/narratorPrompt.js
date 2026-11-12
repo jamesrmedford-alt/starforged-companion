@@ -309,7 +309,10 @@ export function buildLedgerBlock(campaignState, options = {}) {
     if (!Array.isArray(entries) || !entries.length) continue;
     const subjectForKey = subjectFromStateKey(key);
     if (!isSubjectInScope(subjectForKey, matchedIds)) continue;
-    const label = formatSubjectLabel(subjectForKey, nameLookup);
+    // A text subject as the narrator last wrote it — its key is lowercased
+    // (TEXT-SUBJECT-LOWERCASE); an entry from before the label was kept has none.
+    const written = subjectForKey.kind === 'text' ? textSubjectAsWritten(entries, key) : '';
+    const label = written || formatSubjectLabel(subjectForKey, nameLookup);
     for (const e of entries) {
       const attr  = String(e?.attribute ?? '').trim();
       const value = e?.value;
@@ -537,6 +540,17 @@ function estimateTokens(s) {
  *   scene  → "scene"
  *   text   → the original text
  */
+/** The newest `subjectText` among a text subject's state entries that still names its key, or ''. */
+function textSubjectAsWritten(entries, key) {
+  let best = null;
+  for (const e of entries) {
+    const text = typeof e?.subjectText === 'string' ? e.subjectText.trim() : '';
+    if (!text || text.toLowerCase() !== String(key).toLowerCase()) continue;
+    if (!best || (Number(e.updatedAt) || 0) >= (Number(best.updatedAt) || 0)) best = { text, updatedAt: e.updatedAt };
+  }
+  return best?.text ?? '';
+}
+
 function formatSubjectLabel(subject, nameLookup) {
   if (!subject || typeof subject !== 'object') return 'unknown';
   switch (subject.kind) {

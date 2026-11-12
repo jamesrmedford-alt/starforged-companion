@@ -167,7 +167,11 @@ export function applySidecar(sidecar, ctx) {
     // location left the dockmaster none, though narration A — kept — had
     // put him in the cargo bay).
     const previous = idx >= 0 ? supersededEntry(list[idx]) : null;
-    const entry   = { attribute, value, updatedAt: now, ...stamp, ...(previous ? { previous } : {}) };
+    // A text subject's key is lowercased (subjectKey): the entry keeps the
+    // subject as the narrator wrote it, for the CURRENT STATE label
+    // (known-issues TEXT-SUBJECT-LOWERCASE).
+    const shown   = subject.kind === 'text' && subject.text ? { subjectText: subject.text } : {};
+    const entry   = { attribute, value, updatedAt: now, ...shown, ...stamp, ...(previous ? { previous } : {}) };
     if (idx >= 0) list[idx] = entry;
     else list.push(entry);
     stateUpdates.push({ key, attribute });
@@ -575,7 +579,10 @@ export function promoteTextSubject(textValue, entityRef, campaignState) {
   const newKey = subjectKey({ kind: 'entity', entityId: entityRef.entityId });
   if (oldKey !== newKey && campaignState.sceneState.bySubject[oldKey]) {
     const merged = campaignState.sceneState.bySubject[newKey] ?? [];
-    for (const e of campaignState.sceneState.bySubject[oldKey]) {
+    for (const old of campaignState.sceneState.bySubject[oldKey]) {
+      // An entity subject's label is its card's name: the text's is dropped.
+      const e = { ...(old ?? {}) };
+      delete e.subjectText;
       const idx = merged.findIndex(m => sameStateAttribute(m.attribute, e.attribute));
       if (idx >= 0) merged[idx] = e; else merged.push(e);
     }
@@ -623,7 +630,9 @@ export function demoteEntitySubject(entityId, name, campaignState) {
   if (bySubject && typeof bySubject === 'object' && Array.isArray(bySubject[oldKey])) {
     const newKey = subjectKey({ kind: 'text', text });
     const merged = [...(Array.isArray(bySubject[newKey]) ? bySubject[newKey] : [])];
-    for (const e of bySubject[oldKey]) {
+    for (const old of bySubject[oldKey]) {
+      // Labelled with the name as the card had it (TEXT-SUBJECT-LOWERCASE).
+      const e = old && typeof old === 'object' ? { ...old, subjectText: text } : old;
       const idx = merged.findIndex(m => sameStateAttribute(m?.attribute, e?.attribute));
       if (idx >= 0) merged[idx] = e; else merged.push(e);
     }

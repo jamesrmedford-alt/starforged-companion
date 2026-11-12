@@ -614,7 +614,9 @@ export const CampaignStateSchema = {
   //                      moveId, source, asserter, createdAt, retracted,
   //                      retractedBy, retractedAt, correctedTo, migratedTo }
   //   sceneState     — supersede-on-attribute state ledger
-  //                    { bySubject: { [subjectKey]: [{ attribute, value, updatedAt }] }, sceneId }
+  //                    { bySubject: { [subjectKey]: [{ attribute, value, updatedAt, subjectText? }] }, sceneId }
+  //                    (subjectText: a text subject as the narrator wrote it — its key is lowercased;
+  //                    the CURRENT STATE label reads it, TEXT-SUBJECT-LOWERCASE)
   currentSceneId: null,
   sceneTruths:    [],
   sceneState:     { bySubject: {}, sceneId: null },
