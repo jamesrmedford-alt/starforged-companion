@@ -413,8 +413,9 @@ rank through `rankName` — issue #321 U62), a forged one as "bonded" (the
 Item's `completed`, issue #342 Z57 — it read "fulfilled", a vow's word), and a severed one apart, under
 "Connections lost" (`readConnections`' `lost` — issue #330 D10). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
-bond's Item as history. `background` and `secrets` have no production writer, so neither
-renders. The legacy count-only "ACTIVE CONNECTIONS" block
+bond's Item as history. `background` and `secrets`, which had no production
+writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN).
+The legacy count-only "ACTIVE CONNECTIONS" block
 (`buildConnectionsSummary`, "N active connection(s)" from `connectionIds`)
 is retired: it counted a lost connection as active beside the roster that
 lists it apart (issue #331 X29).
