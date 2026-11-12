@@ -2790,6 +2790,10 @@ export function syncEntityRecordNameOnUpdate(actor, changes, _options, _userId) 
       // A name the GM once dismissed from a draft card is this record's now
       // (issue #345 AA55): dismissed, it kept the card out of the narrator.
       .then(() => undismissRecordName(newName))
+      // A connection's PCs' bond Items take the new name too
+      // (BOND-ITEM-NAME-STALE), found as it was named.
+      .then(() => (entityType === "connection"
+        ? import("./entities/connection.js").then(m => m.renameBondItems(record, newName)) : null))
       .catch(err =>
         console.warn(`${MODULE_ID} | rename sync: record update failed for ${actor.id}:`, err?.message ?? err));
   } catch (err) {

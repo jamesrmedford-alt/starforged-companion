@@ -22,7 +22,11 @@ two stay in step; `loseConnection` (`!sever`) writes the record's
 #330 D10; a module flag, not the vendor's `completed`, which the sheet shows
 as a forged bond); and `forgeBond` writes `bonded: true` through as that
 `completed` (`setBondItemForged` — issue #342 Z57: the forge reached the
-record only, so the sheet and CHARACTER STATE never showed the bond). The Items are keyed by the record's `_id`
+record only, so the sheet and CHARACTER STATE never showed the bond); and a
+rename — `updateConnection`'s, or the NPC card's in the sidebar
+(`syncEntityRecordNameOnUpdate`) — renames them (`connection.renameBondItems`
+→ `setBondItemName`, found as the connection was named: BOND-ITEM-NAME-STALE,
+the Connections tab and CHARACTER STATE kept the old name). The Items are keyed by the record's `_id`
 (`flags[MODULE].connectionId`, written by every creator) and matched by it
 alone (`actorBridge.bondItemsFor`); the name reaches only an Item with no
 key, and only the PC's one of that name — a same-named sibling's Item is

@@ -1162,6 +1162,31 @@ export async function deleteUnmarkedBondItems({ connectionId } = {}) {
 }
 
 /**
+ * Mirror a connection's rename onto each PC's bond Item (BOND-ITEM-NAME-STALE):
+ * the record and its NPC card took the new name, but the Items kept the old
+ * one, so the vendor Connections tab and CHARACTER STATE (readConnections)
+ * still showed it. `keys` are the connection as it was named — the record's
+ * `_id`, and its OLD name for an unkeyed Item (bondItemsFor's fallback).
+ *
+ * @param {{ connectionId?: string|null, name?: string|null }} keys — the old name
+ * @param {string} name — the new name
+ * @returns {Promise<number>} how many items were updated
+ */
+export async function setBondItemName(keys = {}, name) {
+  const next = typeof name === "string" ? name.trim() : "";
+  if (!next) return 0;
+  let updated = 0;
+  for (const { actor, item } of bondItemsFor(keys)) {
+    if (item.name === next) continue;
+    await item.update({ name: next }).catch(err =>
+      console.warn(`actorBridge | setBondItemName failed:`, err?.message ?? err));
+    invalidateActorCache(actor.id);
+    updated++;
+  }
+  return updated;
+}
+
+/**
  * Mirror a connection's rank onto each PC's bond Item (NARR-BOND-RANK-STALE,
  * narrator-context audit 2026-07): the item's rank was seeded at creation and
  * never updated when the connection record's rank rose (develop-match /
