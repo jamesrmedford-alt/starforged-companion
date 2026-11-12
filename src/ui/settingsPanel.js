@@ -2202,6 +2202,9 @@ export class MoveConfirmDialog extends ApplicationV2 {
   #resolve = null;
   #interp  = null;
   #decided = false;
+  // A card button's move (or another forced move): there is no line to
+  // re-word, so its cancel button reads "Cancel".
+  #forced  = false;
 
   // Most-recently-prompted instance, exposed so callers (and Quench tests)
   // can locate the in-flight dialog without scanning foundry.applications.instances
@@ -2234,13 +2237,15 @@ export class MoveConfirmDialog extends ApplicationV2 {
    * Awaits the inner render so the instance is fully wired (DOM in place,
    * action handlers bound) before the returned promise can be observed.
    * @param {object} interpretation
+   * @param {{ forced?: boolean }} [opts] — a forced move (a card button's)
    * @returns {Promise<boolean>}
    */
-  static async prompt(interpretation) {
+  static async prompt(interpretation, { forced = false } = {}) {
     const dialog = new MoveConfirmDialog({
       id: `${MODULE_ID}-move-confirm-${foundry.utils.randomID()}`,
     });
     dialog.#interp = interpretation;
+    dialog.#forced = forced === true;
     const result = new Promise((resolve) => { dialog.#resolve = resolve; });
     MoveConfirmDialog.#pending = dialog;
     await dialog.render({ force: true });
@@ -2258,6 +2263,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
       mischiefAside:   interp._mischiefAside ?? '',
       applicableAbilities: Array.isArray(interp.applicableAbilities) ? interp.applicableAbilities : [],
       dialLabel,
+      forced:          this.#forced,
     };
   }
 
@@ -2289,7 +2295,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
         ${abilitiesBlock}
         <div class="confirm-actions">
           <button class="settings-btn btn-accept" data-action="accept">Accept — Roll</button>
-          <button class="settings-btn btn-reject" data-action="reject">Re-interpret</button>
+          <button class="settings-btn btn-reject" data-action="reject" title="${context.forced ? 'Nothing is rolled; the button that made this move can be pressed again.' : 'Nothing is rolled; your line goes back in your chat box to re-word and send again.'}">${context.forced ? 'Cancel' : 'Cancel — re-word'}</button>
         </div>
       </div>
     `;
@@ -2523,8 +2529,17 @@ export function openSettingsPanel() {
   return SettingsPanelApp.open();
 }
 
-export async function confirmInterpretation(interpretation) {
-  return MoveConfirmDialog.prompt(interpretation);
+/**
+ * Show the move confirm dialog and await the choice: true to roll, false when
+ * it is cancelled or closed (nothing is rolled — index.js tells the table and
+ * hands a card's button back).
+ *
+ * @param {object} interpretation
+ * @param {{ forced?: boolean }} [opts] — a forced move: its cancel reads "Cancel"
+ * @returns {Promise<boolean>}
+ */
+export async function confirmInterpretation(interpretation, opts = {}) {
+  return MoveConfirmDialog.prompt(interpretation, opts);
 }
 
 /**

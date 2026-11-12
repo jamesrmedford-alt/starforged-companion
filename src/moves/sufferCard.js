@@ -629,7 +629,10 @@ async function handleSufferPick(message, dataset) {
   }
 
   await closeUpgrades();
-  const results = await runSufferResolution(calls, actor, executorOpts);
+  // The card's id goes with the calls: a resist roll it owes is posted as a
+  // forced move that names this card, so a roll that is then not made
+  // re-opens it (reopenSufferCard — issue #347 AB06).
+  const results = await runSufferResolution(calls, actor, { ...executorOpts, sufferCardId: message.id ?? null });
   const missed  = notAppliedLines(calls, results);
   // A loss past a vehicle's or companion's 0 was taken as momentum: the
   // resolved card says so, not the "-1" nothing took (issue #345 AA15).
@@ -645,6 +648,38 @@ async function handleSufferPick(message, dataset) {
     if (missed.length) await reportRefusedCalls(actor, calls, results, executorOpts);
   }
   return { applied: true };
+}
+
+/**
+ * Re-open a suffer card whose pick posted a roll that was then not made — the
+ * resist roll a harm or stress at 0 owes (sufferDialog.js "resist"), whose
+ * confirm dialog was closed or whose reading failed. The pick was claimed
+ * (`resolved`, "Applied: … rolled to resist") before the roll was posted, so
+ * the card said the roll was made and its button was gone for good (issue
+ * #347 AB06). Re-rendered from its own prompt, as a pick with no follow-up
+ * card re-opens it. Runs on the canonical GM (the move pipeline's client).
+ *
+ * @param {string} messageId
+ * @returns {Promise<boolean>} whether the card is open again
+ */
+export async function reopenSufferCard(messageId) {
+  const message = typeof messageId === "string" ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  const f = message?.flags?.[MODULE_ID] ?? {};
+  const prompt = f.sufferPrompt;
+  if (!f.sufferCard || !f.resolved || !prompt) return false;
+  const actor = cardActor(f);
+  if (!actor) return false;
+  const notes = Array.isArray(f.notApplied) ? f.notApplied : [];
+  try {
+    await message.update({
+      [`flags.${MODULE_ID}.resolved`]: false,
+      content: renderSufferCard(prompt, actor, f.pickedIndices ?? [], optionContext(actor, f.executorOpts ?? {}), notes),
+    });
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferCard: card ${messageId} could not re-open:`, err?.message ?? err);
+    return false;
+  }
 }
 
 /**

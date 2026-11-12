@@ -11,6 +11,14 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Alpha 23 playtest (issue #348) — PT11 fixed in the v1.8.1 cycle
+
+| ID | Kind | Fix |
+|---|---|---|
+| PT11 REINTERPRET-SILENT | UX / LOSE-STATE | The confirm dialog's "Re-interpret" settled it false and the pipeline returned: no re-reading, no card, no notice — and a card button's move left its card claimed ("Rolled") for a move never made → the cancel reads "Cancel — re-word" ("Cancel" for a forced move); a "Not rolled" notice is whispered to the author, the roller's players and the GMs; a typed line goes back in its author's chat box; a card's claim is written back (`sourceCard` / `releaseSourceCard`) |
+| AB06 (part) CLAIMED-CARD-FORCED-MOVE-DROPPED | LOCK (dead card) | Issue #347's confirm-closed, owed-resist and inciting-⚔-at-the-lock cases: the card is handed back (the suffer card re-opened, the ⚔ re-armed) and the table told. The GM-handover case stays open with issue #344 |
+| MOVE-BUSY-NOTICE | UX | A line typed while another move was narrated was refused with a toast on the canonical GM's screen only → a "Not rolled" notice is whispered to its author, and the line goes back in their chat box. Free-flow only: in Batch Mode a typed line is table talk |
+
 ### Twelfth bug audit (issue #345) — all seventy fixed and the seven decisions built in the v1.8.1 cycle
 
 Found by the twelfth bug audit (2026-11-10) of `22bdbeb` (the merge of PR
@@ -2052,15 +2060,6 @@ been checked in a live Foundry world yet.
 
 Open — pinned or described, not fixed (each needs a decision first):
 
-- **MOVE-BUSY-NOTICE** (UX). A line typed while another player's move is
-  narrated runs no move, and the "a move is already being resolved" notice
-  shows on the canonical GM's screen (the pipeline runs there), not the
-  typist's — who sees nothing. A KNOWN ISSUE row in `faultMatrix.test.js`
-  pins it and fails once it is fixed. Proposed: whisper the notice to the
-  message's author. Free-flow only: in Batch Mode (issue #340) a typed line
-  is table talk kept as its author's draft, and a round drops no action (the
-  eleventh audit found three ways it did — Z18, Z29, Z31 — all fixed in the
-  v1.8.0).
 - **DRAFT-CONFIRM-TWO-GMS** (DUPLICATE). Two GMs clicking Confirm on the same
   draft at the same moment can still create it twice: the in-flight guard is
   per client. Proposed: relay draft Confirm / Dismiss to the canonical GM

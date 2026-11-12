@@ -130,6 +130,66 @@ export function parseCardButtons(content, dataAction) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// A CARD'S MOVE THAT WAS NOT ROLLED — hand the card back
+// ─────────────────────────────────────────────────────────────────────────────
+
+// A claim path a forced move may name: a flag key, or one level under one
+// (`legacyRolled.<track>`). Anything else is refused, never written.
+const SOURCE_CLAIM_PATH = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_-]+)?$/;
+
+/**
+ * The module flag a card button's forced move carries back to the card it
+ * claimed: which card, which claim, and what releasing it writes — the same
+ * value the button's own failed-post path writes (false, or null for a claim
+ * that records a pick). When the pipeline does not roll the move (its confirm
+ * dialog closed or cancelled, its reading failed), `releaseSourceCard` writes
+ * that value back, so the button can be pressed again (issue #347 AB06).
+ *
+ * @param {string|null} messageId — the claimed card
+ * @param {string} claim — the claimed flag's path under the module's flags
+ * @param {false|null} [release]
+ * @returns {{ sourceCard: { messageId: string, claim: string, release: false|null } }|{}}
+ */
+export function sourceCardFlag(messageId, claim, release = false) {
+  if (typeof messageId !== "string" || !messageId) return {};
+  return { sourceCard: { messageId, claim, release: release === null ? null : false } };
+}
+
+/**
+ * Hand back the card a forced move claimed, when that move was not rolled.
+ * Runs where the pipeline runs (the canonical GM). Only a post a GM made is
+ * trusted — every card button's move is posted by the canonical GM's relay
+ * handler; a player can put any flag on their own chat line. A resist roll a
+ * suffer card owes (`kind: "suffer"`) re-opens that card (sufferCard.js
+ * reopenSufferCard) instead.
+ *
+ * @param {ChatMessage} forced — the forced move's chat message
+ * @returns {Promise<boolean>} whether a card was handed back
+ */
+export async function releaseSourceCard(forced) {
+  const src = forced?.flags?.[MODULE_ID]?.sourceCard;
+  if (!src || typeof src.messageId !== "string" || !src.messageId) return false;
+  if (forced.author?.isGM !== true) {
+    console.warn(`${MODULE_ID} | a forced move not posted by a GM names a card to hand back — ignored.`);
+    return false;
+  }
+  if (src.kind === "suffer") {
+    const { reopenSufferCard } = await import("./sufferCard.js");
+    return reopenSufferCard(src.messageId);
+  }
+  if (typeof src.claim !== "string" || !SOURCE_CLAIM_PATH.test(src.claim)) return false;
+  const card = globalThis.game?.messages?.get?.(src.messageId) ?? null;
+  if (!card) return false;
+  try {
+    await card.update({ [`flags.${MODULE_ID}.${src.claim}`]: src.release === null ? null : false });
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | handing card ${src.messageId} back failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // CONNECTION PICKER — gmRelay "connection.pick"
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -224,7 +284,7 @@ export async function applyConnectionPick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content(label),
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...target } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...target, ...sourceCardFlag(messageId, "resolved") } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | connection pick: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -346,7 +406,7 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true, ...sourceCardFlag(messageId, "waypointRewardClaimed", null) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | waypoint oracle: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -442,6 +502,7 @@ export async function applyFulfilVowPick(payload = {}, ctx = {}) {
           bypassPacing: true, forcedMoveId: forsake ? "forsake_your_vow" : "fulfill_your_vow", deferWhileBusy: true,
           forcedMoveTargetId: choice.itemId,
           ...(choice.name ? { forcedMoveTarget: choice.name } : {}),
+          ...sourceCardFlag(messageId, "resolved"),
         } },
       });
     } catch (err) {
@@ -532,6 +593,7 @@ export async function applyLegacyTrackPick(payload = {}, ctx = {}) {
         flags:   { [MODULE_ID]: {
           bypassPacing: true, forcedMoveId: "continue_a_legacy", deferWhileBusy: true,
           forcedMoveTarget: choice.label ?? track,
+          ...sourceCardFlag(messageId, `legacyRolled.${track}`),
         } },
       });
     } catch (err) {
@@ -614,7 +676,7 @@ export async function applyMilestoneSuggestion(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: "Mark progress on your vow.",
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone", deferWhileBusy: true } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: "reach_a_milestone", deferWhileBusy: true, ...sourceCardFlag(messageId, "milestoneMarked") } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | milestone suggestion: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -750,6 +812,7 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
           bypassPacing: true, forcedMoveId: "fulfill_your_vow", deferWhileBusy: true,
           ...(targetName ? { forcedMoveTarget: targetName } : {}),
           ...(vowItemId ? { forcedMoveTargetId: vowItemId } : {}),
+          ...sourceCardFlag(messageId, "fulfilAttempted"),
         } },
       });
     } catch (err) {
@@ -861,7 +924,7 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true } },
+        flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true, ...sourceCardFlag(messageId, claim) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | ${label}: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -1339,6 +1402,7 @@ export async function applyCombatTrackBattle(payload = {}, ctx = {}) {
           bypassPacing: true, forcedMoveId: "battle", deferWhileBusy: true,
           ...(trackId ? { forcedMoveTargetId: trackId } : {}),
           ...(trackLabel ? { forcedMoveTarget: trackLabel } : {}),
+          ...sourceCardFlag(messageId, "battleClaimed"),
         } },
       });
     } catch (err) {
@@ -1510,7 +1574,7 @@ export async function applyWayOutPick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.narration,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...sourceCardFlag(messageId, "wayOutTaken", null) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | way out: forced-move post failed — the claim is released:`, err?.message ?? err);
