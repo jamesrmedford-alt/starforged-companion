@@ -32,6 +32,7 @@ import {
   withSheetNotes,
 } from '../entities/registry.js';
 import { notesAsCardText } from '../narration/narratorPrompt.js';
+import { getCommandVehicleAsset } from '../character/actorBridge.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { withoutPromotedParagraphs } from '../factContinuity/retractions.js';
 
@@ -1160,6 +1161,16 @@ export class EntityPanelApp extends ApplicationV2 {
       if (wasSelected || isEntityActor(actor)) instance.render();
     });
 
+    // A command vehicle's integrity is its STARSHIP asset's Integrity track
+    // (issue #345 AA20) — an embedded Item, so marking it on the sheet fires
+    // updateItem, which none of the hooks above see: the panel showed the
+    // old value until its next render (ENTITY-PANEL-ASSET-TRACK-STALE).
+    Hooks.on('updateItem', (item, change) => {
+      const instance = EntityPanelApp.#instance;
+      if (!instance?.rendered || !itemUpdateShowsInPanel(item, change)) return;
+      instance.render();
+    });
+
     Hooks.on('updateSetting', EntityPanelApp.onSettingChanged);
     Hooks.on('createSetting', EntityPanelApp.onSettingChanged);
   }
@@ -1229,6 +1240,19 @@ function actorUpdateShowsInPanel(actor, change) {
   if (touchesRecord) return true;
   if (!isEntityActor(actor)) return false;
   return has('name') || has('system.debility') || has('system.notes') || has('system.pronouns');
+}
+
+/**
+ * Whether an embedded Item update changes what the panel shows: the track of
+ * a recorded ship's STARSHIP (command vehicle) asset — the integrity the
+ * panel reads (registry withSheetNotes → readCommandVehicleIntegrity).
+ */
+function itemUpdateShowsInPanel(item, change) {
+  if (!change || typeof change !== 'object' || item?.type !== 'asset') return false;
+  if (!foundry.utils.hasProperty(change, 'system.track')) return false;
+  const actor = item.parent ?? null;
+  if (!actor || !isEntityActor(actor)) return false;
+  return getCommandVehicleAsset(actor)?.id === item.id;
 }
 
 /**
