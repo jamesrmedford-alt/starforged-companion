@@ -168,7 +168,7 @@ import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 import { wholeWordsFit } from "./context/relevanceResolver.js";
 import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
-import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced } from "./session/lifecycle.js";
+import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced, serialiseSessionMint } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
 import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js";
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
@@ -202,7 +202,7 @@ import {
   syncCommandVehicleTokenToPosition,
   checkedTokenDragCourse,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, advertiseOpenRouterKeyPresence, registerKeyRegistryHealing, onGmLoadChange, onGmStoodDown } from "./multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, advertiseOpenRouterKeyPresence, registerKeyRegistryHealing, onGmLoadChange, onGmStoodDown, gmPageCanAct } from "./multiplayer/gmGate.js";
 import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.js";
 import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWatch.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
@@ -1204,6 +1204,13 @@ export function registerChatHook() {
   // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
   Hooks.on("updateSetting", (setting) => Promise.resolve(restoreLockOverCarriedBackClaim(setting)).catch(err =>
     console.warn(`${MODULE_ID} | putting the move lock back failed:`, err?.message ?? err)));
+  // …and the reverse: a live claim a co-GM's stale write freed is put back by
+  // its claimant (LOCK-LOST-BY-COGM-STALE-WRITE); a claim of a GM who is gone,
+  // carried back after the handover freed it, is freed again by the canonical
+  // GM (LOCK-RESURRECTED-DEPARTED-CLAIMANT).
+  Hooks.on("updateSetting", onLockFreedUnderLiveClaim);
+  Hooks.on("updateSetting", (setting) => Promise.resolve(releaseLockOfAbsentClaimant(setting)).catch(err =>
+    console.warn(`${MODULE_ID} | freeing a departed GM's move lock failed:`, err?.message ?? err)));
   // When the canonical GM changes, held forced moves follow it: this GM's go
   // to the new one (handOverHeldForcedMoves), or this GM drains its own once
   // it is the canonical GM again (issue #347 AB06).
@@ -1412,6 +1419,97 @@ function restoreLockOverCarriedBackClaim(setting) {
     return game.settings.set(MODULE_ID, "campaignState",
       { ...now, pendingMove: true, pendingMoveBy: game.user.id, pendingMoveClaim: _heldMoveLockClaim });
   }, "move lock put back");
+}
+
+// ── A live claim a stale write freed (LOCK-LOST-BY-COGM-STALE-WRITE) ────────
+// The reverse of the above: a co-GM's write built before this client's claim
+// reached her lands after it, carrying `pendingMove: false` over the live
+// claim, and a second pipeline could start. While this page holds a claim and
+// can act, nothing but its own release frees that claim — the W25 handover and
+// the ready resets free only the lock of a GM who is gone or whose page stood
+// down (and then this page writes nothing). So a store whose lock is free while
+// the claim is live — claimed, and no release of it asked for yet — lost it to
+// a stale write: the claimant puts it back.
+
+// The claim this client's move or round holds and has not yet asked to
+// release (claimPendingMoveLock sets it; releasePendingMoveLock clears it as
+// it is called, before its write — so the free lock that write brings back is
+// never read as lost, and a release the world refused leaves nothing to put
+// back).
+let _liveMoveLockClaim = null;
+
+/**
+ * `updateSetting`: the move lock came back free while this client's move
+ * holds a live claim — a stale write freed it. Put the claim back, on the
+ * client's write chain, while the store is still free and the claim still
+ * live. A store holding another claim is left alone: a spent one is freed by
+ * its own claimant (restoreLockOverCarriedBackClaim), which brings this check
+ * back; a live one is that GM's.
+ *
+ * @param {{ key?: string }} setting
+ * @returns {Promise<unknown>|undefined}
+ */
+function restoreLiveClaimOverStaleWrite(setting) {
+  if (setting?.key !== `${MODULE_ID}.campaignState`) return undefined;
+  const live = _liveMoveLockClaim;
+  if (!live || pageIsStale()) return undefined;
+  if (game.settings.get(MODULE_ID, "campaignState")?.pendingMove) return undefined;
+  console.warn(`${MODULE_ID} | A write freed the move lock this client's move still holds — putting it back.`);
+  return serialiseCampaignStateWrite(() => {
+    const now = game.settings.get(MODULE_ID, "campaignState");
+    if (now?.pendingMove || _liveMoveLockClaim !== live) return undefined;
+    return game.settings.set(MODULE_ID, "campaignState",
+      { ...now, pendingMove: true, pendingMoveBy: game.user.id, pendingMoveClaim: live });
+  }, "live move lock put back");
+}
+
+/**
+ * `updateSetting` on every client — only the client whose move holds the
+ * live claim acts (restoreLiveClaimOverStaleWrite): the one fact only its own
+ * page knows, as a GM's key-registry entry is. Never throws.
+ *
+ * @param {{ key?: string }} setting
+ */
+function onLockFreedUnderLiveClaim(setting) {
+  Promise.resolve(restoreLiveClaimOverStaleWrite(setting)).catch(err =>
+    console.warn(`${MODULE_ID} | putting the live move lock back failed:`, err?.message ?? err));
+}
+
+// ── A departed claimant's lock carried back (LOCK-RESURRECTED-DEPARTED-CLAIMANT)
+// A stale write that brings back a claim the W25 handover (or a ready reset)
+// released has no claimant left to undo it: restoreLockOverCarriedBackClaim
+// runs on the claimant, and it is gone. The lock held until the next GM load.
+
+// Locks this client is freeing for an absent claimant, by claim: one release each.
+const _absentClaimReleases = new Set();
+
+/**
+ * `updateSetting` (the canonical GM): the store holds a move lock whose
+ * claimant is not connected, or whose page stood down (gmGate.js
+ * gmPageCanAct) — free it, under its own claim's token so a claim stored since
+ * is left alone. The handover's card told the GMs when the claimant left; a
+ * lock carried back after it is freed with a console warning only.
+ *
+ * @param {{ key?: string }} setting
+ * @returns {Promise<unknown>|undefined}
+ */
+function releaseLockOfAbsentClaimant(setting) {
+  if (setting?.key !== `${MODULE_ID}.campaignState` || !isCanonicalGM()) return undefined;
+  const state = game.settings.get(MODULE_ID, "campaignState");
+  if (!state?.pendingMove) return undefined;
+  const holderId = state.pendingMoveBy ?? null;
+  if (!holderId || holderId === game.user?.id) return undefined;
+  const holder = game.users?.get?.(holderId) ?? null;
+  if (!holder || (holder.active && gmPageCanAct(holderId))) return undefined;
+  const claim = state.pendingMoveClaim ?? null;
+  const key = claim ?? `by:${holderId}`;
+  if (_absentClaimReleases.has(key)) return undefined;
+  _absentClaimReleases.add(key);
+  return releasePendingMoveLock(claim)
+    .then(released => {
+      if (released) console.warn(`${MODULE_ID} | The move lock of ${holder.name ?? holderId}, who is gone, was carried back by a write — freed again.`);
+    })
+    .finally(() => { _absentClaimReleases.delete(key); });
 }
 
 // ── Forced moves held while another move is resolved (issue #325 W02) ───────
@@ -2600,6 +2698,7 @@ export async function claimPendingMoveLock({ heldMove = false } = {}) {
   }
   if (outcome === "busy") return { claim: null, busy: true };
   _heldMoveLockClaim = claim;
+  _liveMoveLockClaim = claim;
   return { claim };
 }
 
@@ -2655,6 +2754,9 @@ export function isMoveLockFreeHere() {
  *   claim's — false when the release was refused (the caller retries it)
  */
 export function releasePendingMoveLock(claim = null) {
+  // Its claim is no longer live once its release is asked for: the free lock
+  // this write brings back is not a stale write's (restoreLiveClaimOverStaleWrite).
+  if (!claim || claim === _liveMoveLockClaim) _liveMoveLockClaim = null;
   const release = serialiseCampaignStateWrite(() => {
     const latestState = game.settings.get(MODULE_ID, "campaignState");
     if (!latestState?.pendingMove) {               // already released — cheap no-op
@@ -8161,7 +8263,10 @@ Hooks.once("ready", () => {
     // Whether the session start's write cleared the stale lock: the GMs are
     // told once it has landed (issue #347 AB14).
     let staleLockCleared = false;
-    initSessionId(prevState).then(updated => serialiseCampaignStateWrite(() => {
+    // One mint at a time on this client: a Begin a Session relayed here during
+    // this mint's summary call waits for it to land, then begins the session
+    // it minted (SESSION-MINT-RACE).
+    serialiseSessionMint(() => initSessionId(prevState).then(updated => serialiseCampaignStateWrite(() => {
       const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
       const clearLock = !!staleLock && !!latest.pendingMove && (latest.pendingMoveClaim ?? null) === staleLock.claim;
       const minted = (updated?.currentSessionId ?? null) !== priorSessionId;
@@ -8172,7 +8277,7 @@ Hooks.once("ready", () => {
       ];
       return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"))
         .then(() => { staleLockCleared = clearLock; });
-    }, "session start")).then(async () => {
+    }, "session start"))).then(async () => {
       noteSessionReplaced();
       if (staleLockCleared) await postMoveLockReleasedCard(staleLockReleasedText(staleLock?.holder ?? null));
       // A session closed out short — by this mint, or one before it on a

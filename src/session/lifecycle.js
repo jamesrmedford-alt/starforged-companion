@@ -52,6 +52,7 @@
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { resolveNarrationPerspective } from "../narration/narratorPrompt.js";
+import { settledWithin } from "../multiplayer/settleWithin.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -257,17 +258,64 @@ export function sessionNeedsMint(campaignState, now = Date.now()) {
 let _sessionBeingReplaced = null;
 
 /**
- * At the canonical GM's world load, before its mint starts: when the stored
- * session is over (sessionNeedsMint), it is the one this load replaces.
+ * At the canonical GM's world load, before its mint starts — and at any mint's
+ * start (rollSessionIfDue: Begin a Session's too, BEGIN-MINT-LINE-WINDOW):
+ * when the stored session is over (sessionNeedsMint), it is the one being
+ * replaced.
  *
- * @param {Object} campaignState — as the load read it
+ * @param {Object} campaignState — as the load (or the mint) read it
+ * @param {number} [now] — epoch ms
  */
-export function noteSessionBeingReplaced(campaignState) {
-  _sessionBeingReplaced = sessionNeedsMint(campaignState) ? (campaignState?.currentSessionId ?? "") : null;
+export function noteSessionBeingReplaced(campaignState, now = Date.now()) {
+  _sessionBeingReplaced = sessionNeedsMint(campaignState, now) ? (campaignState?.currentSessionId ?? "") : null;
+}
+
+// The world load's session mint on this client, until it is persisted
+// (serialiseSessionMint); a Begin a Session waits for it (sessionMintsSettled).
+let _mintChain = Promise.resolve();
+
+/**
+ * How long a Begin waits for the load's mint: as long as a Begin waits for
+ * the Begin ahead (sessionLifecycleDialogs.js SESSION_CHAIN_WAIT_MS) — a mint
+ * whose write the server never answers must not hold every later Begin (issue
+ * #347 AB05).
+ */
+const SESSION_MINT_WAIT_MS = 5 * 60_000;
+
+/**
+ * Run the world load's session mint — rollSessionIfDue and the persist of
+ * what it minted — as the mint a Begin a Session waits for
+ * (sessionMintsSettled). The load's mint and a Begin landing during its
+ * summary call both read the closing session as over and both minted; the
+ * load's write then overwrote Begin's session id and its open gate
+ * (SESSION-MINT-RACE). Behind the load's, Begin reads the session the load
+ * minted, which needs no mint, and begins it. (Begins wait for each other on
+ * their own chain; the load's mint starts at `ready`, before a Begin can be
+ * relayed to this page.) The caller gets the task's own result or rejection.
+ *
+ * @template T
+ * @param {() => Promise<T>} task
+ * @returns {Promise<T>}
+ */
+export function serialiseSessionMint(task) {
+  const run = _mintChain.then(() => task());
+  _mintChain = run.then(() => undefined, () => undefined);
+  return run;
 }
 
 /**
- * The load's mint has landed: the session it replaced is no longer current.
+ * Settles once the world load's mint on this client has been persisted (or
+ * failed) — at most SESSION_MINT_WAIT_MS, warned. Begin a Session and the
+ * Campaign Start's begin read campaignState only after it (SESSION-MINT-RACE).
+ *
+ * @returns {Promise<boolean>} whether it settled in time
+ */
+export function sessionMintsSettled() {
+  return settledWithin(_mintChain, SESSION_MINT_WAIT_MS, "the world load's session mint");
+}
+
+/**
+ * A mint has landed — the load's, or Begin a Session's: the session it replaced is no longer current.
  * (A refused mint leaves the note: the stored session stays over until the
  * next mint — a Begin a Session — changes its id.)
  */
@@ -402,6 +450,13 @@ export function mintSession(campaignState, now = Date.now()) {
  */
 export async function rollSessionIfDue(campaignState, { now = Date.now() } = {}) {
   if (!sessionNeedsMint(campaignState, now)) return false;
+  // The closing session is over at once, for every caller — the world load and
+  // Begin a Session alike: no typed line is narrated into it, and no Batch
+  // Mode round reads, resolves or opens in it, while its summary call and
+  // scene close run (issue #345 AA58's window, at Begin's own mint —
+  // BEGIN-MINT-LINE-WINDOW). The note clears itself once the minted session is
+  // stored (sessionBeingReplaced).
+  noteSessionBeingReplaced(campaignState, now);
   const closing = campaignState.currentSessionId;
   const ended   = !!closing && campaignState.sessionEndedId === closing;
   // Whether the closing session's summary covers it now. The finalise is

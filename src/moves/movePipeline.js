@@ -339,12 +339,12 @@ export async function readMove({
   // posts the move again with that vow's copy, as the roller (issue #321
   // U02). A shared vow's copies are one vow (selectFulfilVow).
   if (interpretation.moveId === "fulfill_your_vow" && !interpretation.moveTargetId) {
-    const { vow, choices, completed } = selectFulfilVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
+    const { vow, choices, completed, forsaken } = selectFulfilVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
       { rollerActorId: rollerActor?.id ?? null });
     // It names a vow that is already fulfilled: nothing is rolled, and no
     // other vow is scored in its place (issue #325 W29).
     if (!vow && completed) {
-      targetChoice = { kind: "vow-gone" };
+      targetChoice = { kind: "vow-gone", forsaken: forsaken === true };
     } else if (!vow && choices.length >= 2) {
       targetChoice = { kind: "vow", vows: choices };
     }
@@ -358,13 +358,13 @@ export async function readMove({
   // AA16: two open copies table-wide cleared nothing behind "Vow cleared.";
   // AA49: a crewmate's exact-name vow beat the roller's whole-word one).
   if (interpretation.moveId === "forsake_your_vow" && !interpretation.moveTargetId) {
-    const { vow, choices, completed } = selectForsakeVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
+    const { vow, choices, completed, forsaken } = selectForsakeVow(await readAllVows(speakerActorId), interpretation.moveTarget ?? null,
       { rollerActorId: rollerActor?.id ?? null });
     if (vow) {
       interpretation.moveTargetId = vow.id;
       interpretation.moveTarget   = vow.name || (interpretation.moveTarget ?? null);
     } else if (completed) {
-      targetChoice = { kind: "vow-gone" };
+      targetChoice = { kind: "vow-gone", forsaken: forsaken === true };
     } else if (choices.length) {
       targetChoice = { kind: "vow", vows: choices, moveId: "forsake_your_vow" };
     }
@@ -548,6 +548,9 @@ function readingFromMove(read, { forced = null } = {}) {
   const statOptions = [...new Set(abilities
     .map(a => (typeof a.statReplacement === "string" ? a.statReplacement : ""))
     .filter(Boolean))];
+  // `blocked`: a closed vow it names — "vow-forsaken" when that vow was
+  // forsaken, so the refusal does not say it was fulfilled
+  // (ROUND-VOW-GONE-SAYS-FULFILLED).
   return {
     kind:           READING_KIND.MOVE,
     moveId:         interpretation.moveId ?? null,
@@ -558,7 +561,7 @@ function readingFromMove(read, { forced = null } = {}) {
     abilities,
     statOptions,
     targetChoices:  targetOptionsFrom(read.targetChoice),
-    blocked:        read.targetChoice?.kind === "vow-gone" ? "vow-gone" : null,
+    blocked:        read.targetChoice?.kind === "vow-gone" ? (read.targetChoice.forsaken ? "vow-forsaken" : "vow-gone") : null,
     forced: forced ? {
       tokenDragSetCourse:     forced.tokenDragSetCourse ?? null,
       incitingSwearMessageId: forced.incitingSwearMessageId ?? null,

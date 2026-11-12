@@ -92,6 +92,10 @@ recorded under its name promoted to it; its bond is §2's.
   `moveTarget` → `runPostNarrationPasses` → `routeEntityDrafts`' `targetName`;
   KNOWN-NPC-CONNECTION-NO-TARGET — "I win her over" with two known NPCs in the
   narration got the GMs' notice); several, none
+  another player's NPC as the roller's; and its candidates are only the NPCs
+  its own line or the narration names — `narrationText` —
+  ROUND-CONNECTION-OTHER-LINE-CANDIDATE): the one
+  it names, else — naming none — the one the narration names; several, none
   is guessed and the GMs are whispered which (issue #347 AB10 — the first
   pending row named anywhere was confirmed, so a hit with Sable whose
   narration had pending Dace at the bar bonded Dace, and the pending rows

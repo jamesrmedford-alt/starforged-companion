@@ -28,6 +28,7 @@ import {
   startReading,
   advanceRound,
   requestSendNow,
+  requestDiscardThenOff,
   closeCollectingRound,
   openRoundIfDue,
   keepUpgrade,
@@ -236,6 +237,31 @@ export async function applyBatchSendNow(payload = {}, ctx = {}) {
   }
   const res = await requestSendNow({ modeOffAfter: payload.modeOffAfter === true });
   if (!res.ok && SEND_NOW_REFUSALS[res.reason]) await tellRequester(ctx, SEND_NOW_REFUSALS[res.reason]);
+  return res;
+}
+
+/**
+ * gmRelay "batch.discardThenOff" (GMs only) — the toolbar switch's "Discard
+ * the round": Batch Mode off, the collecting round closed with it, decided on
+ * the canonical GM's own round chain (driver.js requestDiscardThenOff). A
+ * round that began resolving meanwhile finishes, then the mode turns off —
+ * the GM who pressed it is told (BATCH-OFF-DIALOG-HANDOVER-WINDOW).
+ *
+ * @param {{ roundId?: string }} payload
+ */
+export async function applyBatchDiscardThenOff(_payload = {}, ctx = {}) {
+  if (!await requireGm(ctx, "turn Batch Mode off")) return { ok: false, reason: "not-gm" };
+  let res;
+  try {
+    res = await requestDiscardThenOff();
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Batch Mode could not be turned off:`, err?.message ?? err);
+    await tellRequester(ctx, "Batch Mode could not be turned off — the world did not save it.");
+    return { ok: false, reason: "refused" };
+  }
+  if (res?.reason === "mode-off-after") {
+    await tellRequester(ctx, "the round is being resolved — Batch Mode turns off when it finishes.");
+  }
   return res;
 }
 

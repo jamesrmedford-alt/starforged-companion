@@ -214,8 +214,13 @@ async function beginSessionOnce(payload) {
   let begun = false;
   let sessionId = null;
   try {
-    const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS } = await import("../session/lifecycle.js");
+    const { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS, sessionMintsSettled, noteSessionReplaced } = await import("../session/lifecycle.js");
     const { writeOwnedFields } = await import("../factContinuity/sceneLifecycle.js");
+    // Read once the world load's mint on this client has landed — this Begin
+    // may arrive during its summary call: both minted, and the load's write
+    // overwrote Begin's session id and open gate (SESSION-MINT-RACE). After
+    // it, Begin reads the session the load minted.
+    await sessionMintsSettled();
     const cs = foundry.utils.deepClone(game.settings.get(MODULE_ID, "campaignState") ?? {});
     await rollSessionIfDue(cs);
     if (cs.currentSessionId && cs.sessionStartedId === cs.currentSessionId) {
@@ -235,6 +240,9 @@ async function beginSessionOnce(payload) {
     // On the client's campaignState write chain, merged onto the store as
     // the write ahead left it (CAMPSTATE-CHAIN-PARTIAL).
     await writeOwnedFields(cs, BEGIN_SESSION_FIELDS.concat(SESSION_MINT_FIELDS), "begin session");
+    // Its mint (if any) has landed: the session it replaced is no longer current
+    // (rollSessionIfDue noted it — BEGIN-MINT-LINE-WINDOW).
+    noteSessionReplaced();
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     begun = true;
   } catch (err) {
