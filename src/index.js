@@ -40,7 +40,7 @@ import {
   getCommandVehicleActor,
 } from "./moves/abilityScanner.js";
 import { rollChallengeDice }     from "./moves/resolver.js";
-import { markLegacyTrack, legacyProgress, deferLegacyXp, payDeferredLegacyXp } from "./moves/legacyTracks.js";
+import { markLegacyOnCopy, legacyProgress, deferLegacyXp, payDeferredLegacyXp } from "./moves/legacyTracks.js";
 import { rollYesNo, rollOracle, ORACLE_TABLES } from "./oracles/roller.js";
 import {
   openSetFlagDialog,
@@ -4690,8 +4690,9 @@ const LEGACY_LABELS = { discoveries: "Discoveries", quests: "Quests", bonds: "Bo
 export function addLegacyTicks(campaignState, key, ticks, { awardXp = true } = {}) {
   campaignState.legacyTracks ??= {};
   const before = legacyProgress(campaignState.legacyTracks[key]);
-  const marked = markLegacyTrack(campaignState.legacyTracks[key], ticks);
-  campaignState.legacyTracks[key] = marked.track;
+  // Recorded by the copy: its persist applies the marks to the stored track
+  // (LEGACY-SHEET-DECREASE).
+  const marked = markLegacyOnCopy(campaignState, key, ticks);
   noteUnsavedOnCopy(campaignState, { step: "legacy", track: key, ticks });
   if (awardXp && legacyProgress(marked.track) > before) {
     // Once the copy is saved, every PC's sheet shows the mark — and the XP a

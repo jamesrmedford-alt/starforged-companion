@@ -22,9 +22,10 @@
  * records compare by their progress (legacyProgress), which only ever grows.
  *
  * Pure: no Foundry, no mutation of the records passed in. index.js
- * addLegacyTicks is the one writer; persistResolution.js merges with it. The
- * one piece of state here is the XP a working copy owes until it is saved
- * (deferLegacyXp / payDeferredLegacyXp, below).
+ * addLegacyTicks is the one writer (markLegacyOnCopy); persistResolution.js
+ * applies a copy's marks to the store (legacyTracksWithCopyMarks). The state
+ * here is by working copy: the ticks it marked, and the XP it owes until it
+ * is saved (deferLegacyXp / payDeferredLegacyXp, below).
  */
 
 export const LEGACY_TICKS_PER_BOX = 4;
@@ -127,28 +128,68 @@ export function legacyTrackFromProgress(progress) {
   return { ticks: p - cycles * LEGACY_CYCLE_TICKS, cleared: cycles > 0, cycles };
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Marks made on a working copy (LEGACY-SHEET-DECREASE)
+// ─────────────────────────────────────────────────────────────────────────────
+
 /**
- * The record further along of two copies of one legacy track (the stored one
- * and a pipeline's working copy): ticks only ever increase, so the one with
- * more progress has every mark the other has. Equal progress with a clear on
- * one side is the cleared one (a track frozen at 40 and its clear to 0 are
- * the same marks). A record present on one side only is returned as it is;
- * null when both are absent.
+ * The ticks marked on a working copy, per track, keyed by that copy. The
+ * persist merge (persistResolution.js) applies them to the stored record
+ * rather than keeping whichever record is further along: a legacy lowered on
+ * a sheet meanwhile (the Legacies tab's ◂ — sharedLegacies.js) flowed back to
+ * the shared track, and a move whose copy was read before it raised the
+ * track again on its persist (LEGACY-SHEET-DECREASE).
+ */
+const MARKS_ON_COPY = new WeakMap();
+
+/**
+ * Mark ticks on a working copy's legacy track and record them by the copy:
+ * index.js addLegacyTicks, the one writer. Mutates `campaignState`.
  *
- * @param {Object|null|undefined} a
- * @param {Object|null|undefined} b
+ * @param {Object} campaignState — the working copy
+ * @param {string} key — "quests" | "bonds" | "discoveries"
+ * @param {number} ticks
+ * @returns {ReturnType<typeof markLegacyTrack>}
+ */
+export function markLegacyOnCopy(campaignState, key, ticks) {
+  campaignState.legacyTracks ??= {};
+  const marked = markLegacyTrack(campaignState.legacyTracks[key], ticks);
+  campaignState.legacyTracks[key] = marked.track;
+  const add = Math.max(0, Math.floor(Number(ticks) || 0));
+  if (add) {
+    const marks = MARKS_ON_COPY.get(campaignState) ?? new Map();
+    marks.set(key, (marks.get(key) ?? 0) + add);
+    MARKS_ON_COPY.set(campaignState, marks);
+  }
+  return marked;
+}
+
+/**
+ * The stored legacy tracks with a working copy's own marks applied — what
+ * the copy's persist writes. A track the copy marked is the stored record
+ * marked again by those ticks (a concurrent `!bond` mark kept beside it, as
+ * the merge by progress lost one of two); one it did not mark is the stored
+ * record, as it stands — lowered on a sheet since the copy was read included
+ * (LEGACY-SHEET-DECREASE: the merge kept the copy's higher, stale record). A
+ * track the store does not hold is the copy's.
+ *
+ * @param {Object|null|undefined} store — the stored `legacyTracks`
+ * @param {Object|null|undefined} working — the copy's `legacyTracks`
+ * @param {Object|null} copy — the copy the marks were made on (markLegacyOnCopy's)
  * @returns {Object|null}
  */
-export function mergeLegacyTrack(a, b) {
-  if (!a && !b) return null;
-  if (!a) return b;
-  if (!b) return a;
-  const na = normaliseLegacyTrack(a);
-  const nb = normaliseLegacyTrack(b);
-  const pa = legacyProgress(na);
-  const pb = legacyProgress(nb);
-  if (pb > pa || (pb === pa && nb.cycles > na.cycles)) return nb;
-  return na;
+export function legacyTracksWithCopyMarks(store, working, copy) {
+  const s = (store   && typeof store   === "object") ? store   : null;
+  const w = (working && typeof working === "object") ? working : null;
+  if (!s && !w) return null;
+  const marks = (copy && MARKS_ON_COPY.get(copy)) ?? null;
+  const out = {};
+  for (const key of new Set([...Object.keys(s ?? {}), ...Object.keys(w ?? {})])) {
+    const add = marks?.get(key) ?? 0;
+    if (s?.[key]) out[key] = add > 0 ? markLegacyTrack(s[key], add).track : normaliseLegacyTrack(s[key]);
+    else if (w?.[key]) out[key] = w[key];
+  }
+  return out;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

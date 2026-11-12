@@ -441,8 +441,9 @@ it lives — journal track *and* actor items (`completeVowItemByName` /
 `completeVowItem`) — and pays quests legacy + connection deepen + reward
 exactly once (`fulfilPaid` item flag; the pipeline path passes
 `skipLegacy: true` to `payFulfilledVowNative` and pays legacy on its own
-campaignState object, which `persistResolution` merges onto the stored state
-keeping the higher legacy tick count). See `vow-flow.md` §4 for how the
+campaignState object, whose marks `persistResolution` applies to the stored
+track — `legacyTracksWithCopyMarks`; it kept the higher record, so a track
+lowered on a sheet meanwhile was raised again, LEGACY-SHEET-DECREASE). See `vow-flow.md` §4 for how the
 reward finds the roller's copy once every copy is already completed.
 
 Winning a fight grants **no direct XP or legacy** — quests-legacy ticks come

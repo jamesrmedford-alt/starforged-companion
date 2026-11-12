@@ -311,8 +311,8 @@ closes **every open item copy** across PCs of the roller's vow — the Item
 the roll scored (`tickInfo.trackId`), else the roller's exact-name vow;
 payoff via `payFulfilledVowNative` with `skipLegacy:true`, `actorId` = the
 roller and the same `itemId` (quests legacy is paid on
-the pipeline's own campaignState object, which `persistResolution` merges
-onto the stored state keeping the higher tick count) — connection
+the pipeline's own campaignState object, whose marks `persistResolution`
+applies to the stored track — `legacyTracksWithCopyMarks`, LEGACY-SHEET-DECREASE) — connection
 deepen (`deepenLinkedConnection`, scaled by `marksForSourceRank(rank)`; the
 vow's linked connection by name alone, `strict` — a link severed or renamed
 deepens nothing and goes on the GMs' payoff card, where it deepened the sole
