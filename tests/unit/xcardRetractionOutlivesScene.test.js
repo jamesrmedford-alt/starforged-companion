@@ -336,6 +336,24 @@ describe('XCARD-DURING-SCENE-END-RACE — an X-Card played while a scene ends ke
     expect(liveTruths(DEAD)).toEqual([]);
   });
 
+  // XCARD-STRIKE-ENDSCENE-RACE: the GM struck this scene's narration truth,
+  // and the X-Card on that narration lands while the scene ends — the end's
+  // copy still holds the GM's strike, which used to be kept and named again.
+  it('a strike made in this scene, X-carded while the scene ends: kept unnamed, still blocking', async () => {
+    // The second truth is archived — the page creation the end is held at.
+    await narrate('nar-1', [{ subject: 'Vance', fact: DEAD }, { subject: 'Kira', fact: 'Took the shuttle' }]);
+    await strike(DEAD);
+    expect(corrected()).toContain(DEAD);                            // control: the GM's strike is named
+
+    await endSceneWhile(async () => { await playXCard(); resume(); });
+
+    expect(named()).toEqual([]);
+    expect(corrected()).not.toContain(DEAD);
+    await someoneSpeaks();
+    await narrate('nar-2', [{ subject: 'Vance', fact: DEAD }]);
+    expect(liveTruths(DEAD)).toEqual([]);
+  });
+
   it("control: with no X-Card meanwhile, the end keeps the scene's strike named and its live narration truth for a later X-Card", async () => {
     await narrate('nar-1', [{ subject: 'Vance', fact: DEAD }, { subject: 'Kira', fact: 'Took the shuttle' }]);
     await strike(DEAD);
