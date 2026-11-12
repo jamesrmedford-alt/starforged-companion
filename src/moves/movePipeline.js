@@ -668,6 +668,9 @@ function substitutingAssetId(interpretation, stat) {
   const ids = new Set((Array.isArray(interpretation?.applicableAbilities) ? interpretation.applicableAbilities : [])
     .filter(a => keys.has(a?.key) && a.statReplacement === stat && a.source === "character" && a.assetId)
     .map(a => a.assetId));
+  // Two offered it: the one the confirm's radio named (COMPANION-TRIGGER-SWAP-UNCUED).
+  const picked = typeof interpretation?.appliedStatAssetId === "string" ? interpretation.appliedStatAssetId : null;
+  if (picked && ids.has(picked)) return picked;
   return ids.size === 1 ? [...ids][0] : null;
 }
 
