@@ -614,20 +614,19 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
   let truthsContent = "";
 
   // Resolve the world-truths journal. Prefer the stored id, but tolerate stale
-  // or missing ids by searching for the system "Setting Truths" journal (i18n
-  // key TypeTruth) and the module's own "World Truths" journal as fallbacks.
-  // When the dialog is re-run or the original journal is deleted/recreated,
-  // worldTruthsJournalId can point at a document that no longer exists.
-  let entry = campaignState.worldTruthsJournalId
-    ? (game.journal?.get(campaignState.worldTruthsJournalId) ?? null)
-    : null;
+  // or missing ids by searching for the system "Setting Truths" journals (i18n
+  // key TypeTruth) and the module's own truths journal (by its flag) as
+  // fallbacks. When the dialog is re-run or the original journal is
+  // deleted/recreated, worldTruthsJournalId can point at a document that no
+  // longer exists — or, linked by name before LORE-JOURNAL-BY-NAME, at a GM's
+  // own notes, which is not used.
+  let entry = linkedLoreTruthsJournal(campaignState);
 
   if (!entry) {
-    // Newest first (issue #321 U65 — the first match was the oldest).
-    const candidates = journalsNewestFirst([systemTruthsTitle() || "Setting Truths", JOURNAL_NAME]);
-    // Prefer a candidate whose first page holds truths (holdsTruths — the
-    // same test the createJournalEntryPage hook makes).
-    entry = candidates.find(j => holdsTruths(j.pages?.contents?.[0]?.text?.content ?? "")) ?? candidates[0] ?? null;
+    // A truths journal by what it is, never by the name "World Truths"
+    // (LORE-JOURNAL-BY-NAME): a GM's own notes of that name were read as the
+    // truths, linked as the campaign's, and given "The Story So Far".
+    entry = findLoreTruthsJournal();
 
     if (entry && entry.id !== campaignState.worldTruthsJournalId) {
       // Linked with the truths it holds, so the narrator reads the truths this
@@ -756,17 +755,53 @@ async function writeLoreRecapToJournal(recap, campaignState) {
     }
   }
 
-  // Prefer the journal we already know about (system-created or ours)
-  if (campaignState.worldTruthsJournalId) {
-    const je = game.journal?.get(campaignState.worldTruthsJournalId);
-    if (je) { await upsertPage(je); return; }
-  }
-
-  // Fallback by name — accept the system's localized "Setting Truths" too,
-  // not only the module's own "World Truths" journal.
-  const systemTitle = game.i18n?.localize?.("IRONSWORN.JOURNALENTRYPAGES.TypeTruth") ?? "Setting Truths";
-  const je = game.journal?.getName(systemTitle) ?? game.journal?.getName(JOURNAL_NAME);
+  // The journal the campaign links (a dialog save or ours), else a truths
+  // journal found by what it is. It fell back by name, so a GM's own "World
+  // Truths" notes took the page (LORE-JOURNAL-BY-NAME).
+  const je = linkedLoreTruthsJournal(campaignState) ?? findLoreTruthsJournal();
   if (je) await upsertPage(je);
+}
+
+/**
+ * Whether `journal` is a truths journal: the module's own (its flag), one
+ * holding saved truths, or one the system's dialog titled ("Setting
+ * Truths" — a save whose page the dialog left empty is still one).
+ */
+function isLoreTruthsJournal(journal) {
+  if (!journal) return false;
+  if (isModuleTruthsJournal(journal) || truthsPageHtml(journal)) return true;
+  const title = systemTruthsTitle() || "Setting Truths";
+  return journal.name === title;
+}
+
+/** The campaign's linked truths journal (`worldTruthsJournalId`) when it is one (isLoreTruthsJournal), else null. */
+function linkedLoreTruthsJournal(campaignState) {
+  const id = campaignState?.worldTruthsJournalId;
+  const linked = id ? (game.journal?.get(id) ?? null) : null;
+  return isLoreTruthsJournal(linked) ? linked : null;
+}
+
+/**
+ * A truths journal for `!lore` when the campaign links none: the newest of
+ * the module's own (by its flag) and the system dialog's saves (by the
+ * system's title), one holding truths first (issue #321 U65 — newest first).
+ * Never a journal found by the name "World Truths" alone — a GM's own notes
+ * of that name (LORE-JOURNAL-BY-NAME).
+ *
+ * @returns {JournalEntry|null}
+ */
+function findLoreTruthsJournal() {
+  const title = systemTruthsTitle() || "Setting Truths";
+  const candidates = (game.journal?.contents ?? [])
+    .map((j, order) => ({ j, order }))
+    .filter(({ j }) => isModuleTruthsJournal(j) || j?.name === title)
+    .sort((a, b) => (createdTime(b.j) - createdTime(a.j)) || (b.order - a.order))
+    .map(({ j }) => j);
+  const holds = (j) => {
+    const truths = truthsFromJournal(j);
+    return !!truths && Object.keys(truths).length > 0;
+  };
+  return candidates.find(holds) ?? candidates.find(j => !isModuleTruthsJournal(j)) ?? candidates[0] ?? null;
 }
 
 

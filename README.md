@@ -235,44 +235,39 @@ reference, settings documentation, troubleshooting guide, and changelog.
 
 ## Cost and API usage
 
-Estimated per 2-hour session with prompt caching, based on real session
-telemetry (~60 chat inputs / hour observed in v1.2.7 play, of which roughly
-40 % resolve as a move and 60 % stay as narration under default pacing
-dials):
+Claude is billed to your own Anthropic API key. The narrator runs on
+**Claude Sonnet 5.5** by default (the *Narration Model* setting — Claude
+Haiku 5.5 is the cheaper choice), and so does the automatic Chronicle writer,
+which follows that setting; the move interpreter, the pacing classifier, the
+detection passes after each narration, relevance, `!lore` and the Private
+Channel run on **Claude Haiku 5.5**. At Anthropic's published rates:
 
-| Configuration | Per session | Per year (50 sessions) |
-|---------------|-------------|------------------------|
-| Haiku interpretation + Haiku narration | ~$0.20 | ~$10 |
-| Haiku interpretation + Sonnet narration | ~$0.30 | ~$15 |
-| Portrait generation (FLUX.2 Pro via OpenRouter) | a few cents each | Infrequent |
-| Sector background art (FLUX.2 Pro via OpenRouter) | a few cents per sector | ~3–5 sectors/campaign |
+| Model | Input | Output |
+|---|---|---|
+| Claude Sonnet 5.5 | $2 / million tokens | $10 / million tokens |
+| Claude Haiku 5.5 | $0.10 / million tokens (prompts up to 100K tokens; $0.50 beyond) | $0.50 / million tokens ($2.50 beyond 100K) |
 
-Prompt caching brings the cached input rate to ~10 % of the cold rate, and
-every long-lived prompt in the module (narrator system prompt, pacing
-classifier system prompt, chronicle writer system prompt) is cached.
+| Other services | Cost |
+|---|---|
+| Portrait generation (FLUX.2 Pro via OpenRouter) | a few cents each — infrequent |
+| Sector background art (FLUX.2 Pro via OpenRouter) | a few cents per sector — ~3–5 sectors a campaign |
+
+The narrator call — one per chat input that is narrated, and one per move —
+is most of the bill, and most of what it sends is billed at the full input
+rate: its system prompt is rebuilt for every call (it carries the scene's
+entities, ledger and character state), so cached reads are a small share of
+it. The helper calls' fixed instructions are marked for prompt caching
+(cached reads bill at a fraction of the input rate); one shorter than the
+model's minimum cacheable length is sent uncached.
+
+Earlier versions of this README quoted per-session and per-call dollar
+figures measured in v1.2.7 play on the models of that time; they no longer
+hold, so they are not repeated here. To see what play costs at your table,
+read the *Narrator Usage* page described below.
 
 The image model is configurable via the `openRouterImageModel` setting —
 swap to a cheaper FLUX variant (`flux.2-klein`, `flux.2-flex`) or a different
 provider's image model on OpenRouter at any time.
-
-### Per-input breakdown
-
-Unlike the move pipeline (which only fires on a roll), several components in
-v1.2.7 run on **every chat input** — that's the dominant cost driver, not move
-count. Per-call figures with caching:
-
-| Component | When it fires | Per call |
-|---|---|---|
-| Pacing classifier (Haiku) | every undecorated input | ~$0.0006 |
-| Narrator (Haiku) | every input | ~$0.0008 |
-| Narrator (Sonnet) | every input | ~$0.003 |
-| Chronicle writer (Haiku) | every input (GM client only) | ~$0.0006 |
-| Move interpreter (Haiku) | only on MOVE | ~$0.001 |
-| Paced detection (Haiku) | only on non-MOVE | ~$0.001 |
-
-A 2-hour session at the observed ~60-input rate burns roughly **170 K tokens**
-in aggregate across all calls — pacing classifier ~22 K, narrator ~90 K,
-paced detection ~29 K, chronicle writer ~17 K, move interpreter ~14 K.
 
 ### Narrator prompt size
 

@@ -24,12 +24,22 @@
  * `journalMerged`, so no later load offers it again. Nothing is deleted. An
  * unpressed card a later load finds is retired, and a fresh one posted while
  * the split stands.
+ *
+ * JOURNAL-MERGE-DIFFERING-ENTRY: the card also lists the entries both copies
+ * hold that were changed in the other one (newer there, or of unknown age),
+ * which Merge leaves as the live journal has them — the other version stays
+ * in the renamed copy; a copy holding only those gets a card too. Its Keep
+ * separate stamps each copy `journalMerged: { keptSeparate: true }`, name and
+ * entries untouched, so no later load asks again. A retired copy is never
+ * the live journal either: with the live one deleted, the lookups
+ * (worldJournal findJournal, progressTracks findTracksJournal, the
+ * interpreter's track read) fell back to it.
  */
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { onChatMessageRender } from "../system/chatHooks.js";
 import { relayCardAction } from "../moves/cardActions.js";
-import { JOURNAL_NAMES, worldJournalCopies, journalHoldsEntry } from "./worldJournal.js";
+import { JOURNAL_NAMES, worldJournalCopies, journalHoldsEntry, journalEntryMatch } from "./worldJournal.js";
 import { tracksJournalCopies, mergeTracksIntoLive } from "../ui/progressTracks.js";
 
 const MODULE_ID = "starforged-companion";
@@ -42,6 +52,7 @@ const CATEGORIES = [...Object.keys(JOURNAL_NAMES), TRACKS];
 const LISTED_ENTRIES = 15;
 
 const MERGE_ACTION = "sf-journal-merge";
+const KEEP_ACTION  = "sf-journal-keep";
 
 // Cards whose merge is running on this client (the canonical GM).
 const _inFlight = new Set();
@@ -77,13 +88,58 @@ function extraEntries(category, live, copy) {
     .map(p => ({ name: String(p.name ?? ""), page: p }));
 }
 
-/** Each copy of a category with what it holds that the live journal lacks — copies with nothing extra left out. */
+/** A page's last change: the newest `updatedAt` its module flags hold, or Foundry's `modifiedTime`; 0 when neither is known. */
+function pageTime(page) {
+  let t = Number(page?._stats?.modifiedTime) || 0;
+  for (const entry of Object.values(page?.flags?.[MODULE_ID] ?? {})) {
+    const u = Date.parse(entry?.updatedAt ?? "");
+    if (Number.isFinite(u) && u > t) t = u;
+  }
+  return t;
+}
+
+/** What a page says: its text, whitespace aside (the body a GM reads and edits). */
+function pageSignature(page) {
+  return String(page?.text?.content ?? "").replace(/\s+/g, " ").trim();
+}
+
+/**
+ * The entries `copy` holds that `live` holds too, with other text in them —
+ * and not an older version of the live one (the live journal took
+ * every write since the split): a change made in the copy, by a GM who took
+ * it for the one in use, that Merge does not bring across. Listed on the card
+ * so it is not lost unseen (JOURNAL-MERGE-DIFFERING-ENTRY). World Journal
+ * pages only — a track holds no text, and a copy's tracks are the state
+ * before the split.
+ *
+ * @returns {Array<{ name: string }>}
+ */
+function differingEntries(category, live, copy) {
+  if (category === TRACKS) return [];
+  const out = [];
+  for (const page of copy?.pages?.contents ?? []) {
+    const held = journalEntryMatch(live, page, category);
+    if (!held || pageSignature(held) === pageSignature(page)) continue;
+    const [mine, theirs] = [pageTime(page), pageTime(held)];
+    if (mine && theirs && mine <= theirs) continue;
+    out.push({ name: String(page.name ?? "") });
+  }
+  return out;
+}
+
+/**
+ * Each copy of a category with what it holds that the live journal lacks,
+ * and the entries both hold that it changed — copies with neither left out.
+ */
 function splitOf(category) {
   const { live, copies } = copiesOf(category);
   if (!live || !copies.length) return null;
-  const withExtras = copies.map(copy => ({ copy, extras: extraEntries(category, live, copy) }))
-    .filter(c => c.extras.length);
-  return withExtras.length ? { live, copies: withExtras } : null;
+  const listed = copies.map(copy => ({
+    copy,
+    extras:    extraEntries(category, live, copy),
+    differing: differingEntries(category, live, copy),
+  })).filter(c => c.extras.length || c.differing.length);
+  return listed.length ? { live, copies: listed } : null;
 }
 
 function escapeHtml(s) {
@@ -96,22 +152,34 @@ function gmIds() {
   return (globalThis.game?.users?.filter?.(u => u?.isGM) ?? []).map(u => u.id);
 }
 
-/** The card's HTML: the live journal, each copy's extra entries, the Merge button. */
+/** A card's list of entry names: the first LISTED_ENTRIES, then "and N more". */
+function entryList(entries) {
+  const shown = entries.slice(0, LISTED_ENTRIES).map(e => `<li>${escapeHtml(e.name)}</li>`).join("");
+  const more  = entries.length > LISTED_ENTRIES ? `<li>…and ${entries.length - LISTED_ENTRIES} more</li>` : "";
+  return `<ul>${shown}${more}</ul>`;
+}
+
+/** The card's HTML: the live journal, each copy's extra and differing entries, the Merge and Keep separate buttons. */
 function cardContent(category, split) {
   const title = categoryTitle(category);
   const what  = category === TRACKS ? "tracks" : "entries";
-  const copies = split.copies.map(({ copy, extras }) => {
-    const shown = extras.slice(0, LISTED_ENTRIES).map(e => `<li>${escapeHtml(e.name)}</li>`).join("");
-    const more  = extras.length > LISTED_ENTRIES ? `<li>…and ${extras.length - LISTED_ENTRIES} more</li>` : "";
-    return `<p><strong>${escapeHtml(copy.name)}</strong> — ${extras.length} ${what} not in the journal the companion uses:</p><ul>${shown}${more}</ul>`;
+  const liveName = escapeHtml(split.live.name);
+  const copies = split.copies.map(({ copy, extras, differing }) => {
+    const name = `<strong>${escapeHtml(copy.name)}</strong>`;
+    return (extras.length ? `<p>${name} — ${extras.length} ${what} not in the journal the companion uses:</p>${entryList(extras)}` : "")
+      + (differing.length
+        ? `<p>${name} — ${differing.length} ${differing.length === 1 ? "entry" : "entries"} both journals hold, changed in this one. Merge keeps <strong>${liveName}</strong>'s; compare them by hand:</p>${entryList(differing)}`
+        : "");
   }).join("");
   return `<div class="sf-journal-merge-card">`
     + `<p><strong>📚 Split journal: ${escapeHtml(title)}</strong></p>`
-    + `<p>More than one journal holds this record. The companion reads and writes <strong>${escapeHtml(split.live.name)}</strong>; the narrator and the panels never see the others.</p>`
+    + `<p>More than one journal holds this record. The companion reads and writes <strong>${liveName}</strong>; the narrator and the panels never see the others.</p>`
     + copies
-    + `<p>Merge copies them into <strong>${escapeHtml(split.live.name)}</strong> and renames each other journal "… (merged)". Nothing is deleted.</p>`
-    + `<div class="sf-milestone-suggest-row"><button type="button" class="sf-followup-btn" data-action="${MERGE_ACTION}">Merge</button></div>`
-    + `</div>`;
+    + `<p>Merge copies the missing ${what} into <strong>${liveName}</strong> and renames each other journal "… (merged)". Keep separate leaves the other journals as they are and stops asking. Nothing is deleted.</p>`
+    + `<div class="sf-milestone-suggest-row">`
+    + `<button type="button" class="sf-followup-btn" data-action="${MERGE_ACTION}">Merge</button>`
+    + `<button type="button" class="sf-followup-btn" data-action="${KEEP_ACTION}">Keep separate</button>`
+    + `</div></div>`;
 }
 
 /** The card's HTML once it is done with: why, no button. */
@@ -174,7 +242,10 @@ export async function checkJournalSplits() {
  * refused as stale. A failure releases the claim and tells the GMs; a press
  * again copies only what is still missing.
  *
- * @param {{ messageId: string }} payload
+ * With `keep: true` (the Keep separate press) nothing is copied or renamed:
+ * the listed copies are stamped kept separate (keepSeparate).
+ *
+ * @param {{ messageId: string, keep?: boolean }} payload
  * @param {{ requesterIsGM?: boolean, requesterId?: string }} ctx
  * @returns {Promise<Object>}
  */
@@ -211,10 +282,13 @@ export async function applyJournalMerge(payload = {}, ctx = {}) {
       return { applied: false, reason: "stale" };
     }
     const listed = new Set(Array.isArray(f.copyIds) ? f.copyIds : []);
+    if (payload?.keep === true) return await keepSeparate(message, category, live, copies.filter(c => listed.has(c.id)));
     let copied = 0;
     const renamed = [];
+    const differing = [];
     try {
       for (const copy of copies.filter(c => listed.has(c.id))) {
+        differing.push(...differingEntries(category, live, copy).map(e => e.name));
         const extras = extraEntries(category, live, copy);
         if (category === TRACKS) {
           copied += await mergeTracksIntoLive(extras.map(e => e.track));
@@ -237,13 +311,49 @@ export async function applyJournalMerge(payload = {}, ctx = {}) {
     }
 
     const line = `Merged: ${copied} ${category === TRACKS ? "tracks" : "entries"} copied into <strong>${escapeHtml(live.name)}</strong>`
-      + (renamed.length ? `; renamed ${renamed.map(n => `<strong>${escapeHtml(n)}</strong>`).join(", ")}.` : ".");
+      + (renamed.length ? `; renamed ${renamed.map(n => `<strong>${escapeHtml(n)}</strong>`).join(", ")}.` : ".")
+      + (differing.length
+        ? ` ${differing.length === 1 ? "One entry" : `${differing.length} entries`} changed in the other journal kept <strong>${escapeHtml(live.name)}</strong>'s text: ${differing.map(n => `<strong>${escapeHtml(n)}</strong>`).join(", ")} — the other version stays in the renamed journal.`
+        : "");
     await message.update({ content: closedContent(category, line), [`flags.${MODULE_ID}.journalMerge`]: "merged" })
       .catch(err => console.warn(`${MODULE_ID} | journal merge: merged, but card ${messageId} could not say so:`, err?.message ?? err));
     return { applied: true, copied, renamed: renamed.length };
   } finally {
     _inFlight.delete(messageId);
   }
+}
+
+/**
+ * The Keep separate press, past applyJournalMerge's claim: each listed copy
+ * is stamped `journalMerged` with `keptSeparate` — out of the split check
+ * and every lookup, its name and entries left as they are — so the card,
+ * which returned at every load until merged, is not posted again
+ * (JOURNAL-MERGE-DIFFERING-ENTRY). A refused stamp frees the card and tells
+ * the GMs; a press again stamps the rest.
+ *
+ * @returns {Promise<Object>}
+ */
+async function keepSeparate(message, category, live, copies) {
+  const kept = [];
+  try {
+    for (const copy of copies) {
+      await copy.update({ flags: { [MODULE_ID]: { journalMerged: { into: null, category, at: Date.now(), keptSeparate: true } } } });
+      kept.push(copy.name);
+    }
+  } catch (err) {
+    console.warn(`${MODULE_ID} | journal merge: keeping the ${categoryTitle(category)} journals separate did not finish:`, err?.message ?? err);
+    await message.update({ [`flags.${MODULE_ID}.journalMerge`]: null }).catch(() => {});
+    await ChatMessage.create({
+      content: closedContent(category, `Keep separate did not finish (${escapeHtml(err?.message ?? err)}). Press it again.`),
+      whisper: gmIds(),
+    }).catch(() => {});
+    return { applied: false, reason: "failed" };
+  }
+  const line = `Kept separate: ${kept.map(n => `<strong>${escapeHtml(n)}</strong>`).join(", ")} left as ${kept.length === 1 ? "it is" : "they are"}. `
+    + `The companion reads and writes only <strong>${escapeHtml(live.name)}</strong>, and no later load asks again.`;
+  await message.update({ content: closedContent(category, line), [`flags.${MODULE_ID}.journalMerge`]: "kept" })
+    .catch(err => console.warn(`${MODULE_ID} | journal merge: kept separate, but card ${message.id} could not say so:`, err?.message ?? err));
+  return { applied: true, kept: kept.length };
 }
 
 /** A page's data for its copy in another journal: everything but its id. */
@@ -261,24 +371,32 @@ function pageData(page) {
   };
 }
 
-/** The Merge button: a GM's press relays to the canonical GM; a pressed card shows none. */
+/**
+ * The Merge and Keep separate buttons: a GM's press relays to the canonical
+ * GM (one relay kind, `keep` naming the second); a pressed card shows none.
+ */
 function wireMergeButton(message, root) {
   const f = message?.flags?.[MODULE_ID];
   if (f?.journalMergeCard !== true) return;
-  const btn = root.querySelector(`[data-action="${MERGE_ACTION}"]`);
-  if (!btn) return;
-  if (f.journalMerge || !game.user?.isGM) { btn.disabled = true; return; }
-  btn.addEventListener("click", async (ev) => {
-    ev?.preventDefault?.();
-    if (btn.disabled) return;
-    btn.disabled = true;
-    await relayCardAction({
-      kind:       "journal.merge",
-      payload:    { messageId: message.id },
-      isResolved: () => !!game.messages?.get?.(message.id)?.flags?.[MODULE_ID]?.journalMerge,
-      restore:    () => { btn.disabled = false; },
+  const buttons = [
+    { btn: root.querySelector(`[data-action="${MERGE_ACTION}"]`), keep: false },
+    { btn: root.querySelector(`[data-action="${KEEP_ACTION}"]`),  keep: true },
+  ].filter(b => b.btn);
+  if (!buttons.length) return;
+  if (f.journalMerge || !game.user?.isGM) { for (const { btn } of buttons) btn.disabled = true; return; }
+  for (const { btn, keep } of buttons) {
+    btn.addEventListener("click", async (ev) => {
+      ev?.preventDefault?.();
+      if (btn.disabled) return;
+      for (const b of buttons) b.btn.disabled = true;
+      await relayCardAction({
+        kind:       "journal.merge",
+        payload:    keep ? { messageId: message.id, keep: true } : { messageId: message.id },
+        isResolved: () => !!game.messages?.get?.(message.id)?.flags?.[MODULE_ID]?.journalMerge,
+        restore:    () => { for (const b of buttons) b.btn.disabled = false; },
+      });
     });
-  });
+  }
 }
 
 /**

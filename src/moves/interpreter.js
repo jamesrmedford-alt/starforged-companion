@@ -257,10 +257,12 @@ function readOpenTrackLabels() {
   try {
     // Of two flagged journals (a pre-fix rename split), the default-named one
     // — what the sessions since wrote (issue #347 AB16).
-    const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY));
+    // Never a copy a split's merge retired (JOURNAL-MERGE-DIFFERING-ENTRY).
+    const retired = (j) => !!j?.getFlag?.(MODULE_ID, "journalMerged");
+    const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY)) && !retired(j);
     const journal = game.journal?.find?.(j => flagged(j) && j?.name === PROGRESS_JOURNAL_NAME)
                  ?? game.journal?.find?.(flagged)
-                 ?? game.journal?.find?.(j => j?.name === PROGRESS_JOURNAL_NAME);
+                 ?? game.journal?.find?.(j => j?.name === PROGRESS_JOURNAL_NAME && !retired(j));
     if (!journal) return [];
     const tracks = journal.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY) ?? [];
     return (Array.isArray(tracks) ? tracks : [])

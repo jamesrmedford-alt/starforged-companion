@@ -216,7 +216,10 @@ and mirrored to that PC when they own it; it read `game.user.character`, null
 for a solo GM, and cycled the fight's position while the PC's own steered the
 next move, issue #326 W56; its badge shows that same position — the viewer's
 own, the fight's when they have none — where it showed the fight's last-set
-one, a crewmate's in a two-character fight, issue #345 AA64) included; the
+one, a crewmate's in a two-character fight, issue #345 AA64; one badge per
+character the viewer plays — a GM's every PC, each press naming its own
+character (`data-actor-id`) — where a GM running several PCs saw and set only
+the first's, POSITION-BADGE-GM-FIRST-PC) included; the
 badge wrote only the two mirrors and the toggle only the track, so the
 interpreter, TDA, the narrator, the sheet and the badge disagreed (issue #321
 U19). The pipeline

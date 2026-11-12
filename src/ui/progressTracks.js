@@ -18,6 +18,7 @@ import { createClock, retireClock, removeClock, clocksFingerprint } from '../clo
 import { requestGmAction } from '../multiplayer/gmRelay.js';
 import { isTrackPosition, combatPositionFor } from '../moves/combat.js';
 import { resolveUserActorId } from '../multiplayer/speaker.js';
+import { getPlayerActors } from '../character/actorBridge.js';
 import { replaceKeepingInput } from './keepTypedInput.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 
@@ -132,10 +133,14 @@ function createTrack({ label, type, rank, entityId = null, objective = null, lin
  * @returns {JournalEntry|null}
  */
 function findTracksJournal() {
-  const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY));
+  // A copy a split's merge retired (`journalMerged` — merged, or kept
+  // separate) is never the live journal: with the live one deleted, the
+  // lookup fell back to it (JOURNAL-MERGE-DIFFERING-ENTRY).
+  const retired = (j) => !!j?.getFlag?.(MODULE_ID, 'journalMerged');
+  const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY)) && !retired(j);
   return game.journal?.find?.(j => flagged(j) && j?.name === JOURNAL_NAME)
       ?? game.journal?.find?.(flagged)
-      ?? game.journal?.find?.(j => j?.name === JOURNAL_NAME)
+      ?? game.journal?.find?.(j => j?.name === JOURNAL_NAME && !retired(j))
       ?? null;
 }
 
@@ -529,10 +534,13 @@ export class ProgressTrackApp extends ApplicationV2 {
     // What this render shows, for onSettingChanged to compare against.
     this._clocksShown   = clocksFingerprint(campaignState.clocks ?? []);
     // A fight's position badge shows the viewer's own position — the one its
-    // press cycles (viewerCharacter). It showed the fight's last-set one, so
+    // press cycles (viewerCharacters). It showed the fight's last-set one, so
     // in a two-character fight a player saw a crewmate's bad spot as theirs,
     // and pressing it to put that right flipped their own (issue #345 AA64).
-    const viewer        = viewerCharacter(campaignState);
+    // One badge per character the viewer plays: a GM running several PCs saw
+    // and toggled only the first's (POSITION-BADGE-GM-FIRST-PC).
+    const viewers       = viewerCharacters(campaignState);
+    const viewer        = viewers[0] ?? null;
 
     // Annotate each track with derived display values.
     const annotated = tracks.map(t => {
@@ -550,6 +558,12 @@ export class ProgressTrackApp extends ApplicationV2 {
         // 'in_control' | 'bad_spot' | null — a fight's, the viewer's own
         combatState: t.type === 'combat' ? combatPositionFor(t, viewer?.id ?? null) : (t.combatState ?? null),
         positionOf:  viewer?.name ?? null,
+        // A fight's badges: each of the viewer's characters' own position, or
+        // the fight's one when the viewer plays none.
+        positionBadges: t.type !== 'combat' ? []
+          : viewers.length
+            ? viewers.map(a => ({ actorId: a.id, name: a.name ?? null, combatState: combatPositionFor(t, a.id) }))
+            : [{ actorId: null, name: null, combatState: t.combatState ?? null }],
         tensionClock: linkedClock
           ? { filled: linkedClock.filled, segments: linkedClock.segments,
               triggered: linkedClock.filled >= linkedClock.segments }
@@ -616,14 +630,22 @@ export class ProgressTrackApp extends ApplicationV2 {
           <span class="track-pct">${t.pct}%</span>
           <span class="track-ticks">${t.ticks} / ${MAX_TICKS} ticks</span>
           ${t.type === 'combat' && !t.completed ? `
-            <button class="track-btn btn-combat-state combat-${t.combatState ?? 'neutral'}"
-                    data-action="toggleCombatState"
-                    data-track-id="${t.id}"
-                    title="Toggle ${t.positionOf ? `${escapeHtml(t.positionOf)}&rsquo;s` : 'the fight&rsquo;s'} combat position (in control / in a bad spot)">
-              ${t.combatState === 'in_control' ? 'In control'
-                : t.combatState === 'bad_spot' ? 'In a bad spot'
-                : 'Neutral'}
-            </button>
+            <span class="combat-positions">
+              ${(t.positionBadges ?? []).map(b => `
+                <span class="combat-position">
+                  ${t.positionBadges.length > 1 && b.name ? `<span class="combat-position-of">${escapeHtml(b.name)}</span>` : ''}
+                  <button class="track-btn btn-combat-state combat-${b.combatState ?? 'neutral'}"
+                          data-action="toggleCombatState"
+                          data-track-id="${t.id}"
+                          ${b.actorId ? `data-actor-id="${escapeHtml(b.actorId)}"` : ''}
+                          title="Toggle ${b.name ? `${escapeHtml(b.name)}&rsquo;s` : 'the fight&rsquo;s'} combat position (in control / in a bad spot)">
+                    ${b.combatState === 'in_control' ? 'In control'
+                      : b.combatState === 'bad_spot' ? 'In a bad spot'
+                      : 'Neutral'}
+                  </button>
+                </span>
+              `).join('')}
+            </span>
           ` : ''}
           ${t.tensionClock ? `
             <span class="tension-clock-meta${t.tensionClock.triggered ? ' is-triggered' : ''}"
@@ -836,10 +858,14 @@ export class ProgressTrackApp extends ApplicationV2 {
    * kept steering the next move (issue #326 W56).
    */
   static #onToggleCombatState(event, target) {
-    let actorId = null;
-    try {
-      actorId = resolveUserActorId(game.user, game.settings.get(MODULE_ID, 'campaignState'));
-    } catch { actorId = game.user?.character?.id ?? null; }
+    // The badge's own character (one badge per character the viewer plays —
+    // POSITION-BADGE-GM-FIRST-PC); a badge naming none, the viewer's PC.
+    let actorId = target?.dataset?.actorId || null;
+    if (!actorId) {
+      try {
+        actorId = resolveUserActorId(game.user, game.settings.get(MODULE_ID, 'campaignState'));
+      } catch { actorId = game.user?.character?.id ?? null; }
+    }
     const work = ProgressTrackApp.#requestEdit(this, {
       op: 'position', trackId: target.dataset.trackId, actorId,
     });
@@ -1398,27 +1424,41 @@ async function readTrackAfterWrites(trackId) {
   return found;
 }
 
+/** Whether this client's user owns `actor` (a GM owns every actor). */
+function viewerOwns(actor) {
+  if (!actor) return false;
+  if (game.user?.isGM) return true;
+  if (typeof actor.testUserPermission === 'function') return actor.testUserPermission(game.user, 'OWNER');
+  const ownership = actor.ownership ?? {};
+  return ownership[game.user?.id] === 3 || ownership.default === 3;
+}
+
 /**
- * The player character whose position a fight's badge shows on this client:
- * the PC its press resolves (resolveUserActorId, as #onToggleCombatState)
- * when the viewer owns it — the one the canonical GM then cycles
- * (positionMirrorActor) — else null, when the press cycles the fight's own
- * position (issue #345 AA64).
+ * The player characters whose positions a fight's badges show on this
+ * client, one badge each — the ones whose press the canonical GM then cycles
+ * (positionMirrorActor checks the presser owns it). First the PC a press with
+ * no character resolves (resolveUserActorId) when the viewer owns it (issue
+ * #345 AA64), then every other PC the viewer owns: a GM's every PC, a
+ * player's own. A GM who runs several PCs saw and toggled only the first's
+ * (POSITION-BADGE-GM-FIRST-PC). Empty when the viewer plays none — the one
+ * badge then cycles the fight's own position.
  *
  * @param {Object} campaignState
- * @returns {Actor|null}
+ * @returns {Actor[]}
  */
-function viewerCharacter(campaignState) {
+function viewerCharacters(campaignState) {
   let actorId = null;
   try {
     actorId = resolveUserActorId(game.user, campaignState);
   } catch { actorId = game.user?.character?.id ?? null; }
-  const actor = actorId ? game.actors?.get?.(actorId) ?? null : null;
-  if (!actor) return null;
-  if (game.user?.isGM) return actor;
-  if (typeof actor.testUserPermission === 'function') return actor.testUserPermission(game.user, 'OWNER') ? actor : null;
-  const ownership = actor.ownership ?? {};
-  return ownership[game.user?.id] === 3 || ownership.default === 3 ? actor : null;
+  const first = actorId ? game.actors?.get?.(actorId) ?? null : null;
+  const out = viewerOwns(first) ? [first] : [];
+  let pcs = [];
+  try { pcs = getPlayerActors(); } catch { pcs = []; }
+  for (const pc of pcs) {
+    if (pc && !out.some(a => a.id === pc.id) && viewerOwns(pc)) out.push(pc);
+  }
+  return out;
 }
 
 /**

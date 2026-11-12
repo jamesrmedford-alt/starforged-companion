@@ -189,28 +189,6 @@ export async function getCanonicalEncounterActor(name) {
 }
 
 /**
- * Return a list of {id, name} for every encounter in the Starforged foe pack.
- * Does NOT load the full Actor documents — only the index. Use this to
- * power suggest / autocomplete UIs in chat commands.
- *
- * @returns {Promise<Array<{id: string, name: string}>>}
- */
-export async function listCanonicalEncounters() {
-  const pack = getPack(IS_PACKS.FOE_ACTORS_SF);
-  if (!pack) return [];
-  const index = await getIndex(pack);
-  if (!index) return [];
-  try {
-    const arr = Array.from(index).map(e => ({ id: e._id ?? e.id, name: e.name }));
-    arr.sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? "")));
-    return arr;
-  } catch (err) {
-    console.warn(`starforged-companion | ironswornPacks: listCanonicalEncounters failed:`, err);
-    return [];
-  }
-}
-
-/**
  * Find an asset Item by slug in the starforged-assets pack. Used to install
  * canonical Modules onto starships (Module-category assets carry the rolled
  * abilities the sheet needs; embedding a hand-constructed `{ name, type,
