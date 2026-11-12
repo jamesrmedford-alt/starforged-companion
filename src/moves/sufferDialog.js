@@ -17,7 +17,7 @@
  * Source: issue #214 (Suffer-move Pipeline) §5.3.
  */
 
-import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum } from "./sufferExecutor.js";
+import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum, markUnprepared } from "./sufferExecutor.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -351,6 +351,13 @@ async function runSufferCall(call, actor, opts) {
       return { kind: "meter", meterKey: call.meterKey, delta: call.delta };
     }
     case "mark":
+      // Unprepared is the crew's: its one writer marks every PC sharing the
+      // supply (markUnprepared) — a Sacrifice Resources' refused mark, retried
+      // alone (SUFFER-RETRY-WHOLE-AFTER-METER).
+      if (call.debility === "unprepared") {
+        const marks = await markUnprepared(actor);
+        return { kind: "mark", debility: call.debility, ...marks };
+      }
       await setDebility(actor, call.debility, true);
       return { kind: "mark", debility: call.debility };
     case "clear-impact": {

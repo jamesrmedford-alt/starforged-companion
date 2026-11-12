@@ -290,7 +290,9 @@ const NOT_APPLIED = {
 function notAppliedLines(calls, results) {
   return (calls ?? []).flatMap((c, i) => {
     const r = results?.[i];
-    return r?.ok === false ? [`${summarizeSufferCalls([c])} — ${NOT_APPLIED[r.reason] ?? r.reason ?? "it failed"}`] : [];
+    // A call whose meter landed and whose second write did not names that
+    // write alone (`retryCall` — SUFFER-RETRY-WHOLE-AFTER-METER).
+    return r?.ok === false ? [`${summarizeSufferCalls([r.retryCall ?? c])} — ${NOT_APPLIED[r.reason] ?? r.reason ?? "it failed"}`] : [];
   });
 }
 
@@ -304,7 +306,9 @@ function notAppliedLines(calls, results) {
  * @returns {string}
  */
 function summarizeSufferResults(calls, results) {
-  const landed = (calls ?? []).flatMap((c, i) => (results?.[i]?.ok !== false ? [i] : []));
+  // A call whose meter landed before its second write was refused
+  // (`retryCall`) is applied, and that write listed as not.
+  const landed = (calls ?? []).flatMap((c, i) => (results?.[i]?.ok !== false || results?.[i]?.retryCall ? [i] : []));
   const missed = notAppliedLines(calls, results);
   return withNotApplied(landed.length || !missed.length
     ? `Applied: ${summarizeSufferCalls(landed.map(i => calls[i]), landed.map(i => results?.[i]))}` : "", missed);
@@ -702,8 +706,12 @@ export async function reopenSufferCard(messageOrId) {
 async function reportRefusedCalls(actor, calls, results, executorOpts) {
   const failures = calls.flatMap((call, i) => {
     const r = results[i];
-    return r?.ok === false && r.reason === "refused" && isRetryableSufferCall(call)
-      ? [{ step: "suffer", call, opts: executorOpts, reason: "refused", error: r.error ?? null }]
+    // The Retry applies what was refused: a call's second write alone when
+    // its meter landed (`retryCall` — SUFFER-RETRY-WHOLE-AFTER-METER: the
+    // whole call's Retry took the meter again).
+    const owed = r?.retryCall ?? call;
+    return r?.ok === false && r.reason === "refused" && isRetryableSufferCall(owed)
+      ? [{ step: "suffer", call: owed, opts: executorOpts, reason: "refused", error: r.error ?? null }]
       : [];
   });
   if (!failures.length) return;

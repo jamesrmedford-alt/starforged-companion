@@ -183,6 +183,35 @@ export async function overflowToMomentum(actor, overflow) {
   return { amount: overflow, taken, remaining: overflow - taken, before: m.before, after: m.after, atMin: m.atMin };
 }
 
+/**
+ * A suffer pick's second write — the impact or the overflow after its meter
+ * landed — run on its own (SUFFER-RETRY-WHOLE-AFTER-METER). The executors
+ * wrote the meter, then threw past it on a refused second write: the call
+ * was reported refused whole, and its `suffer` Retry took the meter again
+ * (a harm at 0 the second time is all momentum). Refused now, it is the
+ * call's own result: `ok: false` with `retryCall`, the call that applies
+ * that write alone — what the card says was not applied and what the GMs'
+ * Retry runs (sufferCard reportRefusedCalls). The meter write stands.
+ *
+ * @param {() => Promise<*>} write
+ * @param {Object} retryCall — a sufferDialog call (`meter` / `mark`)
+ * @param {string} what — for the log
+ * @returns {Promise<{ value?: *, refused?: Object }>}
+ */
+async function afterMeter(write, retryCall, what) {
+  try {
+    return { value: await write() };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | sufferExecutor: ${what} was not saved — the meter loss stands; the GMs have a Retry for it alone:`, err?.message ?? err);
+    return { refused: { ok: false, reason: "refused", error: String(err?.message ?? err), retryCall } };
+  }
+}
+
+/** The card's line for an overflow the world refused. */
+function overflowRefusedLine(overflow) {
+  return ` — ${overflow} more as momentum: <strong>not saved</strong> (the GMs have a Retry)`;
+}
+
 /** The card's line for an overflow: " — N more as momentum: 5 → 3", with what the minimum refused. */
 function overflowLine(momentumLoss) {
   if (!momentumLoss) return "";
@@ -463,7 +492,8 @@ export async function endureHarm(actor, amount, opts = {}) {
   if (absorbed > 0) await applyMeterChanges(actor, { health: -absorbed });
   const after = readMeter(actor, "health");
   const atZero = after <= 0;
-  const momentumLoss = await overflowToMomentum(actor, overflow);
+  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow),
+    { kind: "meter", meterKey: "momentum", delta: -overflow }, "the harm past 0 health, as momentum");
 
   const woundedMarked = false;
   const mortalWound = null;
@@ -477,7 +507,7 @@ export async function endureHarm(actor, amount, opts = {}) {
   const upgradeFirst = resistOwed && await upgradeFirstOwed(opts);
 
   if (!opts.skipCard) {
-    let body = `Health: ${before} → ${after}${overflowLine(momentumLoss)}`;
+    let body = `Health: ${before} → ${after}${refused ? overflowRefusedLine(overflow) : overflowLine(momentumLoss)}`;
     if (impactChoice) body += atZeroChoiceLine("harm");
     if (resistOwed)   body += resistLine("harm", upgradeFirst);
     await postSufferCard({
@@ -489,7 +519,7 @@ export async function endureHarm(actor, amount, opts = {}) {
   if (impactChoice) await postAtZeroChoice(actor, "harm", opts);
   if (resistOwed)   await postResistRoll(actor, "harm", opts, upgradeFirst);
 
-  return { before, after, atZero, woundedMarked, mortalWound, impactChoice, resistOwed, momentumLoss };
+  return { before, after, atZero, woundedMarked, mortalWound, impactChoice, resistOwed, momentumLoss, ...(refused ?? {}) };
 }
 
 /**
@@ -509,7 +539,8 @@ export async function endureStress(actor, amount, opts = {}) {
   if (absorbed > 0) await applyMeterChanges(actor, { spirit: -absorbed });
   const after = readMeter(actor, "spirit");
   const atZero = after <= 0;
-  const momentumLoss = await overflowToMomentum(actor, overflow);
+  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow),
+    { kind: "meter", meterKey: "momentum", delta: -overflow }, "the stress past 0 spirit, as momentum");
 
   const shakenMarked = false;
   const desolation = null;
@@ -518,7 +549,7 @@ export async function endureStress(actor, amount, opts = {}) {
   const upgradeFirst = resistOwed && await upgradeFirstOwed(opts);
 
   if (!opts.skipCard) {
-    let body = `Spirit: ${before} → ${after}${overflowLine(momentumLoss)}`;
+    let body = `Spirit: ${before} → ${after}${refused ? overflowRefusedLine(overflow) : overflowLine(momentumLoss)}`;
     if (impactChoice) body += atZeroChoiceLine("stress");
     if (resistOwed)   body += resistLine("stress", upgradeFirst);
     await postSufferCard({
@@ -530,7 +561,7 @@ export async function endureStress(actor, amount, opts = {}) {
   if (impactChoice) await postAtZeroChoice(actor, "stress", opts);
   if (resistOwed)   await postResistRoll(actor, "stress", opts, upgradeFirst);
 
-  return { before, after, atZero, shakenMarked, desolation, impactChoice, resistOwed, momentumLoss };
+  return { before, after, atZero, shakenMarked, desolation, impactChoice, resistOwed, momentumLoss, ...(refused ?? {}) };
 }
 
 /**
@@ -739,7 +770,11 @@ export async function sacrificeResources(actor, amount, opts = {}) {
   const after = readMeter(actor, "supply");
   const atZero = after <= 0;
 
-  const marks = atZero ? await markUnprepared(actor) : null;
+  // The payer's own mark refused: reported apart, its Retry marks the crew
+  // alone — never the supply loss again (SUFFER-RETRY-WHOLE-AFTER-METER).
+  const { value: marks = null, refused } = atZero
+    ? await afterMeter(() => markUnprepared(actor), { kind: "mark", debility: "unprepared" }, "the unprepared mark at 0 supply")
+    : {};
   const unpreparedMarked = !!marks?.unpreparedMarked;
   // Whom this loss marked unprepared, by id: an upgrade that reverts the
   // price clears exactly those marks (issue #342 D4), and gives back the
@@ -750,7 +785,8 @@ export async function sacrificeResources(actor, amount, opts = {}) {
   if (!opts.skipCard) {
     let body = `Supply: ${before} → ${after}`;
     if (unpreparedMarked) body += " — marked <strong>unprepared</strong>";
-    if (atZero && !unpreparedMarked) body += " — further loss redirects to another suffer move";
+    if (refused) body += " — unprepared <strong>not saved</strong> (the GMs have a Retry)";
+    if (atZero && !unpreparedMarked && !refused) body += " — further loss redirects to another suffer move";
     const crew = crewUnpreparedNote(marks ?? {});
     if (crew) body += ` — ${crew}`;
     await postSufferCard({
@@ -760,7 +796,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     });
   }
 
-  return { before, after, atZero, unpreparedMarked, alliesMarkedIds, momentumClamped };
+  return { before, after, atZero, unpreparedMarked, alliesMarkedIds, momentumClamped, ...(refused ?? {}) };
 }
 
 /**
@@ -812,12 +848,14 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
   }
 
   const { before, after } = res;
-  const momentumLoss = await overflowToMomentum(actor, amount - Math.max(0, before - after));
+  const overflow = amount - Math.max(0, before - after);
+  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow),
+    { kind: "meter", meterKey: "momentum", delta: -overflow }, "the companion's harm past 0 health, as momentum");
   const atZero = after <= 0;
   const destroyed = atZero && opts.isMissWithMatch === true;
 
   if (!opts.skipCard) {
-    let body = `${escapeHtml(res.name ?? "Companion")}: ${before} → ${after}${overflowLine(momentumLoss)}`;   // the player names the asset (issue #336 Y28)
+    let body = `${escapeHtml(res.name ?? "Companion")}: ${before} → ${after}${refused ? overflowRefusedLine(overflow) : overflowLine(momentumLoss)}`;   // the player names the asset (issue #336 Y28)
     if (destroyed) {
       body += `<br/><strong>Companion destroyed.</strong> Open the character sheet → Assets and discard this companion.`;
     } else if (atZero) {
@@ -830,7 +868,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
     });
   }
 
-  return { before, after, atZero, destroyed, itemId: res.itemId ?? null, name: res.name ?? null, ...(momentumLoss ? { momentumLoss } : {}) };
+  return { before, after, atZero, destroyed, itemId: res.itemId ?? null, name: res.name ?? null, ...(momentumLoss ? { momentumLoss } : {}), ...(refused ?? {}) };
 }
 
 /**
@@ -897,12 +935,14 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
 
   const { before, after } = res;
   const isCommandVehicle = !support;
-  const momentumLoss = await overflowToMomentum(actor, amount - Math.max(0, before - after));
+  const overflow = amount - Math.max(0, before - after);
+  const { value: momentumLoss = null, refused } = await afterMeter(() => overflowToMomentum(actor, overflow),
+    { kind: "meter", meterKey: "momentum", delta: -overflow }, "the vehicle's damage past 0 integrity, as momentum");
   const atZero = after <= 0;
   const vehicleDamage = atZero ? rollD100Table(VEHICLE_DAMAGE, opts) : null;
 
   if (!opts.skipCard) {
-    let body = `${escapeHtml(res.name ?? "The vehicle")}: ${before} → ${after}${overflowLine(momentumLoss)}`;   // the player names the asset (issue #336 Y28)
+    let body = `${escapeHtml(res.name ?? "The vehicle")}: ${before} → ${after}${refused ? overflowRefusedLine(overflow) : overflowLine(momentumLoss)}`;   // the player names the asset (issue #336 Y28)
     if (vehicleDamage) {
       body += `<br/>Vehicle Damage (d100 ${vehicleDamage.roll}): <em>${vehicleDamage.result}</em>`;
       if (isCommandVehicle && /catastrophic|destruction/i.test(vehicleDamage.result)) {
@@ -918,7 +958,7 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   }
 
   return { before, after, atZero, vehicleDamage, isCommandVehicle, name: res.name ?? null,
-    ...(support ? { itemId: vehicleItemId } : { vehicleActorId }), ...(momentumLoss ? { momentumLoss } : {}) };
+    ...(support ? { itemId: vehicleItemId } : { vehicleActorId }), ...(momentumLoss ? { momentumLoss } : {}), ...(refused ?? {}) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
