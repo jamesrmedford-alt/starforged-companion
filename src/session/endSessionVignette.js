@@ -27,7 +27,7 @@
 
 import { listConnections } from "../entities/connection.js";
 import { getActiveThreats } from "../world/worldJournal.js";
-import { stripMarkup } from "../audio/segments.js";
+import { proseToHtml } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -180,7 +180,7 @@ export async function postEndSessionVignetteCard({ text, npcName, sessionId = nu
   await globalThis.ChatMessage?.create?.({
     content:
       `<div class="sf-session-vignette-card"><strong>Closing — ${escapeHtml(npcName)}</strong>` +
-      `<p class="sf-narration-prose">${escapeHtml(stripMarkup(text))}</p>` +
+      `<p class="sf-narration-prose">${proseToHtml(text)}</p>` +
       `<div class="sf-narration-footer">` +
       `<button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden><i class="fas fa-play"></i> Play</button>` +
       `<button class="sf-audio-stop-btn" data-action="audioStop" aria-label="Stop narrator audio" hidden><i class="fas fa-stop"></i> Stop</button>` +

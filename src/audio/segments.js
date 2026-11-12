@@ -99,3 +99,28 @@ export function stripMarkup(prose) {
   if (typeof prose !== "string") return "";
   return prose.replace(new RegExp(NPC_TAG_RE.source, "gi"), "$1").replace(STRAY_TAG_RE, "");
 }
+
+// Markdown emphasis the narrator writes — a ship's name in italics, a stressed
+// word, the paced turn's closing italic move-hint (which its prompt asks for
+// as `*…*`). An asterisk with a space inside it ("5 * 3") is left alone.
+const STRONG_MD_RE = /\*\*(?=\S)([^*\n]*?\S)\*\*/g;
+const EM_MD_RE     = /\*(?=\S)([^*\n]*?\S)\*/g;
+
+/**
+ * Narrator prose as card HTML: `<npc>` markup stripped (`stripMarkup`), the
+ * text HTML-escaped, and its Markdown emphasis rendered — `**bold**` as
+ * `<strong>`, `*italics*` as `<em>`. Chat cards showed the asterisks
+ * literally ("*Savela*", issue #348 PT13).
+ *
+ * @param {string} prose
+ * @returns {string} safe HTML
+ */
+export function proseToHtml(prose) {
+  return stripMarkup(prose)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(STRONG_MD_RE, "<strong>$1</strong>")
+    .replace(EM_MD_RE, "<em>$1</em>");
+}

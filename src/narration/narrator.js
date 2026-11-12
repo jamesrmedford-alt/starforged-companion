@@ -24,7 +24,7 @@ import { connectionDrops } from '../multiplayer/connectionWatch.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
-import { stripMarkup } from '../audio/segments.js';
+import { stripMarkup, proseToHtml } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
@@ -1362,7 +1362,7 @@ export async function postRoundNarrationCard(narrationText, round, entries, camp
       <div class="sf-narration-card sf-round-card">
         <div class="sf-narration-label">◈ Round ${escapeHtml(String(round?.number ?? ''))}</div>
         <ul class="sf-round-entries">${entries.map(roundEntryHtml).join('')}</ul>
-        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
+        <div class="sf-narration-prose">${proseToHtml(narrationText)}</div>
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
             <i class="fas fa-play"></i> Play
@@ -1640,7 +1640,7 @@ export async function postNarrationCard(narrationText, resolution, campaignState
     content: `
       <div class="sf-narration-card">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
+        <div class="sf-narration-prose">${proseToHtml(narrationText)}</div>
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
             <i class="fas fa-play"></i> Play
@@ -3005,7 +3005,7 @@ export async function postCampaignRecap(campaignState, options = {}) {
     // The model's text (and any GM-edited chronicle entry it quotes) is
     // prose, escaped as the narrator card's own sink is: "<signal lost>"
     // vanished as an unknown tag and live markup rendered (issue #331 X24).
-    const paragraphs = text.split(/\n\n+/).map(p => `<p>${escapeHtml(stripMarkup(p.trim()))}</p>`).join('');
+    const paragraphs = text.split(/\n\n+/).map(p => `<p>${proseToHtml(p.trim())}</p>`).join('');
     await ChatMessage.create({
       content: `
         <div class="sf-recap-campaign-card">
@@ -3334,7 +3334,7 @@ async function postOracleNarrationCard({ text, kind, oracleName, sessionId, narr
   // entered the ring or rolling summary, so the narrator forgot how an
   // oracle result landed the moment it posted it.
   await ChatMessage.create({
-    content: `<div class="sf-oracle-narration-card"><strong>${escapeHtml(header)} — narration</strong><p>${escapeHtml(stripMarkup(text))}</p></div>`,
+    content: `<div class="sf-oracle-narration-card"><strong>${escapeHtml(header)} — narration</strong><p>${proseToHtml(text)}</p></div>`,
     flags:   {
       [MODULE_ID]: {
         oracleNarrationCard: true,
@@ -4064,7 +4064,7 @@ async function postPacedNarrativeCard(narrationText, playerText, sessionId, sugg
     content: `
       <div class="sf-narration-card sf-narration-card--paced${suggestionClass}">
         <div class="sf-narration-label">◈ Narrator</div>
-        <div class="sf-narration-prose">${escapeHtml(stripMarkup(narrationText))}</div>
+        <div class="sf-narration-prose">${proseToHtml(narrationText)}</div>
         ${buttonRow}
         <div class="sf-narration-footer">
           <button class="sf-audio-play-btn" data-action="audioPlayToggle" aria-label="Play narrator audio" hidden>
@@ -4645,7 +4645,7 @@ async function postSceneCard(question, responseText, sessionId, playerName = nul
       <div class="sf-scene-card">
         <div class="sf-scene-label">◈ Scene</div>
         <div class="sf-scene-question">${escapeHtml(question)}</div>
-        <div class="sf-scene-prose">${escapeHtml(stripMarkup(responseText))}</div>
+        <div class="sf-scene-prose">${proseToHtml(responseText)}</div>
       </div>
     `.trim(),
     flags: {

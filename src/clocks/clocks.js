@@ -28,7 +28,7 @@
 import { rollYesNo } from "../oracles/roller.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
 import { clockStillTriggered } from "./payThePriceClocks.js";
-import { stripMarkup } from "../audio/segments.js";
+import { proseToHtml } from "../audio/segments.js";
 import { replaceKeepingInput } from "../ui/keepTypedInput.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
@@ -893,7 +893,7 @@ function fireClockVignette(clockData) {
         // The prose is the reader's: the narrator's NPC dialogue markup is
         // stripped, as on every fiction card — a clock card has no Play button
         // (issue #331 X27).
-        await postCard(`<em>${escapeHtml(stripMarkup(text))}</em>`, {
+        await postCard(`<em>${proseToHtml(text)}</em>`, {
           clockVignetteCard: true,
           narratorCard:      true,
           narrationText:     text,

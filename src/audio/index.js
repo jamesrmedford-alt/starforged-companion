@@ -22,7 +22,7 @@
  * AUDIO_SOCKET_NAME below.
  */
 
-import { splitSegments, stripMarkup, SEGMENT_VOICE } from "./segments.js";
+import { splitSegments, proseToHtml, SEGMENT_VOICE } from "./segments.js";
 import {
   cacheKey,
   isCachePathFor,
@@ -775,9 +775,10 @@ export async function onNarratorCardRendered(message, root) {
   // was billed on the GM's key with no bound at all (issue #342 D8).
   if (!countsAsNarratorCard(message, rawProse)) return;
   if (proseEl) {
-    const cleaned = stripMarkup(rawProse);
-    // textContent — preserves whitespace, no HTML injection.
-    proseEl.textContent = cleaned;
+    // Escaped, with the prose's Markdown emphasis rendered as the card's own
+    // sink does (proseToHtml) — textContent put the "*Savela*" asterisks back
+    // (issue #348 PT13).
+    proseEl.innerHTML = proseToHtml(rawProse);
   }
 
   // Unhide the button now that we know audio applies on this client.

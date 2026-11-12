@@ -32,7 +32,7 @@ import { settledWithin } from "../multiplayer/settleWithin.js";
 import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
-import { stripMarkup } from "../audio/segments.js";
+import { proseToHtml } from "../audio/segments.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -311,7 +311,7 @@ async function beginSessionOnce(payload) {
                 // narrationId: what an X-Card on it retracts (issue #321 U07).
                 await ChatMessage.create({
                   // NPC dialogue markup stripped, as on every fiction card (issue #331 X27).
-                  content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${escapeHtml(stripMarkup(text))}</em></div>`,
+                  content: `<div class="sf-clock-card">${cd.triggered ? "<strong>⚠ TRIGGERED — </strong>" : ""}<em>${proseToHtml(text)}</em></div>`,
                   flags:   {
                     [MODULE_ID]: {
                       clockCard:         true,

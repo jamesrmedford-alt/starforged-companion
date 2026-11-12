@@ -40,7 +40,7 @@
 import { TRUTH_CATEGORIES, TRUTH_TABLES, SUB_TABLES } from "./tables.js";
 import { apiPost } from "../api-proxy.js";
 import { writeOwnedFields } from "../factContinuity/sceneLifecycle.js";
-import { stripMarkup } from "../audio/segments.js";
+import { proseToHtml } from "../audio/segments.js";
 
 const MODULE_ID      = "starforged-companion";
 const JOURNAL_NAME   = "World Truths";
@@ -731,12 +731,7 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
 function loreParagraphs(recap) {
   return String(recap ?? "").split(/\n\n+/)
     .map(p => p.trim()).filter(Boolean)
-    .map(p => `<p>${escapeLoreHtml(stripMarkup(p))}</p>`);
-}
-
-function escapeLoreHtml(s) {
-  return String(s ?? "")
-    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    .map(p => `<p>${proseToHtml(p)}</p>`);
 }
 
 async function writeLoreRecapToJournal(recap, campaignState) {
