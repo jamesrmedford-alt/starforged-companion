@@ -200,7 +200,7 @@ import {
   syncCommandVehicleTokenToPosition,
   checkedTokenDragCourse,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing, onGmLoadChange, onGmStoodDown } from "./multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, advertiseOpenRouterKeyPresence, registerKeyRegistryHealing, onGmLoadChange, onGmStoodDown } from "./multiplayer/gmGate.js";
 import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.js";
 import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWatch.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
@@ -354,6 +354,20 @@ function registerCoreSettings() {
     config:  false,
     type:    String,
     default: "",
+    // A GM's key is advertised to the table, so a new card's automatic
+    // portrait is made by a GM who holds one when the canonical GM, which
+    // runs the seeds, does not (gmGate.isArtGM — AUTOSEED-KEYLESS-CANONICAL).
+    onChange: () => { advertiseOpenRouterKeyPresence().catch(err =>
+      console.warn(`${MODULE_ID} | art-keyed GM advertise failed:`, err)); },
+  });
+  // The GMs whose client holds an OpenRouter key — user ids only, never the
+  // key (issue #209), as audioKeyedGmUserIds is for the ElevenLabs key.
+  game.settings.register(MODULE_ID, "artKeyedGmUserIds", {
+    name:    "Art-keyed GM registry",
+    scope:   "world",
+    config:  false,
+    type:    Array,
+    default: [],
   });
 
   game.settings.register(MODULE_ID, "openRouterImageModel", {
@@ -7884,6 +7898,10 @@ Hooks.once("ready", () => {
   // make it (issue #342 Z67).
   advertiseElevenLabsKeyPresence().catch((err) =>
     console.warn(`${MODULE_ID} | audio-keyed GM advertise failed:`, err));
+  // And its OpenRouter key, so a new card's automatic portrait is made by a
+  // GM who can make it (AUTOSEED-KEYLESS-CANONICAL).
+  advertiseOpenRouterKeyPresence().catch((err) =>
+    console.warn(`${MODULE_ID} | art-keyed GM advertise failed:`, err));
   console.log(`${MODULE_ID} | Ready`);
 
   // Show the floating Companion launcher. It replaces the old scene-controls
@@ -8217,6 +8235,10 @@ Hooks.once("ready", () => {
     // never the chat log rendered at load (issue #322 V15).
     markAudioClientReady();
   }).catch(err => console.warn(`${MODULE_ID} | audio socket registration failed:`, err));
+  // Portraits a keyless canonical GM's seed asks of the GM holding the
+  // OpenRouter key (AUTOSEED-KEYLESS-CANONICAL).
+  import("./art/portraitRouting.js").then(({ registerArtSocket }) => registerArtSocket())
+    .catch(err => console.warn(`${MODULE_ID} | art socket registration failed:`, err));
   // Shared inciting-vow — the cross-PC progress sync (no-op on non-canonical
   // clients). Its reward and link picks relay through GM_ACTIONS (issue #325
   // W11: "vow.reward", "vow.link").

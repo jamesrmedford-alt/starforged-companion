@@ -170,7 +170,10 @@ The `createActor` seed hook (canonical GM, `autoSeedConnection` on) is not a
 fifth path: it populates a card one of the four made (`connectionNeedsSeed`:
 the module's connection record present, not yet `seeded`) —
 `seedConnectionActor` rolls role/goal/first-look/disposition, writes
-biography/notes/pronouns and fires a silent portrait. A character Actor made by
+biography/notes/pronouns and fires a silent portrait — made where an
+OpenRouter key lives: on the canonical GM when it holds one, else asked of
+the GM who does (`art/portraitRouting.js`, `gmGate.isArtGM` —
+AUTOSEED-KEYLESS-CANONICAL). A character Actor made by
 hand in the Actors sidebar carries no module flag: it is never seeded, never
 listed in `connectionIds`, and the module takes it for a **player character**
 (`isPlayerCharacterActor` — no `entityType`), so it joins the PARTY roster and

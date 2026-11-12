@@ -1048,7 +1048,6 @@ function safeOracleRoll(tableId, options = {}) {
 // pipeline as the make_a_connection auto-create above.
 export async function postCreationEnrichment(typeKey, record, campaignState) {
   if (!record || !record.portraitSourceDescription) return;
-  if (!hasOpenRouterKey()) return;
   // One portrait owner per creation (issue #321 U29): with Auto-Seed NPC on,
   // the createActor seed hook seeds every new connection card — its portrait
   // included, drawn from the portrait source set here — so generating here
@@ -1059,8 +1058,10 @@ export async function postCreationEnrichment(typeKey, record, campaignState) {
   if (!hostId) return;
 
   try {
-    const { generatePortrait } = await import("../art/generator.js");
-    generatePortrait(hostId, typeKey, record, campaignState ?? {}).catch(err =>
+    // Made where an OpenRouter key lives: here, else asked of the GM holding
+    // one (AUTOSEED-KEYLESS-CANONICAL); with none, nothing.
+    const { generatePortraitWhereKeyLives } = await import("../art/portraitRouting.js");
+    generatePortraitWhereKeyLives(hostId, typeKey, record, campaignState ?? {}).catch(err =>
       console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err));
   } catch (err) {
     console.warn(`${MODULE_ID} | postCreationEnrichment: portrait generation failed:`, err);
@@ -1149,14 +1150,6 @@ function findHostDocumentId(typeKey, recordId, campaignState) {
     if (rec?._id === recordId) return hostId;
   }
   return null;
-}
-
-function hasOpenRouterKey() {
-  try {
-    return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey");
-  } catch {
-    return false;
-  }
 }
 
 

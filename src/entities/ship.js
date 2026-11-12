@@ -753,11 +753,12 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
   });
   if (listed) campaignState.shipIds.push(actor.id);
 
-  // Silent portrait — gated on OpenRouter key. Failures stay silent.
-  if (portraitSource && hasOpenRouterKey()) {
+  // Silent portrait — made where an OpenRouter key lives: here, else asked of
+  // the GM holding one (AUTOSEED-KEYLESS-CANONICAL). Failures stay silent.
+  if (portraitSource) {
     try {
-      const { generatePortrait } = await import("../art/generator.js");
-      await generatePortrait(actor.id, "ship", ship, campaignState ?? {});
+      const { generatePortraitWhereKeyLives } = await import("../art/portraitRouting.js");
+      await generatePortraitWhereKeyLives(actor.id, "ship", ship, campaignState ?? {});
     } catch (err) {
       console.warn(`${MODULE_ID} | seedStarshipActor: portrait generation failed:`, err);
     }
@@ -986,13 +987,6 @@ function escapeHtml(s) {
     .replace(/"/g, "&quot;");
 }
 
-function hasOpenRouterKey() {
-  try {
-    return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey");
-  } catch {
-    return false;
-  }
-}
 
 /**
  * Inspect a freshly-created starship Actor and return true when it looks

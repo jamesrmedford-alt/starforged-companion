@@ -299,6 +299,23 @@ export async function advertiseElevenLabsKeyPresence() {
   return advertiseKeyPresence(KEY_REGISTRIES.elevenLabs);
 }
 
+/**
+ * Record (or clear) THIS client's OpenRouter-key presence in the world-scoped
+ * art-keyed GM registry (`artKeyedGmUserIds`), so a new card's automatic
+ * portrait is made by a GM who holds the key (isArtGM). The seeds run on the
+ * canonical GM, chosen by the Claude key: at a table where only a co-GM held
+ * the OpenRouter key, a new card got no portrait (known-issues
+ * AUTOSEED-KEYLESS-CANONICAL — issue #342 Z67's shape, for the ElevenLabs
+ * key). Same rules as advertiseClaudeKeyPresence: GM-only, ids only, writes
+ * only when membership changes. Call sites: the `ready` hook and the
+ * openRouterApiKey `onChange`.
+ *
+ * @returns {Promise<void>}
+ */
+export async function advertiseOpenRouterKeyPresence() {
+  return advertiseKeyPresence(KEY_REGISTRIES.openRouter);
+}
+
 // Each per-browser key a GM's client may hold, and the world registry naming
 // the GMs whose client holds one (user ids only — the key never leaves the
 // browser, issue #209).
@@ -307,6 +324,9 @@ const KEY_REGISTRIES = Object.freeze({
     holds: (key) => !!key }),
   // As the audio module reads it (hasElevenLabsKey): blank is no key.
   elevenLabs: Object.freeze({ keySetting: "elevenLabsApiKey", registry: "audioKeyedGmUserIds",
+    holds: (key) => typeof key === "string" && key.trim().length > 0 }),
+  // As the art generator reads it: blank is no key.
+  openRouter: Object.freeze({ keySetting: "openRouterApiKey", registry: "artKeyedGmUserIds",
     holds: (key) => typeof key === "string" && key.trim().length > 0 }),
 });
 
@@ -374,17 +394,51 @@ function onKeyRegistryWritten(setting) {
  * @returns {boolean}
  */
 export function isAudioGM() {
-  const game = globalThis.game;
-  if (!game?.user?.isGM) return false;
+  return isKeyedServer(KEY_REGISTRIES.elevenLabs.registry);
+}
+
+/**
+ * True iff THIS client is the GM that makes a new card's automatic portrait
+ * when the canonical GM, which runs the seeds, holds no OpenRouter key: the
+ * lowest-id active GM whose client advertised one (`artKeyedGmUserIds`),
+ * else — no active GM holds one — the canonical GM (known-issues
+ * AUTOSEED-KEYLESS-CANONICAL; isAudioGM's rule, for the OpenRouter key).
+ *
+ * @returns {boolean}
+ */
+export function isArtGM() {
+  return isKeyedServer(KEY_REGISTRIES.openRouter.registry);
+}
+
+/**
+ * True when an active GM — any, this client included — has advertised an
+ * OpenRouter key (`artKeyedGmUserIds`): a portrait asked of the art GM
+ * (isArtGM) can then be made.
+ *
+ * @returns {boolean}
+ */
+export function hasArtKeyedActiveGM() {
+  return keyedPool(KEY_REGISTRIES.openRouter.registry).length > 0;
+}
+
+/** The active GMs a key registry names, less any still loading (electableGMs). */
+function keyedPool(registry) {
   let keyed;
   try {
-    keyed = game.settings?.get(MODULE_ID, KEY_REGISTRIES.elevenLabs.registry);
+    keyed = globalThis.game?.settings?.get(MODULE_ID, registry);
   } catch (err) {
-    console.warn(`${MODULE_ID} | isAudioGM: audio-keyed GM registry read failed; using the canonical GM:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | ${registry}: registry read failed; using the canonical GM:`, err?.message ?? err);
     keyed = null;
   }
   const keyedSet = new Set(Array.isArray(keyed) ? keyed : []);
-  const pool = electableGMs().filter(u => keyedSet.has(u.id));
+  return electableGMs().filter(u => keyedSet.has(u.id));
+}
+
+/** Is THIS client the lowest-id active GM a key registry names — else, none named, the canonical GM? */
+function isKeyedServer(registry) {
+  const game = globalThis.game;
+  if (!game?.user?.isGM) return false;
+  const pool = keyedPool(registry);
   if (!pool.length) return isCanonicalGM();
   let first = pool[0];
   for (const u of pool) if (u.id < first.id) first = u;
