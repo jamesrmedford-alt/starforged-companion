@@ -229,7 +229,9 @@ Discovered card says so). With no active sector nothing is recorded.
   the ship had reached); a token's own place on the map (placed, auto-placed
   or moved off a pin, source `token_placement`) reads "near" its nearest pin,
   a settlement's or a charted site's (issue #321 U53 — it was `scene_token`,
-  "docked at"; the site's since issue #335 Y14); with no position it explicitly instructs the
+  "docked at"; the site's since issue #335 Y14; a placement recorded before
+  U53 — `scene_token` with its pin's label as free text, which no arrival
+  writes — reads "near" too, OLD-SCENE-TOKEN-DOCKED); with no position it explicitly instructs the
   narrator not to invent one. The token follows a recorded position onto
   the pin that anchors it — a settlement's, or a site's for a recorded
   location (`syncCommandVehicleTokenToPosition` reads `nearestLocationId`
