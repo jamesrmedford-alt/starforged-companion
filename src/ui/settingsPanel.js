@@ -1083,14 +1083,20 @@ function onSafetyListsWritten(setting) {
     console.warn(`${MODULE_ID} | Lines and Veils: re-sync after a write that misstated them failed:`, err?.message ?? err));
 }
 
-/** True when campaignState.safety holds the world's global Lines and Veils exactly as their settings do. */
+/**
+ * True when campaignState.safety holds the world's global Lines and Veils
+ * exactly as their settings do — or holds no safety copy at all: a state
+ * never synced is the ready-time sync's (syncSafetyToCampaignState), and a
+ * stale write carries the copy its GM had synced.
+ */
 function holdsGlobalSafetyLists(campaignState) {
   const same = (a, b) => {
     const x = Array.isArray(a) ? a : [];
     const y = Array.isArray(b) ? b : [];
     return x.length === y.length && x.every((v, i) => v === y[i]);
   };
-  const safety = campaignState?.safety ?? {};
+  const safety = campaignState?.safety;
+  if (!safety || typeof safety !== 'object') return true;
   return same(safety.lines, getGlobalLines()) && same(safety.veils, getGlobalVeils());
 }
 
