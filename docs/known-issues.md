@@ -25,14 +25,14 @@ issue #347 to be addressed on 2026-11-11 and took option A on all three
 per row; each carries regression tests converted from the probes, which fail
 with the fix taken out (`docs/testing/fix-sensitivity.md`).
 
-Run against this branch, the original probes pass 83 of their 97 tests. The
-14 others assert what a fix changed or a residual below: D1's lock free while
+Run against this branch, the original probes pass 84 of their 97 tests (83
+before the open items below were fixed: AB19's probe passes since the
+stand-down — its pause now stands). The 13 others assert what a fix changed: D1's lock free while
 the prompt is open (option A asks before the dice, where the lock is held as
 at the confirm); AB18's two (they pin `resolverId` staying the first GM's);
 AB05's summary probe's "nothing stored" setup check (the later refresh now
 stores one); AB23's control (its Scene has no settlement pin at the
-destination, which the check now requires); AB19 (the stale-cache residual
-below); AB24's second case (both moves now wait for a write that lands, as
+destination, which the check now requires); AB24's second case (both moves now wait for a write that lands, as
 AA48 decided, rather than the younger rolling first); AB06's resist probe's
 "Applied: … rolled to resist" setup check (the card is now put back live);
 AB02's audio probe (real timers; the deadline is 120 s — the converted test

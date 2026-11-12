@@ -24,7 +24,9 @@ open items — fixed at the maintainer's request the same day — on 2026-11-06,
 and for issue #345 — the twelfth audit's seventy findings and seven
 decisions — on 2026-11-11, and for issue #347 — the thirteenth audit's
 twenty-four findings and three decisions — on 2026-11-12 (the AB22 patch
-applied to `2339bb8`).
+applied to `2339bb8`), and for its open items — fixed at the maintainer's
+request the same day — on 2026-11-12 (the two AB19-STALE-CACHE-WRITES patches
+applied to `4d31c73`).
 To reproduce:
 
 ```bash
@@ -261,6 +263,15 @@ node scripts/fix-sensitivity.mjs \
   e2c6c39 e2e1b23 8d92ffd 0496811 7d7dbe0 2afa6b2 0d573ff 145639b 4af9d03 \
   8b40b40 e05297c 2a1131a 7f112e6 99756fc dbe4c6b 540b02a 73e46a6 2339bb8 \
   --inject scripts/defects/ab22-xcard-pick-chat-only.patch --md details.md
+
+# issue #347's open items, in commit order (AB19-STALE-CACHE-WRITES is shown
+# by injection too: under revert most of its tests fail only on the exports
+# the fix added — the harness calls pageIsStale)
+node scripts/fix-sensitivity.mjs \
+  327163a 0555179 ce8ef71 f5e3754 bb97f01 0e1bff4 c7409a8 6df0b41 8a23391 \
+  1372020 431e374 931e74f 3c6083d 9ca699c 2df539c \
+  --inject scripts/defects/ab19-stale-page-never-stale.patch \
+  --inject scripts/defects/ab19-relay-to-stood-down-gm.patch --md details.md
 ```
 
 Exit code 0 means every entry below is sensitive. Each check runs in a
@@ -1297,11 +1308,52 @@ row; the end-of-run docs commit is not listed.
 | D2 XCARD-AFTER-BURN-KEEPS-STRUCK-CAPTURE | 73e46a6 | revert | 7 — `resultUpgrade.test.js` (2), `xcardAfterUpgradeTakesStruckCapture.test.js` (5) |
 | D3 KEYLESS-TAKEOVER-NARRATES-FALLBACK | 4af9d03 | revert | 2 — `roundNarrationWaitsForKeyedGm.test.js` (2) |
 
+### Issue #347 — the thirteenth audit's open items
+
+Every fix commit is **sensitive**: all fifteen are shown by the script's
+revert — 48 assertions fail with the fixes taken out — and
+AB19-STALE-CACHE-WRITES by injection too: with a dropped page never stale
+(`scripts/defects/ab19-stale-page-never-stale.patch`) 5 assertions fail, and
+with `hasActiveGM` counting a stood-down GM
+(`scripts/defects/ab19-relay-to-stood-down-gm.patch`) the sole-GM X-Card's
+fails. Under revert 15 more of its tests fail only on the missing
+`pageIsStale` export (the harness's reset and `join` call it).
+ROUND-DROP-CHECK-KEYLESS-COGM has no fix commit — the stand-down settles it,
+and `2b4cf68` adds the test that pins the outcome. One commit per row; the
+end-of-run docs commit is not listed.
+
+| Finding | Fix | Shown by | Assertions that fail without the fix |
+| --- | --- | --- | --- |
+| AB19-STALE-CACHE-WRITES | 327163a | revert, injection | 2 — `staleGmPageStandsDown.test.js`, `xcardNarrationAcrossDroppedConnection.test.js`; 15 more fail only on a missing export; by injection 6 — `staleGmPageStandsDown.test.js` (5), `safetyListEditsQueued.test.js` |
+| SAFETY-LIST-EDITS-ONE-ROUND-TRIP | 0555179 | revert | 5 — `safetyListEditsQueued.test.js` (5) |
+| SUPPLY-LAGGING-SHEET | ce8ef71 | revert | 4 — `supplyEditFromLaggingSheet.test.js` (4) |
+| RESIST-BURN-STAYS-CLOSED | f5e3754 | revert | 1 — `owedResistRollHandedBack.test.js` |
+| HELD-MOVES-WAIT-FOR-WRITE | bb97f01 | revert | 3 — `heldMoveRetriedAfterRefusal.test.js` (3) |
+| ROUND-ENTRY-THROW-BEFORE-DICE | 0e1bff4 | revert | 1 — `roundEntryFailedBeforeDiceRolledAgain.test.js` |
+| UPGRADE-IN-FLIGHT-GRACE | c7409a8 | revert | 3 — `roundUpgradeInFlightWaitedWhileRunning.test.js` (3) |
+| ROUND-WAITS-FOR-ABSENT-KEYED-GM | 6df0b41 | revert | 2 — `roundWaitingForKeyClosedAtSessionEnd.test.js` (2) |
+| ROUND-CONNECTION-LINE-JOINED | 8a23391 | revert | 2 — `roundConnectionOwnLineNames.test.js` (2) |
+| TIER-DETAIL-NEGATION-LIST | 1372020 | revert | 9 — `tierDetailNegationList.test.js` (9) |
+| PACED-NARRATION-THROW-BEFORE-CALL | 431e374 | revert | 1 — `pacedNarrationPromptThrowTold.test.js` |
+| DELETED-NARRATION-MEMORY-PAGE-ONLY | 931e74f | revert | 6 — `deletedNarrationSurvivesReload.test.js` (5), `hookGates.test.js` |
+| XCARD-STRUCK-FACTS-AFTER-SCENE-END | 3c6083d | revert | 1 — `xcardStruckFactsAfterSceneEnd.test.js` |
+| TRACKS-JOURNAL-SPLIT-NOT-MERGED | 9ca699c | revert | 6 — `journalSplitMerge.test.js` (6) |
+| TRACK-QUEUE-UNBOUNDED-IN-LOCK | 2df539c | revert | 2 — `progressTracksWriteQueueBounded.test.js` (2) |
+
 ## Controls: new tests that pass with and without the fix
 
 A fix's tests include controls — the case that must keep working — which
 pass either way by design. The script lists every new test that passed both
 ways; each was read and is a control:
+
+*Issue #347's open items:* 21 new tests pass both ways — 19 are named
+`control: …` (a page whose connection never dropped, an in-step sheet, a
+handler running on no page here, a line naming both or no one, the same
+detail filed once, a prompt that builds …), and the other two keep a rule
+the fix must not break: SUPPLY-LAGGING-SHEET's "a ◂ after the last one
+landed takes one more" (sequential, in-step edits — the old value path gave
+the same answer), and TRACKS-JOURNAL-SPLIT-NOT-MERGED's "a copy a merge
+stamped is not offered again" (without the fix there is no card to offer).
 
 *Issue #347:* 63 new tests pass both ways — 62 are named `control: …` (a
 claim the world refuses, an in-step sheet, a lock another GM holds, a GM
@@ -13677,3 +13729,291 @@ Test files: `tests/unit/xcardAfterNarrationCardDeleted.test.js`.
 | --- | --- |
 | tests/unit/xcardAfterNarrationCardDeleted.test.js › issue #347 AB22 — the X-Card after the GM deleted the narration's chat card with the torch card deleted first, the X-Card removes the torch narration — not the deal on screen | AssertionError: the deal narration's card: expected true to be undefined |
 | tests/unit/xcardAfterNarrationCardDeleted.test.js › issue #347 AB22 — the X-Card after the GM deleted the narration's chat card a person's deleted line still ends the beat: the X-Card does not reach back into the earlier narration | AssertionError: expected [ 'nar-deal' ] to deeply equal [ 'nar-torch' ] |
+
+### 327163a — fix: a GM page whose connection dropped stands down until it reloads — its stale copy writes nothing over the table (issue #347 AB19-STALE-CACHE-WRITES)
+
+Test files: `tests/unit/batchModeRecovery.test.js`, `tests/unit/moveLockClaimToken.test.js`, `tests/unit/postNarrationGmGate.test.js`, `tests/unit/privateTranscriptNoGmNotice.test.js`, `tests/unit/readyGmActsWhileCanonicalLoads.test.js`, `tests/unit/roundWindowGmPresence.test.js`, `tests/unit/roundWindowGmPresenceBanners.test.js`, `tests/unit/staleGmPageStandsDown.test.js`, `tests/unit/xcardNarrationAcrossDroppedConnection.test.js`. Source restored: 8 file(s).
+
+- With the fix: 45 passed, 0 failed.
+- Without it: 17 failed (8 new; 15 only for a missing export); 28 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (API) tests/unit/batchModeRecovery.test.js › the GM resolving a round goes away the other GM resumes it: no entry rolled twice, the possibly-incomplete one told, one narration | TypeError: watch.pageIsStale is not a function |
+| (API) tests/unit/moveLockClaimToken.test.js › issue #329 X08 — a pipeline whose lock was released while its GM was away control (W25): the GM who drops mid-move has their lock released by the other GM, who whispers the GMs | TypeError: watch.pageIsStale is not a function |
+| (API) tests/unit/moveLockClaimToken.test.js › issue #329 X08 — a pipeline whose lock was released while its GM was away does not release the lock a later move holds when its narration finally returns | TypeError: watch.pageIsStale is not a function |
+| (API) tests/unit/privateTranscriptNoGmNotice.test.js › issue #337 Y41 — a default Player's Private Channel with no GM connected the player is told — once — that the conversation is not being saved, and the window says so | TypeError: watch.pageIsStale is not a function |
+| (API) tests/unit/privateTranscriptNoGmNotice.test.js › issue #342 Z66 — the open window's "not saved" line follows the conversation the open window shows the line once a flush finds no journal | TypeError: watch.pageIsStale is not a function |
+| (new) (API) tests/unit/readyGmActsWhileCanonicalLoads.test.js › a ready GM keeps the table while another GM loads (issue #347 AB03) control: gm-1's connection drops and comes back on the same page — it stands down until it reloads, then is the canonical GM again | TypeError: watch.pageIsStale is not a function |
+| (API) tests/unit/roundWindowGmPresenceBanners.test.js › the Round window's GM banners follow the GMs (issue #342 Z33) control: rendered now, with no GM connected, the window says so | TypeError: watch.pageIsStale is not a function |
+| (API) tests/unit/roundWindowGmPresenceBanners.test.js › the Round window's GM banners follow the GMs (issue #342 Z33) the GM leaves: Pat's open window says no GM is connected | TypeError: watch.pageIsStale is not a function |
+| (new) (API) tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) an X-Card the page missed stands: the move it was resolving saves nothing over the pause | TypeError: watch.pageIsStale is not a function |
+| (new) (API) tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) the stale page is not the canonical GM, writes no campaignState or round, and asks its GM to reload; the other GM runs the table | TypeError: watch.pageIsStale is not a function |
+| (new) tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) a drop the server never saw — no GM is seen leaving — still stands the page down, and the other GM frees its move's lock | AssertionError: gm-1 told the table it stood down: expected false to be true // Object.is equality |
+| (new) (API) tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) a sole GM's stale page: the table waits for its reload — a move typed meanwhile is not rolled | TypeError: watch.pageIsStale is not a function |
+| (new) (API) tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) an X-Card played while a sole GM's page is stood down says it was not recorded — not "Scene paused" — and is recorded once replayed after the reload | TypeError: watch.pageIsStale is not a function |
+| (new) (API) tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) the stale GM's own X-Card goes to the GM who runs the table, and is recorded | TypeError: watch.pageIsStale is not a function |
+| (API) tests/unit/xcardNarrationAcrossDroppedConnection.test.js › the X-Card and a narration in flight on a GM whose socket drops an X-Card played while the narrating GM is off the server for a moment still stops its narration | TypeError: watch.pageIsStale is not a function |
+| (API) tests/unit/xcardNarrationAcrossDroppedConnection.test.js › the X-Card and a narration in flight on a GM whose socket drops a narration whose GM dropped off the server for a moment is discarded even with no X-Card: its cache cannot say | TypeError: watch.pageIsStale is not a function |
+| (new) tests/unit/xcardNarrationAcrossDroppedConnection.test.js › the X-Card and a narration in flight on a GM whose socket drops control: the next move after the GM has reloaded is narrated as usual | Error: multiClient: drain() timed out with 2 pending handler(s) |
+
+- New test passing with and without the fix (a control?): tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) control: a page whose connection never dropped is not stale — it runs the table and writes
+
+### ce8ef71 — fix: a supply edit on a sheet behind the crew's supply moves the crew's supply by that edit — it never sets every PC to the sheet's value (issue #347 SUPPLY-LAGGING-SHEET)
+
+Test files: `tests/unit/supplyEditFromLaggingSheet.test.js`. Source restored: 1 file(s).
+
+- With the fix: 8 passed, 0 failed.
+- Without it: 4 failed (4 new; 0 only for a missing export); 4 still pass (4 new).
+- Verdict: **sensitive** — 4 assertion(s) fail without the fix; 4 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/supplyEditFromLaggingSheet.test.js › a supply edit on a sheet behind the crew's supply (issue #347 SUPPLY-LAGGING-SHEET) a ◂ on a lagging sheet takes one off the crew's supply — not the crew's supply up to the sheet's value | AssertionError: expected [ 4, 4, 4 ] to deeply equal [ 1, 1, 1 ] |
+| (new) tests/unit/supplyEditFromLaggingSheet.test.js › a supply edit on a sheet behind the crew's supply (issue #347 SUPPLY-LAGGING-SHEET) a ▸ on a sheet left behind adds one to the crew's supply — not the crew's supply down to the sheet's | AssertionError: expected [ 2, 2, 2 ] to deeply equal [ 5, 5, 5 ] |
+| (new) tests/unit/supplyEditFromLaggingSheet.test.js › a supply edit on a sheet behind the crew's supply (issue #347 SUPPLY-LAGGING-SHEET) a character created mid-session starts at the crew's supply | AssertionError: expected 5 to be 2 // Object.is equality |
+| (new) tests/unit/supplyEditFromLaggingSheet.test.js › a supply edit on a sheet behind the crew's supply (issue #347 SUPPLY-LAGGING-SHEET) two players who each spend one at once spend two | AssertionError: expected [ 1, 1 ] to deeply equal [ +0, +0 ] |
+
+- New test passing with and without the fix (a control?): tests/unit/supplyEditFromLaggingSheet.test.js › a supply edit on a sheet behind the crew's supply (issue #347 SUPPLY-LAGGING-SHEET) a ◂ after the last one landed takes one more
+- New test passing with and without the fix (a control?): tests/unit/supplyEditFromLaggingSheet.test.js › a supply edit on a sheet behind the crew's supply (issue #347 SUPPLY-LAGGING-SHEET) control: a ◂ on a sheet in step moves everyone's supply by one
+- New test passing with and without the fix (a control?): tests/unit/supplyEditFromLaggingSheet.test.js › a supply edit on a sheet behind the crew's supply (issue #347 SUPPLY-LAGGING-SHEET) control: a change made where nothing stamped it still sets the crew to its value
+- New test passing with and without the fix (a control?): tests/unit/supplyEditFromLaggingSheet.test.js › a supply edit on a sheet behind the crew's supply (issue #347 SUPPLY-LAGGING-SHEET) control: an NPC card made mid-session is not given the crew's supply
+
+### f5e3754 — fix: a resist roll handed back opens its move's Burn Momentum and Improve Result again — no consequence is chosen any more (issue #347 RESIST-BURN-STAYS-CLOSED)
+
+Test files: `tests/unit/owedResistRollHandedBack.test.js`. Source restored: 2 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 3 still pass (0 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/owedResistRollHandedBack.test.js › the owed resist roll and the GM's confirm dialog (issue #347 AB06) a move's price owes the roll: the press closed the move's Burn Momentum for a roll that is then never made — handed back, the Burn opens again | AssertionError: expected true to be false // Object.is equality |
+
+### bb97f01 — fix: a held move whose claim the world refused is tried again after a bounded wait — it no longer waits for a write that may not come (issue #347 HELD-MOVES-WAIT-FOR-WRITE)
+
+Test files: `tests/unit/heldMoveRetriedAfterRefusal.test.js`. Source restored: 1 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/heldMoveRetriedAfterRefusal.test.js › issue #347 HELD-MOVES-WAIT-FOR-WRITE — a held move the world refused is tried again rolled when its retry comes, though no write lands meanwhile | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/heldMoveRetriedAfterRefusal.test.js › issue #347 HELD-MOVES-WAIT-FOR-WRITE — a held move the world refused is tried again a lasting refusal is tried five times, ever further apart, then left for a write that lands | AssertionError: its own refused claim: expected +0 to be 1 // Object.is equality |
+| (new) tests/unit/heldMoveRetriedAfterRefusal.test.js › issue #347 HELD-MOVES-WAIT-FOR-WRITE — a held move the world refused is tried again control: a write that lands before the retry rolls it at once, and the retry rolls nothing more | AssertionError: expected [] to have a length of 1 but got +0 |
+
+### 0e1bff4 — fix: a Batch Mode move whose roll failed before its dice is rolled when the round goes on — not reported "may be incomplete" and narrated with no roll (ROUND-ENTRY-THROW-BEFORE-DICE)
+
+Test files: `tests/unit/roundEntryFailedBeforeDiceRolledAgain.test.js`. Source restored: 3 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/roundEntryFailedBeforeDiceRolledAgain.test.js › issue #347 residual ROUND-ENTRY-THROW-BEFORE-DICE — a roll that fails before its dice stops the round with nothing stamped; Send now rolls the entry — no "may be incomplete" notice, no action without a roll | AssertionError: nothing was rolled, so nothing is stamped: expected '2026-11-12T03:05:48.249Z' to be null |
+
+- New test passing with and without the fix (a control?): tests/unit/roundEntryFailedBeforeDiceRolledAgain.test.js › issue #347 residual ROUND-ENTRY-THROW-BEFORE-DICE — a roll that fails before its dice control: a roll whose dice rolled is stamped before its effects — its price card posts with the stamp already on the round
+
+### c7409a8 — fix: in Batch Mode, Send now waits for a Burn or Improve the GM's game is still applying, up to five minutes (UPGRADE-IN-FLIGHT-GRACE)
+
+Test files: `tests/unit/roundUpgradeInFlightWaitedWhileRunning.test.js`. Source restored: 4 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 3 failed (3 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 3 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/roundUpgradeInFlightWaitedWhileRunning.test.js › issue #347 residual UPGRADE-IN-FLIGHT-GRACE — Send now and an upgrade whose handler still runs two minutes on, Send now still waits for the burn still being applied here — the round narrates the strong hit | TypeError: Cannot read properties of null (reading 'decided') |
+| (new) tests/unit/roundUpgradeInFlightWaitedWhileRunning.test.js › issue #347 residual UPGRADE-IN-FLIGHT-GRACE — Send now and an upgrade whose handler still runs past five minutes, Send now keeps the result even while the handler still runs | timed out — the test hung |
+| (new) tests/unit/roundUpgradeInFlightWaitedWhileRunning.test.js › issue #347 residual UPGRADE-IN-FLIGHT-GRACE — as round data a handler running here holds the upgrade past the grace, up to the five-minute cap | AssertionError: expected 'keep' to be null // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/roundUpgradeInFlightWaitedWhileRunning.test.js › issue #347 residual UPGRADE-IN-FLIGHT-GRACE — as round data control: with no handler running here, the 60 s grace keeps it
+
+### 6df0b41 — fix: in Batch Mode, End a Session closes a round still waiting for a GM with a Claude key — its card lists each result, and the GMs are told (ROUND-WAITS-FOR-ABSENT-KEYED-GM)
+
+Test files: `tests/unit/roundWaitingForKeyClosedAtSessionEnd.test.js`. Source restored: 3 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/roundWaitingForKeyClosedAtSessionEnd.test.js › issue #347 ROUND-WAITS-FOR-ABSENT-KEYED-GM — the session ends while a round waits for a GM with a Claude key End a Session closes the waiting round: its "narration unavailable" card posts, and the GMs are told | AssertionError: expected { id: 'round-4', number: 4, …(14) } to match object { id: 'round-4', phase: 'closed' } |
+| (new) tests/unit/roundWaitingForKeyClosedAtSessionEnd.test.js › issue #347 ROUND-WAITS-FOR-ABSENT-KEYED-GM — the session ends while a round waits for a GM with a Claude key the world refuses the close's first step at End a Session: the GMs are told the round stopped, and the Send now it asks for closes it | AssertionError: expected +0 to be 1 // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/roundWaitingForKeyClosedAtSessionEnd.test.js › control: the keyed GM narrates the round when the session ends a round the keyed GM is narrating is narrated on its key — no fallback, no notice
+
+### 8a23391 — fix: in Batch Mode, a Make a Connection hit is named by its own player's line — not by another player's line in the same round (ROUND-CONNECTION-LINE-JOINED)
+
+Test files: `tests/unit/roundConnectionOwnLineNames.test.js`. Source restored: 3 file(s).
+
+- With the fix: 4 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/roundConnectionOwnLineNames.test.js › issue #347 ROUND-CONNECTION-LINE-JOINED — a round's Make a Connection hit is named by its own player's line the hit's line names Orla Teague, the other player's names Dace Mirren: Orla is Kira's connection, Dace stays pending | AssertionError: the rows after the round: expected { 'Dace Mirren': 'pending', …(1) } to deeply equal { 'Dace Mirren': 'pending', …(1) } |
+| (new) tests/unit/roundConnectionOwnLineNames.test.js › issue #347 ROUND-CONNECTION-LINE-JOINED — a round's Make a Connection hit is named by its own player's line the hit's line names no one, the other player's names Dace Mirren: Dace is not made Kira's connection | AssertionError: the rows after the round: expected { 'Dace Mirren': 'confirmed', …(1) } to deeply equal { 'Dace Mirren': 'pending', …(1) } |
+
+- New test passing with and without the fix (a control?): tests/unit/roundConnectionOwnLineNames.test.js › issue #347 ROUND-CONNECTION-LINE-JOINED — a round's Make a Connection hit is named by its own player's line control: a hit whose own line names both — none is guessed, and the GMs are told
+- New test passing with and without the fix (a control?): tests/unit/roundConnectionOwnLineNames.test.js › issue #347 ROUND-CONNECTION-LINE-JOINED — a round's Make a Connection hit is named by its own player's line control: a hit whose own line names no one — the narration's only NPC is the connection
+
+### 1372020 — fix: a reversal phrased past the first negation list — gave up, quit, broke with, turned against, or a dis-/un- form of the same word — is never filed as the same NPC detail (TIER-DETAIL-NEGATION-LIST)
+
+Test files: `tests/unit/tierDetailNegationList.test.js`. Source restored: 1 file(s).
+
+- With the fix: 14 passed, 0 failed.
+- Without it: 9 failed (9 new; 0 only for a missing export); 5 still pass (5 new).
+- Verdict: **sensitive** — 9 assertion(s) fail without the fix; 5 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) beside "The Syndicate's informant", the scene-end migration files "Gave up being the Syndicate's informant" | AssertionError: expected [ 'The Syndicate\'s informant' ] to deeply equal [ 'The Syndicate\'s informant', …(1) ] |
+| (new) tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) beside "Trusted the crew", the scene-end migration files "Trusted the crew, then distrusted them" | AssertionError: expected [ 'Trusted the crew' ] to deeply equal [ 'Trusted the crew', …(1) ] |
+| (new) tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) beside "The Iron Accord", the scene-end migration files "Turned against the Iron Accord" | AssertionError: expected [ 'The Iron Accord' ] to deeply equal [ 'The Iron Accord', …(1) ] |
+| (new) tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) beside "The Syndicate", the scene-end migration files "Quit the Syndicate" | AssertionError: expected [ 'The Syndicate' ] to deeply equal [ 'The Syndicate', …(1) ] |
+| (new) tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) beside "Captain of the Wayfarer", the scene-end migration files "Broke with the captain of the Wayfarer" | AssertionError: expected [ 'Captain of the Wayfarer' ] to deeply equal [ 'Captain of the Wayfarer', …(1) ] |
+| (new) tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) beside "Sworn to the crew", the scene-end migration files "Betrayed her oath, sworn to the crew" | AssertionError: expected [ 'Sworn to the crew' ] to deeply equal [ 'Sworn to the crew', …(1) ] |
+| (new) tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) beside "The outpost on Ash", the scene-end migration files "Abandoned the outpost on Ash" | AssertionError: expected [ 'The outpost on Ash' ] to deeply equal [ 'The outpost on Ash', …(1) ] |
+| (new) tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) beside "Liked by the dockhands", the scene-end migration files "Liked by the dockhands, then disliked" | AssertionError: expected [ 'Liked by the dockhands' ] to deeply equal [ 'Liked by the dockhands', …(1) ] |
+| (new) tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) the live tier pass saves "Gave up being the Syndicate's informant" beside "The Syndicate's informant" | AssertionError: expected false to be true // Object.is equality |
+
+- New test passing with and without the fix (a control?): tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) control: beside "Quit the Syndicate", "quit the Syndicate." is the same detail — not filed twice
+- New test passing with and without the fix (a control?): tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) control: beside "Captain of the Wayfarer", "Vex, captain of the Wayfarer" is the same detail — not filed twice
+- New test passing with and without the fix (a control?): tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) control: beside "Vex runs the lower docks", "Runs the lower docks" is the same detail — not filed twice
+- New test passing with and without the fix (a control?): tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) control: beside "Broke her oath to the crew", "Broke her oath to the crew" is the same detail — not filed twice
+- New test passing with and without the fix (a control?): tests/unit/tierDetailNegationList.test.js › a reversal phrased past the first list is never the same detail (issue #347 residual) control: a prefixed word around the detail that is no form of its own words reverses nothing
+
+### 431e374 — fix: a typed line whose narration fails before its call — while its prompt is built — says so in chat too: "That line was not narrated" (PACED-NARRATION-THROW-BEFORE-CALL)
+
+Test files: `tests/unit/pacedNarrationPromptThrowTold.test.js`. Source restored: 1 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/pacedNarrationPromptThrowTold.test.js › a narrative line whose narration cannot be prepared (issue #347 residual) a throw while the prompt is built: the table is told the line was not narrated | AssertionError: one notice after the line: expected [] to have a length of 1 but got +0 |
+
+- New test passing with and without the fix (a control?): tests/unit/pacedNarrationPromptThrowTold.test.js › a narrative line whose narration cannot be prepared (issue #347 residual) control: the same line is narrated when the prompt builds
+
+### 931e74f — fix: an X-Card played after a reload still removes the narration whose chat card a GM deleted, not the beat before it (DELETED-NARRATION-MEMORY-PAGE-ONLY)
+
+Test files: `tests/unit/deletedNarrationSurvivesReload.test.js`, `tests/unit/hookGates.test.js`. Source restored: 3 file(s).
+
+- With the fix: 11 passed, 0 failed.
+- Without it: 6 failed (5 new; 0 only for a missing export); 5 still pass (2 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/deletedNarrationSurvivesReload.test.js › a deleted narration and the X-Card after a reload (issue #347 residual) with the torch card deleted and the page reloaded, the X-Card still removes the torch narration — not the deal | AssertionError: expected [ 'nar-deal' ] to deeply equal [ 'nar-torch' ] |
+| (new) tests/unit/deletedNarrationSurvivesReload.test.js › a deleted narration and the X-Card after a reload (issue #347 residual) a deleted narration the X-Card removed is marked as removed, and a second X-Card after a reload removes nothing more | TypeError: Cannot read properties of undefined (reading 'find') |
+| (new) tests/unit/deletedNarrationSurvivesReload.test.js › a deleted narration and the X-Card after a reload (issue #347 residual) the kept record is small and bounded: the pick's flags, no text, the newest twenty | TypeError: stored is not iterable (cannot read property Symbol(Symbol.iterator)) |
+| (new) tests/unit/deletedNarrationSurvivesReload.test.js › a deleted narration and the X-Card after a reload (issue #347 residual) a person's deleted line is kept without its text, and after a reload still ends the beat | TypeError: Cannot read properties of undefined (reading 'find') |
+| (new) tests/unit/deletedNarrationSurvivesReload.test.js › a deleted narration and the X-Card after a reload (issue #347 residual) a Clear Chat Log's deletions land in one campaignState write | AssertionError: expected [] to have a length of 1 but got +0 |
+| tests/unit/hookGates.test.js › document hook handlers run their shared writes on one client every handler has an author / canonical-GM gate, or is listed as local-only | AssertionError: These handlers run on every client with no isCanonicalGM() / author check. Gate the shared write, or — when the handler only re-renders or mirro |
+
+- New test passing with and without the fix (a control?): tests/unit/deletedNarrationSurvivesReload.test.js › a deleted narration and the X-Card after a reload (issue #347 residual) control: one of this module's other cards, deleted, is not kept — the pick passes it over
+- New test passing with and without the fix (a control?): tests/unit/deletedNarrationSurvivesReload.test.js › a deleted narration and the X-Card after a reload (issue #347 residual) control: on a player's client nothing is written
+
+### 3c6083d — fix: an X-Card on a Burn Momentum or Improve Result beat still blocks the struck version's facts when the scene ended in between (XCARD-STRUCK-FACTS-AFTER-SCENE-END)
+
+Test files: `tests/unit/xcardStruckFactsAfterSceneEnd.test.js`. Source restored: 3 file(s).
+
+- With the fix: 3 passed, 0 failed.
+- Without it: 1 failed (1 new; 0 only for a missing export); 2 still pass (2 new).
+- Verdict: **sensitive** — 1 assertion(s) fail without the fix; 2 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/xcardStruckFactsAfterSceneEnd.test.js › an X-Card after the scene ended, on a beat a Burn Momentum upgraded (issue #347 residual) the struck narration's fact is blocked for the rest of the session | AssertionError: expected [ 'Gave up the door code' ] to deeply equal ArrayContaining{…} |
+
+- New test passing with and without the fix (a control?): tests/unit/xcardStruckFactsAfterSceneEnd.test.js › an X-Card after the scene ended, on a beat a Burn Momentum upgraded (issue #347 residual) control: the re-narration's own fact, live when the scene ended, is blocked as before
+- New test passing with and without the fix (a control?): tests/unit/xcardStruckFactsAfterSceneEnd.test.js › an X-Card after the scene ended, on a beat a Burn Momentum upgraded (issue #347 residual) control: before any X-Card, a superseded fact kept at scene end is no bar to a later narration restating it
+
+### 9ca699c — fix: a World Journal or Progress Tracks journal split into two copies gets a GM card at load whose Merge brings the other copy's entries into the one in use (TRACKS-JOURNAL-SPLIT-NOT-MERGED)
+
+Test files: `tests/unit/journalSplitMerge.test.js`. Source restored: 6 file(s).
+
+- With the fix: 7 passed, 0 failed.
+- Without it: 6 failed (6 new; 0 only for a missing export); 1 still pass (1 new).
+- Verdict: **sensitive** — 6 assertion(s) fail without the fix; 1 new test(s) pass both ways (controls — check each is meant to).
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/journalSplitMerge.test.js › a split journal at the canonical GM's load (issue #347 residual) one card per split journal, whispered to the GMs, naming only what the live journal lacks | AssertionError: expected [] to deeply equal [ 'lore', 'tracks' ] |
+| (new) tests/unit/journalSplitMerge.test.js › a split journal at the canonical GM's load (issue #347 residual) a GM's Merge copies the entries with their flags, renames the other copy, and deletes nothing | Error: multiClient: gm-2 has no message undefined |
+| (new) tests/unit/journalSplitMerge.test.js › a split journal at the canonical GM's load (issue #347 residual) two GMs pressing Merge at once merge once | Error: multiClient: gm-1 has no message undefined |
+| (new) tests/unit/journalSplitMerge.test.js › a split journal at the canonical GM's load (issue #347 residual) a player's relayed Merge is refused: nothing copied, the card still open | Error: gmRelay: unknown action kind "journal.merge" |
+| (new) tests/unit/journalSplitMerge.test.js › a split journal at the canonical GM's load (issue #347 residual) a merge that fails part-way frees the card, and a second press copies only what is missing | Error: multiClient: gm-1 has no message undefined |
+| (new) tests/unit/journalSplitMerge.test.js › a split journal at the canonical GM's load (issue #347 residual) a later check retires the unpressed card and posts a fresh one while the split stands | Error: Cannot find module '../../src/world/journalSplitMerge.js' imported from '/tmp/claude-0/-home-user-starforged-companion/221d3903-3158-535f-b859-9cd15b3e49 |
+
+- New test passing with and without the fix (a control?): tests/unit/journalSplitMerge.test.js › a split journal at the canonical GM's load (issue #347 residual) a copy a merge stamped is not offered again
+
+### 2df539c — fix: a Progress Tracks save that is never answered no longer holds the track queue — or the move lock it is awaited in — for good (issue #347 TRACK-QUEUE-UNBOUNDED-IN-LOCK)
+
+Test files: `tests/unit/progressTracksWriteQueueBounded.test.js`. Source restored: 1 file(s).
+
+- With the fix: 2 passed, 0 failed.
+- Without it: 2 failed (2 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 2 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/progressTracksWriteQueueBounded.test.js › a Progress Tracks save never answered (issue #347 TRACK-QUEUE-UNBOUNDED-IN-LOCK) settles after 30 s — refused — and the next track write runs and lands | timed out — the test hung |
+| (new) tests/unit/progressTracksWriteQueueBounded.test.js › a Progress Tracks save never answered (issue #347 TRACK-QUEUE-UNBOUNDED-IN-LOCK) control: an answered save lands at once, and the next waits for it | timed out — the test hung |
+
+### 0555179 — fix: two Safety-list edits inside one round trip both land — a removed Line no longer comes back, an added one is no longer dropped (issue #347 SAFETY-LIST-EDITS-ONE-ROUND-TRIP)
+
+Test files: `tests/unit/safetyListEditsQueued.test.js`. Source restored: 1 file(s).
+
+- With the fix: 5 passed, 0 failed.
+- Without it: 5 failed (5 new; 0 only for a missing export); 0 still pass (0 new).
+- Verdict: **sensitive** — 5 assertion(s) fail without the fix.
+
+| Fails without the fix | First failure line |
+| --- | --- |
+| (new) tests/unit/safetyListEditsQueued.test.js › two Safety-list edits inside one round trip both land two ✕ on different Lines: both are removed | AssertionError: expected [ 'No sexual violence.', …(1) ] to deeply equal [ 'No torture shown on screen.' ] |
+| (new) tests/unit/safetyListEditsQueued.test.js › two Safety-list edits inside one round trip both land two Adds: both Lines are kept | AssertionError: expected [ 'No harm to children.', …(3) ] to deeply equal [ 'No harm to children.', …(4) ] |
+| (new) tests/unit/safetyListEditsQueued.test.js › two Safety-list edits inside one round trip both land an Add and a ✕ on Veils: both land | AssertionError: expected [ …(2) ] to deeply equal [ 'Body horror kept off screen.' ] |
+| (new) tests/unit/safetyListEditsQueued.test.js › two Safety-list edits inside one round trip both land control: an edit refused by the world is reported, and the next edit still runs | AssertionError: expected [] to have a length of 1 but got +0 |
+| (new) tests/unit/safetyListEditsQueued.test.js › a GM page whose connection dropped writes no Lines until it reloads (issue #347 AB19-STALE-CACHE-WRITES) its ✕ is refused, so a Line a co-GM added meanwhile is kept | AssertionError: expected undefined to be an instance of Error |
+
+### `scripts/defects/ab19-stale-page-never-stale.patch` — AB19-STALE-CACHE-WRITES (issue #347) — a page whose connection dropped is never stale: it goes on running the table and writing campaignState, rounds and Lines from a cache that missed what changed meanwhile
+
+Test files: `tests/unit/staleGmPageStandsDown.test.js`, `tests/unit/safetyListEditsQueued.test.js`.
+
+- On HEAD: 12 passed, 0 failed.
+- With the defect: 5 failed (0 only for a missing export); 7 still pass.
+- Verdict: **sensitive** — 5 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/safetyListEditsQueued.test.js › a GM page whose connection dropped writes no Lines until it reloads (issue #347 AB19-STALE-CACHE-WRITES) its ✕ is refused, so a Line a co-GM added meanwhile is kept | AssertionError: expected undefined to be an instance of Error |
+| tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) an X-Card the page missed stands: the move it was resolving saves nothing over the pause | AssertionError: the move's record and lock release did not write the pause away: expected undefined to be true // Object.is equality |
+| tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) the stale page is not the canonical GM, writes no campaignState or round, and asks its GM to reload; the other GM runs the table | AssertionError: expected true to be false // Object.is equality |
+| tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) a drop the server never saw — no GM is seen leaving — still stands the page down, and the other GM frees its move's lock | AssertionError: expected [ { …(7) }, { …(7) }, { …(7) } ] to have a length of 2 but got 3 |
+| tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) a sole GM's stale page: the table waits for its reload — a move typed meanwhile is not rolled | AssertionError: nothing runs the table: expected [ { …(7) } ] to have a length of +0 but got 1 |
+
+### `scripts/defects/ab19-relay-to-stood-down-gm.patch` — AB19-STALE-CACHE-WRITES (issue #347) — hasActiveGM counts a GM whose page stood down after its connection dropped, so a player's X-Card relayed to a sole GM's stale page says "Scene paused" and is never recorded
+
+Test files: `tests/unit/staleGmPageStandsDown.test.js`.
+
+- On HEAD: 7 passed, 0 failed.
+- With the defect: 1 failed (0 only for a missing export); 6 still pass.
+- Verdict: **sensitive** — 1 assertion(s) fail with the defect.
+
+| Fails with the defect | First failure line |
+| --- | --- |
+| tests/unit/staleGmPageStandsDown.test.js › a GM page whose connection dropped stands down until it reloads (issue #347 AB19-STALE-CACHE-WRITES) an X-Card played while a sole GM's page is stood down says it was not recorded — not "Scene paused" — and is recorded once replayed after the reload | AssertionError: expected true to be false // Object.is equality |
