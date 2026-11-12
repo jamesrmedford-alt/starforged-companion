@@ -640,7 +640,7 @@ export async function seedStarshipActor(actor, campaignState, opts = {}) {
   // Mission") rolls this region's mission table, as the seed's own mission
   // does — it rolled the Terminus one in every region (issue #338 D5's rule;
   // known-issues SHIP-SEED-MISSION-REGION).
-  const rolledType      = safeRoll(rollOracle, "starship_type", { region });
+  const rolledType      = rollSingleShipType(rollOracle, { region });
   const rolledFirstLook = safeRoll(rollOracle, "starship_first_look");
   const rolledMission   = safeRoll(rollOracle, missionTable);
 
@@ -845,6 +845,31 @@ function safeRoll(rollOracle, tableId, options = {}) {
   } catch {
     return "";
   }
+}
+
+// Starship Type's 95–100 row, "Ships in conflict (roll twice)", as the roller
+// resolves it ("Ships in conflict: A / B").
+const SHIPS_IN_CONFLICT = /^Ships in conflict\b/i;
+const SHIP_TYPE_REROLLS = 6;
+
+/**
+ * One ship's own type, rolled on Starship Type. The table is an encounter
+ * table: its 95–100 "Ships in conflict" is two ships met fighting, not a type
+ * one ship can have — a new ship got "Ships in conflict: A / B" as its single
+ * type (known-issues SHIP-TYPE-IN-CONFLICT). That row is rolled again, a few
+ * times at most ("" when every roll landed on it, as a refused roll is).
+ * The ship seed and a detected ship's draft Confirm both roll by it.
+ *
+ * @param {Function} rollOracle — roller.js rollOracle
+ * @param {{ region?: string }} [options] — passed to each roll
+ * @returns {string}
+ */
+export function rollSingleShipType(rollOracle, options = {}) {
+  for (let i = 0; i < SHIP_TYPE_REROLLS; i++) {
+    const type = safeRoll(rollOracle, "starship_type", options);
+    if (!SHIPS_IN_CONFLICT.test(type)) return type;
+  }
+  return "";
 }
 
 /**
