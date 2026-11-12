@@ -82,7 +82,9 @@ recorded under its name promoted to it; its bond is §2's.
   name out). Which one is the player's line's to say (`lineText`; a Batch
   Mode round's hit, its own entry's line — `connectionRollers[].lineText`,
   issue #347 ROUND-CONNECTION-LINE-JOINED: the round's lines joined named
-  another player's NPC as the roller's): the one
+  another player's NPC as the roller's; and its candidates are only the NPCs
+  its own line or the narration names — `narrationText` —
+  ROUND-CONNECTION-OTHER-LINE-CANDIDATE): the one
   it names, else — naming none — the one the narration names; several, none
   is guessed and the GMs are whispered which (issue #347 AB10 — the first
   pending row named anywhere was confirmed, so a hit with Sable whose

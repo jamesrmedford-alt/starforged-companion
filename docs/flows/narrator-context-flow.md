@@ -204,8 +204,11 @@ notice says the connection dropped (issue #347 AB19). The page itself is
 stale from the drop until it reloads, and stands down: it is never the
 canonical GM and writes no campaignState or Batch Mode round, so the move's
 own record and lock release — written from that cache afterwards — are
-refused instead of lifting such a pause; another GM takes over what it held
-(issue #347 AB19-STALE-CACHE-WRITES). The watch
+refused instead of lifting such a pause, and so are its actor writes
+(`actorBridge.js`, STALE-PAGE-ACTOR-WRITES); another GM takes over what it held
+(issue #347 AB19-STALE-CACHE-WRITES). A narration started on a page already
+stale — a player's, narrating on the player's own key — is discarded by the
+same watch, and the Private Channel refuses a turn there (STALE-PLAYER-PAGE). The watch
 starts on entry with the live `campaignState.xCardPlays` count (each
 `suppressScene` adds one; resuming never lowers it), so a card played **and
 resumed** before the reply arrives still discards it (issue #306 R01) —
@@ -588,6 +591,10 @@ a session nobody ended handed its open gate to the next, so Begin did nothing
 reads, resolves or opens in it (issue #342 Z24), and the chat gate tells a
 line's author no session has begun: narrated, it went into the closing
 session after its summary was taken, under its old id (issue #345 AA58).
+`rollSessionIfDue` notes it too, so Begin a Session's own mint has the same
+rule (BEGIN-MINT-LINE-WINDOW); and mints run one at a time on a client
+(`serialiseSessionMint`), so a Begin landing during the load's summary call
+begins the session the load minted (SESSION-MINT-RACE).
 Begin a Session's start effects (Spotlight momentum, campaign clocks, the
 galley vignette) run once per session id: `applyBeginSession` stamps
 `sessionStartedId`, and a second Begin on that session posts a note instead

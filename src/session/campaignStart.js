@@ -34,7 +34,7 @@
  */
 
 import { runPlaytestQuickstart }                                  from "./quickstart.js";
-import { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS }    from "./lifecycle.js";
+import { beginSession, rollSessionIfDue, SESSION_MINT_FIELDS, sessionMintsSettled, noteSessionReplaced } from "./lifecycle.js";
 import { writeOwnedFields }                                       from "../factContinuity/sceneLifecycle.js";
 import { finalizeEntity }                                         from "../entities/finalize.js";
 import { envisionShip, renderEnvisionHtml, appendNotesSection }  from "../entities/shipEnvision.js";
@@ -153,14 +153,16 @@ export async function runCampaignStart(opts = {}) {
   // ── Phase 4: Begin Session ────────────────────────────────────────────────
   // On a copy: get() returns the cached value, and a refused write must leave
   // it as the world has it (rules/foundry-api.md).
-  campaignState = foundry.utils.deepClone(readCampaignState());
   try {
     // A session that is over — End a Session closed it, or it went idle — is
     // closed out and the next one minted first, as Begin a Session does
     // (applyBeginSession): this Begin reopened the ended session, its number
     // and id handed to a new night's play (issue #331 X36). The mint can await
     // the closing session's summary call, so only the session's own fields
-    // are merged onto the latest store.
+    // are merged onto the latest store — read once the world load's mint on
+    // this client has landed, as Begin's is (SESSION-MINT-RACE).
+    await sessionMintsSettled();
+    campaignState = foundry.utils.deepClone(readCampaignState());
     await rollSessionIfDue(campaignState);
     const wasActive = campaignState.sessionActive === true;
     beginSession(campaignState);
@@ -169,6 +171,7 @@ export async function runCampaignStart(opts = {}) {
     campaignState.sessionStartedId = campaignState.currentSessionId ?? null;
     // On the client's campaignState write chain (CAMPSTATE-CHAIN-PARTIAL).
     await writeOwnedFields(campaignState, CAMPAIGN_START_BEGIN_FIELDS, "campaign start begin");
+    noteSessionReplaced();   // its mint (if any) has landed (BEGIN-MINT-LINE-WINDOW)
     Hooks.callAll(`${MODULE_ID}.sessionStateChanged`, { active: true });
     await ChatMessage.create({
       content:
