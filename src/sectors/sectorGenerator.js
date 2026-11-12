@@ -84,9 +84,16 @@ export function generateSector(region, _overrides = {}) {
   // every settlement — that fed the scene-map stellar pins, but made every
   // star in a sector identical (v1.7.10 playtest finding #3).
   const settlements = [];
+  const takenNames  = new Set();
   for (let i = 0; i < cfg.settlements; i++) {
     const s = generateSettlement(region);
     s.stellar = rollTableResult(SPACE.STELLAR_OBJECT);
+    // One name per settlement in a sector: the roster and `!at` match
+    // settlements by name, so two of one name were ambiguous within it
+    // (known-issues SECTOR-DUPLICATE-NAMES; across sectors the active
+    // sector's namesake wins — issue #342 Z15).
+    s.name = uniqueSettlementName(s.name, takenNames);
+    takenNames.add(normalizeSettlementName(s.name));
     settlements.push(s);
   }
 
@@ -237,6 +244,32 @@ export function generateSettlement(region, projectCount) {
     initialContact: null,
     stellar:        null,
   };
+}
+
+const SETTLEMENT_NAME_REROLLS = 12;
+
+const normalizeSettlementName = (name) => String(name ?? "").trim().toLowerCase();
+
+/**
+ * A settlement name no other settlement of the sector has: the rolled one,
+ * else the Settlement Name table rolled again (a few times), else the rolled
+ * one with a numeral ("Bleakhold II"), as a sector's repeated site names are
+ * told apart (precursorSites.js).
+ *
+ * @param {string} rolled — the name generateSettlement rolled
+ * @param {Set<string>} taken — the sector's names so far, normalised
+ * @returns {string}
+ */
+function uniqueSettlementName(rolled, taken) {
+  if (!taken.has(normalizeSettlementName(rolled))) return rolled;
+  for (let i = 0; i < SETTLEMENT_NAME_REROLLS; i++) {
+    const name = rollTableResult(SETTLEMENTS.NAMES);
+    if (!taken.has(normalizeSettlementName(name))) return name;
+  }
+  for (let n = 0; ; n++) {
+    const name = `${rolled} ${NAME_NUMERALS[n] ?? String(n + 2)}`;
+    if (!taken.has(normalizeSettlementName(name))) return name;
+  }
 }
 
 /**
