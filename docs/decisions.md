@@ -46,7 +46,7 @@ the entry they change.)
   `multiplayer/connectionWatch.js`; a returning GM's stale writes are the
   open part (known-issues).
 - **Batch Mode** [AB13, AB17, AB18, AB20]: an upgrade in flight is waited for
-  (Send now keeps it after 60 s); a late reply of a narration taken over posts
+  (Send now keeps it after 60 s — after five minutes while its handler still runs on the resolving GM's page, UPGRADE-IN-FLIGHT-GRACE); a late reply of a narration taken over posts
   and closes nothing; a takeover names its resolver; an entry stamped rolling
   before its effects is never rolled again.
 - **Smaller:** a Make a Connection's portrait is not awaited [AB01]; the
@@ -765,7 +765,13 @@ Free-flow play stays the default and is unchanged while the mode is off.
   momentum…"), its roller's Keep is refused, and Send now keeps it only after
   a minute (`UPGRADE_IN_FLIGHT_GRACE_MS` — a handler that died with its page).
   The step skipped it, and the round told the result as rolled while the card
-  said burned.
+  said burned. *Update (issue #347 residual UPGRADE-IN-FLIGHT-GRACE):* the
+  minute is for a handler no page is running. While the upgrade's handler
+  still runs on the resolving GM's page (the in-flight claim burnMomentum.js
+  shares with Improve Result — `resultUpgradeRunningHere`), Send now waits for
+  it, bounded at five minutes (`UPGRADE_IN_FLIGHT_MAX_MS`): a slow world held
+  a live burn past the minute, and the round then told the rolled result while
+  the card said burned.
 - **Players see who is ready, and what they submitted;** the GM sees every
   reading. Entries stay editable until the round resolves.
 - **Chat is table talk while the mode is on.** A typed line is not narrated;

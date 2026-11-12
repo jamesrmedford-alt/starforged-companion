@@ -89,6 +89,14 @@ const OWN_ACTION = new Set([ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STA
  */
 export const UPGRADE_IN_FLIGHT_GRACE_MS = 60_000;
 
+/**
+ * How long Send now waits for an upgrade in flight whose handler is still
+ * running on the resolving GM's page (`runningHere`): a live handler is
+ * waited for, its writes each bounded, up to this cap; the 60 s grace is for
+ * one that died with another page (UPGRADE-IN-FLIGHT-GRACE).
+ */
+export const UPGRADE_IN_FLIGHT_MAX_MS = 5 * 60_000;
+
 /** A transition refused — `reason` is a stable code, `message` what the requester is told. */
 export class RoundRefusal extends Error {
   constructor(reason, message) {
@@ -949,31 +957,37 @@ export function decideUpgrade(round, { userId, decision, narrationInput = null, 
  * Every undecided upgrade kept — Send now during the upgrade step, or for
  * rollers who left (`userIds`). An upgrade in flight is kept only once it has
  * been on its way longer than UPGRADE_IN_FLIGHT_GRACE_MS (its handler died):
- * until then the round waits for it (issue #347 AB13).
+ * until then the round waits for it (issue #347 AB13). One whose card's
+ * handler is still running on the resolving GM's page (`runningHere`, card
+ * ids) is waited for up to UPGRADE_IN_FLIGHT_MAX_MS — a live handler slower
+ * than the grace lost its upgrade from the narration
+ * (UPGRADE-IN-FLIGHT-GRACE).
  *
  * @param {Object} round
- * @param {{ now: string, userIds?: string[]|null }} args
+ * @param {{ now: string, userIds?: string[]|null, runningHere?: string[] }} args
  * @returns {Object}
  */
-export function keepUndecidedUpgrades(round, { now, userIds = null }) {
+export function keepUndecidedUpgrades(round, { now, userIds = null, runningHere = [] }) {
   if (round?.phase !== ROUND_PHASE.UPGRADING) return round;
+  const live = new Set(Array.isArray(runningHere) ? runningHere : []);
   let next = round;
   for (const e of Object.values(round.entries)) {
     if (!e.upgrade || e.upgrade.decided) continue;
     if (userIds && !userIds.includes(e.userId)) continue;
-    const overrideInFlight = !!e.upgrade.inFlight && inFlightLapsed(e.upgrade, now);
+    const bound = live.has(e.upgrade.cardId) ? UPGRADE_IN_FLIGHT_MAX_MS : UPGRADE_IN_FLIGHT_GRACE_MS;
+    const overrideInFlight = !!e.upgrade.inFlight && inFlightLapsed(e.upgrade, now, bound);
     if (e.upgrade.inFlight && !overrideInFlight) continue;
     next = decideUpgrade(next, { userId: e.userId, decision: "keep", now, overrideInFlight });
   }
   return next;
 }
 
-/** Whether an upgrade in flight has been on its way longer than its grace (or since an unknown time). */
-function inFlightLapsed(upgrade, now) {
+/** Whether an upgrade in flight has been on its way longer than `bound` (or since an unknown time). */
+function inFlightLapsed(upgrade, now, bound = UPGRADE_IN_FLIGHT_GRACE_MS) {
   const since = Date.parse(upgrade?.inFlightSince ?? "");
   const at = Date.parse(now ?? "");
   if (!Number.isFinite(since) || !Number.isFinite(at)) return true;
-  return at - since >= UPGRADE_IN_FLIGHT_GRACE_MS;
+  return at - since >= bound;
 }
 
 /** True once every offered roller has decided. */

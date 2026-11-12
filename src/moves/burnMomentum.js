@@ -129,6 +129,19 @@ export function releaseResultUpgrade(messageId) {
 }
 
 /**
+ * Whether a burn or an improvement of this move card is being applied on
+ * this client now — its handler claimed the card and has not released it.
+ * A Batch Mode round waits longer for an upgrade in flight whose handler is
+ * still running here (driver.js keepUpgrades — UPGRADE-IN-FLIGHT-GRACE).
+ *
+ * @param {string} messageId
+ * @returns {boolean}
+ */
+export function resultUpgradeRunningHere(messageId) {
+  return _upgradeInFlight.has(messageId);
+}
+
+/**
  * Why a card's result can't be upgraded right now, or null when it can: the
  * original outcome is not recorded yet ("original-pending"), the other
  * upgrade already changed the result ("already-upgraded"), or the move's

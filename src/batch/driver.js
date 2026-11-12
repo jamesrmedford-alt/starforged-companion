@@ -62,7 +62,7 @@ import {
   finishMove,
   narrationInputFrom,
 } from "../moves/movePipeline.js";
-import { resultUpgradeBlocker } from "../moves/burnMomentum.js";
+import { resultUpgradeBlocker, resultUpgradeRunningHere } from "../moves/burnMomentum.js";
 import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
@@ -1263,7 +1263,13 @@ async function closeCardUpgrades(round, userIds = null) {
  */
 async function keepUpgrades(userIds) {
   const before = getStoredRound();
-  const after = await queueRoundWrite(r => keepUndecidedUpgrades(r, { now: nowIso(), userIds }))
+  // The upgrades in flight whose handler is still applying them on this page:
+  // waited for longer than the grace for one that died with another page
+  // (UPGRADE-IN-FLIGHT-GRACE).
+  const runningHere = Object.values(before?.entries ?? {})
+    .map(e => e?.upgrade?.inFlight ? e.upgrade.cardId : null)
+    .filter(id => id && resultUpgradeRunningHere(id));
+  const after = await queueRoundWrite(r => keepUndecidedUpgrades(r, { now: nowIso(), userIds, runningHere }))
     .catch(err => { console.warn(`${MODULE_ID} | Batch Mode: keep not saved:`, err?.message ?? err); return null; });
   if (after && after !== before) {
     const kept = Object.values(after.entries).filter(e => e.upgrade?.decided === "keep" && !before?.entries?.[e.userId]?.upgrade?.decided).map(e => e.userId);
