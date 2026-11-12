@@ -4938,6 +4938,7 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     runConsistencyCheck(prose, auditCampaignState(campaignState), {
       matchedEntityIds:  ctx.matchedEntityIds ?? [],
       currentLocationId: campaignState.currentLocationId ?? null,
+      narrationId:       typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
     }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
     );
