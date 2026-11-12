@@ -18,6 +18,7 @@
  */
 
 import { executeSuffer, SUFFER_EXECUTORS, rollImpactTable, offerAtZeroChoiceAfterMiss, clearUnprepared, crewClearedNote, overflowToMomentum } from "./sufferExecutor.js";
+import { UNNAMED_EXPEDITION_LABEL } from "./expedition.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -425,8 +426,10 @@ async function runSufferCall(call, actor, opts) {
         // Explore a Waypoint's "mark progress" pick used to silently skip
         // when no expedition was open (WAYPOINT-PROGRESS-NOOP). Mirror
         // applyExpeditionProgress's resolve-or-create: begin a default
-        // expedition and mark it, so the chosen reward always lands.
-        const created = await addProgressTrack({ label: "Expedition", type: "expedition", rank: "dangerous" });
+        // expedition and mark it, so the chosen reward always lands. Its label
+        // is the one every unnamed expedition has — the arrival and the finish
+        // read it as "no destination named" (WAYPOINT-PLACEHOLDER-LITERAL).
+        const created = await addProgressTrack({ label: UNNAMED_EXPEDITION_LABEL, type: "expedition", rank: "dangerous" });
         for (let i = 0; i < (call.count ?? 1); i++) await markProgressById(created.id);
         return { kind: "expedition-progress", count: call.count, trackId: created.id, created: true };
       }
