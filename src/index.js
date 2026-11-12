@@ -34,7 +34,7 @@ import {
   renderImproveButtonHtml,
   registerImproveResultHook,
 } from "./moves/improveResult.js";
-import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep, reopenRetiredChoiceCards } from "./moves/resultUpgrade.js";
+import { upgradeStepRecord, describeUpgradeStep, retryUpgradeStep, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./moves/resultUpgrade.js";
 import { registerSufferCardHook, summarizeSufferCalls, reopenSufferCard } from "./moves/sufferCard.js";
 import {
   getCommandVehicleActor,
@@ -1655,8 +1655,11 @@ export function holdHandedOverForcedMoves(payload = {}, ctx = {}) {
  * forced move carries (cardActions.js cardClaimFor; a resist roll's card,
  * sufferDialog.js). A flag claim is released only while the card still holds
  * the value the press set; a suffer card is put back live
- * (sufferCard.js reopenSufferCard); a waypoint alternative's press brings back
- * the ordinary reward's cards it retired (resultUpgrade.js
+ * (sufferCard.js reopenSufferCard) and its move's Burn Momentum / Improve
+ * Result, which the press closed as the consequence chosen, open again
+ * (resultUpgrade.js reopenUpgradesForUndoneChoice — issue #347
+ * RESIST-BURN-STAYS-CLOSED); a waypoint alternative's press brings back the
+ * ordinary reward's cards it retired (resultUpgrade.js
  * reopenRetiredChoiceCards). Never throws.
  *
  * @param {Object|null} claim
@@ -1666,7 +1669,11 @@ async function releaseCardClaim(claim) {
   const card = typeof claim?.messageId === "string" ? (game.messages?.get?.(claim.messageId) ?? null) : null;
   if (!card) return false;
   try {
-    if (claim.sufferCard === true) return await reopenSufferCard(card);
+    if (claim.sufferCard === true) {
+      const reopened = await reopenSufferCard(card);
+      if (reopened) await reopenUpgradesForUndoneChoice(card.flags?.[MODULE_ID]?.resolutionId ?? null);
+      return reopened;
+    }
     if (typeof claim.flag !== "string" || !claim.flag) return false;
     const now = claim.flag.split(".").reduce((o, k) => (o == null ? undefined : o[k]), card.flags?.[MODULE_ID] ?? {});
     if (now !== claim.value) return false;               // changed since the press

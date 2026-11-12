@@ -10,7 +10,9 @@
  * runs, then posts the forced Endure Harm, whose confirm dialog the GM can
  * close. Nothing was rolled, the card was not reopened, and nobody was told:
  * the owed roll was lost, and the move's Burn Momentum had been closed for it.
- * The pipeline now puts the card back live and whispers the roller.
+ * The pipeline now puts the card back live and whispers the roller — and,
+ * the consequence no longer chosen, the move's Burn Momentum is open again
+ * (issue #347 RESIST-BURN-STAYS-CLOSED).
  */
 /* global silenceConsoleErrors */
 import { describe, it, expect, beforeAll, afterAll, beforeEach, vi } from "vitest";
@@ -159,7 +161,7 @@ describe("the owed resist roll and the GM's confirm dialog (issue #347 AB06)", (
     expect(flags(resist._id).resolved).toBe(true);
   }, 30_000);
 
-  it("a move's price owes the roll: the press has closed the move's Burn Momentum for a roll that is then never made", async () => {
+  it("a move's price owes the roll: the press closed the move's Burn Momentum for a roll that is then never made — handed back, the Burn opens again", async () => {
     // Kira (momentum 8, health 1) misses Face Danger; its Pay the Price harms her to 0 health.
     kira.system.momentum.value = 8;
     control.interpretation = { moveId: "face_danger", moveName: "Face Danger", statUsed: "edge", adds: 0, rationale: "test", mischiefApplied: false };
@@ -178,8 +180,15 @@ describe("the owed resist roll and the GM's confirm dialog (issue #347 AB06)", (
 
     const rolled     = table.cards(f => f.moveResolution).length > 1;
     const reopened   = flags(resist._id).resolved !== true;
-    // The burn stays closed — the consequence was chosen — but the owed roll is not lost:
-    // its card is live again.
+    // The owed roll is not lost — its card is live again — and with no
+    // consequence chosen now, the move's Burn Momentum is open again.
     expect({ rolled, reopened }).toEqual({ rolled: false, reopened: true });
+    expect(flags(moveCard._id).burn?.choiceMade).toBe(false);
+
+    // The press made again, with the confirm accepted: the consequence is chosen — the Burn closes.
+    control.closeConfirm = false;
+    await pressResist(resist);
+    expect(flags(resist._id).resolved).toBe(true);
+    expect(flags(moveCard._id).burn?.choiceMade).toBe(true);
   }, 30_000);
 });

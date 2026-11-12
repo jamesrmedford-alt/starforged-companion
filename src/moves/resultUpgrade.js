@@ -802,6 +802,30 @@ export async function closeUpgradesForChoice(resolutionId) {
     .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
 }
 
+/**
+ * A choice that closed a move card's upgrades was handed back: a resist roll's
+ * press the pipeline did not roll puts its card back live (index.js
+ * releaseCardClaim, issue #347 AB06), so no consequence of the move is chosen
+ * now — its Burn Momentum / Improve Result open again (`choiceMade` cleared;
+ * issue #347 RESIST-BURN-STAYS-CLOSED). Not while another choice card of the
+ * move is chosen, nor once an upgrade was used; a later move's close
+ * (`laterMove`) stands. Best effort.
+ *
+ * @param {string|null} resolutionId
+ */
+export async function reopenUpgradesForUndoneChoice(resolutionId) {
+  if (!resolutionId || consequenceChosen(resolutionId)) return;
+  const card = moveCardFor(resolutionId);
+  const f    = card?.flags?.[MODULE_ID];
+  if (!f || f.burn?.consumed || f.improve?.consumed) return;
+  const update = Object.fromEntries(["burn", "improve"]
+    .filter(k => f[k]?.choiceMade === true)
+    .map(k => [`flags.${MODULE_ID}.${k}.choiceMade`, false]));
+  if (!Object.keys(update).length) return;
+  await card.update(update)
+    .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: reopening its upgrades failed:`, err?.message ?? err));
+}
+
 // The PC whose move a move card records — its roller.
 const cardRoller = (f) => f?.actorId ?? f?.burn?.actorId ?? f?.improve?.actorId ?? null;
 
