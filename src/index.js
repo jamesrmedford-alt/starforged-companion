@@ -99,6 +99,7 @@ import {
   getProgressTrack,
 } from "./ui/progressTracks.js";
 import { applyExpeditionProgress, legacyRewardTicks, planRecommit, selectExpeditionTrack, UNNAMED_EXPEDITION_LABEL } from "./moves/expedition.js";
+import { courseReroutedText } from "./moves/travel.js";
 import { shouldPayFulfilledVow, selectVowTrack } from "./moves/vow.js";
 import { isBattleStationsCommand, renderBattleStationsCardHtml } from "./moves/battleStations.js";
 import {
@@ -804,6 +805,7 @@ configureMovePipeline({
   resolveVowItemCopies, completeVowItemByName, postFulfillVowCard, payFulfilledVowNative,
   postForsakeVowCard, postDecisiveActionCostCard, postMovePayThePriceCard, postMoveResult,
   reportUnsavedMoveRecord, applyMoveConsequenceRiders,
+  resolveCurrentLocationName,
 });
 
 // A Batch Mode round claims and releases the move lock through its own paths
@@ -2011,11 +2013,14 @@ async function expeditionArrival(interpretation, campaignState) {
  * @param {{ combatTrackId?: string|null }|null} [args.targets] — the fight the original's card
  *   named, for an upgrade
  * @param {Object|null} [args.tokenDragSetCourse] — the pipeline's token-drag payload
- * @returns {Promise<{ moveFight: Object|null, thresholdResolutionId: string|null, applied: string[], notApplied: string[] }>}
+ * @returns {Promise<{ moveFight: Object|null, thresholdResolutionId: string|null, applied: string[], notApplied: string[],
+ *   afterMoveCard: Array<() => Promise<void>> }>}
  *   moveFight — the fight the move was about: the one its progress marked (or created),
  *   else the stamped or selected open fight, else the one it ended; thresholdResolutionId —
  *   the resolution whose threshold card this posted (Enter the Fray against a new foe);
- *   applied / notApplied — what the effects did, in words, for an upgrade's card
+ *   applied / notApplied — what the effects did, in words, for an upgrade's card;
+ *   afterMoveCard — the cards that summarize the move's roll card, for the pipeline to
+ *   post after it (an upgrade's are posted at once)
  */
 async function applyOutcomeEffects({
   resolution, interpretation, campaignState, rollerActor, speakerActor,
@@ -2023,7 +2028,9 @@ async function applyOutcomeEffects({
 }) {
   const applied    = [];
   const notApplied = [];
-  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, applied, notApplied };
+  // afterMoveCard — cards that summarize the roll card, which the pipeline
+  // posts once that card is on the table (issue #348 PT10).
+  const out = { moveFight: null, sceneChallenge: null, thresholdResolutionId: null, applied, notApplied, afterMoveCard: [] };
   if (!game.user?.isGM) return out;
 
   const next       = resolution.consequences ?? {};
@@ -2046,13 +2053,11 @@ async function applyOutcomeEffects({
   const arrivalMove =
     resolution.moveId === "set_a_course"
     || resolution.moveId === "finish_an_expedition";
-  if (
-    arrivalMove
+  const arrives = arrivalMove
     && resolution.outcome !== "miss"
-    && !(upgrade && against.outcome !== "miss")
-    && getShipPositioningEnabled()
-    && getShipAutoMoveOnCourse()
-  ) {
+    && !(upgrade && against.outcome !== "miss");
+  if (arrives) {
+    const positioning = getShipPositioningEnabled() && getShipAutoMoveOnCourse();
     // A Set a Course started by dropping the ship's token on a sector pin
     // names its destination by the pin's settlement Actor (forcedMoveTargetId
     // → moveTargetId): arrive at that settlement by its id, not by a name a
@@ -2084,68 +2089,91 @@ async function applyOutcomeEffects({
     const named = currentLocationForEntityId(destinationId)
       ?? (expedition?.label ? resolveCurrentLocationName(expedition.label, campaignState) : null)
       ?? resolveCurrentLocationName(moveTarget ?? "", campaignState);
-    const docked = await maybeUpdateShipPositionFromName(
-      arrivalName,
-      campaignState,
-      tokenDragSetCourse ? "scene_token"
-        : resolution.moveId === "finish_an_expedition" ? "expedition"
-        : "set_a_course",
-      { entityId: named?.id ?? destinationId },
-    );
 
-    // When the id and the name both miss, the place the ship just docked at:
-    // the position's word scan finds "Bleakhold" in "the expedition to
-    // Bleakhold", the name resolver only a place whose name holds the whole
-    // label — the ship docked there while the current location stayed where
-    // the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT). A record
-    // naming no place (free text) leaves the store untouched.
-    const arrivedAt = named
-      ?? [docked?.nearestLocationId, docked?.nearestSettlementId, docked?.nearestPlanetId]
-        .map(id => currentLocationForEntityId(typeof id === "string" ? id : null)).find(Boolean)
-      ?? null;
-    if (arrivedAt) {
-      campaignState.currentLocationId   = arrivedAt.id;
-      campaignState.currentLocationType = arrivedAt.type;
-      // The pipeline's persistResolution saves its working copy; an upgrade's
-      // location is saved here, beside the ship record just written.
-      if (upgrade) {
-        await persistCampaignStateFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
-      } else {
-        noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
-          name: arrivedAt.entity?.name ?? arrivalName ?? null });
-      }
-    } else if (arrivalName) {
-      console.debug(`${MODULE_ID} | arrival: "${arrivalName}" is not a tracked location — currentLocation unchanged.`);
-    }
-
-    // §20.4b — when the move was initiated by a Token drag and we
-    // succeeded, also move the Token to the destination Note's
-    // coordinates. On a miss the Token never moved (the drag was
-    // cancelled in the preUpdateToken hook), so no snap-back is
-    // needed.
-    if (tokenDragSetCourse) {
-      await moveCommandVehicleTokenToDestination(tokenDragSetCourse).catch(err =>
-        console.warn(`${MODULE_ID} | Token-drag commit failed:`, err),
+    // Whether the ship's position was written, and its token moved — the
+    // Set a Course card says so only when it did (issue #348 PT09).
+    let docked     = null;
+    let tokenMoved = false;
+    let arrivedAt  = null;
+    if (positioning) {
+      const tokenReport = {};
+      docked = await maybeUpdateShipPositionFromName(
+        arrivalName,
+        campaignState,
+        tokenDragSetCourse ? "scene_token"
+          : resolution.moveId === "finish_an_expedition" ? "expedition"
+          : "set_a_course",
+        { entityId: named?.id ?? destinationId, report: tokenReport },
       );
+      tokenMoved = tokenReport.tokenMoved === true;
+
+      // When the id and the name both miss, the place the ship just docked at:
+      // the position's word scan finds "Bleakhold" in "the expedition to
+      // Bleakhold", the name resolver only a place whose name holds the whole
+      // label — the ship docked there while the current location stayed where
+      // the crew set out (known-issues ARRIVAL-LOCATION-PHRASE-SPLIT). A record
+      // naming no place (free text) leaves the store untouched.
+      arrivedAt = named
+        ?? [docked?.nearestLocationId, docked?.nearestSettlementId, docked?.nearestPlanetId]
+          .map(id => currentLocationForEntityId(typeof id === "string" ? id : null)).find(Boolean)
+        ?? null;
+      if (arrivedAt) {
+        campaignState.currentLocationId   = arrivedAt.id;
+        campaignState.currentLocationType = arrivedAt.type;
+        // The pipeline's persistResolution saves its working copy; an upgrade's
+        // location is saved here, beside the ship record just written.
+        if (upgrade) {
+          await persistCampaignStateFields(campaignState, ["currentLocationId", "currentLocationType"], "arrival after an upgrade");
+        } else {
+          noteUnsavedOnCopy(campaignState, { step: "arrival", locationId: arrivedAt.id, locationType: arrivedAt.type,
+            name: arrivedAt.entity?.name ?? arrivalName ?? null });
+        }
+      } else if (arrivalName) {
+        console.debug(`${MODULE_ID} | arrival: "${arrivalName}" is not a tracked location — currentLocation unchanged.`);
+      }
+
+      // §20.4b — when the move was initiated by a Token drag and we
+      // succeeded, also move the Token to the destination Note's
+      // coordinates. On a miss the Token never moved (the drag was
+      // cancelled in the preUpdateToken hook), so no snap-back is
+      // needed.
+      if (tokenDragSetCourse) {
+        tokenMoved = await moveCommandVehicleTokenToDestination(tokenDragSetCourse).catch(err => {
+          console.warn(`${MODULE_ID} | Token-drag commit failed:`, err);
+          return false;
+        }) === true;
+      }
     }
+
+    // The place the ship reached, by its current name: the place the arrival
+    // resolved, else the destination's own words. Null when nothing named one
+    // — a "set a course" with no destination in the line or the scene.
+    const placeName = (arrivedAt ?? named)?.entity?.name ?? arrivalName ?? null;
+
+    // The narrator is told the ship has ARRIVED, and where (issue #348 PT08):
+    // it was given "Arrived, situation favors you" with no place, while the
+    // recent scene still had the crew setting off — and narrated a launch.
+    // On the MOVE OUTCOME every narration of this resolution reads (the
+    // pipeline's, a round's, an upgrade's re-narration).
+    resolution.loremasterContext = [resolution.loremasterContext, arrivalNarratorLine(placeName, resolution.outcome)]
+      .filter(Boolean).join(" ");
 
     // F15 (folded into F16 Phase F): surface a follow-up card so the
-    // user sees that the token moved + which destination. Before this
-    // wire, the position update fired silently and players hit F16's
-    // "narrator says something happened, sheet shows nothing" trust
-    // gap on every Set a Course. The card is informational —
-    // SufferChoiceDialog handles the actual meter changes from the
-    // weak-hit choice in parallel. Set a Course's only: a Finish an
+    // user sees whether the token moved, and where to. The card is
+    // informational — SufferChoiceDialog handles the actual meter changes
+    // from the weak-hit choice in parallel. Set a Course's only: a Finish an
     // Expedition arrival was told "Course held cleanly (+1 momentum)" (the
     // move grants none) or "see the suffer prompt" (it has none), beside
-    // its own "Expedition complete" card (issue #326 W46).
-    if (resolution.moveId === "set_a_course") {
-      await postSetACourseFeedbackCard(
-        moveTarget,
-        resolution,
-      ).catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
+    // its own "Expedition complete" card (issue #326 W46). It summarizes the
+    // roll card, so the pipeline posts it after that card (issue #348 PT10);
+    // an upgrade's roll card is already on the table.
+    if (resolution.moveId === "set_a_course" && positioning) {
+      const postCard = () => postSetACourseFeedbackCard(placeName, resolution, { docked: !!docked, tokenMoved })
+        .catch(err => console.warn(`${MODULE_ID} | Set a Course feedback card failed:`, err?.message ?? err));
+      if (upgrade) await postCard();
+      else out.afterMoveCard.push(postCard);
     }
-    applied.push(`arrived at ${arrivalName ?? "the destination"}`);
+    applied.push(placeName ? `arrived at ${placeName}` : "arrived (no destination named)");
   }
 
   // Exploration lifecycle — Undertake an Expedition (and Explore a Waypoint)
@@ -2185,8 +2213,21 @@ async function applyOutcomeEffects({
         // (known-issues EXPEDITION-STAMP-SITE-NAME).
         if (result.created) {
           try {
-            const { selectExpeditionSite } = await import("./sectors/siteDiscovery.js");
-            const linked = selectExpeditionSite(campaignState, result.track.label);
+            const { selectExpeditionSite, recordUnchartedDestination } = await import("./sectors/siteDiscovery.js");
+            const label  = result.track.label;
+            let   linked = selectExpeditionSite(campaignState, label);
+            // A destination that is no site and no tracked place — the
+            // coordinates an NPC gave, "the gap" — becomes an uncharted site of
+            // the active sector under the expedition's working label, with its
+            // location and map pin (issue #348 PT07): the expedition is for it,
+            // and the Finish an Expedition that completes it charts it and
+            // docks there. It never became a place in the game.
+            if (!linked && label && label !== UNNAMED_EXPEDITION_LABEL && !resolveCurrentLocationName(label, campaignState)) {
+              linked = await recordUnchartedDestination(label, campaignState);
+              // The pipeline's persist saves its working copy; an upgrade's
+              // record is saved here, as its arrival's location is.
+              if (linked && upgrade) await persistCampaignStateFields(campaignState, ["sectors"], "uncharted destination after an upgrade");
+            }
             if (linked) await updateTrackFields(result.track.id, { siteId: linked.site.id });
           } catch (err) {
             console.debug(`${MODULE_ID} | expedition→site link skipped:`, err?.message ?? err);
@@ -3909,22 +3950,30 @@ function warnIfClaudeKeyLooksWrong() {
  *
  * @param {Object}        campaignState
  * @param {string|null}   speakerActorId — preferred actor; falls back to
- *   campaignState.characterIds[0] then the first player-owned PC.
+ *   campaignState.characterIds[0], then the world's one PC when it has only
+ *   one.
  *
  * Previously this read `game.journal.get(characterIds[0])`, which was
  * wrong on two counts: characters are Actors (not Journal entries), and
  * `characterIds` is never written by the module (always []). The function
  * therefore always returned null, leaving the pacing classifier without
  * any character context.
+ *
+ * With no speaker it took the first player-owned PC — at a table of two or
+ * more, a PC-less player's line was classified as another player's
+ * character (known-issues PACING-CHARACTER-SOLO). It follows the speaker
+ * rule now (multiplayer/speaker.js, issue #321 U23): the one PC of a
+ * one-PC world, else none.
  */
 function getActiveCharacterForPacing(campaignState, speakerActorId = null) {
   try {
     const actorId = speakerActorId
                  ?? campaignState?.characterIds?.[0]
                  ?? null;
+    const pcs   = actorId ? [] : getPlayerActors();
     const actor = actorId
       ? game.actors?.get(actorId)
-      : (game.actors?.find(a => a?.type === "character" && a?.hasPlayerOwner && !a?.flags?.[MODULE_ID]?.entityType) ?? null);
+      : (pcs.length === 1 ? pcs[0] : null);
     if (!actor) return null;
     return { name: actor.name ?? null };
   } catch {
@@ -4308,6 +4357,26 @@ async function captureOracleResult(entry) {
 }
 
 /**
+ * The MOVE OUTCOME line an arrival adds (issue #348 PT08). A Set a Course
+ * strong hit was narrated as the crew setting off: the narrator got "Arrived,
+ * situation favors you" with no place, while the recent scene still had the
+ * ship leaving. It is told the ship has ARRIVED, where, to open the scene
+ * there, and how the arrival goes — a strong hit's favours the crew — ending
+ * on something unresolved in the story (the beat-ending rule, PT02).
+ *
+ * @param {string|null} place — the place reached, by name (null: none named)
+ * @param {string} outcome — "strong_hit" | "weak_hit"
+ * @returns {string}
+ */
+function arrivalNarratorLine(place, outcome) {
+  const where = typeof place === "string" ? place.replace(/[[\]\r\n]+/g, " ").trim() : "";
+  const how = outcome === "strong_hit"
+    ? "The arrival favours the crew"
+    : "The arrival comes with a cost or a complication";
+  return `[ARRIVAL: The ship has ARRIVED at ${where || "its destination"}. Open the scene there — not on the departure or the journey. ${how}; end the beat on something unresolved there.]`;
+}
+
+/**
  * F16 Phase F (F15 fold-in): post an informational follow-up card to chat
  * when Set a Course resolves to a non-miss, so players can see that the
  * ship-position update fired. Before this card, F15 surfaced as "narrator
@@ -4318,20 +4387,30 @@ async function captureOracleResult(entry) {
  * (suffer −2, two −1s, or complication at destination) are handled
  * separately by the SufferChoiceDialog (Phase D).
  *
- * @param {string|null} destination — interpretation.moveTarget
+ * @param {string|null} destination — the place reached, by name (null: none named)
  * @param {Object} resolution — full move resolution from resolveMove()
+ * @param {{ docked?: boolean, tokenMoved?: boolean }} [map] — whether the ship's
+ *   position was written, and whether its sector-map token moved
  */
-async function postSetACourseFeedbackCard(destination, resolution) {
-  const dest = destination ? escapeChatHtml(destination) : "the destination";
+async function postSetACourseFeedbackCard(destination, resolution, { docked = false, tokenMoved = false } = {}) {
+  // The place by name — the arrival's, or the scene's established destination
+  // the pipeline read for a line that named none. It said "the destination"
+  // for a course that named no place, and "Token moved" whether or not the
+  // token had moved (issue #348 PT09).
+  const dest = destination ? `<strong>${escapeChatHtml(destination)}</strong>` : null;
   const outcomeLine = resolution.outcome === "strong_hit"
-    ? `<p>Token moved to <strong>${dest}</strong>. Course held cleanly (+1 momentum).</p>`
+    ? `<p>Arrived at ${dest ?? "the destination"}. Course held cleanly (+1 momentum).</p>`
     : resolution.outcome === "weak_hit"
-      ? `<p>Token moved to <strong>${dest}</strong>. Arrived with cost or complication — see the suffer prompt for your choice.</p>`
-      : `<p>Token did not move (course not held).</p>`;
+      ? `<p>Arrived at ${dest ?? "the destination"} with a cost or complication — see the suffer prompt for your choice.</p>`
+      : `<p>Course not held — the ship did not arrive.</p>`;
+  const mapLine = resolution.outcome === "miss" ? ""
+    : tokenMoved && dest ? `<p>Token moved to ${dest}.</p>`
+    : docked && dest ? `<p>The ship's position is now ${dest}; no sector-map pin marks it, so its token did not move.</p>`
+    : `<p>The ship's position was not updated${dest ? "" : " — no destination was named"}. Type <code>!at &lt;place&gt;</code> to set where it is.</p>`;
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Set a Course resolved</strong>${outcomeLine}</div>`,
-      flags:   { [MODULE_ID]: { setACourseFeedback: true, outcome: resolution.outcome } },
+      content: `<div class="sf-ptp-card"><strong>Set a Course resolved</strong>${outcomeLine}${mapLine}</div>`,
+      flags:   { [MODULE_ID]: { setACourseFeedback: true, outcome: resolution.outcome, destination: destination ?? null, tokenMoved: !!tokenMoved } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | postSetACourseFeedbackCard: chat post failed:`, err?.message ?? err);
@@ -7454,8 +7533,11 @@ async function handleAtCommand(message) {
  * caller knows it (the Entities panel's place; a token dropped on a sector
  * pin): the position is that place's, and the name only a fallback for an id
  * that resolves to no settlement / planet / location (issue #321 U52, U56).
+ * `opts.report`, when given, gets `tokenMoved`: whether the sector-map token
+ * now stands on the pin the position names (the Set a Course card says
+ * "Token moved" only then — issue #348 PT09).
  */
-export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual", { entityId = null } = {}) {
+export async function maybeUpdateShipPositionFromName(name, campaignState, source = "manual", { entityId = null, report = null } = {}) {
   if (!getShipPositioningEnabled()) return null;
   const ref = typeof name === "string" ? name.trim() : "";
   if (!ref && !entityId) return null;
@@ -7476,8 +7558,11 @@ export async function maybeUpdateShipPositionFromName(name, campaignState, sourc
     // to the new position. The drag path already moved its own Token
     // (moveCommandVehicleTokenToDestination), so scene_token skips the sync.
     if (source !== "scene_token") {
-      await syncCommandVehicleTokenToPosition(position, campaignState).catch(err =>
-        console.debug?.(`${MODULE_ID} | shipPosition: token sync failed:`, err?.message ?? err));
+      const token = await syncCommandVehicleTokenToPosition(position, campaignState).catch(err => {
+        console.debug?.(`${MODULE_ID} | shipPosition: token sync failed:`, err?.message ?? err);
+        return null;
+      });
+      if (report && typeof report === "object") report.tokenMoved = !!token;
     }
     return position;
   } catch (err) {
@@ -7959,6 +8044,9 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
       ${aside
         ? `<div class="sf-move-aside">🎲 ${aside}</div>`
         : ""}
+      ${resolution.courseRerouted
+        ? `<div class="sf-move-effect sf-move-reroute">🧭 ${escapeChatHtml(courseReroutedText(resolution.courseRerouted))}</div>`
+        : ""}
       ${renderBurnButtonHtml(burnState)}
       ${renderImproveButtonHtml(improveState)}
       ${renderMilestoneSuggestionHtml(milestoneState, upgradeOffered)}
@@ -8018,7 +8106,9 @@ export function wireWaypointOracleButton(message, root) {
     btn.disabled = true;
     btn.title = claimed === "ordinary"
       ? "The ordinary reward was taken — the match's alternative no longer applies"
-      : "Taken";
+      : claimed === "burn" || claimed === "improve"
+        ? "The result changed — the match's alternative no longer applies"
+        : "Taken";
     return;
   }
   const fresh = btn.cloneNode(true);

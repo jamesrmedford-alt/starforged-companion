@@ -117,6 +117,18 @@ describe('A Finish an Expedition arrival posts no Set a Course card (issue #326 
   }, 30_000);
 
   it('control: a Set a Course strong hit posts its feedback card', async () => {
+    // Bleakhold is a charted settlement: a course to a place no chart shows is
+    // read as Undertake an Expedition (issue #348 PT06).
+    await table.reset({ world: { settings: {
+      chronicleAutoEntry: false, narratorSessionSummary: false,
+      campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 2, currentSceneId: 'sc-1', sceneTruths: [],
+        settlementIds: ['actor-bleak'] },
+    } } });
+    await table.setClaudeKey('gm-1', 'sk-ant-gina');
+    table.addActor({ id: 'pc-kira', name: 'Kira', ownership: { 'pl-1': 3 }, system: { momentum: { value: 2, max: 10, min: -6, resetValue: 2 } } });
+    table.addActor({ id: 'actor-bleak', type: 'location', name: 'Bleakhold',
+      flags: { [MODULE_ID]: { entityType: 'settlement', settlement: { _id: 'rec-bleak', name: 'Bleakhold' } } } });
+    scriptClaude(table, { fallback: () => REPLY });
     await play({ moveId: 'set_a_course', moveName: 'Set A Course', statUsed: 'supply', moveTarget: 'Bleakhold' },
       [0.15, 0.25, 0.99],   // challenge 2, 3; action 6 + supply 3: a strong hit
       'We plot the jump to Bleakhold and hold the course.');

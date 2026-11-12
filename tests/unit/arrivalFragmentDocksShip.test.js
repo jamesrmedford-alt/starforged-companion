@@ -204,7 +204,10 @@ describe('an arrival named by a fragment of a place: the ship docks where the cu
   }, 30_000);
 
   it('control: an arrival that names no place leaves the current location, the ship a free-text position', async () => {
-    await setACourse('across the Rift');
+    // A Finish an Expedition: a Set a Course "across the Rift" — to no charted
+    // place — is read as Undertake an Expedition since issue #348 PT06, and
+    // arrives nowhere.
+    await finish('across the Rift');
 
     expect(here()).toEqual({ id: 'actor-port', type: 'settlement' });
     expect(position()).toMatchObject({ nearestSettlementId: null, freeText: 'across the Rift' });

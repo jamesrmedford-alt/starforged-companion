@@ -13,8 +13,8 @@
  * the orchestration unit-tests without a live game.
  */
 
-import { selectSectorSite } from "./precursorSites.js";
-import { restyleSiteOnScene }  from "./sceneBuilder.js";
+import { selectSectorSite, buildSiteLocationData } from "./precursorSites.js";
+import { restyleSiteOnScene, addSiteToScene } from "./sceneBuilder.js";
 import { updateLocation, getLocation } from "../entities/location.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
@@ -71,6 +71,100 @@ export function selectExpeditionSite(state, label, { siteId = null } = {}) {
     activeSectorId:    state?.activeSectorId ?? null,
     siteName:          siteDisplayName,
   });
+}
+
+// The site type an uncharted destination is recorded as (recordUnchartedDestination).
+export const UNCHARTED_SITE_TYPE = "uncharted";
+
+/**
+ * Record a destination the story refers to without a proper name — the
+ * coordinates an NPC gave, "the gap" — as an uncharted site of the active
+ * sector, under the working label the move gives it ("Archer's rendezvous —
+ * the gap"): a location Actor (status unexplored, as a generated site's), a
+ * discovery record on the sector's map (`discovered: false`, `workingLabel:
+ * true`) and its dim "Unexplored Site" pin. It never became a place in the
+ * game (issue #348 PT07): an expedition had nothing to target, Finish an
+ * Expedition nothing to chart, the map nothing to pin. Now the expedition
+ * links it (its `siteId`), and the reveal that charts a generated site charts
+ * it — the pin renamed to the location's name (the GM may rename the location
+ * first) — and the arrival docks there. The existing location and site stores
+ * only, and their reveal flow; no store of its own.
+ *
+ * The discovery record goes onto the caller's `campaignState` — the move
+ * pipeline's working copy, which its persist saves (an upgrade saves it at
+ * once); the location Actor is listed in the store as it is made. With no
+ * active sector, or a label that already names a site or a tracked place,
+ * nothing is recorded. GM-gated by the caller.
+ *
+ * @param {string} label — the working label
+ * @param {Object} campaignState — mutated: the sector's discoveries, locationIds
+ * @param {Object} [deps] — injection seams
+ * @param {Function} [deps.createLoc] — (data, state) => Promise — entities/location.js createLocation
+ * @param {Function} [deps.layout] — (site, index, mapSettlements) => discovery — sectorGenerator layoutDiscovery
+ * @param {Function} [deps.addPin] — (scene, discovery, mapSettlements) => Promise — sceneBuilder addSiteToScene
+ * @param {Function} [deps.getScene] — (sceneId) => Scene|null
+ * @returns {Promise<{ sector: Object, site: Object }|null>}
+ */
+export async function recordUnchartedDestination(label, campaignState, deps = {}) {
+  const name = typeof label === "string" ? label.replace(/\s+/g, " ").trim() : "";
+  if (!name || !campaignState) return null;
+  const sector = (Array.isArray(campaignState.sectors) ? campaignState.sectors : [])
+    .find(s => s?.id && s.id === campaignState.activeSectorId && s.mapData) ?? null;
+  if (!sector) return null;
+  // A destination already on the map — a site it names — is that site's.
+  if (selectExpeditionSite(campaignState, name)) return null;
+
+  const createLoc = deps.createLoc ?? (async (data, state) => (await import("../entities/location.js")).createLocation(data, state));
+  const layout    = deps.layout    ?? (async (...args) => (await import("./sectorGenerator.js")).layoutDiscovery(...args));
+  const addPin    = deps.addPin    ?? addSiteToScene;
+  const getScene  = deps.getScene  ?? (id => game.scenes?.get?.(id) ?? null);
+
+  const site = {
+    id:          newSiteId(),
+    type:        UNCHARTED_SITE_TYPE,
+    name,
+    klass:       null,
+    status:      "unexplored",
+    firstLook:   "",
+    feature:     "",
+    peril:       "",
+    opportunity: "",
+    description: `An uncharted destination the crew set out for, known so far only as "${name}".`,
+  };
+  const mapSettlements = sector.mapData.settlements ?? [];
+  const discoveries    = Array.isArray(sector.mapData.discoveries) ? sector.mapData.discoveries : [];
+  const discovery = { ...(await layout(site, discoveries.length, mapSettlements)), workingLabel: true };
+
+  // The location Actor first — the record links it. A refused creation
+  // records nothing: no record without its place.
+  campaignState.locationIds ??= [];
+  const before = campaignState.locationIds.length;
+  try {
+    await createLoc(buildSiteLocationData(site, sector), campaignState);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | uncharted destination "${name}": its location could not be made — nothing recorded:`, err?.message ?? err);
+    return null;
+  }
+  discovery.actorId = campaignState.locationIds[before] ?? null;
+
+  // On the caller's copy, copied along the path — never the cached setting in
+  // place (rules/foundry-api.md).
+  const recorded = { ...sector, mapData: { ...sector.mapData, discoveries: [...discoveries, discovery] } };
+  campaignState.sectors = campaignState.sectors.map(s => (s === sector ? recorded : s));
+
+  if (sector.sceneId) {
+    const scene = getScene(sector.sceneId);
+    if (scene) {
+      await Promise.resolve(addPin(scene, discovery, mapSettlements)).catch(err =>
+        console.warn(`${MODULE_ID} | uncharted destination "${name}": its map pin could not be placed:`, err?.message ?? err));
+    }
+  }
+  return { sector: recorded, site: discovery };
+}
+
+function newSiteId() {
+  try { return foundry.utils.randomID(); }
+  catch { return Math.random().toString(36).slice(2, 18); }
 }
 
 /**
@@ -173,6 +267,7 @@ export async function saveSiteDiscovered({ sectorId = null, siteId = null } = {}
 export async function postSiteDiscoveryCard(result) {
   const site = result?.site;
   if (!site) return;
+  const uncharted = site.type === UNCHARTED_SITE_TYPE;
   const kind = site.type === "vault" ? "precursor vault" : "derelict";
 
   // Surface the rolled exterior at the payoff moment (SITE-DISCOVERY-CARD-
@@ -194,9 +289,14 @@ export async function postSiteDiscoveryCard(result) {
     // The name is the location Actor's — GM-edited free text — escaped as the
     // first-look line beside it is (issue #331 X45).
     `<h3>◈ Site Discovered — ${escapeSiteHtml(site.name)}</h3>` +
-    `<p>A passage opens through to a ${kind} in the sector's outer reaches. ` +
-    `It is now charted on the sector map — undertake an expedition there, or ` +
-    `Explore a Waypoint to move through its zones.</p>` +
+    (uncharted
+      // An uncharted destination recorded under a working label (issue #348
+      // PT07): charted now, and named as the crew name it.
+      ? `<p>The crew reach a place no chart showed before. It is now charted on the sector map ` +
+        `under its working label — give it its name by renaming its location in the Entities panel.</p>`
+      : `<p>A passage opens through to a ${kind} in the sector's outer reaches. ` +
+        `It is now charted on the sector map — undertake an expedition there, or ` +
+        `Explore a Waypoint to move through its zones.</p>`) +
     firstLookLine +
     `</div>`;
   try {

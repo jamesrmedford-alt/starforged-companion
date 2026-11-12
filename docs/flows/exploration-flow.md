@@ -27,13 +27,68 @@ each as a `canonicalLocked` `location` Actor. On the sector scene they render
 as a dim **"Unexplored Site"** pin behind a faint dashed "undiscovered
 passage" drawing.
 
+A destination the story names without a proper name joins them in play
+(issue #348 PT07): the Undertake an Expedition that begins a track for a
+label naming no site and no tracked place
+(`index.js` `applyOutcomeEffects`) records it with
+`siteDiscovery.recordUnchartedDestination` — a `location` Actor (status
+unexplored), a discovery record of type `uncharted` with `workingLabel: true`
+on the active sector's `mapData.discoveries` (the next periphery slot,
+`sectorGenerator.layoutDiscovery`; on the pipeline's working copy, which its
+persist saves — an upgrade saves `sectors` at once) and its pin
+(`sceneBuilder.addSiteToScene`) — and links the track's `siteId` to it. From
+there it is a site like any other: §3's finish arrives there and §4's reveal
+charts it, under the location's name (the GM may rename it; the Site
+Discovered card says so). With no active sector nothing is recorded.
+
+## 0.5 Reading travel — which move, to where (issue #348 PT05, PT06, PT08)
+
+- **Classifier** (`src/pacing/classifier.js`): the CURRENT SCENE lists the
+  charted places (tracked settlements, planets and locations, the active
+  sector's first, no unexplored site). TRAVEL TO AN UNCHARTED DESTINATION:
+  travel intent toward anywhere else is at least NARRATIVE_WITH_MOVE_AVAILABLE
+  with `undertake_an_expedition`, hazard or not. A TIME SKIP IS NOT DOWNTIME:
+  "wake me when we get there" across a journey not yet made is travel. (PR
+  #350 gave it the recent scene, so "her coordinates" are read as the
+  destination the scene set up.) Prompt rules only — the model decides.
+- **Interpreter** (`src/moves/interpreter.js`): Set a Course is a known route
+  to a charted place; Undertake an Expedition any journey toward one that is
+  not. A destination without a proper name is named by a working label
+  ("Archer's rendezvous — the gap").
+- **Pipeline** (`movePipeline.readMove`, `src/moves/travel.js`): a forced
+  travel move with no destination (a paced card's Roll — the move alone)
+  reads it and its stat from the line and the recent scene
+  (`readForcedTravelDestination`; an Undertake an Expedition only with none
+  open — with one open it continues it). A Set a Course naming none takes the
+  scene's destination — the uncharted destination recorded last
+  (`sceneDestination`). A Set a Course whose destination is not a charted,
+  known place (`chartedPlaceFor`: the arrival's own name resolver, never an
+  unexplored site) is **read as Undertake an Expedition on every Mischief
+  setting** (`rerouteUnchartedCourse`; maintainer decision): the confirm
+  dialog's rationale and the move card (`resolution.courseRerouted`) say why,
+  and the dialog's Cancel lets the player re-word. A course named by its pin's
+  Actor (the token drag) is to a charted place and stays.
+
 ## 1. Setting out
 
-- **`set_a_course`** (safe/familiar route): strong hit +1 momentum
-  ("Arrived, situation favors you"), weak hit arrives with a suffer choice,
-  miss routes Pay the Price. On a non-miss the pipeline treats it as
+- **`set_a_course`** (a known route to a charted place — §0.5): strong hit +1
+  momentum ("Arrived, situation favors you"), weak hit arrives with a suffer
+  choice, miss routes Pay the Price. On a non-miss the pipeline treats it as
   **arrival**: `maybeUpdateShipPositionFromName` writes the ship-position
-  flag on the command vehicle and the sector-scene token syncs.
+  flag on the command vehicle and the sector-scene token syncs (its `report`
+  says whether the token moved). Whatever Ship Positioning says, the narrator
+  is told: the MOVE OUTCOME gains `[ARRIVAL: The ship has ARRIVED at <place>.
+  Open the scene there …]` — a strong hit's favouring the crew, ending on
+  something unresolved there (`arrivalNarratorLine`; issue #348 PT08: it got
+  "Arrived" with no place and narrated a launch) — for every narration of the
+  resolution (the pipeline's, a round's, an upgrade's re-narration); Finish an
+  Expedition's arrival too. The **Set a Course resolved** card names the
+  place (the arrival's, else the destination's words) and says "Token moved"
+  only when the token moved; a place no pin marks says so, and no position
+  written (none named, no command vehicle) points to `!at` (PT09). It is
+  posted after the roll card it summarizes — `applyOutcomeEffects` returns it
+  in `afterMoveCard`, which `rollMove` posts after `postMoveResult`; an
+  upgrade's posts at once (PT10).
 - **Token-drag affordance**: dragging the command-vehicle token onto a
   settlement pin cancels the drag and posts a forced `set_a_course` naming
   the pin's settlement Actor (`flags.actorId`): its current name as
@@ -182,7 +237,9 @@ passage" drawing.
   the ship had reached); a token's own place on the map (placed, auto-placed
   or moved off a pin, source `token_placement`) reads "near" its nearest pin,
   a settlement's or a charted site's (issue #321 U53 — it was `scene_token`,
-  "docked at"; the site's since issue #335 Y14); with no position it explicitly instructs the
+  "docked at"; the site's since issue #335 Y14; a placement recorded before
+  U53 — `scene_token` with its pin's label as free text, which no arrival
+  writes — reads "near" too, OLD-SCENE-TOKEN-DOCKED); with no position it explicitly instructs the
   narrator not to invent one. The token follows a recorded position onto
   the pin that anchors it — a settlement's, or a site's for a recorded
   location (`syncCommandVehicleTokenToPosition` reads `nearestLocationId`

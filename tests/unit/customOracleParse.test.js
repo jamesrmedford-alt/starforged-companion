@@ -70,3 +70,25 @@ describe("saving a table with a line that did not read is refused, naming it", (
     unregisterOracleTable("mood_v28");
   });
 });
+
+// CUSTOM-ORACLE-TO-RANGES: "3 to 4 Wary" read as the single row 3 with the
+// result "to 4 Wary" — neither refused nor read as a range.
+describe('a range written with "to"', () => {
+  it('"3 to 4 Wary" is the range 3–4, "Wary"', () => {
+    expect(parseEntries("3 to 4 Wary")).toEqual([{ min: 3, max: 4, result: "Wary" }]);
+  });
+
+  it('a table written with "to" tiles its die', () => {
+    const entries = parseEntries("1 to 2 Calm\n3 TO 4 Wary\n5 to 6 Hostile");
+    expect(entries).toEqual([
+      { min: 1, max: 2, result: "Calm" },
+      { min: 3, max: 4, result: "Wary" },
+      { min: 5, max: 6, result: "Hostile" },
+    ]);
+    expect(validateCustomOracleEntries(entries)).toEqual({ ok: true, die: 6 });
+  });
+
+  it('control: "to" with no number after it stays part of the result', () => {
+    expect(parseEntries("7 to the stars")).toEqual([{ min: 7, max: 7, result: "to the stars" }]);
+  });
+});

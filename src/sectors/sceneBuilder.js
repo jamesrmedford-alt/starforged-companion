@@ -21,7 +21,7 @@ import {
   iconForStellarObject,
   pickStarshipIcon,
 } from "../system/ironswornAssets.js";
-import { POSITION_SYNC_OPTION } from "./sectorSceneHooks.js";
+import { POSITION_SYNC_OPTION, findSettlementNoteById } from "./sectorSceneHooks.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -300,45 +300,9 @@ export async function createSectorScene(sector, backgroundPath, entityActors) {
     const siteNotes    = [];
     const sitePassages = [];
     for (const site of discoveries) {
-      const sx = offset.x + (site.gridX * gridCellSize);
-      const sy = offset.y + (site.gridY * gridCellSize);
-      const discovered = !!site.discovered;
-      siteNotes.push({
-        x:          sx,
-        y:          sy,
-        texture:    { src: iconPathForSite(site.type, discovered), tint: tintForSite(site.type, discovered) },
-        iconSize:   40,
-        text:       discovered ? site.name : "Unexplored Site",
-        fontSize:   20,
-        textColor:  discovered ? "#FFFFFF" : "#9A9AB0",
-        textAnchor: 1,    // BOTTOM
-        global:     true,
-        flags: {
-          [MODULE_ID]: {
-            sectorNote: true,
-            siteNote:   true,
-            siteId:     site.id,
-            actorId:    site.actorId ?? null,
-            siteType:   site.type,
-            discovered,
-          },
-        },
-      });
-
-      const from = mapSettlements.find(s => s.id === site.nearestSettlementId)
-        ?? mapSettlements[0] ?? null;
-      if (from) {
-        const fromX = from.gridX * gridCellSize;
-        const fromY = from.gridY * gridCellSize;
-        const toX   = site.gridX * gridCellSize;
-        const toY   = site.gridY * gridCellSize;
-        sitePassages.push(makeDrawingData({
-          x: offset.x + fromX, y: offset.y + fromY, dx: toX - fromX, dy: toY - fromY,
-          strokeAlpha: discovered ? 0.8 : 0.3,
-          strokeColor: discovered ? "#7EB8F7" : "#9B7ECF",
-          flags: { sitePassage: true, discovered, siteId: site.id, fromId: from.id },
-        }));
-      }
+      siteNotes.push(siteNoteData(site, offset));
+      const passage = sitePassageData(site, mapSettlements, offset);
+      if (passage) sitePassages.push(passage);
     }
 
     try {
@@ -449,21 +413,34 @@ export async function placeCommandVehicleTokenIfPresent(scene, sector) {
   }
   if (!commandActorId) return null;             // No command vehicle yet — skip.
 
-  // Anchor coordinates: the matching settlement pin, or scene centre.
-  const mapSettlements   = sector?.mapData?.settlements ?? [];
-  const anchorSettlement = commandPayload?.position?.nearestSettlementId
-    ? mapSettlements.find(s => s.id === commandPayload.position.nearestSettlementId)
+  // Anchor coordinates: the pin the ship's position names, or scene centre.
+  // A position record names its place by the settlement's — or a site's
+  // location — Actor id (inferShipPositionFromEntityId, the token's own
+  // placement, `!at`); only a record from before those carries the
+  // generator's settlement id. The anchor was matched against the generator
+  // ids alone, so a ship whose record named its settlement's Actor was placed
+  // at the map's centre (known-issues TOKEN-ANCHOR-GENERATOR-IDS). The pin on
+  // the scene carries both ids (settlementId, actorId); the map data the
+  // generator id, and a site's its Actor's.
+  const position         = commandPayload?.position ?? null;
+  const anchorId         = position?.nearestSettlementId || position?.nearestLocationId || null;
+  const anchorNote       = anchorId ? findSettlementNoteById(scene, anchorId) : null;
+  const anchorCell       = anchorId && !anchorNote
+    ? ((sector?.mapData?.settlements ?? []).find(s => s.id === anchorId)
+      ?? (sector?.mapData?.discoveries ?? []).find(d => d.actorId === anchorId)
+      ?? null)
     : null;
 
   const { gridCellSize, sceneWidth, sceneHeight } = SCENE_CONFIG;
   // Same scene-rect inset as the settlement Notes (PLAYTEST-1712 A) so the
   // Token lands on its anchor pin, not (sceneX, sceneY) px up-and-left of it.
+  // A pin's own coordinates already carry it.
   const offset = sceneRectOffset(scene, SCENE_CONFIG);
-  const tokenX = offset.x + (anchorSettlement
-    ? anchorSettlement.gridX * gridCellSize
+  const tokenX = anchorNote ? Number(anchorNote.x ?? 0) : offset.x + (anchorCell
+    ? anchorCell.gridX * gridCellSize
     : Math.floor(sceneWidth  / 2 / gridCellSize) * gridCellSize);
-  const tokenY = offset.y + (anchorSettlement
-    ? anchorSettlement.gridY * gridCellSize
+  const tokenY = anchorNote ? Number(anchorNote.y ?? 0) : offset.y + (anchorCell
+    ? anchorCell.gridY * gridCellSize
     : Math.floor(sceneHeight / 2 / gridCellSize) * gridCellSize);
 
   const cvActor = game.actors?.get?.(commandActorId);
@@ -504,6 +481,102 @@ export async function placeCommandVehicleTokenIfPresent(scene, sector) {
   }
 }
 
+
+/**
+ * A site's Note pin on the sector Scene: a generic unknown marker labelled
+ * "Unexplored Site" until it is charted, then its name and type icon. Linked
+ * to the site's location Actor by `flags.actorId`.
+ *
+ * @param {Object} site — a mapData.discoveries record
+ * @param {{ x: number, y: number }} offset — the scene rectangle's inset (sceneRectOffset)
+ * @returns {Object} NoteDocument data
+ */
+function siteNoteData(site, offset) {
+  const { gridCellSize } = SCENE_CONFIG;
+  const discovered = !!site.discovered;
+  return {
+    x:          offset.x + (site.gridX * gridCellSize),
+    y:          offset.y + (site.gridY * gridCellSize),
+    texture:    { src: iconPathForSite(site.type, discovered), tint: tintForSite(site.type, discovered) },
+    iconSize:   40,
+    text:       discovered ? site.name : "Unexplored Site",
+    fontSize:   20,
+    textColor:  discovered ? "#FFFFFF" : "#9A9AB0",
+    textAnchor: 1,    // BOTTOM
+    global:     true,
+    flags: {
+      [MODULE_ID]: {
+        sectorNote: true,
+        siteNote:   true,
+        siteId:     site.id,
+        actorId:    site.actorId ?? null,
+        siteType:   site.type,
+        discovered,
+      },
+    },
+  };
+}
+
+/**
+ * A site's passage on the sector Scene, from its anchor settlement (else the
+ * map's first): dim until the site is charted. null with no settlement to
+ * run from.
+ *
+ * @param {Object} site — a mapData.discoveries record
+ * @param {Array} mapSettlements — mapData.settlements
+ * @param {{ x: number, y: number }} offset — the scene rectangle's inset
+ * @returns {Object|null} DrawingDocument data
+ */
+function sitePassageData(site, mapSettlements, offset) {
+  const { gridCellSize } = SCENE_CONFIG;
+  const settlements = Array.isArray(mapSettlements) ? mapSettlements : [];
+  const from = settlements.find(s => s.id === site.nearestSettlementId) ?? settlements[0] ?? null;
+  if (!from) return null;
+  const discovered = !!site.discovered;
+  const fromX = from.gridX * gridCellSize;
+  const fromY = from.gridY * gridCellSize;
+  const toX   = site.gridX * gridCellSize;
+  const toY   = site.gridY * gridCellSize;
+  return makeDrawingData({
+    x: offset.x + fromX, y: offset.y + fromY, dx: toX - fromX, dy: toY - fromY,
+    strokeAlpha: discovered ? 0.8 : 0.3,
+    strokeColor: discovered ? "#7EB8F7" : "#9B7ECF",
+    flags: { sitePassage: true, discovered, siteId: site.id, fromId: from.id },
+  });
+}
+
+/**
+ * Pin a site recorded after its sector's Scene was built — an uncharted
+ * destination the crew set out for (siteDiscovery.recordUnchartedDestination,
+ * issue #348 PT07): its Note and passage, as createSectorScene places the
+ * generated sites', so the reveal that charts it restyles them. Idempotent —
+ * a Scene that already pins the site gets nothing. Never throws.
+ *
+ * @param {Scene|null} scene — the sector's Scene
+ * @param {Object} site — the site's mapData.discoveries record
+ * @param {Array} mapSettlements — the sector's mapData.settlements
+ * @returns {Promise<boolean>} whether the pin was placed
+ */
+export async function addSiteToScene(scene, site, mapSettlements) {
+  if (!scene || !site?.id) return false;
+  const notes = scene.notes?.contents ?? scene.notes ?? [];
+  if ((Array.isArray(notes) ? notes : []).some(n => n?.flags?.[MODULE_ID]?.siteNote && n.flags[MODULE_ID].siteId === site.id)) {
+    return false;
+  }
+  const offset = sceneRectOffset(scene, SCENE_CONFIG);
+  try {
+    await scene.createEmbeddedDocuments("Note", [siteNoteData(site, offset)], { render: false });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | addSiteToScene: the site's Note could not be placed:`, err?.message ?? err);
+    return false;
+  }
+  const passage = sitePassageData(site, mapSettlements, offset);
+  if (passage) {
+    await scene.createEmbeddedDocuments("Drawing", [passage], { render: false }).catch(err =>
+      console.warn(`${MODULE_ID} | addSiteToScene: the site's passage could not be drawn:`, err?.message ?? err));
+  }
+  return true;
+}
 
 /**
  * Re-style a site's Note pin and undiscovered passage to their DISCOVERED
@@ -682,11 +755,13 @@ function tintForLocationType(locationType) {
  */
 function iconPathForSite(type, discovered) {
   if (!discovered) return "icons/svg/hazard.svg";
+  if (type === "uncharted") return "icons/svg/star.svg";
   return type === "vault" ? "icons/svg/temple.svg" : "icons/svg/ruins.svg";
 }
 
 function tintForSite(type, discovered) {
   if (!discovered) return "#9B7ECF";                       // dim violet — unknown signal
+  if (type === "uncharted") return "#7EB8F7";              // a charted destination — route blue
   return type === "vault" ? "#C9A0FF" : "#D98A6A";         // vault violet · derelict rust
 }
 

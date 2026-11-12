@@ -84,9 +84,16 @@ export function generateSector(region, _overrides = {}) {
   // every settlement — that fed the scene-map stellar pins, but made every
   // star in a sector identical (v1.7.10 playtest finding #3).
   const settlements = [];
+  const takenNames  = new Set();
   for (let i = 0; i < cfg.settlements; i++) {
     const s = generateSettlement(region);
     s.stellar = rollTableResult(SPACE.STELLAR_OBJECT);
+    // One name per settlement in a sector: the roster and `!at` match
+    // settlements by name, so two of one name were ambiguous within it
+    // (known-issues SECTOR-DUPLICATE-NAMES; across sectors the active
+    // sector's namesake wins — issue #342 Z15).
+    s.name = uniqueSettlementName(s.name, takenNames);
+    takenNames.add(normalizeSettlementName(s.name));
     settlements.push(s);
   }
 
@@ -180,20 +187,34 @@ const SITE_SLOTS = [
  * @returns {Array} mapData.discoveries entries
  */
 function layoutSites(sites, mapSettlements) {
+  return (sites ?? []).map((s, i) => layoutDiscovery(s, i, mapSettlements));
+}
+
+/**
+ * One site's map discovery record: the periphery slot for the sector's
+ * `index`-th site, its undiscovered passage anchored to the rightmost
+ * (frontier-facing) settlement. Shared by the generator's sites and an
+ * uncharted destination recorded in play (siteDiscovery
+ * recordUnchartedDestination, issue #348 PT07), which takes the next slot.
+ *
+ * @param {{ id: string, type: string, name: string }} site
+ * @param {number} index — the site's place among the sector's discoveries
+ * @param {Array} mapSettlements — mapData.settlements (with gridX/gridY)
+ * @returns {Object} a mapData.discoveries entry
+ */
+export function layoutDiscovery(site, index, mapSettlements) {
   const jumpOff = [...(mapSettlements ?? [])].sort((a, b) => b.gridX - a.gridX)[0] ?? null;
-  return (sites ?? []).map((s, i) => {
-    const slot = SITE_SLOTS[i % SITE_SLOTS.length];
-    return {
-      id:                  s.id,
-      type:                s.type,
-      name:                s.name,
-      discovered:          false,
-      gridX:               slot.gridX,
-      gridY:               slot.gridY,
-      nearestSettlementId: jumpOff?.id ?? null,
-      actorId:             null,   // backfilled by createEntityJournals
-    };
-  });
+  const slot = SITE_SLOTS[Math.max(0, Number(index) || 0) % SITE_SLOTS.length];
+  return {
+    id:                  site.id,
+    type:                site.type,
+    name:                site.name,
+    discovered:          false,
+    gridX:               slot.gridX,
+    gridY:               slot.gridY,
+    nearestSettlementId: jumpOff?.id ?? null,
+    actorId:             null,   // backfilled by createEntityJournals
+  };
 }
 
 /**
@@ -237,6 +258,32 @@ export function generateSettlement(region, projectCount) {
     initialContact: null,
     stellar:        null,
   };
+}
+
+const SETTLEMENT_NAME_REROLLS = 12;
+
+const normalizeSettlementName = (name) => String(name ?? "").trim().toLowerCase();
+
+/**
+ * A settlement name no other settlement of the sector has: the rolled one,
+ * else the Settlement Name table rolled again (a few times), else the rolled
+ * one with a numeral ("Bleakhold II"), as a sector's repeated site names are
+ * told apart (precursorSites.js).
+ *
+ * @param {string} rolled — the name generateSettlement rolled
+ * @param {Set<string>} taken — the sector's names so far, normalised
+ * @returns {string}
+ */
+function uniqueSettlementName(rolled, taken) {
+  if (!taken.has(normalizeSettlementName(rolled))) return rolled;
+  for (let i = 0; i < SETTLEMENT_NAME_REROLLS; i++) {
+    const name = rollTableResult(SETTLEMENTS.NAMES);
+    if (!taken.has(normalizeSettlementName(name))) return name;
+  }
+  for (let n = 0; ; n++) {
+    const name = `${rolled} ${NAME_NUMERALS[n] ?? String(n + 2)}`;
+    if (!taken.has(normalizeSettlementName(name))) return name;
+  }
 }
 
 /**
@@ -714,24 +761,26 @@ export async function generateNarratorStubs(sector, narratorSettings = {}) {
  * (the sheet body) and the module flag (`flags.settlement.description`). The
  * pre-migration code wrote to a JournalEntry page that no longer exists, so the
  * stub was silently dropped and sector-born settlements rendered with an empty
- * body (finding F3). Safe to call when stubs are missing — those settlements
- * are left untouched.
+ * body (finding F3). A settlement with no stub — narrator stubs off, no key,
+ * or the call failed — still gets its rolled-details line: it was written
+ * only beside a stub, so the sheet showed nothing the wizard rolled
+ * (known-issues SECTOR-CARD-GAPS).
  *
  * @param {Object} settlements — { sourceSettlementGenId: Actor|null }
  * @param {{ settlements?: Object }} stubs — output from generateNarratorStubs()
  * @returns {Promise<void>}
  */
 export async function applyStubsToSettlementEntities(settlements, stubs) {
-  if (!stubs?.settlements) return;
   for (const [sourceId, actor] of Object.entries(settlements ?? {})) {
-    const stub = stubs.settlements[sourceId];
-    if (!stub || !actor?.id) continue;
+    if (!actor?.id) continue;
+    const stub = stubs?.settlements?.[sourceId] ?? null;
     try {
       // F17: combine the narrator prose with a structured rolled-detail block
       // so the sheet displays both the atmospheric description AND the
       // Population/Authority/Projects/Trouble that the wizard rolled.
       const data = actor.flags?.[MODULE_ID]?.settlement ?? {};
       const description = composeSettlementDescription(stub, data);
+      if (!description) continue;
       await updateSettlement(actor.id, { description });
     } catch (err) {
       console.warn(`${MODULE_ID} | Sector: could not write stub to settlement Actor:`, err.message);

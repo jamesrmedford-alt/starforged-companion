@@ -416,6 +416,16 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
 
   _inFlight.add(key);
   try {
+    // The outcome the match belonged to was burned or improved away: the
+    // alternative went with it (WAYPOINT-ALT-AFTER-UPGRADE). The upgrade
+    // stamps it closed; a card whose stamp did not land is closed here.
+    const upgraded = f.burn?.consumed ? "burn" : f.improve?.consumed ? "improve" : null;
+    if (upgraded) {
+      console.debug(`${MODULE_ID} | waypoint oracle: card ${messageId} — the result was upgraded (${upgraded}); the alternative is closed.`);
+      await message.update({ [`flags.${MODULE_ID}.waypointRewardClaimed`]: upgraded })
+        .catch(err => console.warn(`${MODULE_ID} | waypoint oracle: closing the alternative failed:`, err?.message ?? err));
+      return { posted: false, reason: "upgraded" };
+    }
     // The ordinary reward is already chosen: the alternative is "instead",
     // not as well. Closed on the card, so its button says so everywhere.
     if (consequenceChosen(f.resolutionId)) {

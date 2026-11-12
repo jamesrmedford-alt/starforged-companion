@@ -38,7 +38,7 @@ import { getPlayerActors, createCharacterBondItem, isPlayerCharacterActor } from
 import { resolveUserActorId } from "../multiplayer/speaker.js";
 import { getSettlement, createSettlement } from "./settlement.js";
 import { getFaction,    createFaction, findFactionByName, applyAttitudeToFactionRecord, seedFactionRecord } from "./faction.js";
-import { getShip,       createShip, resolveActiveRegion } from "./ship.js";
+import { getShip,       createShip, resolveActiveRegion, rollSingleShipType } from "./ship.js";
 import { getPlanet,     createPlanet }     from "./planet.js";
 import { getLocation,   createLocation }   from "./location.js";
 import { getCreature,   createCreature }   from "./creature.js";
@@ -1023,7 +1023,8 @@ function rollFreshConnectionSeed() {
  */
 function rollFreshShipSeed(campaignState) {
   return {
-    type:      safeOracleRoll("starship_type", { region: resolveActiveRegion(campaignState) }),
+    // One ship's type — never "Ships in conflict" (SHIP-TYPE-IN-CONFLICT).
+    type:      rollSingleShipType(rollOracle, { region: resolveActiveRegion(campaignState) }),
     firstLook: safeOracleRoll("starship_first_look"),
     name:      safeOracleRoll("starship_name"),
   };

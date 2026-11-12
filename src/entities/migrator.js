@@ -906,7 +906,8 @@ const UNLISTED_ENTITY_TYPES = [
  * sidebar's Duplicate, or a card whose journal the connection migration has
  * yet to swap — the same record id), and the leftovers of a sector creation
  * whose sector the campaign never stored (known-issues SECTOR-CREATE-PARTIAL
- * — a retry of that creation adopts them). GM-only; one write, onto the
+ * — a failed run takes its own back; one cut short by a closed page leaves
+ * them, and a retry of that creation adopts them). GM-only; one write, onto the
  * latest store; idempotent.
  *
  * @returns {Promise<{ listed: number }>}
