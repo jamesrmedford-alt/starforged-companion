@@ -35,7 +35,7 @@ import { appendMigratedTruthToTier }  from '../entities/entityExtractor.js';
 import { resolveEntityById, writeEntityFlag } from '../entities/registry.js';
 import { collectAllEntities, resolveEntityName } from '../context/relevanceResolver.js';
 import { rememberSessionRetractions, rememberNarratedTruths, retractNarrationCapture, propagateRetraction } from './retractions.js';
-import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY } from './ledgers.js';
+import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES, retractNarrations, XCARD_RETRACTED_BY, SUPERSEDED_RETRACTED_BY, findEquivalentTruth, findSessionStrike } from './ledgers.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { isNarrationXCarded } from '../context/safety.js';
 
@@ -937,11 +937,38 @@ export function mergeSceneLedgers(working, latest) {
     if (w?.retracted && !t?.retracted) return w;
     return (w?.retracted && w.correctedTo && !t?.correctedTo) ? w : t;
   });
+  // What the working copy adds is re-checked against the store as this write
+  // finds it: applySidecar read the store's ledgers when the sidecar was
+  // applied, and an X-Card (or a strike) landing between that read and this
+  // write — on another narration that stated the same fact — was not seen,
+  // so the restatement was written live beside it (XCARD-PERSIST-WINDOW).
+  const retractedInStore = storeTruths.filter(t => t?.retracted);
   for (const t of workingTruths) {
-    if (!seen.has(truthKey(t)) && !refiled.has(t?.id)) merged.push(t);
+    if (seen.has(truthKey(t)) || refiled.has(t?.id)) continue;
+    if (restatesRetraction(t, retractedInStore, latest)) {
+      console.debug?.(`${MODULE_ID} | factContinuity: a narrator truth restating a fact retracted since its sidecar was applied was not written.`);
+      continue;
+    }
+    merged.push(t);
   }
   working.sceneTruths = merged;
   return true;
+}
+
+/**
+ * Whether a narrator truth the working copy adds restates what the store
+ * retracted — the same subject and fact as a retracted scene truth, or a
+ * session strike or X-Card block that stands where it was asserted — as
+ * applySidecar's re-assertion checks decide (XCARD-PERSIST-WINDOW). A GM's or
+ * a player's truth is theirs (`!truth set` has its own rules).
+ */
+function restatesRetraction(t, retractedInStore, latest) {
+  if (!t || t.retracted || (t.asserter ?? 'narrator') !== 'narrator' || !t.subject) return false;
+  const fact = String(t.fact ?? '').trim();
+  if (!fact) return false;
+  if (findEquivalentTruth(retractedInStore, t.subject, fact)) return true;
+  const names = [t.subject.text, t.subject.name].filter(n => typeof n === 'string' && n.trim());
+  return !!findSessionStrike(latest, t.subject, fact, names, { blocked: true, place: t.sceneLocation ?? null });
 }
 
 /**
