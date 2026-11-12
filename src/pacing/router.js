@@ -30,7 +30,7 @@
 
 import { classifyInput, PACING_DECISION, PACING_CATEGORIES } from "./classifier.js";
 import { SCENE_CHALLENGE_VARIANTS, selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
-import { narratePacedInput } from "../narration/narrator.js";
+import { narratePacedInput, getRecentSceneForReading } from "../narration/narrator.js";
 import { logPacingDecision } from "./telemetry.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
@@ -194,8 +194,12 @@ export async function decidePacing({
   const openChallenges    = await detectOpenSceneChallenges();
   const sceneChallenges   = openChallenges.map(t => String(t.label ?? ""));
 
+  // What the line follows: "we're on our way" is travel only to a reader who
+  // saw the destination being discussed (alpha 23 playtest).
+  const recentScene = getRecentSceneForReading(campaignState?.currentSessionId ?? null);
+
   const result = await classifyInput({
-    playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey, combatActive, sceneChallenges,
+    playerText, campaignState, character, recentMoveDensity, pacingConfig, apiKey, combatActive, sceneChallenges, recentScene,
   });
 
   // Backstop: during an active fight the classifier must not hedge. If it

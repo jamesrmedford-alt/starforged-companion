@@ -51,7 +51,7 @@ vi.mock('../../src/moves/resolver.js', async (importOriginal) => {
 import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const EMPTY = '```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
 let table;

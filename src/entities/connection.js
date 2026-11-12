@@ -32,7 +32,6 @@ import { markSeedIntro, writeSeedIntro } from "./seedIntro.js";
 import { PORTRAIT_BLOCK_RE } from "../art/notesPortrait.js";
 import { deleteEntityArtAssets } from "../art/storage.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
-import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID  = "starforged-companion";
 const FLAG_KEY   = "connection";
@@ -871,7 +870,7 @@ async function generateConnectionIntroProse({ name, role, goal, firstLook, descr
   if (!apiKey) return null;
 
   const { apiPost } = await import("../api-proxy.js");
-  const model = readModuleSettingConn("narrationModel") || "claude-sonnet-4-5-20250929";
+  const model = readModuleSettingConn("narrationModel") || "claude-sonnet-5-5";
   const tone  = readModuleSettingConn("narrationTone")  || "wry";
 
   const system =
@@ -895,7 +894,6 @@ async function generateConnectionIntroProse({ name, role, goal, firstLook, descr
   const body = {
     model,
     max_tokens: 220,
-    ...thinkingOffFor(model),   // its 220-token seed on the narration model (issue #325 W27)
     system:   [{ type: "text", text: system }],
     messages: [{ role: "user", content: userMsg }],
   };

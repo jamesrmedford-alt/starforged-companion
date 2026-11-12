@@ -59,7 +59,7 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const MODULE_ID = 'starforged-companion';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';   // narrationModel default
+const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
 const EMPTY_SIDECAR = { newTruths: [], stateChanges: [] };
 
 let table;
@@ -592,7 +592,7 @@ describe('Confirm on a draft card keeps what the narration said about them (D3)'
 });
 
 describe('the Private Channel reads the shared story; a published reflection is canon (D1)', () => {
-  const PRIVATE_MODEL = 'claude-haiku-4-5-20251001';
+  const PRIVATE_MODEL = 'claude-haiku-5-5';
 
   it('a private aside is told the premise, the NPC\'s card and what the scene established about them', async () => {
     await recordNpc('Kael Dros');

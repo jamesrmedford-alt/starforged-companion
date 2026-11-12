@@ -145,7 +145,7 @@ function improveCard(id = "m-imp") {
   });
 }
 
-const NARRATION_MODEL = "claude-sonnet-4-5-20250929";   // narrationModel default
+const NARRATION_MODEL = "claude-sonnet-5-5";   // narrationModel default
 const NARRATION_REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
 const narrate = vi.fn(async () => {});

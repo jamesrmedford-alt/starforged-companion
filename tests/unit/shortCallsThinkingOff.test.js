@@ -1,89 +1,78 @@
 /**
- * The short structured Claude calls that run on the narration model turn
- * extended thinking off where narration does (issue #325 W27).
+ * Every Claude call goes out with its model's thinking-off form (issue #325
+ * W27; the Haiku 5.5 / Sonnet 5.5 upgrade).
  *
- * narrator.js turns thinking off for Sonnet 5 (offered as a Narration Model),
- * which runs adaptive thinking by default when a request omits `thinking` —
- * and thinking shares the `max_tokens` cap. The chronicle scribe
- * (`max_tokens: 200`, on the narration model: its Haiku default only covers
- * an unset setting), the entity flavour (finalize.js), the ship envisioning,
- * the NPC and ship seeds (220 tokens) and the deck-plan vision sent no
- * `thinking`: their replies could come back with no text block or a cut-off
- * object, and the entry, seed or notes were silently not written. They now
- * share narration's rule (narration/thinking.js).
+ * Haiku 5.5 and Sonnet 5.5 — the defaults — run adaptive thinking when a
+ * request omits `thinking`, and thinking shares the `max_tokens` cap: the
+ * classifier's 330-token decision, the chronicle scribe's 260, a seed's 220
+ * could come back with no text block. Short calls on the narration model each
+ * spread the rule into their body; the Haiku calls did not. api-proxy.js now
+ * applies it to every body that sets no `thinking`, in the form each model
+ * accepts (narration/thinking.js).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../../src/api-proxy.js', () => ({ apiPost: vi.fn() }));
-vi.mock('../../src/character/chronicle.js', async (importOriginal) => ({
-  ...(await importOriginal()),
-  requestChronicleEdit: vi.fn(async () => ({ ok: true, relayed: false, result: { applied: true } })),
+const sent = vi.hoisted(() => ({ bodies: [], reply: null }));
+vi.mock('../../src/net/fetchWithTimeout.js', () => ({
+  fetchWithTimeout: vi.fn(async (_url, init) => {
+    sent.bodies.push(JSON.parse(init.body));
+    return { ok: true, status: 200, json: async () => sent.reply };
+  }),
 }));
+vi.mock('../../src/logging/apiTransactionLog.js', () => ({ logApiTransaction: vi.fn() }));
 
 import { apiPost } from '../../src/api-proxy.js';
-import { writeChronicleEntry } from '../../src/character/chronicleWriter.js';
-import { createConnection, seedConnectionActor } from '../../src/entities/connection.js';
-import { narrationDisablesThinking, thinkingOffFor } from '../../src/narration/thinking.js';
-import { narrationDisablesThinking as narratorRule } from '../../src/narration/narrator.js';
-import { CampaignStateSchema } from '../../src/schemas.js';
 
-const MODULE_ID = 'starforged-companion';
+const URL = 'https://api.anthropic.com/v1/messages';
+const post = (body) => apiPost(URL, { 'x-api-key': 'sk-ant-test' }, body);
 
 beforeEach(() => {
-  apiPost.mockReset();
-  apiPost.mockResolvedValue({ content: [{ type: 'text', text: '{"type":"scar","salience":"significant","text":"Kira took a blade across the ribs."}' }] });
-  game.settings._store.clear();
-  game.settings._store.set(`${MODULE_ID}.chronicleAutoEntry`, true);
-  game.settings._store.set(`${MODULE_ID}.claudeApiKey`, 'sk-ant-test');
-  game.user.isGM = true;
+  sent.bodies.length = 0;
+  sent.reply = { content: [{ type: 'text', text: 'ok' }], stop_reason: 'end_turn' };
 });
 
-describe('the rule', () => {
-  it('Sonnet 5 turns thinking off; Sonnet 4.5 is left alone; Sonnet 5.5 is never sent "disabled"', () => {
-    expect(thinkingOffFor('claude-sonnet-5')).toEqual({ thinking: { type: 'disabled' } });
-    expect(thinkingOffFor('claude-sonnet-4-5-20250929')).toEqual({});
-    expect(thinkingOffFor('claude-sonnet-5-5')).toEqual({});
+describe('apiPost sends each model its thinking-off form', () => {
+  it('Haiku 5.5 (the interpreter, classifier and detection default) is sent "disabled"', async () => {
+    await post({ model: 'claude-haiku-5-5', max_tokens: 330, messages: [] });
+    expect(sent.bodies[0].thinking).toEqual({ type: 'disabled' });
   });
 
-  it('control: narrator.js re-exports the same rule', () => {
-    expect(narratorRule).toBe(narrationDisablesThinking);
+  it('Sonnet 5.5 (the narration default) is sent "between_tools" — it 400s on "disabled"', async () => {
+    await post({ model: 'claude-sonnet-5-5', max_tokens: 16000, messages: [] });
+    expect(sent.bodies[0].thinking).toEqual({ type: 'between_tools' });
+  });
+
+  it('Sonnet 5 is sent "disabled"', async () => {
+    await post({ model: 'claude-sonnet-5', max_tokens: 200, messages: [] });
+    expect(sent.bodies[0].thinking).toEqual({ type: 'disabled' });
+  });
+
+  it('control: the older models are sent no thinking field', async () => {
+    await post({ model: 'claude-sonnet-4-5-20250929', max_tokens: 200, messages: [] });
+    await post({ model: 'claude-haiku-4-5-20251001', max_tokens: 200, messages: [] });
+    expect(sent.bodies.map(b => 'thinking' in b)).toEqual([false, false]);
+  });
+
+  it("a caller's own `thinking` is sent as it is", async () => {
+    await post({ model: 'claude-sonnet-5-5', max_tokens: 1000, thinking: { type: 'adaptive' }, messages: [] });
+    expect(sent.bodies[0].thinking).toEqual({ type: 'adaptive' });
+  });
+
+  it("the caller's body object is not changed", async () => {
+    const body = { model: 'claude-haiku-5-5', max_tokens: 100, messages: [] };
+    await post(body);
+    expect(body.thinking).toBeUndefined();
   });
 });
 
-describe('the calls on the Sonnet 5 narration model', () => {
-  it('the chronicle scribe turns thinking off for its 200-token JSON reply', async () => {
-    game.settings._store.set(`${MODULE_ID}.narrationModel`, 'claude-sonnet-5');
-    await writeChronicleEntry({
-      narrationText: 'The blade opens a line across Kira\'s ribs.',
-      campaignState: { currentSessionId: 's1', characterIds: ['actor-1'] },
-      moveId: 'clash', outcome: 'miss', kind: 'move',
-    });
-    const body = apiPost.mock.calls[0][2];
-    expect(body).toMatchObject({ model: 'claude-sonnet-5', max_tokens: 200, thinking: { type: 'disabled' } });
-  });
-
-  it("an NPC seed's introduction turns thinking off", async () => {
-    game.settings._store.set(`${MODULE_ID}.narrationModel`, 'claude-sonnet-5');
-    apiPost.mockResolvedValue({ content: [{ type: 'text', text: 'Mira Kade keeps her burned hand gloved.' }] });
-    global.game.actors._reset();
-    const state = { ...CampaignStateSchema, connectionIds: [], sectors: [] };
-    game.settings._store.set(`${MODULE_ID}.campaignState`, state);
-    await createConnection({ name: 'Mira Kade', role: 'Courier', goal: 'Pay a debt', firstLook: ['Burned hand'] }, state, { persist: false });
-    await seedConnectionActor(global.game.actors.get(state.connectionIds[0]), state, { force: true });
-
-    const seedCall = apiPost.mock.calls.find(([, , body]) => body?.max_tokens === 220);
-    expect(seedCall).toBeDefined();
-    expect(seedCall[2].thinking).toEqual({ type: 'disabled' });
-  });
-
-  it('control: on Sonnet 4.5 the scribe sends no thinking field', async () => {
-    game.settings._store.set(`${MODULE_ID}.narrationModel`, 'claude-sonnet-4-5-20250929');
-    await writeChronicleEntry({
-      narrationText: 'The blade opens a line across Kira\'s ribs.',
-      campaignState: { currentSessionId: 's1', characterIds: ['actor-1'] },
-      moveId: 'clash', outcome: 'miss', kind: 'move',
-    });
-    expect(apiPost.mock.calls[0][2].thinking).toBeUndefined();
+describe('a declined request', () => {
+  it('is logged with its category and returned as it came', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    sent.reply = { content: [], stop_reason: 'refusal', stop_details: { type: 'refusal', category: 'general_harms' } };
+    const data = await post({ model: 'claude-sonnet-5-5', max_tokens: 100, messages: [] });
+    expect(data.stop_reason).toBe('refusal');
+    expect(warn.mock.calls.map(c => c.join(' ')).join('\n')).toMatch(/declined the request \(refusal: general_harms\)/);
+    warn.mockRestore();
   });
 });

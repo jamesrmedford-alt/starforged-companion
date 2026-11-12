@@ -74,7 +74,7 @@ import { CampaignStateSchema } from '../../src/schemas.js';
 import * as R from '../../src/batch/round.js';
 import { buildRoundView } from '../../src/batch/roundView.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const REPLY = 'Kira keeps her word.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 // challenge 4 and 8, action die 3 (+edge 2 = 5): a weak hit a burn of 9 raises.
 const WEAK = [0.35, 0.75, 0.4];

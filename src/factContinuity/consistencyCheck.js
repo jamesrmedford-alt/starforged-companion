@@ -30,13 +30,13 @@ import { resolveEntityById } from '../entities/registry.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const HAIKU_MODEL   = 'claude-haiku-4-5-20251001';
+const HAIKU_MODEL   = 'claude-haiku-5-5';
 // NARRCHK-TRUNC-SILENT (narrator-consistency audit 2026-07): 250 tokens held
 // ~3–4 contradiction objects and truncated silently on contradiction-rich
 // audits — exactly when the check matters most. 1000 is still trivially
 // cheap on Haiku (maxTokens is a cap, not a target) and callHaiku now warns
 // on a max_tokens stop.
-const MAX_TOKENS    = 1000;
+const MAX_TOKENS    = 1300;   // was 1000 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
 
 /**
  * Run the consistency-check audit on a piece of narrator prose.

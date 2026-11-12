@@ -23,6 +23,7 @@
 
 import { logApiTransaction } from "./logging/apiTransactionLog.js";
 import { fetchWithTimeout } from "./net/fetchWithTimeout.js";
+import { thinkingOffFor } from "./narration/thinking.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -31,7 +32,10 @@ const MODULE_ID = "starforged-companion";
  *
  * @param {string} url     — Full Anthropic URL (e.g. https://api.anthropic.com/v1/messages)
  * @param {Object} headers — Caller-supplied headers (x-api-key, anthropic-version, …)
- * @param {Object} body    — Request body (will be JSON-serialised)
+ * @param {Object} body    — Request body (will be JSON-serialised). A body that
+ *   sets no `thinking` is sent with its model's thinking-off form
+ *   (narration/thinking.js): every call here is a short reply or a narration
+ *   sized by `max_tokens`, and Haiku 5.5 / Sonnet 5.5 think by default.
  * @returns {Promise<Object>}
  * @throws {Error} on network failure or non-2xx response
  */
@@ -68,7 +72,7 @@ export async function apiPost(url, headers, body) {
       "anthropic-dangerous-direct-browser-access": "true",
       ...normalisedHeaders,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(body && body.thinking === undefined ? { ...body, ...thinkingOffFor(body.model) } : body),
   }, { label: "Anthropic request" });
 
   if (!res.ok) {
@@ -88,6 +92,12 @@ export async function apiPost(url, headers, body) {
   }
 
   const data = await res.json();
+  // Haiku 5.5 / Sonnet 5.5 can decline a request (HTTP 200, no text). Every
+  // caller already treats a reply with no text as a failure; this says why.
+  if (data?.stop_reason === "refusal") {
+    const category = data?.stop_details?.category;
+    console.warn(`${MODULE_ID} | api-proxy: ${body?.model ?? "the model"} declined the request (refusal${category ? `: ${category}` : ""}) — no text returned.`);
+  }
   const durationMs = Math.round((globalThis.performance?.now?.() ?? Date.now()) - startedAt);
 
   // Log the transaction (fire-and-forget — never blocks the response path).

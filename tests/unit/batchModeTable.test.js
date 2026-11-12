@@ -72,7 +72,7 @@ import { scriptClaude, holdWrites } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 const P3 = Object.freeze({ id: 'pl-3', name: 'Rook', isGM: false });
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const ROUND_REPLY = 'Kira slips through the vent as Ren keeps the corridor covered.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 
 // challenge 3 and 4, action die 6 (+edge 2 = 8): a strong hit.

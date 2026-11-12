@@ -28,7 +28,7 @@ import { markUnprepared, crewUnpreparedNote, isUnprepared } from "./sufferExecut
 import { assetMatchMove } from "./sceneChallenge.js";
 
 const MODULE_ID    = "starforged-companion";
-const HAIKU_MODEL  = "claude-haiku-4-5-20251001";
+const HAIKU_MODEL  = "claude-haiku-5-5";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
 
 // Resources a rider may adjust. `progress` is handled by the caller (it marks
@@ -460,7 +460,7 @@ async function callHaikuExtract(userPrompt, apiKey) {
   const { apiPost } = await import("../api-proxy.js");
   const body = {
     model:      HAIKU_MODEL,
-    max_tokens: 700,
+    max_tokens: 920,   // was 700 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
     system:     [{ type: "text", text: EXTRACT_SYSTEM }],
     messages:   [{ role: "user", content: userPrompt }],
   };

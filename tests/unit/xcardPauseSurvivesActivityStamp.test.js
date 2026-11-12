@@ -59,7 +59,7 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { campaignStateWrite, deferred } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const TORCH_FACT = 'His hand was burned with a cutting torch';
 
 let table;

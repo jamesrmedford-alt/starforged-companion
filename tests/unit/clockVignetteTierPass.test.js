@@ -31,7 +31,7 @@ import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const CLOCK = 'Vance Oduya hunts the crew';
 const PROSE = 'Vance Oduya\'s enforcers seal the docks at dawn, and Vance himself takes the harbourmaster hostage.';
 const DETAIL = 'Took the Bleakhold harbourmaster hostage to force the crew out of hiding';

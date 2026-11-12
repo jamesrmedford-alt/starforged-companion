@@ -484,7 +484,11 @@ match miss means no entity card for that entity.
 **Recent prose.** The user message of paced, oracle follow-up and @scene
 calls carries the ring (`getRecentNarrationContext`); since issue #286 (B1)
 move narration does too — the last 4 entries (`MOVE_RING_CARDS`, bounded by
-`narratorContextCards`). Each entry leads with the player's line that
+`narratorContextCards`). The move interpreter and the pacing classifier read
+it as well — the last 3 entries, the newest 2,400 characters
+(`getRecentSceneForReading`, passed by `movePipeline.readMove` and
+`router.decidePacing`) — so a line is read with the scene it follows (alpha 23
+playtest). Each entry leads with the player's line that
 prompted it (`PLAYER — <name> wrote: "…"`, B5): move and paced cards store
 `playerText` + `playerName`, @scene answers `sceneQuestion` + `playerName`. A
 paced line from a player with no character of their own at a table of several

@@ -67,7 +67,7 @@ import { CampaignStateSchema } from '../../src/schemas.js';
 import { resolveMove } from '../../src/moves/resolver.js';
 
 const MODULE_ID = 'starforged-companion';
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';   // narrationModel default
+const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
 
 let table;
 const world = () => table.world.campaignState();

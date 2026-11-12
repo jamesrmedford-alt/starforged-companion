@@ -8379,7 +8379,7 @@ function registerEntityFinalizeTests(quench) {
         return [
           ["api.anthropic.com", async () => ({
             id: "msg_test", type: "message", role: "assistant",
-            model: "claude-sonnet-4-5-20250929",
+            model: "claude-sonnet-5-5",
             content: [{ type: "text", text: STUB }],
             stop_reason: "end_turn",
             usage: { input_tokens: 100, output_tokens: 20 },
@@ -10918,7 +10918,7 @@ function registerOracleNarrationTests(quench) {
             id:    "msg_test",
             type:  "message",
             role:  "assistant",
-            model: "claude-haiku-4-5-20251001",
+            model: "claude-haiku-5-5",
             content: [
               { type: "text", text: STUBBED_NARRATION_SENTINEL },
             ],

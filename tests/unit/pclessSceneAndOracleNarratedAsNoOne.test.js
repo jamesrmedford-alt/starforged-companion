@@ -32,7 +32,7 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { scriptClaude } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const QUESTION = 'What does the cargo bay smell like?';
 const PROSE = 'Machine oil and ozone hang in the cargo bay; Sable Ortiz watches from the gantry.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 // The capture's detection pass finds a new figure, queued on the GM's draft card.

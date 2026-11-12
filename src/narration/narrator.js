@@ -27,7 +27,6 @@ import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlig
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
 import { readRecentOracleResults, dropOracleResultsFor } from '../oracles/oracleMemory.js';
-import { narrationDisablesThinking } from './thinking.js';
 import { logNarratorUsage } from '../pacing/telemetry.js';
 import { recordNarratorRequest, recordNarratorResponse, recordNarratorFactBlock } from './narratorDebug.js';
 import { inferShipPosition }  from '../factContinuity/shipPosition.js';
@@ -1669,6 +1668,32 @@ export function getRecentNarrationContext(sessionId, limit = 3) {
   }
 }
 
+/** How many recent cards the move interpreter and the pacing classifier read. */
+const READING_SCENE_CARDS = 3;
+/** …and the most of them they read, the newest kept. */
+export const READING_SCENE_MAX_CHARS = 2400;
+
+/**
+ * The recent scene the move interpreter and the pacing classifier read a line
+ * against (alpha 23 playtest): the last few ring entries — each the player's
+ * line, then the narrator's prose — with the newest kept when they run long.
+ * A line like "we're on our way" or "set a course" means nothing without the
+ * destination the characters were just discussing: both read the line alone
+ * (the classifier a one-line scene frame), so travel to an NPC's coordinates
+ * was neither offered a move nor given its destination.
+ *
+ * @param {string|null} sessionId
+ * @returns {string} '' when there is none
+ */
+export function getRecentSceneForReading(sessionId) {
+  if (!sessionId) return '';
+  const text = getRecentNarrationContext(sessionId, READING_SCENE_CARDS);
+  if (text.length <= READING_SCENE_MAX_CHARS) return text;
+  const tail = text.slice(-READING_SCENE_MAX_CHARS);
+  const cut  = tail.indexOf('\n\n');
+  return `…${cut >= 0 && cut < tail.length / 2 ? tail.slice(cut + 2) : tail}`;
+}
+
 /**
  * How many recent cards a MOVE narration's user message carries (issue #286
  * B1: it carried none, so for the first 30 cards of a session a move was
@@ -2279,8 +2304,8 @@ export async function getCampaignRecap(campaignState, options = {}) {
 // decisions.md → "Rolling session summary").
 // ---------------------------------------------------------------------------
 
-const ROLLING_SUMMARY_MODEL     = 'claude-haiku-4-5-20251001';
-const ROLLING_SUMMARY_MAX_TOK   = 320;
+const ROLLING_SUMMARY_MODEL     = 'claude-haiku-5-5';
+const ROLLING_SUMMARY_MAX_TOK   = 420;   // was 320 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
 const ROLLING_SUMMARY_DEBOUNCE  = 1.5;
 
 const ROLLING_SUMMARY_SYSTEM_PROMPT =
@@ -4648,11 +4673,6 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   return persisted;
 }
 
-// Whether a call on `model` turns extended thinking off — the rule lives in
-// narration/thinking.js, shared with every short structured call that runs on
-// the narration model (issue #325 W27); re-exported here for its callers.
-export { narrationDisablesThinking };
-
 async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTokens, label = null }) {
   const body = {
     model,
@@ -4662,12 +4682,9 @@ async function callNarratorAPI({ apiKey, systemPrompt, userMessage, model, maxTo
     ],
     messages: [{ role: 'user', content: userMessage }],
   };
-  // Keep narration fast and un-truncated on a thinking-by-default model (Sonnet
-  // 5): no extended thinking eating the max_tokens cap. No-op for the older
-  // offered models, which already default to thinking-off (#latency).
-  if (narrationDisablesThinking(model)) {
-    body.thinking = { type: 'disabled' };
-  }
+  // No extended thinking eating the max_tokens cap on a thinking-by-default
+  // model (Sonnet 5, Sonnet 5.5, Haiku 5.5): api-proxy.js sends the body with
+  // its model's thinking-off form (narration/thinking.js) (#latency).
 
   const headers = {
     'Content-Type':      'application/json',
@@ -4955,7 +4972,7 @@ function getNarratorSettings() {
   try {
     return {
       narrationEnabled:        game.settings.get(MODULE_ID, 'narrationEnabled')      ?? true,
-      narrationModel:          game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-4-5-20250929',
+      narrationModel:          game.settings.get(MODULE_ID, 'narrationModel')        ?? 'claude-sonnet-5-5',
       narrationPerspective:    game.settings.get(MODULE_ID, 'narrationPerspective')  ?? 'auto',
       narrationTone:           game.settings.get(MODULE_ID, 'narrationTone')         ?? 'wry',
       narrationLevity:         game.settings.get(MODULE_ID, 'narrationLevity')       ?? 'default',
@@ -4971,7 +4988,7 @@ function getNarratorSettings() {
     console.error(`${MODULE_ID} | narrator: getNarratorSettings failed; falling back to hardcoded defaults:`, err);
     return {
       narrationEnabled:        true,
-      narrationModel:          'claude-sonnet-4-5-20250929',
+      narrationModel:          'claude-sonnet-5-5',
       narrationPerspective:    'auto',
       narrationTone:           'wry',
       narrationLevity:         'default',

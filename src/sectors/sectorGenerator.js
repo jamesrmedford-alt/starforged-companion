@@ -29,7 +29,7 @@ import * as MISC               from "../oracles/tables/misc.js";
 import * as CORE               from "../oracles/tables/core.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const STUB_MODEL    = "claude-haiku-4-5-20251001";
+const STUB_MODEL    = "claude-haiku-5-5";
 
 const REGION_LABELS = {
   terminus: "Terminus (the settled core)",

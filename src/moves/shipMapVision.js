@@ -21,7 +21,6 @@
 
 import { SHIPBOARD_ROLES } from "./battleStations.js";
 import { STATION_LAYOUT } from "./shipMapScene.js";
-import { thinkingOffFor } from "../narration/thinking.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -119,7 +118,7 @@ export async function resolveStationCoordsFromImage(b64, opts = {}) {
 
   const model = opts.model
     ?? readModuleSetting("narrationModel")
-    ?? "claude-sonnet-4-5-20250929";
+    ?? "claude-sonnet-5-5";
 
   const targets = (Array.isArray(opts.features) && opts.features.length)
     ? opts.features
@@ -156,7 +155,6 @@ export async function resolveStationCoordsFromImage(b64, opts = {}) {
   const body = {
     model,
     max_tokens: 1500,
-    ...thinkingOffFor(model),   // its JSON on the narration model (issue #325 W27)
     system:   [{ type: "text", text: system }],
     messages: [{ role: "user", content: userContent }],
   };

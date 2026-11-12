@@ -39,7 +39,7 @@ import { simulateTable, USERS } from '../helpers/multiClient.js';
 import { scriptClaude, campaignStateWrite, deferred } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';
+const NARRATION_MODEL = 'claude-sonnet-5-5';
 const CLOCK_FACT  = 'The Syndicate blockade has tightened around Haven';
 const GALLEY_FACT = 'Owes the crew a favour';
 const CLOCK_NARRATION  = 'Another freighter turns back at the picket line.\n```json\n' + JSON.stringify({

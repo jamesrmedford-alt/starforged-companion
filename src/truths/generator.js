@@ -700,8 +700,8 @@ async function callLoreRecapNarrator(campaignState, apiKey) {
     "4–6 sentences. No bullet points. No category labels. Pure prose.";
 
   const body = {
-    model:      "claude-haiku-4-5-20251001",
-    max_tokens: 300,
+    model:      "claude-haiku-5-5",
+    max_tokens: 400,   // was 300 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
     system:     systemPrompt,
     messages:   [{ role: "user", content: `Summarise these world truths:\n\n${truthsContent}` }],
   };

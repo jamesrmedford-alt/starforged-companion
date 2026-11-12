@@ -32,7 +32,7 @@ import { apiPost }       from "../api-proxy.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const HAIKU_MODEL   = "claude-haiku-4-5-20251001";
+const HAIKU_MODEL   = "claude-haiku-5-5";
 
 /**
  * @typedef {Object} EntityRef
@@ -449,7 +449,7 @@ async function defaultClassifyImplicit(narration, moveId) {
 
   const body = {
     model:      HAIKU_MODEL,
-    max_tokens: 80,
+    max_tokens: 110,   // was 80 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
     system: [
       { type: "text", text: CLASSIFY_SYSTEM_PROMPT, cache_control: { type: "ephemeral" } },
     ],

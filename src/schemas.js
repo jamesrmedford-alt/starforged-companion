@@ -504,15 +504,14 @@ export const CampaignStateSchema = {
   // X08).
   pendingMoveClaim: null,
 
-  // Claude API configuration — read by the move interpreter (which falls back
-  // to its own constants); nothing writes it, so it stays at these defaults.
+  // Claude API configuration — read by the move interpreter. Its model and
+  // token cap are the interpreter's and classifier's own constants: a world
+  // stored the model it was created with here, which nothing ever rewrote,
+  // so a newer default never reached it (the model upgrade to Haiku 5.5).
+  // An older world's stored `model` / `maxTokens` / `fallbackModel` are
+  // ignored.
   api: {
-    // Primary model for move interpretation and oracle calls
-    model: "claude-haiku-4-5-20251001",
-    maxTokens: 1000,
     promptCachingEnabled: true,
-    // Fallback model for ambiguous multi-move situations
-    fallbackModel: "claude-sonnet-4-6",
   },
 
   // World Truths state

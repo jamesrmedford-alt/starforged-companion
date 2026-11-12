@@ -14,7 +14,7 @@ import { apiPost } from "../api-proxy.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const REWARD_MODEL  = "claude-haiku-4-5-20251001";
+const REWARD_MODEL  = "claude-haiku-5-5";
 const BOX_TICKS     = 4;
 
 // How a promised concrete reward is delivered mechanically (#241 Phase 2).
@@ -111,7 +111,7 @@ async function callRewardModel(userPrompt, apiKey) {
   const data = await apiPost(
     ANTHROPIC_URL,
     { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
-    { model: REWARD_MODEL, max_tokens: 400, messages: [{ role: "user", content: userPrompt }] },
+    { model: REWARD_MODEL, max_tokens: 520 /* was 400 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5 */, messages: [{ role: "user", content: userPrompt }] },
   );
   return (data?.content ?? []).filter(b => b?.type === "text").map(b => b.text).join("");
 }

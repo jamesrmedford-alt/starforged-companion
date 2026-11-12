@@ -18,7 +18,7 @@ import { toMoveId } from "../schemas.js";
 import { SCENE_CHALLENGE_VARIANTS } from "../moves/sceneChallenge.js";
 
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
-const MODEL         = "claude-haiku-4-5-20251001";
+const MODEL         = "claude-haiku-5-5";
 
 export const PACING_DECISION = Object.freeze({
   MOVE:                          "MOVE",
@@ -145,6 +145,12 @@ sceneChallenge (null for any other move). A fight is still combat
 (enter_the_fray …) even mid-challenge, and any other move is itself. With no
 scene challenge open, never nominate them.
 
+READ THE INPUT AGAINST THE RECENT SCENE — a short line takes its meaning from
+what it follows. "We're on our way", "let's go", "head there", "wake me when we
+get there" after the scene set up a destination is travel toward that
+destination; "do it" after an NPC asked for something is doing that thing.
+The recent scene is context only: what you classify is the player's input.
+
 MOVEMENT WITH STAKES — if the input expresses movement or travel intent
 (setting out, picking a route, closing on a destination) AND there is an
 established hazard or explicit time pressure — in the input itself OR the
@@ -252,11 +258,13 @@ FATE
  * @param {boolean} [args.combatActive] — a fight is open (the COMBAT IS ACTIVE rule)
  * @param {string[]} [args.sceneChallenges] — the open scene challenges' names
  *   (the SCENE CHALLENGE IS OPEN rule — issue #338 D2's variant moves)
+ * @param {string} [args.recentScene] — the last few narration cards
+ *   (narrator.js getRecentSceneForReading): what the input follows
  * @returns {{systemPrompt: string, userMessage: string, effective: Object}}
  */
 export function buildClassifierContext({
   playerText, campaignState, character, recentMoveDensity, pacingConfig,
-  combatActive = false, sceneChallenges = [],
+  combatActive = false, sceneChallenges = [], recentScene = "",
 }) {
   const effective = {};
   for (const cat of PACING_CATEGORIES) {
@@ -311,6 +319,9 @@ export function buildClassifierContext({
     ...(challengeLine ? [challengeLine] : []),
     sceneLine || "(no scene context available)",
     "",
+    ...(typeof recentScene === "string" && recentScene.trim()
+      ? ["## RECENT SCENE (what the input follows — context only; classify the PLAYER INPUT)", recentScene.trim(), ""]
+      : []),
     "## PLAYER INPUT",
     `"${(playerText ?? "").trim()}"`,
   ];
@@ -355,13 +366,13 @@ export function buildClassifierContext({
  */
 export async function classifyInput({
   playerText, campaignState, character, recentMoveDensity, pacingConfig,
-  apiKey, model, combatActive = false, sceneChallenges = [],
+  apiKey, model, combatActive = false, sceneChallenges = [], recentScene = "",
 }) {
   if (!apiKey)             return fallbackDecision("missing api key");
   if (!playerText?.trim()) return fallbackDecision("empty input");
 
   const { systemPrompt, userMessage } = buildClassifierContext({
-    playerText, campaignState, character, recentMoveDensity, pacingConfig, combatActive, sceneChallenges,
+    playerText, campaignState, character, recentMoveDensity, pacingConfig, combatActive, sceneChallenges, recentScene,
   });
 
   try {
@@ -369,7 +380,8 @@ export async function classifyInput({
       apiKey,
       systemPrompt,
       userMessage,
-      model: model ?? campaignState?.api?.model ?? MODEL,
+      // Its own model — never a world's stored `api.model` (schemas.js).
+      model: model ?? MODEL,
     });
     const result = parseDecision(text);
     // A scene-challenge move named with no challenge open is the ordinary
@@ -392,7 +404,7 @@ export async function classifyInput({
 async function callClassifierAPI({ apiKey, systemPrompt, userMessage, model }) {
   const body = {
     model,
-    max_tokens: 250,
+    max_tokens: 330,   // was 250 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5
     system: [
       { type: "text", text: systemPrompt, cache_control: { type: "ephemeral" } },
     ],

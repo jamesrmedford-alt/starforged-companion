@@ -90,7 +90,7 @@ import { CampaignStateSchema } from '../../src/schemas.js';
 import { DEFAULT_TIMEOUT_MS } from '../../src/net/fetchWithTimeout.js';
 import { RELAY_RECOVERY_MS } from '../../src/moves/burnMomentum.js';
 
-const NARRATION_MODEL = 'claude-sonnet-4-5-20250929';   // narrationModel default
+const NARRATION_MODEL = 'claude-sonnet-5-5';   // narrationModel default
 const REPLY = 'The hull groans and holds.\n```json\n{"newTruths":[],"stateChanges":[]}\n```';
 const isNarration = (call) => call.model === NARRATION_MODEL;
 

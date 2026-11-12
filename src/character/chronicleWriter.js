@@ -21,14 +21,13 @@ import { apiPost } from '../api-proxy.js';
 import { requestChronicleEdit, CHRONICLE_AUTO_TYPES } from './chronicle.js';
 import { getPlayerActors } from './actorBridge.js';
 import { passesSalience, getSalienceThreshold } from '../world/salience.js';
-import { thinkingOffFor } from '../narration/thinking.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
-const DEFAULT_MODEL = 'claude-haiku-4-5-20251001';
+const DEFAULT_MODEL = 'claude-haiku-5-5';
 
 const DELAY_MS      = 2000;
-const MAX_TOKENS    = 200;
+const MAX_TOKENS    = 260;   // was 200 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5 (the narration model may be Haiku)
 
 // The types the prompt below offers — the Chronicle panel's type select lists
 // each (CHRONICLE_ENTRY_TYPES includes them: issue #322 V33).
@@ -185,7 +184,6 @@ async function callChronicleAPI({ apiKey, narrationText, moveId, outcome, kind }
     model,
     max_tokens: MAX_TOKENS,
     // Its 200-token JSON on a thinking-by-default model (issue #325 W27).
-    ...thinkingOffFor(model),
     system: [
       { type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } },
     ],
