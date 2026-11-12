@@ -478,12 +478,18 @@ export const CampaignStateSchema = {
   // premise (who / where / stakes / deadline) cannot age out of the recent-
   // narration ring or be cleared by a scene transition (PLAYTEST-1712 S; the
   // narrator-memory "never-dropped" tier). null until the incident is composed.
-  // Shape: { prose, spark:{action,theme}, vow, clock, target, sessionId, establishedAt }
+  // Shape: { prose, spark:{action,theme}, vow, clock, target, sessionId, establishedAt, narrationId }
   incitingIncident: null,
 
   // Entity names suppressed from narrator extraction. Populated by the
   // entity panel's dismiss action.
   dismissedEntities:   [],
+
+  // The names narrations took off dismissedEntities — a Make a Connection on
+  // a dismissed NPC, an identity reveal onto a dismissed name — as
+  // { name, narrationId }, newest last (cap 50), so an X-Card on the
+  // narration dismisses the name again (XCARD-KEEPS-UNDISMISS).
+  undismissedByNarration: [],
 
   // Concurrency lock — true while the move interpretation pipeline is running.
   // Prevents two narration messages from kicking off parallel pipelines that

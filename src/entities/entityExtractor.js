@@ -817,7 +817,7 @@ export async function applyEntityRenames(renames, campaignState, deps = {}) {
     // A revealed name the GM once dismissed from a draft card is hers now:
     // dismissed, it kept her card out of the narrator's name index for good
     // (issue #345 AA55).
-    await undismissRecordName(to, campaignState);
+    await undismissRecordName(to, campaignState, { narrationId });
     // The revealing narration recorded its facts under the new name as a
     // text subject (no card was named that yet): they join the renamed card,
     // as a new entity's do (issue #326 W68 — they neither rendered on the
@@ -2248,7 +2248,8 @@ async function confirmDraft(message, draftIndex, opts = {}) {
         // A Make a Connection's narration made it (confirmNamedPendingConnection).
         ...(opts.narrationId ? {
           createdFromNarrationId: opts.narrationId,
-          createdFromDraft:       { messageId: message?.id ?? null, index: draftIndex },
+          // A row the GM had dismissed goes back to dismissed (XCARD-KEEPS-UNDISMISS).
+          createdFromDraft:       { messageId: message?.id ?? null, index: draftIndex, ...(draft.status === "dismissed" ? { status: "dismissed" } : {}) },
         } : {}),
       }, campaignState);
       // An X-Card on that narration meanwhile takes the stamped card back:
@@ -2478,7 +2479,7 @@ async function connectNamedFigure(slot, campaignState, { namingText = "", lineTe
     return record ? { entity: pick.draft, record } : null;
   }
   if (dismissed.has(pick.key)) {
-    await undismissEntityName(pick.key).catch(err =>
+    await undismissEntityName(pick.key, "make a connection undismiss", { narrationId }).catch(err =>
       console.warn(`${MODULE_ID} | make a connection: un-dismissing the name failed:`, err?.message ?? err));
   }
   if (pick.kind === "listed") {
@@ -2527,15 +2528,88 @@ function namedConnectionCandidates(slot, campaignState, dismissed) {
   return out;
 }
 
-/** Take a name off the dismissed list (by normalizeEntityName), on the GM's campaignState write chain. */
-async function undismissEntityName(key, label = "make a connection undismiss") {
+/** Narrations' un-dismissals kept on campaignState for the X-Card, newest last (as `xCardedNarrationIds` keeps). */
+const UNDISMISS_LOG_CAP = 50;
+
+/**
+ * Take a name off the dismissed list (by normalizeEntityName), on the GM's
+ * campaignState write chain. A narration's un-dismissal — a Make a
+ * Connection that named the dismissed NPC, an identity reveal onto a
+ * dismissed name — is logged with its narration id
+ * (`undismissedByNarration`), so an X-Card on that narration dismisses the
+ * name again (restoreNarrationDismissals, XCARD-KEEPS-UNDISMISS); one the
+ * X-Card has already removed un-dismisses nothing.
+ *
+ * @param {string} key — the normalised name
+ * @param {string} [label]
+ * @param {{ narrationId?: string|null }} [opts]
+ */
+async function undismissEntityName(key, label = "make a connection undismiss", { narrationId = null } = {}) {
   await serialiseCampaignStateWrite(() => {
     const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+    const byNarration = typeof narrationId === "string" && narrationId ? narrationId : null;
+    if (byNarration && (latest.xCardedNarrationIds ?? []).includes(byNarration)) return undefined;
     const list = Array.isArray(latest.dismissedEntities) ? latest.dismissedEntities : [];
     const kept = list.filter(n => normalizeEntityName(n) !== key);
     if (kept.length === list.length) return undefined;
-    return globalThis.game.settings.set(MODULE_ID, "campaignState", { ...latest, dismissedEntities: kept });
+    const cs = { ...latest, dismissedEntities: kept };
+    if (byNarration) {
+      const name = list.find(n => normalizeEntityName(n) === key);
+      const log = Array.isArray(latest.undismissedByNarration) ? latest.undismissedByNarration : [];
+      cs.undismissedByNarration = [...log, { name, narrationId: byNarration }].slice(-UNDISMISS_LOG_CAP);
+    }
+    return globalThis.game.settings.set(MODULE_ID, "campaignState", cs);
   }, label);
+}
+
+/**
+ * Dismiss again the names X-carded narrations took off the Dismissed list
+ * (XCARD-KEEPS-UNDISMISS): a Make a Connection hit on a dismissed NPC, or an
+ * identity reveal onto a dismissed name. The X-Card's finish already put the
+ * row back and the placeholder's name back (retractNarrationConnections,
+ * revertNarrationRenames), but the name stayed off the list. A name a record
+ * still holds — the connection the table had used, a GM's rename onto it —
+ * stays off: dismissed, it would hide that record from the narrator (issue
+ * #345 AA55). Canonical GM (the X-Card's finish), on the write chain, after
+ * the connections are settled. Never throws.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<string[]>} the names dismissed again
+ */
+export async function restoreNarrationDismissals(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === "string" && id));
+  if (!removed.size) return [];
+  // Nothing logged for them: no write, and no wait on the write chain.
+  const logged = (cs) => (Array.isArray(cs?.undismissedByNarration) ? cs.undismissedByNarration : [])
+    .some(e => removed.has(e?.narrationId));
+  if (!logged(globalThis.game?.settings?.get(MODULE_ID, "campaignState"))) return [];
+  let restored = [];
+  try {
+    await serialiseCampaignStateWrite(() => {
+      const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState") ?? {};
+      const log = Array.isArray(latest.undismissedByNarration) ? latest.undismissedByNarration : [];
+      const theirs = log.filter(e => removed.has(e?.narrationId));
+      if (!theirs.length) return undefined;
+      const list = Array.isArray(latest.dismissedEntities) ? latest.dismissedEntities : [];
+      const held = new Set(list.map(normalizeEntityName));
+      restored = [];
+      for (const { name } of theirs) {
+        const key = normalizeEntityName(name);
+        if (!key || held.has(key) || entityExistsAnyType(name, latest)) continue;
+        held.add(key);
+        restored.push(name);
+      }
+      return globalThis.game.settings.set(MODULE_ID, "campaignState", {
+        ...latest,
+        dismissedEntities:      [...list, ...restored],
+        undismissedByNarration: log.filter(e => !removed.has(e?.narrationId)),
+      });
+    }, "X-Card: dismissals restored");
+  } catch (err) {
+    console.warn(`${MODULE_ID} | X-Card: dismissing again the names the removed narration un-dismissed failed:`, err?.message ?? err);
+    return [];
+  }
+  return restored;
 }
 
 /**
@@ -2551,16 +2625,18 @@ async function undismissEntityName(key, label = "make a connection undismiss") {
  *
  * @param {string} name — the record's new name
  * @param {Object} [campaignState] — the caller's copy
+ * @param {{ narrationId?: string|null }} [opts] — the narration that gave the
+ *   record the name (an identity reveal): logged, for its X-Card
  * @returns {Promise<boolean>} whether the name was dismissed
  */
-export async function undismissRecordName(name, campaignState = null) {
+export async function undismissRecordName(name, campaignState = null, { narrationId = null } = {}) {
   const key = normalizeEntityName(name);
   if (!key || !globalThis.game?.user?.isGM) return false;
   const stored = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
   const held = (list) => Array.isArray(list) && list.some(n => typeof n === "string" && normalizeEntityName(n) === key);
   if (!held(stored.dismissedEntities) && !held(campaignState?.dismissedEntities)) return false;
   try {
-    await undismissEntityName(key, "record name undismiss");
+    await undismissEntityName(key, "record name undismiss", { narrationId });
   } catch (err) {
     console.warn(`${MODULE_ID} | un-dismissing "${name}" (a record now holds it) failed:`, err?.message ?? err);
     return false;
@@ -2716,10 +2792,12 @@ export async function withdrawNarrationDrafts(narrationIds) {
  * MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED): the NPC was the earlier
  * narration's, which the X-Card kept, so the row is pending again — Confirm
  * and Dismiss back on the card. A row whose own narration an X-Card removed
- * is withdrawn instead (`xCarded`, issue #338 D6(i)). A row no longer
- * confirmed is left as it is. Canonical GM (the X-Card's finish).
+ * is withdrawn instead (`xCarded`, issue #338 D6(i)); a row the GM had
+ * dismissed before the hit confirmed it is dismissed again (its link's
+ * `status`, XCARD-KEEPS-UNDISMISS). A row no longer confirmed is left as it
+ * is. Canonical GM (the X-Card's finish).
  *
- * @param {{ messageId?: string|null, index?: number }} link — the connection's `createdFromDraft`
+ * @param {{ messageId?: string|null, index?: number, status?: "dismissed" }} link — the connection's `createdFromDraft`
  * @returns {Promise<string|null>} the row's new status, or null when nothing changed
  */
 export async function reopenConfirmedDraftRow(link) {
@@ -2727,7 +2805,8 @@ export async function reopenConfirmedDraftRow(link) {
   const f = message?.flags?.[MODULE_ID];
   if (!f?.draftEntityCard) return null;
   const removed = globalThis.game?.settings?.get(MODULE_ID, "campaignState")?.xCardedNarrationIds ?? [];
-  const status = f.narrationId && removed.includes(f.narrationId) ? DRAFT_XCARDED : "pending";
+  const status = link?.status === "dismissed" ? "dismissed"
+    : f.narrationId && removed.includes(f.narrationId) ? DRAFT_XCARDED : "pending";
   const rows = await changeDraftRows(message, (drafts) => {
     const at = drafts.findIndex(d => d?.index === link.index);
     if (at < 0 || drafts[at].status !== "confirmed") return null;

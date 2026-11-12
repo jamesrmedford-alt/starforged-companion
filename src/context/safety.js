@@ -316,6 +316,16 @@ async function finishXCardRemoval(narrator, removal) {
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: removing the connections the narration created failed:`, err?.message ?? err);
     }
+    // A name it took off the Dismissed list — a Make a Connection on a
+    // dismissed NPC, an identity reveal onto a dismissed name — is dismissed
+    // again, once the connection and the rename are settled above
+    // (XCARD-KEEPS-UNDISMISS). Fail-open inside.
+    try {
+      const { restoreNarrationDismissals } = await import("../entities/entityExtractor.js");
+      await restoreNarrationDismissals(ids);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: dismissing again the names the narration un-dismissed failed:`, err?.message ?? err);
+    }
   }
   if (removal.retracted.length) {
     try {
