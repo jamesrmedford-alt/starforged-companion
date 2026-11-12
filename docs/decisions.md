@@ -6,6 +6,77 @@ rejected.
 
 ---
 
+## Issue #347 audit: no wait on a write of our own is unbounded, the election skips a loading GM, a press not rolled is handed back (2026-11)
+
+**Decision:** (issue #347, the thirteenth audit's 24 findings AB01–AB24 —
+serious bugs, stalls and locks — fixed at the maintainer's request in the
+v1.8.1 cycle. What the fixes established, each row's ID in brackets. The
+three decision rows, all option A, have their own entries: D1 "Who are you
+interacting with? is asked before the roll" (after the move-lock record),
+D2 beside #338 D8 in the issue #338 audit ("An X-Card on an upgraded beat
+takes what the upgrade struck"), D3 "Batch Mode: a keyless GM's takeover
+waits for a keyed GM to narrate the round". Most rows add an *Update* note to
+the entry they change.)
+- **No wait on a write of the module's own is unbounded** [AB05, AB02]: a
+  document or setting write lost with its connection never settles, so every
+  caller that awaits one — or a link of a chain that waits on the one before
+  it — waits through `multiplayer/settleWithin.js` and goes on, warned: the
+  move lock's claim and release (30 s), Begin / End a Session (five minutes),
+  the rolling summary, a Private Channel page write; every FilePicker request
+  through `withFilePickerDeadline` (120 s); U57's Progress Tracks queue (30 s,
+  TRACK-QUEUE-UNBOUNDED-IN-LOCK) and this client's Safety-list edits (30 s,
+  SAFETY-LIST-EDITS-ONE-ROUND-TRIP). The Chronicle queue stays as accepted.
+- **The canonical GM is elected among GMs whose page is ready** [AB03]: a GM
+  whose connect a client saw is passed over until it announces its page
+  (`registerGmReadiness`); a GM connected before the client loaded is
+  presumed ready. Recorded as an update on "Claude calls run where a key
+  lives".
+- **A client's own earlier page's lock is its to free** [AB04], and a ready
+  reset that frees a lock tells the GMs [AB14] — updates on Y07 and W25.
+- **A press the pipeline does not roll is handed back** [AB06]: a claimed
+  card's forced move carries its claim (`sourceCard` — the path main's issue
+  #348 PT11 fix built for the same case, merged into one) and gets it back,
+  with a "Not rolled" whisper, when its confirm is cancelled, the lock or the
+  world refuses its start, or it fails before its dice; a held move follows the canonical GM
+  (`forcedMove.hold`); its order holds through a refused claim [AB24]. The
+  inciting ⚔ is still not held (Y36) — it re-arms from the notice.
+- **A shared track moves by what a sheet edit changed** [AB07] — an update
+  on #326 D3.
+- **A session closed out short is caught up** [AB15] — `unsummarisedSession`,
+  an update on AA21.
+- **A GM page whose connection dropped stands down until it reloads**
+  [AB19, AB19-STALE-CACHE-WRITES; the maintainer's choice, 2026-11-12]. A
+  world write that lands while a socket is down never reaches that client's
+  cache, and a reconnect replays nothing. Its narration in flight is
+  discarded (`multiplayer/connectionWatch.js` counts the drops); from the
+  drop until the page reloads it is never the canonical GM and writes no
+  campaignState, Batch Mode round, Lines or Veils; once its connection is
+  back it tells the table (`GM_PAGE_STALE_KIND`) and asks its GM to reload —
+  a permanent notice and a Reload button. Another GM takes over what it held
+  (its move lock, its round — `noteGmStoodDown`), also for a drop the server
+  never saw; with no other GM the table waits for the reload, and relays say
+  so: a player's X-Card says it was not recorded. A round narrated beside a
+  keyless co-GM therefore waits for the keyed GM's reload
+  (ROUND-DROP-CHECK-KEYLESS-COGM), not counting keyed co-GMs only, which
+  would post a reply from the stale cache. *Not chosen:* reloading the page by
+  itself on reconnect; re-reading the world's settings before the next write.
+  Its sheet and chat-card writes are not refused yet (known-issues
+  STALE-PAGE-ACTOR-WRITES).
+- **Batch Mode** [AB13, AB17, AB18, AB20]: an upgrade in flight is waited for
+  (Send now keeps it after 60 s — after five minutes while its handler still runs on the resolving GM's page, UPGRADE-IN-FLIGHT-GRACE); a late reply of a narration taken over posts
+  and closes nothing; a takeover names its resolver; an entry stamped rolling
+  before its effects is never rolled again.
+- **Smaller:** a Make a Connection's portrait is not awaited [AB01]; the
+  stored entity lists gate a capture's dedup [AB09]; the player's line names
+  the connection (a round's hit, its own line), and none is guessed among
+  several [AB10]; a detail matches
+  whole words and a negation never dedupes [AB11]; a Safety ✕ removes by text
+  [AB12]; the default-named journal wins among flagged ones [AB16]; a failed
+  paced narration says so [AB21]; the X-Card reads chat as it was, deleted
+  narrations included [AB22]; a token-drag payload is checked against what a
+  drop can produce [AB23]; an old ship record reads the lower of record and
+  sheet [AB08].
+
 ## Haiku 5.5 and Sonnet 5.5 are the defaults; a line is read with its scene (2026-11)
 
 **Decision:** (the maintainer's request after the alpha 23 playtest.)
@@ -112,6 +183,19 @@ trusts.
 - *Hand back on a GM handover* (a held move lost when the canonical GM
   changes, #347 AB06's fourth case) — the in-memory hold is issue #344's.
 
+*Update (issue #347 AB06, merged onto this path):* issue #347's own AB06 fix
+built the same hand-back beside this one (`cardClaim`, a "Move not rolled"
+whisper); the merge keeps this path and these names, with what AB06 added.
+`sourceCard` also carries the value the press set — the claim is written back
+only while the card still holds it — and, on a waypoint alternative, the
+ordinary reward's cards it retired, which come back with it (`reopenRetired`).
+The notice gains `refused` (the world did not save the move's start). The
+boundary is the dice (`rollMove`'s `onDiceRolled`), not the confirm: a
+failure after the confirm but before the dice hands the card back too. A
+handed-back resist roll also re-opens its move's Burn Momentum / Improve
+Result (RESIST-BURN-STAYS-CLOSED). And the GM-handover case is no longer
+rejected: a held move follows the canonical GM (`forcedMove.hold`, AB06).
+
 ---
 
 ## Issue #345 audit: one canonical store per fact, a name is its host's, a journal is found by its flag, a capture follows its narration (2026-11)
@@ -138,6 +222,20 @@ entries below this one.)
   a second write path for a mirror no reader needs. The asset's own Battered
   / Cursed conditions stay a further store (known-issues
   STARSHIP-ASSET-CONDITIONS-UNSYNCED).
+  **Update (issue #347 AB08): a record from before this is reconciled to the
+  lower value.** Up to v1.8.0 the module's losses went to the record alone,
+  so a world played then holds, say, record 2 beside an untouched sheet 5,
+  and mirroring the sheet erased the damage from both stores. A record
+  without `integritySheetReconciled` (every record written since carries it;
+  `ShipSchema` sets it on a new one) reads the lower of the two
+  (`actorBridge.unreconciledRecordIntegrity`, in `withSheetNotes` and the
+  +integrity roll), and its first `updateShip` writes that lower value to
+  both stores, stamps the record and whispers the GMs both values where they
+  differed; the canonical GM's world load makes that write first
+  (`migrator.reconcileCommandVehicleIntegrity`). *Rejected:* the sheet's
+  value (it never saw the module's damage) and the record's (a player may
+  have marked the sheet alone) — which was right cannot be known, so the
+  lower is taken and the GM told.
 - **An entity's name is its host document's** [AA18]: an Actor's name for
   the Actor-hosted types, as before, and a faction's or creature's host
   JournalEntry's name: a sidebar rename is written through to the record
@@ -162,6 +260,21 @@ entries below this one.)
   dismissed names, and a load-time sweep un-dismissing every name a record
   holds — both reverse the pinned index rule (a world already in that state
   stays hidden until the GM's Undismiss).
+  **Update (issue #347 AB10): the player's line says which NPC.** Pending
+  draft rows (W23), listed NPCs and dismissed rows are one set of
+  candidates (`connectNamedFigure`): the one the player's line names, else —
+  the line naming none — the one the narration names; several, none is
+  guessed and the GMs are told which. The first pending row named anywhere
+  in the line or the narration used to be confirmed before any known NPC was
+  looked at, so a bystander the narration mentioned was bonded to the
+  roller, silently. "Several" now covers pending rows too, and a line naming
+  exactly one of several the narration names settles it.
+  *Update (issue #347 residual ROUND-CONNECTION-LINE-JOINED):* in a Batch
+  Mode round the player's line is the hit's own entry's
+  (`connectionRollers[].lineText`), not the round's lines joined: with two
+  players playing one character, the other player's line naming an NPC
+  bonded that NPC to the hit's roller, or made a line naming one NPC read as
+  naming several.
 - **Journals are found by their flag; the name is a fallback** [AA62, AA63]:
   the Progress Tracks journal is the one carrying the `tracks` flag
   (`findTracksJournal`; the interpreter reads it the same way), and each
@@ -172,6 +285,31 @@ entries below this one.)
   World Journal one also by the canonical GM's load). Renaming them is fine
   (rules/reachability.md §6, resolve by stable id). *Rejected:* a new id flag
   — the flags these journals already carry are marks a rename leaves alone.
+  **Update (issue #347 AB16):** a world the old name lookup already split
+  holds two journals carrying the same flag — the renamed one and the
+  default-named one the next load or write made, which every session since
+  read and wrote. Among several flagged journals, the one still carrying the
+  default name wins, as v1.8.0 read it; the first in collection order was the
+  older renamed one, so the upgrade flipped every reader and writer onto stale
+  entries. The same rule holds for `findTracksJournal`, the interpreter's
+  track read and `findJournal`. The two journals are not merged
+  (TRACKS-JOURNAL-SPLIT-NOT-MERGED); a sidebar Duplicate is the same case.
+  **Update (issue #347 residual TRACKS-JOURNAL-SPLIT-NOT-MERGED; the maintainer's choice: a
+  GM-confirmed merge at load):** they are merged when a GM says so. At the
+  canonical GM's world load, each World Journal category and the Progress
+  Tracks journal with more than one flagged copy gets one card whispered to
+  the GMs, listing what the other copies hold that the live one lacks (by the
+  writers' identity: a page's name — a faction's entity id or name key too —
+  a track's id); a copy with nothing extra gets none. Its Merge — a GM's
+  press, relayed to the canonical GM and claimed once on the card — copies
+  those pages with their flags (tracks through the tracks write queue) into
+  the live journal, then renames each other copy "<name> (merged)" and stamps
+  it `journalMerged`, which no lookup or later check offers again. Nothing is
+  deleted; a failed merge frees the card, and a second press copies only what
+  is still missing. A later load retires an unpressed card and posts a fresh
+  one while the split stands (`src/world/journalSplitMerge.js`).
+  *Rejected:* merging without asking — the copies may hold entries the GM
+  set aside on purpose; and deleting the merged copy.
 - **A retired setting leaves whole** [AA65]: the "Require a sidecar on every
   narrator response" box (`factContinuity.sidecarRequired`) is retired as
   issue #342 D6 retired the Session gap setting — its key, registration,
@@ -189,7 +327,15 @@ entries below this one.)
   the coverage rather than a count). A regeneration is discarded when the
   X-Card was played during its call or a card it was made from is one an
   X-Card removed (W06's rule as written), no longer merely while an earlier
-  X-Card stands paused.
+  X-Card stands paused. *Update (issue #347 AB15):* the mint's finalise is
+  fail-open, so AA21 moved the single point of failure to the mint — a
+  session closed out on a client with no key yet, or while its one call
+  failed, never got LAST SESSION. The mint now marks such a session
+  (`unsummarisedSession`, one of `SESSION_MINT_FIELDS`; a session nobody
+  began is not marked — X65 folds it into the one before), and the canonical
+  GM summarises its cards for LAST SESSION once it has a key
+  (`catchUpUnsummarisedSession`: after each narrator card, at the world load,
+  when its key is set). The next mint replaces the mark.
 - **A kept strike of a scene fact stands at its place; a Replace stays
   replaced** [AA05, AA28]: a scene end keeps a Replace's original on the
   session's unnamed blocks (never named, never lifted), beside the X-Card's.
@@ -247,7 +393,11 @@ entries below this one.)
   and the held moves wait for the next campaignState write that lands — the
   refused claim's immediate drain is suppressed meanwhile, as it would only
   be refused again. A forced move's first refused claim keeps
-  LOCK-CLAIM-WEDGE's "could not start … Try again".
+  LOCK-CLAIM-WEDGE's "could not start … Try again". *Update (issue #347
+  AB24):* the drain made inside that held move's own refusal is suppressed
+  too (`claimPendingMoveLock({ heldMove })`): it handed the move held behind
+  it to the pipeline before the older one was held again, so they rolled
+  youngest-first.
 - Smaller: the X-Card drops the oracle answers its narrations told from
   RECENT ORACLE RESULTS, by card id and by a move's `resolutionId` [AA01];
   a move's sidecar checks its re-assertions against the store's ledgers as
@@ -469,7 +619,8 @@ fourteen found while fixing those — fixed at the maintainer's request on
   named** [XCARD-RETRACTION-SCENE-SCOPED, XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED]:
   a scene end keeps the scene's X-Card retractions on
   `sessionRetractions.blocked` and every live narration truth it closes on
-  `sessionRetractions.narrated` (each the newest 50); an X-Card on a narration
+  `sessionRetractions.narrated` (each the newest 50 — superseded narration
+  truths too, issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END); an X-Card on a narration
   whose scene has ended moves its truths onto `blocked`; `applySidecar`
   refuses a blocked fact's re-assertion (`findSessionStrike(…, { blocked:
   true })`), while CORRECTED, the summary's leave-out list and `!truth set`'s
@@ -769,7 +920,20 @@ Free-flow play stays the default and is unchanged while the mode is off.
   card's own relays: one action, one claim); the round waits for them, Send
   now counts as Keep, and the one narration tells the final outcomes — a round
   card is never struck through. The round's result cards' Burn / Improve close
-  (`roundClosed`) when it is narrated.
+  (`roundClosed`) when it is narrated. *Update (issue #347 AB13):* a Burn or
+  Improve pressed on a recorded entry's card while the round still rolls, its
+  GM handler still on its way to the round when the rolls end, is an upgrade
+  in flight: the upgrade step waits for it (no buttons — "Burning
+  momentum…"), its roller's Keep is refused, and Send now keeps it only after
+  a minute (`UPGRADE_IN_FLIGHT_GRACE_MS` — a handler that died with its page).
+  The step skipped it, and the round told the result as rolled while the card
+  said burned. *Update (issue #347 residual UPGRADE-IN-FLIGHT-GRACE):* the
+  minute is for a handler no page is running. While the upgrade's handler
+  still runs on the resolving GM's page (the in-flight claim burnMomentum.js
+  shares with Improve Result — `resultUpgradeRunningHere`), Send now waits for
+  it, bounded at five minutes (`UPGRADE_IN_FLIGHT_MAX_MS`): a slow world held
+  a live burn past the minute, and the round then told the rolled result while
+  the card said burned.
 - **Players see who is ready, and what they submitted;** the GM sees every
   reading. Entries stay editable until the round resolves.
 - **Chat is table talk while the mode is on.** A typed line is not narrated;
@@ -858,6 +1022,52 @@ unstructured.
   readable on every client, and the module assumes a trusted table.
 - *The Private Channel's `THREAD` mode* — reserved for a side conversation
   (#226 §15); Batch Mode is the main table's turn structure.
+
+---
+
+## Batch Mode: a keyless GM's takeover waits for a keyed GM to narrate the round (2026-11)
+
+**Decision:** ([#347](https://github.com/jamesrmedford-alt/starforged-companion/issues/347)
+D3, the maintainer's option A, 2026-11-11.) A Batch Mode round is narrated
+on a Claude key. A GM with none — a keyless assistant GM canonical for the
+seconds the keyed GM's page reloads — leaves a narrating round alone while
+the keyed-GM registry (`keyedGmUserIds`) lists a GM with a key, connected or
+not (`narrationWaitsForKey`, `src/batch/driver.js`):
+- it does not take the narration over: no `resolverId` stamp (issue #347
+  AB18's takeover stamp), and a round naming it as its resolver — a keyless
+  GM that took over the rolls — is handed back (`handBackResolution` clears
+  `resolverId`), so the keyed GM's own recovery resumes it;
+- the GMs are told once ("the round waits for a GM with a Claude key"), the
+  Round windows' banner says the round can't be narrated yet, and that GM's
+  Send now is refused, saying why (`narration-no-key`);
+- the keyed GM's recovery — their page's `ready`, or a keyed GM joining (the
+  registry's write) — narrates it on their key.
+The rolls, the records and the upgrade step still run on a keyless GM; only
+the narration waits, as the readings already did (`startReading`) and Send
+now did ("no-key"). A table with no keyed GM at all keeps the "narration
+unavailable" fallback (issue #345 D1); otherwise the fallback is the exit of
+a narration call that failed. Issue #340's round lifecycle listed the
+fallback among the narrating phase's exits without telling a missing key
+from a failed call; `src/batch/round.js`'s lifecycle now says which.
+*Update (issue #347 residual ROUND-WAITS-FOR-ABSENT-KEYED-GM):* the round
+waits only while its session lasts. End a Session closes a round still
+waiting for a keyed GM as a table with no keyed GM closes one — the
+"narration unavailable" card listing each result, the round closed, its
+riders run — and the GMs are told why; a Send now after the session ended
+runs that close again (its key refusal holds only during the session). It
+stayed narrating until the next load's recovery closed it unseen.
+
+**Reason:** the keyless takeover posted "narration unavailable" and closed
+the round — its narration gone for good, though the keyed GM was back
+within a page load.
+
+**Rejected:** *(B) accepting the fallback on any keyless canonical GM* —
+the round's narration lost to a reload; *waiting only while a keyed GM is
+connected* — the reloading GM is not connected for those seconds, which is
+the case at issue.
+
+**Files:** `src/batch/driver.js`, `src/batch/round.js`, `src/batch/relay.js`,
+`src/batch/roundView.js`. Tests: `tests/unit/roundNarrationWaitsForKeyedGm.test.js`.
 
 ---
 
@@ -987,7 +1197,12 @@ Each finding's ID in brackets.)
 - **The ready reset releases only a lock whose claimant is gone** [Y07] —
   held by nobody named, by this client's earlier page, or by a user who is
   not connected: W25's "the claimant's departure is the event that matters"
-  at load. *Rejected:* releasing unconditionally at ready.
+  at load. *Rejected:* releasing unconditionally at ready. *Update (issue #347
+  AB04):* "this client's earlier page" is released by that client's own
+  `ready` whether or not it is canonical (`releaseOwnStaleLockAtReady`): a
+  co-GM who loads alongside the canonical GM reads as connected to it, so
+  neither reset freed the co-GM's earlier page's lock, and every move was
+  refused until the co-GM left again.
 - **A forced move from a card is held, not dropped** [Y08] — the paced Roll
   and the "Which fight?" pick join W02 / X14's `deferWhileBusy`. **An
   unclaimed button the session gate drops is re-armed, not held** [Y36]: the
@@ -1186,6 +1401,33 @@ D6 (i), D7, D8 and D10 option A; D3 option A with the crew-wide clear; D6
   covers every clock the rewind takes out of full — one another player's
   price filled included, vow clocks too — not only the burned receipt's own
   trigger. *Rejected:* keeping both as fiction that stands (option B).
+  **Update (issue #347 D2):** the records stand beside the re-narration only
+  while the beat does: an X-Card on the re-narration takes them too (next
+  entry).
+- **An X-Card on an upgraded beat takes what the upgrade struck** [issue #347
+  D2; the maintainer's option A]: a Burn Momentum or Improve Result
+  re-narration names the resolution it upgraded (`upgradeOf`, from the
+  upgraded resolution — burnMomentum.js / improveResult.js), and a trigger
+  vignette its reversal struck names it too (`supersededFor`, also carried by
+  a refused rewind's Retry step). The X-Card's pick adds to the beat it
+  removes the `burnSuperseded` narrations of that resolution — the move's
+  first narration and the rewound clocks' vignettes (narrator.js
+  `withStruckByUpgrade`) — so their World Journal and tier records are undone
+  by narration id like the beat's own, and their truths, retracted as
+  superseded, become the X-Card's (`retractNarrations` relabels them): blocked
+  for the session, where a superseded truth was no bar to a later narration
+  restating it. The struck cards are flagged `xCarded` too. An X-Card on a
+  later beat leaves them alone. *Rejected:* D8 standing for the X-Card
+  (option B) — the table removed the beat it saw, the struck version
+  included, and the struck narration's lore and NPC details went on reaching
+  every later prompt.
+  **Update (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END):** also
+  after the scene has ended. A scene end keeps the scene's superseded
+  narration truths, unnamed, on `sessionRetractions.narrated` beside its live
+  ones (retractions.js `rememberNarratedTruths`); it dropped them, so an
+  X-Card after the scene ended undid the struck narration's capture but
+  blocked none of its facts. Kept there, a superseded truth still blocks
+  nothing until an X-Card takes its narration.
 - **Push-to-talk into a drafted chat box adds and waits** [D9; option B]: the
   transcript goes after the draft and the player presses Enter; an empty box
   auto-submits. *Rejected:* append and submit (option A) — it guesses whether
@@ -1590,6 +1832,15 @@ the recommended option. Each finding's ID in brackets.)
   (`awardXP` deleted); the earned-XP card stays and points at the Legacies
   tab. *Rejected:* a module panel showing the legacy and XP — the sheet is
   where XP is spent, so a second display would drift from it.
+  *Update (issue #347 AB07):* a sheet edit moves the shared track by what it
+  changed on that sheet, not to the sheet's value. The vendor ▸ / ◂ writes
+  the sheet's own value ± 1, so a sheet behind the crew's track — a PC made
+  since the GM's load, an imported export, a refused mirror write — set the
+  crew's 24 ticks to its own 1 on every sheet, for good. The client that
+  makes the edit stamps the sheet's values before it into the update's
+  options (`preUpdateActor`); an edit without the stamp still sets the track
+  to its value. A PC created mid-session is brought to the shared tracks at
+  once (the ready backfill, run at its creation).
 - **An upgrade closes after the roller's next move** [D4; maintainer]. A
   move card's Burn Momentum / Improve Result stayed live until used or its
   choice was picked: an old card's 🔥 burned momentum at its current value,
@@ -1673,6 +1924,18 @@ finding's ID in brackets.)
   one-shot button's forced move (`deferWhileBusy`) waits on the canonical GM
   and is replayed when the lock frees; a typed line that meets the lock is
   still refused. The hold is in memory (FORCED-MOVE-HOLD-RELOAD).
+  *Update (issue #347 AB06):* a held move follows the canonical GM — the GM
+  holding it hands it over (`forcedMove.hold`) when another GM becomes
+  canonical, which rolls it when the lock frees; it stopped draining and was
+  rolled out of the blue once the first GM was canonical again. And a claimed
+  button's forced move the pipeline does not roll — its confirm closed, the
+  lock busy for a move not held, its start refused, a failure before its dice
+  — hands the card its press back (`sourceCard`, released while the card
+  still holds the press's value; a resist card, and the ordinary reward cards
+  a waypoint alternative retired, put back live) and whispers the roller's
+  players and the GMs ("Not rolled" — the issue #348 PT11 path, merged into
+  one); the inciting ⚔, unclaimed (Y36), re-arms on its presser's client from
+  that notice.
 - **The system's numbers are read as names** [W01]: a progress Item's
   ChallengeRank number goes through `rankName` wherever a rank is read or
   paid.
@@ -1702,7 +1965,9 @@ finding's ID in brackets.)
   connection apart, saying how it was lost.
 - **A GM who leaves releases their own lock** [W25]: the lock records its
   claimant (`pendingMoveBy`); the canonical GM releases a departed GM's lock
-  and whispers the GMs.
+  and whispers the GMs. *Update (issue #347 AB14):* the ready resets whisper
+  the same card when they clear a lock — a sole GM's reload mid-move was
+  reset in silence, its move's record and Burn / Improve never landing.
 - **Short calls follow narration's thinking rule** [W27]:
   `narration/thinking.js` is the one rule, for narration and every short
   structured call on the narration model. (Since the 5.5 upgrade,
@@ -1845,6 +2110,23 @@ Each finding's ID in brackets.)
   REDIRECT" without naming the beat, and `registerXCardRedirectHook` clears it
   once that narration posts. A failure in the forgetting never blocks the
   pause.
+  **Update (issue #347 AB22):** "the narration on screen" is read from the
+  chat as it was, not as it is: each client remembers the chat messages
+  deleted since its page loaded, and the pick puts them back by time. A
+  narration whose card a GM deleted is still the newest narration, and the
+  X-Card removes it — its truths, state, frame and capture — never the kept
+  beat before it, which the walk reached across the player's line. A deletion
+  alone removes nothing: tidying chat (Clear Chat Log deletes every card)
+  must not rewrite the story. *Rejected:* undoing a narration's capture when
+  its card is deleted — for that reason. The record lives in the page: after
+  a reload the pick is chat-only again.
+  **Update (issue #347 residual DELETED-NARRATION-MEMORY-PAGE-ONLY):** the
+  record survives a reload: the canonical GM keeps the newest twenty deleted
+  messages the pick reads on campaignState (`deletedChatMessages`) —
+  narration and X-Card cards with the flags the pick and the removal read,
+  and the lines that end a beat, none with its text — and the pick reads them
+  beside the page's record. A deleted card an X-Card removed is marked
+  `xCarded` there, as a removed card in chat is.
 - **The Private Channel is a narrator entry point** [U09; maintainer]. While
   the live `xCardActive` is set its narrator refuses on entry (and discards a
   reply the card overtook) and Publish refuses; the window says why.
@@ -2381,6 +2663,17 @@ be fixed on 2026-10-29. Each finding's ID in brackets.)
   session already ended is a focus correction: it replaces the noted focus,
   repeats nothing else, posts a note, and pays the momentum only when no
   focus had been noted — the momentum is for the session's first focus.
+  *Update (issue #347 AB05):* "one at a time" waits for the End (or Begin)
+  ahead of it for at most five minutes — past the relay queue's own cap — so
+  one whose write the server never answered no longer holds every later one
+  for the rest of the page load. Every wait on a write of the module's own is
+  bounded the same way (`multiplayer/settleWithin.js`): the move lock's claim
+  and release (30 s; a claim that lands later is released at once), the
+  rolling summary's write and refresh, and a Private Channel page write (its
+  turns kept for a retry, the player told). *Trade-off accepted:* an End or
+  Begin that resumes after its five minutes runs beside the one that went
+  ahead; the Progress Tracks write queue, awaited inside the move lock, stays
+  unbounded (U57).
 - **Session lifecycle writes go on a copy** [N09, and End's twin]: Begin and
   End read `game.settings.get`'s value through `deepClone` before changing
   it (rules/foundry-api.md).
@@ -2723,7 +3016,16 @@ finding's ID in brackets):
   passes `{ "starforged-companion": { sharedSupplyMirror: true } }` in its
   options and the hook skips marked updates, instead of a global in-flight
   flag that also dropped real edits; a change during a sync is coalesced and
-  synced after it.
+  synced after it. *Update (issue #347 SUPPLY-LAGGING-SHEET):* a sheet edit
+  moves the crew's supply by what it changed on that sheet, as a legacy edit
+  moves the shared track (AB07) — the editing client stamps the sheet's
+  supply before the edit into the update's options (`preUpdateActor`). There
+  is no canonical store for supply, so the change is applied to the supply
+  the GM's last pass set when the sheet was in step with that pass (two
+  players spending one at once spend two), else to the value most of the
+  crew's sheets hold, a tie going to the edited sheet's. An edit without the
+  stamp still sets the crew to its value. A PC created mid-session starts at
+  the crew's supply.
 - **Private Channel turns stay buffered until their write succeeds** [F01];
   writes per player are chained, and a failed batch goes back to the front
   and is retried (5 s × attempt, three automatic retries).
@@ -3501,7 +3803,12 @@ and performed by a handler on the canonical GM:
   sender, so `requesterId` is client-asserted. Permission checks protect
   honest clients and the module's own UI; they don't stop a hand-crafted emit
   from a console or macro. Value validation bounds what even a forged request
-  can do to what the UI could have produced.
+  can do to what the UI could have produced. **Update (issue #347 AB23):** the
+  same bound holds for a chat message's flags, which any user can write too —
+  a ship-token drop's `tokenDragSetCourse` payload is checked against what
+  the drop produces (a sector Scene, the command vehicle's token, a
+  settlement pin's coordinates; `checkedTokenDragCourse`) before the GM's
+  client moves a token by it.
 
 Kinds today: `xcard.activate`, `safety.setFlag`, `session.takeBreak`,
 `safety.syncPrivateLines`, `session.begin`, `session.end`, `bond.apply`,
@@ -3931,6 +4238,26 @@ client makes it, with the author's own key as the no-keyed-GM fallback.
   player typed.
 - *Always the canonical GM* — a keyless-GM table loses every Claude command.
 - *Send the key to the GM* — violates #209 (keys never leave the browser).
+
+**Update (issue #347 AB03):** the election passes over a GM whose page is
+still loading. A user is `active` from its socket's connect — the start of its
+page load — but this module's handlers exist on that client only from its
+`ready`; electing it stood the connected, ready GM down for the whole load (a
+player's X-Card, typed moves and card presses reached no handler, and nobody
+was told). Each client marks a GM whose connect it saw as loading and counts
+it again from its page-ready announcement
+(`gmRelay.js` `registerGmReadiness`, first thing in `ready`); a GM already
+connected when the client loaded is presumed ready, as before. When every
+active GM is loading, the election runs over all of them. `hasKeyedActiveGM`
+and `isAudioGM` pass over a loading GM the same way. *Trade-off accepted:* at
+the moment a lower-id GM's page reaches `ready` it counts itself canonical one
+socket hop before the GM it replaces stands down; and two GMs whose loads
+overlap each presume the other ready. The maintainer left that window as it
+is (GM-ELECTION-HOP-WINDOW, 2026-11-12). *Update (issue #347
+AB19-STALE-CACHE-WRITES):* a GM whose socket came back on a loaded page used
+to answer an "is your page ready?" question at once; such a page is stale now
+and stands down until it reloads, so the question is gone — its page passed
+over (`noteGmStoodDown`) until the reload announces ready.
 
 ## An NPC card's or ship's notes are its sheet's Notes tab (2026-11)
 
@@ -4867,6 +5194,45 @@ own release has not landed (`lockReleased`) — once it has, the lock may be
 a later move's, which the second release cleared. `releasePendingMoveLock`
 returns whether the lock is free; a refused early release is still retried.
 
+**Update (issue #347 D1):** the record above called `ClarificationDialog` a
+pre-roll dialog; it was not. It now is — see the next entry, on "Who are
+you interacting with?".
+
+## "Who are you interacting with?" is asked before the roll
+
+**Decision (issue #347 D1, option A; maintainer):** the clarification prompt
+a hybrid move opens when its line implies someone it does not name ("I slip
+past him") is asked in `rollMove` before the dice — after the "not rolled"
+guards, before any add is claimed or die rolled. The line's relevance is read
+there with the outcome unknown, so a hybrid line naming nobody is classified
+(one Haiku call) on every such move, a miss included; the classification is
+kept and the read after the roll uses it (`resolveRelevance`'s
+`classificationCache`), so a hit makes one call, as before. The GM's pick
+stands whatever the outcome: "Someone new" on a miss is narrated as a
+discovery, a picked connection as an interaction. Closing the prompt is "No
+specific entity", and the move goes on. Nothing waits on a prompt after the
+roll.
+
+**Reason:** the prompt was awaited after `resolveMove`, `applyOutcomeEffects`
+and the Pay the Price card, with the move lock held and no result card,
+narration or record until it was answered — every other move at the table
+was refused meanwhile, the v1.7.12 shape, and a reload left the move
+half-applied (issue #347 AB14). The lock record above accepts a dialog that
+holds the lock only at the move's start, where nothing has been applied;
+asked there, an unanswered prompt holds the table as the move's own confirm
+dialog does, and nothing is half-done.
+
+**Rejected:** (B) keeping it after the roll with a timeout that answers "No
+specific entity" — the rider-prompt record above rejected a watchdog on a
+held lock; (C) reaffirming the post-roll hold and correcting the record.
+
+**Trade-off accepted:** a hybrid line that names nobody costs one Haiku call
+on a miss too, and the GM can be asked about a move that then misses.
+
+**Files:** `src/moves/movePipeline.js` (`rollMove`),
+`src/context/relevanceResolver.js` (`classificationCache`, a `null`
+outcome). Test: `tests/unit/clarificationAskedBeforeRoll.test.js`.
+
 **Files:** `src/index.js` (`releasePendingMoveLock`, the release sites in the
 pipeline), `src/moves/riderDialog.js`. Tests: `tests/unit/pipeline.test.js`,
 `tests/unit/assetEffects.test.js`.
@@ -5112,6 +5478,17 @@ fire-and-forget relay to a keyless GM fails silently. One portrait per new NPC
 card (U29): with Auto-Seed NPC on, the `createActor` seed hook owns it (drawn
 from the creator's `portraitSourceDescription`) and the creator skips it; with it
 off, the creator generates it — both used to, billing OpenRouter twice.
+
+**Update (issue #347 AB01): the creator starts the portrait and does not wait
+for it.** A Make a Connection hit's capture runs inside its narration call,
+inside the table's move lock, and waited on the image, its download and its
+upload before the bond, the move's record and the lock's release — minutes,
+and for good behind a stalled upload. `postCreationEnrichment` now starts
+`generatePortrait` and returns, and the capture starts it after the bond; the
+draft Confirm and the inciting vow's target share the function. A portrait
+that finishes late is safe: `generatePortrait` stores nothing for an entity
+deleted meanwhile, keeps one linked meanwhile, and makes one image at a time
+per entity.
 
 ---
 

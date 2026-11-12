@@ -1,0 +1,17 @@
+Defect: AB19-STALE-CACHE-WRITES (issue #347) — hasActiveGM counts a GM whose page stood down after its connection dropped, so a player's X-Card relayed to a sole GM's stale page says "Scene paused" and is never recorded
+Tests: tests/unit/staleGmPageStandsDown.test.js
+Catches: an X-Card played while a sole GM's page is stood down
+
+diff --git a/src/multiplayer/gmRelay.js b/src/multiplayer/gmRelay.js
+index 94d40ef..36f58fd 100644
+--- a/src/multiplayer/gmRelay.js
++++ b/src/multiplayer/gmRelay.js
+@@ -273,7 +273,7 @@ export const GM_ACTIONS = Object.freeze({
+  */
+ export function hasActiveGM() {
+   try {
+-    return Array.from(globalThis.game?.users ?? []).some(u => u?.isGM && u?.active && gmPageCanAct(u.id));
++    return Array.from(globalThis.game?.users ?? []).some(u => u?.isGM && u?.active);   // DEFECT: a GM whose page stood down still counts — a relay to it is dropped
+   } catch (err) {
+     console.warn(`${MODULE_ID} | gmRelay: active-GM lookup failed:`, err?.message ?? err);
+     return false;

@@ -530,10 +530,25 @@ export const CampaignStateSchema = {
   sessionEndedId:       null,
   // The rolling summary of the session before this one, kept when the new
   // session is minted (issue #286 C3) and shown to the narrator as LAST
-  // SESSION. Written only by mintSession (src/session/lifecycle.js), from
-  // sessionSummary — the canonical, live record.
+  // SESSION. Written by mintSession (src/session/lifecycle.js), from
+  // sessionSummary — the canonical, live record — and by the catch-up of a
+  // session the mint closed out without its summary (narrator.js
+  // catchUpUnsummarisedSession, issue #347 AB15).
   //   { sessionId, sessionNumber, text, updatedAt }
   previousSessionSummary: null,
+  // The newest deleted chat messages the X-Card's pick reads — narration and
+  // X-Card cards, and the lines that end a beat, without their text — so a
+  // narration whose card a GM deleted is still the one the next X-Card removes
+  // after a reload (narrator.js persistDeletedRecord / chatAsItWas; issue #347
+  // AB22 and its residual). Canonical GM; the newest 20, newest last.
+  //   [{ id, timestamp, whisper, flags: { [MODULE_ID]: { narratorCard, sessionId, narrationId, … } } | {}, deleted: true }]
+  deletedChatMessages: [],
+  // The session the last mint closed out before its summary could be brought
+  // up to date — no Claude key on the minting GM's client yet, or the one
+  // summary call failed (issue #347 AB15). LAST SESSION is summarised from its
+  // cards the next time a keyed canonical GM can, and this cleared.
+  //   { sessionId, sessionNumber } | null
+  unsummarisedSession: null,
 
   // Session-active gate (see docs/scope-index.md → Session moves panel).
   // false at world load and after End Session; flipped to true by Begin
@@ -606,9 +621,10 @@ export const CampaignStateSchema = {
   // loreRetractionHolder, rendered nowhere; an X-Card
   // moves the kept strikes of the narration it removes there, by
   // `narrationId` (ledgers.js retractNarrations — XCARD-RETRACTION-SCENE-SCOPED),
-  // and its truths a scene end closed live (`narrated`: written by endScene —
-  // rememberNarratedTruths — read only by that move; unnamed —
-  // XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
+  // and its truths a scene end closed live or superseded (`narrated`: written
+  // by endScene — rememberNarratedTruths — read only by that move; unnamed —
+  // XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED; superseded ones — a Burn Momentum /
+  // Improve Result struck their narration — issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END).
   // A scene fact's strike, and a Replace's original, keep `place` (the truth's
   // sceneLocation) and stand only there (keptStrikeStandsAt, issue #345 AA28).
   //   { sessionId, facts: [{ label, fact, place?, sceneId, at, narrationId, truthId, subjectKey, retractedBy, asserter }]  (cap 20),

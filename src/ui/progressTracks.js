@@ -19,6 +19,7 @@ import { requestGmAction } from '../multiplayer/gmRelay.js';
 import { isTrackPosition, combatPositionFor } from '../moves/combat.js';
 import { resolveUserActorId } from '../multiplayer/speaker.js';
 import { replaceKeepingInput } from './keepTypedInput.js';
+import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 
 /**
  * A track's label (or any text) for HTML: a name holding markup — a player can
@@ -119,10 +120,21 @@ function createTrack({ label, type, rank, entityId = null, objective = null, lin
  * second, empty journal beside it (issue #345 AA62; rules/reachability.md
  * §6). interpreter.js readOpenTrackLabels reads it the same way.
  *
+ * A world that defect already split holds two journals carrying the flag —
+ * the renamed one and the default-named one the next track write made, which
+ * every session since read and wrote: the one still carrying the default name
+ * wins, as v1.8.0 read it, never the older renamed one collection order puts
+ * first (issue #347 AB16). At the canonical GM's load a card offers the GMs
+ * a merge of the tracks the other copies hold that this one lacks
+ * (tracksJournalCopies, mergeTracksIntoLive → world/journalSplitMerge.js —
+ * issue #347 residual TRACKS-JOURNAL-SPLIT-NOT-MERGED).
+ *
  * @returns {JournalEntry|null}
  */
 function findTracksJournal() {
-  return game.journal?.find?.(j => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY)))
+  const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY));
+  return game.journal?.find?.(j => flagged(j) && j?.name === JOURNAL_NAME)
+      ?? game.journal?.find?.(flagged)
       ?? game.journal?.find?.(j => j?.name === JOURNAL_NAME)
       ?? null;
 }
@@ -175,18 +187,76 @@ let _writeTail = Promise.resolve();
  * write that fails does not hold up the next. `change` must not call another
  * track writer: it would wait for itself.
  *
+ * Bounded (issue #347 TRACK-QUEUE-UNBOUNDED-IN-LOCK): the write ahead is
+ * waited on, and each of this write's own world writes (the journal's
+ * creation, the save), for at most WORLD_WRITE_WAIT_MS. The queue is awaited
+ * inside the move lock — a move's progress mark, a fight's position — and a
+ * write whose answer was lost with the connection never settled: the table's
+ * lock was held for good. A save not answered in time rejects, as a refused
+ * one does; if it lands later, the cache takes it then.
+ *
  * @param {(tracks: object[]) => (object[]|null|Promise<object[]|null>)} change
  * @returns {Promise<void>}
  */
 function writeTracks(change) {
-  const run = _writeTail.then(async () => {
-    const journal = await getOrCreateJournal();
+  const run = settledWithin(_writeTail, WORLD_WRITE_WAIT_MS, 'a Progress Tracks write ahead of this one').then(async () => {
+    const journal = await answeredWithin(getOrCreateJournal(), "the Progress Tracks journal's creation");
     const tracks  = foundry.utils.deepClone(journal.getFlag(MODULE_ID, FLAG_KEY) ?? []);
     const next    = await change(tracks);
-    if (Array.isArray(next)) await journal.setFlag(MODULE_ID, FLAG_KEY, next);
+    if (Array.isArray(next)) await answeredWithin(journal.setFlag(MODULE_ID, FLAG_KEY, next), 'a Progress Tracks save');
   });
   _writeTail = run.catch(() => {});
   return run;
+}
+
+/**
+ * `promise`'s value once it settles within WORLD_WRITE_WAIT_MS — a world write
+ * of writeTracks'; one not answered by then throws, as a refused write does.
+ *
+ * @param {Promise<*>} promise
+ * @param {string} label
+ * @returns {Promise<*>}
+ */
+async function answeredWithin(promise, label) {
+  if (!(await settledWithin(promise, WORLD_WRITE_WAIT_MS, label))) {
+    throw new Error(`${label} was not answered — it may not have been saved`);
+  }
+  return promise;
+}
+
+/**
+ * The live Progress Tracks journal (findTracksJournal's pick) and the other
+ * journals carrying the tracks flag — a split world's copies (issue #347
+ * AB16) — less a copy a merge already retired (`journalMerged`). For the
+ * GM-confirmed merge at load (world/journalSplitMerge.js — issue #347
+ * residual TRACKS-JOURNAL-SPLIT-NOT-MERGED).
+ *
+ * @returns {{ live: JournalEntry|null, copies: JournalEntry[] }}
+ */
+export function tracksJournalCopies() {
+  const live = findTracksJournal();
+  const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY));
+  const copies = (game.journal?.contents ?? [])
+    .filter(j => flagged(j) && j !== live && !j?.getFlag?.(MODULE_ID, 'journalMerged'));
+  return { live: flagged(live) ? live : null, copies };
+}
+
+/**
+ * Add to the live journal's tracks each of `tracks` whose id it lacks — a
+ * split copy's, through the write queue like every track write. GM-only.
+ *
+ * @param {object[]} tracks
+ * @returns {Promise<number>} how many were added
+ */
+export async function mergeTracksIntoLive(tracks) {
+  let added = 0;
+  await writeTracks((list) => {
+    const ids = new Set(list.map(t => t?.id).filter(Boolean));
+    const extra = (Array.isArray(tracks) ? tracks : []).filter(t => t?.id && !ids.has(t.id));
+    added = extra.length;
+    return added ? [...list, ...foundry.utils.deepClone(extra)] : null;
+  });
+  return added;
 }
 
 /**

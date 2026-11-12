@@ -33,6 +33,7 @@
  */
 
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
+import { settledWithin, WORLD_WRITE_WAIT_MS } from "../multiplayer/settleWithin.js";
 
 const MODULE_ID   = "starforged-companion";
 const FOLDER_NAME = "Starforged Companion";
@@ -464,10 +465,14 @@ function notifyUnsavedChange(userId) {
  * @param {string} userId
  * @param {Object|undefined} entry — the user's buffer entry
  */
-function noteTranscriptUnsaved(userId, entry) {
+function noteTranscriptUnsaved(userId, entry, { unanswered = false } = {}) {
   if (!entry || entry.unsaved) return;
   entry.unsaved = true;
   notifyUnsavedChange(userId);
+  if (unanswered) {
+    globalThis.ui?.notifications?.warn?.("Starforged Companion: your Private Channel conversation is not saved yet — the world did not answer its last save. It is kept in this browser and tried again. Don't reload before it saves.");
+    return;
+  }
   globalThis.ui?.notifications?.warn?.(game.user?.isGM
     ? "Starforged Companion: your Private Channel conversation is not being saved — its journal could not be created. It is kept in this browser and tried again. Don't reload before it saves."
     : "Starforged Companion: your Private Channel conversation is not being saved — a GM's game creates its journal, and no GM is connected (or answering). It is kept in this browser and saved once one is, at your next message or when you close the window. Don't reload before then.");
@@ -495,9 +500,25 @@ async function writeBatch(userId, { sessionId, turns }) {
     return null;
   }
 
-  const appended = (page.text?.content ?? "") + renderTurnsHtml(turns);
+  const html     = renderTurnsHtml(turns);
+  const current  = page.text?.content ?? "";
+  // A retry of a write that was not answered in time but landed since: the
+  // turns are on the page already — not appended twice.
+  if (html && current.endsWith(html)) return page;
+  const appended = current + html;
   try {
-    await page.update({ text: { format: 1, content: appended } });
+    // A write the server never answers is given up after a bound: the
+    // turns stay buffered for a retry and the player is told. It held this
+    // player's chain for the rest of the page load — every later turn queued
+    // behind it in memory, and the window never said "not saved yet" (issue
+    // #347 AB05).
+    const write = page.update({ text: { format: 1, content: appended } });
+    if (!await settledWithin(write, WORLD_WRITE_WAIT_MS, "Private Channel page write")) {
+      console.warn(`${MODULE_ID} | privateChannel: page write not answered — ${turns.length} turn(s) kept for a retry`);
+      noteTranscriptUnsaved(userId, _buffers.get(userId), { unanswered: true });
+      return null;
+    }
+    await write;
     return page;
   } catch (err) {
     console.warn(`${MODULE_ID} | privateChannel: page write failed — ${turns.length} turn(s) kept for a retry:`, err?.message ?? err);

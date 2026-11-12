@@ -291,11 +291,14 @@ describe('XCARD-LATE-CAPTURE — a capture still running when the X-Card is play
 });
 
 // ── A Make a Connection's card is made over several awaits ───────────────────
-// The card, its paid portrait, the roller's bond Item, the ledger promote and
-// (for a pending row) the row's status: an X-Card landing between them took
+// The card, the roller's bond Item, the ledger promote, (for a pending row)
+// the row's status, and its paid portrait: an X-Card landing between them took
 // the stamped card back (issue #338 D6(ii)), and the steps after it went on —
 // a bond for a deleted NPC, an Art Cache entry nothing links to, a reopened
-// row confirmed again.
+// row confirmed again. The portrait is started last and not awaited (issue
+// #347 AB01: the capture held the move lock for it), so an X-Card during its
+// image call lands after the capture has returned; the X-Card takes back the
+// card and its bond, and the late portrait stores nothing.
 describe('XCARD-LATE-CAPTURE — an X-Card during a Make a Connection\'s portrait call', () => {
   let kira, origItemCreate;
   const MAC = { moveId: 'make_a_connection', outcome: 'strong_hit', playerNarration: 'I look for Brother Calloway.' };
@@ -334,6 +337,7 @@ describe('XCARD-LATE-CAPTURE — an X-Card during a Make a Connection\'s portrai
   it('auto-created: no NPC card, no bond, no portrait left behind', async () => {
     const text = await narrate('nar-mac', MAC);
     await runPostNarrationPasses(text, { _id: 'res-nar-mac', ...MAC }, DISCOVERY, stored(), { actorId: 'pc-kira', narrationId: 'nar-mac' });
+    await settle();   // the portrait the capture started, and the X-Card played during its image call
     expect(generateOpenRouterImage).toHaveBeenCalledTimes(1);
     expect(stored().xCardedNarrationIds).toEqual(['nar-mac']);
     expect(calloways(), 'the NPC card').toEqual([]);
@@ -357,6 +361,7 @@ describe('XCARD-LATE-CAPTURE — an X-Card during a Make a Connection\'s portrai
     });
     const text = await narrate('nar-mac', MAC);
     await runPostNarrationPasses(text, { _id: 'res-nar-mac', ...MAC }, DISCOVERY, stored(), { actorId: 'pc-kira', narrationId: 'nar-mac' });
+    await settle();   // the portrait the confirm started, and the X-Card played during its image call
     syncChat();
 
     expect(generateOpenRouterImage).toHaveBeenCalledTimes(1);

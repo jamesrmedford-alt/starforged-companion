@@ -44,7 +44,21 @@
  * own change, the price of not waiting.
  */
 
+import { pageIsStale } from "./connectionWatch.js";
+
 const MODULE_ID = "starforged-companion";
+
+/**
+ * A page whose connection dropped writes no campaignState until it reloads
+ * (issue #347 AB19-STALE-CACHE-WRITES): campaignState is written whole, from
+ * this client's cache, and a stale cache carries back — over the table — what
+ * it missed: an X-Card's pause, another GM's move. Thrown at the write's turn,
+ * so every caller's refused-write path takes it.
+ */
+function refuseIfStale(label) {
+  if (!pageIsStale()) return;
+  throw new Error(`${label}: not written — this page lost its connection to the server and may have missed what changed meanwhile; reload it to save changes`);
+}
 
 /** How long a chained write waits for the one ahead of it, counted from when that one started. */
 const CAMPAIGN_STATE_WRITE_WAIT_MS = 10_000;
@@ -94,6 +108,7 @@ export function serialiseCampaignStateWrite(task, label = "campaignState write")
       }
       entry.startedAt = Date.now();
       markStarted();
+      refuseIfStale(label);
       return await task();
     } finally {
       if (entry.startedAt == null) entry.startedAt = Date.now();
@@ -129,6 +144,7 @@ export function runCampaignStateWriteNow(task, label = "campaignState write") {
   _jumped.add(entry);
   return (async () => {
     try {
+      refuseIfStale(label);
       return await task();
     } finally {
       entry.settled = true;

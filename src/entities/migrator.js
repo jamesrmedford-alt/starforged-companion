@@ -21,7 +21,8 @@
  * sectors / folders that already exist.
  */
 
-import { createShip }       from "./ship.js";
+import { createShip, updateShip } from "./ship.js";
+import { readCommandVehicleIntegrity } from "../character/actorBridge.js";
 import { createPlanet }     from "./planet.js";
 import { createLocation }   from "./location.js";
 import { createSettlement } from "./settlement.js";
@@ -1005,6 +1006,39 @@ export async function moveRecordNotesToSheets() {
       } catch (err) {
         console.warn(`${MODULE_ID} | moveRecordNotesToSheets: ${typeKey} ${document?.id ?? "?"} failed:`, err?.message ?? err);
       }
+    }
+  }
+  return summary;
+}
+
+/**
+ * Ready-time reconcile (issue #347 AB08) of a command vehicle's integrity
+ * recorded before its STARSHIP asset's Integrity track became canonical
+ * (issue #345 AA20). Up to v1.8.0 every loss the module applied went to the
+ * ship record alone, so a world played that way holds, say, record 2 beside
+ * sheet 5 — and the first ship write after the upgrade (a position move, an
+ * `!at`, a token drag) mirrored the sheet's 5 over the record, erasing the
+ * damage from both stores with nothing said. Each ship whose record is not
+ * yet reconciled gets its first write now, at load, before anything else
+ * writes it: updateShip takes the lower of the two into both stores, stamps
+ * the record `integritySheetReconciled` and, where they differed, whispers
+ * the GMs both values (ship.js; actorBridge unreconciledRecordIntegrity).
+ * GM-only (the canonical GM's world load runs it); idempotent — a reconciled
+ * record is skipped, and a ship with no STARSHIP asset keeps its integrity on
+ * the record.
+ *
+ * @returns {Promise<{ reconciled: number }>}
+ */
+export async function reconcileCommandVehicleIntegrity() {
+  const summary = { reconciled: 0 };
+  if (globalThis.game?.user && !globalThis.game.user.isGM) return summary;
+  for (const { document, data } of [...iterEntityDocuments("ship")]) {
+    try {
+      if (data?.integritySheetReconciled === true || !readCommandVehicleIntegrity(document)) continue;
+      await updateShip(document.id, {});   // its first write reconciles both stores
+      summary.reconciled += 1;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | reconcileCommandVehicleIntegrity: ship ${document?.id ?? "?"} failed:`, err?.message ?? err);
     }
   }
   return summary;

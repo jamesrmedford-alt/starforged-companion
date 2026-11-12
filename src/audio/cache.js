@@ -17,7 +17,7 @@
  * commits to cache via socket relay (see src/audio/index.js).
  */
 
-import { uploadedPath } from "../net/uploadResult.js";
+import { uploadedPath, withFilePickerDeadline } from "../net/uploadResult.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -105,7 +105,8 @@ export function isCachePathFor(hash, path) {
 
 async function ensureDir(dir) {
   try {
-    await foundry.applications.apps.FilePicker.implementation.createDirectory("data", dir, {});
+    await withFilePickerDeadline(foundry.applications.apps.FilePicker.implementation.createDirectory("data", dir, {}),
+      { label: "Audio cache: creating a clip folder" });
   } catch (err) {
     const msg = err?.message ?? String(err);
     if (!/exists/i.test(msg)) {
@@ -144,7 +145,10 @@ export async function lookupDetailed(hash) {
   if (memoed) return { path: memoed, browsed: true };
   const { dir, filename } = pathFor(hash);
   try {
-    const browse = await foundry.applications.apps.FilePicker.implementation.browse("data", dir);
+    // Bounded: a browse the server never answers is a miss, never a wait for
+    // good (issue #347 AB02).
+    const browse = await withFilePickerDeadline(foundry.applications.apps.FilePicker.implementation.browse("data", dir),
+      { label: "Audio cache lookup" });
     const files  = Array.isArray(browse?.files) ? browse.files : [];
     // Return the listing's path directly. On native Foundry this is the
     // local relative path; on The Forge it's the absolute assets.forge-vtt.com
@@ -185,9 +189,13 @@ export async function write(hash, bytes) {
   }
 
   const file = new File([blob], filename, { type: "audio/mpeg" });
-  const response = await foundry.applications.apps.FilePicker.implementation.upload(
+  // Bounded: an upload the server never answers throws, as a refused one
+  // fails — the audio GM's in-flight entry for the clip is cleared and its
+  // bytes kept for the retry, instead of every later request and Play joining
+  // a wait that never ends (issue #347 AB02).
+  const response = await withFilePickerDeadline(foundry.applications.apps.FilePicker.implementation.upload(
     "data", dir, file, {}, { notify: false },
-  );
+  ), { label: "Audio cache upload" });
   // On The Forge, FilePicker.upload stores the file in the user's Assets
   // Library and returns the absolute https://assets.forge-vtt.com/... URL
   // in response.path — the constructed local `full` path does not exist

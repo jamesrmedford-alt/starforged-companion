@@ -255,7 +255,11 @@ function readOpenVowLabels() {
 /** `type "label"` for each open non-vow track in the Progress Tracks journal. */
 function readOpenTrackLabels() {
   try {
-    const journal = game.journal?.find?.(j => Array.isArray(j?.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY)))
+    // Of two flagged journals (a pre-fix rename split), the default-named one
+    // — what the sessions since wrote (issue #347 AB16).
+    const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY));
+    const journal = game.journal?.find?.(j => flagged(j) && j?.name === PROGRESS_JOURNAL_NAME)
+                 ?? game.journal?.find?.(flagged)
                  ?? game.journal?.find?.(j => j?.name === PROGRESS_JOURNAL_NAME);
     if (!journal) return [];
     const tracks = journal.getFlag?.(MODULE_ID, PROGRESS_FLAG_KEY) ?? [];

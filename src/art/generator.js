@@ -40,7 +40,7 @@ import {
   readEntityFlag,
   writeEntityFlag,
 } from "../entities/registry.js";
-import { uploadedPath } from "../net/uploadResult.js";
+import { uploadedPath, withFilePickerDeadline } from "../net/uploadResult.js";
 import { PORTRAIT_BLOCK_RE } from "./notesPortrait.js";
 
 const MODULE_ID = "starforged-companion";
@@ -506,7 +506,7 @@ async function uploadPortraitImage(b64, filename) {
     const FP = foundry.applications.apps.FilePicker.implementation;
 
     try {
-      await FP.createDirectory("data", uploadDir, {});
+      await withFilePickerDeadline(FP.createDirectory("data", uploadDir, {}), { label: "Art: creating the art folder" });
     } catch (err) {
       const msg = err?.message ?? String(err);
       if (!/exists/i.test(msg)) {
@@ -520,7 +520,10 @@ async function uploadPortraitImage(b64, filename) {
     const blob = new Blob([bytes], { type: "image/png" });
     const file = new File([blob], filename, { type: "image/png" });
 
-    const response = await FP.upload("data", uploadDir, file, {}, { notify: false });
+    // Bounded: an upload the server never answers is a failed upload — the
+    // portrait stays in its Art Cache journal, unattached (issue #347 AB02).
+    const response = await withFilePickerDeadline(FP.upload("data", uploadDir, file, {}, { notify: false }),
+      { label: "Portrait upload" });
     return uploadedPath(response, `${uploadDir}/${filename}`);   // null when it failed (issue #322 V26)
   } catch (err) {
     console.warn(`${MODULE_ID} | Art: portrait upload failed:`, err?.message ?? err);

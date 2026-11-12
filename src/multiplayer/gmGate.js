@@ -36,7 +36,149 @@
  * the tiebreak runs over keyed GMs first. See advertiseClaudeKeyPresence().
  */
 
+import { pageIsStale } from "./connectionWatch.js";
+
 const MODULE_ID = "starforged-companion";
+
+// ── GMs whose page is still loading (issue #347 AB03) ──────────────────────
+// A user is `active` from the moment their socket connects — the start of
+// their page load — but this module's chat pipeline, hooks and relay listener
+// exist on that client only from its `ready`, often many seconds later. The
+// election ran over every active GM, so a lower-id (or keyed) GM opening the
+// world stood the connected, ready GM down for the whole load: a player's
+// X-Card, typed moves and card presses reached no handler, and nobody was
+// told. Each client keeps what it has seen of the other GMs' loads:
+//   - a GM whose connect this client saw (`userConnected`) is loading until
+//     its ready announcement arrives (gmRelay.js registerGmReadiness);
+//   - a GM that leaves is forgotten — its next connect is a new load;
+//   - a GM already connected when this client loaded is presumed ready, as
+//     every GM was before (an overlapping load stays the old election).
+// The election runs over the active GMs not known to be loading; when every
+// active GM is loading, over all of them, as before. This client never counts
+// itself as loading: its own handlers are what asks.
+const _gmLoad = new Map();   // userId → "loading" | "ready" | "stale"
+
+// Called when what this client knows of the GMs' loads changes — the
+// canonical GM may have changed with it (onGmLoadChange).
+const _loadChangeListeners = new Set();
+
+/**
+ * Run `fn()` whenever a GM's connect, page-ready announcement or departure is
+ * seen — moments when the canonical GM can change. The held forced moves use it
+ * to follow the canonical GM (index.js drainDeferredForcedMoves, issue #347
+ * AB06). A listener that throws is logged.
+ *
+ * @param {() => void} fn
+ */
+export function onGmLoadChange(fn) {
+  if (typeof fn === "function") _loadChangeListeners.add(fn);
+}
+
+function gmLoadChanged() {
+  for (const fn of _loadChangeListeners) {
+    try { fn(); }
+    catch (err) { console.warn(`${MODULE_ID} | a GM-load listener failed:`, err?.message ?? err); }
+  }
+}
+
+/** A GM's socket connected: its page is loading until it announces ready. */
+export function noteGmLoading(userId) {
+  if (typeof userId !== "string" || !userId || userId === globalThis.game?.user?.id) return;
+  _gmLoad.set(userId, "loading");
+  gmLoadChanged();
+}
+
+/** A GM announced its page ready: its handlers are installed. */
+export function noteGmReady(userId) {
+  if (typeof userId !== "string" || !userId || userId === globalThis.game?.user?.id) return;
+  _gmLoad.set(userId, "ready");
+  gmLoadChanged();
+}
+
+/** A GM left: what this client knew of its load no longer holds. */
+export function forgetGmLoad(userId) {
+  _gmLoad.delete(userId);
+  gmLoadChanged();
+}
+
+// Called when a GM's page says it stood down (onGmStoodDown).
+const _standDownListeners = new Set();
+
+/**
+ * Run `fn(user)` when another GM's page says it stood down — its connection
+ * dropped and came back, so its cache may lack what changed meanwhile
+ * (connectionWatch.js; gmRelay.js GM_PAGE_STALE_KIND). What that GM was
+ * running is taken over as a departed GM's is: a socket that drops for a
+ * moment can come back before the server sees the old one go, and then no
+ * `userConnected` fires anywhere (issue #347 AB19-STALE-CACHE-WRITES). A
+ * listener that throws or rejects is logged.
+ *
+ * @param {(user: User) => (void|Promise<void>)} fn
+ */
+export function onGmStoodDown(fn) {
+  if (typeof fn === "function") _standDownListeners.add(fn);
+}
+
+/**
+ * A GM's page stood down: it is passed over in the election, as a page still
+ * loading is, and handles nothing relayed to it (gmPageCanAct) — its reload's
+ * page-ready announcement counts it again — and what it held is taken over
+ * (onGmStoodDown).
+ *
+ * @param {string} userId
+ */
+export function noteGmStoodDown(userId) {
+  const user = typeof userId === "string" ? globalThis.game?.users?.get?.(userId) : null;
+  if (!user?.isGM || userId === globalThis.game?.user?.id) return;
+  _gmLoad.set(userId, "stale");
+  gmLoadChanged();
+  for (const fn of _standDownListeners) {
+    Promise.resolve()
+      .then(() => fn(user))
+      .catch(err => console.warn(`${MODULE_ID} | taking over from a GM whose page stood down failed:`, err?.message ?? err));
+  }
+}
+
+/**
+ * Whether a GM's page can act for the table — handle what is relayed to it —
+ * as far as this client knows: not a page that stood down after its
+ * connection dropped (this page: connectionWatch.js pageIsStale; another GM's:
+ * its GM_PAGE_STALE_KIND announcement) until it reloads (issue #347
+ * AB19-STALE-CACHE-WRITES). A page still loading is not excluded here.
+ *
+ * @param {string} userId
+ * @returns {boolean}
+ */
+export function gmPageCanAct(userId) {
+  if (userId === globalThis.game?.user?.id) return !pageIsStale();
+  return _gmLoad.get(userId) !== "stale";
+}
+
+/** Test seam — forget every GM's load state. */
+export function _resetGmLoadForTests() {
+  _gmLoad.clear();
+}
+
+/**
+ * The active GMs that can act: those not known to be loading — or, when every
+ * active GM is, all of them.
+ *
+ * @param {Array<User>} activeGMs
+ * @returns {Array<User>}
+ */
+function settledGMs(activeGMs) {
+  const selfId = globalThis.game?.user?.id ?? null;
+  // This page, stale since its connection dropped, stands down: it is never
+  // elected, whoever else is there (issue #347 AB19-STALE-CACHE-WRITES).
+  const pool = pageIsStale() ? activeGMs.filter(u => u.id !== selfId) : activeGMs;
+  const settled = pool.filter(u => u.id === selfId || (_gmLoad.get(u.id) !== "loading" && _gmLoad.get(u.id) !== "stale"));
+  return settled.length ? settled : pool;
+}
+
+/** The active GMs, less any still loading (settledGMs). */
+function electableGMs() {
+  return settledGMs(Array.from(globalThis.game?.users ?? []).filter(u => u?.isGM && u?.active));
+}
 
 /**
  * @returns {boolean} true iff THIS client is the canonical GM responsible
@@ -51,14 +193,18 @@ const MODULE_ID = "starforged-companion";
  *     lowest-userId active GM that has advertised a Claude key; when no active
  *     GM has advertised one, it falls back to the lowest-userId active GM, so
  *     the pipeline still has a single emitter (which surfaces a clear no-key
- *     error rather than stopping silently).
+ *     error rather than stopping silently). A GM whose page this client saw
+ *     start loading, and which has not announced ready, is passed over while
+ *     another GM can act (issue #347 AB03).
  */
 export function isCanonicalGM() {
   if (!globalThis.game?.user?.isGM) return false;
+  // A page whose connection dropped has a cache that may lack writes made
+  // meanwhile: it runs nothing for the table until it reloads (issue #347
+  // AB19-STALE-CACHE-WRITES).
+  if (pageIsStale()) return false;
 
-  const users = globalThis.game?.users;
-  const activeGMs = Array.from(users ?? [])
-    .filter(u => u?.isGM && u?.active);
+  const activeGMs = electableGMs();
 
   if (!activeGMs.length) return false;
 
@@ -112,7 +258,8 @@ export function hasKeyedActiveGM() {
   }
   if (!Array.isArray(keyed) || !keyed.length) return false;
   const keyedSet = new Set(keyed);
-  return Array.from(game?.users ?? []).some(u => u?.isGM && u?.active && keyedSet.has(u.id));
+  // A keyed GM still loading cannot answer yet (issue #347 AB03).
+  return electableGMs().some(u => keyedSet.has(u.id));
 }
 
 /**
@@ -237,7 +384,7 @@ export function isAudioGM() {
     keyed = null;
   }
   const keyedSet = new Set(Array.isArray(keyed) ? keyed : []);
-  const pool = Array.from(game.users ?? []).filter(u => u?.isGM && u?.active && keyedSet.has(u.id));
+  const pool = electableGMs().filter(u => keyedSet.has(u.id));
   if (!pool.length) return isCanonicalGM();
   let first = pool[0];
   for (const u of pool) if (u.id < first.id) first = u;

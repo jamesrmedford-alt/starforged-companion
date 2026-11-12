@@ -37,6 +37,8 @@ export const ROUND_NOTICES = Object.freeze({
   // Nothing sends it on a GM's return: the window says what to do (issue #342 Z33).
   noGm:        "No GM is connected — your action is kept here; submit it once a GM has joined.",
   noKeyedGm:   "No GM with a Claude key is connected, so the round can't be read. Your action is kept; it is read once one joins.",
+  // A round rolled and waiting for its narration, which needs a key (issue #347 D3).
+  noKeyedNarrator: "No GM with a Claude key is connected, so the round can't be narrated yet — it is narrated once one joins.",
   xCard:       "The X-Card is in play — the round can't be resolved until a GM resumes.",
   resolving:   "The round is being resolved…",
   readFailed:  "Couldn't read your action — try again.",
@@ -79,7 +81,9 @@ export function buildRoundView(round, viewer, ctx = {}) {
   const banners = [];
   if (!ctx.sessionActive) banners.push({ level: "info", text: ROUND_NOTICES.noSession });
   else if (ctx.gmConnected === false) banners.push({ level: "warn", text: ROUND_NOTICES.noGm });
-  else if (ctx.keyedGm === false) banners.push({ level: "warn", text: ROUND_NOTICES.noKeyedGm });
+  else if (ctx.keyedGm === false) {
+    banners.push({ level: "warn", text: round?.phase === ROUND_PHASE.NARRATING ? ROUND_NOTICES.noKeyedNarrator : ROUND_NOTICES.noKeyedGm });
+  }
   if (ctx.xCardActive) banners.push({ level: "warn", text: ROUND_NOTICES.xCard });
 
   if (!roundIsOpen(round)) {
@@ -118,7 +122,8 @@ function ownView(round, viewer, { collecting, moveLabel, statLabel, notReceived 
   const reading = entry.reading ? readingView(entry.reading, { moveLabel, statLabel }) : null;
   const status = entry.status;
   const awaitingUpgrade = round.phase === ROUND_PHASE.UPGRADING && entry.upgrade && !entry.upgrade.decided;
-  const statusLabel = awaitingUpgrade ? "Deciding upgrade" : (OWN_STATUS_LABELS[status] ?? null);
+  const statusLabel = awaitingUpgrade ? (entry.upgrade.inFlight ? IN_FLIGHT_LABELS[entry.upgrade.inFlight] ?? IN_FLIGHT_LABELS.burn : "Deciding upgrade")
+    : (OWN_STATUS_LABELS[status] ?? null);
   // A roll a card owes (the resist roll at 0) is confirmed, never withdrawn,
   // passed, edited or swapped for the player's own action (issue #342 D2); a
   // move rolled on the character sheet is the player's action as it stands
@@ -193,12 +198,20 @@ function readingView(reading, { moveLabel, statLabel }) {
   };
 }
 
-/** The Burn / Improve / Keep offer a roller decides before the narration. */
+/** What an upgrade on its way to the round is called while the round waits for it (issue #347 AB13). */
+const IN_FLIGHT_LABELS = Object.freeze({ burn: "Burning momentum…", improve: "Improving the result…" });
+
+/**
+ * The Burn / Improve / Keep offer a roller decides before the narration — or
+ * the upgrade already pressed and on its way (`inFlight`), which offers no
+ * choice: the round waits for it.
+ */
 function upgradeView(entry, { moveLabel }) {
   const u = entry.upgrade ?? {};
   const label = (o) => (o ? humanise(o) : null);
   return {
     cardId:   u.cardId ?? null,
+    inFlight: u.inFlight ? (IN_FLIGHT_LABELS[u.inFlight] ?? IN_FLIGHT_LABELS.burn) : null,
     moveName: entry.rolled?.moveId ? moveLabel(entry.rolled.moveId) : null,
     outcome:  label(entry.rolled?.outcome),
     burn:     u.burn ? { momentum: u.burn.momentum ?? null, outcome: label(u.burn.previewOutcome) } : null,
@@ -265,7 +278,7 @@ function progressView(round, { moveLabel }) {
   return (round.acting ?? []).map(id => {
     const e = round.entries[id];
     const deciding = round.phase === ROUND_PHASE.UPGRADING && e?.upgrade && !e.upgrade.decided;
-    const label = deciding ? "Deciding upgrade"
+    const label = deciding ? (e.upgrade.inFlight ? IN_FLIGHT_LABELS[e.upgrade.inFlight] ?? IN_FLIGHT_LABELS.burn : "Deciding upgrade")
       : e?.status === ENTRY_STATUS.REFUSED ? "Not rolled"
       : (e?.status === ENTRY_STATUS.RECORDED || e?.status === ENTRY_STATUS.ROLLED) ? (e.rolled?.moveId ? `${moveLabel(e.rolled.moveId)}: ${humanise(e.rolled.outcome)}` : "Ready")
       : "Waiting to roll";

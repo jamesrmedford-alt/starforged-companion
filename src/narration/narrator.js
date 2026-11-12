@@ -20,7 +20,9 @@ import {
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM } from '../multiplayer/gmGate.js';
+import { connectionDrops } from '../multiplayer/connectionWatch.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
+import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup } from '../audio/segments.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
@@ -140,8 +142,19 @@ function xCardPlayCount() {
  */
 export function watchXCard(campaignState) {
   const playsAtStart = xCardPlayCount();
+  const dropsAtStart = connectionDrops();
   return {
     interrupted(label) {
+      // This client's connection dropped while the narration was written: a
+      // pause recorded meanwhile never reached its cache, so neither the
+      // count nor the flag can be trusted — the narration is discarded, its
+      // sidecar never applied (issue #347 AB19).
+      _discardedForDrop = false;
+      if (connectionDrops() !== dropsAtStart) {
+        console.warn(`${MODULE_ID} | ${label}: the connection to the server dropped while the narration was generated — discarded.`);
+        _discardedForDrop = true;
+        return true;
+      }
       if (!isXCardActive(campaignState) && xCardPlayCount() === playsAtStart) return false;
       console.debug(`${MODULE_ID} | ${label}: X-Card played while the narration was generated — discarded.`);
       return true;
@@ -164,8 +177,14 @@ function xCardDiscardReason(campaignState, what) {
       ? 'Narration paused — the X-Card is active. A GM can resume it from the X-Card card or with <code>!x clear</code>.'
       : 'Scene paused — X-Card is active.';
   }
+  if (_discardedForDrop) {
+    return `${what} discarded — this GM's connection to the server dropped while it was being written, so an X-Card played meanwhile could not be checked.`;
+  }
   return `${what} discarded — the X-Card was played while it was being written.`;
 }
+
+/** Whether the last narration a watch discarded was discarded for a dropped connection (xCardDiscardReason's wording). */
+let _discardedForDrop = false;
 
 const ANTHROPIC_URL  = 'https://api.anthropic.com/v1/messages';
 const RETRY_DELAY_MS = 5000;
@@ -990,10 +1009,17 @@ export function roundNarrationEntries(round) {
  * PC, the PARTY block naming who acts, no SPOTLIGHT (every PC is asked each
  * round). The narrator is told only who acted.
  *
- * @param {{ round: Object, campaignState: Object }} args — a working copy of campaignState
- * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object }>}
+ * `stillNarrating` — the driver's check that this call's narration is still
+ * the round's — is asked once the reply is in (or the call has failed),
+ * before anything is applied or posted: a round another GM took over,
+ * narrated or closed meanwhile is not narrated again from here — no card, no
+ * fallback, no sidecar — and the call answers `{ superseded: true }` (issue
+ * #347 AB17: the first GM's late reply posted a second card).
+ *
+ * @param {{ round: Object, campaignState: Object, stillNarrating?: (() => boolean)|null }} args — a working copy of campaignState
+ * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object, superseded?: boolean }>}
  */
-export async function narrateRound({ round, campaignState }) {
+export async function narrateRound({ round, campaignState, stillNarrating = null }) {
   const entries = roundNarrationEntries(round);
   if (!entries.length) return { posted: null };
   const settings = getNarratorSettings();
@@ -1057,6 +1083,12 @@ export async function narrateRound({ round, campaignState }) {
     sentenceTarget,
   });
   const maxTokens = maxTokensWithSidecar(roundMaxTokens(settings.narrationMaxTokens, entries.length));
+  // Asked after the call's long wait: is this narration still the round's?
+  const superseded = () => {
+    if (typeof stillNarrating !== 'function' || stillNarrating()) return false;
+    console.debug(`${MODULE_ID} | narrateRound: round ${round?.number ?? '?'} was taken over or narrated meanwhile — this reply is not posted.`);
+    return true;
+  };
 
   // One call, and one retry after a rate limit. The call is made here, not in
   // a helper, so its caller is narrateRound (the playthrough harness files a
@@ -1067,6 +1099,7 @@ export async function narrateRound({ round, campaignState }) {
       const raw = await callNarratorAPI({
         label: 'narrateRound', apiKey, systemPrompt, userMessage, model: settings.narrationModel, maxTokens,
       });
+      if (superseded()) return { posted: null, superseded: true };
       if (xCard.interrupted('narrateRound')) {
         return { posted: 'paused', card: await postRoundPausedCard(round, entries, campaignState) };
       }
@@ -1088,6 +1121,7 @@ export async function narrateRound({ round, campaignState }) {
       break;
     }
   }
+  if (superseded()) return { posted: null, superseded: true };
   return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState) };
 }
 
@@ -1160,10 +1194,14 @@ function runRoundNarrationPasses(narration, entries, campaignState, { narrationI
     const owner = roundFigureOwner(entries, narration);
     return runDiscoveryDetection(narration, resolution, campaignState, {
       ...options,
+      // Each hit's own line says which NPC it was with (issue #347 AB10's
+      // rule): the round's lines joined named every player's NPCs as each
+      // roller's (ROUND-CONNECTION-LINE-JOINED).
       connectionRollers: hits.map(e => ({
         actorId:        e.actorId ?? null,
         connectionSeed: e.input.oracleSeeds?.connectionSeed ?? null,
         owns:           (figure) => !!e.actorId && owner(figure) === e.actorId,
+        lineText:       String(e.text ?? ''),
       })),
     });
   }
@@ -1573,8 +1611,10 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       sessionId:            campaignState?.currentSessionId ?? '',
       actorId:              options.actorId ?? null,
       // What names a Make a Connection's NPC — a pending draft's included
-      // (issue #325 W23).
+      // (issue #325 W23); the player's line says which when the narration
+      // names several (issue #347 AB10).
       namingText:           `${resolution?.playerNarration ?? ''}\n${narrationText ?? ''}`,
+      lineText:             resolution?.playerNarration ?? '',
       narrationId,
     });
   } catch (err) {
@@ -1632,6 +1672,10 @@ export async function postNarrationCard(narrationText, resolution, campaignState
         // Links the card to the ledger entries its sidecar wrote, which an
         // X-Card on it retracts (issue #321 U07).
         narrationId,
+        // A Burn Momentum / Improve Result re-narration: the resolution it
+        // upgraded, whose struck narrations an X-Card on this card takes too
+        // (issue #347 D2; xCardedNarrationCards).
+        ...(typeof resolution?.upgradeOf === 'string' && resolution.upgradeOf ? { upgradeOf: resolution.upgradeOf } : {}),
         timestamp:        new Date().toISOString(),
       },
     },
@@ -1748,37 +1792,224 @@ function ringEntryText(message) {
  * @returns {Array<Object>} ChatMessage documents
  */
 function sessionNarratorCards(sessionId, { forRecap = false } = {}) {
-  return (game.messages?.contents ?? []).filter(m => {
-    const f = m.flags?.[MODULE_ID];
-    if (!f?.narratorCard) return false;
-    if (f.sessionId !== sessionId) return false;
-    // Defensive excludes — even if a future code path co-marks a system card
-    // as a narratorCard, none of these should ever feed back into the
-    // narrator's context. Avoids module-meta leaking into prose.
-    if (f.worldJournalContradiction) return false;
-    if (f.worldJournalCard) return false;
-    if (f.recapCard) return false;
-    if (f.draftEntityCard) return false;
-    // Burn Momentum superseded this prose — the pre-burn outcome it describes
-    // no longer happened, so it must not feed the ring or rolling summary (the
-    // upgraded re-narration card carries the live prose). Playtest: the struck
-    // pre-burn narration kept reaching the narrator.
-    if (f.burnSuperseded) return false;
-    // A fallback card ("<Move>: <Outcome> — narration unavailable.") is not
-    // fiction (rules/narrator-memory.md invariant 1). It keeps the flag family
-    // so the session recap still counts the move, but its line must not reach
-    // the ring or the rolling summary, nor count as the session's first
-    // narration — that cancelled the session's campaign recap (issue #321 U35).
-    // The session recap (`forRecap`) keeps it: the move happened — the recap
-    // counts it and quotes none of its line (issue #322 V05).
-    if (f.narrationFallback && !forRecap) return false;
-    // The X-Card removed this narration (issue #321 U07): the table took it
-    // out of the story, so the narrator never reads it again. Its move still
-    // happened: the recap counts it, without its prose.
-    if (f.xCarded && !forRecap) return false;
-    if (Array.isArray(m.whisper) && m.whisper.length) return false;
-    return true;
+  return (game.messages?.contents ?? []).filter(m => inNarratorMemory(m, sessionId, { forRecap }));
+}
+
+/**
+ * Whether one chat message is a narrator card of the session that narrator
+ * memory reads (sessionNarratorCards' rule, per message) — for a message still
+ * in chat or one deleted since this page loaded (the X-Card's pick, issue
+ * #347 AB22).
+ *
+ * @param {Object} m — a ChatMessage, or a deleted message's record
+ * @param {string|null} sessionId
+ * @param {{ forRecap?: boolean }} [opts]
+ * @returns {boolean}
+ */
+function inNarratorMemory(m, sessionId, { forRecap = false } = {}) {
+  const f = m?.flags?.[MODULE_ID];
+  if (!f?.narratorCard) return false;
+  if (f.sessionId !== sessionId) return false;
+  // Defensive excludes — even if a future code path co-marks a system card
+  // as a narratorCard, none of these should ever feed back into the
+  // narrator's context. Avoids module-meta leaking into prose.
+  if (f.worldJournalContradiction) return false;
+  if (f.worldJournalCard) return false;
+  if (f.recapCard) return false;
+  if (f.draftEntityCard) return false;
+  // Burn Momentum superseded this prose — the pre-burn outcome it describes
+  // no longer happened, so it must not feed the ring or rolling summary (the
+  // upgraded re-narration card carries the live prose). Playtest: the struck
+  // pre-burn narration kept reaching the narrator.
+  if (f.burnSuperseded) return false;
+  // A fallback card ("<Move>: <Outcome> — narration unavailable.") is not
+  // fiction (rules/narrator-memory.md invariant 1). It keeps the flag family
+  // so the session recap still counts the move, but its line must not reach
+  // the ring or the rolling summary, nor count as the session's first
+  // narration — that cancelled the session's campaign recap (issue #321 U35).
+  // The session recap (`forRecap`) keeps it: the move happened — the recap
+  // counts it and quotes none of its line (issue #322 V05).
+  if (f.narrationFallback && !forRecap) return false;
+  // The X-Card removed this narration (issue #321 U07): the table took it
+  // out of the story, so the narrator never reads it again. Its move still
+  // happened: the recap counts it, without its prose.
+  if (f.xCarded && !forRecap) return false;
+  if (Array.isArray(m.whisper) && m.whisper.length) return false;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// Deleted chat messages and the X-Card (issue #347 AB22)
+// ---------------------------------------------------------------------------
+//
+// The X-Card answers the newest narration — read from chat. A GM who deletes
+// a narration's chat card (the first thing a GM reaches for) took it out of
+// chat but not out of the story: its truths, state, frame and capture stayed
+// binding, and the next X-Card walked past the gap and removed the beat
+// before it — a kept narration still on screen — instead. Each client keeps a
+// record of the chat messages deleted since its page loaded, so the X-Card's
+// pick reads the chat as it was (chatAsItWas): a deleted narration is still
+// the newest one, and the X-Card removes it and what it wrote. A deletion
+// alone changes nothing in narrator memory — Clear Chat Log deletes every
+// card, and tidying chat must not rewrite the story. The page's record holds
+// every deleted message; the canonical GM also keeps the newest deleted
+// messages the pick reads — narration and X-Card cards, and the lines that end
+// a beat, without their text — on campaignState (`deletedChatMessages`), so
+// the pick survives a reload (issue #347 residual
+// DELETED-NARRATION-MEMORY-PAGE-ONLY — a reload forgot them, and the X-Card
+// answered the beat before again).
+
+/** Deleted chat messages remembered, newest last. */
+const DELETED_MESSAGE_CAP = 200;
+const _deletedMessages = [];
+
+/** Deleted chat messages kept on campaignState, newest last. */
+const STORED_DELETED_CAP = 20;
+
+// The module flags the X-Card's pick and removal read off a card — all a
+// stored record keeps (narrator memory never reads a deleted card's text).
+const DELETED_RECORD_FLAGS = [
+  'narratorCard', 'sessionId', 'narrationId', 'resolutionId', 'roundId', 'oracleCardId', 'upgradeOf',
+  'supersededFor', 'burnSuperseded', 'xCarded', 'narrationFallback', 'worldJournalContradiction',
+  'worldJournalCard', 'recapCard', 'draftEntityCard', 'bypassPacing', 'forcedMoveId', 'xcardCard',
+  'xcardClearedCard', 'timestamp',
+];
+
+/**
+ * A deleted message's record as campaignState keeps it, or null for one the
+ * pick passes over (this module's other cards). A narration or X-Card card
+ * keeps the flags the pick and the removal read; a message that ends a beat —
+ * a person's line or another module's (no flags of this module), a forced
+ * move's post, a round's card — keeps what ends it. No text is kept.
+ */
+function storedDeletedRecord(record) {
+  if (!record?.id) return null;
+  const base = { id: record.id, timestamp: record.timestamp ?? null, deleted: true };
+  const f = record.flags?.[MODULE_ID];
+  if (!f) return { ...base, whisper: [], flags: {} };   // someone spoke
+  if (!(f.narratorCard || f.xcardCard || f.xcardClearedCard || f.bypassPacing || f.forcedMoveId || f.roundId)) return null;
+  const kept = {};
+  for (const key of DELETED_RECORD_FLAGS) if (f[key] !== undefined) kept[key] = f[key];
+  if (Array.isArray(f.roundEntries)) {
+    kept.roundEntries = f.roundEntries.map(e => ({ resolutionId: e?.resolutionId ?? null })).filter(e => e.resolutionId);
+  }
+  return { ...base, whisper: record.whisper ?? [], flags: { [MODULE_ID]: kept } };
+}
+
+// Records waiting for the next write, by id, newest last — a Clear Chat Log
+// deletes every card at once, and one write takes them all.
+const _pendingStoredDeleted = new Map();
+let _storedDeletedFlushQueued = false;
+
+/**
+ * Keep `record` on campaignState's `deletedChatMessages` (the newest
+ * STORED_DELETED_CAP), or update the one there of its id. Canonical GM
+ * (single emitter), on the client's campaignState write chain;
+ * fire-and-forget, never throws.
+ *
+ * @param {Object} record — a deleted message's record
+ */
+function persistDeletedRecord(record) {
+  const rec = storedDeletedRecord(record);
+  if (!rec || !isCanonicalGM()) return;
+  _pendingStoredDeleted.delete(rec.id);
+  _pendingStoredDeleted.set(rec.id, rec);
+  if (_storedDeletedFlushQueued) return;
+  _storedDeletedFlushQueued = true;
+  serialiseCampaignStateWrite(async () => {
+    await Promise.resolve();             // a bulk deletion's other hooks come first
+    _storedDeletedFlushQueued = false;   // a record deleted from here on queues the next write
+    const pending = [..._pendingStoredDeleted.values()];
+    _pendingStoredDeleted.clear();
+    if (!pending.length) return;
+    const latest = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+    const list = Array.isArray(latest.deletedChatMessages) ? latest.deletedChatMessages : [];
+    const ids = new Set(pending.map(r => r.id));
+    latest.deletedChatMessages = [...list.filter(d => !ids.has(d?.id)), ...pending].slice(-STORED_DELETED_CAP);
+    await game.settings.set(MODULE_ID, 'campaignState', latest);
+  }, 'deleted chat message').catch(err => {
+    _storedDeletedFlushQueued = false;
+    console.warn(`${MODULE_ID} | X-Card: a deleted chat message could not be kept for after a reload:`, err?.message ?? err);
   });
+}
+
+/** The deleted chat messages campaignState keeps (persistDeletedRecord), as the pick reads records. */
+function storedDeletedMessages() {
+  let list = null;
+  try { list = game.settings.get(MODULE_ID, 'campaignState')?.deletedChatMessages ?? null; }
+  catch { list = null; }
+  return Array.isArray(list)
+    ? list.filter(d => typeof d?.id === 'string' && d.id && d.flags && typeof d.flags === 'object')
+    : [];
+}
+
+/**
+ * Remember a deleted chat message as the X-Card's pick reads one: its id, its
+ * time, its whisper and a copy of this module's flags (none for a person's
+ * message — the walk's "someone spoke"). Never throws.
+ *
+ * @param {Object} message — the deleted ChatMessage
+ */
+function rememberDeletedMessage(message) {
+  try {
+    if (!message?.id || _deletedMessages.some(d => d.id === message.id)) return;
+    const f = message.flags?.[MODULE_ID];
+    _deletedMessages.push({
+      id:        message.id,
+      timestamp: messageTime(message),
+      whisper:   Array.isArray(message.whisper) ? [...message.whisper] : [],
+      flags:     f ? { [MODULE_ID]: foundry.utils.deepClone(f) } : {},
+      deleted:   true,
+    });
+    if (_deletedMessages.length > DELETED_MESSAGE_CAP) _deletedMessages.splice(0, _deletedMessages.length - DELETED_MESSAGE_CAP);
+    persistDeletedRecord(_deletedMessages[_deletedMessages.length - 1]);
+  } catch (err) {
+    console.debug(`${MODULE_ID} | X-Card: a deleted chat message could not be remembered:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Keep the record of deleted chat messages the X-Card's pick reads (issue
+ * #347 AB22). Every client: whichever GM is canonical when the X-Card is
+ * played saw the deletion too.
+ */
+export function registerDeletedChatHook() {
+  Hooks.on('deleteChatMessage', rememberDeletedMessage);
+}
+
+/** Test seam: forget the deleted messages remembered (a page load starts with none). */
+export function _resetDeletedMessagesForTests() {
+  _deletedMessages.length = 0;
+  _pendingStoredDeleted.clear();
+  _storedDeletedFlushQueued = false;
+}
+
+/**
+ * The chat as it was: the messages still in chat, with those deleted since
+ * this page loaded put back in their place by time. A message with no time
+ * is never passed; a deleted one later than every timed message goes last.
+ *
+ * @returns {Array<Object>}
+ */
+function chatAsItWas() {
+  const live = game.messages?.contents ?? [];
+  // This page's record, then campaignState's — what a reload kept.
+  const remembered = new Set(_deletedMessages.map(d => d.id));
+  const ghosts = [..._deletedMessages, ...storedDeletedMessages().filter(d => !remembered.has(d.id))];
+  if (!ghosts.length) return live;
+  const liveIds = new Set(live.map(m => m?.id).filter(Boolean));
+  const out = [...live];
+  for (const ghost of ghosts) {
+    if (liveIds.has(ghost.id)) continue;
+    const at = ghost.timestamp;
+    let idx = out.length;
+    if (at !== null) {
+      const later = out.findIndex(m => { const t = messageTime(m); return t !== null && t > at; });
+      if (later >= 0) idx = later;
+    }
+    out.splice(idx, 0, ghost);
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -1819,15 +2050,18 @@ function messageTime(message) {
 
 /**
  * The narrator cards an X-Card played now removes, oldest first (the rule
- * above). Reads chat only.
+ * above). Reads the chat as it was (chatAsItWas): a narration whose card a GM
+ * deleted is still the newest narration, and is removed — returned as its
+ * record (`deleted: true`), which flagXCardedCards passes over — never the
+ * kept beat before it (issue #347 AB22).
  *
  * @param {string|null} sessionId
- * @returns {Array<Object>} ChatMessage documents
+ * @returns {Array<Object>} ChatMessage documents, and deleted messages' records
  */
 export function xCardedNarrationCards(sessionId) {
   if (!sessionId) return [];
-  const messages = game.messages?.contents ?? [];
-  const inMemory = new Set(sessionNarratorCards(sessionId));
+  const messages = chatAsItWas();
+  const inMemory = { has: (m) => inNarratorMemory(m, sessionId) };
   const isBoundary = (f) => !!(f?.xcardCard || f?.xcardClearedCard);
 
   // The newest narration, unless an earlier X-Card already answered it.
@@ -1864,7 +2098,40 @@ export function xCardedNarrationCards(sessionId) {
     if (newestAt !== null && at !== null && newestAt - at > XCARD_BEAT_WINDOW_MS) break;
     beat.unshift(m);
   }
-  return beat;
+  return withStruckByUpgrade(beat, messages, sessionId);
+}
+
+/**
+ * The beat's cards with the narrations its own upgrade struck (issue #347
+ * D2, the maintainer's option A). A Burn Momentum or Improve Result
+ * re-narration names the resolution it upgraded (`upgradeOf`); the upgrade
+ * struck that move's first narration (its `resolutionId`) and the trigger
+ * vignette of a clock it rewound (`supersededFor`), each flagged
+ * `burnSuperseded` — out of narrator memory, so the walk passes them, while
+ * #338 D8 left their World Journal and tier records standing beside the
+ * re-narration. The table's X-Card on the beat removes the beat it saw,
+ * the struck version included: these join the cards it removes, so their
+ * capture is undone and their facts blocked too. Oldest first, in chat order.
+ *
+ * @param {Object[]} beat — the cards the walk picked
+ * @param {Object[]} messages — the chat as it was
+ * @param {string} sessionId
+ * @returns {Object[]}
+ */
+function withStruckByUpgrade(beat, messages, sessionId) {
+  const upgraded = new Set(beat.map(m => m?.flags?.[MODULE_ID]?.upgradeOf).filter(id => typeof id === 'string' && id));
+  if (!upgraded.size) return beat;
+  const picked = new Set(beat);
+  const struck = messages.filter(m => {
+    if (picked.has(m)) return false;
+    const f = m?.flags?.[MODULE_ID];
+    return f?.narratorCard === true && f.burnSuperseded === true && f.xCarded !== true
+      && (f.sessionId ?? null) === sessionId
+      && (upgraded.has(f.resolutionId) || upgraded.has(f.supersededFor));
+  });
+  if (!struck.length) return beat;
+  const all = new Set([...struck, ...beat]);
+  return messages.filter(m => all.has(m));
 }
 
 /**
@@ -1939,6 +2206,12 @@ export function applyXCardToNarratorMemory(cs) {
  */
 function summaryCoversCards(summary, sessionId, cards) {
   if (!sessionId || summary?.sessionId !== sessionId || !cards?.length) return false;
+  // A narration whose card was deleted (issue #347 AB22) has no place in
+  // chat to count: a summary written after it may have been made from it.
+  const covered = Number(summary.coveredCount) || 0;
+  const writtenAt = Date.parse(summary.updatedAt ?? '');
+  if (covered > 0 && cards.some(c => c?.deleted
+      && (!Number.isFinite(writtenAt) || (messageTime(c) ?? 0) <= writtenAt))) return true;
   const inMemory = sessionNarratorCards(sessionId);
   const at = cards
     .map(c => inMemory.findIndex(m => m === c || (!!m?.id && m.id === c?.id)))
@@ -2022,6 +2295,18 @@ function xCardedOracleResults(cards) {
 export async function flagXCardedCards(cards) {
   let flagged = 0;
   for (const message of cards ?? []) {
+    if (message?.deleted) {
+      // A deleted card's record (issue #347 AB22): nothing in chat to flag —
+      // the record itself is marked, here and on campaignState, so it reads
+      // as removed, as a removed card in chat does (issue #347 residual
+      // DELETED-NARRATION-MEMORY-PAGE-ONLY).
+      const f = message.flags?.[MODULE_ID];
+      if (f) f.xCarded = true;
+      const mine = _deletedMessages.find(d => d.id === message.id);
+      if (mine?.flags?.[MODULE_ID]) mine.flags[MODULE_ID].xCarded = true;
+      persistDeletedRecord(message);
+      continue;
+    }
     try {
       await message.update({ [`flags.${MODULE_ID}.xCarded`]: true });
       flagged += 1;
@@ -2355,6 +2640,8 @@ function rollingSummaryEnabled() {
  * @param {Object} campaignState
  * @param {Object} [options]
  * @param {boolean} [options.forceRefresh] — regenerate regardless of debounce
+ * @param {boolean} [options.persist] — false: return the text, store nothing
+ *   (a closed session's catch-up — catchUpUnsummarisedSession)
  * @returns {Promise<string>}
  */
 export async function getRollingSessionSummary(campaignState, options = {}) {
@@ -2449,15 +2736,21 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   // another jumps the chain and lands first, and its pause can only empty a
   // summary already stored — this one, made from the narration it removed,
   // was written over it. Discarded then, here and on the caller's copy.
+  if (options.persist === false) return record.text;
   if (isCanonicalGM()) {
     let kept = true;
     try {
-      kept = await serialiseCampaignStateWrite(async () => {
+      const write = serialiseCampaignStateWrite(async () => {
         if (xCardPlayCount() !== xCardPlaysAtStart) return false;
         const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
         await game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
         return true;
       }, 'rolling summary');
+      // A write the server never answers is given up after a bound: it held
+      // this refresh — and every later one, and End and Begin a Session
+      // behind them — for the rest of the page load (issue #347 AB05).
+      if (await settledWithin(write, WORLD_WRITE_WAIT_MS, 'rolling summary write')) kept = await write;
+      else console.warn(`${MODULE_ID} | narrator: the rolling summary's write was not answered — it may not be saved.`);
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary persist failed:`, err?.message ?? err);
     }
@@ -2493,6 +2786,16 @@ function cachedRollingSessionSummary(campaignState) {
 
 let _summaryRefresh = null;
 let _summaryRefreshAgain = false;
+// When the refresh in flight began: one older than SUMMARY_REFRESH_WAIT_MS
+// is passed, not joined (issue #347 AB05).
+let _summaryRefreshStartedAt = 0;
+
+/**
+ * How long a refresh may run before the next card starts its own, and how
+ * long finalizeSessionSummary waits for one — two bounded Claude calls and a
+ * bounded write, with headroom. Only a refresh that never settles is passed.
+ */
+const SUMMARY_REFRESH_WAIT_MS = 5 * 60_000;
 
 /**
  * Regenerate the rolling session summary after each narrator card posts, on
@@ -2508,6 +2811,9 @@ export function registerRollingSummaryRefreshHook() {
     const f = message?.flags?.[MODULE_ID];
     if (!f?.narratorCard || !f.narrationText) return;
     refreshRollingSessionSummary();
+    // A session the mint closed out short gets its LAST SESSION now, if a key
+    // is here (issue #347 AB15).
+    catchUpUnsummarisedSession();
   });
 }
 
@@ -2542,34 +2848,106 @@ export function registerPublishedReflectionHook() {
  * the session's first `coveredCount` cards; makes no call when every card
  * past them is End a Session's own closing vignette (End's refresh runs
  * before it posts — not worth a second call), or there is none. Updates
- * campaignState's `sessionSummary`; fail-open.
+ * campaignState's `sessionSummary`; fail-open — and says whether the summary
+ * covers the session now, so a mint can mark one it closes out short (issue
+ * #347 AB15). A summary the table turned off is "covered".
  *
  * @param {Object} campaignState
- * @returns {Promise<void>}
+ * @returns {Promise<boolean>} false when cards stay uncovered (no key on this
+ *   client, or the call failed)
  */
 export async function finalizeSessionSummary(campaignState) {
   const sessionId = campaignState?.currentSessionId ?? null;
-  if (!sessionId || !rollingSummaryEnabled()) return;
-  if (_summaryRefresh) await _summaryRefresh;
+  if (!sessionId || !rollingSummaryEnabled()) return true;
+  // Bounded: a refresh that never settles held End and Begin a Session with it
+  // (issue #347 AB05).
+  if (_summaryRefresh) await settledWithin(_summaryRefresh, SUMMARY_REFRESH_WAIT_MS, 'rolling summary refresh');
   let stored = null;
   try { stored = game.settings.get(MODULE_ID, 'campaignState')?.sessionSummary ?? null; }
   catch { stored = null; }
   const covered = (summary) => (summary?.sessionId === sessionId ? Number(summary.coveredCount) || 0 : -1);
   if (covered(stored) > covered(campaignState.sessionSummary)) campaignState.sessionSummary = stored;
   const ended = campaignState.sessionEndedId === sessionId;
-  const uncovered = sessionNarratorCards(sessionId)
+  const uncoveredCards = () => sessionNarratorCards(sessionId)
     .slice(Math.max(0, covered(campaignState.sessionSummary)))
     .filter(m => !(ended && m.flags?.[MODULE_ID]?.vignetteKind === 'npc_end'));
-  if (!uncovered.length) return;
+  if (!uncoveredCards().length) return true;
   await getRollingSessionSummary(campaignState, { forceRefresh: true });
+  return uncoveredCards().length === 0;
+}
+
+let _sessionCatchUp = null;
+
+/**
+ * LAST SESSION for a session the mint closed out short (issue #347 AB15): the
+ * mint's summary finalise is fail-open, and a session closed on a client with
+ * no key yet — keys are per browser: another device, cleared site data, a
+ * keyless co-GM who opened the world first — or while its one call failed,
+ * kept whatever the debounce had stored (nothing at all for a short session),
+ * and nothing looked at it again. The mint marks it (`unsummarisedSession`);
+ * here, on the canonical GM with a key, its cards are summarised and the
+ * summary becomes LAST SESSION, the mark cleared. Run after each narrator card
+ * (End a Session's closing vignette among them), at the world load and when
+ * this GM's key is set; one at a time; fail-open — a failed or X-Carded call
+ * leaves the mark for the next try. A later mint replaces the mark.
+ *
+ * @returns {Promise<boolean>} whether LAST SESSION was caught up
+ */
+export function catchUpUnsummarisedSession() {
+  if (_sessionCatchUp) return _sessionCatchUp;
+  let stored = null;
+  try { stored = game.settings.get(MODULE_ID, 'campaignState') ?? null; }
+  catch { stored = null; }
+  const pending = stored?.unsummarisedSession ?? null;
+  if (!pending?.sessionId || !isCanonicalGM() || !rollingSummaryEnabled() || !getApiKey()) return Promise.resolve(false);
+  _sessionCatchUp = (async () => {
+    try {
+      const hasCards = sessionNarratorCards(pending.sessionId).length > 0;
+      const text = hasCards
+        ? await getRollingSessionSummary({ ...stored, currentSessionId: pending.sessionId, sessionSummary: null },
+            { forceRefresh: true, persist: false })
+        : '';
+      if (hasCards && !text?.trim()) return false;          // failed, or X-Carded meanwhile: try again later
+      const write = serialiseCampaignStateWrite(async () => {
+        const latest = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+        if (latest.unsummarisedSession?.sessionId !== pending.sessionId) return false;   // a later mint moved on
+        await game.settings.set(MODULE_ID, 'campaignState', {
+          ...latest,
+          unsummarisedSession: null,
+          ...(text?.trim() ? { previousSessionSummary: {
+            sessionId:     pending.sessionId,
+            sessionNumber: pending.sessionNumber ?? null,
+            text:          text.trim(),
+            updatedAt:     new Date().toISOString(),
+          } } : {}),
+        });
+        return true;
+      }, 'last session catch-up');
+      if (!await settledWithin(write, WORLD_WRITE_WAIT_MS, 'last session catch-up write')) return false;
+      const done = await write;
+      if (done) console.info(`${MODULE_ID} | narrator: LAST SESSION caught up for the session closed without its summary.`);
+      return !!done;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrator: LAST SESSION catch-up failed:`, err?.message ?? err);
+      return false;
+    } finally {
+      _sessionCatchUp = null;
+    }
+  })();
+  return _sessionCatchUp;
 }
 
 function refreshRollingSessionSummary() {
-  if (_summaryRefresh) {
+  // A refresh still running past its bound never settled — a write the
+  // server never answered: passed, so this card refreshes the summary (issue
+  // #347 AB05). It was joined for the rest of the page load.
+  if (_summaryRefresh && Date.now() - _summaryRefreshStartedAt < SUMMARY_REFRESH_WAIT_MS) {
     _summaryRefreshAgain = true;
     return _summaryRefresh;
   }
-  _summaryRefresh = (async () => {
+  if (_summaryRefresh) console.warn(`${MODULE_ID} | narrator: a rolling summary refresh has not settled in ${SUMMARY_REFRESH_WAIT_MS}ms — starting another.`);
+  _summaryRefreshStartedAt = Date.now();
+  const mine = (async () => {
     try {
       do {
         _summaryRefreshAgain = false;
@@ -2577,14 +2955,15 @@ function refreshRollingSessionSummary() {
         // is given — the cached setting itself, before a write the world can
         // refuse (CACHE-MUTATED-BEFORE-WRITE).
         await getRollingSessionSummary({ ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) });
-      } while (_summaryRefreshAgain);
+      } while (_summaryRefreshAgain && _summaryRefresh === mine);
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary refresh failed:`, err?.message ?? err);
     } finally {
-      _summaryRefresh = null;
+      if (_summaryRefresh === mine) _summaryRefresh = null;
     }
   })();
-  return _summaryRefresh;
+  _summaryRefresh = mine;
+  return mine;
 }
 
 /**
@@ -3412,30 +3791,43 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   // first-PC fallback made it Kira's CHARACTER block, Kira speaking, and the
   // ring's "Kira wrote" (issue #342 Z50).
   const character    = options?.speakerActorId ? getActiveCharacter(campaignState, options.speakerActorId) : null;
-  await ensureSceneStarted(campaignState, 'first_narration_paced');
 
-  // Don't suggest a social move against a fellow player character (finding G):
-  // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
-  // the nomination before it reaches the narrator (so no hint is written) and
-  // the card (so no Roll button appears).
-  const suggestedMove = suppressPcDirectedSocialMove(
-    options.suggestedMove ?? null, playerText, character?.name ?? null,
-  );
+  // The prompt is built before the call. A throw here — a store read, an
+  // entity card, the scene start — escaped to the pacing router's catch,
+  // which only logged it: the line sat in chat, narrated by nothing and told
+  // to nobody, as a failed call's line did before AB21 (issue #347 residual
+  // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
+  let suggestedMove, extras, systemPrompt, userMessage;
+  try {
+    await ensureSceneStarted(campaignState, 'first_narration_paced');
 
-  const extras = await buildNarratorExtras('paced_narrative', campaignState, {
-    playerNarration: playerText,
-    character,
-  });
+    // Don't suggest a social move against a fellow player character (finding G):
+    // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
+    // the nomination before it reaches the narrator (so no hint is written) and
+    // the card (so no Roll button appears).
+    suggestedMove = suppressPcDirectedSocialMove(
+      options.suggestedMove ?? null, playerText, character?.name ?? null,
+    );
 
-  const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, '', extras,
-  );
+    extras = await buildNarratorExtras('paced_narrative', campaignState, {
+      playerNarration: playerText,
+      character,
+    });
 
-  const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
-  const sentenceTarget = settings.narrationLength ?? 3;
-  const userMessage = buildPacedNarrativeUserMessage(
-    playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
-  );
+    systemPrompt = buildNarratorSystemPrompt(
+      campaignState, settings, character, '', extras,
+    );
+
+    const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
+    const sentenceTarget = settings.narrationLength ?? 3;
+    userMessage = buildPacedNarrativeUserMessage(
+      playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
+    );
+  } catch (err) {
+    console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
+    await postPacedNarrationFailedCard(campaignState);
+    return null;
+  }
 
   try {
     const raw = await callNarratorAPI({
@@ -3449,7 +3841,11 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
     });
 
-    if (!text?.trim()) return null;
+    if (!text?.trim()) {
+      console.warn(`${MODULE_ID} | narratePacedInput: the narrator's reply had no prose — nothing to post.`);
+      await postPacedNarrationFailedCard(campaignState);
+      return null;
+    }
 
     const buttonMove = reconcileSuggestedMove(text, suggestedMove, { playerText, speakerName: character?.name ?? null });
     await postPacedNarrativeCard(text, playerText, sessionId, buttonMove, character?.name ?? null, narrationId, extras.matchedEntityIds, options?.speakerActorId ?? null, options?.suggestedTargetId ?? null);
@@ -3492,6 +3888,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       }
     }
     console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
+    await postPacedNarrationFailedCard(campaignState);
     return null;
   }
 }
@@ -4349,6 +4746,43 @@ async function postPacedNarrationPausedCard(campaignState = null) {
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | narratePacedInput: the paused notice could not be posted:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * Short notice posted when a paced narration — a typed line the pacing
+ * classifier read as narrative — could not be written: its Claude call failed
+ * (overloaded, a server error, a timeout, a rate limit on the retry too), its
+ * reply had no prose (issue #347 AB21), or its prompt could not be built
+ * (issue #347 residual PACED-NARRATION-THROW-BEFORE-CALL). A move's failed narration posts
+ * postFallbackCard and `@scene` its fallback card; the line posted nothing and
+ * told nobody, after a wait of up to four minutes, and just sat in chat. Not
+ * a narrator card, so it never enters the recent-narration ring, the rolling
+ * summary or the chronicle; posted by the client that narrates the line (the
+ * chat pipeline's, the canonical GM).
+ *
+ * @param {Object|null} [campaignState]
+ * @returns {Promise<ChatMessage|null>}
+ */
+async function postPacedNarrationFailedCard(campaignState = null) {
+  try {
+    return await ChatMessage.create({
+      content: `
+        <div class="sf-narration-card sf-narration-fallback">
+          <div class="sf-narration-label">◈ Narrator</div>
+          <div class="sf-narration-prose">That line was not narrated &mdash; say it again in a moment.</div>
+          <div class="sf-narration-error">Narration unavailable — the narrator could not be reached. If it keeps happening, check your API key and proxy.</div>
+        </div>
+      `.trim(),
+      flags: {
+        [MODULE_ID]: {
+          sessionId: campaignState?.currentSessionId ?? null,
+        },
+      },
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narratePacedInput: the failure notice could not be posted:`, err?.message ?? err);
     return null;
   }
 }

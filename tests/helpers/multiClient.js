@@ -41,7 +41,10 @@
  *     default. Client-scoped settings are per client (claudeApiKey,
  *     privateLines…).
  *   - `game.socket.emit` reaches every OTHER connected client, JSON-cloned,
- *     on a later macrotask. A disconnected client receives nothing.
+ *     on a later macrotask. A disconnected client receives nothing. A page
+ *     that leaves hears socket.io's own "disconnect" on its game.socket, and
+ *     one that joins again on the same page its "connect" (table.leave /
+ *     table.join).
  *   - Permission-faithful (tests/helpers/foundryPermissions.js): a player's
  *     world-setting write rejects, a non-author's ChatMessage update /
  *     delete rejects, an Actor update without OWNER rejects.
@@ -533,6 +536,11 @@ class SimChatMessageReplica {
   toObject() { return jsonClone(this._source); }
 }
 
+/** A page `table.reload` replaced writes nothing more — its tab is closed. */
+function refuseFromUnloadedPage(client, what) {
+  if (client?.unloaded) throw new Error(`multiClient: ${what} from ${client.id}'s unloaded page — refused (the page was reloaded)`);
+}
+
 function requireClient(what) {
   const client = currentClient();
   if (!client) {
@@ -781,6 +789,15 @@ class SimClient {
     if (this.booted) return;
     const restore = this.table._bufferConsole(this.id);
     try {
+      // A page load fetches the world's chat log, as Foundry's does: the
+      // messages posted before this client first connected are its replicas
+      // too, with no create hooks fired for them. A GM who joined could not
+      // find a message posted before it (issue #347 AB06 — a held move handed
+      // to it). A socket that drops and comes back keeps the page and its
+      // replicas, as before.
+      for (const source of this.table._serverMessages.values()) {
+        if (!this.messages.get(source._id)) this.messages._set(source._id, new SimChatMessageReplica(this, source));
+      }
       this._index = await this.run(() => import("../../src/index.js"));
       this.run(() => {
         this.hooks.call("init", [], false);
@@ -817,6 +834,21 @@ class SimClient {
     const off = () => this.game.socket.off(event, fn);
     this._testListeners.push(off);
     return off;
+  }
+
+  /**
+   * Fire one of socket.io's own events on this client's socket — "disconnect"
+   * or "connect", which a real game.socket emits to its own page and no other
+   * (table.leave / table.join). A handler that throws is logged, as Foundry's
+   * emitter would.
+   */
+  emitOwnSocketEvent(event, ...args) {
+    for (const fn of [...(this.socketHandlers.get(event) ?? [])]) {
+      this.run(() => {
+        try { return fn(...args); }
+        catch (err) { console.error(`[${this.id}] socket ${event} handler threw:`, err); return undefined; }
+      });
+    }
   }
 
   /** Set a setting AS THIS CLIENT (permission-checked, hooks fire). */
@@ -1176,6 +1208,15 @@ class SimTable {
       c._dialogResponder = null;
       for (const off of c._testListeners.splice(0)) off();
       this.#seedClientSettings(c);
+      // A fresh page per test: no dropped connection standing it down, no GM
+      // remembered as still loading (issue #347 AB19, AB03), and no shared-
+      // supply pass remembered (SUPPLY-LAGGING-SHEET).
+      if (c.booted) {
+        const watch  = await c.import("../../src/multiplayer/connectionWatch.js");
+        const gate   = await c.import("../../src/multiplayer/gmGate.js");
+        const supply = await c.import("../../src/multiplayer/sharedSupply.js");
+        c.run(() => { watch._resetConnectionWatchForTests?.(); gate._resetGmLoadForTests?.(); supply._resetSharedSupplyForTests?.(); });
+      }
     }
   }
 
@@ -1255,14 +1296,58 @@ class SimTable {
     for (const other of this.connectedClients) {
       if (other !== c) other.run(() => other.hooks.call("userConnected", [c.user, true], false));
     }
+    // A page that lived through the drop hears its own socket reconnect
+    // (socket.io's "connect" on game.socket); a fresh page boots instead.
+    if (c.booted) {
+      c.emitOwnSocketEvent("connect");
+      // reset() seats each test's users as the table began, so a GM page
+      // booted in an earlier test can be away without having dropped — no
+      // real page is. It comes back as loaded: it announces itself ready, as
+      // a loading page does at its `ready` (gmRelay.js registerGmReadiness).
+      // A page that saw its connection drop is stale and stands down instead
+      // (issue #347 AB19-STALE-CACHE-WRITES).
+      if (c.user.isGM) {
+        const watch = await c.import("../../src/multiplayer/connectionWatch.js");
+        const relay = await c.import("../../src/multiplayer/gmRelay.js");
+        c.run(() => {
+          if (!watch.pageIsStale()) c.game.socket.emit(relay.GM_RELAY_SOCKET, { kind: relay.GM_PAGE_READY_KIND, userId: c.id });
+        });
+      }
+    }
     await c.boot();
   }
 
-  /** A user leaves: no further deliveries; `userConnected(user, false)` elsewhere. */
+  /**
+   * A page reload: the user's page goes (`leave`) — what it still has in
+   * flight is cut off, its later world writes refused as a closed tab's are —
+   * and a fresh page loads: a new client for the same user, with its own
+   * module copies and the browser's client settings, booted (`join`). A socket
+   * that drops and comes back on the same page is `leave` then `join` (issue
+   * #347 AB19: that page is stale and stands down; this one is not).
+   */
+  async reload(userId) {
+    const old = this.client(userId);
+    if (old.connected) await this.leave(userId);
+    old.unloaded = true;
+    const fresh = new SimClient(this, old.user);
+    for (const [key, value] of old.clientSettings) fresh.clientSettings.set(key, value);
+    this.clients[this.clients.indexOf(old)] = fresh;
+    await this.join(userId);
+    return fresh;
+  }
+
+  /**
+   * A user leaves: no further deliveries; `userConnected(user, false)`
+   * elsewhere. The leaving page's own socket says it dropped (socket.io's
+   * "disconnect" on game.socket), as a real client's does — a page that lives
+   * on (a drop, then join on the same page) can tell it missed deliveries.
+   */
   async leave(userId) {
     const c = this.client(userId);
     c.user.active = false;
     c.connected = false;
+    // Its own socket sees the drop, as socket.io's `disconnect` (issue #347 AB17, AB19).
+    c.emitOwnSocketEvent("disconnect", "transport close");
     for (const other of this.connectedClients) {
       other.run(() => other.hooks.call("userConnected", [c.user, false], false));
     }
@@ -1415,6 +1500,7 @@ class SimTable {
   }
 
   async _setWorldSetting(writer, k, value, options) {
+    refuseFromUnloadedPage(writer, `setting ${k}`);
     const json = JSON.stringify(value ?? null);
     const existed = this._worldSettings.has(k);
     if (existed && this._worldSettings.get(k) === json) return;   // Foundry: unchanged → no update
@@ -1440,6 +1526,7 @@ class SimTable {
   // ── messages ──────────────────────────────────────────────────────────────
 
   async _createMessage(creator, data, options) {
+    refuseFromUnloadedPage(creator, "ChatMessage create");
     const user = creator.user;
     const named = typeof data.author === "string" ? data.author
       : (data.author?.id ?? (typeof data.user === "string" ? data.user : data.user?.id) ?? null);
@@ -1478,6 +1565,7 @@ class SimTable {
   }
 
   async _updateMessage(caller, id, changes, options) {
+    refuseFromUnloadedPage(caller, `ChatMessage ${id} update`);
     if (!this._serverMessages.get(id)) throw new Error(`ChatMessage ${id} does not exist (deleted?)`);
     if (this._writeInterceptors.length) {
       await this._interceptWrite({ kind: "message.update", id, client: caller.user.id, changes: jsonClone(changes) });
@@ -1502,6 +1590,7 @@ class SimTable {
   }
 
   async _deleteMessage(caller, id, options) {
+    refuseFromUnloadedPage(caller, `ChatMessage ${id} delete`);
     if (!this._serverMessages.has(id)) return undefined;
     this._serverMessages.delete(id);
     const userId = caller.user.id;
@@ -1607,7 +1696,20 @@ class SimTable {
       type: "write", outcome: "applied", kind: "actor.update", id: actor.id, name: actor.name,
       client: currentClient()?.id ?? null, changes: Object.keys(changes ?? {}),
     });
+    // Foundry's preUpdateActor runs on the requesting client only, before the
+    // write, with the document still holding its old values; a handler that
+    // returns false cancels the update, and what a handler adds to the options
+    // travels with the update to every client's updateActor (a module stamps
+    // what it needs the other clients to know there). The change it is passed
+    // is a copy: edits to it do not reach the write here.
+    const preUpdate = (changes, options) => {
+      const caller = currentClient();
+      if (!caller) return true;
+      return caller.run(() => caller.hooks.call("preUpdateActor", [actor, expandUpdate(jsonClone(changes)), options, caller.id], true)) !== false;
+    };
     actor.update = async (changes = {}, options = {}) => {
+      refuseFromUnloadedPage(currentClient(), `Actor ${actor.id} update`);
+      if (!preUpdate(changes, options)) return undefined;
       await intercept(changes);
       await rawUpdate(changes, options);
       applied(changes);
@@ -1615,11 +1717,14 @@ class SimTable {
       return actor;
     };
     actor.setFlag = async (scope, key, value) => {
+      refuseFromUnloadedPage(currentClient(), `Actor ${actor.id} setFlag`);
       const changes = { [`flags.${scope}.${key}`]: value };
+      const options = {};
+      if (!preUpdate(changes, options)) return undefined;
       await intercept(changes);
       await rawSetFlag(scope, key, value);
       applied(changes);
-      broadcast(changes);
+      broadcast(changes, options);
       return actor;
     };
   }

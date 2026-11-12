@@ -46,7 +46,8 @@
  *     (takeSheetRoll), or waits for the next round the same way.
  */
 
-import { isCanonicalGM, hasKeyedActiveGM } from "../multiplayer/gmGate.js";
+import { isCanonicalGM, hasKeyedActiveGM, onGmStoodDown } from "../multiplayer/gmGate.js";
+import { pageIsStale, connectionDrops } from "../multiplayer/connectionWatch.js";
 import { getPlayerActors, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { isSessionActive, sessionBeingReplaced, touchSessionActivity } from "../session/lifecycle.js";
 import { messageAuthorId, resolveSpeakerActorId } from "../multiplayer/speaker.js";
@@ -61,7 +62,7 @@ import {
   finishMove,
   narrationInputFrom,
 } from "../moves/movePipeline.js";
-import { resultUpgradeBlocker } from "../moves/burnMomentum.js";
+import { resultUpgradeBlocker, resultUpgradeRunningHere } from "../moves/burnMomentum.js";
 import { consequenceChosen, laterMoveFollows } from "../moves/resultUpgrade.js";
 import { listProgressTracks } from "../ui/progressTracks.js";
 import { resolveRelevance } from "../context/relevanceResolver.js";
@@ -92,7 +93,11 @@ import {
   readyToResolve,
   readingsInFlight,
   beginResolution,
+  takeOverResolution,
+  handBackResolution,
   fixActing,
+  markRolling,
+  rollBegun,
   markRolled,
   markRecorded,
   markRefused,
@@ -321,7 +326,12 @@ async function whisper(userIds, title, body, flags = {}) {
   }
 }
 
-const tellGms = (title, body, flags) => whisper(gmIds(), title, body, flags);
+// A page whose connection dropped has been told to reload and stands down:
+// what it would say about a round another GM has taken over is stale too
+// (issue #347 AB19-STALE-CACHE-WRITES).
+const tellGms = (title, body, flags) => (pageIsStale()
+  ? Promise.resolve(console.debug(`${MODULE_ID} | Batch Mode: this page lost its connection — "${title}" not posted.`))
+  : whisper(gmIds(), title, body, flags));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // One writer, one chain
@@ -342,6 +352,9 @@ let _roundWrites = Promise.resolve();
  */
 export function queueRoundWrite(transition) {
   const run = _roundWrites.then(async () => {
+    // A page whose connection dropped writes no round: its copy may lack
+    // what another GM wrote meanwhile (issue #347 AB19-STALE-CACHE-WRITES).
+    if (pageIsStale()) throw new Error("the round was not written — this page lost its connection to the server; reload it");
     const latest = getStoredRound();
     const next = transition(latest);
     if (next === undefined || next === latest) return latest;
@@ -353,6 +366,35 @@ export function queueRoundWrite(transition) {
 }
 
 const isRefusal = (err) => err instanceof RoundRefusal || err?.name === "RoundRefusal";
+
+/** Whether this client holds a Claude key — the readings and the narration run on it. */
+function claudeKeyHere() {
+  try { return !!game.settings.get(MODULE_ID, "claudeApiKey"); } catch { return false; }
+}
+
+/**
+ * Whether a round's narration waits for a GM with a Claude key instead of
+ * running here: this GM has none, and the table has one — a GM the keyed-GM
+ * registry lists, connected or not (the keyed GM reloading, a keyless co-GM
+ * canonical for those seconds). A keyless takeover posted "narration
+ * unavailable" and closed the round, its narration gone for good though the
+ * keyed GM was back within a page load (issue #347 D3 — the maintainer's
+ * option A: it waits, as the readings and Send now do). With no keyed GM at
+ * all the narration falls back as before (issue #345 D1). It waits only while
+ * the round's session lasts (`roundSessionOver`): End a Session closes it
+ * unnarrated (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM).
+ */
+function narrationWaitsForKey() {
+  if (claudeKeyHere()) return false;
+  let keyed = [];
+  try { keyed = game.settings.get(MODULE_ID, "keyedGmUserIds") ?? []; } catch { keyed = []; }
+  return Array.isArray(keyed) && keyed.some(id => id && id !== game.user?.id && game.users?.get?.(id)?.isGM === true);
+}
+
+/** Whether a round's session is over: ended, another one current, or being replaced. */
+function roundSessionOver(round, cs = campaignStateNow()) {
+  return !isSessionActive(cs) || round?.sessionId !== (cs.currentSessionId ?? null) || sessionBeingReplaced(cs);
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Opening and closing rounds
@@ -715,6 +757,11 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
     advanceRound("send-now");
     return { ok: true };
   }
+  // A narration that waits for a GM with a Claude key is not sent from a
+  // keyless one: the key is what it waits for (issue #347 D3) — while its
+  // session lasts. After it, Send now runs the pass that closes the round
+  // unnarrated, as End a Session does (ROUND-WAITS-FOR-ABSENT-KEYED-GM).
+  if (round.phase === ROUND_PHASE.NARRATING && narrationWaitsForKey() && !roundSessionOver(round)) return { ok: false, reason: "narration-no-key" };
   if (round.phase !== ROUND_PHASE.COLLECTING) {
     // Rolling or narrating: the round goes on — a pass a refused step stopped
     // runs again (a pass already running just goes round once more).
@@ -723,8 +770,7 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
   }
   if (isXCardActive(null)) return { ok: false, reason: "x-card" };
   const unread = readingsInFlight(round);
-  const keyed = (() => { try { return !!game.settings.get(MODULE_ID, "claudeApiKey"); } catch { return false; } })();
-  if (unread.length && !keyed) return { ok: false, reason: "no-key" };
+  if (unread.length && !claudeKeyHere()) return { ok: false, reason: "no-key" };
   if (modeOffAfter) await markRoundModeOffAfter(round.id);
   _sendNowRoundId = round.id;
   advanceRound("send-now");
@@ -957,15 +1003,19 @@ async function rollEntry(round, entry) {
   const userId = entry.userId;
   const reading = entry.reading;
 
-  // Rolled already, its record not known to the round: never rolled again. A
-  // roll this client made and recorded (the round's own write of it refused)
-  // takes its record as made; one from before a reload is reported.
+  // Rolled already — or its roll begun — its record not known to the round:
+  // never rolled again. A roll this client made and recorded (the round's own
+  // write of it refused) takes its record as made; one from before a reload
+  // is reported, and so is one whose result card never posted (the page
+  // died, or the world refused the card), its effects perhaps partly applied
+  // (issue #347 AB20).
   const card = entry.rolled?.cardId ? game.messages?.get?.(entry.rolled.cardId) : roundResultCard(round.id, userId);
-  if (entry.status === ENTRY_STATUS.ROLLED || card) {
+  if (rollBegun(entry) || card) {
     const here = rolledHere(round.id, userId);
     if (!here || !_recordedHere.has(userId)) {
-      await tellGms("Batch Mode — a move may be incomplete",
-        `${escapeHtml(entry.actorName)}'s move was rolled before the round stopped, and its result may not have been recorded. Check its card; the round goes on without rolling it again.`,
+      await tellGms("Batch Mode — a move may be incomplete", card
+        ? `${escapeHtml(entry.actorName)}'s move was rolled before the round stopped, and its result may not have been recorded. Check its card; the round goes on without rolling it again.`
+        : `${escapeHtml(entry.actorName)}'s move was being rolled when the round stopped, and its result card was never posted: its effects may be partly applied. Check ${escapeHtml(entry.actorName)}'s sheet; the round goes on without rolling it again and narrates it as an action with no roll.`,
         { batchIncompleteNotice: true });
     }
     const rolledInfo = here ? rolledInfoFrom(here) : null;
@@ -1032,11 +1082,23 @@ async function rollEntry(round, entry) {
       interpretation.moveName = moveDisplayName(ordinary);
     }
   }
+  // The round says the roll has begun once its dice are rolled — before
+  // anything is applied — under the id it will carry: a recovery, or Send now
+  // after a result card the world refused, reports it rather than rolling it
+  // again (issue #347 AB20). Stamped from rollMove's `onDiceRolled`, which it
+  // awaits: a roll that fails before its dice (an enrichment, a +1's claim)
+  // has rolled nothing and applied nothing, and is rolled again on recovery —
+  // stamped before the call, it was reported "may be incomplete" and narrated
+  // as an action with no roll (ROUND-ENTRY-THROW-BEFORE-DICE). A refused
+  // stamp stops the move there, with nothing applied: Send now tries again.
+  const resolutionId = foundry.utils.randomID();
   const rolled = await rollMove({
     interpretation, campaignState, speakerActorId: entry.actorId, narration: entry.text,
     tokenDragSetCourse:     reading.forced?.tokenDragSetCourse ?? null,
     incitingSwearMessageId: reading.forced?.incitingSwearMessageId ?? null,
     cardFlags: { roundId: round.id, roundNumber: round.number, roundUserId: userId },
+    resolutionId,
+    onDiceRolled: () => queueRoundWrite(r => markRolling(r, { userId, resolutionId, now: nowIso() })),
   });
   if (rolled.refused) {
     // rollMove posted the track-gone card ("not rolled — it was deleted or finished").
@@ -1109,12 +1171,20 @@ async function postRefusedCard(round, entry, reading, reason) {
  * The Burn Momentum / Improve Result offers the round's result cards make —
  * by roller, with the upgraded outcome — for the rollers who have not
  * decided: only an upgrade its card would still take (upgradeOpen). A card
- * already burned or improved offers nothing, nor one whose consequence was
- * chosen on its choice card — the round waited on a Burn the card refused
- * (issue #342 Z27).
+ * whose consequence was chosen on its choice card offers nothing — the round
+ * waited on a Burn the card refused (issue #342 Z27).
+ *
+ * A card already burned or improved whose entry the upgrade has not decided
+ * is an upgrade in flight: pressed while the round still rolled, its GM
+ * handler claimed the card and has not yet handed the round the upgraded
+ * outcome (acceptRoundUpgrade). It is offered as such (`inFlight`, no
+ * buttons), so the upgrade step waits for it. It was skipped: the round went
+ * on to its narration — or refused the late upgrade "no-upgrade" while
+ * another roller decided — and told the result as rolled while the card said
+ * burned (issue #347 AB13).
  *
  * @param {Object} round
- * @returns {Object<string, { burn: Object|null, improve: Object|null, cardId: string }>}
+ * @returns {Object<string, { burn: Object|null, improve: Object|null, cardId: string, inFlight?: "burn"|"improve", inFlightSince?: string }>}
  */
 function upgradeOffers(round) {
   const offers = {};
@@ -1123,12 +1193,30 @@ function upgradeOffers(round) {
     if (e?.status !== ENTRY_STATUS.RECORDED || !e.rolled?.cardId || e.upgrade?.decided) continue;
     const card = game.messages?.get?.(e.rolled.cardId) ?? null;
     const f = card?.flags?.[MODULE_ID];
-    if (!f || f.burn?.consumed || f.improve?.consumed) continue;
+    if (!f) continue;
+    if (f.burn?.consumed || f.improve?.consumed) {
+      offers[userId] = inFlightOffer(e.rolled.cardId, f.burn?.consumed ? "burn" : "improve");
+      continue;
+    }
     const burn = upgradeOpen(card, "burn") ? { momentum: f.burn.momentum ?? null, previewOutcome: f.burn.previewOutcome ?? null } : null;
     const improve = upgradeOpen(card, "improve") ? { previewOutcome: f.improve.improveTo ?? "strong_hit", label: f.improve.assetName || null } : null;
     if (burn || improve) offers[userId] = { burn, improve, cardId: e.rolled.cardId };
   }
   return offers;
+}
+
+/**
+ * An upgrade in flight as the round stores it (upgradeOffers): no buttons,
+ * which upgrade is on its way, and since when — a GM's Send now keeps it only
+ * once its grace has passed (round.js UPGRADE_IN_FLIGHT_GRACE_MS, issue #347
+ * AB13).
+ *
+ * @param {string} cardId
+ * @param {"burn"|"improve"} kind
+ * @returns {{ burn: null, improve: null, cardId: string, inFlight: string, inFlightSince: string }}
+ */
+function inFlightOffer(cardId, kind) {
+  return { burn: null, improve: null, cardId, inFlight: kind, inFlightSince: nowIso() };
 }
 
 /**
@@ -1184,7 +1272,13 @@ async function closeCardUpgrades(round, userIds = null) {
  */
 async function keepUpgrades(userIds) {
   const before = getStoredRound();
-  const after = await queueRoundWrite(r => keepUndecidedUpgrades(r, { now: nowIso(), userIds }))
+  // The upgrades in flight whose handler is still applying them on this page:
+  // waited for longer than the grace for one that died with another page
+  // (UPGRADE-IN-FLIGHT-GRACE).
+  const runningHere = Object.values(before?.entries ?? {})
+    .map(e => e?.upgrade?.inFlight ? e.upgrade.cardId : null)
+    .filter(id => id && resultUpgradeRunningHere(id));
+  const after = await queueRoundWrite(r => keepUndecidedUpgrades(r, { now: nowIso(), userIds, runningHere }))
     .catch(err => { console.warn(`${MODULE_ID} | Batch Mode: keep not saved:`, err?.message ?? err); return null; });
   if (after && after !== before) {
     const kept = Object.values(after.entries).filter(e => e.upgrade?.decided === "keep" && !before?.entries?.[e.userId]?.upgrade?.decided).map(e => e.userId);
@@ -1208,7 +1302,10 @@ async function keepUpgrades(userIds) {
  */
 async function keepUndecidable(round) {
   const connected = new Set(connectedUserIds());
-  const moot = undecidedUpgrades(round).filter(id => !connected.has(id) || !offerAnswerable(round.entries[id]));
+  // An upgrade in flight decides itself — its GM handler is applying it,
+  // whoever is connected (issue #347 AB13).
+  const moot = undecidedUpgrades(round).filter(id => !round.entries[id]?.upgrade?.inFlight
+    && (!connected.has(id) || !offerAnswerable(round.entries[id])));
   if (moot.length) await keepUpgrades(moot);
 }
 
@@ -1286,25 +1383,119 @@ async function narrateTheRound() {
   // (the lift runs the pass again). Played once the narration is written,
   // narrateRound discards the reply and posts the paused notice instead.
   if (isXCardActive(null)) return false;
+  // Not narrated without a Claude key while the table has a keyed GM: the
+  // round waits for them, handed back so their recovery (their load, a keyed
+  // GM joining) narrates it (issue #347 D3) — while its session lasts. Once
+  // the session is over it is closed as a table with no keyed GM closes one:
+  // the "narration unavailable" card, the GMs told. It stayed narrating
+  // until the next load's recovery closed it unseen (issue #347
+  // ROUND-WAITS-FOR-ABSENT-KEYED-GM).
+  const closingUnnarrated = narrationWaitsForKey() && roundSessionOver(round);
+  if (narrationWaitsForKey() && !closingUnnarrated) {
+    await waitForKeyedNarrator(round);
+    return false;
+  }
   const lock = await claimRoundLock();
   if (!lock.claim) {
     lockNotClaimed(lock);
     return false;
   }
   _narratingRoundId = round.id;
+  const dropsAtClaim = connectionDrops();
+  let superseded = false;
+  let posted = null;
   try {
-    round = await queueRoundWrite(r => claimNarration(r, { narrationClaim: lock.claim, now: nowIso(), takeOver: !!r?.narrationClaim }));
+    round = await queueRoundWrite(r => claimNarration(r, {
+      narrationClaim: lock.claim, now: nowIso(), takeOver: !!r?.narrationClaim, resolverId: game.user.id,
+    }));
     await closeCardUpgrades(round, null);
-    await narrateRound({ round, campaignState: workingCopy() }).catch((err) => {
+    const narrated = round;
+    const told = await narrateRound({
+      round: narrated, campaignState: workingCopy(),
+      stillNarrating: () => narrationStillOurs(narrated.id, lock.claim, dropsAtClaim),
+    }).catch((err) => {
       console.error(`${MODULE_ID} | Batch Mode: the round's narration failed:`, err);
       tellNarrationUnposted();
+      return null;
     });
+    superseded = told?.superseded === true;
+    posted = told?.posted ?? null;
   } finally {
     _narratingRoundId = null;
-    await releaseRoundLock(lock.claim);
+    // A page that lost its connection while its narration was out, with
+    // another GM connected, writes nothing more: its view of the world may
+    // be stale, and the release writes campaignState whole — it would put
+    // back what the other GM changed meanwhile. The lock it held was released
+    // by the GM it handed over to (W25), or is freed by its reload.
+    if (!(superseded && droppedSince(dropsAtClaim))) await releaseRoundLock(lock.claim);
   }
-  await finishRound(getStoredRound() ?? round, "resolved");
+  // Another GM narrated it, took it over, or closed it meanwhile: the round
+  // is theirs to finish. A late finisher closed the round in its cache —
+  // after a drop, a round the table had already closed and replaced, with
+  // the actions players had written for the next (issue #347 AB17).
+  if (superseded) {
+    if (droppedSince(dropsAtClaim)) tellStalePage();
+    return false;
+  }
+  const finished = await finishRound(getStoredRound() ?? round, "resolved");
+  if (finished && closingUnnarrated) await tellClosedUnnarrated(round, posted);
   return true;
+}
+
+/**
+ * The session ended while the round waited for a GM with a Claude key, and
+ * it closed without its narration (ROUND-WAITS-FOR-ABSENT-KEYED-GM): the
+ * GMs are told why, and that its moves stand. Never throws.
+ *
+ * @param {Object} round
+ * @param {string|null} posted — what narrateRound posted ("fallback" when its card is up)
+ */
+async function tellClosedUnnarrated(round, posted) {
+  await tellGms("Batch Mode — the round closed without its narration",
+    `The session ended while round ${round.number} waited for a GM with a Claude key to narrate it, so it closed without its narration. Its moves stand${posted === "fallback" ? ", and its card lists each result" : ""}.`,
+    { batchRoundUnnarratedNotice: true });
+}
+
+/** Whether another GM is connected — one who may have taken a round over while this page was away. */
+function otherGmConnected() {
+  return Array.from(game.users ?? []).some(u => u?.isGM && u.active && u.id !== game.user?.id);
+}
+
+/** Whether this page has lost its connection since `drops` was read, with another GM connected now. */
+function droppedSince(drops) {
+  return connectionDrops() !== drops && otherGmConnected();
+}
+
+/**
+ * Whether this client's narration of a round is still the round's — asked
+ * by narrateRound once its reply is in, before anything is applied or posted
+ * (issue #347 AB17). Not when the stored round is another one, no longer
+ * narrating, or narrated under another claim (a co-GM took it over); not
+ * once a narration of it is in chat; and not when this page lost its
+ * connection while the call was out and another GM is connected — a short
+ * drop reloads nothing, and the round's takeover, its card and its close may
+ * be writes this page never heard.
+ *
+ * @param {string} roundId
+ * @param {string} claim — the narration's lock claim
+ * @param {number} dropsAtClaim — the socket drops counted when it was claimed
+ * @returns {boolean}
+ */
+function narrationStillOurs(roundId, claim, dropsAtClaim) {
+  if (droppedSince(dropsAtClaim)) return false;
+  const r = getStoredRound();
+  if (r?.id !== roundId || r.phase !== ROUND_PHASE.NARRATING || r.narrationClaim !== claim) return false;
+  return !roundNarrationPosted(roundId);
+}
+
+/**
+ * This page lost its connection while it narrated a round, and its reply was
+ * not posted: told by a notification (a whisper is a write this page should
+ * not make) that its view may be out of date and a reload catches it up.
+ * Never throws.
+ */
+function tellStalePage() {
+  globalThis.ui?.notifications?.warn?.("Starforged Companion: your connection to the server dropped while this browser was narrating the Batch Mode round, so its narration was not posted — this browser may have missed what changed meanwhile, another GM taking the round over included. Reload (F5) to catch up; the round is finished by a GM who can.", { permanent: true });
 }
 
 /**
@@ -1319,6 +1510,30 @@ function tellNarrationUnposted() {
   whisper(gmIds().filter(id => id !== game.user?.id), "Batch Mode — the round's narration was not posted",
     "The round's narration could not be posted to chat. Its moves' results were still applied — their result cards show them.",
     { batchNarrationUnpostedNotice: true });
+}
+
+// Round ids whose wait for a keyed narrator this client has told the GMs of.
+const _toldNarrationWaits = new Set();
+
+/**
+ * The round waits for a GM with a Claude key to narrate it (issue #347 D3):
+ * handed back when it names this GM as its resolver — a keyless GM that took
+ * over its rolls — so the keyed GM's recovery resumes it rather than leaving
+ * it to this one; the GMs told once. Never throws.
+ *
+ * @param {Object} round — narrating
+ */
+async function waitForKeyedNarrator(round) {
+  if (round.resolverId === game.user?.id) {
+    await queueRoundWrite(r => (r?.id === round.id ? handBackResolution(r, { resolverId: game.user.id }) : r))
+      .catch(err => console.warn(`${MODULE_ID} | Batch Mode: round ${round.number} could not be handed back for a keyed GM:`, err?.message ?? err));
+  }
+  if (_toldNarrationWaits.has(round.id)) return;
+  _toldNarrationWaits.add(round.id);
+  console.debug(`${MODULE_ID} | Batch Mode: no Claude key on this GM — round ${round.number} waits for a keyed GM to narrate it.`);
+  await tellGms("Batch Mode — the round waits for a GM with a Claude key",
+    "The round's moves are rolled and recorded. Its narration needs a GM with a Claude key: it is narrated as soon as one is connected.",
+    { batchNarrationWaitsNotice: true });
 }
 
 /** True once a round's narration — its card, fallback or paused notice — is in chat. */
@@ -1878,7 +2093,7 @@ export async function recoverRound(reason = "recovery") {
   const round = getStoredRound();
   const cs = campaignStateNow();
   if (roundIsOpen(round)) {
-    const sessionOver = !isSessionActive(cs) || round.sessionId !== (cs.currentSessionId ?? null) || sessionBeingReplaced(cs);
+    const sessionOver = roundSessionOver(round, cs);
     if (sessionOver && !isResolving(round)) {
       await closeCollectingRound("session-ended");
     } else if (sessionOver && CLOSES_RESOLVING_ROUND.has(reason)) {
@@ -1887,6 +2102,18 @@ export async function recoverRound(reason = "recovery") {
     } else if (isResolving(round)) {
       const resolver = round.resolverId && round.resolverId !== game.user.id ? game.users?.get?.(round.resolverId) : null;
       if (resolver?.active) return;   // that GM is resolving it
+      // This GM takes it over, and the round says so: the GM who began it,
+      // back on a fresh page and canonical again, leaves it to this one. The
+      // takeover kept the first GM's id, so that GM's recovery read the round
+      // as its own and resumed it beside this one — both closed it, and every
+      // asset rider paid twice (issue #347 AB18). A refused stamp still lets
+      // the round go on. Not a narration this keyless GM leaves to a keyed
+      // one (issue #347 D3): the keyed GM's own recovery then finds no
+      // resolver to leave it to.
+      if (!(round.phase === ROUND_PHASE.NARRATING && narrationWaitsForKey())) {
+        await queueRoundWrite(r => (r?.id === round.id ? takeOverResolution(r, { resolverId: game.user.id }) : r))
+          .catch(err => console.warn(`${MODULE_ID} | Batch Mode: the takeover of round ${round.number} was not saved:`, err?.message ?? err));
+      }
       const plan = recoveryPlan(round);
       console.log(`${MODULE_ID} | Batch Mode: resuming round ${round.number} (${reason}) — ${plan.recorded.length} recorded, ${plan.unrecorded.length} unrecorded, ${plan.toRoll.length} to roll.`);
       advanceRound("recovery");
@@ -1929,6 +2156,11 @@ function onCampaignStateChanged(setting) {
     const work = (async () => {
       if (roundIsOpen(round) && round.phase === ROUND_PHASE.COLLECTING && (!active || round.sessionId !== sessionId)) {
         await closeCollectingRound("session-ended");
+      }
+      // A round whose narration waits for a keyed GM: the session ending
+      // closes it, unnarrated (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM).
+      if (roundIsOpen(round) && round.phase === ROUND_PHASE.NARRATING && narrationWaitsForKey() && roundSessionOver(round, cs)) {
+        await advanceRound("session-ended");
       }
       if (active && (!roundIsOpen(getStoredRound()) || getStoredRound()?.sessionId !== sessionId)) {
         await openRoundIfDue("session-began");
@@ -2054,6 +2286,10 @@ export function registerBatchModeDriver() {
     onUserConnected(user, connected).catch(err =>
       console.warn(`${MODULE_ID} | Batch Mode: a connection change:`, err?.message ?? err));
   });
+  // A GM whose page stood down — its connection dropped, and it writes no
+  // round until it reloads — is taken over as a GM who left (issue #347
+  // AB19-STALE-CACHE-WRITES).
+  onGmStoodDown(user => onUserConnected(user, false));
   if (isCanonicalGM() && isBatchModeEnabled()) {
     recoverRound("ready").catch(err => console.warn(`${MODULE_ID} | Batch Mode: recovery on ready:`, err?.message ?? err));
   }

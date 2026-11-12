@@ -42,7 +42,7 @@ import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank } from "./milestone.js";
-import { consequenceChosen, retireOutcomeChoiceCards } from "./resultUpgrade.js";
+import { consequenceChosen, retireOutcomeChoiceCards, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -139,29 +139,44 @@ const SOURCE_CLAIM_PATH = /^[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z0-9_-]+)?$/;
 
 /**
  * The module flag a card button's forced move carries back to the card it
- * claimed: which card, which claim, and what releasing it writes — the same
- * value the button's own failed-post path writes (false, or null for a claim
- * that records a pick). When the pipeline does not roll the move (its confirm
- * dialog closed or cancelled, its reading failed), `releaseSourceCard` writes
- * that value back, so the button can be pressed again (issue #347 AB06).
+ * claimed: which card, which claim, the value the press set, and what
+ * releasing it writes — the same value the button's own failed-post path
+ * writes (false, or null for a claim that records a pick). When the pipeline
+ * does not roll the move (its confirm dialog closed or cancelled, the move
+ * lock or the world refused its start, it failed before its dice),
+ * `releaseSourceCard` writes that value back, so the button can be pressed
+ * again (issue #347 AB06).
  *
  * @param {string|null} messageId — the claimed card
  * @param {string} claim — the claimed flag's path under the module's flags
  * @param {false|null} [release]
- * @returns {{ sourceCard: { messageId: string, claim: string, release: false|null } }|{}}
+ * @param {Object} [opts]
+ * @param {*} [opts.value] — what the press set (default true): released only
+ *   while the card still holds it
+ * @param {{ resolutionId: string|null, kind: string }} [opts.reopenRetired] —
+ *   the outcome choice cards the press retired, brought back with it
+ * @returns {{ sourceCard: Object }|{}}
  */
-export function sourceCardFlag(messageId, claim, release = false) {
+export function sourceCardFlag(messageId, claim, release = false, { value = true, reopenRetired = null } = {}) {
   if (typeof messageId !== "string" || !messageId) return {};
-  return { sourceCard: { messageId, claim, release: release === null ? null : false } };
+  return { sourceCard: {
+    messageId, claim, value, release: release === null ? null : false,
+    ...(reopenRetired ? { reopenRetired } : {}),
+  } };
 }
 
 /**
  * Hand back the card a forced move claimed, when that move was not rolled.
  * Runs where the pipeline runs (the canonical GM). Only a post a GM made is
  * trusted — every card button's move is posted by the canonical GM's relay
- * handler; a player can put any flag on their own chat line. A resist roll a
- * suffer card owes (`kind: "suffer"`) re-opens that card (sufferCard.js
- * reopenSufferCard) instead.
+ * handler; a player can put any flag on their own chat line. A flag claim is
+ * released only while the card still holds the value the press set (a claim
+ * that changed since is not this press's to undo), and a waypoint
+ * alternative's press brings back the ordinary reward's cards it retired. A
+ * resist roll a suffer card owes (`kind: "suffer"`) re-opens that card
+ * (sufferCard.js reopenSufferCard) — and, no consequence chosen now, the
+ * move's Burn Momentum / Improve Result its press closed (resultUpgrade.js
+ * reopenUpgradesForUndoneChoice, issue #347 RESIST-BURN-STAYS-CLOSED).
  *
  * @param {ChatMessage} forced — the forced move's chat message
  * @returns {Promise<boolean>} whether a card was handed back
@@ -175,13 +190,25 @@ export async function releaseSourceCard(forced) {
   }
   if (src.kind === "suffer") {
     const { reopenSufferCard } = await import("./sufferCard.js");
-    return reopenSufferCard(src.messageId);
+    const reopened = await reopenSufferCard(src.messageId);
+    if (reopened) {
+      const suffer = globalThis.game?.messages?.get?.(src.messageId) ?? null;
+      await reopenUpgradesForUndoneChoice(suffer?.flags?.[MODULE_ID]?.resolutionId ?? null);
+    }
+    return reopened;
   }
   if (typeof src.claim !== "string" || !SOURCE_CLAIM_PATH.test(src.claim)) return false;
   const card = globalThis.game?.messages?.get?.(src.messageId) ?? null;
   if (!card) return false;
+  if (Object.prototype.hasOwnProperty.call(src, "value")) {
+    const now = src.claim.split(".").reduce((o, k) => (o == null ? undefined : o[k]), card.flags?.[MODULE_ID] ?? {});
+    if (now !== src.value) return false;                 // changed since the press
+  }
   try {
     await card.update({ [`flags.${MODULE_ID}.${src.claim}`]: src.release === null ? null : false });
+    if (src.reopenRetired?.resolutionId && src.reopenRetired?.kind) {
+      await reopenRetiredChoiceCards(src.reopenRetired.resolutionId, src.reopenRetired.kind);
+    }
     return true;
   } catch (err) {
     console.warn(`${MODULE_ID} | handing card ${src.messageId} back failed:`, err?.message ?? err);
@@ -406,7 +433,10 @@ export async function applyWaypointOraclePick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true, ...sourceCardFlag(messageId, "waypointRewardClaimed", null) } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: f.waypointOracleCard, deferWhileBusy: true,
+          // Not rolled, the ordinary reward's cards this press retires below come back too.
+          ...sourceCardFlag(messageId, "waypointRewardClaimed", null,
+            { value: "alternative", reopenRetired: { resolutionId: f.resolutionId ?? null, kind: move.retired } }) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | waypoint oracle: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -924,7 +954,8 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
       await ChatMessage.create({
         content: move.content,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true, ...sourceCardFlag(messageId, claim) } },
+        flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true,
+          ...sourceCardFlag(messageId, claim, false, { value: move.stamp ?? true }) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | ${label}: forced-move post failed — the claim is released:`, err?.message ?? err);
@@ -1574,7 +1605,8 @@ export async function applyWayOutPick(payload = {}, ctx = {}) {
       await ChatMessage.create({
         content: move.narration,
         ...(actor ? { speaker: speakerFor(actor) } : {}),
-        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true, ...sourceCardFlag(messageId, "wayOutTaken", null) } },
+        flags:   { [MODULE_ID]: { bypassPacing: true, forcedMoveId: move.moveId, deferWhileBusy: true,
+          ...sourceCardFlag(messageId, "wayOutTaken", null, { value: move.moveId }) } },
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | way out: forced-move post failed — the claim is released:`, err?.message ?? err);

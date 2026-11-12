@@ -213,6 +213,8 @@ async function requireGm(ctx, what) {
 const SEND_NOW_REFUSALS = {
   "x-card":    "The X-Card is in play — the round can't be resolved until a GM resumes.",
   "no-key":    "No GM with a Claude key is connected, so the actions submitted can't be read yet — the round can't be sent.",
+  // A keyless GM's Send now while the round waits for a keyed narrator (issue #347 D3).
+  "narration-no-key": "The round's narration needs a GM with a Claude key — it is narrated as soon as one is connected.",
   "no-round":  "There is no round open.",
 };
 

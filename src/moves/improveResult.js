@@ -471,6 +471,10 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
     isProgressMove:  false,
     progressScore:   0,
     resultImproved:  true,
+    // The resolution this one upgrades: its re-narration card carries it, so
+    // an X-Card on that card also takes the narrations the upgrade struck
+    // (issue #347 D2).
+    upgradeOf:       improve.resolutionId ?? null,
     consequences:    newConsequences,
     oracleSeeds:     null,
     playerNarration: `[Player used ${improve.assetName || "an asset"} to improve the result to a strong hit]`,

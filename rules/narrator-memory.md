@@ -142,7 +142,9 @@ layers. This file is the never-break list.
    (XCARD-AFTER-STRIKE-STILL-NAMED). A narration whose scene has already
    ended is blocked the same way: a scene end keeps each live narration truth
    it closes, unnamed (`sessionRetractions.narrated`), and the X-Card moves
-   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED). So is
+   its narration's to the blocks (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED) — each
+   superseded one too, which blocks nothing until an X-Card takes its struck
+   narration with the upgraded beat (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END). So is
    a Replace's struck original: a scene end keeps it on the unnamed blocks
    too — the replacement stands, so it is named nowhere, and a `!truth set`
    lifts nothing (a strike a set lifted, linked by `correctedTo` to a truth
@@ -155,7 +157,12 @@ layers. This file is the never-break list.
    store holds them (STRIKE-DURING-SCENE-END-LOST). A superseded narration's
    (`retractedBy: "superseded"` — what a Burn Momentum / Improve Result
    replaced, retracted by its `narrationId`, issue #338 D8) is never named
-   either, and blocks nothing: the re-narration may state the fact again. Anything a narration writes
+   either, and blocks nothing: the re-narration may state the fact again —
+   until an X-Card removes the beat: the re-narration names the resolution it
+   upgraded (`upgradeOf`), a struck vignette names it too (`supersededFor`),
+   and the X-Card takes the struck narrations with the beat — their capture
+   undone, their superseded truths relabelled `xcard`, blocked (issue #347
+   D2). Anything a narration writes
    outside the ledgers carries its `narrationId` so the X-Card can undo it
    too — the command vehicle's position does (issue #325 W07; every other
    position writer writes `narrationId: null`, as `setFlag` merges —

@@ -28,6 +28,7 @@
  * and the narrator's Claude key lives on the (keyed) canonical GM.
  */
 
+import { settledWithin } from "../multiplayer/settleWithin.js";
 import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
@@ -151,36 +152,25 @@ async function sessionAlreadyBegun(campaignState) {
 }
 
 // One Begin a Session at a time on this client. The GM relay queue already
-// serialises them; this holds even past its wait cap, so two never both see
-// the session un-begun and both apply its start effects.
+// serialises them; this holds past its wait cap, so two never both see the
+// session un-begun and both apply its start effects — for up to
+// SESSION_CHAIN_WAIT_MS: a Begin whose write the server never answered (a
+// dropped connection) held every later Begin for the rest of the page load,
+// with no card and no state change (issue #347 AB05).
 let _beginChain = Promise.resolve();
+
+/**
+ * How long a Begin (or an End) waits for the one ahead of it on this client —
+ * past the relay queue's own cap (GM_CLAUDE_ACTION_TIMEOUT_MS, 270 s), so only
+ * one that never settles is passed.
+ */
+const SESSION_CHAIN_WAIT_MS = 5 * 60_000;
 
 /**
  * How long Begin's galley vignette waits for its clock vignettes (issue #335
  * Y05): each is a bounded Claude call, so this only passes one that hangs.
  */
 const OPENING_VIGNETTE_WAIT_MS = 60_000;
-
-/**
- * Settle once `promise` has, or after `ms` — whichever is first, with a
- * warning when the wait ran out. Never rejects.
- *
- * @param {Promise} promise
- * @param {number}  ms
- * @param {string}  label — for the warning
- * @returns {Promise<void>}
- */
-async function settledWithin(promise, ms, label) {
-  let timer = null;
-  const timedOut = new Promise(resolve => { timer = setTimeout(() => resolve(true), ms); });
-  try {
-    if (await Promise.race([Promise.resolve(promise).then(() => false, () => false), timedOut])) {
-      console.warn(`${MODULE_ID} | ${label}: still waiting after ${ms}ms — going ahead.`);
-    }
-  } finally {
-    clearTimeout(timer);
-  }
-}
 
 /**
  * GM-relay handler for `"session.begin"` (GM_ACTIONS in
@@ -196,7 +186,8 @@ async function settledWithin(promise, ms, label) {
  * @returns {Promise<void>}
  */
 export function applyBeginSession(payload = {}, _ctx = {}) {
-  const run = _beginChain.then(() => beginSessionOnce(payload));
+  const run = settledWithin(_beginChain, SESSION_CHAIN_WAIT_MS, "Begin a Session (the Begin ahead of it)")
+    .then(() => beginSessionOnce(payload));
   _beginChain = run.catch(() => {});
   return run;
 }
@@ -544,7 +535,7 @@ function hasFocus(campaignState) {
 
 // One End a Session at a time on this client, as for Begin: two players
 // ending the same session reach this handler together, and both found it
-// not yet ended (issue #309 N08).
+// not yet ended (issue #309 N08). Bounded as Begin's is (issue #347 AB05).
 let _endChain = Promise.resolve();
 
 /**
@@ -573,7 +564,8 @@ let _endChain = Promise.resolve();
  *   ended — only the focus was corrected (postEndSessionCard posts no card)
  */
 export function applyEndSession(payload = {}, ctx = {}) {
-  const run = _endChain.then(() => endSessionOnce(payload, ctx));
+  const run = settledWithin(_endChain, SESSION_CHAIN_WAIT_MS, "End a Session (the End ahead of it)")
+    .then(() => endSessionOnce(payload, ctx));
   _endChain = run.catch(() => {});
   return run;
 }

@@ -43,10 +43,15 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after
-  every acting entry is rolled and recorded and its upgrade decided. Context
+  every acting entry is rolled and recorded and its upgrade decided. Its
+  reply is posted only while the narration is still the round's (the
+  driver's `narrationStillOurs`): a co-GM's takeover, card or close since —
+  or a drop off the server while the call was out, with another GM
+  connected — and the reply is dropped, nothing applied (issue #347 AB17). Context
   goes through the same seam: the entries' text joined for lexical relevance
   and lore; each move entry's own relevance (resolved when it rolled — the
-  GM's clarification dialog included) unioned, at the widest class (an entry
+  GM's clarification dialog, asked before its dice, included — issue #347
+  D1) unioned, at the widest class (an entry
   with no roll counts as interaction); a CHARACTER block per acting PC
   still in the game (`extras.roundCharacters`, by the entry's actor id — an
   entry whose PC was deleted since the round opened gets none:
@@ -191,7 +196,16 @@ meanwhile is only visible in the store. Each gate runs twice — on entry and
 again the moment the Claude reply arrives (`watchXCard(…).interrupted`), before the
 sidecar is applied: a card played while the reply was generated discards it
 (no card, no audio, no ledger facts, no post-narration passes — issue #300
-F13), and the entry point stands down as it would have on entry. The watch
+F13), and the entry point stands down as it would have on entry. So does a
+narration whose client's connection to the server dropped while it was
+written (`connectionWatch.js` counts the drops): a pause recorded meanwhile
+never reached that client's cache, so the watch cannot see it — the paused
+notice says the connection dropped (issue #347 AB19). The page itself is
+stale from the drop until it reloads, and stands down: it is never the
+canonical GM and writes no campaignState or Batch Mode round, so the move's
+own record and lock release — written from that cache afterwards — are
+refused instead of lifting such a pause; another GM takes over what it held
+(issue #347 AB19-STALE-CACHE-WRITES). The watch
 starts on entry with the live `campaignState.xCardPlays` count (each
 `suppressScene` adds one; resuming never lowers it), so a card played **and
 resumed** before the reply arrives still discards it (issue #306 R01) —
@@ -205,7 +219,15 @@ runs — it is how a typed move is found) gets the same notice from
 told nobody, and the line was never narrated after the resume (issue #345
 AA29). When
 the card was played and resumed mid-call, the notice (and `@scene`'s card)
-says the narration was discarded instead.
+says the narration was discarded instead. A paced line whose narration call
+fails — overloaded, a server error, a timeout, a rate limit on the retry
+too — or whose reply has no prose, or whose prompt could not be built (a
+throw before the call, issue #347 residual PACED-NARRATION-THROW-BEFORE-CALL)
+— gets a "That line was not narrated" notice
+the same way (`postPacedNarrationFailedCard`, issue #347 AB21): it logged to
+the GM's console only, and the line sat in chat with no answer. Neither
+notice is a narrator card, so neither reaches the ring, the summary or the
+chronicle.
 
 **The X-Card removes the narration it answers** (issue #321 U07 — full
 exclusion, a maintainer decision). In the same write as the pause,
@@ -218,7 +240,27 @@ of the player's line, a button's forced move — counts as one, issue #326 W42)
 and at most two minutes older; an earlier X-Card's
 card, its "X-Card cleared" card or a card an earlier X-Card removed bounds
 the beat, so a repeat play removes nothing more (fallback, burn-superseded
-and whispered cards are never chosen). It retracts what their sidecars wrote
+and whispered cards are never chosen). The walk reads the chat as it was:
+every client remembers the chat messages deleted since its page loaded
+(`registerDeletedChatHook`, `deleteChatMessage`) and the pick puts them back
+in their place by time (`chatAsItWas`) — so a narration whose card a GM
+deleted is still the newest one, and is what the X-Card removes, never the
+kept beat before it; a deleted person's line still ends a beat (issue #347
+AB22). A deletion alone changes nothing in narrator memory (Clear Chat Log
+deletes every card). The canonical GM also keeps the newest twenty deleted
+messages the pick reads — narration and X-Card cards with the flags the pick
+and the removal read, and the lines that end a beat, none with its text — on
+campaignState `deletedChatMessages` (`persistDeletedRecord`, one write per
+bulk deletion), which `chatAsItWas` reads too, so the pick survives a reload;
+a deleted card an X-Card removed is marked `xCarded` there, as a removed
+card in chat is (issue #347 residual
+DELETED-NARRATION-MEMORY-PAGE-ONLY). A Burn Momentum / Improve
+Result re-narration in the beat names the resolution it upgraded
+(`upgradeOf`): the narrations that upgrade struck — the move's first
+narration and the trigger vignette of a clock it rewound (`supersededFor`) —
+join the cards removed (`withStruckByUpgrade`), so their capture is undone
+and their superseded truths become the X-Card's, blocked (issue #347 D2 — the
+maintainer's option A; #338 D8 had left them standing). It retracts what their sidecars wrote
 (`retractNarrations`, `ledgers.js`: truths `retractedBy: "xcard"` — a truth
 the table had struck is relabelled so, and the strike a scene end kept for
 the session (`sessionRetractions.facts`, with its truth's `narrationId`)
@@ -229,7 +271,8 @@ blocked nothing (XCARD-RETRACTION-SCENE-SCOPED). A scene end keeps the
 scene's X-Card retractions there too, so each blocks the narrator's
 re-assertion for the rest of the session — `findSessionStrike`'s write half
 reads them, the lift does not, and nothing renders them — and each live
-narration truth it closes on `sessionRetractions.narrated`, unnamed, which an
+narration truth it closes — live, or superseded by a Burn Momentum / Improve
+Result (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END) — on `sessionRetractions.narrated`, unnamed, which an
 X-Card on that narration — the session's newest, its scene since ended —
 moves to the blocks: the ledger it retracts holds none of them, and nothing
 stopped the narrator re-asserting them (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED) — state
@@ -527,8 +570,12 @@ runs posts into the ended session after it (issue #345 AA21), and an X-Card
 on End's closing vignette empties a summary that covered the beat it removed
 (issue #342 Z41); End's own closing vignette, posted after its refresh, is
 the one card that check leaves out — its scene closes under its own id, then
-`mintSession` keeps that summary as `previousSessionSummary` — a session
-nobody began (no Begin stamped it, its gate shut, End a Session did not close
+`mintSession` keeps that summary as `previousSessionSummary` (a finalise that
+could not cover the session — no key on that client yet, a failed call —
+marks it `unsummarisedSession`, and the canonical GM summarises its cards into
+`previousSessionSummary` once it has a key: `catchUpUnsummarisedSession`,
+after each narrator card, at the load and when its key is set — issue #347
+AB15) — a session nobody began (no Begin stamped it, its gate shut, End a Session did not close
 it) hands its number on (issue #330 D12; one End a Session closed counts as
 begun, issue #331 X64) and adds its summary to the one before it, which stays
 LAST SESSION under its own number (it replaced it — issue #331 X65) — mints
@@ -888,7 +935,12 @@ ring, and the closing scene's truths keep the closing session's number.
   canon beside the replacement (issue #345 AA05). Its live narration truths are
   kept too (`sessionRetractions.narrated`, unnamed, read only by the X-Card's
   `retractNarrations`), so an X-Card on a narration whose scene has ended
-  blocks what it recorded (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
+  blocks what it recorded (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED) — and so are
+  its superseded truths (`retractedBy: "superseded"`, a Burn Momentum /
+  Improve Result struck their narration), so an X-Card on the upgraded beat
+  after the scene ended still blocks the struck narration's facts (D2's
+  pick takes that narration); until then a kept superseded truth is no bar
+  to a later narration restating it (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END).
 - `!truth` / `!state` resolve subjects **against the full entity roster**,
   so entity-keyed entries are addressable by name from the commands (the
   correction dialog always could). The commands are checked on the typist's
@@ -935,9 +987,18 @@ Addressed:
   `oracleResultIds`, a field no code ever wrote). Oracle follow-up prose
   joined the flag family. Decision: decisions.md → "Raw oracle results are
   memory, not just chat".
-- **Scene-end tier migration dedups** with the same containment check as
-  live capture — a dedupe hit still marks the truth migrated (the fact IS in
-  the tier).
+- **Scene-end tier migration dedups** with the same check as live capture —
+  a dedupe hit still marks the truth migrated (the fact IS in the tier). The
+  check (`tierHasDetail`) is whole-word containment with no negating or
+  reversing word around the shared words: raw substring containment let
+  "Distrusts the crew" swallow the scene's "Trusts the crew" (and "Is
+  deadly…" swallow "Is dead"), so the new truth was counted migrated and
+  written nowhere (issue #347 AB11). The reversing words are a list
+  (quit / stopped / ceased, lost, broke, betrayed, abandoned, refused …), two-word
+  reversals ("gave up", "turned against", "fell out") and a dis- / un- /
+  mis- / non- form of one of the detail's own words around them ("Trusted
+  the crew, then distrusted them"); an exact restatement still dedupes
+  (issue #347 residual TIER-DETAIL-NEGATION-LIST).
 
 Reaffirmed as deliberate (decisions.md → "Narrator-context reaffirmations"):
 - **Frame applies as an unvalidated full replacement** — the broadened

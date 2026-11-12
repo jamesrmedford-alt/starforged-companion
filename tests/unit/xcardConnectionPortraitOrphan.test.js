@@ -139,13 +139,18 @@ afterEach(() => {
   global.Item.create = orig.itemCreate;
 });
 
-/** The Make a Connection narration and its synchronous capture (the hit creates Vex, with her portrait). */
+/**
+ * The Make a Connection narration and its synchronous capture (the hit creates
+ * Vex), then her portrait — which the capture starts and does not wait for
+ * (issue #347 AB01).
+ */
 async function makeAConnection() {
   const cs = stored();
   const text = applyNarratorSidecar(`${PROSE}\n\`\`\`json\n${JSON.stringify(SIDECAR)}\n\`\`\``, cs, { narrationId: 'nar-vex', matchedEntityIds: [] });
   await postNarrationCard(text, RESOLUTION, cs, { playerText: RESOLUTION.playerNarration, playerName: 'Kira', narrationId: 'nar-vex' });
   await runPostNarrationPasses(text, RESOLUTION, RELEVANCE, cs, { actorId: 'pc-kira', narrationId: 'nar-vex' });
   syncChat();
+  await vi.waitFor(() => { if (!vexRecord()?.portraitId) throw new Error("Vex's portrait is not linked yet"); });
 }
 
 const vexRecord = () => listConnections(stored()).find(c => c.name === 'Vex') ?? null;

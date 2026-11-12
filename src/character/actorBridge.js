@@ -646,6 +646,30 @@ export function readCommandVehicleIntegrity(shipActor) {
 }
 
 /**
+ * What a ship record from before the STARSHIP asset's track became canonical
+ * reconciles to (issue #347 AB08): the lower of the record's integrity and
+ * the track's, within the track — or null for a record already reconciled
+ * (`integritySheetReconciled`, set by every ship write since) or one with no
+ * integrity of its own. Up to v1.8.0 the module applied its losses to the
+ * record alone, so record 2 beside sheet 5 is damage the sheet never saw, and
+ * reading — then mirroring — the sheet's 5 erased it from both stores. Every
+ * reader of the command vehicle's integrity (registry withSheetNotes,
+ * statEnrichment's +integrity) and its writer (entities/ship.js updateShip)
+ * take this value until the first write reconciles the record; the GM's
+ * world load makes that write (migrator.reconcileCommandVehicleIntegrity).
+ *
+ * @param {Object|null} record — the ship record as stored
+ * @param {{ value: number, min: number, max: number }|null} sheet — readCommandVehicleIntegrity
+ * @returns {number|null}
+ */
+export function unreconciledRecordIntegrity(record, sheet) {
+  if (!sheet || !record || record.integritySheetReconciled === true) return null;
+  const own = Number(record.integrity);
+  if (record.integrity == null || !Number.isFinite(own)) return null;
+  return clamp(Math.min(own, sheet.value), sheet.min, sheet.max);
+}
+
+/**
  * Write the command vehicle's integrity onto its STARSHIP asset's Integrity
  * track, kept within the track's min..max (readCommandVehicleIntegrity — the
  * canonical store). Throws when the world refuses the write: the ship

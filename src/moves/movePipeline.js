@@ -704,7 +704,7 @@ async function aidMadeInFight(moveId) {
 export async function rollMove({
   interpretation, campaignState, speakerActorId, narration,
   combatPosition = undefined, tokenDragSetCourse = null, incitingSwearMessageId = null,
-  cardFlags = null,
+  cardFlags = null, onDiceRolled = null, resolutionId = null,
 }) {
   const {
     postTrackGoneCard, applyOutcomeEffects, addLegacyTicks, postDevelopRelationshipCard, applyReachMilestone,
@@ -845,6 +845,28 @@ export async function rollMove({
     }
   }
 
+  // Who the line implies, asked before the dice (issue #347 D1). A hybrid
+  // move whose line implies someone it does not name — "I slip past him" —
+  // asks the GM "Who are you interacting with?". Asked after the roll, the
+  // prompt held the move lock with the dice rolled and their effects and
+  // price applied, and no result card, narration or record until it was
+  // answered: every other move at the table was refused meanwhile, and a
+  // reload left the move half-applied. Asked here, the move has done nothing
+  // yet — the confirm step's place, where decisions.md accepts a dialog
+  // holding the lock. Closing it is "No specific entity" and the move goes
+  // on. The classification is kept for the read after the roll (one call);
+  // the GM's pick stands whatever the outcome, a miss included.
+  const relevanceText = interpretation.playerNarration ?? narration;
+  const classificationCache = {};
+  const preRollRelevance = await resolveRelevance(relevanceText, interpretation.moveId, null, campaignState, { classificationCache })
+    .catch(err => {
+      console.warn(`${MODULE_ID} | relevance resolver failed before the roll:`, err);
+      return null;
+    });
+  const clarification = preRollRelevance?.needsClarification
+    ? await ClarificationDialog.prompt(campaignState, preRollRelevance)
+    : null;
+
   // Take a Break → "Move on": a single-use +1 on the next action roll (not
   // a progress move). Claimed on the stored campaignState before it is added
   // — a refused claim adds nothing and leaves it pending, so it is never
@@ -901,12 +923,19 @@ export async function rollMove({
   // Secure an Advantage (issue #325 W17).
   const inFight = await aidMadeInFight(interpretation.moveId);
   const resolution = resolveMove(interpretation, campaignState, { combatPosition: resolvedPosition, currentSite, momentum, inFight });
+  // The dice are rolled: a failure from here on is not "not rolled" — a card
+  // button's press is not handed back (index.js, issue #347 AB06), and a
+  // Batch Mode round stamps its entry rolling (driver.js rollEntry). Awaited
+  // before anything is applied: a refused stamp stops the move here, with
+  // nothing applied (ROUND-ENTRY-THROW-BEFORE-DICE).
+  await onDiceRolled?.();
   // resolveMove leaves the id to its caller. The move card's Burn / Improve
   // flags and the narration card both carry it, and superseding the
   // original narration after an upgrade finds that card by it — with no id
   // the struck-through pre-burn prose was never struck and kept reaching
   // the narrator's recent-narration ring (issue #300 F02).
-  resolution._id = foundry.utils.randomID();
+  // A Batch Mode round names it before the roll begins (issue #347 AB20).
+  resolution._id = resolutionId ?? foundry.utils.randomID();
 
   // The outcome's effects beyond the roller's meters and its choice card —
   // an arrival, the expedition's progress, a legacy mark, the companion's
@@ -1342,14 +1371,17 @@ export async function rollMove({
   }
 
   // Step 7: relevance resolver — picks the narrator-permission block
-  // and identifies which entity records to inject as cards. For hybrid
-  // moves with implicit references, we pause the pipeline for a
-  // clarification dialog before continuing.
+  // and identifies which entity records to inject as cards, now the outcome
+  // is known (a hybrid line naming nobody is embellished on a miss). An
+  // implied someone was asked about before the dice (issue #347 D1): the
+  // GM's pick is applied, on any outcome; the classification is not made
+  // again. Nothing here waits on a prompt.
   let relevance = await resolveRelevance(
-    resolution.playerNarration ?? narration,
+    resolution.playerNarration ?? relevanceText,
     resolution.moveId,
     resolution.outcome,
     campaignState,
+    { classificationCache },
   ).catch(err => {
     console.warn(`${MODULE_ID} | relevance resolver failed:`, err);
     return {
@@ -1357,13 +1389,10 @@ export async function rollMove({
       matchedNames: [], needsClarification: false, referenceType: 'none',
     };
   });
-
-  if (relevance.needsClarification) {
-    // (The pendingClarification campaignState marker written around this
-    // prompt had no reader and was removed in the 2026-10 audit.)
-    const selection = await ClarificationDialog.prompt(campaignState, relevance);
-    relevance = applyClarificationSelection(relevance, selection);
-  }
+  if (clarification) relevance = applyClarificationSelection(relevance, clarification);
+  // A line the GM was not asked about (the read before the roll failed)
+  // reaches the narrator unprompted: no dialog opens after the roll.
+  if (relevance.needsClarification) relevance = { ...relevance, needsClarification: false };
 
   // Step 8 (retired 2026-07, FACTION-PACKET-DEAD): the assembler context
   // packet was built here and passed to narrateResolution, whose packet

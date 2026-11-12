@@ -67,12 +67,12 @@ afterEach(async () => {
 });
 
 /** Run one of the Companion Settings panel's own actions on a client (multiplayerComposition.test.js's helper). */
-async function panelAction(userId, action, { newPrivateLine = '', index = 0 } = {}) {
+async function panelAction(userId, action, { newPrivateLine = '', item = '' } = {}) {
   const c = table.client(userId);
   const { SettingsPanelApp } = await c.import('../../src/ui/settingsPanel.js');
   const app = { element: parseHTML(`<input name="newPrivateLine" value="${newPrivateLine}">`), render() {} };
   const target = parseHTML('<button></button>').firstElementChild;
-  target.dataset.index = String(index);
+  target.dataset.item = item;   // a ✕ carries its row's text (issue #347 AB12)
   await c.run(() => SettingsPanelApp.DEFAULT_OPTIONS.actions[action].call(app, null, target));
   await table.settle();
 }

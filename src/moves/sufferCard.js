@@ -631,7 +631,7 @@ async function handleSufferPick(message, dataset) {
   await closeUpgrades();
   // The card's id goes with the calls: a resist roll it owes is posted as a
   // forced move that names this card, so a roll that is then not made
-  // re-opens it (reopenSufferCard — issue #347 AB06).
+  // re-opens it (cardActions.js releaseSourceCard — issue #347 AB06).
   const results = await runSufferResolution(calls, actor, { ...executorOpts, sufferCardId: message.id ?? null });
   const missed  = notAppliedLines(calls, results);
   // A loss past a vehicle's or companion's 0 was taken as momentum: the
@@ -651,33 +651,43 @@ async function handleSufferPick(message, dataset) {
 }
 
 /**
- * Re-open a suffer card whose pick posted a roll that was then not made — the
- * resist roll a harm or stress at 0 owes (sufferDialog.js "resist"), whose
- * confirm dialog was closed or whose reading failed. The pick was claimed
+ * Re-open a suffer choice card — not resolved, not superseded, its buttons
+ * rendered again with the picks it already has — when its pick posted a roll
+ * that was then not made: the resist roll a harm or stress at 0 owes
+ * (sufferDialog.js "resist"), whose confirm was closed or whose start or
+ * reading failed (cardActions.js releaseSourceCard), or when the waypoint
+ * alternative that retired it was not rolled. The pick was claimed
  * (`resolved`, "Applied: … rolled to resist") before the roll was posted, so
  * the card said the roll was made and its button was gone for good (issue
- * #347 AB06). Re-rendered from its own prompt, as a pick with no follow-up
- * card re-opens it. Runs on the canonical GM (the move pipeline's client).
+ * #347 AB06). Runs on the canonical GM (the move pipeline's client). A card
+ * whose character is gone, or one live already, stays as it is.
  *
- * @param {string} messageId
+ * @param {string|ChatMessage} messageOrId
  * @returns {Promise<boolean>} whether the card is open again
  */
-export async function reopenSufferCard(messageId) {
-  const message = typeof messageId === "string" ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+export async function reopenSufferCard(messageOrId) {
+  const message = typeof messageOrId === "string"
+    ? (globalThis.game?.messages?.get?.(messageOrId) ?? null)
+    : (messageOrId ?? null);
   const f = message?.flags?.[MODULE_ID] ?? {};
   const prompt = f.sufferPrompt;
-  if (!f.sufferCard || !f.resolved || !prompt) return false;
+  // Live already — not resolved and not retired — there is nothing to re-open.
+  if (!f.sufferCard || !prompt || (!f.resolved && !f.superseded)) return false;
   const actor = cardActor(f);
   if (!actor) return false;
-  const notes = Array.isArray(f.notApplied) ? f.notApplied : [];
+  const picked  = Array.isArray(f.pickedIndices) ? f.pickedIndices : [];
+  const madeAny = Array.isArray(f.pickedSuffers) ? f.pickedSuffers : [];
+  const notes   = Array.isArray(f.notApplied) ? f.notApplied : [];
   try {
     await message.update({
-      [`flags.${MODULE_ID}.resolved`]: false,
-      content: renderSufferCard(prompt, actor, f.pickedIndices ?? [], optionContext(actor, f.executorOpts ?? {}), notes),
+      [`flags.${MODULE_ID}.resolved`]:   false,
+      [`flags.${MODULE_ID}.superseded`]: false,
+      [`flags.${MODULE_ID}.retiredBy`]:  null,
+      content: renderSufferCard(prompt, actor, picked, optionContext(actor, f.executorOpts ?? {}), notes, madeAny),
     });
     return true;
   } catch (err) {
-    console.warn(`${MODULE_ID} | sufferCard: card ${messageId} could not re-open:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | sufferCard: card ${message?.id ?? "?"} could not re-open:`, err?.message ?? err);
     return false;
   }
 }

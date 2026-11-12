@@ -18,6 +18,14 @@
  *   upgrading ──(each offered roller chose; Send now = Keep; the roller left = Keep)──► narrating
  *   narrating ──(the round card, its fallback or the X-Card's paused notice posted)──► closed
  *
+ * A round is narrated on a Claude key: a GM with none, at a table whose
+ * keyed-GM registry lists one, leaves the narrating round waiting for that
+ * GM — handed back, its resolver cleared (handBackResolution) — instead of
+ * posting the "narration unavailable" fallback (issue #347 D3). The fallback
+ * is the exit of a failed narration call, of a table with no keyed GM, and
+ * of a round still waiting for one when its session ends (End a Session —
+ * ROUND-WAITS-FOR-ABSENT-KEYED-GM).
+ *
  * An entry goes waiting → submitted → read → ready, or passed — or straight
  * to ready with a move rolled on the character sheet (enterSheetRoll). One
  * that is not ready when the round resolves is left out of it, with no mark —
@@ -73,6 +81,23 @@ const RESOLVING = new Set([ROUND_PHASE.ROLLING, ROUND_PHASE.UPGRADING, ROUND_PHA
 const SETTLED_ENTRY = new Set([ENTRY_STATUS.RECORDED, ENTRY_STATUS.REFUSED]);
 // An entry holding an action of its own — written, or a card's move — not yet rolled.
 const OWN_ACTION = new Set([ENTRY_STATUS.SUBMITTED, ENTRY_STATUS.READ, ENTRY_STATUS.READY]);
+
+/**
+ * How long an upgrade in flight — a Burn or Improve whose handler claimed its
+ * card but has not reached the round yet (driver.js upgradeOffers) — holds
+ * against a GM's Send now: within it the round waits for the upgrade, after
+ * it Send now keeps the result (a handler that died with its page). Issue
+ * #347 AB13.
+ */
+export const UPGRADE_IN_FLIGHT_GRACE_MS = 60_000;
+
+/**
+ * How long Send now waits for an upgrade in flight whose handler is still
+ * running on the resolving GM's page (`runningHere`): a live handler is
+ * waited for, its writes each bounded, up to this cap; the 60 s grace is for
+ * one that died with another page (UPGRADE-IN-FLIGHT-GRACE).
+ */
+export const UPGRADE_IN_FLIGHT_MAX_MS = 5 * 60_000;
 
 /** A transition refused — `reason` is a stable code, `message` what the requester is told. */
 export class RoundRefusal extends Error {
@@ -742,6 +767,38 @@ export function beginResolution(round, { resolverId, now, sendNow = false }) {
 }
 
 /**
+ * A GM takes over a round left resolving — its resolver went away, or this
+ * client's own earlier page left it (driver.js recoverRound): the round names
+ * the GM resolving it now, so the GM who began it, back on a fresh page and
+ * canonical again, leaves it to this one instead of resuming it beside it.
+ * The takeover never re-stamped it, and both finished the round — every asset
+ * rider paid twice (issue #347 AB18).
+ *
+ * @param {Object} round
+ * @param {{ resolverId: string }} args
+ * @returns {Object}
+ */
+export function takeOverResolution(round, { resolverId }) {
+  if (!isResolving(round) || !resolverId || round.resolverId === resolverId) return round;
+  return { ...round, resolverId };
+}
+
+/**
+ * A GM hands back a round it cannot finish: no GM resolves it until one who
+ * can resumes it (driver.js narrateTheRound — a GM without a Claude key
+ * leaves the narration to a keyed GM, issue #347 D3). Only the resolver it
+ * names hands it back.
+ *
+ * @param {Object} round
+ * @param {{ resolverId: string }} args
+ * @returns {Object}
+ */
+export function handBackResolution(round, { resolverId }) {
+  if (!isResolving(round) || !resolverId || round.resolverId !== resolverId) return round;
+  return { ...round, resolverId: null };
+}
+
+/**
  * The entries that act, in order: the ready ones in the order they were last
  * confirmed, then — when a GM sent the round now — readings not yet confirmed,
  * used as read, in the order they were submitted. Anyone else is simply not
@@ -775,6 +832,33 @@ export function fixActing(round) {
 function requireActing(round, userId) {
   if (!Array.isArray(round?.acting) || !round.acting.includes(userId)) refuse("not-acting", "That entry is not in this round.");
   return round.entries[userId];
+}
+
+/**
+ * An acting entry's roll begins: stamped once its dice are rolled, before
+ * rollMove applies anything — the outcome's effects, a miss's Pay the Price
+ * (driver.js passes it as rollMove's awaited `onDiceRolled`) — with the
+ * resolution id the roll will carry (`rolled.resolutionId`,
+ * `rolled.rollingAt`). The round knew of a roll only from its result card
+ * on, the last thing rollMove posts: a resolver whose page died in between,
+ * or a result card the world refused, left the entry to be rolled again —
+ * new dice, a second price (issue #347 AB20). A begun entry is never rolled
+ * again: recovery and Send now report it (recoveryPlan's `unrecorded`). A
+ * roll that fails before its dice is not stamped, and is rolled when the
+ * round goes on (ROUND-ENTRY-THROW-BEFORE-DICE).
+ *
+ * @param {Object} round
+ * @param {{ userId: string, resolutionId: string, now: string }} args
+ * @returns {Object}
+ */
+export function markRolling(round, { userId, resolutionId, now }) {
+  const entry = requireActing(round, userId);
+  return withEntry(round, userId, { rolled: { ...(entry.rolled ?? {}), resolutionId, rollingAt: now } });
+}
+
+/** True once an entry's roll has begun (markRolling) — whether or not its card posted. */
+export function rollBegun(entry) {
+  return !!entry && (entry.status === ENTRY_STATUS.ROLLED || !!entry.rolled?.cardId || !!entry.rolled?.rollingAt);
 }
 
 /**
@@ -847,17 +931,24 @@ export function beginUpgrades(round, { offers = {} }) {
  * input replaces the original's), or "keep". While the round is still rolling
  * a recorded entry's card is already live, so a burn or an improvement can
  * land then too: it is recorded as decided, and the upgrade step skips it.
+ * One still on its way when the rolls end — its handler has claimed the card
+ * but not reached the round — is an upgrade in flight (`upgrade.inFlight`):
+ * the step waits for it, and Keep is refused for it unless `overrideInFlight`
+ * (a GM's Send now once its grace has passed — issue #347 AB13).
  *
  * @param {Object} round
- * @param {{ userId: string, decision: "burn"|"improve"|"keep", narrationInput?: Object, now: string }} args
+ * @param {{ userId: string, decision: "burn"|"improve"|"keep", narrationInput?: Object, now: string, overrideInFlight?: boolean }} args
  * @returns {Object}
  */
-export function decideUpgrade(round, { userId, decision, narrationInput = null, now }) {
+export function decideUpgrade(round, { userId, decision, narrationInput = null, now, overrideInFlight = false }) {
   const early = round?.phase === ROUND_PHASE.ROLLING && decision !== "keep";
   if (round?.phase !== ROUND_PHASE.UPGRADING && !early) refuse("not-upgrading", "The round isn't waiting for an upgrade.");
   const entry = entryFor(round, userId);
   if (!entry?.upgrade && !early) refuse("no-upgrade", "That entry was offered no upgrade.");
   if (entry?.upgrade?.decided) return round;
+  if (decision === "keep" && entry?.upgrade?.inFlight && !overrideInFlight) {
+    refuse("upgrade-in-flight", "Your upgrade is being applied — the round narrates its result.");
+  }
   if (early && !Array.isArray(round.acting)) refuse("not-acting", "That entry is not in this round.");
   if (!["burn", "improve", "keep"].includes(decision)) refuse("bad-decision", "Burn, Improve or Keep.");
   const rolled = narrationInput ? { ...(entry.rolled ?? {}), narrationInput, upgradedBy: decision } : entry.rolled;
@@ -866,21 +957,39 @@ export function decideUpgrade(round, { userId, decision, narrationInput = null, 
 
 /**
  * Every undecided upgrade kept — Send now during the upgrade step, or for
- * rollers who left (`userIds`).
+ * rollers who left (`userIds`). An upgrade in flight is kept only once it has
+ * been on its way longer than UPGRADE_IN_FLIGHT_GRACE_MS (its handler died):
+ * until then the round waits for it (issue #347 AB13). One whose card's
+ * handler is still running on the resolving GM's page (`runningHere`, card
+ * ids) is waited for up to UPGRADE_IN_FLIGHT_MAX_MS — a live handler slower
+ * than the grace lost its upgrade from the narration
+ * (UPGRADE-IN-FLIGHT-GRACE).
  *
  * @param {Object} round
- * @param {{ now: string, userIds?: string[]|null }} args
+ * @param {{ now: string, userIds?: string[]|null, runningHere?: string[] }} args
  * @returns {Object}
  */
-export function keepUndecidedUpgrades(round, { now, userIds = null }) {
+export function keepUndecidedUpgrades(round, { now, userIds = null, runningHere = [] }) {
   if (round?.phase !== ROUND_PHASE.UPGRADING) return round;
+  const live = new Set(Array.isArray(runningHere) ? runningHere : []);
   let next = round;
   for (const e of Object.values(round.entries)) {
     if (!e.upgrade || e.upgrade.decided) continue;
     if (userIds && !userIds.includes(e.userId)) continue;
-    next = decideUpgrade(next, { userId: e.userId, decision: "keep", now });
+    const bound = live.has(e.upgrade.cardId) ? UPGRADE_IN_FLIGHT_MAX_MS : UPGRADE_IN_FLIGHT_GRACE_MS;
+    const overrideInFlight = !!e.upgrade.inFlight && inFlightLapsed(e.upgrade, now, bound);
+    if (e.upgrade.inFlight && !overrideInFlight) continue;
+    next = decideUpgrade(next, { userId: e.userId, decision: "keep", now, overrideInFlight });
   }
   return next;
+}
+
+/** Whether an upgrade in flight has been on its way longer than `bound` (or since an unknown time). */
+function inFlightLapsed(upgrade, now, bound = UPGRADE_IN_FLIGHT_GRACE_MS) {
+  const since = Date.parse(upgrade?.inFlightSince ?? "");
+  const at = Date.parse(now ?? "");
+  if (!Number.isFinite(since) || !Number.isFinite(at)) return true;
+  return at - since >= bound;
 }
 
 /** True once every offered roller has decided. */
@@ -909,16 +1018,19 @@ export function beginNarration(round) {
 /**
  * Stamp the narration's claim: a round narrates once, even when a recovery
  * re-enters the narrating phase. A recovery takes over (`takeOver`) a claim
- * whose GM went away before the round card posted.
+ * whose GM went away before the round card posted. The GM narrating it is
+ * the round's resolver from then on (`resolverId`): a GM who became canonical
+ * mid-round and narrates it is the one the other GMs' recoveries leave it to
+ * (issue #347 AB18).
  *
  * @param {Object} round
- * @param {{ narrationClaim: string, now: string, takeOver?: boolean }} args
+ * @param {{ narrationClaim: string, now: string, takeOver?: boolean, resolverId?: string|null }} args
  * @returns {Object}
  */
-export function claimNarration(round, { narrationClaim, now, takeOver = false }) {
+export function claimNarration(round, { narrationClaim, now, takeOver = false, resolverId = null }) {
   if (round?.phase !== ROUND_PHASE.NARRATING) refuse("not-narrating", "The round isn't being narrated.");
   if (round.narrationClaim && !takeOver) refuse("narrated", "The round is already being narrated.");
-  return { ...round, narrationClaim, narrationAt: now };
+  return { ...round, narrationClaim, narrationAt: now, ...(resolverId ? { resolverId } : {}) };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -927,9 +1039,9 @@ export function claimNarration(round, { narrationClaim, now, takeOver = false })
 
 /**
  * What a recovery finds in a round left resolving: entries recorded (never
- * rolled again), entries whose result card is up but whose record is not
- * (reported to the GMs as possibly incomplete — not rolled again), and
- * entries still to roll.
+ * rolled again), entries whose roll began — its result card up, or not —
+ * but whose record is not (reported to the GMs as possibly incomplete — not
+ * rolled again; issue #347 AB20), and entries still to roll.
  *
  * @param {Object} round
  * @returns {{ recorded: string[], unrecorded: string[], toRoll: string[] }}
@@ -940,7 +1052,7 @@ export function recoveryPlan(round) {
     const e = round.entries[id];
     if (!e) continue;
     if (SETTLED_ENTRY.has(e.status)) out.recorded.push(id);
-    else if (e.status === ENTRY_STATUS.ROLLED || e.rolled?.cardId) out.unrecorded.push(id);
+    else if (rollBegun(e)) out.unrecorded.push(id);
     else out.toRoll.push(id);
   }
   return out;

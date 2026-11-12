@@ -422,10 +422,14 @@ export async function playXCard() {
   let recorded = false;
   let reason = "no-gm";
   try {
-    const { requestGmAction } = await import("../multiplayer/gmRelay.js");
+    const { requestGmAction, onlyStoodDownGMs } = await import("../multiplayer/gmRelay.js");
     const res = await requestGmAction("xcard.activate", {});
     recorded = res?.ok === true && res.result !== false;
     if (res?.ok === true && !recorded) reason = "not-saved";
+    // A GM is connected but its page stood down after its connection dropped:
+    // nothing can record the pause until it reloads (issue #347
+    // AB19-STALE-CACHE-WRITES).
+    if (!recorded && res?.reason === "no-gm" && onlyStoodDownGMs()) reason = "gm-reload";
   } catch (err) {
     console.error(`${MODULE_ID} | X-Card: could not request the scene pause:`, err);
     reason = "not-saved";
@@ -439,15 +443,20 @@ export async function playXCard() {
  * the `!x` command predicate never re-triggers on it. When the pause was
  * recorded the card carries a "Resume narration" button (GM-only — see
  * bindXCardCard); when it was not, the card says why: no GM is connected
- * (`reason: "no-gm"`), or the GM could not save it (`"not-saved"`).
+ * (`reason: "no-gm"`), the GM's browser must be reloaded first — its
+ * connection dropped (`"gm-reload"`) — or the GM could not save it
+ * (`"not-saved"`).
  *
- * @param {{ recorded?: boolean, reason?: "no-gm"|"not-saved" }} [opts]
+ * @param {{ recorded?: boolean, reason?: "no-gm"|"gm-reload"|"not-saved" }} [opts]
  * @returns {Promise<Object>} the created ChatMessage
  */
 export async function postXCardCard({ recorded = true, reason = "no-gm" } = {}) {
   const unrecorded = reason === "not-saved"
     ? `<p class="xcard-unrecorded"><strong>The pause could not be saved.</strong>
               The narrator will not hold the scene; play the X-Card again.</p>`
+    : reason === "gm-reload"
+    ? `<p class="xcard-unrecorded"><strong>The pause could not be recorded — the GM's browser lost its connection to the server.</strong>
+              Nothing can record it until the GM reloads their browser; play the X-Card again once they have.</p>`
     : `<p class="xcard-unrecorded"><strong>The pause could not be recorded — no GM is connected.</strong>
               The narrator will not hold the scene until a GM joins; play the X-Card again once one has.</p>`;
   const body = recorded

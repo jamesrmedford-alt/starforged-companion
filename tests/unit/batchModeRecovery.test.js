@@ -61,7 +61,8 @@ beforeEach(async () => {
   resolveMove.mockClear();
   await table.reset({ world: { settings: {
     chronicleAutoEntry: false, narratorSessionSummary: false,
-    campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1, currentSceneId: 'sc-1', sceneTruths: [] },
+    // A live session: a GM's page that loads mid-session keeps it.
+    campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: 'sess-1', sessionNumber: 1, currentSceneId: 'sc-1', sceneTruths: [], lastSessionTimestamp: new Date().toISOString() },
   } } });
   await table.setClaudeKey('gm-1', 'sk-ant-gina');
   await table.setClaudeKey('gm-2', 'sk-ant-gus');
@@ -111,10 +112,27 @@ describe('the GM resolving a round goes away', () => {
     expect(round()).toMatchObject({ number: 2, phase: 'collecting' });
     expect(table.world.campaignState().pendingMove).toBe(false);
 
-    held.release();   // gm-1's stalled write lands on a round that has moved on: it changes nothing
+    // gm-1's stalled write went with its connection: a socket discards what
+    // it had not sent when it closes. Its page lives on, stale: back on the
+    // same page it rolls nothing again and narrates nothing, and asks to be
+    // reloaded (issue #347 AB19-STALE-CACHE-WRITES). It used to go on from
+    // its stale cache — Ren's move rolled a second time, the round narrated
+    // twice.
+    held.fail();
     await table.settle();
-    expect(round()).toMatchObject({ number: 2, phase: 'collecting' });
     await table.join('gm-1');
+    await table.settle();
+    await table.drain();
+    expect(resolveMove).toHaveBeenCalledTimes(2);
+    expect(momentum('pc-ren')).toBe(ren + 1);
+    expect(narrations().map(c => c.client)).toEqual(['gm-2']);
+    expect(round()).toMatchObject({ number: 2, phase: 'collecting' });
+
+    await table.reload('gm-1');   // its reload: canonical again, and the round goes on from where it is
+    await table.settle();
+    await table.drain();
+    expect(resolveMove).toHaveBeenCalledTimes(2);
+    expect(round()).toMatchObject({ number: 2, phase: 'collecting' });
   }, 30_000);
 });
 

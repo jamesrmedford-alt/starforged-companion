@@ -45,7 +45,7 @@
  */
 
 import { MOVES } from "../schemas.js";
-import { readCharacterSnapshot, listCompanionAssets, listSupportVehicleAssets, readAssetIntegrity, readCommandVehicleIntegrity } from "../character/actorBridge.js";
+import { readCharacterSnapshot, listCompanionAssets, listSupportVehicleAssets, readAssetIntegrity, readCommandVehicleIntegrity, unreconciledRecordIntegrity } from "../character/actorBridge.js";
 import { getCommandVehicleActor } from "./abilityScanner.js";
 import { selectCombatTrack, combatPositionFor } from "./combat.js";
 import { selectExpeditionTrack } from "./expedition.js";
@@ -446,10 +446,14 @@ export function resolveStatValue(actor, statUsed, campaignState) {
   // starship sheet shows and the player marks (the starship Actor's own
   // schema has none — vendor starship.ts carries notes + debility). The ship
   // record's copy is its mirror, read only for a starship with no STARSHIP
-  // asset (issue #345 AA20 — the record alone was rolled).
+  // asset (issue #345 AA20 — the record alone was rolled) — and, until it is
+  // reconciled, for a record from before that whose damage the sheet never
+  // saw: the lower of the two (issue #347 AB08).
   if (statUsed === "integrity") {
     const vehicle = getCommandVehicleActor(campaignState);
-    const integrity = readCommandVehicleIntegrity(vehicle)?.value ?? vehicle?.flags?.[MODULE_ID]?.ship?.integrity;
+    const record  = vehicle?.flags?.[MODULE_ID]?.ship;
+    const sheet   = readCommandVehicleIntegrity(vehicle);
+    const integrity = sheet ? (unreconciledRecordIntegrity(record, sheet) ?? sheet.value) : record?.integrity;
     if (integrity == null) {
       console.warn(
         `${MODULE_ID} | statEnrichment: withstand_damage rolled but no command vehicle integrity was readable. Defaulting to 0.`,

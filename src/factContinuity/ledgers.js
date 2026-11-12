@@ -357,6 +357,15 @@ export function retractNarrations(campaignState, narrationIds, { by = XCARD_RETR
   if (Array.isArray(campaignState.sceneTruths)) {
     campaignState.sceneTruths = campaignState.sceneTruths.map((t) => {
       if (!t || !ids.has(t.narrationId)) return t;
+      // A superseded narration's truth the X-Card takes — the beat's struck
+      // narration, removed with its re-narration (issue #347 D2): blocked
+      // from now on, as the X-Card's own (a superseded truth is no bar to a
+      // later narration restating it), and carried to what copied it.
+      if (t.retracted && xCard && t.retractedBy === SUPERSEDED_RETRACTED_BY) {
+        const next = { ...t, retractedBy: XCARD_RETRACTED_BY };
+        retracted.push(next);
+        return next;
+      }
       if (t.retracted) return (xCard && isBareTableStrike(t)) ? { ...t, retractedBy: XCARD_RETRACTED_BY } : t;
       const next = { ...t, retracted: true, retractedBy: by, retractedAt: now };
       retracted.push(next);

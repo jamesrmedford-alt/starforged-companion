@@ -249,7 +249,8 @@ export function matchNamesInNarration(playerNarration, index) {
  *
  * @param {string} playerNarration
  * @param {string} moveId
- * @param {string} outcome  — "strong_hit" | "weak_hit" | "miss"
+ * @param {string|null} outcome  — "strong_hit" | "weak_hit" | "miss"; null before
+ *   the dice (a hybrid line naming nobody is then classified, as for a hit)
  * @param {Object} campaignState
  * @param {Object} [options]
  * @param {Function} [options.classifyImplicit] — async (narration, moveId) =>
@@ -257,6 +258,11 @@ export function matchNamesInNarration(playerNarration, index) {
  *   Defaults to a Haiku call via apiPost.
  * @param {Function} [options.collectEntities]  — async (campaignState) => EntityRef[].
  *   Override for tests; defaults to scanning all entity collections.
+ * @param {{ value?: Object }} [options.classificationCache] — holds the Phase 2
+ *   classification once made, and answers a later call from it: the move
+ *   pipeline reads the line before the dice (to ask "Who are you interacting
+ *   with?" then — issue #347 D1) and again with the outcome, with one Claude
+ *   call between them.
  * @returns {Promise<RelevanceResult>}
  */
 export async function resolveRelevance(
@@ -302,13 +308,20 @@ export async function resolveRelevance(
     return { ...baseResult, resolvedClass: "embellishment" };
   }
 
-  // No name match + hit → invoke Phase 2 classification
+  // No name match + hit (or an outcome not rolled yet) → invoke Phase 2
+  // classification, once per cache.
   const classify = options.classifyImplicit ?? defaultClassifyImplicit;
+  const cache = options.classificationCache ?? null;
   let classification = { impliedEntity: false, referenceType: "none" };
-  try {
-    classification = await classify(playerNarration, moveId);
-  } catch (err) {
-    console.warn(`${MODULE_ID} | relevanceResolver: classifyImplicit failed:`, err);
+  if (cache?.value) {
+    classification = cache.value;
+  } else {
+    try {
+      classification = await classify(playerNarration, moveId);
+      if (cache) cache.value = classification;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | relevanceResolver: classifyImplicit failed:`, err);
+    }
   }
 
   const referenceType = classification?.referenceType ?? "none";

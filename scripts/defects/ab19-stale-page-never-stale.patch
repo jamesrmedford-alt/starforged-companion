@@ -1,0 +1,21 @@
+Defect: AB19-STALE-CACHE-WRITES (issue #347) — a page whose connection dropped is never stale: it goes on running the table and writing campaignState, rounds and Lines from a cache that missed what changed meanwhile
+Tests: tests/unit/staleGmPageStandsDown.test.js tests/unit/safetyListEditsQueued.test.js
+Catches: an X-Card the page missed stands
+Catches: the stale page is not the canonical GM
+Catches: a drop the server never saw
+Catches: a sole GM's stale page: the table waits for its reload
+Catches: its ✕ is refused, so a Line a co-GM added meanwhile is kept
+
+diff --git a/src/multiplayer/connectionWatch.js b/src/multiplayer/connectionWatch.js
+index 8a233c6..b50a300 100644
+--- a/src/multiplayer/connectionWatch.js
++++ b/src/multiplayer/connectionWatch.js
+@@ -49,7 +49,7 @@ export function connectionDrops() { return _drops; }
+  *
+  * @returns {boolean}
+  */
+-export function pageIsStale() { return _stale; }
++export function pageIsStale() { return false; }   // DEFECT: a page whose connection dropped is never stale — it runs the table and writes from its cache
+ 
+ /**
+  * Run `fn()` each time this stale page's connection comes back — the moment

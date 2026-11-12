@@ -73,7 +73,9 @@ import {
   getCampaignRecap,
   registerRollingSummaryRefreshHook,
   registerXCardRedirectHook,
+  registerDeletedChatHook,
   registerPublishedReflectionHook,
+  catchUpUnsummarisedSession,
 } from "./narration/narrator.js";
 import { isNarratorCommand, handleNarratorCommand } from "./narration/narratorDebug.js";
 import { parseIronswornProgressRoll, classifyProgressRoll, ironswornRollKind, planNativeRollNarration } from "./narration/nativeProgressRoll.js";
@@ -146,6 +148,7 @@ import {
   parseJournalCommand,
   executeJournalCommand,
 } from "./world/worldJournal.js";
+import { registerJournalSplitMerge } from "./world/journalSplitMerge.js";
 import {
   installConsoleInterceptor,
   flushErrorLogBuffer,
@@ -195,9 +198,12 @@ import {
   registerSectorSceneHooks,
   moveCommandVehicleTokenToDestination,
   syncCommandVehicleTokenToPosition,
+  checkedTokenDragCourse,
 } from "./sectors/sectorSceneHooks.js";
-import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing } from "./multiplayer/gmGate.js";
-import { registerGmRelaySocket, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
+import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseElevenLabsKeyPresence, registerKeyRegistryHealing, onGmLoadChange, onGmStoodDown } from "./multiplayer/gmGate.js";
+import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.js";
+import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWatch.js";
+import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
@@ -316,7 +322,12 @@ function registerCoreSettings() {
     // Keep the keyed-GM routing registry in sync the moment a GM enters or
     // clears their key, so the single-emitter pipeline always runs on a GM
     // that actually holds a key (see gmGate.js / advertiseClaudeKeyPresence).
-    onChange: () => { advertiseClaudeKeyPresence().catch(warnKeyAdvertiseRefused); },
+    onChange: () => {
+      advertiseClaudeKeyPresence().catch(warnKeyAdvertiseRefused);
+      // A session the mint closed out short, while this browser had no key,
+      // gets its LAST SESSION now (issue #347 AB15).
+      catchUpUnsummarisedSession().catch(() => {});
+    },
   });
 
   // Keyed-GM routing registry — world-scoped list of GM user IDs whose client
@@ -933,7 +944,9 @@ export function registerChatHook() {
     const forcedMoveTargetId = typeof message.flags?.[MODULE_ID]?.forcedMoveTargetId === "string"
       ? message.flags[MODULE_ID].forcedMoveTargetId
       : null;
-    const tokenDragSetCourse = message.flags?.[MODULE_ID]?.tokenDragSetCourse ?? null;
+    // Only what a ship-token drop could have produced: a sector map, the
+    // command vehicle's token, a settlement pin (issue #347 AB23).
+    const tokenDragSetCourse = checkedTokenDragCourse(message.flags?.[MODULE_ID]?.tokenDragSetCourse ?? null);
     // The connection a forced Swear an Iron Vow is sworn to — its card's: the
     // inciting vow's target, or the one a sheet-made vow is linked to. +1, or
     // +2 when bonded (issue #325 W18).
@@ -971,6 +984,9 @@ export function registerChatHook() {
     if (!speakerActorId && getPlayerActors().length >= 2) {
       await postNoCharacterNotice(message).catch(err =>
         console.warn(`${MODULE_ID} | no-character notice failed:`, err?.message ?? err));
+      // A card's press is handed back — the notice above says why (issue #347 AB06).
+      await releaseSourceCard(message).catch(err =>
+        console.warn(`${MODULE_ID} | handing the card back failed:`, err?.message ?? err));
       return;
     }
 
@@ -991,7 +1007,7 @@ export function registerChatHook() {
     // campaignState write chain. Set on the cache in place and written whole,
     // it was read inside the round trip of the write ahead and put that
     // write's fields back (CAMPSTATE-CHAIN-PARTIAL).
-    const lock = await claimPendingMoveLock();
+    const lock = await claimPendingMoveLock({ heldMove: isHandedBackHeldMove(message) });
     if (!lock.claim) {
       if (lock.busy) {
         // A claimed card's forced move is held, not dropped: its button reads
@@ -1007,16 +1023,16 @@ export function registerChatHook() {
         );
         // The pipeline runs on this (the GM's) client: the toast told only
         // this screen. Whoever typed the line — or pressed the inciting ⚔,
-        // whose post is not held — is told, and the ⚔ re-arms
-        // (MOVE-BUSY-NOTICE; issue #347 AB06).
-        await postMoveNotRolledNotice(message, { reason: "busy" }).catch(err =>
-          console.warn(`${MODULE_ID} | the not-rolled notice failed:`, err?.message ?? err));
+        // whose post is not held (Y36's rule) — is told, a card's press is
+        // handed back, and the ⚔ re-arms (MOVE-BUSY-NOTICE; issue #347 AB06).
+        await moveNotRolled(message, "busy", null);
         return;
       }
       // A held move handed back is held again until a write lands, not
       // dropped (issue #345 AA48).
       if (reholdRefusedForcedMove(message)) return;
       ui.notifications?.error?.("Starforged Companion: the move could not start — the world did not save it. Try again.");
+      await moveNotRolled(message, "refused", null);
       return;
     }
     const lockClaim = lock.claim;
@@ -1028,12 +1044,12 @@ export function registerChatHook() {
     // Whether the early release was tried: the finally's release is then its
     // one retry (FREE-FLOW-RELEASE-REFUSED-TWICE).
     let releaseTried = false;
-    // Whether the roll has begun: past it, a failure is the roll's, not the
-    // reading's — its card is not handed back.
-    let rollStarted = false;
 
     const apiKey = apiKeyForPacing;
     const dial   = getMischiefDial();
+    // Whether this move's dice were rolled: a forced move that leaves before
+    // them is handed back to its card (issue #347 AB06).
+    let diceRolled = false;
 
     try {
       // A `!roll` is spent by the line that runs — this one, now it holds the
@@ -1067,7 +1083,6 @@ export function registerChatHook() {
         await moveNotRolled(message, "cancelled", interpretation?.moveId ?? null);
         return;
       }
-      rollStarted = true;
 
       // Stage 3 — roll it, apply its outcome, post its result card.
       const rolled = await rollMove({
@@ -1075,6 +1090,7 @@ export function registerChatHook() {
         combatPosition: read.combatPosition,
         tokenDragSetCourse,
         incitingSwearMessageId: message.flags?.[MODULE_ID]?.incitingSwearMessageId ?? null,
+        onDiceRolled: () => { diceRolled = true; },
       });
       if (rolled.refused) return;
       const { resolution, relevance } = rolled;
@@ -1123,9 +1139,9 @@ export function registerChatHook() {
         "Starforged Companion: Move interpretation failed. " +
         "Check your API key in module settings and try again."
       );
-      // Failed before anything was rolled: hand a card's button back and
-      // tell its player, as a cancelled confirm does.
-      if (!rollStarted) await moveNotRolled(message, "failed", null);
+      // Failed before its dice were rolled (rollMove's onDiceRolled): hand a
+      // card's button back and tell its player, as a cancelled confirm does.
+      if (!diceRolled) await moveNotRolled(message, "failed", null);
     } finally {
       // Safety net: release the lock if the pipeline threw or the confirm
       // dialog was cancelled before the success-path release above ran, or
@@ -1137,7 +1153,11 @@ export function registerChatHook() {
       // dropped in silence (FREE-FLOW-RELEASE-REFUSED-TWICE).
       if (!lockReleased) lockReleased = await releasePendingMoveLock(lockClaim);
       if (!lockReleased && !releaseTried) lockReleased = await releasePendingMoveLock(lockClaim);
-      if (!lockReleased) await postMoveLockNotReleasedCard();
+      // A page whose connection dropped saves nothing until it reloads: its
+      // lock is released by the GM who saw it leave (W25), or by its own
+      // reload (AB04) — not a refused release to report (issue #347
+      // AB19-STALE-CACHE-WRITES).
+      if (!lockReleased && !pageIsStale()) await postMoveLockNotReleasedCard();
     }
   };
   // A "Not rolled" notice puts a typed line back in its author's chat box
@@ -1155,6 +1175,7 @@ export function registerChatHook() {
     if (setting?.key !== `${MODULE_ID}.campaignState`) return;
     // A write landed: the world saves again, so a held move it refused goes (issue #345 AA48).
     _heldMovesWaitForLandedWrite = false;
+    resetHeldMoveRetry();
     drainDeferredForcedMoves();
   });
   // A claim this client released, carried back by a write built from a cache
@@ -1162,11 +1183,19 @@ export function registerChatHook() {
   // (LOCK-RESURRECTED-BY-COGM-STALE-WRITE).
   Hooks.on("updateSetting", (setting) => Promise.resolve(restoreLockOverCarriedBackClaim(setting)).catch(err =>
     console.warn(`${MODULE_ID} | putting the move lock back failed:`, err?.message ?? err)));
-  // A GM who leaves mid-move takes their lock with them (issue #325 W25).
+  // When the canonical GM changes, held forced moves follow it: this GM's go
+  // to the new one (handOverHeldForcedMoves), or this GM drains its own once
+  // it is the canonical GM again (issue #347 AB06).
+  onGmLoadChange(() => drainDeferredForcedMoves());
+  // A GM who leaves mid-move takes their lock with them (issue #325 W25) —
+  // and so does a GM whose page stood down: its connection dropped and came
+  // back, perhaps before the server saw the old one go, and it writes nothing
+  // more until it reloads (issue #347 AB19-STALE-CACHE-WRITES).
   Hooks.on("userConnected", (user, connected) => {
     releaseLockOfDisconnectedGM(user, connected).catch(err =>
       console.warn(`${MODULE_ID} | releasing a departed GM's move lock failed:`, err?.message ?? err));
   });
+  onGmStoodDown(user => releaseLockOfDisconnectedGM(user, false));
 }
 
 // ── A move lock whose GM is gone (issue #325 W25) ──────────────────────────
@@ -1193,11 +1222,38 @@ async function releaseLockOfDisconnectedGM(user, connected) {
   const released = await releasePendingMoveLock();
   if (!released) return;
   console.warn(`${MODULE_ID} | ${user.name ?? user.id} left while a move was being resolved — the move lock is released.`);
+  await postMoveLockReleasedCard(`${escapeChatHtml(user.name ?? "A GM")} disconnected while a move was being resolved.`);
+}
+
+/**
+ * Whisper the GMs that a move lock nobody could still be resolving was
+ * released, and that its move may be incomplete — the W25 handover's card,
+ * and the `ready` resets' (issue #347 AB14: a sole GM who reloaded mid-move
+ * had the lock reset in silence — the move's meters, record and Burn / Improve
+ * never landed, its card's Burn read "available once recorded" for good, and a
+ * retyped line rolled again on top of the first roll's marks). Never throws.
+ *
+ * @param {string} what — HTML: who left and when (escaped by the caller)
+ * @returns {Promise<void>}
+ */
+async function postMoveLockReleasedCard(what) {
   await ChatMessage.create({
-    content: `<div class="sf-ptp-card"><strong>Move lock released</strong><p>${escapeChatHtml(user.name ?? "A GM")} disconnected while a move was being resolved. The table can move again; that move's narration or its result may be incomplete — check its card.</p></div>`,
+    content: `<div class="sf-ptp-card"><strong>Move lock released</strong><p>${what} The table can move again; that move's narration or its result may be incomplete — check its card.</p></div>`,
     whisper: gmUserIds(),
     flags:   { [MODULE_ID]: { moveLockReleasedCard: true } },
   }).catch(err => console.warn(`${MODULE_ID} | move-lock card failed:`, err?.message ?? err));
+}
+
+/**
+ * The ready resets' wording for a lock whose claimant's page is gone.
+ *
+ * @param {string|null} holderId — the lock's `pendingMoveBy`
+ * @returns {string} HTML
+ */
+function staleLockReleasedText(holderId) {
+  const holder = holderId ? (game.users?.get?.(holderId) ?? null) : null;
+  const who = holder?.name ? `${escapeChatHtml(holder.name)}'s browser` : "A GM's browser";
+  return `${who} closed or reloaded while a move was being resolved.`;
 }
 
 /**
@@ -1230,7 +1286,7 @@ async function postMoveLockNotReleasedCard() {
  * earlier page held, is stale.
  *
  * @param {Object} state — campaignState with `pendingMove` set
- * @returns {{ claim: string|null }|null}
+ * @returns {{ claim: string|null, holder: string|null }|null}
  */
 function staleMoveLockAtReady(state) {
   const holder = state?.pendingMoveBy ?? null;
@@ -1239,7 +1295,39 @@ function staleMoveLockAtReady(state) {
     console.log(`${MODULE_ID} | The move lock is held by ${user.name ?? holder}, who is connected and resolving a move — not reset on ready.`);
     return null;
   }
-  return { claim: state?.pendingMoveClaim ?? null };
+  return { claim: state?.pendingMoveClaim ?? null, holder };
+}
+
+/**
+ * A non-canonical GM's `ready`: release the move lock its own earlier page
+ * left (issue #347 AB04). Two GMs; gm-2 ran a night alone and the browser
+ * closed mid-move, leaving `pendingMoveBy: gm-2`. When both open the world in
+ * overlapping loads, the canonical gm-1's ready reset reads "held by gm-2, who
+ * is connected and resolving a move" (staleMoveLockAtReady, issue #335 Y07)
+ * and leaves it; gm-2's own ready was not canonical and skipped the reset; and
+ * the W25 handover acts only on a departure. Every move was refused until gm-2
+ * left again. The claimant's own fresh page knows its claim is dead: it
+ * releases the lock — on its write chain, and only while the store still holds
+ * that claim, by this user.
+ *
+ * @returns {Promise<boolean>} whether a lock was released
+ */
+async function releaseOwnStaleLockAtReady() {
+  const userId = game.user?.id ?? null;
+  const found = game.settings.get(MODULE_ID, "campaignState");
+  if (!userId || !found?.pendingMove || (found.pendingMoveBy ?? null) !== userId) return false;
+  const claim = found.pendingMoveClaim ?? null;
+  const released = await serialiseCampaignStateWrite(async () => {
+    const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
+    if (!latest.pendingMove || (latest.pendingMoveBy ?? null) !== userId || (latest.pendingMoveClaim ?? null) !== claim) return false;
+    await game.settings.set(MODULE_ID, "campaignState", { ...latest, pendingMove: false, pendingMoveBy: null, pendingMoveClaim: null });
+    return true;
+  }, "own earlier page's move lock");
+  if (!released) return false;
+  noteMoveLockClaimReleased(claim);
+  console.log(`${MODULE_ID} | Reset the move lock this GM's earlier page left, on ready`);
+  await postMoveLockReleasedCard(staleLockReleasedText(userId));
+  return true;
 }
 
 // ── A released claim a stale write carries back ─────────────────────────────
@@ -1316,10 +1404,37 @@ const _deferredForcedMoves = [];
 const _drainedForcedMoves = new Set();
 // Set when a held move handed back met a claim the world refused and was held
 // again: the held moves wait for a campaignState write that lands (the
-// updateSetting hook clears it). The drain's own re-ask — or another refused
+// updateSetting hook clears it), or for their retry (scheduleHeldMoveRetry). The drain's own re-ask — or another refused
 // claim's — would hand the move straight back into a claim the world still
 // refuses, again and again (the issue #342 Z25 shape). Issue #345 AA48.
 let _heldMovesWaitForLandedWrite = false;
+
+// …or for a retry (issue #347 HELD-MOVES-WAIT-FOR-WRITE): at a quiet table no
+// campaignState write may land for a long while, and the held move — its card
+// claimed, its button read taken — waited for one. Tried again after
+// HELD_MOVE_RETRY_MS × the attempt, HELD_MOVE_RETRIES times (10 s … 50 s,
+// two and a half minutes in all), then left for a write that lands; a write
+// that lands starts the count again.
+const HELD_MOVE_RETRY_MS = 10_000;
+const HELD_MOVE_RETRIES  = 5;
+let _heldMoveRetry = { timer: null, attempts: 0 };
+
+/** Try the held moves again after a bounded wait, once the refused one is held (reholdRefusedForcedMove). */
+function scheduleHeldMoveRetry() {
+  if (_heldMoveRetry.timer || _heldMoveRetry.attempts >= HELD_MOVE_RETRIES) return;
+  _heldMoveRetry.attempts += 1;
+  _heldMoveRetry.timer = setTimeout(() => {
+    _heldMoveRetry.timer = null;
+    _heldMovesWaitForLandedWrite = false;
+    drainDeferredForcedMoves();
+  }, HELD_MOVE_RETRY_MS * _heldMoveRetry.attempts);
+}
+
+/** A campaignState write landed: the held moves go now, and a later refusal's retries count from one. */
+function resetHeldMoveRetry() {
+  if (_heldMoveRetry.timer) clearTimeout(_heldMoveRetry.timer);
+  _heldMoveRetry = { timer: null, attempts: 0 };
+}
 
 /**
  * Hold a forced move that met the move lock. A card button's GM handler
@@ -1359,11 +1474,24 @@ function deferForcedMove(message, { untilSession = false, refused = false } = {}
  * @returns {boolean} whether it was held again
  */
 function reholdRefusedForcedMove(message) {
-  const id = message?.id ?? null;
-  if (!id || message.flags?.[MODULE_ID]?.deferWhileBusy !== true || !_drainedForcedMoves.has(id)) return false;
+  if (!isHandedBackHeldMove(message)) return false;
   _heldMovesWaitForLandedWrite = true;
   deferForcedMove(message, { refused: true });
+  scheduleHeldMoveRetry();
   return true;
+}
+
+/**
+ * A held forced move the drain handed back to the pipeline (its id is in
+ * `_drainedForcedMoves`): its refused claim holds it again (AA48), and wakes
+ * no other held move (issue #347 AB24).
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean}
+ */
+function isHandedBackHeldMove(message) {
+  const id = message?.id ?? null;
+  return !!id && message.flags?.[MODULE_ID]?.deferWhileBusy === true && _drainedForcedMoves.has(id);
 }
 
 // Authors told — since a message last passed the session gate — that no
@@ -1427,7 +1555,8 @@ async function postSessionGateNotice(message, { held = false } = {}) {
  *
  * @param {ChatMessage} message — the line, or the card's forced move
  * @param {Object} opts
- * @param {"cancelled"|"failed"|"busy"} opts.reason
+ * @param {"cancelled"|"failed"|"busy"|"refused"} opts.reason — "refused": the
+ *   world did not save its start (the move lock's claim)
  * @param {string|null} [opts.moveId] — the move it was read as, when known
  * @param {boolean} [opts.handedBack] — the card that posted it is pressable again
  * @returns {Promise<void>}
@@ -1443,9 +1572,12 @@ async function postMoveNotRolledNotice(message, { reason, moveId = null, handedB
     ? `${forced ? label : `The reading of this line as ${label}`} was cancelled, so nothing was rolled.`
     : reason === "busy"
       ? "Another move was being resolved, so this was not rolled."
-      : `Reading ${forced ? label : "this line"} failed, so nothing was rolled.`;
+      : reason === "refused"
+        ? `The world did not save the start of ${forced ? label : "this line's move"}, so nothing was rolled.`
+        : `Reading ${forced ? label : "this line"} failed, so nothing was rolled.`;
   const next = !forced
-    ? (reason === "busy" ? "Send it again once that move's narration is posted." : "Re-word your line and send it again.")
+    ? (reason === "busy" ? "Send it again once that move's narration is posted."
+      : reason === "refused" ? "Send it again." : "Re-word your line and send it again.")
     : owed
       ? (handedBack ? "The roll is still owed: its card is open again." : "The roll is still owed — ask the GM to roll it.")
       : handedBack
@@ -1469,7 +1601,7 @@ async function postMoveNotRolledNotice(message, { reason, moveId = null, handedB
  * suffer card owing a resist roll) and the table is told. Never throws.
  *
  * @param {ChatMessage} message
- * @param {"cancelled"|"failed"} reason
+ * @param {"cancelled"|"failed"|"busy"|"refused"} reason
  * @param {string|null} moveId
  * @returns {Promise<void>}
  */
@@ -1574,7 +1706,10 @@ let _heldMovePipeline = null;
  */
 function drainDeferredForcedMoves() {
   const runPipeline = _heldMovePipeline;
-  if (!runPipeline || !_deferredForcedMoves.length || !isCanonicalGM()) return;
+  if (!runPipeline || !_deferredForcedMoves.length) return;
+  // Held here, but another GM is the canonical one now: its pipeline rolls
+  // them (issue #347 AB06).
+  if (!isCanonicalGM()) { handOverHeldForcedMoves(); return; }
   // A held move the world just refused waits for a write that lands (issue #345 AA48).
   if (_heldMovesWaitForLandedWrite) return;
   const state = game.settings.get(MODULE_ID, "campaignState");
@@ -1603,6 +1738,58 @@ function drainDeferredForcedMoves() {
     });
 }
 
+
+/**
+ * Hand this GM's held forced moves to the canonical GM (issue #347 AB06). A
+ * held move lives in the memory of the GM whose pipeline held it, and only the
+ * canonical GM drains: when another GM became canonical — a lower-id or keyed
+ * GM joined — the held moves stopped draining here and the new GM never held
+ * them. The cards stayed claimed, the moves not rolled, until this GM was
+ * canonical again — and then rolled out of the blue. Relayed to the canonical
+ * GM, which holds them (holdHandedOverForcedMoves) and rolls them when the
+ * lock frees, oldest first. Kept here if no GM is there to take them.
+ */
+function handOverHeldForcedMoves() {
+  if (!game.user?.isGM || isCanonicalGM() || !_deferredForcedMoves.length) return;
+  const messageIds = _deferredForcedMoves.splice(0);
+  for (const id of messageIds) _drainedForcedMoves.delete(id);
+  const keep = () => { for (const id of messageIds) if (!_deferredForcedMoves.includes(id)) _deferredForcedMoves.push(id); };
+  Promise.resolve(requestGmAction("forcedMove.hold", { messageIds }))
+    .then(res => { if (!res?.ok) keep(); })
+    .catch(err => {
+      console.warn(`${MODULE_ID} | handing the held moves to the canonical GM failed — kept here:`, err?.message ?? err);
+      keep();
+    });
+}
+
+/**
+ * gmRelay handler for "forcedMove.hold" — on the canonical GM (issue #347
+ * AB06): forced moves another GM held, handed over when this GM became
+ * canonical. Each is held here, after any already held, and rolled when the
+ * lock frees (drainDeferredForcedMoves). Only a GM may hand moves over, and
+ * only a card button's held forced move (`deferWhileBusy`) is taken.
+ *
+ * @param {{ messageIds?: string[] }} payload
+ * @param {{ requesterIsGM?: boolean }} [ctx]
+ * @returns {{ held: number }}
+ */
+export function holdHandedOverForcedMoves(payload = {}, ctx = {}) {
+  if (!ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | held moves handed over by a user who is not a GM — refused.`);
+    return { held: 0 };
+  }
+  const ids = Array.isArray(payload?.messageIds) ? payload.messageIds.filter(id => typeof id === "string" && id) : [];
+  let held = 0;
+  for (const id of ids) {
+    const f = game.messages?.get?.(id)?.flags?.[MODULE_ID];
+    if (f?.deferWhileBusy !== true || typeof f.forcedMoveId !== "string" || _deferredForcedMoves.includes(id)) continue;
+    _deferredForcedMoves.push(id);
+    held += 1;
+  }
+  if (held) console.debug(`${MODULE_ID} | ${held} held move(s) handed over by another GM — rolled when the lock frees.`);
+  drainDeferredForcedMoves();
+  return { held };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OUTCOME EFFECTS — one applier for the pipeline and the result upgrades
@@ -2333,16 +2520,24 @@ async function stashPositionOnThresholdCard(resolutionId, position) {
  * waiting for the lock goes on (driver.js noteMoveLockFreed —
  * ROUND-WAIT-AFTER-REFUSED-CLAIM).
  *
+ * A held move handed back whose own claim the world refuses (`heldMove`) wakes
+ * nothing: it is held again at the front (reholdRefusedForcedMove) and the
+ * held moves wait for a write that lands. Its refusal handed the move held
+ * behind it to the pipeline before it was held again, so the two rolled
+ * youngest-first — a ⚑ Mark Progress after the 🏁 Attempt to Fulfill pressed
+ * after it (issue #347 AB24).
+ *
+ * @param {{ heldMove?: boolean }} [opts]
  * @returns {Promise<{ claim: string|null, busy?: boolean, refused?: boolean }>}
  *   `busy`: another move holds the lock; `refused`: the world refused the write
  */
-export async function claimPendingMoveLock() {
+export async function claimPendingMoveLock({ heldMove = false } = {}) {
   if (!isMoveLockFreeHere()) return { claim: null, busy: true };
   const claim = foundry.utils.randomID();
   _moveLockClaimInFlight = claim;
   let outcome = "claimed";
   try {
-    await serialiseCampaignStateWrite(async () => {
+    const write = serialiseCampaignStateWrite(async () => {
       const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
       // Taken by another client's write while this claim waited its turn.
       if (latest.pendingMove) { outcome = "busy"; return; }
@@ -2350,6 +2545,17 @@ export async function claimPendingMoveLock() {
       await game.settings.set(MODULE_ID, "campaignState",
         { ...latest, pendingMove: true, pendingMoveBy: game.user?.id ?? null, pendingMoveClaim: claim });
     }, "move lock claim");
+    // A claim the server never answers (a dropped connection) is given up
+    // after a bound — it pinned `_moveLockClaimInFlight` for good, so every
+    // later move on this GM was "already being resolved", held card moves
+    // never drained and a waiting round waited forever (issue #347 AB05). One
+    // that lands after all is released at once: its pipeline has gone.
+    if (await settledWithin(write, MOVE_LOCK_CLAIM_WAIT_MS, "move lock claim")) {
+      await write;
+    } else {
+      outcome = "refused";
+      write.then(() => releasePendingMoveLock(claim), () => {}).catch(() => {});
+    }
   } catch (err) {
     console.error(`${MODULE_ID} | could not claim the move lock:`, err);
     outcome = "refused";
@@ -2357,7 +2563,7 @@ export async function claimPendingMoveLock() {
     if (_moveLockClaimInFlight === claim) _moveLockClaimInFlight = null;
   }
   if (outcome === "refused") {
-    drainDeferredForcedMoves();
+    if (!heldMove) drainDeferredForcedMoves();
     noteMoveLockFreed();
     return { claim: null, refused: true };
   }
@@ -2418,7 +2624,7 @@ export function isMoveLockFreeHere() {
  *   claim's — false when the release was refused (the caller retries it)
  */
 export function releasePendingMoveLock(claim = null) {
-  return serialiseCampaignStateWrite(() => {
+  const release = serialiseCampaignStateWrite(() => {
     const latestState = game.settings.get(MODULE_ID, "campaignState");
     if (!latestState?.pendingMove) {               // already released — cheap no-op
       noteMoveLockClaimReleased(claim);
@@ -2440,7 +2646,23 @@ export function releasePendingMoveLock(claim = null) {
       return false;
     });
   }, "move lock release");
+  // A release the server never answers reads as refused after a bound, so
+  // the caller's retry — and the GMs' notice when that is refused too — runs;
+  // it waited forever, the pipeline's `finally` with it (issue #347 AB05).
+  // A release refused before it ran (this page went stale — connectionWatch.js)
+  // is refused like any other.
+  return settledWithin(release, MOVE_LOCK_CLAIM_WAIT_MS, "move lock release")
+    .then(settled => (settled ? release.catch(err => {
+      console.error(`${MODULE_ID} | Failed to release pendingMove lock:`, err?.message ?? err);
+      return false;
+    }) : false));
 }
+
+/**
+ * How long the move lock's claim or release waits for its own write — a
+ * write the server never answers is given up after it (issue #347 AB05).
+ */
+const MOVE_LOCK_CLAIM_WAIT_MS = WORLD_WRITE_WAIT_MS;
 
 /** Drop the owning actor's cached snapshot when one of its Items changes — this client's cache only. */
 function invalidateItemOwnerSnapshot(item) {
@@ -7643,6 +7865,11 @@ Hooks.once("init", () => {
 });
 
 Hooks.once("ready", () => {
+  // First: which GMs are still loading, and this GM's own page is ready —
+  // before any canonical-gated work below. A GM that connected but has not
+  // reached its ready is passed over by the election while another GM can
+  // act (issue #347 AB03).
+  registerGmReadiness();
   registerErrorLogSocket();   // GM listens for relayed non-GM client errors
   flushErrorLogBuffer();
   flushApiTransactionLogBuffer();
@@ -7732,6 +7959,9 @@ Hooks.once("ready", () => {
     // Z24, #345 AA58). Noted before the mint starts and before the chat hook
     // and the round driver are installed below.
     noteSessionBeingReplaced(prevState);
+    // Whether the session start's write cleared the stale lock: the GMs are
+    // told once it has landed (issue #347 AB14).
+    let staleLockCleared = false;
     initSessionId(prevState).then(updated => serialiseCampaignStateWrite(() => {
       const latest = game.settings.get(MODULE_ID, "campaignState") ?? {};
       const clearLock = !!staleLock && !!latest.pendingMove && (latest.pendingMoveClaim ?? null) === staleLock.claim;
@@ -7741,9 +7971,15 @@ Hooks.once("ready", () => {
         ...(clearLock ? ["pendingMove", "pendingMoveBy", "pendingMoveClaim"] : []),
         ...(minted ? SESSION_MINT_FIELDS : []),
       ];
-      return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"));
+      return game.settings.set(MODULE_ID, "campaignState", mergeOwnedFields(updated, fields, "session start"))
+        .then(() => { staleLockCleared = clearLock; });
     }, "session start")).then(async () => {
       noteSessionReplaced();
+      if (staleLockCleared) await postMoveLockReleasedCard(staleLockReleasedText(staleLock?.holder ?? null));
+      // A session closed out short — by this mint, or one before it on a
+      // client with no key — gets its LAST SESSION, if this GM has a key
+      // (issue #347 AB15).
+      catchUpUnsummarisedSession().catch(() => {});
       const freshState = game.settings.get(MODULE_ID, "campaignState");
       // Auto-recap: the "Previously On" campaign recap introduces the session
       // this load started — the boundary is End a Session or four idle hours
@@ -7788,6 +8024,13 @@ Hooks.once("ready", () => {
     }).catch(err => {
       console.error(`${MODULE_ID} | Failed to persist session ID:`, err);
     });
+  } else if (game.user.isGM) {
+    // This GM's own earlier page's move lock is stale whether or not this GM
+    // is the canonical one now — its page has no pipeline running. The
+    // canonical GM's reset above leaves a lock a connected co-GM holds (Y07),
+    // and this load is that co-GM (issue #347 AB04).
+    releaseOwnStaleLockAtReady().catch(err =>
+      console.warn(`${MODULE_ID} | releasing this GM's earlier page's move lock failed:`, err?.message ?? err));
   }
 
   if (game.user.isGM) {
@@ -7837,7 +8080,18 @@ Hooks.once("ready", () => {
     // These migrations write world documents: the canonical GM runs them —
     // two GMs whose clients reconnected together each ran them (issue #326
     // W54). The help journal, macros and World Journal gate themselves.
-    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames, moveRecordNotesToSheets, registerUnlistedEntityActors }) => {
+    if (isCanonicalGM()) import("./entities/migrator.js").then(async ({ reconcileCommandVehicleIntegrity, flattenSectorActorFolders, scaffoldPcShipFolders, migrateJournalConnectionsToActors, backfillNpcCardSheets, syncEntityRecordNames, moveRecordNotesToSheets, registerUnlistedEntityActors }) => {
+      try {
+        // Issue #347 AB08 — first, before any ship write mirrors the sheet:
+        // a command vehicle's integrity recorded before its STARSHIP asset's
+        // track became canonical is reconciled to the lower of the two.
+        const ships = await reconcileCommandVehicleIntegrity();
+        if (ships.reconciled) {
+          console.log(`${MODULE_ID} | ship integrity: reconciled ${ships.reconciled} command vehicle record(s) with their sheet`);
+        }
+      } catch (err) {
+        console.warn(`${MODULE_ID} | ship integrity reconcile failed:`, err?.message ?? err);
+      }
       try {
         const state   = game.settings.get(MODULE_ID, "campaignState");
         const summary = await flattenSectorActorFolders(state);
@@ -7942,9 +8196,12 @@ Hooks.once("ready", () => {
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
   registerXCardRedirectHook();             // #321 U07: the X-Card's redirect is cleared once the first narration after it posts
-  registerSessionActivityHook();           // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
+  registerDeletedChatHook();               // #347 AB22: the X-Card's pick reads chat as it was, a deleted narration included
+  registerConnectionWatch();               // #347 AB19: a narration in flight across a dropped connection is discarded
+  registerSessionActivityHook();          // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
+  registerJournalSplitMerge();             // #347 residual: a split World Journal / Progress Tracks journal — the GMs' Merge card
   registerClocksPanelHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();

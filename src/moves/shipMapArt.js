@@ -16,7 +16,7 @@
  */
 
 import { generateOpenRouterImage } from "../art/openRouterImage.js";
-import { uploadedPath } from "../net/uploadResult.js";
+import { uploadedPath, withFilePickerDeadline } from "../net/uploadResult.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -169,8 +169,8 @@ async function uploadShipMapImage(b64, shipActorId) {
   // Ensure the upload directory exists. createDirectory() throws when it
   // already exists — the common case, silently ignored (sectorArt.js).
   try {
-    await foundry.applications.apps.FilePicker.implementation
-      .createDirectory("data", uploadDir, {});
+    await withFilePickerDeadline(foundry.applications.apps.FilePicker.implementation
+      .createDirectory("data", uploadDir, {}), { label: "Ship-map art: creating the scenes folder" });
   } catch (err) {
     const msg = err?.message ?? String(err);
     if (!/exists/i.test(msg)) {
@@ -187,8 +187,10 @@ async function uploadShipMapImage(b64, shipActorId) {
   const file = new File([blob], filename, { type: "image/png" });
 
   // The Forge returns its Assets Library URL in response.path (sectorArt.js).
-  const response = await foundry.applications.apps.FilePicker.implementation
-    .upload("data", uploadDir, file, {}, { notify: false });
+  // Bounded: an upload the server never answers is a failed upload — the deck
+  // plan takes the schematic backdrop (issue #347 AB02).
+  const response = await withFilePickerDeadline(foundry.applications.apps.FilePicker.implementation
+    .upload("data", uploadDir, file, {}, { notify: false }), { label: "Ship-map upload" });
 
   return uploadedPath(response, `${uploadDir}/${filename}`);   // null when it failed (issue #322 V26)
 }
