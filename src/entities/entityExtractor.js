@@ -556,6 +556,9 @@ function detectionFromParsed(parsed, campaignState) {
  *   narrator's), for the pending-draft and known-NPC fallback
  * @param {string}  [options.lineText] — the player's line: which of several
  *   named NPCs the move was with (a round's hit reads its own, below)
+ * @param {string|null} [options.targetName] — the interpreter's target for a
+ *   free-flow Make a Connection: which of several named NPCs it was with when
+ *   the line does not say (KNOWN-NPC-CONNECTION-NO-TARGET)
  * @param {Array<{ actorId: string|null, connectionSeed?: Object|null, owns: (figure: Object) => boolean, lineText?: string }>} [options.connectionRollers]
  *   — a Batch Mode round's Make a Connection hits, in confirm order, in place
  *   of `autoCreateConnection` (issue #342 Z09): each creates one connection,
@@ -746,6 +749,7 @@ function connectionSlots(options) {
     takes:          () => true,
     names:          named,
     lineText:       null,
+    targetName:     typeof options.targetName === "string" && options.targetName.trim() ? options.targetName.trim() : null,
     done:           false,
   }];
 }
@@ -2559,8 +2563,12 @@ async function completeListedEntity(draft, campaignState) {
  * hit with Sable whose narration had pending Dace watching from the bar
  * bonded Dace, and the pending rows were tried before the known NPC the line
  * named. Now the line decides when it names exactly one of them; a line that
- * names none leaves it to the narration when that names exactly one;
- * otherwise none is guessed and the GMs are told which were named.
+ * names none leaves it to the narration when that names exactly one; else
+ * the interpreter's target for the move (`slot.targetName`) picks the one it
+ * names, when it names exactly one of them (KNOWN-NPC-CONNECTION-NO-TARGET:
+ * no target reached the capture, so "I win him over" with two known NPCs in
+ * the narration got the GMs' notice); otherwise none is guessed and the GMs
+ * are told which were named.
  *
  * @param {{ actorId: string|null, names: Function }} slot — the hit
  *   (connectionSlots): whether the move names a figure as its roller's —
@@ -2582,8 +2590,13 @@ async function connectNamedFigure(slot, campaignState, { namingText = "", lineTe
 
   const line = String(lineText ?? "");
   const inLine = line.trim() ? candidates.filter(c => wholeWordPattern(c.name).test(line)) : [];
+  const target = String(slot.targetName ?? "").trim();
+  const byTarget = target
+    ? (inLine.length ? inLine : candidates).filter(c => wholeWordPattern(c.name).test(target) || wholeWordPattern(target).test(c.name))
+    : [];
   const pick = inLine.length === 1 ? inLine[0]
     : inLine.length === 0 && candidates.length === 1 ? candidates[0]
+    : byTarget.length === 1 ? byTarget[0]
     : null;
   if (!pick) {
     const named = inLine.length ? inLine : candidates;

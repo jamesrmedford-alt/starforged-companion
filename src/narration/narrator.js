@@ -768,6 +768,8 @@ function sceneFrameEnabledFromSettings() {
  *   the createChatMessage pipeline (lets the caller insert a clarification
  *   dialog between resolveRelevance and narration). If omitted, resolveRelevance
  *   is called internally.
+ * @param {string|null} [options.moveTarget] — the interpreter's target for the
+ *   move, for its capture (runPostNarrationPasses — KNOWN-NPC-CONNECTION-NO-TARGET)
  * @returns {Promise<string|null>} narration text, or null on failure/disabled
  */
 export async function narrateResolution(resolution, campaignState, options = {}) {
@@ -886,7 +888,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     }
 
     await postNarrationCard(narration, resolution, campaignState, cardOptions);
-    await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId });
+    await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
     scheduleChronicleEntry({
       narrationText: narration,
       campaignState,
@@ -918,7 +920,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
         });
         if (narration?.trim()) {
           await postNarrationCard(narration, resolution, campaignState, cardOptions);
-          await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId });
+          await runPostNarrationPasses(narration, resolution, relevance, campaignState, { actorId: character?.actorId ?? null, narrationId, moveTarget: options?.moveTarget ?? null });
           scheduleChronicleEntry({
             narrationText: narration,
             campaignState,
@@ -1493,10 +1495,13 @@ const ASYNC_DETECTION_DELAY_MS = 2000;
  * creates — or a draft card's Confirm — puts the bond Item on their sheet,
  * not the first PC's (issue #321 U23). `narrationId` is the narration's id,
  * stamped on what the passes record — lore, threats, Session Log beats, tier
- * details — so an X-Card on it undoes them (issue #329 X01).
+ * details — so an X-Card on it undoes them (issue #329 X01). `moveTarget` is
+ * the interpreter's target for the move: a Make a Connection hit whose
+ * narration names several NPCs the table knows connects the one it names when
+ * the player's line does not say (KNOWN-NPC-CONNECTION-NO-TARGET).
  */
 export function runPostNarrationPasses(
-  narrationText, resolution, relevance, campaignState, { actorId = null, narrationId = null } = {},
+  narrationText, resolution, relevance, campaignState, { actorId = null, narrationId = null, moveTarget = null } = {},
 ) {
   if (!resolution || !relevance) return Promise.resolve();
 
@@ -1536,6 +1541,7 @@ export function runPostNarrationPasses(
           connectionSeed:       resolution.oracleSeeds?.connectionSeed ?? null,
           actorId,
           narrationId,
+          moveTarget,
         },
       );
     }
@@ -1615,6 +1621,9 @@ async function runDiscoveryDetection(narrationText, resolution, campaignState, o
       // names several (issue #347 AB10).
       namingText:           `${resolution?.playerNarration ?? ''}\n${narrationText ?? ''}`,
       lineText:             resolution?.playerNarration ?? '',
+      // …and, when the line does not, the interpreter's target for the move
+      // (KNOWN-NPC-CONNECTION-NO-TARGET).
+      targetName:           typeof options.moveTarget === 'string' ? options.moveTarget : null,
       narrationId,
     });
   } catch (err) {

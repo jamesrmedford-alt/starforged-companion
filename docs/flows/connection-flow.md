@@ -83,7 +83,11 @@ recorded under its name promoted to it; its bond is §2's.
   Mode round's hit, its own entry's line — `connectionRollers[].lineText`,
   issue #347 ROUND-CONNECTION-LINE-JOINED: the round's lines joined named
   another player's NPC as the roller's): the one
-  it names, else — naming none — the one the narration names; several, none
+  it names, else — naming none — the one the narration names, else the one
+  the interpreter's target for the move names (free-flow: `narrateResolution`'s
+  `moveTarget` → `runPostNarrationPasses` → `routeEntityDrafts`' `targetName`;
+  KNOWN-NPC-CONNECTION-NO-TARGET — "I win her over" with two known NPCs in the
+  narration got the GMs' notice); several, none
   is guessed and the GMs are whispered which (issue #347 AB10 — the first
   pending row named anywhere was confirmed, so a hit with Sable whose
   narration had pending Dace at the bar bonded Dace, and the pending rows
