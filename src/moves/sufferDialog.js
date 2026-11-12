@@ -44,7 +44,8 @@ const MODULE_ID = "starforged-companion";
  *     { kind: "meter",        meterKey, delta }
  *     { kind: "noop" }
  *     { kind: "complication", scope }
- *     { kind: "route",        route, rank?, mark? }
+ *     { kind: "route",        route, rank?, mark?, price? } — `price` ({ roll, moveName }):
+ *                                         a Pay the Price the move rolled (SOJOURN-PTP-ADVISORY)
  *     { kind: "mark",         debility }
  *     { kind: "roll-table",   table }   — Endure Harm / Stress at 0 on a miss (issue #329 X03)
  *     { kind: "at-zero-choice", which } — the at-0 choice after a miss's
@@ -106,7 +107,10 @@ function optionToCalls(opt, selection) {
 
   // Route to another move (e.g. "Pay the Price", "Swear an Iron Vow").
   if (opt.route) {
-    return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}) }];
+    // A priced Pay the Price option (Sojourn's miss — resolver rollChoicePrice)
+    // carries the roll its narration depicted, for the pick to pay.
+    const price = opt.route === "pay_the_price" && Number.isInteger(opt.price?.roll) ? { roll: opt.price.roll, moveName: opt.price.moveName ?? null } : null;
+    return [{ kind: "route", route: opt.route, ...(opt.rank ? { rank: opt.rank } : {}), ...(price ? { price } : {}) }];
   }
 
   // Combat progress mark — marks the active combat track N times.
@@ -484,6 +488,15 @@ async function runSufferCall(call, actor, opts) {
       );
       return { kind: "complication", scope: call.scope };
     case "route":
+      // A priced Pay the Price (Sojourn's "No relief"): the price the move's
+      // narration depicted is paid — its card, its suffer routes and the
+      // countdown clocks — never a reminder to roll another, which differed
+      // from the narrated one (SOJOURN-PTP-ADVISORY).
+      if (call.route === "pay_the_price" && call.price) {
+        const { payChosenPrice } = await import("../index.js");
+        const paid = await payChosenPrice(call.price, actor);
+        return { kind: "route", route: call.route, ...paid };
+      }
       // Surface a chat card prompting the player/GM to trigger the
       // follow-up move themselves. Auto-firing Swear an Iron Vow /
       // Pay the Price from here would lose the player's narration.

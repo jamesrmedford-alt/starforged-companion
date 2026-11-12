@@ -6803,6 +6803,58 @@ async function postForgeABondCard(connection, legacyTicks, { legacyPending = fal
  * The Pay the Price card's footer: "Routes to endure_harm (-1), endure_stress (-1)." — nothing for none.
  * `notApplied` (markup, escaped by the caller) says why the routes were not applied (issue #337 Y43).
  */
+/**
+ * Pay the price a move's choice held (SOJOURN-PTP-ADVISORY): Sojourn's "No
+ * relief — Pay the Price" carries the d100 its narration was seeded with
+ * (resolver rollChoicePrice), and its pick pays that price — the card, its
+ * suffer routes on the roller, the countdown clocks — as a routed price is
+ * paid (postMovePayThePriceCard). It only posted a reminder to roll one, which
+ * differed from the narrated price. The result is read from the table by the
+ * roll, never from the card's text. No follow-up narration: the move's own
+ * depicted it. Runs where the pick is applied — the canonical GM (sufferCard
+ * "suffer.pick"); elsewhere its world writes are relayed. A card the world
+ * refuses is logged: the price is paid all the same (the pick is claimed).
+ *
+ * @param {{ roll: number, moveName?: string|null }} price
+ * @param {Actor} actor — the card's PC, the roller
+ * @returns {Promise<{ ok: boolean, reason?: string, price?: string }>}
+ */
+export async function payChosenPrice(price, actor) {
+  if (!isPlayerCharacterActor(actor)) return { ok: false, reason: "no-pc" };
+  const { rollOracle } = await import("./oracles/roller.js");
+  let result;
+  try {
+    result = Number.isInteger(price?.roll) && price.roll >= 1 && price.roll <= 100 ? rollOracle("pay_the_price", { roll: price.roll }) : null;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the chosen Pay the Price could not be read:`, err?.message ?? err);
+    result = null;
+  }
+  if (!result?.result) return { ok: false, reason: "invalid" };
+  const paidFor = typeof price.moveName === "string" && price.moveName.trim() ? price.moveName.trim() : "";
+  const qBlock  = paidFor ? `<p><em>${escapeChatHtml(paidFor)}</em></p>` : "";
+  await ChatMessage.create({
+    content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+    flags:   { [MODULE_ID]: {
+      payThePriceCard: true,
+      sufferRoutes:    result.sufferRoutes,
+      oracleMemory:    { name: "Pay the Price", question: paidFor, answer: result.result },
+    } },
+  }).catch(err => console.warn(`${MODULE_ID} | the chosen Pay the Price's card failed — the price is paid all the same:`, err?.message ?? err));
+
+  if (result.sufferRoutes?.length) {
+    if (game.user?.isGM) await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actor.id, `${paidFor || "move"} PtP (chosen)`);
+    else await requestGmAction("payThePrice.suffer", { routes: result.sufferRoutes, actorId: actor.id });
+  }
+  if (game.user?.isGM) {
+    await advanceClocksOnPayThePrice().catch(err =>
+      console.warn(`${MODULE_ID} | the chosen Pay the Price's clock advance failed:`, err?.message ?? err));
+  } else {
+    await requestGmAction("payThePrice.advanceClocks", {}).catch(err =>
+      console.warn(`${MODULE_ID} | the chosen Pay the Price's clock advance failed:`, err?.message ?? err));
+  }
+  return { ok: true, price: result.result };
+}
+
 function sufferRoutesFooter(routes, { notApplied = null } = {}) {
   if (!routes?.length) return "";
   const list = routes.map(r => `${escapeChatHtml(r.move)} (-${r.amount})`).join(", ");

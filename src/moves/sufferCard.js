@@ -242,7 +242,9 @@ export function summarizeSufferCalls(calls, results = []) {
       case "next-bonus":          parts.push(`+${c.amount} next move`); break;
       case "roll-table":          parts.push(`rolled the ${c.table === "desolation" ? "desolation" : "mortal-wound"} table`); break;
       case "resist":              parts.push(`${labelForSuffer(c.moveId)} rolled to resist`); break;
-      case "route":               parts.push(`see "Trigger: ${c.route}"`); break;
+      case "route":               parts.push(c.route === "pay_the_price" && c.price
+        ? "the price paid (see its card)"
+        : `see "Trigger: ${c.route}"`); break;
       case "complication":        parts.push("complication pending"); break;
       default: break;
     }
