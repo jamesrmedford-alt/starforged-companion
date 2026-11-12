@@ -156,6 +156,22 @@ entries below this one.)
   entries. The same rule holds for `findTracksJournal`, the interpreter's
   track read and `findJournal`. The two journals are not merged
   (TRACKS-JOURNAL-SPLIT-NOT-MERGED); a sidebar Duplicate is the same case.
+  **Update (issue #347 residual TRACKS-JOURNAL-SPLIT-NOT-MERGED; the maintainer's choice: a
+  GM-confirmed merge at load):** they are merged when a GM says so. At the
+  canonical GM's world load, each World Journal category and the Progress
+  Tracks journal with more than one flagged copy gets one card whispered to
+  the GMs, listing what the other copies hold that the live one lacks (by the
+  writers' identity: a page's name — a faction's entity id or name key too —
+  a track's id); a copy with nothing extra gets none. Its Merge — a GM's
+  press, relayed to the canonical GM and claimed once on the card — copies
+  those pages with their flags (tracks through the tracks write queue) into
+  the live journal, then renames each other copy "<name> (merged)" and stamps
+  it `journalMerged`, which no lookup or later check offers again. Nothing is
+  deleted; a failed merge frees the card, and a second press copies only what
+  is still missing. A later load retires an unpressed card and posts a fresh
+  one while the split stands (`src/world/journalSplitMerge.js`).
+  *Rejected:* merging without asking — the copies may hold entries the GM
+  set aside on purpose; and deleting the merged copy.
 - **A retired setting leaves whole** [AA65]: the "Require a sidecar on every
   narrator response" box (`factContinuity.sidecarRequired`) is retired as
   issue #342 D6 retired the Session gap setting — its key, registration,

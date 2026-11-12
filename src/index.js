@@ -147,6 +147,7 @@ import {
   parseJournalCommand,
   executeJournalCommand,
 } from "./world/worldJournal.js";
+import { registerJournalSplitMerge } from "./world/journalSplitMerge.js";
 import {
   installConsoleInterceptor,
   flushErrorLogBuffer,
@@ -8157,6 +8158,7 @@ Hooks.once("ready", () => {
   registerSessionActivityHook();          // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
+  registerJournalSplitMerge();             // #347 residual: a split World Journal / Progress Tracks journal — the GMs' Merge card
   registerClocksPanelHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();

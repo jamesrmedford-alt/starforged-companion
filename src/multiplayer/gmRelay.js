@@ -214,6 +214,8 @@ export const GM_ACTIONS = Object.freeze({
   "fightVow.deepenBond":       { load: () => import("../moves/cardActions.js"),                      fn: "applyFightVowDeepenBond" },
   "suffer.pick":               { load: () => import("../moves/sufferCard.js"),                       fn: "applySufferPickFromRelay" },
   "payoff.retry":              { load: () => import("../moves/cardActions.js"),                      fn: "applyPayoffRetry" },
+  // Issue #347 residual TRACKS-JOURNAL-SPLIT-NOT-MERGED — a split journal's Merge, a GM's press claimed once on the card
+  "journal.merge":             { load: () => import("../world/journalSplitMerge.js"),                fn: "applyJournalMerge" },
   // Issue #321 group A — one-shot card buttons claimed on the GM-authored card:
   // U02 "Which vow?" (a Fulfill Your Vow that named none of several open vows);
   // U20 a move card's "⚑ Mark Progress on Vow", and an expedition's "🔁 Recommit"

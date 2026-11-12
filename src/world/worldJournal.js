@@ -1441,7 +1441,9 @@ function journalCategory(journal) {
  * collection order put the older, renamed journal first, so the upgrade would
  * have flipped every reader and writer onto it — the lore recorded since the
  * split leaving ESTABLISHED LORE (issue #347 AB16). A sidebar Duplicate of a
- * World Journal journal is the same case. The journals are not merged.
+ * World Journal journal is the same case. At the canonical GM's load a card
+ * offers the GMs a merge of what the other copies hold that this one lacks
+ * (journalSplitMerge.js — issue #347 residual TRACKS-JOURNAL-SPLIT-NOT-MERGED).
  *
  * @param {string} name
  * @returns {JournalEntry|null}
@@ -1471,6 +1473,46 @@ function findJournal(name) {
 export function findWorldJournal(category) {
   const name = JOURNAL_NAMES[category];
   return name ? findJournal(name) : null;
+}
+
+/**
+ * A World Journal category's live journal (findJournal's pick, which every
+ * reader and writer uses) and the other journals flagged with that category
+ * — the copies a split world holds (issue #347 AB16) — less a copy a merge
+ * already retired (`journalMerged`, journalSplitMerge.js). For the
+ * GM-confirmed merge at load (issue #347 residual
+ * TRACKS-JOURNAL-SPLIT-NOT-MERGED).
+ *
+ * @param {string} category — a JOURNAL_NAMES key
+ * @returns {{ live: JournalEntry|null, copies: JournalEntry[] }}
+ */
+export function worldJournalCopies(category) {
+  const name = JOURNAL_NAMES[category];
+  if (!name || !globalThis.game?.journal) return { live: null, copies: [] };
+  const live = findJournal(name);
+  const all  = (game.journal.contents ?? []).filter(j => journalCategory(j) === category);
+  return { live, copies: all.filter(j => j !== live && !j?.flags?.[MODULE_ID]?.journalMerged) };
+}
+
+/**
+ * Whether `journal` already holds the entry `page` is — found as the writers
+ * find an entry: by its page name; a Factions page also by its faction's
+ * entity id or name key (findFactionPage, renameFactionEntry).
+ *
+ * @param {JournalEntry|null} journal
+ * @param {JournalEntryPage} page
+ * @param {string} category — a JOURNAL_NAMES key
+ * @returns {boolean}
+ */
+export function journalHoldsEntry(journal, page, category) {
+  const pages = journal?.pages?.contents ?? [];
+  if (pages.some(p => p?.name === page?.name)) return true;
+  if (category !== "factions") return false;
+  const entryOf = (p) => p?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
+  const entityId = entryOf(page)?.entityId ?? null;
+  if (entityId && pages.some(p => entryOf(p)?.entityId === entityId)) return true;
+  const key = factionNameKey(page?.name);
+  return !!key && pages.some(p => factionNameKey(p?.name) === key);
 }
 
 /**

@@ -123,8 +123,10 @@ function createTrack({ label, type, rank, entityId = null, objective = null, lin
  * the renamed one and the default-named one the next track write made, which
  * every session since read and wrote: the one still carrying the default name
  * wins, as v1.8.0 read it, never the older renamed one collection order puts
- * first (issue #347 AB16). The two are not merged
- * (TRACKS-JOURNAL-SPLIT-NOT-MERGED).
+ * first (issue #347 AB16). At the canonical GM's load a card offers the GMs
+ * a merge of the tracks the other copies hold that this one lacks
+ * (tracksJournalCopies, mergeTracksIntoLive → world/journalSplitMerge.js —
+ * issue #347 residual TRACKS-JOURNAL-SPLIT-NOT-MERGED).
  *
  * @returns {JournalEntry|null}
  */
@@ -196,6 +198,41 @@ function writeTracks(change) {
   });
   _writeTail = run.catch(() => {});
   return run;
+}
+
+/**
+ * The live Progress Tracks journal (findTracksJournal's pick) and the other
+ * journals carrying the tracks flag — a split world's copies (issue #347
+ * AB16) — less a copy a merge already retired (`journalMerged`). For the
+ * GM-confirmed merge at load (world/journalSplitMerge.js — issue #347
+ * residual TRACKS-JOURNAL-SPLIT-NOT-MERGED).
+ *
+ * @returns {{ live: JournalEntry|null, copies: JournalEntry[] }}
+ */
+export function tracksJournalCopies() {
+  const live = findTracksJournal();
+  const flagged = (j) => Array.isArray(j?.getFlag?.(MODULE_ID, FLAG_KEY));
+  const copies = (game.journal?.contents ?? [])
+    .filter(j => flagged(j) && j !== live && !j?.getFlag?.(MODULE_ID, 'journalMerged'));
+  return { live: flagged(live) ? live : null, copies };
+}
+
+/**
+ * Add to the live journal's tracks each of `tracks` whose id it lacks — a
+ * split copy's, through the write queue like every track write. GM-only.
+ *
+ * @param {object[]} tracks
+ * @returns {Promise<number>} how many were added
+ */
+export async function mergeTracksIntoLive(tracks) {
+  let added = 0;
+  await writeTracks((list) => {
+    const ids = new Set(list.map(t => t?.id).filter(Boolean));
+    const extra = (Array.isArray(tracks) ? tracks : []).filter(t => t?.id && !ids.has(t.id));
+    added = extra.length;
+    return added ? [...list, ...foundry.utils.deepClone(extra)] : null;
+  });
+  return added;
 }
 
 /**
