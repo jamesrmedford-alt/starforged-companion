@@ -60,6 +60,11 @@ export class ChroniclePanelApp extends foundry.applications.api.ApplicationV2 {
   /** The actor whose chronicle this panel shows. */
   get actorId() { return this.#actorId; }
 
+  /** Show another actor's chronicle (the opener's next render reads it). */
+  showActor(actorId) {
+    if (actorId) this.#actorId = actorId;
+  }
+
   static DEFAULT_OPTIONS = {
     id:      'sf-chronicle-panel',
     classes: ['starforged-companion', 'sf-chronicle', 'sf-window'],
@@ -312,8 +317,16 @@ export function openChroniclePanel(actorId) {
     return;
   }
 
-  if (_chroniclePanelInstance?.rendered) {
-    _chroniclePanelInstance.bringToTop?.();
+  // Pressed again while open, the window is re-rendered and brought to the
+  // front, as the World Journal panel's opener does (issue #345 AA66): the v1
+  // `bringToTop` it called does not exist on an ApplicationV2 window, so the
+  // press did nothing (CHRONICLE-OPENER-V1-BRING-TO-TOP) — and, asked for
+  // another actor's chronicle, it left the open one's showing.
+  const open = _chroniclePanelInstance;
+  if (open?.rendered) {
+    open.showActor(resolvedId);
+    open.render({ force: true });
+    open.bringToFront?.();
     return;
   }
 
