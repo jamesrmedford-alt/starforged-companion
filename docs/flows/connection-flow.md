@@ -79,7 +79,10 @@ recorded under its name promoted to it; its bond is §2's.
   existing relationship"); a connection row the GM dismissed is taken off
   `dismissedEntities` and confirmed as the roller's, as a pending row is
   (issue #345 AA19 — the detection pass leaves an established or dismissed
-  name out). Which one is the player's line's to say (`lineText`): the one
+  name out). Which one is the player's line's to say (`lineText`; a Batch
+  Mode round's hit, its own entry's line — `connectionRollers[].lineText`,
+  issue #347 ROUND-CONNECTION-LINE-JOINED: the round's lines joined named
+  another player's NPC as the roller's): the one
   it names, else — naming none — the one the narration names; several, none
   is guessed and the GMs are whispered which (issue #347 AB10 — the first
   pending row named anywhere was confirmed, so a hit with Sable whose

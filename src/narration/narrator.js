@@ -1195,10 +1195,14 @@ function runRoundNarrationPasses(narration, entries, campaignState, { narrationI
     const owner = roundFigureOwner(entries, narration);
     return runDiscoveryDetection(narration, resolution, campaignState, {
       ...options,
+      // Each hit's own line says which NPC it was with (issue #347 AB10's
+      // rule): the round's lines joined named every player's NPCs as each
+      // roller's (ROUND-CONNECTION-LINE-JOINED).
       connectionRollers: hits.map(e => ({
         actorId:        e.actorId ?? null,
         connectionSeed: e.input.oracleSeeds?.connectionSeed ?? null,
         owns:           (figure) => !!e.actorId && owner(figure) === e.actorId,
+        lineText:       String(e.text ?? ''),
       })),
     });
   }

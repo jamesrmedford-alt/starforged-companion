@@ -51,7 +51,8 @@ the entry they change.)
   before its effects is never rolled again.
 - **Smaller:** a Make a Connection's portrait is not awaited [AB01]; the
   stored entity lists gate a capture's dedup [AB09]; the player's line names
-  the connection, and none is guessed among several [AB10]; a detail matches
+  the connection (a round's hit, its own line), and none is guessed among
+  several [AB10]; a detail matches
   whole words and a negation never dedupes [AB11]; a Safety ✕ removes by text
   [AB12]; the default-named journal wins among flagged ones [AB16]; a failed
   paced narration says so [AB21]; the X-Card reads chat as it was, deleted
@@ -130,6 +131,12 @@ entries below this one.)
   looked at, so a bystander the narration mentioned was bonded to the
   roller, silently. "Several" now covers pending rows too, and a line naming
   exactly one of several the narration names settles it.
+  *Update (issue #347 residual ROUND-CONNECTION-LINE-JOINED):* in a Batch
+  Mode round the player's line is the hit's own entry's
+  (`connectionRollers[].lineText`), not the round's lines joined: with two
+  players playing one character, the other player's line naming an NPC
+  bonded that NPC to the hit's roller, or made a line naming one NPC read as
+  naming several.
 - **Journals are found by their flag; the name is a fallback** [AA62, AA63]:
   the Progress Tracks journal is the one carrying the `tracks` flag
   (`findTracksJournal`; the interpreter reads it the same way), and each

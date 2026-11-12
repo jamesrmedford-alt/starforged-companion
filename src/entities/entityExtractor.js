@@ -554,15 +554,16 @@ function detectionFromParsed(parsed, campaignState) {
  *   (connectNamedFigure; issue #347 AB10).
  * @param {string}  [options.namingText] — the move's narration (player's and
  *   narrator's), for the pending-draft and known-NPC fallback
- * @param {string}  [options.lineText] — the player's line (a round's, its
- *   lines): which of several named NPCs the move was with
- * @param {Array<{ actorId: string|null, connectionSeed?: Object|null, owns: (figure: Object) => boolean }>} [options.connectionRollers]
+ * @param {string}  [options.lineText] — the player's line: which of several
+ *   named NPCs the move was with (a round's hit reads its own, below)
+ * @param {Array<{ actorId: string|null, connectionSeed?: Object|null, owns: (figure: Object) => boolean, lineText?: string }>} [options.connectionRollers]
  *   — a Batch Mode round's Make a Connection hits, in confirm order, in place
  *   of `autoCreateConnection` (issue #342 Z09): each creates one connection,
  *   the first detected (else pending) one its `owns` says its own roller's
  *   action met, with its own seed and its bond on its roller. The rest are
  *   queued — the round's narration is several characters', so its first
- *   connection is not the first hit's.
+ *   connection is not the first hit's. `lineText` is the hit's own entry's
+ *   line, in place of `options.lineText` (ROUND-CONNECTION-LINE-JOINED).
  * @param {string}  [options.sessionId]
  * @param {string}  [options.source]  — telemetry flag attached to the
  *   GM draft card. "paced_narrative" for paced-path detection;
@@ -684,7 +685,7 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
   for (const slot of slots) {
     if (slot.done || !slot.names || removed()) continue;
     const made = await connectNamedFigure(slot, campaignState, {
-      namingText: options.namingText, lineText: options.lineText, narrationId,
+      namingText: options.namingText, lineText: slot.lineText ?? options.lineText, narrationId,
     }).catch(err => {
       console.warn(`${MODULE_ID} | routeEntityDrafts: connecting the NPC the move names failed:`, err?.message ?? err);
       return null;
@@ -720,7 +721,8 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
  * mentioned — was confirmed and bonded to the roller).
  *
  * @param {Object} options — routeEntityDrafts' options
- * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, done: boolean }>}
+ * @returns {Array<{ actorId: string|null, connectionSeed: Object|null, takes: Function, names: Function|null, lineText: string|null, done: boolean }>}
+ *   — `lineText` a round's hit's own line (null: the move's, `options.lineText`)
  */
 function connectionSlots(options) {
   const hay = String(options.namingText ?? "");
@@ -733,6 +735,7 @@ function connectionSlots(options) {
         connectionSeed: r.connectionSeed ?? null,
         takes:          (entity) => r.owns(entity) === true,
         names:          named ? (draft) => named(draft) && r.owns(draft) === true : null,
+        lineText:       typeof r.lineText === "string" ? r.lineText : null,
         done:           false,
       }));
   }
@@ -742,6 +745,7 @@ function connectionSlots(options) {
     connectionSeed: options.connectionSeed ?? null,
     takes:          () => true,
     names:          named,
+    lineText:       null,
     done:           false,
   }];
 }
@@ -2404,7 +2408,7 @@ async function completeListedEntity(draft, campaignState) {
  * @param {Object} campaignState
  * @param {{ namingText?: string, lineText?: string, narrationId?: string|null }} opts
  *   — `namingText` the line and the narration; `lineText` the player's line
- *   (a round's, its lines)
+ *   (a round's hit: its own entry's — ROUND-CONNECTION-LINE-JOINED)
  * @returns {Promise<{ entity: Object, record: Object }|null>}
  */
 async function connectNamedFigure(slot, campaignState, { namingText = "", lineText = "", narrationId = null } = {}) {
