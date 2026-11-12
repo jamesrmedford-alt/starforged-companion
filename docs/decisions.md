@@ -887,6 +887,13 @@ unavailable" fallback (issue #345 D1); otherwise the fallback is the exit of
 a narration call that failed. Issue #340's round lifecycle listed the
 fallback among the narrating phase's exits without telling a missing key
 from a failed call; `src/batch/round.js`'s lifecycle now says which.
+*Update (issue #347 residual ROUND-WAITS-FOR-ABSENT-KEYED-GM):* the round
+waits only while its session lasts. End a Session closes a round still
+waiting for a keyed GM as a table with no keyed GM closes one — the
+"narration unavailable" card listing each result, the round closed, its
+riders run — and the GMs are told why; a Send now after the session ended
+runs that close again (its key refusal holds only during the session). It
+stayed narrating until the next load's recovery closed it unseen.
 
 **Reason:** the keyless takeover posted "narration unavailable" and closed
 the round — its narration gone for good, though the keyed GM was back

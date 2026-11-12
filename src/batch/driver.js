@@ -380,13 +380,20 @@ function claudeKeyHere() {
  * unavailable" and closed the round, its narration gone for good though the
  * keyed GM was back within a page load (issue #347 D3 — the maintainer's
  * option A: it waits, as the readings and Send now do). With no keyed GM at
- * all the narration falls back as before (issue #345 D1).
+ * all the narration falls back as before (issue #345 D1). It waits only while
+ * the round's session lasts (`roundSessionOver`): End a Session closes it
+ * unnarrated (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM).
  */
 function narrationWaitsForKey() {
   if (claudeKeyHere()) return false;
   let keyed = [];
   try { keyed = game.settings.get(MODULE_ID, "keyedGmUserIds") ?? []; } catch { keyed = []; }
   return Array.isArray(keyed) && keyed.some(id => id && id !== game.user?.id && game.users?.get?.(id)?.isGM === true);
+}
+
+/** Whether a round's session is over: ended, another one current, or being replaced. */
+function roundSessionOver(round, cs = campaignStateNow()) {
+  return !isSessionActive(cs) || round?.sessionId !== (cs.currentSessionId ?? null) || sessionBeingReplaced(cs);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -751,8 +758,10 @@ export async function requestSendNow({ modeOffAfter = false } = {}) {
     return { ok: true };
   }
   // A narration that waits for a GM with a Claude key is not sent from a
-  // keyless one: the key is what it waits for (issue #347 D3).
-  if (round.phase === ROUND_PHASE.NARRATING && narrationWaitsForKey()) return { ok: false, reason: "narration-no-key" };
+  // keyless one: the key is what it waits for (issue #347 D3) — while its
+  // session lasts. After it, Send now runs the pass that closes the round
+  // unnarrated, as End a Session does (ROUND-WAITS-FOR-ABSENT-KEYED-GM).
+  if (round.phase === ROUND_PHASE.NARRATING && narrationWaitsForKey() && !roundSessionOver(round)) return { ok: false, reason: "narration-no-key" };
   if (round.phase !== ROUND_PHASE.COLLECTING) {
     // Rolling or narrating: the round goes on — a pass a refused step stopped
     // runs again (a pass already running just goes round once more).
@@ -1376,8 +1385,13 @@ async function narrateTheRound() {
   if (isXCardActive(null)) return false;
   // Not narrated without a Claude key while the table has a keyed GM: the
   // round waits for them, handed back so their recovery (their load, a keyed
-  // GM joining) narrates it (issue #347 D3).
-  if (narrationWaitsForKey()) {
+  // GM joining) narrates it (issue #347 D3) — while its session lasts. Once
+  // the session is over it is closed as a table with no keyed GM closes one:
+  // the "narration unavailable" card, the GMs told. It stayed narrating
+  // until the next load's recovery closed it unseen (issue #347
+  // ROUND-WAITS-FOR-ABSENT-KEYED-GM).
+  const closingUnnarrated = narrationWaitsForKey() && roundSessionOver(round);
+  if (narrationWaitsForKey() && !closingUnnarrated) {
     await waitForKeyedNarrator(round);
     return false;
   }
@@ -1389,6 +1403,7 @@ async function narrateTheRound() {
   _narratingRoundId = round.id;
   const dropsAtClaim = connectionDrops();
   let superseded = false;
+  let posted = null;
   try {
     round = await queueRoundWrite(r => claimNarration(r, {
       narrationClaim: lock.claim, now: nowIso(), takeOver: !!r?.narrationClaim, resolverId: game.user.id,
@@ -1404,6 +1419,7 @@ async function narrateTheRound() {
       return null;
     });
     superseded = told?.superseded === true;
+    posted = told?.posted ?? null;
   } finally {
     _narratingRoundId = null;
     // A page that lost its connection while its narration was out, with
@@ -1421,8 +1437,23 @@ async function narrateTheRound() {
     if (droppedSince(dropsAtClaim)) tellStalePage();
     return false;
   }
-  await finishRound(getStoredRound() ?? round, "resolved");
+  const finished = await finishRound(getStoredRound() ?? round, "resolved");
+  if (finished && closingUnnarrated) await tellClosedUnnarrated(round, posted);
   return true;
+}
+
+/**
+ * The session ended while the round waited for a GM with a Claude key, and
+ * it closed without its narration (ROUND-WAITS-FOR-ABSENT-KEYED-GM): the
+ * GMs are told why, and that its moves stand. Never throws.
+ *
+ * @param {Object} round
+ * @param {string|null} posted — what narrateRound posted ("fallback" when its card is up)
+ */
+async function tellClosedUnnarrated(round, posted) {
+  await tellGms("Batch Mode — the round closed without its narration",
+    `The session ended while round ${round.number} waited for a GM with a Claude key to narrate it, so it closed without its narration. Its moves stand${posted === "fallback" ? ", and its card lists each result" : ""}.`,
+    { batchRoundUnnarratedNotice: true });
 }
 
 /** Whether another GM is connected — one who may have taken a round over while this page was away. */
@@ -2062,7 +2093,7 @@ export async function recoverRound(reason = "recovery") {
   const round = getStoredRound();
   const cs = campaignStateNow();
   if (roundIsOpen(round)) {
-    const sessionOver = !isSessionActive(cs) || round.sessionId !== (cs.currentSessionId ?? null) || sessionBeingReplaced(cs);
+    const sessionOver = roundSessionOver(round, cs);
     if (sessionOver && !isResolving(round)) {
       await closeCollectingRound("session-ended");
     } else if (sessionOver && CLOSES_RESOLVING_ROUND.has(reason)) {
@@ -2125,6 +2156,11 @@ function onCampaignStateChanged(setting) {
     const work = (async () => {
       if (roundIsOpen(round) && round.phase === ROUND_PHASE.COLLECTING && (!active || round.sessionId !== sessionId)) {
         await closeCollectingRound("session-ended");
+      }
+      // A round whose narration waits for a keyed GM: the session ending
+      // closes it, unnarrated (narrateTheRound — ROUND-WAITS-FOR-ABSENT-KEYED-GM).
+      if (roundIsOpen(round) && round.phase === ROUND_PHASE.NARRATING && narrationWaitsForKey() && roundSessionOver(round, cs)) {
+        await advanceRound("session-ended");
       }
       if (active && (!roundIsOpen(getStoredRound()) || getStoredRound()?.sessionId !== sessionId)) {
         await openRoundIfDue("session-began");

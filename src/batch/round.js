@@ -22,7 +22,9 @@
  * keyed-GM registry lists one, leaves the narrating round waiting for that
  * GM — handed back, its resolver cleared (handBackResolution) — instead of
  * posting the "narration unavailable" fallback (issue #347 D3). The fallback
- * is the exit of a failed narration call, and of a table with no keyed GM.
+ * is the exit of a failed narration call, of a table with no keyed GM, and
+ * of a round still waiting for one when its session ends (End a Session —
+ * ROUND-WAITS-FOR-ABSENT-KEYED-GM).
  *
  * An entry goes waiting → submitted → read → ready, or passed — or straight
  * to ready with a move rolled on the character sheet (enterSheetRoll). One
