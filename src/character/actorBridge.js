@@ -708,6 +708,53 @@ export async function setCommandVehicleIntegrity(shipActor, value) {
 }
 
 /**
+ * The STARSHIP asset's own Battered / Cursed conditions (`system.conditions`,
+ * vendor asset.ts) — `{ battered, cursed }`, or null for a starship that
+ * carries no STARSHIP asset. A mirror: the starship's native impacts
+ * (`system.debility.battered` / `cursed`) are canonical (decisions.md →
+ * "Starship battered: the native sheet field is canonical"), and the asset's
+ * conditions follow them (STARSHIP-ASSET-CONDITIONS-UNSYNCED).
+ *
+ * @param {Actor|null} shipActor
+ * @returns {{ battered: boolean, cursed: boolean }|null}
+ */
+export function readCommandVehicleConditions(shipActor) {
+  const asset = getCommandVehicleAsset(shipActor);
+  if (!asset) return null;
+  const ticked = (name) => (asset.system?.conditions ?? [])
+    .some(c => String(c?.name ?? '').trim().toLowerCase() === name && c?.ticked === true);
+  return { battered: ticked('battered'), cursed: ticked('cursed') };
+}
+
+/**
+ * Mirror the starship's impacts onto its STARSHIP asset's Battered / Cursed
+ * conditions (readCommandVehicleConditions) — the write-through of the
+ * canonical native impacts (STARSHIP-ASSET-CONDITIONS-UNSYNCED). Only the
+ * conditions the asset carries, only when they differ; the write is marked
+ * (`options[MODULE].conditionMirror`) so the asset → impact sync hook skips
+ * it. Throws when the world refuses the write.
+ *
+ * @param {Actor} shipActor
+ * @param {{ battered?: boolean, cursed?: boolean }} impacts
+ * @returns {Promise<boolean>} whether the asset was written
+ */
+export async function setCommandVehicleConditions(shipActor, impacts = {}) {
+  const asset = getCommandVehicleAsset(shipActor);
+  const conditions = Array.isArray(asset?.system?.conditions) ? asset.system.conditions : null;
+  if (!conditions) return false;
+  let changed = false;
+  const next = conditions.map(c => {
+    const key = String(c?.name ?? '').trim().toLowerCase();
+    if (!(key in impacts) || typeof impacts[key] !== 'boolean' || (c?.ticked === true) === impacts[key]) return c;
+    changed = true;
+    return { ...c, ticked: impacts[key] };
+  });
+  if (!changed) return false;
+  await asset.update({ 'system.conditions': next }, { [MODULE_ID]: { conditionMirror: true } });
+  return true;
+}
+
+/**
  * Is this support vehicle battered? Its card's own Battered condition
  * (`system.conditions[]`, vendor asset.ts) — the "if your vehicle is not
  * battered" of Withstand Damage's +1 integrity. Null when `itemId` names no

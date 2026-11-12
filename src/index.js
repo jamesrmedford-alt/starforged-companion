@@ -209,6 +209,7 @@ import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
 import { registerSharedSupplyHook } from "./multiplayer/sharedSupply.js";
+import { registerStarshipConditionSync } from "./entities/ship.js";
 import {
   DEFAULT_NARRATOR_VOICE_ID,
   DEFAULT_NPC_VOICE_ID,
@@ -8254,6 +8255,10 @@ Hooks.once("ready", () => {
   registerRoundWindowHooks();
   registerActorHook();
   registerSharedSupplyHook();   // crew-shared supply track (co-op/guided rule)
+  // A starship's impacts and its STARSHIP asset's Battered / Cursed conditions
+  // are one fact: the native impacts canonical, the asset's conditions their
+  // mirror (STARSHIP-ASSET-CONDITIONS-UNSYNCED).
+  registerStarshipConditionSync();
   // #326 D3: the shared legacy tracks on every PC's sheet — a sheet edit flows
   // back; the canonical GM backfills the sheets once the world is ready.
   registerLegacySheetSyncHook();
