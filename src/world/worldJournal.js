@@ -1507,6 +1507,10 @@ export function worldJournalCopies(category) {
 export function journalHoldsEntry(journal, page, category) {
   const pages = journal?.pages?.contents ?? [];
   if (pages.some(p => p?.name === page?.name)) return true;
+  // By the entry its flag names too: a page renamed in either copy is still
+  // the same entry (WJ-PAGE-BY-TITLE).
+  const title = entryTitle(page);
+  if (title && pages.some(p => entryTitle(p) === title)) return true;
   if (category !== "factions") return false;
   const entryOf = (p) => p?.flags?.[MODULE_ID]?.[FLAG_KEYS.factions] ?? null;
   const entityId = entryOf(page)?.entityId ?? null;
@@ -1550,8 +1554,53 @@ async function getOrCreateJournal(name) {
   }
 }
 
+/**
+ * The name an entry page's own flag gives its entry — a lore title, a
+ * threat's, a faction's or a location's name — or null for a page with no
+ * entry flag. Written with the entry, so a GM's rename of the page in the
+ * journal leaves it alone.
+ *
+ * @param {JournalEntryPage} page
+ * @returns {string|null}
+ */
+function entryTitle(page) {
+  const own = page?.flags?.[MODULE_ID];
+  if (!own) return null;
+  const title = own[FLAG_KEYS.lore]?.title ?? own[FLAG_KEYS.threats]?.name
+    ?? own[FLAG_KEYS.factions]?.factionName ?? own[FLAG_KEYS.locations]?.locationName ?? null;
+  return typeof title === "string" && title ? title : null;
+}
+
+/**
+ * The entry page for a name: the page whose entry flag names it, else the
+ * page so titled (a page written before, or by hand). It was found by its
+ * title alone, so a page the GM renamed in the journal was not followed: the
+ * next record of that entry started a second page beside it, and the World
+ * Journal panel's buttons and the GM's `!journal` rulings missed it (issue
+ * #345 AA63's residual WJ-PAGE-BY-TITLE).
+ *
+ * @param {JournalEntry|null} journal
+ * @param {string} pageName
+ * @returns {JournalEntryPage|null}
+ */
 function findPageByName(journal, pageName) {
-  return journal?.pages?.contents?.find(p => p.name === pageName) ?? null;
+  const pages = journal?.pages?.contents ?? [];
+  return pages.find(p => entryTitle(p) === pageName)
+      ?? pages.find(p => p?.name === pageName)
+      ?? null;
+}
+
+/**
+ * A World Journal entry's page by the entry's name, found as the writers find
+ * it (by its entry flag first — WJ-PAGE-BY-TITLE). For the World Journal
+ * panel's per-entry buttons.
+ *
+ * @param {JournalEntry|null} journal
+ * @param {string} title
+ * @returns {JournalEntryPage|null}
+ */
+export function findEntryPage(journal, title) {
+  return findPageByName(journal, title);
 }
 
 /**
@@ -1568,7 +1617,11 @@ function findFactionPage(journal, name) {
   const exact = findPageByName(journal, name);
   if (exact) return exact;
   const key = factionNameKey(name);
-  return key ? (journal?.pages?.contents?.find(p => factionNameKey(p.name) === key) ?? null) : null;
+  if (!key) return null;
+  const pages = journal?.pages?.contents ?? [];
+  return pages.find(p => entryTitle(p) && factionNameKey(entryTitle(p)) === key)
+      ?? pages.find(p => factionNameKey(p.name) === key)
+      ?? null;
 }
 
 /** The stored lore entry titled `title` (trimmed, as recordLoreDiscovery files it), or null. */
