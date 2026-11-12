@@ -2151,6 +2151,8 @@ function withStruckByUpgrade(beat, messages, sessionId) {
  *     `resolutionId`, a round card's entries' too) — out of RECENT ORACLE
  *     RESULTS, which told every later narration the removed answer was
  *     established (issue #345 AA01);
+ *   - `incitingIncident`: the campaign premise, when they include the
+ *     inciting narration it was written from (XCARD-INCITING-PREMISE);
  *   - `sessionSummary`: its text dropped and a regen due, when it covered
  *     them (the summary is a droppable convenience; the next regen reads the
  *     remaining cards);
@@ -2175,6 +2177,7 @@ export function applyXCardToNarratorMemory(cs) {
     cs.xCardedNarrationIds = [...prior.filter(id => !ids.includes(id)), ...ids].slice(-XCARD_NARRATION_ID_CAP);
   }
   dropOracleResultsFor(cs, xCardedOracleResults(cards));
+  dropXCardedPremise(cs, cards, ids);
 
   const summary = cs.sessionSummary;
   let summaryDropped = false;
@@ -2193,6 +2196,34 @@ export function applyXCardToNarratorMemory(cs) {
 
   cs.xCardRedirect = { sessionId, at: new Date().toISOString() };
   return { cards, retracted, sessionId, summaryDropped };
+}
+
+/**
+ * Take the campaign premise out of `cs` when the X-Card removed the inciting
+ * narration it was written from (XCARD-INCITING-PREMISE). The premise
+ * (`campaignState.incitingIncident`, runIncitingIncident) renders as
+ * CAMPAIGN PREMISE — canon — in every narrator prompt, so its prose kept
+ * telling the removed beat after its card, ledger entries, lore and capture
+ * were gone. Found by the narration id it carries; a premise saved before it
+ * carried one, by an X-carded inciting card of its session. Mutates `cs`.
+ *
+ * @param {Object} cs
+ * @param {Object[]} cards — the X-carded cards
+ * @param {string[]} ids — their narration ids
+ * @returns {boolean} whether the premise was dropped
+ */
+function dropXCardedPremise(cs, cards, ids) {
+  const premise = cs?.incitingIncident;
+  if (!premise || typeof premise !== 'object') return false;
+  const byId = typeof premise.narrationId === 'string' && premise.narrationId
+    ? ids.includes(premise.narrationId)
+    : (cards ?? []).some(m => {
+      const f = m?.flags?.[MODULE_ID];
+      return f?.incitingIncidentCard === true && (f.sessionId ?? null) === (premise.sessionId ?? null);
+    });
+  if (!byId) return false;
+  cs.incitingIncident = null;
+  return true;
 }
 
 /**

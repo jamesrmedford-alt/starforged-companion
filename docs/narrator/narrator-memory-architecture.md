@@ -243,7 +243,9 @@ the opening premise survivable. The premise (`campaignState.incitingIncident`)
 is written with the narration's scene ledgers onto the store as it is then
 (`persistSceneLedgerFields(…, { onto })`), never the pre-call snapshot whole —
 that reverted Private Lines, a safety flag or an X-Card relayed during the
-call (issue #321 U06d).
+call (issue #321 U06d). The premise carries its narration's `narrationId`, so
+an X-Card on the inciting card drops it in the pause's write
+(XCARD-INCITING-PREMISE).
 
 **Narration ids and the X-Card (issue #321 U07).** Every truth and state value
 a sidecar writes, and the frame, carries the narration's `narrationId` (its
