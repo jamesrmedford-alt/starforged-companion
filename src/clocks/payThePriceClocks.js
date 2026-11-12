@@ -49,7 +49,53 @@ function trackVignetteInFlight(clockId, delta) {
   if (!clockId) return;
   const n = (_vignettesInFlight.get(clockId) ?? 0) + delta;
   if (n > 0) _vignettesInFlight.set(clockId, n);
-  else _vignettesInFlight.delete(clockId);
+  else { _vignettesInFlight.delete(clockId); _rewoundDuringVignette.delete(clockId); }
+}
+
+/**
+ * The upgrades that rewound a clock while its trigger vignette was in flight
+ * (clockId → `{ kind, resolutionId }`): its card, if it still posts — the
+ * rewind landed during the card's own creation, after its last check — is
+ * struck with that upgrade's note and name (TRIGGER-VIGNETTE-POST-WINDOW).
+ */
+const _rewoundDuringVignette = new Map();
+
+/**
+ * Note that an upgrade rewound this clock while its trigger vignette is in
+ * flight (resultUpgrade.js supersedeTriggerVignettes).
+ *
+ * @param {string|null} clockId
+ * @param {{ kind?: "burn"|"improve", resolutionId?: string|null }} info
+ */
+export function noteRewindDuringVignette(clockId, info = {}) {
+  if (!clockId || !triggerVignetteInFlight(clockId)) return;
+  _rewoundDuringVignette.set(clockId, { kind: info.kind === "improve" ? "improve" : "burn", resolutionId: info.resolutionId ?? null });
+}
+
+/**
+ * After a trigger vignette's card posted: a rewind that landed while it was
+ * being created — after the vignette's last `stillTriggered` check — left
+ * the card live, and the rewind's own supersede skipped it (it was in
+ * flight). Re-check the clock, and strike the card when the rewind's note is
+ * here or the clock is no longer full (TRIGGER-VIGNETTE-POST-WINDOW, the
+ * proposal). Never throws.
+ *
+ * @param {Object} card — the posted ChatMessage
+ * @param {Object} entry — the advanced-clock entry it narrates
+ * @param {string|null} clockId
+ */
+async function strikeIfRewoundWhilePosting(card, entry, clockId) {
+  if (!card) return;
+  try {
+    const stillFull = await clockStillTriggered(entry);
+    const note = _rewoundDuringVignette.get(clockId) ?? null;
+    if (stillFull && !note) return;
+    _rewoundDuringVignette.delete(clockId);
+    const { strikeTriggerVignetteCards } = await import("../moves/resultUpgrade.js");
+    await strikeTriggerVignetteCards([card], note?.kind ?? "burn", note?.resolutionId ?? null);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Pay the Price: re-checking a trigger vignette's clock after its card posted failed:`, err?.message ?? err);
+  }
 }
 
 /**
@@ -146,7 +192,7 @@ export async function advanceClocksOnPayThePrice({ skipClockIds = [] } = {}) {
               // Flag family (NARR-RING-CLOCKVIG): threat-advance fiction must
               // enter the ring/summary or the narrator forgets it immediately.
               // narrationId: what an X-Card on it retracts (issue #321 U07).
-              await ChatMessage.create({
+              const card = await ChatMessage.create({
                 // NPC dialogue markup stripped, as on every fiction card (issue #331 X27).
                 content: `<div class="sf-clock-card"><strong>⚠ TRIGGERED — </strong><em>${escapeChatHtml(stripMarkup(text))}</em></div>`,
                 flags:   {
@@ -163,6 +209,8 @@ export async function advanceClocksOnPayThePrice({ skipClockIds = [] } = {}) {
                   },
                 },
               });
+              // Still in flight: a rewind meanwhile has noted itself for this.
+              await strikeIfRewoundWhilePosting(card, cd, clockId);
             }
           } finally {
             trackVignetteInFlight(clockId, -1);
