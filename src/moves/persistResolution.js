@@ -332,7 +332,7 @@ function mergeWithLatestState(working, latestRaw) {
   // A map, not a list: listed with the id lists, it was never merged and the
   // working copy's index dropped entries stored meanwhile (issue #300 F14).
   if (latest.artAssetIds || working.artAssetIds) {
-    working.artAssetIds = { ...(working.artAssetIds ?? {}), ...(latest.artAssetIds ?? {}) };
+    working.artAssetIds = mergeArtIndex(latest.artAssetIds, working.artAssetIds);
   }
 
   if (isNewerRecord(latest.sessionSummary, working.sessionSummary)) {
@@ -346,6 +346,35 @@ function mergeWithLatestState(working, latestRaw) {
     console.debug(`${MODULE_ID} | persistResolution: the scene changed while the move resolved — keeping the stored scene ledgers.`);
   }
   return working;
+}
+
+/**
+ * The art index (asset id → "Art: …" journal entry name), merged: every entry
+ * the store holds, and an entry only the working copy holds while a journal
+ * entry still holds that portrait (by its name, or its `assetId` flag after a
+ * rename). The store drops an entry when its portrait goes — the X-Card's
+ * deleteEntityArtAssets — and a move in flight wrote it back from its copy
+ * (known-issues ART-INDEX-RESURRECTED).
+ *
+ * @param {Object|undefined} store
+ * @param {Object|undefined} working
+ * @returns {Object}
+ */
+function mergeArtIndex(store, working) {
+  const out = { ...(store ?? {}) };
+  for (const [assetId, entryName] of Object.entries(working ?? {})) {
+    if (Object.prototype.hasOwnProperty.call(out, assetId)) continue;
+    if (artEntryHolds(assetId, entryName)) out[assetId] = entryName;
+  }
+  return out;
+}
+
+/** Whether a journal entry still holds this portrait. */
+function artEntryHolds(assetId, entryName) {
+  const journal = globalThis.game?.journal;
+  if (entryName && journal?.getName?.(entryName)) return true;
+  const entries = journal?.contents ?? [];
+  return entries.some(e => e?.flags?.[MODULE_ID]?.entityType === 'artAsset' && e.flags[MODULE_ID].assetId === assetId);
 }
 
 function isNewerRecord(storeRec, workingRec) {

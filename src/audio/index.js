@@ -38,7 +38,7 @@ import {
   userGestureReceived,
   stopActivePlayback,
 } from "./playback.js";
-import { isAudioGM, hasKeyedActiveGM } from "../multiplayer/gmGate.js";
+import { isAudioGM, hasKeyedActiveGM, hasAudioKeyedActiveGM } from "../multiplayer/gmGate.js";
 
 const MODULE_ID = "starforged-companion";
 export const AUDIO_SOCKET_NAME = `module.${MODULE_ID}`;
@@ -64,6 +64,9 @@ const _pendingSynth  = new Map();   // hash -> Set<resolve>
 // this client's own playback and by every keyless player's request for it
 // (synthesiseToCacheOnce).
 const _synthInFlight = new Map();
+// …and hash -> its bytes, once synthesised: the audio GM's own playback plays
+// them while the upload goes on (synthesisedBytesOnce — issue #348 PT12).
+const _synthBytesInFlight = new Map();
 
 // A keyed Player who may not browse the cache asks the audio GM whether a
 // clip is already there (`audio.cache.ask` → `audio.cache.found`) before
@@ -91,7 +94,7 @@ const UNSAVED_CLIP_PLAYER_MESSAGE = "Narrator audio couldn't be saved to the wor
 
 /** Test-only — clear the keyless-synthesis wait/in-flight state. */
 export function _resetSynthStateForTests() {
-  _pendingSynth.clear(); _synthInFlight.clear(); _pendingCacheAsk.clear();
+  _pendingSynth.clear(); _synthInFlight.clear(); _synthBytesInFlight.clear(); _pendingCacheAsk.clear();
   _unsavedClips.clear(); _toldUnsavedClip = false;
 }
 
@@ -268,81 +271,116 @@ export async function resolveNpcVoiceForCard(message, voices) {
  * Build the playback segments for a chat card: split prose, resolve
  * cache hits, generate misses, return `{ src, voice, text }` entries
  * in prose order.
+ *
+ * Only the first segment is resolved before this returns — its failure fails
+ * the Play, as every segment's used to. The rest are resolved one after
+ * another in the background while it plays: each later entry's `src` is a
+ * promise the PlaybackSession awaits when it reaches it. Every segment of the
+ * card used to be synthesised — and, on the audio GM, uploaded — one after
+ * another before a word was heard, so a long narration sat on "Loading…" for
+ * the sum of them (issue #348 PT12). Synthesis still starts only on Play:
+ * nothing is made before it. `cancelled()` is asked before each later
+ * segment starts: a Play stopped meanwhile synthesises — bills — no more.
+ *
+ * @param {string} prose
+ * @param {{ npcVoiceId?: string, cancelled?: () => boolean }} [opts]
+ * @returns {Promise<Array<{ voice: string, text: string, src: string|Promise<string> }>>}
  */
-async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
+async function buildPlayableSegments(prose, { npcVoiceId, cancelled = () => false } = {}) {
   const voices = getVoiceConfig();
   const npcVoice = npcVoiceId || voices.npcVoiceId;   // caller may override per focal NPC (finding F)
-  const parts  = splitSegments(prose);
-  const out    = [];
-  for (const p of parts) {
-    const voiceId = p.voice === SEGMENT_VOICE.NPC
-      ? npcVoice
-      : voices.narratorVoiceId;
-    if (!voiceId) {
-      throw new Error(`audio: ${p.voice} voice ID is not configured`);
-    }
-    const hash = await cacheKey({
-      text:    p.text,
-      voiceId,
-      modelId: voices.modelId,
-      speed:   voices.speed,
+  // Every segment's voice is known before anything is made.
+  const specs = splitSegments(prose).map(p => {
+    const voiceId = p.voice === SEGMENT_VOICE.NPC ? npcVoice : voices.narratorVoiceId;
+    if (!voiceId) throw new Error(`audio: ${p.voice} voice ID is not configured`);
+    return { voice: p.voice, text: p.text, voiceId };
+  });
+  if (!specs.length) return [];
+
+  const out = [{ voice: specs[0].voice, text: specs[0].text, src: await resolveSegmentSrc(specs[0], voices) }];
+  let previous = Promise.resolve();
+  for (const spec of specs.slice(1)) {
+    const src = previous.then(() => {
+      if (cancelled()) throw new Error("audio: playback stopped before this segment was made");
+      return resolveSegmentSrc(spec, voices);
     });
-    const found = await cacheLookupDetailed(hash);
-    let src = found.path;
-    if (!src) {
-      if (hasElevenLabsKey() && isAudioGM()) {
-        // The audio GM writes the cache itself, and shares the synthesis
-        // with any player's request for the same clip.
-        const spec = { voiceId, modelId: voices.modelId, text: p.text, speed: voices.speed };
-        const made = await synthesiseToCacheOnce(hash, spec, getSetting("elevenLabsApiKey", ""));
-        src = made.path ?? blobUrlOf(made.bytes);
-      } else if (hasElevenLabsKey()) {
-        // A default Player may not browse the cache, so a cached clip read as
-        // a miss and every play was synthesised — billed — again on their key,
-        // its bytes re-sent for a re-upload (issue #326 W79). Ask the
-        // audio GM for the cached file first.
-        if (!found.browsed && !globalThis.game?.user?.isGM) src = await askGmForCachedPath(hash);
-        if (!src) {
-          const bytes = await synthesise({
-            apiKey:  getSetting("elevenLabsApiKey", ""),
-            voiceId,
-            modelId: voices.modelId,
-            text:    p.text,
-            speed:   voices.speed,
-            stream:  false,
-          });
-          src = await commitToCache(hash, bytes);
-        }
-      } else if (isAudioGM()) {
-        // A keyless request goes to the audio GM — this client, with no GM
-        // holding a key (isAudioGM falls back to the canonical GM). A socket
-        // emit never reaches its sender, so the request sat out its 30 s
-        // timeout on itself and then told the GM to "ask the GM" (issue #326
-        // W80). Fail at once and name where the key goes.
-        throw new Error("Narrator audio needs an ElevenLabs API key — add one in Companion Settings → About.");
-      } else {
-        // No key on this client — ask the GM to synthesise + cache it, then
-        // play the resulting file. Players never need their own key.
-        const answer = await requestGmSynthesis(hash, {
-          voiceId,
-          modelId: voices.modelId,
-          text:    p.text,
-          speed:   voices.speed,
-        });
-        src = answer.src;
-        if (!src) {
-          // The GM made the clip and the world's storage refused it: say so —
-          // "ask the GM to play it" sent the player round the same refusal
-          // (issue #345 AA61).
-          throw new Error(answer.unsaved
-            ? UNSAVED_CLIP_PLAYER_MESSAGE
-            : "Narrator audio isn't ready yet — ask the GM to play this card once, then try again.");
-        }
-      }
-    }
-    out.push({ voice: p.voice, src, text: p.text });
+    // Handled here: the session reports a failure when it reaches the segment,
+    // and a segment after a failed one is never made.
+    src.catch(() => {});
+    previous = src;
+    out.push({ voice: spec.voice, text: spec.text, src });
   }
   return out;
+}
+
+/**
+ * One segment's playable source: the cached clip, else the clip made where an
+ * ElevenLabs key lives —
+ *   - the audio GM makes it on its key, caches it, and plays its bytes at once
+ *     (the upload goes on behind: it used to be waited for before a word was
+ *     heard — issue #348 PT12);
+ *   - any other client asks the audio GM to make it when a GM holding a key
+ *     is connected — a keyed client too: it used to synthesise on its own key
+ *     while the audio GM made the same clip on its own, each billed, and the
+ *     keyed GM files no relayed bytes (D10), so it was made again at the GM's
+ *     next Play (known-issues AUDIO-KEYED-NONCANONICAL-DUP). A keyed client the
+ *     GM could not serve still makes it itself;
+ *   - with no keyed GM connected, a keyed client makes it on its own key and
+ *     relays the bytes to the GM to cache (D11);
+ *   - a keyless audio GM fails at once, naming where the key goes (W80).
+ *
+ * @param {{ voice: string, text: string, voiceId: string }} spec
+ * @param {ReturnType<typeof getVoiceConfig>} voices
+ * @returns {Promise<string>}
+ */
+async function resolveSegmentSrc(spec, voices) {
+  const synthSpec = { voiceId: spec.voiceId, modelId: voices.modelId, text: spec.text, speed: voices.speed };
+  const hash = await cacheKey(synthSpec);
+  const found = await cacheLookupDetailed(hash);
+  if (found.path) return found.path;
+
+  if (hasElevenLabsKey() && isAudioGM()) {
+    // The audio GM writes the cache itself, and shares the synthesis with any
+    // player's request for the same clip.
+    return blobUrlOf(await synthesisedBytesOnce(hash, synthSpec, getSetting("elevenLabsApiKey", "")));
+  }
+  if (hasElevenLabsKey() && !hasAudioKeyedActiveGM()) return synthesiseOnOwnKey(hash, synthSpec, found);
+  if (isAudioGM()) {
+    // A keyless request goes to the audio GM — this client, with no GM
+    // holding a key (isAudioGM falls back to the canonical GM). A socket
+    // emit never reaches its sender, so the request sat out its 30 s
+    // timeout on itself and then told the GM to "ask the GM" (issue #326
+    // W80). Fail at once and name where the key goes.
+    throw new Error("Narrator audio needs an ElevenLabs API key — add one in Companion Settings → About.");
+  }
+  // Ask the audio GM to synthesise + cache it, then play the resulting file.
+  // Players never need their own key.
+  const answer = await requestGmSynthesis(hash, synthSpec);
+  if (answer.src) return answer.src;
+  // A keyed client the GM could not serve makes the clip itself.
+  if (hasElevenLabsKey()) return synthesiseOnOwnKey(hash, synthSpec, found);
+  // The GM made the clip and the world's storage refused it: say so — "ask
+  // the GM to play it" sent the player round the same refusal (issue #345
+  // AA61).
+  throw new Error(answer.unsaved
+    ? UNSAVED_CLIP_PLAYER_MESSAGE
+    : "Narrator audio isn't ready yet — ask the GM to play this card once, then try again.");
+}
+
+/**
+ * A keyed client that is not the audio GM makes a clip on its own key. A
+ * default Player may not browse the cache, so a cached clip read as a miss
+ * and every play was synthesised — billed — again on their key, its bytes
+ * re-sent for a re-upload (issue #326 W79): it asks the audio GM for the
+ * cached file first.
+ */
+async function synthesiseOnOwnKey(hash, synthSpec, found) {
+  if (!found.browsed && !globalThis.game?.user?.isGM) {
+    const cached = await askGmForCachedPath(hash);
+    if (cached) return cached;
+  }
+  const bytes = await synthesise({ apiKey: getSetting("elevenLabsApiKey", ""), ...synthSpec, stream: false });
+  return commitToCache(hash, bytes);
 }
 
 /**
@@ -367,23 +405,38 @@ async function buildPlayableSegments(prose, { npcVoiceId } = {}) {
 function synthesiseToCacheOnce(hash, spec, apiKey) {
   let pending = _synthInFlight.get(hash);
   if (!pending) {
+    const bytes = (async () => _unsavedClips.get(hash) ?? await synthesise({
+      apiKey,
+      voiceId: spec.voiceId,
+      modelId: spec.modelId,
+      text:    spec.text,
+      speed:   spec.speed,
+      stream:  false,
+    }))();
     pending = (async () => {
-      const bytes = _unsavedClips.get(hash) ?? await synthesise({
-        apiKey,
-        voiceId: spec.voiceId,
-        modelId: spec.modelId,
-        text:    spec.text,
-        speed:   spec.speed,
-        stream:  false,
-      });
-      const path = await writeToCache(hash, bytes);
+      const made = await bytes;
+      const path = await writeToCache(hash, made);
       if (path) _unsavedClips.delete(hash);
-      else holdUnsavedClip(hash, bytes);
-      return { bytes, path };
-    })().finally(() => _synthInFlight.delete(hash));
+      else holdUnsavedClip(hash, made);
+      return { bytes: made, path };
+    })().finally(() => { _synthInFlight.delete(hash); _synthBytesInFlight.delete(hash); });
     _synthInFlight.set(hash, pending);
+    _synthBytesInFlight.set(hash, bytes);
   }
   return pending;
+}
+
+/**
+ * Audio GM: the bytes of a clip made — or being made — once (synthesiseToCacheOnce),
+ * as soon as they are synthesised; its upload goes on behind (issue #348 PT12).
+ *
+ * @returns {Promise<ArrayBuffer|Uint8Array|Blob>}
+ */
+function synthesisedBytesOnce(hash, spec, apiKey) {
+  const pending = synthesiseToCacheOnce(hash, spec, apiKey);
+  // Handled here: a failed synthesis rejects the bytes, which the caller awaits.
+  pending.catch(() => {});
+  return _synthBytesInFlight.get(hash) ?? pending.then(made => made.bytes);
 }
 
 /**
@@ -646,7 +699,8 @@ async function handleSynthRequest(payload) {
 // GM-side: a keyed Player who may not browse the cache asks whether a clip is
 // already there (issue #326 W79). Lookup only — an ask never synthesises (it
 // carries no spec, and its answer must not bill the GM) — but it joins this
-// clip's in-flight synthesis, so a clip being made is not made twice.
+// clip's in-flight synthesis, so a clip being made is not made twice, and
+// uploads again a clip this GM made whose upload the world refused.
 async function handleCacheAsk(payload) {
   if (!isAudioGM()) return;
   const hash = typeof payload.hash === "string" ? payload.hash : "";
@@ -654,7 +708,11 @@ async function handleCacheAsk(payload) {
   let path = null;
   try {
     path = await cacheLookup(hash);
-    if (!path && _synthInFlight.has(hash)) ({ path } = await _synthInFlight.get(hash));
+    // A clip this GM made whose upload the world refused is uploaded again —
+    // its held bytes, nothing synthesised, no key needed: the asker otherwise
+    // made it again on their own key (known-issues
+    // AUDIO-KEYED-PLAYER-STORAGE-REFUSED).
+    if (!path && (_synthInFlight.has(hash) || _unsavedClips.has(hash))) ({ path } = await synthesiseToCacheOnce(hash, null, ""));
   } catch (err) {
     console.warn(`${MODULE_ID} | audio cache ask failed:`, err?.message ?? err);
   }
@@ -684,7 +742,7 @@ function resolvePendingCacheAsk(hash, path) {
  * for, and the GM's real answer then found no waiter (issue #337 Y42). Two
  * forgeries still pass (known-issues AUDIO-FORGE-ORIGIN-SHARED): a file
  * another Forge account keeps in The Forge's Assets Library under the clip's
- * name, in any world (see isCachePathFor); and a forged "no clip"
+ * name, in a world on The Forge (see isCachePathFor); and a forged "no clip"
  * (`path: null`), which has the GM's honest answer's form and cannot be told
  * from it — it ends the wait early with "not ready": a nuisance, not a
  * substitution.
@@ -756,11 +814,17 @@ async function requestGmSynthesis(hash, spec) {
  * handler, and applies the stripped prose to the card's prose element.
  */
 export async function onNarratorCardRendered(message, root) {
+  // The X-Card removed this narration (issue #321 U07): no Play button — its
+  // audio stays hidden, as the card renders it — and audio of it already
+  // playing, or still loading, stops. The flag lands as an update, which
+  // re-renders the card on every client; the narration used to play on to
+  // its end (known-issues XCARD-AUDIO-PLAYING).
+  if (message?.flags?.[MODULE_ID]?.xCarded) {
+    await silenceCard(message);
+    return;
+  }
   if (!audioEnabledForThisClient()) return;
   if (!(root instanceof HTMLElement)) return;
-  // The X-Card removed this narration (issue #321 U07): no Play button — its
-  // audio stays hidden, as the card renders it.
-  if (message?.flags?.[MODULE_ID]?.xCarded) return;
 
   const playBtn = root.querySelector('[data-action="audioPlayToggle"]');
   if (!playBtn) return;
@@ -832,6 +896,26 @@ export async function onNarratorCardRendered(message, root) {
   }
 }
 
+/**
+ * Stop this card's audio on this client: a load still in flight never plays
+ * (its generation is taken), segments still being made are not made, and a
+ * session playing or paused is stopped. Other cards' audio is left alone.
+ *
+ * @param {ChatMessage} message
+ */
+async function silenceCard(message) {
+  cancelCardLoad(message);
+  const session = _sessionsByCardId.get(message);
+  if (!session) return;
+  _sessionsByCardId.delete(message);
+  if (session.state === PLAYBACK_STATE.STOPPED || session.state === PLAYBACK_STATE.IDLE) return;
+  try {
+    await session.stop();
+  } catch (err) {
+    console.warn(`${MODULE_ID} | audio: stopping an X-carded card's narration failed:`, err?.message ?? err);
+  }
+}
+
 async function togglePlayback(message, btn, rawProse, userInitiated = false) {
   let session = _sessionsByCardId.get(message);
   if (session && session.state === PLAYBACK_STATE.PLAYING) {
@@ -851,12 +935,19 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
   setButtonLabel(btn, "loading");
   const generation = cardLoadGeneration(message);
   const stopped    = () => cardLoadGeneration(message) !== generation;
+  // The segments still being made once playback starts stop being made when
+  // this Play is stopped — its Stop, the X-Card, or another card taking over
+  // (buildPlayableSegments' `cancelled`).
+  let started = null;
+  const cancelled = () => stopped() || message?.flags?.[MODULE_ID]?.xCarded === true
+    || started?.state === PLAYBACK_STATE.STOPPED || started?.state === PLAYBACK_STATE.ERROR;
   try {
     // Pick the NPC voice from the card's focal connection pronouns (finding F).
     const npcVoiceId = await resolveNpcVoiceForCard(message, getVoiceConfig());
-    const segments = await buildPlayableSegments(rawProse, { npcVoiceId });
-    // Stop was pressed while this loaded: the card stays as Stop left it.
-    if (stopped()) return;
+    const segments = await buildPlayableSegments(rawProse, { npcVoiceId, cancelled });
+    // Stop was pressed while this loaded — or the X-Card took the narration
+    // (XCARD-AUDIO-PLAYING): the card stays as Stop left it.
+    if (stopped() || message?.flags?.[MODULE_ID]?.xCarded === true) return;
     if (segments.length === 0) {
       // No synthesisable text. Previously a silent no-op — a player clicking
       // Play saw nothing happen with no explanation (finding H). Tell them.
@@ -890,6 +981,7 @@ async function togglePlayback(message, btn, rawProse, userInitiated = false) {
       },
     });
     _sessionsByCardId.set(message, session);
+    started = session;
     await session.play();
   } catch (err) {
     // Synthesis / segmentation failures (buildPlayableSegments throws).

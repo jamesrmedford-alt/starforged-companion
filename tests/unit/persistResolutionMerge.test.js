@@ -142,11 +142,44 @@ describe("persistResolution — concurrent writes survive the stale working copy
     const snapshot = pipelineSnapshot();
     snapshot.artAssetIds = { "a-pipeline": "Art: connection c-1 a-pipeline" };
     stored().artAssetIds = { "a-gm": "Art: ship s-1 a-gm" };
-    await persistResolution(resolution(), snapshot);
+    // The pipeline's portrait is in the Art Cache: its journal entry holds it.
+    const savedGetName = game.journal.getName;
+    game.journal.getName = (name) => (name === "Art: connection c-1 a-pipeline" ? { name } : null);
+    try {
+      await persistResolution(resolution(), snapshot);
+    } finally {
+      game.journal.getName = savedGetName;
+    }
     expect(stored().artAssetIds).toEqual({
       "a-pipeline": "Art: connection c-1 a-pipeline",
       "a-gm":       "Art: ship s-1 a-gm",
     });
+  });
+
+  // Known-issues ART-INDEX-RESURRECTED: the X-Card's deleteEntityArtAssets
+  // dropped a deleted portrait's index entry from the store while a move was
+  // in flight, and the union wrote it back from the pipeline's copy.
+  it("does not write back an art index entry the store dropped when its journal entry is gone", async () => {
+    stored().artAssetIds = { "a-gone": "Art: connection c-1 a-gone", "a-kept": "Art: ship s-1 a-kept" };
+    const snapshot = pipelineSnapshot();
+    // Meanwhile the X-Card deleted a-gone's journal entry and its index entry.
+    stored().artAssetIds = { "a-kept": "Art: ship s-1 a-kept" };
+    await persistResolution(resolution(), snapshot);
+    expect(stored().artAssetIds).toEqual({ "a-kept": "Art: ship s-1 a-kept" });
+  });
+
+  it("control: a pipeline-only entry whose journal was renamed is kept (found by its asset flag)", async () => {
+    const snapshot = pipelineSnapshot();
+    snapshot.artAssetIds = { "a-renamed": "Art: connection c-1 a-renamed" };
+    const savedContents = game.journal.contents;
+    game.journal.contents = [{ name: "Vance's portrait", flags: { [MODULE_ID]: { entityType: "artAsset", assetId: "a-renamed" } } }];
+    try {
+      await persistResolution(resolution(), snapshot);
+    } finally {
+      if (savedContents === undefined) delete game.journal.contents;
+      else game.journal.contents = savedContents;
+    }
+    expect(stored().artAssetIds).toEqual({ "a-renamed": "Art: connection c-1 a-renamed" });
   });
 
   it("legacy ticks from a concurrent `!bond` are not reverted", async () => {

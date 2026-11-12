@@ -672,13 +672,14 @@ export async function seedConnectionActor(actor, campaignState, { force = false,
   // The record as written: the seeded fields over the record as it is now.
   const connection = { ...existing, ...(actor.flags?.[MODULE_ID]?.[FLAG_KEY] ?? {}), ...seededFields };
 
-  // Silent portrait — gated on an OpenRouter key. attachPortraitToActor sets
-  // actor.img + prototype-token art and embeds a large copy at the top of the
-  // Notes tab. Failures stay silent.
-  if (portraitSource && hasOpenRouterKey()) {
+  // Silent portrait — made where an OpenRouter key lives: here, else asked of
+  // the GM holding one (AUTOSEED-KEYLESS-CANONICAL); with none, nothing.
+  // attachPortraitToActor sets actor.img + prototype-token art and embeds a
+  // large copy at the top of the Notes tab. Failures stay silent.
+  if (portraitSource) {
     try {
-      const { generatePortrait } = await import("../art/generator.js");
-      await generatePortrait(actor.id, "connection", connection, campaignState ?? {});
+      const { generatePortraitWhereKeyLives } = await import("../art/portraitRouting.js");
+      await generatePortraitWhereKeyLives(actor.id, "connection", connection, campaignState ?? {});
     } catch (err) {
       console.warn(`${MODULE_ID} | seedConnectionActor: portrait generation failed:`, err);
     }
@@ -929,11 +930,6 @@ function readClaudeKeyConn() {
 function readModuleSettingConn(key) {
   try { return globalThis.game?.settings?.get(MODULE_ID, key); }
   catch { return undefined; }
-}
-
-function hasOpenRouterKey() {
-  try { return !!globalThis.game?.settings?.get(MODULE_ID, "openRouterApiKey"); }
-  catch { return false; }
 }
 
 function escapeHtmlConn(s) {

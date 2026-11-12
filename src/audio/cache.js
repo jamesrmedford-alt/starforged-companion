@@ -72,6 +72,24 @@ function pathFor(hash) {
 const FORGE_ASSETS_ORIGIN = "https://assets.forge-vtt.com/";
 
 /**
+ * Is this world running on The Forge? The Forge's own client module says so
+ * (`ForgeVTT.usingTheForge` — docs/foundry-reference/foundry-api-reference.md,
+ * "Checking if running on The Forge"); a page served from a forge-vtt.com host
+ * is one too. Only there can the GM's cache name an Assets Library URL.
+ *
+ * @returns {boolean}
+ */
+function runningOnTheForge() {
+  try {
+    if (globalThis.ForgeVTT?.usingTheForge === true) return true;
+    const host = String(globalThis.location?.hostname ?? "").toLowerCase();
+    return host === "forge-vtt.com" || host.endsWith(".forge-vtt.com");
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Whether `path` is one this cache can name for the clip `hash` — what
  * `write` returns and `lookupDetailed` finds: the world's own
  * `worlds/<world>/audio/<xx>/<hash>.mp3` (pathFor), or an Assets Library URL
@@ -80,12 +98,13 @@ const FORGE_ASSETS_ORIGIN = "https://assets.forge-vtt.com/";
  * `audio.cache.found`) is played only when it is one: the socket does not say
  * who sent it, and a Sound loads any URL (issue #337 Y42).
  *
- * What it cannot bind (known-issues AUDIO-FORGE-ORIGIN-SHARED): the Assets
- * Library origin is every Forge account's, so a user of the world with a
- * Forge account of their own can upload a file named `<hash>.mp3` to their
- * library and send its URL, and it passes — in any world, since nothing here
- * knows whether this one is on The Forge. Nothing here tells the GM's
- * library from theirs either. This module never builds a Forge URL — `write`
+ * The Assets Library branch holds only in a world running on The Forge
+ * (runningOnTheForge — known-issues AUDIO-FORGE-ANY-WORLD). What it cannot
+ * bind there (known-issues AUDIO-FORGE-ORIGIN-SHARED): the Assets Library
+ * origin is every Forge account's, so a user of the world with a Forge
+ * account of their own can upload a file named `<hash>.mp3` to their library
+ * and send its URL, and it passes. Nothing here tells the GM's library from
+ * theirs. This module never builds a Forge URL — `write`
  * returns the upload response's and `lookupDetailed` the browse listing's,
  * whatever their layout — so it does not establish that one ends in the
  * world's `worlds/<world>/audio/<xx>/<hash>.mp3`. Requiring that ending waits
@@ -100,6 +119,10 @@ const FORGE_ASSETS_ORIGIN = "https://assets.forge-vtt.com/";
 export function isCachePathFor(hash, path) {
   if (typeof hash !== "string" || !/^[0-9a-f]{64}$/.test(hash) || typeof path !== "string") return false;
   if (globalThis.game?.world?.id && path === pathFor(hash).full) return true;
+  // An Assets Library URL only in a world on The Forge: a self-hosted world's
+  // cache can never name one, and accepting it there let any user's own
+  // Forge-hosted file stand in for a clip (known-issues AUDIO-FORGE-ANY-WORLD).
+  if (!runningOnTheForge()) return false;
   return path.startsWith(FORGE_ASSETS_ORIGIN) && path.endsWith(`/${hash}.mp3`);
 }
 

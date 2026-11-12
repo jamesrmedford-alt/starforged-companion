@@ -31,6 +31,20 @@ import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
 
 const MODULE_ID = 'starforged-companion';
 
+// The About tab's per-browser API keys, by setting (KEYS-NOT-CLEARABLE).
+const API_KEY_LABELS = Object.freeze({
+  claudeApiKey:     'Claude',
+  openRouterApiKey: 'OpenRouter',
+  elevenLabsApiKey: 'ElevenLabs',
+});
+
+/** The About tab's Clear beside a key field — shown only while a key is stored. */
+function clearKeyButton(key, isSet) {
+  if (!isSet) return '';
+  return `<button type="button" class="settings-btn btn-clear-key" data-action="clearApiKey" data-key="${key}"
+                  title="Remove the ${API_KEY_LABELS[key]} API key stored in this browser">Clear</button>`;
+}
+
 const DIAL_POSITIONS = [
   {
     value: 'lawful',
@@ -1171,6 +1185,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       savePacingSettings:          SettingsPanelApp.#onSavePacingSettings,
       saveFactContinuitySettings:  SettingsPanelApp.#onSaveFactContinuitySettings,
       saveApiKeys:                 SettingsPanelApp.#onSaveApiKeys,
+      clearApiKey:                 SettingsPanelApp.#onClearApiKey,
       saveAudioSettings:           SettingsPanelApp.#onSaveAudioSettings,
       refreshAudioBudget:          SettingsPanelApp.#onRefreshAudioBudget,
     },
@@ -1958,6 +1973,7 @@ export class SettingsPanelApp extends ApplicationV2 {
                    id="sf-claude-key" name="claudeApiKey"
                    placeholder="sk-ant-..."
                    autocomplete="off" spellcheck="false">
+            ${clearKeyButton('claudeApiKey', ctx.apiKeys.claudeKeySet)}
           </div>
           ${ctx.isGM ? `
             <div class="api-key-field">
@@ -1971,6 +1987,7 @@ export class SettingsPanelApp extends ApplicationV2 {
                      id="sf-openrouter-key" name="openRouterApiKey"
                      placeholder="sk-or-v1-..."
                      autocomplete="off" spellcheck="false">
+              ${clearKeyButton('openRouterApiKey', ctx.apiKeys.openRouterKeySet)}
             </div>
           ` : ''}
           <div class="api-key-field">
@@ -1984,13 +2001,14 @@ export class SettingsPanelApp extends ApplicationV2 {
                    id="sf-elevenlabs-key" name="elevenLabsApiKey"
                    placeholder="sk_..."
                    autocomplete="off" spellcheck="false">
+            ${clearKeyButton('elevenLabsApiKey', ctx.apiKeys.elevenLabsKeySet)}
           </div>
           <div class="api-key-actions">
             <button class="settings-btn btn-save-keys" data-action="saveApiKeys">
               Save Keys
             </button>
             <span class="api-key-save-note">
-              Leave a field blank to keep the existing value.
+              Leave a field blank to keep the existing value; Clear removes a stored key.
             </span>
           </div>
         </div>
@@ -2235,6 +2253,37 @@ export class SettingsPanelApp extends ApplicationV2 {
       ]);
 
       ui.notifications?.info('Starforged Companion: Fact Continuity settings saved.');
+      this.render();
+    })();
+    this._lastAction = work;
+    return work;
+  }
+
+  /**
+   * The About tab's Clear beside a stored key (known-issues
+   * KEYS-NOT-CLEARABLE): the fields render empty and Save Keys writes only a
+   * non-empty one, so no module UI could remove a stored Claude, OpenRouter
+   * or ElevenLabs key — Y40's "cleared key" branch was reachable only from
+   * the console. Clearing writes the empty key, so its `onChange` takes a
+   * GM out of the matching key registry as entering one put them in.
+   */
+  static #onClearApiKey(_event, target) {
+    const work = (async () => {
+      const key   = target?.dataset?.key;
+      const label = API_KEY_LABELS[key];
+      if (!label) return;
+      // The OpenRouter field is a GM's (it renders for GMs only).
+      if (key === 'openRouterApiKey' && !game.user?.isGM) return;
+      const confirm = foundry.applications?.api?.DialogV2?.confirm;
+      if (typeof confirm === 'function') {
+        const ok = await confirm({
+          window:  { title: `Clear ${label} API key` },
+          content: `<p>Remove the ${label} API key stored in this browser? Enter it again to use it.</p>`,
+        });
+        if (!ok) return;
+      }
+      await game.settings.set(MODULE_ID, key, '');
+      ui.notifications?.info?.(`Starforged Companion: ${label} API key cleared.`);
       this.render();
     })();
     this._lastAction = work;

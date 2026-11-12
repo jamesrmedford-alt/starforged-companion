@@ -897,6 +897,10 @@ export async function applyAttemptFulfilVow(payload = {}, ctx = {}) {
  * @param {(f: Object) => boolean} [spec.offers] — a pick: the press names one
  *   of the card's own choices (the payload is client-asserted); false refuses
  *   it, `not-on-card`
+ * @param {(f: Object, card: ChatMessage) => Object|null} [spec.lineSpeaker] —
+ *   who the forced move speaks as when no PC rolls it (a player's own line
+ *   posted again): it spoke as the presser — a GM's press put the player's
+ *   words under the GM's name (issue #348 PT14)
  * @returns {Promise<{ posted: boolean, reason?: string }>}
  */
 export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
@@ -950,10 +954,11 @@ export async function applyCardRollerFollowup(payload = {}, ctx = {}, spec) {
       console.warn(`${MODULE_ID} | ${label}: card ${messageId} could not be claimed — nothing rolled:`, err?.message ?? err);
       return { posted: false, reason: "claim-refused" };
     }
+    const lineSpeaker = actor ? null : (spec.lineSpeaker?.(f, message) ?? null);
     try {
       await ChatMessage.create({
         content: move.content,
-        ...(actor ? { speaker: speakerFor(actor) } : {}),
+        ...(actor ? { speaker: speakerFor(actor) } : lineSpeaker ? { speaker: lineSpeaker } : {}),
         flags:   { [MODULE_ID]: { ...move.flags, bypassPacing: true, deferWhileBusy: true,
           ...sourceCardFlag(messageId, claim, false, { value: move.stamp ?? true }) } },
       });
@@ -1054,6 +1059,9 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
     isCard: (f) => f.pacedNarrative === true
       && typeof f.suggestedMove === "string" && !!f.suggestedMove
       && typeof f.playerText === "string" && !!f.playerText,
+    // The card's line is the player's: with no PC to speak it, it keeps the
+    // speaker it was typed under (PT14).
+    lineSpeaker: (f, card) => speakerOfLine(f.playerText, card),
     build: (f) => ({ content: f.playerText, flags: {
       forcedMoveId: f.suggestedMove,
       // A scene-challenge Roll's challenge, as the Finish an Expedition
@@ -1858,6 +1866,31 @@ export async function applyPayoffRetry(payload = {}, ctx = {}) {
 // ─────────────────────────────────────────────────────────────────────────────
 // HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The speaker a player's line was typed under: the newest chat message before
+ * `card` with exactly that text and none of the module's flags — the line the
+ * paced card answered — as its alias (the player's name with no PC of their
+ * own). Null when it is not in chat any more.
+ *
+ * @param {string} text
+ * @param {ChatMessage} card
+ * @returns {{ alias: string }|null}
+ */
+function speakerOfLine(text, card) {
+  if (typeof text !== "string" || !text) return null;
+  const all = Array.from(globalThis.game?.messages?.contents ?? []);
+  const at  = all.findIndex(m => m?.id === card?.id);
+  for (let i = (at >= 0 ? at : all.length) - 1; i >= 0; i--) {
+    const m = all[i];
+    if (m?.flags?.[MODULE_ID] || String(m?.content ?? "") !== text) continue;
+    const author = m.author;
+    const authorName = typeof author === "object" ? author?.name : globalThis.game?.users?.get?.(author)?.name;
+    const alias = m.speaker?.alias || authorName || null;
+    return alias ? { alias } : null;
+  }
+  return null;
+}
 
 /** A ChatMessage speaker for `actor` — Foundry's own builder when available. */
 function speakerFor(actor) {

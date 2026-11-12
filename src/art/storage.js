@@ -230,6 +230,34 @@ export async function deleteEntityArtAssets(entityType, entityId, { portraitId =
 }
 
 
+/**
+ * Delete the page-less "Art: …" entry a store of `assetId` left — its page
+ * refused, it holds nothing. A refused regeneration's entry: the entity is
+ * locked, so no later Generate completes it (storeArtAsset's page-less
+ * branch), and it went only with the entity (known-issues
+ * ART-REGEN-PAGELESS-ENTRY). An entry with its page is left alone. A refused
+ * delete is logged, never thrown.
+ *
+ * @param {string} assetId
+ * @returns {Promise<boolean>} whether an entry was deleted
+ */
+export async function discardPagelessAssetEntry(assetId) {
+  if (!assetId) return false;
+  const entry = (game.journal?.contents ?? []).find(e =>
+    e?.flags?.[MODULE_ID]?.entityType === "artAsset"
+    && e.flags[MODULE_ID].assetId === assetId
+    && !e.pages?.contents?.length);
+  if (!entry) return false;
+  try {
+    await entry.delete();
+    return true;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | art/storage: deleting the page-less portrait entry "${entry.name}" failed:`, err?.message ?? err);
+    return false;
+  }
+}
+
+
 // ─────────────────────────────────────────────────────────────────────────────
 // RENDERING
 // ─────────────────────────────────────────────────────────────────────────────

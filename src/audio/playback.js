@@ -124,7 +124,8 @@ function _createBlobAudioAdapter(src) {
 /**
  * One playback session per chat card. Sequentially plays an array of
  * `{ voice, src, text }` segments where `src` is a path or URL the
- * Foundry Sound class can load.
+ * Foundry Sound class can load — or a promise of one, for a segment still
+ * being made when playback starts (issue #348 PT12).
  *
  * One sequencing loop owns the segment cursor (issue #300): resume plays the
  * paused sound on and lets the loop that started it carry on — a second
@@ -137,7 +138,7 @@ export class PlaybackSession {
   /**
    * @param {Object} args
    * @param {string} args.cardId
-   * @param {Array<{ voice: string, src: string, text: string }>} args.segments
+   * @param {Array<{ voice: string, src: string|Promise<string>, text: string }>} args.segments
    * @param {number} [args.volume=0.8]   — 0..1, applied to each segment
    * @param {Function} [args.onStateChange]  — (newState) => void
    * @param {Function} [args.onError]        — (err) => void, called by _fail
@@ -230,7 +231,21 @@ export class PlaybackSession {
     while (current() && this._currentIdx < this.segments.length) {
       const seg   = this.segments[this._currentIdx];
       this._currentSound = null;   // nothing is sounding while the next segment loads
-      const sound = await this._createSound(seg.src);
+      // A later segment's source may still be being made while the earlier
+      // ones play (audio/index.js buildPlayableSegments — issue #348 PT12):
+      // it is awaited here. One that failed fails the session — unless it was
+      // stopped meanwhile, when its making was called off.
+      let src = seg.src;
+      if (typeof src?.then === "function") {
+        try {
+          src = await src;
+        } catch (err) {
+          if (!current()) return;
+          throw err;
+        }
+        if (!current()) return;
+      }
+      const sound = await this._createSound(src);
       if (!current()) {
         // Stopped, or replayed from the top, while this loaded: never play it.
         try { await sound?.stop?.(); } catch (err) {

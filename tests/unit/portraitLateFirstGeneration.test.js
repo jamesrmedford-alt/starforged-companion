@@ -37,7 +37,7 @@ vi.mock('../../src/art/openRouterImage.js', () => ({
 }));
 
 import { simulateTable, USERS, MODULE_ID } from '../helpers/multiClient.js';
-import { deferred } from '../helpers/faults.js';
+import { deferred, failWrites } from '../helpers/faults.js';
 import { CampaignStateSchema } from '../../src/schemas.js';
 
 let nextId = 0;
@@ -146,6 +146,11 @@ describe('an entity is given one first portrait (PORTRAIT-LATE-FIRST-GENERATION)
   }, 30_000);
 
   it('a first portrait that comes back after another GM generated and regenerated one leaves the locked portrait standing', async () => {
+    // gm-1's claim on the record refused: its seed generates unclaimed, so the
+    // other GM's Generate is not held back by it (PORTRAIT-TWO-GM-FIRST-
+    // GENERATION's claim) and links a portrait while gm-1's image is out.
+    failWrites(table, (w) => w.kind === 'actor.update' && w.client === 'gm-1'
+      && !!w.changes?.[`flags.${MODULE_ID}.connection`]?.portraitClaim);
     const { seed, image } = await seedPortraitHeld('gm-1');
 
     await generate('gm-2');
