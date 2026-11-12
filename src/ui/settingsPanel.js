@@ -19,6 +19,7 @@ import { playXCard, resumeNarrationAfterXCard, bindXCardCard } from '../context/
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { pageIsStale } from '../multiplayer/connectionWatch.js';
+import { isCanonicalGM } from '../multiplayer/gmGate.js';
 import { sessionLastSeenAt } from '../session/lifecycle.js';
 import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
@@ -1010,6 +1011,9 @@ function holdsOwnPrivateLines(campaignState, userId) {
 function registerPrivateLinesHealing() {
   Hooks.on('updateSetting', onCampaignStateWritten);
   Hooks.on('createSetting', onCampaignStateWritten);
+  // And the global Lines / Veils copy beside them (SAFETY-GLOBAL-LISTS-CROSS-WRITE).
+  Hooks.on('updateSetting', onSafetyListsWritten);
+  Hooks.on('createSetting', onSafetyListsWritten);
 }
 
 /** A world setting landed: when it is campaignState and misstates this user's Private Lines, re-sync them. */
@@ -1041,6 +1045,59 @@ function restoreOwnPrivateLines(userId) {
     safety.privateLines = withPrivateLinesEntry(safety.privateLines, userId, storedFormOfPrivateLines(getPrivateLines()));
     return game.settings.set(MODULE_ID, 'campaignState', { ...stored, safety });
   }, 'Private Lines restore');
+}
+
+/**
+ * The global Lines and Veils in campaignState.safety, kept as the world
+ * settings have them (SAFETY-GLOBAL-LISTS-CROSS-WRITE — AA35's heal for these
+ * lists). Every GM writes them from the settings at `ready` and on each
+ * Safety edit (syncSafetyToCampaignState), from its cached campaignState, so a
+ * co-GM's write built before a GM's edit landed after it, carrying the old
+ * lists, and the narrator read them until the next sync. The settings are
+ * the canonical store and every GM shares them; the canonical GM — the one
+ * writer, so two GMs never trade writes — puts the stored copy back when a
+ * campaignState write, or a list's own setting landing, leaves them apart.
+ * Not from a page whose connection dropped: its settings may be stale
+ * (issue #347 AB19-STALE-CACHE-WRITES). Fire-and-forget; never throws.
+ *
+ * @param {Object} setting — the Setting document written
+ */
+function onSafetyListsWritten(setting) {
+  const key = setting?.key;
+  if (key !== `${MODULE_ID}.campaignState` && key !== `${MODULE_ID}.${SETTING.GLOBAL_LINES}`
+      && key !== `${MODULE_ID}.${SETTING.GLOBAL_VEILS}`) return;
+  try {
+    if (!game.user?.isGM || !isCanonicalGM() || pageIsStale()) return;
+    if (holdsGlobalSafetyLists(game.settings.get(MODULE_ID, 'campaignState'))) return;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Lines and Veils: could not check the stored copy:`, err?.message ?? err);
+    return;
+  }
+  serialiseCampaignStateWrite(() => {
+    // Only when it is still wrong at this write's turn (a sync may have been on its way).
+    const stored = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    if (holdsGlobalSafetyLists(stored)) return undefined;
+    const safety = { ...(stored.safety ?? {}), lines: getGlobalLines(), veils: getGlobalVeils() };
+    return game.settings.set(MODULE_ID, 'campaignState', { ...stored, safety });
+  }, 'Lines and Veils restore').catch(err =>
+    console.warn(`${MODULE_ID} | Lines and Veils: re-sync after a write that misstated them failed:`, err?.message ?? err));
+}
+
+/**
+ * True when campaignState.safety holds the world's global Lines and Veils
+ * exactly as their settings do — or holds no safety copy at all: a state
+ * never synced is the ready-time sync's (syncSafetyToCampaignState), and a
+ * stale write carries the copy its GM had synced.
+ */
+function holdsGlobalSafetyLists(campaignState) {
+  const same = (a, b) => {
+    const x = Array.isArray(a) ? a : [];
+    const y = Array.isArray(b) ? b : [];
+    return x.length === y.length && x.every((v, i) => v === y[i]);
+  };
+  const safety = campaignState?.safety;
+  if (!safety || typeof safety !== 'object') return true;
+  return same(safety.lines, getGlobalLines()) && same(safety.veils, getGlobalVeils());
 }
 
 // ---------------------------------------------------------------------------

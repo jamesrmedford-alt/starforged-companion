@@ -894,6 +894,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
       outcome:       resolution.outcome,
       kind:          'move',
       actorId:       character?.actorId ?? null,   // the roller's chronicle (CHRONICLE-FIRST-PC)
+      narrationId,
     });
     return narration;
 
@@ -927,6 +928,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
             outcome:       resolution.outcome,
             kind:          'move',
             actorId:       character?.actorId ?? null,
+            narrationId,
           });
           return narration;
         }
@@ -1117,7 +1119,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       });
       // The acting character the beat is about (CHRONICLE-FIRST-PC).
       scheduleChronicleEntry({
-        narrationText: narration, campaignState, kind: 'round',
+        narrationText: narration, campaignState, kind: 'round', narrationId,
         characters: entries.map(e => ({ actorId: e.actorId, name: e.actorName })),
       });
       return { posted: 'card', narrationId, card };
@@ -2155,22 +2157,29 @@ function withStruckByUpgrade(beat, messages, sessionId) {
  *     `resolutionId`, a round card's entries' too) — out of RECENT ORACLE
  *     RESULTS, which told every later narration the removed answer was
  *     established (issue #345 AA01);
+ *   - `incitingIncident`: the campaign premise, when they include the
+ *     inciting narration it was written from (XCARD-INCITING-PREMISE);
  *   - `sessionSummary`: its text dropped and a regen due, when it covered
  *     them (the summary is a droppable convenience; the next regen reads the
  *     remaining cards);
  *   - `xCardRedirect`: the redirect the first narration after a GM resumes
  *     carries — set on every play, X-carded cards or not.
  * The caller then flags the returned cards `xCarded` (flagXCardedCards).
+ * `opts.cards` names the cards to remove instead of the pick: a narration
+ * whose card posted after the pause (safety.js, XCARD-POST-RACE).
  *
  * @param {Object} cs — the copy to update (mutated; its ledger objects are replaced, never changed)
+ * @param {{ cards?: Object[]|null }} [opts]
  * @returns {{ cards: Object[], retracted: Object[], sessionId: string|null, summaryDropped: boolean }}
  *   the X-carded cards, the truths retracted, their session, and whether the
  *   session's summary was dropped — the Session Log's story End wrote from it
  *   goes too (safety.js finishXCardRemoval, issue #345 AA27)
  */
-export function applyXCardToNarratorMemory(cs) {
+export function applyXCardToNarratorMemory(cs, { cards: given = null } = {}) {
   const sessionId = cs?.currentSessionId ?? null;
-  const cards = xCardedNarrationCards(sessionId);
+  // `cards`: a narration that posted after the pause (XCARD-POST-RACE) —
+  // removed the same way, in place of the pick.
+  const cards = Array.isArray(given) ? given.filter(Boolean) : xCardedNarrationCards(sessionId);
   const ids = [...new Set(cards.map(m => m.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === 'string' && id))];
 
   const retracted = retractNarrations(cs, ids);
@@ -2179,6 +2188,7 @@ export function applyXCardToNarratorMemory(cs) {
     cs.xCardedNarrationIds = [...prior.filter(id => !ids.includes(id)), ...ids].slice(-XCARD_NARRATION_ID_CAP);
   }
   dropOracleResultsFor(cs, xCardedOracleResults(cards));
+  dropXCardedPremise(cs, cards, ids);
 
   const summary = cs.sessionSummary;
   let summaryDropped = false;
@@ -2197,6 +2207,34 @@ export function applyXCardToNarratorMemory(cs) {
 
   cs.xCardRedirect = { sessionId, at: new Date().toISOString() };
   return { cards, retracted, sessionId, summaryDropped };
+}
+
+/**
+ * Take the campaign premise out of `cs` when the X-Card removed the inciting
+ * narration it was written from (XCARD-INCITING-PREMISE). The premise
+ * (`campaignState.incitingIncident`, runIncitingIncident) renders as
+ * CAMPAIGN PREMISE — canon — in every narrator prompt, so its prose kept
+ * telling the removed beat after its card, ledger entries, lore and capture
+ * were gone. Found by the narration id it carries; a premise saved before it
+ * carried one, by an X-carded inciting card of its session. Mutates `cs`.
+ *
+ * @param {Object} cs
+ * @param {Object[]} cards — the X-carded cards
+ * @param {string[]} ids — their narration ids
+ * @returns {boolean} whether the premise was dropped
+ */
+function dropXCardedPremise(cs, cards, ids) {
+  const premise = cs?.incitingIncident;
+  if (!premise || typeof premise !== 'object') return false;
+  const byId = typeof premise.narrationId === 'string' && premise.narrationId
+    ? ids.includes(premise.narrationId)
+    : (cards ?? []).some(m => {
+      const f = m?.flags?.[MODULE_ID];
+      return f?.incitingIncidentCard === true && (f.sessionId ?? null) === (premise.sessionId ?? null);
+    });
+  if (!byId) return false;
+  cs.incitingIncident = null;
+  return true;
 }
 
 /**
@@ -2226,6 +2264,33 @@ function summaryCoversCards(summary, sessionId, cards) {
 }
 
 /**
+ * The narration cards a Burn Momentum or Improve Result has begun to
+ * supersede on this page — their ids, newest last, capped. A rolling summary
+ * whose call (or write) is out when one is superseded compares its source
+ * against them (UPGRADE-REGEN-IN-FLIGHT — AA25's play count for the X-Card):
+ * the card's `burnSuperseded` flag lands only after the supersede's own
+ * awaits, and the summary made from it was stored after the supersede.
+ */
+const SUPERSEDING_CARD_CAP = 100;
+/** How long a begun supersede counts without its flag (a strike whose card write failed stops counting). */
+const SUPERSEDING_WINDOW_MS = 2 * 60 * 1000;
+const _supersedingCards = new Map();   // card id → when its supersede began
+
+/** Note cards a supersede has begun on (dropSummaryOfSupersededCards). */
+function noteSupersedingCards(cards) {
+  const now = Date.now();
+  for (const c of cards) if (typeof c?.id === 'string' && c.id) _supersedingCards.set(c.id, now);
+  while (_supersedingCards.size > SUPERSEDING_CARD_CAP) _supersedingCards.delete(_supersedingCards.keys().next().value);
+}
+
+/** True when a supersede has begun on (recently), or struck, one of `cards`. */
+function anySuperseded(cards) {
+  const now = Date.now();
+  return (cards ?? []).some(m => m?.flags?.[MODULE_ID]?.burnSuperseded === true
+    || (typeof m?.id === 'string' && now - (_supersedingCards.get(m.id) ?? -Infinity) < SUPERSEDING_WINDOW_MS));
+}
+
+/**
  * Drop the session's rolling summary when it was made from narrations a Burn
  * Momentum or Improve Result is about to supersede — the move narration it
  * replaces, the trigger vignette of a clock it rewinds (issue #345 AA24).
@@ -2245,6 +2310,8 @@ function summaryCoversCards(summary, sessionId, cards) {
 export async function dropSummaryOfSupersededCards(cards) {
   const list = (Array.isArray(cards) ? cards : []).filter(Boolean);
   if (!list.length) return false;
+  // A summary still being made from them is not stored (UPGRADE-REGEN-IN-FLIGHT).
+  noteSupersedingCards(list);
   try {
     if (!isCanonicalGM()) return false;
     const stored = storedCampaignState();
@@ -2720,6 +2787,13 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     console.debug(`${MODULE_ID} | narrator: X-Card played during the rolling summary's call — its summary is discarded.`);
     return '';
   }
+  // A Burn Momentum or Improve Result that superseded a card of its source
+  // while the call was out (UPGRADE-REGEN-IN-FLIGHT): the next card — the
+  // re-narration — regenerates it without the replaced outcome.
+  if (anySuperseded(cards)) {
+    console.debug(`${MODULE_ID} | narrator: a narration the rolling summary was made from was superseded during its call — its summary is discarded.`);
+    return '';
+  }
 
   const record = {
     text:         text.trim(),
@@ -2747,7 +2821,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
     let kept = true;
     try {
       const write = serialiseCampaignStateWrite(async () => {
-        if (xCardPlayCount() !== xCardPlaysAtStart) return false;
+        if (xCardPlayCount() !== xCardPlaysAtStart || anySuperseded(cards)) return false;
         const stored = game.settings.get(MODULE_ID, 'campaignState') ?? campaignState;
         await game.settings.set(MODULE_ID, 'campaignState', { ...stored, sessionSummary: record });
         return true;
@@ -2761,7 +2835,7 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
       console.warn(`${MODULE_ID} | narrator: rolling summary persist failed:`, err?.message ?? err);
     }
     if (!kept) {
-      console.debug(`${MODULE_ID} | narrator: X-Card played while the rolling summary waited to be written — its summary is discarded.`);
+      console.debug(`${MODULE_ID} | narrator: X-Card played, or a source narration superseded, while the rolling summary waited to be written — its summary is discarded.`);
       return '';
     }
   }
@@ -2932,6 +3006,16 @@ export function catchUpUnsummarisedSession() {
       if (!await settledWithin(write, WORLD_WRITE_WAIT_MS, 'last session catch-up write')) return false;
       const done = await write;
       if (done) console.info(`${MODULE_ID} | narrator: LAST SESSION caught up for the session closed without its summary.`);
+      // Its Session Log page's story, when an X-Card emptied it, too
+      // (SESSION-LOG-STORY-NOT-REBUILT).
+      if (done && text?.trim()) {
+        try {
+          const { restoreSessionLogStory } = await import('../world/worldJournal.js');
+          await restoreSessionLogStory(pending.sessionId, text);
+        } catch (err) {
+          console.warn(`${MODULE_ID} | narrator: rebuilding the Session Log's story failed:`, err?.message ?? err);
+        }
+      }
       return !!done;
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: LAST SESSION catch-up failed:`, err?.message ?? err);
@@ -3275,7 +3359,7 @@ export async function narrateOracleFollowup({
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(16000),
     });
-    if (xCard.interrupted('narrateOracleFollowup')) return null;
+    if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
     const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
 
     if (!text?.trim()) return null;
@@ -3294,7 +3378,7 @@ export async function narrateOracleFollowup({
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(16000),
         });
-        if (xCard.interrupted('narrateOracleFollowup')) return null;
+        if (xCard.interrupted('narrateOracleFollowup')) return forgetInterruptedOracleResult(oracleCardId);
         const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
         if (text?.trim()) {
           await postOracleNarrationCard({ text, kind, oracleName, sessionId, narrationId, oracleCardId });
@@ -3308,6 +3392,27 @@ export async function narrateOracleFollowup({
     console.error(`${MODULE_ID} | narrateOracleFollowup failed:`, err);
     return null;
   }
+}
+
+/**
+ * An oracle follow-up the X-Card interrupted posts no card, so nothing names
+ * its raw result card for the X-Card's drop: the result leaves RECENT ORACLE
+ * RESULTS here instead (oracleFollowup.js forgetOracleResultUnderXCard —
+ * XCARD-ORACLE-FOLLOWUP-UNWRITTEN). Resolves null, the follow-up's skip value.
+ *
+ * @param {string|null} oracleCardId
+ * @returns {Promise<null>}
+ */
+async function forgetInterruptedOracleResult(oracleCardId) {
+  if (typeof oracleCardId === 'string' && oracleCardId) {
+    try {
+      const { forgetOracleResultUnderXCard } = await import('../oracles/oracleFollowup.js');
+      await forgetOracleResultUnderXCard(oracleCardId);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | narrateOracleFollowup: forgetting the interrupted result failed:`, err?.message ?? err);
+    }
+  }
+  return null;
 }
 
 function buildOracleUserMessage({
@@ -3862,6 +3967,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       campaignState,
       kind:          'paced',
       actorId:       character?.actorId ?? null,   // the speaker's chronicle (CHRONICLE-FIRST-PC)
+      narrationId,
     });
     return text;
   } catch (err) {
@@ -3888,6 +3994,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
             campaignState,
             kind:          'paced',
             actorId:       character?.actorId ?? null,
+            narrationId,
           });
           return text;
         }
@@ -4946,6 +5053,7 @@ export function applyNarratorSidecar(rawText, campaignState, ctx = {}) {
     runConsistencyCheck(prose, auditCampaignState(campaignState), {
       matchedEntityIds:  ctx.matchedEntityIds ?? [],
       currentLocationId: campaignState.currentLocationId ?? null,
+      narrationId:       typeof ctx.narrationId === 'string' ? ctx.narrationId : null,
     }).catch(err =>
       console.warn(`${MODULE_ID} | factContinuity: consistencyCheck dispatch failed:`, err),
     );

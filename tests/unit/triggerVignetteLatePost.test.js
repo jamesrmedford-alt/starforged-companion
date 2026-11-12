@@ -244,3 +244,70 @@ describe("Begin a Session's campaign clock, rewound while its trigger vignette i
     expect(vignetteCards()[0].flags[MODULE_ID].clockId).toBe('camp-1');
   });
 });
+
+/**
+ * TRIGGER-VIGNETTE-POST-WINDOW (residual of TRIGGER-VIGNETTE-LATE-POST): the
+ * vignette checks its clock when its reply comes in; a rewind landing during
+ * the card's own creation round trip found the vignette still in flight (its
+ * supersede skipped it) and the card posted live. The card now re-checks its
+ * clock once posted and is struck — named for the upgrade that rewound it.
+ */
+describe('Pay the Price: a burn rewinds the clock while the vignette\'s card is being created', () => {
+  const PTP = { sufferMeterDeltas: [] };
+
+  it('the card that posted anyway is struck, its truth retracted, and it names the upgrade', async () => {
+    const realCreate = ChatMessage.create;
+    const gate = deferred();
+    const reached = deferred();
+    ChatMessage.create = async (data) => {
+      if (data?.flags?.[MODULE_ID]?.clockVignetteCard) { reached.resolve(); await gate.promise; }
+      return realCreate(data);
+    };
+    try {
+      const advanced = await advanceClocksOnPayThePrice();
+      await until(() => calls.length === 1, 'the vignette\'s Claude call');
+      calls[0].resolve(reply(VIGNETTE));
+      await reached.promise;                                // past its check, its card on the way
+
+      await revertPayThePrice({ ...PTP, clocksAdvanced: advanced }, null, { kind: 'burn', failures: [], resolutionId: 'res-burned' });
+      expect(state().clocks[0].filled).toBe(3);
+
+      gate.resolve();
+      await triggerVignettesSettled();
+      await turns(40);
+    } finally {
+      ChatMessage.create = realCreate;
+    }
+
+    const [card] = vignetteCards();
+    expect(card, 'the card posted (setup)').toBeDefined();
+    expect(card.flags[MODULE_ID]).toMatchObject({ burnSuperseded: true, supersededFor: 'res-burned' });
+    expect(card.content).toMatch(/Superseded/);
+    await until(() => reactorTruths().every(t => t.retracted), 'the vignette\'s truth retracted');
+    expect(reactorTruths().every(t => t.retractedBy === 'superseded')).toBe(true);
+  });
+
+  it('control: no rewind while the card is created — it stays live', async () => {
+    const realCreate = ChatMessage.create;
+    const gate = deferred();
+    const reached = deferred();
+    ChatMessage.create = async (data) => {
+      if (data?.flags?.[MODULE_ID]?.clockVignetteCard) { reached.resolve(); await gate.promise; }
+      return realCreate(data);
+    };
+    try {
+      await advanceClocksOnPayThePrice();
+      await until(() => calls.length === 1, 'the vignette\'s Claude call');
+      calls[0].resolve(reply(VIGNETTE));
+      await reached.promise;
+      gate.resolve();
+      await triggerVignettesSettled();
+      await turns(40);
+    } finally {
+      ChatMessage.create = realCreate;
+    }
+    const [card] = vignetteCards();
+    expect(card.flags[MODULE_ID].burnSuperseded).toBeUndefined();
+    expect(reactorTruths()).toMatchObject([{ retracted: false }]);
+  });
+});

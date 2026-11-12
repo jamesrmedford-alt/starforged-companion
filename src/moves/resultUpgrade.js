@@ -662,7 +662,7 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
   try {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
     if (!isCanonicalGM()) return;
-    const { vignetteClockId, triggerVignetteInFlight } = await import("../clocks/payThePriceClocks.js");
+    const { vignetteClockId, triggerVignetteInFlight, noteRewindDuringVignette } = await import("../clocks/payThePriceClocks.js");
     const clockIds = new Set(clocks.map(vignetteClockId).filter(Boolean));
     if (!clockIds.size) return;
     const sessionId = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState")?.currentSessionId ?? null;
@@ -672,25 +672,58 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
       // Its vignette is still being written: it is narrated only while the
       // clock is full, so it drops itself — and the newest card of the clock
       // is an earlier trigger's, which happened (TRIGGER-VIGNETTE-LATE-POST).
-      if (triggerVignetteInFlight(clockId)) continue;
+      // One whose card is on its way strikes itself once posted, with this
+      // upgrade's note (TRIGGER-VIGNETTE-POST-WINDOW).
+      if (triggerVignetteInFlight(clockId)) {
+        noteRewindDuringVignette(clockId, { kind, resolutionId });
+        continue;
+      }
       const card = newestFirst.find(m => {
         const f = m?.flags?.[MODULE_ID];
-        return f?.clockVignetteCard === true && f.narratorCard === true && f.clockId === clockId
-          && (f.sessionId ?? null) === sessionId && f.burnSuperseded !== true && f.xCarded !== true;
+        if (f?.clockVignetteCard !== true || f.narratorCard !== true || f.clockId !== clockId
+          || (f.sessionId ?? null) !== sessionId || f.xCarded === true) return false;
+        // Live — or struck by its own post-time check before this upgrade's
+        // name reached it: it takes the name (supersededFor, issue #347 D2).
+        return f.burnSuperseded !== true || (f.lateStruck === true && !f.supersededFor);
       });
       if (card) cards.push(card);
     }
-    if (!cards.length) return;
+    await strikeTriggerVignetteCards(cards, kind, resolutionId);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${kind}: superseding a rewound clock's vignette failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * Strike trigger vignette cards a rewind undid — supersedeTriggerVignettes'
+ * strike, and the vignette post site's own after a rewind landed during its
+ * card's creation (payThePriceClocks.js, TRIGGER-VIGNETTE-POST-WINDOW): a
+ * rolling summary made from them dropped first (issue #345 AA24), each card
+ * flagged `burnSuperseded` (naming the upgraded resolution, `supersededFor`,
+ * when known — else marked `lateStruck` for the upgrade to name), its prose
+ * struck, and what its sidecar wrote retracted. Canonical GM. Never throws.
+ *
+ * @param {Object[]} cards — ChatMessage documents
+ * @param {"burn"|"improve"} kind
+ * @param {string|null} [resolutionId] — the resolution upgraded, when known
+ * @returns {Promise<void>}
+ */
+export async function strikeTriggerVignetteCards(cards, kind, resolutionId = null) {
+  const list = (Array.isArray(cards) ? cards : []).filter(Boolean);
+  if (!list.length) return;
+  try {
+    const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
+    if (!isCanonicalGM()) return;
     // A rolling summary made from them goes first, while they are still in
     // memory (issue #345 AA24 — the move narration's supersede does the same).
     await import("../narration/narrator.js")
-      .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards(cards))
+      .then(({ dropSummaryOfSupersededCards }) => dropSummaryOfSupersededCards(list))
       .catch(err => console.warn(`${MODULE_ID} | ${kind}: the rolling summary of a rewound clock's vignette could not be dropped:`, err?.message ?? err));
     const narrationIds = [];
-    for (const card of cards) {
+    for (const card of list) {
       await card.update({
         [`flags.${MODULE_ID}.burnSuperseded`]: true,
-        ...(resolutionId ? { [`flags.${MODULE_ID}.supersededFor`]: resolutionId } : {}),
+        ...(resolutionId ? { [`flags.${MODULE_ID}.supersededFor`]: resolutionId } : { [`flags.${MODULE_ID}.lateStruck`]: true }),
         content: supersededVignetteContent(card.content, kind),
       }).catch(err => console.warn(`${MODULE_ID} | ${kind}: the rewound clock's vignette ${card.id} could not be struck:`, err?.message ?? err));
       const narrationId = card.flags?.[MODULE_ID]?.narrationId;
@@ -698,7 +731,7 @@ async function supersedeTriggerVignettes(clocks, kind, resolutionId = null) {
     }
     await retractSupersededNarrations(narrationIds, { label: `${kind}: a rewound clock's vignette` });
   } catch (err) {
-    console.warn(`${MODULE_ID} | ${kind}: superseding a rewound clock's vignette failed:`, err?.message ?? err);
+    console.warn(`${MODULE_ID} | ${kind}: striking a rewound clock's vignette failed:`, err?.message ?? err);
   }
 }
 

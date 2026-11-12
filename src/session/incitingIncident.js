@@ -464,6 +464,9 @@ export async function runIncitingIncident(campaignState, { authorId = null } = {
         target:          meta.target,
         sessionId:       campaignState?.currentSessionId ?? null,
         establishedAt:   new Date().toISOString(),
+        // Its card carries the same id: an X-Card on the card takes the
+        // premise out of every prompt with it (XCARD-INCITING-PREMISE).
+        narrationId,
       };
       const { persistSceneLedgerFields } = await import("../factContinuity/sceneLifecycle.js");
       const written = await persistSceneLedgerFields(campaignState, ["sceneTruths", "sceneState", "sceneFrame"], "inciting premise", {

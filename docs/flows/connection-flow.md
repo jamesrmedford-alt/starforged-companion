@@ -120,7 +120,8 @@ recorded under its name promoted to it; its bond is §2's.
   way, with the row it confirmed (`confirmDraft`'s `narrationId` →
   `createdFromNarrationId` + `createdFromDraft`): deleted by the X-Card, the
   row goes back to pending (`entityExtractor.reopenConfirmedDraftRow`;
-  withdrawn instead when the X-Card removed the row's own narration too) —
+  withdrawn instead when the X-Card removed the row's own narration too; a
+  row the GM had dismissed goes back to dismissed — the link's `status`) —
   the NPC came from the earlier narration's draft, which the X-Card kept
   (MAKE-CONNECTION-PENDING-CONFIRM-UNSTAMPED). Either delete hands the
   scene-ledger facts promoted to the card back to its name
@@ -159,7 +160,12 @@ recorded under its name promoted to it; its bond is §2's.
   card comes off `dismissedEntities` with the rename — as a sidebar rename
   the record follows does (`undismissRecordName`; issue #345 AA55): the name
   index leaves out a record whose name is dismissed, so she vanished from the
-  narrator.
+  narrator. A narration's un-dismissal — this reveal's, or a Make a
+  Connection's on a dismissed NPC (AA19) — is logged with its narration id
+  (`campaignState.undismissedByNarration`), and the X-Card's finish
+  dismisses the name again once the connection and the rename are settled,
+  unless a record still holds it (`restoreNarrationDismissals`,
+  XCARD-KEEPS-UNDISMISS).
 - **Sector creation** — the canonical local connection, `canonicalLocked`,
   bond Item mirrored to every PC.
 - **Inciting incident** — the vow-target NPC (`swearSharedVowForAll` creates

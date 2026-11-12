@@ -972,7 +972,9 @@ export async function undoNarrationEntries(narrationIds) {
  * telling what it removed, and "Lore this session" naming lore it retracted.
  * `narrative`: the X-Card dropped the summary the story was written from (it
  * covered the removed narration — applyXCardToNarratorMemory), so the story
- * leaves the page too; nothing rebuilds it there. The lore list keeps a title
+ * leaves the page too, marked (`narrativeXCarded`): the mint's catch-up
+ * rebuilds it from the summary of what remains (restoreSessionLogStory,
+ * SESSION-LOG-STORY-NOT-REBUILT). The lore list keeps a title
  * unless every lore entry of the session by that title is now retracted. A
  * page End has not summarised is left alone. A journal write: the canonical
  * GM's, after the X-Card's undo. Never throws.
@@ -997,10 +999,44 @@ export async function retractSessionLogSummary(sessionId, { narrative = false } 
     const kept      = lore.filter(t => !gone(t));
     const dropStory = narrative && typeof summary.narrative === "string" && summary.narrative.trim() !== "";
     if (!dropStory && kept.length === lore.length) return false;
-    const next = { ...summary, lore: kept, ...(dropStory ? { narrative: "" } : {}) };
+    const next = { ...summary, lore: kept, ...(dropStory ? { narrative: "", narrativeXCarded: true } : {}) };
     return !!(await persistSessionLogPage(page, { ...flag, summary: next }));
   } catch (err) {
     console.warn(`${MODULE_ID} | X-Card: the Session Log's summary could not be revised:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/**
+ * Write a session's "Story so far" back onto its Session Log page after an
+ * X-Card emptied it (SESSION-LOG-STORY-NOT-REBUILT — the maintainer's
+ * proposal). An X-Card after End a Session drops the page's story with the
+ * summary it was written from (retractSessionLogSummary marks it); the next
+ * mint regenerates that session's summary from the cards that remain for
+ * LAST SESSION (rollSessionIfDue's finalize, or catchUpUnsummarisedSession
+ * later), and this is that write's mirror on the page — the page was left
+ * without its story for good. Only a story the X-Card emptied, and only
+ * while the page still has none. A journal write: the canonical GM's (both
+ * callers are). Never throws.
+ *
+ * @param {string|null} sessionId — the closing session
+ * @param {string} text — its summary, regenerated without the removed beat
+ * @returns {Promise<boolean>} whether the page was rewritten
+ */
+export async function restoreSessionLogStory(sessionId, text) {
+  const story = typeof text === "string" ? text.trim() : "";
+  if (typeof sessionId !== "string" || !sessionId || !story) return false;
+  try {
+    const page    = findSessionLogPage(findJournal(JOURNAL_NAMES.sessionLog), sessionId);
+    const flag    = page?.flags?.[MODULE_ID]?.[FLAG_KEYS.sessionLogPage];
+    const summary = flag?.summary;
+    if (!summary?.writtenAt || summary.narrativeXCarded !== true) return false;
+    if (typeof summary.narrative === "string" && summary.narrative.trim()) return false;
+    const rebuilt = { ...summary, narrative: story };
+    delete rebuilt.narrativeXCarded;
+    return !!(await persistSessionLogPage(page, { ...flag, summary: rebuilt }));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | the Session Log's story could not be rebuilt:`, err?.message ?? err);
     return false;
   }
 }

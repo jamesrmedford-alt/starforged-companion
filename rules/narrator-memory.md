@@ -197,7 +197,11 @@ layers. This file is the never-break list.
    write — an oracle follow-up's
    result by the card id its card names (`oracleCardId` ↔ the entry's
    `cardId`), a move's Pay the Price by its `resolutionId` (issue #345
-   AA01).
+   AA01); an oracle follow-up the X-Card interrupted, which posts no card,
+   drops its raw card's own (XCARD-ORACLE-FOLLOWUP-UNWRITTEN). A narration
+   card that posts while the X-Card is active is removed with it
+   (XCARD-POST-RACE), and the Chronicle entries the scribe wrote from a
+   removed narration go too (XCARD-CHRONICLE).
 
 7. **Sidecar subjects resolve against the full roster, in its own shape.**
    `applyNarratorSidecar` passes `collectAllEntities(campaignState)` so

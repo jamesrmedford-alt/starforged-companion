@@ -168,7 +168,10 @@ CLAUDE.md "audit consumers" rule):
   beat), and `registerXCardRedirectHook` (canonical GM) clears
   `xCardRedirect` when the first narrator card with `narrationText` posts
   with the X-Card lifted — not a fallback, a published reflection or an
-  X-carded card. A round card is one beat: the walk back from the newest card
+  X-carded card. A narration card created while the X-Card is active — its
+  reply passed its check just before the play, its card on the way while the
+  pause's pick ran — is removed as the X-Card removes one, on the canonical
+  GM (`registerXCardLatePostHook`, XCARD-POST-RACE). A round card is one beat: the walk back from the newest card
   stops at a card of another round — round submissions are not chat messages,
   so without that stop it took the previous round's card within the beat's
   two minutes (issue #340). The pick reads the chat as it was — the messages
@@ -177,7 +180,8 @@ CLAUDE.md "audit consumers" rule):
   still the one an X-Card removes, with what it wrote, and the kept beat
   before it is left alone (issue #347 AB22); the canonical GM keeps the
   newest twenty of those the pick reads on campaignState
-  (`deletedChatMessages`, no text kept), so the pick survives a reload, and a
+  (`deletedChatMessages`, no text kept — a session mint lets them go,
+  DELETED-MESSAGES-KEPT), so the pick survives a reload, and a
   deleted card an X-Card removed is marked there (issue #347 residual
   DELETED-NARRATION-MEMORY-PAGE-ONLY); a deletion alone forgets nothing
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
@@ -200,7 +204,12 @@ CLAUDE.md "audit consumers" rule):
 - burn supersede never matches a round card: a round's upgrades are decided
   before it is narrated, and the card's `resolutionId` is empty (issue #340)
 - the Chronicle (`scheduleChronicleEntry`) writes one entry per round, kind
-  `round`, which the writer's prompt knows (issue #340)
+  `round`, which the writer's prompt knows (issue #340); every entry the
+  scribe writes carries its narration's `narrationId`, so the X-Card's finish
+  removes it (`retractNarrationChronicle`) and a scribe still running when
+  the card lands writes nothing (XCARD-CHRONICLE); a strike deletes the
+  session's automatic entries that state the struck fact
+  (`propagateRetraction` → `retractStruckChronicle`, STRIKE-CHRONICLE)
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
@@ -238,7 +247,9 @@ the opening premise survivable. The premise (`campaignState.incitingIncident`)
 is written with the narration's scene ledgers onto the store as it is then
 (`persistSceneLedgerFields(…, { onto })`), never the pre-call snapshot whole —
 that reverted Private Lines, a safety flag or an X-Card relayed during the
-call (issue #321 U06d).
+call (issue #321 U06d). The premise carries its narration's `narrationId`, so
+an X-Card on the inciting card drops it in the pause's write
+(XCARD-INCITING-PREMISE).
 
 **Narration ids and the X-Card (issue #321 U07).** Every truth and state value
 a sidecar writes, and the frame, carries the narration's `narrationId` (its

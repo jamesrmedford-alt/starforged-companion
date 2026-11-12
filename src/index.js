@@ -164,7 +164,7 @@ import {
 import { registerLayoutSettings, initLayoutMode } from "./ui/layoutMode.js";
 
 import { wholeWordsFit } from "./context/relevanceResolver.js";
-import { suppressScene, postXCardCard, clearXCard } from "./context/safety.js";
+import { suppressScene, postXCardCard, clearXCard, registerXCardLatePostHook } from "./context/safety.js";
 import { startScene, endScene, mergeOwnedFields, persistCampaignStateFields } from "./factContinuity/sceneLifecycle.js";
 import { rollSessionIfDue, registerSessionActivityHook, registerSessionActivitySetting, SESSION_MINT_FIELDS, isSessionActive, noteSessionBeingReplaced, noteSessionReplaced, sessionBeingReplaced } from "./session/lifecycle.js";
 import { recordOracleResult } from "./oracles/oracleMemory.js";
@@ -8196,6 +8196,7 @@ Hooks.once("ready", () => {
   registerOracleMemoryCaptureHook();       // narrator-context 2026-07: !oracle / !ptp results → campaignState.recentOracles
   registerRollingSummaryRefreshHook();     // #286 B7: rolling summary regen after a narrator card posts, off the narration's path
   registerXCardRedirectHook();             // #321 U07: the X-Card's redirect is cleared once the first narration after it posts
+  registerXCardLatePostHook();             // XCARD-POST-RACE: a narration whose card posts after the pause is removed with it
   registerDeletedChatHook();               // #347 AB22: the X-Card's pick reads chat as it was, a deleted narration included
   registerConnectionWatch();               // #347 AB19: a narration in flight across a dropped connection is discarded
   registerSessionActivityHook();          // #286 C4: chat activity keeps the session alive (lastSessionTimestamp)

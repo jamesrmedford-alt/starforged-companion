@@ -164,6 +164,7 @@ export const SESSION_MINT_FIELDS = Object.freeze([
   "unsummarisedSession",
   "sessionActive",
   "sessionActiveStartedAt",
+  "deletedChatMessages",
 ]);
 
 /** Epoch ms of the activity stamp for `sessionId`; NaN when there is none for it. */
@@ -355,6 +356,10 @@ export function mintSession(campaignState, now = Date.now()) {
   campaignState.sessionEndedId         = null;
   campaignState.sessionActive          = false;
   campaignState.sessionActiveStartedAt = null;
+  // The deleted chat messages the X-Card's pick reads after a reload belong
+  // to the session closing out: its pick reads the new session's alone, so
+  // they are let go (DELETED-MESSAGES-KEPT).
+  campaignState.deletedChatMessages    = [];
   return campaignState;
 }
 
@@ -399,6 +404,18 @@ export async function rollSessionIfDue(campaignState, { now = Date.now() } = {})
     } catch (err) {
       caughtUp = false;
       console.warn(`${MODULE_ID} | session roll: summary finalise failed:`, err?.message ?? err);
+    }
+  }
+  // Its Session Log page's story, when an X-Card after End emptied it, is
+  // rebuilt from the summary just brought up to date
+  // (SESSION-LOG-STORY-NOT-REBUILT). Fail-open.
+  const closingSummary = campaignState.sessionSummary;
+  if (closing && caughtUp && closingSummary?.sessionId === closing && closingSummary.text?.trim()) {
+    try {
+      const { restoreSessionLogStory } = await import("../world/worldJournal.js");
+      await restoreSessionLogStory(closing, closingSummary.text);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | session roll: rebuilding the Session Log's story failed:`, err?.message ?? err);
     }
   }
   // A session nobody began is folded into the one before it (X65): not marked.

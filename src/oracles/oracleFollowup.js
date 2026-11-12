@@ -30,6 +30,8 @@ import { hasKeyedActiveGM, isCanonicalGM } from "../multiplayer/gmGate.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor } from "../moves/burnMomentum.js";
 import { triggerVignettesSettled } from "../clocks/payThePriceClocks.js";
+import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
+import { dropOracleResultsFor } from "./oracleMemory.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -120,6 +122,70 @@ export async function narrateOracleFollowupOnGm(payload = {}, ctx = {}) {
     speakerActorId: speakerOk ? speaker.id : null,
     messageId,
   });
+}
+
+/**
+ * Ask the canonical GM to take a raw oracle card's result out of RECENT
+ * ORACLE RESULTS: its follow-up narration was discarded because the X-Card
+ * was played while it was being written (XCARD-ORACLE-FOLLOWUP-UNWRITTEN).
+ * No narration card posts, so nothing names the card for the X-Card's own
+ * drop (issue #345 AA01), and the raw answer kept telling every later
+ * narration it was established. Local on the canonical GM, relayed from the
+ * client that narrated on its own key. Fire-and-forget; never throws.
+ *
+ * @param {string|null} messageId — the raw oracle card
+ * @returns {Promise<void>}
+ */
+export async function forgetOracleResultUnderXCard(messageId) {
+  if (typeof messageId !== "string" || !messageId) return;
+  try {
+    // On the canonical GM the follow-up may be running inside its own relay
+    // handler ("oracle.narrate"): a second relayed action would queue behind
+    // it and never run. Its own write chain orders the drop behind the capture.
+    if (isCanonicalGM()) await dropOracleCardResult(messageId);
+    else await requestGmAction("oracle.forgetResult", { messageId });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | oracle follow-up: forgetting the result the X-Card interrupted failed:`, err?.message ?? err);
+  }
+}
+
+/**
+ * gmRelay handler for "oracle.forgetResult" — runs on the canonical GM: the
+ * raw oracle card's entry leaves campaignState.recentOracles, on the write
+ * chain behind its capture (registerOracleMemoryCaptureHook queued it when
+ * the card was created). The card must be a raw oracle card posted by the
+ * requester, or the requester a GM — a result only its roller (or a GM) may
+ * take out of the narrator's memory.
+ *
+ * @param {{ messageId?: string }} payload
+ * @param {{ requesterId?: string|null, requesterIsGM?: boolean }} [ctx]
+ * @returns {Promise<boolean>} whether a result was dropped
+ */
+export async function forgetOracleResultFromRelay(payload = {}, ctx = {}) {
+  const messageId = typeof payload?.messageId === "string" && payload.messageId ? payload.messageId : null;
+  const card = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  const f    = card?.flags?.[MODULE_ID] ?? {};
+  if (!card || !(f.oracleCommandCard || f.payThePriceCard)) {
+    console.warn(`${MODULE_ID} | oracle follow-up: ${messageId ?? "no card"} is not a raw oracle card — its result is kept.`);
+    return false;
+  }
+  const authorId = card.author?.id ?? card.user?.id ?? null;
+  if (!ctx?.requesterIsGM && authorId !== (ctx?.requesterId ?? null)) {
+    console.warn(`${MODULE_ID} | oracle follow-up: user ${ctx?.requesterId ?? "?"} did not post card ${messageId} — its result is kept.`);
+    return false;
+  }
+  return dropOracleCardResult(messageId);
+}
+
+/** The card's entry out of the ring, read at its turn on the campaignState write chain. Canonical GM. */
+function dropOracleCardResult(messageId) {
+  return serialiseCampaignStateWrite(async () => {
+    const latest = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? {};
+    const campaignState = { ...latest, recentOracles: Array.isArray(latest.recentOracles) ? [...latest.recentOracles] : [] };
+    if (!dropOracleResultsFor(campaignState, { cardIds: [messageId] })) return false;
+    await globalThis.game.settings.set(MODULE_ID, "campaignState", campaignState);
+    return true;
+  }, "oracle result forgotten under the X-Card");
 }
 
 async function runOracleFollowup(args) {
