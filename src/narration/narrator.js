@@ -3662,30 +3662,43 @@ export async function narratePacedInput(playerText, campaignState, options = {})
   // first-PC fallback made it Kira's CHARACTER block, Kira speaking, and the
   // ring's "Kira wrote" (issue #342 Z50).
   const character    = options?.speakerActorId ? getActiveCharacter(campaignState, options.speakerActorId) : null;
-  await ensureSceneStarted(campaignState, 'first_narration_paced');
 
-  // Don't suggest a social move against a fellow player character (finding G):
-  // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
-  // the nomination before it reaches the narrator (so no hint is written) and
-  // the card (so no Roll button appears).
-  const suggestedMove = suppressPcDirectedSocialMove(
-    options.suggestedMove ?? null, playerText, character?.name ?? null,
-  );
+  // The prompt is built before the call. A throw here — a store read, an
+  // entity card, the scene start — escaped to the pacing router's catch,
+  // which only logged it: the line sat in chat, narrated by nothing and told
+  // to nobody, as a failed call's line did before AB21 (issue #347 residual
+  // PACED-NARRATION-THROW-BEFORE-CALL). It posts AB21's notice too.
+  let suggestedMove, extras, systemPrompt, userMessage;
+  try {
+    await ensureSceneStarted(campaignState, 'first_narration_paced');
 
-  const extras = await buildNarratorExtras('paced_narrative', campaignState, {
-    playerNarration: playerText,
-    character,
-  });
+    // Don't suggest a social move against a fellow player character (finding G):
+    // inter-PC tension is resolved through roleplay, not a Compel roll. Suppress
+    // the nomination before it reaches the narrator (so no hint is written) and
+    // the card (so no Roll button appears).
+    suggestedMove = suppressPcDirectedSocialMove(
+      options.suggestedMove ?? null, playerText, character?.name ?? null,
+    );
 
-  const systemPrompt = buildNarratorSystemPrompt(
-    campaignState, settings, character, '', extras,
-  );
+    extras = await buildNarratorExtras('paced_narrative', campaignState, {
+      playerNarration: playerText,
+      character,
+    });
 
-  const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
-  const sentenceTarget = settings.narrationLength ?? 3;
-  const userMessage = buildPacedNarrativeUserMessage(
-    playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
-  );
+    systemPrompt = buildNarratorSystemPrompt(
+      campaignState, settings, character, '', extras,
+    );
+
+    const recentContext = getRecentNarrationContext(sessionId, getNarratorContextCards());
+    const sentenceTarget = settings.narrationLength ?? 3;
+    userMessage = buildPacedNarrativeUserMessage(
+      playerText, recentContext, sentenceTarget, suggestedMove, character?.name ?? null,
+    );
+  } catch (err) {
+    console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
+    await postPacedNarrationFailedCard(campaignState);
+    return null;
+  }
 
   try {
     const raw = await callNarratorAPI({
@@ -4611,8 +4624,9 @@ async function postPacedNarrationPausedCard(campaignState = null) {
 /**
  * Short notice posted when a paced narration — a typed line the pacing
  * classifier read as narrative — could not be written: its Claude call failed
- * (overloaded, a server error, a timeout, a rate limit on the retry too) or
- * its reply had no prose (issue #347 AB21). A move's failed narration posts
+ * (overloaded, a server error, a timeout, a rate limit on the retry too), its
+ * reply had no prose (issue #347 AB21), or its prompt could not be built
+ * (issue #347 residual PACED-NARRATION-THROW-BEFORE-CALL). A move's failed narration posts
  * postFallbackCard and `@scene` its fallback card; the line posted nothing and
  * told nobody, after a wait of up to four minutes, and just sat in chat. Not
  * a narrator card, so it never enters the recent-narration ring, the rolling

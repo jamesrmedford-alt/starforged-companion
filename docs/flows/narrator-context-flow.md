@@ -221,7 +221,9 @@ AA29). When
 the card was played and resumed mid-call, the notice (and `@scene`'s card)
 says the narration was discarded instead. A paced line whose narration call
 fails — overloaded, a server error, a timeout, a rate limit on the retry
-too — or whose reply has no prose gets a "That line was not narrated" notice
+too — or whose reply has no prose, or whose prompt could not be built (a
+throw before the call, issue #347 residual PACED-NARRATION-THROW-BEFORE-CALL)
+— gets a "That line was not narrated" notice
 the same way (`postPacedNarrationFailedCard`, issue #347 AB21): it logged to
 the GM's console only, and the line sat in chat with no answer. Neither
 notice is a narrator card, so neither reaches the ring, the summary or the
