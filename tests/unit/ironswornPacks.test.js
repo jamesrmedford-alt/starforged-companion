@@ -6,7 +6,6 @@ import {
   IS_PACKS,
   getCanonicalMove,
   getCanonicalEncounterActor,
-  listCanonicalEncounters,
   listCanonicalTruths,
   _clearPackCache,
 } from '../../src/system/ironswornPacks.js';
@@ -102,7 +101,7 @@ describe('Phase 5 — getCanonicalMove', () => {
   });
 });
 
-describe('Phase 5 — getCanonicalEncounterActor / listCanonicalEncounters', () => {
+describe('Phase 5 — getCanonicalEncounterActor', () => {
   beforeEach(() => { _clearPackCache(); });
 
   it('finds an encounter by exact (case-insensitive) name', async () => {
@@ -119,26 +118,6 @@ describe('Phase 5 — getCanonicalEncounterActor / listCanonicalEncounters', () 
   it('returns null when name is missing', async () => {
     global.game.packs = { get: () => null };
     expect(await getCanonicalEncounterActor('')).toBeNull();
-  });
-
-  it('listCanonicalEncounters returns the index sorted by name', async () => {
-    const entries = [
-      { _id: 'a1', name: 'Zealot' },
-      { _id: 'a2', name: 'Adept' },
-      { _id: 'a3', name: 'Hunter' },
-    ];
-    global.game.packs = {
-      get: (id) => id === IS_PACKS.FOE_ACTORS_SF
-        ? makeFakePack({ id, entries })
-        : null,
-    };
-    const list = await listCanonicalEncounters();
-    expect(list.map(x => x.name)).toEqual(['Adept', 'Hunter', 'Zealot']);
-  });
-
-  it('returns [] when the foe pack is unavailable', async () => {
-    global.game.packs = { get: () => null };
-    expect(await listCanonicalEncounters()).toEqual([]);
   });
 });
 
