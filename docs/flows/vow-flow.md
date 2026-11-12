@@ -254,10 +254,15 @@ All real progress lands on **item ticks** (`system.current`) via
   (`onePerClock`, by `vowId`). The returned entries keep every copy, each
   with its `vowId`, for the reversal below. A Burn Momentum or Improve Result
   that upgrades the miss reverts them via `revertVowClocksForBurn`
-  (`resultUpgrade.js` `revertPayThePrice` — issue #311 P05). A rewind that
-  lands in part leaves only the refused Items on the GMs' payoff card; its
-  Retry rewinds those alone (issue #314 Q05 — the whole step was queued and
-  the landed clocks were rewound again).
+  (`resultUpgrade.js` `revertPayThePrice` — issue #311 P05) — in the same
+  lockstep: the first copy is rewound a segment and each later copy set to
+  the value it reached, one the sync hook already moved left alone, and the
+  reversal card says "rewound" once per vow (VOW-CLOCK-REWIND-PER-COPY: each
+  copy was rewound from what it read, a second segment off one the hook had
+  moved, and said once per copy). A rewind that lands in part leaves only
+  the refused Items on the GMs' payoff card, each with the value it is owed
+  (`target`); its Retry sets those alone to it (issue #314 Q05 — the whole
+  step was queued and the landed clocks were rewound again).
 
 ## 3. Narrator awareness
 

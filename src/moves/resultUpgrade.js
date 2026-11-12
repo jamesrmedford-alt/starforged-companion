@@ -200,7 +200,8 @@ export async function retryUpgradeStep(s) {
       break;
     case "vowClocks":
       if (!Array.isArray(s.entries) || !s.entries.every(e => typeof e?.actorId === "string" && typeof e?.itemId === "string"
-        && (e.vowId == null || typeof e.vowId === "string"))) {
+        && (e.vowId == null || typeof e.vowId === "string")
+        && (e.target == null || (Number.isInteger(e.target) && e.target >= 0)))) {
         return { ok: false, reason: "invalid step" };
       }
       break;
@@ -254,6 +255,8 @@ export function upgradeStepRecord(f) {
       ...upgradedResolution(f) } : {}),
     ...(f.effect === "vowClocks"     ? { entries: (f.entries ?? []).map(e => ({
       actorId: e.actorId, itemId: e.itemId, vowId: typeof e.vowId === "string" && e.vowId ? e.vowId : null, name: e.name ?? null,
+      // The value the copy is owed, for its Retry (VOW-CLOCK-REWIND-PER-COPY).
+      ...(Number.isInteger(e.target) && e.target >= 0 ? { target: e.target } : {}),
     })), kind: upgradeKind(f.kind), ...upgradedResolution(f) } : {}),
     ...(f.effect === "unprepared"    ? { pcIds: (f.pcIds ?? []).filter(id => typeof id === "string") } : {}),
     ...(f.effect === "choiceCard"    ? { pcId: f.pcId ?? null, sufferPrompt: f.sufferPrompt ?? null, executorOpts: f.executorOpts ?? {},
@@ -431,7 +434,17 @@ export async function revertPayThePrice(ptpReversals, actor, { kind = "burn", fa
     const ok = await applyUpgradeStep({ effect: "vowClocks", entries, kind, ...(resolutionId ? { resolutionId } : {}) }, failures, vowReport);
     const owed = ok ? [] : (failures[at]?.entries ?? entries);
     const owedIds = new Set(owed.map(e => e.itemId));
-    for (const v of entries) if (!owedIds.has(v.itemId)) reverted.push(`${v.name} clock rewound`);
+    // One line per vow — a shared vow's copies are one clock — once none of
+    // its copies is still owed (VOW-CLOCK-REWIND-PER-COPY: "rewound" once per
+    // copy).
+    const vowOf = (e) => e.vowId ?? e.itemId;
+    const owedVows = new Set(entries.filter(e => owedIds.has(e.itemId)).map(vowOf));
+    const said = new Set();
+    for (const v of entries) {
+      if (owedVows.has(vowOf(v)) || said.has(vowOf(v))) continue;
+      said.add(vowOf(v));
+      reverted.push(`${v.name} clock rewound`);
+    }
     untriggered.push(...vowClocksUntriggered(entries, vowReport.untriggered, owed));
   }
   await supersedeTriggerVignettes(untriggered, kind, resolutionId);
