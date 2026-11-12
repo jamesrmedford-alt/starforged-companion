@@ -106,3 +106,33 @@ describe("buildContextSummary", () => {
     expect(buildContextSummary({ progressTrackIds: ["j1", "j2"] })).toBe("No active tracks yet.");
   });
 });
+
+// SUPPORT-VEHICLES-UNLISTED — withstand_damage names a support vehicle in
+// moveTarget (null for the command starship), and the interpreter was given
+// none of the roller's: "The hoverbike skids across the scree" with no target
+// was the starship's. The roller's support vehicles and companions are listed.
+describe("buildContextSummary — the roller's support vehicles and companions", () => {
+  const asset = (id, name, category, trackName, given = null) => ({
+    id, name, type: "asset",
+    system: { category, track: { enabled: true, name: trackName, value: 3, min: 0, max: 5 },
+      ...(given ? { fields: [{ name: "Name", value: given }] } : {}) },
+  });
+
+  it("lists the roller's support vehicles and companions, a companion by its given name too", () => {
+    const kira = makeTestActor({ id: "pc-kira", name: "Kira", type: "character", items: { contents: [
+      asset("hb", "Hoverbike", "Support Vehicle", "Integrity"),
+      asset("gc", "Glowcat", "Companion", "Health", "Pip"),
+      asset("ss", "Starship", "Command Vehicle", "Integrity"),
+    ] } });
+    const summary = buildContextSummary({}, { roller: kira });
+    expect(summary).toContain(`Kira's support vehicles: "Hoverbike" (withstand_damage to one names it in moveTarget; the command starship is null).`);
+    expect(summary).toContain(`Kira's companions: "Glowcat" (named "Pip").`);
+    expect(summary).not.toContain(`"Starship"`);
+  });
+
+  it("control: no roller, or one with neither, adds nothing", () => {
+    expect(buildContextSummary({})).toBe("No active tracks yet.");
+    const ren = makeTestActor({ id: "pc-ren", name: "Ren", type: "character", items: { contents: [] } });
+    expect(buildContextSummary({}, { roller: ren })).toBe("No active tracks yet.");
+  });
+});

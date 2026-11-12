@@ -18,7 +18,7 @@ import { MOVES, STATS, toMoveId } from "../schemas.js";
 import { buildMischiefFraming } from "./mischief.js";
 import { apiPost } from "../api-proxy.js";
 import { getCanonicalMove } from "../system/ironswornPacks.js";
-import { getPlayerActors, readVows } from "../character/actorBridge.js";
+import { getPlayerActors, readVows, listSupportVehicleAssets, listCompanionAssets, companionGivenName, isPlayerCharacterActor } from "../character/actorBridge.js";
 import { moveDisplayName } from "../system/i18n.js";
 
 const MODULE_ID     = "starforged-companion";
@@ -199,7 +199,7 @@ combatRank: only for enter_the_fray. When the narration implies the foe’s dang
  * Kept short by design — the system prompt already has the full move reference.
  * This just gives the interpreter enough context to make good choices.
  */
-export function buildContextSummary(campaignState) {
+export function buildContextSummary(campaignState, { roller = null } = {}) {
   const lines = [];
 
   // Open vows + other open tracks — helps identify reach_a_milestone,
@@ -219,8 +219,42 @@ export function buildContextSummary(campaignState) {
     lines.push(`Session active.`);
   }
 
+  // The roller's own vehicles and companions, by name: withstand_damage names
+  // the support vehicle taking the damage in moveTarget (null for the command
+  // starship), companion_takes_a_hit the companion — and the interpreter was
+  // told neither, so "The hoverbike skids across the scree" was the
+  // starship's (SUPPORT-VEHICLES-UNLISTED).
+  lines.push(...rollerAssetLines(roller));
+
   if (!vows.length && !tracks.length) lines.unshift("No active tracks yet.");
   return lines.join(" ");
+}
+
+/**
+ * The context lines naming the roller's support vehicles and companions (a
+ * companion's given name beside its asset's) — none for no roller, or one
+ * with neither. Never throws.
+ *
+ * @param {Actor|null} roller
+ * @returns {string[]}
+ */
+function rollerAssetLines(roller) {
+  try {
+    if (!isPlayerCharacterActor(roller)) return [];
+    const who = roller.name ?? "The character";
+    const out = [];
+    const vehicles = listSupportVehicleAssets(roller).map(i => `"${i.name}"`);
+    if (vehicles.length) out.push(`${who}'s support vehicles: ${formatList(vehicles)} (withstand_damage to one names it in moveTarget; the command starship is null).`);
+    const companions = listCompanionAssets(roller).map(c => {
+      const given = companionGivenName(c);
+      return given ? `"${c.name}" (named "${given}")` : `"${c.name}"`;
+    });
+    if (companions.length) out.push(`${who}'s companions: ${formatList(companions)}.`);
+    return out;
+  } catch (err) {
+    console.warn(`${MODULE_ID} | interpreter: the roller's vehicles and companions could not be read:`, err?.message ?? err);
+    return [];
+  }
 }
 
 const CONTEXT_LIST_CAP = 8;
@@ -406,7 +440,7 @@ export async function buildCanonicalMoveBlock(slug) {
  * @returns {Promise<Object>}      — partial MoveResolutionSchema (no dice yet)
  */
 export async function interpretMove(narration, {
-  campaignState, mischiefLevel, apiKey, expectedMoveSlug, combatPosition = null, recentScene = "",
+  campaignState, mischiefLevel, apiKey, expectedMoveSlug, combatPosition = null, recentScene = "", roller = null,
 }) {
   if (!apiKey) throw new Error("Claude API key not configured. Set it in module settings.");
   if (!narration?.trim()) throw new Error("No narration to interpret.");
@@ -415,7 +449,7 @@ export async function interpretMove(narration, {
   const position        = expectedMove ? null : combatPosition;
   const systemPrompt = buildSystemPrompt();
   const mischiefFraming = expectedMove ? null : buildMischiefFraming(mischiefLevel, narration);
-  const contextSummary  = buildContextSummary(campaignState);
+  const contextSummary  = buildContextSummary(campaignState, { roller });
   const combatDirective = buildCombatPositionDirective(position);
   const expectedDirective = buildExpectedMoveDirective(expectedMove);
   const canonicalBlock  = expectedMove

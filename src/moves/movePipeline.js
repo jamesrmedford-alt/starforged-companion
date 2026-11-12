@@ -245,6 +245,8 @@ export async function readMove({
         mischiefLevel: dial,
         apiKey,
         combatPosition,
+        // The roller's support vehicles and companions, by name (SUPPORT-VEHICLES-UNLISTED).
+        roller: speakerActorId ? (game.actors?.get?.(speakerActorId) ?? null) : null,
         // What the line follows — its destination, its target (alpha 23 playtest).
         recentScene: getRecentSceneForReading(campaignState?.currentSessionId ?? null),
       });
