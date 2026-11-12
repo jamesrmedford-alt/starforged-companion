@@ -1187,8 +1187,7 @@ export function registerChatHook() {
   // its claimant (LOCK-LOST-BY-COGM-STALE-WRITE); a claim of a GM who is gone,
   // carried back after the handover freed it, is freed again by the canonical
   // GM (LOCK-RESURRECTED-DEPARTED-CLAIMANT).
-  Hooks.on("updateSetting", (setting) => Promise.resolve(restoreLiveClaimOverStaleWrite(setting)).catch(err =>
-    console.warn(`${MODULE_ID} | putting the live move lock back failed:`, err?.message ?? err)));
+  Hooks.on("updateSetting", onLockFreedUnderLiveClaim);
   Hooks.on("updateSetting", (setting) => Promise.resolve(releaseLockOfAbsentClaimant(setting)).catch(err =>
     console.warn(`${MODULE_ID} | freeing a departed GM's move lock failed:`, err?.message ?? err)));
   // When the canonical GM changes, held forced moves follow it: this GM's go
@@ -1441,6 +1440,18 @@ function restoreLiveClaimOverStaleWrite(setting) {
     return game.settings.set(MODULE_ID, "campaignState",
       { ...now, pendingMove: true, pendingMoveBy: game.user.id, pendingMoveClaim: live });
   }, "live move lock put back");
+}
+
+/**
+ * `updateSetting` on every client — only the client whose move holds the
+ * live claim acts (restoreLiveClaimOverStaleWrite): the one fact only its own
+ * page knows, as a GM's key-registry entry is. Never throws.
+ *
+ * @param {{ key?: string }} setting
+ */
+function onLockFreedUnderLiveClaim(setting) {
+  Promise.resolve(restoreLiveClaimOverStaleWrite(setting)).catch(err =>
+    console.warn(`${MODULE_ID} | putting the live move lock back failed:`, err?.message ?? err));
 }
 
 // ── A departed claimant's lock carried back (LOCK-RESURRECTED-DEPARTED-CLAIMANT)

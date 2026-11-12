@@ -105,6 +105,8 @@ const OWN_ENTRY = {
   // issue #345 AA35
   'src/ui/settingsPanel.js updateSetting onCampaignStateWritten': 'puts this user\'s own Private Lines entry back when another client\'s concurrent write dropped or misstated it — a GM writes it, a player relays it to the canonical GM (issue #345 AA35)',
   'src/ui/settingsPanel.js createSetting onCampaignStateWritten': 'same, first write of the setting',
+  // LOCK-LOST-BY-COGM-STALE-WRITE
+  'src/index.js updateSetting onLockFreedUnderLiveClaim': 'puts this client\'s own live move-lock claim back when a co-GM\'s stale write freed it — only the client whose move holds the claim knows it is live, and only it writes (issue #347 residual)',
 };
 
 const NOT_CALLS = new Set(['if', 'for', 'while', 'switch', 'catch', 'function', 'return', 'typeof', 'await', 'new', 'import', 'super']);
