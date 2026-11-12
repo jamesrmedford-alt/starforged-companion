@@ -893,6 +893,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
       moveId:        resolution.moveId,
       outcome:       resolution.outcome,
       kind:          'move',
+      narrationId,
     });
     return narration;
 
@@ -925,6 +926,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
             moveId:        resolution.moveId,
             outcome:       resolution.outcome,
             kind:          'move',
+            narrationId,
           });
           return narration;
         }
@@ -1113,7 +1115,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       await runRoundNarrationPasses(narration, entries, campaignState, {
         narrationId, matchedEntityIds: extras.matchedEntityIds ?? [], matchedEntityTypes: extras.matchedEntityTypes ?? [],
       });
-      scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round' });
+      scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round', narrationId });
       return { posted: 'card', narrationId, card };
     } catch (err) {
       if (!tries && isRateLimit(err)) continue;
@@ -3855,6 +3857,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       narrationText: text,
       campaignState,
       kind:          'paced',
+      narrationId,
     });
     return text;
   } catch (err) {
@@ -3880,6 +3883,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
             narrationText: text,
             campaignState,
             kind:          'paced',
+            narrationId,
           });
           return text;
         }

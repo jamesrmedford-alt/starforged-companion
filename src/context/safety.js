@@ -297,6 +297,14 @@ async function finishXCardRemoval(narrator, removal) {
     } catch (err) {
       console.warn(`${MODULE_ID} | X-Card: undoing what the narration's capture recorded failed:`, err?.message ?? err);
     }
+    // The Chronicle entries the scribe wrote from it — the Chronicle feeds
+    // the campaign recap and, pinned, every CHARACTER block (XCARD-CHRONICLE).
+    try {
+      const { retractNarrationChronicle } = await import("../character/chronicle.js");
+      await retractNarrationChronicle(ids);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | X-Card: removing the narration's Chronicle entries failed:`, err?.message ?? err);
+    }
     // A connection the narration created (a Make a Connection hit) goes with
     // it while nobody has used it; one the table has used stays, and the GMs
     // are told so (issue #338 D6(ii)). After the capture undo, which takes

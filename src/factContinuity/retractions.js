@@ -13,8 +13,9 @@
  *   - propagateRetraction(truth, campaignState) — on Strike / Replace: drop
  *     the subject entity's same-session tier details that state the fact,
  *     take same-session lore that states it about the same subject out of
- *     confirmed canon, and mark the rolling summary for a regen
- *     (markSummaryForRegen).
+ *     confirmed canon, drop the same-session Chronicle entries the scribe
+ *     wrote stating it (STRIKE-CHRONICLE), and mark the rolling summary for
+ *     a regen (markSummaryForRegen).
  *   - rememberSessionRetractions(campaignState) — at scene end: keep the
  *     scene's bare strikes for the rest of the session, so the CORRECTED
  *     block and the summary prompt still name them.
@@ -105,10 +106,10 @@ export function factsOverlap(a, b) {
  *
  * @param {Object} truth          — the struck sceneTruths entry
  * @param {Object} campaignState
- * @returns {Promise<{ tierDetails: number, lore: number }>}
+ * @returns {Promise<{ tierDetails: number, lore: number, chronicle: number }>}
  */
 export async function propagateRetraction(truth, campaignState) {
-  const out = { tierDetails: 0, lore: 0 };
+  const out = { tierDetails: 0, lore: 0, chronicle: 0 };
   const fact = String(truth?.fact ?? '').trim();
   if (!fact) return out;
   const sessionId = truth.sessionId ?? campaignState?.currentSessionId ?? null;
@@ -128,6 +129,18 @@ export async function propagateRetraction(truth, campaignState) {
         { truthId: typeof truth.id === "string" ? truth.id : null });
     } catch (err) {
       console.warn(`${MODULE_ID} | retraction: lore propagation failed:`, err?.message ?? err);
+    }
+    // The session's Chronicle entries the scribe wrote stating it: the
+    // Chronicle feeds the campaign recap and, pinned, the CHARACTER block
+    // (STRIKE-CHRONICLE). Matched as lore is; a pinned or player-edited
+    // entry stays.
+    try {
+      const { retractStruckChronicle } = await import('../character/chronicle.js');
+      const label = subjectLabel(truth.subject);
+      out.chronicle = await retractStruckChronicle(sessionId,
+        (entry) => loreStatesStrike({ text: entry?.text ?? '' }, truth.subject, label, fact));
+    } catch (err) {
+      console.warn(`${MODULE_ID} | retraction: Chronicle propagation failed:`, err?.message ?? err);
     }
   }
 

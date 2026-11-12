@@ -16,6 +16,7 @@
 // actor's writes run one at a time (writeChronicle).
 
 import { getPlayerActors } from './actorBridge.js';
+import { isNarrationXCarded } from '../context/safety.js';
 
 const MODULE_ID      = 'starforged-companion';
 const CHRONICLE_KEY  = 'chronicle';
@@ -34,7 +35,102 @@ const JOURNAL_PREFIX = 'Chronicle — ';
  * @returns {Promise<void>}
  */
 export async function addChronicleEntry(actorId, entry) {
-  return writeChronicle(actorId, entries => [...entries, buildEntry(entry)], { create: true });
+  // Checked at the write's turn on the actor's chain: an automatic entry
+  // whose narration the X-Card removed meanwhile is not written — one written
+  // before the pause landed is taken back by the X-Card's finish, queued
+  // behind it (retractNarrationChronicle, XCARD-CHRONICLE).
+  return writeChronicle(actorId, entries => (isNarrationXCarded(entry?.narrationId)
+    ? null
+    : [...entries, buildEntry(entry)]), { create: true });
+}
+
+/**
+ * Take the X-carded narrations' automatic entries out of every character's
+ * Chronicle (XCARD-CHRONICLE). The scribe stamps each entry with the
+ * narration it was written from, and the Chronicle feeds the campaign recap
+ * (whose cache key is the entries' text, so it is rebuilt) and, pinned, every
+ * narration's CHARACTER block — so a removed beat came back at the next
+ * session start. Pinned or edited, an entry goes: the table removed the beat
+ * it tells (the tier details' rule, issue #329 X01). Runs on the canonical GM
+ * — the X-Card's finish (safety.js finishXCardRemoval), the Chronicle's one
+ * writer. Never creates a journal. Fail-open per character.
+ *
+ * @param {string[]} narrationIds
+ * @returns {Promise<number>} entries removed
+ */
+export async function retractNarrationChronicle(narrationIds) {
+  const removed = new Set((narrationIds ?? []).filter(id => typeof id === 'string' && id));
+  if (!removed.size) return 0;
+  return removeChronicleEntries(entry => typeof entry?.narrationId === 'string' && removed.has(entry.narrationId));
+}
+
+/**
+ * Take a struck fact's automatic entries out of the Chronicle
+ * (STRIKE-CHRONICLE): the session's scribe entries that state it — matched
+ * as propagateRetraction matches lore (`states(entry)`, word overlap on the
+ * struck subject and fact). A pinned entry or one a player edited stays, as
+ * a pinned tier detail does: the table keeps it. The campaign recap is
+ * rebuilt from what remains (its cache key is the entries' text, issue #301
+ * B04). A strike may be made on any GM's client: each entry is deleted by id
+ * through the canonical GM, the Chronicle's one writer (requestChronicleEdit's
+ * GM-only "delete"). Never creates a journal. Fail-open.
+ *
+ * @param {string} sessionId
+ * @param {(entry: Object) => boolean} states — true when the entry states the struck fact
+ * @returns {Promise<number>} entries removed
+ */
+export async function retractStruckChronicle(sessionId, states) {
+  if (!sessionId || typeof states !== 'function') return 0;
+  let count = 0;
+  for (const actorId of chronicleActorIds()) {
+    try {
+      const struck = readEntries(findChronicleJournals(actorId)).filter(entry => entry?.automated === true
+        && entry.sessionId === sessionId && typeof entry.id === 'string' && entry.id
+        && entry.pinned !== true && entry.playerEdited !== true
+        && states(entry));
+      for (const entry of struck) {
+        const res = await requestChronicleEdit(actorId, { op: 'delete', entryId: entry.id });
+        if (res?.ok && res.result?.applied !== false) count += 1;
+      }
+    } catch (err) {
+      console.warn(`${MODULE_ID} | chronicle: removing a struck fact's entries from ${actorId}'s chronicle failed:`, err?.message ?? err);
+    }
+  }
+  return count;
+}
+
+/** Remove the entries `drop` names from every character's Chronicle. */
+async function removeChronicleEntries(drop) {
+  let count = 0;
+  for (const actorId of chronicleActorIds()) {
+    try {
+      let dropped = 0;
+      await writeChronicle(actorId, (entries) => {
+        const keep = entries.filter(e => !drop(e));
+        dropped = entries.length - keep.length;
+        return dropped ? keep : null;
+      });
+      count += dropped;
+    } catch (err) {
+      console.warn(`${MODULE_ID} | chronicle: removing entries from ${actorId}'s chronicle failed:`, err?.message ?? err);
+    }
+  }
+  return count;
+}
+
+/** Every actor a Chronicle may belong to: the flagged journals' and each PC (a legacy journal is found by name). */
+function chronicleActorIds() {
+  const ids = new Set();
+  for (const journal of game.journal?.contents ?? []) {
+    const owner = chronicleOwner(journal);
+    if (typeof owner === 'string' && owner && game.actors?.get(owner)) ids.add(owner);
+  }
+  try {
+    for (const actor of getPlayerActors() ?? []) if (actor?.id) ids.add(actor.id);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | chronicle: listing the characters failed:`, err?.message ?? err);
+  }
+  return [...ids];
 }
 
 /**
@@ -185,6 +281,7 @@ export async function applyChronicleEditFromRelay(payload = {}, ctx = {}) {
     case 'add': {
       const entry = addableEntry(payload.entry, gm);
       if (!entry) return refused('invalid', payload);
+      if (isNarrationXCarded(entry.narrationId)) return refused('xcarded', payload);
       applied = await addChronicleEntry(actorId, entry);
       break;
     }
@@ -223,6 +320,8 @@ function addableEntry(raw, gm) {
     type, text, sessionId,
     moveId:    typeof raw.moveId === 'string' && raw.moveId ? raw.moveId : null,
     automated: raw.automated === true,
+    // The narration an automatic entry was written from (XCARD-CHRONICLE).
+    ...(typeof raw.narrationId === 'string' && /^[\w-]{1,64}$/.test(raw.narrationId) ? { narrationId: raw.narrationId } : {}),
   };
 }
 
@@ -434,6 +533,7 @@ function buildEntry(entry) {
     automated:  entry.automated ?? false,
     pinned:     false,
     playerEdited: false,
+    ...(typeof entry.narrationId === 'string' && entry.narrationId ? { narrationId: entry.narrationId } : {}),
   };
 }
 

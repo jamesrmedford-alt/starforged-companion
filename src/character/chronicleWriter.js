@@ -21,6 +21,7 @@ import { apiPost } from '../api-proxy.js';
 import { requestChronicleEdit, CHRONICLE_AUTO_TYPES } from './chronicle.js';
 import { getPlayerActors } from './actorBridge.js';
 import { passesSalience, getSalienceThreshold } from '../world/salience.js';
+import { isNarrationXCarded } from '../context/safety.js';
 
 const MODULE_ID     = 'starforged-companion';
 const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
@@ -89,6 +90,8 @@ Constraints:
  * @param {string} [args.moveId]    — present for move-pipeline calls
  * @param {string} [args.outcome]   — present for move-pipeline calls
  * @param {"move"|"paced"|"round"} args.kind
+ * @param {string|null} [args.narrationId] — the narration's id, stamped on the
+ *   entry so the X-Card can take it back (XCARD-CHRONICLE)
  */
 export function scheduleChronicleEntry(args) {
   if (!isAutoEntryEnabled()) return;
@@ -106,11 +109,15 @@ export function scheduleChronicleEntry(args) {
  * @returns {Promise<Object|null>}  — the entry written (or null if skipped)
  */
 export async function writeChronicleEntry({
-  narrationText, campaignState, moveId, outcome, kind,
+  narrationText, campaignState, moveId, outcome, kind, narrationId = null,
 }) {
   if (!isAutoEntryEnabled())              return null;
   if (!globalThis.game?.user?.isGM)       return null;
   if (!narrationText?.trim())             return null;
+  // The X-Card may have removed the narration before the scribe ran, or while
+  // its call is out (below): nothing is written from the removed prose
+  // (XCARD-CHRONICLE — the capture's XCARD-LATE-CAPTURE rule).
+  if (isNarrationXCarded(narrationId))    return null;
 
   const actorId = resolveActorId(campaignState);
   if (!actorId)                           return null;
@@ -129,6 +136,7 @@ export async function writeChronicleEntry({
     return null;
   });
   if (!generated?.text) return null;
+  if (isNarrationXCarded(narrationId)) return null;
 
   // Per-channel salience floor (docs/decisions.md → auto-capture salience gate).
   // Fail-open: an unrated beat passes rather than silently dropping (F20).
@@ -142,6 +150,8 @@ export async function writeChronicleEntry({
     moveId:    moveId ?? '',
     sessionId: campaignState?.currentSessionId ?? '',
     automated: true,
+    // The X-Card's finish removes the entry by it (retractNarrationChronicle).
+    ...(typeof narrationId === 'string' && narrationId ? { narrationId } : {}),
   };
 
   try {

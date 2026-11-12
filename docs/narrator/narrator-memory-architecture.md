@@ -200,7 +200,12 @@ CLAUDE.md "audit consumers" rule):
 - burn supersede never matches a round card: a round's upgrades are decided
   before it is narrated, and the card's `resolutionId` is empty (issue #340)
 - the Chronicle (`scheduleChronicleEntry`) writes one entry per round, kind
-  `round`, which the writer's prompt knows (issue #340)
+  `round`, which the writer's prompt knows (issue #340); every entry the
+  scribe writes carries its narration's `narrationId`, so the X-Card's finish
+  removes it (`retractNarrationChronicle`) and a scribe still running when
+  the card lands writes nothing (XCARD-CHRONICLE); a strike deletes the
+  session's automatic entries that state the struck fact
+  (`propagateRetraction` → `retractStruckChronicle`, STRIKE-CHRONICLE)
 - WJ contradiction cards co-mark `narratorCard` but are excluded by the
   ring's defensive filters
 - the Private Channel's own scene context (`getRecentNarrationContext`, last
