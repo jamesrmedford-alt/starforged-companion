@@ -1101,7 +1101,10 @@ export function registerChatHook() {
       // the Claude call fails, but when the narrator card and that fallback
       // are both refused its rejection skipped the persist — the strong hit
       // showed and never landed (issue #322 V09).
-      await narrateResolution(resolution, campaignState, { relevance, speakerActorId }).catch(err => {
+      // The interpreter's target reaches the capture: a Make a Connection whose
+      // narration names several known NPCs connects the one it reads
+      // (KNOWN-NPC-CONNECTION-NO-TARGET).
+      await narrateResolution(resolution, campaignState, { relevance, speakerActorId, moveTarget: interpretation.moveTarget ?? null }).catch(err => {
         console.warn(`${MODULE_ID} | the move's narration could not be posted — its result is applied all the same:`, err?.message ?? err);
         ui.notifications?.warn?.("Starforged Companion: the narration could not be posted to chat; the move's result was still applied.");
       });

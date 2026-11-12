@@ -83,7 +83,11 @@ recorded under its name promoted to it; its bond is §2's.
   Mode round's hit, its own entry's line — `connectionRollers[].lineText`,
   issue #347 ROUND-CONNECTION-LINE-JOINED: the round's lines joined named
   another player's NPC as the roller's): the one
-  it names, else — naming none — the one the narration names; several, none
+  it names, else — naming none — the one the narration names, else the one
+  the interpreter's target for the move names (free-flow: `narrateResolution`'s
+  `moveTarget` → `runPostNarrationPasses` → `routeEntityDrafts`' `targetName`;
+  KNOWN-NPC-CONNECTION-NO-TARGET — "I win her over" with two known NPCs in the
+  narration got the GMs' notice); several, none
   is guessed and the GMs are whispered which (issue #347 AB10 — the first
   pending row named anywhere was confirmed, so a hit with Sable whose
   narration had pending Dace at the bar bonded Dace, and the pending rows
@@ -141,7 +145,10 @@ recorded under its name promoted to it; its bond is §2's.
   maintainer's ruling A — it was the first entry's PC): a connection row's
   Confirm is a button per acting PC and **No one**, the pick checked against
   the card's own `actorIds` (`draftConfirmPick`), and the bond goes on the PC
-  picked, or on no sheet (`draftBondHolder`). Each Confirm / Dismiss writes its
+  picked, or on no sheet (`draftBondHolder`). Each Confirm / Dismiss is a GM's
+  press relayed to the canonical GM (`draft.confirm` / `draft.dismiss`), run
+  one at a time there — two GMs' simultaneous Confirms each ran on their own
+  client and made the NPC twice (DRAFT-CONFIRM-TWO-GMS) — and writes its
   own row's status, one write at a time per card, on the live card
   (`setDraftStatus`) — a whole-card copy written back reverted a row resolved
   meanwhile — and Confirm creates nothing when an entity of that name and
@@ -412,8 +419,9 @@ rank through `rankName` — issue #321 U62), a forged one as "bonded" (the
 Item's `completed`, issue #342 Z57 — it read "fulfilled", a vow's word), and a severed one apart, under
 "Connections lost" (`readConnections`' `lost` — issue #330 D10). The vendor
 sheet's Connections tab, which the module cannot filter, keeps the lost
-bond's Item as history. `background` and `secrets` have no production writer, so neither
-renders. The legacy count-only "ACTIVE CONNECTIONS" block
+bond's Item as history. `background` and `secrets`, which had no production
+writer and no reader, are retired from the schema (CONN-BACKGROUND-UNWRITTEN).
+The legacy count-only "ACTIVE CONNECTIONS" block
 (`buildConnectionsSummary`, "N active connection(s)" from `connectionIds`)
 is retired: it counted a lost connection as active beside the roster that
 lists it apart (issue #331 X29).

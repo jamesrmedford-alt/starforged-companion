@@ -197,6 +197,11 @@ export const GM_ACTIONS = Object.freeze({
   "forcedMove.hold":           { load: () => import("../index.js"),                                  fn: "holdHandedOverForcedMoves" },
   // Narration on a player's own key (no keyed GM online)
   "narrator.sidecar":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedNarratorSidecar" },
+  // Known-issues SUMMARY-KEYLESS-GM — the rolling summary a keyed player's client made, for a keyless GM to store
+  "narrator.summary":          { load: () => import("../narration/narrator.js"),                     fn: "applyRelayedSessionSummary" },
+  // Known-issues DRAFT-CONFIRM-TWO-GMS — a "New Entities Detected" card's Confirm / Dismiss, one press at a time
+  "draft.confirm":             { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftConfirmFromRelay" },
+  "draft.dismiss":             { load: () => import("../entities/entityExtractor.js"),               fn: "applyDraftDismissFromRelay" },
   // Chat-card buttons
   "move.burnMomentum":         { load: () => import("../moves/burnMomentum.js"),                     fn: "applyBurnFromRelay",    claude: true },
   "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay", claude: true },

@@ -311,7 +311,6 @@ export const ConnectionSchema = {
                                 // createConnection data win; seedConnectionActor rolls only
                                 // when still blank (finding E; CHAR-NPC-PRONOUN-ROLL-BLIND).
                                 // Anchors portrait prompt, entity card, seeded Notes, audio voice.
-  background: "",               // Known history
   motivation: "",               // What drives them (may be blank — unknown)
   goal: "",                     // The driving objective: the goal the narration gave them
                                 // (detection / the Make a Connection seed the narration was
@@ -319,7 +318,11 @@ export const ConnectionSchema = {
                                 // oracle result (sector wizard, seedConnectionActor).
                                 // F3: rolled by sector creator and passed to createConnection
                                 // but had no schema home, so it never reached the journal body.
-  secrets: "",                  // Information hidden from the player character (GM only)
+  // `background` (known history) and `secrets` (GM-only) are retired: no
+  // production code ever wrote or read either, so neither reached the card or
+  // the narrator (CONN-BACKGROUND-UNWRITTEN). History is `history` and the
+  // generative tier; GM-only notes are the sheet's Notes. Stored records keep
+  // the empty fields, which do no harm.
 
   // Append-only relationship history log
   history: [

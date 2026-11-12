@@ -245,7 +245,10 @@ export async function applyFactContinuityCommand(payload = {}, ctx = {}) {
       const subject = resolveSubject(parsed.subject, campaignState, entities);
       const fact    = String(parsed.fact ?? "").trim();
       const names   = subjectNames(subject, parsed.subject, entities);
-      const struck  = findBareStrike(campaignState.sceneTruths, subject, fact);
+      // This scene's strike where it stands — at the place the scene is at
+      // now, as setTruth lifts it (ACTIVE-SCENE-STRIKE-PLACE-BLIND).
+      const struck  = findBareStrike(campaignState.sceneTruths, subject, fact,
+        { place: campaignState.sceneFrame?.location ?? null });
       // A strike an earlier scene of this session kept is lifted the same
       // way (issue #342 Z42): CORRECTED went on naming it beside the GM's
       // binding truth, and its lore stayed out of canon.
