@@ -682,7 +682,12 @@ async function endSessionOnce(payload, ctx = {}) {
       const npc = selectEndSessionNPC(cs);
       const userMessage = buildEndSessionVignetteUserMessage(npc, cs);
       const narrationId = newNarrationId();
-      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId });
+      // Its CHARACTER blocks are the PCs at the table, as the galley's — it
+      // took the campaign's first PC, whoever was there (known-issues
+      // CLOSING-VIGNETTE-FIRST-PC); none present gives none.
+      const { collectGalleyParticipants } = await import("../session/galleyVignette.js");
+      const actorIds = collectGalleyParticipants(cs).active.map(p => p.actor?.id).filter(Boolean);
+      const text = await narrateSessionVignette({ userMessage, campaignState: cs, narrationId, actorIds });
       if (text) {
         await postEndSessionVignetteCard({ text, npcName: npc.name, sessionId: cs.currentSessionId ?? "", narrationId });
       }

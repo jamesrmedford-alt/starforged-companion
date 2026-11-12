@@ -3392,8 +3392,9 @@ function escapeHtml(s) {
  * (issue #342 Z40's rule) — and a vignette with none present gets none. It
  * took the campaign's first PC, so with that PC's player away the vignette's
  * "you" was the crewmate its own user message called absent, and the PC in
- * the galley had no block (issue #345 AA31). Without `actorIds` (the closing
- * vignette, about an NPC) the block is the first PC's, as before.
+ * the galley had no block (issue #345 AA31). End a Session's closing
+ * vignette, about an NPC, passes the PCs at the table too (known-issues
+ * CLOSING-VIGNETTE-FIRST-PC). Without `actorIds` the block is the first PC's.
  *
  * @param {Object} args
  * @param {string} args.userMessage    — pre-built vignette prompt body
