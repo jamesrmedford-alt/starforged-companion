@@ -398,6 +398,20 @@ export function isAudioGM() {
 }
 
 /**
+ * True when an active GM — any, this client included — has advertised an
+ * ElevenLabs key (`audioKeyedGmUserIds`): the audio GM (isAudioGM) can then
+ * make a clip for anyone, once, and cache it. A keyed client that is not the
+ * audio GM asks it then rather than synthesising on its own key — the two
+ * made the same clip, each billed (known-issues AUDIO-KEYED-NONCANONICAL-DUP;
+ * "Claude calls run where a key lives, exactly once", for the ElevenLabs key).
+ *
+ * @returns {boolean}
+ */
+export function hasAudioKeyedActiveGM() {
+  return keyedPool(KEY_REGISTRIES.elevenLabs.registry).length > 0;
+}
+
+/**
  * True iff THIS client is the GM that makes a new card's automatic portrait
  * when the canonical GM, which runs the seeds, holds no OpenRouter key: the
  * lowest-id active GM whose client advertised one (`artKeyedGmUserIds`),

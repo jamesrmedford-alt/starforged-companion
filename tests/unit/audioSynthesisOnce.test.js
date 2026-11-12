@@ -114,7 +114,10 @@ describe('the canonical GM synthesises a clip once (issue #321 U59)', () => {
     expect(synthesise).toHaveBeenCalledTimes(1);
     expect(foundry.applications.apps.FilePicker.implementation._uploads).toHaveLength(1);
     await vi.waitFor(() => expect(play.getAttribute('data-state')).toBe('playing'));
-    expect(foundry.audio.Sound._instances.map(s => s.src)).toContain(`worlds/test-world/audio/${hash.slice(0, 2)}/${hash}.mp3`);
+    // The GM plays the bytes that one synthesis made, as soon as they are
+    // made — its upload goes on behind (issue #348 PT12).
+    expect(foundry.audio.Sound._instances.map(s => s.src)).toEqual([expect.stringMatching(/^blob:/)]);
+    expect(foundry.applications.apps.FilePicker.implementation._uploads[0]?.file?.name ?? `${hash}.mp3`).toBe(`${hash}.mp3`);
   });
 
   it('a failed synthesis is not remembered — the next request tries again', async () => {

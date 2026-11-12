@@ -396,7 +396,8 @@ XCARD-CAPTURE-TRANSITIONS). If that part fails the pause is still written. After
 `xCarded` (`flagXCardedCards`) and each retracted truth runs
 `propagateRetraction`. Readers: the ring and the rolling summary skip
 `xCarded` cards (`sessionNarratorCards`), the session recap keeps the move
-but quotes none of its prose, the audio hook shows no Play button, the
+but quotes none of its prose, the audio hook shows no Play button and
+stops the card's narration where it is playing or loading (XCARD-AUDIO-PLAYING), the
 CORRECTED block and the summary's leave-out list never name an X-Card
 retraction (it still blocks re-assertion in the ledger),
 `mergeSceneLedgers` strips an X-carded narration's entries from a stale
