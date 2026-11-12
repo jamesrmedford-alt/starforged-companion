@@ -42,6 +42,7 @@ import { requestGmAction, refusePress } from "../multiplayer/gmRelay.js";
 import { isPlayerCharacterActor } from "../character/actorBridge.js";
 import { requesterOwnsActor, RELAY_RECOVERY_MS } from "./burnMomentum.js";
 import { marksForSourceRank } from "./milestone.js";
+import { toMoveId } from "../schemas.js";
 import { consequenceChosen, retireOutcomeChoiceCards, reopenRetiredChoiceCards, reopenUpgradesForUndoneChoice } from "./resultUpgrade.js";
 
 const MODULE_ID = "starforged-companion";
@@ -1054,12 +1055,20 @@ export function applyPacedRoll(payload = {}, ctx = {}) {
     isCard: (f) => f.pacedNarrative === true
       && typeof f.suggestedMove === "string" && !!f.suggestedMove
       && typeof f.playerText === "string" && !!f.playerText,
-    build: (f) => ({ content: f.playerText, flags: {
-      forcedMoveId: f.suggestedMove,
-      // A scene-challenge Roll's challenge, as the Finish an Expedition
-      // button forwards its track (PACED-VARIANT-NO-TARGET).
-      ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
-    } }),
+    build: (f) => {
+      // A card posted before issue #321 U45 may hold the classifier's display
+      // name ("Gather Information"), which the pipeline throws on as an
+      // unknown move: map it to its key here, and roll nothing for a name
+      // that is no move (PACED-CARD-OLD-MOVE-NAME).
+      const moveId = toMoveId(f.suggestedMove);
+      if (!moveId) return null;
+      return { content: f.playerText, flags: {
+        forcedMoveId: moveId,
+        // A scene-challenge Roll's challenge, as the Finish an Expedition
+        // button forwards its track (PACED-VARIANT-NO-TARGET).
+        ...(typeof f.suggestedMoveTargetId === "string" && f.suggestedMoveTargetId ? { forcedMoveTargetId: f.suggestedMoveTargetId } : {}),
+      } };
+    },
   });
 }
 
