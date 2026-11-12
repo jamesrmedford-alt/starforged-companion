@@ -681,6 +681,24 @@ async function aidMadeInFight(moveId) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * Why a move that names a track was not rolled, in a sentence — a Batch Mode
+ * round's refused reading (batch/driver.js); the "not rolled" card says the
+ * same (index.js postTrackGoneCard). A forge's track is a connection:
+ * severed, removed or bonded since its picker was posted (issue #345 AA50),
+ * or one a typed forge named that is already bonded (FORGE-NAMED-BONDED-SCORED).
+ *
+ * @param {Object} interpretation
+ * @param {{ alreadyBonded?: boolean }} [opts]
+ * @returns {string}
+ */
+function trackGoneReason(interpretation, { alreadyBonded = false } = {}) {
+  if (alreadyBonded) return `${interpretation?.moveTarget ?? "That connection"} is already bonded — there is no bond to forge.`;
+  return interpretation?.moveId === "forge_a_bond"
+    ? "The connection it named was severed, removed or bonded before the roll."
+    : "The track it named was deleted or finished before the roll.";
+}
+
+/**
  * Roll a confirmed move and apply its outcome: the confirm's ability adds and
  * stat substitution, the stat and progress enrichment, the "not rolled"
  * guards, the adds owed (Take a Break, the roller's +1, a bond), the dice,
@@ -697,7 +715,7 @@ async function aidMadeInFight(moveId) {
  * @param {Object|null} [args.tokenDragSetCourse]
  * @param {string|null} [args.incitingSwearMessageId] — an inciting "⚔ Swear this vow" card
  * @param {Object|null} [args.cardFlags] — more flags for the result card (a round's entry: its round and player)
- * @returns {Promise<{ refused: string }|{ refused: null, resolution: Object, interpretation: Object,
+ * @returns {Promise<{ refused: string, refusedReason?: string }|{ refused: null, resolution: Object, interpretation: Object,
  *   relevance: Object, moveTargets: Object, burnState: Object|null, improveState: Object|null,
  *   moveResultMessage: ChatMessage|null, rollerActor: Actor|null, speakerActorId: string|null }>}
  */
@@ -824,13 +842,19 @@ export async function rollMove({
   // since was rolled at 0, and one bonded since (its id resolves nothing
   // for a forge — selectConnection `unbonded`) said "Legacy reward marked"
   // over a forge that marked nothing (issue #345 AA50).
-  if (interpretation.moveTargetId
+  // A typed Forge a Bond naming a connection already bonded is not rolled
+  // either, and its card says it was bonded (FORGE-NAMED-BONDED-SCORED: it
+  // was scored on the bond's own track, then the forge skipped it). The
+  // refusal carries its reason for a Batch Mode round's reading, which said
+  // "deleted or finished" for a forge too.
+  const alreadyBonded = tickInfo?.source === "connection" && tickInfo.alreadyBonded === true;
+  if (alreadyBonded || (interpretation.moveTargetId
       && (tickInfo?.source === "combat" || tickInfo?.source === "expedition" || tickInfo?.source === "vow"
         || tickInfo?.source === "scene_challenge" || tickInfo?.source === "connection")
-      && !tickInfo.trackId) {
-    await postTrackGoneCard(interpretation).catch(err =>
+      && !tickInfo.trackId)) {
+    await postTrackGoneCard(interpretation, { alreadyBonded }).catch(err =>
       console.warn(`${MODULE_ID} | track-gone card failed:`, err?.message ?? err));
-    return { refused: "track-gone" };
+    return { refused: "track-gone", refusedReason: trackGoneReason(interpretation, { alreadyBonded }) };
   }
   // Battle is an action roll, so the guard above (progress moves) let a
   // Battle naming a finished fight by id roll in full — its +2 momentum

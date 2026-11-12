@@ -319,7 +319,12 @@ vow's target start it the same way; `generatePortrait` handles finishing late
   card says so, as for a gone fight or vow (rollMove's track-gone guard; for
   a forge the id rung resolves no bonded connection — issue #345 AA50: it
   was rolled at 0, or its card said "Legacy reward marked" over a forge that
-  marked nothing). A click with
+  marked nothing). So is a typed forge that names a bonded connection: the
+  name rungs take `unbonded` too, `enrichProgressTicks` marks the result
+  `alreadyBonded`, and the card — and a Batch Mode round's refusal, from
+  rollMove's `refusedReason` — say it is already bonded
+  (FORGE-NAMED-BONDED-SCORED: it was scored on the bond's own track, then
+  the forge skipped it). A click with
   no GM connected, a refusal, or a card still unresolved after
   `RELAY_RECOVERY_MS` (15 s) re-arms the buttons. (The picker used to be
   GM-only; the first 2026-10 fix let any click post the move but only the

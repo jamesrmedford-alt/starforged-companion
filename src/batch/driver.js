@@ -1101,8 +1101,10 @@ async function rollEntry(round, entry) {
     onDiceRolled: () => queueRoundWrite(r => markRolling(r, { userId, resolutionId, now: nowIso() })),
   });
   if (rolled.refused) {
-    // rollMove posted the track-gone card ("not rolled — it was deleted or finished").
-    const reason = "The track it named was deleted or finished before the roll.";
+    // rollMove posted the track-gone card ("not rolled — it was deleted or
+    // finished"; a forge's connection severed, removed or already bonded),
+    // and says why (FORGE-NAMED-BONDED-SCORED).
+    const reason = rolled.refusedReason ?? "The track it named was deleted or finished before the roll.";
     await queueRoundWrite(r => markRefused(r, {
       userId, reason, recordedAt: nowIso(),
       narrationInput: { kind: "refused", moveId: reading.moveId, moveName: reading.moveName, reason },

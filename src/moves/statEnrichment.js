@@ -768,10 +768,8 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
     // it wasn't asked for (issue #301 B01 — with the id dropped, it scored the
     // sole bonded one's full track), nor one a stale picker names (AA50).
     const connections = (await deps.listConnections?.()) ?? [];
-    const conn = selectConnection(connections, target, {
-      hostId:   interpretation?.moveTargetId ?? null,
-      unbonded: moveId === "forge_a_bond",
-    });
+    const hostId = interpretation?.moveTargetId ?? null;
+    const conn = selectConnection(connections, target, { hostId, unbonded: moveId === "forge_a_bond" });
     if (conn) {
       // Always an id once resolved — rollMove's "not rolled" guard reads a
       // null trackId as "the picked connection is gone" (issue #345 AA50).
@@ -779,6 +777,18 @@ export async function enrichProgressTicks(interpretation, deps = {}) {
         ticks: Number(conn.relationshipTicks ?? 0), label: conn.name ?? null,
         trackId: conn._id ?? conn.id ?? conn.__hostId ?? null, combatState: null,
       };
+    } else if (moveId === "forge_a_bond" && (hostId || target)) {
+      // A forge naming a connection already bonded (by its picker's id or by
+      // name) resolves nothing: rollMove's "not rolled" card says it was
+      // bonded (FORGE-NAMED-BONDED-SCORED — a typed name scored the bond's
+      // own track, then the forge skipped it).
+      const named = selectConnection(connections, target, { hostId, strict: true });
+      if (named?.bonded) {
+        console.warn(`${MODULE_ID} | enrichProgressTicks: ${named.name ?? "that connection"} is already bonded — Forge a Bond scores nothing.`);
+        interpretation.statValue     = 0;
+        interpretation.progressTicks = 0;
+        return { ticks: 0, source, label: named.name ?? null, trackId: null, combatState: null, alreadyBonded: true };
+      }
     }
   }
 
