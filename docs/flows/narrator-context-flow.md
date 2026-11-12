@@ -271,7 +271,8 @@ blocked nothing (XCARD-RETRACTION-SCENE-SCOPED). A scene end keeps the
 scene's X-Card retractions there too, so each blocks the narrator's
 re-assertion for the rest of the session — `findSessionStrike`'s write half
 reads them, the lift does not, and nothing renders them — and each live
-narration truth it closes on `sessionRetractions.narrated`, unnamed, which an
+narration truth it closes — live, or superseded by a Burn Momentum / Improve
+Result (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END) — on `sessionRetractions.narrated`, unnamed, which an
 X-Card on that narration — the session's newest, its scene since ended —
 moves to the blocks: the ledger it retracts holds none of them, and nothing
 stopped the narrator re-asserting them (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED) — state
@@ -930,7 +931,12 @@ ring, and the closing scene's truths keep the closing session's number.
   canon beside the replacement (issue #345 AA05). Its live narration truths are
   kept too (`sessionRetractions.narrated`, unnamed, read only by the X-Card's
   `retractNarrations`), so an X-Card on a narration whose scene has ended
-  blocks what it recorded (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
+  blocks what it recorded (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED) — and so are
+  its superseded truths (`retractedBy: "superseded"`, a Burn Momentum /
+  Improve Result struck their narration), so an X-Card on the upgraded beat
+  after the scene ended still blocks the struck narration's facts (D2's
+  pick takes that narration); until then a kept superseded truth is no bar
+  to a later narration restating it (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END).
 - `!truth` / `!state` resolve subjects **against the full entity roster**,
   so entity-keyed entries are addressable by name from the commands (the
   correction dialog always could). The commands are checked on the typist's

@@ -608,13 +608,21 @@ const SESSION_NARRATED_CAP = 50;
  * GM's `!truth set` carries no narration id and is not kept. Mutates
  * campaignState; endScene persists it.
  *
+ * A truth a Burn Momentum or Improve Result superseded is kept the same way
+ * (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END): an X-Card on the
+ * beat takes the narration the upgrade struck with its re-narration (D2),
+ * and its facts become the X-Card's, blocked — but the scene end dropped
+ * them, so after it nothing blocked them. Kept here, a superseded truth is
+ * still no bar to a later narration restating it until an X-Card takes it.
+ *
  * @param {Object} campaignState
  * @param {Array<Object>} truths — the truths the scene end closed (migrated, archived or dropped)
  */
 export function rememberNarratedTruths(campaignState, truths) {
   const sessionId = campaignState?.currentSessionId ?? null;
   if (!sessionId) return;
-  const closed = (Array.isArray(truths) ? truths : []).filter(t => t && !t.retracted
+  const closed = (Array.isArray(truths) ? truths : []).filter(t => t
+    && (!t.retracted || t.retractedBy === SUPERSEDED_RETRACTED_BY)
     && typeof t.narrationId === 'string' && t.narrationId && String(t.fact ?? '').trim());
   if (!closed.length) return;
   const same = campaignState.sessionRetractions?.sessionId === sessionId;

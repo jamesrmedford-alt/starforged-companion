@@ -622,9 +622,10 @@ export const CampaignStateSchema = {
   // loreRetractionHolder, rendered nowhere; an X-Card
   // moves the kept strikes of the narration it removes there, by
   // `narrationId` (ledgers.js retractNarrations — XCARD-RETRACTION-SCENE-SCOPED),
-  // and its truths a scene end closed live (`narrated`: written by endScene —
-  // rememberNarratedTruths — read only by that move; unnamed —
-  // XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED).
+  // and its truths a scene end closed live or superseded (`narrated`: written
+  // by endScene — rememberNarratedTruths — read only by that move; unnamed —
+  // XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED; superseded ones — a Burn Momentum /
+  // Improve Result struck their narration — issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END).
   // A scene fact's strike, and a Replace's original, keep `place` (the truth's
   // sceneLocation) and stand only there (keptStrikeStandsAt, issue #345 AA28).
   //   { sessionId, facts: [{ label, fact, place?, sceneId, at, narrationId, truthId, subjectKey, retractedBy, asserter }]  (cap 20),

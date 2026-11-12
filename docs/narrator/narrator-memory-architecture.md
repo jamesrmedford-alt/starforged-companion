@@ -249,7 +249,9 @@ re-assertion — for the rest of the session: a scene end keeps them unnamed
 on `sessionRetractions.blocked`, which `findSessionStrike`'s write half reads
 (XCARD-RETRACTION-SCENE-SCOPED), and keeps its live narration truths on
 `sessionRetractions.narrated`, which an X-Card on a narration whose scene has
-ended moves there (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED); a truth the table had already struck is
+ended moves there (XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED) — its superseded ones
+too, so the narration a Burn Momentum / Improve Result struck is blocked by an
+X-Card on the upgraded beat after the scene ended (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END); a truth the table had already struck is
 relabelled the X-Card's and its kept `sessionRetractions` entry moved to
 those blocks, so neither CORRECTED nor the summary's leave-out list names it
 and `!truth set` cannot lift it (XCARD-AFTER-STRIKE-STILL-NAMED) — its state values removed (each restoring the value it
@@ -293,7 +295,10 @@ canonical GM, merged onto the latest store, and on the upgrade's working copy,
 which its re-narration applies its sidecar to). A superseded truth is
 rendered nowhere and never named under CORRECTED, like an X-carded one, but it
 blocks nothing: the re-narration of the upgraded outcome — or the clock's next
-trigger — may state the same fact, and it is recorded live. Only the ledgers:
+trigger — may state the same fact, and it is recorded live. A scene end keeps
+it, unnamed, on `sessionRetractions.narrated` (blocking nothing), so an X-Card
+on the upgraded beat after the scene ended still blocks it (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END).
+Only the ledgers:
 what the superseded narration's capture recorded stands, and no id list keeps
 a stale writer from writing its state back (the accepted no-baseline merge).
 

@@ -465,7 +465,8 @@ fourteen found while fixing those — fixed at the maintainer's request on
   named** [XCARD-RETRACTION-SCENE-SCOPED, XCARD-ENDED-SCENE-TRUTHS-UNBLOCKED]:
   a scene end keeps the scene's X-Card retractions on
   `sessionRetractions.blocked` and every live narration truth it closes on
-  `sessionRetractions.narrated` (each the newest 50); an X-Card on a narration
+  `sessionRetractions.narrated` (each the newest 50 — superseded narration
+  truths too, issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END); an X-Card on a narration
   whose scene has ended moves its truths onto `blocked`; `applySidecar`
   refuses a blocked fact's re-assertion (`findSessionStrike(…, { blocked:
   true })`), while CORRECTED, the summary's leave-out list and `!truth set`'s
@@ -1266,6 +1267,13 @@ D6 (i), D7, D8 and D10 option A; D3 option A with the crew-wide clear; D6
   (option B) — the table removed the beat it saw, the struck version
   included, and the struck narration's lore and NPC details went on reaching
   every later prompt.
+  **Update (issue #347 residual XCARD-STRUCK-FACTS-AFTER-SCENE-END):** also
+  after the scene has ended. A scene end keeps the scene's superseded
+  narration truths, unnamed, on `sessionRetractions.narrated` beside its live
+  ones (retractions.js `rememberNarratedTruths`); it dropped them, so an
+  X-Card after the scene ended undid the struck narration's capture but
+  blocked none of its facts. Kept there, a superseded truth still blocks
+  nothing until an X-Card takes its narration.
 - **Push-to-talk into a drafted chat box adds and waits** [D9; option B]: the
   transcript goes after the draft and the player presses Enter; an empty box
   auto-submits. *Rejected:* append and submit (option A) — it guesses whether
