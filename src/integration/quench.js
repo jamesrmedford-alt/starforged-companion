@@ -12194,6 +12194,11 @@ function registerPromptContractTests(quench) {
       /** Settings each section depends on, pinned for the batch (defaults may change). */
       const PINNED = {
         claudeApiKey:                      "sk-ant-contract-stub",
+        // The table's global Lines and Veils are the world settings; the
+        // copy on campaignState.safety is written through from them
+        // (SAFETY-GLOBAL-LISTS-CROSS-WRITE), so the seeded Line is set here.
+        globalSafetyLines:                 ["No harm to children"],
+        globalSafetyVeils:                 [],
         narrationEnabled:                  true,
         narratorSessionSummary:            true,
         vowSwearingNarration:              true,
