@@ -30,7 +30,8 @@
 
 import { classifyInput, PACING_DECISION, PACING_CATEGORIES } from "./classifier.js";
 import { SCENE_CHALLENGE_VARIANTS, selectSceneChallengeTrack } from "../moves/sceneChallenge.js";
-import { narratePacedInput, getRecentSceneForReading } from "../narration/narrator.js";
+import { narratePacedInput, getRecentSceneForReading, tellPacedLineNotNarrated } from "../narration/narrator.js";
+import { claudeFailureReason } from "../narration/failureReason.js";
 import { logPacingDecision } from "./telemetry.js";
 import { serialiseCampaignStateWrite } from "../multiplayer/campaignStateChain.js";
 
@@ -296,7 +297,17 @@ export async function decidePacing({
 export async function routePacedInput({
   playerText, campaignState, character, apiKey, speakerActorId = null,
 }) {
-  const pacing = await decidePacing({ playerText, campaignState, character, apiKey });
+  // A throw here, before the narration starts, reached the caller's catch,
+  // which only logged it (known-issues PACED-ROUTER-THROW): the line went on
+  // to the move pipeline with nobody told why it was read as a move.
+  let pacing;
+  try {
+    pacing = await decidePacing({ playerText, campaignState, character, apiKey });
+  } catch (err) {
+    console.error(`${MODULE_ID} | pacing router failed; the line is read as a move:`, err);
+    ui.notifications?.warn?.(`Starforged Companion: the pacing check failed — ${claudeFailureReason(err)}. The line is read as a move instead.`);
+    return { runMove: true, decision: PACING_DECISION.MOVE, suggestedMove: null, category: "exploration", confidence: 0, reasoning: "pacing router failed" };
+  }
   if (pacing.runMove) return pacing;
 
   // NARRATIVE / NARRATIVE_WITH_MOVE_AVAILABLE — run the narrator and stop.
@@ -306,10 +317,17 @@ export async function routePacedInput({
   // world can refuse — a refusal left the scene and the facts on this GM's
   // cache alone, and its next whole-object write carried them into the world
   // (issue #342 Z02; the X09 / Y04 rule, rules/foundry-api.md).
+  // A line the classifier read as narrative is never rolled for a throw
+  // here: the table is told it was not narrated (PACED-ROUTER-THROW).
+  // narratePacedInput itself never throws — it tells the table of its own.
   const { suggestedMove, suggestedTargetId } = pacing;
-  const working = foundry.utils.deepClone(campaignState);
-  await narratePacedInput(playerText, working, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}) })
-    .catch(err => console.error(`${MODULE_ID} | narratePacedInput failed:`, err));
+  try {
+    const working = foundry.utils.deepClone(campaignState);
+    await narratePacedInput(playerText, working, { suggestedMove, speakerActorId, ...(suggestedTargetId ? { suggestedTargetId } : {}) });
+  } catch (err) {
+    console.error(`${MODULE_ID} | the paced narration could not be started:`, err);
+    await tellPacedLineNotNarrated(campaignState, err);
+  }
 
   return {
     runMove: false,

@@ -25,6 +25,7 @@ import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.j
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { stripMarkup, proseToHtml } from '../audio/segments.js';
+import { claudeFailureReason, NO_CLAUDE_KEY_REASON, EMPTY_REPLY_REASON } from './failureReason.js';
 import { SPOTLIGHT_MODES, selectSpotlight, buildSpotlightBlock } from './spotlight.js';
 import { extractSidecar, normaliseSidecar } from '../factContinuity/sidecarParser.js';
 import { applySidecar, applySceneFrame, retractNarrations, newNarrationId } from '../factContinuity/ledgers.js';
@@ -788,7 +789,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
   const apiKey = getApiKey();
   if (!apiKey) {
     console.warn(`${MODULE_ID} | narrateResolution: Claude API key not configured`);
-    await postFallbackCard(resolution, campaignState);
+    await postFallbackCard(resolution, campaignState, NO_CLAUDE_KEY_REASON);
     return null;
   }
 
@@ -881,7 +882,7 @@ export async function narrateResolution(resolution, campaignState, options = {})
     });
 
     if (!narration?.trim()) {
-      await postFallbackCard(resolution, campaignState);
+      await postFallbackCard(resolution, campaignState, EMPTY_REPLY_REASON);
       return null;
     }
 
@@ -897,6 +898,9 @@ export async function narrateResolution(resolution, campaignState, options = {})
     return narration;
 
   } catch (err) {
+    // What the fallback card names as the cause (ERROR-TEXT-BLAMES-KEY): the
+    // last failure — the retry's, when there was one.
+    let failure = claudeFailureReason(err);
     // Rate limit — retry once after 5 s
     if (isRateLimit(err)) {
       try {
@@ -928,13 +932,15 @@ export async function narrateResolution(resolution, campaignState, options = {})
           });
           return narration;
         }
+        failure = EMPTY_REPLY_REASON;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narrateResolution retry failed:`, retryErr);
+        failure = claudeFailureReason(retryErr);
       }
     }
 
     console.error(`${MODULE_ID} | narrateResolution failed:`, err);
-    await postFallbackCard(resolution, campaignState);
+    await postFallbackCard(resolution, campaignState, failure);
     return null;
   }
 }
@@ -1019,7 +1025,7 @@ export function roundNarrationEntries(round) {
  * @param {{ round: Object, campaignState: Object, stillNarrating?: (() => boolean)|null }} args — a working copy of campaignState
  * @returns {Promise<{ posted: "card"|"fallback"|"paused"|null, narrationId?: string, card?: Object, superseded?: boolean }>}
  */
-export async function narrateRound({ round, campaignState, stillNarrating = null }) {
+export async function narrateRound({ round, campaignState, stillNarrating = null, noKeyReason = null }) {
   const entries = roundNarrationEntries(round);
   if (!entries.length) return { posted: null };
   const settings = getNarratorSettings();
@@ -1035,7 +1041,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   const apiKey = getApiKey();
   if (!apiKey) {
     console.warn(`${MODULE_ID} | narrateRound: Claude API key not configured`);
-    return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState) };
+    return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState, noKeyReason || NO_CLAUDE_KEY_REASON) };
   }
 
   await ensureSceneStarted(campaignState, 'first_narration_round_resolution');
@@ -1093,6 +1099,7 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
   // One call, and one retry after a rate limit. The call is made here, not in
   // a helper, so its caller is narrateRound (the playthrough harness files a
   // call under the two module functions above the proxy).
+  let failure = claudeFailureReason(null);   // the fallback card's cause (ERROR-TEXT-BLAMES-KEY)
   for (let tries = 0; tries < 2; tries += 1) {
     try {
       if (tries) await delay(RETRY_DELAY_MS);
@@ -1106,7 +1113,10 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       const narration = applyNarratorSidecar(raw, campaignState, {
         moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
       });
-      if (!narration?.trim()) break;
+      if (!narration?.trim()) {
+        failure = EMPTY_REPLY_REASON;
+        break;
+      }
       const card = await postRoundNarrationCard(narration, round, entries, campaignState, {
         matchedEntityIds: extras.matchedEntityIds ?? [], narrationId,
       });
@@ -1116,13 +1126,14 @@ export async function narrateRound({ round, campaignState, stillNarrating = null
       scheduleChronicleEntry({ narrationText: narration, campaignState, kind: 'round' });
       return { posted: 'card', narrationId, card };
     } catch (err) {
+      failure = claudeFailureReason(err);
       if (!tries && isRateLimit(err)) continue;
       console.error(`${MODULE_ID} | narrateRound ${tries ? 'retry ' : ''}failed:`, err);
       break;
     }
   }
   if (superseded()) return { posted: null, superseded: true };
-  return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState) };
+  return { posted: 'fallback', card: await postRoundFallbackCard(round, entries, campaignState, failure) };
 }
 
 /**
@@ -1403,7 +1414,7 @@ export async function postRoundNarrationCard(narrationText, round, entries, camp
  * session recap counts the moves and every narrator-memory read leaves it out
  * (rules/narrator-memory.md invariant 1). No narrationId: no sidecar ran.
  */
-async function postRoundFallbackCard(round, entries, campaignState = null) {
+async function postRoundFallbackCard(round, entries, campaignState = null, reason = claudeFailureReason(null)) {
   const lines = entries.map(e => {
     const input = e.input ?? {};
     const what = input.kind === 'move'
@@ -1416,7 +1427,7 @@ async function postRoundFallbackCard(round, entries, campaignState = null) {
       <div class="sf-narration-card sf-narration-fallback sf-round-card">
         <div class="sf-narration-label">◈ Round ${escapeHtml(String(round?.number ?? ''))}</div>
         <div class="sf-narration-prose">${lines.map(escapeHtml).join('<br>')}</div>
-        <div class="sf-narration-error">Narration unavailable — check your API key and proxy.</div>
+        <div class="sf-narration-error">Narration unavailable — ${escapeHtml(reason)}.</div>
       </div>
     `.trim(),
     flags: {
@@ -3115,6 +3126,7 @@ export async function interrogateScene(question, campaignState, options = {}) {
     return response;
 
   } catch (err) {
+    let failure = claudeFailureReason(err);   // the card's cause (ERROR-TEXT-BLAMES-KEY)
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
@@ -3136,12 +3148,14 @@ export async function interrogateScene(question, campaignState, options = {}) {
           scheduleSceneAnswerCapture(response, extras, campaignState, character?.actorId ?? null, narrationId);
           return response;
         }
+        failure = EMPTY_REPLY_REASON;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | interrogateScene retry failed:`, retryErr);
+        failure = claudeFailureReason(retryErr);
       }
     }
     console.error(`${MODULE_ID} | interrogateScene failed:`, err);
-    await postSceneFallbackCard(question, 'Scene query failed — check your API key and proxy.', sessionId);
+    await postSceneFallbackCard(question, `Scene query failed — ${failure}.`, sessionId);
     return null;
   }
 }
@@ -3760,9 +3774,26 @@ export async function narrateIncitingIncident({ userMessage, campaignState, narr
  * @param {Object} [options]
  * @param {string|null} [options.suggestedMove] — when set, the narrator is
  *   instructed to end with an italicized inline hint nominating this move
+ * Never throws: a throw outside its own guarded steps — before the prompt
+ * is built (the X-Card watch, the key, the speaker's character) — told
+ * nobody; the pacing router only logged it (known-issues PACED-ROUTER-THROW).
+ * The table is told the line was not narrated, as a failed call's line is
+ * (issue #347 AB21). A reply the X-Card discards posts the paused notice
+ * (PACED-DISCARD-UNDER-XCARD-SILENT).
+ *
  * @returns {Promise<string|null>}   — narration text, or null on failure/disabled
  */
 export async function narratePacedInput(playerText, campaignState, options = {}) {
+  try {
+    return await narratePacedInputGuarded(playerText, campaignState, options ?? {});
+  } catch (err) {
+    console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
+    await postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
+    return null;
+  }
+}
+
+async function narratePacedInputGuarded(playerText, campaignState, options) {
   const sessionId = campaignState?.currentSessionId ?? null;
 
   const settings = getNarratorSettings();
@@ -3825,7 +3856,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     );
   } catch (err) {
     console.error(`${MODULE_ID} | narratePacedInput: the narration could not be prepared:`, err);
-    await postPacedNarrationFailedCard(campaignState);
+    await postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
     return null;
   }
 
@@ -3836,14 +3867,19 @@ export async function narratePacedInput(playerText, campaignState, options = {})
       model:     settings.narrationModel,
       maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
     });
-    if (xCard.interrupted('narratePacedInput')) return null;
+    if (xCard.interrupted('narratePacedInput')) {
+      // Discarded because the X-Card was played while it was written: said
+      // so, as a move's and @scene's are (PACED-DISCARD-UNDER-XCARD-SILENT).
+      await postPacedNarrationPausedCard(campaignState);
+      return null;
+    }
     const text = applyNarratorSidecar(raw, campaignState, {
       moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
     });
 
     if (!text?.trim()) {
       console.warn(`${MODULE_ID} | narratePacedInput: the narrator's reply had no prose — nothing to post.`);
-      await postPacedNarrationFailedCard(campaignState);
+      await postPacedNarrationFailedCard(campaignState, EMPTY_REPLY_REASON);
       return null;
     }
 
@@ -3858,6 +3894,7 @@ export async function narratePacedInput(playerText, campaignState, options = {})
     });
     return text;
   } catch (err) {
+    let failure = claudeFailureReason(err);   // the notice's cause (ERROR-TEXT-BLAMES-KEY)
     if (isRateLimit(err)) {
       try {
         await delay(RETRY_DELAY_MS);
@@ -3867,7 +3904,10 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           model:     settings.narrationModel,
           maxTokens: maxTokensWithSidecar(settings.narrationMaxTokens),
         });
-        if (xCard.interrupted('narratePacedInput')) return null;
+        if (xCard.interrupted('narratePacedInput')) {
+          await postPacedNarrationPausedCard(campaignState);
+          return null;
+        }
         const text = applyNarratorSidecar(raw, campaignState, {
           moveId: null, matchedEntityIds: extras.matchedEntityIds, narrationId,
         });
@@ -3883,12 +3923,14 @@ export async function narratePacedInput(playerText, campaignState, options = {})
           });
           return text;
         }
+        failure = EMPTY_REPLY_REASON;
       } catch (retryErr) {
         console.error(`${MODULE_ID} | narratePacedInput retry failed:`, retryErr);
+        failure = claudeFailureReason(retryErr);
       }
     }
     console.error(`${MODULE_ID} | narratePacedInput failed:`, err);
-    await postPacedNarrationFailedCard(campaignState);
+    await postPacedNarrationFailedCard(campaignState, failure);
     return null;
   }
 }
@@ -4765,14 +4807,27 @@ async function postPacedNarrationPausedCard(campaignState = null) {
  * @param {Object|null} [campaignState]
  * @returns {Promise<ChatMessage|null>}
  */
-async function postPacedNarrationFailedCard(campaignState = null) {
+/**
+ * The pacing router's way to tell the table a line it read as narrative was
+ * not narrated — a throw before narratePacedInput began (known-issues
+ * PACED-ROUTER-THROW). Never throws.
+ *
+ * @param {Object|null} campaignState
+ * @param {unknown} err — the cause, worded by claudeFailureReason
+ * @returns {Promise<ChatMessage|null>}
+ */
+export function tellPacedLineNotNarrated(campaignState, err) {
+  return postPacedNarrationFailedCard(campaignState, claudeFailureReason(err));
+}
+
+async function postPacedNarrationFailedCard(campaignState = null, reason = claudeFailureReason(null)) {
   try {
     return await ChatMessage.create({
       content: `
         <div class="sf-narration-card sf-narration-fallback">
           <div class="sf-narration-label">◈ Narrator</div>
           <div class="sf-narration-prose">That line was not narrated &mdash; say it again in a moment.</div>
-          <div class="sf-narration-error">Narration unavailable — the narrator could not be reached. If it keeps happening, check your API key and proxy.</div>
+          <div class="sf-narration-error">Narration unavailable — ${escapeHtml(reason)}.</div>
         </div>
       `.trim(),
       flags: {
@@ -4787,7 +4842,16 @@ async function postPacedNarrationFailedCard(campaignState = null) {
   }
 }
 
-async function postFallbackCard(resolution, campaignState = null) {
+/**
+ * A move's card when its narration failed: the move and outcome, and why —
+ * by cause (ERROR-TEXT-BLAMES-KEY: every failure said "check your API key and
+ * proxy").
+ *
+ * @param {Object} resolution
+ * @param {Object|null} [campaignState]
+ * @param {string} [reason] — failureReason.js clause
+ */
+async function postFallbackCard(resolution, campaignState = null, reason = claudeFailureReason(null)) {
   const moveInfo = resolution?.moveName && resolution?.outcomeLabel
     ? `${resolution.moveName}: ${resolution.outcomeLabel}`
     : 'Move resolved.';
@@ -4798,7 +4862,7 @@ async function postFallbackCard(resolution, campaignState = null) {
       <div class="sf-narration-card sf-narration-fallback">
         <div class="sf-narration-label">◈ Narrator</div>
         <div class="sf-narration-prose">${moveInfo}</div>
-        <div class="sf-narration-error">Narration unavailable — check your API key and proxy.</div>
+        <div class="sf-narration-error">Narration unavailable — ${escapeHtml(reason)}.</div>
       </div>
     `.trim(),
     flags: {
