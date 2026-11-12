@@ -388,6 +388,9 @@ function mergeLegacyTracks(store, working) {
  * @param {Object} [targets] — persistResolution's: what the choices change
  * @returns {Promise<Object|null>} the refused card's step, or null when it posted
  */
+// The outcome's choice card's hint while its move still offers an upgrade.
+const CHOICE_UPGRADE_FIRST = "Burn momentum or improve the result first — choosing here is the move's consequence, and closes them.";
+
 async function resolveSufferPrompt(resolution, actor, targets = {}) {
   const prompt = resolution.consequences.sufferPrompt;
   if (!prompt) return null;
@@ -415,8 +418,15 @@ async function resolveSufferPrompt(resolution, actor, targets = {}) {
   // The card carries its resolution: a Burn Momentum or Improve Result that
   // replaces this outcome retires it and offers the new outcome's choice
   // instead (resultUpgrade.js — issue #311 P03).
+  // While the move card still offers Burn Momentum or Improve Result, the
+  // choice says to take it first: a pick is the move's consequence, and
+  // closes them — only a price's cards posted before the move card said so
+  // (issue #336 Y18; OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT). It comes off once
+  // the upgrade closes another way (resultUpgrade dropUpgradeHints).
+  const { upgradeOpenFor } = await import('./resultUpgrade.js');
+  const upgradeFirst = resolution._id ? upgradeOpenFor(resolution._id) === true : false;
   const card = await postSufferChoiceCard({
-    sufferPrompt: prompt,
+    sufferPrompt: upgradeFirst && !prompt.hint ? { ...prompt, hint: CHOICE_UPGRADE_FIRST } : prompt,
     actor,
     executorOpts,
     moveId: resolution.moveId,

@@ -834,9 +834,56 @@ export async function closeUpgradesForChoice(resolutionId) {
     .filter(k => f[k] && !f[k].consumed && !f[k].choiceMade)
     .map(k => [`flags.${MODULE_ID}.${k}.choiceMade`, true]));
   if (f.waypointOracleCard && !f.waypointRewardClaimed) update[`flags.${MODULE_ID}.waypointRewardClaimed`] = "ordinary";
+  // The move's other open choice cards no longer say to burn or improve
+  // first: that is closed now (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
+  await dropUpgradeHints(resolutionId);
   if (!Object.keys(update).length) return;
   await card.update(update)
     .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
+}
+
+/**
+ * A choice card's update that takes its "burn or improve first" hint away —
+ * its prompt's `hint` and the card re-rendered without it — or {} when it
+ * carries none, or cannot be re-rendered (the hint stays). Best effort.
+ *
+ * @param {ChatMessage} card
+ * @returns {Promise<Object>}
+ */
+async function withoutHint(card) {
+  const f = card?.flags?.[MODULE_ID];
+  if (!f?.sufferPrompt?.hint) return {};
+  try {
+    const { renderSufferCard } = await import("./sufferCard.js");
+    const actor = f.actorId ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
+    return {
+      [`flags.${MODULE_ID}.sufferPrompt.hint`]: null,
+      content: renderSufferCard({ ...f.sufferPrompt, hint: null }, actor, f.pickedIndices ?? [], undefined, f.notApplied ?? [], f.pickedSuffers ?? []),
+    };
+  } catch (err) {
+    console.debug(`${MODULE_ID} | choice card ${card?.id ?? "?"}: its hint stays —`, err?.message ?? err);
+    return {};
+  }
+}
+
+/**
+ * The "burn or improve first" hint comes off a move's still-open choice
+ * cards once its upgrade has closed another way — a choice made on another
+ * of its cards, or the roller's later move (OUTCOME-CHOICE-CARD-NO-UPGRADE-
+ * HINT: the hint was static, and said to burn a result no longer burnable).
+ * Canonical GM, where the closes run. Best effort.
+ *
+ * @param {string|null} resolutionId
+ */
+export async function dropUpgradeHints(resolutionId) {
+  for (const card of outcomeChoiceCards(resolutionId)) {
+    const f = card.flags[MODULE_ID];
+    if (f.resolved === true || !f.sufferPrompt?.hint) continue;
+    const update = await withoutHint(card);
+    if (!Object.keys(update).length) continue;
+    await card.update(update)
+      .catch(err => console.warn(`${MODULE_ID} | choice card ${card.id}: its "burn or improve first" hint could not be taken off:`, err?.message ?? err));
+  }
 }
 
 /**
@@ -891,6 +938,9 @@ export async function closeUpgradesForLaterMove(actorId, resolutionId) {
     if (!Object.keys(update).length) continue;
     await card.update(update)
       .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades after a later move failed:`, err?.message ?? err));
+    // Its choice cards no longer say to burn or improve first
+    // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
+    await dropUpgradeHints(f.resolutionId ?? null);
   }
 }
 
@@ -1022,17 +1072,8 @@ async function keepPriceCard(card) {
   const update = {
     [`flags.${MODULE_ID}.upgraded`]:              true,
     [`flags.${MODULE_ID}.executorOpts.upgraded`]: true,
+    ...(await withoutHint(card)),
   };
-  if (f.sufferPrompt?.hint) {
-    update[`flags.${MODULE_ID}.sufferPrompt.hint`] = null;
-    try {
-      const { renderSufferCard } = await import("./sufferCard.js");
-      const actor = f.actorId ? (globalThis.game?.actors?.get?.(f.actorId) ?? null) : null;
-      update.content = renderSufferCard({ ...f.sufferPrompt, hint: null }, actor, f.pickedIndices ?? [], undefined, f.notApplied ?? [], f.pickedSuffers ?? []);
-    } catch (err) {
-      console.debug(`${MODULE_ID} | kept price card ${card.id}: its hint stays —`, err?.message ?? err);
-    }
-  }
   try {
     await card.update(update);
     return true;
