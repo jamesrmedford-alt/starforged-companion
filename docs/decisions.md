@@ -1956,6 +1956,13 @@ Each finding's ID in brackets.)
   must not rewrite the story. *Rejected:* undoing a narration's capture when
   its card is deleted — for that reason. The record lives in the page: after
   a reload the pick is chat-only again.
+  **Update (issue #347 residual DELETED-NARRATION-MEMORY-PAGE-ONLY):** the
+  record survives a reload: the canonical GM keeps the newest twenty deleted
+  messages the pick reads on campaignState (`deletedChatMessages`) —
+  narration and X-Card cards with the flags the pick and the removal read,
+  and the lines that end a beat, none with its text — and the pick reads them
+  beside the page's record. A deleted card an X-Card removed is marked
+  `xCarded` there, as a removed card in chat is.
 - **The Private Channel is a narrator entry point** [U09; maintainer]. While
   the live `xCardActive` is set its narrator refuses on entry (and discards a
   reply the card overtook) and Publish refuses; the window says why.

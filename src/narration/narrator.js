@@ -1826,12 +1826,97 @@ function inNarratorMemory(m, sessionId, { forRecap = false } = {}) {
 // pick reads the chat as it was (chatAsItWas): a deleted narration is still
 // the newest one, and the X-Card removes it and what it wrote. A deletion
 // alone changes nothing in narrator memory — Clear Chat Log deletes every
-// card, and tidying chat must not rewrite the story. The record lives in the
-// page: a reload forgets it (the pick is chat-only again, as before).
+// card, and tidying chat must not rewrite the story. The page's record holds
+// every deleted message; the canonical GM also keeps the newest deleted
+// messages the pick reads — narration and X-Card cards, and the lines that end
+// a beat, without their text — on campaignState (`deletedChatMessages`), so
+// the pick survives a reload (issue #347 residual
+// DELETED-NARRATION-MEMORY-PAGE-ONLY — a reload forgot them, and the X-Card
+// answered the beat before again).
 
 /** Deleted chat messages remembered, newest last. */
 const DELETED_MESSAGE_CAP = 200;
 const _deletedMessages = [];
+
+/** Deleted chat messages kept on campaignState, newest last. */
+const STORED_DELETED_CAP = 20;
+
+// The module flags the X-Card's pick and removal read off a card — all a
+// stored record keeps (narrator memory never reads a deleted card's text).
+const DELETED_RECORD_FLAGS = [
+  'narratorCard', 'sessionId', 'narrationId', 'resolutionId', 'roundId', 'oracleCardId', 'upgradeOf',
+  'supersededFor', 'burnSuperseded', 'xCarded', 'narrationFallback', 'worldJournalContradiction',
+  'worldJournalCard', 'recapCard', 'draftEntityCard', 'bypassPacing', 'forcedMoveId', 'xcardCard',
+  'xcardClearedCard', 'timestamp',
+];
+
+/**
+ * A deleted message's record as campaignState keeps it, or null for one the
+ * pick passes over (this module's other cards). A narration or X-Card card
+ * keeps the flags the pick and the removal read; a message that ends a beat —
+ * a person's line or another module's (no flags of this module), a forced
+ * move's post, a round's card — keeps what ends it. No text is kept.
+ */
+function storedDeletedRecord(record) {
+  if (!record?.id) return null;
+  const base = { id: record.id, timestamp: record.timestamp ?? null, deleted: true };
+  const f = record.flags?.[MODULE_ID];
+  if (!f) return { ...base, whisper: [], flags: {} };   // someone spoke
+  if (!(f.narratorCard || f.xcardCard || f.xcardClearedCard || f.bypassPacing || f.forcedMoveId || f.roundId)) return null;
+  const kept = {};
+  for (const key of DELETED_RECORD_FLAGS) if (f[key] !== undefined) kept[key] = f[key];
+  if (Array.isArray(f.roundEntries)) {
+    kept.roundEntries = f.roundEntries.map(e => ({ resolutionId: e?.resolutionId ?? null })).filter(e => e.resolutionId);
+  }
+  return { ...base, whisper: record.whisper ?? [], flags: { [MODULE_ID]: kept } };
+}
+
+// Records waiting for the next write, by id, newest last — a Clear Chat Log
+// deletes every card at once, and one write takes them all.
+const _pendingStoredDeleted = new Map();
+let _storedDeletedFlushQueued = false;
+
+/**
+ * Keep `record` on campaignState's `deletedChatMessages` (the newest
+ * STORED_DELETED_CAP), or update the one there of its id. Canonical GM
+ * (single emitter), on the client's campaignState write chain;
+ * fire-and-forget, never throws.
+ *
+ * @param {Object} record — a deleted message's record
+ */
+function persistDeletedRecord(record) {
+  const rec = storedDeletedRecord(record);
+  if (!rec || !isCanonicalGM()) return;
+  _pendingStoredDeleted.delete(rec.id);
+  _pendingStoredDeleted.set(rec.id, rec);
+  if (_storedDeletedFlushQueued) return;
+  _storedDeletedFlushQueued = true;
+  serialiseCampaignStateWrite(async () => {
+    await Promise.resolve();             // a bulk deletion's other hooks come first
+    _storedDeletedFlushQueued = false;   // a record deleted from here on queues the next write
+    const pending = [..._pendingStoredDeleted.values()];
+    _pendingStoredDeleted.clear();
+    if (!pending.length) return;
+    const latest = { ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) };
+    const list = Array.isArray(latest.deletedChatMessages) ? latest.deletedChatMessages : [];
+    const ids = new Set(pending.map(r => r.id));
+    latest.deletedChatMessages = [...list.filter(d => !ids.has(d?.id)), ...pending].slice(-STORED_DELETED_CAP);
+    await game.settings.set(MODULE_ID, 'campaignState', latest);
+  }, 'deleted chat message').catch(err => {
+    _storedDeletedFlushQueued = false;
+    console.warn(`${MODULE_ID} | X-Card: a deleted chat message could not be kept for after a reload:`, err?.message ?? err);
+  });
+}
+
+/** The deleted chat messages campaignState keeps (persistDeletedRecord), as the pick reads records. */
+function storedDeletedMessages() {
+  let list = null;
+  try { list = game.settings.get(MODULE_ID, 'campaignState')?.deletedChatMessages ?? null; }
+  catch { list = null; }
+  return Array.isArray(list)
+    ? list.filter(d => typeof d?.id === 'string' && d.id && d.flags && typeof d.flags === 'object')
+    : [];
+}
 
 /**
  * Remember a deleted chat message as the X-Card's pick reads one: its id, its
@@ -1852,6 +1937,7 @@ function rememberDeletedMessage(message) {
       deleted:   true,
     });
     if (_deletedMessages.length > DELETED_MESSAGE_CAP) _deletedMessages.splice(0, _deletedMessages.length - DELETED_MESSAGE_CAP);
+    persistDeletedRecord(_deletedMessages[_deletedMessages.length - 1]);
   } catch (err) {
     console.debug(`${MODULE_ID} | X-Card: a deleted chat message could not be remembered:`, err?.message ?? err);
   }
@@ -1867,7 +1953,11 @@ export function registerDeletedChatHook() {
 }
 
 /** Test seam: forget the deleted messages remembered (a page load starts with none). */
-export function _resetDeletedMessagesForTests() { _deletedMessages.length = 0; }
+export function _resetDeletedMessagesForTests() {
+  _deletedMessages.length = 0;
+  _pendingStoredDeleted.clear();
+  _storedDeletedFlushQueued = false;
+}
 
 /**
  * The chat as it was: the messages still in chat, with those deleted since
@@ -1878,10 +1968,13 @@ export function _resetDeletedMessagesForTests() { _deletedMessages.length = 0; }
  */
 function chatAsItWas() {
   const live = game.messages?.contents ?? [];
-  if (!_deletedMessages.length) return live;
+  // This page's record, then campaignState's — what a reload kept.
+  const remembered = new Set(_deletedMessages.map(d => d.id));
+  const ghosts = [..._deletedMessages, ...storedDeletedMessages().filter(d => !remembered.has(d.id))];
+  if (!ghosts.length) return live;
   const liveIds = new Set(live.map(m => m?.id).filter(Boolean));
   const out = [...live];
-  for (const ghost of _deletedMessages) {
+  for (const ghost of ghosts) {
     if (liveIds.has(ghost.id)) continue;
     const at = ghost.timestamp;
     let idx = out.length;
@@ -2177,7 +2270,18 @@ function xCardedOracleResults(cards) {
 export async function flagXCardedCards(cards) {
   let flagged = 0;
   for (const message of cards ?? []) {
-    if (message?.deleted) continue;   // a deleted card's record (issue #347 AB22): nothing in chat to flag
+    if (message?.deleted) {
+      // A deleted card's record (issue #347 AB22): nothing in chat to flag —
+      // the record itself is marked, here and on campaignState, so it reads
+      // as removed, as a removed card in chat does (issue #347 residual
+      // DELETED-NARRATION-MEMORY-PAGE-ONLY).
+      const f = message.flags?.[MODULE_ID];
+      if (f) f.xCarded = true;
+      const mine = _deletedMessages.find(d => d.id === message.id);
+      if (mine?.flags?.[MODULE_ID]) mine.flags[MODULE_ID].xCarded = true;
+      persistDeletedRecord(message);
+      continue;
+    }
     try {
       await message.update({ [`flags.${MODULE_ID}.xCarded`]: true });
       flagged += 1;

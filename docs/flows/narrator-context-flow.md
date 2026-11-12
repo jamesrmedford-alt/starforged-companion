@@ -247,7 +247,14 @@ in their place by time (`chatAsItWas`) — so a narration whose card a GM
 deleted is still the newest one, and is what the X-Card removes, never the
 kept beat before it; a deleted person's line still ends a beat (issue #347
 AB22). A deletion alone changes nothing in narrator memory (Clear Chat Log
-deletes every card); a reload forgets the record. A Burn Momentum / Improve
+deletes every card). The canonical GM also keeps the newest twenty deleted
+messages the pick reads — narration and X-Card cards with the flags the pick
+and the removal read, and the lines that end a beat, none with its text — on
+campaignState `deletedChatMessages` (`persistDeletedRecord`, one write per
+bulk deletion), which `chatAsItWas` reads too, so the pick survives a reload;
+a deleted card an X-Card removed is marked `xCarded` there, as a removed
+card in chat is (issue #347 residual
+DELETED-NARRATION-MEMORY-PAGE-ONLY). A Burn Momentum / Improve
 Result re-narration in the beat names the resolution it upgraded
 (`upgradeOf`): the narrations that upgrade struck — the move's first
 narration and the trigger vignette of a clock it rewound (`supersededFor`) —

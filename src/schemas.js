@@ -537,6 +537,13 @@ export const CampaignStateSchema = {
   // catchUpUnsummarisedSession, issue #347 AB15).
   //   { sessionId, sessionNumber, text, updatedAt }
   previousSessionSummary: null,
+  // The newest deleted chat messages the X-Card's pick reads — narration and
+  // X-Card cards, and the lines that end a beat, without their text — so a
+  // narration whose card a GM deleted is still the one the next X-Card removes
+  // after a reload (narrator.js persistDeletedRecord / chatAsItWas; issue #347
+  // AB22 and its residual). Canonical GM; the newest 20, newest last.
+  //   [{ id, timestamp, whisper, flags: { [MODULE_ID]: { narratorCard, sessionId, narrationId, … } } | {}, deleted: true }]
+  deletedChatMessages: [],
   // The session the last mint closed out before its summary could be brought
   // up to date — no Claude key on the minting GM's client yet, or the one
   // summary call failed (issue #347 AB15). LAST SESSION is summarised from its

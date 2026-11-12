@@ -88,7 +88,6 @@ const LOCAL_ONLY = {
   'src/private-channel/transcript.js createJournalEntry inline#1': 'ends this client\'s wait for the transcript journal the GM created for it',
   'src/ui/roundWindow.js updateSetting onSettingForWindow': 're-renders this client\'s Batch Mode Round window when the session, X-Card or keyed GMs its banners show changed (issue #340)',
   'src/ui/roundWindow.js createSetting onSettingForWindow': 'same, first write of the setting — the keyed-GM registry\'s (issue #342 Z33)',
-  'src/narration/narrator.js deleteChatMessage rememberDeletedMessage': 'remembers a deleted chat message in this client\'s page, for the X-Card\'s pick of the narration on screen — writes nothing (issue #347 AB22)',
 };
 
 /**

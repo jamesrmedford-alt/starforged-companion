@@ -175,7 +175,11 @@ CLAUDE.md "audit consumers" rule):
   deleted since this page loaded put back by time (`chatAsItWas`, fed by
   `registerDeletedChatHook`) — so a narration whose card a GM deleted is
   still the one an X-Card removes, with what it wrote, and the kept beat
-  before it is left alone (issue #347 AB22); a deletion alone forgets nothing
+  before it is left alone (issue #347 AB22); the canonical GM keeps the
+  newest twenty of those the pick reads on campaignState
+  (`deletedChatMessages`, no text kept), so the pick survives a reload, and a
+  deleted card an X-Card removed is marked there (issue #347 residual
+  DELETED-NARRATION-MEMORY-PAGE-ONLY); a deletion alone forgets nothing
 - burn supersede (`src/moves/burnMomentum.js`) — requires matching
   `resolutionId`, unaffected; it flags the card `burnSuperseded`, which
   `sessionNarratorCards` leaves out (ring, summary, recap), after dropping a
