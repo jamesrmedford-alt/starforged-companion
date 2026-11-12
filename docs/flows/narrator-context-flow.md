@@ -150,7 +150,9 @@ early on player clients, so only the GM's own lines were ever stored. Every
 client, GM or player, also puts its own entry back when a campaignState write
 leaves it wrong (`registerPrivateLinesHealing`): two writes of the list inside
 one round trip — two GMs loading at once — dropped one user's lines from every
-GM-built prompt until their next load (issue #345 AA35). [1] is
+GM-built prompt until their next load (issue #345 AA35). The global Lines /
+Veils copy is healed the same way by the canonical GM, from the world
+settings (`onSafetyListsWritten`, SAFETY-GLOBAL-LISTS-CROSS-WRITE). [1] is
 built by `formatNarratorSafetyContext`, which scopes Private Lines to the
 building client: on a GM's client every player's lines (deduplicated); on a
 player's client — narrating only with no keyed GM online — that player's own,
