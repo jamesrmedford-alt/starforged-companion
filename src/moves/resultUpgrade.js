@@ -1006,6 +1006,27 @@ async function keepPriceCard(card) {
 }
 
 /**
+ * An upgrade replaced the outcome an Explore a Waypoint match's alternative
+ * belonged to: a miss with a match offers Confront Chaos instead of its price,
+ * and a miss burned or improved to a hit kept that button live on the
+ * superseded card — only a claim closed it (known-issues
+ * WAYPOINT-ALT-AFTER-UPGRADE). The upgrade stamps it closed
+ * (`waypointRewardClaimed`: the upgrade's kind) with the choice cards it
+ * retires. Best effort: the alternative's handler also refuses an upgraded
+ * card (cardActions.js applyWaypointOraclePick).
+ *
+ * @param {string|null} resolutionId
+ * @param {"burn"|"improve"} kind
+ */
+async function closeWaypointAlternativeForUpgrade(resolutionId, kind) {
+  const card = moveCardFor(resolutionId);
+  const f    = card?.flags?.[MODULE_ID];
+  if (!f?.waypointOracleCard || f.waypointRewardClaimed) return;
+  await card.update({ [`flags.${MODULE_ID}.waypointRewardClaimed`]: kind })
+    .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing the waypoint's alternative after the ${kind} failed:`, err?.message ?? err));
+}
+
+/**
  * After an upgrade's claim: retire the superseded outcome's pending choice
  * cards, then post the upgraded outcome's own choice, once — for the move's
  * vehicle, companion and fight (`targets`, as persistResolution gives its
@@ -1027,6 +1048,7 @@ async function keepPriceCard(card) {
  */
 export async function reconcileChoices({ resolutionId, kind, actor, sufferPrompt, moveId, targets = {}, failures, priceStands = false }) {
   const kept = await retireOutcomeChoiceCards(resolutionId, kind, { keepPriceCards: priceStands });
+  await closeWaypointAlternativeForUpgrade(resolutionId, kind);
   if (sufferPrompt && actor) {
     await applyUpgradeStep({
       effect: "choiceCard", pcId: actor.id, sufferPrompt, moveId: moveId ?? null, resolutionId: resolutionId ?? null,

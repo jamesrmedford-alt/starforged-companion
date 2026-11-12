@@ -7729,7 +7729,9 @@ export function wireWaypointOracleButton(message, root) {
     btn.disabled = true;
     btn.title = claimed === "ordinary"
       ? "The ordinary reward was taken — the match's alternative no longer applies"
-      : "Taken";
+      : claimed === "burn" || claimed === "improve"
+        ? "The result changed — the match's alternative no longer applies"
+        : "Taken";
     return;
   }
   const fresh = btn.cloneNode(true);
