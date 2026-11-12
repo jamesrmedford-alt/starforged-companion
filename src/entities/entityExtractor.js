@@ -1095,8 +1095,13 @@ function seedHookOwnsPortrait(record) {
  *
  * Promotes the caller's copy too: the move pipeline holds one across its
  * awaits and writes its scene ledgers back at the end of the move. The write
- * is the stored campaignState, read just before it, with only the two ledger
- * fields changed. Fail-open; never throws.
+ * is the stored campaignState, read at its turn on the write chain, with
+ * only the two ledger fields changed — promoted on a deep copy of the
+ * store's, never on the cached setting itself: a refused write left the
+ * re-key on the GM's cache, which the world never took
+ * (PROMOTE-SUBJECTS-CACHED-MUTATE). A caller's copy that IS the cached
+ * setting (a draft card's Confirm hands it over) is not promoted in place —
+ * the write sets the store. Fail-open; never throws.
  *
  * @param {string} name     — the name the facts were recorded under
  * @param {string} typeKey  — the entity type
@@ -1123,14 +1128,19 @@ export async function promoteNewEntityLedgerSubjects(name, typeKey, record, camp
       return promoteTextSubject(text, ref, cs) > 0 || hadState;
     };
 
-    const callerChanged = promote(campaignState);
+    const cached = () => globalThis.game?.settings?.get(MODULE_ID, "campaignState");
+    if (campaignState !== cached()) promote(campaignState);
     // Read and written at its turn on the client's campaignState write chain
-    // (CAMPSTATE-CHAIN-REST).
+    // (CAMPSTATE-CHAIN-REST), on a copy of the store's two ledgers.
     await serialiseCampaignStateWrite(async () => {
-      const latest = globalThis.game?.settings?.get(MODULE_ID, "campaignState");
+      const latest = cached();
       if (!latest) return;
-      const changed = latest === campaignState ? callerChanged : promote(latest);
-      if (changed) await globalThis.game.settings.set(MODULE_ID, "campaignState", latest);
+      const target = {
+        ...latest,
+        sceneTruths: foundry.utils.deepClone(latest.sceneTruths ?? []),
+        sceneState:  foundry.utils.deepClone(latest.sceneState ?? { bySubject: {}, sceneId: null }),
+      };
+      if (promote(target)) await globalThis.game.settings.set(MODULE_ID, "campaignState", target);
     }, "promote ledger subjects");
   } catch (err) {
     console.warn(`${MODULE_ID} | promote ledger subjects for "${text}" failed:`, err?.message ?? err);
