@@ -78,6 +78,11 @@ describe('PT14 — the system\'s change log for a module write is not the PC spe
     expect(logged[0].speaker.actor).toBeNull();
     expect(logged[0].content).toMatch(/^<em>Isaac Sutton: \+1 momentum \(now \d+\)<\/em>$/);
     expect(logged[0].style).not.toBe(EMOTE);
+    // …and is never read as a player's line: the move pipeline skips it
+    // (it is not an emote any more — CI's first-session playthrough rolled it).
+    expect(logged[0].flags?.[MODULE_ID]?.systemNote).toBe(true);
+    const { isPlayerNarration } = await import('../../src/index.js');
+    expect(isPlayerNarration({ ...logged[0], whisper: [], rolls: [] })).toBe(false);
   });
 
   it('control: the same line from a sheet edit (no module write in flight) keeps the PC speaker', () => {

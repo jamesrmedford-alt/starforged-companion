@@ -140,6 +140,10 @@ function reattributeSystemNote(message, data) {
       content: `<em>${escaped ? `${escaped}: ` : ""}${line[1].trim()}</em>`,
       style:   globalThis.CONST?.CHAT_MESSAGE_STYLES?.OTHER ?? 0,
       speaker: { actor: null, token: null, scene: null, alias: null },
+      // A module flag: no longer an emote, the note would otherwise read as a
+      // player's line to the move pipeline (index.js isPlayerNarration skips
+      // any module-flagged message) and run a move of its own.
+      flags:   { [MODULE_ID]: { systemNote: true } },
     });
     return true;
   } catch (err) {
