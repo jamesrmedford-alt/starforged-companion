@@ -3772,22 +3772,30 @@ function warnIfClaudeKeyLooksWrong() {
  *
  * @param {Object}        campaignState
  * @param {string|null}   speakerActorId — preferred actor; falls back to
- *   campaignState.characterIds[0] then the first player-owned PC.
+ *   campaignState.characterIds[0], then the world's one PC when it has only
+ *   one.
  *
  * Previously this read `game.journal.get(characterIds[0])`, which was
  * wrong on two counts: characters are Actors (not Journal entries), and
  * `characterIds` is never written by the module (always []). The function
  * therefore always returned null, leaving the pacing classifier without
  * any character context.
+ *
+ * With no speaker it took the first player-owned PC — at a table of two or
+ * more, a PC-less player's line was classified as another player's
+ * character (known-issues PACING-CHARACTER-SOLO). It follows the speaker
+ * rule now (multiplayer/speaker.js, issue #321 U23): the one PC of a
+ * one-PC world, else none.
  */
 function getActiveCharacterForPacing(campaignState, speakerActorId = null) {
   try {
     const actorId = speakerActorId
                  ?? campaignState?.characterIds?.[0]
                  ?? null;
+    const pcs   = actorId ? [] : getPlayerActors();
     const actor = actorId
       ? game.actors?.get(actorId)
-      : (game.actors?.find(a => a?.type === "character" && a?.hasPlayerOwner && !a?.flags?.[MODULE_ID]?.entityType) ?? null);
+      : (pcs.length === 1 ? pcs[0] : null);
     if (!actor) return null;
     return { name: actor.name ?? null };
   } catch {
