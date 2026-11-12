@@ -140,7 +140,10 @@ recorded under its name promoted to it; its bond is §2's.
   maintainer's ruling A — it was the first entry's PC): a connection row's
   Confirm is a button per acting PC and **No one**, the pick checked against
   the card's own `actorIds` (`draftConfirmPick`), and the bond goes on the PC
-  picked, or on no sheet (`draftBondHolder`). Each Confirm / Dismiss writes its
+  picked, or on no sheet (`draftBondHolder`). Each Confirm / Dismiss is a GM's
+  press relayed to the canonical GM (`draft.confirm` / `draft.dismiss`), run
+  one at a time there — two GMs' simultaneous Confirms each ran on their own
+  client and made the NPC twice (DRAFT-CONFIRM-TWO-GMS) — and writes its
   own row's status, one write at a time per card, on the live card
   (`setDraftStatus`) — a whole-card copy written back reverted a row resolved
   meanwhile — and Confirm creates nothing when an entity of that name and

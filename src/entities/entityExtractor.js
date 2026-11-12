@@ -2101,6 +2101,13 @@ const ENTITY_CREATORS = {
  * Wire Confirm/Dismiss button clicks on draft entity chat cards. Idempotent:
  * registers a single chat-render hook that re-attaches listeners every
  * render. Call once at module ready.
+ *
+ * A press is relayed to the canonical GM (`draft.confirm` / `draft.dismiss`,
+ * relayCardAction — the suffer card's shape), where the relay queue runs one
+ * at a time: two GMs pressing Confirm on one row at the same moment each ran
+ * it on their own client, past the per-client in-flight guard, and both
+ * created the NPC (DRAFT-CONFIRM-TWO-GMS). The second press now runs after the
+ * first, finds the row confirmed, and does nothing.
  */
 export function registerDraftCardHooks() {
   onChatMessageRender((message, root) => {
@@ -2114,27 +2121,91 @@ export function registerDraftCardHooks() {
       return;
     }
 
-    root.querySelectorAll('[data-action="sf-draft-confirm"]').forEach(btn => {
-      btn.addEventListener("click", (ev) => {
+    const wire = (action, kind) => root.querySelectorAll(`[data-action="${action}"]`).forEach(btn => {
+      btn.addEventListener("click", async (ev) => {
         ev.preventDefault();
         ev.stopPropagation();
+        if (btn.disabled) return;
+        btn.disabled = true;
         const idx = Number(btn.dataset.index);
-        // A round's connection row: whose connection the GM picked ("" — no one).
-        handleDraftConfirm(message, idx, btn.dataset.actorId).catch(err =>
-          console.error(`${MODULE_ID} | draft confirm failed:`, err));
+        const { relayCardAction } = await import("../moves/cardActions.js");
+        await relayCardAction({
+          kind,
+          // A round's connection row: whose connection the GM picked ("" — no one).
+          payload:    { messageId: message?.id ?? null, draftIndex: idx, pick: btn.dataset.actorId },
+          isResolved: () => draftRowSettled(message?.id, idx),
+          restore:    () => { btn.disabled = false; },
+        });
       });
     });
-
-    root.querySelectorAll('[data-action="sf-draft-dismiss"]').forEach(btn => {
-      btn.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        const idx = Number(btn.dataset.index);
-        handleDraftDismiss(message, idx).catch(err =>
-          console.error(`${MODULE_ID} | draft dismiss failed:`, err));
-      });
-    });
+    wire("sf-draft-confirm", "draft.confirm");
+    wire("sf-draft-dismiss", "draft.dismiss");
   });
+}
+
+/** True when the live card's row is no longer pending (confirmed or dismissed). */
+function draftRowSettled(messageId, draftIndex) {
+  const message = globalThis.game?.messages?.get?.(messageId);
+  const drafts = message?.flags?.[MODULE_ID]?.drafts;
+  const row = Array.isArray(drafts) ? drafts.find(d => d?.index === draftIndex) : null;
+  return !!row && !!row.status && row.status !== "pending";
+}
+
+/**
+ * The relayed press's card and row (applyDraftConfirmFromRelay /
+ * applyDraftDismissFromRelay): a GM's press on a draft card's row, or null —
+ * refused, with the presser told, for anyone else (the buttons are a GM's).
+ *
+ * @param {{ messageId?: string, draftIndex?: number|string }} payload
+ * @param {Object} ctx — the relay context
+ * @returns {{ message: ChatMessage, draftIndex: number }|null}
+ */
+async function relayedDraftPress(payload, ctx) {
+  if (!ctx?.requesterIsGM) {
+    console.warn(`${MODULE_ID} | draft card: user ${ctx?.requesterId ?? "?"} is not a GM — press refused.`);
+    const { refusePress } = await import("../multiplayer/gmRelay.js");
+    refusePress(ctx, "not-owner");
+    return null;
+  }
+  const messageId = typeof payload?.messageId === "string" ? payload.messageId : null;
+  const message = messageId ? (globalThis.game?.messages?.get?.(messageId) ?? null) : null;
+  const draftIndex = Number(payload?.draftIndex);
+  if (!message?.flags?.[MODULE_ID]?.draftEntityCard || !Number.isInteger(draftIndex)) {
+    console.warn(`${MODULE_ID} | draft card: card ${messageId ?? "?"} row ${payload?.draftIndex ?? "?"} not found — press ignored.`);
+    return null;
+  }
+  return { message, draftIndex };
+}
+
+/**
+ * gmRelay handler for "draft.confirm" — runs on the canonical GM, one press
+ * at a time (DRAFT-CONFIRM-TWO-GMS): confirmDraft creates the row's entity
+ * unless the row is no longer pending.
+ *
+ * @param {{ messageId?: string, draftIndex?: number, pick?: string }} payload
+ * @param {Object} ctx — the relay context
+ * @returns {Promise<{ applied: boolean }>}
+ */
+export async function applyDraftConfirmFromRelay(payload = {}, ctx = {}) {
+  const press = await relayedDraftPress(payload, ctx);
+  if (!press) return { applied: false };
+  await handleDraftConfirm(press.message, press.draftIndex, typeof payload.pick === "string" ? payload.pick : undefined);
+  return { applied: true };
+}
+
+/**
+ * gmRelay handler for "draft.dismiss" — runs on the canonical GM, behind any
+ * Confirm of the same row (DRAFT-CONFIRM-TWO-GMS).
+ *
+ * @param {{ messageId?: string, draftIndex?: number }} payload
+ * @param {Object} ctx — the relay context
+ * @returns {Promise<{ applied: boolean }>}
+ */
+export async function applyDraftDismissFromRelay(payload = {}, ctx = {}) {
+  const press = await relayedDraftPress(payload, ctx);
+  if (!press) return { applied: false };
+  await handleDraftDismiss(press.message, press.draftIndex);
+  return { applied: true };
 }
 
 // "<messageId>:<draftIndex>" drafts this client is confirming. The card says
