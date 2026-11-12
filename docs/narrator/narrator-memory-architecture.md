@@ -140,7 +140,9 @@ CLAUDE.md "audit consumers" rule):
   not the last N
 - rolling-summary refresh hook (`registerRollingSummaryRefreshHook`, issue
   #286 B7) — on the canonical GM, a new `narratorCard` with `narrationText`
-  triggers the debounced regen after the card posts
+  triggers the debounced regen after the card posts; at a table whose GMs hold
+  no key, the keyed client that wrote the card makes it and relays it to the
+  GM to store (`applyRelayedSessionSummary`, SUMMARY-KEYLESS-GM)
 - session recap (`postSessionRecap`) — inclusion intended; reads
   `sessionNarratorCards(sessionId, { forRecap: true })`: the narrator's
   excludes (a burned move's superseded prose among them) except that a

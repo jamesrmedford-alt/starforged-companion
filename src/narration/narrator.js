@@ -19,7 +19,7 @@ import {
   SCENE_LEDGER_FIELDS,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
-import { isCanonicalGM } from '../multiplayer/gmGate.js';
+import { isCanonicalGM, hasKeyedActiveGM } from '../multiplayer/gmGate.js';
 import { connectionDrops } from '../multiplayer/connectionWatch.js';
 import { serialiseCampaignStateWrite } from '../multiplayer/campaignStateChain.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
@@ -2651,6 +2651,9 @@ function rollingSummaryEnabled() {
  * @param {boolean} [options.forceRefresh] — regenerate regardless of debounce
  * @param {boolean} [options.persist] — false: return the text, store nothing
  *   (a closed session's catch-up — catchUpUnsummarisedSession)
+ * @param {boolean} [options.relay] — true: a keyed client at a table whose
+ *   GMs hold no key — the summary is sent to the canonical GM to store
+ *   (`narrator.summary`, applyRelayedSessionSummary — SUMMARY-KEYLESS-GM)
  * @returns {Promise<string>}
  */
 export async function getRollingSessionSummary(campaignState, options = {}) {
@@ -2746,6 +2749,13 @@ export async function getRollingSessionSummary(campaignState, options = {}) {
   // summary already stored — this one, made from the narration it removed,
   // was written over it. Discarded then, here and on the caller's copy.
   if (options.persist === false) return record.text;
+  if (options.relay === true) {
+    // Made on a player's key: the canonical GM — who has none — stores it,
+    // checked again there against the X-Card (SUMMARY-KEYLESS-GM).
+    await relaySessionSummary(record, cards);
+    campaignState.sessionSummary = record;
+    return record.text;
+  }
   if (isCanonicalGM()) {
     let kept = true;
     try {
@@ -2816,14 +2826,120 @@ const SUMMARY_REFRESH_WAIT_MS = 5 * 60_000;
  */
 export function registerRollingSummaryRefreshHook() {
   Hooks.on('createChatMessage', (message) => {
-    if (!isCanonicalGM()) return;
     const f = message?.flags?.[MODULE_ID];
     if (!f?.narratorCard || !f.narrationText) return;
+    if (!isCanonicalGM()) {
+      // A table whose GMs hold no Claude key: the canonical GM can make no
+      // summary, so narration on a player's key had no STORY SO FAR. The
+      // keyed client whose card this is makes it and sends it to the GM to
+      // store (SUMMARY-KEYLESS-GM) — one client per card, its author.
+      if (summaryFallsToThisClient(message)) refreshRollingSessionSummary({ relay: true });
+      return;
+    }
     refreshRollingSessionSummary();
     // A session the mint closed out short gets its LAST SESSION now, if a key
     // is here (issue #347 AB15).
     catchUpUnsummarisedSession();
   });
+}
+
+/**
+ * Whether this client makes the rolling summary for a narrator card the
+ * canonical GM cannot (SUMMARY-KEYLESS-GM): it wrote the card, it holds a
+ * Claude key, a GM is connected to store it, and no connected GM holds a key
+ * (one that does makes its own — isCanonicalGM prefers it).
+ *
+ * @param {ChatMessage} message
+ * @returns {boolean}
+ */
+function summaryFallsToThisClient(message) {
+  const me = game.user?.id ?? null;
+  const author = message?.author?.id ?? message?._source?.author ?? null;
+  if (!me || author !== me || !getApiKey()) return false;
+  try {
+    return Array.from(game.users ?? []).some(u => u?.isGM && u?.active) && !hasKeyedActiveGM();
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | narrator: keyed-GM lookup failed — no relayed summary:`, err?.message ?? err);
+    return false;
+  }
+}
+
+/** The longest rolling summary a client may relay (4-8 sentences, with headroom). */
+const RELAYED_SUMMARY_MAX_CHARS = 6000;
+
+/**
+ * Send a rolling summary made on this client's key to the canonical GM
+ * (GM relay `"narrator.summary"`), with the narrations it was made from — the
+ * GM stores it only while none of them has been X-Carded (W06's rule, from
+ * across the socket). Fire-and-forget; a refusal is logged.
+ *
+ * @param {{ text: string, coveredCount: number, sessionId: string }} record
+ * @param {Array<ChatMessage>} cards — the session's narrator cards it was made from
+ * @returns {Promise<void>}
+ */
+async function relaySessionSummary(record, cards) {
+  try {
+    const { requestGmAction } = await import('../multiplayer/gmRelay.js');
+    await requestGmAction('narrator.summary', {
+      sessionId:    record.sessionId,
+      text:         record.text,
+      coveredCount: record.coveredCount,
+      narrationIds: cards.map(m => m?.flags?.[MODULE_ID]?.narrationId).filter(id => typeof id === 'string' && id),
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the rolling summary could not be sent to the GM:`, err?.message ?? err);
+  }
+}
+
+/**
+ * GM-relay handler for `"narrator.summary"` (GM_ACTIONS in
+ * src/multiplayer/gmRelay.js): store a rolling session summary a keyed
+ * player's client made at a table whose GMs hold no key (SUMMARY-KEYLESS-GM —
+ * it was never generated there). On a copy of the latest store, at its turn on
+ * the write chain, and only when it is this session's, covers more of it than
+ * the stored one, and none of the narrations it was made from has been
+ * X-Carded since — the reply-time X-Card rule of getRollingSessionSummary
+ * (W06), checked here because the X-Card lands on the GM. A GM with a key of
+ * its own makes its own summary and ignores relayed ones. Bounded: it crossed
+ * the socket from a client.
+ *
+ * @param {{ sessionId?: string, text?: string, coveredCount?: number, narrationIds?: string[] }} payload
+ * @param {Object} [_ctx]
+ * @returns {Promise<{ stored: boolean, reason?: string }>}
+ */
+export async function applyRelayedSessionSummary(payload = {}, _ctx = {}) {
+  if (!rollingSummaryEnabled()) return { stored: false, reason: 'disabled' };
+  if (getApiKey()) return { stored: false, reason: 'keyed-gm' };
+  const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : null;
+  const text = typeof payload.text === 'string' ? payload.text.trim().slice(0, RELAYED_SUMMARY_MAX_CHARS) : '';
+  const covered = Math.floor(Number(payload.coveredCount));
+  const narrationIds = (Array.isArray(payload.narrationIds) ? payload.narrationIds : [])
+    .filter(id => typeof id === 'string' && /^[\w-]{1,64}$/.test(id));
+  if (!sessionId || !text || !Number.isFinite(covered) || covered < 1) return { stored: false, reason: 'malformed' };
+  // No more cards than the session has.
+  if (covered > sessionNarratorCards(sessionId).length) return { stored: false, reason: 'malformed' };
+  if (narrationIds.some(id => isNarrationXCarded(id))) {
+    console.debug(`${MODULE_ID} | narrator: a relayed rolling summary was made from a narration the X-Card removed — discarded.`);
+    return { stored: false, reason: 'xcarded' };
+  }
+  let stored = false;
+  try {
+    stored = await serialiseCampaignStateWrite(async () => {
+      const latest = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+      if ((latest.currentSessionId ?? null) !== sessionId) return false;
+      const prior = latest.sessionSummary?.sessionId === sessionId ? Number(latest.sessionSummary.coveredCount) || 0 : 0;
+      if (covered <= prior) return false;
+      if (narrationIds.some(id => (latest.xCardedNarrationIds ?? []).includes(id))) return false;
+      await game.settings.set(MODULE_ID, 'campaignState', { ...latest, sessionSummary: {
+        text, coveredCount: covered, sessionId, updatedAt: new Date().toISOString(),
+      } });
+      return true;
+    }, 'relayed rolling summary');
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: a relayed rolling summary could not be stored:`, err?.message ?? err);
+    return { stored: false, reason: 'refused' };
+  }
+  return stored ? { stored: true } : { stored: false, reason: 'stale' };
 }
 
 /**
@@ -2946,7 +3062,7 @@ export function catchUpUnsummarisedSession() {
   return _sessionCatchUp;
 }
 
-function refreshRollingSessionSummary() {
+function refreshRollingSessionSummary({ relay = false } = {}) {
   // A refresh still running past its bound never settled — a write the
   // server never answered: passed, so this card refreshes the summary (issue
   // #347 AB05). It was joined for the rest of the page load.
@@ -2963,7 +3079,7 @@ function refreshRollingSessionSummary() {
         // A copy: getRollingSessionSummary sets the summary on the object it
         // is given — the cached setting itself, before a write the world can
         // refuse (CACHE-MUTATED-BEFORE-WRITE).
-        await getRollingSessionSummary({ ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) });
+        await getRollingSessionSummary({ ...(game.settings.get(MODULE_ID, 'campaignState') ?? {}) }, { relay });
       } while (_summaryRefreshAgain && _summaryRefresh === mine);
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: rolling summary refresh failed:`, err?.message ?? err);

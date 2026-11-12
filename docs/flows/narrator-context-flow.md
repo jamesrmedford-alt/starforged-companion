@@ -547,8 +547,12 @@ player wrote reaches it too. Both read the session's cards through
 counts the move, but was fed back as story and counted as the session's first
 narration, cancelling the campaign recap; issue #321 U35) and a card the
 X-Card removed (`xCarded`, U07). Its regen runs after a narrator card posts, on
-the canonical GM (`registerRollingSummaryRefreshHook`, B7); prompts read the
-cached text.
+the canonical GM (`registerRollingSummaryRefreshHook`, B7) — at a table whose
+GMs hold no Claude key, on the keyed client that wrote the card, which relays
+the summary to the canonical GM to store (`narrator.summary` →
+`applyRelayedSessionSummary`: this session's, covering more than the stored
+one, none of its narrations X-Carded since — SUMMARY-KEYLESS-GM); prompts read
+the cached text.
 
 **Across sessions** (issue #286 C3, C4, `src/session/lifecycle.js`). The ring,
 the rolling summary and recent oracles are scoped to `currentSessionId`. A
