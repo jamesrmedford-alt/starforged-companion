@@ -1,3 +1,4 @@
+/* global makeTestActor */
 /**
  * STARFORGED COMPANION
  * tests/unit/connectionLinkNoFallback.test.js

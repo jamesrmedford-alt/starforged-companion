@@ -1,3 +1,4 @@
+/* global makeTestActor */
 /**
  * STARFORGED COMPANION
  * tests/unit/bondItemRename.test.js
