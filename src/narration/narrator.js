@@ -68,7 +68,7 @@ import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
-import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan } from '../world/secrets.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals } from '../world/skeletons.js';
 
 const ENTITY_GETTERS = {
@@ -567,7 +567,10 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: the hidden plans could not be read:`, err?.message ?? err);
     }
-    extras.planRequests = normalisePlanRequests(planRequests);
+    // Each plan this narration must decide gets its one re-roll (issue
+    // #353 "one re-roll"): offered under DECIDE NOW, kept with the request.
+    extras.planRequests = await Promise.all(normalisePlanRequests(planRequests)
+      .map(async q => (q.reroll ? q : { ...q, reroll: await rollReroll() })));
   }
 
   // Established lore, picked for what this turn is about (issue #286 C2):

@@ -298,6 +298,33 @@ rolls create the enemy's hidden truth (Phase 1).
 
 ---
 
+## The narrative skeleton: one re-roll when a roll contradicts the story (2026-11)
+
+**Decision:** (issue #353 "Rules for these rolls": "one re-roll when the
+interpretation step says a result contradicts established facts".) The
+narrator is the interpretation step (decided: its own sidecar first, no
+planning call), so the re-roll is rolled in code ahead of it: every plan
+awaiting its decision carries one — a request gets it when its narration's
+extras are built (`narrator.js` → `secrets.rollReroll`), a plan filed with
+rolls and no truth gets it when it is filed (`createSkeleton`). DECIDE NOW
+shows it beside the plan's rolls with the rule; a deciding plan that uses it
+names the result it replaced (`"rerolled"`), and `applyPlanToSkeleton` keeps
+"Re-rolled in place of …" with the plan's rolls and spends it. One at most:
+an unused re-roll is dropped once the plan is decided, and a correction to a
+decided plan re-rolls nothing. Like every hidden roll, it is shown with the
+plan's rolls when its truth comes out.
+
+**Reason:** a stored truth is binding; a roll that contradicts what the
+table has already seen must not be forced into it, and one fresh roll —
+not an unlimited reroll until it fits — keeps the oracle honest.
+
+**Rejected:** *a second model call to re-interpret* — the sidecar-first
+decision. *Re-rolling the same table* — a request's seeds are lines of
+several tables; an Action + Theme is Starforged's general "what does it
+mean?" oracle and fits any subject.
+
+---
+
 ## Issue #353 R2: each scene has a question; scenes stay manual (2026-11)
 
 **Decision:** (issue #353 R2; decided, maintainer 2026-11-13: scenes stay

@@ -103,6 +103,10 @@ export function normaliseSkeleton(raw) {
     truthRevealed: raw.truthRevealed === true,
     clockId:       typeof raw.clockId === "string" && ID_RE.test(raw.clockId) ? raw.clockId : null,
     oracleSeeds:   (Array.isArray(raw.oracleSeeds) ? raw.oracleSeeds : []).map(s => text(s, ITEM_MAX)).filter(Boolean).slice(0, SEED_MAX),
+    // The one re-roll a plan awaiting its decision may use in place of a
+    // result that contradicts the story ("one re-roll", issue #353 "Rules for
+    // these rolls"); spent or dropped once it is decided.
+    reroll:        text(raw.reroll, ITEM_MAX),
     rollsShown:    raw.rollsShown === true,
     status:        SKELETON_STATUSES.includes(raw.status) ? raw.status : "active",
     sceneId:       typeof raw.sceneId === "string" ? raw.sceneId : null,
@@ -156,6 +160,8 @@ export function normalisePlans(plans) {
       escalation:  textList(p.escalation),
       clues:       textList(p.clues),
       resolutions: textList(p.resolutions),
+      // The oracle result the plan's re-roll replaced, when it used it.
+      rerolled:    text(p.rerolled, ITEM_MAX),
     };
     if (!plan.truth && !plan.wants && !plan.escalation.length && !plan.clues.length) continue;
     out.push(plan);
@@ -261,6 +267,14 @@ export function applyRevealToSkeleton(record, reveal) {
  */
 export function applyPlanToSkeleton(record, plan) {
   const next = { ...record, subject: { ...record.subject } };
+  // The decision may use the plan's one re-roll in place of a result that
+  // contradicts the story: kept with its rolls, and spent. Only while it is
+  // being decided — a correction re-rolls nothing.
+  if (!record.truth && plan.rerolled && record.reroll) {
+    next.oracleSeeds = [...(record.oracleSeeds ?? []).slice(0, SEED_MAX - 1),
+      text(`Re-rolled in place of "${plan.rerolled}": ${record.reroll}`, ITEM_MAX)];
+    next.reroll = "";
+  }
   if (plan.subject) next.subject.name = plan.subject;
   for (const field of ["truth", "wants", "knows"]) if (plan[field]) next[field] = plan[field];
   if (plan.escalation.length) {
@@ -272,6 +286,7 @@ export function applyPlanToSkeleton(record, plan) {
     next.clues = plan.clues.map((t, i) => ({ id: itemId("c", i), text: t, revealed: shown.has(t) }));
   }
   if (plan.resolutions.length) next.resolutions = plan.resolutions;
+  if (next.truth) next.reroll = "";   // decided: an unused re-roll goes
   return next;
 }
 
@@ -426,6 +441,8 @@ export function normalisePlanRequests(requests) {
       trigger:     typeof r.trigger === "string" ? r.trigger.slice(0, 32) : "",
       label:       text(r.label, SUBJECT_MAX) || "the subject",
       oracleSeeds: (Array.isArray(r.oracleSeeds) ? r.oracleSeeds : []).map(s => text(s, ITEM_MAX)).filter(Boolean).slice(0, SEED_MAX),
+      // Its one re-roll (narrator.js buildNarratorExtras rolls it).
+      ...(text(r.reroll, ITEM_MAX) ? { reroll: text(r.reroll, ITEM_MAX) } : {}),
       // A request about a known subject (an expedition's track) names it by id.
       ...(normaliseSubject(r.subject) ? { subject: normaliseSubject(r.subject) } : {}),
     }));

@@ -558,7 +558,8 @@ complication plays, Phase 3; the plan of the vow the scene serves
 at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,
 the plans this narration's seeds ask it to decide: a price that revealed a
 new enemy, an expedition begun, a Make a Discovery's or Confront Chaos's find,
-a vow's swearing scene (Phase 4). Decided plans read
+a vow's swearing scene (Phase 4) — each with its one re-roll (`reroll`, for
+a result that contradicts the story; decisions.md "one re-roll"). Decided plans read
 as truths never to state outright, with the reveal rule; undecided ones and the
 requests list under DECIDE NOW with their oracle rolls, only when the sidecar
 is on; every prose mode, never a meta one; `formatUnrevealedBlock`. Outside

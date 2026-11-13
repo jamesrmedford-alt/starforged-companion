@@ -1957,20 +1957,23 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], sidecar = 
       '    "escalation": ["<2-3 steps, in order: what happens if it is ignored or provoked>"],',
       '    "clues": ["<2-4 things the fiction can show that point at the truth>"],',
       '    "resolutions": ["<1-3 ways it could end>"] }]',
+      'If one oracle result for a subject contradicts what the story has established, use its re-roll in',
+      'that result\'s place — once — and add "rerolled": "<the result it replaces>" to that entry.',
     );
+    const rerollOf = (x) => (typeof x?.reroll === 'string' && x.reroll ? ` Re-roll: ${x.reroll}.` : '');
     for (const q of requests) {
       const seeds = Array.isArray(q.oracleSeeds) && q.oracleSeeds.length ? ` Oracle: ${q.oracleSeeds.join('; ')}.` : '';
       const journey = q.kind === 'expedition'
         ? ' Its truth is what waits at the end, its clues are 2-4 waypoints in order, its escalation the danger along the way.'
         : '';
-      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${journey}${seeds}`);
+      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${journey}${seeds}${rerollOf(q)}`);
     }
     for (const r of pending) {
       const seeds = Array.isArray(r.oracleSeeds) && r.oracleSeeds.length ? ` Oracle: ${r.oracleSeeds.join('; ')}` : '';
       const what = r.kind === 'mystery' && r.question
         ? `the hidden answer to ${skeletonHeading(r).replace(/^Mystery — /, '')}.${seeds}${seeds ? ' — use the pair that fits.' : ''}`
         : `${skeletonHeading(r)}.${seeds}`;
-      lines.push(`- id ${r.id}: ${what}`);
+      lines.push(`- id ${r.id}: ${what}${rerollOf(r)}`);
     }
   }
   return lines.join('\n');

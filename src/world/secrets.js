@@ -152,9 +152,13 @@ function mayWrite(byGm) {
  */
 export async function createSkeleton(input, { narrationId = null, byGm = false } = {}) {
   if (!mayWrite(byGm)) return null;
+  // A plan filed with its rolls but nothing decided gets its one re-roll now,
+  // for the narration that decides it (issue #353 "one re-roll").
+  const reroll = !input?.truth && !input?.reroll && Array.isArray(input?.oracleSeeds) && input.oracleSeeds.length
+    ? await rollReroll() : "";
   return serialiseSecretWrite(async () => {
     const now = new Date().toISOString();
-    const record = normaliseSkeleton({ ...input, id: newSkeletonId(), createdAt: now, updatedAt: now });
+    const record = normaliseSkeleton({ ...input, ...(reroll ? { reroll } : {}), id: newSkeletonId(), createdAt: now, updatedAt: now });
     if (!record) return null;
     const journal = await getOrCreateWorldJournal("secrets");
     if (!journal) return null;
@@ -301,6 +305,7 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const subject = req.subject ? { ...req.subject } : { type: "name", id: null, name: plan?.subject || req.label };
       const base = {
         kind: req.kind, subject, oracleSeeds: req.oracleSeeds, sceneId, sessionId,
+        ...(req.reroll ? { reroll: req.reroll } : {}),
         createdFrom: { narrationId, moveId, trigger: req.trigger || null },
       };
       const decided = plan ? applyPlanToSkeleton(normaliseSkeleton({ ...base, id: "pending" }), plan) : base;
@@ -600,6 +605,20 @@ export async function fileRequestedPlan(request, { campaignState = null } = {}) 
     sceneId: campaignState?.currentSceneId ?? null, sessionId: campaignState?.currentSessionId ?? null,
     createdFrom: { narrationId: null, moveId: null, trigger: req.trigger || null },
   });
+}
+
+/**
+ * One re-roll for a plan awaiting its decision: an Action + Theme, the
+ * oracle Starforged asks "what does it mean?" of. '' when the roll fails.
+ */
+export async function rollReroll() {
+  try {
+    const { rollPaired } = await import("../oracles/roller.js");
+    const pair = rollPaired("action", "theme")?.combined;
+    return pair ? `Action + Theme: ${pair}` : "";
+  } catch {
+    return "";
+  }
 }
 
 /** How a significant threat's agenda is rolled (Action + Theme), for its plan's seeds. */
