@@ -484,7 +484,7 @@ async function defaultClassifyImplicit(narration, moveId) {
     "anthropic-beta":    "prompt-caching-2024-07-31",
   };
 
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "relevanceResolver" });
   const text = (data?.content ?? [])
     .filter(b => b.type === "text")
     .map(b => b.text)

@@ -497,9 +497,33 @@ every call's usage — uncached input, cache reads, cache writes, output — and
 elapsed time to the Pacing Telemetry journal's "Narrator Usage" page, labelled
 with the narrator function that made it; the page leads with the cache-read
 share of prompt tokens and the median time per call. The whole system prompt
-is one cached block that changes every turn, so the expectation is a share
-near zero: that measurement is what the proposed tier layout (cached campaign
-canon and memory first, per-turn data last — issue #287, from #286 §F) is judged against.
+was one cached block that changed every turn, and the alpha 23 playtest
+measured what that predicted: 27 calls, 0% read, every call paying the
+cache-write premium on 9–10k tokens.
+
+**The cached layout** (issue #354 P2-23). `buildNarratorSystemBlocks` orders
+the prompt by how often each part changes, and `callNarratorAPI` sends the
+parts as separate `system` blocks: the **standing** rules (voice, safety,
+world and campaign truths, the premise, the sidecar format, the NPC markup —
+the same for every prose mode), **this narration** (the mode's role, how its
+beats end, perspective, length, permission class), each closing on a one-hour
+cache breakpoint, then the per-beat **context**, uncached. One hour, not the
+default five minutes: a table's beats are often more than five minutes apart,
+and every read restarts the hour. The sidecar instruction is in the standing
+block; the context closes on RESPOND NOW, a pointer back to it, so the last
+thing the narrator reads is still the response format. The check is the same
+page: from a session's second narration its Cache read column should carry
+the standing block (about 3k tokens with truths and a premise), and the share
+in the summary line should sit well above zero. **Not yet measured against a
+live model**: whether the sidecar is still emitted as reliably with its
+instruction early in the prompt, and whether the voice shifts with the mode's
+role no longer first. Compare the page's Fact block column (below) and a read
+of the prose before and after.
+
+**Prose and fact block** (issue #354 P2-24). Each usage row also records how
+the reply split between narration and the fenced fact block, shown as the
+output tokens of each — the playtest's output grew from 551 to 919 tokens
+over a session and nothing said which half had grown.
 
 Watch item — **ledger cap vs deterministic emission**: `maxLedgerTokens`
 (400) only sheds *state*; truths/frame/corrections/ship render regardless.

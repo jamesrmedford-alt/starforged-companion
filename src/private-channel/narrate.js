@@ -75,7 +75,7 @@ export async function requestPrivateNarration(args) {
 
   let data;
   try {
-    data = await apiPost(ANTHROPIC_URL, headers, body);
+    data = await apiPost(ANTHROPIC_URL, headers, body, { label: "privateChannel" });
   } catch (err) {
     console.warn(`${MODULE_ID} | privateChannel: narrator call failed:`, err?.message ?? err);
     return { ok: false, reason: "error", error: err };

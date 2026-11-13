@@ -166,7 +166,7 @@ export async function resolveStationCoordsFromImage(b64, opts = {}) {
 
   try {
     const { apiPost } = await import("../api-proxy.js");
-    const data = await apiPost("https://api.anthropic.com/v1/messages", headers, body);
+    const data = await apiPost("https://api.anthropic.com/v1/messages", headers, body, { label: "shipMapVision" });
     const text = (data?.content ?? [])
       .filter(b => b.type === "text")
       .map(b => b.text)

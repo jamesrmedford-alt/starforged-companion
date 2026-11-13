@@ -390,7 +390,7 @@ async function callHaiku(apiKey, systemPrompt) {
     'x-api-key':         apiKey,
     'anthropic-version': '2023-06-01',
   };
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "consistencyCheck" });
   if (data?.stop_reason === 'max_tokens') {
     // Truncated audit — the parse below salvages what it can, but catches
     // beyond the cut are lost. Never silent (NARRCHK-TRUNC-SILENT).

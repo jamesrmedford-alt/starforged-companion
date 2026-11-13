@@ -689,7 +689,7 @@ async function callClaudeAPI({ apiKey, systemPrompt, userMessage, model, maxToke
     ...(promptCachingEnabled ? { "anthropic-beta": "prompt-caching-2024-07-31" } : {}),
   };
 
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "moveInterpreter" });
 
   const text = (data.content ?? [])
     .filter(block => block.type === "text")

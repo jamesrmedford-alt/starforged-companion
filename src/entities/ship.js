@@ -1039,7 +1039,7 @@ async function generateStarshipIntroProse({ type, firstLook, mission, name, modu
     "anthropic-version": "2023-06-01",
   };
 
-  const data = await apiPost("https://api.anthropic.com/v1/messages", headers, body);
+  const data = await apiPost("https://api.anthropic.com/v1/messages", headers, body, { label: "shipIntro" });
   const text = (data?.content ?? [])
     .filter(b => b.type === "text")
     .map(b => b.text)

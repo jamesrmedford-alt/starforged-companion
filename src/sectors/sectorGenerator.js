@@ -1158,7 +1158,7 @@ async function callStubApi(prompt, maxTokens, apiKey) {
     "x-api-key":         apiKey,
     "anthropic-version": "2023-06-01",
   };
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "sectorStub" });
   const stopReason = data.stop_reason;
   const text = (data.content ?? [])
     .filter(b => b.type === "text")

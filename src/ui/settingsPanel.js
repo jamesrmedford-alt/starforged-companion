@@ -283,8 +283,8 @@ export function registerSettings() {
   });
 
   game.settings.register(MODULE_ID, SETTING.NARRATION_LENGTH, {
-    name:    'Narration Length (sentences)',
-    hint:    'Target number of sentences per narration. Range: 1–6.',
+    name:    'Narration Length',
+    hint:    'How long a move or paced narration runs. Each step is about 22 words: 3 is about 65 words, in at most 5 short sentences. Range: 1–6.',
     scope:   'world',
     config:  false,
     type:    Number,
@@ -1660,10 +1660,10 @@ export class SettingsPanelApp extends ApplicationV2 {
           <span class="narrator-field-hint">Layers on top of Tone. Light/Playful permit ordinary life, small victories, and affectionate detail while keeping the chosen Tone's voice (e.g. "noir, but lighter"). Default makes no change. No effect on recaps.</span>
         </div>
         <div class="narrator-field">
-          <label class="narrator-field-label">Length (sentences)</label>
+          <label class="narrator-field-label">Length</label>
           <input class="settings-input narrator-number-input" name="narrationLength"
                  type="number" min="1" max="6" value="${ctx.narrationLength}" ${dis}>
-          <span class="narrator-field-hint">Move and paced narration. <code>@scene</code> answers use Scene Response Length; recaps, vignettes and other beats set their own length.</span>
+          <span class="narrator-field-hint">Move and paced narration. Each step is about 22 words: 3 is about 65 words, in at most 5 short sentences (shorter still with audio narration on). <code>@scene</code> answers use Scene Response Length; recaps, vignettes and other beats set their own length.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Context cards (memory horizon)</label>

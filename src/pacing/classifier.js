@@ -454,7 +454,7 @@ async function callClassifierAPI({ apiKey, systemPrompt, userMessage, model }) {
     "anthropic-beta":    "prompt-caching-2024-07-31",
   };
 
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "pacingClassifier" });
   const text = (data.content ?? [])
     .filter(b => b.type === "text")
     .map(b => b.text)

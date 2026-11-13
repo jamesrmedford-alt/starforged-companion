@@ -442,7 +442,7 @@ async function callHaiku(userPrompt, apiKey) {
     "x-api-key":         apiKey,
     "anthropic-version": "2023-06-01",
   };
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "abilityScanner" });
   return (data?.content ?? [])
     .filter(b => b?.type === "text")
     .map(b => b.text)

@@ -3314,7 +3314,7 @@ async function callHaiku(userPrompt, systemPrompt, maxTokens) {
     "anthropic-beta":    "prompt-caching-2024-07-31",
   };
 
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "detectionPass" });
   if (data?.stop_reason === "max_tokens") {
     // Cut off at the cap: the JSON ends mid-object. The caller reports the
     // loss; this names the cause (issue #321 U15).

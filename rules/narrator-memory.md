@@ -223,6 +223,21 @@ layers. This file is the never-break list.
    issue #345 AA06). Entity state keys are `entity:<id>`
    (`subjectKey` / `subjectFromStateKey`).
 
+7b. **The system prompt's cached blocks hold nothing per-call** (issue #354
+   P2-23). `buildNarratorSystemBlocks` orders the prompt as `standing` (the
+   same for every prose mode), `mode` (the same for one mode at one
+   permission class) and `beat` (everything else), and the request caches
+   the first two. A cache read needs those bytes identical to an earlier
+   request's: anything read per call — a perspective a round can force, the
+   X-Card redirect, oracle seeds, the session-start recap, a name, a count,
+   a timestamp — goes in `beat` (or `mode`, when it is constant for the
+   mode). Add a section to the block its volatility puts it in, never to
+   `standing` because it reads well there; `tests/unit/
+   narratorPromptBlocks.test.js` fails when a per-beat value reaches a cached
+   block. The sidecar instruction lives in `standing`, and the context closes
+   on RESPOND NOW, a pointer to it that names no key: a new sidecar key goes
+   in the instruction (invariant 2), never in the pointer.
+
 8. **The rolling session summary is a droppable convenience, not a fact
    store.** It is summarised *from source* (never summary-of-summary),
    debounced at `round(1.5 × narratorContextCards)`, and must never be retained

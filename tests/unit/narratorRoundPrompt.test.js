@@ -61,7 +61,8 @@ describe('buildRoundUserMessage', () => {
     expect(msg).toContain('Kira: "I slip through the vent before the drones turn."');
     expect(msg).toContain('Ren: "I keep the corridor covered."');
     expect(msg).toContain('Latitude: embellish only.');
-    expect(msg).toContain('in 5–6 sentences');
+    // Five sentences' worth, as a word budget (issue #354 P2-20).
+    expect(msg).toContain('in about 110 words — never more than 140 — in at most 8 sentences');
   });
 
   it('names no character who didn\'t act, and says not to act for or remark on anyone else', () => {
@@ -150,7 +151,8 @@ describe('narrateRound — the request the narrator is sent', () => {
     const calls = apiPost.mock.calls.filter(([, , body]) => Array.isArray(body?.system));
     expect(calls).toHaveLength(1);
     const body = calls[0][2];
-    return { system: body.system[0].text, user: String(body.messages[0].content), maxTokens: body.max_tokens };
+    // The system prompt's blocks, joined (issue #354 P2-23).
+    return { system: body.system.map(b => b.text).join('\n\n'), user: String(body.messages[0].content), maxTokens: body.max_tokens };
   }
 
   it('carries a CHARACTER block per acting PC, the PARTY naming who acts, no SPOTLIGHT, the widest class and the sidecar', async () => {
@@ -166,8 +168,10 @@ describe('narrateRound — the request the narrator is sent', () => {
     expect(system).toContain('NARRATOR PERMISSIONS — INTERACTION MODE');   // Ren's line, with no roll, is interaction
     expect(system).toMatch(/SIDECAR|newTruths/);
     expect(`${system}\n${user}`).not.toMatch(/\bAsh\b/);
-    expect(system).toMatch(/Length: 5 sentences/);
-    expect(user).toContain('in 5–6 sentences');
+    // A round of two at Length 3 is worth five sentences of ordinary length:
+    // a word budget since issue #354 P2-20.
+    expect(system).toMatch(/Length: about 110 words — never more than 140 — in at most 8 sentences\./);
+    expect(user).toContain('Narrate the round as one scene in about 110 words — never more than 140 — in at most 8 sentences.');
   });
 
   it('round_resolution is a narrator mode of its own and no spotlight mode', () => {

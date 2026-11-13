@@ -12484,6 +12484,9 @@ function registerPromptContractTests(quench) {
           });
         });
 
+        // The standing block each mode's request led with (issue #354 P2-23).
+        const standingSent = {};
+
         for (const mode of PROSE_MODES) {
           it(`${mode.name}: the role, safety and the character, and none of the seeded sections`, async function () {
             const request = await capture(mode);
@@ -12492,8 +12495,33 @@ function registerPromptContractTests(quench) {
             carries(request, "CHARACTER", mode.name);
             for (const name of SEEDED_SECTIONS) lacks(request, name, mode.name);
             if (!fx.otherPcs.length) lacks(request, "PARTY", mode.name);
+
+            // The cached layout (issue #354 P2-23): the standing rules, this
+            // narration and its context as three blocks — the first two each
+            // closing on a one-hour cache breakpoint, the context uncached.
+            // The whole prompt went as one cached block that changed every
+            // beat, so the cache was written on every call and never read.
+            const blocks = request.body.system ?? [];
+            assert.lengthOf(blocks, 3, `${mode.name}: the standing rules, this narration, its context`);
+            assert.deepEqual(blocks[0].cache_control, { type: "ephemeral", ttl: "1h" }, `${mode.name}: the standing rules are cached`);
+            assert.deepEqual(blocks[1].cache_control, { type: "ephemeral", ttl: "1h" }, `${mode.name}: this narration's block is cached`);
+            assert.isUndefined(blocks[2].cache_control, `${mode.name}: the context is not cached`);
+            assert.isTrue(blocks[1].text.startsWith("## THIS NARRATION"), `${mode.name}: the second block is this narration's`);
+            assert.isTrue(blocks[2].text.startsWith("## CONTEXT FOR THIS NARRATION"), `${mode.name}: the third block is the context`);
+            carries({ system: blocks[0].text, user: "" }, "SAFETY CONFIGURATION", `${mode.name} (standing block)`);
+            carries({ system: blocks[2].text, user: "" }, "CHARACTER", `${mode.name} (context block)`);
+            standingSent[mode.name] = blocks[0].text;
           });
         }
+
+        it("the standing block is the same bytes for a move, a paced line, an @scene answer and an oracle follow-up (issue #354 P2-23)", function () {
+          // A cache read needs the cached bytes identical to an earlier
+          // request's. (The modes before the inciting incident, which records
+          // the campaign premise the later ones then carry.)
+          const sent = [MOVE, PACED, SCENE, ORACLE].map(m => standingSent[m.name]);
+          if (sent.some(text => typeof text !== "string")) { this.skip(); return; }
+          for (const text of sent.slice(1)) assert.equal(text, sent[0], "the standing block differs between two modes");
+        });
 
         it("campaign recap: nothing is sent without a chronicle", async function () {
           if (fx.otherPcs.length) { this.skip(); return; }   // their chronicles count

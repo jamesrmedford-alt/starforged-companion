@@ -112,6 +112,7 @@ async function callRewardModel(userPrompt, apiKey) {
     ANTHROPIC_URL,
     { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
     { model: REWARD_MODEL, max_tokens: 520 /* was 400 — Haiku 5.5 counts the same text as about 30% more tokens than Haiku 4.5 */, messages: [{ role: "user", content: userPrompt }] },
+    { label: "vowRewards" },
   );
   return (data?.content ?? []).filter(b => b?.type === "text").map(b => b.text).join("");
 }

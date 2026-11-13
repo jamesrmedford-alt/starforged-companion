@@ -204,6 +204,10 @@ async function writeNarratorUsage(entry) {
       outputTokens:        count(usage.output_tokens),
       elapsedMs:           count(entry.elapsedMs),
       sessionId:           entry.sessionId ?? null,
+      // How the reply's characters split between prose and the fact block
+      // (issue #354 P2-24) — the Prose / Fact block columns.
+      proseChars:          count(entry.proseChars),
+      sidecarChars:        count(entry.sidecarChars),
     };
 
     if (existing) {
@@ -324,17 +328,46 @@ function renderUsageHtml(entries) {
   const median = timed.length ? timed[Math.floor(timed.length / 2)] : null;
   const cell = (v) => (Number.isFinite(v) ? String(v) : "—");
   const rows = entries.slice(-50).reverse().map(e => {
-    const time = e.ts ? new Date(e.ts).toLocaleTimeString() : "—";
-    return `<tr><td>${time}</td><td>${escapeHtml(e.label ?? "—")}</td><td>${escapeHtml(e.model ?? "—")}</td>` +
+    const { prose, factBlock } = outputTokenSplit(e);
+    return `<tr><td>${usageTime(e.ts)}</td><td>${escapeHtml(e.label ?? "—")}</td><td>${escapeHtml(e.model ?? "—")}</td>` +
       `<td>${cell(e.inputTokens)}</td><td>${cell(e.cacheReadTokens)}</td><td>${cell(e.cacheCreationTokens)}</td>` +
-      `<td>${cell(e.outputTokens)}</td><td>${cell(e.elapsedMs)}</td></tr>`;
+      `<td>${cell(e.outputTokens)}</td><td>${cell(prose)}</td><td>${cell(factBlock)}</td><td>${cell(e.elapsedMs)}</td></tr>`;
   }).join("");
   return [
     `<h2>Narrator Usage</h2>`,
-    `<p>${entries.length} calls: ${readShare}% of prompt tokens read from the cache; median ${median ?? "—"} ms per call. Most recent ${Math.min(50, entries.length)} below.</p>`,
-    `<table><thead><tr><th>Time</th><th>Call</th><th>Model</th><th>Input</th><th>Cache read</th><th>Cache write</th><th>Output</th><th>ms</th></tr></thead>`,
+    `<p>${entries.length} calls: ${readShare}% of prompt tokens read from the cache; median ${median ?? "—"} ms per call. Most recent ${Math.min(50, entries.length)} below, newest first. Prose and Fact block split each call's output tokens by the share of its text that was narration and the share that was the fact block.</p>`,
+    `<table><thead><tr><th>Date and time</th><th>Call</th><th>Model</th><th>Input</th><th>Cache read</th><th>Cache write</th><th>Output</th><th>Prose</th><th>Fact block</th><th>ms</th></tr></thead>`,
     `<tbody>${rows}</tbody></table>`,
   ].join("");
+}
+
+/**
+ * A usage row's date and time. The time alone read as out of order once the
+ * page held two sessions: rows from 9:09 PM the evening before sat below
+ * 8:46 PM (issue #354 P2-24).
+ *
+ * @param {string|null} ts — ISO timestamp
+ * @returns {string}
+ */
+function usageTime(ts) {
+  if (!ts) return "—";
+  const at = new Date(ts);
+  return Number.isNaN(at.getTime()) ? "—" : escapeHtml(at.toLocaleString());
+}
+
+/**
+ * A call's output tokens, split between its prose and its fact block by the
+ * share of the reply's characters each took (issue #354 P2-24). Null for a
+ * record without the character counts (one made before they were kept).
+ *
+ * @param {Object} e — a usage record
+ * @returns {{ prose: number|null, factBlock: number|null }}
+ */
+function outputTokenSplit(e) {
+  const prose = e?.proseChars, sidecar = e?.sidecarChars, out = e?.outputTokens;
+  if (![prose, sidecar, out].every(Number.isFinite) || prose + sidecar <= 0) return { prose: null, factBlock: null };
+  const proseTokens = Math.round(out * (prose / (prose + sidecar)));
+  return { prose: proseTokens, factBlock: out - proseTokens };
 }
 
 function escapeHtml(s) {

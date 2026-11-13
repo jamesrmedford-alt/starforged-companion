@@ -78,7 +78,7 @@ export async function oddsFromPlan(question, { apiKey = null } = {}) {
       max_tokens: 40,
       system:     [{ type: "text", text: SYSTEM }],
       messages:   [{ role: "user", content: `What is true about ${subject}: ${plan.truth}\nQuestion: ${question}\nOdds:` }],
-    });
+    }, { label: "oracleConsult" });
     const text = (data?.content ?? []).filter(b => b.type === "text").map(b => b.text).join("").toLowerCase();
     const odds = CONSULT_ODDS.find(o => text.includes(o)) ?? (/\b50\s*\/\s*50\b/.test(text) ? "50_50" : null);
     return odds ? { odds, planId: plan.id } : null;

@@ -227,7 +227,7 @@ async function callChronicleAPI({ apiKey, narrationText, moveId, outcome, kind, 
     'anthropic-beta':    'prompt-caching-2024-07-31',
   };
 
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "chronicleWriter" });
   const text = (data?.content ?? [])
     .filter(b => b.type === 'text')
     .map(b => b.text)

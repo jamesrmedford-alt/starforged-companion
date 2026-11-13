@@ -675,7 +675,9 @@ describe('NARRATOR_PERMISSIONS', () => {
     expect(d).toContain('generic and unnamed');
   });
 
-  it('permissions appear after safety, before world truths in the system prompt', () => {
+  // Issue #354 P2-23: the standing rules (safety and the truths among them)
+  // lead, cached; the permission class is this narration's, after them.
+  it('permissions appear after safety and the world truths, before the per-beat context', () => {
     const prompt = buildNarratorSystemPrompt(
       makeCampaignState({
         safety: { lines: ['No real-world atrocities'], veils: [], privateLines: [] },
@@ -689,9 +691,11 @@ describe('NARRATOR_PERMISSIONS', () => {
     const safetyIdx      = prompt.indexOf('SAFETY CONFIGURATION');
     const permissionsIdx = prompt.indexOf('NARRATOR PERMISSIONS');
     const truthsIdx      = prompt.indexOf('WORLD TRUTHS');
+    const contextIdx     = prompt.indexOf('## CONTEXT FOR THIS NARRATION');
     expect(safetyIdx).toBeGreaterThan(-1);
-    expect(permissionsIdx).toBeGreaterThan(safetyIdx);
-    expect(truthsIdx).toBeGreaterThan(permissionsIdx);
+    expect(truthsIdx).toBeGreaterThan(safetyIdx);
+    expect(permissionsIdx).toBeGreaterThan(truthsIdx);
+    expect(contextIdx).toBeGreaterThan(permissionsIdx);
   });
 
   it('omits the permissions block when no narratorClass is supplied', () => {
@@ -926,7 +930,9 @@ describe('buildNarratorSystemPrompt extras', () => {
     expect(prompt).toContain('Sable'.toUpperCase());
   });
 
-  it('injects oracle seeds block before world truths', () => {
+  // Issue #354 P2-23: the seeds are this beat's, so they sit in the context —
+  // after the standing rules and the permission class, never among them.
+  it('injects oracle seeds block in the per-beat context, after the permissions', () => {
     const prompt = buildNarratorSystemPrompt(
       makeCampaignState({
         worldTruths: { cataclysm: { title: 'The Sundering' } },
@@ -937,10 +943,14 @@ describe('buildNarratorSystemPrompt extras', () => {
         oracleSeeds:   { results: ['Character role: Captain'], names: [] },
       },
     );
-    const seedsIdx  = prompt.indexOf('ORACLE SEEDS');
-    const truthsIdx = prompt.indexOf('WORLD TRUTHS');
-    expect(seedsIdx).toBeGreaterThan(-1);
-    expect(truthsIdx).toBeGreaterThan(seedsIdx);
+    const seedsIdx       = prompt.indexOf('ORACLE SEEDS');
+    const truthsIdx      = prompt.indexOf('WORLD TRUTHS');
+    const permissionsIdx = prompt.indexOf('NARRATOR PERMISSIONS');
+    const contextIdx     = prompt.indexOf('## CONTEXT FOR THIS NARRATION');
+    expect(truthsIdx).toBeGreaterThan(-1);
+    expect(permissionsIdx).toBeGreaterThan(truthsIdx);
+    expect(contextIdx).toBeGreaterThan(permissionsIdx);
+    expect(seedsIdx).toBeGreaterThan(contextIdx);
   });
 
   it('injects current location card under CURRENT LOCATION header', () => {

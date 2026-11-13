@@ -604,7 +604,7 @@ async function generateProse({ builder, maxTokens }) {
     "anthropic-version": "2023-06-01",
   };
 
-  const data = await apiPost(ANTHROPIC_URL, headers, body);
+  const data = await apiPost(ANTHROPIC_URL, headers, body, { label: "shipEnvision" });
   const text = (data?.content ?? [])
     .filter(b => b.type === "text")
     .map(b => b.text)
