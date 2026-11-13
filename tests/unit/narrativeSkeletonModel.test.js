@@ -133,7 +133,8 @@ describe('issue #353 — the UNREVEALED section', () => {
     expect(block).toMatch(/refused the same request twice/);
     expect(block).toContain('### Threat — the escort (id sk-1)');
     expect(block).toContain('Truth: A Keeper drone that collects names for its masters.');
-    expect(block).toContain('Escalation, in order: 1. It asks again, closer 2. It seals the corridor');
+    expect(block).toContain('Escalation, in order: [e1] It asks again, closer; [e2] It seals the corridor');
+    expect(block).toMatch(/"reveals": \[\{ "id": "<its id>", "revealed"/);
     expect(block).not.toMatch(/DECIDE NOW/);
   });
 

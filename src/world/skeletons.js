@@ -48,9 +48,10 @@ const QUESTION_MAX = 240;
 const SEED_MAX     = 8;
 const ID_RE        = /^[\w-]{1,64}$/;
 
-/** Plans a narration may write in one sidecar, and questions it may pose. */
+/** Plans a narration may write in one sidecar, questions it may pose, and plans it may mark revealed. */
 export const PLANS_PER_SIDECAR     = 4;
 export const QUESTIONS_PER_SIDECAR = 1;
+export const REVEALS_PER_SIDECAR   = 4;
 
 /** A trimmed, length-capped string ('' for anything else). */
 function text(value, max) {
@@ -184,6 +185,53 @@ export function normaliseOpenQuestions(questions) {
 }
 
 /**
+ * The sidecar's `reveals` (issue #353 Phase 2): what this beat showed of a
+ * plan — clues by id (or "truth" for the truth itself), the escalation step
+ * it played, whether the subject's story ended. Each needs the plan's id and
+ * at least one of those. Bounded — it may come over the relay.
+ *
+ * @param {*} reveals
+ * @returns {Array<{ id: string, revealed: string[], advanced: string|null, resolved: boolean }>}
+ */
+export function normaliseReveals(reveals) {
+  if (!Array.isArray(reveals)) return [];
+  const out = [];
+  for (const r of reveals) {
+    if (!r || typeof r !== "object") continue;
+    const id = typeof r.id === "string" && ID_RE.test(r.id.trim()) ? r.id.trim() : null;
+    if (!id) continue;
+    const revealed = [...new Set((Array.isArray(r.revealed) ? r.revealed : (typeof r.revealed === "string" ? [r.revealed] : []))
+      .filter(v => typeof v === "string").map(v => v.trim().toLowerCase())
+      .filter(v => v === "truth" || /^c\d{1,2}$/.test(v)))].slice(0, LIST_MAX + 1);
+    const advanced = typeof r.advanced === "string" && /^e\d{1,2}$/i.test(r.advanced.trim()) ? r.advanced.trim().toLowerCase() : null;
+    const resolved = r.resolved === true;
+    if (!revealed.length && !advanced && !resolved) continue;
+    out.push({ id, revealed, advanced, resolved });
+    if (out.length >= REVEALS_PER_SIDECAR) break;
+  }
+  return out;
+}
+
+/**
+ * What a beat showed, laid onto the plan: its clues shown, its truth
+ * revealed, its step played, its story ended (`status: "resolved"`).
+ *
+ * @param {Object} record — normaliseSkeleton's
+ * @param {{ revealed: string[], advanced: string|null, resolved: boolean }} reveal
+ * @returns {Object} a new record
+ */
+export function applyRevealToSkeleton(record, reveal) {
+  const shown = new Set(reveal.revealed);
+  return {
+    ...record,
+    truthRevealed: record.truthRevealed || shown.has("truth"),
+    clues:         record.clues.map(c => (shown.has(c.id) ? { ...c, revealed: true } : c)),
+    escalation:    record.escalation.map(e => (e.id === reveal.advanced ? { ...e, done: true } : e)),
+    status:        reveal.resolved ? "resolved" : record.status,
+  };
+}
+
+/**
  * A plan the narrator decided, laid onto its record: each field it gave
  * replaces the record's; a list it gave replaces the list, keeping what was
  * already revealed or played of an item it repeated word for word. The
@@ -251,6 +299,7 @@ export const MAX_RELEVANT_SKELETONS = 4;
  * @param {string} [ctx.text] — the player's line, or the question asked
  * @param {string[]} [ctx.openTrackIds] — open progress tracks (an expedition's plan)
  * @param {string[]} [ctx.openVowIds] — open vows (a vow's plan)
+ * @param {string[]} [ctx.activeThreatNames] — the World Journal's immediate threats (a threat's plan)
  * @param {number} [ctx.max]
  * @returns {Object[]}
  */
@@ -260,6 +309,7 @@ export function selectRelevantSkeletons(records, ctx = {}) {
   const matched = new Set(Array.isArray(ctx.matchedEntityIds) ? ctx.matchedEntityIds : []);
   const tracks  = new Set(Array.isArray(ctx.openTrackIds) ? ctx.openTrackIds : []);
   const vows    = new Set(Array.isArray(ctx.openVowIds) ? ctx.openVowIds : []);
+  const threats = (Array.isArray(ctx.activeThreatNames) ? ctx.activeThreatNames : []).filter(n => typeof n === "string");
   const frame   = ctx.frame && typeof ctx.frame === "object" ? ctx.frame : {};
   const passage = [
     ctx.text,
@@ -272,6 +322,7 @@ export function selectRelevantSkeletons(records, ctx = {}) {
     if (inScene(r)) return true;
     const s = r.subject ?? {};
     if (s.id && (matched.has(s.id) || tracks.has(s.id) || vows.has(s.id))) return true;
+    if (r.kind === "threat" && threats.some(n => sameSubjectName(n, s.name))) return true;
     return nameMentioned(s.name, passage);
   };
   const time = (r) => String(r.updatedAt ?? r.createdAt ?? "");
@@ -325,6 +376,13 @@ export function normalisePlanRequests(requests) {
       label:       text(r.label, SUBJECT_MAX) || "the subject",
       oracleSeeds: (Array.isArray(r.oracleSeeds) ? r.oracleSeeds : []).map(s => text(s, ITEM_MAX)).filter(Boolean).slice(0, SEED_MAX),
     }));
+}
+
+/** Two subject names are the same when their words are, articles aside ("The Escort" is "the escort"). */
+export function sameSubjectName(a, b) {
+  const wa = words(a).filter(w => !NAME_FILLER.has(w)).join(" ");
+  const wb = words(b).filter(w => !NAME_FILLER.has(w)).join(" ");
+  return !!wa && wa === wb;
 }
 
 /** Two questions are the same when their words are (case and punctuation aside). */

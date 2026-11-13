@@ -29,8 +29,8 @@ import {
   FLAG_KEYS, findWorldJournal, getOrCreateWorldJournal, writeEntryPage, narrationStamp, recordLoreDiscovery,
 } from "./worldJournal.js";
 import {
-  normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, applyPlanToSkeleton,
-  sameQuestion, SKELETON_KIND_LABELS,
+  normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
+  applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, SKELETON_KIND_LABELS,
 } from "./skeletons.js";
 
 const MODULE_ID = "starforged-companion";
@@ -220,6 +220,31 @@ async function rollMysteryAnswer() {
 }
 
 /**
+ * The plan subject and fact a revealed truth becomes in the scene's ledger
+ * (issue #353 Phase 2: "a revealed truth is promoted to Lore and the ledger,
+ * so it becomes a stated fact"): the plans a sidecar's `reveals` reveal the
+ * truth of, that were not revealed before. Read synchronously, for the
+ * sidecar apply to add to the narration's own truths — stamped with its id,
+ * so the X-Card retracts them with it.
+ *
+ * @param {Object} sidecar — normaliseSidecar's
+ * @returns {Array<{ subject: string, fact: string }>}
+ */
+export function revealedTruthsOf(sidecar) {
+  if (!skeletonsEnabled()) return [];
+  const out = [];
+  for (const reveal of normaliseReveals(sidecar?.reveals)) {
+    if (!reveal.revealed.includes("truth")) continue;
+    const record = getSkeleton(reveal.id);
+    if (!record || record.status !== "active" || record.truthRevealed || !record.truth) continue;
+    out.push(record.kind === "mystery" && record.question
+      ? { subject: record.subject.name, fact: `The answer to "${record.question}": ${record.truth}` }
+      : { subject: record.subject.name, fact: record.truth });
+  }
+  return out;
+}
+
+/**
  * Apply a narration's plan side-data on the canonical GM (narrator.js
  * applySidecarSideData; a relayed sidecar's too):
  *  1. each plan the narration was asked to decide (`planRequests` — a price
@@ -228,21 +253,25 @@ async function rollMysteryAnswer() {
  *     the next narration to decide ("keep the raw rolls as the skeleton");
  *  2. each other `plans` entry decides or corrects the plan of its id;
  *  3. each `openQuestions` entry not already a mystery of this scene becomes
- *     one, its hidden answer rolled now and decided by a later narration.
+ *     one, its hidden answer rolled now and decided by a later narration;
+ *  4. each `reveals` entry marks what the beat showed (Phase 2): clues shown,
+ *     the truth revealed — filed as confirmed lore, and the oracle rolls behind
+ *     it shown to the table — a step played, an ending.
  * Every write is stamped with the narration's id. Never throws.
  *
  * @param {Object} sidecar — normaliseSidecar's
  * @param {{ campaignState: Object, narrationId?: string|null, moveId?: string|null, planRequests?: Object[] }} ctx
- * @returns {Promise<{ filed: number, decided: number, questions: number }>}
+ * @returns {Promise<{ filed: number, decided: number, questions: number, revealed: number }>}
  */
 export async function applyPlanSideData(sidecar, { campaignState, narrationId = null, moveId = null, planRequests = [] } = {}) {
-  const out = { filed: 0, decided: 0, questions: 0 };
+  const out = { filed: 0, decided: 0, questions: 0, revealed: 0 };
   if (!skeletonsEnabled() || !isCanonicalGM()) return out;
   try {
     const plans     = normalisePlans(sidecar?.plans);
     const questions = normaliseOpenQuestions(sidecar?.openQuestions);
     const requests  = normalisePlanRequests(planRequests);
-    if (!plans.length && !questions.length && !requests.length) return out;
+    const reveals   = normaliseReveals(sidecar?.reveals);
+    if (!plans.length && !questions.length && !requests.length && !reveals.length) return out;
     const sceneId   = campaignState?.currentSceneId ?? null;
     const sessionId = campaignState?.currentSessionId ?? null;
     const byId = new Map(plans.map(p => [p.id, p]));
@@ -282,10 +311,92 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
         await showRollsIfSet(filed);
       }
     }
+
+    for (const reveal of reveals) {
+      const before = getSkeleton(reveal.id);
+      if (!before || before.status !== "active") continue;
+      const truthNow = reveal.revealed.includes("truth") && !before.truthRevealed && !!before.truth;
+      const after = await updateSkeleton(reveal.id,
+        r => ({ ...applyRevealToSkeleton(r, reveal), ...(truthNow ? { rollsShown: true } : {}) }), { narrationId });
+      if (!after) continue;
+      out.revealed += 1;
+      if (truthNow) await onTruthRevealed(after, { campaignState, narrationId, rollsWereShown: before.rollsShown });
+    }
   } catch (err) {
     console.warn(`${MODULE_ID} | secrets: a narration's plans were not applied:`, err?.message ?? err);
   }
   return out;
+}
+
+/** A plan's title in the Lore journal: "Threat: the escort", "Mystery: Which name…?". */
+function loreTitleOf(record) {
+  const subject = record.kind === "mystery" && record.question ? record.question : record.subject.name;
+  return `${SKELETON_KIND_LABELS[record.kind] ?? "Plan"}: ${subject}`.slice(0, 120);
+}
+
+/**
+ * A plan's truth the fiction revealed: filed as confirmed lore (stamped with
+ * the narration, so the X-Card retracts it with the reveal), and the oracle
+ * rolls behind it shown to the table — "hidden until their truth is revealed,
+ * then shown" (decided) — unless they already were.
+ */
+async function onTruthRevealed(record, { campaignState, narrationId, rollsWereShown }) {
+  await recordLoreDiscovery(loreTitleOf(record), {
+    text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
+    ...(narrationId ? { narrationId } : {}),
+  }, campaignState).catch(err =>
+    console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));
+  if (!rollsWereShown) await postRollsCard(record, { narrationId });
+}
+
+/** How a significant threat's agenda is rolled (Action + Theme), for its plan's seeds. */
+async function rollThreatAgenda() {
+  try {
+    const { rollPaired } = await import("../oracles/roller.js");
+    return [`Its agenda — Action + Theme: ${rollPaired("action", "theme").combined}`];
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the threat's oracle roll failed:`, err?.message ?? err);
+    return [];
+  }
+}
+
+/**
+ * A threat the detection pass recorded at significant salience or above gets
+ * a plan (issue #353 Phase 2, "When a skeleton is made"): what it really is,
+ * wants and does next, decided by the next narration it is in play for, from
+ * an Action + Theme roll for its agenda. It shares the threat page's id. A
+ * plan already filed under its name — a new enemy the narration named — is
+ * linked to the page instead of a second one. Canonical GM; stamped with the
+ * narration whose capture recorded the threat. Never throws.
+ *
+ * @param {{ name: string, pageId?: string|null, summary?: string }} threat — recordThreat's result
+ * @param {{ campaignState?: Object, narrationId?: string|null }} [ctx]
+ * @returns {Promise<Object|null>} the plan filed or linked, or null
+ */
+export async function planSignificantThreat(threat, { campaignState = null, narrationId = null } = {}) {
+  if (!skeletonsEnabled() || !isCanonicalGM()) return null;
+  const name = typeof threat?.name === "string" ? threat.name.trim() : "";
+  if (!name) return null;
+  const pageId = typeof threat.pageId === "string" ? threat.pageId : null;
+  try {
+    const all = listSkeletons({ includeInactive: true });
+    const byPage = pageId ? all.find(r => r.subject.type === "threat" && r.subject.id === pageId) : null;
+    if (byPage) return null;
+    const byName = all.find(r => r.status === "active" && ["threat", "npcAgenda"].includes(r.kind) && sameSubjectName(r.subject.name, name));
+    if (byName) {
+      if (byName.subject.type !== "name" || !pageId) return null;
+      return updateSkeleton(byName.id, r => ({ ...r, subject: { type: "threat", id: pageId, name: r.subject.name } }), { narrationId });
+    }
+    return createSkeleton({
+      kind: "threat", subject: { type: "threat", id: pageId, name },
+      oracleSeeds: await rollThreatAgenda(),
+      sceneId: campaignState?.currentSceneId ?? null, sessionId: campaignState?.currentSessionId ?? null,
+      createdFrom: { narrationId, moveId: null, trigger: "significant_threat" },
+    }, { narrationId });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the threat "${name}" was not planned:`, err?.message ?? err);
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -297,14 +408,24 @@ function rollsLine(record) {
   return (record?.oracleSeeds ?? []).join("; ");
 }
 
+/**
+ * The table's card of a plan's oracle rolls ("the oracle, behind the
+ * scenes"): posted when its truth is revealed, or — "show hidden rolls" on —
+ * when it is made. Carries the narration that showed it.
+ */
+async function postRollsCard(record, { narrationId = null } = {}) {
+  if (!record?.oracleSeeds?.length) return null;
+  return postSecretCard(
+    `The oracle, behind the scenes`,
+    `<p><strong>${escapeHtml(record.kind === "mystery" ? record.question : record.subject.name)}</strong></p><p>${escapeHtml(rollsLine(record))}</p>`,
+    { secretRollsCard: true, skeletonId: record.id, ...(narrationId ? { narrationId } : {}) },
+  );
+}
+
 /** With "show hidden rolls" on, a new plan's rolls are posted to the table at once (issue #353 "Visibility"). */
 async function showRollsIfSet(record) {
   if (!hiddenRollsShownAtOnce() || !record?.oracleSeeds?.length) return;
-  const posted = await postSecretCard(
-    `The oracle, behind the scenes`,
-    `<p><strong>${escapeHtml(record.kind === "mystery" ? record.question : record.subject.name)}</strong></p><p>${escapeHtml(rollsLine(record))}</p>`,
-    { secretRollsCard: true },
-  );
+  const posted = await postRollsCard(record);
   if (posted) await updateSkeleton(record.id, r => ({ ...r, rollsShown: true }), { keepStamp: true });
 }
 
@@ -328,7 +449,7 @@ export async function revealSkeletonNow(id) {
     { secretRevealCard: true, skeletonId: record.id },
   );
   const campaignState = globalThis.game?.settings?.get?.(MODULE_ID, "campaignState") ?? null;
-  await recordLoreDiscovery(`${SKELETON_KIND_LABELS[record.kind]}: ${subject}`.slice(0, 120), {
+  await recordLoreDiscovery(loreTitleOf(record), {
     text: record.truth, category: "other", confirmed: true, subject: record.subject.name, fact: record.truth,
   }, campaignState).catch(err =>
     console.warn(`${MODULE_ID} | secrets: the revealed truth was not filed as lore:`, err?.message ?? err));

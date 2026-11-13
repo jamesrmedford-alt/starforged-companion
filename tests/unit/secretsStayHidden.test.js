@@ -24,6 +24,7 @@ const byFile = new Map(sources.map(s => [s.file, s]));
 
 /** The modules that may import the store or its record model, and why. */
 const STORE_READERS = new Map([
+  ['src/entities/entityExtractor.js', 'a significant threat\'s plan (planSignificantThreat — a write, no read)'],
   ['src/narration/narrator.js', 'the UNREVEALED block, the sidecar apply, the Private Channel story'],
   ['src/world/worldJournalPanel.js', 'the GM-only Secrets section'],
 ]);
@@ -53,16 +54,20 @@ describe('issue #353 — the hidden plans stay hidden', () => {
     expect(readers).toEqual(['src/world/secrets.js', 'src/world/worldJournal.js', 'src/world/worldJournalPanel.js']);
   });
 
-  it('the store posts chat only from Reveal now and the opt-in roll display', () => {
+  it('the store posts chat only for a revealed truth and the opt-in roll display', () => {
     const store = byFile.get('src/world/secrets.js');
+    const src = (name) => resolveFunctionSource(store, name) ?? '';
     expect(store.code.match(/ChatMessage\??\.create/g)).toHaveLength(1);
-    expect(resolveFunctionSource(store, 'postSecretCard')).toMatch(/ChatMessage\?\.create\?\.\(/);
-    const callers = ['revealSkeletonNow', 'showRollsIfSet']
-      .filter(name => /postSecretCard\(/.test(resolveFunctionSource(store, name) ?? ''));
-    expect(callers).toEqual(['revealSkeletonNow', 'showRollsIfSet']);
+    expect(src('postSecretCard')).toMatch(/ChatMessage\?\.create\?\.\(/);
+    // postSecretCard: the GM's Reveal now, and the rolls card.
+    expect(['revealSkeletonNow', 'postRollsCard'].filter(n => /postSecretCard\(/.test(src(n)))).toEqual(['revealSkeletonNow', 'postRollsCard']);
     expect(store.code.match(/postSecretCard\(/g)).toHaveLength(3);   // its definition and those two calls
-    // The roll display only with the setting on.
-    expect(resolveFunctionSource(store, 'showRollsIfSet')).toMatch(/if \(!hiddenRollsShownAtOnce\(\)/);
+    // The rolls card: a truth the fiction revealed, and the opt-in display.
+    expect(['onTruthRevealed', 'showRollsIfSet'].filter(n => /postRollsCard\(/.test(src(n)))).toEqual(['onTruthRevealed', 'showRollsIfSet']);
+    expect(store.code.match(/postRollsCard\(/g)).toHaveLength(3);
+    // The roll display only with the setting on; a truth's only once revealed.
+    expect(src('showRollsIfSet')).toMatch(/if \(!hiddenRollsShownAtOnce\(\)/);
+    expect(src('applyPlanSideData')).toMatch(/if \(truthNow\) await onTruthRevealed\(/);
   });
 
   it('the narrator-card builders never read a plan', () => {

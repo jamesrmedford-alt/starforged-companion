@@ -6,6 +6,49 @@ rejected.
 
 ---
 
+## The narrative skeleton, Phase 2: reveals follow move outcomes; a revealed truth is a stated fact; significant threats are planned (2026-11)
+
+**Decision:** (issue #353 Phase 2.)
+- **The sidecar's `reveals`** records what a beat showed of a plan, by the
+  ids UNREVEALED lists (`[c1]` a clue, `[e1]` an escalation step): clues
+  shown, the truth revealed (`"truth"`), the step it played, and
+  `resolved` when the subject's story ends. Only what the beat actually
+  showed — a beat that does not touch a subject leaves it alone. Applied on
+  the canonical GM, stamped with the narration's id; the X-Card restores the
+  plan to its version before (`undoNarrationEntries`).
+- **A revealed truth becomes a stated fact**: a truth of the narration's own
+  in the scene ledger (`revealedTruthsOf`, added to its `newTruths` before
+  `applySidecar`) and confirmed lore, both stamped with its id, so the X-Card
+  retracts them with the reveal. The oracle rolls behind it are then shown to
+  the table (decided: hidden until revealed) — a card the X-Card leaves
+  (known-issues SECRET-ROLLS-CARD-XCARD).
+- **A resolved plan leaves play** (`status: "resolved"`): it is no longer
+  shown to the narrator, and stays in the journal.
+- **A threat recorded at significant salience or above gets a plan**
+  (`planSignificantThreat`, from the detection pass's
+  `routeWorldJournalResults`): its subject is the threat page, by id; its
+  agenda is rolled on Action + Theme and its truth decided by the next
+  narration it is in play for. Rated explicitly — the capture gate lets an
+  unrated threat through, the plan does not. A plan already filed under its
+  name (a new enemy the narration named) is linked to the page instead of a
+  second one.
+- **An immediate threat's plan is in play every beat** (relevance, by the
+  World Journal threat's name); any other plan only when its subject is.
+- **The planning call is still not built** (decided: only if the sidecar
+  proves too thin; nothing has shown that yet).
+
+**Reason:** issue #353's "Reveals follow move outcomes" and "Reveal
+tracking": a plan that is never marked revealed is replayed as a fresh
+mystery, and a reveal that is not a stated fact can be contradicted the next
+beat.
+
+**Rejected:** *reveal one clue per beat* — the issue's own revision: a reveal
+on every beat would spend the plan in a few turns; reveals follow the
+outcomes of moves that touch the subject. *A rolls card the X-Card deletes*
+— a new X-Card path for a card that names no removed content.
+
+---
+
 ## The narrative skeleton: hidden plans in a GM-only Secrets journal, decided by the narrator, played toward (2026-11)
 
 **Decision:** (issue #353 Phase 1; every question in the issue was settled by

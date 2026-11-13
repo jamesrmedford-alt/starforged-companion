@@ -62,7 +62,8 @@ import {
   getFactionLandscape,
   getFactionEntry,
 } from "../world/worldJournal.js";
-import { passesSalience, getSalienceThreshold, SALIENCE_ORDER } from "../world/salience.js";
+import { passesSalience, getSalienceThreshold, normalizeSalience, SALIENCE_ORDER } from "../world/salience.js";
+import { planSignificantThreat } from "../world/secrets.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -1307,7 +1308,13 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
       await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "", ...fromNarration });
       continue;
     }
-    await recordThreat(threat.name, { ...threat, ...fromNarration }, campaignState);
+    const recorded = await recordThreat(threat.name, { ...threat, ...fromNarration }, campaignState);
+    // A threat recorded at significant salience or above gets a hidden plan
+    // (issue #353 Phase 2), sharing its page's id. Rated explicitly: the
+    // salience gate above lets an unrated threat through.
+    if (recorded && (SALIENCE_ORDER[normalizeSalience(threat.salience)] ?? -1) >= SALIENCE_ORDER.significant) {
+      await planSignificantThreat(recorded, { campaignState, narrationId: fromNarration.narrationId ?? null });
+    }
   }
 
   for (const faction of wj.factionUpdates ?? []) {

@@ -11,6 +11,12 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Narrative skeleton (issue #353) — residuals
+
+| ID | Kind | Status |
+|---|---|---|
+| SECRET-ROLLS-CARD-XCARD | by design (residual) | When a narration reveals a plan's truth, the oracle rolls behind it are posted to the table ("The oracle, behind the scenes"). The X-Card on that narration undoes the reveal, its lore and its ledger truth, but leaves that card: the rolls are table words (a role, a goal, a disposition), not the removed beat's content, and taking a posted card back would need a new X-Card path. Revisit if a playtest shows the card spoiling a plan the X-Card put back. |
+
 ### Alpha 23 playtest (issue #348) — all fourteen resolved in the v1.8.1 cycle
 
 | ID | Kind | Fix |

@@ -529,7 +529,8 @@ never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
 `buildNarratorExtras` → `extras.unrevealed`, the active plans of the GM-only
 Secrets journal whose subject is in play — made in this scene, its entity
 matched or in the frame's cast, its name in the frame or the player's line,
-`skeletons.js` `selectRelevantSkeletons`, at most four, trimmed to
+`skeletons.js` `selectRelevantSkeletons` — an immediate World Journal threat's
+plan every beat, Phase 2 — at most four, trimmed to
 `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`, the plans this narration's
 seeds ask it to decide: a price that revealed a new enemy. Decided plans read
 as truths never to state outright, with the reveal rule; undecided ones and the
@@ -710,7 +711,10 @@ mandatory, so a missing fence is a lost frame update, not a quiet no-op) →
 `plans` and `openQuestions`, normalised by `src/world/skeletons.js` — go to
 `secrets.js` `applyPlanSideData`, which files the narration's requested plans
 — as decided, or with their rolls alone — decides or corrects the plans it was
-shown by id, and turns a posed question into a mystery whose answer it rolls;
+shown by id, turns a posed question into a mystery whose answer it rolls,
+and marks what the beat showed — `reveals`: a clue, a step played, an ending,
+the truth itself, which becomes a ledger truth of the narration's own
+(`revealedTruthsOf`) and confirmed lore, its oracle rolls then shown — Phase 2;
 each write stamped with the narration's id, which the X-Card's
 `undoNarrationEntries` takes back; a relayed sidecar carries its plan requests,
 issue #353 Phase 1): truths append **with dedup**

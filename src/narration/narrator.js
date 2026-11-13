@@ -68,7 +68,7 @@ import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines } from '../moves/resolver.js';
-import { listSkeletons, skeletonsEnabled, applyPlanSideData } from '../world/secrets.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests } from '../world/skeletons.js';
 
 const ENTITY_GETTERS = {
@@ -518,10 +518,11 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   if (mode !== 'campaign_recap' && skeletonsEnabled()) {
     try {
       extras.unrevealed = selectRelevantSkeletons(listSkeletons(), {
-        sceneId:          sceneState?.currentSceneId ?? null,
-        frame:            sceneState?.sceneFrame ?? null,
-        matchedEntityIds: extras.matchedEntityIds ?? [],
-        text:             playerNarration,
+        sceneId:           sceneState?.currentSceneId ?? null,
+        frame:             sceneState?.sceneFrame ?? null,
+        matchedEntityIds:  extras.matchedEntityIds ?? [],
+        text:              playerNarration,
+        activeThreatNames: immediateThreatNames(campaignState),
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: the hidden plans could not be read:`, err?.message ?? err);
@@ -542,6 +543,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     : [];
 
   return extras;
+}
+
+/** The World Journal's immediate threats, by name — their plans are in play every beat (issue #353). Fail-open. */
+function immediateThreatNames(campaignState) {
+  try {
+    return getActiveThreats(campaignState).filter(t => t?.severity === 'immediate').map(t => t.name).filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 /** How many pinned Chronicle entries a CHARACTER block carries (the newest), and how long each may run. */
@@ -5477,7 +5487,14 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
       otherChanges.push(c);
     }
   }
-  const filteredSidecar = { ...sidecar, stateChanges: otherChanges };
+  // A plan's truth this beat revealed becomes a stated fact (issue #353
+  // Phase 2): a truth of the narration's own, stamped with its id, so the
+  // X-Card retracts it with the reveal.
+  const filteredSidecar = {
+    ...sidecar,
+    stateChanges: otherChanges,
+    newTruths:    [...(sidecar.newTruths ?? []), ...revealedTruthsOf(sidecar)],
+  };
 
   try {
     // Narrator-memory A2 — resolve sidecar subjects against the full
@@ -5548,7 +5565,7 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // ones it was asked to decide, and the questions it posed — filed in the
   // Secrets journal, stamped with its id for the X-Card. Fire-and-forget,
   // never throws.
-  if (sidecar.plans?.length || sidecar.openQuestions?.length || ctx.planRequests?.length) {
+  if (sidecar.plans?.length || sidecar.openQuestions?.length || sidecar.reveals?.length || ctx.planRequests?.length) {
     void applyPlanSideData(sidecar, {
       campaignState,
       narrationId:  typeof ctx.narrationId === 'string' ? ctx.narrationId : null,

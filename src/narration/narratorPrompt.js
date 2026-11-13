@@ -1836,8 +1836,8 @@ function formatSkeletonEntry(r) {
   lines.push(`${r.kind === 'mystery' ? 'Answer' : 'Truth'}: ${r.truth}${r.truthRevealed ? ' (already revealed — the characters know it)' : ''}`);
   if (r.wants) lines.push(`Wants: ${r.wants}`);
   if (r.knows) lines.push(`Knows: ${r.knows}`);
-  const steps = (r.escalation ?? []).map((e, i) => `${i + 1}. ${e.text}${e.done ? ' (played)' : ''}`);
-  if (steps.length) lines.push(`Escalation, in order: ${steps.join(' ')}`);
+  const steps = (r.escalation ?? []).map(e => `[${e.id}] ${e.text}${e.done ? ' (played)' : ''}`);
+  if (steps.length) lines.push(`Escalation, in order: ${steps.join('; ')}`);
   const clues = (r.clues ?? []).map(c => `[${c.id}] ${c.text}${c.revealed ? ' (shown)' : ''}`);
   if (clues.length) lines.push(`Clues: ${clues.join('; ')}`);
   if (r.resolutions?.length) lines.push(`Could end: ${r.resolutions.join('; ')}`);
@@ -1878,6 +1878,10 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], sidecar = 
   ];
   if (sidecar) {
     lines.push(
+      '- When this beat shows something below, record exactly what it showed in your sidecar:',
+      '  "reveals": [{ "id": "<its id>", "revealed": ["<clue id>", or "truth" when the truth itself comes',
+      '  out>], "advanced": "<the escalation step id it played>", "resolved": true when its story ends }].',
+      '  Only what this beat actually showed; nothing for a subject it did not touch.',
       '- Where your narration contradicts something below, your narration stands: record the change in',
       '  your sidecar as "plans": [{ "id": "<its id>", …only the fields that changed: "subject", "truth",',
       '  "wants", "knows", "escalation", "clues" or "resolutions" }].',
