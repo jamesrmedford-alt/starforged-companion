@@ -372,9 +372,15 @@ position → (never) scene frame. Soft cap `factContinuity.maxLedgerTokens`.
 
 ## 4. Surface 3 — the scene frame
 
-`campaignState.sceneFrame = { location, present[], situation, sceneId,
-updatedAt }`. The narrator emits a **full-replacement snapshot** in every
-sidecar (`sceneFrame` key); an omitted frame keeps the previous one. Applied
+`campaignState.sceneFrame = { location, present[], situation, question?,
+questionAnswered?, sceneId, updatedAt }`. The narrator emits a
+**full-replacement snapshot** in every sidecar (`sceneFrame` key); an omitted
+frame keeps the previous one. The **scene question** (issue #353 R2) is the
+exception to full replacement: what the scene is deciding, set on its first
+beat and kept by `applySceneFrame` (`sceneQuestion`) — a later snapshot cannot
+reword it — until a beat marks it answered (`questionAnswered`), after which
+the next beat's question is the scene's. The answering beat is told to end on
+a cut forward; no beat ends a scene (scenes stay manual — decisions.md). Applied
 by `applySceneFrame` (`ledgers.js`), which keeps the frames of the scene it
 replaces as a bounded `previous` chain (never rendered), so an X-Card on a
 narration puts back the frame its narration replaced (issue #345 D3);
@@ -385,7 +391,11 @@ SCENE FRAME (the scene as it stands):
   Where:   Lyra's orbital graveyard
   Present: Venri Quint, Vance
   Now:     Hailing Vance's shuttle across the debris field
+  Question: Will Vance let them board?
 ```
+
+(An answered question reads `Question (answered): … — the scene has moved
+past it; set the question it turns on now.`)
 
 Two side effects beyond display:
 1. `present` names are treated as mentioned for ledger scoping (§3).

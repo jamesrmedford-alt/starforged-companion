@@ -470,7 +470,7 @@ export function isReplacedOriginal(t, byId) {
  * campaignState in place; persistence is the caller's responsibility (same
  * contract as applySidecar).
  *
- * @param {Object|null} frame — { location, present[], situation } or null
+ * @param {Object|null} frame — { location, present[], situation, question?, questionAnswered? } or null
  * @param {Object} campaignState
  * @param {Object} [opts]
  * @param {string|null} [opts.narrationId] — the narration that wrote it,
@@ -488,12 +488,14 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
 
   const sceneId = campaignState.currentSceneId ?? null;
   const prior   = campaignState.sceneFrame;
-  const previous = (prior && typeof prior === 'object' && (prior.sceneId ?? null) === sceneId)
-    ? supersededEntry(prior) : null;
+  const samePrior = !!prior && typeof prior === 'object' && (prior.sceneId ?? null) === sceneId;
+  const previous = samePrior ? supersededEntry(prior) : null;
+  const question = sceneQuestion(frame, samePrior ? prior : null);
   campaignState.sceneFrame = {
     location,
     present,
     situation,
+    ...question,
     sceneId,
     updatedAt: Date.now(),
     ...narrationStamp(narrationId),
@@ -509,6 +511,38 @@ export function applySceneFrame(frame, campaignState, { narrationId = null } = {
     }
   }
   return true;
+}
+
+/**
+ * The scene's question as the new frame keeps it (issue #353 R2): what the
+ * scene is deciding, set on its first beat and kept — a later snapshot may
+ * not reword it — until a beat answers it (`questionAnswered`); after that,
+ * the next beat's question is the scene's, and with none the answered one
+ * stays, marked. A new scene starts with none (sceneLifecycle clears the
+ * frame). Scenes still end only by hand: an answer ends no scene.
+ *
+ * @param {Object} frame — the sidecar's snapshot
+ * @param {Object|null} prior — this scene's stored frame
+ * @returns {{ question?: string, questionAnswered?: true }}
+ */
+function sceneQuestion(frame, prior) {
+  const asked    = typeof frame?.question === 'string' ? frame.question.trim() : '';
+  const answers  = frame?.questionAnswered === true;
+  const held     = typeof prior?.question === 'string' ? prior.question.trim() : '';
+  const heldDone = prior?.questionAnswered === true;
+  let question = '';
+  let answered = false;
+  if (held && !heldDone) {
+    question = held;                    // kept for the scene until answered
+    answered = answers;
+  } else if (asked && asked !== held) {
+    question = asked;                   // the first beat's, or the next after an answer
+    answered = answers;
+  } else {
+    question = held;                    // none asked: an answered question stays, marked
+    answered = held ? heldDone : false;
+  }
+  return question ? { question, ...(answered ? { questionAnswered: true } : {}) } : {};
 }
 
 /**

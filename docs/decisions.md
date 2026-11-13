@@ -298,6 +298,35 @@ rolls create the enemy's hidden truth (Phase 1).
 
 ---
 
+## Issue #353 R2: each scene has a question; scenes stay manual (2026-11)
+
+**Decision:** (issue #353 R2; decided, maintainer 2026-11-13: scenes stay
+manual — a scene ends only at `!scene end` or with the session; the module
+does not end one and does not offer to; a narrator-proposed end is deferred.)
+- **The scene frame carries the scene's question** — what is being decided
+  here, in a few words (`sceneFrame.question`). The narrator sets it on the
+  scene's first beat; the module keeps it (`ledgers.applySceneFrame`): a later
+  snapshot cannot reword it, so a beat cannot quietly move the scene's goal.
+- **An answer cuts forward.** The beat that answers it marks it
+  (`questionAnswered`) and is told to end on a cut forward — to the
+  consequence, the next place or a later hour — not another exchange in the
+  same room. The next beat sets the question the scene turns on now; until
+  then SCENE FRAME shows the answered one, marked.
+- **It lives and dies with the frame**: rendered in SCENE FRAME, restored by
+  the X-Card through the frame's superseded chain, cleared at scene end.
+  The sidecar is told plainly never to end the scene.
+
+**Reason:** the playtest's hour was one scene circling one exchange; the
+frame recorded where and who, not what the scene was for, so the narrator
+never knew when to stop.
+
+**Rejected:** *ending or offering to end the scene on an answer* — decided
+against (deferred, revisit once the question has been played with). *A
+question the narrator may reword every beat* — it would drift with the
+conversation it is meant to bound.
+
+---
+
 ## Issue #353 R1: the stakes are stated before the roll, and a miss pays them (2026-11)
 
 **Decision:** (issue #353 R1; decided, maintainer 2026-11-13: the outcome

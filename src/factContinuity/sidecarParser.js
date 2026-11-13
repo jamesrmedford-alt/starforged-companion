@@ -206,7 +206,8 @@ export function normaliseSidecar(parsed) {
  * see docs/narrator/narrator-memory-architecture.md). Shape:
  *
  *   { "location": "Lyra's graveyard", "present": ["Venri Quint", "Vance"],
- *     "situation": "Hailing Vance across the debris field" }
+ *     "situation": "Hailing Vance across the debris field",
+ *     "question": "Will Vance let them board?", "questionAnswered": false }
  *
  * Returns null when absent or unusable so callers can keep the previous
  * frame. String fields are trimmed; `present` keeps non-empty strings only.
@@ -219,5 +220,15 @@ function normaliseSceneFrame(frame) {
     ? frame.present.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim())
     : [];
   if (!location && !situation && !present.length) return null;
-  return { location, present, situation };
+  // The scene's question — what is being decided here — and whether this
+  // beat answered it (issue #353 R2; kept by ledgers.applySceneFrame).
+  const question  = typeof frame.question === 'string' ? frame.question.replace(/\s+/g, ' ').trim().slice(0, SCENE_QUESTION_MAX) : '';
+  return {
+    location, present, situation,
+    ...(question ? { question } : {}),
+    ...(frame.questionAnswered === true ? { questionAnswered: true } : {}),
+  };
 }
+
+/** The longest scene question kept (a question, not a paragraph). */
+const SCENE_QUESTION_MAX = 160;

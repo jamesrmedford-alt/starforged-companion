@@ -85,7 +85,8 @@ export function appendSidecarInstruction(options = {}) {
       '      "sceneFrame": {',
       '        "location":  "Lyra\'s orbital graveyard",',
       '        "present":   ["Venri Quint", "Vance"],',
-      '        "situation": "Hailing Vance\'s shuttle across the debris field"',
+      '        "situation": "Hailing Vance\'s shuttle across the debris field",',
+      '        "question":  "Will Vance let them board?"',
       '      }',
     );
   }
@@ -171,6 +172,14 @@ export function appendSidecarInstruction(options = {}) {
       '  present or directly engaged (include characters on comms), and the',
       '  situation in one sentence. Include it on EVERY response — it',
       '  replaces the previous snapshot. Keep names exactly as established.',
+      '- "question" (inside "sceneFrame") is what this scene is deciding, in a',
+      '  few words. Set it on the scene\'s first beat; afterwards copy it',
+      '  unchanged from SCENE FRAME — it is kept for the scene. When this beat',
+      '  answers it, add "questionAnswered": true and end the beat on a cut',
+      '  forward — to the consequence, the next place or a later hour — not on',
+      '  another exchange in the same room. Once it is answered, set the',
+      '  question the scene turns on now. Never end the scene: the table ends',
+      '  scenes.',
     );
   }
 
@@ -356,6 +365,12 @@ export function buildLedgerBlock(campaignState, options = {}) {
     if (frame.location)      frameLines.push(`  Where:   ${frame.location}`);
     if (presentNames.length) frameLines.push(`  Present: ${presentNames.join(', ')}`);
     if (frame.situation)     frameLines.push(`  Now:     ${frame.situation}`);
+    // What the scene is deciding (issue #353 R2).
+    if (typeof frame.question === 'string' && frame.question.trim()) {
+      frameLines.push(frame.questionAnswered === true
+        ? `  Question (answered): ${frame.question.trim()} — the scene has moved past it; set the question it turns on now.`
+        : `  Question: ${frame.question.trim()}`);
+    }
   }
   const frameBlock = frameLines.length
     ? ['SCENE FRAME (the scene as it stands):', ...frameLines].join('\n')

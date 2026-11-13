@@ -541,7 +541,8 @@ connections as reuse-first cast, and a lost one apart, its line saying how it
 was lost — issue #325 W37) · [6] matched entity cards (a connection's card also
 shows its goal, a lost or forged bond and its last three `history` events —
 C5) · [6.5] active-scene ledger
-(SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
+(SCENE FRAME — with the scene's question, kept for the scene and marked
+when answered, issue #353 R2 → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
 condition last — frame/truths/corrections/ship are
 never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
