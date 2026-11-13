@@ -17,6 +17,8 @@ import {
   formatSettlementPlanet,
   sanitizePlayerText,
   SCENE_LEDGER_FIELDS,
+  resolveNarrationPerspective,
+  sessionPerspectiveOf,
 } from './narratorPrompt.js';
 import { resolveRelevance, collectAllEntities, resolveEntityName, wholeWordPattern } from '../context/relevanceResolver.js';
 import { isCanonicalGM, hasKeyedActiveGM } from '../multiplayer/gmGate.js';
@@ -5801,14 +5803,15 @@ function audioMarkupEnabledFromSettings() {
 }
 
 /**
- * Read the narrator.spotlightRotation world toggle (issue #232). Defaults to
- * enabled when the setting is unregistered (early init, unit tests).
+ * Read the Rotating Spotlight world toggle (issue #232). Off unless the
+ * setting is stored on — its default since issue #354 P2-07 — and off when
+ * the setting is unregistered (early init, unit tests).
  */
 function spotlightRotationEnabledFromSettings() {
   try {
-    return game.settings.get(MODULE_ID, 'narratorSpotlightRotation') !== false;
+    return game.settings.get(MODULE_ID, 'narratorSpotlightRotation') === true;
   } catch {
-    return true;
+    return false;
   }
 }
 
@@ -5876,7 +5879,11 @@ function maybeAdvanceSpotlight(mode, campaignState, frameState = campaignState, 
         console.warn(`${MODULE_ID} | narrator: spotlight persist failed:`, err?.message ?? err));
     }
 
-    return buildSpotlightBlock(selection);
+    // "You" is the acting character alone in second person (issue #354 P2-08).
+    const perspective = resolveNarrationPerspective(getNarratorSettings().narrationPerspective, {
+      sessionPerspective: sessionPerspectiveOf(campaignState),
+    });
+    return buildSpotlightBlock(selection, { perspective });
   } catch (err) {
     console.debug?.(`${MODULE_ID} | narrator: spotlight build failed:`, err?.message ?? err);
     return '';

@@ -25,6 +25,7 @@ import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
 import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
 import { stakesShown } from '../moves/stakes.js';
+import { registerSpotlightDefaultSetting } from '../narration/spotlightDefault.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -339,12 +340,19 @@ export function registerSettings() {
 
   game.settings.register(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT, {
     name:    'Rotating Spotlight',
-    hint:    'In multiplayer scenes, when a beat ends by inviting action the narrator addresses its prompting question to a specific player character, rotating who it draws in across beats. A suggestion only — never gates play; any player may act at any time. No effect in solo play.',
+    hint:    'When a beat ends by inviting action, the narrator turns it toward a specific player character, rotating who it draws in across beats. A suggestion only — never gates play; any player may act at any time. It counts characters, not players: one player running two characters is rotated too. No effect with a single character. Off by default.',
     scope:   'world',
     config:  false,
     type:    Boolean,
-    default: true,
+    // Off by default (issue #354 P2-07): on, it named a character at the end
+    // of most beats — at a table of one player running two characters, the
+    // other one nearly every time.
+    default: false,
   });
+
+  // Whether the one-time switch-off of a stored Rotating Spotlight "on" has
+  // run in this world (issue #354 P2-07) — registered by its own module.
+  registerSpotlightDefaultSetting();
 
   game.settings.register(MODULE_ID, SETTING.VOW_SWEARING_SCENE, {
     name:    'Vow-Swearing Scene',
@@ -721,7 +729,7 @@ function getNarratorSessionSummary() {
 }
 
 function getNarratorSpotlight() {
-  return game.settings.get(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT) ?? true;
+  return game.settings.get(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT) ?? false;
 }
 
 function getVowSwearingScene() {
@@ -1680,9 +1688,9 @@ export class SettingsPanelApp extends ApplicationV2 {
         <div class="narrator-field">
           <label class="narrator-field-label">
             <input type="checkbox" name="narratorSpotlightRotation" ${ctx.narratorSpotlight ? 'checked' : ''} ${dis}>
-            Rotating spotlight (multiplayer)
+            Rotating spotlight (two or more characters)
           </label>
-          <span class="narrator-field-hint">When a beat invites action, the narrator addresses its prompting question to a specific player character, rotating who it draws in across beats. A nudge to keep everyone involved — never gates play; any player may act at any time. No effect in solo play.</span>
+          <span class="narrator-field-hint">When a beat invites action, the narrator turns it toward a specific player character, rotating who it draws in across beats. A nudge to keep everyone involved — never gates play; any player may act at any time. It counts characters, not players: one player running two characters is rotated too. Off by default.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">
@@ -2183,7 +2191,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       const contextRaw   = el.querySelector('[name="narratorContextCards"]')?.value;
       const contextCards = Math.max(1, Math.min(50, Number(contextRaw) || 20));
       const sessionSummary = el.querySelector('[name="narratorSessionSummary"]')?.checked ?? true;
-      const spotlight    = el.querySelector('[name="narratorSpotlightRotation"]')?.checked ?? true;
+      const spotlight    = el.querySelector('[name="narratorSpotlightRotation"]')?.checked ?? false;
       const vowScene     = el.querySelector('[name="vowSwearingNarration"]')?.checked ?? true;
       const instructions = el.querySelector('[name="narrationInstructions"]')?.value.trim() ?? '';
 

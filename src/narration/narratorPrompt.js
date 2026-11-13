@@ -1297,10 +1297,17 @@ const LEVITY_DESCRIPTIONS = {
 // bit hardest (every PC referred to by name AND pronoun); second person still
 // needs the rule for NPC dialogue ABOUT the player character.
 const PERSPECTIVE_DESCRIPTIONS = {
+  // "You" is one character for the whole card (issue #354 P2-08): a card said
+  // "you" of Isaac in its body and of Karthik in its close, and another mixed
+  // "Isaac's offer" with "watching you".
   second_person:
     'Address the player character directly as "you". e.g. "You feel the deck ' +
-    'shudder..." When other characters speak ABOUT the player character, use ' +
-    'the recorded pronouns from the CHARACTER section.',
+    'shudder..." "You" is the character in the CHARACTER section, for the whole ' +
+    'narration: never call them by name in narration (their name appears only ' +
+    'when another character says it in dialogue), and never call anyone else ' +
+    '"you" — every other player character is named, in the third person. When ' +
+    'other characters speak ABOUT the player character, use the recorded ' +
+    'pronouns from the CHARACTER section.',
   third_person:
     'Refer to characters by name. e.g. "Kira feels the deck shudder..." Use ' +
     'each character\'s recorded pronouns (CHARACTER, PARTY, and ENTITIES IN ' +

@@ -131,7 +131,32 @@ describe('buildSpotlightBlock', () => {
     expect(block).toContain('Kira is next');
     expect(block).toContain('"Kira, what do you do?"');
     expect(block).toContain('never a gate');
-    expect(block).toContain('follow the fiction');
+    expect(block).toContain('The fiction comes first');
+  });
+
+  // Issue #354 P2-07: two of the playtest's prompts named the rotation's PC
+  // right after an NPC had asked the other one a question, and one asked the
+  // player what their character's console showed.
+  it('ends on the character the last line of dialogue is spoken to, and never asks for facts', () => {
+    const block = buildSpotlightBlock(selectSpotlight({ roster: [A, B, C], lastActorId: null }));
+    expect(block).toMatch(/last line of dialogue is spoken\s+to a character, or asks one a question/);
+    expect(block).toMatch(/do not name Kira after it/);
+    expect(block).toMatch(/never what they see, read or find/);
+    expect(block).not.toContain('a question that fits their');
+    expect(block).not.toContain('This is a multiplayer scene');
+  });
+
+  // Issue #354 P2-08: in second person "you" is the acting character alone.
+  it('in second person brings the next PC in by name, inside the fiction, never as "you"', () => {
+    const selection = selectSpotlight({ roster: [A, B, C], lastActorId: null });
+    const block = buildSpotlightBlock(selection, { perspective: 'second_person' });
+    expect(block).toContain('Kira is next');
+    expect(block).toMatch(/in the third person/);
+    expect(block).toMatch(/never\s+address Kira as "you"/);
+    expect(block).not.toContain('"Kira, what do you do?"');
+    // Third person (and a perspective not given) keeps the named closing prompt.
+    expect(buildSpotlightBlock(selection, { perspective: 'third_person' })).toContain('"Kira, what do you do?"');
+    expect(buildSpotlightBlock(selection)).toContain('"Kira, what do you do?"');
   });
 
   it('lists the present player characters', () => {

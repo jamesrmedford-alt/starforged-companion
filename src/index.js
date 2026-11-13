@@ -176,6 +176,7 @@ import { serialiseCampaignStateWrite } from "./multiplayer/campaignStateChain.js
 import { openCorrectionDialog } from "./factContinuity/correctionDialog.js";
 import { handleFactContinuityCommand } from "./factContinuity/chatCommands.js";
 import { requestOracleNarration } from "./oracles/oracleFollowup.js";
+import { applySpotlightDefaultOff } from "./narration/spotlightDefault.js";
 import { inferShipPosition, inferShipPositionFromEntityId } from "./factContinuity/shipPosition.js";
 import {
   routePacedInput,
@@ -8611,6 +8612,10 @@ Hooks.once("ready", () => {
   if (isCanonicalGM()) {
     backfillLegacySheets().catch(err =>
       console.warn(`${MODULE_ID} | legacy sheet backfill failed:`, err?.message ?? err));
+    // Issue #354 P2-07: Rotating Spotlight is off by default — a world's
+    // stored "on" is switched off once, and its GMs told.
+    applySpotlightDefaultOff().catch(err =>
+      console.warn(`${MODULE_ID} | spotlight default switch-off failed:`, err?.message ?? err));
   }
   registerEntityRenameSyncHook();
   registerStarshipSeedHook();
