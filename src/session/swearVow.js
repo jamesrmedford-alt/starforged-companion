@@ -268,6 +268,9 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
       // The opening scene recorded who they are and what is at stake under
       // their name, before this card existed (issue #286 A3).
       await promoteNewEntityLedgerSubjects(meta.target.name, "connection", connection, campaignState);
+      // A connection made: their agenda is planned (issue #353 Phase 4).
+      const { planNpcAgenda } = await import("../world/secrets.js");
+      await planNpcAgenda(connection, { campaignState, trigger: "vow_target" });
     } catch (err) {
       console.error(`${MODULE_ID} | swearVow: vow-target connection create failed:`, err);
       ui?.notifications?.warn(
@@ -284,7 +287,8 @@ export async function swearSharedVowForAll(message, { speakerActorId = null } = 
   // oath being made. Dynamic import avoids a static narrator.js dependency cycle.
   try {
     const { narrateAndPostVowSwearing } = await import("../narration/narrator.js");
-    await narrateAndPostVowSwearing({ vow: plan.vow, campaignState, speakerActorId });
+    // The vow's id: its plan is about this vow (issue #353 Phase 4).
+    await narrateAndPostVowSwearing({ vow: { ...plan.vow, vowId: message.id }, campaignState, speakerActorId });
   } catch (err) {
     console.warn(`${MODULE_ID} | swearVow: vow-swearing scene failed:`, err?.message ?? err);
   }

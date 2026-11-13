@@ -7,7 +7,11 @@
 //   2. Contradictions     — Review / Override / Dismiss flagged lore; a
 //                           fact-continuity catch gets Correct… / Dismiss
 //   3. Active Threats     — change severity inline
-//   4. Journal Links      — open the underlying JournalEntries
+//   4. Secrets            — the narrative skeleton's hidden plans (issue
+//                           #353): each collapsed until clicked (in solo play
+//                           the GM is also the player); Open, Edit, Reveal
+//                           now, Retire
+//   5. Journal Links      — open the underlying JournalEntries
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
 import {
@@ -23,6 +27,8 @@ import {
   findEntryPage,
 } from './worldJournal.js';
 import { openCorrectionDialog } from '../factContinuity/correctionDialog.js';
+import { listSkeletons, getSkeleton, editSkeleton, revealSkeletonNow, retireSkeleton, skeletonsEnabled } from './secrets.js';
+import { SKELETON_KIND_LABELS, sameSubjectName } from './skeletons.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -38,6 +44,7 @@ const JOURNAL_LINKS = [
   { key: 'threats',    label: 'Threats Journal'  },
   { key: 'factions',   label: 'Factions Journal' },
   { key: 'sessionLog', label: 'Session Log'      },
+  { key: 'secrets',    label: 'Secrets Journal'  },
 ];
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,6 +71,10 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
       correctContradiction: WorldJournalPanelApp.#onCorrectContradiction,
       dismissContradiction: WorldJournalPanelApp.#onDismissContradiction,
       openJournal:        WorldJournalPanelApp.#onOpenJournal,
+      openSecret:         WorldJournalPanelApp.#onOpenSecret,
+      editSecret:         WorldJournalPanelApp.#onEditSecret,
+      revealSecret:       WorldJournalPanelApp.#onRevealSecret,
+      retireSecret:       WorldJournalPanelApp.#onRetireSecret,
     },
   };
 
@@ -71,11 +82,15 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
 
   async _prepareContext(_options) {
     const campaignState = readCampaignState();
+    const isGM = game.user?.isGM ?? false;
     return {
-      isGM:           game.user?.isGM ?? false,
+      isGM,
       pendingLore:    getNarratorAssertedLore(campaignState),
       contradictions: readContradictions(),
       threats:        getActiveThreats(campaignState),
+      // GM-only: the panel is, and the plans are (issue #353).
+      secrets:        isGM ? listSkeletons() : [],
+      secretsOn:      skeletonsEnabled(),
     };
   }
 
@@ -217,6 +232,68 @@ export class WorldJournalPanelApp extends foundry.applications.api.ApplicationV2
     await this.render({ force: true });
   }
 
+  // ── Secrets (issue #353) ────────────────────────────────────────────────────
+
+  static async #onOpenSecret(_event, target) {
+    const id = target?.dataset?.id;
+    if (!id || !game.user?.isGM) return;
+    const journal = findWorldJournal('secrets');
+    const page = (journal?.pages?.contents ?? []).find(p => p?.flags?.[MODULE_ID]?.[FLAG_KEYS.secrets]?.id === id);
+    if (!journal || !page) {
+      ui?.notifications?.warn('Starforged Companion: that plan is no longer in the Secrets journal.');
+      return;
+    }
+    journal.sheet?.render(true, { pageId: page.id });
+  }
+
+  static async #onEditSecret(_event, target) {
+    const id = target?.dataset?.id;
+    if (!id || !game.user?.isGM) return;
+    const record = getSkeleton(id);
+    if (!record) return;
+    const fields = await promptSecretEdit(record);
+    if (!fields) return;
+    const saved = await editSkeleton(id, fields).catch(err => {
+      console.error(`${MODULE_ID} | worldJournalPanel: editing the plan failed:`, err);
+      return null;
+    });
+    if (!saved) ui?.notifications?.warn('Starforged Companion: the plan was not saved — see the console.');
+    await this.render({ force: true });
+  }
+
+  static async #onRevealSecret(_event, target) {
+    const id = target?.dataset?.id;
+    if (!id || !game.user?.isGM) return;
+    const record = getSkeleton(id);
+    if (!record?.truth) {
+      ui?.notifications?.warn('Starforged Companion: nothing is decided about this yet — there is nothing to reveal.');
+      return;
+    }
+    const ok = await foundry.applications.api.DialogV2.confirm({
+      window:  { title: 'Reveal now' },
+      content: `<p>Tell the table what is true about <strong>${escapeHtml(secretTitle(record))}</strong>? It is posted to chat with the oracle rolls behind it, and becomes established lore.</p>`,
+      rejectClose: false,
+    }).catch(() => false);
+    if (!ok) return;
+    const revealed = await revealSkeletonNow(id).catch(err => {
+      console.error(`${MODULE_ID} | worldJournalPanel: revealing the plan failed:`, err);
+      return null;
+    });
+    if (!revealed) ui?.notifications?.warn('Starforged Companion: the plan was not revealed — see the console.');
+    await this.render({ force: true });
+  }
+
+  static async #onRetireSecret(_event, target) {
+    const id = target?.dataset?.id;
+    if (!id || !game.user?.isGM) return;
+    const retired = await retireSkeleton(id).catch(err => {
+      console.error(`${MODULE_ID} | worldJournalPanel: retiring the plan failed:`, err);
+      return null;
+    });
+    if (!retired) ui?.notifications?.warn('Starforged Companion: the plan was not retired — see the console.');
+    await this.render({ force: true });
+  }
+
   static async #onOpenJournal(_event, target) {
     const key  = target?.dataset?.journalKey;
     const name = JOURNAL_NAMES[key];
@@ -238,7 +315,9 @@ function buildPanelHTML(ctx) {
   const sections = [
     buildPendingLoreSection(ctx.pendingLore),
     buildContradictionsSection(ctx.contradictions),
-    buildThreatsSection(ctx.threats),
+    // A threat a hidden plan is about carries the GM's marker (issue #353 Phase 4).
+    buildThreatsSection(ctx.threats, ctx.isGM ? (ctx.secrets ?? []).map(r => r.subject?.name).filter(Boolean) : []),
+    ctx.isGM ? buildSecretsSection(ctx.secrets ?? [], ctx.secretsOn !== false) : '',
   ].join('');
 
   const links = JOURNAL_LINKS.map(l =>
@@ -316,7 +395,7 @@ function buildContradictionsSection(items) {
   return `${heading}<div class="sf-wj-entry-list">${rows}</div>`;
 }
 
-function buildThreatsSection(threats) {
+function buildThreatsSection(threats, plannedNames = []) {
   const heading = '<h3 class="sf-wj-section-heading">Active Threats</h3>';
   if (!threats.length) {
     return `${heading}<div class="sf-wj-empty-compact">No active threats.</div>`;
@@ -332,11 +411,102 @@ function buildThreatsSection(threats) {
     return `
 <div class="sf-wj-threat-row">
   <span class="sf-wj-badge ${cls}">${escapeHtml((t.severity ?? '').toUpperCase())}</span>
-  <span class="sf-wj-entry-title">${escapeHtml(t.name ?? '')}</span>
+  <span class="sf-wj-entry-title">${escapeHtml(t.name ?? '')}${plannedNames.some(n => sameSubjectName(n, t.name)) ? ' <span class="sf-plan-marker" title="The narrator holds a hidden plan for this (GM only)">◆</span>' : ''}</span>
   ${select}
 </div>`.trim();
   }).join('');
   return `${heading}<div class="sf-wj-threat-list">${rows}</div>`;
+}
+
+/** A plan's name in the panel: its question for a mystery, else its subject. */
+function secretTitle(r) {
+  return r?.kind === 'mystery' && r.question ? r.question : (r?.subject?.name ?? '');
+}
+
+/**
+ * The Secrets section (issue #353): each active plan collapsed to its kind and
+ * name until clicked — in solo play the GM is the only player, and seeing a
+ * plan spoils it — with Open, Edit, Reveal now and Retire.
+ */
+function buildSecretsSection(secrets, enabled) {
+  const heading = '<h3 class="sf-wj-section-heading">Secrets</h3>';
+  if (!secrets.length) {
+    const why = enabled ? 'No hidden plans yet.' : 'Narrative skeletons are off (Companion Settings → Narrator).';
+    return `${heading}<div class="sf-wj-empty-compact">${why}</div>`;
+  }
+  const field = (label, value) => (value ? `<div class="sf-wj-entry-text"><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</div>` : '');
+  const list = (label, items) => (items.length
+    ? `<div class="sf-wj-entry-text"><strong>${escapeHtml(label)}:</strong></div><ol class="sf-wj-secret-list">${items.map(i => `<li>${escapeHtml(i)}</li>`).join('')}</ol>` : '');
+  const rows = secrets.map(r => {
+    const state = !r.truth ? 'undecided' : (r.truthRevealed ? 'revealed' : 'hidden');
+    const id = escapeHtml(r.id);
+    return `
+<details class="sf-wj-entry sf-wj-secret" data-id="${id}">
+  <summary class="sf-wj-entry-meta">
+    <span class="sf-wj-badge">${escapeHtml((SKELETON_KIND_LABELS[r.kind] ?? 'Plan').toUpperCase())}</span>
+    <span class="sf-wj-entry-title">${escapeHtml(secretTitle(r))}</span>
+    <span class="sf-wj-entry-session">${state}</span>
+  </summary>
+  ${r.kind === 'mystery' ? field('About', r.subject?.name) : ''}
+  ${field(r.kind === 'mystery' ? 'Answer' : 'Truth', r.truth || 'Not yet decided — the narrator decides it from the oracle rolls.')}
+  ${field('Wants', r.wants)}
+  ${field('Knows', r.knows)}
+  ${list('Escalation', (r.escalation ?? []).map(e => `${e.text}${e.done ? ' (played)' : ''}`))}
+  ${list('Clues', (r.clues ?? []).map(c => `${c.text}${c.revealed ? ' (shown)' : ''}`))}
+  ${list('Could end', r.resolutions ?? [])}
+  ${field('Oracle rolls', (r.oracleSeeds ?? []).join('; '))}
+  <div class="sf-wj-action-row">
+    <button type="button" data-action="openSecret" data-id="${id}" title="Open its page in the Secrets journal">Open</button>
+    <button type="button" data-action="editSecret" data-id="${id}" title="Change what is true about it">Edit</button>
+    <button type="button" data-action="revealSecret" data-id="${id}" ${r.truth ? '' : 'disabled'}
+            title="Tell the table what is true about it (posted to chat; becomes lore)">Reveal now</button>
+    <button type="button" class="sf-wj-dismiss-btn" data-action="retireSecret" data-id="${id}"
+            title="Take it out of play — the narrator no longer sees it">Retire</button>
+  </div>
+</details>`.trim();
+  }).join('');
+  return `${heading}<div class="sf-wj-entry-list">${rows}</div>`;
+}
+
+/**
+ * The GM's edit of a plan: one field each, lists one item per line. Resolves
+ * the fields, or null when cancelled or closed (DialogV2.prompt settles on
+ * close — rules/foundry-api.md).
+ *
+ * @param {Object} r — the plan
+ * @returns {Promise<Object|null>}
+ */
+async function promptSecretEdit(r) {
+  const area = (name, label, value, rows = 2) =>
+    `<label><span>${escapeHtml(label)}</span><textarea name="${name}" rows="${rows}">${escapeHtml(value)}</textarea></label>`;
+  const lines = (items) => items.join('\n');
+  const content = `<form class="sf-secret-edit">
+    <label><span>Name in the story</span><input type="text" name="subject" maxlength="120" value="${escapeHtml(r.subject?.name ?? '')}"></label>
+    ${area('truth', r.kind === 'mystery' ? 'Answer' : 'Truth', r.truth, 3)}
+    ${area('wants', 'Wants', r.wants)}
+    ${area('knows', 'Knows', r.knows)}
+    ${area('escalation', 'Escalation (one step per line, in order)', lines((r.escalation ?? []).map(e => e.text)), 3)}
+    ${area('clues', 'Clues (one per line)', lines((r.clues ?? []).map(c => c.text)), 3)}
+    ${area('resolutions', 'Could end (one per line)', lines(r.resolutions ?? []), 2)}
+  </form>`;
+  const split = (v) => String(v ?? '').split('\n').map(t => t.trim()).filter(Boolean);
+  const result = await foundry.applications.api.DialogV2.prompt({
+    window:  { title: `Edit plan — ${secretTitle(r)}` },
+    content,
+    ok: {
+      label: 'Save',
+      callback: (_event, button) => {
+        const form = button.form;
+        const val = (n) => form?.querySelector(`[name="${n}"]`)?.value ?? '';
+        return {
+          subject: val('subject'), truth: val('truth'), wants: val('wants'), knows: val('knows'),
+          escalation: split(val('escalation')), clues: split(val('clues')), resolutions: split(val('resolutions')),
+        };
+      },
+    },
+    rejectClose: false,
+  }).catch(() => null);
+  return result && typeof result === 'object' ? result : null;
 }
 
 function escapeHtml(s) {
@@ -429,9 +599,9 @@ async function clearNarratorAssertion(title) {
 // Refresh — the open panel shows what another client's write changed
 // ─────────────────────────────────────────────────────────────────────────────
 
-// The entry pages the panel lists: Lore (its review queue) and Threats (each
-// active threat's severity).
-const PANEL_PAGE_FLAGS = [FLAG_KEYS.lore, FLAG_KEYS.threats];
+// The entry pages the panel lists: Lore (its review queue), Threats (each
+// active threat's severity) and Secrets (the hidden plans, issue #353).
+const PANEL_PAGE_FLAGS = [FLAG_KEYS.lore, FLAG_KEYS.threats, FLAG_KEYS.secrets];
 
 function isPanelPage(page, change = null) {
   const own = page?.flags?.[MODULE_ID];

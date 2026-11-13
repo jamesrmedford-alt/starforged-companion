@@ -17,7 +17,11 @@ Two cross-cutting facts to hold onto:
   at a table of several is told they need a character and nothing is rolled,
   issue #326 D8) drives the stat enrichment, the decisive-action
   cost and Face Defeat Pay the Price routes, and the won-fight card and reward
-  (decisions.md → "Multiplayer attribution").
+  (decisions.md → "Multiplayer attribution"). A miss that routes Pay the
+  Price pays the cost the Confirm dialog stated before the roll when there
+  is one (`moves/stakes.js` `statedPrice` → `postMovePayThePriceCard`'s
+  `stated`: no d100, its one suffer route dispatched as a rolled route is,
+  the same receipts on `ptpReversals`), else rolls the table (issue #353 R1).
 - **Card-button world writes run on the canonical GM.** The won-fight buttons
   (§4), Burn Momentum and Improve Result relay through `requestGmAction`
   (`src/multiplayer/gmRelay.js` `GM_ACTIONS` — serialised, one-shot per card,
@@ -150,7 +154,11 @@ included: matched by name only, issue #321 U16 / ENTER-FRAY-SOLE-FIGHT) →
 the actor's sheet field, and the combatant badge). A combat-track card posts
 (stakes line, **Battle instead** button on fresh tracks; flagged with the
 track's `trackId` / `trackLabel`, which Battle forwards) and the Foundry Combat
-doc opens with position/range badges.
+doc opens with position/range badges. A fight added by hand in the Progress
+Tracks panel can be linked to a vow at creation too — the add form's vow
+select (issue #353 R3): it carries `linkedVowName` and `linkedVowId`, and a
+won linked fight pays off as a threshold fight does (§4). A fight's link is
+not changed on its row afterwards.
 
 **Find another way** posts the way-out card (from the canonical GM, once per
 threshold card): the `WAY_OUT_PROMPT` nudge plus

@@ -31,7 +31,19 @@
  * (SIDECAR-UNFENCED).
  *
  * This module is pure — no I/O, no globals.
+ *
+ * The narrative skeleton's keys (issue #353): `plans` (the narrator's decision
+ * of what is true about a subject it was asked to decide, or a correction
+ * where its prose contradicted one), `openQuestions` (a question the prose
+ * poses that the characters are meant to answer) and `reveals` (what this
+ * beat showed of a plan — a clue, the truth, an escalation step played, an
+ * ending — Phase 2) and `countdown` (a countdown the prose started, made a
+ * tension clock — Phase 3). Normalised and bounded by
+ * src/world/skeletons.js, and applied on the canonical GM by
+ * src/world/secrets.js applyPlanSideData.
  */
+
+import { normalisePlans, normaliseOpenQuestions, normaliseReveals, normaliseCountdown } from '../world/skeletons.js';
 
 // Matches each complete ``` … ``` fence in the response. Group 1 is the
 // `json` info string when present (spaces before it allowed); group 2 is the
@@ -122,7 +134,7 @@ export function extractSidecar(rawText) {
 }
 
 // A line that opens a bare sidecar object: `{` and, first, one of its keys.
-const BARE_SIDECAR_START = /(^|\n)[ \t]*\{\s*"(?:newTruths|stateChanges|sceneFrame)"\s*:/g;
+const BARE_SIDECAR_START = /(^|\n)[ \t]*\{\s*"(?:newTruths|stateChanges|sceneFrame|plans|openQuestions|reveals|countdown)"\s*:/g;
 
 /**
  * The sidecar object written with no fence: the first line, from the end of
@@ -179,9 +191,13 @@ function stripBlocks(rawText, blocks) {
 export function normaliseSidecar(parsed) {
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
   return {
-    newTruths:    Array.isArray(parsed.newTruths)    ? parsed.newTruths    : [],
-    stateChanges: Array.isArray(parsed.stateChanges) ? parsed.stateChanges : [],
-    sceneFrame:   normaliseSceneFrame(parsed.sceneFrame),
+    newTruths:     Array.isArray(parsed.newTruths)    ? parsed.newTruths    : [],
+    stateChanges:  Array.isArray(parsed.stateChanges) ? parsed.stateChanges : [],
+    sceneFrame:    normaliseSceneFrame(parsed.sceneFrame),
+    plans:         normalisePlans(parsed.plans),
+    openQuestions: normaliseOpenQuestions(parsed.openQuestions),
+    reveals:       normaliseReveals(parsed.reveals),
+    countdown:     normaliseCountdown(parsed.countdown),
   };
 }
 
@@ -190,7 +206,8 @@ export function normaliseSidecar(parsed) {
  * see docs/narrator/narrator-memory-architecture.md). Shape:
  *
  *   { "location": "Lyra's graveyard", "present": ["Venri Quint", "Vance"],
- *     "situation": "Hailing Vance across the debris field" }
+ *     "situation": "Hailing Vance across the debris field",
+ *     "question": "Will Vance let them board?", "questionAnswered": false }
  *
  * Returns null when absent or unusable so callers can keep the previous
  * frame. String fields are trimmed; `present` keeps non-empty strings only.
@@ -203,5 +220,15 @@ function normaliseSceneFrame(frame) {
     ? frame.present.filter(p => typeof p === 'string' && p.trim()).map(p => p.trim())
     : [];
   if (!location && !situation && !present.length) return null;
-  return { location, present, situation };
+  // The scene's question — what is being decided here — and whether this
+  // beat answered it (issue #353 R2; kept by ledgers.applySceneFrame).
+  const question  = typeof frame.question === 'string' ? frame.question.replace(/\s+/g, ' ').trim().slice(0, SCENE_QUESTION_MAX) : '';
+  return {
+    location, present, situation,
+    ...(question ? { question } : {}),
+    ...(frame.questionAnswered === true ? { questionAnswered: true } : {}),
+  };
 }
+
+/** The longest scene question kept (a question, not a paragraph). */
+const SCENE_QUESTION_MAX = 160;

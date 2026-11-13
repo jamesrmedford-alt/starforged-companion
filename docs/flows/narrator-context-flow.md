@@ -39,7 +39,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
 - **Move narration** (`narrateResolution`) runs inside the move pipeline, on
   the canonical GM — which `isCanonicalGM()` prefers to be a GM that
   advertised a Claude key (world setting `keyedGmUserIds`,
-  `src/multiplayer/gmGate.js`).
+  `src/multiplayer/gmGate.js`). Its user message (`buildNarratorUserMessage`)
+  is RECENT SCENE, MOVE OUTCOME, then STAKES STATED BEFORE THE ROLL — the
+  interpreter's hit and miss lines the Confirm dialog showed
+  (`resolution.stakes`, `moves/stakes.js` `formatStakesBlock`) and which one
+  this outcome delivers (issue #353 R1; a burn's or an improvement's
+  re-narration carries them) — then the player's line.
 - **A Batch Mode round's narration** (`narrateRound`, mode
   `round_resolution`, issue #340) runs once per round in the round driver
   (`src/batch/driver.js`) on the canonical GM, under the move lock, after
@@ -63,8 +68,9 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   Z36); no SPOTLIGHT (`round_resolution` is not in
   `SPOTLIGHT_MODES`). The user message (`buildRoundUserMessage`) is RECENT
   SCENE, then THIS ROUND — each acting entry in confirm order with its move,
-  stat, outcome, outcome text and price, oracle seeds, the player's sanitised
-  line and a latitude line — and the instruction to act for no one else and
+  stat, outcome, outcome text and price, the stakes shown before its roll
+  (`narrationInputFrom`'s `stakes`, issue #353 R1), oracle seeds, the
+  player's sanitised line and a latitude line — and the instruction to act for no one else and
   remark on no one who didn't act. Who sat the round out is never sent.
   Perspective "auto" is third person whenever two or more PCs act, whoever is
   connected (`resolveNarrationPerspective`'s `actingCharacters`, from the
@@ -99,7 +105,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   keyless → the usual "key not configured" fallback). Every client reads the
   same setting and user list, so they agree on the runner.
 - **Oracle follow-ups** (after `!oracle yes`, `!oracle <tableId>` and
-  `!pay-the-price`; a move's routed Pay the Price has none — its price seeds
+  `!pay-the-price` — a price that reveals a new enemy is told its Character
+  Role + Goal + Disposition, rolled where it is narrated and never put on the
+  raw card — and after a weak hit's chosen complication, whose card
+  (`sufferDialog.js` `postChosenComplication`, kind `complication`; a
+  waypoint's peril rolled on Spaceborne Peril) the narrator plays at once as
+  its own beat, issue #353 Phase 0; a move's routed Pay the Price has none — its price seeds
   the move's own narration, issue #325 W03 — nor does a routed `!ptp` price
   nobody pays, a PC-less player's at a table of several: its card says it was
   not applied and carries no `oracleNarration` or `oracleMemory`,
@@ -175,7 +186,9 @@ what the main narrator knows, rendered by the same section formatters
 (`buildPrivateChannelStory` → `buildSharedStorySections`): world truths and the
 campaign premise in its cached prefix; LAST SESSION, STORY SO FAR, the cards of
 the recorded entities the message or the scene frame names (lexical, plus
-`addSceneFrameCast`) and the scene ledger in the per-turn message. Its
+`addSceneFrameCast`), the scene ledger and the hidden plans in play (the
+narrative skeleton's UNREVEALED, decided plans only and no instruction to
+write — issue #353, decided) in the per-turn message. Its
 character is the player's own PC (`resolveUserActorId` — never another
 player's; with none of their own in a multi-PC game the window says "Set up
 your character first", issue #321 U23), and the transcript it sends is the
@@ -468,8 +481,23 @@ campaign recap (a session's first narration in any prose mode, from
 B04) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
 U08) · **[1b] X-Card redirect** (prose modes, until the first narration after
 a GM resumes has posted — issue #321 U07, above) · [2] permission-class latitude · [2.5]
-Battle Stations · [3] oracle seeds (move-provided only; a routed Pay the
-Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03) · **[3b] recent
+Battle Stations · **[2.6] THE VOW THIS SCENE SERVES** (issue #353 R3 — the
+beat modes only: move, paced, round, @scene, oracle follow-up;
+`buildNarratorExtras` → `extras.sceneVow`, `session/openThreads.js`
+`readSceneVow` over every PC's vows (actorBridge), the open tracks [4j] reads
+and the session's focus [4i]: an open track's linked vow — a fight, then a
+scene challenge, then an expedition; a `linkedVowId` names the vow whatever
+it is called now — else a quest focus naming one open vow, else the only
+quest in play, else the only open vow; nothing else is guessed. The vow, its
+rank, progress and holders and why it is the scene's, and one instruction:
+show what a beat achieves toward it, never its track, progress or a
+milestone — `formatSceneVowBlock`; `vow-flow.md` §3) · [3] oracle seeds (move-provided only; a routed Pay the
+Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03; the
+"envision" outcomes roll theirs once in `buildOracleSeeds` — Gather
+Information's Story Clue / Story Complication, a Compel weak hit's Action +
+Theme counteroffer, an Undertake an Expedition hit's region Space Sighting,
+and a price that reveals a new enemy its Character Role + Goal + Disposition,
+`priceSeedLines` — issue #353 Phase 0) · **[3b] recent
 oracle results** (`campaignState.recentOracles`, read from the store — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, and the at-0
 choice card's mortal-wound / desolation roll — the table's one roll, no move
@@ -502,7 +530,10 @@ Session foci, kept as `sessionFocus` at Begin Session — C5) · **[4j] open
 progress tracks** (the open fights, expeditions and scene challenges in the
 Progress Tracks journal, `listOpenProgressTracks` — a fight with its
 objective, position and linked vow, at most six; skipped for the recap.
-Issue #290: only the retired assembler had rendered them, TRACKS-UNPORTED)
+Issue #290: only the retired assembler had rendered them, TRACKS-UNPORTED;
+an expedition or a scene challenge linked to a vow, issue #353 R3, says it
+serves the vow — "seeing it through is a step toward" it, a fight's win "a
+milestone on" it)
 · [5] current location card · [5b]
 active-sector anchor (each settlement with its planet and stellar object, as
 its card shows them — `formatSettlementPlanet`, issue #321 U51; the sector's
@@ -510,10 +541,32 @@ connections as reuse-first cast, and a lost one apart, its line saying how it
 was lost — issue #325 W37) · [6] matched entity cards (a connection's card also
 shows its goal, a lost or forged bond and its last three `history` events —
 C5) · [6.5] active-scene ledger
-(SCENE FRAME → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
+(SCENE FRAME — with the scene's question, kept for the scene and marked
+when answered, issue #353 R2 → TRUTHS → **CORRECTED** → STATE → SHIP POSITION;
 `maxLedgerTokens` sheds state only, line by line with location / vessel /
 condition last — frame/truths/corrections/ship are
-never dropped) · ([7], a legacy count of `connectionIds` that counted a
+never dropped) · **[6.6] UNREVEALED** (the narrative skeleton, issue #353:
+`buildNarratorExtras` → `extras.unrevealed`, the active plans of the GM-only
+Secrets journal whose subject is in play — made in this scene, its entity
+matched or in the frame's cast, its name in the frame or the player's line,
+`skeletons.js` `selectRelevantSkeletons` — an immediate World Journal threat's
+plan every beat, Phase 2; an open expedition's plan, a finished one's in the
+narration that finishes it, and the plan a clock vignette or a chosen
+complication plays, Phase 3; the plan of the vow the scene serves
+(`extras.sceneVow`, R3), and a vow's in the Fulfill Your Vow that scores it
+(its `vowId` on `endingTrackIds`), Phase 4 —
+at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,
+the plans this narration's seeds ask it to decide: a price that revealed a
+new enemy, an expedition begun, a Make a Discovery's or Confront Chaos's find,
+a vow's swearing scene (Phase 4) — each with its one re-roll (`reroll`, for
+a result that contradicts the story; decisions.md "one re-roll"). Decided plans read
+as truths never to state outright, with the reveal rule; undecided ones and the
+requests list under DECIDE NOW with their oracle rolls, only when the sidecar
+is on; every prose mode, never a meta one; `formatUnrevealedBlock`. Outside
+the prompt, the plans are read by one player-facing surface: the Session
+panel's What's open — a mystery's question while its truth is hidden, a
+revealed threat's or NPC agenda's subject and wants, no other field;
+`ui/sessionPanel.js`, issue #353 R4) · ([7], a legacy count of `connectionIds` that counted a
 lost connection as active, is retired — issue #331 X29) · [8]
 CHARACTER STATE (vows and bonds with progress and their rank by name — issue
 #321 U62 — granted rewards — C5 — and the PC's newest five pinned Chronicle
@@ -685,7 +738,23 @@ unknown keys dropped; an unclosed fence's tail is stripped and parsed — a
 complete object applies, a truncated one is a parseError and is discarded; a response with
 **no fence at all now warns** in `applyNarratorSidecar` — the sidecar is
 mandatory, so a missing fence is a lost frame update, not a quiet no-op) →
-`applyNarratorSidecar` (canonical-GM only): truths append **with dedup**
+`applyNarratorSidecar` (canonical-GM only; the narrative skeleton's keys —
+`plans` and `openQuestions`, normalised by `src/world/skeletons.js` — go to
+`secrets.js` `applyPlanSideData`, which files the narration's requested plans
+— as decided, or with their rolls alone — decides or corrects the plans it was
+shown by id, turns a posed question into a mystery whose answer it rolls,
+and marks what the beat showed — `reveals`: a clue, a step played, an ending,
+the truth itself, which becomes a ledger truth of the narration's own
+(`revealedTruthsOf`) and confirmed lore, its oracle rolls then shown — Phase 2;
+a decided threat plan gets its escalation clock, a `countdown` becomes a clock
+tied to its plan (or a new mystery) and offers the GMs a scene challenge, and
+what a clock vignette or a chosen complication was made to play (`ctx.reveals`)
+is marked played whatever the sidecar says — Phase 3; a narration a burn or
+improvement supersedes takes back its plan writes and clocks with its ledger
+entries (`retractSupersededNarrations`);
+each write stamped with the narration's id, which the X-Card's
+`undoNarrationEntries` takes back; a relayed sidecar carries its plan requests,
+issue #353 Phase 1): truths append **with dedup**
 (subject + normalised fact; a match against a *retracted* truth blocks the
 append — the correction stands) / state supersede per subject+attribute
 (`ledgers.js`), subjects resolved against `collectAllEntities` (passed

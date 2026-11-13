@@ -6,6 +6,495 @@ rejected.
 
 ---
 
+## The narrative skeleton, Phase 4: NPC agendas, vows and discoveries planned; the GM's "has a plan" markers (2026-11)
+
+**Decision:** (issue #353 Phase 4, "When a skeleton is made" and "What the
+GM sees".)
+- **A connection made gets an agenda plan** — Make a Connection's
+  auto-create, a named NPC the GM confirmed from the draft card, the inciting
+  vow's target (`planNpcAgenda`): an `npcAgenda` plan about the NPC's card
+  by its id, its rolls their goal and role (the seed's), a Character
+  Disposition and an Action + Theme for what they hide. Its truth is left to
+  the next narration they are in (DECIDE NOW), not decided at creation — the
+  capture that made them has no narration left to write it. One plan an NPC
+  (by card id, or by name); the canonical GM's; stamped with the capture's
+  narration, so the X-Card that takes the card away takes the plan too.
+- **A vow sworn is asked what is really behind it** (`vowPlanRequest`: an
+  Action + Theme): its swearing scene decides the `vow` plan, about the vow
+  by its stable `vowId`. No scene (switched off, no key, a failure): the
+  request is filed with its roll alone (`fileRequestedPlan`) for a later
+  narration to decide. A vow's plan is in play while its vow is **the one
+  this scene serves** (R3's ladder, `openThreads.readSceneVow`: an open
+  track's linked vow, the session's quest focus, or the only vow in play —
+  matched by the vow's id across its copies, or its name), when the fiction
+  names it, and in the narration of the **Fulfill Your Vow** that scores it
+  (its `vowId` among the tracks the beat ends — `endingTrackIds`, as Finish
+  an Expedition's track) — never every open vow every beat (with three vows
+  open they would crowd out the scene's plans).
+- **Make a Discovery and Confront Chaos keep what their find means**: their
+  oracle rolls (less any price) ask the narration for a `discovery` plan,
+  decided with the beat that shows the find.
+- **"Has a plan" markers** (decided: plans hidden from players; the GM sees
+  they exist): an NPC card's row in the Entities panel, an expedition's row
+  in the Progress Tracks panel and a threat's row in the World Journal panel
+  show a small ◆ on a GM's client only — no content (`plannedSubjects`:
+  ids and names, never truths). A player's client never builds them.
+- **A subject's name with filler inside** ("Free the Kessan miners") is
+  found in its own words — the matcher dropped filler from the name but not
+  from the passage, so such a name never matched its own text.
+
+**Reason:** the issue's triggers name a connection made, a vow sworn and a
+discovery made; without a plan, an NPC's motive, a vow's real stakes and a
+find's meaning are improvised fresh each beat — the drift this issue exists
+to stop.
+
+**Rejected:** *deciding an NPC's agenda at creation with a Claude call of
+its own* — the decided design is the narrator's sidecar first, a planning
+call only if that proves too thin. *Every open vow's plan in every beat* —
+the token cap would drop the scene's own plans. *Markers that show the
+plan's kind or a hint* — any content on a shared screen leaks it.
+
+---
+
+## The narrative skeleton, Phase 3: plans paced by clocks, countdowns made real, expeditions planned (2026-11)
+
+**Decision:** (issue #353 Phase 3, "Tie-ins to existing mechanics".)
+- **Threat ↔ clock.** A decided threat plan with an escalation step gets a
+  clock it owns (`planId` on the clock, `clockId` on the plan): a threat the
+  fiction revealed is the scene's — a 4-segment **tension** clock, turned by
+  each Pay the Price; a significant World Journal threat is the campaign's —
+  a 6-segment **campaign** clock, rolled at Begin a Session. At most
+  `MAX_PLAN_CLOCKS` (4) plan clocks run at once (every tension clock turns
+  on each price). When the clock fills, its trigger vignette plays the plan's
+  next step — **marked played by code** (the vignette's `reveals`, added
+  whatever its sidecar says), not left to the model — and the clock goes back
+  to empty for the step after, or retires when none is left. A countdown's
+  mystery with no step left plays its answer coming out.
+- **A countdown the prose starts is a real clock** (the sidecar's
+  `countdown` — the trigger table's "a countdown introduced in the
+  fiction"): tied to the plan its `about` names (by id, or its subject's
+  name), else a new mystery — "What happens when <it> runs out?", its answer
+  rolled and decided by the next narration. One clock a plan; a countdown of
+  a running clock's name is not made again.
+- **The standoff ↔ scene challenge.** A countdown made in a scene with no
+  scene challenge open offers the GMs one (`sceneChallengeOffer.js`): a
+  whispered card whose **Begin the scene challenge** makes the track with
+  the countdown's clock as its tension clock (`addProgressTrack`'s
+  `tensionClockId` — no second clock). A GM's press, claimed once on the
+  card, run on the canonical GM (gmRelay `sceneChallenge.begin`). Scenes stay
+  manual (R2, decided): the module offers the challenge, never ends a scene.
+- **A narration's clocks and plans leave with it.** A clock a narration
+  started carries its `narrationId`: the X-Card's pause write drops it, and a
+  narration a **Burn Momentum or Improve Result supersedes** takes back its
+  plan writes and its clocks too (`retractSupersededNarrations` →
+  `undoNarrationEntries(ids, { categories: ["secrets"] })` and
+  `removeClocksMadeBy`) — the price that revealed a new enemy, or the trigger
+  a rewind undid, did not happen. (Before this, a burned narration's plan
+  stayed in play.)
+- **Expedition ↔ progress track.** An expedition an Undertake an Expedition
+  begins asks its narration to plan it (`expeditionPlanRequest`: two Space
+  Sightings of the region for waypoint ideas, an Action + Theme for the
+  end), about the track by id: its truth is what waits at the end, its clues
+  the waypoints in order, its escalation the danger along the way. It is in
+  play while the track is open, and in the narration of the Finish an
+  Expedition that completes it (`endingTrackIds`), told to reveal the end.
+- **A chosen complication** plays the in-scene plan's next escalation step —
+  a waypoint's peril the open expedition's — so it has something concrete to
+  be; marked played with the complication's beat.
+- **Ask the Oracle consults the plan** (decided, every Mischief setting): a
+  yes/no whose question names a decided plan's subject is rolled at odds one
+  Haiku call sets from the plan's truth (`oracleConsult.js`), so the answer
+  cannot contradict it. Only a GM's roll: `!oracle yes` is rolled on the
+  typing client, and the plans are the GM's (known-issues
+  ORACLE-CONSULT-PLAYER-ROLL). Fail-open: the player's odds stand.
+
+**Reason:** the playtest's count and pulse ran ten beats with no clock
+behind them, and its hour-long standoff never became the structure
+Starforged has for it. A plan that escalates only when the narrator
+remembers to does not escalate.
+
+**Rejected:** *every tension clock for every plan* — each price turns them
+all; capped, and a campaign-level threat paces on the campaign clock.
+*Leaving a played step to the model's sidecar* — a vignette written to play
+the step is the step. *Moving every player's yes/no to the GM* — a routing
+change beyond this issue; recorded as the residual.
+
+---
+
+## The narrative skeleton, Phase 2: reveals follow move outcomes; a revealed truth is a stated fact; significant threats are planned (2026-11)
+
+**Decision:** (issue #353 Phase 2.)
+- **The sidecar's `reveals`** records what a beat showed of a plan, by the
+  ids UNREVEALED lists (`[c1]` a clue, `[e1]` an escalation step): clues
+  shown, the truth revealed (`"truth"`), the step it played, and
+  `resolved` when the subject's story ends. Only what the beat actually
+  showed — a beat that does not touch a subject leaves it alone. Applied on
+  the canonical GM, stamped with the narration's id; the X-Card restores the
+  plan to its version before (`undoNarrationEntries`).
+- **A revealed truth becomes a stated fact**: a truth of the narration's own
+  in the scene ledger (`revealedTruthsOf`, added to its `newTruths` before
+  `applySidecar`) and confirmed lore, both stamped with its id, so the X-Card
+  retracts them with the reveal. The oracle rolls behind it are then shown to
+  the table (decided: hidden until revealed) — a card the X-Card leaves
+  (known-issues SECRET-ROLLS-CARD-XCARD).
+- **A resolved plan leaves play** (`status: "resolved"`): it is no longer
+  shown to the narrator, and stays in the journal.
+- **A threat recorded at significant salience or above gets a plan**
+  (`planSignificantThreat`, from the detection pass's
+  `routeWorldJournalResults`): its subject is the threat page, by id; its
+  agenda is rolled on Action + Theme and its truth decided by the next
+  narration it is in play for. Rated explicitly — the capture gate lets an
+  unrated threat through, the plan does not. A plan already filed under its
+  name (a new enemy the narration named) is linked to the page instead of a
+  second one.
+- **An immediate threat's plan is in play every beat** (relevance, by the
+  World Journal threat's name); any other plan only when its subject is.
+- **The planning call is still not built** (decided: only if the sidecar
+  proves too thin; nothing has shown that yet).
+
+**Reason:** issue #353's "Reveals follow move outcomes" and "Reveal
+tracking": a plan that is never marked revealed is replayed as a fresh
+mystery, and a reveal that is not a stated fact can be contradicted the next
+beat.
+
+**Rejected:** *reveal one clue per beat* — the issue's own revision: a reveal
+on every beat would spend the plan in a few turns; reveals follow the
+outcomes of moves that touch the subject. *A rolls card the X-Card deletes*
+— a new X-Card path for a card that names no removed content.
+
+---
+
+## The narrative skeleton: hidden plans in a GM-only Secrets journal, decided by the narrator, played toward (2026-11)
+
+**Decision:** (issue #353 Phase 1; every question in the issue was settled by
+the maintainer on 2026-11-13.) When the fiction introduces something that
+carries a mystery, a threat or an arc, what is true about it is decided at
+that moment, kept where players don't see it, and handed to the narrator as
+unrevealed:
+- **The store** is the World Journal — Secrets journal: one page per plan,
+  its record in the page's `secretEntry` flag (`src/world/skeletons.js` the
+  shape, `src/world/secrets.js` the store). The journal is made with **no
+  player permission** (`worldJournal.js` `GM_ONLY_CATEGORIES`). A plan links
+  to its subject **by id** where it has one (a scene, an entity, a track, a
+  vow), its name being the fiction's.
+- **Writes from narration run on the canonical GM** (`applyPlanSideData`,
+  called from the sidecar apply — a relayed sidecar's too, with the plan
+  requests it was given) and are **stamped with the narration's id**, so the
+  X-Card takes a plan back with the narration that made it, and restores the
+  version before a narration that changed it (`undoNarrationEntries` covers
+  the Secrets journal). The GM's Secrets panel writes on any GM, and the GM
+  then owns the plan.
+- **Who decides a plan: the narrator, in its own sidecar** (decided). The
+  sidecar gains `plans` (a decision, by the id it was shown) and
+  `openQuestions` (a question the prose poses that the characters are meant
+  to answer). A narration is asked to decide (UNREVEALED → DECIDE NOW) the
+  plans its seeds introduced — a price that revealed a new enemy, by ref, with
+  its Character Role / Goal / Disposition — and any plan whose rolls are in
+  but whose truth is not. If it decides none, the plan is filed with its rolls
+  alone and the next narration where it is in play is asked ("keep the raw
+  rolls as the skeleton"). **The planning call is not built**: it is built
+  only if the sidecar proves too thin (decided).
+- **A posed question is a mystery**: its hidden answer is rolled once (Action
+  + Theme and Descriptor + Focus) and decided by the next narration it is in
+  play for. The same question posed again in the scene is the same mystery.
+- **The narrator sees** [6.6] UNREVEALED: the active plans whose subject is
+  in play (made in this scene; its entity matched or in the frame's cast; its
+  name in the frame or the player's line — at most four, capped at
+  `UNREVEALED_MAX_TOKENS`), with the rule: never state one outright; reveals
+  follow move outcomes (a hit shows a clue or moves it toward an ending, a
+  weak hit a clue with a complication, a miss its next escalation step); a
+  beat that does not touch a subject leaves it alone; a refusal made twice is
+  answered on the third beat by a reveal, a trade or an escalation.
+- **How binding a plan is: guidance** (decided). A narrated fact wins: the
+  narrator records the change in `plans`, and the plan is updated to match. A
+  plan is never the source of a contradiction card.
+- **Which plans are made: automatically, when a trigger fires** (decided).
+  Phase 1's triggers are a new enemy and a posed question. There is no "Plan
+  this" button, command, or Regenerate (deferred); a plan can be edited by
+  hand in the Secrets panel.
+- **Plan visibility** (decided): the World Journal panel's Secrets section
+  lists each plan collapsed until clicked — in solo play the GM is the only
+  player — with Open, Edit, Reveal now and Retire.
+- **Hidden oracle rolls** (decided): GM-only until the plan's truth is
+  revealed, then shown ("the oracle said: …" on the GM's Reveal now card). The
+  world setting **Show hidden oracle rolls** (`narrativeSkeletonsShowRolls`,
+  default off) posts them when a plan is made. No hidden roll is on a
+  player-visible card or a card's flags otherwise
+  (`tests/unit/secretsStayHidden.test.js`).
+- **The Private Channel reads plans** (decided), under the same
+  never-state-outright rule and with no instruction to write (it emits no
+  sidecar).
+- **The world setting Narrative skeletons** (`narrativeSkeletons`, default
+  on): off, nothing is planned and no plan is shown to any narrator.
+
+**Supersedes CONN-BACKGROUND-UNWRITTEN for secrets.** That entry retired a
+connection's `secrets` field because nothing wrote or read it. What an NPC
+hides now has a writer and a reader — a plan in the Secrets journal, linked to
+the NPC by id (its agenda plans arrive with Phase 4) — not a field on the
+connection record, which stays retired.
+
+**Reason:** the alpha 23 playtest's hour of circular dialogue — a new enemy
+with no nature or goal, an escort asking an unanswerable question three
+times, a count with no clock behind it. Every beat re-improvised its mysteries
+because nothing held what was true but not yet revealed; the stores that
+existed (the ledger, the summary, lore) hold only what was stated.
+
+**Rejected:** *campaignState as the store* — it is sent whole to every
+client and written by many writers; a GM-only journal keeps plans out of
+players' journal directory and off the write chain. *A planning call first*
+— the maintainer chose the narrator's own sidecar; one call both narrates and
+plans, and the call is built only if that proves too thin. *Asking the
+narrator to plan anything it likes* — plans are made when a trigger fires.
+
+---
+
+## Oracles behind the scenes: the "envision" outcomes roll their table once (2026-11)
+
+**Decision:** (issue #353 Phase 0, "Where to roll".) Where a move's outcome
+says to envision something, the resolver rolls the matching table once and
+the narration is given the result as an oracle seed, as the eight seeded moves
+already were:
+- **Gather Information**: a hit → Story Clue (what you learn); a weak hit also
+  → Story Complication (how it complicates the quest); a miss → Story
+  Complication (the unwelcome truth). The miss's Pay the Price stays the
+  pipeline's card.
+- **Compel**, weak hit → Action + Theme (their counteroffer).
+- **Undertake an Expedition**, hit → the active sector's region's Space
+  Sighting (the waypoint reached); Terminus with no active sector.
+- **A Pay the Price that reveals a new enemy** (the 45–50 row, or a leaf of a
+  "Roll twice") → Character Role + Goal + Disposition, wherever the price is
+  narrated: the move's own price seed (`withPayThePriceSeed`, so the
+  pipeline's routed price and Sojourn's choice price both), the advisory price
+  of a miss that routes none, the Pay the Price move, and a `!ptp` / `!oracle
+  pay_the_price` follow-up — rolled there, on the narrating client, and never
+  put on the raw card the table reads.
+- **A chosen complication is played as its own beat.** A weak hit's
+  complication option ("Peril at the waypoint", "Complication at
+  destination", Forsake Your Vow's "Narrative cost") posts its card as the
+  module's own oracle card (`oracleCommandCard`, `oracleNarration` kind
+  `complication`) and asks for the oracle follow-up, which the keyed canonical
+  GM narrates once and the X-Card can take back (its card names the raw card,
+  `oracleCardId`). A waypoint's peril is rolled on Spaceborne Peril first; its
+  roll is on the card and in RECENT ORACLE RESULTS. The other scopes roll
+  nothing.
+
+No other outcome rolls one: a beat that is not one of these plays what the
+story holds.
+
+**Reason:** in the alpha 23 playtest's corridor scene the narrator filled
+every "envision" from its own defaults, so the same images recurred for an
+hour, "A new enemy is revealed" became a voice with no nature or goal, and a
+chosen "Peril at the waypoint" never arrived — its card only promised that the
+narrator would "surface" it, and nothing read it (produced-but-dead,
+rules/reachability.md §1). Starforged's own answer to "what does this mean?"
+is to ask an oracle.
+
+**Rejected:** *a roll on every beat* — unrelated random results each turn
+make the story less coherent, not more; *a pending complication on
+campaignState for the next narration* — a new store and its X-Card undo, where
+the follow-up beat already delivers at once and is X-Card aware; *rolling the
+enemy's tables on the `!ptp` card* — the card is the table's to read, and the
+rolls create the enemy's hidden truth (Phase 1).
+
+---
+
+## The narrative skeleton: one re-roll when a roll contradicts the story (2026-11)
+
+**Decision:** (issue #353 "Rules for these rolls": "one re-roll when the
+interpretation step says a result contradicts established facts".) The
+narrator is the interpretation step (decided: its own sidecar first, no
+planning call), so the re-roll is rolled in code ahead of it: every plan
+awaiting its decision carries one — a request gets it when its narration's
+extras are built (`narrator.js` → `secrets.rollReroll`), a plan filed with
+rolls and no truth gets it when it is filed (`createSkeleton`). DECIDE NOW
+shows it beside the plan's rolls with the rule; a deciding plan that uses it
+names the result it replaced (`"rerolled"`), and `applyPlanToSkeleton` keeps
+"Re-rolled in place of …" with the plan's rolls and spends it. One at most:
+an unused re-roll is dropped once the plan is decided, and a correction to a
+decided plan re-rolls nothing. Like every hidden roll, it is shown with the
+plan's rolls when its truth comes out.
+
+**Reason:** a stored truth is binding; a roll that contradicts what the
+table has already seen must not be forced into it, and one fresh roll —
+not an unlimited reroll until it fits — keeps the oracle honest.
+
+**Rejected:** *a second model call to re-interpret* — the sidecar-first
+decision. *Re-rolling the same table* — a request's seeds are lines of
+several tables; an Action + Theme is Starforged's general "what does it
+mean?" oracle and fits any subject.
+
+---
+
+## Issue #353 R2: each scene has a question; scenes stay manual (2026-11)
+
+**Decision:** (issue #353 R2; decided, maintainer 2026-11-13: scenes stay
+manual — a scene ends only at `!scene end` or with the session; the module
+does not end one and does not offer to; a narrator-proposed end is deferred.)
+- **The scene frame carries the scene's question** — what is being decided
+  here, in a few words (`sceneFrame.question`). The narrator sets it on the
+  scene's first beat; the module keeps it (`ledgers.applySceneFrame`): a later
+  snapshot cannot reword it, so a beat cannot quietly move the scene's goal.
+- **An answer cuts forward.** The beat that answers it marks it
+  (`questionAnswered`) and is told to end on a cut forward — to the
+  consequence, the next place or a later hour — not another exchange in the
+  same room. The next beat sets the question the scene turns on now; until
+  then SCENE FRAME shows the answered one, marked.
+- **It lives and dies with the frame**: rendered in SCENE FRAME, restored by
+  the X-Card through the frame's superseded chain, cleared at scene end.
+  The sidecar is told plainly never to end the scene.
+
+**Reason:** the playtest's hour was one scene circling one exchange; the
+frame recorded where and who, not what the scene was for, so the narrator
+never knew when to stop.
+
+**Rejected:** *ending or offering to end the scene on an answer* — decided
+against (deferred, revisit once the question has been played with). *A
+question the narrator may reword every beat* — it would drift with the
+conversation it is meant to bound.
+
+---
+
+## Issue #353 R1: the stakes are stated before the roll, and a miss pays them (2026-11)
+
+**Decision:** (issue #353 R1; decided, maintainer 2026-11-13: the outcome
+stated before the roll is a miss's default price, the Pay the Price table
+the alternative.)
+- **The interpreter states the stakes** (`moves/stakes.js`): for a move that
+  rolls a stat, one line for what a hit gets and one for what a miss costs —
+  its most obvious negative outcome (Pay the Price's first choice), drawn
+  from the RECENT SCENE and the player's line — and, beside a miss, at most
+  one suffer move it costs (`missSuffer`, 1–3): the routes Pay the Price's
+  table annotates (Endure Harm, Endure Stress, Sacrifice Resources, Withstand
+  Damage, Companion Takes a Hit — Endure Harm with no companion) and Lose
+  Momentum (the move for "delayed or put at a disadvantage", which the table
+  leaves narrative). A progress move, or a move with no roll, has none.
+  Whether a miss pays the stated miss (`priceStated`) is fixed when the
+  interpretation is read, so the dialog shows what the roll then pays.
+- **Shown before the roll**: the Confirm Move dialog and a Batch Mode round
+  reading show "On a hit" and — only when it is the price — "On a miss" with
+  its cost. Wrong stakes are fixed the existing way: Cancel and re-word.
+- **A miss pays them**: a routed miss (`routePayThePrice`) posts its Pay the
+  Price card with the stated miss and rolls nothing ("As stated before the
+  roll"); its suffer move runs through the same dispatcher and executors as a
+  rolled route, so its receipts are the ones a burn or an improvement undoes,
+  and the Pay the Price clock advance is unchanged. An unrouted miss whose
+  text says to pay the price is seeded with the stated miss instead of an
+  advisory table roll. The table is rolled only when no miss was stated, or
+  with the world setting **Miss Pays the Stated Stakes**
+  (`missPaysStatedStakes`, default on) off.
+- **The narrator delivers them**: a STAKES block after MOVE OUTCOME (a round
+  entry's too) names what was shown and which line the outcome delivers; a
+  burn's or an improvement's re-narration carries the stakes and delivers the
+  upgraded outcome's line.
+- **Never from a hidden plan.** The issue proposed a miss's stake be the
+  subject's next escalation step. The stakes are shown on the roller's screen
+  before the roll — a player's, or a solo GM's who should not see the plan —
+  so they are drawn from the scene only; the narrator still plays a planned
+  subject's next escalation step on a miss, under UNREVEALED.
+
+**Reason:** in the alpha 23 playtest a scan's miss came back "You are delayed
+or put at a disadvantage", unrelated to the scan, with nothing behind it. A
+player who knows what a roll is for has a reason to make it, and the
+consequence follows from the action.
+
+**Rejected:** *the plan's escalation step as the miss stake* — it shows the
+plan before the roll (above). *A per-roll "roll the table instead" box* — the
+issue names two alternatives, no stated miss and the world setting.
+*Editable stakes in the dialog* — Cancel and re-word already re-reads the
+line. *Withstand Damage and Companion Takes a Hit excluded* — they are table
+routes, and a burn treats them exactly as it treats the table's.
+
+---
+
+## Issue #353 R3 and R4: the vow is the spine; what is open is shown (2026-11)
+
+**Decision:** (issue #353 "Related changes" R3 and R4. R4's home — the
+Session panel — and the definitions of its two skeleton rows were decided by
+the maintainer.)
+- **A quest is in play** when some character holds an open vow besides a
+  background vow. A character's background vow, for this question, is their
+  first vow on the sheet that is not the shared inciting vow (the
+  foundry-ironsworn convention `readVows`' fallback follows); the shared
+  inciting vow is always a quest — `readVows` now reports `shared`
+  (`session/openThreads.js` `questVows`). The narrator's "Background vow"
+  label (`isBackground`, the shared vow first — "Collaborative character
+  creation" above) is unchanged.
+- **Begin a Session says when none is** — on its dialog and its card — and
+  offers Swear an Iron Vow for the user's own character
+  (`resolveUserActorId`): a vow and a rank, optional. It is written on that
+  character's sheet once the session's start is requested
+  (`actorBridge.createCharacterVowItem`); the canonical GM's createItem hook
+  then posts its "🆕 New vow recorded" card — ⚔ Swear it (roll), the reward
+  offer, the connection link — the path a vow written on the sheet already
+  takes. The Begin card does not claim the vow; a refused write is said to the
+  user.
+- **The vow a scene serves heads the per-beat context** — [2.6] THE VOW THIS
+  SCENE SERVES, in the beat modes (move, paced, round, @scene, oracle
+  follow-up) — chosen by a bounded ladder: an open track's linked vow (a
+  fight, then a scene challenge, then an expedition; the newest of a kind),
+  else the session's quest focus when it names one open vow, else the only
+  quest in play, else the only open vow; nothing is guessed past that. It
+  names the vow, its rank, progress and holders and why it is the scene's,
+  with one instruction: when a beat achieves something toward it, show that
+  in the fiction, and never name its track, its progress or a milestone —
+  marking it is the player's (the move card's ⚑ Mark Progress on Vow).
+- **An expedition or a scene challenge serves a vow** when the Progress Tracks
+  panel links it: the add form's vow select (any track it creates — a fight
+  added by hand too, which then pays off as a threshold fight does) and an
+  open expedition's or scene challenge's row (🔗 — an expedition the move
+  pipeline began has no creation card to link it on). **The link's canonical
+  half is the vow's id across its copies** (`linkedVowId`: its `vowId`, else
+  its Item id — a renamed vow keeps its link); `linkedVowName` is the name it
+  was linked under, which [4j] and a fight's threshold link (a name only)
+  carry. The canonical GM checks the vow is open as the sheets stand
+  (`resolveVowChoice`), and the presser's client checks first, since a
+  relayed refusal reaches no player. A fight's link stays its threshold
+  card's or the add form's and is not changed mid-fight; finishing a linked
+  expedition or scene challenge marks nothing by itself.
+- **What's open lives in the Session panel** (decided): the open vows and
+  their progress, the open tracks with the vow each serves, the running
+  clocks (active and not full; a scene challenge's own clock on its row), and
+  from the narrative skeleton — `listSkeletons()`, only while
+  `skeletonsEnabled()` — the **unanswered questions** (active `mystery` plans
+  whose `truthRevealed` is false: their `question` only) and the **standing
+  demands** (active `threat` / `npcAgenda` plans whose `truthRevealed` is
+  true: the subject's name and its `wants`). No other plan field is read —
+  never `truth`, `knows`, `clues`, `escalation`, `resolutions` or
+  `oracleSeeds` — and a player's list is the GM's (the store is read alike on
+  every client). It is not a chat card and makes no model call; it re-renders
+  when a vow, the tracks journal or a plan's page changes.
+- **End a Session offers one-click focus choices**: the open vows (one per
+  vow) for the quest focus and the characters' connections (a severed one
+  left out) for the connection focus, beside the free text, which stays
+  editable. The quest focus chosen there is the next session's
+  `sessionFocus.quest` — the scene's vow, rung 2.
+
+**Reason:** issue #353 R3 and R4. In the alpha 23 playtest no hit card offered
+Reach a Milestone because no vow was open, and nothing said so; the narrator
+was told the vows in three places but asked to play toward none; an
+expedition could not say which vow it served; and End a Session's two blank
+boxes were left empty, the +1 momentum with them. What was still open was
+spread over the sheet, two panels and the World Journal.
+
+**Rejected:**
+- *`isBackground` as the background vow for the check* — it is the shared
+  inciting vow, so a table pursuing its inciting vow alone would be told no
+  vow is in play.
+- *Swearing from Begin a Session through a forced swear move* — the vow must
+  be on the sheet first, and its "🆕 New vow recorded" card already offers the
+  roll, claimed once; a second path would roll it twice.
+- *A vow link on the expedition's progress card* — a new card button and relay
+  in the move pipeline; the panel's `progressTrack.edit` relay already checks
+  every panel edit, and a row serves both creation paths.
+- *Linking a new expedition to the roller's only vow by itself* — #241
+  rejected auto-detecting which vow a fight serves; the link stays the
+  player's choice.
+- *Showing a revealed plan's truth in What's open* — the maintainer's
+  definition shows a revealed plan's subject and wants; the truth is lore once
+  revealed, in the World Journal.
+
+---
+
 ## The v1.8.1 open-item sweep: issue #348 and the earlier audits' open items (2026-11)
 
 **Decision:** (the maintainer's request, 2026-11-12: close out issue #348 and every item the earlier audits left open.) The maintainer chose: Perspective "Auto" is decided once per session (#348 PT03); a Set a Course to an uncharted place is read as Undertake an Expedition on every Mischief setting, saying why (#348 PT06); an unnamed destination is recorded as a location with a working label (#348 PT07); each open item's written proposal is applied, including the "maintainer's call" ones; and by-design / cosmetic / not-reproduced items are re-checked, fixed when real and cheap, else closed with the reason. What each fix established (known-issues.md, "The v1.8.1 open-item sweep", has every row):
@@ -36,7 +525,7 @@ rejected.
 - **CLOCK-VIGNETTE-NO-DETECTION** (ledger): Clock vignettes run the detection pass as well as the tier pass (they use interaction latitude since V23). Session vignettes and vow scenes are unchanged: tier pass only (CLOCK-VIGNETTE-NO-DETECTION).
 - **CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE** (ledger): AA34's capture gate (the capture runs on the GM whose client narrated, not on whoever is canonical when the reply lands) also covers @scene answers, oracle follow-ups and session, clock and vow vignettes (CAPTURE-HANDOVER-SCENE-ORACLE-VIGNETTE).
 - **CREATED-ONTO-DISMISSED-NAME** (ledger): Every record registration (registry.registerEntityId) takes the new record's name off the dismissed list, and the world load sweeps listed records the same way (CREATED-ONTO-DISMISSED-NAME).
-- **CONN-BACKGROUND-UNWRITTEN** (ledger): A connection's `background` and `secrets` fields are retired (no writer, no reader). History lives in `history` and the NPC's narrator-added details, and GM-only notes go in the sheet's Notes (CONN-BACKGROUND-UNWRITTEN, issue #287).
+- **CONN-BACKGROUND-UNWRITTEN** (ledger): A connection's `background` and `secrets` fields are retired (no writer, no reader). History lives in `history` and the NPC's narrator-added details, and GM-only notes go in the sheet's Notes (CONN-BACKGROUND-UNWRITTEN, issue #287). *Update (issue #353):* superseded for secrets by "The narrative skeleton" above — what an NPC hides lives in its plan in the GM-only Secrets journal, which has a writer and a reader; the record's `secrets` field stays retired.
 - **DRAFT-CONFIRM-TWO-GMS** (ledger): Draft card Confirm and Dismiss run on the canonical GM through the GM relay (`draft.confirm` / `draft.dismiss`), one press at a time; only GM presses are accepted (DRAFT-CONFIRM-TWO-GMS).
 - **STALE-PAGE-ACTOR-WRITES** (multigm): A stale page (its connection dropped and it has not reloaded) writes no actor either: actorBridge refuses every actor and item write there, the same way campaignState, rounds and Lines/Veils were already refused (issue #347 AB19-STALE-CACHE-WRITES).
 - **STALE-PAGE-CLAUDE-COMMANDS** (multigm): hasKeyedActiveGM counts only GMs whose page can act. A keyed GM whose page stood down is not 'keyed' for routing until it reloads.

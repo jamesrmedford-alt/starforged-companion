@@ -454,6 +454,20 @@ The legacy count-only "ACTIVE CONNECTIONS" block
 is retired: it counted a lost connection as active beside the roster that
 lists it apart (issue #331 X29).
 
+**The NPC's hidden agenda (issue #353 Phase 4).** Three creators file an
+`npcAgenda` plan right after `createConnection` (`secrets.planNpcAgenda`,
+canonical GM): Make a Connection's auto-create (`routeEntityDrafts`, stamped
+with the capture's narration — the X-Card that retracts the card takes the
+plan too), a confirmed NPC draft (`confirmDraft`) and the inciting vow's
+target (`swearSharedVowForAll`). The plan is about the NPC card by id
+(`registry.iterEntityDocuments`), its rolls the record's `goal` and `role`, a
+Character Disposition and an Action + Theme for what they hide; its truth is
+decided by the next narration they are in play for (DECIDE NOW in [6.6]
+UNREVEALED — an entity matched, or made in this scene). One plan an NPC. The
+Entities panel marks the card's row with the GM-only ◆ (`plannedSubjects`).
+What an NPC hides lives in that plan, not on the record (`secrets` stays
+retired — decisions.md, The narrative skeleton).
+
 ## Verified defects (all FIXED in the v1.7.30 cycle — resolved ledger in `known-issues.md`)
 
 Each entry below describes the pre-fix behaviour the audit verified; the fix

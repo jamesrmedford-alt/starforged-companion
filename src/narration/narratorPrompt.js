@@ -5,6 +5,7 @@
 // Private Lines setting (formatNarratorSafetyContext, src/context/safety.js).
 
 import { decodeHtmlEntities } from '../system/htmlEntities.js';
+import { formatStakesBlock } from '../moves/stakes.js';
 import { formatNarratorSafetyContext } from '../context/safety.js';
 import { formatShipPositionLine } from '../factContinuity/shipPosition.js';
 import { subjectFromStateKey, WHEREABOUTS_ATTRIBUTES } from '../factContinuity/ledgers.js';
@@ -66,6 +67,7 @@ export function appendNpcMarkupInstruction() {
 export function appendSidecarInstruction(options = {}) {
   const mode              = typeof options.mode === 'string' ? options.mode : 'move_resolution';
   const sceneFrameEnabled = options.sceneFrameEnabled !== false;
+  const skeletonsEnabled  = options.skeletonsEnabled === true;
 
   const exampleLines = [
     '    ```json',
@@ -83,7 +85,8 @@ export function appendSidecarInstruction(options = {}) {
       '      "sceneFrame": {',
       '        "location":  "Lyra\'s orbital graveyard",',
       '        "present":   ["Venri Quint", "Vance"],',
-      '        "situation": "Hailing Vance\'s shuttle across the debris field"',
+      '        "situation": "Hailing Vance\'s shuttle across the debris field",',
+      '        "question":  "Will Vance let them board?"',
       '      }',
     );
   }
@@ -169,6 +172,32 @@ export function appendSidecarInstruction(options = {}) {
       '  present or directly engaged (include characters on comms), and the',
       '  situation in one sentence. Include it on EVERY response — it',
       '  replaces the previous snapshot. Keep names exactly as established.',
+      '- "question" (inside "sceneFrame") is what this scene is deciding, in a',
+      '  few words. Set it on the scene\'s first beat; afterwards copy it',
+      '  unchanged from SCENE FRAME — it is kept for the scene. When this beat',
+      '  answers it, add "questionAnswered": true and end the beat on a cut',
+      '  forward — to the consequence, the next place or a later hour — not on',
+      '  another exchange in the same room. Once it is answered, set the',
+      '  question the scene turns on now. Never end the scene: the table ends',
+      '  scenes.',
+    );
+  }
+
+  // The narrative skeleton (issue #353 Phase 1): a question the prose poses
+  // gets a hidden answer, rolled and kept (src/world/secrets.js).
+  if (skeletonsEnabled) {
+    lines.push(
+      '- When your prose poses a question or a mystery the characters are',
+      '  meant to answer — a question an NPC presses on them, an unexplained',
+      '  sign, a puzzle the scene turns on — emit it once, as',
+      '  "openQuestions": [{ "question": "<the question, in a few words>",',
+      '  "about": "<who or what it concerns>" }]. Do not answer it in the',
+      '  prose. Do not emit a question already listed under UNREVEALED.',
+      '- When your prose starts a countdown — a count, a deadline, "before it',
+      '  asks again" — emit it once, as "countdown": { "label": "<what is',
+      '  counting down, in a few words>", "about": "<the id from UNREVEALED it',
+      '  belongs to, or who or what it concerns>" }. Not for one already',
+      '  running (see CLOCKS).',
     );
   }
 
@@ -336,6 +365,12 @@ export function buildLedgerBlock(campaignState, options = {}) {
     if (frame.location)      frameLines.push(`  Where:   ${frame.location}`);
     if (presentNames.length) frameLines.push(`  Present: ${presentNames.join(', ')}`);
     if (frame.situation)     frameLines.push(`  Now:     ${frame.situation}`);
+    // What the scene is deciding (issue #353 R2).
+    if (typeof frame.question === 'string' && frame.question.trim()) {
+      frameLines.push(frame.questionAnswered === true
+        ? `  Question (answered): ${frame.question.trim()} — the scene has moved past it; set the question it turns on now.`
+        : `  Question: ${frame.question.trim()}`);
+    }
   }
   const frameBlock = frameLines.length
     ? ['SCENE FRAME (the scene as it stands):', ...frameLines].join('\n')
@@ -1401,6 +1436,9 @@ export function buildSharedStorySections(campaignState, narratorSettings = {}, e
       formatStorySoFarBlock(extras.rollingSummary ?? ''),
       formatEntityCardsBlock(extras.entityCards),
       formatLedgerSection(withSceneLedger(campaignState, extras.sceneLedger), narratorSettings, extras),
+      // The hidden plans, under the main narrator's rule: never state one
+      // outright. It writes nothing back, so no sidecar lines (issue #353).
+      formatUnrevealedBlock(extras.unrevealed, { sidecar: false }),
     ]),
   };
 }
@@ -1524,6 +1562,8 @@ export function buildNarratorSystemPrompt(
     progressTracks       = [],
     sceneLedger          = null,
     pinnedChronicle      = null,
+    unrevealed           = [],
+    planRequests         = [],
   } = extras ?? {};
 
   const resolvedMode    = NARRATOR_MODES.has(mode) ? mode : 'move_resolution';
@@ -1620,6 +1660,16 @@ export function buildNarratorSystemPrompt(
   //       The detection + text live in moves/battleStations.js (pure); extras
   //       carries the rendered block in, or '' when not applicable.
   if (shipboardGuidance) parts.push(shipboardGuidance);
+
+  // [2.6] The vow this scene serves (issue #353 R3) — at the top of the
+  //       per-beat context, in the beat modes: the vow a linked track, the
+  //       session's quest focus or the only vow in play says this scene is
+  //       for, with its progress, and the one instruction to show what a beat
+  //       achieves toward it (buildNarratorExtras → extras.sceneVow).
+  if (SCENE_VOW_MODES.has(resolvedMode)) {
+    const sceneVowBlock = formatSceneVowBlock(extras?.sceneVow ?? null);
+    if (sceneVowBlock) parts.push(sceneVowBlock);
+  }
 
   // [3] Oracle seeds — only when the resolved move provides them
   const seedsBlock = formatOracleSeedsBlock(oracleSeeds);
@@ -1726,6 +1776,18 @@ export function buildNarratorSystemPrompt(
   }, { matchedEntityIds, entityNamesById });
   if (ledgerBlock) parts.push(ledgerBlock);
 
+  // [6.6] UNREVEALED — the narrative skeleton (issue #353): the hidden plans
+  //       relevant to this beat (buildNarratorExtras selects them), and the
+  //       plans this narration must decide in its sidecar. Never in a meta
+  //       mode; its writes need the sidecar, so DECIDE NOW only with it.
+  if (!isMetaMode) {
+    const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
+      planRequests,
+      sidecar: factContinuityEnabled,
+    });
+    if (unrevealedBlock) parts.push(unrevealedBlock);
+  }
+
   // [7] — retired: a legacy "N active connection(s)" count of every id in
   // `connectionIds`, a lost connection's included, while the ACTIVE SECTOR
   // roster lists it apart as lost (issue #331 X29). The roster and CHARACTER
@@ -1764,6 +1826,7 @@ export function buildNarratorSystemPrompt(
     parts.push(appendSidecarInstruction({
       mode:              resolvedMode,
       sceneFrameEnabled: factContinuitySceneFrame,
+      skeletonsEnabled:  narratorSettings?.narrativeSkeletons !== false,
     }));
   }
 
@@ -1778,6 +1841,142 @@ export function buildNarratorSystemPrompt(
   }
 
   return parts.join('\n\n---\n\n');
+}
+
+/** The UNREVEALED section's budget for its plans, in estimated tokens (DECIDE NOW is never trimmed). */
+export const UNREVEALED_MAX_TOKENS = 600;
+
+const SKELETON_KIND_NAMES = Object.freeze({
+  threat: 'Threat', mystery: 'Mystery', npcAgenda: 'NPC agenda',
+  expedition: 'Expedition', discovery: 'Discovery', vow: 'Vow',
+});
+
+/** A plan's heading: "Threat — the escort", "Mystery — "Which name…?" (about the escort)". */
+function skeletonHeading(r) {
+  const kind = SKELETON_KIND_NAMES[r?.kind] ?? 'Plan';
+  if (r?.kind === 'mystery' && r.question) {
+    const about = r.subject?.name && r.subject.name !== 'the scene' ? ` (about ${r.subject.name})` : '';
+    return `${kind} — "${r.question}"${about}`;
+  }
+  return `${kind} — ${r?.subject?.name ?? ''}`;
+}
+
+/** What a plan's fields are called for the narrator — an expedition's read as its journey (issue #353 Phase 3). */
+const ENTRY_LABELS = Object.freeze({
+  default:    { truth: 'Truth', steps: 'Escalation, in order', clues: 'Clues' },
+  mystery:    { truth: 'Answer', steps: 'Escalation, in order', clues: 'Clues' },
+  expedition: { truth: 'What waits at the end', steps: 'Dangers along the way, in order',
+    clues: 'Waypoints, in order (the next not yet shown is the next one reached)' },
+});
+
+/** One decided plan, as the narrator reads it. */
+function formatSkeletonEntry(r) {
+  const label = ENTRY_LABELS[r.kind] ?? ENTRY_LABELS.default;
+  const lines = [`### ${skeletonHeading(r)} (id ${r.id})`];
+  lines.push(`${label.truth}: ${r.truth}${r.truthRevealed ? ' (already revealed — the characters know it)' : ''}`);
+  if (r.wants) lines.push(`Wants: ${r.wants}`);
+  if (r.knows) lines.push(`Knows: ${r.knows}`);
+  const steps = (r.escalation ?? []).map(e => `[${e.id}] ${e.text}${e.done ? ' (played)' : ''}`);
+  if (steps.length) lines.push(`${label.steps}: ${steps.join('; ')}`);
+  const clues = (r.clues ?? []).map(c => `[${c.id}] ${c.text}${c.revealed ? ' (shown)' : ''}`);
+  if (clues.length) lines.push(`${label.clues}: ${clues.join('; ')}`);
+  if (r.resolutions?.length) lines.push(`Could end: ${r.resolutions.join('; ')}`);
+  if (r.kind === 'expedition') {
+    lines.push('When the expedition is finished, what waits at the end comes out: record it as revealed ("truth") and resolved.');
+  } else if (r.kind === 'vow') {
+    lines.push('When the vow is fulfilled or forsaken, its story ends: record it as resolved, and "truth" as revealed if it comes out.');
+  }
+  return lines.join('\n');
+}
+
+/**
+ * [6.6] UNREVEALED — the narrative skeleton's hidden plans for this beat
+ * (issue #353 "What the narrator sees"), and — with the sidecar — DECIDE NOW,
+ * the plans this narration must decide: a price that revealed a new enemy
+ * (`planRequests`, by ref), a posed question whose answer was rolled but not
+ * yet decided (a plan with no truth, by id). The plans are trimmed from the
+ * end to UNREVEALED_MAX_TOKENS; DECIDE NOW is not. Without the sidecar (the
+ * Private Channel) only decided plans, and no instruction to write. Exported
+ * for unit testing and the Private Channel's shared story.
+ *
+ * @param {Object[]} skeletons — selectRelevantSkeletons' records
+ * @param {{ planRequests?: Object[], sidecar?: boolean, maxTokens?: number }} [opts]
+ * @returns {string} '' when there is nothing to show
+ */
+export function formatUnrevealedBlock(skeletons, { planRequests = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS } = {}) {
+  const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
+  const decided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
+  const pending = sidecar ? list.filter(r => !(typeof r.truth === 'string' && r.truth.trim())) : [];
+  const requests = sidecar ? (Array.isArray(planRequests) ? planRequests : []).filter(q => q?.ref) : [];
+  if (!decided.length && !pending.length && !requests.length) return '';
+
+  const lines = [
+    '## UNREVEALED — FOR THE NARRATOR ONLY',
+    '',
+    'The story holds these truths, but the characters do not know them yet. Never state one outright,',
+    'and never hint that a plan exists. Let them shape what characters do and say, which clues appear',
+    'and what escalates.',
+    '- Reveals follow move outcomes. When a move touches a subject below, a hit shows one of its clues',
+    '  or moves it toward a way it could end; a weak hit shows a clue with a complication; a miss plays',
+    '  its next escalation step. A beat that does not touch a subject leaves it alone.',
+    '- When a character has refused the same request twice, the next beat reveals, trades or escalates.',
+  ];
+  if (sidecar) {
+    lines.push(
+      '- When this beat shows something below, record exactly what it showed in your sidecar:',
+      '  "reveals": [{ "id": "<its id>", "revealed": ["<clue id>", or "truth" when the truth itself comes',
+      '  out>], "advanced": "<the escalation step id it played>", "resolved": true when its story ends }].',
+      '  Only what this beat actually showed; nothing for a subject it did not touch.',
+      '- Where your narration contradicts something below, your narration stands: record the change in',
+      '  your sidecar as "plans": [{ "id": "<its id>", …only the fields that changed: "subject", "truth",',
+      '  "wants", "knows", "escalation", "clues" or "resolutions" }].',
+    );
+  }
+
+  const budget = Math.max(0, Number(maxTokens) || 0) * 4;   // ~4 characters a token
+  let used = lines.join('\n').length;
+  const entries = [];
+  for (const r of decided) {
+    const entry = formatSkeletonEntry(r);
+    if (entries.length && used + entry.length > budget) break;   // the first always shows
+    entries.push(entry);
+    used += entry.length;
+  }
+  if (entries.length) lines.push('', entries.join('\n\n'));
+
+  if (pending.length || requests.length) {
+    lines.push(
+      '',
+      '### DECIDE NOW',
+      'Each of these has entered the story but has not been decided. Decide what is true about it now —',
+      'from its oracle rolls and what the story has established, in Starforged terms — and record it in',
+      'your sidecar, whether or not this beat shows any of it (show none of it outright):',
+      '  "plans": [{ "id": "<its id>", "subject": "<the name your prose uses for it>",',
+      '    "truth": "<what it really is, 1-3 sentences>", "wants": "<what it is trying to do>",',
+      '    "knows": "<what it knows that the characters do not>",',
+      '    "escalation": ["<2-3 steps, in order: what happens if it is ignored or provoked>"],',
+      '    "clues": ["<2-4 things the fiction can show that point at the truth>"],',
+      '    "resolutions": ["<1-3 ways it could end>"] }]',
+      'If one oracle result for a subject contradicts what the story has established, use its re-roll in',
+      'that result\'s place — once — and add "rerolled": "<the result it replaces>" to that entry.',
+    );
+    const rerollOf = (x) => (typeof x?.reroll === 'string' && x.reroll ? ` Re-roll: ${x.reroll}.` : '');
+    for (const q of requests) {
+      const seeds = Array.isArray(q.oracleSeeds) && q.oracleSeeds.length ? ` Oracle: ${q.oracleSeeds.join('; ')}.` : '';
+      const journey = q.kind === 'expedition'
+        ? ' Its truth is what waits at the end, its clues are 2-4 waypoints in order, its escalation the danger along the way.'
+        : '';
+      lines.push(`- id ${q.ref}: ${SKELETON_KIND_NAMES[q.kind] ?? 'Plan'} — ${q.label}.${journey}${seeds}${rerollOf(q)}`);
+    }
+    for (const r of pending) {
+      const seeds = Array.isArray(r.oracleSeeds) && r.oracleSeeds.length ? ` Oracle: ${r.oracleSeeds.join('; ')}` : '';
+      const what = r.kind === 'mystery' && r.question
+        ? `the hidden answer to ${skeletonHeading(r).replace(/^Mystery — /, '')}.${seeds}${seeds ? ' — use the pair that fits.' : ''}`
+        : `${skeletonHeading(r)}.${seeds}`;
+      lines.push(`- id ${r.id}: ${what}${rerollOf(r)}`);
+    }
+  }
+  return lines.join('\n');
 }
 
 /**
@@ -1941,6 +2140,68 @@ function formatSessionFocusBlock(focus) {
   );
 }
 
+/**
+ * The modes the scene's vow line speaks to (issue #353 R3): the beats of play
+ * — a move, a line of free narration, a Batch Mode round, a question about
+ * the scene, an oracle's follow-up. Not a vignette, the vow-swearing scene or
+ * the inciting incident (each has its own subject), a clock's beat or the
+ * recap.
+ */
+const SCENE_VOW_MODES = new Set(['move_resolution', 'round_resolution', 'paced_narrative', 'scene_interrogation', 'oracle_followup']);
+
+/** A linked track's kind, as the vow line names it. */
+const SCENE_VOW_TRACK_NAMES = Object.freeze({ combat: 'fight', expedition: 'expedition', scene_challenge: 'scene challenge' });
+
+/** "A", "A and B", "A, B and C". */
+function joinNames(names) {
+  return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** Why the vow is this scene's, as the vow line says it. */
+function sceneVowReason(sceneVow) {
+  if (sceneVow?.source === 'track') {
+    const kind  = SCENE_VOW_TRACK_NAMES[sceneVow.track?.type] ?? 'track';
+    const label = typeof sceneVow.track?.label === 'string' ? sceneVow.track.label.trim() : '';
+    return label ? `the open ${kind} "${label}" serves it` : `an open ${kind} serves it`;
+  }
+  if (sceneVow?.source === 'focus') return `the table chose it as this session's quest focus`;
+  if (sceneVow?.source === 'only') return `the only vow in play`;
+  return '';
+}
+
+/**
+ * [2.6] THE VOW THIS SCENE SERVES (issue #353 R3): one line at the top of the
+ * per-beat context — the vow the scene serves (buildNarratorExtras →
+ * extras.sceneVow, session/openThreads.js selectSceneVow), its rank and
+ * progress, who swore it and why it is this scene's — and one instruction:
+ * when a beat achieves something toward it, show that in the fiction. The
+ * player marks the progress (the move card's ⚑ Mark Progress on Vow), so the
+ * narrator never names a milestone. '' with no vow.
+ *
+ * @param {{ vow: { name: string, rank?: string, progress?: number, holders?: string[] },
+ *   source: "track"|"focus"|"only", track?: { type: string, label: string } }|null} sceneVow
+ * @returns {string}
+ */
+export function formatSceneVowBlock(sceneVow) {
+  const vow  = sceneVow?.vow;
+  const name = typeof vow?.name === 'string' ? vow.name.trim() : '';
+  if (!name) return '';
+  const bits = [];
+  if (typeof vow.rank === 'string' && vow.rank.trim()) bits.push(vow.rank.trim());
+  if (Number.isFinite(Number(vow.progress)) && vow.progress !== null) {
+    bits.push(`progress ${Math.max(0, Math.min(10, Math.floor(Number(vow.progress))))}/10`);
+  }
+  const holders = (Array.isArray(vow.holders) ? vow.holders : []).filter(h => typeof h === 'string' && h.trim()).map(h => h.trim());
+  if (holders.length) bits.push(`sworn by ${joinNames(holders)}`);
+  const why = sceneVowReason(sceneVow);
+  return (
+    `## THE VOW THIS SCENE SERVES\n\n` +
+    `"${name}"${bits.length ? ` (${bits.join(', ')})` : ''}${why ? ` — ${why}` : ''}.\n\n` +
+    `When a beat achieves something toward this vow, show that in the fiction. Never mention the vow's ` +
+    `track, its progress or a milestone: marking it is the player's.`
+  );
+}
+
 /** Track types the Progress Tracks panel lists, as the [4j] block names them. */
 const PROGRESS_TRACK_LABELS = {
   combat:          'Fight',
@@ -1979,7 +2240,10 @@ function formatProgressTracksBlock(tracks) {
     if (own.length) bits.push(`positions: ${own.map(e => `${e.name.trim()} ${positionText[e.position]}`).join(', ')}`);
     else if (positionText[t.combatState]) bits.push(`position: ${positionText[t.combatState]}`);
     if (typeof t.linkedVowName === 'string' && t.linkedVowName.trim()) {
-      bits.push(`serves the vow "${t.linkedVowName.trim()}" — winning it is a milestone on that vow`);
+      // An expedition or a scene challenge can serve a vow too (issue #353 R3).
+      bits.push(t.type === 'combat'
+        ? `serves the vow "${t.linkedVowName.trim()}" — winning it is a milestone on that vow`
+        : `serves the vow "${t.linkedVowName.trim()}" — seeing it through is a step toward that vow`);
     }
     return `- ${PROGRESS_TRACK_LABELS[t.type]}: ${t.label.trim()} — ${bits.join('; ')}`;
   });
@@ -2206,6 +2470,11 @@ export function buildNarratorUserMessage(resolution, playerNarration, sentenceTa
     parts.push(`## MOVE OUTCOME\n\n${moveOutcome}`);
   }
 
+  // What the player was shown before the roll, and which of it this outcome
+  // delivers (issue #353 R1).
+  const stakes = formatStakesBlock(resolution?.stakes ?? null, resolution?.outcome ?? null);
+  if (stakes) parts.push(stakes);
+
   const speaker = typeof speakerName === 'string' && speakerName.trim()
     ? speakerName.trim()
     : null;
@@ -2302,6 +2571,9 @@ export function buildRoundUserMessage({ recentContext = '', entries = [], senten
       const outcome = String(input.outcomeLabel ?? input.outcome ?? '').replace(/_/g, ' ').trim().toLowerCase();
       lines.push(`### ${i + 1}. ${name} — ${input.moveName ?? 'A move'}${stat}${outcome ? `: ${outcome}` : ''}`);
       if (input.loremasterContext) lines.push(String(input.loremasterContext).trim());
+      // The stakes shown before this entry's roll (issue #353 R1).
+      const stakes = formatStakesBlock(input.stakes ?? null, input.outcome ?? null);
+      if (stakes) lines.push(stakes.replace(/^## /gm, '#### '));
       const seeds = formatOracleSeedsBlock(input.oracleSeeds);
       if (seeds) lines.push(seeds.replace(/^## /gm, '#### '));
     } else if (input.kind === 'refused') {

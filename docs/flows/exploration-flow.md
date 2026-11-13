@@ -134,7 +134,14 @@ Discovered card says so). With no active sector nothing is recorded.
   that track's id as the roller; known-issues PACED-ROLL-OPEN-PRESS), and a track named by id
   that is over marks nothing (`reason: "ambiguous" | "gone"`) — an unnamed
   Undertake used to begin a phantom "Expedition" that took the progress
-  (issue #321 U16). The progress card shows boxes filled and carries a
+  (issue #321 U16). An expedition serves a vow when it is linked to one
+  (issue #353 R3): in the Progress Tracks panel's add form, or on its row
+  (🔗) — the only place for one this move began; the canonical GM stores the
+  vow's `linkedVowId` and `linkedVowName`, and the link makes it the vow the
+  narrator's scene line names (`vow-flow.md` §3) and the "serves" of the
+  Session panel's What's open. Nothing else reads it: finishing a linked
+  expedition marks no milestone by itself — the player's ⚑ does. The
+  progress card shows boxes filled and carries a
   **"🗺 Finish the Expedition"** button — its forced move names the track by
   id and speaks as the PC who marked the progress (the card's `actorId`,
   issue #329 X05). The press relays `expedition.finish`
@@ -142,7 +149,25 @@ Discovered card says so). With no active sector nothing is recorded.
   card once (`expeditionFinishAttempted`), and only that PC's player or a GM
   may press it — it posted from the presser's client, so a crewmate finished
   another player's expedition (issue #338 D1). Deliberately **not** an
-  arrival move — no position write mid-journey.
+  arrival move — no position write mid-journey. A hit's narration is seeded
+  with the waypoint it reaches: the active sector's region's Space Sighting,
+  rolled once by the resolver (`buildOracleSeeds`, issue #353 Phase 0). A weak
+  hit's "Peril at the waypoint" pick rolls Spaceborne Peril, posts it, and the
+  narrator plays it at once as its own beat (`sufferDialog.js`
+  `postChosenComplication` → the oracle follow-up) — its card only promised
+  that the narrator would "surface" it. That peril is the open expedition's
+  plan's next danger when one is planned (issue #353 Phase 3). An expedition
+  the move begins asks its narration to plan it — `expeditionPlanRequest`
+  (resolver.js) on `resolution.skeletonRequests`, from `applyOutcomeEffects`'
+  `result.created`: its waypoints (clues), the danger along the way
+  (escalation) and what waits at the end (truth), about the track by id, in
+  play while the track is open; the Finish an Expedition that completes it
+  narrates with it (`resolution.endingTrackIds`) and is told to reveal the end.
+  The Progress Tracks panel marks a planned expedition's row with the GM-only
+  ◆ (`secrets.plannedSubjects`, Phase 4). Make a Discovery and Confront Chaos
+  ask their narration for a `discovery` plan from their rolls (less any
+  price — `skeletons.planRequestsFromSeeds`), keeping what the find means
+  (Phase 4).
 - **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
   ship record, `currentLocationId`, the feedback card), and an Undertake an
   Expedition miss upgraded marks the expedition as a rolled hit would — the

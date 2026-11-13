@@ -35,6 +35,19 @@ import { notesAsCardText } from '../narration/narratorPrompt.js';
 import { getCommandVehicleAsset } from '../character/actorBridge.js';
 import { isNarrationXCarded } from '../context/safety.js';
 import { withoutPromotedParagraphs } from '../factContinuity/retractions.js';
+import { plannedSubjects } from '../world/secrets.js';
+
+/** The GM's "has a plan" marker (issue #353 Phase 4): a sign, no content. */
+const PLAN_MARKER = '<span class="sf-plan-marker" title="The narrator holds a hidden plan for this (GM only)">◆</span>';
+
+/** The entity ids a hidden plan is about (secrets.js plannedSubjects). Fail-open. */
+function plannedEntityIds() {
+  try {
+    return plannedSubjects().ids;
+  } catch {
+    return new Set();
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -241,6 +254,9 @@ export class EntityPanelApp extends ApplicationV2 {
 
   async _prepareContext(_options) {
     const campaignState = game.settings.get(MODULE_ID, 'campaignState') ?? {};
+    // The GM's "has a plan" marker on an NPC a hidden plan is about (issue
+    // #353 Phase 4). No content; never a player's.
+    this._plannedIds = game.user?.isGM ? plannedEntityIds() : new Set();
     // What this render shows, for onSettingChanged to compare against.
     this._stateShown = shownStateFingerprint(campaignState);
     const isCurrentLocation = (id) =>
@@ -369,7 +385,7 @@ export class EntityPanelApp extends ApplicationV2 {
           role="button" tabindex="0">
         <div class="entity-thumb-wrap">${thumb}${lockBadge}</div>
         <div class="entity-row-info">
-          <span class="entity-row-name">${escapeHtml(entity.name)}</span>
+          <span class="entity-row-name">${escapeHtml(entity.name)}${this._plannedIds?.has(entity.journalId) ? PLAN_MARKER : ''}</span>
           ${this.#renderRowSubtitle(entity)}
         </div>
         <span class="entity-row-chevron">›</span>

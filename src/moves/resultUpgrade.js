@@ -625,6 +625,11 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
   try {
     const { isCanonicalGM } = await import("../multiplayer/gmGate.js");
     if (!isCanonicalGM()) return false;
+    // What the narration planned goes with it (issue #353): a new enemy its
+    // price revealed, a reveal, an escalation step a rewound trigger
+    // vignette played — and the countdown clocks it started. The price, the
+    // reveal, the trigger did not happen.
+    await undoSupersededPlans(ids, label);
     const { retractNarrations, SUPERSEDED_RETRACTED_BY } = await import("../factContinuity/ledgers.js");
     const { persistSceneLedgerFields } = await import("../factContinuity/sceneLifecycle.js");
     if (campaignState && typeof campaignState === "object") retractNarrations(campaignState, ids, { by: SUPERSEDED_RETRACTED_BY });
@@ -638,6 +643,29 @@ export async function retractSupersededNarrations(narrationIds, { campaignState 
   } catch (err) {
     console.warn(`${MODULE_ID} | ${label}: the superseded narration's ledger entries could not be retracted:`, err?.message ?? err);
     return false;
+  }
+}
+
+/**
+ * A superseded narration's plan writes and countdown clocks, taken back as an
+ * X-Card on it takes them (worldJournal.js undoNarrationEntries, the Secrets
+ * category alone; clocks.js removeClocksMadeBy). Canonical GM. Never throws.
+ *
+ * @param {string[]} ids — the superseded narrations
+ * @param {string} label — for the log
+ */
+async function undoSupersededPlans(ids, label) {
+  try {
+    const { undoNarrationEntries } = await import("../world/worldJournal.js");
+    await undoNarrationEntries(ids, { categories: ["secrets"] });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${label}: the superseded narration's plans could not be taken back:`, err?.message ?? err);
+  }
+  try {
+    const { removeClocksMadeBy } = await import("../clocks/clocks.js");
+    await removeClocksMadeBy(ids);
+  } catch (err) {
+    console.warn(`${MODULE_ID} | ${label}: the superseded narration's countdown clocks could not be removed:`, err?.message ?? err);
   }
 }
 

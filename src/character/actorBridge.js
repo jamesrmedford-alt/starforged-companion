@@ -353,7 +353,7 @@ function readGrantedRewards(actor) {
  * convention explicit.
  *
  * @param {Actor} actor
- * @returns {Array<{ id, name, rank, progress, ticks, completed, forsaken, isBackground }>}
+ * @returns {Array<{ id, name, rank, progress, ticks, completed, forsaken, isBackground, shared }>}
  */
 export function readVows(actor) {
   const items = actor?.items?.contents ?? actor?.items ?? [];
@@ -386,6 +386,11 @@ export function readVows(actor) {
       // (issue #345 AA51).
       forsaken:     v.flags?.[MODULE_ID]?.forsaken === true,
       isBackground: i === bgIdx,
+      // The shared inciting vow (its copies on every PC): the campaign's first
+      // quest. "Is a quest in play?" (session/openThreads.js questVows, issue
+      // #353 R3) never takes it for a PC's own background vow, whatever
+      // isBackground labels it for the narrator.
+      shared:       v.flags?.[MODULE_ID]?.sharedVow === true,
       // Countdown clock (the deadline/threat running against the hero, e.g.
       // "Dani's captivity"), surfaced so the narrator can reference it and the
       // pipeline can advance it on a Pay the Price. null when the vow has none.

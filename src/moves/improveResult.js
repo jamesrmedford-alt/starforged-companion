@@ -128,6 +128,7 @@ export function buildImproveState(resolution, applicableAbilities, actor, ptpRev
     actorId:              actor.id,
     resolutionId:         resolution._id ?? null,
     ptpReversals:         ptpReversals ?? null,   // the superseded miss's Pay the Price, undone on improve
+    stakes:               resolution.stakes ?? null, // as shown before the roll (issue #353 R1)
     targets:              targets ?? null,        // for the strong hit's choice card and effects
     move:                 move ?? null,           // the move's target and ranks, for its effects
     // The cost: the ability's own clock.
@@ -487,6 +488,9 @@ function buildImprovedResolution({ improve, newConsequences, campaignState }) {
     upgradeOf:       improve.resolutionId ?? null,
     consequences:    newConsequences,
     oracleSeeds:     null,
+    // The stakes shown before the roll: the re-narration delivers the hit
+    // (issue #353 R1).
+    stakes:          improve.stakes ?? null,
     playerNarration: `[Player used ${improve.assetName || "an asset"} to improve the result to a strong hit]`,
     inputMethod:     "improve",
     sessionId:       campaignState.currentSessionId ?? "",

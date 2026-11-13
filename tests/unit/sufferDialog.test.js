@@ -144,7 +144,8 @@ describe("resolveSufferSelection — B2 enumerated prompts", () => {
       { label: "Complication at destination", complication: true, scope: "destination" },
     ]};
     const r = resolveSufferSelection(prompt, { optionIndices: [0] });
-    expect(r).toEqual([{ kind: "complication", scope: "destination" }]);
+    // The option's label rides along: the complication's card and its beat name it (issue #353 Phase 0).
+    expect(r).toEqual([{ kind: "complication", scope: "destination", label: "Complication at destination" }]);
   });
 
   it("maps route options to route calls (Pay the Price, Swear an Iron Vow)", () => {
@@ -326,14 +327,21 @@ describe("runSufferResolution — dispatches calls into executors / bridge", () 
     expect(bridgeCalls.setDebility).toContainEqual({ actor, key: "doomed", value: true });
   });
 
-  it("complication calls post a deferred chat card with the scope flag", async () => {
+  // Issue #353 Phase 0: the card was a promise that the narrator would
+  // "surface" the complication, and nothing read it. It is now the module's own
+  // oracle card, carrying what its follow-up beat narrates.
+  it("complication calls post a card the narrator's follow-up beat plays", async () => {
     await runSufferResolution(
-      [{ kind: "complication", scope: "destination" }],
+      [{ kind: "complication", scope: "destination", label: "Complication at destination" }],
       actor,
     );
     expect(chatCalls).toHaveLength(1);
-    expect(chatCalls[0].content).toMatch(/Pending complication \(destination\)/);
-    expect(chatCalls[0].flags["starforged-companion"]).toMatchObject({ complication: true, scope: "destination" });
+    expect(chatCalls[0].content).toMatch(/Complication: Complication at destination/);
+    expect(chatCalls[0].content).not.toMatch(/Narrator will surface/);
+    expect(chatCalls[0].flags["starforged-companion"]).toMatchObject({
+      complication: true, scope: "destination", oracleCommandCard: true,
+      oracleNarration: { kind: "complication", oracleName: "Complication at destination", rolledLine: "" },
+    });
   });
 
   it("route calls post a deferred chat card pointing at the follow-up move", async () => {

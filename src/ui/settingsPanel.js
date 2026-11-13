@@ -24,6 +24,7 @@ import { sessionLastSeenAt } from '../session/lifecycle.js';
 import { ELEVENLABS_MODELS } from "../audio/elevenlabs.js";
 import { onChatMessageRender } from '../system/chatHooks.js';
 import { localizeStat, localizeMeter, localizeMove } from '../system/i18n.js';
+import { stakesShown } from '../moves/stakes.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -80,6 +81,7 @@ const SETTING = {
   NARRATOR_SESSION_SUMMARY: 'narratorSessionSummary',
   NARRATOR_SPOTLIGHT:       'narratorSpotlightRotation',
   VOW_SWEARING_SCENE:       'vowSwearingNarration',
+  MISS_STATED_STAKES:       'missPaysStatedStakes',   // stakes.js STAKES_SETTING (read there)
   // ── Character management ─────────────────────────────────────────────────
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
   CHRONICLE_SALIENCE:       'chronicleSalienceThreshold',
@@ -98,6 +100,9 @@ const SETTING = {
   WJ_SESSION_LOG_AUTOWRITE:    'sessionLogAutoWrite',
   WJ_LORE_SALIENCE:            'loreSalienceThreshold',
   WJ_THREAT_SALIENCE:          'threatSalienceThreshold',
+  // The narrative skeleton (issue #353) — read by src/world/secrets.js.
+  WJ_SKELETONS:                'narrativeSkeletons',
+  WJ_SKELETON_ROLLS:           'narrativeSkeletonsShowRolls',
   // ── Pacing classifier ────────────────────────────────────────────────────
   PACING_ENABLED:              'pacing.enabled',
   PACING_DENSITY_WINDOW:       'pacing.densityWindow',
@@ -350,6 +355,15 @@ export function registerSettings() {
     default: true,
   });
 
+  game.settings.register(MODULE_ID, SETTING.MISS_STATED_STAKES, {
+    name:    'Miss Pays the Stated Stakes',
+    hint:    'Before a roll, the Confirm Move dialog says what a hit gets and what a miss costs. On: a miss that pays the price pays that stated cost — the most obvious negative outcome of what was attempted — with any harm, stress or loss it names. Off: the Pay the Price table is rolled, as before. A miss with no stated cost always rolls the table.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
   game.settings.register(MODULE_ID, SETTING.CHRONICLE_SALIENCE, {
     name:    'Chronicle Capture Threshold',
     hint:    'Minimum salience for an automatic chronicle entry to be recorded. Conservative by default — fleeting scene beats are skipped; the player can still add smaller notes by hand. One of: trivial, scene, notable, significant, defining.',
@@ -470,6 +484,24 @@ export function registerSettings() {
     type:    String,
     choices: SALIENCE_CHOICES,
     default: 'significant',
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_SKELETONS, {
+    name:    'Narrative Skeletons',
+    hint:    'When the story introduces something that carries a mystery, a threat or an arc — a new enemy, a question the characters are meant to answer — the narrator decides what is really true about it, keeps it in the GM-only World Journal — Secrets journal, and plays toward it without stating it. Off: nothing is planned, and existing plans are not shown to the narrator.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.WJ_SKELETON_ROLLS, {
+    name:    'Show Hidden Oracle Rolls',
+    hint:    'The oracle rolls behind a narrative skeleton\'s plan are kept hidden until its truth is revealed, then shown. On: they are shown to the table as soon as the plan is made.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: false,
   });
 
   game.settings.register(MODULE_ID, SETTING.WJ_THREAT_SALIENCE, {
@@ -1229,6 +1261,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narratorSessionSummary: getNarratorSessionSummary(),
       narratorSpotlight:     getNarratorSpotlight(),
       vowSwearingScene:      getVowSwearingScene(),
+      missPaysStatedStakes:  readSetting(SETTING.MISS_STATED_STAKES, true),
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
@@ -1255,6 +1288,8 @@ export class SettingsPanelApp extends ApplicationV2 {
         sessionLogAutoWrite:        readSetting(SETTING.WJ_SESSION_LOG_AUTOWRITE, true),
         loreSalience:               readSetting(SETTING.WJ_LORE_SALIENCE, 'significant'),
         threatSalience:             readSetting(SETTING.WJ_THREAT_SALIENCE, 'significant'),
+        narrativeSkeletons:         readSetting(SETTING.WJ_SKELETONS, true),
+        skeletonRollsShown:         readSetting(SETTING.WJ_SKELETON_ROLLS, false),
       },
       pacingEnabled:         getPacingEnabled(),
       pacingDensityWindow:   getPacingDensityWindow(),
@@ -1657,6 +1692,13 @@ export class SettingsPanelApp extends ApplicationV2 {
           <span class="narrator-field-hint">When a vow is sworn, the narrator paints a brief scene of the oath being made, grounded in your campaign's Iron truth (how the Ironsworn bind their vows).</span>
         </div>
         <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="missPaysStatedStakes" ${ctx.missPaysStatedStakes ? 'checked' : ''} ${dis}>
+            A miss pays the stated stakes
+          </label>
+          <span class="narrator-field-hint">The Confirm Move dialog says what a hit gets and what a miss costs. On: a miss that pays the price pays that stated cost. Off: the Pay the Price table is rolled.</span>
+        </div>
+        <div class="narrator-field">
           <label class="narrator-field-label">Custom instructions</label>
           <textarea class="settings-input narrator-instructions" name="narrationInstructions"
                     rows="3" maxlength="500" placeholder="Additional instructions for the narrator…"
@@ -1756,6 +1798,20 @@ export class SettingsPanelApp extends ApplicationV2 {
             <input type="checkbox" name="sessionLogAutoWrite" ${ctx.worldJournal.sessionLogAutoWrite ? 'checked' : ''} ${dis}>
             Session Log auto-write
           </label>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="narrativeSkeletons" ${ctx.worldJournal.narrativeSkeletons ? 'checked' : ''} ${dis}>
+            Narrative skeletons
+          </label>
+          <span class="narrator-field-hint">The narrator decides what is really true about a new enemy or a question the story poses, keeps it in the GM-only Secrets journal, and plays toward it without stating it.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="narrativeSkeletonsShowRolls" ${ctx.worldJournal.skeletonRollsShown ? 'checked' : ''} ${dis}>
+            Show hidden oracle rolls at once
+          </label>
+          <span class="narrator-field-hint">Off: a plan's oracle rolls are shown to the table when its truth is revealed. On: as soon as the plan is made.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Lore capture threshold</label>
@@ -2157,6 +2213,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SESSION_SUMMARY, sessionSummary),
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT,       spotlight),
         game.settings.set(MODULE_ID, SETTING.VOW_SWEARING_SCENE,       vowScene),
+        game.settings.set(MODULE_ID, SETTING.MISS_STATED_STAKES,       checked('missPaysStatedStakes', true)),
         game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
         game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),
@@ -2175,6 +2232,8 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.WJ_SESSION_LOG_AUTOWRITE, checked('sessionLogAutoWrite', true)),
         game.settings.set(MODULE_ID, SETTING.WJ_LORE_SALIENCE,       salience('loreSalienceThreshold')),
         game.settings.set(MODULE_ID, SETTING.WJ_THREAT_SALIENCE,     salience('threatSalienceThreshold')),
+        game.settings.set(MODULE_ID, SETTING.WJ_SKELETONS,           checked('narrativeSkeletons', true)),
+        game.settings.set(MODULE_ID, SETTING.WJ_SKELETON_ROLLS,      checked('narrativeSkeletonsShowRolls', false)),
       ]);
 
       ui.notifications?.info('Starforged Companion: Narrator settings saved.');
@@ -2457,6 +2516,8 @@ export class MoveConfirmDialog extends ApplicationV2 {
       moveId:          interp.moveId    ?? '—',
       statUsed:        interp.statUsed  ?? '—',
       rationale:       interp.rationale ?? '',
+      // What a hit gets and a miss costs, before the roll (issue #353 R1).
+      stakes:          interp.stakes ?? null,
       mischiefApplied: !!interp.mischiefApplied,
       mischiefAside:   interp._mischiefAside ?? '',
       applicableAbilities: Array.isArray(interp.applicableAbilities) ? interp.applicableAbilities : [],
@@ -2489,6 +2550,7 @@ export class MoveConfirmDialog extends ApplicationV2 {
           <span class="confirm-field-label">Interpretation</span>
           <p class="confirm-rationale-text">${escapeAttr(context.rationale)}</p>
         </div>
+        ${renderStakesBlock(context.stakes)}
         ${mischiefBlock}
         ${abilitiesBlock}
         <div class="confirm-actions">
@@ -2610,6 +2672,23 @@ export function readMoveAbilitiesForm(root) {
  * @param {string} currentStat — the move's listed stat
  * @returns {string} HTML ('' with no abilities)
  */
+/**
+ * What the roll is for, before it (issue #353 R1): what a hit gets, and what
+ * a miss costs when that is its price (stakes.js stakesShown) — the Confirm
+ * dialog's and a Batch Mode round reading's. '' for none.
+ *
+ * @param {Object|null} stakes — the interpretation's
+ * @returns {string}
+ */
+export function renderStakesBlock(stakes) {
+  const shown = stakesShown(stakes);
+  if (!shown.length) return '';
+  const rows = shown.map(s => (s.kind === 'hit'
+    ? `<p class="confirm-stake confirm-stake-hit"><strong>On a hit:</strong> ${escapeAttr(s.text)}</p>`
+    : `<p class="confirm-stake confirm-stake-miss"><strong>On a miss:</strong> ${escapeAttr(s.text)}${s.cost ? ` <span class="confirm-stake-cost">(${escapeAttr(s.cost)})</span>` : ''}</p>`)).join('');
+  return `<div class="confirm-stakes"><span class="confirm-field-label">At stake</span>${rows}</div>`;
+}
+
 export function renderMoveAbilitiesForm(abilities, currentStat) {
   return renderApplicableAbilitiesBlock(abilities, currentStat);
 }

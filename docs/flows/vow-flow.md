@@ -279,6 +279,82 @@ paths, written for the PC who swore (`speakerActorId`, issue #321 U23), and
 records its facts in a scene (`ensureSceneStarted`, issue #321 U34). Vows are
 **not** part of the scene frame or relevance-injected entity cards.
 
+**The vow this scene serves** (issue #353 R3 — the vow as the spine). Of
+those three places only THE TABLE'S FOCUS THIS SESSION came with an
+instruction, so the narrator was told what the vows were but not to play
+toward one. `buildNarratorExtras` now reads `extras.sceneVow`
+(`session/openThreads.js` `readSceneVow` over every PC's vows, the open
+tracks it already read for [4j] and the session's focus), and the beat modes
+(move, paced, round, @scene, oracle follow-up) carry **[2.6] THE VOW THIS
+SCENE SERVES** at the top of the per-beat context: the vow, its rank,
+progress and holders, why it is this scene's, and one instruction — when a
+beat achieves something toward it, show that in the fiction; never name its
+track, its progress or a milestone (the move card's ⚑ Mark Progress on Vow is
+the player's). The vow is chosen by a bounded ladder (`selectSceneVow`):
+1. an open track's linked vow — a fight first, then a scene challenge, then
+   an expedition, the newest of a kind; a link by `linkedVowId` names that
+   vow whatever it is called now and nothing once it is closed; a fight's
+   threshold link (a name) names the one open vow of that name;
+2. the session's quest focus (`campaignState.sessionFocus.quest`), when it
+   names one open vow, exactly or as whole words;
+3. the only vow in play — the one quest (below), else, with no quest, the one
+   open vow (a lone background vow).
+Otherwise there is no line: two quests, no focus and no link is not guessed.
+
+**A quest in play** (`openThreads.questVows`): an open vow besides a PC's
+background vow — for this question, the PC's first vow on the sheet that is
+not the shared inciting vow (the foundry-ironsworn convention `readVows`'
+fallback follows); the shared inciting vow (`readVows` `shared`) is always a
+quest, though `isBackground` labels it "Background vow" for the narrator.
+
+## 3b. What is open — Begin, the tracks, the Session panel, End (issue #353 R3, R4)
+
+- **Begin a Session** (`openBeginSessionDialog`, the invoking client): when no
+  PC holds a quest, its dialog and card say so ("No vow in play"), and the
+  dialog offers Swear an Iron Vow for the user's own PC (`resolveUserActorId`)
+  — a vow and its rank. After the session's start is requested it is written
+  on that PC's sheet (`actorBridge.createCharacterVowItem`, no `vowId`), so the
+  canonical GM's `registerPlayerVowHook` posts its "🆕 New vow recorded" card
+  — ⚔ Swear it (roll), the reward offer, the 🤝 link: §1's player-authored
+  path. A vow the sheet refused is said to the user; the Begin card claims no
+  vow.
+- **A track serves a vow** (Progress Tracks panel, `progressTrack.edit`): the
+  add form's vow select links any track it creates (a fight added by hand too
+  — it then pays off as a threshold fight does, `combat-flow.md` §4), and an
+  open expedition's or scene challenge's row links or unlinks it (🔗 — an
+  expedition the move pipeline began, which has no creation card to link it
+  on). The canonical GM checks the vow is open as the sheets stand
+  (`resolveVowChoice`; refused `no-vow`, said first on the presser's screen,
+  since a relayed refusal reaches no player) and stores **`linkedVowId`** (the
+  vow's id across copies — canonical) and **`linkedVowName`** (the name [4j]
+  and the fight path read). A fight's link stays its threshold card's (a
+  name) and is not changed on its row.
+- **The Session panel's "What's open"** (`ui/sessionPanel.js`): the open vows
+  (one per vow, with rank, boxes, countdown clock and holders), the open
+  tracks with the vow each serves (`trackVowName`, by id first) and a scene
+  challenge's danger, the running clocks, and from the narrative skeleton the
+  unanswered questions and the standing demands the table has been shown —
+  never a plan's secrets (`narrator-context-flow.md` lists the reader). A
+  line says when no quest is in play.
+- **End a Session**: the open vows (`vowChoices`, one per vow) and the PCs'
+  connections (`tableConnectionNames`, a severed one left out) are one-click
+  choices beside the two focus fields, which stay free text. The quest focus
+  chosen there is `sessionFocus.quest` at the next Begin — rung 2 above.
+
+**The vow's hidden plan (issue #353 Phase 4).** `narrateAndPostVowSwearing`
+asks its scene what is really behind the vow (`resolver.vowPlanRequest`: an
+Action + Theme, a `vow` plan about the vow by its stable `vowId` — the swear
+passes the inciting card's message id); the scene's sidecar `plans` decides
+it into the GM-only Secrets journal (`secrets.applyPlanSideData`). No scene
+(the setting off, no key, a failure): the request is filed with its roll
+alone (`secrets.fileRequestedPlan`) for a later narration to decide. The
+plan reaches the narrator as [6.6] UNREVEALED while its vow is the one the
+scene serves (`extras.sceneVow`, below → `selectRelevantSkeletons`'
+`sceneVow`, by the vow's id or name), when the fiction names it, and in the narration of the
+Fulfill Your Vow that scores it: the fulfil branch puts the scored copies'
+`vowId`s on `resolution.endingTrackIds` (`movePipeline.js`), which
+`narrationInputFrom` carries to the narration.
+
 ## 4. Fulfilment
 
 Scoring: `fulfill_your_vow` is a progress move; `enrichProgressTicks` fills

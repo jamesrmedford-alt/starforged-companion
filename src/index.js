@@ -23,7 +23,7 @@
  */
 
 import { CampaignStateSchema, rankName } from "./schemas.js";
-import { mapConsequences, buildLoremasterContext } from "./moves/resolver.js";
+import { mapConsequences, buildLoremasterContext, expeditionPlanRequest } from "./moves/resolver.js";
 import { progressPerMilestoneLine, planRewardGrant } from "./moves/rewards.js";
 import {
   renderBurnButtonHtml,
@@ -152,6 +152,7 @@ import {
   executeJournalCommand,
 } from "./world/worldJournal.js";
 import { registerJournalSplitMerge } from "./world/journalSplitMerge.js";
+import { registerSceneChallengeOffer } from "./moves/sceneChallengeOffer.js";
 import {
   installConsoleInterceptor,
   flushErrorLogBuffer,
@@ -2212,6 +2213,11 @@ async function applyOutcomeEffects({
         // "ghost" keyword linked the derelict, which the finish then charted
         // (known-issues EXPEDITION-STAMP-SITE-NAME).
         if (result.created) {
+          // Its narration plans it (issue #353 Phase 3): waypoints, the
+          // danger along the way, what waits at the end — from two waypoint
+          // sightings and an Action + Theme. Dropped when skeletons are off.
+          resolution.skeletonRequests = [...(resolution.skeletonRequests ?? []),
+            expeditionPlanRequest(result.track, campaignState, resolution._id)];
           try {
             const { selectExpeditionSite, recordUnchartedDestination } = await import("./sectors/siteDiscovery.js");
             const label  = result.track.label;
@@ -4065,6 +4071,15 @@ async function handleOracleCommand(message) {
   } else if (oneWord) {
     oddsKey  = oneWord;
     question = parts.slice(2).join(" ");
+  }
+
+  // A question about a subject the narrator holds a hidden plan for is
+  // rolled at odds its truth sets, so the answer cannot contradict it (issue
+  // #353, decided). Only a GM's roll: the plans are the GM's.
+  if (game.user?.isGM) {
+    const { oddsFromPlan } = await import("./oracles/oracleConsult.js");
+    const consulted = await oddsFromPlan(question).catch(() => null);
+    if (consulted?.odds) oddsKey = consulted.odds;
   }
 
   const result = rollYesNo(oddsKey, { question });
@@ -6882,24 +6897,35 @@ async function postDecisiveActionCostCard(actorId = null) {
  *   challenge's clock the move's miss filled itself (issue #338 D2)
  * @returns {Promise<{ reversals: Object, price: string }|null>}
  */
-async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [] } = {}) {
-  const { rollOracle } = await import("./oracles/roller.js");
+async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [], stated = null } = {}) {
+  // The miss stated before the roll is the price, when there is one (issue
+  // #353 R1, stakes.js statedPrice): nothing is rolled, and its suffer move —
+  // the one route — is dispatched as a rolled route is.
+  const statedText = typeof stated?.price === "string" && stated.price.trim() ? stated.price.trim() : null;
   let result;
-  try {
-    result = rollOracle("pay_the_price");
-  } catch (err) {
-    console.warn(`${MODULE_ID} | ${moveName ?? "move"} pay_the_price roll failed:`, err);
-    return null;
+  if (statedText) {
+    result = { roll: null, result: statedText, sufferRoutes: Array.isArray(stated.sufferRoutes) ? stated.sufferRoutes.slice(0, 1) : [] };
+  } else {
+    const { rollOracle } = await import("./oracles/roller.js");
+    try {
+      result = rollOracle("pay_the_price");
+    } catch (err) {
+      console.warn(`${MODULE_ID} | ${moveName ?? "move"} pay_the_price roll failed:`, err);
+      return null;
+    }
+    void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
   }
-  void showD100(result.roll);   // 3D dice for the d100 (fire-and-forget, fail-open)
   // The price is recorded under the move that paid it: the card and RECENT
   // ORACLE RESULTS said "Face Defeat" for every routed price — a Face Danger
   // miss included — a defeat that never happened (issue #325 W03).
   const paidFor = typeof moveName === "string" && moveName.trim() ? moveName.trim() : "";
   const qBlock  = paidFor ? `<p><em>${escapeChatHtml(paidFor)}</em></p>` : "";
+  const priceLine = statedText
+    ? `<p>As stated before the roll: <strong>${escapeChatHtml(result.result)}</strong></p>`
+    : `<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>`;
   try {
     await ChatMessage.create({
-      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}<p>d100 = <strong>${result.roll}</strong> · ${escapeChatHtml(result.result)}</p>${sufferRoutesFooter(result.sufferRoutes)}</div>`,
+      content: `<div class="sf-ptp-card"><strong>Pay the Price</strong>${qBlock}${priceLine}${sufferRoutesFooter(result.sufferRoutes)}</div>`,
       flags:   {
         [MODULE_ID]: {
           payThePriceCard: true,
@@ -8601,6 +8627,7 @@ Hooks.once("ready", () => {
   registerPublishedReflectionHook();       // #286 D1: a published Private Channel reflection's NPC developments → their cards
   registerProgressTrackHooks();
   registerJournalSplitMerge();             // #347 residual: a split World Journal / Progress Tracks journal — the GMs' Merge card
+  registerSceneChallengeOffer();           // #353 Phase 3: a countdown's "Begin the scene challenge" card button
   registerClocksPanelHooks();
   registerCombatTrackerHooks();
   registerEntityPanelHooks();

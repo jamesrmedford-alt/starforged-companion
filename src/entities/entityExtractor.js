@@ -62,7 +62,8 @@ import {
   getFactionLandscape,
   getFactionEntry,
 } from "../world/worldJournal.js";
-import { passesSalience, getSalienceThreshold, SALIENCE_ORDER } from "../world/salience.js";
+import { passesSalience, getSalienceThreshold, normalizeSalience, SALIENCE_ORDER } from "../world/salience.js";
+import { planSignificantThreat, planNpcAgenda } from "../world/secrets.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -650,6 +651,10 @@ export async function routeEntityDrafts(entities, campaignState, options = {}) {
         // the portrait — the image, its download and upload — can take
         // minutes (issue #347 AB01). The card and the bond exist now.
         if (!removed()) await postCreationEnrichment("connection", record, campaignState);
+        // A connection made: their agenda is planned, for the next narration
+        // they are in to decide (issue #353 Phase 4). After the enrichment:
+        // it decides the portrait's owner from whether the seed has run yet.
+        if (!removed()) await planNpcAgenda(record, { campaignState, narrationId, trigger: "make_a_connection" });
       } catch (err) {
         console.error(`${MODULE_ID} | entityExtractor: auto-create connection failed:`, err);
         queued.push(entity);
@@ -1307,7 +1312,13 @@ export async function routeWorldJournalResults(wj, campaignState, { narrationId 
       await appendSessionLogBeat(campaignState, { kind: "threat", title: threat.name, text: threat.summary ?? "", ...fromNarration });
       continue;
     }
-    await recordThreat(threat.name, { ...threat, ...fromNarration }, campaignState);
+    const recorded = await recordThreat(threat.name, { ...threat, ...fromNarration }, campaignState);
+    // A threat recorded at significant salience or above gets a hidden plan
+    // (issue #353 Phase 2), sharing its page's id. Rated explicitly: the
+    // salience gate above lets an unrated threat through.
+    if (recorded && (SALIENCE_ORDER[normalizeSalience(threat.salience)] ?? -1) >= SALIENCE_ORDER.significant) {
+      await planSignificantThreat(recorded, { campaignState, narrationId: fromNarration.narrationId ?? null });
+    }
   }
 
   for (const faction of wj.factionUpdates ?? []) {
@@ -2480,6 +2491,12 @@ async function confirmDraft(message, draftIndex, opts = {}) {
     await postCreationEnrichment(draft.type, record, campaignState);
 
     if (draft.type === "faction") await mirrorConfirmedFaction(draft, campaignState);
+    // A named NPC the GM confirmed: their agenda is planned (issue #353
+    // Phase 4) — after the enrichment, which decides the portrait's owner
+    // from whether the seed has run yet.
+    if (draft.type === "connection") {
+      await planNpcAgenda(record, { campaignState, narrationId: opts.narrationId ?? null, trigger: "connection_confirmed" });
+    }
 
     // Promote any free-text fact-continuity ledger entries that were
     // captured against this name into entity-scoped entries pointing at

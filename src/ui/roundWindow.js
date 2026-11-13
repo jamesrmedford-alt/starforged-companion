@@ -43,7 +43,7 @@ import {
 import { requestGmAction, hasActiveGM, onlyStoodDownGMs } from "../multiplayer/gmRelay.js";
 import { onGmLoadChange } from "../multiplayer/gmGate.js";
 import { relayCardButtonClick, RELAY_RECOVERY_MS } from "../moves/burnMomentum.js";
-import { renderMoveAbilitiesForm, readMoveAbilitiesForm } from "./settingsPanel.js";
+import { renderMoveAbilitiesForm, readMoveAbilitiesForm, renderStakesBlock } from "./settingsPanel.js";
 import { isXCardActive } from "../narration/narrator.js";
 import { sanitizePlayerText } from "../narration/narratorPrompt.js";
 import { isNarrationXCarded } from "../context/safety.js";
@@ -355,6 +355,8 @@ export class RoundWindowApp extends foundry.applications.api.ApplicationV2 {
       `<div class="sf-round-row"><span class="sf-round-label">Move</span> <strong>${escapeHtml(r.moveName)}</strong></div>`];
     if (r.statName) parts.push(`<div class="sf-round-row"><span class="sf-round-label">Stat</span> ${escapeHtml(r.statName)}</div>`);
     if (r.rationale) parts.push(`<p class="sf-round-rationale">${escapeHtml(r.rationale)}</p>`);
+    // What a hit gets and a miss costs, before the roll (issue #353 R1).
+    if (r.stakes) parts.push(renderStakesBlock(r.stakes));
     if (r.mischiefAside) parts.push(`<div class="sf-round-mischief"><span class="sf-round-label">Mischief</span> ${escapeHtml(r.mischiefAside)}</div>`);
     // Worded by the closed vow's forsaken flag (ROUND-VOW-GONE-SAYS-FULFILLED).
     if (r.blocked) parts.push(`<p class="sf-round-hint">This can't be rolled as read — the vow it names ${r.blocked === "vow-forsaken" ? "was forsaken" : "is already fulfilled"}. Edit your action, or pass.</p>`);

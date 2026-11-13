@@ -11,6 +11,17 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Narrative skeleton (issue #353) — residuals
+
+| ID | Kind | Status |
+|---|---|---|
+| ORACLE-CONSULT-PLAYER-ROLL | residual | `!oracle yes` is rolled on the typing client (`RUN_ON.AUTHOR`). A GM's roll about a planned subject takes its odds from the plan's truth (issue #353, decided); a player's is rolled at the odds they gave, since the plans are the GM's and moving every player's yes/no to the GM is a routing change of its own. The follow-up narration still sees the plan under UNREVEALED. |
+| SKELETON-CLOCK-RESET-REWIND | residual | When a plan's clock fills, its trigger vignette plays the next escalation step and the clock goes back to empty for the step after. A Burn Momentum or Improve Result that then rewinds the price which filled it takes the step back (the superseded vignette's plan writes are undone) but finds the clock already empty, so the step is paced again from 0 rather than from one short of full. |
+| SECRET-ROLLS-CARD-XCARD | by design (residual) | When a narration reveals a plan's truth, the oracle rolls behind it are posted to the table ("The oracle, behind the scenes"). The X-Card on that narration undoes the reveal, its lore and its ledger truth, but leaves that card: the rolls are table words (a role, a goal, a disposition), not the removed beat's content, and taking a posted card back would need a new X-Card path. Revisit if a playtest shows the card spoiling a plan the X-Card put back. |
+| SCENE-VOW-THRESHOLD-LINK-BY-NAME | residual | A fight linked to a vow at its threshold card carries the vow's name only (`linkedVowName`); the vow this scene serves ([2.6], `openThreads.selectSceneVow`) resolves it by an exact, unique name, so two open vows of that name give no line. An expedition's or scene challenge's link carries the vow's id (`linkedVowId`). Stamping the id at the threshold card would close it (issue #353 R3). |
+| TRACK-VOW-NAME-SNAPSHOT-IN-4J | residual | [4j] OPEN PROGRESS TRACKS prints a track's `linkedVowName`, the name the vow had when it was linked, so a vow renamed since shows its old name there; [2.6] and the Progress Tracks and Session panels resolve the link by id and show the current name (issue #353 R3). |
+| BACKGROUND-VOW-BY-POSITION | by design (residual) | "Is a quest in play?" (Begin a Session's no-vow check, issue #353 R3) treats a character's first vow that is not the shared inciting vow as their background vow, the foundry-ironsworn convention. A character who never wrote a background vow has their first own quest counted as it, so Begin a Session can say no vow is in play while that quest is open. The narrator's "Background vow" label is unchanged. |
+
 ### Alpha 23 playtest (issue #348) — all fourteen resolved in the v1.8.1 cycle
 
 | ID | Kind | Fix |

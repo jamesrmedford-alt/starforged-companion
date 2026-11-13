@@ -16,7 +16,13 @@
  *   - Take a Break — opens the existing pacing prompt.
  *
  * The panel renders a small status badge showing whether the session
- * is active and (when active) for how many minutes.
+ * is active and (when active) for how many minutes, and the table's
+ * "What's open" list (issue #353 R4): the open vows and their progress,
+ * the open fights / expeditions / scene challenges, the running clocks, and
+ * the narrative skeleton's standing demands and unanswered questions that
+ * the table has been shown — never a plan's secrets (revealedPlanRows). It is
+ * read from the stores that hold them, with no model call, on every render;
+ * the panel re-renders when a vow, a track or a plan changes.
  *
  * State writes are done by the dialogs' GM-relay handlers in
  * `src/safety/sessionLifecycleDialogs.js` (run on the canonical GM),
@@ -35,6 +41,9 @@ import {
   openEndSessionDialog,
 } from "../safety/sessionLifecycleDialogs.js";
 import { isSessionActive, sessionMinutesActive, sessionNeedsMint, sessionLastSeenAt, SESSION_IDLE_HOURS } from "../session/lifecycle.js";
+import { tableVows, openThreadRows } from "../session/openThreads.js";
+import { listOpenProgressTracks } from "./progressTracks.js";
+import { listSkeletons, skeletonsEnabled } from "../world/secrets.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -86,9 +95,26 @@ export class SessionPanelApp extends ApplicationV2 {
       Hooks.on(`${MODULE_ID}.sessionStateChanged`, SessionPanelApp.rerenderIfOpen);
       Hooks.on("updateSetting", SessionPanelApp.onSettingChanged);
       Hooks.on("createSetting", SessionPanelApp.onSettingChanged);
+      // What's open (issue #353 R4) follows what it lists: a vow on a sheet
+      // (an Item), the Progress Tracks journal's flag, a plan's page.
+      Hooks.on("createItem", SessionPanelApp.onOpenThreadsChanged);
+      Hooks.on("updateItem", SessionPanelApp.onOpenThreadsChanged);
+      Hooks.on("deleteItem", SessionPanelApp.onOpenThreadsChanged);
+      Hooks.on("updateJournalEntry", SessionPanelApp.onOpenThreadsChanged);
+      Hooks.on("createJournalEntryPage", SessionPanelApp.onOpenThreadsChanged);
+      Hooks.on("updateJournalEntryPage", SessionPanelApp.onOpenThreadsChanged);
+      Hooks.on("deleteJournalEntryPage", SessionPanelApp.onOpenThreadsChanged);
     }
     SessionPanelApp.#instance.render({ force: true });
     return SessionPanelApp.#instance;
+  }
+
+  /**
+   * Document hook → re-render the open panel's "What's open" list: a vow, a
+   * track or a plan may have changed. This client's panel only.
+   */
+  static onOpenThreadsChanged() {
+    SessionPanelApp.rerenderIfOpen();
   }
 
   /**
@@ -123,7 +149,19 @@ export class SessionPanelApp extends ApplicationV2 {
     const minutes       = sessionMinutesActive(campaignState);
     const sessionNumber = Number(campaignState?.sessionNumber ?? 0);
     this.#scheduleIdleRerender(active && !over ? campaignState : null);
-    return { active, over, minutes, sessionNumber };
+    // What's open (issue #353 R4): the vows, tracks and clocks as their
+    // stores hold them, and what the table has been shown of the plans.
+    // Fail-open: the panel's buttons render whatever it can read.
+    let open = null;
+    try {
+      open = {
+        ...openThreadRows({ vows: tableVows(), tracks: listOpenProgressTracks(), clocks: campaignState?.clocks ?? [] }),
+        ...revealedPlanRows(),
+      };
+    } catch (err) {
+      console.warn(`${MODULE_ID} | session panel: what is open could not be read:`, err?.message ?? err);
+    }
+    return { active, over, minutes, sessionNumber, open };
   }
 
   // The re-render due when the open session reaches its four idle hours.
@@ -162,7 +200,7 @@ export class SessionPanelApp extends ApplicationV2 {
 
   /** @override */
   async _renderHTML(context, _options) {
-    const { active, over, minutes, sessionNumber } = context;
+    const { active, over, minutes, sessionNumber, open } = context;
 
     const stateBadge = over
       ? `<span class="badge over" title="No chat for four hours: this session is over. Begin Session starts the next one.">Over — four hours without chat</span>`
@@ -216,6 +254,8 @@ export class SessionPanelApp extends ApplicationV2 {
             ✦ Envision Inciting Incident
           </button>
         </section>
+
+        ${renderOpenThreads(open)}
 
         <p class="hint">
           Pre-session, typed narration does NOT trigger the narrator or move pipeline.
@@ -283,4 +323,88 @@ export class SessionPanelApp extends ApplicationV2 {
 /** Convenience for the toolbar wiring. */
 export function openSessionPanel() {
   SessionPanelApp.open();
+}
+
+/**
+ * What the "What's open" list shows of the narrative skeleton (issue #353
+ * R4) — only what the table has been shown, never a plan's secrets:
+ *   - an unanswered question: an active mystery whose truth is not revealed —
+ *     its question alone (the fiction posed it to the characters);
+ *   - a standing demand: an active threat or NPC agenda whose truth is
+ *     revealed — its subject and what it wants, no longer secret.
+ * No other field of a plan is read here — its truth, what it knows, its
+ * clues, escalation, endings and oracle rolls stay in the GM-only Secrets
+ * journal — and every client reads alike: a player's list and a GM's are the
+ * same. Nothing while the narrative skeleton is off; fail-open
+ * (listSkeletons gives none on any failure).
+ *
+ * @returns {{ questions: Array<{ question: string }>, demands: Array<{ name: string, wants: string }> }}
+ */
+function revealedPlanRows() {
+  const out = { questions: [], demands: [] };
+  if (!skeletonsEnabled()) return out;
+  for (const plan of listSkeletons()) {
+    if (plan?.status !== "active") continue;
+    if (plan.kind === "mystery" && plan.truthRevealed !== true && plan.question) {
+      out.questions.push({ question: plan.question });
+    } else if ((plan.kind === "threat" || plan.kind === "npcAgenda") && plan.truthRevealed === true && plan.wants) {
+      out.demands.push({ name: plan.subject?.name ?? "", wants: plan.wants });
+    }
+  }
+  return out;
+}
+
+/** "formidable · 3/10" — a vow's or a track's rank and filled boxes. */
+const rankAndBoxes = (rank, progress) => [rank, `${progress}/10`].filter(Boolean).join(" · ");
+
+/**
+ * The "What's open" section (issue #353 R4): open vows, open tracks, running
+ * clocks, standing demands and unanswered questions — each part only when it
+ * has rows, and a line saying so when no character has a vow besides a
+ * background vow (issue #353 R3).
+ *
+ * @param {Object|null} open — _prepareContext's `open`
+ * @returns {string}
+ */
+function renderOpenThreads(open) {
+  if (!open) return "";
+  const parts = [];
+  const list = (items) => `<ul class="open-thread-list">${items.join("")}</ul>`;
+  const meta = (text) => (text ? ` <span class="muted">${escapeHtml(text)}</span>` : "");
+
+  const vows = (open.vows ?? []).map(v => `<li><span class="thread-name">${escapeHtml(v.name)}</span>${meta([
+    rankAndBoxes(v.rank, v.progress),
+    v.clock ? `clock ${v.clock.filled}/${v.clock.segments}` : "",
+    (v.holders ?? []).join(", "),
+  ].filter(Boolean).join(" · "))}</li>`);
+  const noQuest = open.questInPlay === false
+    ? `<p class="muted sf-no-vow">No character has a vow in play besides a background vow — swear an iron vow to give the session a quest.</p>`
+    : "";
+  parts.push(`<h4>Vows</h4>${vows.length ? list(vows) : ""}${noQuest}`);
+
+  const tracks = (open.tracks ?? []).map(t => `<li><span class="thread-name">${escapeHtml(`${t.kind}: ${t.label}`)}</span>${meta([
+    rankAndBoxes(t.rank, t.progress),
+    t.clock ? `danger ${t.clock.filled}/${t.clock.segments}` : "",
+    t.vowName ? `serves “${t.vowName}”` : "",
+  ].filter(Boolean).join(" · "))}</li>`);
+  if (tracks.length) parts.push(`<h4>Progress tracks</h4>${list(tracks)}`);
+
+  const clocks = (open.clocks ?? []).map(c => `<li><span class="thread-name">${escapeHtml(c.name)}</span>${meta(`${c.type === "campaign" ? "campaign" : "tension"} · ${c.filled}/${c.segments}`)}</li>`);
+  if (clocks.length) parts.push(`<h4>Clocks</h4>${list(clocks)}`);
+
+  const demands = (open.demands ?? []).map(d => `<li><span class="thread-name">${escapeHtml(d.name)}</span> wants: ${escapeHtml(d.wants)}</li>`);
+  if (demands.length) parts.push(`<h4>Standing demands</h4>${list(demands)}`);
+
+  const questions = (open.questions ?? []).map(q => `<li>${escapeHtml(q.question)}</li>`);
+  if (questions.length) parts.push(`<h4>Unanswered questions</h4>${list(questions)}`);
+
+  return `<section class="open-threads"><h3>What's open</h3>${parts.join("")}</section>`;
+}
+
+function escapeHtml(s) {
+  return String(s ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }

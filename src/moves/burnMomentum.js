@@ -334,6 +334,7 @@ export function buildBurnState(resolution, actor, ptpReversals = null, targets =
     actorId:            actor.id,
     resolutionId:       resolution._id ?? null,  // links to the original narration card (F13a)
     ptpReversals:       ptpReversals ?? null,     // PtP clock + suffer deltas to undo on burn
+    stakes:             resolution.stakes ?? null, // as shown before the roll: the re-narration delivers the burned outcome's (issue #353 R1)
     targets:            targets ?? null,          // for the upgraded outcome's choice card and effects
     move:               move ?? null,             // the move's target and ranks, for its effects
     ...(weakHitAsMiss ? { weakHitAsMiss: resolution.weakHitAsMiss } : {}),   // the press re-checks with it
@@ -762,6 +763,9 @@ function buildBurnedResolution({ burn, burnResult, burnedMomentum, newConsequenc
     upgradeOf:       burn.resolutionId ?? null,
     consequences:    newConsequences,
     oracleSeeds:     null,
+    // The stakes shown before the roll: the re-narration delivers the line
+    // the burned outcome calls for (issue #353 R1).
+    stakes:          burn.stakes ?? null,
     playerNarration: "[Player burned momentum to upgrade the outcome]",
     inputMethod:     "burn",
     sessionId:       campaignState.currentSessionId ?? "",

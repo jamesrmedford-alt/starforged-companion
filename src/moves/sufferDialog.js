@@ -110,7 +110,7 @@ function optionToCalls(opt, selection) {
 
   // Complication branch (e.g. set_a_course "complication at destination").
   if (opt.complication) {
-    return [{ kind: "complication", scope: opt.scope ?? "scene" }];
+    return [{ kind: "complication", scope: opt.scope ?? "scene", label: typeof opt.label === "string" ? opt.label : null }];
   }
 
   // Route to another move (e.g. "Pay the Price", "Swear an Iron Vow").
@@ -541,16 +541,7 @@ async function runSufferCall(call, actor, opts) {
       return { kind: "next-bonus", amount: call.amount };
     }
     case "complication":
-      // Surface a chat card; the narrator picks it up on next scene
-      // transition. The actual `pendingComplication` flag write is
-      // the narrator's responsibility (Phase F for set_a_course; the
-      // rest is GM adjudication).
-      await postDeferredCard(
-        `Pending complication (${call.scope})`,
-        `Narrator will surface this complication on the next scene transition or appropriate beat.`,
-        { complication: true, scope: call.scope },
-      );
-      return { kind: "complication", scope: call.scope };
+      return postChosenComplication(call, actor);
     case "route":
       // A priced Pay the Price (Sojourn's "No relief"): the price the move's
       // narration depicted is paid — its card, its suffer routes and the
@@ -722,6 +713,78 @@ function escapeHtml(s) {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+/** The table a chosen complication's scope is rolled on: a waypoint's peril (issue #353 Phase 0). */
+const COMPLICATION_TABLES = Object.freeze({ waypoint: "spaceborne_peril" });
+
+/** What a complication with no option label is called, by scope. */
+const COMPLICATION_LABELS = Object.freeze({
+  waypoint:    "Peril at the waypoint",
+  destination: "Complication at destination",
+  scene:       "Narrative cost",
+});
+
+/**
+ * A complication the player chose as a weak hit's cost — "Peril at the
+ * waypoint", "Complication at destination", Forsake Your Vow's "Narrative
+ * cost" — delivered: its card, then a short narrator beat that plays it now
+ * (the oracle follow-up, narrated once where a Claude key lives, its card
+ * stamped for the X-Card). Its card only promised that the narrator would
+ * "surface" it, and nothing read it (issue #353 Phase 0; rules/
+ * reachability.md §1). A waypoint's peril is rolled on Spaceborne Peril
+ * first, and the roll is on the card and in RECENT ORACLE RESULTS; the other
+ * scopes roll nothing. The card is the module's own oracle card
+ * (`oracleCommandCard`), so the GM narrates what it carries and nothing a
+ * relay brings (oracleFollowup.js).
+ *
+ * @param {{ scope?: string, label?: string|null }} call
+ * @param {Actor|null} actor — the card's PC, whose beat it is
+ * @returns {Promise<{ kind: "complication", scope: string, roll?: string }>}
+ */
+async function postChosenComplication(call, actor) {
+  const scope = typeof call?.scope === "string" && call.scope ? call.scope : "scene";
+  const label = (typeof call?.label === "string" && call.label.trim()) ? call.label.trim()
+    : (COMPLICATION_LABELS[scope] ?? "A complication");
+  const tableId = COMPLICATION_TABLES[scope] ?? null;
+  let roll = null;
+  if (tableId) {
+    try {
+      const { rollOracle } = await import("../oracles/roller.js");
+      const r = rollOracle(tableId);
+      if (r?.result && r.result !== "—") roll = { tableId, tableName: r.tableName ?? tableId, die: r.die ?? 100, roll: r.roll, result: r.result };
+    } catch (err) {
+      console.warn(`${MODULE_ID} | complication: the ${tableId} roll failed — it is narrated unrolled:`, err?.message ?? err);
+    }
+  }
+  const narration = {
+    kind:           "complication",
+    oracleName:     label,
+    question:       "",
+    rolledLine:     roll ? `${roll.tableName}: ${roll.result}` : "",
+    speakerActorId: actor?.id ?? null,
+    scope,
+  };
+  const body = roll
+    ? `<p>${escapeHtml(roll.tableName)}: d${roll.die} = <strong>${roll.roll}</strong> · ${escapeHtml(roll.result)}</p>`
+    : `<p>The cost you chose arrives.</p>`;
+  const card = await postDeferredCard(`Complication: ${escapeHtml(label)}`, body, {
+    complication:      true,
+    scope,
+    oracleCommandCard: true,
+    ...(roll ? {
+      oracleTableId: roll.tableId,
+      // The dice established it: later narrations must not contradict it.
+      oracleMemory:  { name: roll.tableName, question: label, answer: roll.result },
+    } : {}),
+    // What the GM narrates — the card's own (oracleFollowup.js, issue #331 X49).
+    oracleNarration: narration,
+  });
+  if (card?.id) {
+    const { requestOracleNarration } = await import("../oracles/oracleFollowup.js");
+    requestOracleNarration({ ...narration, messageId: card.id });
+  }
+  return { kind: "complication", scope, ...(roll ? { roll: roll.result } : {}) };
 }
 
 async function postDeferredCard(title, body, flags = {}) {
