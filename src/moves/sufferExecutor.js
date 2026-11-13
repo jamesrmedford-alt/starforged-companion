@@ -103,11 +103,18 @@ function rollD100Table(table, opts = {}) {
  * tests can pin the shape; non-Foundry test envs no-op via the
  * ChatMessage stub.
  */
-async function postSufferCard({ title, body, flags = {} }) {
+async function postSufferCard({ title, body, flags = {}, opts = null }) {
+  // A move's Pay the Price names the move on the cards its route posts
+  // (`priceOf` — index.js dispatchPayThePriceSufferRoute's `priceCard` and
+  // `resolutionId`): a Burn Momentum or Improve Result that reverts the price
+  // strikes them, as it strikes the narration (resultUpgrade.js
+  // supersedePriceCards, issue #354 P2-09).
+  const priceOf = opts?.priceCard === true && typeof opts.resolutionId === "string" && opts.resolutionId
+    ? { priceOf: opts.resolutionId } : {};
   try {
     return await globalThis.ChatMessage?.create?.({
       content: `<div class="sf-card sf-card--suffer"><div class="sf-card-header">${title}</div><div class="sf-card-body">${body}</div></div>`,
-      flags: { [MODULE_ID]: { sufferCard: true, ...flags } },
+      flags: { [MODULE_ID]: { sufferCard: true, ...flags, ...priceOf } },
     });
   } catch (err) {
     console.warn(`${MODULE_ID} | sufferExecutor: chat post failed:`, err);
@@ -151,6 +158,7 @@ export async function loseMomentum(actor, amount, opts = {}) {
 
   if (!opts.skipCard) {
     await postSufferCard({
+      opts,
       title: `Lose Momentum (-${amount})`,
       body: `Momentum: ${before} → ${after}${remaining > 0 ? minimumLine(remaining, !!redirect) : ""}`,
       flags: { suffer: "lose_momentum", amount, before, after, atMin, remaining },
@@ -512,6 +520,7 @@ export async function rollImpactTable(tableId, opts = {}) {
   const rolled = rollD100Table(t.table, opts);
   const who = typeof opts.actorName === "string" && opts.actorName.trim() ? opts.actorName.trim() : "";
   await postSufferCard({
+    opts,
     title: t.title,
     body:  `d100 ${rolled.roll}: <em>${rolled.result}</em>`,
     flags: {
@@ -569,6 +578,7 @@ export async function endureHarm(actor, amount, opts = {}) {
     if (impactChoice) body += atZeroChoiceLine("harm");
     if (resistOwed)   body += resistLine("harm", upgradeFirst);
     await postSufferCard({
+      opts,
       title: `Endure Harm (-${amount})`,
       body,
       flags: { suffer: "endure_harm", amount, before, after, atZero, woundedMarked, mortalWound, impactChoice, resistOwed, momentumLoss },
@@ -611,6 +621,7 @@ export async function endureStress(actor, amount, opts = {}) {
     if (impactChoice) body += atZeroChoiceLine("stress");
     if (resistOwed)   body += resistLine("stress", upgradeFirst);
     await postSufferCard({
+      opts,
       title: `Endure Stress (-${amount})`,
       body,
       flags: { suffer: "endure_stress", amount, before, after, atZero, shakenMarked, desolation, impactChoice, resistOwed, momentumLoss },
@@ -817,6 +828,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     // above this card: "choose below" pointed at nothing (W16-CHOOSE-BELOW).
     if (!opts.skipCard) {
       await postSufferCard({
+        opts,
         title: `Sacrifice Resources (-${amount})`,
         body: `Supply: ${before} — <strong>unprepared</strong>: the loss goes to another suffer move${redirect ? ` (choose it on its card${first})` : " — choose one and apply it on the sheet"}.`,
         flags: { suffer: "sacrifice_resources", amount, before, after: before, atZero, unpreparedMarked: false, redirected: true },
@@ -848,6 +860,7 @@ export async function sacrificeResources(actor, amount, opts = {}) {
     const crew = crewUnpreparedNote(marks ?? {});
     if (crew) body += ` — ${crew}`;
     await postSufferCard({
+      opts,
       title: `Sacrifice Resources (-${amount})`,
       body,
       flags: { suffer: "sacrifice_resources", amount, before, after, atZero, unpreparedMarked },
@@ -896,6 +909,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
     // No such companion (or several, none named) — a user-visible failure
     // worth flagging rather than silently no-oping.
     await postSufferCard({
+      opts,
       title: `Companion Takes a Hit (-${amount})`,
       body: companionItemId
         ? `Companion not found (id ${escapeHtml(companionItemId)}). Apply the damage manually.`
@@ -920,6 +934,7 @@ export async function companionTakesAHit(actor, companionItemId, amount, opts = 
       body += ` — out of action until aided`;
     }
     await postSufferCard({
+      opts,
       title: `Companion Takes a Hit (-${amount})`,
       body,
       flags: { suffer: "companion_takes_a_hit", amount, before, after, atZero, destroyed, companionItemId: res.itemId ?? null },
@@ -982,6 +997,7 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
   if (res.reason === "refused") throw new Error(res.error ?? "the world did not save the vehicle's integrity");
   if (!res.ok) {
     await postSufferCard({
+      opts,
       title: `Withstand Damage (-${amount})`,
       body: vehicleItemId
         ? `Vehicle not found (id ${escapeHtml(vehicleItemId)}). Apply the damage manually.`
@@ -1008,6 +1024,7 @@ export async function withstandDamage(actor, vehicleItemId, amount, opts = {}) {
       }
     }
     await postSufferCard({
+      opts,
       title: `Withstand Damage (-${amount})`,
       body,
       flags: { suffer: "withstand_damage", amount, before, after, atZero, vehicleDamage,

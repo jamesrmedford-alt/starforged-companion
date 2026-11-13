@@ -6342,6 +6342,9 @@ const gmUserIds = () => Array.from(game.users ?? []).filter(u => u?.isGM).map(u 
 
 // The PC meter each suffer move changes — a failure card line shows it as it stands.
 const SUFFER_METERS = { lose_momentum: "momentum", endure_harm: "health", endure_stress: "spirit", sacrifice_resources: "supply" };
+// The suffer moves that change a vehicle's or a companion's track, not a PC
+// meter — the track a Pay the Price receipt names (ptpAssetReceipts).
+const SUFFER_ASSET_TRACKS = { withstand_damage: "integrity", companion_takes_a_hit: "health" };
 
 const PAYOFF_REASONS = {
   "refused":   "the world did not save it",
@@ -7130,6 +7133,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
   // route's — so the upgrade reversal undoes only that.
   const landed = await dispatchPayThePriceSufferRoutes(result.sufferRoutes, actorId, `${paidFor || "move"} PtP`, { resolutionId, upgradeOffered });
   const sufferMeterDeltas = landed.flatMap(ptpMeterReceipts);
+  const assetDeltas       = landed.flatMap(ptpAssetReceipts);
 
   const clocksAdvanced = await advanceClocksOnPayThePrice({ skipClockIds }).catch(err => {
     console.warn(`${MODULE_ID} | ${paidFor || "move"} PtP clock advance failed:`, err?.message ?? err);
@@ -7143,7 +7147,7 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
 
   // reversals — what the price did, for an upgrade to undo; price — the
   // result the card shows, which the move's narration is seeded with.
-  return { reversals: { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDeltas }, price: result.result };
+  return { reversals: { clocksAdvanced: clocksAdvanced ?? [], sufferMeterDeltas, assetDeltas }, price: result.result };
 }
 
 /**
@@ -7151,8 +7155,8 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
  * reversal to refund: the move the dispatcher ran — "companion in harm's way"
  * runs Endure Harm with no companion — and each meter's before and after, so
  * a loss at 0 refunds nothing. Only the four PC meters; Withstand Damage and
- * Companion Takes a Hit change a vehicle or a companion, which a burn does not
- * reverse. The table's annotation stood in for it, so a burn raised health a
+ * Companion Takes a Hit change a vehicle or a companion, whose receipts are
+ * ptpAssetReceipts' (issue #354 P2-09). The table's annotation stood in for it, so a burn raised health a
  * clamped loss never took and skipped the fallback's real one (issue #311 P04).
  * Harm or stress past the meter is taken as momentum (`momentumLoss`, issue
  * #314 Q02): that is a receipt of its own, which an improvement refunds and a
@@ -7166,9 +7170,12 @@ async function postMovePayThePriceCard(actorId = null, moveName = null, resoluti
  */
 function ptpMeterReceipts(landed) {
   const meterKey = SUFFER_METERS[landed?.move];
-  if (!meterKey || landed.skipped) return [];
+  // A vehicle's or companion's loss is its own receipt (ptpAssetReceipts);
+  // what it took past 0 came off the payer's momentum, and is a momentum
+  // receipt here as a harm's overflow is (issue #354 P2-09).
+  if ((!meterKey && !SUFFER_ASSET_TRACKS[landed?.move]) || landed.skipped) return [];
   const receipts = [];
-  const amount = Number(landed.before) - Number(landed.after);
+  const amount = meterKey ? Number(landed.before) - Number(landed.after) : 0;
   if (amount > 0) {
     // A supply loss to 0 names whom it marked unprepared — the payer, the
     // allies sharing the supply — so an upgrade that reverts the price clears
@@ -7189,6 +7196,33 @@ function ptpMeterReceipts(landed) {
     receipts.push({ move: landed.move, meterKey: "momentum", amount: m.taken, actorId: landed.actorId ?? null, before: m.before, after: m.after, overflow: true });
   }
   return receipts;
+}
+
+/**
+ * The vehicle integrity or companion health a Pay the Price route took, for
+ * the upgrade reversal to put back (issue #354 P2-09). Withstand Damage and
+ * Companion Takes a Hit left no receipt — "a burn does not reverse" them — so
+ * a miss whose price was "your vehicle suffers damage", burned to a weak hit,
+ * kept the damage beside the weak hit's own cost; and since issue #353 R1 a
+ * miss's stated cost can be either. One receipt per route that landed a loss:
+ * the track's before and after, and what it is — the command vehicle (its
+ * Actor), or a support vehicle or companion (its asset Item on the payer).
+ *
+ * @param {Object|null} landed — dispatchPayThePriceSufferRoute's result
+ * @returns {Array<{ move: string, track: "integrity"|"health", amount: number, actorId: string|null,
+ *   before: number, after: number, name: string|null, vehicleActorId?: string, itemId?: string }>}
+ */
+function ptpAssetReceipts(landed) {
+  const track = SUFFER_ASSET_TRACKS[landed?.move];
+  if (!track || landed.skipped) return [];
+  const amount = Number(landed.before) - Number(landed.after);
+  if (!(amount > 0)) return [];
+  const target = typeof landed.itemId === "string" && landed.itemId ? { itemId: landed.itemId }
+    : typeof landed.vehicleActorId === "string" && landed.vehicleActorId ? { vehicleActorId: landed.vehicleActorId }
+    : null;
+  if (!target) return [];
+  return [{ move: landed.move, track, amount, actorId: landed.actorId ?? null,
+    before: Number(landed.before), after: Number(landed.after), name: landed.name ?? null, ...target }];
 }
 
 /** markUnprepared's `momentumClamped` (PC id → momentum), its whole positive entries only; null when none. */

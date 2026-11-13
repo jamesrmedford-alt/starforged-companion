@@ -905,15 +905,16 @@ export function readVehicleAssetBattered(actor, itemId) {
  * kept within the track's min..max: Withstand Damage's "+1 integrity" /
  * "-1 integrity" when the roll was the vehicle's (statEnrichment's
  * `vehicleItemId`). A rise is refused while the vehicle is battered, as the
- * ship record's writer refuses one (entities/ship.js changeIntegrity). The
- * sibling of applyCompanionHealthChange; reports, never throws.
+ * ship record's writer refuses one (entities/ship.js changeIntegrity) — save
+ * a `restore`, which puts back what a reverted Pay the Price took (issue #354
+ * P2-09). The sibling of applyCompanionHealthChange; reports, never throws.
  *
  * @param {Actor} actor
  * @param {number} delta
- * @param {{ itemId?: string|null }} [opts] — the vehicle asset
+ * @param {{ itemId?: string|null, restore?: boolean }} [opts] — the vehicle asset
  * @returns {Promise<{ ok: boolean, itemId?: string, name?: string, before?: number, after?: number, reason?: "no-vehicle"|"battered"|"refused", error?: string }>}
  */
-export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null } = {}) {
+export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = null, restore = false } = {}) {
   const asset = itemId ? listSupportVehicleAssets(actor).find(i => i.id === itemId) ?? null : null;
   if (!asset) {
     console.warn(`actorBridge | vehicle integrity: no support vehicle${itemId ? ` ${itemId}` : ''} on ${actor?.name ?? actor?.id ?? 'no actor'} — ${delta >= 0 ? '+' : ''}${delta} not applied.`);
@@ -922,7 +923,7 @@ export async function applyVehicleAssetIntegrityChange(actor, delta, { itemId = 
   const track  = asset.system?.track ?? {};
   const before = Number(track.value ?? 0);
   const at     = { itemId: asset.id, name: asset.name ?? null, before };
-  if (delta > 0 && readVehicleAssetBattered(actor, asset.id)) return { ok: false, reason: 'battered', ...at };
+  if (delta > 0 && !restore && readVehicleAssetBattered(actor, asset.id)) return { ok: false, reason: 'battered', ...at };
   const after  = clamp(before + delta, Number(track.min ?? 0), Number(track.max ?? 5));
   if (after === before) return { ok: true, ...at, after };
   try {

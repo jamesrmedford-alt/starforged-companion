@@ -492,17 +492,22 @@ export async function repairIntegrity(actorId, amount) {
  * that rule. updateShip keeps the value within 0..integrityMax. Reports,
  * never throws.
  *
+ * `restore` is not a rise: it puts back integrity a reverted Pay the Price
+ * took (resultUpgrade.js revertPayThePrice, issue #354 P2-09) — damage the
+ * upgraded result says never happened — so the battered rule does not refuse it.
+ *
  * @param {string|null} actorId
  * @param {number} delta
+ * @param {{ restore?: boolean }} [opts]
  * @returns {Promise<{ ok: boolean, reason?: "no-vehicle"|"battered"|"refused", error?: string,
  *   name?: string|null, before?: number, after?: number }>}
  */
-export async function changeIntegrity(actorId, delta) {
+export async function changeIntegrity(actorId, delta, { restore = false } = {}) {
   const ship = actorId ? getShip(actorId) : null;
   if (!ship) return { ok: false, reason: "no-vehicle" };
   const before = Number(ship.integrity ?? 0);
   const at = { name: ship.name ?? null, before };
-  if (delta > 0 && isShipBattered(actorId)) return { ok: false, reason: "battered", ...at };
+  if (delta > 0 && !restore && isShipBattered(actorId)) return { ok: false, reason: "battered", ...at };
   try {
     const updated = await updateShip(actorId, { integrity: before + delta });
     return { ok: true, ...at, after: Number(updated?.integrity ?? before + delta) };
