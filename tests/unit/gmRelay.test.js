@@ -58,7 +58,7 @@ describe('GM_ACTIONS wiring contract', () => {
   // budget. Pinned, so marking (or unmarking) a kind is a deliberate change.
   it('marks the handlers that await a Claude call, and their budget covers two bounded requests', () => {
     const claudeKinds = Object.keys(GM_ACTIONS).filter(k => GM_ACTIONS[k].claude).sort();
-    expect(claudeKinds).toEqual(['move.burnMomentum', 'move.improveResult', 'oracle.narrate', 'session.begin', 'session.end']);
+    expect(claudeKinds).toEqual(['move.burnMomentum', 'move.improveResult', 'move.keepResult', 'oracle.narrate', 'session.begin', 'session.end']);
     expect(GM_CLAUDE_ACTION_TIMEOUT_MS).toBeGreaterThan(2 * DEFAULT_TIMEOUT_MS);
     expect(GM_ACTION_TIMEOUT_MS).toBeLessThan(GM_CLAUDE_ACTION_TIMEOUT_MS);
   });

@@ -205,6 +205,8 @@ export const GM_ACTIONS = Object.freeze({
   // Chat-card buttons
   "move.burnMomentum":         { load: () => import("../moves/burnMomentum.js"),                     fn: "applyBurnFromRelay",    claude: true },
   "move.improveResult":        { load: () => import("../moves/improveResult.js"),                    fn: "applyImproveFromRelay", claude: true },
+  // Issue #354 P2-10 — a free-flow result held for Burn / Improve / Keep: "Keep the result" pays its price and narrates it
+  "move.keepResult":           { load: () => import("../moves/heldResult.js"),                       fn: "applyKeepResultFromRelay", claude: true },
   "milestone.pick":            { load: () => import("../moves/milestonePicker.js"),                  fn: "applyMilestonePick" },
   "connection.pick":           { load: () => import("../moves/cardActions.js"),                      fn: "applyConnectionPick" },
   "waypoint.oracle":           { load: () => import("../moves/cardActions.js"),                      fn: "applyWaypointOraclePick" },

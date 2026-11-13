@@ -215,6 +215,7 @@ import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWa
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
 import { registerOracleConsultSocket } from "./oracles/oracleConsult.js";
 import { STATED_SUFFER_MOVES } from "./moves/stakes.js";
+import { narrateHeldUpgrade, keepHeldResultsOf, holdForUpgradeEnabled } from "./moves/heldResult.js";
 import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
@@ -840,6 +841,13 @@ configureBatchDriver({
  */
 async function narrateUpgradedResolution(resolution, campaignState, options = {}) {
   if (options.upgradeOf && await acceptRoundUpgrade(options.upgradeOf, resolution, options.kind ?? "burn")) return null;
+  // A free-flow result held for the choice (issue #354 P2-10): the upgraded
+  // result is the move's one narration — heldResult.js closes the wait, pays
+  // the held price if this result pays one too, and narrates it.
+  if (options.upgradeOf) {
+    const told = await narrateHeldUpgrade(options.upgradeOf, resolution, campaignState, options);
+    if (told !== undefined) return told;
+  }
   return narrateResolution(resolution, campaignState, { speakerActorId: options.speakerActorId ?? null });
 }
 
@@ -951,6 +959,16 @@ export function registerChatHook() {
       message,
       game.settings.get(MODULE_ID, "campaignState"),
     );
+
+    // The roller has gone on (issue #354 P2-10): a result of theirs still
+    // held for Burn / Improve / Keep is kept — its price paid, its narration
+    // posted — before this line is read, so the story stays in order. A
+    // follow-up pressed on the held card itself is such a line: "burn
+    // momentum before applying any other effects of the move".
+    if (speakerActorId) {
+      await keepHeldResultsOf(speakerActorId).catch(err =>
+        console.warn(`${MODULE_ID} | a result held for its roller's choice could not be kept before their next line:`, err?.message ?? err));
+    }
 
     const narration = message.content;
     const apiKeyForPacing = game.settings.get(MODULE_ID, "claudeApiKey");
@@ -1162,13 +1180,17 @@ export function registerChatHook() {
         return;
       }
 
-      // Stage 3 — roll it, apply its outcome, post its result card.
+      // Stage 3 — roll it, apply its outcome, post its result card. A
+      // result whose card offers Burn Momentum or Improve Result is held
+      // (issue #354 P2-10): its price and its narration wait for the roller's
+      // Burn / Improve / Keep (moves/heldResult.js).
       const rolled = await rollMove({
         interpretation, campaignState, speakerActorId, narration,
         combatPosition: read.combatPosition,
         tokenDragSetCourse,
         incitingSwearMessageId: message.flags?.[MODULE_ID]?.incitingSwearMessageId ?? null,
         onDiceRolled: () => { diceRolled = true; },
+        holdForUpgrade: game.user?.isGM === true && holdForUpgradeEnabled(),
       });
       if (rolled.refused) return;
       const { resolution, relevance } = rolled;
@@ -1182,7 +1204,8 @@ export function registerChatHook() {
       // The interpreter's target reaches the capture: a Make a Connection whose
       // narration names several known NPCs connects the one it reads
       // (KNOWN-NPC-CONNECTION-NO-TARGET).
-      await narrateResolution(resolution, campaignState, { relevance, speakerActorId, moveTarget: interpretation.moveTarget ?? null }).catch(err => {
+      // A held result is narrated once its roller has chosen — not here.
+      if (!rolled.held) await narrateResolution(resolution, campaignState, { relevance, speakerActorId, moveTarget: interpretation.moveTarget ?? null }).catch(err => {
         console.warn(`${MODULE_ID} | the move's narration could not be posted — its result is applied all the same:`, err?.message ?? err);
         ui.notifications?.warn?.("Starforged Companion: the narration could not be posted to chat; the move's result was still applied.");
       });
@@ -7102,7 +7125,7 @@ async function postDecisiveActionCostCard(actorId = null) {
  *   challenge's clock the move's miss filled itself (issue #338 D2)
  * @returns {Promise<{ reversals: Object, price: string }|null>}
  */
-async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [], stated = null } = {}) {
+export async function postMovePayThePriceCard(actorId = null, moveName = null, resolutionId = null, { upgradeOffered = false, skipClockIds = [], stated = null } = {}) {
   // The miss stated before the roll is the price, when there is one (issue
   // #353 R1, stakes.js statedPrice): nothing is rolled, and its suffer move —
   // the one route — is dispatched as a rolled route is.
@@ -8228,7 +8251,8 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
   const combatMove = TDA_OFFER_MOVES.has(resolution.moveId);
   const namedFight = combatMove && fight?.id ? fight : null;
   return ChatMessage.create({
-    content: formatMoveResult(resolution, aside, burnState, improveState, milestoneState, connectionState, namedFight),
+    content: formatMoveResult(resolution, aside, burnState, improveState, milestoneState, connectionState, namedFight,
+      extraFlags?.awaitingUpgrade?.open === true),
     flags: {
       [MODULE_ID]: {
         moveResolution: true,
@@ -8255,6 +8279,60 @@ async function postMoveResult(resolution, aside = null, burnState = null, improv
 }
 
 /**
+ * The move card's **Keep the result** button and what it means, for a
+ * free-flow result held for its roller's choice (issue #354 P2-10;
+ * moves/heldResult.js): beside Burn Momentum / Improve Result, it says the
+ * result stands — its Pay the Price is paid then, and it is narrated.
+ * Wired by wireKeepResultButton; the roller's next line keeps it too.
+ *
+ * @param {Object} resolution
+ * @returns {string} HTML
+ */
+function renderKeepResultHtml(resolution) {
+  const owes = resolution?.consequences?.routePayThePrice
+    ? "Nothing has been paid or narrated yet: burn or improve the result, or keep it — the price and the narration follow your choice."
+    : "Not narrated yet: burn or improve the result, or keep it — the narration follows your choice.";
+  return `<div class="sf-keep-result-row">` +
+    `<button type="button" class="sf-followup-btn" data-action="sf-keep-result" title="Keep this result as rolled">Keep the result</button>` +
+    `<p class="sf-card-hint sf-keep-result-hint">${owes} Your next line keeps it.</p></div>`;
+}
+
+/**
+ * Wire a held move card's **Keep the result** button. A press relays to the
+ * canonical GM ("move.keepResult" → moves/heldResult.js
+ * applyKeepResultFromRelay), which closes the wait, pays the held price and
+ * narrates the result. Once the wait is over — kept, burned, improved — the
+ * button and its hint go: the card's flags say how it was settled.
+ *
+ * Exported so tests and Quench can drive it with a message + root.
+ */
+export function wireKeepResultButton(message, root) {
+  const row = root?.querySelector?.(".sf-keep-result-row");
+  const btn = root?.querySelector?.('[data-action="sf-keep-result"]');
+  if (!btn) return;
+  const held = liveCardFlags(message)?.awaitingUpgrade;
+  if (!held?.open) {
+    // Settled: nothing left to ask.
+    if (row?.remove) row.remove();
+    else btn.disabled = true;
+    return;
+  }
+  const fresh = btn.cloneNode(true);
+  btn.replaceWith(fresh);
+  fresh.addEventListener("click", async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    fresh.disabled = true;
+    await relayCardAction({
+      kind:       "move.keepResult",
+      payload:    { messageId: message?.id ?? null },
+      isResolved: () => liveCardFlags(message)?.awaitingUpgrade?.open !== true,
+      restore:    () => { fresh.disabled = false; },
+    });
+  });
+}
+
+/**
  * What a match adds, in one line under the outcome (issue #354 P2-14): the
  * card said "with a Match" and nothing told the player why the narration took
  * a turn. The rulebook's own reading: on a hit, a twist or a new opportunity;
@@ -8273,7 +8351,7 @@ export function matchLine(outcome) {
 /**
  * Format a move resolution as an HTML chat card.
  */
-function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null) {
+function formatMoveResult(resolution, aside = null, burnState = null, improveState = null, milestoneState = null, connectionState = null, fight = null, awaiting = false) {
   const outcomeClass = {
     strong_hit: "sf-strong-hit",
     weak_hit:   "sf-weak-hit",
@@ -8332,6 +8410,7 @@ function formatMoveResult(resolution, aside = null, burnState = null, improveSta
         : ""}
       ${renderBurnButtonHtml(burnState)}
       ${renderImproveButtonHtml(improveState)}
+      ${awaiting ? renderKeepResultHtml(resolution) : ""}
       ${renderMilestoneSuggestionHtml(milestoneState, upgradeOffered)}
       ${renderConnectionSuggestionHtml(connectionState, upgradeOffered)}
       ${upgradeOffered && (milestoneState?.eligible || connectionState?.eligible)
@@ -9151,6 +9230,8 @@ export function wireTakeDecisiveActionButton(message, root) {
   wireRollerFollowup(message, root, "sf-take-decisive-action", "tda.attempt", "decisiveActionAttempted");
 }
 onChatMessageRender((message, root) => wireTakeDecisiveActionButton(message, root));
+// A held result's "Keep the result" (issue #354 P2-10).
+onChatMessageRender((message, root) => wireKeepResultButton(message, root));
 
 // A card's forced follow-up that the card's roller makes (issue #338 D1): one
 // press per card, relayed to the canonical GM, which claims `claim` and posts

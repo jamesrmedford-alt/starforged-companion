@@ -70,6 +70,7 @@ import {
   UPGRADE_CHOSEN_TITLE,
   UPGRADE_LATER_MOVE_TITLE,
   UPGRADE_ROUND_CLOSED_TITLE,
+  UPGRADE_KEPT_TITLE,
   UPGRADE_REFUSALS,
 } from "./burnMomentum.js";
 
@@ -209,6 +210,12 @@ export function registerImproveResultHook({ narrate, applyEffects } = {}) {
       btn.disabled    = true;
       btn.textContent = "✦ Improve Result — decided before the round was narrated";
       btn.title       = UPGRADE_ROUND_CLOSED_TITLE;
+      return;
+    }
+    if (blocker === "kept") {
+      btn.disabled    = true;
+      btn.textContent = "✦ Improve Result — the result was kept";
+      btn.title       = UPGRADE_KEPT_TITLE;
       return;
     }
     if (blocker === "later-move") {

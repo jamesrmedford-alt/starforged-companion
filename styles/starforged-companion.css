@@ -190,6 +190,11 @@
   opacity:     0.75;
 }
 
+/* A held result's "Keep the result" and what the wait means (issue #354 P2-10). */
+.sf-keep-result-row {
+  margin-top: 6px;
+}
+
 /* What a match adds, under the outcome line (issue #354 P2-14). */
 .sf-move-match {
   font-size:  var(--font-size-12, 12px);

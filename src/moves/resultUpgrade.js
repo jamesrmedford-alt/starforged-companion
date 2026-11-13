@@ -1028,7 +1028,7 @@ export function upgradeOpenFor(resolutionId) {
   const f    = card?.flags?.[MODULE_ID];
   if (!f) return null;
   if (f.burn?.consumed || f.improve?.consumed) return false;
-  const open = (state, offered) => !!(state?.[offered] && !state.choiceMade && !state.laterMove);
+  const open = (state, offered) => !!(state?.[offered] && !state.choiceMade && !state.laterMove && !state.kept);
   if (!open(f.burn, "canBurn") && !open(f.improve, "canImprove")) return false;
   return !consequenceChosen(resolutionId) && !laterMoveFollows(card);
 }
@@ -1055,9 +1055,18 @@ export async function closeUpgradesForChoice(resolutionId) {
   // The move's other open choice cards no longer say to burn or improve
   // first: that is closed now (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
   await dropUpgradeHints(resolutionId);
-  if (!Object.keys(update).length) return;
-  await card.update(update)
-    .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
+  if (Object.keys(update).length) {
+    await card.update(update)
+      .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: closing its upgrades failed:`, err?.message ?? err));
+  }
+  // A free-flow result held for Burn / Improve / Keep (issue #354 P2-10):
+  // choosing its consequence keeps it — its price and narration follow now.
+  // Not awaited: the choice being applied does not wait on a narration.
+  if (f.awaitingUpgrade?.open) {
+    void import("./heldResult.js")
+      .then(({ keepHeldResultForChoice }) => keepHeldResultForChoice(resolutionId))
+      .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after the choice:`, err?.message ?? err));
+  }
 }
 
 /**
@@ -1159,6 +1168,15 @@ export async function closeUpgradesForLaterMove(actorId, resolutionId) {
     // Its choice cards no longer say to burn or improve first
     // (OUTCOME-CHOICE-CARD-NO-UPGRADE-HINT).
     await dropUpgradeHints(f.resolutionId ?? null);
+    // A result still held for Burn / Improve / Keep (issue #354 P2-10) is
+    // kept: the free-flow pipeline keeps it before the roller's next line is
+    // read (index.js), so this is the later move that did not come through
+    // it — a Batch Mode round's entry. Not awaited.
+    if (f.awaitingUpgrade?.open) {
+      void import("./heldResult.js")
+        .then(({ keepHeldResult }) => keepHeldResult(card, "later"))
+        .catch(err => console.warn(`${MODULE_ID} | move card ${card.id}: its held result was not kept after a later move:`, err?.message ?? err));
+    }
   }
 }
 

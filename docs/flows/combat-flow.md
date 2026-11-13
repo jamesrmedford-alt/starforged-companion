@@ -29,6 +29,17 @@ Two cross-cutting facts to hold onto:
   press refused for whose the card is — not the presser's character, or one
   gone — whispers the presser and the GMs whose button it is, `refusePress`,
   known-issues RELAY-REFUSED-PRESS-UNTOLD).
+  In free-flow play a result whose card offers either is **held** (issue
+  #354 P2-10; `movePipeline.rollMove` `holdForUpgrade`, `moves/heldResult.js`):
+  the card carries `flags.awaitingUpgrade` and a **Keep the result** button
+  (relay `move.keepResult`), its Pay the Price is not paid and it is not
+  narrated until the roller burns, improves or keeps — or goes on: their next
+  line or move (`keepHeldResultsOf`, `index.js` onMessage) or a consequence
+  chosen (`closeUpgradesForChoice` → `keepHeldResultForChoice`). A kept
+  result's upgrades close (`kept`). So in free-flow a burn has no paid price
+  to revert; the reversal below is a Batch Mode round entry's — a round pays
+  the price at the roll and holds only its narration — and free-flow's with
+  the world setting `holdResultForUpgrade` off.
   Burn and Improve open only once the pipeline has persisted the original
   outcome and stamped the card `originalApplied` (until then the button is
   disabled and the GM handler refuses — issue #300 F02); each swaps that

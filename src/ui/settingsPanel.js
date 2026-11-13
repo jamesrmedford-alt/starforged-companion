@@ -83,6 +83,7 @@ const SETTING = {
   NARRATOR_SPOTLIGHT:       'narratorSpotlightRotation',
   VOW_SWEARING_SCENE:       'vowSwearingNarration',
   MISS_STATED_STAKES:       'missPaysStatedStakes',   // stakes.js STAKES_SETTING (read there)
+  HOLD_FOR_UPGRADE:         'holdResultForUpgrade',   // heldResult.js HOLD_SETTING (read there)
   // ── Character management ─────────────────────────────────────────────────
   CHRONICLE_AUTO_ENTRY:     'chronicleAutoEntry',
   CHRONICLE_SALIENCE:       'chronicleSalienceThreshold',
@@ -366,6 +367,15 @@ export function registerSettings() {
   game.settings.register(MODULE_ID, SETTING.MISS_STATED_STAKES, {
     name:    'Miss Pays the Stated Stakes',
     hint:    'Before a roll, the Confirm Move dialog says what a hit gets and what a miss costs. On: a miss that pays the price pays that stated cost — the most obvious negative outcome of what was attempted — with any harm, stress or loss it names. Off: the Pay the Price table is rolled, as before. A miss with no stated cost always rolls the table.',
+    scope:   'world',
+    config:  false,
+    type:    Boolean,
+    default: true,
+  });
+
+  game.settings.register(MODULE_ID, SETTING.HOLD_FOR_UPGRADE, {
+    name:    'Ask Before Paying and Narrating',
+    hint:    'In free-flow play, when a result can be upgraded — Burn Momentum or an asset\'s Improve Result is offered — its card asks the roller to burn, improve or keep it before its Pay the Price is paid and before it is narrated. Their next line keeps it. Off: the price is paid and the result narrated at once, as before; a burn or an improvement then undoes the price and strikes the narration. Batch Mode rounds always ask before their narration.',
     scope:   'world',
     config:  false,
     type:    Boolean,
@@ -1270,6 +1280,7 @@ export class SettingsPanelApp extends ApplicationV2 {
       narratorSpotlight:     getNarratorSpotlight(),
       vowSwearingScene:      getVowSwearingScene(),
       missPaysStatedStakes:  readSetting(SETTING.MISS_STATED_STAKES, true),
+      holdResultForUpgrade:  readSetting(SETTING.HOLD_FOR_UPGRADE, true),
       narrationModels:       NARRATION_MODELS,
       narrationPerspectives: NARRATION_PERSPECTIVES,
       narrationTones:        NARRATION_TONES,
@@ -1705,6 +1716,13 @@ export class SettingsPanelApp extends ApplicationV2 {
             A miss pays the stated stakes
           </label>
           <span class="narrator-field-hint">The Confirm Move dialog says what a hit gets and what a miss costs. On: a miss that pays the price pays that stated cost. Off: the Pay the Price table is rolled.</span>
+        </div>
+        <div class="narrator-field">
+          <label class="narrator-field-label">
+            <input type="checkbox" name="holdResultForUpgrade" ${ctx.holdResultForUpgrade ? 'checked' : ''} ${dis}>
+            Ask before paying and narrating
+          </label>
+          <span class="narrator-field-hint">When Burn Momentum or Improve Result is offered, the move card asks the roller to burn, improve or keep the result before its price is paid and before it is narrated; their next line keeps it. Off: paid and narrated at once, and a burn undoes them.</span>
         </div>
         <div class="narrator-field">
           <label class="narrator-field-label">Custom instructions</label>
@@ -2222,6 +2240,7 @@ export class SettingsPanelApp extends ApplicationV2 {
         game.settings.set(MODULE_ID, SETTING.NARRATOR_SPOTLIGHT,       spotlight),
         game.settings.set(MODULE_ID, SETTING.VOW_SWEARING_SCENE,       vowScene),
         game.settings.set(MODULE_ID, SETTING.MISS_STATED_STAKES,       checked('missPaysStatedStakes', true)),
+        game.settings.set(MODULE_ID, SETTING.HOLD_FOR_UPGRADE,         checked('holdResultForUpgrade', true)),
         game.settings.set(MODULE_ID, SETTING.NARRATION_INSTRUCTIONS, instructions),
         game.settings.set(MODULE_ID, SETTING.AUTO_RECAP_ENABLED,     autoRecapEnabled),
         game.settings.set(MODULE_ID, SETTING.RECAP_GM_ONLY,          recapGmOnly),

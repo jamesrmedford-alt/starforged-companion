@@ -66,6 +66,10 @@ beforeAll(async () => { table = await simulateTable({ users: [USERS.GM, USERS.P1
 afterAll(() => table?.teardown());
 beforeEach(async () => {
   await table.reset({ world: { settings: {
+    // The price is paid and the result narrated at once, and an upgrade
+    // undoes them — the flow these tests are about. (Asking first is the
+    // default since issue #354 P2-10: heldResultBeforePrice.test.js.)
+    holdResultForUpgrade: false,
     chronicleAutoEntry: false, narratorSessionSummary: false,
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: "d2-s1", sessionNumber: 1,
       currentSceneId: "d2-scene", sceneTruths: [], clocks: [] },

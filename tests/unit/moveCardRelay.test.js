@@ -478,7 +478,7 @@ describe("across a booted table", () => {
    * responder) and before the narration — e.g. to hold the narrator's reply.
    */
   async function rollWeakHit({ beforeChat } = {}) {
-    await table.reset({ world: { settings: { campaignState: { ...CampaignStateSchema, sessionActive: true } } } });
+    await table.reset({ world: { settings: { holdResultForUpgrade: false, /* pay and narrate at once: the flow these tests are about (issue #354 P2-10) */ campaignState: { ...CampaignStateSchema, sessionActive: true } } } });
     await table.setClaudeKey("gm-1", "sk-ant-gina");
     pc = table.addActor({
       id: "pc-pat", name: "Kira", ownership: { "pl-1": 3 },

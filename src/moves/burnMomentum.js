@@ -152,16 +152,19 @@ export function resultUpgradeRunningHere(messageId) {
  * issue #311 P03), or the roller has made another move since ("later-move" —
  * an upgrade belongs to the move being made, issue #326 D4), or a Batch Mode
  * round decided it before it was narrated ("round-closed" — the roller kept
- * the result, or the round's narration began: issue #340). The GM handlers
+ * the result, or the round's narration began: issue #340), or a free-flow
+ * result held for the choice was kept ("kept" — its price and narration have
+ * followed: issue #354 P2-10, heldResult.js). The GM handlers
  * also check the choice cards and the later moves themselves (resultUpgrade.js
  * consequenceChosen, laterMoveFollows).
  * @param {Object} upgrade   the card's `burn` or `improve` flag
  * @param {Object} [other]   the card's other upgrade flag
- * @returns {"original-pending"|"already-upgraded"|"round-closed"|"later-move"|"choice-made"|null}
+ * @returns {"original-pending"|"already-upgraded"|"round-closed"|"kept"|"later-move"|"choice-made"|null}
  */
 export function resultUpgradeBlocker(upgrade, other) {
   if (other?.consumed) return "already-upgraded";
   if (upgrade?.roundClosed) return "round-closed";
+  if (upgrade?.kept) return "kept";
   if (upgrade?.laterMove) return "later-move";
   if (upgrade?.choiceMade) return "choice-made";
   if (upgrade?.originalApplied !== true) return "original-pending";
@@ -180,11 +183,15 @@ export const UPGRADE_LATER_MOVE_TITLE = "An upgrade belongs to the move being ma
 /** Tooltip on a burn / improve button a Batch Mode round closed (issue #340). */
 export const UPGRADE_ROUND_CLOSED_TITLE = "Decided before the round was narrated — the round tells this result";
 
+/** Tooltip on a burn / improve button of a result that was kept (issue #354 P2-10). */
+export const UPGRADE_KEPT_TITLE = "The result was kept — its price and its narration have followed";
+
 /** Why the GM handlers refused an upgrade (resultUpgradeBlocker's reasons), for the log. */
 export const UPGRADE_REFUSALS = {
   "original-pending": "the original outcome is not recorded yet",
   "already-upgraded": "the result was already upgraded",
   "round-closed":     "the round decided this result before it was narrated",
+  "kept":             "the result was kept",
   "later-move":       "the roller has made another move since",
   "choice-made":      "the move's consequence was already chosen",
 };
@@ -413,6 +420,12 @@ export function registerBurnMomentumHook({ narrate, applyEffects } = {}) {
       btn.disabled    = true;
       btn.textContent = "🔥 Burn Momentum — decided before the round was narrated";
       btn.title       = UPGRADE_ROUND_CLOSED_TITLE;
+      return;
+    }
+    if (blocker === "kept") {
+      btn.disabled    = true;
+      btn.textContent = "🔥 Burn Momentum — the result was kept";
+      btn.title       = UPGRADE_KEPT_TITLE;
       return;
     }
     if (blocker === "later-move") {

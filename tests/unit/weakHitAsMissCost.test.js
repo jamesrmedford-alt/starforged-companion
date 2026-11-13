@@ -108,6 +108,10 @@ afterAll(() => { table?.teardown(); delete globalThis.document; });
 beforeEach(async () => {
   Object.assign(control, { ptp: [12], uncheck: false, rows: [] });
   await table.reset({ world: { settings: {
+    // The price is paid and the result narrated at once, and an upgrade
+    // undoes them — the flow these tests are about. (Asking first is the
+    // default since issue #354 P2-10: heldResultBeforePrice.test.js.)
+    holdResultForUpgrade: false,
     chronicleAutoEntry: false, narratorSessionSummary: false, sessionLogAutoWrite: false,
     campaignState: { ...CampaignStateSchema, sessionActive: true, currentSessionId: "wm-s1", sessionNumber: 1,
       lastSessionTimestamp: new Date().toISOString(), currentSceneId: "wm-scene", sceneTruths: [], clocks: [] },
