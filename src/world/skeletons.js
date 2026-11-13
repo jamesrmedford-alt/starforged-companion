@@ -21,6 +21,8 @@
  *   - planRequestsFromSeeds — the plans a narration's seeds ask it to decide
  */
 
+import { sameSubject } from "../entities/nameMatch.js";
+
 /** The kinds of plan (issue #353 "The skeleton record"). */
 export const SKELETON_KINDS = Object.freeze(["threat", "mystery", "npcAgenda", "expedition", "discovery", "vow"]);
 
@@ -363,7 +365,7 @@ export function selectRelevantSkeletons(records, ctx = {}) {
     if (pinned.has(r.id) || inScene(r)) return true;
     const s = r.subject ?? {};
     if (s.id && (matched.has(s.id) || tracks.has(s.id) || ending.has(s.id))) return true;
-    if (r.kind === "threat" && threats.some(n => sameSubjectName(n, s.name))) return true;
+    if (r.kind === "threat" && threats.some(n => sameSubject(n, s.name))) return true;   // a variant of its name too (issue #354 P2-30)
     if (r.kind === "vow" && sceneVow && ((s.id && s.id === sceneVow.id) || sameSubjectName(sceneVow.name, s.name))) return true;
     return nameMentioned(s.name, passage);
   };

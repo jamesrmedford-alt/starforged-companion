@@ -21,6 +21,7 @@
 
 import { isCanonicalGM } from "../multiplayer/gmGate.js";
 import { factionNameKey } from "../entities/faction.js";
+import { nameKey, suffixedName } from "../entities/nameMatch.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -69,6 +70,232 @@ function journalCreateData(name, folderId = undefined) {
 
 export const THREAT_SEVERITIES = ["immediate", "active", "looming", "resolved"];
 const SEVERITY_ORDER = { immediate: 0, active: 1, looming: 2, resolved: 3 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THREATS — a severity is one of four words; a threat has one page (issue #354 P2-15)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// The detection pass wrote whatever it returned: a severity of "high", or a
+// sentence of what the threat was doing, was stored as the severity (the
+// panel's dropdown showed its first option for it, "immediate"), and a threat
+// it named "<name>: high" — it was shown the threats as "<name>: <severity>" —
+// started a second page beside "<name>". One playtest session made nine pages
+// for two threats.
+
+/** Words the detector (and worlds from before the check) used for a severity, by the severity they mean. */
+const SEVERITY_WORDS = {
+  immediate: ["immediate", "imminent", "critical", "severe", "high", "urgent", "extreme", "acute", "dire"],
+  active:    ["active", "medium", "moderate", "ongoing", "escalating", "escalated", "rising", "growing", "elevated", "present"],
+  looming:   ["looming", "low", "distant", "latent", "minor", "potential", "emerging", "dormant"],
+  resolved:  ["resolved", "ended", "over", "neutralised", "neutralized", "defeated", "gone"],
+};
+const SEVERITY_BY_WORD = new Map(Object.entries(SEVERITY_WORDS).flatMap(([severity, words]) => words.map(w => [w, severity])));
+
+/** How many words a severity value may run to and still be read as one ("high severity", "very high"). */
+const SEVERITY_MAX_WORDS = 3;
+
+/** How many history entries a threat keeps: its first and its most recent. */
+const THREAT_HISTORY_CAP = 24;
+
+/**
+ * A stored or detected severity as one of THREAT_SEVERITIES, or null when it
+ * names none: a word of the vocabulary ("high" → immediate), alone or in a
+ * phrase of up to three words. A sentence is no severity.
+ *
+ * @param {*} value
+ * @returns {"immediate"|"active"|"looming"|"resolved"|null}
+ */
+export function normalizeThreatSeverity(value) {
+  if (typeof value !== "string") return null;
+  const words = value.toLowerCase().replace(/[^a-z\s-]+/g, " ").split(/[\s-]+/).filter(Boolean);
+  if (!words.length || words.length > SEVERITY_MAX_WORDS) return null;
+  for (const w of words) {
+    const severity = SEVERITY_BY_WORD.get(w);
+    if (severity) return severity;
+  }
+  return null;
+}
+
+/** A value given as a severity that is none, when it reads as a note worth keeping (more than a word or two). */
+function strayThreatNote(value) {
+  if (typeof value !== "string" || normalizeThreatSeverity(value)) return "";
+  const text = value.replace(/\s+/g, " ").trim();
+  return text.split(" ").length > SEVERITY_MAX_WORDS ? text : "";
+}
+
+/** The severity one step more urgent (looming → active → immediate); a resolved threat that escalates is active again. */
+function escalatedSeverity(severity) {
+  return severity === "looming" || severity === "resolved" ? "active" : "immediate";
+}
+
+/**
+ * A threat's name as the detector may return it, without the severity it
+ * tacked on: "Raiders: high", "Raiders (immediate)", "Raiders — active" are
+ * all "Raiders", with the severity those words mean.
+ *
+ * @param {string} raw
+ * @returns {{ name: string, severity: string|null }}
+ */
+export function splitThreatName(raw) {
+  let name = String(raw ?? "").replace(/\s+/g, " ").trim();
+  let severity = null;
+  for (;;) {
+    const m = /^(.*\S)\s*(?:[:—–]\s*|\s-\s+)([^:—–()]+)$/.exec(name) ?? /^(.*\S)\s*\(([^()]+)\)$/.exec(name);
+    const tail = m ? normalizeThreatSeverity(m[2]) : null;
+    if (!m || !tail) break;
+    severity = severity ?? tail;
+    name = m[1].trim();
+  }
+  return { name, severity };
+}
+
+/**
+ * The Threats page a name the detector returned belongs to: the page so
+ * named; else the one of the same name whatever its case, spacing or article;
+ * else one whose name this is a variant of, or that is a variant of this
+ * (nameMatch.js suffixedName — more said after a separator). Of several, a threat still
+ * in play before a resolved one, then the shortest name. null for a threat
+ * the journal does not hold.
+ *
+ * @param {JournalEntry|null} journal — the Threats journal
+ * @param {string} name — splitThreatName's
+ * @returns {JournalEntryPage|null}
+ */
+function findThreatPageVariant(journal, name) {
+  const exact = findPageByName(journal, name);
+  if (exact) return exact;
+  const key = nameKey(name);
+  if (!key) return null;
+  const pages = (journal?.pages?.contents ?? [])
+    .map(page => ({ page, entry: page?.flags?.[MODULE_ID]?.[FLAG_KEYS.threats] ?? null }))
+    .filter(p => p.entry?.name)
+    .map(p => ({ ...p, key: nameKey(p.entry.name) }));
+  const rank = (p) => (p.entry.severity === "resolved" ? 1 : 0);
+  const best = (hits) => hits.sort((a, b) => (rank(a) - rank(b)) || (a.key.length - b.key.length))[0]?.page ?? null;
+  return best(pages.filter(p => p.key === key))
+      ?? best(pages.filter(p => suffixedName(p.entry.name, name)))
+      ?? null;
+}
+
+/**
+ * The recorded threat a name the detector returned means, by its own name —
+ * or the name itself, cleaned, when the journal holds no such threat. A name
+ * that runs two threats together ("A: looming; B: immediate" — the list the
+ * detector was shown) is the first of them the journal holds.
+ *
+ * @param {string} raw
+ * @returns {{ name: string, severity: string|null, known: boolean }}
+ */
+export function resolveThreatName(raw) {
+  const journal = findJournal(JOURNAL_NAMES.threats);
+  const whole = splitThreatName(raw);
+  const named = (split) => {
+    const page = split.name ? findThreatPageVariant(journal, split.name) : null;
+    const name = page ? (entryTitle(page) ?? page.name) : null;
+    return name ? { name, severity: split.severity, known: true } : null;
+  };
+  const hit = named(whole);
+  if (hit) return hit;
+  if (String(raw ?? "").includes(";")) {
+    for (const part of String(raw).split(";")) {
+      const partHit = named(splitThreatName(part));
+      if (partHit) return partHit;
+    }
+  }
+  return { ...whole, known: false };
+}
+
+/** The base name a threat page is grouped under: its name without a tacked-on severity, the first of a run of names. */
+function threatGroupKey(name) {
+  const first = String(name ?? "").split(";")[0];
+  return nameKey(splitThreatName(first).name);
+}
+
+/**
+ * The active threats recorded more than once (issue #354 P2-15): pages whose
+ * names are one threat's — the same but for case, spacing or an article, or
+ * one a variant of another (nameMatch.js suffixedName). Each group names the page
+ * it keeps — the plainest name, the oldest of equals — and the rest. Pages
+ * already merged away, and resolved threats, are left out.
+ *
+ * @returns {Array<{ keep: string, merge: string[] }>}
+ */
+export function findDuplicateThreats() {
+  const journal = findJournal(JOURNAL_NAMES.threats);
+  const entries = readEntries(journal, FLAG_KEYS.threats)
+    .filter(e => e?.name && !e.mergedInto && (normalizeThreatSeverity(e.severity) ?? "active") !== "resolved")
+    .map(e => ({ entry: e, key: threatGroupKey(e.name) }))
+    .filter(e => e.key)
+    .sort((a, b) => (a.key.length - b.key.length) || String(a.entry.createdAt ?? "").localeCompare(String(b.entry.createdAt ?? "")));
+  const groups = [];
+  for (const e of entries) {
+    // Shortest first, so a group's first member is its base name.
+    const group = groups.find(g => g[0].key === e.key || suffixedName(g[0].key, e.key));
+    if (group) group.push(e);
+    else groups.push([e]);
+  }
+  return groups.filter(g => g.length > 1)
+    .map(g => ({ keep: g[0].entry.name, merge: g.slice(1).map(e => e.entry.name) }));
+}
+
+/**
+ * Merge the active threats recorded more than once, when a GM asks (the World
+ * Journal panel's button — never by itself): each group's kept page takes the
+ * others' history, in the order they were last written, and the severity and
+ * summary of the one written last; each other page is closed — resolved, and
+ * marked `mergedInto` — not deleted, so nothing it holds is lost and a plan
+ * about it still finds its page. GM only.
+ *
+ * @param {Object} [campaignState]
+ * @returns {Promise<{ kept: number, merged: number }>}
+ */
+export async function mergeDuplicateThreats(campaignState = null) {
+  const out = { kept: 0, merged: 0 };
+  if (!globalThis.game?.user?.isGM) return out;
+  const journal = findJournal(JOURNAL_NAMES.threats);
+  if (!journal) return out;
+  const sessionId = campaignState?.currentSessionId ?? "";
+  for (const group of findDuplicateThreats()) {
+    const keepPage = findPageByName(journal, group.keep);
+    const kept = keepPage?.flags?.[MODULE_ID]?.[FLAG_KEYS.threats];
+    if (!kept) continue;
+    const others = group.merge
+      .map(name => findPageByName(journal, name))
+      .filter(page => page && page !== keepPage && page.flags?.[MODULE_ID]?.[FLAG_KEYS.threats])
+      .sort((a, b) => String(a.flags[MODULE_ID][FLAG_KEYS.threats].updatedAt ?? "")
+        .localeCompare(String(b.flags[MODULE_ID][FLAG_KEYS.threats].updatedAt ?? "")));
+    if (!others.length) continue;
+
+    const history = threatHistoryOf(kept);
+    let latest = kept;
+    for (const page of others) {
+      const entry = page.flags[MODULE_ID][FLAG_KEYS.threats];
+      for (const h of threatHistoryOf(entry)) {
+        if (h?.summary && !history.some(k => k?.summary === h.summary)) history.push(h);
+      }
+      if (String(entry.updatedAt ?? "") > String(latest.updatedAt ?? "")) latest = entry;
+    }
+    const now = new Date().toISOString();
+    const severity = normalizeThreatSeverity(latest.severity) ?? "active";
+    const summary = strayThreatNote(latest.severity) || latest.summary || kept.summary || "";
+    if (summary && !history.some(h => h?.summary === summary)) history.push({ sessionId, severity, summary });
+    // The GM's write: it owns the entry, as a `!journal` ruling does (no narration stamp).
+    await writeEntryPage(keepPage, FLAG_KEYS.threats, {
+      ...kept, severity, summary, lastUpdated: sessionId, history: cappedThreatHistory(history),
+      updatedAt: now, ...narrationStamp(null, kept),
+    });
+    out.kept += 1;
+    for (const page of others) {
+      const entry = page.flags[MODULE_ID][FLAG_KEYS.threats];
+      await writeEntryPage(page, FLAG_KEYS.threats, {
+        ...entry, severity: "resolved", mergedInto: kept.name, lastUpdated: sessionId,
+        updatedAt: now, ...narrationStamp(null, entry),
+      });
+      out.merged += 1;
+    }
+  }
+  return out;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // NARRATION PROVENANCE — what the X-Card undoes (issue #329 X01)
@@ -319,10 +546,18 @@ export async function archiveSceneTruth(truth, campaignState, options = {}) {
 
 /**
  * Record an active threat. Creates a page named after the threat; on duplicate
- * names the existing entry is updated. Severity changes are appended to the
- * history array so the timeline is preserved.
+ * names the existing entry is updated. Severity and summary changes are
+ * appended to the history array so the timeline is preserved.
  *
- * Default severity is "looming" when not specified.
+ * The severity is one of THREAT_SEVERITIES (normalizeThreatSeverity): the
+ * one given, else the one the threat has, else "looming". A value that is no
+ * severity is never stored as one — a sentence given for it is kept as the
+ * summary when none came with it (issue #354 P2-15).
+ *
+ * `entry.fromDetection` — the narration capture's writes: the name is the
+ * recorded threat's when it is a variant of one (resolveThreatName), so a
+ * threat the detector names "<name>: high" updates "<name>" and starts no
+ * second page. A GM's `!journal threat` names a page exactly, as it always has.
  *
  * @param {string} name
  * @param {Object} entry
@@ -330,8 +565,8 @@ export async function archiveSceneTruth(truth, campaignState, options = {}) {
  * @returns {Promise<Object|null>} — the entry data enriched with {pageId, journalId}, or null on failure
  */
 export async function recordThreat(name, entry, campaignState) {
-  const cleanName = name?.trim();
-  if (!cleanName) {
+  const typed = name?.trim();
+  if (!typed) {
     console.warn(`${MODULE_ID} | worldJournal: recordThreat rejected — empty name`);
     return null;
   }
@@ -339,26 +574,29 @@ export async function recordThreat(name, entry, campaignState) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.threats);
   if (!journal) return null;
 
+  const resolved  = entry?.fromDetection === true ? resolveThreatName(typed) : { name: typed, severity: null };
+  const cleanName = resolved.name || typed;
   const existing  = findPageByName(journal, cleanName)?.flags?.[MODULE_ID]?.[FLAG_KEYS.threats];
   const now       = new Date().toISOString();
-  const severity  = entry?.severity ?? existing?.severity ?? "looming";
+  const was       = existing ? (normalizeThreatSeverity(existing.severity) ?? "active") : null;
+  const severity  = normalizeThreatSeverity(entry?.severity) ?? resolved.severity ?? was ?? "looming";
   const sessionId = entry?.sessionId ?? campaignState?.currentSessionId ?? "";
+  const given     = typeof entry?.summary === "string" && entry.summary.trim() ? entry.summary.trim() : strayThreatNote(entry?.severity);
+  const summary   = given || existing?.summary || "";
 
-  const history = Array.isArray(existing?.history) ? [...existing.history] : [];
-  if (existing && existing.severity !== severity) {
-    history.push({ sessionId, severity, summary: entry?.summary ?? "" });
-  } else if (!existing) {
-    history.push({ sessionId, severity, summary: entry?.summary ?? "" });
+  const history = threatHistoryOf(existing);
+  if (!existing || was !== severity || (given && given !== existing.summary)) {
+    history.push({ sessionId, severity, summary });
   }
 
   const data = {
     name:        cleanName,
     type:        entry?.type ?? existing?.type ?? "other",
     severity,
-    summary:     entry?.summary ?? existing?.summary ?? "",
+    summary,
     firstSeen:   existing?.firstSeen ?? sessionId,
     lastUpdated: sessionId,
-    history,
+    history:     cappedThreatHistory(history),
     createdAt:   existing?.createdAt ?? now,
     updatedAt:   now,
     ...narrationStamp(entry?.narrationId, existing),   // for the X-Card (issue #329 X01)
@@ -366,6 +604,28 @@ export async function recordThreat(name, entry, campaignState) {
 
   const page = await upsertPage(journal, cleanName, FLAG_KEYS.threats, data);
   return page ? { ...data, pageId: page.id, journalId: journal.id } : null;
+}
+
+/**
+ * A stored threat's history, as a copy to append to. An entry from before the
+ * severity was checked (issue #354 P2-15) may hold a sentence as its severity:
+ * that sentence is what the threat was doing, so it is kept as a history line
+ * under the severity it is read as, never lost with the rewrite.
+ */
+function threatHistoryOf(existing) {
+  const history = Array.isArray(existing?.history) ? [...existing.history] : [];
+  const stray = strayThreatNote(existing?.severity);
+  if (stray && !history.some(h => h?.summary === stray)) {
+    history.push({ sessionId: existing.lastUpdated ?? "", severity: "active", summary: stray });
+  }
+  return history;
+}
+
+/** A threat's history within its cap: its first entry and its most recent. */
+function cappedThreatHistory(history) {
+  return history.length > THREAT_HISTORY_CAP
+    ? [history[0], ...history.slice(-(THREAT_HISTORY_CAP - 1))]
+    : history;
 }
 
 /**
@@ -513,16 +773,25 @@ export async function recordLocation(name, entry, campaignState) {
  * (XCARD-CAPTURE-TRANSITIONS); any other write owns the entry (no stamp), as
  * the record writers' (issue #329 X01).
  *
+ * The severity is one of THREAT_SEVERITIES (normalizeThreatSeverity). A
+ * value that is none changes nothing — unless `escalate` is set (the
+ * detector's "escalated" transition): the threat then moves one step more
+ * urgent. `note` — what the threat is now doing — becomes its summary and the
+ * history line; it was stored as the severity (issue #354 P2-15).
+ * `fromDetection` finds the threat by a variant of its name
+ * (resolveThreatName), as recordThreat does.
+ *
  * @param {string} name
  * @param {string} severity
  * @param {Object} campaignState
- * @param {{ narrationId?: string|null }} [options]
+ * @param {{ narrationId?: string|null, note?: string|null, escalate?: boolean, fromDetection?: boolean }} [options]
  */
-export async function updateThreatSeverity(name, severity, campaignState, { narrationId = null } = {}) {
+export async function updateThreatSeverity(name, severity, campaignState, { narrationId = null, note = null, escalate = false, fromDetection = false } = {}) {
   const journal = await getOrCreateJournal(JOURNAL_NAMES.threats);
   if (!journal) return null;
 
-  const page = findPageByName(journal, name?.trim() ?? "");
+  const typed = name?.trim() ?? "";
+  const page = findPageByName(journal, fromDetection ? resolveThreatName(typed).name : typed);
   if (!page) {
     // Not a warning: the detector may reference a danger that was never
     // recorded as a threat. The detection prompt now discourages this, but a
@@ -535,15 +804,25 @@ export async function updateThreatSeverity(name, severity, campaignState, { narr
   const existing = page.flags?.[MODULE_ID]?.[FLAG_KEYS.threats];
   if (!existing) return null;
 
+  const was  = normalizeThreatSeverity(existing.severity) ?? "active";
+  const next = normalizeThreatSeverity(severity) ?? (escalate ? escalatedSeverity(was) : null);
+  if (!next) {
+    console.warn(`${MODULE_ID} | worldJournal: updateThreatSeverity — "${severity}" is no severity (${THREAT_SEVERITIES.join(", ")}); "${existing.name}" is unchanged.`);
+    return null;
+  }
+  const development = typeof note === "string" && note.trim() ? note.trim() : "";
+  const summary     = development || existing.summary || "";
+
   const sessionId = campaignState?.currentSessionId ?? "";
-  const history   = Array.isArray(existing.history) ? [...existing.history] : [];
-  history.push({ sessionId, severity, summary: existing.summary ?? "" });
+  const history   = threatHistoryOf(existing);
+  history.push({ sessionId, severity: next, summary });
 
   const updated = {
     ...existing,
-    severity,
+    severity:    next,
+    summary,
     lastUpdated: sessionId,
-    history,
+    history:     cappedThreatHistory(history),
     updatedAt:   new Date().toISOString(),
     ...narrationStamp(narrationId, existing),
   };
@@ -708,12 +987,18 @@ export async function applyStateTransition(transition, campaignState, { narratio
 
   switch (transition.entryType) {
     case "threat": {
+      // The detector's transitions: the threat is found by a variant of its
+      // name, and what it is now doing is a note — `summary`, or a `newValue`
+      // that is a sentence rather than a severity — never the severity
+      // (issue #354 P2-15).
+      const note = [transition.summary, strayThreatNote(transition.newValue)]
+        .find(v => typeof v === "string" && v.trim()) ?? null;
+      const opts = { ...fromNarration, note, fromDetection: true };
       if (transition.change === "resolved") {
-        return updateThreatSeverity(transition.name, "resolved", campaignState, fromNarration);
+        return updateThreatSeverity(transition.name, "resolved", campaignState, opts);
       }
       if (transition.change === "escalated") {
-        const next = transition.newValue ?? "active";
-        return updateThreatSeverity(transition.name, next, campaignState, fromNarration);
+        return updateThreatSeverity(transition.name, transition.newValue, campaignState, { ...opts, escalate: true });
       }
       return null;
     }
@@ -1268,6 +1553,9 @@ export function getNarratorAssertedLore(_campaignState) {
 export function getActiveThreats(_campaignState) {
   const journal = findJournal(JOURNAL_NAMES.threats);
   return readEntries(journal, FLAG_KEYS.threats)
+    // A severity stored before it was checked (issue #354 P2-15) is read as
+    // the one it means — a sentence as "active": it was an escalation's note.
+    .map(e => (THREAT_SEVERITIES.includes(e.severity) ? e : { ...e, severity: normalizeThreatSeverity(e.severity) ?? "active" }))
     .filter(e => e.severity !== "resolved")
     .sort((a, b) => {
       const sa = SEVERITY_ORDER[a.severity] ?? 99;
@@ -1786,8 +2074,18 @@ function renderPageBody(flagKey, data) {
          : data.confirmed ? "<p><em>Confirmed.</em></p>"
          : data.narratorAsserted ? "<p><em>Pending confirmation.</em></p>" : "");
     }
-    case FLAG_KEYS.threats:
-      return meta("Severity", data.severity) + (data.summary ? p(data.summary) : "");
+    case FLAG_KEYS.threats: {
+      // What the threat did before its summary changed: the history lines
+      // that say something else (issue #354 P2-15).
+      const earlier = [...new Set((Array.isArray(data.history) ? data.history : [])
+        .map(h => (typeof h?.summary === "string" ? h.summary.trim() : ""))
+        .filter(text => text && text !== data.summary))];
+      return meta("Severity", normalizeThreatSeverity(data.severity) ?? data.severity) +
+        (data.mergedInto ? meta("Merged into", data.mergedInto) : "") +
+        (data.summary ? p(data.summary) : "") +
+        (earlier.length
+          ? `<p><strong>Earlier:</strong></p><ul>${earlier.map(text => `<li>${escapeHtml(text)}</li>`).join("")}</ul>` : "");
+    }
     case FLAG_KEYS.factions:
       return meta("Attitude", data.attitude) + (data.knownGoal ? p(data.knownGoal) : "");
     case FLAG_KEYS.locations:
@@ -1833,9 +2131,17 @@ async function postContradictionNotification(transition) {
   })();
   if (!enabled) return;
 
-  const name   = escapeHtml(transition.name ?? "(unknown)");
-  const detail = escapeHtml(transition.summary ?? transition.newValue ?? "");
   const isFactContinuity = transition.entryType === "factContinuity";
+  // A fact-continuity catch says what conflicts (issue #354 P2-19): the fact
+  // as recorded, then the narration's own words — it showed the subject and
+  // a pointer to the fact ("ACTIVE SCENE STATE — isaac sutton location").
+  const recorded = typeof transition.recorded === "string" ? transition.recorded.trim() : "";
+  const evidence = typeof transition.evidence === "string" ? transition.evidence.trim() : "";
+  const name   = escapeHtml(transition.subjectLabel || transition.name || "(unknown)");
+  const detail = escapeHtml(recorded ? `recorded — ${recorded}` : (transition.summary ?? transition.newValue ?? ""));
+  const said   = isFactContinuity && evidence
+    ? `<p class="sf-wj-contradiction-evidence"><em>The narration said:</em> “${escapeHtml(evidence)}”</p>`
+    : "";
 
   // Kind-aware remedy (NARRCHK-REMEDY-MISMATCH, 2026-07): the correction
   // dialog only fixes scene truths/state — for the other audit kinds the
@@ -1863,6 +2169,7 @@ async function postContradictionNotification(transition) {
     `<div class="sf-wj-contradiction"><div class="sf-wj-contradiction-label">◈ Narrative Review</div>` +
     `<p>The narrator may have contradicted an established fact.</p>` +
     `<p><strong>${name}</strong>${detail ? ` — ${detail}` : ""}</p>` +
+    said +
     remedy +
     `</div>`;
 
@@ -1876,6 +2183,8 @@ async function postContradictionNotification(transition) {
           narratorCard:              isFactContinuity,             // surfaces the correction renderChatMessage hook
           factContinuityReview:      isFactContinuity,
           contradictedSubject:       transition.name ?? null,
+          // What the World Journal panel's row shows (issue #354 P2-19).
+          ...(isFactContinuity ? { contradiction: { subject: transition.subjectLabel || transition.name || "", recorded, evidence } } : {}),
           contradictedTruthId:       transition.truthId ?? null,
           matchedEntityIds:          transition.matchedEntityIds ?? [],
         },

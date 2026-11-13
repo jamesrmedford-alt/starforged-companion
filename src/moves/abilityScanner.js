@@ -357,30 +357,78 @@ function buildHaikuPrompt(abilities, moveId, moveName, narration, madeAs = null)
   ].join("\n");
 }
 
+/**
+ * The complete top-level JSON objects in a reply, in order — each `{ … }`
+ * found by matching braces outside strings. A reply cut off mid-object gives
+ * the objects that closed.
+ *
+ * @param {string} text
+ * @returns {string[]}
+ */
+function topLevelObjects(text) {
+  const out = [];
+  let depth = 0, start = -1, inString = false, escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') { if (depth > 0) inString = true; continue; }
+    if (c === "{") { if (depth === 0) start = i; depth += 1; }
+    else if (c === "}" && depth > 0) {
+      depth -= 1;
+      if (depth === 0 && start >= 0) { out.push(text.slice(start, i + 1)); start = -1; }
+    }
+  }
+  return out;
+}
+
+/**
+ * Read the scan's reply into its matches. The reply is meant to be one
+ * `{ "matches": [...] }` object. Haiku sometimes adds a sentence after it, and
+ * sometimes returns more than one object — a second `{ "matches": … }`, or
+ * one object per match — which the old "slice from the first { to the last }"
+ * turned into "Unexpected non-whitespace character after JSON": the scan
+ * returned nothing, and that turn's abilities were skipped without anyone
+ * being told why (issue #354 P2-25). Every complete top-level object is read:
+ * its `matches`, or the object itself when it is a match. A reply that holds
+ * none is logged with its text.
+ *
+ * @param {string} raw
+ * @returns {Array<{ key: string, summary: string, statReplacement: string|null }>}
+ */
 export function parseHaikuResponse(raw) {
   if (!raw) return [];
-  try {
-    const stripped = String(raw).replace(/```(?:json)?|```/g, "").trim();
-    // Haiku occasionally appends a trailing sentence after the JSON object
-    // (despite "JSON only" in the prompt), which made JSON.parse throw
-    // "Unexpected non-whitespace character after JSON". Slice to the
-    // outermost {...} so trailing prose can't break the parse.
-    const first = stripped.indexOf("{");
-    const last  = stripped.lastIndexOf("}");
-    const cleaned = (first >= 0 && last > first) ? stripped.slice(first, last + 1) : stripped;
-    const parsed = JSON.parse(cleaned);
-    const arr = Array.isArray(parsed?.matches) ? parsed.matches : [];
-    return arr
-      .filter(m => m && typeof m.key === "string")
-      .map(m => ({
-        key:             m.key,
-        summary:         String(m.summary ?? "").trim(),
-        statReplacement: SUBSTITUTABLE_STATS.includes(m.statReplacement) ? m.statReplacement : null,
-      }));
-  } catch (err) {
-    console.warn(`${MODULE_ID} | abilityScanner: Haiku JSON parse failed:`, err.message);
+  const stripped = String(raw).replace(/```(?:json)?|```/g, "").trim();
+  const found = [];
+  let parsedAny = false;
+  for (const chunk of topLevelObjects(stripped)) {
+    let parsed;
+    try {
+      parsed = JSON.parse(chunk);
+    } catch (err) {
+      console.warn(`${MODULE_ID} | abilityScanner: one object of the reply is not JSON (${err.message}) — skipped.`);
+      continue;
+    }
+    parsedAny = true;
+    if (Array.isArray(parsed?.matches)) found.push(...parsed.matches);
+    else if (parsed && typeof parsed.key === "string") found.push(parsed);
+  }
+  if (!parsedAny) {
+    console.warn(`${MODULE_ID} | abilityScanner: Haiku JSON parse failed — no JSON object in the reply; no ability is offered this turn. The reply was:`, stripped.slice(0, 600));
     return [];
   }
+  const seen = new Set();
+  return found
+    .filter(m => m && typeof m.key === "string" && !seen.has(m.key) && seen.add(m.key))
+    .map(m => ({
+      key:             m.key,
+      summary:         String(m.summary ?? "").trim(),
+      statReplacement: SUBSTITUTABLE_STATS.includes(m.statReplacement) ? m.statReplacement : null,
+    }));
 }
 
 async function callHaiku(userPrompt, apiKey) {

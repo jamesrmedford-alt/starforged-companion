@@ -100,6 +100,33 @@ async function moduleUpdate(doc, changes, options) {
 }
 
 /**
+ * Run a write the module makes on an Actor's own documents — an Item it
+ * creates there — with the Actor marked as written by the module until it
+ * settles, as moduleUpdate marks an update (reattributeSystemNote). The
+ * system's "Added The Escort" for a bond Item a draft's Confirm made was
+ * posted as the PC speaking (issue #354 P2-16): the `suppressLog` the create
+ * passes is read by the system's preCreateItem hook from the wrong argument
+ * (the creation data, vendor chat-alert.ts), so the note is always posted.
+ *
+ * @param {Actor|null} actor
+ * @param {() => Promise<*>} write
+ * @returns {Promise<*>}
+ */
+async function moduleWriteOn(actor, write) {
+  const id = typeof actor?.id === "string" ? actor.id : null;
+  if (id) _moduleWritesInFlight.set(id, (_moduleWritesInFlight.get(id) ?? 0) + 1);
+  try {
+    return await write();
+  } finally {
+    if (id) {
+      const left = (_moduleWritesInFlight.get(id) ?? 1) - 1;
+      if (left > 0) _moduleWritesInFlight.set(id, left);
+      else _moduleWritesInFlight.delete(id);
+    }
+  }
+}
+
+/**
  * Register the hook that has the ironsworn system's change log, for a change
  * the module made, said by the system rather than the PC: the emote "+1
  * momentum (now 5)" spoken by the PC read as the player speaking (issue #348
@@ -1207,9 +1234,12 @@ const VALID_RANKS = ["troublesome", "dangerous", "formidable", "extreme", "epic"
  * vendor/foundry-ironsworn/.../sf-connections.vue), so we use "bond" to
  * match the system's own "+ Connection" button behaviour.
  *
- * Passes `{ suppressLog: true }` so the ironsworn preCreateItem chat-alert
- * hook does not emit an "Added <name>" emote message in chat — those
- * messages were leaking between narrator turns.
+ * Passes `{ suppressLog: true }`, which the ironsworn preCreateItem
+ * chat-alert hook is meant to honour — it reads it from the creation data,
+ * not the options, so its "Added <name>" note is posted all the same. The
+ * create runs through moduleWriteOn, so that note reads as the system's
+ * ("Isaac Sutton: Added The Escort"), never as the PC speaking (issue #354
+ * P2-16).
  *
  * Idempotent: if an Item flagged with this connection's id already exists
  * on the actor, returns it without creating a duplicate.
@@ -1485,7 +1515,7 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
 
   try {
     refuseStaleActorWrite(`create ${subtype} item`);
-    const item = await ItemCls.create(
+    const item = await moduleWriteOn(actor, () => ItemCls.create(
       {
         name,
         type:   "progress",
@@ -1493,7 +1523,7 @@ async function createCharacterProgressItem(actor, { subtype, name, rank, flagKey
         flags:  Object.keys(moduleFlags).length ? { [MODULE_ID]: moduleFlags } : {},
       },
       { parent: actor, suppressLog: true },
-    );
+    ));
     invalidateActorCache(actor.id);
     return item ?? null;
   } catch (err) {
