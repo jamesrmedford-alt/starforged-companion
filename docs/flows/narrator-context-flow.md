@@ -99,7 +99,12 @@ GM (§2), so every narrator call runs exactly once, on one chosen client:
   keyless → the usual "key not configured" fallback). Every client reads the
   same setting and user list, so they agree on the runner.
 - **Oracle follow-ups** (after `!oracle yes`, `!oracle <tableId>` and
-  `!pay-the-price`; a move's routed Pay the Price has none — its price seeds
+  `!pay-the-price` — a price that reveals a new enemy is told its Character
+  Role + Goal + Disposition, rolled where it is narrated and never put on the
+  raw card — and after a weak hit's chosen complication, whose card
+  (`sufferDialog.js` `postChosenComplication`, kind `complication`; a
+  waypoint's peril rolled on Spaceborne Peril) the narrator plays at once as
+  its own beat, issue #353 Phase 0; a move's routed Pay the Price has none — its price seeds
   the move's own narration, issue #325 W03 — nor does a routed `!ptp` price
   nobody pays, a PC-less player's at a table of several: its card says it was
   not applied and carries no `oracleNarration` or `oracleMemory`,
@@ -469,7 +474,12 @@ B04) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
 U08) · **[1b] X-Card redirect** (prose modes, until the first narration after
 a GM resumes has posted — issue #321 U07, above) · [2] permission-class latitude · [2.5]
 Battle Stations · [3] oracle seeds (move-provided only; a routed Pay the
-Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03) · **[3b] recent
+Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03; the
+"envision" outcomes roll theirs once in `buildOracleSeeds` — Gather
+Information's Story Clue / Story Complication, a Compel weak hit's Action +
+Theme counteroffer, an Undertake an Expedition hit's region Space Sighting,
+and a price that reveals a new enemy its Character Role + Goal + Disposition,
+`priceSeedLines` — issue #353 Phase 0) · **[3b] recent
 oracle results** (`campaignState.recentOracles`, read from the store — raw `!oracle` (incl.
 `!oracle <tableId>` and custom-table rolls) / `!ptp` outcomes, and the at-0
 choice card's mortal-wound / desolation roll — the table's one roll, no move

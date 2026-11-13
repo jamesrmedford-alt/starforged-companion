@@ -142,7 +142,13 @@ Discovered card says so). With no active sector nothing is recorded.
   card once (`expeditionFinishAttempted`), and only that PC's player or a GM
   may press it — it posted from the presser's client, so a crewmate finished
   another player's expedition (issue #338 D1). Deliberately **not** an
-  arrival move — no position write mid-journey.
+  arrival move — no position write mid-journey. A hit's narration is seeded
+  with the waypoint it reaches: the active sector's region's Space Sighting,
+  rolled once by the resolver (`buildOracleSeeds`, issue #353 Phase 0). A weak
+  hit's "Peril at the waypoint" pick rolls Spaceborne Peril, posts it, and the
+  narrator plays it at once as its own beat (`sufferDialog.js`
+  `postChosenComplication` → the oracle follow-up) — its card only promised
+  that the narrator would "surface" it.
 - **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
   ship record, `currentLocationId`, the feedback card), and an Undertake an
   Expedition miss upgraded marks the expedition as a rolled hit would — the

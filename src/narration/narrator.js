@@ -67,6 +67,7 @@ import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
+import { priceRevealsNewEnemy, newEnemySeedLines } from '../moves/resolver.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -3528,8 +3529,12 @@ export async function narrateOracleFollowup({
   // Length setting governs move and paced narration only (issue #326 W40); it
   // was read into this user message while the role said 2-3 (issue #331 X28).
   const recentContext  = getRecentNarrationContext(sessionId, getNarratorContextCards());
+  // A price that reveals a new enemy is told what it is and wants — rolled
+  // once, here, where it is narrated (issue #353 Phase 0; never on the raw
+  // card a player can read).
+  const seedLines      = priceRevealsNewEnemy(rolledLine) ? newEnemySeedLines() : [];
   const userMessage    = buildOracleUserMessage({
-    oracleName, question, rolledLine, recentContext,
+    kind, oracleName, question, rolledLine, recentContext, seedLines,
   });
 
   try {
@@ -3596,7 +3601,7 @@ async function forgetInterruptedOracleResult(oracleCardId) {
 }
 
 function buildOracleUserMessage({
-  oracleName, question, rolledLine, recentContext,
+  kind = 'oracle_table', oracleName, question, rolledLine, recentContext, seedLines = [],
 }) {
   // recentContext is a pre-joined STRING (getRecentNarrationContext), matching
   // the scene/paced builders. Use it directly — calling .join here threw
@@ -3606,11 +3611,30 @@ function buildOracleUserMessage({
     ? `\n\nRECENT NARRATION (most recent last):\n${recentContext}`
     : '';
   const q = question?.trim() ? `Question or context: ${question.trim()}\n` : '';
+  const seeds = (Array.isArray(seedLines) ? seedLines : []).filter(l => typeof l === 'string' && l.trim());
+  const seedBlock = seeds.length ? `What the oracle says of it:\n${seeds.map(l => `- ${l}`).join('\n')}\n` : '';
+  // A complication the player chose as a weak hit's cost (issue #353 Phase
+  // 0): it is delivered now, as its own beat. Its card only promised that the
+  // narrator would "surface" it, and nothing ever did.
+  if (kind === 'complication') {
+    return (
+      `The player chose a complication as the cost of their last move:\n` +
+      `Complication: ${oracleName}\n` +
+      q +
+      (rolledLine ? `Oracle: ${rolledLine}\n` : '') +
+      `${recent}\n\n` +
+      `Render the complication arriving now, as 2-3 sentences of in-fiction prose anchored to ` +
+      `the current scene: it happens, concretely, and it costs or threatens the characters. ` +
+      `Do not resolve it. Do not repeat the dice number or the literal table text — transform ` +
+      `it into narrative.`
+    );
+  }
   return (
     `The player invoked the oracle:\n` +
     `Oracle: ${oracleName}\n` +
     q +
     `Mechanical result: ${rolledLine}\n` +
+    seedBlock +
     `${recent}\n\n` +
     `Render this result as 2-3 sentences of in-fiction prose anchored to ` +
     `the current scene. Do not repeat the dice number or the literal table text — transform ` +

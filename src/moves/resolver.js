@@ -1389,7 +1389,8 @@ export function resolveMove(interpretation, campaignState, options = {}) {
   if (choicePrice) consequences.sufferPrompt = withChoicePrice(consequences.sufferPrompt, choicePrice, moveName);
   const builtSeeds = buildOracleSeeds(moveId, outcome, isMatch, options.currentSite ?? null,
     { routesPayThePrice: consequences.routePayThePrice === true || !!choicePrice,
-      rollsDecisiveActionCost: consequences.rollDecisiveActionCost === true });
+      rollsDecisiveActionCost: consequences.rollDecisiveActionCost === true,
+      region: activeSectorRegion(campaignState) });
   const oracleSeeds = choicePrice ? withPayThePriceSeed(builtSeeds, moveId, choicePrice.result) : builtSeeds;
 
   return {
@@ -1460,6 +1461,19 @@ function weakHitAsMissSource(interpretation) {
  *   confront_chaos         → action + theme
  *   ask_the_oracle         → action + theme (default fallback)
  *
+ * And at the outcomes whose text says to envision something (issue #353
+ * Phase 0, "Where to roll" — rolled once, here, never on a beat that is not
+ * one of these):
+ *   gather_information     → hit: Story Clue (what is learned); weak hit also,
+ *                            and miss: Story Complication (the complication,
+ *                            the unwelcome truth)
+ *   compel                 → weak hit: action + theme (their counteroffer)
+ *   undertake_an_expedition→ hit: Space Sighting for the active sector's
+ *                            region (the waypoint reached)
+ *   a price that reveals a new enemy ("A new enemy is revealed", a "Roll
+ *   twice" leaf included) → character role + goal + disposition (what it is
+ *   and what it wants — priceSeedLines)
+ *
  * Returns null for moves that don't seed.
  *
  * @param {string} moveId
@@ -1475,6 +1489,9 @@ function weakHitAsMissSource(interpretation) {
  *   roll Take Decisive Action's weak-hit cost (`rollDecisiveActionCost`): the
  *   pipeline's cost card rolls it and seeds the narration with that one, so
  *   none is rolled here (TDA-COST-DOUBLE-ROLL — the U03 shape)
+ * @param {string|null} [opts.region] — the active sector's region
+ *   ("terminus" | "outlands" | "expanse"): an expedition's waypoint is that
+ *   region's Space Sighting; Terminus with none (activeSectorRegion)
  * @returns {Object|null}
  */
 // Moves whose miss outcome says "Pay the Price" per the play kit. A miss the
@@ -1492,7 +1509,7 @@ const PAY_THE_PRICE_ON_MISS = new Set([
   "explore_a_waypoint",
 ]);
 
-export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, { routesPayThePrice = false, rollsDecisiveActionCost = false } = {}) {
+export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, { routesPayThePrice = false, rollsDecisiveActionCost = false, region = null } = {}) {
   try {
     const results = [];
     const names   = [];
@@ -1501,6 +1518,50 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
 
     // ── PER-MOVE SEEDS ─────────────────────────────────────────────────────
     switch (moveId) {
+
+      // The outcomes that say to envision something (issue #353 Phase 0):
+      // the narrator used to fill them from its own defaults, so the same
+      // images came back beat after beat. Rolled once, here, and given to the
+      // narration as seeds are.
+      case "gather_information": {
+        // Strong hit: "the situation or path forward is clear"; weak hit: "a
+        // new insight, but it complicates your quest"; miss: "a dire threat
+        // or an unwelcome truth" (and Pay the Price — the pipeline's card).
+        if (outcome === "strong_hit" || outcome === "weak_hit") {
+          const clue = safeRoll("story_clue");
+          if (clue) results.push(`What you learn — Story Clue: ${clue}`);
+        }
+        if (outcome === "weak_hit") {
+          const complication = safeRoll("story_complication");
+          if (complication) results.push(`How it complicates the quest — Story Complication: ${complication}`);
+        } else if (outcome === "miss") {
+          const truth = safeRoll("story_complication");
+          if (truth) results.push(`The unwelcome truth — Story Complication: ${truth}`);
+        }
+        break;
+      }
+
+      case "compel": {
+        // Weak hit: "they agree, but with a demand or complication" — the
+        // counteroffer the narrator is told to envision.
+        if (outcome === "weak_hit") {
+          const pair = safeRollPaired("action", "theme");
+          if (pair) results.push(`Their counteroffer — Action + Theme: ${pair}`);
+        }
+        break;
+      }
+
+      case "undertake_an_expedition": {
+        // A hit reaches a waypoint: what it is, from the region's Space
+        // Sighting table. A miss is waylaid — its Pay the Price is the
+        // pipeline's card.
+        if (outcome === "strong_hit" || outcome === "weak_hit") {
+          const tableId = SPACE_SIGHTING_BY_REGION[region] ?? SPACE_SIGHTING_BY_REGION.terminus;
+          const sight = safeRoll(tableId);
+          if (sight) results.push(`The waypoint you reach — Space Sighting (${regionLabel(region)}): ${sight}`);
+        }
+        break;
+      }
 
       case "make_a_connection": {
         const role      = safeRoll("character_role");
@@ -1609,7 +1670,7 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
       case "pay_the_price": {
         // Pay the Price as a deliberate fate move — always roll the d100 table.
         const ptp = safeRoll("pay_the_price");
-        if (ptp) results.push(`Pay the Price: ${ptp}`);
+        if (ptp) results.push(...priceSeedLines(ptp));
         break;
       }
 
@@ -1638,7 +1699,7 @@ export function buildOracleSeeds(moveId, outcome, isMatch, currentSite = null, {
     // the table another (issue #321 U03).
     if (outcome === "miss" && PAY_THE_PRICE_ON_MISS.has(moveId) && !routesPayThePrice) {
       const ptp = safeRoll("pay_the_price");
-      if (ptp) results.push(`Pay the Price: ${ptp}`);
+      if (ptp) results.push(...priceSeedLines(ptp));
     }
 
     if (!results.length && !names.length && !connectionSeed) return null;
@@ -1710,7 +1771,79 @@ export function withChoicePrice(prompt, price, moveName = null) {
 export function withPayThePriceSeed(seeds, moveId, price) {
   if (!price) return seeds ?? null;
   const base = seeds ?? { results: [], names: [], context: moveId };
-  return { ...base, results: [...(base.results ?? []), `Pay the Price: ${price}`] };
+  return { ...base, results: [...(base.results ?? []), ...priceSeedLines(price)] };
+}
+
+/** The Pay the Price result that reveals a new enemy (the play kit's 45–50). */
+const NEW_ENEMY_PRICE = /\bA new enemy is revealed\b/i;
+
+/**
+ * Whether a Pay the Price result — or one leaf of a "Roll twice" (the roller
+ * joins leaves with " / ") — reveals a new enemy.
+ *
+ * @param {string|null|undefined} price
+ * @returns {boolean}
+ */
+export function priceRevealsNewEnemy(price) {
+  return typeof price === "string" && NEW_ENEMY_PRICE.test(price);
+}
+
+/**
+ * The seed lines for a Pay the Price result: the price, and — when it reveals
+ * a new enemy — what that enemy is and wants, rolled once on Character Role,
+ * Goal and Disposition (issue #353 Phase 0). The narration was seeded with the
+ * bare price, so "a new enemy" became a voice with no nature or agenda.
+ *
+ * @param {string} price — the rolled result
+ * @returns {string[]}
+ */
+function priceSeedLines(price) {
+  const lines = [`Pay the Price: ${price}`];
+  if (priceRevealsNewEnemy(price)) lines.push(...newEnemySeedLines());
+  return lines;
+}
+
+/**
+ * What a new enemy is and what it wants: Character Role, Goal and Disposition,
+ * one roll each. A table that fails gives no line.
+ *
+ * @returns {string[]}
+ */
+export function newEnemySeedLines() {
+  const lines = [];
+  const role = safeRoll("character_role");
+  const goal = safeRoll("character_goal");
+  const disposition = safeRoll("character_disposition");
+  if (role)        lines.push(`The new enemy — Character Role: ${role}`);
+  if (goal)        lines.push(`The new enemy — Character Goal: ${goal}`);
+  if (disposition) lines.push(`The new enemy — Character Disposition: ${disposition}`);
+  return lines;
+}
+
+/** Each region's Space Sighting table (oracles/roller.js ORACLE_TABLES). */
+const SPACE_SIGHTING_BY_REGION = Object.freeze({
+  terminus: "space_sighting_terminus",
+  outlands: "space_sighting_outlands",
+  expanse:  "space_sighting_expanse",
+});
+
+/** "Outlands" for a region key; "Terminus" for none or an unknown one. */
+function regionLabel(region) {
+  const key = SPACE_SIGHTING_BY_REGION[region] ? region : "terminus";
+  return key.charAt(0).toUpperCase() + key.slice(1);
+}
+
+/**
+ * The active sector's region ("terminus" | "outlands" | "expanse"), or null
+ * with no active sector — as `!oracle` reads it for its per-region tables.
+ *
+ * @param {Object|null} campaignState
+ * @returns {string|null}
+ */
+function activeSectorRegion(campaignState) {
+  const sectors = Array.isArray(campaignState?.sectors) ? campaignState.sectors : [];
+  const region = sectors.find(s => s?.id === campaignState?.activeSectorId)?.region ?? null;
+  return typeof region === "string" && SPACE_SIGHTING_BY_REGION[region] ? region : null;
 }
 
 /**

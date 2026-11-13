@@ -256,7 +256,7 @@ export function summarizeSufferCalls(calls, results = []) {
       case "route":               parts.push(c.route === "pay_the_price" && c.price
         ? "the price paid (see its card)"
         : `see "Trigger: ${c.route}"`); break;
-      case "complication":        parts.push("complication pending"); break;
+      case "complication":        parts.push("a complication (see its card)"); break;
       default: break;
     }
   }

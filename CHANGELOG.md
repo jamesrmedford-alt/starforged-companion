@@ -6,6 +6,11 @@ All notable changes to Starforged Companion are documented here.
 
 ## [Unreleased]
 
+- Added: **The narrator rolls an oracle where a move says to envision something** (issue #353 Phase 0). Gather Information rolls Story Clue on a hit (and Story Complication on a weak hit) and Story Complication on a miss; a Compel weak hit rolls Action + Theme for the counteroffer; an Undertake an Expedition hit rolls the sector region's Space Sighting for the waypoint; a Pay the Price that reveals a new enemy rolls its Character Role, Goal and Disposition. Each is rolled once and given to the narration as a seed; nothing is posted to chat.
+- Fixed: **A complication you choose as a weak hit's cost is played** (issue #353 Phase 0). "Peril at the waypoint", "Complication at destination" and a narrative cost posted a card promising the narrator would bring it in later, and nothing ever did. Its card now posts and the narrator plays it at once as its own beat (narrated once, on the GM with a Claude key, and undone by the X-Card like any narration). A peril at the waypoint is rolled on Spaceborne Peril first, and the roll is on its card.
+
+## [1.8.1] — 2026-11-12
+
 - Fixed: **Character notes reach the narrator as text.** Entities such as "&amp;" and "&middot;" in a character's notes, biography and asset descriptions reached the narrator as written; every reader now decodes them the same way, once. (CHARACTER-STATE-ENTITY-UNDECODED)
 - Fixed: **Narration without a roll moves the story along.** It used to hold the scene still: an arrival kept being pushed back. It now lets the time and small events your line implies happen, and a time skip such as "wake me when we get there" cuts to the next moment that needs you. It still never decides what a roll should decide. (issue #348 PT01)
 - Fixed: **Narrator beats no longer end flat.** Every move, free-narration and round beat now changes something and ends on something left open in the story: a question, a threat, a demand, something unexplained. A repeated image has to change or be dropped. The narrator still shows these as events in the story, not as a list of options. (issue #348 PT02)

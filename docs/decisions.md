@@ -6,6 +6,56 @@ rejected.
 
 ---
 
+## Oracles behind the scenes: the "envision" outcomes roll their table once (2026-11)
+
+**Decision:** (issue #353 Phase 0, "Where to roll".) Where a move's outcome
+says to envision something, the resolver rolls the matching table once and
+the narration is given the result as an oracle seed, as the eight seeded moves
+already were:
+- **Gather Information**: a hit → Story Clue (what you learn); a weak hit also
+  → Story Complication (how it complicates the quest); a miss → Story
+  Complication (the unwelcome truth). The miss's Pay the Price stays the
+  pipeline's card.
+- **Compel**, weak hit → Action + Theme (their counteroffer).
+- **Undertake an Expedition**, hit → the active sector's region's Space
+  Sighting (the waypoint reached); Terminus with no active sector.
+- **A Pay the Price that reveals a new enemy** (the 45–50 row, or a leaf of a
+  "Roll twice") → Character Role + Goal + Disposition, wherever the price is
+  narrated: the move's own price seed (`withPayThePriceSeed`, so the
+  pipeline's routed price and Sojourn's choice price both), the advisory price
+  of a miss that routes none, the Pay the Price move, and a `!ptp` / `!oracle
+  pay_the_price` follow-up — rolled there, on the narrating client, and never
+  put on the raw card the table reads.
+- **A chosen complication is played as its own beat.** A weak hit's
+  complication option ("Peril at the waypoint", "Complication at
+  destination", Forsake Your Vow's "Narrative cost") posts its card as the
+  module's own oracle card (`oracleCommandCard`, `oracleNarration` kind
+  `complication`) and asks for the oracle follow-up, which the keyed canonical
+  GM narrates once and the X-Card can take back (its card names the raw card,
+  `oracleCardId`). A waypoint's peril is rolled on Spaceborne Peril first; its
+  roll is on the card and in RECENT ORACLE RESULTS. The other scopes roll
+  nothing.
+
+No other outcome rolls one: a beat that is not one of these plays what the
+story holds.
+
+**Reason:** in the alpha 23 playtest's corridor scene the narrator filled
+every "envision" from its own defaults, so the same images recurred for an
+hour, "A new enemy is revealed" became a voice with no nature or goal, and a
+chosen "Peril at the waypoint" never arrived — its card only promised that the
+narrator would "surface" it, and nothing read it (produced-but-dead,
+rules/reachability.md §1). Starforged's own answer to "what does this mean?"
+is to ask an oracle.
+
+**Rejected:** *a roll on every beat* — unrelated random results each turn
+make the story less coherent, not more; *a pending complication on
+campaignState for the next narration* — a new store and its X-Card undo, where
+the follow-up beat already delivers at once and is X-Card aware; *rolling the
+enemy's tables on the `!ptp` card* — the card is the table's to read, and the
+rolls create the enemy's hidden truth (Phase 1).
+
+---
+
 ## The v1.8.1 open-item sweep: issue #348 and the earlier audits' open items (2026-11)
 
 **Decision:** (the maintainer's request, 2026-11-12: close out issue #348 and every item the earlier audits left open.) The maintainer chose: Perspective "Auto" is decided once per session (#348 PT03); a Set a Course to an uncharted place is read as Undertake an Expedition on every Mischief setting, saying why (#348 PT06); an unnamed destination is recorded as a location with a working label (#348 PT07); each open item's written proposal is applied, including the "maintainer's call" ones; and by-design / cosmetic / not-reproduced items are re-checked, fixed when real and cheap, else closed with the reason. What each fix established (known-issues.md, "The v1.8.1 open-item sweep", has every row):
