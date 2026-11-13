@@ -11,9 +11,9 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
-### Alpha 23 playtest part 2 (issue #354) — in progress in the v1.8.2 cycle
+### Alpha 23 playtest part 2 (issue #354) — built in the v1.8.2 cycle, not yet played
 
-Fixed so far (each with a regression test; decisions.md → "Issue #354"):
+Each with a regression test (decisions.md → "Issue #354"). None of it has been played in Foundry:
 
 | ID | Kind | Fix |
 |---|---|---|

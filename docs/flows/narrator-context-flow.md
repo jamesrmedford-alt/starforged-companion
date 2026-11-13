@@ -413,7 +413,11 @@ XCARD-DURING-SCENE-END-MIGRATES: the scene end's copy still held the beat
 live, and its writes after the card's own undo left the removed fact as a
 detail, as confirmed lore and as LAST KNOWN). A state transition the capture
 applies to an entry it did not make — a threat resolved or escalated
-(`updateThreatSeverity`), lore confirmed (`promoteLoreToConfirmed`), a
+(`updateThreatSeverity`; a detected threat is the recorded one when its name
+is a variant of it — `resolveThreatName` — and its severity one of four
+words, a sentence given for one kept as the summary, so one threat is one
+page: issue #354 P2-15; a GM's **Merge duplicates** folds earlier ones,
+`mergeDuplicateThreats`), lore confirmed (`promoteLoreToConfirmed`), a
 faction's attitude (`recordFactionIntelligence`) — is stamped the same way and
 put back with it; the stance an attitude moved on the faction's record (the
 canonical stance, `recordStance` before → after) is put back too, where the

@@ -32,7 +32,9 @@ A destination the story names without a proper name joins them in play
 label naming no site and no tracked place
 (`index.js` `applyOutcomeEffects`) records it with
 `siteDiscovery.recordUnchartedDestination` — a `location` Actor (status
-unexplored), a discovery record of type `uncharted` with `workingLabel: true`
+unexplored; its name the label written as a name, `nameMatch.generatedName`:
+"the corridor" → "Corridor", issue #354 P2-18), a discovery record of type
+`uncharted` with `workingLabel: true`
 on the active sector's `mapData.discoveries` (the next periphery slot,
 `sectorGenerator.layoutDiscovery`; on the pipeline's working copy, which its
 persist saves — an upgrade saves `sectors` at once) and its pin

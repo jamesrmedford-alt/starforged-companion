@@ -64,7 +64,12 @@ Two cross-cutting facts to hold onto:
   made once the supply is refunded above 0 — for a burn, before its reset is
   computed, for an improvement before its meter write (issue #342 D4) — and
   gives back the momentum each mark's lowered maximum clamped (the receipt's
-  `momentumClamped`; a burn's burner spends it instead, issue #345 AA46) —
+  `momentumClamped`; a burn's burner spends it instead, issue #345 AA46);
+  the vehicle integrity or companion health a Withstand Damage / Companion
+  Takes a Hit route took is a receipt too (`ptpReversals.assetDeltas`, put
+  back as a restore — an `assetTrack` upgrade step — issue #354 P2-09), and
+  the reverted price's own cards are struck (`supersedePriceCards`, by the
+  `priceOf` its suffer cards carry) —
   retires the
   move's pending choice card (bound by `resolutionId`) and posts the upgraded
   outcome's choice for the move's fight, vehicle and companion; a write that
