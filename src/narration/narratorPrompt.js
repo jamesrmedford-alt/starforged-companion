@@ -1857,6 +1857,8 @@ function formatSkeletonEntry(r) {
   if (r.resolutions?.length) lines.push(`Could end: ${r.resolutions.join('; ')}`);
   if (r.kind === 'expedition') {
     lines.push('When the expedition is finished, what waits at the end comes out: record it as revealed ("truth") and resolved.');
+  } else if (r.kind === 'vow') {
+    lines.push('When the vow is fulfilled or forsaken, its story ends: record it as resolved, and "truth" as revealed if it comes out.');
   }
   return lines.join('\n');
 }

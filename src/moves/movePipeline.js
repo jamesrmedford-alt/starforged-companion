@@ -1300,8 +1300,12 @@ export async function rollMove({
       // native payoff's claim — the vendor leaves the Item open, so it can
       // be fulfilled again here): its Quests legacy is paid, and the write
       // below paid it a second time (issue #325 W28).
-      const legacyPaid = resolveVowItemCopies(vowName, vowKey).copies
-        .some(({ item }) => item?.flags?.[MODULE_ID]?.fulfilPaid === true);
+      const copies = resolveVowItemCopies(vowName, vowKey).copies;
+      const legacyPaid = copies.some(({ item }) => item?.flags?.[MODULE_ID]?.fulfilPaid === true);
+      // The vow's plan comes out in this narration — its stable id (every
+      // copy's) is the plan's subject (issue #353 Phase 4).
+      const vowIds = [...new Set(copies.map(({ item }) => item?.flags?.[MODULE_ID]?.vowId).filter(Boolean))];
+      if (vowIds.length) resolution.endingTrackIds = vowIds;
       const itemDone = await completeVowItemByName(vowName, vowKey);
 
       if (fin?.track) {

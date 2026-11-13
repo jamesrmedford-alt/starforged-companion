@@ -2811,3 +2811,12 @@ body.sf-touch .sf-round-window .sf-round-target { min-height: 44px; }
 /* The round's narrator card: each acting player's line and roll above the prose. */
 .sf-round-card .sf-round-entries { list-style: none; margin: 0 0 0.4rem; padding: 0; display: flex; flex-direction: column; gap: 0.25rem; }
 .sf-round-card .sf-round-entry-line { font-style: italic; opacity: 0.85; }
+
+/* The GM's "has a plan" marker (issue #353): a sign that the narrator holds a
+   hidden plan for this subject, no content. Rendered only on a GM's client. */
+.sf-plan-marker {
+  margin-left: 0.35em;
+  font-size: 0.75em;
+  opacity: 0.6;
+  cursor: help;
+}

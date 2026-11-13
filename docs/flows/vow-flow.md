@@ -279,6 +279,20 @@ paths, written for the PC who swore (`speakerActorId`, issue #321 U23), and
 records its facts in a scene (`ensureSceneStarted`, issue #321 U34). Vows are
 **not** part of the scene frame or relevance-injected entity cards.
 
+**The vow's hidden plan (issue #353 Phase 4).** `narrateAndPostVowSwearing`
+asks its scene what is really behind the vow (`resolver.vowPlanRequest`: an
+Action + Theme, a `vow` plan about the vow by its stable `vowId` — the swear
+passes the inciting card's message id); the scene's sidecar `plans` decides
+it into the GM-only Secrets journal (`secrets.applyPlanSideData`). No scene
+(the setting off, no key, a failure): the request is filed with its roll
+alone (`secrets.fileRequestedPlan`) for a later narration to decide. The
+plan reaches the narrator as [6.6] UNREVEALED while the vow is the sole open
+vow (`narrator.js` `soleOpenVowNames` → `selectRelevantSkeletons`'
+`openVowNames`), when the fiction names it, and in the narration of the
+Fulfill Your Vow that scores it: the fulfil branch puts the scored copies'
+`vowId`s on `resolution.endingTrackIds` (`movePipeline.js`), which
+`narrationInputFrom` carries to the narration.
+
 ## 4. Fulfilment
 
 Scoring: `fulfill_your_vow` is a progress move; `enrichProgressTicks` fills

@@ -1854,6 +1854,31 @@ export function expeditionPlanRequest(track, campaignState, resolutionId) {
   };
 }
 
+/**
+ * The plan a vow's swearing scene is asked to decide (issue #353 Phase 4,
+ * "Swear an Iron Vow / the inciting incident → vow"): what is really behind
+ * the vow, seeded with an Action + Theme. About the vow, by its id when it
+ * has one.
+ *
+ * @param {{ name?: string, vowId?: string|null }} vow
+ * @param {string} refBase — unique to the narration
+ * @returns {{ ref: string, kind: "vow", trigger: string, label: string,
+ *   subject: { type: "vow", id: string|null, name: string }, oracleSeeds: string[] }|null}
+ */
+export function vowPlanRequest(vow, refBase) {
+  const name = String(vow?.name ?? "").trim();
+  if (!name || typeof refBase !== "string" || !refBase) return null;
+  const behind = safeRollPaired("action", "theme");
+  return {
+    ref:         `plan-${refBase}-vow`.slice(0, 64),
+    kind:        "vow",
+    trigger:     "vow",
+    label:       `what is really behind the vow "${name}"`,
+    subject:     { type: "vow", id: typeof vow?.vowId === "string" && vow.vowId ? vow.vowId : null, name },
+    oracleSeeds: behind ? [`What is behind it — Action + Theme: ${behind}`] : [],
+  };
+}
+
 /** Each region's Space Sighting table (oracles/roller.js ORACLE_TABLES). */
 const SPACE_SIGHTING_BY_REGION = Object.freeze({
   terminus: "space_sighting_terminus",

@@ -21,6 +21,7 @@ import { resolveUserActorId } from '../multiplayer/speaker.js';
 import { getPlayerActors } from '../character/actorBridge.js';
 import { replaceKeepingInput } from './keepTypedInput.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
+import { plannedSubjects } from '../world/secrets.js';
 
 /**
  * A track's label (or any text) for HTML: a name holding markup — a player can
@@ -79,6 +80,18 @@ const PANEL_TRACK_TYPES = {
 // ---------------------------------------------------------------------------
 // ProgressTrack data model (plain object, persisted in journal flags)
 // ---------------------------------------------------------------------------
+
+/** The GM's "has a plan" marker (issue #353 Phase 4): a sign, no content. */
+const PLAN_MARKER = '<span class="sf-plan-marker" title="The narrator holds a hidden plan for this (GM only)">◆</span>';
+
+/** The track ids a hidden plan is about (secrets.js plannedSubjects). Fail-open. */
+function plannedTrackIds() {
+  try {
+    return plannedSubjects().ids;
+  } catch {
+    return new Set();
+  }
+}
 
 /**
  * Create a new track record.
@@ -543,6 +556,9 @@ export class ProgressTrackApp extends ApplicationV2 {
     // One badge per character the viewer plays: a GM running several PCs saw
     // and toggled only the first's (POSITION-BADGE-GM-FIRST-PC).
     const viewers       = viewerCharacters(campaignState);
+    // The GM's "has a plan" marker on a track a hidden plan is about — an
+    // expedition's (issue #353 Phase 4). No content; never a player's.
+    const planned       = game.user?.isGM ? plannedTrackIds() : new Set();
     const viewer        = viewers[0] ?? null;
 
     // Annotate each track with derived display values.
@@ -571,6 +587,7 @@ export class ProgressTrackApp extends ApplicationV2 {
           ? { filled: linkedClock.filled, segments: linkedClock.segments,
               triggered: linkedClock.filled >= linkedClock.segments }
           : null,
+        hasPlan: planned.has(t.id),
       };
     });
 
@@ -593,7 +610,7 @@ export class ProgressTrackApp extends ApplicationV2 {
            data-track-id="${t.id}">
         <div class="track-header">
           <div class="track-labels">
-            <span class="track-name">${escapeHtml(t.label)}</span>
+            <span class="track-name">${escapeHtml(t.label)}${t.hasPlan ? PLAN_MARKER : ''}</span>
             <span class="track-meta">${t.typeLabel} · ${t.rankLabel}</span>
           </div>
           <div class="track-actions">

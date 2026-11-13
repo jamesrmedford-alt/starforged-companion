@@ -63,12 +63,12 @@ import { buildCampaignTruthsBlock } from '../system/campaignTruths.js';
 import { getTruth } from '../truths/generator.js';
 import { getChronicleEntries } from '../character/chronicle.js';
 import { scheduleChronicleEntry } from '../character/chronicleWriter.js';
-import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor } from '../character/actorBridge.js';
+import { readCharacterSnapshot, getPlayerActors, isPlayerCharacterActor, readVows } from '../character/actorBridge.js';
 import { MOVES, toMoveId } from '../schemas.js';
 import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
-import { priceRevealsNewEnemy, newEnemySeedLines } from '../moves/resolver.js';
-import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock } from '../world/secrets.js';
+import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
+import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan } from '../world/secrets.js';
 import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals } from '../world/skeletons.js';
 
 const ENTITY_GETTERS = {
@@ -532,6 +532,8 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
         // The plans this beat is about whatever its text: a clock vignette's,
         // a chosen complication's.
         planIds,
+        // A vow's plan is in play when it is the one open vow (Phase 4).
+        openVowNames:      soleOpenVowNames(),
       });
     } catch (err) {
       console.warn(`${MODULE_ID} | narrator: the hidden plans could not be read:`, err?.message ?? err);
@@ -552,6 +554,24 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
     : [];
 
   return extras;
+}
+
+/**
+ * The open vow's name when the player characters hold exactly one (a shared
+ * vow's copies are one) — its plan is in play every beat (issue #353 Phase
+ * 4). With several, a vow's plan is in play when the fiction names it.
+ * Fail-open.
+ */
+function soleOpenVowNames() {
+  try {
+    const names = new Set();
+    for (const actor of getPlayerActors()) {
+      for (const v of readVows(actor)) if (!v.completed && v.name) names.add(v.name.trim());
+    }
+    return names.size === 1 ? [...names] : [];
+  } catch {
+    return [];
+  }
 }
 
 /** The World Journal's immediate threats, by name — their plans are in play every beat (issue #353). Fail-open. */
@@ -4053,7 +4073,7 @@ export function buildVowSwearingUserMessage(vow, ironTruth) {
  *   X-Card can remove this narration (issue #321 U07)
  * @returns {Promise<string|null>}
  */
-export async function narrateVowSwearing({ vow, campaignState, speakerActorId = null, narrationId = newNarrationId() }) {
+export async function narrateVowSwearing({ vow, campaignState, speakerActorId = null, narrationId = newNarrationId(), planRequests = [] }) {
   const settings = getNarratorSettings();
   if (!settings.narrationEnabled) return null;
   let vowSceneOn = true;
@@ -4071,7 +4091,8 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
 
   const character    = getActiveCharacter(campaignState, speakerActorId);
   const ironTruth    = getTruth(campaignState, 'iron');
-  const extras       = await buildNarratorExtras('vow_swearing', campaignState, { character });
+  // What is really behind the vow is decided here (issue #353 Phase 4).
+  const extras       = await buildNarratorExtras('vow_swearing', campaignState, { character, planRequests });
   const systemPrompt = buildNarratorSystemPrompt(campaignState, settings, character, '', extras);
   const userMessage  = buildVowSwearingUserMessage(vow, ironTruth);
 
@@ -4083,7 +4104,7 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
       maxTokens: maxTokensWithSidecar(16000),
     });
     if (xCard.interrupted('narrateVowSwearing')) return null;
-    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId });
+    const text = applyNarratorSidecar(raw, campaignState, { moveId: null, matchedEntityIds: extras.matchedEntityIds ?? [], narrationId, planRequests: extras.planRequests });
     return (text && text.trim()) ? text : null;
   };
 
@@ -4111,8 +4132,15 @@ export async function narrateVowSwearing({ vow, campaignState, speakerActorId = 
  */
 export async function narrateAndPostVowSwearing({ vow, campaignState, speakerActorId = null }) {
   const narrationId = newNarrationId();
-  const text = await narrateVowSwearing({ vow, campaignState, speakerActorId, narrationId });
-  if (!text) return null;
+  // The vow's plan (issue #353 Phase 4): decided by its swearing scene, or —
+  // no scene (switched off, no key, a failure) — filed with its roll for the
+  // next narration it is in play for. The canonical GM's (callers are GM-gated).
+  const request = skeletonsEnabled() ? vowPlanRequest(vow, narrationId) : null;
+  const text = await narrateVowSwearing({ vow, campaignState, speakerActorId, narrationId, planRequests: request ? [request] : [] });
+  if (!text) {
+    if (request) await fileRequestedPlan(request, { campaignState }).catch(() => null);
+    return null;
+  }
   const clean = stripMarkup(text)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   try {

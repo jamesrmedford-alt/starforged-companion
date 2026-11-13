@@ -116,6 +116,10 @@ describe('issue #353 — which plans a beat is shown', () => {
     expect(nameMentioned('the escort', 'The Escort waits by the door')).toBe(true);
     expect(nameMentioned('Vuldar Archer', "Archer's count goes on")).toBe(false);
     expect(nameMentioned('the Pale Choir', 'pale choir')).toBe(true);
+    // A name with filler inside is found in its own words (issue #353 Phase 4).
+    expect(nameMentioned('Free the Kessan miners', 'We swore to free the Kessan miners.')).toBe(true);
+    expect(nameMentioned('Bringer of the Dark', 'the bringer of the dark returns')).toBe(true);
+    expect(nameMentioned('Free the Kessan miners', 'free Kessan')).toBe(false);
   });
 
   it('caps the plans shown', () => {

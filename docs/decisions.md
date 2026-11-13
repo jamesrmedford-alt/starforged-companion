@@ -6,6 +6,53 @@ rejected.
 
 ---
 
+## The narrative skeleton, Phase 4: NPC agendas, vows and discoveries planned; the GM's "has a plan" markers (2026-11)
+
+**Decision:** (issue #353 Phase 4, "When a skeleton is made" and "What the
+GM sees".)
+- **A connection made gets an agenda plan** — Make a Connection's
+  auto-create, a named NPC the GM confirmed from the draft card, the inciting
+  vow's target (`planNpcAgenda`): an `npcAgenda` plan about the NPC's card
+  by its id, its rolls their goal and role (the seed's), a Character
+  Disposition and an Action + Theme for what they hide. Its truth is left to
+  the next narration they are in (DECIDE NOW), not decided at creation — the
+  capture that made them has no narration left to write it. One plan an NPC
+  (by card id, or by name); the canonical GM's; stamped with the capture's
+  narration, so the X-Card that takes the card away takes the plan too.
+- **A vow sworn is asked what is really behind it** (`vowPlanRequest`: an
+  Action + Theme): its swearing scene decides the `vow` plan, about the vow
+  by its stable `vowId`. No scene (switched off, no key, a failure): the
+  request is filed with its roll alone (`fileRequestedPlan`) for a later
+  narration to decide. A vow's plan is in play while it is the **one** open
+  vow, when the fiction names it, and in the narration of the **Fulfill Your
+  Vow** that scores it (its `vowId` among the tracks the beat ends —
+  `endingTrackIds`, as Finish an Expedition's track) — never every open vow
+  every beat (with three vows open they would crowd out the scene's plans).
+- **Make a Discovery and Confront Chaos keep what their find means**: their
+  oracle rolls (less any price) ask the narration for a `discovery` plan,
+  decided with the beat that shows the find.
+- **"Has a plan" markers** (decided: plans hidden from players; the GM sees
+  they exist): an NPC card's row in the Entities panel, an expedition's row
+  in the Progress Tracks panel and a threat's row in the World Journal panel
+  show a small ◆ on a GM's client only — no content (`plannedSubjects`:
+  ids and names, never truths). A player's client never builds them.
+- **A subject's name with filler inside** ("Free the Kessan miners") is
+  found in its own words — the matcher dropped filler from the name but not
+  from the passage, so such a name never matched its own text.
+
+**Reason:** the issue's triggers name a connection made, a vow sworn and a
+discovery made; without a plan, an NPC's motive, a vow's real stakes and a
+find's meaning are improvised fresh each beat — the drift this issue exists
+to stop.
+
+**Rejected:** *deciding an NPC's agenda at creation with a Claude call of
+its own* — the decided design is the narrator's sidecar first, a planning
+call only if that proves too thin. *Every open vow's plan in every beat* —
+the token cap would drop the scene's own plans. *Markers that show the
+plan's kind or a hint* — any content on a shared screen leaks it.
+
+---
+
 ## The narrative skeleton, Phase 3: plans paced by clocks, countdowns made real, expeditions planned (2026-11)
 
 **Decision:** (issue #353 Phase 3, "Tie-ins to existing mechanics".)

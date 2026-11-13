@@ -291,7 +291,9 @@ const NAME_FILLER = new Set(["the", "a", "an", "of", "and", "to", "in", "on", "a
 export function nameMentioned(name, passage) {
   const need = words(name).filter(w => !NAME_FILLER.has(w));
   if (!need.length) return false;
-  const have = words(passage).map(w => w.replace(/'s$/, ""));
+  // Filler is dropped from both: a name with one inside ("Free the Kessan
+  // miners") is found in its own words.
+  const have = words(passage).map(w => w.replace(/'s$/, "")).filter(w => !NAME_FILLER.has(w));
   for (let i = 0; i + need.length <= have.length; i += 1) {
     if (need.every((w, j) => have[i + j] === w)) return true;
   }
@@ -315,10 +317,11 @@ export const MAX_RELEVANT_SKELETONS = 4;
  * @param {string[]} [ctx.matchedEntityIds]
  * @param {string} [ctx.text] — the player's line, or the question asked
  * @param {string[]} [ctx.openTrackIds] — open progress tracks (an expedition's plan)
- * @param {string[]} [ctx.openVowIds] — open vows (a vow's plan)
  * @param {string[]} [ctx.activeThreatNames] — the World Journal's immediate threats (a threat's plan)
- * @param {string[]} [ctx.endingTrackIds] — tracks this beat finishes (an expedition's plan, its ending revealed)
+ * @param {string[]} [ctx.endingTrackIds] — tracks this beat finishes (an expedition's plan, its ending
+ *   revealed; a fulfilled vow's, by its stable vowId)
  * @param {string[]} [ctx.planIds] — plans this beat is about whatever else (a clock vignette's, a complication's)
+ * @param {string[]} [ctx.openVowNames] — the open vow when it is the only one (a vow's plan, Phase 4)
  * @param {number} [ctx.max]
  * @returns {Object[]}
  */
@@ -327,9 +330,9 @@ export function selectRelevantSkeletons(records, ctx = {}) {
   if (!list.length) return [];
   const matched = new Set(Array.isArray(ctx.matchedEntityIds) ? ctx.matchedEntityIds : []);
   const tracks  = new Set(Array.isArray(ctx.openTrackIds) ? ctx.openTrackIds : []);
-  const vows    = new Set(Array.isArray(ctx.openVowIds) ? ctx.openVowIds : []);
   const threats = (Array.isArray(ctx.activeThreatNames) ? ctx.activeThreatNames : []).filter(n => typeof n === "string");
   const ending  = new Set(Array.isArray(ctx.endingTrackIds) ? ctx.endingTrackIds : []);
+  const vowNames = (Array.isArray(ctx.openVowNames) ? ctx.openVowNames : []).filter(n => typeof n === "string");
   const pinned  = new Set(Array.isArray(ctx.planIds) ? ctx.planIds : []);
   const frame   = ctx.frame && typeof ctx.frame === "object" ? ctx.frame : {};
   const passage = [
@@ -342,8 +345,9 @@ export function selectRelevantSkeletons(records, ctx = {}) {
   const relevant = (r) => {
     if (pinned.has(r.id) || inScene(r)) return true;
     const s = r.subject ?? {};
-    if (s.id && (matched.has(s.id) || tracks.has(s.id) || vows.has(s.id) || ending.has(s.id))) return true;
+    if (s.id && (matched.has(s.id) || tracks.has(s.id) || ending.has(s.id))) return true;
     if (r.kind === "threat" && threats.some(n => sameSubjectName(n, s.name))) return true;
+    if (r.kind === "vow" && vowNames.some(n => sameSubjectName(n, s.name))) return true;
     return nameMentioned(s.name, passage);
   };
   const time = (r) => String(r.updatedAt ?? r.createdAt ?? "");
@@ -368,16 +372,39 @@ const NEW_ENEMY_SEED = /^The new enemy — /;
  */
 export function planRequestsFromSeeds(seeds, refBase) {
   const lines = Array.isArray(seeds) ? seeds : (Array.isArray(seeds?.results) ? seeds.results : []);
+  if (typeof refBase !== "string" || !refBase) return [];
+  const out = [];
   const enemy = lines.filter(l => typeof l === "string" && NEW_ENEMY_SEED.test(l));
-  if (!enemy.length || typeof refBase !== "string" || !refBase) return [];
-  return [{
-    ref:         `plan-${refBase}-enemy`.slice(0, 64),
-    kind:        "threat",
-    trigger:     "new_enemy",
-    label:       "the new enemy this price reveals",
-    oracleSeeds: enemy.map(l => l.replace(NEW_ENEMY_SEED, "")),
-  }];
+  if (enemy.length) {
+    out.push({
+      ref:         `plan-${refBase}-enemy`.slice(0, 64),
+      kind:        "threat",
+      trigger:     "new_enemy",
+      label:       "the new enemy this price reveals",
+      oracleSeeds: enemy.map(l => l.replace(NEW_ENEMY_SEED, "")),
+    });
+  }
+  // Make a Discovery and Confront Chaos roll what they find (Phase 4): the
+  // plan keeps what it means (issue #353 "When a skeleton is made").
+  const discovery = DISCOVERY_MOVES[String(seeds?.context ?? "").split(" ")[0]];
+  const found = lines.filter(l => typeof l === "string" && !/^Pay the Price: /.test(l) && !NEW_ENEMY_SEED.test(l));
+  if (discovery && found.length) {
+    out.push({
+      ref:         `plan-${refBase}-find`.slice(0, 64),
+      kind:        "discovery",
+      trigger:     discovery.trigger,
+      label:       discovery.label,
+      oracleSeeds: found,
+    });
+  }
+  return out;
 }
+
+/** The moves whose rolled find a plan keeps the meaning of (Phase 4). */
+const DISCOVERY_MOVES = Object.freeze({
+  make_a_discovery: { trigger: "make_a_discovery", label: "the discovery this move makes" },
+  confront_chaos:   { trigger: "confront_chaos",   label: "the chaos this move confronts" },
+});
 
 /**
  * Plan requests as they cross the relay from a client: known kinds, bounded

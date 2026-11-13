@@ -532,9 +532,12 @@ matched or in the frame's cast, its name in the frame or the player's line,
 `skeletons.js` `selectRelevantSkeletons` — an immediate World Journal threat's
 plan every beat, Phase 2; an open expedition's plan, a finished one's in the
 narration that finishes it, and the plan a clock vignette or a chosen
-complication plays, Phase 3 — at most four, trimmed to
-`UNREVEALED_MAX_TOKENS` — and `extras.planRequests`, the plans this narration's
-seeds ask it to decide: a price that revealed a new enemy. Decided plans read
+complication plays, Phase 3; the sole open vow's plan, and a vow's in the
+Fulfill Your Vow that scores it (its `vowId` on `endingTrackIds`), Phase 4 —
+at most four, trimmed to `UNREVEALED_MAX_TOKENS` — and `extras.planRequests`,
+the plans this narration's seeds ask it to decide: a price that revealed a
+new enemy, an expedition begun, a Make a Discovery's or Confront Chaos's find,
+a vow's swearing scene (Phase 4). Decided plans read
 as truths never to state outright, with the reveal rule; undecided ones and the
 requests list under DECIDE NOW with their oracle rolls, only when the sidecar
 is on; every prose mode, never a meta one; `formatUnrevealedBlock`) · ([7], a legacy count of `connectionIds` that counted a

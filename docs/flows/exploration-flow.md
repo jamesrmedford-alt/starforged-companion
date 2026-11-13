@@ -156,6 +156,11 @@ Discovered card says so). With no active sector nothing is recorded.
   (escalation) and what waits at the end (truth), about the track by id, in
   play while the track is open; the Finish an Expedition that completes it
   narrates with it (`resolution.endingTrackIds`) and is told to reveal the end.
+  The Progress Tracks panel marks a planned expedition's row with the GM-only
+  ◆ (`secrets.plannedSubjects`, Phase 4). Make a Discovery and Confront Chaos
+  ask their narration for a `discovery` plan from their rolls (less any
+  price — `skeletons.planRequestsFromSeeds`), keeping what the find means
+  (Phase 4).
 - **Upgrades**: a Set a Course miss burned or improved to a hit arrives (the
   ship record, `currentLocationId`, the feedback card), and an Undertake an
   Expedition miss upgraded marks the expedition as a rolled hit would — the

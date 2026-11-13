@@ -28,7 +28,7 @@ import {
 } from './worldJournal.js';
 import { openCorrectionDialog } from '../factContinuity/correctionDialog.js';
 import { listSkeletons, getSkeleton, editSkeleton, revealSkeletonNow, retireSkeleton, skeletonsEnabled } from './secrets.js';
-import { SKELETON_KIND_LABELS } from './skeletons.js';
+import { SKELETON_KIND_LABELS, sameSubjectName } from './skeletons.js';
 
 const MODULE_ID = 'starforged-companion';
 
@@ -315,7 +315,8 @@ function buildPanelHTML(ctx) {
   const sections = [
     buildPendingLoreSection(ctx.pendingLore),
     buildContradictionsSection(ctx.contradictions),
-    buildThreatsSection(ctx.threats),
+    // A threat a hidden plan is about carries the GM's marker (issue #353 Phase 4).
+    buildThreatsSection(ctx.threats, ctx.isGM ? (ctx.secrets ?? []).map(r => r.subject?.name).filter(Boolean) : []),
     ctx.isGM ? buildSecretsSection(ctx.secrets ?? [], ctx.secretsOn !== false) : '',
   ].join('');
 
@@ -394,7 +395,7 @@ function buildContradictionsSection(items) {
   return `${heading}<div class="sf-wj-entry-list">${rows}</div>`;
 }
 
-function buildThreatsSection(threats) {
+function buildThreatsSection(threats, plannedNames = []) {
   const heading = '<h3 class="sf-wj-section-heading">Active Threats</h3>';
   if (!threats.length) {
     return `${heading}<div class="sf-wj-empty-compact">No active threats.</div>`;
@@ -410,7 +411,7 @@ function buildThreatsSection(threats) {
     return `
 <div class="sf-wj-threat-row">
   <span class="sf-wj-badge ${cls}">${escapeHtml((t.severity ?? '').toUpperCase())}</span>
-  <span class="sf-wj-entry-title">${escapeHtml(t.name ?? '')}</span>
+  <span class="sf-wj-entry-title">${escapeHtml(t.name ?? '')}${plannedNames.some(n => sameSubjectName(n, t.name)) ? ' <span class="sf-plan-marker" title="The narrator holds a hidden plan for this (GM only)">◆</span>' : ''}</span>
   ${select}
 </div>`.trim();
   }).join('');

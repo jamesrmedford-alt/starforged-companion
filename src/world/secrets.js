@@ -91,6 +91,21 @@ export function listSkeletons({ includeInactive = false } = {}) {
     .filter(r => r && (includeInactive || r.status === "active"));
 }
 
+/**
+ * What the GM's "has a plan" markers need (issue #353 Phase 4 — "subject
+ * cards show a small marker for the GM, with no content"): the subject ids
+ * and names of the active plans. Never their content. Fail-open.
+ *
+ * @returns {{ ids: Set<string>, names: string[] }}
+ */
+export function plannedSubjects() {
+  const plans = listSkeletons();
+  return {
+    ids:   new Set(plans.map(r => r.subject.id).filter(Boolean)),
+    names: plans.map(r => r.subject.name).filter(Boolean),
+  };
+}
+
 /** The plan `id` as a record, or null. */
 export function getSkeleton(id) {
   return typeof id === "string" ? normaliseSkeleton(entryOf(pageOf(id))) : null;
@@ -496,6 +511,95 @@ export function planForClock(clockId) {
   if (!plan) return null;
   const step = plan.escalation.find(e => !e.done) ?? null;
   return { plan, step, revealsTruth: !step && !!plan.truth && !plan.truthRevealed };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// NPCs AND VOWS (issue #353 Phase 4)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The NPC card (Actor) of a connection record createConnection returned: its
+ * id and its record as stored now (the Auto-Seed may have rolled its goal and
+ * role since), or null.
+ */
+async function connectionCard(record) {
+  if (!record?._id) return null;
+  try {
+    const { iterEntityDocuments } = await import("../entities/registry.js");
+    for (const { document, data } of iterEntityDocuments("connection")) {
+      if (data?._id === record._id) return document?.id ? { id: document.id, data } : null;
+    }
+  } catch (err) {
+    console.debug?.(`${MODULE_ID} | secrets: the connection's card could not be found:`, err?.message ?? err);
+  }
+  return null;
+}
+
+/**
+ * A significant NPC gets an agenda plan (issue #353 "When a skeleton is
+ * made": a connection made, or a named NPC the GM confirmed): who they really
+ * are and what they hide, wants (their rolled goal), knows, how they act if
+ * ignored or crossed. Its rolls — their goal, a disposition, and an Action +
+ * Theme for what they hide — wait for the next narration they are in play
+ * for to decide it (DECIDE NOW). About the NPC's card, by id; one plan an
+ * NPC. Canonical GM; stamped with the narration whose capture made them.
+ * Never throws.
+ *
+ * @param {Object} record — the connection record (createConnection's)
+ * @param {{ campaignState?: Object|null, narrationId?: string|null, trigger?: string }} [ctx]
+ * @returns {Promise<Object|null>} the plan filed, or null
+ */
+export async function planNpcAgenda(record, { campaignState = null, narrationId = null, trigger = "connection" } = {}) {
+  if (!skeletonsEnabled() || !isCanonicalGM()) return null;
+  const name = typeof record?.name === "string" ? record.name.trim() : "";
+  if (!name) return null;
+  try {
+    const card = await connectionCard(record);
+    const actorId = card?.id ?? null;
+    const all = listSkeletons({ includeInactive: true });
+    if (all.some(r => (actorId && r.subject.id === actorId) || (r.kind === "npcAgenda" && sameSubjectName(r.subject.name, name)))) return null;
+    const { rollOracle, rollPaired } = await import("../oracles/roller.js");
+    const seeds = [];
+    const goal = [card?.data?.goal, record.goal].find(v => typeof v === "string" && v.trim());
+    const role = [card?.data?.role, record.role].find(v => typeof v === "string" && v.trim());
+    if (goal) seeds.push(`Their goal: ${goal.trim()}`);
+    if (role) seeds.push(`Their role: ${role.trim()}`);
+    const disposition = rollOracle("character_disposition")?.result;
+    if (disposition && disposition !== "—") seeds.push(`Character Disposition: ${disposition}`);
+    seeds.push(`What they hide — Action + Theme: ${rollPaired("action", "theme").combined}`);
+    return await createSkeleton({
+      kind: "npcAgenda", subject: { type: actorId ? "entity" : "name", id: actorId, name },
+      oracleSeeds: seeds, sceneId: campaignState?.currentSceneId ?? null, sessionId: campaignState?.currentSessionId ?? null,
+      createdFrom: { narrationId, moveId: null, trigger },
+    }, { narrationId });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: ${name}'s agenda was not planned:`, err?.message ?? err);
+    return null;
+  }
+}
+
+/**
+ * File a plan a narration was asked to decide but never wrote — its vow scene
+ * was off or failed — with its rolls alone, for the next narration it is in
+ * play for to decide. A plan already filed for its subject (the narration
+ * did file it) is left. Canonical GM. Never throws.
+ *
+ * @param {Object} request — a plan request (normalisePlanRequests' shape)
+ * @param {{ campaignState?: Object|null }} [ctx]
+ * @returns {Promise<Object|null>}
+ */
+export async function fileRequestedPlan(request, { campaignState = null } = {}) {
+  if (!skeletonsEnabled() || !isCanonicalGM()) return null;
+  const [req] = normalisePlanRequests([request]);
+  if (!req) return null;
+  const name = req.subject?.name ?? req.label;
+  if (listSkeletons({ includeInactive: true }).some(r => r.kind === req.kind
+    && ((req.subject?.id && r.subject.id === req.subject.id) || sameSubjectName(r.subject.name, name)))) return null;
+  return createSkeleton({
+    kind: req.kind, subject: req.subject ?? { type: "name", id: null, name }, oracleSeeds: req.oracleSeeds,
+    sceneId: campaignState?.currentSceneId ?? null, sessionId: campaignState?.currentSessionId ?? null,
+    createdFrom: { narrationId: null, moveId: null, trigger: req.trigger || null },
+  });
 }
 
 /** How a significant threat's agenda is rolled (Action + Theme), for its plan's seeds. */

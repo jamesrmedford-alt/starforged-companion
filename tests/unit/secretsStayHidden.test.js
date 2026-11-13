@@ -27,6 +27,9 @@ const STORE_READERS = new Map([
   ['src/entities/entityExtractor.js', 'a significant threat\'s plan (planSignificantThreat — a write, no read)'],
   ['src/narration/narrator.js', 'the UNREVEALED block, the sidecar apply, the Private Channel story'],
   ['src/oracles/oracleConsult.js', 'a GM\'s yes/no about a planned subject: its truth sets the odds, sent to Claude, never to a card'],
+  ['src/session/swearVow.js', 'a vow target\'s agenda plan (planNpcAgenda — a write, no read)'],
+  ['src/ui/entityPanel.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects)'],
+  ['src/ui/progressTracks.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects)'],
   ['src/world/worldJournalPanel.js', 'the GM-only Secrets section'],
 ]);
 const MODEL_READERS = new Map([
@@ -70,6 +73,15 @@ describe('issue #353 — the hidden plans stay hidden', () => {
     // The roll display only with the setting on; a truth's only once revealed.
     expect(src('showRollsIfSet')).toMatch(/if \(!hiddenRollsShownAtOnce\(\)/);
     expect(src('applyPlanSideData')).toMatch(/if \(truthNow\) await onTruthRevealed\(/);
+  });
+
+  it('the markers read subject ids only, and only for a GM', () => {
+    for (const file of ['src/ui/entityPanel.js', 'src/ui/progressTracks.js']) {
+      const code = byFile.get(file).code;
+      expect(code, file).toMatch(/plannedSubjects\(\)\.ids/);
+      expect(code, file).not.toMatch(/listSkeletons|getSkeleton|\.truth\b|oracleSeeds/);
+      expect(code, file).toMatch(/game\.user\?\.isGM \? planned\w+Ids\(\) : new Set\(\)/);
+    }
   });
 
   it('the narrator-card builders never read a plan', () => {
