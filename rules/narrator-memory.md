@@ -41,7 +41,8 @@ layers. This file is the never-break list.
 
 2. **The sidecar JSON contract** (`appendSidecarInstruction` ↔
    `extractSidecar` ↔ `applySidecar`/`applySceneFrame` — and, for the
-   narrative skeleton's `plans` / `openQuestions`, `src/world/skeletons.js`'s
+   narrative skeleton's `plans` / `openQuestions` / `reveals` / `countdown` /
+   `newThreats`, `src/world/skeletons.js`'s
    normalisers ↔ `secrets.js` `applyPlanSideData`, issue #353) is a matched pair.
    Any key added to the instruction must be normalised in
    `sidecarParser.js` and applied in `narrator.js applyNarratorSidecar` in

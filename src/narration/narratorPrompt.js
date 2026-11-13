@@ -199,6 +199,14 @@ export function appendSidecarInstruction(options = {}) {
       '  counting down, in a few words>", "about": "<the id from UNREVEALED it',
       '  belongs to, or who or what it concerns>" }. Not for one already',
       '  running (see CLOCKS).',
+      // Issue #354 P2-29: an enemy got a plan only when a rolled price was
+      // "A new enemy is revealed" — rare, now a miss pays its stated outcome.
+      '- When your prose brings in a new enemy or danger the story will have',
+      '  to deal with — a pursuer, a rival, a hostile presence, something',
+      '  hunting or closing in — emit it once, as "newThreats": [{ "name":',
+      '  "<what your prose calls it, in a few words>" }]. Not for a hazard',
+      '  this beat ends, a player character, or anything already under',
+      '  UNREVEALED or among the threats, under any name.',
     );
   }
 
@@ -1742,6 +1750,7 @@ export function buildNarratorSystemBlocks(
     pinnedChronicle      = null,
     unrevealed           = [],
     planRequests         = [],
+    plannedSubjects      = [],
     usedImages           = [],
     beatShape            = null,
   } = extras ?? {};
@@ -2024,6 +2033,7 @@ export function buildNarratorSystemBlocks(
   if (!isMetaMode) {
     const unrevealedBlock = formatUnrevealedBlock(unrevealed, {
       planRequests,
+      plannedSubjects,
       sidecar: factContinuityEnabled,
     });
     if (unrevealedBlock) parts.push(unrevealedBlock);
@@ -2143,7 +2153,8 @@ function skeletonHeading(r) {
     const about = r.subject?.name && r.subject.name !== 'the scene' ? ` (about ${r.subject.name})` : '';
     return `${kind} — "${r.question}"${about}`;
   }
-  return `${kind} — ${r?.subject?.name ?? ''}`;
+  const also = Array.isArray(r?.aliases) && r.aliases.length ? ` (also called: ${r.aliases.join(', ')})` : '';
+  return `${kind} — ${r?.subject?.name ?? ''}${also}`;
 }
 
 /** What a plan's fields are called for the narrator — an expedition's read as its journey (issue #353 Phase 3). */
@@ -2185,10 +2196,13 @@ function formatSkeletonEntry(r) {
  * for unit testing and the Private Channel's shared story.
  *
  * @param {Object[]} skeletons — selectRelevantSkeletons' records
- * @param {{ planRequests?: Object[], sidecar?: boolean, maxTokens?: number }} [opts]
+ * @param {{ planRequests?: Object[], plannedSubjects?: Object[], sidecar?: boolean, maxTokens?: number }} [opts] —
+ *   `plannedSubjects`: the beings that already have a plan (skeletons.js plannedBeings), listed under
+ *   DECIDE NOW when an enemy or an NPC's agenda is being decided, so the narrator can answer that the
+ *   "new" one is one of them (`sameAs`, issue #354 P2-30)
  * @returns {string} '' when there is nothing to show
  */
-export function formatUnrevealedBlock(skeletons, { planRequests = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS } = {}) {
+export function formatUnrevealedBlock(skeletons, { planRequests = [], plannedSubjects = [], sidecar = true, maxTokens = UNREVEALED_MAX_TOKENS } = {}) {
   const list = (Array.isArray(skeletons) ? skeletons : []).filter(r => r && typeof r === 'object' && r.subject);
   const decided = list.filter(r => typeof r.truth === 'string' && r.truth.trim());
   const pending = sidecar ? list.filter(r => !(typeof r.truth === 'string' && r.truth.trim())) : [];
@@ -2259,6 +2273,24 @@ export function formatUnrevealedBlock(skeletons, { planRequests = [], sidecar = 
         ? `the hidden answer to ${skeletonHeading(r).replace(/^Mystery — /, '')}.${seeds}${seeds ? ' — use the pair that fits.' : ''}`
         : `${skeletonHeading(r)}.${seeds}`;
       lines.push(`- id ${r.id}: ${what}${rerollOf(r)}`);
+    }
+    // Issue #354 P2-30: one enemy named three ways got three plans. Names
+    // that share a word are matched in code; only the narrator knows "the
+    // second presence" is the escort — so it is shown who is planned already.
+    const BEINGS = new Set(['threat', 'npcAgenda']);
+    const deciding = new Set(pending.map(r => r.id));
+    const planned = (Array.isArray(plannedSubjects) ? plannedSubjects : [])
+      .filter(p => p?.id && p.name && !deciding.has(p.id));
+    if (planned.length && (requests.some(q => BEINGS.has(q.kind)) || pending.some(r => BEINGS.has(r.kind)))) {
+      lines.push(
+        '',
+        '### ALREADY PLANNED',
+        'If an enemy or a person above is in truth one of these under another name, do not decide it a',
+        'second time: answer it with only { "id": "<its id above>", "sameAs": "<the id below of the one it is>",',
+        '"subject": "<the name your prose uses for it>" }.',
+        ...planned.map(p => `- id ${p.id}: ${SKELETON_KIND_NAMES[p.kind] ?? 'Plan'} — ${p.name}` +
+          `${Array.isArray(p.aliases) && p.aliases.length ? ` (also: ${p.aliases.join(', ')})` : ''}`),
+      );
     }
   }
   return lines.join('\n');

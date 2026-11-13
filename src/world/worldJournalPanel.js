@@ -346,7 +346,7 @@ function buildPanelHTML(ctx) {
     buildPendingLoreSection(ctx.pendingLore),
     buildContradictionsSection(ctx.contradictions),
     // A threat a hidden plan is about carries the GM's marker (issue #353 Phase 4).
-    buildThreatsSection(ctx.threats, ctx.isGM ? (ctx.secrets ?? []).map(r => r.subject?.name).filter(Boolean) : [],
+    buildThreatsSection(ctx.threats, ctx.isGM ? (ctx.secrets ?? []).flatMap(r => [r.subject?.name, ...(r.aliases ?? [])]).filter(Boolean) : [],
       ctx.isGM ? (ctx.duplicateThreats ?? []) : []),
     ctx.isGM ? buildSecretsSection(ctx.secrets ?? [], ctx.secretsOn !== false) : '',
   ].join('');
@@ -488,6 +488,7 @@ function buildSecretsSection(secrets, enabled) {
     <span class="sf-wj-entry-session">${state}</span>
   </summary>
   ${r.kind === 'mystery' ? field('About', r.subject?.name) : ''}
+  ${field('Also called', (r.aliases ?? []).join(', '))}
   ${field(r.kind === 'mystery' ? 'Answer' : 'Truth', r.truth || 'Not yet decided — the narrator decides it from the oracle rolls.')}
   ${field('Wants', r.wants)}
   ${field('Knows', r.knows)}

@@ -73,7 +73,7 @@ import { moveDisplayName } from '../system/i18n.js';
 import { SCENE_CHALLENGE_VARIANTS } from '../moves/sceneChallenge.js';
 import { priceRevealsNewEnemy, newEnemySeedLines, vowPlanRequest } from '../moves/resolver.js';
 import { listSkeletons, skeletonsEnabled, applyPlanSideData, revealedTruthsOf, planForClock, fileRequestedPlan, rollReroll } from '../world/secrets.js';
-import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals } from '../world/skeletons.js';
+import { selectRelevantSkeletons, planRequestsFromSeeds, normalisePlanRequests, normaliseReveals, plannedBeings } from '../world/skeletons.js';
 
 const ENTITY_GETTERS = {
   connection: getConnection,
@@ -553,9 +553,15 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // [6.6] UNREVEALED. Fail-open: an unreadable journal is no plans.
   extras.unrevealed   = [];
   extras.planRequests = [];
+  extras.plannedSubjects = [];
   if (mode !== 'campaign_recap' && skeletonsEnabled()) {
     try {
-      extras.unrevealed = selectRelevantSkeletons(listSkeletons(), {
+      const allPlans = listSkeletons();
+      // The beings already planned, for a narration that has an enemy or an
+      // agenda to decide: it may say the new one is one of them (issue #354
+      // P2-30; formatUnrevealedBlock ALREADY PLANNED).
+      extras.plannedSubjects = plannedBeings(allPlans);
+      extras.unrevealed = selectRelevantSkeletons(allPlans, {
         sceneId:           sceneState?.currentSceneId ?? null,
         frame:             sceneState?.sceneFrame ?? null,
         matchedEntityIds:  extras.matchedEntityIds ?? [],
@@ -5774,7 +5780,8 @@ function applySidecarSideData(sidecar, campaignState, ctx = {}) {
   // ones it was asked to decide, and the questions it posed — filed in the
   // Secrets journal, stamped with its id for the X-Card. Fire-and-forget,
   // never throws.
-  if (sidecar.plans?.length || sidecar.openQuestions?.length || sidecar.reveals?.length || sidecar.countdown || ctx.planRequests?.length) {
+  if (sidecar.plans?.length || sidecar.openQuestions?.length || sidecar.reveals?.length || sidecar.countdown
+    || sidecar.newThreats?.length || ctx.planRequests?.length) {
     void applyPlanSideData(sidecar, {
       campaignState,
       narrationId:  typeof ctx.narrationId === 'string' ? ctx.narrationId : null,

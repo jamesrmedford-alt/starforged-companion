@@ -2097,6 +2097,7 @@ function renderPageBody(flagKey, data) {
         ? `<p><strong>${escapeHtml(label)}:</strong></p><ol>${items.map(i => `<li>${escapeHtml(String(i))}</li>`).join("")}</ol>` : "");
       const mark = (t, on, word) => `${t}${on ? ` (${word})` : ""}`;
       return meta("Status", data.status) +
+        (data.aliases?.length ? meta("Also called", data.aliases.join(", ")) : "") +
         (data.question ? meta("Question", data.question) : "") +
         meta("Truth", data.truth || "not yet decided") +
         (data.truthRevealed ? "<p><em>Revealed to the table.</em></p>" : "") +

@@ -31,6 +31,7 @@ import {
 import {
   normaliseSkeleton, normalisePlans, normaliseOpenQuestions, normalisePlanRequests, normaliseReveals,
   normaliseCountdown, applyPlanToSkeleton, applyRevealToSkeleton, sameQuestion, sameSubjectName, nameMentioned,
+  normaliseNewThreats, withAlias, BEING_KINDS,
   SKELETON_KIND_LABELS,
 } from "./skeletons.js";
 
@@ -234,20 +235,24 @@ export async function updateSkeleton(id, change, { narrationId = null, byGm = fa
 // truth: the incoherence the skeleton exists to prevent. Names are now
 // matched the way the entity gates match them (entities/nameMatch.js, shared
 // with issue #354 P2-16 / P2-17), and a plan that names a subject already
-// planned is merged into that plan. Names with no word in common still file
-// apart: only someone who read the scene knows "the second presence" is the
-// escort (the narrator's own say — the rest of P2-30).
+// planned is merged into that plan. Names with no word in common cannot be
+// matched in code: only someone who read the scene knows "the second
+// presence" is the escort. So the narrator says so — a plan it is asked to
+// decide may answer `sameAs` with the id of the plan the subject already has
+// (it is shown them under ALREADY PLANNED), and that plan keeps the other
+// name as an alias (planAsAnother, applyPlanSideData).
 
 /**
- * Every name a plan's subject goes by: the one it was filed under, and — a
- * plan linked to something by id — that thing's own name now: its card's (an
- * NPC or a place the GM may have renamed since), its Threats page's.
+ * Every name a plan's subject goes by: the one it was filed under, the
+ * others the narrator said are the same subject (`aliases`), and — a plan
+ * linked to something by id — that thing's own name now: its card's (an NPC
+ * or a place the GM may have renamed since), its Threats page's.
  *
  * @param {Object} record — normaliseSkeleton's
  * @returns {string[]}
  */
 function subjectNames(record) {
-  const names = [record?.subject?.name];
+  const names = [record?.subject?.name, ...(Array.isArray(record?.aliases) ? record.aliases : [])];
   const id = record?.subject?.id ?? null;
   try {
     if (id && record.subject.type === "entity") names.push(globalThis.game?.actors?.get?.(id)?.name);
@@ -275,9 +280,6 @@ export function planIsAbout(record, name) {
   if (typeof name !== "string" || !name.trim()) return false;
   return subjectNames(record).some(n => sameSubject(n, name) || (record.kind === "npcAgenda" && !!personNameMatch(n, name)));
 }
-
-/** The kinds of plan that can be about one being: an enemy the story revealed, a threat, an NPC's agenda. */
-const BEING_KINDS = ["threat", "npcAgenda"];
 
 /**
  * The active plan a new one about `name` would double: one of the same kind —
@@ -317,6 +319,101 @@ function mergePlanInto(record, plan) {
     resolutions: record.resolutions.length ? [] : plan.resolutions,
     rerolled:    "",
   });
+}
+
+/**
+ * The active plan of a being a `sameAs` answer points at, for a plan of
+ * `kind` about to be decided — null when the id names none, or either is not
+ * a being's plan (a vow or a mystery is never "the same as" an enemy).
+ *
+ * @param {string} id — normalisePlans' `sameAs`
+ * @param {string} kind
+ * @returns {Object|null}
+ */
+function plannedAs(id, kind) {
+  if (!id || !BEING_KINDS.includes(kind)) return null;
+  const target = getSkeleton(id);
+  return target && target.status === "active" && BEING_KINDS.includes(target.kind) ? target : null;
+}
+
+/**
+ * A plan waiting to be decided is, by the narrator's say, a subject that
+ * already has one (issue #354 P2-30): the plan it has takes what the answer
+ * adds and the waiting plan's name as another of its names — and its link to
+ * a Threats page or an NPC's card when it had none of its own — and the
+ * waiting plan is retired. Only for a plan not yet decided: a decided
+ * duplicate holds a truth of its own, which is a GM's to Retire. Both writes
+ * carry the narration, so the X-Card on it puts both back.
+ *
+ * @param {Object} waiting — the undecided plan (its id is the answer's)
+ * @param {Object} plan — normalisePlans', with `sameAs`
+ * @param {{ narrationId?: string|null }} [opts]
+ * @returns {Promise<Object|null>} the plan it joined, as written
+ */
+async function planAsAnother(waiting, plan, { narrationId = null } = {}) {
+  if (waiting.truth) return null;
+  const target = plannedAs(plan.sameAs, waiting.kind);
+  if (!target || target.id === waiting.id) return null;
+  const merged = await updateSkeleton(target.id, r => {
+    let next = withAlias(withAlias(mergePlanInto(r, plan), waiting.subject.name), plan.subject);
+    for (const alias of waiting.aliases ?? []) next = withAlias(next, alias);
+    // A plan known only by name takes the waiting plan's page or card.
+    if (next.subject.type === "name" && waiting.subject.id && waiting.subject.type !== "name") {
+      next = { ...next, subject: { type: waiting.subject.type, id: waiting.subject.id, name: next.subject.name } };
+    }
+    return next;
+  }, { narrationId });
+  if (!merged) return null;
+  await updateSkeleton(waiting.id, r => ({ ...r, status: "retired" }), { narrationId });
+  await ensureThreatClock(merged, { narrationId });
+  return merged;
+}
+
+/** A player character's name, or part of one: never an enemy to plan (the acting PC named in a sidecar). */
+async function namesPlayerCharacter(name) {
+  try {
+    const { getPlayerActors } = await import("../character/actorBridge.js");
+    return getPlayerActors().some(a => typeof a?.name === "string" && !!personNameMatch(a.name, name));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * An enemy or danger a narration introduced gets a plan (issue #354 P2-29):
+ * a `threat` plan under the name the prose gave it, with a Character Role,
+ * Goal and Disposition rolled once — what a price's "A new enemy is revealed"
+ * rolls (resolver.js newEnemySeedLines) — and no truth, so the next narration
+ * it is in play for decides it under DECIDE NOW. Nothing is filed for a
+ * subject already planned under any name it goes by (a resolved or retired
+ * plan included: its story was told), or for a player character. Canonical
+ * GM. Never throws.
+ *
+ * @param {string} name — the name the prose uses for it
+ * @param {{ campaignState?: Object|null, narrationId?: string|null, moveId?: string|null }} [ctx]
+ * @returns {Promise<Object|null>} the plan filed, or null
+ */
+async function planNarratedThreat(name, { campaignState = null, narrationId = null, moveId = null } = {}) {
+  if (!skeletonsEnabled() || !isCanonicalGM()) return null;
+  const subject = typeof name === "string" ? name.trim() : "";
+  if (!subject || await namesPlayerCharacter(subject)) return null;
+  try {
+    if (listSkeletons({ includeInactive: true }).some(r => BEING_KINDS.includes(r.kind) && planIsAbout(r, subject))) return null;
+    const { rollOracle } = await import("../oracles/roller.js");
+    const seeds = [];
+    for (const [id, label] of [["character_role", "Character Role"], ["character_goal", "Character Goal"], ["character_disposition", "Character Disposition"]]) {
+      const result = rollOracle(id)?.result;
+      if (result && result !== "—") seeds.push(`${label}: ${result}`);
+    }
+    return await createSkeleton({
+      kind: "threat", subject: { type: "name", id: null, name: subject }, oracleSeeds: seeds,
+      sceneId: campaignState?.currentSceneId ?? null, sessionId: campaignState?.currentSessionId ?? null,
+      createdFrom: { narrationId, moveId, trigger: "narrated_enemy" },
+    }, { narrationId });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | secrets: the narrated enemy "${subject}" was not planned:`, err?.message ?? err);
+    return null;
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -375,6 +472,12 @@ export function revealedTruthsOf(sidecar) {
  *  4. each `reveals` entry marks what the beat showed (Phase 2): clues shown,
  *     the truth revealed — filed as confirmed lore, and the oracle rolls behind
  *     it shown to the table — a step played, an ending.
+ *  5. each `newThreats` entry — an enemy or danger the prose introduced — not
+ *     already planned under any of its names gets a `threat` plan, its
+ *     Character Role, Goal and Disposition rolled now and its truth left for
+ *     the next narration to decide (issue #354 P2-29).
+ * A plan answered `sameAs` (steps 1 and 2) is not decided again: it joins the
+ * plan its subject already has (issue #354 P2-30).
  * Every write is stamped with the narration's id. Never throws.
  *
  * @param {Object} sidecar — normaliseSidecar's
@@ -390,7 +493,8 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
     const requests  = normalisePlanRequests(planRequests);
     const reveals   = normaliseReveals(sidecar?.reveals);
     const countdown = normaliseCountdown(sidecar?.countdown);
-    if (!plans.length && !questions.length && !requests.length && !reveals.length && !countdown) return out;
+    const newThreats = normaliseNewThreats(sidecar?.newThreats);
+    if (!plans.length && !questions.length && !requests.length && !reveals.length && !countdown && !newThreats.length) return out;
     const sceneId   = campaignState?.currentSceneId ?? null;
     const sessionId = campaignState?.currentSessionId ?? null;
     const byId = new Map(plans.map(p => [p.id, p]));
@@ -399,10 +503,12 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       const plan = byId.get(req.ref) ?? null;
       byId.delete(req.ref);
       // The subject the narration named already has a plan (issue #354
-      // P2-30): this decision joins it — no second plan, no second clock.
-      const planned = !req.subject && plan?.subject ? activePlanAbout(plan.subject, req.kind) : null;
+      // P2-30) — by a name the two share, or by the narrator's own say
+      // (`sameAs`): this decision joins it — no second plan, no second clock.
+      const planned = req.subject ? null
+        : (plannedAs(plan?.sameAs, req.kind) ?? (plan?.subject ? activePlanAbout(plan.subject, req.kind) : null));
       if (planned) {
-        const merged = await updateSkeleton(planned.id, r => mergePlanInto(r, plan), { narrationId });
+        const merged = await updateSkeleton(planned.id, r => withAlias(mergePlanInto(r, plan), plan.subject), { narrationId });
         if (merged) {
           out.decided += 1;
           await ensureThreatClock(merged, { narrationId });
@@ -430,6 +536,12 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
     for (const plan of byId.values()) {
       const existing = getSkeleton(plan.id);
       if (!existing || existing.status !== "active") continue;
+      // A plan waiting to be decided that the narrator says is a subject
+      // already planned (issue #354 P2-30) joins that plan, and is retired.
+      if (plan.sameAs) {
+        if (await planAsAnother(existing, plan, { narrationId })) out.decided += 1;
+        continue;
+      }
       const decided = await updateSkeleton(plan.id, r => applyPlanToSkeleton(r, plan), { narrationId });
       if (decided) {
         out.decided += 1;
@@ -461,6 +573,16 @@ export async function applyPlanSideData(sidecar, { campaignState, narrationId = 
       out.revealed += 1;
       if (truthNow) await onTruthRevealed(after, { campaignState, narrationId, rollsWereShown: before.rollsShown });
       await paceAfterReveal(before, after);
+    }
+
+    // An enemy the prose introduced gets a plan (issue #354 P2-29) — after
+    // the plans above, so one this same narration decided is found by name.
+    for (const threat of newThreats) {
+      const filed = await planNarratedThreat(threat.name, { campaignState, narrationId, moveId });
+      if (filed) {
+        out.filed += 1;
+        await showRollsIfSet(filed);
+      }
     }
 
     // A countdown the prose started becomes a real clock (Phase 3).

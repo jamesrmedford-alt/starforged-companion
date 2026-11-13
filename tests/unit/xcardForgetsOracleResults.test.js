@@ -147,10 +147,12 @@ describe('issue #345 AA01 — the oracle answer of an X-carded beat is not "esta
     const dice = vi.spyOn(Math, 'random').mockReturnValue(0.05);   // d100 = 6: YES on "likely"
     try {
       await table.client('pl-1').chat(`!oracle yes likely ${QUESTION}`, { speaker: { actor: 'pc-pat' } });
+      // A player's question first asks the GM's game for its odds (issue #354
+      // P2-31), so the d100 is rolled a moment after the line is sent.
+      await table.settle();
     } finally {
       dice.mockRestore();
     }
-    await table.settle();
     expect((world().recentOracles ?? []).find(o => o.question === QUESTION)?.answer).toMatch(/^YES/);   // setup: rung
     const followups = table.world.messages().filter(m => m.flags?.[MODULE_ID]?.narratorCard && /small body/.test(m.flags[MODULE_ID].narrationText ?? ''));
     expect(followups).toHaveLength(1);                                                                 // setup: narrated

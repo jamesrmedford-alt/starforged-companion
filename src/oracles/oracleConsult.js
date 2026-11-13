@@ -10,14 +10,20 @@
  * is rolled as always. Only a question whose subject a decided plan names is
  * consulted; any failure keeps the odds the player gave (fail-open).
  *
- * Runs where the yes/no is rolled — the client that typed `!oracle yes`
- * (index.js handleOracleCommand) — and only on a GM's: the plans are the
- * GM's (known-issues ORACLE-CONSULT-PLAYER-ROLL).
+ * The yes/no is rolled on the client that typed `!oracle yes` (index.js
+ * handleOracleCommand); the plans are the GM's, in a journal a player's
+ * client cannot read. A GM's roll consults here directly. A player's asks the
+ * canonical GM for the odds over the module socket (issue #354 P2-31:
+ * requestPlanOdds → registerOracleConsultSocket → oddsFromPlan there) and gets
+ * back the one word — never the plan, its truth or its id. No GM connected,
+ * no answer in time, no plan: the odds the player gave stand.
  */
 
 import { apiPost } from "../api-proxy.js";
 import { listSkeletons, skeletonsEnabled } from "../world/secrets.js";
 import { nameMentioned, sameQuestion } from "../world/skeletons.js";
+import { isCanonicalGM } from "../multiplayer/gmGate.js";
+import { hasActiveGM, GM_RELAY_SOCKET } from "../multiplayer/gmRelay.js";
 
 const MODULE_ID     = "starforged-companion";
 const ANTHROPIC_URL = "https://api.anthropic.com/v1/messages";
@@ -46,7 +52,8 @@ export function planForQuestion(question) {
   if (typeof question !== "string" || !question.trim() || !skeletonsEnabled()) return null;
   const decided = listSkeletons().filter(r => r.truth);
   return decided.find(r => r.kind === "mystery" && r.question && sameQuestion(r.question, question))
-    ?? decided.find(r => nameMentioned(r.subject.name, question))
+    // Under any name the subject goes by (its aliases — issue #354 P2-30).
+    ?? decided.find(r => [r.subject.name, ...(r.aliases ?? [])].some(n => nameMentioned(n, question)))
     ?? null;
 }
 
@@ -86,4 +93,94 @@ export async function oddsFromPlan(question, { apiKey = null } = {}) {
     console.warn(`${MODULE_ID} | oracle: consulting the plan failed — the odds given are kept:`, err?.message ?? err);
     return null;
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// A PLAYER'S QUESTION — the odds, from the canonical GM (issue #354 P2-31)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The module-socket kinds of a player's ask and the GM's answer (not gmRelay actions: an answer comes back). */
+export const CONSULT_ASK_KIND    = "oracleConsult.ask";
+export const CONSULT_ANSWER_KIND = "oracleConsult.answer";
+
+/**
+ * How long a player's roll waits for the GM's odds. With no plan the GM
+ * answers at once; with one, after a short Haiku call. Past this the odds the
+ * player gave are rolled — the oracle is never held up by a GM who is away.
+ */
+export const CONSULT_WAIT_MS = 8_000;
+
+/** The longest question taken over the socket. */
+const QUESTION_MAX = 400;
+
+const _waiting = new Map();   // ask id → resolve
+let _socketInstalled = false;
+
+function newAskId() {
+  return globalThis.foundry?.utils?.randomID?.() ?? Math.random().toString(36).slice(2, 14);
+}
+
+/**
+ * Install the consult listener on the module socket (idempotent; every
+ * client, at ready — index.js). The canonical GM answers an ask with the
+ * odds its plans set (oddsFromPlan), or none; the client that asked takes the
+ * answer carrying its ask's id.
+ */
+export function registerOracleConsultSocket() {
+  if (_socketInstalled) return;
+  const socket = globalThis.game?.socket ?? null;
+  if (!socket?.on) return;
+  _socketInstalled = true;
+  socket.on(GM_RELAY_SOCKET, async (message) => {
+    if (message?.kind === CONSULT_ANSWER_KIND) {
+      const resolve = typeof message.id === "string" ? _waiting.get(message.id) : null;
+      if (resolve) resolve(CONSULT_ODDS.includes(message.odds) ? message.odds : null);
+      return;
+    }
+    if (message?.kind !== CONSULT_ASK_KIND || !isCanonicalGM()) return;
+    const id = typeof message.id === "string" && /^[\w-]{1,64}$/.test(message.id) ? message.id : null;
+    if (!id) return;
+    const question = typeof message.question === "string" ? message.question.slice(0, QUESTION_MAX) : "";
+    const consulted = await oddsFromPlan(question).catch(() => null);
+    // The odds only: the plan, its truth and its id stay on the GM's client.
+    globalThis.game?.socket?.emit?.(GM_RELAY_SOCKET, { kind: CONSULT_ANSWER_KIND, id, odds: consulted?.odds ?? null });
+  });
+}
+
+/**
+ * The odds a player's yes/no is rolled at when its subject has a hidden
+ * plan: asked of the canonical GM, whose client holds the plans. Null — the
+ * odds the player gave stand — for no question, no GM connected, no plan, or
+ * no answer within CONSULT_WAIT_MS. Never throws.
+ *
+ * @param {string} question
+ * @param {{ waitMs?: number }} [opts]
+ * @returns {Promise<string|null>} one of CONSULT_ODDS, or null
+ */
+export async function requestPlanOdds(question, { waitMs = CONSULT_WAIT_MS } = {}) {
+  if (typeof question !== "string" || !question.trim()) return null;
+  const socket = globalThis.game?.socket ?? null;
+  if (!socket?.emit || !hasActiveGM()) return null;
+  registerOracleConsultSocket();
+  const id = newAskId();
+  let timer = null;
+  try {
+    return await new Promise((resolve) => {
+      _waiting.set(id, resolve);
+      timer = setTimeout(() => resolve(null), Math.max(0, waitMs));
+      socket.emit(GM_RELAY_SOCKET, { kind: CONSULT_ASK_KIND, id, question: question.slice(0, QUESTION_MAX) });
+    });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | oracle: asking the GM for the odds failed — the odds given are kept:`, err?.message ?? err);
+    return null;
+  } finally {
+    if (timer) clearTimeout(timer);
+    _waiting.delete(id);
+  }
+}
+
+/** Test seam: forget the listener and any ask in flight. */
+export function _resetOracleConsultForTests() {
+  _socketInstalled = false;
+  _waiting.clear();
 }

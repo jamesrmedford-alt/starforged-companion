@@ -213,6 +213,7 @@ import { isCanonicalGM, hasKeyedActiveGM, advertiseClaudeKeyPresence, advertiseE
 import { settledWithin, WORLD_WRITE_WAIT_MS } from "./multiplayer/settleWithin.js";
 import { registerConnectionWatch, pageIsStale } from "./multiplayer/connectionWatch.js";
 import { registerGmRelaySocket, registerGmReadiness, announceGmRelayReady, requestGmAction } from "./multiplayer/gmRelay.js";
+import { registerOracleConsultSocket } from "./oracles/oracleConsult.js";
 import { relayCardAction, releaseSourceCard } from "./moves/cardActions.js";
 import { advanceClocksOnPayThePrice } from "./clocks/payThePriceClocks.js";
 import { grantNextMoveBonus } from "./moves/nextMoveAdd.js";
@@ -4259,11 +4260,15 @@ async function handleOracleCommand(message) {
 
   // A question about a subject the narrator holds a hidden plan for is
   // rolled at odds its truth sets, so the answer cannot contradict it (issue
-  // #353, decided). Only a GM's roll: the plans are the GM's.
-  if (game.user?.isGM) {
-    const { oddsFromPlan } = await import("./oracles/oracleConsult.js");
-    const consulted = await oddsFromPlan(question).catch(() => null);
-    if (consulted?.odds) oddsKey = consulted.odds;
+  // #353, decided). The plans are the GM's: a GM's roll reads them here; a
+  // player's asks the canonical GM for the odds — the one word — and rolls
+  // at the odds they gave when no answer comes (issue #354 P2-31).
+  {
+    const { oddsFromPlan, requestPlanOdds } = await import("./oracles/oracleConsult.js");
+    const consulted = game.user?.isGM
+      ? (await oddsFromPlan(question).catch(() => null))?.odds
+      : await requestPlanOdds(question);
+    if (consulted) oddsKey = consulted;
   }
 
   const result = rollYesNo(oddsKey, { question });
@@ -8807,6 +8812,9 @@ Hooks.once("ready", () => {
   }
 
   registerGmRelaySocket();   // canonical-GM action relay (player-invoked world writes)
+  // A player's yes/no oracle question asks the canonical GM for its odds
+  // when a hidden plan covers its subject (issue #354 P2-31).
+  registerOracleConsultSocket();
   // Relays emitted while this GM's client was still loading reached no
   // listener and were dropped; tell players the relay is live so they can
   // re-send state (onGmRelayReady — e.g. their Private Lines). Canonical GM

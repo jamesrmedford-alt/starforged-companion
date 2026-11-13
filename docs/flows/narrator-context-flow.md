@@ -795,7 +795,16 @@ the truth itself, which becomes a ledger truth of the narration's own
 a decided threat plan gets its escalation clock, a `countdown` becomes a clock
 tied to its plan (or a new mystery) and offers the GMs a scene challenge, and
 what a clock vignette or a chosen complication was made to play (`ctx.reveals`)
-is marked played whatever the sidecar says — Phase 3; a narration a burn or
+is marked played whatever the sidecar says — Phase 3; an enemy or danger the
+prose introduced — `newThreats`, issue #354 P2-29 — gets a `threat` plan
+(`planNarratedThreat`: Character Role, Goal and Disposition rolled once, no
+truth, so the next narration decides it), unless one of its names is already
+planned or it names a PC; and a plan answered `sameAs` — the narrator's say
+that a subject it was asked to decide is one already planned, shown to it
+under DECIDE NOW → ALREADY PLANNED (`skeletons.plannedBeings` →
+`extras.plannedSubjects`), issue #354 P2-30 — joins that plan, which keeps
+the other name in `aliases` (read by `secrets.subjectNames` and
+`selectRelevantSkeletons`), the waiting plan retired (`planAsAnother`); a narration a burn or
 improvement supersedes takes back its plan writes and clocks with its ledger
 entries (`retractSupersededNarrations`);
 each write stamped with the narration's id, which the X-Card's
