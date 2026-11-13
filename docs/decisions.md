@@ -6,6 +6,31 @@ rejected.
 
 ---
 
+## Issue #354 (alpha 23 playtest part 2): dialogue is not a move, the spotlight is opt-in, a reverted price is whole (2026-11)
+
+**Decision:** ([#354](https://github.com/jamesrmedford-alt/starforged-companion/issues/354); the maintainer's answers of 2026-11-13 to its six open questions.) The guiding principle is issue #348's: corrections, not reversals — "depict, do not offer", the optional closing move hint and the classifier → interpreter → resolver pipeline all stay.
+
+The six answers:
+- **P2-02 — Balanced Mischief stays in kind.** A Balanced misread may change the stat or pick a neighbouring move; it never turns a line of dialogue into a travel, fate or suffer move. The framing says so, and `interpreter.js` `keepMischiefInKind` holds it in code: a reading the model marked as a misread (`mischiefApplied`), of a line the classifier placed in a social scene, that lands on an exploration, fate or suffer move is put back to the move the classifier named. Chaotic keeps its freedom. A reading that is not a misread is untouched, so issue #348 PT06's reroute (a journey through uncharted space is an expedition) stands.
+- **P2-04 — both narrowings of the Connection rule.** The classifier leans toward MOVE only for a line that presses someone for something they are reluctant to give, or tests or deepens the relationship, *and* only when that someone is one of the speaker's own connections — the bond Items on that character's sheet (`actorBridge.readConnections`), not every NPC card. Under FOLDER-002 every named individual is a connection-type card, so "the addressee is a Connection" had come to mean every tracked NPC. Plain conversation and an everyday action with nothing at risk are narration, whoever they are with.
+- **P2-05 — the minimum line length stays, and says so.** A line under ten characters is still read as table talk (short out-of-fiction chatter must not be narrated). Its author is told, on their own client, and the line goes back in their chat box. Not accepted: narrating any line with a word in it, or giving the classifier a "not part of the fiction" answer.
+- **P2-07 — Rotating Spotlight defaults off, with a one-time switch-off.** Saving the Narrator tab stores every field, so a default flip alone would reach almost no existing world: the canonical GM switches a stored "on" off once at world load, whispers the GMs why, and marks the world (`narratorSpotlightDefaultOffApplied`). A GM who ticks it again keeps it. This amends "Multiplayer spotlight is implied by narration", which recorded "(world, default on)". The rotation still counts characters, not players — it was not gated on connected users.
+- **P2-10 — free-flow asks Burn / Improve / Keep before a result's price and narration**, as a Batch Mode round does (recorded here as decided; see known-issues for whether it is built).
+- **P2-16 — a "No one" choice beside Confirm on free-flow New Entities cards** (amends issue #342 D3; recorded here as decided; see known-issues for whether it is built).
+
+What the fixes established:
+- **A line can make no move (P2-01).** The interpreter may answer `"moveId": null`; `readMove` returns that — or a low-confidence reading outside a fight — as `noMove`, and the line is narrated as a paced line with the classifier's move offered on its card. Not when a roll was asked for (`!roll`, a round's "Roll a move instead") or with pacing switched off, where every line is a move as before. A reply that names no move at all, or cannot be parsed, is a failed reading: it goes to the confirm dialog, never to narration. The confirm dialog's **No move — narrate** and the "Not rolled" notice's **Narrate it — no move** narrate a typed line as it stands. A confidence threshold on the classifier was considered and withdrawn (P2-03): four of the seven unwanted rolls scored 75–80%.
+- **The classifier's reading is the interpreter's context (P2-02).** On a MOVE decision the router hands on the move the classifier named (`nominatedMove`), its category and its reasoning; the interpreter takes them as a hint, not a ruling. Disagreement between the two is not treated as "not a move" — one of the playtest's five disagreements was a correct refinement.
+- **The interpreter is told who is speaking (P2-06)**, in the narrator's words. And "inter-PC tension is roleplay, not a roll" holds on a MOVE decision too: a social move read into a line that names another PC and no tracked NPC is narrated.
+- **"You" is one character for a whole card (P2-08).** In second person the acting character is "you" and is named only in dialogue; every other PC is named. The SPOTLIGHT block takes the narration's resolved perspective, ends on whoever the last line of dialogue is spoken to, and asks only what a character does.
+- **A reverted price is reverted whole (P2-09).** Update to "Burn Momentum reverses Pay-the-Price side effects", which left Withstand Damage and Companion Takes a Hit out "until a playtest shows it matters": the price's receipts now include the vehicle integrity or companion health its route took (`ptpReversals.assetDeltas`), a burn or an improvement puts it back — as a restore, which the battered rule does not refuse — and the price's own cards are struck as its narration is. The at-0 results a hit posted (the Vehicle Damage table's text, "companion destroyed") are advisory text on a card that is struck with it; nothing else was applied for them. A burned result that pays the price too keeps it.
+
+**Reason:** the alpha 23 playtest part 2 (v1.8.1, one user running two characters): six of eight lines of dialogue went to the roll dialog; seven of eleven narrations ended on a prompt to a named character; "I cannot" was ignored for six minutes; a burned miss kept the ship damage its price dealt.
+
+**Rejected:** *"when the classifier and the interpreter disagree, don't roll"* — it would have blocked the correct expedition reroute and switched Mischief off. *A classifier confidence threshold* (P2-03) — see above. *Gating the spotlight on connected players* — optional in the issue; the setting is off by default and says what it counts.
+
+---
+
 ## The narrative skeleton, Phase 4: NPC agendas, vows and discoveries planned; the GM's "has a plan" markers (2026-11)
 
 **Decision:** (issue #353 Phase 4, "When a skeleton is made" and "What the
@@ -7371,7 +7396,7 @@ players without taking agency away from anyone.
   unauditable; a code-owned pointer round-robins correctly and survives a mid-scene
   rename (it keys on actor id, not name).
 - *No setting* — a GM whose table dislikes being called on by name needs an off switch;
-  added as `narratorSpotlightRotation` (world, default on), surfaced under Narrator
+  added as `narratorSpotlightRotation` (world, default on — *off since issue #354 P2-07, with a one-time switch-off of a stored "on"*), surfaced under Narrator
   settings.
 
 *Update (2026-11, issue #340):* this holds for free-flow play. Batch Mode is an

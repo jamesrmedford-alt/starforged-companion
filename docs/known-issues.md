@@ -11,6 +11,24 @@ against source — full traces in `docs/flows/*.md`._
 
 ## Active issues
 
+### Alpha 23 playtest part 2 (issue #354) — in progress in the v1.8.2 cycle
+
+Fixed so far (each with a regression test; decisions.md → "Issue #354"):
+
+| ID | Kind | Fix |
+|---|---|---|
+| P2-01 NO-MOVE-ANSWER | UX (forced roll) | The interpreter's reply always carried a move (fallback Face Danger), and its `confidence` was read by nothing, so a line it called "a narrative exchange" opened the roll dialog → it may answer `"moveId": null`; `readMove` returns that, or a low-confidence reading outside a fight, as `noMove`, and free-flow narrates the line with the classifier's move offered (`index.js` `narrateLineWithoutMove`); a round's reading becomes a narrative one. The confirm dialog has **No move — narrate**; a cancelled reading's notice has **Narrate it — no move** (gmRelay `notRolled.narrate`). A reply naming no move at all is a failed reading and still goes to the dialog |
+| P2-02 CLASSIFIER-MOVE-DROPPED | UX (forced roll) | `router.decidePacing` returned `suggestedMove: null` on MOVE, so the interpreter read each line from scratch → the classifier's move, category and reasoning are handed on (`nominatedMove`, the interpreter's PACING READ hint). Balanced Mischief stays in kind (`keepMischiefInKind`, decided) |
+| P2-03 | withdrawn | A confidence threshold would not have caught most of the unwanted rolls (four of seven scored 75–80%) |
+| P2-04 CONNECTION-RULE-EVERY-NPC | UX (forced roll) | "If the addressee is a Connection … bias toward MOVE", with every NPC card listed → the classifier is told the speaker's own connections (the bond Items on their sheet) and leans toward MOVE only for a pressing or testing line to one of them; talk and everyday actions with nothing at risk are narration (decided: both narrowings) |
+| P2-05 SHORT-LINE-SILENT | SILENT | `isPlayerNarration` returned false under ten characters with no notice → the minimum stays (decided) and the line's author is told on their own client, the line back in their chat box (`isLineTooShortForNarrator`, `tellLineTooShort`) |
+| P2-06 INTERPRETER-NO-SPEAKER | attribution | The interpreter's context named no speaker, so it took one from the recent scene; the fellow-PC rule ran only where a move was offered → `buildContextSummary` names the speaker; `lineIsToAFellowPlayerCharacter` narrates such a line on a MOVE decision |
+| P2-07 SPOTLIGHT-DEFAULT-ON | UX | Rotating Spotlight defaulted on and counts PCs, not players → default off, a stored "on" switched off once with a GM notice (`spotlightDefault.js`, decided); the block ends on whoever the last line of dialogue is spoken to and asks only what a character does |
+| P2-08 YOU-CHANGES-PERSON | narrator | The spotlight block told a second-person narration to address a different PC directly → the block takes the resolved perspective (third person, by name, inside the fiction); the second-person style rule keeps "you" for the acting character |
+| P2-09 BURN-NO-ASSET-REFUND | STATE | `SUFFER_METERS` had no Withstand Damage / Companion Takes a Hit, so a reverted price kept the integrity or health it took → `assetDeltas` receipts, an `assetTrack` upgrade step (restore, with a GM Retry), and the price's cards struck (`supersedePriceCards`) |
+
+Still open in this issue — not yet built on the branch (see the issue for each item's fix): **P2-10** (ask Burn / Improve / Keep before the price and narration — decided, a pipeline change), **P2-12** (the "delayed or put at a disadvantage" price row → Lose Momentum), **P2-13** / **P2-14** (card noise and wording), **P2-15 – P2-19** and **P2-30** (World Journal threats, entity name matching, lore linking, contradiction card, duplicate plans), **P2-20 – P2-24**, **P2-26**, **P2-27** (prose length and style, prompt caching, usage log), **P2-25** (ability scanner JSON), **P2-29** (a sidecar key for a new enemy's plan), **P2-31** (a player's oracle consult), **P2-33** (scope-index row). **P2-11** and **P2-28** (for a scene with a countdown) were built by issue #353. **P2-32** is a play-test checklist, not code.
+
 ### Narrative skeleton (issue #353) — residuals
 
 | ID | Kind | Status |
