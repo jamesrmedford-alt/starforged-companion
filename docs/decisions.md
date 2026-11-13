@@ -295,6 +295,95 @@ rolls create the enemy's hidden truth (Phase 1).
 
 ---
 
+## Issue #353 R3 and R4: the vow is the spine; what is open is shown (2026-11)
+
+**Decision:** (issue #353 "Related changes" R3 and R4. R4's home — the
+Session panel — and the definitions of its two skeleton rows were decided by
+the maintainer.)
+- **A quest is in play** when some character holds an open vow besides a
+  background vow. A character's background vow, for this question, is their
+  first vow on the sheet that is not the shared inciting vow (the
+  foundry-ironsworn convention `readVows`' fallback follows); the shared
+  inciting vow is always a quest — `readVows` now reports `shared`
+  (`session/openThreads.js` `questVows`). The narrator's "Background vow"
+  label (`isBackground`, the shared vow first — "Collaborative character
+  creation" above) is unchanged.
+- **Begin a Session says when none is** — on its dialog and its card — and
+  offers Swear an Iron Vow for the user's own character
+  (`resolveUserActorId`): a vow and a rank, optional. It is written on that
+  character's sheet once the session's start is requested
+  (`actorBridge.createCharacterVowItem`); the canonical GM's createItem hook
+  then posts its "🆕 New vow recorded" card — ⚔ Swear it (roll), the reward
+  offer, the connection link — the path a vow written on the sheet already
+  takes. The Begin card does not claim the vow; a refused write is said to the
+  user.
+- **The vow a scene serves heads the per-beat context** — [2.6] THE VOW THIS
+  SCENE SERVES, in the beat modes (move, paced, round, @scene, oracle
+  follow-up) — chosen by a bounded ladder: an open track's linked vow (a
+  fight, then a scene challenge, then an expedition; the newest of a kind),
+  else the session's quest focus when it names one open vow, else the only
+  quest in play, else the only open vow; nothing is guessed past that. It
+  names the vow, its rank, progress and holders and why it is the scene's,
+  with one instruction: when a beat achieves something toward it, show that
+  in the fiction, and never name its track, its progress or a milestone —
+  marking it is the player's (the move card's ⚑ Mark Progress on Vow).
+- **An expedition or a scene challenge serves a vow** when the Progress Tracks
+  panel links it: the add form's vow select (any track it creates — a fight
+  added by hand too, which then pays off as a threshold fight does) and an
+  open expedition's or scene challenge's row (🔗 — an expedition the move
+  pipeline began has no creation card to link it on). **The link's canonical
+  half is the vow's id across its copies** (`linkedVowId`: its `vowId`, else
+  its Item id — a renamed vow keeps its link); `linkedVowName` is the name it
+  was linked under, which [4j] and a fight's threshold link (a name only)
+  carry. The canonical GM checks the vow is open as the sheets stand
+  (`resolveVowChoice`), and the presser's client checks first, since a
+  relayed refusal reaches no player. A fight's link stays its threshold
+  card's or the add form's and is not changed mid-fight; finishing a linked
+  expedition or scene challenge marks nothing by itself.
+- **What's open lives in the Session panel** (decided): the open vows and
+  their progress, the open tracks with the vow each serves, the running
+  clocks (active and not full; a scene challenge's own clock on its row), and
+  from the narrative skeleton — `listSkeletons()`, only while
+  `skeletonsEnabled()` — the **unanswered questions** (active `mystery` plans
+  whose `truthRevealed` is false: their `question` only) and the **standing
+  demands** (active `threat` / `npcAgenda` plans whose `truthRevealed` is
+  true: the subject's name and its `wants`). No other plan field is read —
+  never `truth`, `knows`, `clues`, `escalation`, `resolutions` or
+  `oracleSeeds` — and a player's list is the GM's (the store is read alike on
+  every client). It is not a chat card and makes no model call; it re-renders
+  when a vow, the tracks journal or a plan's page changes.
+- **End a Session offers one-click focus choices**: the open vows (one per
+  vow) for the quest focus and the characters' connections (a severed one
+  left out) for the connection focus, beside the free text, which stays
+  editable. The quest focus chosen there is the next session's
+  `sessionFocus.quest` — the scene's vow, rung 2.
+
+**Reason:** issue #353 R3 and R4. In the alpha 23 playtest no hit card offered
+Reach a Milestone because no vow was open, and nothing said so; the narrator
+was told the vows in three places but asked to play toward none; an
+expedition could not say which vow it served; and End a Session's two blank
+boxes were left empty, the +1 momentum with them. What was still open was
+spread over the sheet, two panels and the World Journal.
+
+**Rejected:**
+- *`isBackground` as the background vow for the check* — it is the shared
+  inciting vow, so a table pursuing its inciting vow alone would be told no
+  vow is in play.
+- *Swearing from Begin a Session through a forced swear move* — the vow must
+  be on the sheet first, and its "🆕 New vow recorded" card already offers the
+  roll, claimed once; a second path would roll it twice.
+- *A vow link on the expedition's progress card* — a new card button and relay
+  in the move pipeline; the panel's `progressTrack.edit` relay already checks
+  every panel edit, and a row serves both creation paths.
+- *Linking a new expedition to the roller's only vow by itself* — #241
+  rejected auto-detecting which vow a fight serves; the link stays the
+  player's choice.
+- *Showing a revealed plan's truth in What's open* — the maintainer's
+  definition shows a revealed plan's subject and wants; the truth is lore once
+  revealed, in the World Journal.
+
+---
+
 ## The v1.8.1 open-item sweep: issue #348 and the earlier audits' open items (2026-11)
 
 **Decision:** (the maintainer's request, 2026-11-12: close out issue #348 and every item the earlier audits left open.) The maintainer chose: Perspective "Auto" is decided once per session (#348 PT03); a Set a Course to an uncharted place is read as Undertake an Expedition on every Mischief setting, saying why (#348 PT06); an unnamed destination is recorded as a location with a working label (#348 PT07); each open item's written proposal is applied, including the "maintainer's call" ones; and by-design / cosmetic / not-reproduced items are re-checked, fixed when real and cheap, else closed with the reason. What each fix established (known-issues.md, "The v1.8.1 open-item sweep", has every row):

@@ -322,6 +322,25 @@ async function readOpenProgressTracks() {
   }
 }
 
+/**
+ * The vow this scene serves (issue #353 R3; session/openThreads.js
+ * readSceneVow): an open track's linked vow, the session's quest focus, or
+ * the only vow in play — over the extras' open tracks and focus. Fail-open:
+ * null, never a blocked narration.
+ *
+ * @param {{ progressTracks?: Object[], sessionFocus?: Object|null }} extras
+ * @returns {Promise<Object|null>}
+ */
+async function readSceneVowFor(extras) {
+  try {
+    const { readSceneVow } = await import('../session/openThreads.js');
+    return readSceneVow({ tracks: extras?.progressTracks ?? [], focus: extras?.sessionFocus ?? null });
+  } catch (err) {
+    console.warn(`${MODULE_ID} | narrator: the vow this scene serves could not be read:`, err?.message ?? err);
+    return null;
+  }
+}
+
 export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   const {
     playerNarration = '',
@@ -402,6 +421,12 @@ export async function buildNarratorExtras(mode, campaignState, opts = {}) {
   // retired context assembler ever rendered them, so no narration saw an open
   // fight; vows and bonds reach the CHARACTER block from the sheet.
   extras.progressTracks = (mode === 'campaign_recap') ? [] : await readOpenProgressTracks();
+
+  // The vow this scene serves (issue #353 R3): a linked track's vow, the
+  // session's quest focus, or the only vow in play, with its progress — the
+  // line at the top of the per-beat context ([2.6]). Read here, after the
+  // tracks and the focus it is chosen from.
+  extras.sceneVow = (mode === 'campaign_recap') ? null : await readSceneVowFor(extras);
 
   // Each PC's pinned Chronicle entries, for its CHARACTER block (issue #345
   // AA07). The Chronicle panel's 📌 promises "pinned entries always appear in

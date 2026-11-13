@@ -30,6 +30,7 @@ const STORE_READERS = new Map([
   ['src/session/swearVow.js', 'a vow target\'s agenda plan (planNpcAgenda — a write, no read)'],
   ['src/ui/entityPanel.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects)'],
   ['src/ui/progressTracks.js', 'the GM-only "has a plan" marker — subject ids only (plannedSubjects)'],
+  ['src/ui/sessionPanel.js', 'the "What\'s open" list (issue #353 R4): a mystery\'s question while its truth is unrevealed, a revealed threat\'s or NPC agenda\'s subject and wants — no other plan field (sessionPanelOpenThreads.test.js)'],
   ['src/world/worldJournalPanel.js', 'the GM-only Secrets section'],
 ]);
 const MODEL_READERS = new Map([
@@ -82,6 +83,18 @@ describe('issue #353 — the hidden plans stay hidden', () => {
       expect(code, file).not.toMatch(/listSkeletons|getSkeleton|\.truth\b|oracleSeeds/);
       expect(code, file).toMatch(/game\.user\?\.isGM \? planned\w+Ids\(\) : new Set\(\)/);
     }
+  });
+
+  it('the Session panel reads a plan\'s question, subject and wants only — and each only when shown (issue #353 R4)', () => {
+    const panel = byFile.get('src/ui/sessionPanel.js');
+    // No hidden field is named anywhere in the panel.
+    expect(panel.code).not.toMatch(/\.(?:truth|knows|clues|escalation|resolutions|oracleSeeds)\b/);
+    const rows = resolveFunctionSource(panel, 'revealedPlanRows') ?? '';
+    expect(rows).toMatch(/if \(!skeletonsEnabled\(\)\) return out;/);
+    expect(rows).toMatch(/plan\.kind === "mystery" && plan\.truthRevealed !== true && plan\.question/);
+    expect(rows).toMatch(/\(plan\.kind === "threat" \|\| plan\.kind === "npcAgenda"\) && plan\.truthRevealed === true && plan\.wants/);
+    // The plans reach the panel through this one reader.
+    expect(panel.code.match(/listSkeletons\(/g)).toHaveLength(1);
   });
 
   it('the narrator-card builders never read a plan', () => {

@@ -2820,3 +2820,27 @@ body.sf-touch .sf-round-window .sf-round-target { min-height: 44px; }
   opacity: 0.6;
   cursor: help;
 }
+
+/* ============================================================================
+   WHAT IS OPEN — the vow as the spine and the table's open threads (issue #353 R3, R4)
+   The Session panel's list, End a Session's focus choices, and a progress
+   track's link to the vow it serves.
+   ============================================================================ */
+
+.sf-session-panel .open-threads {
+  border-top: 1px solid var(--color-border-light, #ccc);
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+}
+.sf-session-panel .open-threads h3 { margin: 0 0 0.25rem; font-size: 1em; }
+.sf-session-panel .open-threads h4 { margin: 0.4rem 0 0.15rem; font-size: 0.9em; opacity: 0.85; }
+.sf-session-panel .open-thread-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.sf-session-panel .open-thread-list .thread-name { font-weight: 600; }
+.sf-session-panel .sf-no-vow { font-style: italic; }
+.sf-begin-session-form .sf-no-vow { border-left: 3px solid var(--sf-suggestion-colour, #B5985A); padding-left: 0.5rem; margin: 0.4rem 0; }
+
+.sf-end-session-form .sf-focus-choices { display: flex; flex-wrap: wrap; align-items: center; gap: 0.25rem; margin: 0.15rem 0 0.5rem; }
+.sf-end-session-form .sf-focus-choice { flex: 0 1 auto; width: auto; padding: 0.1rem 0.5rem; font-size: 0.9em; line-height: 1.4; }
+
+.track-vow-link { display: flex; align-items: center; gap: 0.3rem; }
+.track-vow-link .track-vow { flex: 1 1 auto; min-width: 0; }

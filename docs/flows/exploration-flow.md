@@ -134,7 +134,14 @@ Discovered card says so). With no active sector nothing is recorded.
   that track's id as the roller; known-issues PACED-ROLL-OPEN-PRESS), and a track named by id
   that is over marks nothing (`reason: "ambiguous" | "gone"`) — an unnamed
   Undertake used to begin a phantom "Expedition" that took the progress
-  (issue #321 U16). The progress card shows boxes filled and carries a
+  (issue #321 U16). An expedition serves a vow when it is linked to one
+  (issue #353 R3): in the Progress Tracks panel's add form, or on its row
+  (🔗) — the only place for one this move began; the canonical GM stores the
+  vow's `linkedVowId` and `linkedVowName`, and the link makes it the vow the
+  narrator's scene line names (`vow-flow.md` §3) and the "serves" of the
+  Session panel's What's open. Nothing else reads it: finishing a linked
+  expedition marks no milestone by itself — the player's ⚑ does. The
+  progress card shows boxes filled and carries a
   **"🗺 Finish the Expedition"** button — its forced move names the track by
   id and speaks as the PC who marked the progress (the card's `actorId`,
   issue #329 X05). The press relays `expedition.finish`

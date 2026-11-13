@@ -150,7 +150,11 @@ included: matched by name only, issue #321 U16 / ENTER-FRAY-SOLE-FIGHT) →
 the actor's sheet field, and the combatant badge). A combat-track card posts
 (stakes line, **Battle instead** button on fresh tracks; flagged with the
 track's `trackId` / `trackLabel`, which Battle forwards) and the Foundry Combat
-doc opens with position/range badges.
+doc opens with position/range badges. A fight added by hand in the Progress
+Tracks panel can be linked to a vow at creation too — the add form's vow
+select (issue #353 R3): it carries `linkedVowName` and `linkedVowId`, and a
+won linked fight pays off as a threshold fight does (§4). A fight's link is
+not changed on its row afterwards.
 
 **Find another way** posts the way-out card (from the canonical GM, once per
 threshold card): the `WAY_OUT_PROMPT` nudge plus

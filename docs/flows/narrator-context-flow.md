@@ -475,7 +475,17 @@ campaign recap (a session's first narration in any prose mode, from
 B04) · [1] safety (the stored Lines / Veils / Private Lines — issue #321
 U08) · **[1b] X-Card redirect** (prose modes, until the first narration after
 a GM resumes has posted — issue #321 U07, above) · [2] permission-class latitude · [2.5]
-Battle Stations · [3] oracle seeds (move-provided only; a routed Pay the
+Battle Stations · **[2.6] THE VOW THIS SCENE SERVES** (issue #353 R3 — the
+beat modes only: move, paced, round, @scene, oracle follow-up;
+`buildNarratorExtras` → `extras.sceneVow`, `session/openThreads.js`
+`readSceneVow` over every PC's vows (actorBridge), the open tracks [4j] reads
+and the session's focus [4i]: an open track's linked vow — a fight, then a
+scene challenge, then an expedition; a `linkedVowId` names the vow whatever
+it is called now — else a quest focus naming one open vow, else the only
+quest in play, else the only open vow; nothing else is guessed. The vow, its
+rank, progress and holders and why it is the scene's, and one instruction:
+show what a beat achieves toward it, never its track, progress or a
+milestone — `formatSceneVowBlock`; `vow-flow.md` §3) · [3] oracle seeds (move-provided only; a routed Pay the
 Price is the one its card rolled — `withPayThePriceSeed`, issue #321 U03; the
 "envision" outcomes roll theirs once in `buildOracleSeeds` — Gather
 Information's Story Clue / Story Complication, a Compel weak hit's Action +
@@ -514,7 +524,10 @@ Session foci, kept as `sessionFocus` at Begin Session — C5) · **[4j] open
 progress tracks** (the open fights, expeditions and scene challenges in the
 Progress Tracks journal, `listOpenProgressTracks` — a fight with its
 objective, position and linked vow, at most six; skipped for the recap.
-Issue #290: only the retired assembler had rendered them, TRACKS-UNPORTED)
+Issue #290: only the retired assembler had rendered them, TRACKS-UNPORTED;
+an expedition or a scene challenge linked to a vow, issue #353 R3, says it
+serves the vow — "seeing it through is a step toward" it, a fight's win "a
+milestone on" it)
 · [5] current location card · [5b]
 active-sector anchor (each settlement with its planet and stellar object, as
 its card shows them — `formatSettlementPlanet`, issue #321 U51; the sector's
@@ -540,7 +553,11 @@ new enemy, an expedition begun, a Make a Discovery's or Confront Chaos's find,
 a vow's swearing scene (Phase 4). Decided plans read
 as truths never to state outright, with the reveal rule; undecided ones and the
 requests list under DECIDE NOW with their oracle rolls, only when the sidecar
-is on; every prose mode, never a meta one; `formatUnrevealedBlock`) · ([7], a legacy count of `connectionIds` that counted a
+is on; every prose mode, never a meta one; `formatUnrevealedBlock`. Outside
+the prompt, the plans are read by one player-facing surface: the Session
+panel's What's open — a mystery's question while its truth is hidden, a
+revealed threat's or NPC agenda's subject and wants, no other field;
+`ui/sessionPanel.js`, issue #353 R4) · ([7], a legacy count of `connectionIds` that counted a
 lost connection as active, is retired — issue #331 X29) · [8]
 CHARACTER STATE (vows and bonds with progress and their rank by name — issue
 #321 U62 — granted rewards — C5 — and the PC's newest five pinned Chronicle

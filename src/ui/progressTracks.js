@@ -22,6 +22,7 @@ import { getPlayerActors } from '../character/actorBridge.js';
 import { replaceKeepingInput } from './keepTypedInput.js';
 import { settledWithin, WORLD_WRITE_WAIT_MS } from '../multiplayer/settleWithin.js';
 import { plannedSubjects } from '../world/secrets.js';
+import { tableVows, vowChoices, resolveVowChoice, trackVowName } from '../session/openThreads.js';
 
 /**
  * A track's label (or any text) for HTML: a name holding markup — a player can
@@ -101,11 +102,12 @@ function plannedTrackIds() {
  * @param {'troublesome'|'dangerous'|'formidable'|'extreme'|'epic'} data.rank
  * @param {string|null} [data.entityId]  Links to a connection.js entity when type === 'connection'
  * @param {string|null} [data.objective]  The concrete goal of this track (e.g. a fight's objective)
- * @param {string|null} [data.linkedVowName]  For a combat track, the vow statement it serves (#241)
+ * @param {string|null} [data.linkedVowName]  The vow statement it serves — a fight's (#241), an expedition's or a scene challenge's (issue #353 R3)
+ * @param {string|null} [data.linkedVowId]  The served vow's id across its copies (`vowId`, else its Item id) — the link's canonical half, read before the name (issue #353 R3)
  * @param {object|null} [data.reward]  The promised reward { description, form, proposedBy, status } (#241, Phase 2)
  * @returns {object}
  */
-function createTrack({ label, type, rank, entityId = null, objective = null, linkedVowName = null, reward = null, tensionClockId = null }) {
+function createTrack({ label, type, rank, entityId = null, objective = null, linkedVowName = null, linkedVowId = null, reward = null, tensionClockId = null }) {
   return {
     id: foundry.utils.randomID(),
     label,
@@ -115,7 +117,8 @@ function createTrack({ label, type, rank, entityId = null, objective = null, lin
     completed: false,
     entityId,
     objective,        // concrete goal stated up front (#241)
-    linkedVowName,    // combat → vow link (#241)
+    linkedVowName,    // track → vow link (#241; an expedition's or scene challenge's, issue #353 R3)
+    linkedVowId,      // that vow by id (issue #353 R3); a fight linked at its threshold card has the name only
     reward,           // promised concrete reward (#241, populated in Phase 2)
     createdAt: Date.now(),
     // A scene challenge begun on a countdown the fiction started uses that
@@ -520,6 +523,7 @@ export class ProgressTrackApp extends ApplicationV2 {
       addTrack:            ProgressTrackApp.#onAddTrack,
       completeTrack:       ProgressTrackApp.#onCompleteTrack,
       toggleCombatState:   ProgressTrackApp.#onToggleCombatState,
+      linkTrackVow:        ProgressTrackApp.#onLinkTrackVow,
     },
   };
 
@@ -560,12 +564,19 @@ export class ProgressTrackApp extends ApplicationV2 {
     // expedition's (issue #353 Phase 4). No content; never a player's.
     const planned       = game.user?.isGM ? plannedTrackIds() : new Set();
     const viewer        = viewers[0] ?? null;
+    // The open vows a track can serve (issue #353 R3): the add form's link,
+    // and an open expedition's or scene challenge's — one the move pipeline
+    // began has no other place to be linked.
+    const vows          = tableVows();
+    const vowOptions    = vowChoices(vows);
 
     // Annotate each track with derived display values.
     const annotated = tracks.map(t => {
       const linkedClock = t.tensionClockId ? clockById.get(t.tensionClockId) : null;
       return {
         ...t,
+        servesVow: trackVowName(t, vows),
+        vowLinkable: !t.completed && VOW_LINK_TYPES.has(t.type),
         rankLabel: RANKS[t.rank]?.label ?? t.rank,
         rankClass: RANKS[t.rank]?.cssClass ?? '',
         typeLabel: TRACK_TYPES[t.type] ?? t.type,
@@ -598,12 +609,19 @@ export class ProgressTrackApp extends ApplicationV2 {
     const active    = panelVisible.filter(t => !t.completed);
     const completed = panelVisible.filter(t => t.completed);
 
-    return { active, completed, rankOptions: RANKS, typeOptions: PANEL_TRACK_TYPES };
+    return { active, completed, rankOptions: RANKS, typeOptions: PANEL_TRACK_TYPES, vowOptions };
   }
 
   /** @override */
   async _renderHTML(context, _options) {
-    const { active, completed, rankOptions, typeOptions } = context;
+    const { active, completed, rankOptions, typeOptions, vowOptions = [] } = context;
+
+    // A vow select: "— no vow —" and the open vows, `selected` the one linked.
+    const vowSelect = (attrs, selected = null) => `
+      <select class="track-select track-vow" ${attrs} title="The vow this track serves">
+        <option value="">— no vow —</option>
+        ${vowOptions.map(v => `<option value="${escapeHtml(v.id)}"${v.id === selected ? ' selected' : ''}>${escapeHtml(v.label)}</option>`).join('')}
+      </select>`;
 
     const renderTrack = (t) => `
       <div class="track-row ${t.rankClass} ${t.completed ? 'is-completed' : ''}"
@@ -611,7 +629,7 @@ export class ProgressTrackApp extends ApplicationV2 {
         <div class="track-header">
           <div class="track-labels">
             <span class="track-name">${escapeHtml(t.label)}${t.hasPlan ? PLAN_MARKER : ''}</span>
-            <span class="track-meta">${t.typeLabel} · ${t.rankLabel}</span>
+            <span class="track-meta">${t.typeLabel} · ${t.rankLabel}${t.servesVow ? ` · serves “${escapeHtml(t.servesVow)}”` : ''}</span>
           </div>
           <div class="track-actions">
             ${!t.completed ? `
@@ -674,6 +692,15 @@ export class ProgressTrackApp extends ApplicationV2 {
             </span>
           ` : ''}
         </div>
+        ${t.vowLinkable && vowOptions.length ? `
+          <div class="track-vow-link">
+            ${vowSelect(`name="trackVow" data-track-id="${t.id}"`, t.linkedVowId ?? null)}
+            <button class="track-btn btn-link-vow" data-action="linkTrackVow"
+                    data-track-id="${t.id}" title="Link this track to the vow it serves">
+              🔗
+            </button>
+          </div>
+        ` : ''}
       </div>
     `;
 
@@ -692,6 +719,7 @@ export class ProgressTrackApp extends ApplicationV2 {
                     placeholder="Track name…" maxlength="60" />
             <select class="track-select" name="newType">${typeOpts}</select>
             <select class="track-select" name="newRank">${rankOpts}</select>
+            ${vowOptions.length ? vowSelect('name="newVow"') : ''}
             <button class="track-btn btn-add" data-action="addTrack" title="Add Track">
               Add
             </button>
@@ -922,7 +950,8 @@ export class ProgressTrackApp extends ApplicationV2 {
    * The name is cleared at the press, so a second press while the add is in
    * flight adds nothing twice; an add that was not made gives the form back
    * what was submitted (known-issues TRACK-ADD-REFUSED-LOSES-NAME — the
-   * typed name was lost).
+   * typed name was lost). The vow chosen in the form, if any, is the vow the
+   * new track serves (issue #353 R3).
    */
   static #onAddTrack(_event, _target) {
     const work = (async () => {
@@ -930,6 +959,8 @@ export class ProgressTrackApp extends ApplicationV2 {
       const labelInput = panel.querySelector('[name="newLabel"]');
       const typeSelect = panel.querySelector('[name="newType"]');
       const rankSelect = panel.querySelector('[name="newRank"]');
+      // Only offered while a character has an open vow.
+      const vowSelect  = panel.querySelector('[name="newVow"]');
 
       const label = labelInput.value.trim();
       if (!label) {
@@ -938,12 +969,45 @@ export class ProgressTrackApp extends ApplicationV2 {
       }
 
       const submitted = { newLabel: labelInput.value, newType: typeSelect.value, newRank: rankSelect.value };
+      if (vowSelect) submitted.newVow = vowSelect.value ?? '';
+      // A vow fulfilled or deleted since the form was drawn is said here: a
+      // relayed refusal reaches no player (the relay has no ack). The GM
+      // checks again.
+      if (submitted.newVow && !resolveVowChoice(submitted.newVow)) {
+        ui.notifications?.warn?.(`Starforged Companion: ${EDIT_REFUSAL_TEXT['no-vow']}`);
+        this.render();
+        return;
+      }
       labelInput.value = '';
       const made = await ProgressTrackApp.#requestEdit(this, {
         op: 'add', label, type: submitted.newType, rank: submitted.newRank,
+        ...(submitted.newVow ? { vowId: submitted.newVow } : {}),
       });
       if (!made) ProgressTrackApp.#restoreAddForm(this, submitted);
     })();
+    this._lastAction = work;
+    return work;
+  }
+
+  /**
+   * Link an open expedition or scene challenge to the vow it serves — the
+   * vow chosen on its row, or none (issue #353 R3). An expedition the move
+   * pipeline began has no other place to be linked. The canonical GM checks
+   * the vow is open as it stands (`progressTrack.edit` op `linkVow`).
+   * @param {PointerEvent} event
+   * @param {HTMLElement}  target
+   */
+  static #onLinkTrackVow(_event, target) {
+    const trackId = target?.dataset?.trackId ?? '';
+    const select  = this.element?.querySelector?.(`select[name="trackVow"][data-track-id="${trackId}"]`);
+    const vowId   = select?.value ?? '';
+    // Said here, as the add form's: a relayed refusal reaches no player.
+    if (vowId && !resolveVowChoice(vowId)) {
+      ui.notifications?.warn?.(`Starforged Companion: ${EDIT_REFUSAL_TEXT['no-vow']}`);
+      this.render();
+      return undefined;
+    }
+    const work = ProgressTrackApp.#requestEdit(this, { op: 'linkVow', trackId, vowId });
     this._lastAction = work;
     return work;
   }
@@ -1317,7 +1381,16 @@ const MAX_LABEL_LENGTH = 60;
 const EDIT_REFUSAL_TEXT = {
   'invalid':  'the panel cannot make that change — nothing was changed.',
   'no-track': 'that track is gone or already finished — nothing was changed.',
+  'no-vow':   'that vow is no longer open — nothing was changed. Choose another.',
 };
+
+/**
+ * The tracks a row links to a vow (issue #353 R3): an expedition or a scene
+ * challenge, as a fight is linked at its ⚔ threshold card (#241). A fight's
+ * vow is chosen when it is begun — there, or in the add form — and not
+ * changed mid-fight: a won linked fight pays the vow's milestone and reward.
+ */
+const VOW_LINK_TYPES = new Set(['expedition', 'scene_challenge']);
 
 /** Position toggle cycle: neutral → in control → in a bad spot → neutral. */
 const NEXT_POSITION = { null: 'in_control', in_control: 'bad_spot', bad_spot: null };
@@ -1344,14 +1417,20 @@ function isOpenPanelTrack(track) {
  * +, −, ✓ act on an open fight, expedition or scene challenge, the position
  * toggle on an open fight, ✕ on any of the three; a new track takes its name
  * (trimmed, at most 60 characters), type and rank from the panel's own lists.
+ * A vow link (issue #353 R3) — a new track's `vowId`, or `linkVow` on an open
+ * expedition or scene challenge — names an open vow by its id, checked
+ * against the vows as they stand (`resolveVowChoice`), and is stored as the
+ * vow's id and name (`linkedVowId`, `linkedVowName`); an empty `vowId` on
+ * `linkVow` unlinks.
  *
- * @param {{ op: "add"|"mark"|"clear"|"complete"|"position"|"remove",
+ * @param {{ op: "add"|"mark"|"clear"|"complete"|"position"|"remove"|"linkVow",
  *           trackId?: string, label?: string, type?: string, rank?: string,
- *           actorId?: string|null }} payload  `actorId` (position only): the
- *   clicker's own character, whose sheet and badge mirror the new position
+ *           vowId?: string, actorId?: string|null }} payload  `actorId`
+ *   (position only): the clicker's own character, whose sheet and badge
+ *   mirror the new position
  * @param {Object} [ctx]  gmRelay context — no edit is restricted to a role;
  *   the position mirror needs a requester who owns `actorId`
- * @returns {Promise<{ applied: boolean, reason?: "invalid"|"no-track"|"clock", trackId?: string }>}
+ * @returns {Promise<{ applied: boolean, reason?: "invalid"|"no-track"|"clock"|"no-vow", trackId?: string }>}
  */
 export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
   const trackId = typeof payload?.trackId === 'string' ? payload.trackId : '';
@@ -1362,8 +1441,32 @@ export async function applyProgressTrackEditFromRelay(payload = {}, ctx = {}) {
       if (!label || !own(PANEL_TRACK_TYPES, payload.type) || !own(RANKS, payload.rank)) {
         return refusedEdit('invalid', payload);
       }
-      const track = await addProgressTrack({ label, type: payload.type, rank: payload.rank });
+      // The vow it serves (issue #353 R3): an open vow as the vows stand now,
+      // by its id — one fulfilled or deleted since the form was drawn is
+      // refused, so the panel gives the form back to choose again.
+      const vowId = typeof payload.vowId === 'string' ? payload.vowId.trim() : '';
+      const link  = vowId ? resolveVowChoice(vowId) : null;
+      if (vowId && !link) return refusedEdit('no-vow', payload);
+      const track = await addProgressTrack({ label, type: payload.type, rank: payload.rank, ...(link ?? {}) });
       return { applied: true, trackId: track.id };
+    }
+    case 'linkVow': {
+      // An open expedition's or scene challenge's vow, or none (issue #353
+      // R3); a fight's is chosen when it is begun (VOW_LINK_TYPES).
+      const vowId = typeof payload.vowId === 'string' ? payload.vowId.trim() : '';
+      const link  = vowId ? resolveVowChoice(vowId) : { linkedVowId: null, linkedVowName: null };
+      if (!link) return refusedEdit('no-vow', payload);
+      let notLinkable = false;
+      const linked = await updateTrack(trackId, (track) => {
+        if (!isOpenPanelTrack(track)) return false;
+        if (!VOW_LINK_TYPES.has(track.type)) {
+          notLinkable = true;
+          return false;
+        }
+        track.linkedVowId   = link.linkedVowId;
+        track.linkedVowName = link.linkedVowName;
+      });
+      return notLinkable ? refusedEdit('invalid', payload) : editOutcome(linked, payload);
     }
     case 'mark':
       return editOutcome(await updateTrack(trackId, (track) => {

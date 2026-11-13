@@ -11,9 +11,13 @@
  *   - Offers an optional Spotlight Vignette roll (d100, 10 entries) —
  *     uses src/oracles/tables/sessionVignette.js. On roll, all players
  *     take +1 momentum.
+ *   - Says so when no character has an open vow besides a background vow,
+ *     and offers to swear one on the user's own character (issue #353 R3).
  *
  * End a Session (play kit p. 1):
- *   - Capture quest focus and/or connection focus for next session.
+ *   - Capture quest focus and/or connection focus for next session — the
+ *     open vows and the connections are offered as one-click choices beside
+ *     the free text (issue #353 R4).
  *   - If at least one focus is noted, the player takes +1 momentum.
  *   - Surfaces a reminder for any vow that advanced this session
  *     (the player should Reach a Milestone before posting the card).
@@ -33,6 +37,7 @@ import { rollOracle } from "../oracles/roller.js";
 import { requestGmAction, hasActiveGM } from "../multiplayer/gmRelay.js";
 import { newNarrationId } from "../factContinuity/ledgers.js";
 import { proseToHtml } from "../audio/segments.js";
+import { RANKS } from "../schemas.js";
 
 const MODULE_ID = "starforged-companion";
 
@@ -67,6 +72,10 @@ export async function openBeginSessionDialog() {
     ? `<details open><summary>Flagged content to review (${shownFlags.length})</summary><ul>${flagList}</ul></details>`
     : `<p class="muted"><em>No flagged content. Use Set a Flag to add some.</em></p>`;
 
+  // No vow in play (issue #353 R3): without a quest the session has nothing
+  // to play toward in the rules' own terms, and nothing said so.
+  const quest = await questStatus(state);
+
   const content = `
     <form class="sf-begin-session-form">
       <p class="hint">Identify or adjust flagged content. Review or recap what
@@ -74,6 +83,7 @@ export async function openBeginSessionDialog() {
       current situation and intent.</p>
       ${renderLastSessionFoci(state)}
       ${flagBlock}
+      ${quest.inPlay ? "" : renderNoQuestBlock(quest.swearer)}
       <label class="row">
         <input type="checkbox" name="vignette" value="1">
         Roll a Spotlight Vignette (+1 momentum to all players)
@@ -94,13 +104,91 @@ export async function openBeginSessionDialog() {
         const form = button.form;
         const rollVignette  = form?.querySelector('input[name="vignette"]')?.checked;
         const includeGalley = form?.querySelector('input[name="galleyVignette"]')?.checked ?? true;
-        await postBeginSessionCard(rollVignette, includeGalley);
+        const newVow        = String(form?.querySelector('input[name="newVow"]')?.value ?? "").trim().slice(0, VOW_NAME_MAX);
+        const newVowRank    = form?.querySelector('select[name="newVowRank"]')?.value ?? "dangerous";
+        await postBeginSessionCard(rollVignette, includeGalley, { ...quest, newVow, newVowRank });
       },
     },
   });
 }
 
-async function postBeginSessionCard(rollVignette, includeGalley = true) {
+/** The longest vow the "no vow in play" offer takes (the field's maxlength). */
+const VOW_NAME_MAX = 120;
+
+/**
+ * Whether a quest is in play at Begin a Session (issue #353 R3): some
+ * character holds an open vow besides a background vow
+ * (session/openThreads.js questVows — the shared inciting vow counts as one).
+ * With none, `swearer` is the character this user would swear one for —
+ * their own (multiplayer/speaker.js resolveUserActorId) — or null.
+ * Fail-open: a check that cannot be made says nothing, and never holds up
+ * the Begin.
+ *
+ * @param {Object} state — campaignState
+ * @returns {Promise<{ inPlay: boolean, swearer: { id: string, name: string }|null }>}
+ */
+async function questStatus(state) {
+  try {
+    const { tableVows, questVows } = await import("../session/openThreads.js");
+    if (questVows(tableVows()).length) return { inPlay: true, swearer: null };
+    const { resolveUserActorId } = await import("../multiplayer/speaker.js");
+    const { getActor } = await import("../character/actorBridge.js");
+    const actorId = resolveUserActorId(game.user, state);
+    const actor   = actorId ? getActor(actorId) : null;
+    return { inPlay: false, swearer: actor?.id ? { id: actor.id, name: String(actor.name ?? "") } : null };
+  } catch (err) {
+    console.warn(`${MODULE_ID} | Begin a Session: whether a vow is in play could not be read:`, err?.message ?? err);
+    return { inPlay: true, swearer: null };
+  }
+}
+
+/**
+ * The Begin a Session dialog's "No vow in play" block (issue #353 R3): it
+ * says so and offers Swear an Iron Vow for the user's own character — a vow
+ * and its rank, optional. With no character of their own, it points to the
+ * sheet.
+ *
+ * @param {{ id: string, name: string }|null} swearer
+ * @returns {string}
+ */
+function renderNoQuestBlock(swearer) {
+  const ranks = RANKS.map(r => `<option value="${r}"${r === "dangerous" ? " selected" : ""}>${r}</option>`).join("");
+  const offer = swearer
+    ? `<label class="row"><span>Swear an Iron Vow for ${escapeHtml(swearer.name)} (optional)</span>`
+      + `<input type="text" name="newVow" maxlength="${VOW_NAME_MAX}" placeholder="What do you swear to do?"></label>`
+      + `<label class="row"><span>Rank</span><select name="newVowRank">${ranks}</select></label>`
+      + `<p class="hint">The vow goes on the character sheet; its card then offers the swear roll.</p>`
+    : `<p class="hint">Swear one on a character sheet: its card then offers the swear roll.</p>`;
+  return `<div class="sf-no-vow"><p><strong>No vow in play.</strong> No character has an open vow besides a `
+    + `background vow, so this session has no quest to play toward.</p>${offer}</div>`;
+}
+
+/**
+ * Swear the vow Begin a Session's "no vow in play" offer was given (issue
+ * #353 R3), on the user's own character's sheet, through actorBridge. The
+ * canonical GM's createItem hook then posts its "🆕 New vow recorded" card —
+ * the ⚔ Swear it (roll), the reward offer and the connection link
+ * (session/swearVow.js registerPlayerVowHook). A vow the sheet refused is
+ * said to this user, who can add it on the sheet.
+ *
+ * @param {string} actorId
+ * @param {string} name
+ * @param {string} rank
+ * @returns {Promise<Object|null>} the vow Item, or null when it was not made
+ */
+async function swearSessionVow(actorId, name, rank) {
+  const { getActor, createCharacterVowItem } = await import("../character/actorBridge.js");
+  const actor = getActor(actorId);
+  const item  = actor
+    ? await createCharacterVowItem(actor, { name, rank: RANKS.includes(rank) ? rank : "dangerous" })
+    : null;
+  if (!item) {
+    ui.notifications?.warn?.(`Starforged Companion: the vow "${name}" could not be saved — add it on the character sheet.`);
+  }
+  return item;
+}
+
+async function postBeginSessionCard(rollVignette, includeGalley = true, quest = { inPlay: true }) {
   // Read the foci before the GM handler clears them, so the card shows what
   // the table carried over from last session.
   const state = game.settings.get(MODULE_ID, "campaignState") ?? {};
@@ -125,12 +213,24 @@ async function postBeginSessionCard(rollVignette, includeGalley = true) {
     ? ""
     : `<p class="muted sf-not-recorded"><em>No GM is connected — the session was not started${vignetteRolled ? " and no momentum was applied" : ""}. Try again once a GM has joined.</em></p>`;
 
+  // No vow in play (issue #353 R3): said to the table. A vow sworn from the
+  // dialog is not claimed here — its own card follows once the sheet has it.
+  const noQuestBlock = quest?.inPlay === false
+    ? `<p class="sf-no-vow"><em>No character has a vow in play besides a background vow — swear an iron vow to give this session a quest.</em></p>`
+    : "";
+
   await ChatMessage.create({
-    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>Flagged content reviewed; scene set.</p>${renderLastSessionFoci(state)}${vignetteBlock}${notRecorded}</div>`,
+    content: `<div class="sf-session-card"><strong>Begin a Session</strong><p>Flagged content reviewed; scene set.</p>${renderLastSessionFoci(state)}${noQuestBlock}${vignetteBlock}${notRecorded}</div>`,
     flags:   { [MODULE_ID]: { sessionLifecycleCard: true } },
   });
 
   await requestGmActionSafely("session.begin", { vignetteRolled, includeGalley: includeGalley !== false });
+
+  // The vow the "no vow in play" offer was given, after the session's start
+  // (so its swear roll meets a begun session): on the user's own character.
+  if (quest?.inPlay === false && quest.newVow && quest.swearer?.id) {
+    await swearSessionVow(quest.swearer.id, quest.newVow, quest.newVowRank);
+  }
 }
 
 /** campaignState fields applyBeginSession writes, besides a new session's (SESSION_MINT_FIELDS). */
@@ -440,6 +540,19 @@ export async function openEndSessionDialog() {
       ? `This session has already ended. A focus set now replaces the one noted; its momentum was already taken.`
       : `This session has already ended. Setting a focus now still grants <strong>+1 momentum</strong>, once.`;
 
+  // The open vows and the connections, one click each into their focus
+  // field, beside the free text (issue #353 R4): left blank, the focus — and
+  // its +1 momentum — went unchosen. Fail-open: none offered.
+  let questChoices      = [];
+  let connectionChoices = [];
+  try {
+    const { vowChoices, tableConnectionNames } = await import("../session/openThreads.js");
+    questChoices      = vowChoices().map(v => ({ value: v.name, label: v.label }));
+    connectionChoices = tableConnectionNames().map(name => ({ value: name, label: name }));
+  } catch (err) {
+    console.warn(`${MODULE_ID} | End a Session: the focus choices could not be read:`, err?.message ?? err);
+  }
+
   const content = `
     <form class="sf-end-session-form">
       <p class="hint">Reflect on the events of the game and identify any missed
@@ -449,10 +562,12 @@ export async function openEndSessionDialog() {
         <span>Quest focus for next session (optional)</span>
         <input type="text" name="questFocus" maxlength="120">
       </label>
+      ${renderFocusChoices("questFocus", "Open vows", questChoices)}
       <label>
         <span>Connection focus for next session (optional)</span>
         <input type="text" name="connectionFocus" maxlength="120">
       </label>
+      ${renderFocusChoices("connectionFocus", "Connections", connectionChoices)}
       <p class="hint">${bonusHint}</p>
     </form>
   `;
@@ -460,6 +575,9 @@ export async function openEndSessionDialog() {
   await DialogV2.prompt({
     window:  { title: "End a Session" },
     content,
+    // The choices' clicks are wired when the dialog renders (DialogV2.wait,
+    // which prompt runs, attaches `render`).
+    render: (event, dialog) => wireFocusChoices(dialogElement(event, dialog)),
     ok: {
       label:    "End Session",
       callback: async (_event, button) => {
@@ -807,6 +925,57 @@ async function requestGmActionSafely(kind, payload) {
 /** Relay-payload focus → trimmed string capped at the dialog's maxlength. */
 function cleanFocus(value) {
   return typeof value === "string" ? value.trim().slice(0, 120) : "";
+}
+
+/** How many one-click choices a focus field offers, at most. */
+const MAX_FOCUS_CHOICES = 8;
+
+/**
+ * End a Session's one-click choices for a focus field (issue #353 R4): a
+ * button per open vow or connection that puts its name in the field, which
+ * stays free text. '' with none to offer.
+ *
+ * @param {"questFocus"|"connectionFocus"} field — the input's name
+ * @param {string} title
+ * @param {Array<{ value: string, label: string }>} choices
+ * @returns {string}
+ */
+function renderFocusChoices(field, title, choices) {
+  const list = (Array.isArray(choices) ? choices : [])
+    .filter(c => typeof c?.value === "string" && c.value.trim())
+    .slice(0, MAX_FOCUS_CHOICES);
+  if (!list.length) return "";
+  const buttons = list.map(c =>
+    `<button type="button" class="sf-focus-choice" data-focus-field="${field}" data-focus-value="${escapeHtml(cleanFocus(c.value))}">${escapeHtml(c.label || c.value)}</button>`,
+  ).join(" ");
+  return `<p class="sf-focus-choices"><span class="muted">${escapeHtml(title)}:</span> ${buttons}</p>`;
+}
+
+/**
+ * The dialog's element in its render callback: DialogV2.wait passes the
+ * dialog (v13) — an older shape passed the element itself.
+ */
+function dialogElement(event, dialog) {
+  if (typeof dialog?.querySelectorAll === "function") return dialog;
+  return dialog?.element ?? event?.target?.element ?? null;
+}
+
+/**
+ * Wire End a Session's focus choices: a click puts the choice in its field
+ * (renderFocusChoices). The buttons are `type="button"` with no action, so a
+ * click never submits the dialog.
+ *
+ * @param {HTMLElement|null} root — the dialog's element
+ */
+function wireFocusChoices(root) {
+  if (typeof root?.querySelectorAll !== "function") return;
+  for (const button of root.querySelectorAll("[data-focus-field]")) {
+    button.addEventListener("click", (event) => {
+      event?.preventDefault?.();
+      const field = root.querySelector(`input[name="${button.dataset.focusField}"]`);
+      if (field) field.value = button.dataset.focusValue ?? "";
+    });
+  }
 }
 
 /**

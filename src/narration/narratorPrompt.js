@@ -1645,6 +1645,16 @@ export function buildNarratorSystemPrompt(
   //       carries the rendered block in, or '' when not applicable.
   if (shipboardGuidance) parts.push(shipboardGuidance);
 
+  // [2.6] The vow this scene serves (issue #353 R3) — at the top of the
+  //       per-beat context, in the beat modes: the vow a linked track, the
+  //       session's quest focus or the only vow in play says this scene is
+  //       for, with its progress, and the one instruction to show what a beat
+  //       achieves toward it (buildNarratorExtras → extras.sceneVow).
+  if (SCENE_VOW_MODES.has(resolvedMode)) {
+    const sceneVowBlock = formatSceneVowBlock(extras?.sceneVow ?? null);
+    if (sceneVowBlock) parts.push(sceneVowBlock);
+  }
+
   // [3] Oracle seeds — only when the resolved move provides them
   const seedsBlock = formatOracleSeedsBlock(oracleSeeds);
   if (seedsBlock) parts.push(seedsBlock);
@@ -2111,6 +2121,68 @@ function formatSessionFocusBlock(focus) {
   );
 }
 
+/**
+ * The modes the scene's vow line speaks to (issue #353 R3): the beats of play
+ * — a move, a line of free narration, a Batch Mode round, a question about
+ * the scene, an oracle's follow-up. Not a vignette, the vow-swearing scene or
+ * the inciting incident (each has its own subject), a clock's beat or the
+ * recap.
+ */
+const SCENE_VOW_MODES = new Set(['move_resolution', 'round_resolution', 'paced_narrative', 'scene_interrogation', 'oracle_followup']);
+
+/** A linked track's kind, as the vow line names it. */
+const SCENE_VOW_TRACK_NAMES = Object.freeze({ combat: 'fight', expedition: 'expedition', scene_challenge: 'scene challenge' });
+
+/** "A", "A and B", "A, B and C". */
+function joinNames(names) {
+  return names.length < 2 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
+}
+
+/** Why the vow is this scene's, as the vow line says it. */
+function sceneVowReason(sceneVow) {
+  if (sceneVow?.source === 'track') {
+    const kind  = SCENE_VOW_TRACK_NAMES[sceneVow.track?.type] ?? 'track';
+    const label = typeof sceneVow.track?.label === 'string' ? sceneVow.track.label.trim() : '';
+    return label ? `the open ${kind} "${label}" serves it` : `an open ${kind} serves it`;
+  }
+  if (sceneVow?.source === 'focus') return `the table chose it as this session's quest focus`;
+  if (sceneVow?.source === 'only') return `the only vow in play`;
+  return '';
+}
+
+/**
+ * [2.6] THE VOW THIS SCENE SERVES (issue #353 R3): one line at the top of the
+ * per-beat context — the vow the scene serves (buildNarratorExtras →
+ * extras.sceneVow, session/openThreads.js selectSceneVow), its rank and
+ * progress, who swore it and why it is this scene's — and one instruction:
+ * when a beat achieves something toward it, show that in the fiction. The
+ * player marks the progress (the move card's ⚑ Mark Progress on Vow), so the
+ * narrator never names a milestone. '' with no vow.
+ *
+ * @param {{ vow: { name: string, rank?: string, progress?: number, holders?: string[] },
+ *   source: "track"|"focus"|"only", track?: { type: string, label: string } }|null} sceneVow
+ * @returns {string}
+ */
+export function formatSceneVowBlock(sceneVow) {
+  const vow  = sceneVow?.vow;
+  const name = typeof vow?.name === 'string' ? vow.name.trim() : '';
+  if (!name) return '';
+  const bits = [];
+  if (typeof vow.rank === 'string' && vow.rank.trim()) bits.push(vow.rank.trim());
+  if (Number.isFinite(Number(vow.progress)) && vow.progress !== null) {
+    bits.push(`progress ${Math.max(0, Math.min(10, Math.floor(Number(vow.progress))))}/10`);
+  }
+  const holders = (Array.isArray(vow.holders) ? vow.holders : []).filter(h => typeof h === 'string' && h.trim()).map(h => h.trim());
+  if (holders.length) bits.push(`sworn by ${joinNames(holders)}`);
+  const why = sceneVowReason(sceneVow);
+  return (
+    `## THE VOW THIS SCENE SERVES\n\n` +
+    `"${name}"${bits.length ? ` (${bits.join(', ')})` : ''}${why ? ` — ${why}` : ''}.\n\n` +
+    `When a beat achieves something toward this vow, show that in the fiction. Never mention the vow's ` +
+    `track, its progress or a milestone: marking it is the player's.`
+  );
+}
+
 /** Track types the Progress Tracks panel lists, as the [4j] block names them. */
 const PROGRESS_TRACK_LABELS = {
   combat:          'Fight',
@@ -2149,7 +2221,10 @@ function formatProgressTracksBlock(tracks) {
     if (own.length) bits.push(`positions: ${own.map(e => `${e.name.trim()} ${positionText[e.position]}`).join(', ')}`);
     else if (positionText[t.combatState]) bits.push(`position: ${positionText[t.combatState]}`);
     if (typeof t.linkedVowName === 'string' && t.linkedVowName.trim()) {
-      bits.push(`serves the vow "${t.linkedVowName.trim()}" — winning it is a milestone on that vow`);
+      // An expedition or a scene challenge can serve a vow too (issue #353 R3).
+      bits.push(t.type === 'combat'
+        ? `serves the vow "${t.linkedVowName.trim()}" — winning it is a milestone on that vow`
+        : `serves the vow "${t.linkedVowName.trim()}" — seeing it through is a step toward that vow`);
     }
     return `- ${PROGRESS_TRACK_LABELS[t.type]}: ${t.label.trim()} — ${bits.join('; ')}`;
   });
